@@ -1,0 +1,448 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=${IMAGE:-docker.io/library/python:3.12-alpine}
+ZONE=${ZONE:-sortsys.de}
+SUBDOMAIN=${SUBDOMAIN:-auto}
+TTL=${TTL:-1800}
+DRY_RUN=${DRY_RUN:-0}
+DELETE_STALE=${DELETE_STALE:-1}
+INCLUDE_FLOATING_IPS=${INCLUDE_FLOATING_IPS:-1}
+COMMENT=${COMMENT:-managed by hcloud-auto-dns}
+HCLOUD_ENDPOINT=${HCLOUD_ENDPOINT:-https://api.hetzner.cloud/v1}
+VERBOSE=${VERBOSE:-0}
+CONTAINER_ENGINE=${CONTAINER_ENGINE:-}
+
+usage() {
+  cat <<'EOF'
+Usage: hcloud-auto-dns.sh [options]
+
+Sync Hetzner Cloud server public IPs to <server-name>.auto.sortsys.de A/AAAA records.
+
+Credentials:
+  HCLOUD_TOKEN=...          Hetzner project API token with read/write access to servers and DNS zone
+  HETZNER_TOKEN=...         Alias for HCLOUD_TOKEN
+                            If neither is set, the script asks interactively with hidden input.
+
+Options:
+  --zone NAME              DNS zone name; default: sortsys.de
+  --subdomain NAME         Managed subdomain below zone; default: auto
+  --ttl SECONDS            TTL for newly created records and existing managed RRSets; default: 300
+  --dry-run                Print changes but do not modify DNS
+  --no-delete-stale        Do not delete A/AAAA records under *.auto for missing servers
+  --no-floating-ips        Only use Primary IPv4/IPv6, not assigned Floating IPs
+  --image IMAGE            Python container image; default: docker.io/library/python:3.12-alpine
+  --engine podman|docker   Container engine; default: podman if present, otherwise docker
+  --verbose                Print skipped names and unchanged records
+  -h, --help               Show this help
+
+Environment overrides: ZONE, SUBDOMAIN, TTL, DRY_RUN, DELETE_STALE,
+INCLUDE_FLOATING_IPS, COMMENT, HCLOUD_ENDPOINT, IMAGE, CONTAINER_ENGINE.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --zone) ZONE=${2:?missing value for --zone}; shift 2 ;;
+    --subdomain) SUBDOMAIN=${2:?missing value for --subdomain}; shift 2 ;;
+    --ttl) TTL=${2:?missing value for --ttl}; shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --no-delete-stale) DELETE_STALE=0; shift ;;
+    --no-floating-ips) INCLUDE_FLOATING_IPS=0; shift ;;
+    --image) IMAGE=${2:?missing value for --image}; shift 2 ;;
+    --engine) CONTAINER_ENGINE=${2:?missing value for --engine}; shift 2 ;;
+    --verbose) VERBOSE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+prompt_hcloud_token() {
+  local token
+
+  if { exec 3</dev/tty 4>/dev/tty; } 2>/dev/null; then
+    printf 'Hetzner API token: ' >&4
+    if ! IFS= read -r -s -u 3 token; then
+      printf '\n' >&4
+      exec 3<&- 4>&-
+      echo "ERROR: Could not read Hetzner API token." >&2
+      exit 2
+    fi
+    printf '\n' >&4
+    exec 3<&- 4>&-
+  elif [ -t 0 ]; then
+    printf 'Hetzner API token: ' >&2
+    if ! IFS= read -r -s token; then
+      printf '\n' >&2
+      echo "ERROR: Could not read Hetzner API token." >&2
+      exit 2
+    fi
+    printf '\n' >&2
+  else
+    echo "ERROR: No Hetzner token provided and no interactive terminal is available." >&2
+    echo "Set HCLOUD_TOKEN or HETZNER_TOKEN for non-interactive use." >&2
+    exit 2
+  fi
+
+  if [ -z "$token" ]; then
+    echo "ERROR: Empty Hetzner API token." >&2
+    exit 2
+  fi
+
+  declare -g HCLOUD_TOKEN="$token"
+}
+
+if [ -n "${HCLOUD_TOKEN:-}" ]; then
+  :
+elif [ -n "${HETZNER_TOKEN:-}" ]; then
+  HCLOUD_TOKEN=$HETZNER_TOKEN
+else
+  prompt_hcloud_token
+fi
+
+export HCLOUD_TOKEN
+
+if [ -z "$CONTAINER_ENGINE" ]; then
+  if command -v podman >/dev/null 2>&1; then
+    CONTAINER_ENGINE=podman
+  elif command -v docker >/dev/null 2>&1; then
+    CONTAINER_ENGINE=docker
+  else
+    echo "ERROR: Neither podman nor docker was found." >&2
+    exit 127
+  fi
+fi
+
+umask 077
+envfile=$(mktemp)
+trap 'rm -f "$envfile"' EXIT
+
+cat >"$envfile" <<EOF
+HCLOUD_TOKEN=$HCLOUD_TOKEN
+ZONE=$ZONE
+SUBDOMAIN=$SUBDOMAIN
+TTL=$TTL
+DRY_RUN=$DRY_RUN
+DELETE_STALE=$DELETE_STALE
+INCLUDE_FLOATING_IPS=$INCLUDE_FLOATING_IPS
+COMMENT=$COMMENT
+HCLOUD_ENDPOINT=$HCLOUD_ENDPOINT
+VERBOSE=$VERBOSE
+EOF
+
+exec "$CONTAINER_ENGINE" run --rm -i \
+  --env-file "$envfile" \
+  "$IMAGE" python3 - <<'PY'
+import ipaddress
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections import defaultdict
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+TOKEN = os.environ["HCLOUD_TOKEN"]
+BASE = os.environ.get("HCLOUD_ENDPOINT", "https://api.hetzner.cloud/v1").rstrip("/")
+ZONE = os.environ.get("ZONE", "sortsys.de").strip().rstrip(".").lower()
+SUBDOMAIN = os.environ.get("SUBDOMAIN", "auto").strip().strip(".").lower()
+COMMENT = os.environ.get("COMMENT", "managed by hcloud-auto-dns")
+TTL = int(os.environ.get("TTL", "300"))
+DRY_RUN = os.environ.get("DRY_RUN", "0").lower() in {"1", "true", "yes", "on"}
+DELETE_STALE = os.environ.get("DELETE_STALE", "1").lower() in {"1", "true", "yes", "on"}
+INCLUDE_FLOATING_IPS = os.environ.get("INCLUDE_FLOATING_IPS", "1").lower() in {"1", "true", "yes", "on"}
+VERBOSE = os.environ.get("VERBOSE", "0").lower() in {"1", "true", "yes", "on"}
+
+if not ZONE or not SUBDOMAIN:
+    raise SystemExit("ERROR: --zone and --subdomain must be non-empty.")
+if TTL <= 0:
+    raise SystemExit("ERROR: --ttl must be a positive integer.")
+
+LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+class ApiError(RuntimeError):
+    pass
+
+def log(msg: str) -> None:
+    print(msg, flush=True)
+
+def warn(msg: str) -> None:
+    print(f"WARN: {msg}", file=sys.stderr, flush=True)
+
+def q(segment: str) -> str:
+    return urllib.parse.quote(segment, safe="")
+
+def api(method: str, path: str, body: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    query = ""
+    if params:
+        query = "?" + urllib.parse.urlencode(params, doseq=True)
+    url = f"{BASE}{path}{query}"
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Accept": "application/json",
+        "User-Agent": "hcloud-auto-dns/1.0",
+    }
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        msg = raw
+        try:
+            parsed = json.loads(raw)
+            if "error" in parsed:
+                err = parsed["error"]
+                msg = err.get("message") or err.get("code") or raw
+            elif "errors" in parsed:
+                msg = json.dumps(parsed["errors"])
+        except Exception:
+            pass
+        raise ApiError(f"{method} {url} -> HTTP {e.code}: {msg}") from None
+    except urllib.error.URLError as e:
+        raise ApiError(f"{method} {url} failed: {e.reason}") from None
+
+def paginated(path: str, key: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    page = 1
+    while True:
+        p = dict(params or {})
+        p.setdefault("per_page", 100)
+        p["page"] = page
+        data = api("GET", path, params=p)
+        out.extend(data.get(key, []))
+        pagination = data.get("meta", {}).get("pagination", {})
+        next_page = pagination.get("next_page")
+        if not next_page:
+            break
+        page = int(next_page)
+    return out
+
+def valid_dns_rel_name(rel: str) -> bool:
+    labels = rel.split(".")
+    return all(LABEL_RE.fullmatch(label) for label in labels) and len(f"{rel}.{ZONE}") <= 253
+
+def rel_name_for_server(server_name: str) -> Optional[str]:
+    host = server_name.strip().rstrip(".").lower()
+    rel = f"{host}.{SUBDOMAIN}"
+    if valid_dns_rel_name(rel):
+        return rel
+    return None
+
+def normalize_ip(raw: Any, version: int) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        if "/" in s:
+            net = ipaddress.ip_network(s, strict=False)
+            if net.version != version:
+                return None
+            if version == 6 and net.prefixlen < 128:
+                return str(net.network_address + 1)
+            return str(net.network_address)
+        ip = ipaddress.ip_address(s)
+        return str(ip) if ip.version == version else None
+    except ValueError:
+        return None
+
+def primary_ips(server: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    pnet = server.get("public_net") or {}
+    a: List[str] = []
+    aaaa: List[str] = []
+    ipv4 = pnet.get("ipv4")
+    if isinstance(ipv4, dict):
+        ip = normalize_ip(ipv4.get("ip"), 4)
+        if ip:
+            a.append(ip)
+    ipv6 = pnet.get("ipv6")
+    if isinstance(ipv6, dict):
+        ip = normalize_ip(ipv6.get("ip"), 6)
+        if ip:
+            aaaa.append(ip)
+    return a, aaaa
+
+def floating_ips_by_server() -> Dict[int, Dict[str, List[str]]]:
+    result: Dict[int, Dict[str, List[str]]] = defaultdict(lambda: {"A": [], "AAAA": []})
+    if not INCLUDE_FLOATING_IPS:
+        return result
+    for fip in paginated("/floating_ips", "floating_ips"):
+        server = fip.get("server")
+        if server is None:
+            continue
+        if isinstance(server, dict):
+            sid = server.get("id")
+        else:
+            sid = server
+        try:
+            sid = int(sid)
+        except Exception:
+            continue
+        typ = fip.get("type")
+        ip_raw = fip.get("ip")
+        if typ == "ipv4":
+            ip = normalize_ip(ip_raw, 4)
+            if ip:
+                result[sid]["A"].append(ip)
+        elif typ == "ipv6":
+            ip = normalize_ip(ip_raw, 6)
+            if ip:
+                result[sid]["AAAA"].append(ip)
+    return result
+
+def rr_values(rrset: Dict[str, Any]) -> List[str]:
+    values = []
+    for r in rrset.get("records") or []:
+        if isinstance(r, dict) and r.get("value"):
+            values.append(str(r["value"]))
+    return sorted(set(values))
+
+def record_payload(values: Iterable[str]) -> List[Dict[str, str]]:
+    out = []
+    for value in sorted(set(values)):
+        rec = {"value": value}
+        if COMMENT:
+            rec["comment"] = COMMENT
+        out.append(rec)
+    return out
+
+def managed_name(name: str) -> bool:
+    name = name.strip().rstrip(".").lower()
+    return name.endswith(f".{SUBDOMAIN}") and name != SUBDOMAIN
+
+def do_or_print(action: str, func, *args, **kwargs) -> None:
+    if DRY_RUN:
+        log(f"DRY-RUN {action}")
+    else:
+        log(action)
+        func(*args, **kwargs)
+
+def create_rrset(zone_id: str, name: str, typ: str, values: List[str]) -> None:
+    api("POST", f"/zones/{q(zone_id)}/rrsets", {
+        "name": name,
+        "type": typ,
+        "ttl": TTL,
+        "records": record_payload(values),
+    })
+
+def set_rrset_records(zone_id: str, name: str, typ: str, values: List[str]) -> None:
+    api("POST", f"/zones/{q(zone_id)}/rrsets/{q(name)}/{q(typ)}/actions/set_records", {
+        "records": record_payload(values),
+    })
+
+def change_rrset_ttl(zone_id: str, name: str, typ: str) -> None:
+    api("POST", f"/zones/{q(zone_id)}/rrsets/{q(name)}/{q(typ)}/actions/change_ttl", {"ttl": TTL})
+
+def delete_rrset(zone_id: str, name: str, typ: str) -> None:
+    api("DELETE", f"/zones/{q(zone_id)}/rrsets/{q(name)}/{q(typ)}")
+
+def main() -> int:
+    zones = paginated("/zones", "zones", {"name": ZONE})
+    zones = [z for z in zones if str(z.get("name", "")).rstrip(".").lower() == ZONE]
+    if not zones:
+        raise SystemExit(f"ERROR: Zone {ZONE!r} not found with this token.")
+    if len(zones) > 1:
+        raise SystemExit(f"ERROR: More than one zone named {ZONE!r} returned; refusing to guess.")
+    zone_id = str(zones[0].get("id") or ZONE)
+
+    servers = paginated("/servers", "servers")
+    fips = floating_ips_by_server()
+
+    desired: Dict[str, Dict[str, List[str]]] = {}
+    skipped: List[str] = []
+    owners: Dict[str, str] = {}
+
+    for srv in servers:
+        name = str(srv.get("name") or "")
+        rel = rel_name_for_server(name)
+        if rel is None:
+            skipped.append(name)
+            continue
+        if rel in desired:
+            prev = owners.get(rel, "<unknown>")
+            raise SystemExit(f"ERROR: Duplicate DNS name {rel}.{ZONE} from servers {prev!r} and {name!r}; refusing to merge.")
+        a, aaaa = primary_ips(srv)
+        sid = int(srv["id"])
+        a.extend(fips.get(sid, {}).get("A", []))
+        aaaa.extend(fips.get(sid, {}).get("AAAA", []))
+        desired[rel] = {"A": sorted(set(a)), "AAAA": sorted(set(aaaa))}
+        owners[rel] = name
+
+    rrsets = paginated(f"/zones/{q(zone_id)}/rrsets", "rrsets")
+    existing: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for rr in rrsets:
+        typ = str(rr.get("type") or "")
+        if typ not in {"A", "AAAA"}:
+            continue
+        name = str(rr.get("name") or "").strip().rstrip(".").lower()
+        existing[(name, typ)] = rr
+
+    log(f"Zone: {ZONE} (id/name used for API: {zone_id})")
+    log(f"Managed suffix: *.{SUBDOMAIN}.{ZONE}")
+    log(f"Servers seen: {len(servers)}; valid managed names: {len(desired)}; skipped invalid names: {len(skipped)}")
+    log(f"Floating IPs included: {'yes' if INCLUDE_FLOATING_IPS else 'no'}; stale deletion: {'yes' if DELETE_STALE else 'no'}; dry-run: {'yes' if DRY_RUN else 'no'}")
+    if skipped and VERBOSE:
+        for name in skipped:
+            warn(f"Skipped server name {name!r}; it is not a valid DNS name below .{ZONE}")
+
+    operations = 0
+
+    for rel in sorted(desired):
+        for typ in ("A", "AAAA"):
+            wanted = desired[rel][typ]
+            have_rr = existing.get((rel, typ))
+            have = rr_values(have_rr) if have_rr else []
+            fqdn = f"{rel}.{ZONE}"
+
+            if not wanted:
+                if have_rr:
+                    operations += 1
+                    do_or_print(f"DELETE {typ} {fqdn} (server exists but has no public {typ} address)", delete_rrset, zone_id, rel, typ)
+                elif VERBOSE:
+                    log(f"OK absent {typ} {fqdn}")
+                continue
+
+            if not have_rr:
+                operations += 1
+                do_or_print(f"CREATE {typ} {fqdn} -> {', '.join(wanted)}", create_rrset, zone_id, rel, typ, wanted)
+                continue
+
+            if sorted(have) != sorted(wanted):
+                operations += 1
+                do_or_print(f"UPDATE {typ} {fqdn}: {', '.join(have) or '<empty>'} -> {', '.join(wanted)}", set_rrset_records, zone_id, rel, typ, wanted)
+            else:
+                if VERBOSE:
+                    log(f"OK {typ} {fqdn} -> {', '.join(wanted)}")
+
+            try:
+                have_ttl = int(have_rr.get("ttl"))
+            except Exception:
+                have_ttl = None
+            if have_ttl is not None and have_ttl != TTL:
+                operations += 1
+                do_or_print(f"TTL {typ} {fqdn}: {have_ttl} -> {TTL}", change_rrset_ttl, zone_id, rel, typ)
+
+    if DELETE_STALE:
+        current_names = set(desired.keys())
+        for (name, typ), rr in sorted(existing.items()):
+            if managed_name(name) and name not in current_names:
+                operations += 1
+                do_or_print(f"DELETE stale {typ} {name}.{ZONE} (no matching server)", delete_rrset, zone_id, name, typ)
+
+    log(f"Done. DNS changes {'planned' if DRY_RUN else 'applied'}: {operations}")
+    return 0
+
+try:
+    raise SystemExit(main())
+except ApiError as e:
+    print(f"ERROR: {e}", file=sys.stderr)
+    raise SystemExit(1)
+PY

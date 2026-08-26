@@ -1,0 +1,71 @@
+#!/usr/bin/env bun
+
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
+import { createClient } from '../client/src/index.ts';
+
+async function prompt(rl: ReturnType<typeof createInterface>, question: string, defaultValue?: string) {
+  const label = defaultValue ? `${question} [${defaultValue}]: ` : `${question}: `;
+  const answer = (await rl.question(label)).trim();
+  if (answer) return answer;
+  if (defaultValue) return defaultValue;
+  return '';
+}
+
+const API_HOST = process.env.SORTSYS_API_HOST ?? 'https://app.sortsys.de/api/v2';
+const client = createClient(API_HOST);
+const rl = createInterface({ input, output });
+
+try {
+  const adminPassword = await prompt(rl, 'Global Admin password');
+  if (!adminPassword) throw new Error('Global Admin password is required.');
+
+  const tenantName = (await prompt(rl, 'Tenant name')).toLowerCase();
+  if (!tenantName) throw new Error('Tenant name is required.');
+
+  const adminUsername = (await prompt(rl, 'New Admin username')).toLowerCase();
+  if (!adminUsername) throw new Error('New Admin username is required.');
+
+  const contactEmail = await prompt(rl, 'Contact email');
+  if (!contactEmail) throw new Error('Contact email is required.');
+
+  const defaultDsn = process.env.TENANT_POSTGRES_DSN ?? '';
+  const postgresDSN = await prompt(rl, 'Tenant Postgres DSN', defaultDsn || undefined);
+  if (!postgresDSN) throw new Error('Tenant Postgres DSN is required.');
+
+  const [loginResult, loginErr] = await client.mutate('admin.login', {
+    tenant: null,
+    password: adminPassword,
+  });
+  if (loginErr) throw loginErr;
+  client.setToken(loginResult.token);
+
+  const [tenantResult, tenantErr] = await client.mutate('admin.tenants.create', {
+    name: tenantName,
+    contact_details: { email: contactEmail },
+    connection_details: { postgresDSN },
+  });
+  if (tenantErr) throw tenantErr;
+
+  const [userResult, userErr] = await client.mutate('admin.users.create', {
+    tenant: tenantName,
+    username: adminUsername,
+    firstName: adminUsername,
+    lastName: null,
+    email: contactEmail,
+    phone: null,
+    salutation: null,
+    contractType: 'internal',
+  });
+  if (userErr) throw userErr;
+
+  console.log(`Tenant created: ${tenantName}`);
+  console.log(`Tenant admin password: ${tenantResult.adminPassword}`);
+  console.log(`Admin user: ${adminUsername}`);
+  console.log(`Admin user password: ${userResult.password}`);
+} catch (err) {
+  console.error(err);
+  process.exitCode = 1;
+} finally {
+  rl.close();
+}

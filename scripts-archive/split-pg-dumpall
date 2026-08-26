@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+IMAGE="docker.io/library/postgres:17"
+CONTAINER_NAME="pgdumpall-splitter-$$"
+PGUSER="postgres"
+PGPASSWORD="postgres"
+PGPORT="55432"
+DUMP_MOUNT_PATH="/input/dump.sql"
+FILTERED_DUMP_MOUNT_PATH="/input/dump.filtered.sql"
+
+cleanup() {
+  local rc=$?
+  podman rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  exit "$rc"
+}
+trap cleanup EXIT
+
+usage() {
+  cat <<'EOF'
+Usage:
+  split-pg-dumpall.sh /path/to/pg_dumpall.sql
+
+Behavior:
+  - starts a temporary postgres:17 Podman container
+  - preprocesses the pg_dumpall file to skip CREATE ROLE postgres;
+  - restores the cluster dump into the container
+  - exports each non-template, connectable database to ./<dbname>.sql.gz
+
+Requirements:
+  - podman
+  - gzip
+  - awk
+  - readlink
+
+Notes:
+  - input must be a plain SQL pg_dumpall file
+  - output files are plain SQL compressed with gzip
+EOF
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Error: required command not found: $1" >&2
+    exit 1
+  }
+}
+
+wait_for_postgres() {
+  local tries=90
+  echo "Waiting for PostgreSQL to become ready..."
+  for ((i=1; i<=tries; i++)); do
+    if podman exec \
+      -e PGPASSWORD="${PGPASSWORD}" \
+      "${CONTAINER_NAME}" \
+      pg_isready -U "${PGUSER}" -d postgres >/dev/null 2>&1; then
+      echo "PostgreSQL is ready."
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Error: PostgreSQL did not become ready in time." >&2
+  podman logs "${CONTAINER_NAME}" >&2 || true
+  exit 1
+}
+
+make_filtered_dump() {
+  local input_file="$1"
+  local output_file="$2"
+
+  echo "Preprocessing dump to skip conflicting CREATE ROLE postgres..."
+  awk '
+    /^[[:space:]]*CREATE ROLE postgres;[[:space:]]*$/ {
+      print "-- skipped by split-pg-dumpall.sh: " $0
+      next
+    }
+    { print }
+  ' "$input_file" > "$output_file"
+}
+
+main() {
+  require_cmd podman
+  require_cmd gzip
+  require_cmd awk
+  require_cmd readlink
+
+  if [[ $# -ne 1 ]]; then
+    usage >&2
+    exit 1
+  fi
+
+  local dump_file="$1"
+  if [[ ! -f "$dump_file" ]]; then
+    echo "Error: file not found: $dump_file" >&2
+    exit 1
+  fi
+  if [[ ! -r "$dump_file" ]]; then
+    echo "Error: file is not readable: $dump_file" >&2
+    exit 1
+  fi
+
+  local abs_dump filtered_dump
+  abs_dump="$(readlink -f "$dump_file")"
+  filtered_dump="$(mktemp "${TMPDIR:-/tmp}/pgdumpall-filtered.XXXXXX.sql")"
+
+  make_filtered_dump "$abs_dump" "$filtered_dump"
+
+  echo "Starting container ${CONTAINER_NAME} from ${IMAGE}..."
+  podman run -d \
+    --name "${CONTAINER_NAME}" \
+    -e POSTGRES_PASSWORD="${PGPASSWORD}" \
+    -e POSTGRES_USER="${PGUSER}" \
+    -p "${PGPORT}:5432" \
+    -v "${filtered_dump}:${FILTERED_DUMP_MOUNT_PATH}:ro,Z" \
+    "${IMAGE}" >/dev/null
+
+  wait_for_postgres
+
+  echo "Importing filtered pg_dumpall file..."
+  podman exec \
+    -e PGPASSWORD="${PGPASSWORD}" \
+    "${CONTAINER_NAME}" \
+    psql -v ON_ERROR_STOP=1 -U "${PGUSER}" -d postgres -f "${FILTERED_DUMP_MOUNT_PATH}"
+
+  echo "Collecting database list..."
+  mapfile -t dbs < <(
+    podman exec \
+      -e PGPASSWORD="${PGPASSWORD}" \
+      "${CONTAINER_NAME}" \
+      psql -At -U "${PGUSER}" -d postgres -c "
+        SELECT datname
+        FROM pg_database
+        WHERE datistemplate = false
+          AND datallowconn = true
+          AND datname <> 'postgres'
+        ORDER BY datname;
+      "
+  )
+
+  if [[ ${#dbs[@]} -eq 0 ]]; then
+    echo "No user databases found."
+    rm -f "$filtered_dump"
+    exit 0
+  fi
+
+  echo "Exporting individual databases to $(pwd)"
+  for db in "${dbs[@]}"; do
+    local out_file
+    out_file="./${db}.sql.gz"
+
+    echo "  -> ${db} -> ${out_file}"
+    podman exec \
+      -e PGPASSWORD="${PGPASSWORD}" \
+      "${CONTAINER_NAME}" \
+      pg_dump -U "${PGUSER}" --no-owner --no-privileges --dbname="$db" \
+      | gzip -c > "$out_file"
+  done
+
+  rm -f "$filtered_dump"
+
+  echo "Done."
+  echo "Created files:"
+  for db in "${dbs[@]}"; do
+    echo "  ./${db}.sql.gz"
+  done
+}
+
+main "$@"

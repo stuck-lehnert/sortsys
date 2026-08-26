@@ -1,0 +1,19 @@
+ARG RUST_IMAGE=docker.io/library/rust:1.88-bookworm
+
+FROM docker.io/library/postgres:17-bookworm AS postgres-client
+
+FROM ${RUST_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Managed backup scenarios call the same PostgreSQL 17 tools as production.
+COPY --from=postgres-client /usr/lib/*-linux-gnu/libpq.so.5.18 /usr/local/lib/libpq.so.5
+RUN multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" \
+    && rm -f "/usr/lib/${multiarch}/libpq.so.5" \
+    && cp /usr/local/lib/libpq.so.5 "/usr/lib/${multiarch}/libpq.so.5" \
+    && ldconfig
+COPY --from=postgres-client /usr/lib/postgresql/17/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=postgres-client /usr/lib/postgresql/17/bin/psql /usr/local/bin/psql

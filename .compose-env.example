@@ -1,0 +1,21 @@
+# Coolify generates and persists these SERVICE_* values automatically.
+# For a local Docker Compose deployment, replace every placeholder with a
+# long, random value and keep the resulting .compose-env file out of Git.
+SERVICE_PASSWORD_64_POSTGRES=replace-with-a-long-random-postgres-password
+SERVICE_BASE64_64_JWT=replace-with-a-long-random-jwt-secret
+SERVICE_BASE64_64_JOBRUNNER=replace-with-a-long-random-job-runner-token
+
+# Required. Generate this as documented in README.md. In Coolify, mark the
+# bcrypt value as Literal so its dollar signs are not interpolated.
+ADMIN_HASH=replace-with-a-bcrypt-password-hash
+
+# Coolify assigns this from the webapp domain. Outside Coolify, it may be left
+# empty because it is informational; the stack does not publish a host port.
+SERVICE_URL_WEBAPP_80=
+
+# Optional overrides (the shown values are the Compose defaults).
+POSTGRES_IMAGE=postgres:17-alpine
+POSTGRES_DB=sortsys
+POSTGRES_USER=sortsys
+JOB_RUNNER_ID=sortsys-compose-1
+CLIENT_MAX_BODY_SIZE=64m

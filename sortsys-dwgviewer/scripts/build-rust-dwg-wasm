@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MANIFEST="$ROOT/lib/Cargo.toml"
+OUT_DIR="$ROOT/src/dwg/wasm"
+WASM="$ROOT/lib/target/wasm32-unknown-unknown/release/sortsys_dwg_parser.wasm"
+
+rustup target add wasm32-unknown-unknown
+cargo build --manifest-path "$MANIFEST" --locked --release --target wasm32-unknown-unknown
+
+mkdir -p "$OUT_DIR"
+install -m 0644 "$WASM" "$OUT_DIR/sortsys-dwg-rust.wasm"
+printf 'Built %s\n' "$OUT_DIR/sortsys-dwg-rust.wasm"

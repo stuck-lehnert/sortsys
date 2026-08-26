@@ -1,0 +1,33 @@
+{
+  "name": "@sortsys/v2-client",
+  "version": "0.1.40",
+  "license": "AGPL-3.0-only",
+  "main": "dist/index.js",
+  "devDependencies": {
+    "@types/bun": "^1.3.11",
+    "typescript": "^5.9.3"
+  },
+  "exports": {
+    "import": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "default": "./dist/index.js"
+  },
+  "description": "Typed batched RPC client for sortsys-api-v2",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/index.ts --production --outfile dist/index.js && tsc -p tsconfig.json --emitDeclarationOnly --outDir dist --declarationDir dist && bun ./scripts/write-dist-package-json.mjs"
+  },
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@types/node": "^25.0.1",
+    "@types/send": "^1.2.1",
+    "rxjs": "^7.8.2",
+    "superjson": "^2.2.6"
+  }
+}

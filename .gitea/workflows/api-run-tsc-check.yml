@@ -1,0 +1,41 @@
+name: API - Run `tsc` check
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - sortsys-api-v2/**
+      - .github/workflows/api-run-tsc-check.yml
+  pull_request:
+    paths:
+      - sortsys-api-v2/**
+      - .github/workflows/api-run-tsc-check.yml
+
+jobs:
+  main:
+    name: Run `./tsc`
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install apt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl unzip ca-certificates
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: sortsys-api-v2
+        run: bun install
+
+      - name: Run `./tsc`
+        working-directory: sortsys-api-v2
+        run: ./tsc

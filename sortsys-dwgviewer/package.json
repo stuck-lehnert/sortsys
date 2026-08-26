@@ -1,0 +1,38 @@
+{
+  "name": "@sortsys/dwgviewer",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.js"
+    },
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "build": "npm run typecheck",
+    "build:wasm:rust": "bash ./scripts/build-rust-dwg-wasm",
+    "test:wasm:rust": "npm run build:wasm:rust && node ./scripts/smoke-rust-dwg-wasm.mjs",
+    "smoke:wasm:rust:fixtures": "npm run build:wasm:rust && node ./scripts/smoke-rust-dwg-fixtures.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^6.1.200"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.0"
+  }
+}

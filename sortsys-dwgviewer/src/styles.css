@@ -1,0 +1,188 @@
+.ss-dwgviewer {
+  block-size: 100%;
+  min-block-size: 28rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--ss-surface, #ffffff);
+  border: 1px solid var(--ss-border, #d0d7de);
+  color: var(--ss-text-primary, #111827);
+  overflow: hidden;
+}
+
+.ss-dwgviewer-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  border-bottom: 1px solid var(--ss-border, #d0d7de);
+  background: var(--ss-surface-muted, #f6f8fa);
+}
+
+.ss-dwgviewer-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ss-dwgviewer-tool,
+.ss-dwgviewer-select {
+  block-size: 2rem;
+  border: 1px solid var(--ss-border, #d0d7de);
+  background: var(--ss-surface, #ffffff);
+  color: inherit;
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.ss-dwgviewer-tool {
+  min-inline-size: 2rem;
+  padding: 0 0.55rem;
+  cursor: pointer;
+}
+
+.ss-dwgviewer-tool:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.ss-dwgviewer-tool.is-active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.ss-dwgviewer-select {
+  min-inline-size: 8rem;
+  padding: 0 0.45rem;
+}
+
+.ss-dwgviewer-zoom {
+  min-inline-size: 4.5rem;
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--ss-text-secondary, #4b5563);
+}
+
+.ss-dwgviewer-body {
+  min-block-size: 0;
+  flex: 1 1 auto;
+  display: flex;
+}
+
+.ss-dwgviewer-layers {
+  inline-size: 14rem;
+  flex: 0 0 14rem;
+  overflow: auto;
+  padding: 0.55rem;
+  border-right: 1px solid var(--ss-border, #d0d7de);
+  background: var(--ss-surface, #ffffff);
+}
+
+.ss-dwgviewer-panel-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.45rem;
+}
+
+.ss-dwgviewer-layer {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-inline-size: 0;
+  padding: 0.25rem 0;
+  font-size: 0.84rem;
+}
+
+.ss-dwgviewer-layer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-dwgviewer-canvas-wrap {
+  position: relative;
+  min-inline-size: 0;
+  min-block-size: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  touch-action: none;
+  background: #eef2f7;
+}
+
+.ss-dwgviewer-canvas-content {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.ss-dwgviewer-canvas,
+.ss-dwgviewer-overlay {
+  position: absolute;
+  display: block;
+}
+
+.ss-dwgviewer-overlay {
+  pointer-events: none;
+}
+
+.ss-dwgviewer-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  text-align: center;
+  color: var(--ss-text-secondary, #4b5563);
+  background: color-mix(in srgb, #ffffff 82%, transparent);
+}
+
+.ss-dwgviewer-state--error {
+  color: #991b1b;
+  background: #fff1f2;
+}
+
+.ss-dwgviewer-warnings {
+  position: absolute;
+  inset-inline: 0.75rem auto;
+  inset-block-end: 0.75rem;
+  max-inline-size: min(34rem, calc(100% - 1.5rem));
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 0.78rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+@media (max-width: 48rem) {
+  .ss-dwgviewer-body {
+    flex-direction: column;
+  }
+
+  .ss-dwgviewer-layers {
+    inline-size: auto;
+    block-size: 8rem;
+    flex-basis: 8rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--ss-border, #d0d7de);
+  }
+}
+
+.ss-dwgviewer-calibration {
+  align-items: center;
+  background: #ecfdf5;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  color: #14532d;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+}

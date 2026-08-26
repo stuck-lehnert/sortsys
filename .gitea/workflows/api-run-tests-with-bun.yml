@@ -1,0 +1,36 @@
+name: API - Full integration tests
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - sortsys-api-v2/**
+      - sortsys-v2-job_runner/**
+      - scripts/test-api
+      - .github/workflows/api-run-tests-with-bun.yml
+  pull_request:
+    paths:
+      - sortsys-api-v2/**
+      - sortsys-v2-job_runner/**
+      - scripts/test-api
+      - .github/workflows/api-run-tests-with-bun.yml
+
+jobs:
+  main:
+    name: Run `./scripts/test-api`
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run full API integration suite
+        shell: bash
+        run: |
+          unset TEST_RUN_SUFFIX
+          unset TEST_NETWORK TEST_PG_CONTAINER TEST_S3_CONTAINER TEST_API_CONTAINER
+          unset TEST_JOB_RUNNER_1_CONTAINER TEST_JOB_RUNNER_2_CONTAINER
+          unset TEST_API_PORT TEST_PG_PORT TEST_S3_PORT
+          ./scripts/test-api --rerun-each=1

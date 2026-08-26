@@ -1,0 +1,245 @@
+import { useOutletContext } from "react-router";
+import { from } from "rxjs";
+import { AttrList } from "~/components/AttrList";
+import { MyButton } from "~/components/MyButton";
+import { MyCallout } from "~/components/MyCallout";
+import { MyDivider } from "~/components/MyDivider";
+import { MyExpandable } from "~/components/MyExpandable";
+import { MyLink } from "~/components/MyLink";
+import { Remarks } from "~/components/Remarks";
+import { TrackingTable } from "~/components/TrackingTable";
+import { EntityActivityTimeline } from "~/components/EntityActivityTimeline";
+import { useClientStream } from "~/hooks/useClientStream";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { useTitle } from "~/hooks/useTitle";
+import { contactName, customerName, formatAddress, formatDate, userFullName } from "~/lib/format";
+import { client } from "~/lib/client";
+import { Icons } from "~/lib/icons";
+import { renderStructuredPdf, type PdfCardSection, type PdfTableSection } from "~/lib/pdf";
+import { ContactTile } from "~/lib/tiles";
+import { addressUrl, deliverBlob } from "~/lib/utils";
+import type { Project } from "~/type-helpers";
+import { useMemo, useState } from "react";
+
+function safeFilePart(value: string) {
+  return value.replace(/[^\w\-]+/g, '-') || 'Projekt';
+}
+
+function contactPhoneLines(contact: { phoneNumbers: { name?: string | null; number: string }[] }) {
+  const value = contact.phoneNumbers
+    .map(({ name, number }) => name ? `${name}: ${number}` : number)
+    .join('\n')
+    .trim();
+  return value || null;
+}
+
+function contactEmailLines(contact: { emailAddresses: { name?: string | null; email: string }[] }) {
+  const value = contact.emailAddresses
+    .map(({ name, email }) => name ? `${name}: ${email}` : email)
+    .join('\n')
+    .trim();
+  return value || null;
+}
+
+function contactAddressLine(contact: { address?: Parameters<typeof formatAddress>[0] }) {
+  return formatAddress(contact.address) || null;
+}
+
+function contactCardItems(contact: { address?: Parameters<typeof formatAddress>[0]; phoneNumbers: { name?: string | null; number: string }[]; emailAddresses: { name?: string | null; email: string }[] }) {
+  const address = contactAddressLine(contact);
+  const phone = contactPhoneLines(contact);
+  const email = contactEmailLines(contact);
+
+  return [
+    address ? { label: 'Anschrift', value: address } : null,
+    phone ? { label: 'Telefon', value: phone } : null,
+    email ? { label: 'E-Mail', value: email } : null,
+  ].filter(Boolean) as { label: string; value: string }[];
+}
+
+export default function ProjectDetailPage() {
+  const { project } = useOutletContext<{ project: Project }>();
+
+  const sessionInfo = useSessionInfo();
+  const canViewUsers = sessionInfo.canDo('view:users');
+  const canViewContacts = sessionInfo.canDo('view:contacts');
+  const [isContactSheetPrinting, setIsContactSheetPrinting] = useState(false);
+  const [contactSheetPrintErr, setContactSheetPrintErr] = useState<string | null>(null);
+
+  const [customer] = useClientStream(() => client.streamQuery('customers.get', { id: project.customerId ?? '0' }), [project.customerId]);
+  const [responsibleProjectLeader] = useClientStream(
+    () => {
+      if (!project.responsibleProjectLeaderUserId || !canViewUsers) {
+        return from([[null, null] as [null, null]]);
+      }
+
+      return client.streamQuery('users.get', { id: project.responsibleProjectLeaderUserId });
+    },
+    [project.responsibleProjectLeaderUserId, canViewUsers],
+  );
+  const [contacts] = useClientStream(() => client.streamQuery('projects.contacts.list', { projectId: project.id! }), [project.id]);
+  const [trackings] = useClientStream(() => client.streamQuery('tools.trackings.list', { projectId: project.id!, finished: false }), [project.id]);
+
+  useTitle(() => project ? `Übersicht – ${project.title}` : null, [JSON.stringify(project)]);
+
+  const sortedTrackings = useMemo(() => {
+    if (!trackings) return null;
+    return trackings.slice().sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  }, [trackings]);
+
+  const hasProjectMeta = !!project.address || !!customer || !!project.responsibleProjectLeaderUserId || !!project.orderReceivedAt;
+
+  async function downloadProjectContactSheet() {
+    setContactSheetPrintErr(null);
+    setIsContactSheetPrinting(true);
+
+    try {
+      const [freshContacts, contactsErr] = await client.query('projects.contacts.list', { projectId: project.id }, { strategy: 'network-first' });
+      if (contactsErr) throw contactsErr;
+
+      const [projectRemarks, projectRemarksErr] = await client.query('remarks.list', { resourceType: 'project', resourceId: project.id }, { strategy: 'network-first' });
+      if (projectRemarksErr) throw projectRemarksErr;
+
+      const [currentCustomer] = project.customerId
+        ? await client.query('customers.get', { id: project.customerId }, { strategy: 'cache-first' })
+        : [null, null] as const;
+
+      const projectRows: string[][] = [
+        ['Projekt', project.title],
+        ['Anschrift', formatAddress(project.address) || '-'],
+      ];
+      if (project.orderReceivedAt) projectRows.push(['Auftrag erhalten am', formatDate(project.orderReceivedAt, 'long')]);
+      if (project.customerId || currentCustomer) {
+        projectRows.push(['Kunde', currentCustomer ? customerName(currentCustomer) : 'Unbekannt']);
+        projectRows.push(['Kundenanschrift', currentCustomer?.address ? formatAddress(currentCustomer.address) : '-']);
+        const customerPhone = currentCustomer ? contactPhoneLines(currentCustomer) : null;
+        const customerEmail = currentCustomer ? contactEmailLines(currentCustomer) : null;
+        if (customerPhone) projectRows.push(['Kunden-Telefon', customerPhone]);
+        if (customerEmail) projectRows.push(['Kunden-E-Mail', customerEmail]);
+      }
+      if (project.responsibleProjectLeaderUserId) {
+        if (canViewUsers) {
+          const [user] = await client.query('users.get', { id: project.responsibleProjectLeaderUserId }, { strategy: 'cache-first' });
+          projectRows.push(['Verantwortlicher Projektleiter', user ? userFullName(user) : 'Unbekannt']);
+        } else {
+          projectRows.push(['Verantwortlicher Projektleiter', 'Keine Berechtigung']);
+        }
+      }
+
+      const sortedContacts = [...(freshContacts ?? [])].sort((left, right) => {
+        return contactName(left).localeCompare(contactName(right), 'de', { sensitivity: 'base' });
+      });
+
+      const sections: PdfTableSection[] = [
+        {
+          title: 'Projektdaten',
+          columns: ['Feld', 'Wert'],
+          rows: projectRows,
+          withHeader: false,
+          align: ['left', 'left'],
+          columnWidths: ['1fr', '2fr'],
+        },
+      ];
+      const cardSections: PdfCardSection[] = [];
+
+      const remarkRows = [...(projectRemarks ?? [])]
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .map((remark) => [formatDate(remark.createdAt, 'long'), remark.body]);
+      if (remarkRows.length) {
+        sections.push({
+          title: 'Vermerke',
+          subtitle: `${remarkRows.length} ${remarkRows.length === 1 ? 'Vermerk' : 'Vermerke'} zum Projekt`,
+          columns: ['Datum', 'Vermerk'],
+          rows: remarkRows,
+          align: ['left', 'left'],
+          columnWidths: ['0.8fr', '2.2fr'],
+        });
+      }
+
+      if (sortedContacts.length) {
+        cardSections.push({
+          title: 'Ansprechpartner',
+          subtitle: `${sortedContacts.length} ${sortedContacts.length === 1 ? 'Kontakt' : 'Kontakte'} für dieses Projekt`,
+          cards: sortedContacts.map(contact => ({
+            title: contactName(contact),
+            badge: contact.label ?? 'Ansprechpartner',
+            items: contactCardItems(contact),
+          })),
+        });
+      } else {
+        sections.push({
+          title: 'Ansprechpartner',
+          columns: ['Hinweis'],
+          rows: [['Keine Ansprechpartner hinterlegt.']],
+          withHeader: false,
+          align: ['left'],
+          columnWidths: ['1fr'],
+        });
+      }
+
+      const pdfData = await renderStructuredPdf({
+        title: project.title,
+        reportLabel: 'Datenblatt',
+        sections,
+        cardSections,
+        emptyMessage: 'Keine Projektdaten verfügbar.',
+      });
+
+      const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
+      deliverBlob(blob, `Datenblatt-${safeFilePart(project.title)}.pdf`);
+    } catch (err) {
+      setContactSheetPrintErr((err as Error)?.message || 'Unbekannter Fehler beim Erstellen des Datenblatts.');
+    } finally {
+      setIsContactSheetPrinting(false);
+    }
+  }
+
+  return <>
+    {canViewContacts && <div className="flex justify-end gap-2">
+      <MyButton
+        kind="ghost"
+        size="sm"
+        renderIcon={Icons.Download}
+        loading={isContactSheetPrinting}
+        disabled={isContactSheetPrinting}
+        onClick={() => void downloadProjectContactSheet()}
+      >Datenblatt</MyButton>
+    </div>}
+
+    {!!contactSheetPrintErr && <MyCallout icon={Icons.Deny} color="red">
+      Datenblatt konnte nicht erstellt werden: {contactSheetPrintErr}
+    </MyCallout>}
+
+    {hasProjectMeta && <>
+      <AttrList>
+        {!!project.address && <AttrList.Attr name="Anschrift" value={<MyLink target="_blank" to={addressUrl(project.address)}>{formatAddress(project.address)}</MyLink>} />}
+        {!!customer && <AttrList.Attr name="Kunde" value={<MyLink to={`/customers/${customer.id}`}>{customerName(customer)}</MyLink>} />}
+        {!!project.orderReceivedAt && <AttrList.Attr name="Auftrag erhalten am" value={formatDate(project.orderReceivedAt, 'long')} />}
+        {!!project.responsibleProjectLeaderUserId && <AttrList.Attr
+          name="Verantwortlicher Projektleiter"
+          value={
+            !!responsibleProjectLeader
+              ? <MyLink to={`/users/${responsibleProjectLeader.id}`}>{userFullName(responsibleProjectLeader)}</MyLink>
+              : (canViewUsers ? 'Unbekannt' : 'Keine Berechtigung')
+          }
+        />}
+      </AttrList>
+
+      <MyDivider />
+    </>}
+
+    <Remarks resourceType="project" resourceId={project.id} canManage={sessionInfo.canDo('manage:projects')} />
+
+    <EntityActivityTimeline resourceType="project" resourceId={project.id} includeProjectContext />
+
+    {!!contacts?.length && <MyExpandable title={`Ansprechpartner (${contacts.length})`}>
+      <div className="space-y-2">
+        {contacts.map((contact) => <ContactTile key={contact.id} contact={contact} />)}
+      </div>
+    </MyExpandable>}
+
+    {!!sortedTrackings?.length && <MyExpandable title={`Gebuchte Werkzeuge (${sortedTrackings.length})`}>
+      <TrackingTable trackings={sortedTrackings} omit={['project']} />
+    </MyExpandable>}
+  </>;
+}

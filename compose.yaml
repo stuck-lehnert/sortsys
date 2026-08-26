@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sortsys}
+      POSTGRES_USER: ${POSTGRES_USER:-sortsys}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    stop_grace_period: 1m
+
+  api:
+    build:
+      context: ./sortsys-api-v2
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PG_MASTER_DSN: postgresql://${POSTGRES_USER:-sortsys}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/${POSTGRES_DB:-sortsys}
+      JWT_SECRET: ${SERVICE_BASE64_64_JWT}
+      ADMIN_HASH: ${ADMIN_HASH:?Set ADMIN_HASH to a bcrypt hash for the global administrator}
+      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+
+  job-runner:
+    build:
+      context: ./sortsys-v2-job_runner
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      JOB_RUNNER_WS_URL: ws://api:3000/internal/job-runners/ws
+      JOB_RUNNER_WS_IGNORE_PROXY: "true"
+      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
+      JOB_RUNNER_ID: ${JOB_RUNNER_ID:-sortsys-compose-1}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+
+  webapp:
+    build:
+      context: .
+      dockerfile: sortsys-webapp-v2/Dockerfile
+    restart: unless-stopped
+    environment:
+      - SERVICE_URL_WEBAPP_80
+      - API_UPSTREAM=http://api:3000
+      - CLIENT_MAX_BODY_SIZE=${CLIENT_MAX_BODY_SIZE:-64m}
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres-data:

@@ -1,0 +1,1231 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+NON_INTERACTIVE=0
+FORCE_OVERWRITE=0
+ENV_FILE=""
+OUTPUT_FILE="$PWD/kubernetes.yml"
+
+declare -A CLI_CONFIG_VALUES=()
+declare -A CLUSTER_DEFAULT_VALUES=()
+
+KNOWN_CONFIG_VARS=(
+  NAMESPACE
+  REGISTRY_SERVER
+  IMAGE_PULL_SECRET_NAME
+  REGISTRY_USERNAME
+  REGISTRY_PASSWORD
+  API_IMAGE
+  WEBAPP_IMAGE
+  JOBRUNNER_IMAGE
+  API_REPLICAS
+  WEBAPP_REPLICAS
+  JOBRUNNER_REPLICAS
+  API_PORT
+  API_NODE_PORT
+  WEBAPP_NODE_PORT
+  POSTGRES_IMAGE
+  POSTGRES_SERVICE_NAME
+  POSTGRES_STORAGE_SIZE
+  POSTGRES_STORAGE_CLASS
+  POSTGRES_DB
+  POSTGRES_USER
+  POSTGRES_PASSWORD
+  NODE_ENV
+  OBJECT_STORAGE_PROXY_URL
+  JOB_RUNNER_WS_URL
+  NO_PROXY
+  JWT_SECRET
+  ADMIN_HASH
+  JOB_RUNNER_TOKEN
+)
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/create-kubernetes-config [options]
+
+Options:
+  --env-file <path>        Read values from KEY=VALUE file
+  --non-interactive        Do not prompt; fail on missing required values
+  --force                  Overwrite existing output file in non-interactive mode
+  --output <path>          Output file path (default: ./kubernetes.yml)
+  --help                   Show this help
+
+Config values can be provided via:
+  1) environment variables (e.g. ADMIN_HASH=...)
+  2) --env-file KEY=VALUE entries
+  3) flags using kebab-case variable names
+
+Examples:
+  ./scripts/create-kubernetes-config --non-interactive \
+    --registry-username ci --registry-password secret \
+    --admin-hash '$2y$10$...' --output ./kubernetes.yml --force
+
+  ./scripts/create-kubernetes-config --env-file .k8s.env
+EOF
+}
+
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+is_known_config_var() {
+  local key="$1"
+  local known
+
+  for known in "${KNOWN_CONFIG_VARS[@]}"; do
+    if [ "$known" = "$key" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+set_config_from_flag() {
+  local option_name="$1"
+  local value="$2"
+  local key="${option_name#--}"
+
+  key="${key//-/_}"
+  key="${key^^}"
+
+  if ! is_known_config_var "$key"; then
+    fail "unknown option: $option_name"
+  fi
+
+  CLI_CONFIG_VALUES["$key"]="$value"
+}
+
+load_env_file() {
+  local path="$1"
+  local line
+  local key
+  local value
+
+  [ -f "$path" ] || fail "env file not found: $path"
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(trim "$line")"
+    [ -n "$line" ] || continue
+    case "$line" in
+      \#*) continue ;;
+    esac
+
+    if [[ "$line" == export[[:space:]]* ]]; then
+      line="$(trim "${line#export}")"
+    fi
+
+    if [[ "$line" != *=* ]]; then
+      fail "invalid line in env file: $line"
+    fi
+
+    key="$(trim "${line%%=*}")"
+    value="$(trim "${line#*=}")"
+
+    if [[ "$value" =~ ^\".*\"$ ]]; then
+      value="${value:1:-1}"
+    elif [[ "$value" =~ ^\'.*\'$ ]]; then
+      value="${value:1:-1}"
+    fi
+
+    is_known_config_var "$key" || fail "unknown key in env file: $key"
+    printf -v "$key" '%s' "$value"
+  done < "$path"
+}
+
+parse_args() {
+  local option
+  local value
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      --non-interactive)
+        NON_INTERACTIVE=1
+        shift
+        ;;
+      --force)
+        FORCE_OVERWRITE=1
+        shift
+        ;;
+      --env-file)
+        [ "$#" -ge 2 ] || fail "missing value for --env-file"
+        ENV_FILE="$2"
+        shift 2
+        ;;
+      --output)
+        [ "$#" -ge 2 ] || fail "missing value for --output"
+        OUTPUT_FILE="$2"
+        shift 2
+        ;;
+      --env-file=*)
+        ENV_FILE="${1#*=}"
+        shift
+        ;;
+      --output=*)
+        OUTPUT_FILE="${1#*=}"
+        shift
+        ;;
+      --*=*)
+        option="${1%%=*}"
+        value="${1#*=}"
+        set_config_from_flag "$option" "$value"
+        shift
+        ;;
+      --*)
+        [ "$#" -ge 2 ] || fail "missing value for $1"
+        set_config_from_flag "$1" "$2"
+        shift 2
+        ;;
+      *)
+        fail "unexpected argument: $1"
+        ;;
+    esac
+  done
+}
+
+apply_cli_overrides() {
+  local key
+
+  for key in "${!CLI_CONFIG_VALUES[@]}"; do
+    printf -v "$key" '%s' "${CLI_CONFIG_VALUES[$key]}"
+  done
+}
+
+prompt_default() {
+  local __var_name="$1"
+  local label="$2"
+  local default_value="$3"
+  local cluster_default="${CLUSTER_DEFAULT_VALUES[$__var_name]-}"
+  local resolved_default="$default_value"
+  local value
+
+  if [ -n "$cluster_default" ]; then
+    resolved_default="$cluster_default"
+  fi
+
+  value="${!__var_name:-}"
+  if [ -n "$value" ]; then
+    return
+  fi
+
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    printf -v "$__var_name" '%s' "$resolved_default"
+    return
+  fi
+
+  read -r -p "$label [$resolved_default]: " value
+  printf -v "$__var_name" '%s' "${value:-$resolved_default}"
+}
+
+prompt_required() {
+  local __var_name="$1"
+  local label="$2"
+  local cluster_default="${CLUSTER_DEFAULT_VALUES[$__var_name]-}"
+  local value
+  local flag_name
+
+  value="${!__var_name:-}"
+  if [ -n "$value" ]; then
+    return
+  fi
+
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    if [ -n "$cluster_default" ]; then
+      printf -v "$__var_name" '%s' "$cluster_default"
+      return
+    fi
+
+    flag_name="${__var_name,,}"
+    flag_name="${flag_name//_/-}"
+    fail "$label is required in non-interactive mode (set ${__var_name} or pass --${flag_name})"
+  fi
+
+  if [ -n "$cluster_default" ]; then
+    read -r -p "$label [$cluster_default]: " value
+    printf -v "$__var_name" '%s' "${value:-$cluster_default}"
+    return
+  fi
+
+  while true; do
+    read -r -p "$label: " value
+    if [ -n "$value" ]; then
+      printf -v "$__var_name" '%s' "$value"
+      return
+    fi
+
+    echo "Please provide a value."
+  done
+}
+
+prompt_required_secret() {
+  local __var_name="$1"
+  local label="$2"
+  local cluster_default="${CLUSTER_DEFAULT_VALUES[$__var_name]-}"
+  local value
+  local flag_name
+
+  value="${!__var_name:-}"
+  if [ -n "$value" ]; then
+    return
+  fi
+
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    if [ -n "$cluster_default" ]; then
+      printf -v "$__var_name" '%s' "$cluster_default"
+      return
+    fi
+
+    flag_name="${__var_name,,}"
+    flag_name="${flag_name//_/-}"
+    fail "$label is required in non-interactive mode (set ${__var_name} or pass --${flag_name})"
+  fi
+
+  if [ -n "$cluster_default" ]; then
+    read -r -s -p "$label [already present]: " value
+    echo
+    if [ -z "$value" ]; then
+      printf -v "$__var_name" '%s' "$cluster_default"
+      return
+    fi
+
+    printf -v "$__var_name" '%s' "$value"
+    return
+  fi
+
+  while true; do
+    read -r -s -p "$label: " value
+    echo
+    if [ -n "$value" ]; then
+      printf -v "$__var_name" '%s' "$value"
+      return
+    fi
+
+    echo "Please provide a value."
+  done
+}
+
+generate_secret() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+
+  fail "openssl is required for automatic secret generation"
+}
+
+ensure_secret_with_autogen() {
+  local __var_name="$1"
+  local label="$2"
+  local value="${!__var_name:-}"
+  local cluster_default="${CLUSTER_DEFAULT_VALUES[$__var_name]-}"
+
+  if [ -n "$value" ]; then
+    return
+  fi
+
+  if [ -n "$cluster_default" ]; then
+    if [ "$NON_INTERACTIVE" -eq 1 ]; then
+      printf -v "$__var_name" '%s' "$cluster_default"
+      return
+    fi
+
+    read -r -s -p "${label} [already present]: " value
+    echo
+    if [ -z "$value" ]; then
+      printf -v "$__var_name" '%s' "$cluster_default"
+      return
+    fi
+
+    printf -v "$__var_name" '%s' "$value"
+    return
+  fi
+
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    value="$(generate_secret)"
+    printf -v "$__var_name" '%s' "$value"
+    echo "Generated ${label}."
+    return
+  fi
+
+  read -r -s -p "${label} (leave empty to auto-generate): " value
+  echo
+  if [ -z "$value" ]; then
+    value="$(generate_secret)"
+    echo "Generated ${label}."
+  fi
+
+  printf -v "$__var_name" '%s' "$value"
+}
+
+load_secret_default_from_cluster() {
+  local secret_name="$1"
+  local secret_key="$2"
+  local var_name="$3"
+  local raw
+  local decoded
+
+  raw="$(kubectl -n "$NAMESPACE" get secret "$secret_name" -o "jsonpath={.data.$secret_key}" 2>/dev/null || true)"
+  [ -n "$raw" ] || return 1
+
+  decoded="$(printf '%s' "$raw" | base64 -d 2>/dev/null || true)"
+  [ -n "$decoded" ] || return 1
+
+  CLUSTER_DEFAULT_VALUES["$var_name"]="$decoded"
+  return 0
+}
+
+load_registry_defaults_from_pull_secret() {
+  local secret_name="$1"
+  local secret_json
+  local registry_username=""
+  local registry_password=""
+  local line
+
+  [ -n "$secret_name" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  secret_json="$(kubectl -n "$NAMESPACE" get secret "$secret_name" -o json 2>/dev/null || true)"
+  [ -n "$secret_json" ] || return 1
+
+  while IFS= read -r line; do
+    case "$line" in
+      USERNAME=*) registry_username="${line#USERNAME=}" ;;
+      PASSWORD=*) registry_password="${line#PASSWORD=}" ;;
+    esac
+  done < <(
+    printf '%s' "$secret_json" | python3 - "$REGISTRY_SERVER" <<'PY'
+import base64
+import json
+import sys
+
+registry_server = (sys.argv[1] or "").strip().rstrip("/")
+
+def candidates(server: str):
+    if not server:
+        return []
+    values = [server]
+    if server.startswith("https://"):
+        values.append(server[len("https://"):])
+    else:
+        values.append("https://" + server)
+    deduped = []
+    seen = set()
+    for value in values:
+        normalized = value.rstrip("/")
+        if normalized not in seen:
+            seen.add(normalized)
+            deduped.append(normalized)
+    return deduped
+
+try:
+    secret = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+secret_data = secret.get("data") or {}
+encoded_docker_config = secret_data.get(".dockerconfigjson")
+if not encoded_docker_config:
+    sys.exit(0)
+
+try:
+    docker_config = json.loads(base64.b64decode(encoded_docker_config).decode("utf-8", "replace"))
+except Exception:
+    sys.exit(0)
+
+auths = docker_config.get("auths") or {}
+entry = None
+
+for key in candidates(registry_server):
+    entry = auths.get(key)
+    if entry:
+        break
+
+if entry is None and auths:
+    entry = next(iter(auths.values()))
+
+if not entry:
+    sys.exit(0)
+
+username = (entry.get("username") or "").strip()
+password = (entry.get("password") or "")
+
+if (not username or not password) and entry.get("auth"):
+    try:
+        decoded = base64.b64decode(entry["auth"]).decode("utf-8", "replace")
+        if ":" in decoded:
+            maybe_username, maybe_password = decoded.split(":", 1)
+            if not username:
+                username = maybe_username.strip()
+            if not password:
+                password = maybe_password
+    except Exception:
+        pass
+
+if username:
+    print(f"USERNAME={username}")
+if password:
+    print(f"PASSWORD={password}")
+PY
+  )
+
+  if [ -n "$registry_username" ]; then
+    CLUSTER_DEFAULT_VALUES["REGISTRY_USERNAME"]="$registry_username"
+  fi
+
+  if [ -n "$registry_password" ]; then
+    CLUSTER_DEFAULT_VALUES["REGISTRY_PASSWORD"]="$registry_password"
+  fi
+
+  if [ -n "$registry_username" ] || [ -n "$registry_password" ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+load_registry_defaults_from_service_account() {
+  local service_account_name="$1"
+  local pull_secret_names
+  local pull_secret_name
+
+  [ -n "$service_account_name" ] || return 1
+
+  pull_secret_names="$(kubectl -n "$NAMESPACE" get serviceaccount "$service_account_name" -o "jsonpath={range .imagePullSecrets[*]}{.name}{'\n'}{end}" 2>/dev/null || true)"
+  [ -n "$pull_secret_names" ] || return 1
+
+  while IFS= read -r pull_secret_name; do
+    [ -n "$pull_secret_name" ] || continue
+    if load_registry_defaults_from_pull_secret "$pull_secret_name"; then
+      return 0
+    fi
+  done <<< "$pull_secret_names"
+
+  return 1
+}
+
+load_cluster_secret_defaults() {
+  local found=0
+  local registry_defaults_found=0
+
+  if ! command -v kubectl >/dev/null 2>&1; then
+    return
+  fi
+
+  load_secret_default_from_cluster "sortsys-app-secrets" "POSTGRES_DB" "POSTGRES_DB" && found=1
+  load_secret_default_from_cluster "sortsys-app-secrets" "POSTGRES_USER" "POSTGRES_USER" && found=1
+  load_secret_default_from_cluster "sortsys-app-secrets" "POSTGRES_PASSWORD" "POSTGRES_PASSWORD" && found=1
+  load_secret_default_from_cluster "sortsys-app-secrets" "JWT_SECRET" "JWT_SECRET" && found=1
+  load_secret_default_from_cluster "sortsys-app-secrets" "ADMIN_HASH" "ADMIN_HASH" && found=1
+  load_secret_default_from_cluster "sortsys-app-secrets" "JOB_RUNNER_TOKEN" "JOB_RUNNER_TOKEN" && found=1
+
+  if load_registry_defaults_from_pull_secret "$IMAGE_PULL_SECRET_NAME"; then
+    registry_defaults_found=1
+  elif load_registry_defaults_from_service_account "sortsys-workload"; then
+    registry_defaults_found=1
+  elif load_registry_defaults_from_service_account "default"; then
+    registry_defaults_found=1
+  fi
+
+  if [ "$NON_INTERACTIVE" -eq 0 ] && [ "$found" -eq 1 -o "$registry_defaults_found" -eq 1 ]; then
+    echo "Detected existing secret values in namespace '$NAMESPACE'."
+    echo "Secret defaults will be used when you press Enter."
+    if [ -n "${CLUSTER_DEFAULT_VALUES[REGISTRY_PASSWORD]-}" ]; then
+      echo "Registry password is already available and can remain unchanged."
+    fi
+    if [ -n "${CLUSTER_DEFAULT_VALUES[POSTGRES_PASSWORD]-}" ]; then
+      echo "Postgres password is already available and can remain unchanged."
+    fi
+    echo
+  fi
+}
+
+yaml_quote() {
+  local value="$1"
+  value=${value//\'/\'\'}
+  printf "'%s'" "$value"
+}
+
+json_escape() {
+  local value="$1"
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/}
+  value=${value//$'\t'/\\t}
+  printf '%s' "$value"
+}
+
+validate_positive_int() {
+  local value="$1"
+  local field="$2"
+
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    fail "$field must be an integer"
+  fi
+
+  if [ "$value" -lt 1 ]; then
+    fail "$field must be greater than zero"
+  fi
+}
+
+validate_node_port() {
+  local value="$1"
+  local field="$2"
+
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    fail "$field must be an integer"
+  fi
+
+  if [ "$value" -lt 30000 ] || [ "$value" -gt 32767 ]; then
+    fail "$field must be in range 30000-32767"
+  fi
+}
+
+parse_args "$@"
+
+if [ -n "$ENV_FILE" ]; then
+  load_env_file "$ENV_FILE"
+fi
+
+apply_cli_overrides
+
+OUTPUT_DIR="$(dirname "$OUTPUT_FILE")"
+[ -d "$OUTPUT_DIR" ] || fail "output directory does not exist: $OUTPUT_DIR"
+
+echo "This script will generate $OUTPUT_FILE"
+echo
+
+if [ -f "$OUTPUT_FILE" ]; then
+  if [ "$FORCE_OVERWRITE" -eq 1 ]; then
+    :
+  elif [ "$NON_INTERACTIVE" -eq 1 ]; then
+    fail "$OUTPUT_FILE already exists (use --force to overwrite)"
+  else
+    read -r -p "$OUTPUT_FILE already exists. Overwrite? [y/N]: " overwrite
+    case "$overwrite" in
+      y|Y|yes|YES) ;;
+      *)
+        echo "Aborted."
+        exit 0
+        ;;
+    esac
+  fi
+fi
+
+prompt_default NAMESPACE "Kubernetes namespace" "sortsys"
+prompt_default REGISTRY_SERVER "Container registry host" "gitea.lehnert.cloud"
+prompt_default IMAGE_PULL_SECRET_NAME "Image pull secret name" "gitea-registry-cred"
+
+load_cluster_secret_defaults
+
+prompt_required REGISTRY_USERNAME "Registry username"
+prompt_required_secret REGISTRY_PASSWORD "Registry password/token"
+
+prompt_default API_IMAGE "API image" "gitea.lehnert.cloud/sortsys/api-v2:latest"
+prompt_default WEBAPP_IMAGE "Webapp image" "gitea.lehnert.cloud/sortsys/webapp-v2:latest"
+prompt_default JOBRUNNER_IMAGE "Job runner image" "gitea.lehnert.cloud/sortsys/jobrunner-v2:latest"
+
+prompt_default API_REPLICAS "API replicas" "6"
+prompt_default WEBAPP_REPLICAS "Webapp replicas" "3"
+prompt_default JOBRUNNER_REPLICAS "Job runner replicas" "2"
+
+prompt_default API_PORT "API container/service port" "3000"
+prompt_default API_NODE_PORT "API NodePort" "32300"
+prompt_default WEBAPP_NODE_PORT "Webapp NodePort" "32080"
+
+prompt_default POSTGRES_IMAGE "Postgres image" "docker.io/library/postgres:17-alpine"
+prompt_default POSTGRES_SERVICE_NAME "Postgres internal service name" "sortsys-postgres"
+prompt_default POSTGRES_STORAGE_SIZE "Postgres PVC size" "20Gi"
+prompt_default POSTGRES_STORAGE_CLASS "Postgres storageClassName (empty for default)" ""
+prompt_default POSTGRES_DB "Postgres master database name" "sortsys_master"
+prompt_default POSTGRES_USER "Postgres master username" "sortsys_master"
+
+prompt_default NODE_ENV "NODE_ENV" "production"
+prompt_default OBJECT_STORAGE_PROXY_URL "Object storage HTTP(S) proxy URL" "http://10.237.0.254:3128"
+prompt_default JOB_RUNNER_WS_URL "Job runner websocket URL" "ws://sortsys-api:${API_PORT}/internal/job-runners/ws"
+prompt_default NO_PROXY "NO_PROXY (proxy bypass list)" "localhost,127.0.0.1,::1,sortsys-api,sortsys-api.${NAMESPACE},sortsys-api.${NAMESPACE}.svc,sortsys-api.${NAMESPACE}.svc.cluster.local,.svc,.cluster.local"
+
+ensure_secret_with_autogen JWT_SECRET "JWT_SECRET"
+ensure_secret_with_autogen POSTGRES_PASSWORD "POSTGRES_PASSWORD"
+
+PG_MASTER_DSN="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_SERVICE_NAME}:5432/${POSTGRES_DB}"
+
+prompt_required ADMIN_HASH "ADMIN_HASH (bcrypt hash)"
+
+ensure_secret_with_autogen JOB_RUNNER_TOKEN "JOB_RUNNER_TOKEN"
+
+validate_positive_int "$API_REPLICAS" "API replicas"
+validate_positive_int "$WEBAPP_REPLICAS" "Webapp replicas"
+validate_positive_int "$JOBRUNNER_REPLICAS" "Job runner replicas"
+validate_positive_int "$API_PORT" "API port"
+
+validate_node_port "$API_NODE_PORT" "API NodePort"
+validate_node_port "$WEBAPP_NODE_PORT" "Webapp NodePort"
+
+if [ "$API_NODE_PORT" = "$WEBAPP_NODE_PORT" ]; then
+  fail "API NodePort and Webapp NodePort must be different"
+fi
+
+AUTH_B64="$(printf '%s:%s' "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | base64 | tr -d '\n')"
+
+REGISTRY_SERVER_JSON="$(json_escape "$REGISTRY_SERVER")"
+REGISTRY_USERNAME_JSON="$(json_escape "$REGISTRY_USERNAME")"
+REGISTRY_PASSWORD_JSON="$(json_escape "$REGISTRY_PASSWORD")"
+
+API_IMAGE_YAML="$(yaml_quote "$API_IMAGE")"
+WEBAPP_IMAGE_YAML="$(yaml_quote "$WEBAPP_IMAGE")"
+JOBRUNNER_IMAGE_YAML="$(yaml_quote "$JOBRUNNER_IMAGE")"
+JWT_SECRET_YAML="$(yaml_quote "$JWT_SECRET")"
+PG_MASTER_DSN_YAML="$(yaml_quote "$PG_MASTER_DSN")"
+ADMIN_HASH_YAML="$(yaml_quote "$ADMIN_HASH")"
+JOB_RUNNER_TOKEN_YAML="$(yaml_quote "$JOB_RUNNER_TOKEN")"
+JOB_RUNNER_WS_URL_YAML="$(yaml_quote "$JOB_RUNNER_WS_URL")"
+OBJECT_STORAGE_PROXY_URL_YAML="$(yaml_quote "$OBJECT_STORAGE_PROXY_URL")"
+NO_PROXY_YAML="$(yaml_quote "$NO_PROXY")"
+POSTGRES_IMAGE_YAML="$(yaml_quote "$POSTGRES_IMAGE")"
+POSTGRES_DB_YAML="$(yaml_quote "$POSTGRES_DB")"
+POSTGRES_USER_YAML="$(yaml_quote "$POSTGRES_USER")"
+POSTGRES_PASSWORD_YAML="$(yaml_quote "$POSTGRES_PASSWORD")"
+
+if [ -n "$POSTGRES_STORAGE_CLASS" ]; then
+  POSTGRES_STORAGE_CLASS_LINE="        storageClassName: $(yaml_quote "$POSTGRES_STORAGE_CLASS")"
+else
+  POSTGRES_STORAGE_CLASS_LINE=""
+fi
+
+cat > "$OUTPUT_FILE" <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $NAMESPACE
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: $IMAGE_PULL_SECRET_NAME
+  namespace: $NAMESPACE
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {
+      "auths": {
+        "$REGISTRY_SERVER_JSON": {
+          "username": "$REGISTRY_USERNAME_JSON",
+          "password": "$REGISTRY_PASSWORD_JSON",
+          "auth": "$AUTH_B64"
+        }
+      }
+    }
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sortsys-app-secrets
+  namespace: $NAMESPACE
+type: Opaque
+stringData:
+  JWT_SECRET: $JWT_SECRET_YAML
+  PG_MASTER_DSN: $PG_MASTER_DSN_YAML
+  ADMIN_HASH: $ADMIN_HASH_YAML
+  JOB_RUNNER_TOKEN: $JOB_RUNNER_TOKEN_YAML
+  POSTGRES_DB: $POSTGRES_DB_YAML
+  POSTGRES_USER: $POSTGRES_USER_YAML
+  POSTGRES_PASSWORD: $POSTGRES_PASSWORD_YAML
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sortsys-runtime
+  namespace: $NAMESPACE
+data:
+  API_PORT: "$API_PORT"
+  NODE_ENV: "$NODE_ENV"
+  OBJECT_STORAGE_PROXY_URL: $OBJECT_STORAGE_PROXY_URL_YAML
+  JOB_RUNNER_WS_URL: $JOB_RUNNER_WS_URL_YAML
+  NO_PROXY: $NO_PROXY_YAML
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sortsys-workload
+  namespace: $NAMESPACE
+imagePullSecrets:
+  - name: $IMAGE_PULL_SECRET_NAME
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: $POSTGRES_SERVICE_NAME
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-postgres
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sortsys-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sortsys-postgres
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-postgres
+spec:
+  serviceName: $POSTGRES_SERVICE_NAME
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sortsys-postgres
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: $POSTGRES_IMAGE_YAML
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+$POSTGRES_STORAGE_CLASS_LINE
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: $POSTGRES_STORAGE_SIZE
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sortsys-api
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-api
+spec:
+  replicas: $API_REPLICAS
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sortsys-api
+    spec:
+      serviceAccountName: sortsys-workload
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sortsys-api
+      containers:
+        - name: api
+          image: $API_IMAGE_YAML
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: $API_PORT
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: API_PORT
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: NODE_ENV
+            - name: HTTP_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: HTTPS_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: http_proxy
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: https_proxy
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: NO_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: NO_PROXY
+            - name: no_proxy
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: NO_PROXY
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: JWT_SECRET
+            - name: PG_MASTER_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: PG_MASTER_DSN
+            - name: ADMIN_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: ADMIN_HASH
+            - name: JOB_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: JOB_RUNNER_TOKEN
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sortsys-api
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-api
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: sortsys-api
+  ports:
+    - name: http
+      port: $API_PORT
+      targetPort: http
+      nodePort: $API_NODE_PORT
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sortsys-api
+  namespace: $NAMESPACE
+spec:
+  minAvailable: 4
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-api
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sortsys-webapp
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-webapp
+spec:
+  replicas: $WEBAPP_REPLICAS
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-webapp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sortsys-webapp
+    spec:
+      serviceAccountName: sortsys-workload
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sortsys-webapp
+      containers:
+        - name: webapp
+          image: $WEBAPP_IMAGE_YAML
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sortsys-webapp
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-webapp
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: sortsys-webapp
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: $WEBAPP_NODE_PORT
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sortsys-webapp
+  namespace: $NAMESPACE
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-webapp
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sortsys-jobrunner
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: sortsys-jobrunner
+spec:
+  replicas: $JOBRUNNER_REPLICAS
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-jobrunner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sortsys-jobrunner
+    spec:
+      serviceAccountName: sortsys-workload
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sortsys-jobrunner
+      containers:
+        - name: jobrunner
+          image: $JOBRUNNER_IMAGE_YAML
+          imagePullPolicy: Always
+          env:
+            - name: JOB_RUNNER_WS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: JOB_RUNNER_WS_URL
+            - name: JOB_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sortsys-app-secrets
+                  key: JOB_RUNNER_TOKEN
+            - name: HTTP_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: HTTPS_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: http_proxy
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: https_proxy
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: OBJECT_STORAGE_PROXY_URL
+            - name: NO_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: NO_PROXY
+            - name: no_proxy
+              valueFrom:
+                configMapKeyRef:
+                  name: sortsys-runtime
+                  key: NO_PROXY
+            - name: JOB_RUNNER_JOB_TYPE
+              value: "project_file_thumbnail_generate,tenant_logo_generate"
+            - name: JOB_RUNNER_POLL_LIMIT
+              value: "10"
+            - name: JOB_RUNNER_POLL_INTERVAL_MS
+              value: "800"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sortsys-jobrunner
+  namespace: $NAMESPACE
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sortsys-jobrunner
+EOF
+
+echo
+echo "Created $OUTPUT_FILE"
+echo "API NodePort: $API_NODE_PORT"
+echo "Webapp NodePort: $WEBAPP_NODE_PORT"
+echo "Object storage proxy: $OBJECT_STORAGE_PROXY_URL"
+echo "No-proxy list: $NO_PROXY"
+echo "Postgres service: $POSTGRES_SERVICE_NAME:5432"
+echo
+echo "Next steps:"
+echo "1) kubectl apply -f $OUTPUT_FILE"
+echo "2) Route your external proxy to <node-ip>:$WEBAPP_NODE_PORT (webapp)"
+echo "3) Route API traffic to <node-ip>:$API_NODE_PORT and strip /api/v2 at proxy level"
+echo "4) The API master DSN points to postgres service $POSTGRES_SERVICE_NAME"

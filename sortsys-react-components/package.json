@@ -1,0 +1,36 @@
+{
+  "name": "@sortsys/react-components",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./styles.css": "./src/styles.css",
+    "./my-button": {
+      "types": "./src/my-button.d.ts",
+      "default": "./src/my-button.tsx"
+    },
+    "./my-callout": {
+      "types": "./src/my-callout.d.ts",
+      "default": "./src/my-callout.tsx"
+    },
+    "./my-header": {
+      "types": "./src/my-header.d.ts",
+      "default": "./src/my-header.tsx"
+    },
+    "./my-form": {
+      "types": "./src/my-form.d.ts",
+      "default": "./src/my-form.tsx"
+    }
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
