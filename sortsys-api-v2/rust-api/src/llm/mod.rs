@@ -44,6 +44,14 @@ berechtigungsgeprüften Lesezugriff. Rate niemals Feldnamen oder Daten auf Basis
 Antworten. Gemeinkosten liegen beispielsweise unter settings.costs.get.
 Die kompakten sortsys_search-Ressourcen sind für häufige, bereichsübergreifende Suchen
 gedacht; sortsys_query erschließt den vollständigen fachlichen API-Vertrag.
+Behandle Wörter wie „alles“, „insgesamt“ und offene Fragen nach heutigen
+Baustellenaktivitäten als Aufforderung, alle naheliegenden Quellen zu prüfen. Dazu gehören
+mindestens Tagesberichte, Regieberichte und Lieferscheine. Fasse die Ergebnisse gemeinsam
+zusammen, statt auf einzelne Nachfragen zu warten. Lies bei Lieferscheinen auch die
+Positionen und bei Berichten die vorhandenen Inhalte. Nutze für vollständige Zeiträume die
+passenden Listenabfragen über sortsys_query; ein begrenztes Suchergebnis ist kein Beleg
+dafür, dass keine weiteren Einträge existieren. Behalte bei kurzen Anschlussfragen wie
+„und der Lieferschein?“ den Zeitraum und Sachbezug der vorherigen Nachricht bei.
 Bei Fragen zu Projektkosten, Angeboten, Rechnungen oder Projektergebnissen musst du
 sortsys_search mit der Ressource project_costs aufrufen. Die Ressource projects enthält
 keine Finanzdaten und ist dafür kein Ersatz.
@@ -82,6 +90,13 @@ Use sortsys_search with project_costs for project costs, offers, invoices, or pr
 results. Use tool_trackings for current tool assignments and tool_inventories for
 inventory history or coverage. Do not claim to have read or changed data unless a tool
 confirmed it.
+Treat words such as “all” or “overall” and broad questions about current-day construction-site
+activity as requests to check every relevant source. This includes at least daily reports,
+regie reports, and delivery notes. Return one combined answer instead of waiting for the
+user to ask about each category. Read delivery-note line items and report contents as well.
+For complete periods, use the corresponding list queries through sortsys_query; a limited
+search result does not prove that no more records exist. Preserve the period and subject
+of the previous message in short follow-up questions.
 Never execute writes. Create changes only through sortsys_propose_change so the user can
 review them. Use exact RPC mutation paths, never URL paths. Before proposing an operation,
 call sortsys_get_schema and match its field names, nesting, and types exactly. Correct
@@ -1434,12 +1449,18 @@ mod tests {
         assert!(prompt.contains("sortsys_get_schema"));
         assert!(prompt.contains("sortsys_find_procedures"));
         assert!(prompt.contains("sortsys_query"));
+        assert!(prompt.contains("mindestens Tagesberichte, Regieberichte und Lieferscheine"));
+        assert!(prompt.contains("statt auf einzelne Nachfragen zu warten"));
+        assert!(prompt.contains("ein begrenztes Suchergebnis ist kein Beleg"));
+        assert!(prompt.contains("den Zeitraum und Sachbezug"));
         assert!(prompt.contains("settings.costs.get"));
         assert!(prompt.contains("Schreibzugriffe sind verboten"));
         assert!(prompt.contains("<proposal-only>"));
 
         let english_prompt = system_prompt("en");
         assert!(english_prompt.contains("professionally in English"));
+        assert!(english_prompt.contains("daily reports,\nregie reports, and delivery notes"));
+        assert!(english_prompt.contains("one combined answer"));
         assert!(english_prompt.contains("<proposal-only>"));
         assert!(english_prompt.contains("do not state"));
     }
