@@ -10,6 +10,7 @@ pub mod ids;
 pub mod job_queue;
 mod job_runner_media;
 pub mod job_runners;
+pub mod llm;
 pub mod object_storage;
 pub mod rpc;
 pub mod seed;
@@ -60,7 +61,9 @@ pub fn registry_with_state(state: Arc<AppState>) -> ProcedureRegistry {
 }
 
 pub fn app_with_state(state: Arc<AppState>) -> axum::Router {
-    rpc::http_router(registry_with_state(Arc::clone(&state))).merge(job_runners::router(state))
+    rpc::http_router(registry_with_state(Arc::clone(&state)))
+        .merge(job_runners::router(Arc::clone(&state)))
+        .merge(llm::mcp_router(state))
 }
 pub fn app() -> axum::Router {
     rpc::http_router(registry())

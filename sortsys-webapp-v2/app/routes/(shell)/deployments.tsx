@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { OperationalTag } from "@sortsys/react-components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/deployments";
@@ -74,7 +75,7 @@ type ProjectUnavailabilityPeriod = {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: 'Einsatzplanung' },
+    { title: uiText("Einsatzplanung") },
   ];
 }
 
@@ -129,14 +130,14 @@ export default function DeploymentsPage() {
   const rangeEndInclusive = useMemo(() => addDays(range.endExclusive, -1), [range.endExclusive]);
 
   const [vacations] = useClientStream<DeploymentVacation[] | null, any>(() => {
-    return (client.streamQuery as any)('users.vacations.list', {
+    return client.streamQuery('users.vacations.list', {
       from: range.start,
       to: rangeEndInclusive,
       includeDenied: false,
     }, { strategy: 'cache-first' });
   }, [range.start.getTime(), rangeEndInclusive.getTime()]);
   const [projectUnavailability] = useClientStream<ProjectUnavailabilityPeriod[] | null, any>(() => {
-    return (client.streamQuery as any)('projects.unavailability.list', {
+    return client.streamQuery('projects.unavailability.list', {
       from: range.start,
       to: rangeEndInclusive,
     }, { strategy: 'cache-first' });
@@ -258,8 +259,8 @@ export default function DeploymentsPage() {
         deployment,
         from,
         to,
-        projectLabel: project?.title ?? 'Unbekanntes Projekt',
-        userLabel: user ? userFullName(user) : 'Unbekannter Benutzer',
+        projectLabel: project?.title ?? uiText('Unbekanntes Projekt'),
+        userLabel: user ? userFullName(user) : uiText('Unbekannter Benutzer'),
       }];
     }).sort((left, right) => left.from.getTime() - right.from.getTime());
   }, [deployments, projectMap, range.endExclusive, range.start, userMap]);
@@ -337,7 +338,7 @@ export default function DeploymentsPage() {
           const user = userMap.get(vacation.userId);
           rows.set(vacation.userId, {
             id: vacation.userId,
-            label: user ? userFullName(user) : 'Unbekannter Benutzer',
+            label: user ? userFullName(user) : uiText("Unbekannter Benutzer"),
           });
         }
       });
@@ -363,7 +364,7 @@ export default function DeploymentsPage() {
           const project = projectMap.get(period.projectId);
           rows.set(period.projectId, {
             id: period.projectId,
-            label: project?.title ?? 'Unbekanntes Projekt',
+            label: project?.title ?? uiText("Unbekanntes Projekt"),
           });
         }
       });
@@ -404,7 +405,7 @@ export default function DeploymentsPage() {
     vacationsByUserId,
   ]);
 
-  const rowHeading = rowMode === 'project' ? 'Projekt' : 'Benutzer';
+  const rowHeading = rowMode === 'project' ? uiText('Projekt') : uiText('Benutzer');
 
   const exportRows = useMemo(() => {
     const vacationRows = (vacations ?? [])
@@ -412,9 +413,9 @@ export default function DeploymentsPage() {
       .map(vacation => {
         const user = userMap.get(vacation.userId);
         return {
-          kind: 'Urlaub',
+          kind: uiText('Urlaub'),
           project: '',
-          user: user ? userFullName(user) : 'Unbekannter Benutzer',
+          user: user ? userFullName(user) : uiText('Unbekannter Benutzer'),
           from: vacation.from,
           to: vacation.to,
           note: vacation.note ?? '',
@@ -427,7 +428,7 @@ export default function DeploymentsPage() {
         const project = projectMap.get(period.projectId);
         return {
           kind: 'Projektsperre',
-          project: project?.title ?? 'Unbekanntes Projekt',
+          project: project?.title ?? uiText('Unbekanntes Projekt'),
           user: '',
           from: period.from,
           to: period.to,
@@ -483,7 +484,7 @@ export default function DeploymentsPage() {
       content: ({ context, hide }) => <>
         <MyForm.MultiSelect
           name="user"
-          labelText="Benutzer"
+          labelText={uiText("Benutzer")}
           minSelectedItems={1}
           maxSelectedItems={1}
           getOptions={async ({ query }) => {
@@ -500,7 +501,7 @@ export default function DeploymentsPage() {
 
         <MyForm.MultiSelect
           name="project"
-          labelText="Projekt"
+          labelText={uiText("Projekt")}
           minSelectedItems={1}
           maxSelectedItems={1}
           getOptions={async ({ query }) => {
@@ -517,24 +518,24 @@ export default function DeploymentsPage() {
 
         <div className="flex gap-2">
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="fromDate" labelText="Von (Datum)" type="date" />
+            <MyForm.Input required name="fromDate" labelText={uiText("Von (Datum)")} type="date" />
           </div>
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="fromTime" labelText="Von (Uhrzeit)" type="time" />
+            <MyForm.Input required name="fromTime" labelText={uiText("Von (Uhrzeit)")} type="time" />
           </div>
         </div>
 
         <div className="flex gap-2">
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="toDate" labelText="Bis (Datum)" type="date" />
+            <MyForm.Input required name="toDate" labelText={uiText("Bis (Datum)")} type="date" />
           </div>
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="toTime" labelText="Bis (Uhrzeit)" type="time" />
+            <MyForm.Input required name="toTime" labelText={uiText("Bis (Uhrzeit)")} type="time" />
           </div>
         </div>
 
-        <MyForm.Input textArea name="note" labelText="Kommentar" />
-        <p className="light">Zusatzinfo zum Einsatz, z. B. Materialfahrt oder Baustellenwechsel.</p>
+        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
+        <p className="light">{uiText("Zusatzinfo zum Einsatz, z. B. Materialfahrt oder Baustellenwechsel.")}</p>
 
         {!!deployment && canDeleteDeployments && <MyButton
           kind="ghost"
@@ -548,7 +549,7 @@ export default function DeploymentsPage() {
             setDeploymentsReloadCounter(value => value + 1);
             hide();
           }}
-        >Einsatz löschen</MyButton>}
+        >{uiText("Einsatz löschen")}</MyButton>}
 
         <NotifyLoaded onLoad={() => {
           const selectedUserId = deployment?.deployment.userId ?? options.preset?.userId ?? null;
@@ -591,12 +592,12 @@ export default function DeploymentsPage() {
 
         const user = values.user?.at(0) as User | undefined;
         const project = values.project?.at(0) as Project | undefined;
-        if (!user || !project) throw new Error('Benutzer und Projekt müssen ausgewählt sein.');
+        if (!user || !project) throw new Error(uiText("Benutzer und Projekt müssen ausgewählt sein."));
 
         const from = combineDateAndTime(values.fromDate, values.fromTime);
         const to = combineDateAndTime(values.toDate, values.toTime);
-        if (!from || !to) throw new Error('Datum und Uhrzeit sind ungültig.');
-        if (from.getTime() >= to.getTime()) throw new Error('Von muss vor Bis liegen.');
+        if (!from || !to) throw new Error(uiText("Datum und Uhrzeit sind ungültig."));
+        if (from.getTime() >= to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
 
         const noteText = `${values.note ?? ''}`.trim();
         const payload = {
@@ -627,8 +628,8 @@ export default function DeploymentsPage() {
         hide();
       },
       modalProps: () => ({
-        modalHeading: options.mode === 'create' ? 'Einsatz planen' : 'Einsatz bearbeiten',
-        primaryButtonText: options.mode === 'create' ? 'Planen' : 'Speichern',
+        modalHeading: options.mode === 'create' ? uiText("Einsatz planen") : uiText("Einsatz bearbeiten"),
+        primaryButtonText: options.mode === 'create' ? uiText("Planen") : uiText("Speichern"),
         noFullscreen: true,
       }),
     });
@@ -644,7 +645,7 @@ export default function DeploymentsPage() {
       content: ({ context, hide }) => <>
         <MyForm.MultiSelect
           name="project"
-          labelText="Projekt"
+          labelText={uiText("Projekt")}
           minSelectedItems={1}
           maxSelectedItems={1}
           getOptions={async ({ query }) => {
@@ -661,28 +662,28 @@ export default function DeploymentsPage() {
 
         <div className="flex gap-2">
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="from" labelText="Von" type="date" />
+            <MyForm.Input required name="from" labelText={uiText("Von")} type="date" />
           </div>
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="to" labelText="Bis" type="date" />
+            <MyForm.Input required name="to" labelText={uiText("Bis")} type="date" />
           </div>
         </div>
 
-        <MyForm.Input required name="reason" labelText="Grund" />
-        <MyForm.Input textArea name="note" labelText="Kommentar" />
+        <MyForm.Input required name="reason" labelText={uiText("Grund")} />
+        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
 
         {!!period && canDeleteDeployments && <MyButton
           kind="ghost"
           type="button"
           renderIcon={Icons.Delete}
           onClick={async () => {
-            const [result, err] = await (client.mutate as any)('projects.unavailability.delete', { id: period.id });
+            const [result, err] = await client.mutate('projects.unavailability.delete', { id: period.id });
             if (err) throw err;
             if (!result) return;
             setUnavailabilityReloadCounter(value => value + 1);
             hide();
           }}
-        >Sperre löschen</MyButton>}
+        >{uiText("Sperre löschen")}</MyButton>}
 
         <NotifyLoaded onLoad={() => {
           const selectedProjectId = period?.projectId ?? options.preset?.projectId ?? null;
@@ -711,9 +712,9 @@ export default function DeploymentsPage() {
         const project = values.project?.at(0) as Project | undefined;
         const from = parseDateInputValue(values.from);
         const to = parseDateInputValue(values.to);
-        if (!project) throw new Error('Projekt muss ausgewählt sein.');
-        if (!from || !to) throw new Error('Datum ist ungültig.');
-        if (from.getTime() > to.getTime()) throw new Error('Von muss vor Bis liegen.');
+        if (!project) throw new Error(uiText("Projekt muss ausgewählt sein."));
+        if (!from || !to) throw new Error(uiText("Datum ist ungültig."));
+        if (from.getTime() > to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
 
         const payload = {
           projectId: project.id,
@@ -722,15 +723,15 @@ export default function DeploymentsPage() {
           reason: `${values.reason ?? ''}`.trim(),
           note: `${values.note ?? ''}`.trim() || null,
         };
-        if (!payload.reason) throw new Error('Grund fehlt.');
+        if (!payload.reason) throw new Error(uiText("Grund fehlt."));
 
         if (options.mode === 'create') {
-          const [created, createErr] = await (client.mutate as any)('projects.unavailability.create', payload);
+          const [created, createErr] = await client.mutate('projects.unavailability.create', payload);
           if (createErr) throw createErr;
           if (!created) return;
         } else {
           if (!period) return;
-          const [updated, updateErr] = await (client.mutate as any)('projects.unavailability.update', {
+          const [updated, updateErr] = await client.mutate('projects.unavailability.update', {
             id: period.id,
             data: payload,
           });
@@ -742,8 +743,8 @@ export default function DeploymentsPage() {
         hide();
       },
       modalProps: () => ({
-        modalHeading: options.mode === 'create' ? 'Unterbrechung eintragen' : 'Unterbrechung bearbeiten',
-        primaryButtonText: options.mode === 'create' ? 'Sperren' : 'Speichern',
+        modalHeading: options.mode === 'create' ? uiText("Unterbrechung eintragen") : uiText("Unterbrechung bearbeiten"),
+        primaryButtonText: options.mode === 'create' ? uiText("Sperren") : uiText("Speichern"),
         noFullscreen: true,
       }),
     });
@@ -757,10 +758,10 @@ export default function DeploymentsPage() {
       .filter(period => periodOverlapsWindow(period, segmentStart, segmentEnd));
 
     overlappingVacations.forEach(vacation => {
-      labels.push(vacation.status === 'requested' ? 'Urlaub beantragt' : 'Urlaub');
+      labels.push(vacation.status === 'requested' ? uiText('Urlaub beantragt', 'Leave requested') : uiText('Urlaub', 'Leave'));
     });
     overlappingUnavailability.forEach(period => {
-      labels.push(`Projekt gesperrt: ${period.reason}`);
+      labels.push(uiText(`Projekt gesperrt: ${period.reason}`, `Project unavailable: ${period.reason}`));
     });
 
     return labels;
@@ -769,27 +770,27 @@ export default function DeploymentsPage() {
   function renderVacationMarker(vacation: DeploymentVacation, key: string) {
     const user = userMap.get(vacation.userId);
     const title = [
-      vacation.status === 'requested' ? 'Urlaub beantragt' : 'Urlaub',
+      vacation.status === 'requested' ? uiText('Urlaub beantragt', 'Leave requested') : uiText('Urlaub', 'Leave'),
       user ? userFullName(user) : null,
       `${formatDate(vacation.from)} - ${formatDate(vacation.to)}`,
-      vacation.note ? `Kommentar: ${vacation.note}` : null,
+      vacation.note ? uiText(`Kommentar: ${vacation.note}`, `Comment: ${vacation.note}`) : null,
     ].filter(Boolean).join('\n');
 
     return <span key={key} className="pep-marker pep-marker--vacation" title={title}>
-      {vacation.status === 'requested' ? 'Urlaub beantragt' : 'Urlaub'}
+      {vacation.status === 'requested' ? uiText('Urlaub beantragt', 'Leave requested') : uiText('Urlaub', 'Leave')}
     </span>;
   }
 
   function renderUnavailabilityMarker(period: ProjectUnavailabilityPeriod, key: string) {
     const project = projectMap.get(period.projectId);
     const title = [
-      `Projekt gesperrt: ${period.reason}`,
+      uiText(`Projekt gesperrt: ${period.reason}`, `Project unavailable: ${period.reason}`),
       project?.title ?? null,
       `${formatDate(period.from)} - ${formatDate(period.to)}`,
-      period.note ? `Kommentar: ${period.note}` : null,
+      period.note ? uiText(`Kommentar: ${period.note}`, `Comment: ${period.note}`) : null,
     ].filter(Boolean).join('\n');
     const content = <>
-      <span>Gesperrt</span>
+      <span>{uiText("Gesperrt")}</span>
       <span className="pep-marker__detail">{period.reason}</span>
     </>;
 
@@ -823,7 +824,7 @@ export default function DeploymentsPage() {
       primaryLabel,
       `${formatDate(segmentStart)} ${segmentTimeLabel}`,
       ...warningLabels,
-      item.deployment.note ? `Kommentar: ${item.deployment.note}` : null,
+      item.deployment.note ? uiText(`Kommentar: ${item.deployment.note}`, `Comment: ${item.deployment.note}`) : null,
     ].filter(Boolean).join('\n');
 
     const style = {
@@ -844,7 +845,7 @@ export default function DeploymentsPage() {
         <span className="pep-entry__time">{segmentTimeLabel}</span>
         <span className="pep-entry__project">{primaryLabel}</span>
         {!!warningLabels.length && <span className="pep-entry__warning">!</span>}
-        {!!item.deployment.note && <span className="pep-entry__note">Kommentar</span>}
+        {!!item.deployment.note && <span className="pep-entry__note">{uiText("Kommentar")}</span>}
       </button>;
     }
 
@@ -852,7 +853,7 @@ export default function DeploymentsPage() {
       <span className="pep-entry__time">{segmentTimeLabel}</span>
       <span className="pep-entry__project">{primaryLabel}</span>
       {!!warningLabels.length && <span className="pep-entry__warning">!</span>}
-      {!!item.deployment.note && <span className="pep-entry__note">Kommentar</span>}
+      {!!item.deployment.note && <span className="pep-entry__note">{uiText("Kommentar")}</span>}
     </div>;
   }
 
@@ -863,7 +864,7 @@ export default function DeploymentsPage() {
   });
 
   return <>
-    <MyHeader title="Einsatzplanung" />
+    <MyHeader title={uiText("Einsatzplanung")} />
 
     <div className="pep-toolbar">
       <div className="pep-toolbar__group">
@@ -871,17 +872,15 @@ export default function DeploymentsPage() {
           size="sm"
           kind="secondary"
           onClick={() => setViewRaw(viewMode === 'day' ? 'week' : 'day')}
-        >Ansicht: {viewMode === 'day' ? 'Tag' : 'Woche'}</MyButton>
+        >{uiText("Ansicht: ")}{viewMode === 'day' ? 'Tag' : 'Woche'}</MyButton>
 
         <MyButton
           size="sm"
           kind="secondary"
           onClick={() => setRowMode(rowMode === 'project' ? 'user' : 'project')}
-        >Zeilen: {rowMode === 'project' ? 'Projekte' : 'Benutzer'}</MyButton>
+        >{uiText("Zeilen: ")}{rowMode === 'project' ? 'Projekte' : uiText('Benutzer')}</MyButton>
 
-        <MyButton size="sm" kind="ghost" renderIcon={Icons.TakeBack} onClick={() => shiftFocus('prev')}>
-          Zurück
-        </MyButton>
+        <MyButton size="sm" kind="ghost" renderIcon={Icons.TakeBack} onClick={() => shiftFocus('prev')}>{uiText("Zurück")}</MyButton>
 
         <input
           className="ss-input pep-date-input"
@@ -900,9 +899,7 @@ export default function DeploymentsPage() {
           }}
         />
 
-        <MyButton size="sm" kind="ghost" renderIcon={Icons.Transfer} onClick={() => shiftFocus('next')}>
-          Weiter
-        </MyButton>
+        <MyButton size="sm" kind="ghost" renderIcon={Icons.Transfer} onClick={() => shiftFocus('next')}>{uiText("Weiter")}</MyButton>
       </div>
 
       <div className="pep-toolbar__group">
@@ -911,42 +908,42 @@ export default function DeploymentsPage() {
           kind="secondary"
           renderIcon={Icons.Plus}
           onClick={() => showDeploymentForm({ mode: 'create', preset: { day: focusDay } })}
-        >Einsatz hinzufügen</MyButton>}
+        >{uiText("Einsatz hinzufügen")}</MyButton>}
 
         <MyButton
           size="sm"
           kind="secondary"
           renderIcon={Icons.User}
           onClick={() => navigate('/vacations')}
-        >Urlaub</MyButton>
+        >{uiText("Urlaub")}</MyButton>
 
         <OperationalTag
           renderIcon={showEmptyRows ? Icons.FilterEdit : Icons.Filter}
-          text={showEmptyRows ? 'Mit freien Zeilen' : 'Nur mit Einsatz'}
+          text={showEmptyRows ? uiText('Mit freien Zeilen') : uiText('Nur mit Einsatz')}
           onClick={() => setShowEmptyRows(!showEmptyRows)}
         />
 
         <TableExportActions
-          title="Einsatzplanung"
+          title={uiText("Einsatzplanung")}
           fileName={`Einsatzplanung-${toDateInputValue(range.start)}`}
           rows={exportRows}
           disabled={!projects || !users}
           columns={[
-            { header: 'Art', value: row => row.kind },
-            { header: 'Projekt', value: row => row.project, width: '2fr' },
-            { header: 'Benutzer', value: row => row.user, width: '2fr' },
-            { header: 'Von', value: row => row.from },
-            { header: 'Bis', value: row => row.to },
-            { header: 'Notiz', value: row => row.note, width: '2fr' },
+            { header: uiText("Art"), value: row => row.kind },
+            { header: uiText("Projekt"), value: row => row.project, width: '2fr' },
+            { header: uiText("Benutzer"), value: row => row.user, width: '2fr' },
+            { header: uiText("Von"), value: row => row.from },
+            { header: uiText("Bis"), value: row => row.to },
+            { header: uiText("Notiz"), value: row => row.note, width: '2fr' },
           ]}
         />
       </div>
     </div>
 
-    {!canViewAllDeployments && <p className="light">Du siehst deine eigenen Einsätze.</p>}
+    {!canViewAllDeployments && <p className="light">{uiText("Du siehst deine eigenen Einsätze.")}</p>}
 
     {viewMode === 'day' && <div className="pep-board">
-      {!rowEntities.length && <div className="pep-empty-row light">Keine Einsätze im gewählten Zeitraum.</div>}
+      {!rowEntities.length && <div className="pep-empty-row light">{uiText("Keine Einsätze im gewählten Zeitraum.")}</div>}
 
       {rowEntities.map(row => {
         const rowDeployments = deploymentsForRow(row.id);
@@ -970,8 +967,8 @@ export default function DeploymentsPage() {
               size="sm"
               kind="ghost"
               className="pep-add-btn"
-              title="Einsatz hinzufügen"
-              aria-label="Einsatz hinzufügen"
+              title={uiText("Einsatz hinzufügen")}
+              aria-label={uiText("Einsatz hinzufügen")}
               onClick={() => showDeploymentForm({
                 mode: 'create',
                 preset: {
@@ -986,7 +983,7 @@ export default function DeploymentsPage() {
           </div>
 
           <div className="pep-day-entries">
-            {!segments.length && !rowVacations.length && !rowUnavailability.length && <span className="light">Kein Einsatz</span>}
+            {!segments.length && !rowVacations.length && !rowUnavailability.length && <span className="light">{uiText("Kein Einsatz")}</span>}
             {rowVacations.map(vacation => renderVacationMarker(vacation, `vacation:${vacation.id}`))}
             {rowUnavailability.map(period => renderUnavailabilityMarker(period, `project-stop:${period.id}`))}
             {segments.map((segment, index) => renderDeploymentEntry({
@@ -1019,7 +1016,7 @@ export default function DeploymentsPage() {
 
         <tbody>
           {!rowEntities.length && <tr>
-            <td colSpan={8} className="pep-empty-row light">Keine Einsätze im gewählten Zeitraum.</td>
+            <td colSpan={8} className="pep-empty-row light">{uiText("Keine Einsätze im gewählten Zeitraum.")}</td>
           </tr>}
 
           {rowEntities.map(row => {
@@ -1035,8 +1032,8 @@ export default function DeploymentsPage() {
                     size="sm"
                     kind="ghost"
                     className="pep-add-btn"
-                    title="Einsatz hinzufügen"
-                    aria-label="Einsatz hinzufügen"
+                    title={uiText("Einsatz hinzufügen")}
+                    aria-label={uiText("Einsatz hinzufügen")}
                     onClick={() => showDeploymentForm({
                       mode: 'create',
                       preset: {

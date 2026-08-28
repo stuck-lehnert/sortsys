@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useNavigate } from "react-router";
 import { MyCallout } from "~/components/MyCallout";
 import { MyLink } from "~/components/MyLink";
@@ -46,7 +47,7 @@ function isProjectCostStatusFilter(value: string | null): value is ProjectCostSt
 
 export function meta() {
   return [
-    { title: "Kostenübersicht" },
+    { title: uiText("Kostenübersicht") },
   ];
 }
 
@@ -84,10 +85,10 @@ export default function ProjectCostsOverviewPage() {
   }), [status, closingYear, projectLeaderUserId]);
 
   const [filterOptions, filterOptionsErr] = useClientStream<ProjectCostsFilterOptions | null, any>(() => {
-    return (client.streamQuery as any)('projects.costs.filterOptions', undefined);
+    return client.streamQuery('projects.costs.filterOptions', undefined);
   }, []);
   const [rows, err] = useClientStream<ProjectCostsOverviewRow[] | null, any>(() => {
-    return (client.streamQuery as any)('projects.costs.overview', overviewInput);
+    return client.streamQuery('projects.costs.overview', overviewInput);
   }, [overviewInput]);
 
   useEffect(() => {
@@ -107,42 +108,40 @@ export default function ProjectCostsOverviewPage() {
   const tableRows = (rows ?? []).map(row => ({ ...row, id: row.projectId }));
 
   return <>
-    {!!err && <MyCallout icon={Icons.Deny} color="red">
-      Kostenübersicht konnte nicht geladen werden: {err.message}
+    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Kostenübersicht konnte nicht geladen werden:")}{err.message}
     </MyCallout>}
-    {!!filterOptionsErr && <MyCallout icon={Icons.Deny} color="red">
-      Filteroptionen konnten nicht geladen werden: {filterOptionsErr.message}
+    {!!filterOptionsErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Filteroptionen konnten nicht geladen werden:")}{filterOptionsErr.message}
     </MyCallout>}
 
     <div className="flex gap-2 w-full overlflow-x-auto">
       <TableExportActions
-        title="Kostenübersicht"
+        title={uiText("Kostenübersicht")}
         fileName="Kostenuebersicht"
         rows={tableRows}
         disabled={!rows}
         columns={[
-          { header: 'Projekt', value: row => row.title, width: '2fr' },
-          { header: 'Status', value: row => row.finishedAt ? 'Abgeschlossen' : 'Laufend' },
-          { header: 'Projektleiter', value: row => {
+          { header: uiText("Projekt"), value: row => row.title, width: '2fr' },
+          { header: uiText("Status"), value: row => row.finishedAt ? 'Abgeschlossen' : 'Laufend' },
+          { header: uiText("Projektleiter"), value: row => {
             const user = row.responsibleProjectLeaderUserId ? userById.get(row.responsibleProjectLeaderUserId) : null;
             return user ? userFullName(user) : '-';
           }, width: '1.5fr' },
           {
-            header: 'Kosten',
+            header: uiText("Kosten"),
             value: row => row.costs,
             format: value => formatCurrency(Number(value)),
             excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
             align: 'right',
           },
           {
-            header: 'Gewinn/Verlust (absolut)',
+            header: uiText("Gewinn/Verlust (absolut)"),
             value: row => row.gainOrLoss,
             format: value => value == null ? '-' : formatCurrency(Number(value)),
             excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
             align: 'right',
           },
           {
-            header: 'Gewinn/Verlust (relativ)',
+            header: uiText("Gewinn/Verlust (relativ)"),
             value: row => row.gainOrLoss == null || !hasNumberData(row.invoicesTotal)
               ? null
               : row.gainOrLoss / Math.abs(row.invoicesTotal),
@@ -151,14 +150,14 @@ export default function ProjectCostsOverviewPage() {
             align: 'right',
           },
           {
-            header: 'Angebotssummen',
+            header: uiText("Angebotssummen"),
             value: row => row.offersTotal,
             format: value => formatCurrency(Number(value)),
             excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
             align: 'right',
           },
           {
-            header: 'Rechnungssummen',
+            header: uiText("Rechnungssummen"),
             value: row => row.invoicesTotal,
             format: value => formatCurrency(Number(value)),
             excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
@@ -170,7 +169,7 @@ export default function ProjectCostsOverviewPage() {
 
     <div className="project-costs-filter-bar">
       <label>
-        <span>Status</span>
+        <span>{uiText("Status")}</span>
         <select value={status} onChange={event => {
           const nextStatus = event.target.value as ProjectCostStatusFilter;
           setStatusParam(nextStatus === 'active' ? null : nextStatus);
@@ -183,29 +182,27 @@ export default function ProjectCostsOverviewPage() {
       </label>
 
       {status !== 'active' && <label>
-        <span>Abschlussjahr</span>
+        <span>{uiText("Abschlussjahr")}</span>
         <select
           value={closingYear?.toString() ?? ''}
           onChange={event => setClosingYear(event.target.value ? Number.parseInt(event.target.value, 10) : null)}
           disabled={!filterOptions?.finishingYears.length}
         >
-          <option value="">Alle</option>
+          <option value="">{uiText("Alle")}</option>
           {(filterOptions?.finishingYears ?? []).map(year => <option key={year} value={year}>{year}</option>)}
         </select>
       </label>}
 
       <label>
-        <span>Projektleiter</span>
+        <span>{uiText("Projektleiter")}</span>
         <select value={projectLeaderUserId ?? ''} onChange={event => setProjectLeaderUserId(event.target.value || null)}>
-          <option value="">Alle</option>
+          <option value="">{uiText("Alle")}</option>
           {(filterOptions?.projectLeaders ?? []).map(user => <option key={user.id} value={user.id}>{userFullName(user)}</option>)}
         </select>
       </label>
     </div>
 
-    {!err && rows?.length === 0 && <MyCallout icon={Icons.Info} color="grey">
-      Keine Projekte für die aktuellen Filter.
-    </MyCallout>}
+    {!err && rows?.length === 0 && <MyCallout icon={Icons.Info} color="grey">{uiText("Keine Projekte für die aktuellen Filter.")}</MyCallout>}
 
     <MyTable
       topPagination
@@ -214,17 +211,17 @@ export default function ProjectCostsOverviewPage() {
       onRowClick={row => navigate(`/projects/${row.projectId}/costs`)}
       columns={[
         {
-          label: 'Projekt',
+          label: uiText("Projekt"),
           render: row => <MyLink to={`/projects/${row.projectId}/costs`}>{row.title}</MyLink>,
           sortKey: row => row.title.toLowerCase(),
         },
         {
-          label: 'Status',
+          label: uiText("Status"),
           render: row => row.finishedAt ? 'Abgeschlossen' : 'Laufend',
           sortKey: row => row.finishedAt?.getTime() ?? Number.MAX_SAFE_INTEGER,
         },
         {
-          label: 'Projektleiter',
+          label: uiText("Projektleiter"),
           render: row => {
             const user = row.responsibleProjectLeaderUserId ? userById.get(row.responsibleProjectLeaderUserId) : null;
             return user ? userFullName(user) : '-';
@@ -235,22 +232,22 @@ export default function ProjectCostsOverviewPage() {
           },
         },
         {
-          label: 'Kosten',
+          label: uiText("Kosten"),
           render: row => formatCurrency(row.costs),
           sortKey: row => row.costs,
         },
         {
-          label: 'Gewinn/Verlust',
+          label: uiText("Gewinn/Verlust"),
           render: row => renderGainOrLoss(row.gainOrLoss, row.invoicesTotal),
           sortKey: row => row.gainOrLoss ?? Number.NEGATIVE_INFINITY,
         },
         {
-          label: 'Angebotssummen',
+          label: uiText("Angebotssummen"),
           render: row => formatCurrency(row.offersTotal),
           sortKey: row => row.offersTotal,
         },
         {
-          label: 'Rechnungssummen',
+          label: uiText("Rechnungssummen"),
           render: row => formatCurrency(row.invoicesTotal),
           sortKey: row => row.invoicesTotal,
         },

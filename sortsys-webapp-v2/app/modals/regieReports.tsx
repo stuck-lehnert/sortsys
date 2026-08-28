@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
@@ -17,7 +18,7 @@ import type { Product, RegieReport } from "~/type-helpers";
 function parseWeekdayIndex(value: unknown) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed >= WEEKDAY_NAMES.length) {
-    throw new Error("Ungültiger Wochentag");
+    throw new Error(uiText("Ungültiger Wochentag"));
   }
   return parsed;
 }
@@ -48,7 +49,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
       return <>
         <MyForm.MultiSelect
           minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText="Projekt"
+          name="project" labelText={uiText("Projekt")}
           getOptions={async ({ query }) => {
             const [data] = await client.query('projects.list', { search: query });
             return data ?? [];
@@ -57,29 +58,29 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
           renderTile={item => <SmallProjectTile data={item} noLink />}
           createAction={createEntityAction.project}
         />
-        <p className="light">Wähle das Projekt, für das der Regiebericht erstellt wird.</p>
+        <p className="light">{uiText("Wähle das Projekt, für das der Regiebericht erstellt wird.")}</p>
 
-        <MyForm.Input textArea name="summary" labelText="Beschreibung der Arbeiten" />
-        <p className="light">Beschreibe die ausgeführten Arbeiten für die gesamte Kalenderwoche.</p>
+        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
+        <p className="light">{uiText("Beschreibe die ausgeführten Arbeiten für die gesamte Kalenderwoche.")}</p>
 
         <MyForm.DateInput
           required
           name="week"
-          labelText="Woche (beliebiger Tag)"
+          labelText={uiText("Woche (beliebiger Tag)")}
           rules={[date => {
             if (!date) return null;
             const today = new Date();
             today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return 'Datum darf nicht in der Zukunft liegen';
+            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
             return null;
           }]}
         />
-        <p className="light">Der Bericht gilt immer für Montag bis Sonntag der gewählten Kalenderwoche.</p>
+        <p className="light">{uiText("Der Bericht gilt immer für Montag bis Sonntag der gewählten Kalenderwoche.")}</p>
 
         <MyDivider />
         
-        <h4>Arbeitszeit</h4>
-        <p className="light">Pro Eintrag Tag, Mitarbeiter und Stunden der ausgewählten Woche erfassen.</p>
+        <h4>{uiText("Arbeitszeit")}</h4>
+        <p className="light">{uiText("Pro Eintrag Tag, Mitarbeiter und Stunden der ausgewählten Woche erfassen.")}</p>
 
         {workHourIds.map(id => {
           return <Fragment key={id}>
@@ -87,14 +88,14 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
               <MyForm.Select
                 required
                 name={`workHour:${id}:dayIndex`}
-                labelText="Tag"
+                labelText={uiText("Tag")}
                 getOptions={() => WEEKDAY_OPTIONS}
                 buildOption={({ id: optionId, label }) => ({ text: label, value: optionId })}
               />
 
               <MyForm.MultiSelect
                 name={`workHour:${id}:user`}
-                labelText="Mitarbeiter"
+                labelText={uiText("Mitarbeiter")}
                 autoFocus={autoFocusFieldName === `workHour:${id}:user`}
                 minSelectedItems={1} maxSelectedItems={1}
                 getOptions={async ({ query }) => {
@@ -112,7 +113,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                   <MyForm.Input
                     required
                     name={`workHour:${id}:hours`}
-                    labelText="Stunden"
+                    labelText={uiText("Stunden")}
                     type="number"
                     rules={[
                       MyForm.Input.rules.num,
@@ -120,11 +121,11 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                         if (!value.trim()) return null;
                         const hours = parseFloatCustom(value);
                         if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return 'Stunden müssen zwischen 0 und 10 liegen';
+                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
                         return null;
                       },
                     ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Arbeitszeit entfernen" aria-label="Arbeitszeit entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
                       setWorkHourIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -141,12 +142,12 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
           setWorkHourIds(ids => [...ids, id]);
           setAutoFocusFieldName(`workHour:${id}:user`);
           context.setValues({ [`workHour:${id}:dayIndex`]: '0' });
-        }}>Arbeitszeit</MyButton>
+        }}>{uiText("Arbeitszeit")}</MyButton>
 
         <MyDivider />
 
-        <h4>Produkte</h4>
-        <p className="light">Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.</p>
+        <h4>{uiText("Produkte")}</h4>
+        <p className="light">{uiText("Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.")}</p>
 
         {recordIds.map(id => {
           const currentProduct = () => {
@@ -156,7 +157,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
           return <Fragment key={id}>
             <MyForm.MultiSelect
               name={`record:${id}:product`}
-              labelText="Produkt"
+              labelText={uiText("Produkt")}
               autoFocus={autoFocusFieldName === `record:${id}:product`}
               minSelectedItems={1} maxSelectedItems={1}
               getOptions={async ({ query }) => {
@@ -175,7 +176,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                 <div className="basis-1/2 flex-1">
                   <MyForm.Input
                     required
-                    name={`record:${id}:amount`} labelText="Anzahl"
+                    name={`record:${id}:amount`} labelText={uiText("Anzahl")}
                     type="number"
                     rules={[MyForm.Input.rules.num]}
                   />
@@ -184,7 +185,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                 <div className="basis-1/2 flex-1">
                   <MyForm.Select
                     name={`record:${id}:unit`}
-                    labelText="Einheit"
+                    labelText={uiText("Einheit")}
                     getOptions={() => {
                       const _product = currentProduct();
                       if (!_product) return [];
@@ -192,7 +193,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                     }}
                     getOptionsDeps={[currentProduct()?.id]}
                     buildOption={({ id })=> ({ text: id, value: id })}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Eintrag entfernen" aria-label="Eintrag entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
                       setRecordIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -209,12 +210,12 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
           const id = generateId();
           setRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`record:${id}:product`);
-        }}>Eintrag</MyButton>
+        }}>{uiText("Eintrag")}</MyButton>
 
         <MyDivider />
 
-        <h4>Sonderposten</h4>
-        <p className="light">Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.</p>
+        <h4>{uiText("Sonderposten")}</h4>
+        <p className="light">{uiText("Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.")}</p>
 
         {specialRecordIds.map(id => {
           return <Fragment key={id}>
@@ -224,7 +225,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                   <MyForm.Input
                     required
                     name={`specialRecord:${id}:name`}
-                    labelText="Bezeichnung"
+                    labelText={uiText("Bezeichnung")}
                     autoFocus={autoFocusFieldName === `specialRecord:${id}:name`}
                   />
                 </div>
@@ -234,7 +235,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:amount`}
-                      labelText="Menge"
+                      labelText={uiText("Menge")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
                     />
@@ -244,8 +245,8 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:unit`}
-                      labelText="Einheit"
-                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Sonderposten entfernen" aria-label="Sonderposten entfernen" onClick={() => {
+                      labelText={uiText("Einheit")}
+                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={() => {
                         setSpecialRecordIds(ids => ids.filter(_id => _id !== id));
                       }}><Icons.Delete /></MyButton>}
                     />
@@ -262,7 +263,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
           const id = generateId();
           setSpecialRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`specialRecord:${id}:name`);
-        }}>Sonderposten</MyButton>
+        }}>{uiText("Sonderposten")}</MyButton>
 
         <NotifyLoaded onLoad={() => {
           context.field('week')?.setValue(new Date());
@@ -275,7 +276,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
       const projectId = values.project[0]?.id;
 
       const weekInput = values.week ? new Date(values.week) : new Date();
-      if (isNaN(weekInput.getTime())) throw new Error('Ungültige Woche');
+      if (isNaN(weekInput.getTime())) throw new Error(uiText("Ungültige Woche"));
       const weekStart = startOfIsoWeek(weekInput);
 
       const records: {
@@ -386,8 +387,8 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Regiebericht erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Regiebericht erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -422,7 +423,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
       return <>
         <MyForm.MultiSelect
           minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText="Projekt"
+          name="project" labelText={uiText("Projekt")}
           disabled
           getOptions={async ({ query }) => {
             const [data] = await client.query('projects.list', { search: query });
@@ -431,29 +432,29 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
           renderItem={({ item }) => item.title}
           renderTile={item => <SmallProjectTile data={item} noLink />}
         />
-        <p className="light">Projektzuordnung ist fix; hier wird nur zur Einordnung angezeigt.</p>
+        <p className="light">{uiText("Projektzuordnung ist fix; hier wird nur zur Einordnung angezeigt.")}</p>
 
-        <MyForm.Input textArea name="summary" labelText="Zusammenfassung" />
-        <p className="light">Beschreibe die ausgeführten Arbeiten für die gesamte Kalenderwoche.</p>
+        <MyForm.Input textArea name="summary" labelText={uiText("Zusammenfassung")} />
+        <p className="light">{uiText("Beschreibe die ausgeführten Arbeiten für die gesamte Kalenderwoche.")}</p>
 
         <MyForm.DateInput
           required
           name="week"
-          labelText="Woche (beliebiger Tag)"
+          labelText={uiText("Woche (beliebiger Tag)")}
           rules={[date => {
             if (!date) return null;
             const today = new Date();
             today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return 'Datum darf nicht in der Zukunft liegen';
+            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
             return null;
           }]}
         />
-        <p className="light">Der Bericht gilt immer für Montag bis Sonntag der gewählten Kalenderwoche.</p>
+        <p className="light">{uiText("Der Bericht gilt immer für Montag bis Sonntag der gewählten Kalenderwoche.")}</p>
 
         <MyDivider />
 
-        <h4>Arbeitszeit</h4>
-        <p className="light">Pro Eintrag Tag, Mitarbeiter und Stunden der gewählten Woche erfassen.</p>
+        <h4>{uiText("Arbeitszeit")}</h4>
+        <p className="light">{uiText("Pro Eintrag Tag, Mitarbeiter und Stunden der gewählten Woche erfassen.")}</p>
 
         {workHourIds.map(id => {
           return <Fragment key={id}>
@@ -461,14 +462,14 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
               <MyForm.Select
                 required
                 name={`workHour:${id}:dayIndex`}
-                labelText="Tag"
+                labelText={uiText("Tag")}
                 getOptions={() => WEEKDAY_OPTIONS}
                 buildOption={({ id: optionId, label }) => ({ text: label, value: optionId })}
               />
 
               <MyForm.MultiSelect
                 name={`workHour:${id}:user`}
-                labelText="Mitarbeiter"
+                labelText={uiText("Mitarbeiter")}
                 autoFocus={autoFocusFieldName === `workHour:${id}:user`}
                 minSelectedItems={1} maxSelectedItems={1}
                 getOptions={async ({ query }) => {
@@ -486,7 +487,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                   <MyForm.Input
                     required
                     name={`workHour:${id}:hours`}
-                    labelText="Stunden"
+                    labelText={uiText("Stunden")}
                     type="number"
                     rules={[
                       MyForm.Input.rules.num,
@@ -494,11 +495,11 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                         if (!value.trim()) return null;
                         const hours = parseFloatCustom(value);
                         if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return 'Stunden müssen zwischen 0 und 10 liegen';
+                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
                         return null;
                       },
                     ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Arbeitszeit entfernen" aria-label="Arbeitszeit entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
                       setWorkHourIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -527,12 +528,12 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
           setWorkHourIds(ids => [...ids, id]);
           setAutoFocusFieldName(`workHour:${id}:user`);
           context.setValues({ [`workHour:${id}:dayIndex`]: '0' });
-        }}>Arbeitszeit</MyButton>
+        }}>{uiText("Arbeitszeit")}</MyButton>
 
         <MyDivider />
 
-        <h4>Produkte</h4>
-        <p className="light">Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.</p>
+        <h4>{uiText("Produkte")}</h4>
+        <p className="light">{uiText("Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.")}</p>
 
         {recordIds.map(id => {
           const currentProduct = () => {
@@ -542,7 +543,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
           return <Fragment key={id}>
             <MyForm.MultiSelect
               name={`record:${id}:product`}
-              labelText="Produkt"
+              labelText={uiText("Produkt")}
               autoFocus={autoFocusFieldName === `record:${id}:product`}
               minSelectedItems={1} maxSelectedItems={1}
               getOptions={async ({ query }) => {
@@ -561,7 +562,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                 <div className="basis-1/2 flex-1">
                   <MyForm.Input
                     required
-                    name={`record:${id}:amount`} labelText="Anzahl"
+                    name={`record:${id}:amount`} labelText={uiText("Anzahl")}
                     type="number"
                     rules={[MyForm.Input.rules.num]}
                   />
@@ -570,7 +571,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                 <div className="basis-1/2 flex-1">
                   <MyForm.Select
                     name={`record:${id}:unit`}
-                    labelText="Einheit"
+                    labelText={uiText("Einheit")}
                     getOptions={() => {
                       const _product = currentProduct();
                       if (!_product) return [];
@@ -578,7 +579,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                     }}
                     getOptionsDeps={[currentProduct()?.id]}
                     buildOption={({ id })=> ({ text: id, value: id })}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Eintrag entfernen" aria-label="Eintrag entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
                       setRecordIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -615,12 +616,12 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
           const id = generateId();
           setRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`record:${id}:product`);
-        }}>Eintrag</MyButton>
+        }}>{uiText("Eintrag")}</MyButton>
 
         <MyDivider />
 
-        <h4>Sonderposten</h4>
-        <p className="light">Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.</p>
+        <h4>{uiText("Sonderposten")}</h4>
+        <p className="light">{uiText("Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.")}</p>
 
         {specialRecordIds.map(id => {
           return <Fragment key={id}>
@@ -630,7 +631,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                   <MyForm.Input
                     required
                     name={`specialRecord:${id}:name`}
-                    labelText="Bezeichnung"
+                    labelText={uiText("Bezeichnung")}
                     autoFocus={autoFocusFieldName === `specialRecord:${id}:name`}
                   />
                 </div>
@@ -640,7 +641,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:amount`}
-                      labelText="Menge"
+                      labelText={uiText("Menge")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
                     />
@@ -650,8 +651,8 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:unit`}
-                      labelText="Einheit"
-                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Sonderposten entfernen" aria-label="Sonderposten entfernen" onClick={() => {
+                      labelText={uiText("Einheit")}
+                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={() => {
                         setSpecialRecordIds(ids => ids.filter(_id => _id !== id));
                       }}><Icons.Delete /></MyButton>}
                     />
@@ -679,7 +680,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
           const id = generateId();
           setSpecialRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`specialRecord:${id}:name`);
-        }}>Sonderposten</MyButton>
+        }}>{uiText("Sonderposten")}</MyButton>
 
         <NotifyLoaded onLoad={async () => {
           const weekStart = startOfIsoWeek(new Date(report.day));
@@ -752,7 +753,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
       const values = context.getValues();
 
       const weekInput = values.week ? new Date(values.week) : new Date();
-      if (isNaN(weekInput.getTime())) throw new Error('Ungültige Woche');
+      if (isNaN(weekInput.getTime())) throw new Error(uiText("Ungültige Woche"));
       const weekStart = startOfIsoWeek(weekInput);
 
       const records: {
@@ -864,8 +865,8 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Regiebericht bearbeiten',
-      primaryButtonText: 'Speichern',
+      modalHeading: uiText("Regiebericht bearbeiten"),
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -873,13 +874,11 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
 export function showDeleteRegieReportModal(modals: MyModalsInterface, report: RegieReport) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Regiebericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Regiebericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -893,8 +892,8 @@ export function showDeleteRegieReportModal(modals: MyModalsInterface, report: Re
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Regiebericht löschen',
-      primaryButtonText: 'Löschen',
+      modalHeading: uiText("Regiebericht löschen"),
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }

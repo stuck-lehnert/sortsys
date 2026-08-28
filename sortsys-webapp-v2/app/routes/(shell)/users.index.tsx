@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useNavigate } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -11,7 +12,7 @@ import { TableExportActions } from "~/components/TableExportActions";
 
 export function meta() {
   return [
-    { title: "Benutzer" },
+    { title: uiText("Benutzer") },
   ];
 }
 
@@ -30,23 +31,23 @@ export default function UsersPage() {
   return <>
     <div className="flex gap-2 w-full overlflow-x-auto">
       {!archivedOnly ? (
-        <OperationalTag renderIcon={Icons.Archive} text="Nicht Archviert" onClick={() => setArchivedOnly(true)} />
+        <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht Archviert")} onClick={() => setArchivedOnly(true)} />
       ) : (
-        <OperationalTag renderIcon={Icons.Archive} text="Archiviert" onClick={() => setArchivedOnly(false)} />
+        <OperationalTag renderIcon={Icons.Archive} text={uiText("Archiviert")} onClick={() => setArchivedOnly(false)} />
       )}
 
       <TableExportActions
-        title="Benutzer"
-        fileName={archivedOnly ? 'Archivierte-Benutzer' : 'Benutzer'}
+        title={uiText("Benutzer")}
+        fileName={archivedOnly ? uiText('Archivierte-Benutzer') : uiText('Benutzer')}
         rows={visibleUsers}
         disabled={!users}
         columns={[
-          { header: 'Vorname', value: user => user.firstName },
-          { header: 'Nachname', value: user => user.lastName },
-          { header: 'Vertrag', value: user => userContractName(user) },
-          { header: 'E-Mail', value: user => user.email, width: '2fr' },
-          { header: 'Telefon', value: user => user.phone },
-          { header: 'Deaktiviert am', value: user => user.deactivatedAt },
+          { header: uiText("Vorname"), value: user => user.firstName },
+          { header: uiText("Nachname"), value: user => user.lastName },
+          { header: uiText("Vertrag"), value: user => userContractName(user) },
+          { header: uiText("E-Mail"), value: user => user.email, width: '2fr' },
+          { header: uiText("Telefon"), value: user => user.phone },
+          { header: uiText("Deaktiviert am"), value: user => user.deactivatedAt },
         ]}
       />
     </div>
@@ -61,12 +62,12 @@ export default function UsersPage() {
       onRowClick={row => navigate(`/users/${row.id}`)}
       columns={[
         {
-          label: 'Vorname',
+          label: uiText("Vorname"),
           render: row => row.firstName,
           sortKey: row => row.firstName.toLowerCase(),
         },
         {
-          label: 'Nachname',
+          label: uiText("Nachname"),
           render: row => row.lastName,
           sortKey: row => row.lastName?.toLowerCase() ?? '',
         },
@@ -81,7 +82,7 @@ export default function UsersPage() {
         //   sortKey: row => row.phone?.toLowerCase() ?? '',
         // },
         {
-          label: 'Vertrag',
+          label: uiText("Vertrag"),
           render: row => userContractName(row),
           sortKey: row => userContractName(row).toLowerCase(),
         },

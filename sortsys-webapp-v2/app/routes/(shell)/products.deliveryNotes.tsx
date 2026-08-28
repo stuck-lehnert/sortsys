@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -10,7 +11,7 @@ import { TableExportActions } from "~/components/TableExportActions";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Lieferscheine" },
+    { title: uiText("Lieferscheine") },
   ];
 }
 
@@ -21,15 +22,15 @@ export default function DeliverNotesPage() {
   return <>
     <div className="flex gap-2 w-full overflow-x-auto">
       <TableExportActions
-        title="Lieferscheine"
+        title={uiText("Lieferscheine")}
         fileName="Lieferscheine"
         rows={notes ?? []}
         disabled={!notes}
         columns={[
-          { header: 'Nummer', value: note => note.autoId, align: 'right' },
-          { header: 'Erfasst am', value: note => note.createdAt },
-          { header: 'Effektiv am', value: note => note.effectiveTimestamp },
-          { header: 'Kommentar', value: note => note.comment, width: '2fr' },
+          { header: uiText("Nummer"), value: note => note.autoId, align: 'right' },
+          { header: uiText("Erfasst am"), value: note => note.createdAt },
+          { header: uiText("Effektiv am"), value: note => note.effectiveTimestamp },
+          { header: uiText("Kommentar"), value: note => note.comment, width: '2fr' },
         ]}
       />
     </div>
@@ -43,22 +44,22 @@ export default function DeliverNotesPage() {
       onRowClick={row => navigate(`/products/deliveryNotes/${row.id}`)}
       columns={[
         {
-          label: 'Nummer',
+          label: uiText("Nummer"),
           render: note => <MyLink to={`/products/deliveryNotes/${note.id}`}>#{note.autoId}</MyLink>,
           sortKey: row => row.autoId,
         },
         {
-          label: 'Erfasst am',
+          label: uiText("Erfasst am"),
           render: note => formatDate(note.createdAt),
           sortKey: row => row.createdAt.getTime(),
         },
         {
-          label: 'Effektiv am',
+          label: uiText("Effektiv am"),
           render: note => formatDate(note.effectiveTimestamp),
           sortKey: row => row.effectiveTimestamp.getTime(),
         },
         {
-          label: 'Kommentar',
+          label: uiText("Kommentar"),
           render: note => note.comment ?? '',
           sortKey: row => (row.comment ?? '').toLowerCase(),
         },

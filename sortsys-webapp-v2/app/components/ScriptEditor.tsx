@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useEffect, useRef } from "react";
 
 let scriptTypeLibsLoaded = false;
@@ -314,7 +315,7 @@ export function ScriptEditor(props: {
                 return {
                   label: symbol,
                   kind: symbol === 'client' ? monaco.languages.CompletionItemKind.Variable : monaco.languages.CompletionItemKind.Function,
-                  detail: `Auto-Import aus ${moduleName}`,
+                  detail: uiText(`Auto-Import aus ${moduleName}`, `Auto-import from ${moduleName}`),
                   insertText: overlaps ? `const { ${symbol} } = await import('${moduleName}');\n\n${symbol}` : symbol,
                   additionalTextEdits: overlaps ? undefined : importEdits,
                   range,
@@ -336,7 +337,7 @@ export function ScriptEditor(props: {
               if (!edits.length) return [];
 
               return [{
-                title: `Auto-Import ${entry.symbol} aus ${entry.moduleName}`,
+                title: uiText(`Auto-Import ${entry.symbol} aus ${entry.moduleName}`, `Auto-import ${entry.symbol} from ${entry.moduleName}`),
                 kind: 'quickfix',
                 diagnostics: [marker],
                 edit: {
@@ -454,7 +455,7 @@ export function ScriptCodePreview(props: { value: string }) {
     };
   }, [props.value]);
 
-  return <div className="script-code-preview" aria-label="Skriptvorschau">
+  return <div className="script-code-preview" aria-label={uiText("Skriptvorschau")}>
     <div ref={containerRef} className="script-code-preview-content" />
   </div>;
 }

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -11,17 +12,17 @@ export default function ProductsShell() {
     const tabs = [
         {
             path: '/products',
-            label: 'Produkte',
+            label: uiText("Produkte"),
             hideIf: !sessionInfo.canDo('view:products'),
         },
         {
             path: '/products/deliveryNotes',
-            label: 'Lieferscheine',
+            label: uiText("Lieferscheine"),
             hideIf: !sessionInfo.canDo('view:deliveryNotes'),
         },
         {
             path: '/products/vendors',
-            label: 'Händler',
+            label: uiText("Händler"),
             hideIf: !sessionInfo.canDo('view:productVendors'),
         },
     ];

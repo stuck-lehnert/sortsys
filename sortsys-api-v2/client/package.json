@@ -20,7 +20,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build src/index.ts --production --outfile dist/index.js && tsc -p tsconfig.json --emitDeclarationOnly --outDir dist --declarationDir dist && bun ./scripts/write-dist-package-json.mjs"
+    "build": "bun run lint:client-casts && rm -rf dist && bun build src/index.ts --production --outfile dist/index.js && tsc -p tsconfig.json --emitDeclarationOnly --outDir dist --declarationDir dist && bun ./scripts/write-dist-package-json.mjs",
+    "lint:client-casts": "node ./scripts/check-no-client-method-any-casts.mjs"
   },
   "type": "module",
   "types": "dist/index.d.ts",

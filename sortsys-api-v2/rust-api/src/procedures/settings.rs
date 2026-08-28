@@ -27,6 +27,13 @@ pub fn register(
     mut builder: ProcedureRegistryBuilder,
     state: Arc<AppState>,
 ) -> ProcedureRegistryBuilder {
+    let set_language_state = Arc::clone(&state);
+    builder = builder.mutation("settings.language.set", move |context, input| {
+        let state = Arc::clone(&set_language_state);
+
+        async move { set_language(&state, &context, input).await }
+    });
+
     let get_name_state = Arc::clone(&state);
     builder = builder.query("settings.tenantName.get", move |context, _input: ()| {
         let state = Arc::clone(&get_name_state);
@@ -109,6 +116,28 @@ pub fn register(
 
         async move { delete_setting(&state, &context, input, PUBLIC_SETTINGS_TABLE).await }
     })
+}
+
+async fn set_language(
+    state: &AppState,
+    context: &RequestContext,
+    input: LanguageSetInput,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+    let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
+
+    let result = sqlx::query("UPDATE users SET ui_locale = $1 WHERE id = $2")
+        .bind(input.locale.as_str())
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .map_err(internal)?;
+
+    if result.rows_affected() == 0 {
+        return Err(not_found());
+    }
+
+    Ok(Success { success: true })
 }
 
 async fn get_tenant_name(
@@ -481,6 +510,29 @@ async fn delete_setting(
     }
 
     Ok(Success { success: true })
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+enum UiLocale {
+    De,
+    En,
+}
+
+impl UiLocale {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::De => "de",
+            Self::En => "en",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct LanguageSetInput {
+    locale: UiLocale,
 }
 
 #[derive(Debug, Deserialize, TS)]

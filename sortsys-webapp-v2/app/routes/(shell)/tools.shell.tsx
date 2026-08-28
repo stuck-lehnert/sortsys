@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -13,17 +14,17 @@ export default function ToolsShell() {
     const tabs = [
         {
             path: '/tools',
-            label: 'Werkzeuge',
+            label: uiText("Werkzeuge"),
             hideIf: !sessionInfo.canDo('view:tools'),
         },
         {
             path: '/tools/trackings',
-            label: 'Buchungshistorie',
+            label: uiText("Buchungshistorie"),
             hideIf: !sessionInfo.canDo('view:toolTrackings'),
         },
         {
             path: '/tools/transferRequests',
-            label: 'Umbuchungsanfragen',
+            label: uiText("Umbuchungsanfragen"),
             hideIf: !sessionInfo.canDo('view:toolTrackings'),
         },
     ];

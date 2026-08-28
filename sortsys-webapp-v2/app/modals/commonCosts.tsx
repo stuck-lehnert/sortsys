@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useEffect, useState } from "react";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
@@ -20,9 +21,9 @@ function commonCostLabel(type: CommonCostType) {
 }
 
 function commonCostDescription(type: CommonCostType) {
-  if (type === 'fgk') return 'Lohngemeinkosten (interne Arbeitszeit)';
+  if (type === 'fgk') return uiText('Lohngemeinkosten (interne Arbeitszeit)');
   if (type === 'mgk') return 'Materialgemeinkosten (Lieferscheine: Produkte + Sonderposten)';
-  return 'Nachunternehmergemeinkosten (SUB-Arbeitszeit)';
+  return uiText('Nachunternehmergemeinkosten (SUB-Arbeitszeit)');
 }
 
 export function showManageCommonCostsModal(modals: MyModalsInterface) {
@@ -55,17 +56,12 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
       const history = settings?.history ?? [];
 
       return <>
-        <p className="light">
-          Die Gemeinkosten werden historisch gespeichert und gelten immer ab dem gewählten Stichtag um 00:00 Uhr.
-          Ein neuer Eintrag überschreibt keine alten Werte, sondern ergänzt die Historie für spätere Buchungen.
-          Die Berechnung erfolgt je betroffener Kostenposition nach der Formel <b>originale Kosten * relativer Faktor + Konstante</b>.
-          So kannst du Änderungen transparent zu einem bestimmten Datum wirksam machen.
-        </p>
+        <p className="light">{uiText("Die Gemeinkosten werden historisch gespeichert und gelten immer ab dem gewählten Stichtag um 00:00 Uhr. Ein neuer Eintrag überschreibt keine alten Werte, sondern ergänzt die Historie für spätere Buchungen. Die Berechnung erfolgt je betroffener Kostenposition nach der Formel")}<b>{uiText("originale Kosten * relativer Faktor + Konstante")}</b>{uiText(". So kannst du Änderungen transparent zu einem bestimmten Datum wirksam machen.")}</p>
 
         <MyForm.DateInput
           required
           name="effectiveAt"
-          labelText="Gültig ab"
+          labelText={uiText("Gültig ab")}
         />
 
         <MyDivider />
@@ -80,7 +76,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
             <MyForm.Input
               required
               name={`${key}RelativeFactor`}
-              labelText="Relativer Faktor in % (z.B. 20)"
+              labelText={uiText("Relativer Faktor in % (z.B. 20)")}
               type="number"
               rules={[MyForm.Input.rules.posnum]}
             />
@@ -88,7 +84,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
             <MyForm.Input
               required
               name={`${key}Constant`}
-              labelText="Konstante (EUR)"
+              labelText={uiText("Konstante (EUR)")}
               type="number"
               rules={[MyForm.Input.rules.num]}
             />
@@ -99,7 +95,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
 
         <MyDivider />
 
-        <h4>Historie</h4>
+        <h4>{uiText("Historie")}</h4>
         <MyTable
           rows={history.map((entry, index) => ({
             ...entry,
@@ -107,22 +103,22 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
           }))}
           columns={[
             {
-              label: 'Typ',
+              label: uiText("Typ"),
               render: row => commonCostLabel(row.type),
               sortKey: row => commonCostLabel(row.type),
             },
             {
-              label: 'Gültig ab',
+              label: uiText("Gültig ab"),
               render: row => formatDate(row.effectiveAt),
               sortKey: row => row.effectiveAt?.getTime() ?? 0,
             },
             {
-              label: 'Relativer Faktor',
+              label: uiText("Relativer Faktor"),
               render: row => `${formatNumber(row.relativeFactor * 100)} %`,
               sortKey: row => row.relativeFactor,
             },
             {
-              label: 'Konstante',
+              label: uiText("Konstante"),
               render: row => formatCurrency(row.constant),
               sortKey: row => row.constant,
             },
@@ -141,13 +137,13 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
 
       const effectiveAtInput = values.effectiveAt ? new Date(values.effectiveAt) : null;
       if (!effectiveAtInput || isNaN(effectiveAtInput.getTime())) {
-        throw new Error('Ungültiges Datum');
+        throw new Error(uiText("Ungültiges Datum"));
       }
       const effectiveAt = dailyReportDayKey(effectiveAtInput);
 
       const parseValue = (name: string) => {
         const value = parseFloatCustom(values[name]);
-        if (isNaN(value)) throw new Error(`Ungültiger Zahlenwert: ${name}`);
+        if (isNaN(value)) throw new Error(uiText(`Ungültiger Zahlenwert: ${name}`, `Invalid number: ${name}`));
         return value;
       };
 
@@ -190,8 +186,8 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Gemeinkosten verwalten',
-      primaryButtonText: 'Speichern',
+      modalHeading: uiText("Gemeinkosten verwalten"),
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }

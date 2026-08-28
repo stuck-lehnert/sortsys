@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -45,7 +46,7 @@ export default function DailyProjectReportDetailPage() {
     return client.streamQuery('projects.dailyReports.get', { projectId: id, day: dayKey });
   }, [id, dayKey]);
 
-  useTitle(() => report ? `Bautagesbericht ${formatDate(report.day)}` : null, [report?.day]);
+  useTitle(() => report ? uiText(`Bautagesbericht ${formatDate(report.day)}`, `Daily report ${formatDate(report.day)}`) : null, [report?.day]);
 
   async function exportDailyReportToPdf(target: BlobTarget = 'open') {
     const currentReport = report;
@@ -82,18 +83,18 @@ export default function DailyProjectReportDetailPage() {
       const totalHours = currentReport.workHours.reduce((sum, entry) => sum + Number(entry.hours ?? 0), 0);
 
       const summaryRows: string[][] = [
-        ['Projekt', project?.title ?? 'Unbekannt'],
+        [uiText('Projekt'), project?.title ?? 'Unbekannt'],
         ['Tag', formatDate(currentReport.day, 'long')],
         ['Gesamtstunden', formatNumber(totalHours)],
       ];
       if (currentReport.summary) {
-        summaryRows.push(['Beschreibung der Arbeiten', currentReport.summary]);
+        summaryRows.push([uiText('Beschreibung der Arbeiten'), currentReport.summary]);
       }
 
       const sections: PdfTableSection[] = [
         {
-          title: 'Zusammenfassung',
-          columns: ['Kennzahl', 'Wert'],
+          title: uiText("Zusammenfassung"),
+          columns: [uiText('Kennzahl'), uiText('Wert')],
           rows: summaryRows,
           withHeader: false,
           align: ['left', 'left'],
@@ -103,8 +104,8 @@ export default function DailyProjectReportDetailPage() {
 
       if (workHourRows.length > 0) {
         sections.push({
-          title: 'Arbeitszeit',
-          columns: ['Mitarbeiter', 'Stunden'],
+          title: uiText("Arbeitszeit"),
+          columns: ['Mitarbeiter', uiText('Stunden')],
           rows: workHourRows,
           align: ['left', 'right'],
           columnWidths: ['2fr', '1fr'],
@@ -113,15 +114,15 @@ export default function DailyProjectReportDetailPage() {
 
       if (currentReport.weather && Object.values(currentReport.weather).some(Boolean)) {
         const weatherRows: string[][] = [];
-        if (currentReport.weather.summary) weatherRows.push(['Beschreibung', currentReport.weather.summary]);
+        if (currentReport.weather.summary) weatherRows.push([uiText('Beschreibung'), currentReport.weather.summary]);
         if (typeof currentReport.weather.temperatureC === 'number') weatherRows.push(['Temperatur', `${formatNumber(currentReport.weather.temperatureC)} °C`]);
         if (typeof currentReport.weather.precipitationMm === 'number') weatherRows.push(['Niederschlag', `${formatNumber(currentReport.weather.precipitationMm)} mm`]);
         if (typeof currentReport.weather.windKph === 'number') weatherRows.push(['Wind', `${formatNumber(currentReport.weather.windKph)} km/h`]);
 
         if (weatherRows.length > 0) {
           sections.push({
-            title: 'Wetter',
-            columns: ['Feld', 'Wert'],
+            title: uiText("Wetter"),
+            columns: ['Feld', uiText('Wert')],
             rows: weatherRows,
             withHeader: false,
             align: ['left', 'left'],
@@ -141,27 +142,27 @@ export default function DailyProjectReportDetailPage() {
         .filter(image => !!image.url);
       const imageSections: PdfImageSection[] = photoImages.length
         ? [{
-          title: 'Fotos',
-          subtitle: `${photoImages.length} ${photoImages.length === 1 ? 'Foto' : 'Fotos'} zum Bautagesbericht`,
+          title: uiText("Fotos"),
+          subtitle: uiText(`${photoImages.length} ${photoImages.length === 1 ? "Foto" : "Fotos"} zum Bautagesbericht`, `${photoImages.length} ${photoImages.length === 1 ? "photo" : "photos"} for the daily report`),
           images: photoImages,
         }]
         : [];
 
       const pdfData = await renderStructuredPdf({
-        title: `Bautagesbericht ${formatDate(currentReport.day, 'long')}`,
-        reportLabel: 'Bautagesbericht',
+        title: uiText(`Bautagesbericht ${formatDate(currentReport.day, 'long')}`, `Daily report ${formatDate(currentReport.day, 'long')}`),
+        reportLabel: uiText("Bautagesbericht"),
         showReportLabel: false,
         sections,
         imageSections,
-        emptyMessage: 'Keine Daten zum Bautagesbericht verfügbar.',
+        emptyMessage: uiText("Keine Daten zum Bautagesbericht verfügbar."),
       });
 
       const safeSuffix = currentReport.day.toISOString().slice(0, 10).replace(/[^\w\-]+/g, '-');
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      deliverBlob(blob, `Bautagesbericht-${safeSuffix}.pdf`, target, pdfWindow);
+      deliverBlob(blob, uiText(`Bautagesbericht-${safeSuffix}.pdf`, `Daily report-${safeSuffix}.pdf`), target, pdfWindow);
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || 'Unbekannter Fehler beim PDF-Export.');
+      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
     } finally {
       setIsPdfExporting(false);
     }
@@ -191,7 +192,7 @@ export default function DailyProjectReportDetailPage() {
       const files = Array.from(fileList);
       for (const file of files) {
         if (!file.type.toLowerCase().startsWith('image/')) {
-          throw new Error(`${file.name} ist kein Bild.`);
+          throw new Error(uiText(`${file.name} ist kein Bild.`, `${file.name} is not an image.`));
         }
 
         const [uploadData, createErr] = await client.mutate('projects.files.createUpload', {
@@ -200,7 +201,7 @@ export default function DailyProjectReportDetailPage() {
           mimeType: file.type || 'application/octet-stream',
           sizeBytes: Number.isFinite(file.size) ? file.size : null,
         });
-        if (createErr || !uploadData) throw createErr ?? new Error('Upload konnte nicht vorbereitet werden.');
+        if (createErr || !uploadData) throw createErr ?? new Error(uiText("Upload konnte nicht vorbereitet werden."));
 
         const uploadRes = await fetch(uploadData.uploadUrl, {
           method: uploadData.uploadMethod,
@@ -208,7 +209,7 @@ export default function DailyProjectReportDetailPage() {
           body: file,
         });
         if (!uploadRes.ok) {
-          throw new Error(`Foto-Upload fehlgeschlagen (${uploadRes.status})`);
+          throw new Error(uiText(`Foto-Upload fehlgeschlagen (${uploadRes.status})`, `Photo-Upload failed (${uploadRes.status})`));
         }
 
         const etag = uploadRes.headers.get('etag');
@@ -233,7 +234,7 @@ export default function DailyProjectReportDetailPage() {
         client.invalidate('projects.files.list'),
       ]);
     } catch (err) {
-      setPhotoErr((err as Error)?.message || 'Fotos konnten nicht hochgeladen werden.');
+      setPhotoErr((err as Error)?.message || uiText('Fotos konnten nicht hochgeladen werden.'));
     } finally {
       setIsPhotoUploading(false);
       if (photoInputRef.current) photoInputRef.current.value = '';
@@ -260,7 +261,7 @@ export default function DailyProjectReportDetailPage() {
         client.invalidate('projects.dailyReports.list'),
       ]);
     } catch (err) {
-      setPhotoErr((err as Error)?.message || 'Foto konnte nicht entfernt werden.');
+      setPhotoErr((err as Error)?.message || uiText('Foto konnte nicht entfernt werden.'));
     } finally {
       setRemovingPhotoId(null);
     }
@@ -284,30 +285,30 @@ export default function DailyProjectReportDetailPage() {
     />
 
     <MyHeader
-      title={`Bautagesbericht`}
+      title={uiText(`Bautagesbericht`)}
       actions={<MyDropdown items={[
         {
-          label: isPdfExporting ? 'PDF wird erstellt...' : 'PDF',
+          label: isPdfExporting ? uiText("PDF wird erstellt...") : uiText("PDF"),
           renderIcon: Icons.Download,
           hideIf: !sessionInfo.canDo('view:dailyProjectReports'),
           disabled: isPdfExporting,
           onClick: () => exportDailyReportToPdf(),
         },
         {
-          label: isPhotoUploading ? 'Fotos werden hochgeladen...' : 'Fotos hinzufügen',
+          label: isPhotoUploading ? uiText("Fotos werden hochgeladen...") : uiText("Fotos hinzufügen"),
           renderIcon: Icons.Create,
           hideIf: !canManagePhotos,
           disabled: isPhotoUploading,
           onClick: () => photoInputRef.current?.click(),
         },
         {
-          label: 'Bearbeiten',
+          label: uiText("Bearbeiten"),
           renderIcon: Icons.Edit,
           hideIf: !sessionInfo.canDo('manage:dailyProjectReports'),
           onClick: () => showModifyDailyProjectReportModal(modals, report),
         },
         {
-          label: 'Löschen',
+          label: uiText("Löschen"),
           renderIcon: Icons.Delete,
           hideIf: !sessionInfo.canDo('delete:dailyProjectReports'),
           onClick: () => showDeleteDailyProjectReportModal(modals, report),
@@ -315,25 +316,23 @@ export default function DailyProjectReportDetailPage() {
       ]} />}
     />
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">
-      PDF-Export fehlgeschlagen: {pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
     </MyCallout>}
 
-    {!!photoErr && <MyCallout icon={Icons.Deny} color="red">
-      Foto-Aktion fehlgeschlagen: {photoErr}
+    {!!photoErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Foto-Aktion fehlgeschlagen:")}{photoErr}
     </MyCallout>}
 
     <AttrList>
-      <AttrList.Attr name="Projekt" value={<Awaited promise={async () => {
+      <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
         const [project] = await client.query('projects.get', { id: report.projectId }, { strategy: 'cache-first' });
         if (!project) return 'Unbekannt';
         return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
       }} />} />
 
       <AttrList.Attr name="Tag" value={formatDate(report.day)} />
-      {!!report.summary && <AttrList.Attr name="Beschreibung der Arbeiten" value={report.summary} />}
-      <AttrList.Attr name="Erstellt am" value={formatDate(report.createdAt)} />
-      {!!report.createdByUserId && <AttrList.Attr name="Erstellt von" value={<Awaited promise={async () => {
+      {!!report.summary && <AttrList.Attr name={uiText("Beschreibung der Arbeiten")} value={report.summary} />}
+      <AttrList.Attr name={uiText("Erstellt am")} value={formatDate(report.createdAt)} />
+      {!!report.createdByUserId && <AttrList.Attr name={uiText("Erstellt von")} value={<Awaited promise={async () => {
         const [user] = await client.query('users.get', { id: report.createdByUserId! }, { strategy: 'cache-first' });
         if (!user) return 'Unbekannt';
         return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>
@@ -342,13 +341,13 @@ export default function DailyProjectReportDetailPage() {
 
     <MyDivider />
 
-    {!!report.workHours.length && <MyExpandable title="Arbeitszeit">
+    {!!report.workHours.length && <MyExpandable title={uiText("Arbeitszeit")}>
       <MyTable
         className="th-25rem"
         rows={report.workHours}
         columns={[
           {
-            label: 'Mitarbeiter',
+            label: uiText("Mitarbeiter"),
             render: async row => {
               if (!row.userId) return 'Unbekannt';
               const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
@@ -357,7 +356,7 @@ export default function DailyProjectReportDetailPage() {
             },
           },
           {
-            label: 'Stunden',
+            label: uiText("Stunden"),
             render: row => formatNumber(row.hours),
             sortKey: row => row.hours,
           },
@@ -367,16 +366,16 @@ export default function DailyProjectReportDetailPage() {
       />
     </MyExpandable>}
 
-    {!!report.weather && hasWeather && <MyExpandable title="Wetter" initiallyExpanded>
+    {!!report.weather && hasWeather && <MyExpandable title={uiText("Wetter")} initiallyExpanded>
       <AttrList>
-        {!!report.weather.summary && <AttrList.Attr name="Beschreibung" value={report.weather.summary} />}
+        {!!report.weather.summary && <AttrList.Attr name={uiText("Beschreibung")} value={report.weather.summary} />}
         {typeof report.weather.temperatureC === 'number' && <AttrList.Attr name="Temperatur" value={`${formatNumber(report.weather.temperatureC)} °C`} />}
         {typeof report.weather.precipitationMm === 'number' && <AttrList.Attr name="Niederschlag" value={`${formatNumber(report.weather.precipitationMm)} mm`} />}
         {typeof report.weather.windKph === 'number' && <AttrList.Attr name="Wind" value={`${formatNumber(report.weather.windKph)} km/h`} />}
       </AttrList>
     </MyExpandable>}
 
-    {!!photos.length && <MyExpandable title={`Fotos (${photos.length})`} initiallyExpanded>
+    {!!photos.length && <MyExpandable title={uiText(`Fotos (${photos.length})`, `Photos (${photos.length})`)} initiallyExpanded>
       <div className="daily-report-photo-grid">
         {photos.map(photo => {
           const imageUrl = photo.previewUrl || photo.thumbnailUrl || photo.downloadUrl || null;
@@ -385,12 +384,12 @@ export default function DailyProjectReportDetailPage() {
               ? <a href={photo.downloadUrl || imageUrl} target="_blank" rel="noreferrer">
                 <img src={imageUrl} alt={photo.fileName} />
               </a>
-              : <div className="daily-report-photo-placeholder">Keine Vorschau</div>}
+              : <div className="daily-report-photo-placeholder">{uiText("Keine Vorschau")}</div>}
             <div className="daily-report-photo-meta">
               <div className="daily-report-photo-title">{photo.fileName}</div>
               <div className="light">{formatDate(photo.createdAt)}</div>
               {canManagePhotos && <MyDropdown items={[{
-                label: removingPhotoId === photo.id ? 'Wird entfernt...' : 'Aus Bericht entfernen',
+                label: removingPhotoId === photo.id ? uiText("Wird entfernt...") : uiText("Aus Bericht entfernen"),
                 renderIcon: Icons.Delete,
                 disabled: !!removingPhotoId,
                 onClick: () => removeDailyReportPhoto(photo.id),

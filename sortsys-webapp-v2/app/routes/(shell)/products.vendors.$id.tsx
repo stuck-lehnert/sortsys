@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -32,13 +33,13 @@ export default function ProductVendorDetailPage() {
       title={vendor.name}
       actions={<MyDropdown items={[
         {
-          label: 'Bearbeiten',
+          label: uiText("Bearbeiten"),
           renderIcon: Icons.Edit,
           hideIf: !sessionInfo.canDo('manage:productVendors'),
           onClick: () => showModifyProductVendorModal(modals, vendor),
         },
         {
-          label: 'Löschen',
+          label: uiText("Löschen"),
           renderIcon: Icons.Delete,
           hideIf: !sessionInfo.canDo('delete:productVendors'),
           onClick: () => showDeleteProductVendorModal(modals, vendor),

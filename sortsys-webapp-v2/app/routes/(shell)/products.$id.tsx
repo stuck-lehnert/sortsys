@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -77,25 +78,25 @@ export default function ProductDetailPage() {
             actions={<>
                 <MyDropdown items={[
                     {
-                        label: 'Preis verzeichnen',
+                        label: uiText("Preis verzeichnen"),
                         renderIcon: Icons.PriceRecord,
                         hideIf: !sessionInfo.canDo('manage:productPriceRecords'),
                         onClick: () => showCreateProductPriceRecordModal(modals, product),
                     },
                     {
-                        label: 'Kategorien bearbeiten',
+                        label: uiText("Kategorien bearbeiten"),
                         renderIcon: Icons.Edit,
                         hideIf: !sessionInfo.canDo('manage:products'),
                         onClick: () => showSetProductCategoriesModal(modals, product),
                     },
                     {
-                        label: 'Bearbeiten',
+                        label: uiText("Bearbeiten"),
                         renderIcon: Icons.Edit,
                         hideIf: !sessionInfo.canDo('manage:products'),
                         onClick: () => showModifyProductModal(modals, product),
                     },
                     {
-                        label: 'Löschen',
+                        label: uiText("Löschen"),
                         renderIcon: Icons.Delete,
                         hideIf: !sessionInfo.canDo('delete:products'),
                         onClick: () => showDeleteProductModal(modals, product),
@@ -113,17 +114,17 @@ export default function ProductDetailPage() {
         <MyDivider />
 
         <AttrList>
-            <AttrList.Attr name="Nummer" value={product.customId} />
+            <AttrList.Attr name={uiText("Nummer")} value={product.customId} />
             <AttrList.Attr name="Bezeichnung" value={product.name} />
             {!!product.brand && <AttrList.Attr name="Hersteller" value={product.brand} />}
-            {!!product.description && <AttrList.Attr name="Beschreibung" value={product.description} />}
+            {!!product.description && <AttrList.Attr name={uiText("Beschreibung")} value={product.description} />}
             <AttrList.Attr name="Basiseinheit" value={product.baseUnit} />
             {!!latestPriceRecord && <AttrList.Attr name="Letzer EK-Preis" value={`${formatCurrency(latestPriceRecord.price)} / ${product.baseUnit}`} />}
         </AttrList>
 
         <MyDivider />
 
-        {!!otherUnitsOverview && <MyExpandable title="Andere Einheiten" initiallyExpanded>
+        {!!otherUnitsOverview && <MyExpandable title={uiText("Andere Einheiten")} initiallyExpanded>
             <AttrList>
                 {Object.entries(otherUnitsOverview).map(([unit, others]) => {
                     return <AttrList.Attr key={unit}
@@ -136,7 +137,7 @@ export default function ProductDetailPage() {
             </AttrList>
         </MyExpandable>}
 
-        {!!sortedPriceRecords?.length && <MyExpandable title="Preisentwicklung">
+        {!!sortedPriceRecords?.length && <MyExpandable title={uiText("Preisentwicklung")}>
             {sortedPriceRecords.length >= 2 && <>
                 <Suspense fallback={<div style={{ height: 150 }} />}>
                     <ProductPriceChart records={sortedPriceRecords} baseUnit={product.baseUnit} />
@@ -152,22 +153,22 @@ export default function ProductDetailPage() {
                 className="th-20rem"
                 columns={[
                     {
-                        label: 'Datum',
+                        label: uiText("Datum"),
                         render: row => formatDate(row.timestamp),
                         sortKey: (tracking) => tracking.timestamp?.getTime() ?? Number.MAX_SAFE_INTEGER,
                     },
                     {
-                        label: 'Preis',
+                        label: uiText("Preis"),
                         render: row => `${formatCurrency(row.price)} / ${product.baseUnit}`,
                         sortKey: row => row.price,
                     },
                     {
-                        label: 'Händler',
+                        label: uiText("Händler"),
                         render: async (row) => {
                             if (!row.vendorId) return;
             
                             const [vendor] = await client.query('products.vendors.get', { id: row.vendorId }, { strategy: 'cache-first' });
-                            if (!vendor) return 'Unbekannter Händler';
+                            if (!vendor) return uiText('Unbekannter Händler', 'Unknown vendor');
                             return <MyLink to={`/products/vendors/${vendor.id}`}>{vendor.name}</MyLink>;
                         },
                     },

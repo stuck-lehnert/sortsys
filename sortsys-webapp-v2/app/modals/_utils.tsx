@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useRef, useState, type ReactNode } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyForm } from "~/components/MyForm";
@@ -14,12 +15,12 @@ export function FormAddress({ required, children, initialChecked }: {
 
   const content = <>
     <div style={{ height: '0.5rem' }} />
-    <MyForm.Input required name="streetAddress" labelText="Straße & Hausnummer" />
+    <MyForm.Input required name="streetAddress" labelText={uiText("Straße & Hausnummer")} />
     <div className="flex gap-2">
-      <MyForm.Input className="flex-1" name="zip" labelText="Postleitzahl" />
-      <MyForm.Input className="flex-2" required name="city" labelText="Stadt" />
+      <MyForm.Input className="flex-1" name="zip" labelText={uiText("Postleitzahl")} />
+      <MyForm.Input className="flex-2" required name="city" labelText={uiText("Stadt")} />
     </div>
-    <MyForm.Input name="country" labelText="Land/Staat" />
+    <MyForm.Input name="country" labelText={uiText("Land/Staat")} />
 
     {children}
   </>;
@@ -29,7 +30,7 @@ export function FormAddress({ required, children, initialChecked }: {
   const [useAddress, setUseAddress] = useState(initialChecked || false);
 
   return <>
-    <MyForm.Checkbox name="__useAddress" labelText="Anschrift hinterlegen" onValueChange={setUseAddress} />
+    <MyForm.Checkbox name="__useAddress" labelText={uiText("Anschrift hinterlegen")} onValueChange={setUseAddress} />
     <NotifyLoaded onLoad={() => context.field('__useAddress')?.setValue(initialChecked)} />
 
     {useAddress && content}
@@ -78,7 +79,7 @@ export function ContactChannelsFormFields({ phoneNumbers = [], emailAddresses = 
         <div className="basis-1/2 flex-1">
           <MyForm.Input
             name={`${kind}:${id}:name`}
-            labelText="Bezeichnung"
+            labelText={uiText("Bezeichnung")}
             autoFocus={autoFocusFieldName === `${kind}:${id}:name`}
           />
         </div>
@@ -87,7 +88,7 @@ export function ContactChannelsFormFields({ phoneNumbers = [], emailAddresses = 
           <MyForm.Input
             required
             name={`${kind}:${id}:value`} labelText={kind === 'email' ? 'E-Mail' : 'Telefon'}
-            suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Eintrag entfernen" aria-label="Eintrag entfernen" onClick={() => {
+            suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
               context.field(`${kind}:${id}:name`)?.setValue('');
               context.field(`${kind}:${id}:value`)?.setValue('');
               setFields(fields => fields.filter(([, _id]) => _id !== id));
@@ -108,13 +109,13 @@ export function ContactChannelsFormFields({ phoneNumbers = [], emailAddresses = 
         const id = generateId();
         setFields(fields => [...fields, ['email', id]]);
         setAutoFocusFieldName(`email:${id}:name`);
-      }}>E-Mail</MyButton>
+      }}>{uiText("E-Mail")}</MyButton>
 
       <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
         const id = generateId();
         setFields(fields => [...fields, ['phone', id]]);
         setAutoFocusFieldName(`phone:${id}:name`);
-      }}>Telefon</MyButton>
+      }}>{uiText("Telefon")}</MyButton>
     </div>
 
     <NotifyLoaded onLoad={() => {

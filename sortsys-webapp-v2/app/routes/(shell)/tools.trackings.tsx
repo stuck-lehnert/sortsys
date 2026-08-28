@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { OperationalTag } from "@sortsys/react-components";
 import { TrackingTable } from "~/components/TrackingTable";
 import { MyForm } from "~/components/MyForm";
@@ -13,7 +14,7 @@ import { TableExportActions } from "~/components/TableExportActions";
 
 export function meta() {
     return [
-        { title: "Buchungshistorie" },
+        { title: uiText("Buchungshistorie") },
     ];
 }
 
@@ -39,7 +40,7 @@ export default function ToolTrackingsPage() {
             content: ({ context }) => <>
                 <MyForm.MultiSelect
                     name="project"
-                    labelText="Projekt"
+                    labelText={uiText("Projekt")}
                     maxSelectedItems={1}
                     getOptions={async ({ query }) => {
                         const [data, err] = await client.query('projects.list', { search: query });
@@ -52,7 +53,7 @@ export default function ToolTrackingsPage() {
 
                 <MyForm.MultiSelect
                     name="author"
-                    labelText="Herausgeber"
+                    labelText={uiText("Herausgeber")}
                     maxSelectedItems={1}
                     getOptions={async ({ query }) => {
                         const [data, err] = await client.query('users.list', { search: query });
@@ -65,7 +66,7 @@ export default function ToolTrackingsPage() {
 
                 <MyForm.MultiSelect
                     name="responsible"
-                    labelText="Verantwortlicher"
+                    labelText={uiText("Verantwortlicher")}
                     maxSelectedItems={1}
                     getOptions={async ({ query }) => {
                         const [data, err] = await client.query('users.list', { search: query });
@@ -78,7 +79,7 @@ export default function ToolTrackingsPage() {
 
                 <MyForm.MultiSelect
                     name="tool"
-                    labelText="Werkzeug"
+                    labelText={uiText("Werkzeug")}
                     maxSelectedItems={1}
                     getOptions={async ({ query }) => {
                         const [data, err] = await client.query('tools.list', { search: query });
@@ -120,8 +121,8 @@ export default function ToolTrackingsPage() {
                 hide();
             },
             modalProps: () => ({
-                modalHeading: 'Buchungshistorie filtern',
-                primaryButtonText: 'Filter anwenden',
+                modalHeading: uiText("Buchungshistorie filtern"),
+                primaryButtonText: uiText("Filter anwenden"),
             }),
         });
     }
@@ -158,11 +159,11 @@ export default function ToolTrackingsPage() {
     return <>
         <div className="flex gap-2 w-full overlflow-x-auto items-center">
             {!hasFilter ? (
-                <OperationalTag renderIcon={Icons.Filter} text="Filter" onClick={showFilterModal} />
+                <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
             ) : (
                 <>
-                    <OperationalTag renderIcon={Icons.FilterEdit} text="Filter ändern" onClick={showFilterModal} />
-                    <OperationalTag renderIcon={Icons.FilterRemove} text="Filter aus" onClick={() => {
+                    <OperationalTag renderIcon={Icons.FilterEdit} text={uiText("Filter ändern")} onClick={showFilterModal} />
+                    <OperationalTag renderIcon={Icons.FilterRemove} text={uiText("Filter aus")} onClick={() => {
                         setProjectId(null);
                         setAuthorId(null);
                         setResponsibleId(null);
@@ -172,17 +173,17 @@ export default function ToolTrackingsPage() {
             )}
 
             <TableExportActions
-                title="Buchungshistorie"
+                title={uiText("Buchungshistorie")}
                 fileName="Buchungshistorie"
                 rows={loadTrackingExportRows}
                 disabled={!trackings}
                 columns={[
-                    { header: 'Werkzeug', value: tracking => tracking.toolLabel, width: '2fr' },
-                    { header: 'Projekt', value: tracking => tracking.projectLabel, width: '2fr' },
-                    { header: 'Verantwortlicher', value: tracking => tracking.responsibleLabel, width: '1.5fr' },
-                    { header: 'Herausgeber', value: tracking => tracking.authorLabel, width: '1.5fr' },
-                    { header: 'Von', value: tracking => tracking.startedAt },
-                    { header: 'Bis', value: tracking => tracking.endedAt ?? 'offen' },
+                    { header: uiText("Werkzeug"), value: tracking => tracking.toolLabel, width: '2fr' },
+                    { header: uiText("Projekt"), value: tracking => tracking.projectLabel, width: '2fr' },
+                    { header: uiText("Verantwortlicher"), value: tracking => tracking.responsibleLabel, width: '1.5fr' },
+                    { header: uiText("Herausgeber"), value: tracking => tracking.authorLabel, width: '1.5fr' },
+                    { header: uiText("Von"), value: tracking => tracking.startedAt },
+                    { header: uiText("Bis"), value: tracking => tracking.endedAt ?? 'offen' },
                 ]}
             />
         </div>

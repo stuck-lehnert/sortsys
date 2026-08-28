@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { OperationalTag } from "@sortsys/react-components";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -59,7 +60,7 @@ function persistInventoryDays(storageKey: string, days: number) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Inventur" },
+    { title: uiText("Inventur") },
   ];
 }
 
@@ -95,11 +96,11 @@ export default function InventoryOverviewPage() {
         <MyForm.Input
           required
           name="days"
-          labelText="Zeitraum in Tagen"
+          labelText={uiText("Zeitraum in Tagen")}
           type="number"
           rules={[MyForm.Input.rules.posnum]}
         />
-        <p className="light">Es wird geprüft, ob innerhalb dieses Zeitraums eine Inventur erfasst wurde.</p>
+        <p className="light">{uiText("Es wird geprüft, ob innerhalb dieses Zeitraums eine Inventur erfasst wurde.")}</p>
 
         <NotifyLoaded onLoad={() => {
           context.setValues({ days });
@@ -116,8 +117,8 @@ export default function InventoryOverviewPage() {
       },
       modalProps: () => ({
         noFullscreen: true,
-        modalHeading: 'Inventurzeitraum setzen',
-        primaryButtonText: 'Anwenden',
+        modalHeading: uiText("Inventurzeitraum setzen"),
+        primaryButtonText: uiText("Anwenden"),
       }),
     });
   }
@@ -125,7 +126,7 @@ export default function InventoryOverviewPage() {
   async function exportInventoryOverviewToExcel() {
     const rows = [
       ...(inventoriedTools ?? []).map((tool: any) => [
-        'Inventiert',
+        uiText('Inventiert'),
         tool.customId,
         inventoryToolTitle(tool),
         inventoryLastResponsibleLabel(tool),
@@ -133,7 +134,7 @@ export default function InventoryOverviewPage() {
         tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, 'long') : '—',
       ]),
       ...(missingTools ?? []).map((tool: any) => [
-        `Keine Inventur (${days} Tage)`,
+        uiText(`Keine Inventur (${days} Tage)`, `No inventory (${days} days)`),
         tool.customId,
         inventoryToolTitle(tool),
         inventoryLastResponsibleLabel(tool),
@@ -143,8 +144,8 @@ export default function InventoryOverviewPage() {
     ];
 
     const bytes = await exportToExcel({
-      sheetName: 'Inventurübersicht',
-      columns: ['Bereich', 'Nummer', 'Werkzeug', 'Letzter Verantwortlicher', 'Status', 'Letzte Inventur'],
+      sheetName: uiText("Inventurübersicht"),
+      columns: ['Bereich', uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
       rows,
     });
 
@@ -152,7 +153,7 @@ export default function InventoryOverviewPage() {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
-    downloadBlob(blob, `Inventuruebersicht-${days}Tage.xlsx`);
+    downloadBlob(blob, uiText(`Inventuruebersicht-${days}Tage.xlsx`, `Inventoryuebersicht-${days}Tage.xlsx`));
   }
 
   async function exportInventoryOverviewToPdf(target: BlobTarget = 'open') {
@@ -190,12 +191,12 @@ export default function InventoryOverviewPage() {
 
       const sections: PdfTableSection[] = [
         {
-          title: 'Zusammenfassung',
-          columns: ['Kennzahl', 'Wert'],
+          title: uiText("Zusammenfassung"),
+          columns: [uiText('Kennzahl'), uiText('Wert')],
           rows: [
-            ['Zeitraum', `${days} Tage`],
-            ['Inventiert', `${sortedInventoriedTools.length}`],
-            ['Keine Inventur', `${sortedMissingTools.length}`],
+            [uiText('Zeitraum'), `${days} Tage`],
+            [uiText('Inventiert'), `${sortedInventoriedTools.length}`],
+            [uiText('Keine Inventur'), `${sortedMissingTools.length}`],
           ],
           withHeader: false,
           align: ['left', 'right'],
@@ -205,8 +206,8 @@ export default function InventoryOverviewPage() {
 
       if (sortedInventoriedTools.length > 0) {
         sections.push({
-          title: `Inventiert in den letzten ${days} Tagen`,
-          columns: ['Nummer', 'Werkzeug', 'Letzter Verantwortlicher', 'Status', 'Letzte Inventur'],
+          title: uiText(`Inventiert in den letzten ${days} Tagen`, `Inventoried in the last ${days} days`),
+          columns: [uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
           rows: sortedInventoriedTools.map(toToolRow),
           align: ['left', 'left', 'left', 'left', 'left'],
           columnWidths: ['0.8fr', '2fr', '1.5fr', '0.8fr', '1fr'],
@@ -215,8 +216,8 @@ export default function InventoryOverviewPage() {
 
       if (sortedMissingTools.length > 0) {
         sections.push({
-          title: `Keine Inventur in den letzten ${days} Tagen`,
-          columns: ['Nummer', 'Werkzeug', 'Letzter Verantwortlicher', 'Status', 'Letzte Inventur'],
+          title: uiText(`Keine Inventur in den letzten ${days} Tagen`, `No inventory in the last ${days} days`),
+          columns: [uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
           rows: sortedMissingTools.map(toToolRow),
           align: ['left', 'left', 'left', 'left', 'left'],
           columnWidths: ['0.8fr', '2fr', '1.5fr', '0.8fr', '1fr'],
@@ -224,17 +225,17 @@ export default function InventoryOverviewPage() {
       }
 
       const pdfData = await renderStructuredPdf({
-        title: `Inventur (${days} Tage)`,
-        reportLabel: 'Inventurübersicht',
+        title: uiText(`Inventur (${days} Tage)`, `Inventory (${days} days)`),
+        reportLabel: uiText("Inventurübersicht"),
         sections,
-        emptyMessage: 'Keine Inventurdaten verfügbar.',
+        emptyMessage: uiText("Keine Inventurdaten verfügbar."),
       });
 
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      deliverBlob(blob, `Inventuruebersicht-${days}Tage.pdf`, target, pdfWindow);
+      deliverBlob(blob, uiText(`Inventuruebersicht-${days}Tage.pdf`, `Inventoryuebersicht-${days}Tage.pdf`), target, pdfWindow);
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || 'Unbekannter Fehler beim PDF-Export.');
+      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
     } finally {
       setIsPdfExporting(false);
     }
@@ -248,17 +249,17 @@ export default function InventoryOverviewPage() {
 
   const columns = [
     {
-      label: 'Nummer',
+      label: uiText("Nummer"),
       render: (row: any) => row.customId,
       sortKey: (row: any) => row.customId,
     },
     {
-      label: 'Werkzeug',
+      label: uiText("Werkzeug"),
       render: (row: any) => <MyLink to={`/tools/${row.id}`}>{inventoryToolTitle(row)}</MyLink>,
       sortKey: (row: any) => inventoryToolTitle(row).toLowerCase(),
     },
     {
-      label: 'Letzter Verantwortlicher',
+      label: uiText("Letzter Verantwortlicher"),
       render: (row: any) => {
         const label = inventoryLastResponsibleLabel(row);
         if (!row.lastResponsibleUserId) return label;
@@ -267,12 +268,12 @@ export default function InventoryOverviewPage() {
       sortKey: (row: any) => inventoryLastResponsibleLabel(row).toLowerCase(),
     },
     {
-      label: 'Status',
+      label: uiText("Status"),
       render: (row: any) => inventoryStatusLabel(row),
       sortKey: (row: any) => inventoryStatusLabel(row),
     },
     {
-      label: 'Letzte Inventur',
+      label: uiText("Letzte Inventur"),
       render: (row: any) => row.lastInventoryAt ? formatDate(row.lastInventoryAt, 'long') : '—',
       sortKey: (row: any) => row.lastInventoryAt ? row.lastInventoryAt.getTime() : 0,
     },
@@ -280,27 +281,26 @@ export default function InventoryOverviewPage() {
 
   return <>
     <MyHeader
-      title="Inventur"
-      subtitle="Werkzeuge mit und ohne Inventur im gewählten Zeitraum"
+      title={uiText("Inventur")}
+      subtitle={uiText("Werkzeuge mit und ohne Inventur im gewählten Zeitraum")}
     />
 
     <div className="flex gap-2 w-full overflow-x-auto">
       <OperationalTag
         renderIcon={Icons.Filter}
-        text={`Zeitraum: ${days} Tage`}
+        text={uiText(`Zeitraum: ${days} Tage`, `Period: ${days} days`)}
         onClick={showDaysFilterModal}
       />
-      <MyButton kind="ghost" size="sm" renderIcon={Icons.Download} loading={isPdfExporting} onClick={() => exportInventoryOverviewToPdf()}>PDF</MyButton>
-      <MyButton kind="ghost" size="sm" renderIcon={Icons.Excel} onClick={exportInventoryOverviewToExcel}>Excel</MyButton>
+      <MyButton kind="ghost" size="sm" renderIcon={Icons.Download} loading={isPdfExporting} onClick={() => exportInventoryOverviewToPdf()}>{uiText("PDF")}</MyButton>
+      <MyButton kind="ghost" size="sm" renderIcon={Icons.Excel} onClick={exportInventoryOverviewToExcel}>{uiText("Excel")}</MyButton>
     </div>
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">
-      PDF-Export fehlgeschlagen: {pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
     </MyCallout>}
 
     <div style={{ height: '1px' }} />
 
-    <MyExpandable title={`Inventiert in den letzten ${days} Tagen (${inventoriedTools?.length ?? 0})`} initiallyExpanded>
+    <MyExpandable title={uiText(`Inventiert in den letzten ${days} Tagen (${inventoriedTools?.length ?? 0})`, `Inventoried in the last ${days} days (${inventoriedTools?.length ?? 0})`)} initiallyExpanded>
       <MyTable
         topPagination
         persistentId="InventoriesRecent"
@@ -311,13 +311,13 @@ export default function InventoryOverviewPage() {
         renderSmallViewport={row => <SmallTile
           icon={Icons.Tool}
           title={`${row.customId} ${inventoryToolTitle(row)}`}
-          subtitle={row.lastInventoryAt ? `Letzte Inventur: ${formatDate(row.lastInventoryAt)}` : undefined}
+          subtitle={row.lastInventoryAt ? uiText(`Letzte Inventur: ${formatDate(row.lastInventoryAt)}`, `Last inventory: ${formatDate(row.lastInventoryAt)}`) : undefined}
           href={`/tools/${row.id}`}
         />}
       />
     </MyExpandable>
 
-    <MyExpandable title={`Keine Inventur in den letzten ${days} Tagen (${missingTools?.length ?? 0})`}>
+    <MyExpandable title={uiText(`Keine Inventur in den letzten ${days} Tagen (${missingTools?.length ?? 0})`, `No inventory in the last ${days} days (${missingTools?.length ?? 0})`)}>
       <MyTable
         topPagination
         persistentId="InventoriesMissing"
@@ -328,7 +328,7 @@ export default function InventoryOverviewPage() {
         renderSmallViewport={row => <SmallTile
           icon={Icons.Tool}
           title={`${row.customId} ${inventoryToolTitle(row)}`}
-          subtitle={row.lastInventoryAt ? `Letzte Inventur: ${formatDate(row.lastInventoryAt)}` : 'Noch nie inventiert'}
+          subtitle={row.lastInventoryAt ? uiText(`Letzte Inventur: ${formatDate(row.lastInventoryAt)}`, `Last inventory: ${formatDate(row.lastInventoryAt)}`) : uiText('Noch nie inventiert')}
           href={`/tools/${row.id}`}
         />}
       />
@@ -358,5 +358,5 @@ function inventoryStatusLabel(tool: {
 }) {
   if (tool.status === 'lost') return 'abhanden';
   if (tool.status === 'broken') return 'defekt';
-  return tool.available ? 'verfügbar' : 'gebucht';
+  return tool.available ? uiText('verfügbar', 'available') : uiText('gebucht', 'booked');
 }

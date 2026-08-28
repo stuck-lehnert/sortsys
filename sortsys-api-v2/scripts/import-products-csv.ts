@@ -136,7 +136,7 @@ async function main() {
     const rows = parseCsv(csvText);
     if (!rows.length) throw new Error('CSV contains no data rows.');
 
-    const client = createClient(apiHost);
+    const client = createClient(apiHost, "import-products-csv");
     await client.login({ tenant, username, password });
 
     const vendorCache = new Map<string, string>();

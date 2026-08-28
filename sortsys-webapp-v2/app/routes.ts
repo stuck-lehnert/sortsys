@@ -6,6 +6,8 @@ export default [
         index("routes/(admin)/__admin.index.tsx"),
         route("tenants", "routes/(admin)/__admin.tenants.tsx"),
         route("databases", "routes/(admin)/__admin.databases.tsx"),
+        route("errors", "routes/(admin)/__admin.errors.tsx"),
+        route("llm", "routes/(admin)/__admin.llm.tsx"),
         route("*", "routes/(admin)/__admin.not-found.tsx"),
     ]),
 
@@ -14,12 +16,18 @@ export default [
     route(null, "routes/(shell)/_layout.tsx", [
         index("routes/(shell)/index.tsx"),
         route("dashboard", "routes/(shell)/dashboard.tsx"),
-        route("settings", "routes/(shell)/settings.tsx"),
+        route("settings", "routes/(shell)/settings.shell.tsx", [
+            index("routes/(shell)/settings.tsx"),
+            route("passkeys", "routes/(shell)/settings.passkeys.tsx"),
+            route("language", "routes/(shell)/settings.language.tsx"),
+        ]),
         route("docs", "routes/(shell)/docs.tsx"),
         route("docs/:id", "routes/(shell)/docs.$id.tsx"),
         route("scripts", "routes/(shell)/scripts.tsx"),
         route("deployments", "routes/(shell)/deployments.tsx"),
         route("vacations", "routes/(shell)/vacations.tsx"),
+        route("llm/chats", "routes/(shell)/llm.chats.tsx"),
+        route("llm/:chatId?", "routes/(shell)/llm.tsx"),
 
         route("projects", "routes/(shell)/projects.shell.tsx", [
             index("routes/(shell)/projects.index.tsx"),

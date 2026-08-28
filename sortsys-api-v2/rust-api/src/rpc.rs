@@ -105,6 +105,30 @@ impl ProcedureRegistry {
         output
     }
 
+    pub(crate) async fn execute_query(
+        &self,
+        path: &str,
+        context: RequestContext,
+        input: Value,
+    ) -> RpcResult<Value> {
+        let procedure = self
+            .procedures
+            .get(path)
+            .ok_or_else(|| RpcError::not_found(path))?;
+
+        if procedure.kind != ProcedureKind::Query {
+            return Err(RpcError::new(
+                ErrorCode::MethodNotSupported,
+                format!("Procedure at path \"{path}\" is not a query"),
+            )
+            .at_path(path));
+        }
+
+        (procedure.handler)(context, input)
+            .await
+            .map_err(|error| error.at_path_if_missing(path))
+    }
+
     async fn call(
         &self,
         path: String,

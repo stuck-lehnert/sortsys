@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import type { Route } from "./+types/docs.$id";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -13,17 +14,25 @@ import { NotFound } from "./_404";
 type ScriptExample = NonNullable<DocArticle['scriptExamples']>[number];
 
 function renderDocText(text: string) {
-  return text.split(/(<kbd>.*?<\/kbd>)/g).map((part, index) => {
-    const match = part.match(/^<kbd>(.*?)<\/kbd>$/);
+  const parts = text.split(/(<(?:kbd|code)>.*?<\/(?:kbd|code)>)/g);
+
+  return parts.map((part, index) => {
+    const match = part.match(/^<(kbd|code)>(.*?)<\/\1>$/);
     if (!match) return part;
-    return <kbd key={`${match[1]}-${index}`}>{match[1]}</kbd>;
+
+    const [, element, content] = match;
+    const key = `${element}-${content}-${index}`;
+
+    return element === "kbd"
+      ? <kbd key={key}>{content}</kbd>
+      : <code key={key}>{content}</code>;
   });
 }
 
 export function meta({ params }: Route.MetaArgs) {
   const article = getDocArticle(params.id);
   return [
-    { title: article ? article.title : "Artikel nicht gefunden" },
+    { title: article ? article.title : uiText("Artikel nicht gefunden") },
   ];
 }
 
@@ -41,21 +50,21 @@ export default function DocArticlePage({ params }: Route.ComponentProps) {
       </div>
     </header>
 
-    <Link to="/docs" className="docs-back-link">Zur Dokumentation</Link>
+    <Link to="/docs" className="docs-back-link">{uiText("Zur Dokumentation")}</Link>
 
     <section className="docs-summary" aria-labelledby="docs-summary-heading">
-      <h2 id="docs-summary-heading">Kurzfassung</h2>
+      <h2 id="docs-summary-heading">{uiText("Kurzfassung")}</h2>
       <p>{renderDocText(article.lead)}</p>
     </section>
 
-    <nav className="docs-toc" aria-label="Inhaltsverzeichnis">
-      <div className="docs-toc-title">Inhalt</div>
+    <nav className="docs-toc" aria-label={uiText("Inhaltsverzeichnis")}>
+      <div className="docs-toc-title">{uiText("Inhalt")}</div>
       <ol>
         {sections.map((section, index) => <li key={section.heading}>
           <a href={`#section-${index + 1}`}>{section.heading}</a>
         </li>)}
-        {!!article.scriptExamples?.length && <li><a href="#docs-script-examples-heading">Ausführbare Beispiele</a></li>}
-        {!!article.faqs?.length && <li><a href="#docs-faq-heading">Häufige Fragen</a></li>}
+        {!!article.scriptExamples?.length && <li><a href="#docs-script-examples-heading">{uiText("Ausführbare Beispiele")}</a></li>}
+        {!!article.faqs?.length && <li><a href="#docs-faq-heading">{uiText("Häufige Fragen")}</a></li>}
       </ol>
     </nav>
 
@@ -69,15 +78,15 @@ export default function DocArticlePage({ params }: Route.ComponentProps) {
     </div>
 
     {!!article.scriptExamples?.length && <section className="docs-script-examples" aria-labelledby="docs-script-examples-heading">
-      <h2 id="docs-script-examples-heading">Ausführbare Beispiele</h2>
+      <h2 id="docs-script-examples-heading">{uiText("Ausführbare Beispiele")}</h2>
       {article.scriptExamples.map(example => <DocScriptExample key={example.title} example={example} />)}
     </section>}
 
     {!!article.faqs?.length && <section className="docs-faq-section" aria-labelledby="docs-faq-heading">
-      <h2 id="docs-faq-heading">Häufige Fragen</h2>
+      <h2 id="docs-faq-heading">{uiText("Häufige Fragen")}</h2>
       <div className="docs-faq-list">
         {article.faqs.map(faq => <details key={faq.question} className="docs-faq">
-          <summary>{faq.question}</summary>
+          <summary>{renderDocText(faq.question)}</summary>
           <div className="docs-entry-body docs-faq-body">
             {faq.answer.map(paragraph => <p key={paragraph}>{renderDocText(paragraph)}</p>)}
           </div>
@@ -97,13 +106,13 @@ function DocScriptExample(props: { example: ScriptExample }) {
     try {
       const result = await runScript(code);
       if (!result.ok) {
-        setRunResult({ ok: false, message: result.error?.message || 'Skript fehlgeschlagen.' });
+        setRunResult({ ok: false, message: result.error?.message || uiText('Skript fehlgeschlagen.', 'Script failed.') });
         return;
       }
 
-      setRunResult({ ok: true, message: 'Beispiel abgeschlossen.' });
+      setRunResult({ ok: true, message: uiText('Beispiel abgeschlossen.', 'Example completed.') });
     } catch (err) {
-      setRunResult({ ok: false, message: (err as Error)?.message || 'Skript fehlgeschlagen.' });
+      setRunResult({ ok: false, message: (err as Error)?.message || uiText('Skript fehlgeschlagen.', 'Script failed.') });
     }
   }
 
@@ -111,9 +120,9 @@ function DocScriptExample(props: { example: ScriptExample }) {
     <div className="docs-script-example-head">
       <div>
         <h3>{props.example.title}</h3>
-        <p className="light">{props.example.description}</p>
+        <p className="light">{renderDocText(props.example.description)}</p>
       </div>
-      <MyButton size="sm" renderIcon={Icons.Resume} loading={isRunning} disabled={!code.trim()} onClick={runExample}>Ausführen</MyButton>
+      <MyButton size="sm" renderIcon={Icons.Resume} loading={isRunning} disabled={!code.trim()} onClick={runExample}>{uiText("Ausführen")}</MyButton>
     </div>
 
     {!!runResult && (runResult.ok

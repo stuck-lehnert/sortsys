@@ -21,6 +21,7 @@ use crate::{
 
 const USER_TOKEN_TTL_SECONDS: usize = 30 * 24 * 60 * 60;
 const ADMIN_TOKEN_TTL_SECONDS: usize = 2 * 60 * 60;
+const MCP_TOKEN_TTL_SECONDS: usize = 10 * 60;
 
 #[derive(Clone)]
 pub struct AuthService {
@@ -48,6 +49,8 @@ pub struct AuthUser {
     pub last_name: Option<String>,
     pub phone: Option<String>,
     pub email: Option<String>,
+    #[ts(type = "\"de\" | \"en\"")]
+    pub locale: String,
     #[ts(type = "\"internal\" | \"external\" | \"subcontractor\"")]
     pub contract_type: String,
 }
@@ -176,6 +179,29 @@ impl AuthService {
     pub async fn authenticate(&self, headers: &HeaderMap) -> RpcResult<AuthResult> {
         let token = bearer(headers)?;
         let claims = self.decode(token)?;
+        if claims.purpose.is_some() {
+            return Err(unauthorized(
+                "Provided JWT token cannot be used for this request",
+            ));
+        }
+        self.authenticate_claims(claims).await
+    }
+
+    pub async fn authenticate_mcp(&self, headers: &HeaderMap) -> RpcResult<(AuthResult, i64)> {
+        let token = bearer(headers)?;
+        let claims = self.decode(token)?;
+        if claims.purpose.as_deref() != Some("llm-mcp") {
+            return Err(unauthorized("Provided JWT token is not an MCP delegation"));
+        }
+        let chat_id = claims
+            .chat_id
+            .ok_or_else(|| unauthorized("MCP delegation has no chat context"))?;
+        let auth = self.authenticate_claims(claims).await?;
+
+        Ok((auth, chat_id))
+    }
+
+    async fn authenticate_claims(&self, claims: Claims) -> RpcResult<AuthResult> {
         let tenant = claims
             .tenant
             .ok_or_else(|| unauthorized("Provided JWT token does not seem to be valid"))?;
@@ -191,7 +217,7 @@ impl AuthService {
             })?;
         let row = sqlx::query_as::<_, AuthRow>(
             "SELECT u.id AS user_id, u.username, u.salutation, u.first_name, u.last_name, \
-                    u.phone, u.email, u.contract_type, session.id AS session_id, \
+                    u.phone, u.email, u.ui_locale, u.contract_type, session.id AS session_id, \
                     session.inet_addr, session.user_agent, session.created_at, session.expires_at, \
                     ARRAY_REMOVE(ARRAY_AGG(ura.role_name), NULL) AS roles \
              FROM user_sessions session \
@@ -217,6 +243,7 @@ impl AuthService {
                 last_name: row.last_name,
                 phone: row.phone,
                 email: row.email,
+                locale: row.ui_locale,
                 contract_type: row.contract_type,
             },
             session: AuthSession {
@@ -284,8 +311,53 @@ impl AuthService {
                 tenant: Some(tenant.to_owned()),
                 session_id: Some(session_id.to_owned()),
                 admin_for: None,
+                purpose: None,
+                chat_id: None,
                 iat: now,
                 exp: now + USER_TOKEN_TTL_SECONDS,
+            },
+            &EncodingKey::from_secret(&self.jwt_secret),
+        )
+    }
+
+    pub(crate) fn issue_internal_user_token(
+        &self,
+        auth: &AuthResult,
+    ) -> jsonwebtoken::errors::Result<String> {
+        let now = unix_time();
+
+        encode(
+            &Header::new(Algorithm::HS512),
+            &Claims {
+                tenant: Some(auth.tenant.clone()),
+                session_id: Some(auth.session.id.clone()),
+                admin_for: None,
+                purpose: None,
+                chat_id: None,
+                iat: now,
+                exp: now + MCP_TOKEN_TTL_SECONDS,
+            },
+            &EncodingKey::from_secret(&self.jwt_secret),
+        )
+    }
+
+    pub(crate) fn issue_mcp_token(
+        &self,
+        auth: &AuthResult,
+        chat_id: i64,
+    ) -> jsonwebtoken::errors::Result<String> {
+        let now = unix_time();
+
+        encode(
+            &Header::new(Algorithm::HS512),
+            &Claims {
+                tenant: Some(auth.tenant.clone()),
+                session_id: Some(auth.session.id.clone()),
+                admin_for: None,
+                purpose: Some("llm-mcp".to_owned()),
+                chat_id: Some(chat_id),
+                iat: now,
+                exp: now + MCP_TOKEN_TTL_SECONDS,
             },
             &EncodingKey::from_secret(&self.jwt_secret),
         )
@@ -299,6 +371,8 @@ impl AuthService {
                 tenant: None,
                 session_id: None,
                 admin_for: Some(admin_for.to_owned()),
+                purpose: None,
+                chat_id: None,
                 iat: now,
                 exp: now + ADMIN_TOKEN_TTL_SECONDS,
             },
@@ -353,6 +427,9 @@ struct Claims {
     session_id: Option<String>,
     #[serde(rename = "adminFor")]
     admin_for: Option<String>,
+    purpose: Option<String>,
+    #[serde(rename = "chatId")]
+    chat_id: Option<i64>,
     iat: usize,
     exp: usize,
 }
@@ -372,6 +449,7 @@ struct AuthRow {
     last_name: Option<String>,
     phone: Option<String>,
     email: Option<String>,
+    ui_locale: String,
     contract_type: String,
     session_id: i64,
     inet_addr: Option<String>,

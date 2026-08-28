@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Modal } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
 import { useOutletContext } from "react-router";
@@ -137,7 +138,7 @@ export default function ProjectFilesPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useTitle(() => project ? `Anhänge – ${project.title}` : null, [JSON.stringify(project)]);
+  useTitle(() => project ? uiText(`Anhänge – ${project.title}`, `Attachments – ${project.title}`) : null, [JSON.stringify(project)]);
 
   const attachments = useMemo(() => {
     return ((projectFiles ?? []) as ProjectFileEntry[])
@@ -210,14 +211,14 @@ export default function ProjectFilesPage() {
 
   const imageCardFallback = (file: ProjectFileEntry) => {
     if (file.thumbnailStatus === 'queued' || file.thumbnailStatus === 'processing') {
-      return 'Vorschau wird erstellt';
+      return uiText('Vorschau wird erstellt');
     }
 
     if (file.thumbnailStatus === 'failed') {
-      return 'Vorschau fehlgeschlagen';
+      return uiText('Vorschau fehlgeschlagen');
     }
 
-    return 'Keine Vorschau';
+    return uiText('Keine Vorschau');
   };
 
   const closeImageViewer = () => {
@@ -265,14 +266,14 @@ export default function ProjectFilesPage() {
   const selectionMenuItems = useMemo<Parameters<typeof MyDropdown>[0]['items']>(() => {
     const items: Parameters<typeof MyDropdown>[0]['items'] = [
       {
-        label: 'Alle auswählen',
+        label: uiText("Alle auswählen"),
         renderIcon: Icons.Accept,
         hideIf: !attachments.length,
         disabled: !!batchBusyAction,
         onClick: selectAllAttachments,
       },
       {
-        label: 'Auswahl aufheben',
+        label: uiText("Auswahl aufheben"),
         renderIcon: Icons.Reset,
         hideIf: !selectedAttachmentIds.length,
         disabled: !!batchBusyAction,
@@ -284,7 +285,7 @@ export default function ProjectFilesPage() {
       items.push({
         selectable: true,
         selected: selectedAttachmentIdSet.has(attachment.id),
-        label: `[${attachment.kind === 'image' ? 'Bild' : 'Datei'}] ${attachment.fileName}`,
+        label: uiText(`[${attachment.kind === 'image' ? "Bild" : "Datei"}] ${attachment.fileName}`, `[${attachment.kind === 'image' ? "Image" : "File"}] ${attachment.fileName}`),
         disabled: !!batchBusyAction,
         onClick: () => toggleAttachmentSelection(attachment.id),
       });
@@ -335,9 +336,6 @@ export default function ProjectFilesPage() {
   useEffect(() => {
     if (activeImageIndex == null) return;
 
-    const oldOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -358,7 +356,6 @@ export default function ProjectFilesPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = oldOverflow;
     };
   }, [activeImageIndex, imageFiles.length]);
 
@@ -381,7 +378,7 @@ export default function ProjectFilesPage() {
           mimeType: file.type || 'application/octet-stream',
           sizeBytes: Number.isFinite(file.size) ? file.size : null,
         });
-        if (createErr || !uploadData) throw createErr ?? new Error('Upload konnte nicht vorbereitet werden.');
+        if (createErr || !uploadData) throw createErr ?? new Error(uiText("Upload konnte nicht vorbereitet werden."));
 
         const uploadRes = await fetch(uploadData.uploadUrl, {
           method: uploadData.uploadMethod,
@@ -389,7 +386,7 @@ export default function ProjectFilesPage() {
           body: file,
         });
         if (!uploadRes.ok) {
-          throw new Error(`Datei-Upload fehlgeschlagen (${uploadRes.status})`);
+          throw new Error(uiText(`Datei-Upload fehlgeschlagen (${uploadRes.status})`, `File-Upload failed (${uploadRes.status})`));
         }
 
         const etag = uploadRes.headers.get('etag');
@@ -402,9 +399,9 @@ export default function ProjectFilesPage() {
       }
 
       await client.invalidate('projects.files.list');
-      setUploadInfo(`${selected.length} Datei(en) erfolgreich hochgeladen.`);
+      setUploadInfo(uiText(`${selected.length} Datei(en) erfolgreich hochgeladen.`, `${selected.length} file(s) uploaded successfully.`));
     } catch (err) {
-      setUploadErr((err as Error)?.message || 'Datei-Upload fehlgeschlagen.');
+      setUploadErr((err as Error)?.message || uiText('Datei-Upload fehlgeschlagen.'));
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -422,7 +419,7 @@ export default function ProjectFilesPage() {
     try {
       const candidates = selectedAttachments.filter(file => !!attachmentDownloadUrl(file));
       if (!candidates.length) {
-        throw new Error('Für die Auswahl sind aktuell keine Download-Links verfügbar.');
+        throw new Error(uiText("Für die Auswahl sind aktuell keine Download-Links verfügbar."));
       }
 
       const { default: JSZip } = await import('jszip');
@@ -437,7 +434,7 @@ export default function ProjectFilesPage() {
 
         const response = await fetch(url);
         if (!response.ok) {
-          throw new Error(`Download fehlgeschlagen: ${file.fileName} (${response.status})`);
+          throw new Error(uiText(`Download fehlgeschlagen: ${file.fileName} (${response.status})`, `Download failed: ${file.fileName} (${response.status})`));
         }
 
         const bytes = await response.arrayBuffer();
@@ -461,10 +458,10 @@ export default function ProjectFilesPage() {
         .replace(/^-+|-+$/g, '')
         .slice(0, 80) || 'projekt';
 
-      downloadBlob(zipBlob, `Projektanhaenge-${safeProjectTitle}.zip`);
-      setUploadInfo(`${candidates.length} Datei(en) als ZIP heruntergeladen.`);
+      downloadBlob(zipBlob, uiText(`Projektanhaenge-${safeProjectTitle}.zip`, `Projectanhaenge-${safeProjectTitle}.zip`));
+      setUploadInfo(uiText(`${candidates.length} Datei(en) als ZIP heruntergeladen.`, `${candidates.length} file(s) downloaded as a ZIP archive.`));
     } catch (err) {
-      setUploadErr((err as Error)?.message || 'ZIP-Download fehlgeschlagen.');
+      setUploadErr((err as Error)?.message || uiText('ZIP-Download fehlgeschlagen.', 'ZIP download failed.'));
     } finally {
       setBatchBusyAction(null);
     }
@@ -475,17 +472,15 @@ export default function ProjectFilesPage() {
 
     modals.showDefault({
       content: () => <>
-        <p>
-          Soll{selectedAttachments.length === 1 ? '' : 'en'} <b>{selectedAttachments.length} ausgewählte Datei(en)</b> wirklich gelöscht werden?
-          {' '}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+        <p>{uiText("Soll")}{selectedAttachments.length === 1 ? '' : 'en'} <b>{selectedAttachments.length}{uiText(" ausgewählte Datei(en)")}</b>{uiText("wirklich gelöscht werden?")}{' '}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
         </p>
       </>,
       modalProps: () => ({
         danger: true,
         noFullscreen: true,
-        modalHeading: 'Auswahl löschen',
+        modalHeading: uiText("Auswahl löschen"),
         modalLabel: project.title,
-        primaryButtonText: 'Löschen',
+        primaryButtonText: uiText("Löschen"),
       }),
       onPrimaryAction: async ({ hide }) => {
         if (batchBusyAction) return;
@@ -510,10 +505,10 @@ export default function ProjectFilesPage() {
           await client.invalidate('projects.files.list');
 
           setSelectedAttachmentIds(previous => previous.filter(id => !selectedIdsSet.has(id)));
-          setUploadInfo(`${selectedIds.length} Datei(en) wurden entfernt.`);
+          setUploadInfo(uiText(`${selectedIds.length} Datei(en) wurden entfernt.`, `${selectedIds.length} file(s) removed.`));
           hide();
         } catch (err) {
-          setUploadErr((err as Error)?.message || 'Dateien konnten nicht entfernt werden.');
+          setUploadErr((err as Error)?.message || uiText('Dateien konnten nicht entfernt werden.'));
         } finally {
           setBatchBusyAction(null);
         }
@@ -522,9 +517,7 @@ export default function ProjectFilesPage() {
   }
 
   if (!supportsProjectFiles) {
-    return <MyCallout icon={Icons.Info} color="amber">
-      Anhänge sind für dieses Mandanten-Setup nicht aktiviert.
-    </MyCallout>;
+    return <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge sind für dieses Mandanten-Setup nicht aktiviert.")}</MyCallout>;
   }
 
   return <>
@@ -545,9 +538,7 @@ export default function ProjectFilesPage() {
           loading={isUploading}
           disabled={!!batchBusyAction}
           onClick={() => fileInputRef.current?.click()}
-        >
-          Dateien hochladen
-        </MyButton>
+        >{uiText("Dateien hochladen")}</MyButton>
 
         {!!selectedAttachmentIds.length && <>
           <MyButton
@@ -557,9 +548,7 @@ export default function ProjectFilesPage() {
             disabled={!!batchBusyAction}
             loading={batchBusyAction === 'download'}
             onClick={downloadSelectedAsZip}
-          >
-            Auswahl ZIP
-          </MyButton>
+          >{uiText("Auswahl ZIP")}</MyButton>
 
           <MyButton
             size="sm"
@@ -568,9 +557,7 @@ export default function ProjectFilesPage() {
             disabled={!!batchBusyAction}
             loading={batchBusyAction === 'delete'}
             onClick={showDeleteSelectedFilesConfirmModal}
-          >
-            Auswahl löschen
-          </MyButton>
+          >{uiText("Auswahl löschen")}</MyButton>
 
           <MyButton
             size="sm"
@@ -578,12 +565,10 @@ export default function ProjectFilesPage() {
             renderIcon={Icons.Reset}
             disabled={!!batchBusyAction}
             onClick={clearAttachmentSelection}
-          >
-            Auswahl aufheben
-          </MyButton>
+          >{uiText("Auswahl aufheben")}</MyButton>
         </>}
 
-        {isUploading && <span>Upload läuft...</span>}
+        {isUploading && <span>{uiText("Upload läuft...")}</span>}
       </div>
 
       {!!attachments.length && <div className="project-files-toolbar-right">
@@ -592,8 +577,7 @@ export default function ProjectFilesPage() {
     </div>
 
     {!!projectFilesErr && (
-      <MyCallout icon={Icons.Info} color="amber">
-        Anhänge konnten nicht geladen werden: {`${(projectFilesErr as any)?.message ?? 'Unbekannter Fehler'}`}
+      <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")}{`${(projectFilesErr as any)?.message ?? uiText('Unbekannter Fehler')}`}
       </MyCallout>
     )}
 
@@ -606,7 +590,7 @@ export default function ProjectFilesPage() {
     )}
 
     {!attachments.length && (
-      <div className="light">Noch keine Projektanhänge vorhanden.</div>
+      <div className="light">{uiText("Noch keine Projektanhänge vorhanden.")}</div>
     )}
 
     {!!imageFiles.length && <MyExpandable title={`Bilder (${imageFiles.length})`} initiallyExpanded>
@@ -667,8 +651,8 @@ export default function ProjectFilesPage() {
               size="sm"
               kind="ghost"
               data-image-select-toggle="true"
-              title={selectedAttachmentIdSet.has(image.id) ? 'Aus Auswahl entfernen' : 'Zur Auswahl hinzufügen'}
-              aria-label={selectedAttachmentIdSet.has(image.id) ? 'Aus Auswahl entfernen' : 'Zur Auswahl hinzufügen'}
+              title={selectedAttachmentIdSet.has(image.id) ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
+              aria-label={selectedAttachmentIdSet.has(image.id) ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
               style={{
                 inlineSize: '1.55rem',
                 blockSize: '1.55rem',
@@ -685,7 +669,7 @@ export default function ProjectFilesPage() {
       </div>
     </MyExpandable>}
 
-    {!!documentFiles.length && <MyExpandable title={`Dateien (${documentFiles.length})`} initiallyExpanded>
+    {!!documentFiles.length && <MyExpandable title={uiText(`Dateien (${documentFiles.length})`, `Files (${documentFiles.length})`)} initiallyExpanded>
       <MyTable
         tableClassName="project-files-table"
         rows={documentRows}
@@ -698,8 +682,8 @@ export default function ProjectFilesPage() {
               return <MyButton
                 size="sm"
                 kind="ghost"
-                title={isSelected ? 'Aus Auswahl entfernen' : 'Zur Auswahl hinzufügen'}
-                aria-label={isSelected ? 'Aus Auswahl entfernen' : 'Zur Auswahl hinzufügen'}
+                title={isSelected ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
+                aria-label={isSelected ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
                 renderIcon={isSelected ? Icons.Accept : undefined}
                 style={{
                   inlineSize: '1.55rem',
@@ -713,7 +697,7 @@ export default function ProjectFilesPage() {
             },
           },
           {
-            label: 'Datei',
+            label: uiText("Datei"),
             render: (row) => {
               const url = attachmentDownloadUrl(row);
               if (!url) return row.fileName;
@@ -733,12 +717,12 @@ export default function ProjectFilesPage() {
             sortKey: (row) => row.fileName.toLowerCase(),
           },
           {
-            label: 'Größe',
+            label: uiText("Größe"),
             render: (row) => formatBytes(row.sizeBytes),
             sortKey: (row) => row.sizeBytes ?? 0,
           },
           {
-            label: 'Erfasst',
+            label: uiText("Erfasst"),
             render: (row) => formatDate(row.createdAt),
             sortKey: (row) => row.createdAt.getTime(),
           },
@@ -752,9 +736,9 @@ export default function ProjectFilesPage() {
       <Modal
         open
         passiveModal
-        modalHeading="DWG Viewer"
+        modalHeading={uiText("DWG Viewer")}
         modalLabel={project.title}
-        closeButtonLabel="Schließen"
+        closeButtonLabel={uiText("Schließen")}
         onRequestClose={closeDwgViewer}
         data-fullheight="true"
         data-fullwidth="true"
@@ -772,7 +756,7 @@ export default function ProjectFilesPage() {
             <MyDropdown
               items={[
                 {
-                  label: "Original öffnen",
+                  label: uiText("Original öffnen"),
                   renderIcon: Icons.Search,
                   hideIf: !activeDwgFile.downloadUrl,
                   onClick: () => {
@@ -781,7 +765,7 @@ export default function ProjectFilesPage() {
                   },
                 },
                 {
-                  label: "Herunterladen",
+                  label: uiText("Herunterladen"),
                   renderIcon: Icons.Download,
                   hideIf: !activeDwgFile.downloadAttachmentUrl && !activeDwgFile.downloadUrl,
                   onClick: () => {
@@ -800,9 +784,7 @@ export default function ProjectFilesPage() {
                 document={activeDwgDocument}
                 defaultUnit="m"
               />
-              : <MyCallout icon={Icons.Info} color="amber">
-                Für diese DWG-Datei ist aktuell kein Download-Link verfügbar.
-              </MyCallout>
+              : <MyCallout icon={Icons.Info} color="amber">{uiText("Für diese DWG-Datei ist aktuell kein Download-Link verfügbar.")}</MyCallout>
             }
           </div>
         </div>
@@ -813,9 +795,9 @@ export default function ProjectFilesPage() {
       <Modal
         open
         passiveModal
-        modalHeading="Bilder"
+        modalHeading={uiText("Bilder")}
         modalLabel={project.title}
-        closeButtonLabel="Schließen"
+        closeButtonLabel={uiText("Schließen")}
         onRequestClose={closeImageViewer}
         data-fullheight="true"
         data-fullwidth="true"
@@ -838,8 +820,7 @@ export default function ProjectFilesPage() {
           >
             <div>
               <div style={{ fontWeight: 600 }}>{activeImage.fileName}</div>
-              <div className="light" style={{ fontSize: '.9rem' }}>
-                Bild {(activeImageIndex ?? 0) + 1} von {imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}
+              <div className="light" style={{ fontSize: '.9rem' }}>{uiText("Bild")}{(activeImageIndex ?? 0) + 1}{uiText(" von ")}{imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}
               </div>
             </div>
 
@@ -847,7 +828,7 @@ export default function ProjectFilesPage() {
               <MyDropdown
                 items={[
                   {
-                    label: 'Original öffnen',
+                    label: uiText("Original öffnen"),
                     renderIcon: Icons.Search,
                     hideIf: !activeImage.downloadUrl,
                     onClick: () => {
@@ -856,7 +837,7 @@ export default function ProjectFilesPage() {
                     },
                   },
                   {
-                    label: 'Herunterladen',
+                    label: uiText("Herunterladen"),
                     renderIcon: Icons.Download,
                     hideIf: !activeImage.downloadAttachmentUrl && !activeImage.downloadUrl,
                     onClick: () => {
@@ -877,13 +858,9 @@ export default function ProjectFilesPage() {
               borderBottom: '1px solid var(--ss-border)',
             }}
           >
-            <MyButton size="sm" kind="secondary" onClick={showPreviousImage}>
-              ← Zurück
-            </MyButton>
+            <MyButton size="sm" kind="secondary" onClick={showPreviousImage}>{uiText("← Zurück")}</MyButton>
 
-            <MyButton size="sm" kind="secondary" onClick={showNextImage}>
-              Weiter →
-            </MyButton>
+            <MyButton size="sm" kind="secondary" onClick={showNextImage}>{uiText("Weiter →")}</MyButton>
           </div>
 
           <div style={{
@@ -906,9 +883,7 @@ export default function ProjectFilesPage() {
                   display: 'block',
                 }}
               />
-              : <MyCallout icon={Icons.Info} color="amber">
-                Für dieses Bild konnte keine Vorschau geladen werden.
-              </MyCallout>
+              : <MyCallout icon={Icons.Info} color="amber">{uiText("Für dieses Bild konnte keine Vorschau geladen werden.")}</MyCallout>
             }
           </div>
         </div>

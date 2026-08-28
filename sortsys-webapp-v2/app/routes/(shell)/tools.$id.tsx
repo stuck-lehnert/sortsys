@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Callout, Heading, InlineNotification, Loading, Menu, MenuItem, Tag, Tile } from "@sortsys/react-components";
 import { useParams } from "react-router";
 import { MyHeader } from "~/components/MyHeader";
@@ -69,13 +70,13 @@ export default function ToolDetailPage() {
                 <MyDropdown icon={Icons.DropdownMenu}
                     items={[
                         {
-                            label: 'Buchen',
+                            label: uiText("Buchen"),
                             renderIcon: Icons.Track,
                             hideIf: !tool.available || !sessionInfo.canDo('manage:toolTrackings'),
                             onClick: () => showTrackToolsModal(modals, { tools: [tool] }),
                         },
                         {
-                            label: 'Zurückbuchen',
+                            label: uiText("Zurückbuchen"),
                             renderIcon: Icons.TakeBack,
                             hideIf: tool.available || !sessionInfo.canDo('manage:toolTrackings'),
                             onClick: async () => {
@@ -84,7 +85,7 @@ export default function ToolDetailPage() {
                             },
                         },
                         {
-                            label: sessionInfo.canDo('manage:toolTrackings') ? 'Umbuchen' : 'Umbuchungsanfrage',
+                            label: sessionInfo.canDo("manage:toolTrackings") ? uiText("Umbuchen") : uiText("Umbuchungsanfrage"),
                             renderIcon: Icons.Transfer,
                             hideIf: !activeTracking || !(sessionInfo.canDo('manage:toolTrackings') || sessionInfo.user.id === activeTracking.id),
                             onClick: () => showToolTransferModal(modals, {
@@ -93,13 +94,13 @@ export default function ToolDetailPage() {
                             }),
                         },
                         {
-                            label: 'Inventur',
+                            label: uiText("Inventur"),
                             renderIcon: Icons.ToolInventory,
                             hideIf: !sessionInfo.canDo('manage:toolInventories'),
                             onClick: () => showCreateToolInventoryModal(modals, tool),
                         },
                         {
-                            label: 'Archvieren',
+                            label: uiText("Archvieren"),
                             renderIcon: Icons.Archive,
                             hideIf: !!tool.archivedSince || !sessionInfo.canDo('manage:tools'),
                             onClick: async () => {
@@ -108,7 +109,7 @@ export default function ToolDetailPage() {
                             },
                         },
                         {
-                            label: 'Aus Archiv holen',
+                            label: uiText("Aus Archiv holen"),
                             renderIcon: Icons.Archive,
                             hideIf: !tool.archivedSince || !sessionInfo.canDo('manage:tools'),
                             onClick: async () => {
@@ -117,13 +118,13 @@ export default function ToolDetailPage() {
                             },
                         },
                         {
-                            label: 'Bearbeiten',
+                            label: uiText("Bearbeiten"),
                             renderIcon: Icons.Edit,
                             hideIf: !sessionInfo.canDo('manage:tools'),
                             onClick: () => showModifyToolModal(modals, tool),
                         },
                         {
-                            label: 'Löschen',
+                            label: uiText("Löschen"),
                             renderIcon: Icons.Delete,
                             hideIf: !sessionInfo.canDo('delete:tools'),
                             onClick: () => showDeleteToolModal(modals, tool),
@@ -133,12 +134,9 @@ export default function ToolDetailPage() {
             </>}
         />
 
-        {!!tool.archivedSince && <MyCallout icon={Icons.Archive} color="grey">
-            Werkzeug ist seit dem {formatDate(tool.archivedSince)} archiviert
-        </MyCallout>}
+        {!!tool.archivedSince && <MyCallout icon={Icons.Archive} color="grey">{uiText("Werkzeug ist seit dem")}{formatDate(tool.archivedSince)}{uiText("archiviert")}</MyCallout>}
 
-        {!!latestInventory && <MyCallout icon={Icons.Info} color="blue">
-            Letzte Inventur am {formatDate(latestInventory.createdAt)}
+        {!!latestInventory && <MyCallout icon={Icons.Info} color="blue">{uiText("Letzte Inventur am")}{formatDate(latestInventory.createdAt)}
             {!!latestInventory.comment && <>
                 <br /><span className="light">{latestInventory.comment}</span>
             </>}
@@ -147,7 +145,7 @@ export default function ToolDetailPage() {
         <MyDivider />
 
         <AttrList>
-            <AttrList.Attr name="Nummer" value={tool.customId} />
+            <AttrList.Attr name={uiText("Nummer")} value={tool.customId} />
             <AttrList.Attr name="Marke" value={<MyLink to={`/tools?brand=${encodeURIComponent(tool.brand)}`}>{tool.brand}</MyLink>} />
             <AttrList.Attr name="Kategorie" value={<MyLink to={`/tools?category=${encodeURIComponent(tool.category)}`}>{tool.category}</MyLink>} />
             <AttrList.Attr name="Gebucht" value={!tool.available ? 'Ja' : 'Nein'} />

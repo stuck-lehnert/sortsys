@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { formatDate } from "~/lib/format";
 import { renderStructuredPdf, type PdfTableAlign } from "~/lib/pdf";
 import { deliverBlob, downloadBlob } from "~/lib/utils";
@@ -66,7 +67,7 @@ export async function exportTable<RowT>(options: TableExportOptions<RowT>) {
 
   const pdfData = await renderStructuredPdf({
     title: options.title,
-    reportLabel: 'Tabellenexport',
+    reportLabel: uiText("Tabellenexport"),
     sections: [{
       title: '',
       columns: headers,
@@ -76,7 +77,7 @@ export async function exportTable<RowT>(options: TableExportOptions<RowT>) {
         ? options.columns.map(column => column.width ?? '1fr')
         : undefined,
     }],
-    emptyMessage: 'Keine Daten vorhanden.',
+    emptyMessage: uiText("Keine Daten vorhanden."),
   });
 
   const blob = new Blob([pdfData] as any, { type: 'application/pdf' });

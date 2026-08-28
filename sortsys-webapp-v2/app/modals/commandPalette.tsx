@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
@@ -80,7 +81,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (projects ?? []).slice(0, 8).forEach(project => pushLink(nextEntries, {
         id: `project:${project.id}`,
         title: project.title,
-        subtitle: 'Projekt',
+        subtitle: uiText("Projekt"),
         group: 'Treffer',
         icon: Icons.Project,
         href: `/projects/${project.id}`,
@@ -88,7 +89,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (tools ?? []).slice(0, 8).forEach(tool => pushLink(nextEntries, {
         id: `tool:${tool.id}`,
         title: `${tool.customId} ${toolTitle(tool)}`,
-        subtitle: 'Werkzeug',
+        subtitle: uiText("Werkzeug"),
         group: 'Treffer',
         icon: Icons.Tool,
         href: `/tools/${tool.id}`,
@@ -96,7 +97,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (users ?? []).slice(0, 8).forEach(user => pushLink(nextEntries, {
         id: `user:${user.id}`,
         title: userFullName(user),
-        subtitle: 'Benutzer',
+        subtitle: uiText("Benutzer"),
         group: 'Treffer',
         icon: Icons.User,
         href: `/users/${user.id}`,
@@ -104,7 +105,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (products ?? []).slice(0, 8).forEach(product => pushLink(nextEntries, {
         id: `product:${product.id}`,
         title: `${product.customId} ${productTitle(product)}`,
-        subtitle: 'Produkt',
+        subtitle: uiText("Produkt"),
         group: 'Treffer',
         icon: Icons.Product,
         href: `/products/${product.id}`,
@@ -112,7 +113,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (customers ?? []).slice(0, 8).forEach(customer => pushLink(nextEntries, {
         id: `customer:${customer.id}`,
         title: customerName(customer),
-        subtitle: 'Kunde',
+        subtitle: uiText("Kunde"),
         group: 'Treffer',
         icon: Icons.Customer,
         href: `/customers/${customer.id}`,
@@ -120,7 +121,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (contacts ?? []).slice(0, 8).forEach(contact => pushLink(nextEntries, {
         id: `contact:${contact.id}`,
         title: contactName(contact),
-        subtitle: 'Kontakt',
+        subtitle: uiText("Kontakt"),
         group: 'Treffer',
         icon: Icons.Contact,
         href: `/contacts/${contact.id}`,
@@ -128,14 +129,14 @@ function useEntitySearchEntries(query: string, close: () => void) {
       (productVendors ?? []).slice(0, 8).forEach(vendor => pushLink(nextEntries, {
         id: `productVendor:${vendor.id}`,
         title: vendor.name,
-        subtitle: 'Händler',
+        subtitle: uiText("Händler"),
         group: 'Treffer',
         icon: Icons.ProductVendor,
         href: `/products/vendors/${vendor.id}`,
       }));
       (deliveryNote ?? []).slice(0, 3).forEach(note => pushLink(nextEntries, {
         id: `deliveryNote:${note.id}`,
-        title: `Lieferschein #${note.autoId}`,
+        title: uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`),
         subtitle: `Erfasst ${formatDate(note.createdAt)}`,
         group: 'Treffer',
         icon: Icons.DeliveryNote,
@@ -240,7 +241,7 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
             id: `action:${action.id}`,
             title: action.label,
             subtitle: action.description,
-            group: action.group === 'work' ? 'Arbeit' : action.group === 'create' ? 'Anlegen' : action.group === 'admin' ? 'Verwaltung' : 'Navigation',
+            group: action.group === 'work' ? uiText('Arbeit') : action.group === 'create' ? 'Anlegen' : action.group === 'admin' ? 'Verwaltung' : 'Navigation',
             icon: action.icon,
             run: runVisibleAction(action),
           }));
@@ -262,14 +263,14 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
       }
 
       return <div className="command-palette">
-        <label className="command-palette-label" htmlFor={inputId}>Befehl oder Suche</label>
+        <label className="command-palette-label" htmlFor={inputId}>{uiText("Befehl oder Suche")}</label>
         <div className="command-palette-input-wrap">
           <Icons.Search size={20} />
           <input
             id={inputId}
             className="command-palette-input"
             value={query}
-            placeholder="Tippe > für Befehle, sonst Suche"
+            placeholder={uiText("Tippe > für Befehle, sonst Suche")}
             onChange={event => setQuery(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'ArrowDown') {
@@ -284,7 +285,7 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
               }
             }}
           />
-          <kbd>Ctrl K</kbd>
+          <kbd>{uiText("Ctrl K")}</kbd>
         </div>
         <NotifyLoaded onLoad={() => document.getElementById(inputId)?.focus()} />
 
@@ -301,15 +302,15 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
               />;
             })}
           </section>)}
-          {!entries.length && <div className="command-palette-empty">Keine Treffer.</div>}
+          {!entries.length && <div className="command-palette-empty">{uiText("Keine Treffer.")}</div>}
         </div>
       </div>;
     },
     modalProps: ({ hide }) => ({
-      modalHeading: 'Befehlspalette',
+      modalHeading: uiText("Befehlspalette"),
       className: 'command-palette-modal',
       primaryButtonDisabled: true,
-      secondaryButtonText: 'Schließen',
+      secondaryButtonText: uiText("Schließen"),
       onSecondarySubmit: hide,
     }),
   });

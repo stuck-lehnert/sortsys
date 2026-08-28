@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Heading, Tag, Tile } from "@sortsys/react-components";
 import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
@@ -81,7 +82,7 @@ export const SmallCustomerTile = createSmallTile<Customer>(customer => ({
 
 export const SmallDeliveryNoteTile = createSmallTile<DeliveryNote>(note => ({
   icon: Icons.DeliveryNote,
-  title: `Lieferschein #${note.autoId}`,
+  title: uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`),
   href: `/products/deliveryNotes/${note.id}`,
   subtitle: formatDate(note.createdAt),
 }));
@@ -94,7 +95,7 @@ export const SmallProductVendorTile = createSmallTile<ProductVendor>(vendor => (
 
 export const SmallRegieReportTile = createSmallTile<RegieReport>(report => ({
   icon: Icons.RegieReport,
-  title: `Regiebericht #${report.autoId}`,
+  title: uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`),
   href: `/regieReports/${report.id}`,
 }));
 
@@ -107,7 +108,7 @@ export const dailyReportDayKey = (day: Date) => {
 
 export const SmallDailyProjectReportTile = createSmallTile<DailyProjectReport>(report => ({
   icon: Icons.DailyReport,
-  title: `Bautagesbericht ${formatDate(report.day)}`,
+  title: uiText(`Bautagesbericht ${formatDate(report.day)}`, `Daily report ${formatDate(report.day)}`),
   href: `/projects/${report.projectId}/dailyReports/${dailyReportDayKey(report.day)}`,
 }));
 
@@ -117,13 +118,13 @@ export function DailyProjectReportTile({ report }: { report: DailyProjectReport 
   return <Tile key={report.id} className="w-full">
     <Heading level={5} noMargin>
       <MyLink className={nowrap({ class: 'max-w-full' })} to={`/projects/${report.projectId}/dailyReports/${dayKey}`}>
-        Bautagesbericht {formatDate(report.day)}
+        {uiText("Bautagesbericht", "Daily construction report")} {formatDate(report.day)}
       </MyLink>
     </Heading>
 
     <AttrList>
-      <AttrList.Attr name="Beschreibung" value={report.summary} />
-      <AttrList.Attr name="Arbeitszeit" value={`${report.workHours.length} Einträge`} />
+      <AttrList.Attr name={uiText("Beschreibung")} value={report.summary} />
+      <AttrList.Attr name={uiText("Arbeitszeit")} value={uiText(`${report.workHours.length} Einträge`, `${report.workHours.length} entries`)} />
     </AttrList>
   </Tile>;
 }
@@ -137,22 +138,22 @@ export function RegieReportTile({ report, omit }: { report: RegieReport; omit?: 
   return <Tile key={report.id} className="w-full">
     <Heading level={5} noMargin>
       <MyLink className={nowrap({ class: 'max-w-full' })} to={`/regieReports/${report.id}`}>
-        Regiebericht #{report.autoId}
+        {uiText("Regiebericht", "Time-and-material report")} #{report.autoId}
       </MyLink>
     </Heading>
 
     <AttrList>
-      {!omit.includes('project') && <AttrList.Attr name="Projekt" value={<Awaited promise={async () => {
+      {!omit.includes('project') && <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
         const [project] = await client.query('projects.get', { id: report.projectId }, { strategy: 'cache-first' });
         if (!project) return 'Unbekannt';
         return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
       }} />} />}
 
       <AttrList.Attr name="Kalenderwoche" value={isoWeekLabel(weekStart)} />
-      <AttrList.Attr name="Zeitraum" value={`${formatDate(weekStart)} bis ${formatDate(weekEnd)}`} />
+      <AttrList.Attr name={uiText("Zeitraum")} value={uiText(`${formatDate(weekStart)} bis ${formatDate(weekEnd)}`, `${formatDate(weekStart)} to ${formatDate(weekEnd)}`)} />
       {!!report.summary && <AttrList.Attr name="Zusammenfassung" value={report.summary} />}
-      <AttrList.Attr name="Arbeitszeit" value={`${report.workHours.length} Einträge`} />
-      <AttrList.Attr name="Produkte" value={`${report.products.length} Einträge`} />
+      <AttrList.Attr name={uiText("Arbeitszeit")} value={uiText(`${report.workHours.length} Einträge`, `${report.workHours.length} entries`)} />
+      <AttrList.Attr name={uiText("Produkte")} value={uiText(`${report.products.length} Einträge`, `${report.products.length} entries`)} />
     </AttrList>
   </Tile>;
 }
@@ -173,7 +174,7 @@ export function ProjectTile({ project, omit }: {
         <MyLink to={addressUrl(project.address)} target="_blank">{formatAddress(project.address)}</MyLink>
       } />}
 
-      {!!project.customerId && !omit.includes('customer') && <AttrList.Attr name="Kunde" value={<Awaited promise={async () => {
+      {!!project.customerId && !omit.includes('customer') && <AttrList.Attr name={uiText("Kunde")} value={<Awaited promise={async () => {
         const [customer] = await client.query('customers.get', { id: project.customerId! }, { strategy: 'cache-first' });
         if (!customer) return 'Unbekannt';
         return <MyLink to={`/customers/${customer.id}`}>{customerName(customer)}</MyLink>;
@@ -223,7 +224,7 @@ export function ProductTile({ product }: {
 
 
     <AttrList>
-      {!!product.description && <AttrList.Attr name="Beschreibung" value={product.description} />}
+      {!!product.description && <AttrList.Attr name={uiText("Beschreibung")} value={product.description} />}
     </AttrList>
   </Tile>
 }
@@ -284,13 +285,13 @@ export function TrackingTile({ tracking, omit }: {
 
   return <Tile key={tracking.id} className="w-full">
     <AttrList>
-      {!omit.includes('tool') && <AttrList.Attr name="Werkzeug" value={<Awaited promise={async () => {
+      {!omit.includes('tool') && <AttrList.Attr name={uiText("Werkzeug")} value={<Awaited promise={async () => {
         const [tool] = await client.query('tools.get', { id: tracking.toolId });
         if (!tool) return 'Unbekannt';
         return <MyLink to={`/tools/${tool.id}`}>{tool.customId} {toolTitle(tool)}</MyLink>;
       }} />} />}
 
-      {!omit.includes('project') && !!tracking.projectId && <AttrList.Attr name="Projekt" value={<Awaited promise={async () => {
+      {!omit.includes('project') && !!tracking.projectId && <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
         const [project] = await client.query('projects.get', { id: tracking.projectId! });
         if (!project) return 'Unbekannt';
         return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
@@ -309,8 +310,8 @@ export function TrackingTile({ tracking, omit }: {
       }} />} />}
 
       {!omit.includes('timestamps') && <>
-        <AttrList.Attr name={!!tracking.endedAt ? 'Von' : 'Seit'} value={formatDate(tracking.startedAt)} />
-        {!!tracking.endedAt && <AttrList.Attr name={'Bis'} value={formatDate(tracking.endedAt)} />}
+        <AttrList.Attr name={!!tracking.endedAt ? uiText('Von') : 'Seit'} value={formatDate(tracking.startedAt)} />
+        {!!tracking.endedAt && <AttrList.Attr name={uiText('Bis')} value={formatDate(tracking.endedAt)} />}
         {!!tracking.deadlineAt && <AttrList.Attr name={'Deadline'} value={formatDate(tracking.deadlineAt)} />}
       </>}
     </AttrList>
@@ -325,7 +326,7 @@ export function ProductPriceRecordTile({ priceRecord, omit }: {
 
   return <Tile key={priceRecord.id} className="w-full">
     <AttrList>
-      <AttrList.Attr name="Datum" value={formatDate(priceRecord.timestamp)} />
+      <AttrList.Attr name={uiText("Datum")} value={formatDate(priceRecord.timestamp)} />
       <AttrList.Attr name="Preis" value={<>
         {formatCurrency(priceRecord.price)} / <Awaited promise={async () => {
           const [product] = await client.query('products.get', { id: priceRecord.productId });
@@ -340,7 +341,7 @@ export function ProductPriceRecordTile({ priceRecord, omit }: {
         return <MyLink to={`/products/${product.id}`}>{product.customId} {productTitle(product)}</MyLink>;
       }} />} />}
 
-      {!omit.includes('vendor') && !!priceRecord.vendorId && <AttrList.Attr name="Händler" value={<Awaited promise={async () => {
+      {!omit.includes('vendor') && !!priceRecord.vendorId && <AttrList.Attr name={uiText("Händler")} value={<Awaited promise={async () => {
         const [vendor] = await client.query('products.vendors.get', { id: priceRecord.vendorId! });
         if (!vendor) return 'Unbekannt';
         return <MyLink to={`/products/vendors/${vendor.id}`}>{vendor.name}</MyLink>;

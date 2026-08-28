@@ -1,3 +1,4 @@
 testdata/
 .compose-env
 .DS_Store
+.env

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { OperationalTag, Tag } from "@sortsys/react-components";
 import { useNavigate } from "react-router";
 import { MyTable } from "~/components/MyTable";
@@ -16,7 +17,7 @@ import { TableExportActions } from "~/components/TableExportActions";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Werkzeuge" },
+    { title: uiText("Werkzeuge") },
   ];
 }
 
@@ -46,13 +47,13 @@ export default function ToolsPage() {
         modals.showForm({
             content: ({ context }) => <>
                 <MyForm.Select
-                    name="status" labelText="Status"
+                    name="status" labelText={uiText("Status")}
                     getOptions={() => [
-                        { id: 'none', label: 'Nicht ausgewählt' },
-                        { id: 'available', label: 'Verfügbar' },
-                        { id: 'unavailable', label: 'Gebucht' },
-                        { id: 'lost', label: 'Abhanden' },
-                        { id: 'broken', label: 'Defekt' },
+                        { id: 'none', label: uiText("Nicht ausgewählt") },
+                        { id: 'available', label: uiText("Verfügbar") },
+                        { id: 'unavailable', label: uiText("Gebucht") },
+                        { id: 'lost', label: uiText("Abhanden") },
+                        { id: 'broken', label: uiText("Defekt") },
                     ]}
                     buildOption={option => ({
                         text: option.label,
@@ -61,7 +62,7 @@ export default function ToolsPage() {
                 />
 
                 <MyForm.MultiSelect
-                    name="brand" labelText="Marke"
+                    name="brand" labelText={uiText("Marke")}
                     maxSelectedItems={1}
                     prepare={async () => {
                         const [data, err] = await client.query('tools.brands', undefined);
@@ -79,7 +80,7 @@ export default function ToolsPage() {
                 />
 
                 <MyForm.MultiSelect
-                    name="category" labelText="Kategorie"
+                    name="category" labelText={uiText("Kategorie")}
                     maxSelectedItems={1}
                     prepare={async () => {
                         const [data, err] = await client.query('tools.categories', undefined);
@@ -116,8 +117,8 @@ export default function ToolsPage() {
                 hide();
             },
             modalProps: () => ({
-                modalHeading: "Werkzeuge filtern",
-                primaryButtonText: 'Filter anwenden',
+                modalHeading: uiText("Werkzeuge filtern"),
+                primaryButtonText: uiText("Filter anwenden"),
             }),
         });
     }
@@ -127,16 +128,16 @@ export default function ToolsPage() {
     return <>
         <div className="flex gap-2 w-full overlflow-x-auto">
             {!archivedOnly ? (
-                <OperationalTag renderIcon={Icons.Archive} text="Nicht Archiviert" onClick={() => setArchivedOnly(true)} />
+                <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht Archiviert")} onClick={() => setArchivedOnly(true)} />
             ) : (
-                <OperationalTag renderIcon={Icons.Archive} text="Archiviert" onClick={() => setArchivedOnly(false)} />
+                <OperationalTag renderIcon={Icons.Archive} text={uiText("Archiviert")} onClick={() => setArchivedOnly(false)} />
             )}
 
             {!hasFilter ? <>
-                <OperationalTag renderIcon={Icons.Filter} text="Filter" onClick={showFilterModal} />
+                <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
             </> : <>
-                <OperationalTag renderIcon={Icons.FilterEdit} text="Filter ändern" onClick={showFilterModal} />
-                <OperationalTag renderIcon={Icons.FilterRemove} text="Filter aus" onClick={() => {
+                <OperationalTag renderIcon={Icons.FilterEdit} text={uiText("Filter ändern")} onClick={showFilterModal} />
+                <OperationalTag renderIcon={Icons.FilterRemove} text={uiText("Filter aus")} onClick={() => {
                     setStatus(null);
                     setBrand(null);
                     setCategory(null);
@@ -144,17 +145,17 @@ export default function ToolsPage() {
             </>}
 
             <TableExportActions
-                title="Werkzeuge"
+                title={uiText("Werkzeuge")}
                 fileName={archivedOnly ? 'Archivierte-Werkzeuge' : 'Werkzeuge'}
                 rows={filteredData ?? []}
                 disabled={!data}
                 columns={[
-                    { header: 'Nummer', value: tool => tool.customId, align: 'right' },
-                    { header: 'Status', value: tool => toolStatus(tool) },
-                    { header: 'Marke', value: tool => tool.brand },
-                    { header: 'Kategorie', value: tool => tool.category },
-                    { header: 'Modell', value: tool => tool.label, width: '2fr' },
-                    { header: 'Archiviert am', value: tool => tool.archivedSince },
+                    { header: uiText("Nummer"), value: tool => tool.customId, align: 'right' },
+                    { header: uiText("Status"), value: tool => toolStatus(tool) },
+                    { header: uiText("Marke"), value: tool => tool.brand },
+                    { header: uiText("Kategorie"), value: tool => tool.category },
+                    { header: uiText("Modell"), value: tool => tool.label, width: '2fr' },
+                    { header: uiText("Archiviert am"), value: tool => tool.archivedSince },
                 ]}
             />
         </div>
@@ -169,29 +170,29 @@ export default function ToolsPage() {
             onRowClick={row => navigate(`/tools/${row.id}`)}
             columns={[
                 {
-                    label: 'Nummer',
+                    label: uiText("Nummer"),
                     render: row => row.customId.toString(),
                     sortKey: row => row.customId,
                 },
                 {
-                    label: 'Status',
+                    label: uiText("Status"),
                     render: row => <div>
                         <Tag type={toolStatusTagType(row)}>{toolStatus(row)}</Tag>
                     </div>,
                     sortKey: row => toolStatus(row).toLowerCase(),
                 },
                 {
-                    label: 'Marke',
+                    label: uiText("Marke"),
                     render: row => row.brand,
                     sortKey: row => row.brand.toLowerCase(),
                 },
                 {
-                    label: 'Kategorie',
+                    label: uiText("Kategorie"),
                     render: row => row.category,
                     sortKey: row => row.category.toLowerCase(),
                 },
                 {
-                    label: 'Modell',
+                    label: uiText("Modell"),
                     render: row => row.label,
                     sortKey: row => row.label?.toLowerCase() ?? '',
                 },

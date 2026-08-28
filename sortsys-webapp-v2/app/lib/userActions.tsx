@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useMyModals, type MyModalsInterface } from "~/hooks/useMyModals";
@@ -40,8 +41,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
   const actions = useMemo<UserAction[]>(() => [
     {
       id: 'tools.track',
-      label: 'Werkzeuge einbuchen',
-      description: 'Werkzeuge ausgeben, zurücknehmen oder umbuchen.',
+      label: uiText("Werkzeuge einbuchen"),
+      description: uiText("Werkzeuge ausgeben, zurücknehmen oder umbuchen."),
       group: 'work',
       icon: Icons.Track,
       requiredRole: 'manage:toolTrackings',
@@ -49,8 +50,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'deliveryNotes.create',
-      label: 'Lieferschein erfassen',
-      description: 'Materiallieferung für Projekt dokumentieren.',
+      label: uiText("Lieferschein erfassen"),
+      description: uiText("Materiallieferung für Projekt dokumentieren."),
       group: 'work',
       icon: Icons.DeliveryNote,
       requiredRole: 'manage:deliveryNotes',
@@ -58,8 +59,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'dailyReports.create',
-      label: 'Bautagesbericht',
-      description: 'Täglichen Baustellenstand mit Zeiten und Wetter erfassen.',
+      label: uiText("Bautagesbericht"),
+      description: uiText("Täglichen Baustellenstand mit Zeiten und Wetter erfassen."),
       group: 'work',
       icon: Icons.DailyReport,
       requiredRole: 'manage:dailyProjectReports',
@@ -67,8 +68,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'dailyReports.weeklyCreate',
-      label: 'Bauwochenbericht',
-      description: 'Mehrere Bautagesberichte für Kalenderwoche erfassen.',
+      label: uiText("Bauwochenbericht"),
+      description: uiText("Mehrere Bautagesberichte für Kalenderwoche erfassen."),
       group: 'work',
       icon: Icons.DailyReport,
       requiredRole: 'manage:dailyProjectReports',
@@ -76,8 +77,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'regieReports.create',
-      label: 'Regiebericht',
-      description: 'Zusatzleistungen mit Zeiten, Material und Sonderpositionen erfassen.',
+      label: uiText("Regiebericht"),
+      description: uiText("Zusatzleistungen mit Zeiten, Material und Sonderpositionen erfassen."),
       group: 'work',
       icon: Icons.RegieReport,
       requiredRole: 'manage:regieReports',
@@ -85,8 +86,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'projects.create',
-      label: 'Projekt erstellen',
-      description: 'Neues Projekt im Projektstamm anlegen.',
+      label: uiText("Projekt erstellen"),
+      description: uiText("Neues Projekt im Projektstamm anlegen."),
       group: 'create',
       icon: Icons.Project,
       requiredRole: 'manage:projects',
@@ -94,8 +95,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'tools.create',
-      label: 'Werkzeug erstellen',
-      description: 'Neues Werkzeug im Werkzeugstamm anlegen.',
+      label: uiText("Werkzeug erstellen"),
+      description: uiText("Neues Werkzeug im Werkzeugstamm anlegen."),
       group: 'create',
       icon: Icons.Tool,
       requiredRole: 'manage:tools',
@@ -103,8 +104,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'products.create',
-      label: 'Produkt erstellen',
-      description: 'Neues Material oder Produkt anlegen.',
+      label: uiText("Produkt erstellen"),
+      description: uiText("Neues Material oder Produkt anlegen."),
       group: 'create',
       icon: Icons.Product,
       requiredRole: 'manage:products',
@@ -112,8 +113,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'productVendors.create',
-      label: 'Händler erstellen',
-      description: 'Neuen Produkt-Händler anlegen.',
+      label: uiText("Händler erstellen"),
+      description: uiText("Neuen Produkt-Händler anlegen."),
       group: 'create',
       icon: Icons.ProductVendor,
       requiredRole: 'manage:productVendors',
@@ -121,8 +122,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'users.create',
-      label: 'Benutzer erstellen',
-      description: 'Neues Benutzerkonto anlegen.',
+      label: uiText("Benutzer erstellen"),
+      description: uiText("Neues Benutzerkonto anlegen."),
       group: 'create',
       icon: Icons.User,
       requiredRole: 'manage:users',
@@ -130,8 +131,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'customers.create',
-      label: 'Kunde erstellen',
-      description: 'Neuen Kundenstamm anlegen.',
+      label: uiText("Kunde erstellen"),
+      description: uiText("Neuen Kundenstamm anlegen."),
       group: 'create',
       icon: Icons.Customer,
       requiredRole: 'manage:customers',
@@ -139,8 +140,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'contacts.create',
-      label: 'Kontakt erstellen',
-      description: 'Neue Kontaktperson anlegen.',
+      label: uiText("Kontakt erstellen"),
+      description: uiText("Neue Kontaktperson anlegen."),
       group: 'create',
       icon: Icons.Contact,
       requiredRole: 'manage:contacts',
@@ -148,8 +149,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'projects.costs.open',
-      label: 'Kostenübersicht öffnen',
-      description: 'Projektkosten, Lieferscheine und Arbeitszeiten prüfen.',
+      label: uiText("Kostenübersicht öffnen"),
+      description: uiText("Projektkosten, Lieferscheine und Arbeitszeiten prüfen."),
       group: 'navigate',
       icon: Icons.PriceRecord,
       requiredRoles: ['view:projects', 'view:deliveryNotes', 'view:dailyProjectReports'],
@@ -158,8 +159,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'deployments.open',
-      label: 'Einsatzplanung öffnen',
-      description: 'Projektzuweisungen und Abwesenheiten planen.',
+      label: uiText("Einsatzplanung öffnen"),
+      description: uiText("Projektzuweisungen und Abwesenheiten planen."),
       group: 'navigate',
       icon: Icons.DailyReport,
       requiredRole: 'view:projectDeployments',
@@ -168,8 +169,8 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'commonCosts.manage',
-      label: 'Gemeinkosten',
-      description: 'Globale Zuschläge und Gemeinkosten bearbeiten.',
+      label: uiText("Gemeinkosten"),
+      description: uiText("Globale Zuschläge und Gemeinkosten bearbeiten."),
       group: 'admin',
       icon: Icons.PriceRecord,
       requiredRole: 'manage:projects',

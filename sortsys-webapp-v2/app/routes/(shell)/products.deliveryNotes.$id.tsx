@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
@@ -64,7 +65,7 @@ export default function DeliveryNoteDetailPage() {
     return note?.records.map(record => ({ ...record, costs }));
   }, [note, costs]);
 
-  useTitle(() => note ? `Lieferschein #${note.autoId}` : null, [note?.autoId]);
+  useTitle(() => note ? uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`) : null, [note?.autoId]);
 
   async function exportDeliveryNoteToPdf(target: BlobTarget = 'open') {
     const currentNote = note;
@@ -130,12 +131,12 @@ export default function DeliveryNoteDetailPage() {
       });
 
       const summaryRows: string[][] = [
-        ['Projekt', project?.title ?? 'Unbekannt'],
-        ['Datum', formatDate(currentNote.effectiveTimestamp, 'long')],
-        ['Nummer', `#${currentNote.autoId}`],
+        [uiText('Projekt'), project?.title ?? 'Unbekannt'],
+        [uiText('Datum'), formatDate(currentNote.effectiveTimestamp, 'long')],
+        [uiText('Nummer'), `#${currentNote.autoId}`],
       ];
       if (currentNote.comment) {
-        summaryRows.push(['Kommentar', currentNote.comment]);
+        summaryRows.push([uiText('Kommentar'), currentNote.comment]);
       }
       if (costs) {
         summaryRows.push(['Gesamtkosten', formatCurrency(costs.totalCost)]);
@@ -143,8 +144,8 @@ export default function DeliveryNoteDetailPage() {
 
       const sections: PdfTableSection[] = [
         {
-          title: 'Zusammenfassung',
-          columns: ['Kennzahl', 'Wert'],
+          title: uiText("Zusammenfassung"),
+          columns: [uiText('Kennzahl'), uiText('Wert')],
           rows: summaryRows,
           withHeader: false,
           align: ['left', 'left'],
@@ -154,8 +155,8 @@ export default function DeliveryNoteDetailPage() {
 
       if (productRows.length > 0) {
         sections.push({
-          title: 'Produkte',
-          columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', 'Kosten'],
+          title: uiText("Produkte"),
+          columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
           rows: productRows,
           align: ['left', 'right', 'right', 'right', 'right'],
           columnWidths: ['1.8fr', '1fr', '1fr', '1fr', '0.9fr'],
@@ -164,8 +165,8 @@ export default function DeliveryNoteDetailPage() {
 
       if (specialRows.length > 0) {
         sections.push({
-          title: 'Sonderposten',
-          columns: ['Bezeichnung', 'Menge', 'Preis pro Einheit', 'Kosten'],
+          title: uiText("Sonderposten"),
+          columns: ['Bezeichnung', 'Menge', 'Preis pro Einheit', uiText('Kosten')],
           rows: specialRows,
           align: ['left', 'right', 'right', 'right'],
           columnWidths: ['1.6fr', '1fr', '1fr', '1fr'],
@@ -173,18 +174,18 @@ export default function DeliveryNoteDetailPage() {
       }
 
       const pdfData = await renderStructuredPdf({
-        title: `Lieferschein #${currentNote.autoId}`,
-        reportLabel: 'Lieferschein',
+        title: uiText(`Lieferschein #${currentNote.autoId}`, `Delivery note #${currentNote.autoId}`),
+        reportLabel: uiText("Lieferschein"),
         showReportLabel: false,
         sections,
-        emptyMessage: 'Keine Daten zum Lieferschein verfügbar.',
+        emptyMessage: uiText("Keine Daten zum Lieferschein verfügbar."),
       });
 
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      deliverBlob(blob, `Lieferschein-${currentNote.autoId}.pdf`, target, pdfWindow);
+      deliverBlob(blob, uiText(`Lieferschein-${currentNote.autoId}.pdf`, `Delivery note-${currentNote.autoId}.pdf`), target, pdfWindow);
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || 'Unbekannter Fehler beim PDF-Export.');
+      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
     } finally {
       setIsPdfExporting(false);
     }
@@ -228,10 +229,10 @@ export default function DeliveryNoteDetailPage() {
     wb.creator = 'exceljs';
     wb.created = new Date();
 
-    const ws = wb.addWorksheet('Lieferschein');
-    ws.getCell(1, 1).value = `Lieferschein #${currentNote.autoId}`;
+    const ws = wb.addWorksheet(uiText('Lieferschein'));
+    ws.getCell(1, 1).value = uiText(`Lieferschein #${currentNote.autoId}`, `Delivery note #${currentNote.autoId}`);
     ws.getCell(1, 1).font = { size: 18, bold: true };
-    ws.getCell(2, 1).value = `${formatDate(currentNote.effectiveTimestamp)} — ${project?.title ?? 'Unbekanntes Projekt'}`;
+    ws.getCell(2, 1).value = uiText(`${formatDate(currentNote.effectiveTimestamp)} — ${project?.title ?? 'Unbekanntes Projekt'}`, `${formatDate(currentNote.effectiveTimestamp)} — ${project?.title ?? 'Unknown project'}`);
     ws.getCell(2, 1).font = { size: 12, italic: true };
     ws.mergeCells(1, 1, 1, 6);
     ws.mergeCells(2, 1, 2, 6);
@@ -239,7 +240,7 @@ export default function DeliveryNoteDetailPage() {
     let cursor = 4;
 
     if (currentNote.comment) {
-      ws.getCell(cursor, 1).value = 'Kommentar';
+      ws.getCell(cursor, 1).value = uiText('Kommentar');
       ws.getCell(cursor, 1).font = { bold: true, size: 14 };
       cursor += 1;
 
@@ -309,7 +310,7 @@ export default function DeliveryNoteDetailPage() {
     if (productRows.length) {
       addSectionTitle('Produkte');
       productsTable = addTable(
-        ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', 'Kosten'],
+        ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
         productRows,
       );
     }
@@ -351,8 +352,8 @@ export default function DeliveryNoteDetailPage() {
     if (costs) {
       addSectionTitle('Gesamt');
       const totalsTable = addTable(
-        ['Bereich', 'Kosten'],
-        [['Lieferschein gesamt', Number(costs.totalCost ?? 0)]],
+        ['Bereich', uiText('Kosten')],
+        [[uiText('Lieferschein gesamt'), Number(costs.totalCost ?? 0)]],
       );
       if (totalsTable) {
         ws.getCell(totalsTable.firstDataRow, 2).numFmt = CURRENCY_NUM_FMT;
@@ -373,34 +374,34 @@ export default function DeliveryNoteDetailPage() {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
-    downloadBlob(blob, `Lieferschein-${currentNote.autoId}.xlsx`);
+    downloadBlob(blob, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
   }
 
   return <>
     <MyHeader
-      title={`Lieferschein #${note.autoId}`}
+      title={uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`)}
       actions={<MyDropdown items={[
         {
-          label: isPdfExporting ? 'PDF wird erstellt...' : 'PDF',
+          label: isPdfExporting ? uiText("PDF wird erstellt...") : uiText("PDF"),
           renderIcon: Icons.Download,
           hideIf: !sessionInfo.canDo('view:deliveryNotes'),
           disabled: isPdfExporting,
           onClick: () => exportDeliveryNoteToPdf(),
         },
         {
-          label: 'Excel',
+          label: uiText("Excel"),
           renderIcon: Icons.Excel,
           hideIf: !sessionInfo.canDo('view:deliveryNotes'),
           onClick: exportDeliveryNoteToExcel,
         },
         {
-          label: 'Bearbeiten',
+          label: uiText("Bearbeiten"),
           renderIcon: Icons.Edit,
           hideIf: !sessionInfo.canDo('manage:deliveryNotes'),
           onClick: () => showModifyDeliveryNoteModal(modals, note),
         },
         {
-          label: 'Löschen',
+          label: uiText("Löschen"),
           renderIcon: Icons.Delete,
           hideIf: !sessionInfo.canDo('delete:deliveryNotes'),
           onClick: () => showDeleteDeliveryNoteModal(modals, note),
@@ -408,38 +409,37 @@ export default function DeliveryNoteDetailPage() {
       ]} />}
     />
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">
-      PDF-Export fehlgeschlagen: {pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
     </MyCallout>}
 
     <AttrList>
-      <AttrList.Attr name="Projekt" value={<Awaited promise={async () => {
+      <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
         const [project] = await client.query('projects.get', { id: note.projectId }, { strategy: 'cache-first' });
         if (!project) return 'Unbekannt';
         return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
       }} />} />
 
-      {!!note.comment && <AttrList.Attr name="Kommentar" value={note.comment} />}
-      <AttrList.Attr name="Erstellt am" value={formatDate(note.createdAt)} />
-      {!!note.createdByUserId && <AttrList.Attr name="Erstellt von" value={<Awaited promise={async () => {
+      {!!note.comment && <AttrList.Attr name={uiText("Kommentar")} value={note.comment} />}
+      <AttrList.Attr name={uiText("Erstellt am")} value={formatDate(note.createdAt)} />
+      {!!note.createdByUserId && <AttrList.Attr name={uiText("Erstellt von")} value={<Awaited promise={async () => {
         const [user] = await client.query('users.get', { id: note.createdByUserId! }, { strategy: 'cache-first' });
         if (!user) return 'Unbekannt';
         return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>
       }} />} />}
 
-      {!!costs && <AttrList.Attr name="Kosten" value={formatCurrency(costs.totalCost)} />}
+      {!!costs && <AttrList.Attr name={uiText("Kosten")} value={formatCurrency(costs.totalCost)} />}
     </AttrList>
 
     <MyDivider />
 
-    {!!note.records.length && <MyExpandable title="Produkte" initiallyExpanded>
+    {!!note.records.length && <MyExpandable title={uiText("Produkte")} initiallyExpanded>
       <MyTable
         className="th-25rem"
         persistentId="Products"
         rows={tableRecords ?? []}
         columns={[
           {
-            label: 'Bezeichnung',
+            label: uiText("Bezeichnung"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return 'Unbekannt';
@@ -447,7 +447,7 @@ export default function DeliveryNoteDetailPage() {
             },
           },
           {
-            label: 'Menge',
+            label: uiText("Menge"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return `${formatNumber(row.quantity)} ???`;
@@ -456,7 +456,7 @@ export default function DeliveryNoteDetailPage() {
             },
           },
           {
-            label: 'Basismenge',
+            label: uiText("Basismenge"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return formatNumber(row.quantity);
@@ -465,7 +465,7 @@ export default function DeliveryNoteDetailPage() {
             },
           },
           {
-            label: 'mittlerer EP',
+            label: uiText("mittlerer EP"),
             render: async row => {
               const recordCost = deliveryRecordCost(row.costs, row.id);
               const baseQuantity = Number(row.quantity ?? 0);
@@ -482,7 +482,7 @@ export default function DeliveryNoteDetailPage() {
             },
           },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => {
               const recordCost = deliveryRecordCost(row.costs, row.id);
               if (typeof recordCost !== 'number') return '';
@@ -499,28 +499,28 @@ export default function DeliveryNoteDetailPage() {
       />
     </MyExpandable>}
 
-    {!!note.specialRecords?.length && <MyExpandable title="Sonderposten" initiallyExpanded>
+    {!!note.specialRecords?.length && <MyExpandable title={uiText("Sonderposten")} initiallyExpanded>
       <MyTable
         className="th-25rem"
         rows={note.specialRecords}
         columns={[
           {
-            label: 'Bezeichnung',
+            label: uiText("Bezeichnung"),
             render: row => row.name,
             sortKey: row => row.name,
           },
           {
-            label: 'Menge',
+            label: uiText("Menge"),
             render: row => `${formatNumber(row.amount)} ${row.unit}`,
             sortKey: row => row.amount,
           },
           {
-            label: 'Preis pro Einheit',
+            label: uiText("Preis pro Einheit"),
             render: row => row.pricePerUnit != null ? formatCurrency(row.pricePerUnit) : '',
             sortKey: row => row.pricePerUnit ?? 0,
           },
           {
-            label: 'Gesamt',
+            label: uiText("Gesamt"),
             render: row => row.pricePerUnit != null ? formatCurrency(row.amount * row.pricePerUnit) : '',
             sortKey: row => row.pricePerUnit != null ? row.amount * row.pricePerUnit : 0,
           },

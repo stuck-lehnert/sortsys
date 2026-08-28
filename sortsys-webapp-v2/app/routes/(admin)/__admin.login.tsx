@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Loading, Tile } from "@sortsys/react-components";
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router";
@@ -10,7 +11,7 @@ import { useForceUpdate } from "~/hooks/useForceUpdate";
 
 export function meta() {
   return [
-    { title: "Global Admin Login" },
+    { title: uiText("Global Admin Login") },
   ];
 }
 
@@ -36,11 +37,7 @@ export default function GlobalAdminLoginPage() {
   return <div className="my-container" style={{ maxWidth: "36rem", paddingTop: "2rem" }}>
     <Tile>
       <div className="space-y-2">
-        <h2 className={h2()}>Global Tenant Admin</h2>
-
-        <MyCallout icon={Icons.Info} color="blue">
-          Dieser Login-Bereich ist getrennt von der normalen Benutzer-Anmeldung.
-        </MyCallout>
+        <h2 className={h2()}>{uiText("Global Admin")}</h2>
 
         {!!errMsg && (
           <MyCallout icon={Icons.Deny} color="red">
@@ -58,17 +55,17 @@ export default function GlobalAdminLoginPage() {
             return;
           }
 
-          setErrMsg(err.message || "Anmeldung fehlgeschlagen");
+          setErrMsg(err.message || uiText("Anmeldung fehlgeschlagen"));
         }}>
           <MyForm.Input
             required
             autoComplete="current-password"
             type="password"
             name="password"
-            labelText="Global Admin Passwort"
+            labelText={uiText("Global Admin Passwort")}
           />
 
-          <MyForm.SubmitButton>Anmelden</MyForm.SubmitButton>
+          <MyForm.SubmitButton>{uiText("Anmelden")}</MyForm.SubmitButton>
         </MyForm>
       </div>
     </Tile>

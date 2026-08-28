@@ -1,54 +1,9 @@
-import { createHash } from "node:crypto";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { relative } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 
-async function listFiles(root) {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    const url = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, root);
-    if (entry.isDirectory()) {
-      files.push(...await listFiles(url));
-    } else if (
-      entry.isFile()
-      && (entry.name.endsWith(".rs") || entry.name.endsWith(".ts"))
-    ) {
-      files.push(url);
-    }
-  }
-
-  return files;
-}
-
-async function hashApiSource() {
-  const roots = [
-    new URL("../../rust-api/src/", import.meta.url),
-    new URL("../src/generated/contract.ts", import.meta.url),
-  ];
-  const hash = createHash("sha256");
-  const files = [];
-
-  for (const root of roots) {
-    const info = await stat(root);
-    if (info.isDirectory()) {
-      files.push(...await listFiles(root));
-    } else {
-      files.push(root);
-    }
-  }
-
-  files.sort((left, right) => left.pathname.localeCompare(right.pathname));
-  const repoRoot = new URL("../../", import.meta.url);
-  for (const file of files) {
-    hash.update(relative(repoRoot.pathname, file.pathname));
-    hash.update("\0");
-    hash.update(await readFile(file));
-    hash.update("\0");
-  }
-
-  return hash.digest("hex");
-}
+import {
+  hashApiContract,
+  hashClientBuildInputs,
+} from "./build-fingerprint.mjs";
 
 const pkgRaw = await readFile(new URL("../package.json", import.meta.url), "utf8");
 const pkg = JSON.parse(pkgRaw);
@@ -67,7 +22,8 @@ const distPkg = {
     default: "./index.js",
   },
   dependencies: pkg.dependencies ?? {},
-  sortsysApiSourceHash: await hashApiSource(),
+  sortsysApiSourceHash: await hashApiContract(),
+  sortsysClientBuildHash: await hashClientBuildInputs(),
 };
 
 await writeFile(

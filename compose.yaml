@@ -28,6 +28,8 @@ services:
       JWT_SECRET: ${SERVICE_BASE64_64_JWT}
       ADMIN_HASH: ${ADMIN_HASH:?Set ADMIN_HASH to a bcrypt hash for the global administrator}
       JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
+      LLM_ENCRYPTION_KEY: ${SERVICE_BASE64_64_LLM}
+      LLM_MCP_URL: ${LLM_MCP_URL:-}
     expose:
       - "3000"
     depends_on:

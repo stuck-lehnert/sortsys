@@ -1,3 +1,4 @@
+import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { MyCallout } from "~/components/MyCallout";
 import { MyExpandable } from "~/components/MyExpandable";
@@ -11,17 +12,17 @@ type ActivityItem = QueryResult<'personalization.activity.list'>[number];
 type ActivityResourceType = ActivityItem['resourceType'];
 
 const ACTIVITY_META: Record<ActivityResourceType, { label: string; icon: Icon; href: (item: ActivityItem) => string | null }> = {
-  project: { label: 'Projekt', icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
-  tool: { label: 'Werkzeug', icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
-  user: { label: 'Benutzer', icon: Icons.User, href: item => `/users/${item.resourceId}` },
-  customer: { label: 'Kunde', icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
-  contact: { label: 'Kontakt', icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
-  product: { label: 'Produkt', icon: Icons.Product, href: item => `/products/${item.resourceId}` },
-  productVendor: { label: 'Händler', icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
-  deliveryNote: { label: 'Lieferschein', icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
-  regieReport: { label: 'Regiebericht', icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
+  project: { label: uiText("Projekt"), icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
+  tool: { label: uiText("Werkzeug"), icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
+  user: { label: uiText("Benutzer"), icon: Icons.User, href: item => `/users/${item.resourceId}` },
+  customer: { label: uiText("Kunde"), icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
+  contact: { label: uiText("Kontakt"), icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
+  product: { label: uiText("Produkt"), icon: Icons.Product, href: item => `/products/${item.resourceId}` },
+  productVendor: { label: uiText("Händler"), icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
+  deliveryNote: { label: uiText("Lieferschein"), icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
+  regieReport: { label: uiText("Regiebericht"), icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
   dailyProjectReport: {
-    label: 'Bautagesbericht',
+    label: uiText("Bautagesbericht"),
     icon: Icons.DailyReport,
     href: item => item.contextId && item.contextDate
       ? `/projects/${item.contextId}/dailyReports/${dailyReportDayKey(item.contextDate)}`
@@ -30,7 +31,7 @@ const ACTIVITY_META: Record<ActivityResourceType, { label: string; icon: Icon; h
 };
 
 function formatTimestamp(value: Date) {
-  return value.toLocaleString('de-DE', {
+  return value.toLocaleString(currentLocaleTag(), {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -40,7 +41,7 @@ function formatTimestamp(value: Date) {
 }
 
 function actionLabel(action: ActivityItem['action']) {
-  return action === 'updated' ? 'Geändert' : 'Erstellt';
+  return action === 'updated' ? uiText('Geändert', 'Changed') : uiText('Erstellt');
 }
 
 function ActivityTimelineRow({ item }: { item: ActivityItem }) {
@@ -57,7 +58,7 @@ function ActivityTimelineRow({ item }: { item: ActivityItem }) {
       </div>
       <div className="entity-activity-meta">
         {meta.label} · {formatTimestamp(item.occurredAt)}
-        {!!item.contextTitle && <> · Projekt {item.contextTitle}</>}
+        {!!item.contextTitle && <>{uiText(" · Projekt ")}{item.contextTitle}</>}
       </div>
       {!!item.description && <div className="entity-activity-description">{item.description}</div>}
     </div>
@@ -83,14 +84,13 @@ export function EntityActivityTimeline({
   }), [resourceType, resourceId, includeProjectContext, limit]);
 
   if (err) {
-    return <MyCallout icon={Icons.Info} color="amber">
-      Aktivität konnte nicht geladen werden: {err.message}
+    return <MyCallout icon={Icons.Info} color="amber">{uiText("Aktivität konnte nicht geladen werden:")}{err.message}
     </MyCallout>;
   }
 
-  return <MyExpandable title={`Aktivität (${items?.length ?? 0})`} initiallyExpanded={false}>
+  return <MyExpandable title={uiText(`Aktivität (${items?.length ?? 0})`, `Activity (${items?.length ?? 0})`)} initiallyExpanded={false}>
     {!items?.length
-      ? <div className="light">Noch keine Aktivität vorhanden.</div>
+      ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
       : <div className="entity-activity-timeline">
         {items.map(item => <ActivityTimelineRow key={`${item.resourceType}:${item.resourceId}:${item.occurredAt.toISOString()}`} item={item} />)}
       </div>}

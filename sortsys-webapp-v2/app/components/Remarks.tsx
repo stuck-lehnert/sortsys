@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDropdown } from "~/components/MyDropdown";
@@ -22,7 +23,7 @@ export function showRemarkFormModal(props: {
 
   modals.showForm({
     content: ({ context }) => <>
-      <MyForm.Input required textArea name="body" labelText="Vermerk" />
+      <MyForm.Input required textArea name="body" labelText={uiText("Vermerk")} />
       {!!remark && <NotifyLoaded onLoad={() => context.setValues({ body: remark.body })} />}
     </>,
     onSubmit: async ({ context, hide }) => {
@@ -36,8 +37,8 @@ export function showRemarkFormModal(props: {
     },
     modalProps: () => ({
       noFullscreen: true,
-      modalHeading: remark ? 'Vermerk bearbeiten' : 'Vermerk erstellen',
-      primaryButtonText: remark ? 'Speichern' : 'Erstellen',
+      modalHeading: remark ? uiText("Vermerk bearbeiten") : uiText("Vermerk erstellen"),
+      primaryButtonText: remark ? uiText("Speichern") : uiText("Erstellen"),
     }),
   });
 }
@@ -45,8 +46,8 @@ export function showRemarkFormModal(props: {
 function showDeleteRemarkModal(modals: ReturnType<typeof useMyModals>, remark: Remark) {
   modals.showForm({
     content: () => <>
-      <p className="light">Dieser Vermerk wird dauerhaft gelöscht.</p>
-      <MyForm.Checkbox required name="_understood" labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann." />
+      <p className="light">{uiText("Dieser Vermerk wird dauerhaft gelöscht.")}</p>
+      <MyForm.Checkbox required name="_understood" labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")} />
     </>,
     onSubmit: async ({ hide }) => {
       const [data, err] = await client.mutate('remarks.delete', { id: remark.id });
@@ -57,8 +58,8 @@ function showDeleteRemarkModal(modals: ReturnType<typeof useMyModals>, remark: R
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Vermerk löschen',
-      primaryButtonText: 'Löschen',
+      modalHeading: uiText("Vermerk löschen"),
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }
@@ -76,14 +77,14 @@ export function Remarks({ resourceType, resourceId, canManage }: {
 
   return <section className="remarks-section">
     <div className="remarks-header">
-      <h3>Vermerke</h3>
+      <h3>{uiText("Vermerke")}</h3>
 
       {canManage && <MyButton kind="secondary" size="sm" renderIcon={Icons.Plus} onClick={() => {
         showRemarkFormModal({ modals, resourceType, resourceId });
-      }}>Vermerk</MyButton>}
+      }}>{uiText("Vermerk")}</MyButton>}
     </div>
 
-    {!!err && <MyCallout icon={Icons.Deny} color="red">Vermerke konnten nicht geladen werden: {err.message}</MyCallout>}
+    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Vermerke konnten nicht geladen werden: ")}{err.message}</MyCallout>}
 
     {!!rows.length && <div className="remarks-grid">
       {rows.map(remark => <article key={remark.id} className="remark-note">
@@ -95,12 +96,12 @@ export function Remarks({ resourceType, resourceId, canManage }: {
         {canManage && <div className="remark-note__actions">
           <MyDropdown items={[
             {
-              label: 'Bearbeiten',
+              label: uiText("Bearbeiten"),
               renderIcon: Icons.Edit,
               onClick: () => showRemarkFormModal({ modals, resourceType, resourceId, remark }),
             },
             {
-              label: 'Löschen',
+              label: uiText("Löschen"),
               renderIcon: Icons.Delete,
               onClick: () => showDeleteRemarkModal(modals, remark),
             },

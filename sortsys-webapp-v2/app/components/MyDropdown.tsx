@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Button, Menu, MenuItem, MenuItemSelectable } from "@sortsys/react-components";
 import type { ComponentProps } from "react";
 import React, { useRef, useState } from "react";
@@ -49,7 +50,7 @@ export function MyDropdown(_props: {
             </Button>
         </div>
 
-        <Menu label="Dropdown"
+        <Menu label={uiText("Dropdown")}
             className={menuClassName}
             ref={menuRef}
             open={open}

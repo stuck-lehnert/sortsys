@@ -1,3 +1,4 @@
+import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { Route } from "./+types/dashboard";
 import { Heading, Tile } from "@sortsys/react-components";
 import { MyHeader } from "~/components/MyHeader";
@@ -13,7 +14,7 @@ import { Icons, type Icon } from "~/lib/icons";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Dashboard" },
+    { title: uiText("Dashboard") },
   ];
 }
 
@@ -44,6 +45,16 @@ const DASHBOARD_PINNED_VISITS_KEY = "sortsys.dashboard.pinnedVisits";
 
 type PinnedVisit = Pick<VisitHistoryItem, 'path' | 'title' | 'visitedAt'>;
 
+function normalizeLlmPath(path: string) {
+  return path.replace(/^\/assistant(?=\/|[?#]|$)/, '/llm');
+}
+
+function visitLabel(visit: PinnedVisit) {
+  if (/^\/llm(?:[/?#]|$)/.test(visit.path)) return 'LLM';
+
+  return visit.title || visit.path;
+}
+
 function pickQuickActions(actions: UserAction[], history: ActionHistoryItem[] | null | undefined) {
   const actionById = new Map(actions.map(action => [action.id, action]));
   const stats = new Map<string, { count: number; lastUsedAt: number }>();
@@ -70,11 +81,16 @@ function pickQuickActions(actions: UserAction[], history: ActionHistoryItem[] | 
 
 function uniqueRecentVisits(visits: VisitHistoryItem[] | null | undefined) {
   const seen = new Set<string>();
-  return (visits ?? []).filter(visit => {
-    if (visit.path === '/dashboard' || seen.has(visit.path)) return false;
-    seen.add(visit.path);
-    return true;
-  }).slice(0, 8);
+
+  return (visits ?? [])
+    .map(visit => ({ ...visit, path: normalizeLlmPath(visit.path) }))
+    .filter(visit => {
+      if (visit.path === '/dashboard' || seen.has(visit.path)) return false;
+
+      seen.add(visit.path);
+      return true;
+    })
+    .slice(0, 8);
 }
 
 function readPinnedVisits(): PinnedVisit[] {
@@ -86,7 +102,7 @@ function readPinnedVisits(): PinnedVisit[] {
     return parsed
       .filter(item => item && typeof item.path === 'string')
       .map(item => ({
-        path: item.path,
+        path: normalizeLlmPath(item.path),
         title: typeof item.title === 'string' ? item.title : null,
         visitedAt: item.visitedAt ? new Date(item.visitedAt) : new Date(),
       }))
@@ -101,20 +117,20 @@ function groupActivity(activity: ActivityItem[] | null | undefined) {
 
   (activity ?? []).forEach(item => {
     let key = 'other';
-    let label = 'Weitere Änderungen';
+    let label = uiText('Weitere Änderungen', 'Other changes');
     let href: string | null = null;
 
     if (item.resourceType === 'project') {
       key = `project:${item.resourceId}`;
-      label = `Projekt: ${item.title}`;
+      label = uiText(`Projekt: ${item.title}`, `Project: ${item.title}`);
       href = `/projects/${item.resourceId}`;
     } else if (item.resourceType === 'customer') {
       key = `customer:${item.resourceId}`;
-      label = `Kunde: ${item.title}`;
+      label = uiText(`Kunde: ${item.title}`, `Customer: ${item.title}`);
       href = `/customers/${item.resourceId}`;
     } else if (item.contextId) {
       key = `project:${item.contextId}`;
-      label = `Projekt: ${item.contextTitle || item.contextId}`;
+      label = uiText(`Projekt: ${item.contextTitle || item.contextId}`, `Project: ${item.contextTitle || item.contextId}`);
       href = `/projects/${item.contextId}`;
     }
 
@@ -126,7 +142,7 @@ function groupActivity(activity: ActivityItem[] | null | undefined) {
 }
 
 function formatTimestamp(value: Date) {
-  return value.toLocaleString('de-DE', {
+  return value.toLocaleString(currentLocaleTag(), {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -136,17 +152,17 @@ function formatTimestamp(value: Date) {
 }
 
 const ACTIVITY_META: Record<ActivityItem['resourceType'], { label: string; icon: Icon; href: (item: ActivityItem) => string | null }> = {
-  project: { label: 'Projekt', icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
-  tool: { label: 'Werkzeug', icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
-  user: { label: 'Benutzer', icon: Icons.User, href: item => `/users/${item.resourceId}` },
-  customer: { label: 'Kunde', icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
-  contact: { label: 'Kontakt', icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
-  product: { label: 'Produkt', icon: Icons.Product, href: item => `/products/${item.resourceId}` },
-  productVendor: { label: 'Händler', icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
-  deliveryNote: { label: 'Lieferschein', icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
-  regieReport: { label: 'Regiebericht', icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
+  project: { label: uiText("Projekt"), icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
+  tool: { label: uiText("Werkzeug"), icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
+  user: { label: uiText("Benutzer"), icon: Icons.User, href: item => `/users/${item.resourceId}` },
+  customer: { label: uiText("Kunde"), icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
+  contact: { label: uiText("Kontakt"), icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
+  product: { label: uiText("Produkt"), icon: Icons.Product, href: item => `/products/${item.resourceId}` },
+  productVendor: { label: uiText("Händler"), icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
+  deliveryNote: { label: uiText("Lieferschein"), icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
+  regieReport: { label: uiText("Regiebericht"), icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
   dailyProjectReport: {
-    label: 'Bautagesbericht',
+    label: uiText("Bautagesbericht"),
     icon: Icons.DailyReport,
     href: item => item.contextId && item.contextDate
       ? `/projects/${item.contextId}/dailyReports/${dailyReportDayKey(item.contextDate)}`
@@ -160,13 +176,13 @@ export default function DashboardPage() {
   const [draggedPinnedPath, setDraggedPinnedPath] = useState<string | null>(null);
   const [dragOverPinnedPath, setDragOverPinnedPath] = useState<string | null>(null);
   const [actionHistory] = useClientStream<ActionHistoryItem[] | null, any>(() => {
-    return (client.streamQuery as any)('personalization.actions.list', { limit: 100 });
+    return client.streamQuery('personalization.actions.list', { limit: 100 });
   }, []);
   const [visitHistory] = useClientStream<VisitHistoryItem[] | null, any>(() => {
-    return (client.streamQuery as any)('personalization.visits.list', { limit: 30 });
+    return client.streamQuery('personalization.visits.list', { limit: 30 });
   }, []);
   const [activity] = useClientStream<ActivityItem[] | null, any>(() => {
-    return (client.streamQuery as any)('personalization.activity.list', { limit: 25 });
+    return client.streamQuery('personalization.activity.list', { limit: 25 });
   }, []);
 
   const quickActions = useMemo(() => {
@@ -230,6 +246,7 @@ export default function DashboardPage() {
   }
 
   function renderVisitRow(visit: PinnedVisit, pinned = false, reorderable = false) {
+    const label = visitLabel(visit);
     const dragging = reorderable && draggedPinnedPath === visit.path;
     const dragOver = reorderable && dragOverPinnedPath === visit.path && draggedPinnedPath !== visit.path;
     const rowClassName = [
@@ -244,7 +261,7 @@ export default function DashboardPage() {
       className={rowClassName}
       draggable={reorderable}
       tabIndex={reorderable ? 0 : undefined}
-      aria-label={reorderable ? `${visit.title || visit.path} sortieren` : undefined}
+      aria-label={reorderable ? `${label} sortieren` : undefined}
       onDragStart={event => {
         if (!reorderable) return;
         event.dataTransfer.effectAllowed = 'move';
@@ -287,15 +304,15 @@ export default function DashboardPage() {
       }}
     >
       <Link to={visit.path} className="dashboard-visit-link" draggable={false}>
-        <span>{visit.title || visit.path}</span>
+        <span>{label}</span>
         <small>{formatDate(visit.visitedAt, 'long')}</small>
       </Link>
       <MyButton
         kind="ghost"
         size="sm"
         renderIcon={pinned ? Icons.PinFilled : Icons.Pin}
-        title={pinned ? 'Fixierung entfernen' : 'Auf Dashboard fixieren'}
-        aria-label={pinned ? 'Fixierung entfernen' : 'Auf Dashboard fixieren'}
+        title={pinned ? uiText('Fixierung entfernen') : uiText('Auf Dashboard fixieren')}
+        aria-label={pinned ? uiText('Fixierung entfernen') : uiText('Auf Dashboard fixieren')}
         onClick={() => pinned ? unpinVisit(visit.path) : pinVisit(visit)}
       />
     </div>;
@@ -303,11 +320,11 @@ export default function DashboardPage() {
 
   return <>
     <MyHeader
-      title="Dashboard"
+      title={uiText("Dashboard")}
     />
 
     {!!pinnedVisits.length && <Tile className="dashboard-pinned-visits">
-      <Heading level={3} noMargin>Fixiert</Heading>
+      <Heading level={3} noMargin>{uiText("Fixiert")}</Heading>
       <div className="dashboard-visit-list">
         {pinnedVisits.map(visit => renderVisitRow(visit, true, true))}
       </div>
@@ -317,7 +334,7 @@ export default function DashboardPage() {
       {!!quickActions.length && <Tile className="dashboard-quick-actions">
         <div className="dashboard-section-head">
           <div>
-            <Heading level={3} noMargin>Schnellaktionen</Heading>
+            <Heading level={3} noMargin>{uiText("Schnellaktionen")}</Heading>
           </div>
         </div>
         <div className="dashboard-action-grid">
@@ -334,7 +351,7 @@ export default function DashboardPage() {
       </Tile>}
 
       {!!recentVisits.length && <Tile className="dashboard-recent-visits">
-        <Heading level={3} noMargin>Zuletzt besucht</Heading>
+        <Heading level={3} noMargin>{uiText("Zuletzt besucht")}</Heading>
         <div className="dashboard-visit-list">
           {recentVisits.map(visit => renderVisitRow(visit, isPinned(visit.path)))}
         </div>
@@ -344,7 +361,7 @@ export default function DashboardPage() {
     <Tile className="dashboard-activity">
       <div className="dashboard-section-head">
         <div>
-          <Heading level={3} noMargin>Zuletzt geändert</Heading>
+          <Heading level={3} noMargin>{uiText("Zuletzt geändert")}</Heading>
         </div>
       </div>
 
@@ -352,7 +369,7 @@ export default function DashboardPage() {
         {groupedActivity.map(group => <section key={group.key} className="dashboard-activity-group">
           <div className="dashboard-activity-group-head">
             {group.href ? <Link to={group.href}>{group.label}</Link> : <span>{group.label}</span>}
-            <small>{group.items.length} Änderungen</small>
+            <small>{group.items.length}{uiText(" Änderungen")}</small>
           </div>
           <ul className="dashboard-activity-list">
             {group.items.map(item => {
@@ -360,7 +377,7 @@ export default function DashboardPage() {
               const href = meta.href(item);
               const Icon = meta.icon;
               const key = `${item.resourceType}:${item.resourceId}:${item.occurredAt.getTime()}`;
-              const actionText = item.action === 'updated' ? 'Geändert' : 'Erstellt';
+              const actionText = item.action === 'updated' ? uiText('Geändert', 'Changed') : uiText('Erstellt');
               const content = <span className="dashboard-activity-row-inner">
                 <span className="dashboard-activity-icon"><Icon size={18} /></span>
                 <span className="dashboard-activity-main">
@@ -380,7 +397,7 @@ export default function DashboardPage() {
             })}
           </ul>
         </section>)}
-      </div> : <p className="light">Noch keine Aktivität sichtbar.</p>}
+      </div> : <p className="light">{uiText("Noch keine Aktivität sichtbar.")}</p>}
     </Tile>
   </>;
 };

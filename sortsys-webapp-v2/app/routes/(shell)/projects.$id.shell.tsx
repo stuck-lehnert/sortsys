@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { MyCallout } from "~/components/MyCallout";
@@ -42,27 +43,27 @@ export default function ProjectDetailShell() {
     const tabs = [
         {
             path: `/projects/${id}`,
-            label: 'Übersicht',
+            label: uiText("Übersicht"),
             hideIf: !sessionInfo.canDo('view:tools'),
         },
         {
             path: `/projects/${id}/files`,
-            label: 'Anhänge',
+            label: uiText("Anhänge"),
             hideIf: !supportsProjectFiles,
         },
         {
             path: `/projects/${id}/costs`,
-            label: 'Kosten',
+            label: uiText("Kosten"),
             hideIf: !sessionInfo.canDo('view:deliveryNotes') || !sessionInfo.canDo('view:dailyProjectReports'),
         },
         {
             path: `/projects/${id}/regieReports`,
-            label: 'Regieberichte',
+            label: uiText("Regieberichte"),
             hideIf: !sessionInfo.canDo('view:regieReports'),
         },
         {
             path: `/projects/${id}/dailyReports`,
-            label: 'Bautagesberichte',
+            label: uiText("Bautagesberichte"),
             hideIf: !sessionInfo.canDo('view:dailyProjectReports'),
         },
     ];
@@ -85,7 +86,7 @@ export default function ProjectDetailShell() {
             actions={<MyDropdown icon={Icons.DropdownMenu}
                 items={[
                     {
-                        label: 'Abschließen',
+                        label: uiText("Abschließen"),
                         renderIcon: Icons.Finish,
                         hideIf: !!project.finishedAt || !sessionInfo.canDo('manage:projects'),
                         onClick: async () => {
@@ -94,7 +95,7 @@ export default function ProjectDetailShell() {
                         },
                     },
                     {
-                        label: 'Fortsetzen',
+                        label: uiText("Fortsetzen"),
                         renderIcon: Icons.Resume,
                         hideIf: !project.finishedAt || !sessionInfo.canDo('manage:projects'),
                         onClick: async () => {
@@ -103,67 +104,67 @@ export default function ProjectDetailShell() {
                         },
                     },
                     {
-                        label: 'Bearbeiten',
+                        label: uiText("Bearbeiten"),
                         renderIcon: Icons.Edit,
                         hideIf: !sessionInfo.canDo('manage:projects'),
                         onClick: () => showModifyProjectModal(modals, project),
                     },
                     {
-                        label: 'Unterbrechung eintragen',
+                        label: uiText("Unterbrechung eintragen"),
                         renderIcon: Icons.Disable,
                         hideIf: !sessionInfo.canDo('manage:projectDeployments'),
                         onClick: () => showCreateProjectInterruptionModal(modals, project),
                     },
                     {
-                        label: 'Vermerk erstellen',
+                        label: uiText("Vermerk erstellen"),
                         renderIcon: Icons.Plus,
                         hideIf: !isOverviewTab || !sessionInfo.canDo('manage:projects'),
                         onClick: () => showRemarkFormModal({ modals, resourceType: 'project', resourceId: project.id }),
                     },
                     {
-                        label: 'Angebotssumme',
+                        label: uiText("Angebotssumme"),
                         renderIcon: Icons.PriceRecord,
                         hideIf: !isCostsTab || !sessionInfo.canDo('manage:projects'),
                         onClick: () => showCreateProjectOfferModal(modals, project),
                     },
                     {
-                        label: 'Rechnungssumme',
+                        label: uiText("Rechnungssumme"),
                         renderIcon: Icons.DeliveryNote,
                         hideIf: !isCostsTab || !sessionInfo.canDo('manage:projects'),
                         onClick: () => showCreateProjectInvoiceModal(modals, project),
                     },
                     {
-                        label: 'Lieferscheine Excel (Zeitraum)',
+                        label: uiText("Lieferscheine Excel (Zeitraum)"),
                         renderIcon: Icons.Excel,
                         hideIf: !isCostsTab || !sessionInfo.canDo('view:deliveryNotes') || !hasDeliveryNotes,
                         onClick: () => showExportProjectDeliveryNotesTimespanModal(modals, project),
                     },
                     {
-                        label: 'Regieberichte PDF',
+                        label: uiText("Regieberichte PDF"),
                         renderIcon: Icons.Download,
                         hideIf: !isRegieReportsTab || !sessionInfo.canDo('view:regieReports') || !hasRegieReports,
                         onClick: () => showExportProjectRegieReportsModal(modals, project, 'pdf'),
                     },
                     {
-                        label: 'Regieberichte Excel',
+                        label: uiText("Regieberichte Excel"),
                         renderIcon: Icons.Excel,
                         hideIf: !isRegieReportsTab || !sessionInfo.canDo('view:regieReports') || !hasRegieReports,
                         onClick: () => showExportProjectRegieReportsModal(modals, project, 'excel'),
                     },
                     {
-                        label: 'Bauwochenberichte PDF (alle)',
+                        label: uiText("Bauwochenberichte PDF (alle)"),
                         renderIcon: Icons.Download,
                         hideIf: !isDailyReportsTab || !sessionInfo.canDo('view:dailyProjectReports'),
                         onClick: () => showExportWeeklyDailyProjectReportsModal(modals, project, 'pdf'),
                     },
                     {
-                        label: 'Bauwochenberichte Excel (alle)',
+                        label: uiText("Bauwochenberichte Excel (alle)"),
                         renderIcon: Icons.Excel,
                         hideIf: !isDailyReportsTab || !sessionInfo.canDo('view:dailyProjectReports'),
                         onClick: () => showExportWeeklyDailyProjectReportsModal(modals, project, 'excel'),
                     },
                     {
-                        label: 'Löschen',
+                        label: uiText("Löschen"),
                         renderIcon: Icons.Delete,
                         hideIf: !sessionInfo.canDo('delete:projects'),
                         onClick: () => showDeleteProjectModal(modals, project),
@@ -173,15 +174,11 @@ export default function ProjectDetailShell() {
         />
 
         {!!project.finishedAt && (
-            <MyCallout icon={Icons.Finish} color="grey">
-                Projekt ist seit dem {formatDate(project.finishedAt)} abgeschlossen
-            </MyCallout>
+            <MyCallout icon={Icons.Finish} color="grey">{uiText("Projekt ist seit dem")}{formatDate(project.finishedAt)}{uiText("abgeschlossen")}</MyCallout>
         )}
 
         {!!archivedAt && (
-            <MyCallout icon={Icons.Archive} color="grey">
-                Projekt ist seit dem {formatDate(archivedAt)} archiviert
-            </MyCallout>
+            <MyCallout icon={Icons.Archive} color="grey">{uiText("Projekt ist seit dem")}{formatDate(archivedAt)}{uiText("archiviert")}</MyCallout>
         )}
 
         <Tabs

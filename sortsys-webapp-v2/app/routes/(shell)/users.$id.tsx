@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -69,61 +70,61 @@ export default function UserDetailPage() {
             actions={<>
                 <MyDropdown items={[
                     {
-                        label: 'Archvieren',
+                        label: uiText("Archvieren"),
                         renderIcon: Icons.Archive,
                         hideIf: !!user.archivedAt || !user.deactivatedAt || !sessionInfo.canDo('manage:users'),
                         onClick: () => client.mutate('users.archive', { id: user.id }),
                     },
                     {
-                        label: 'Aus Archiv holen',
+                        label: uiText("Aus Archiv holen"),
                         renderIcon: Icons.UndoArchive,
                         hideIf: !user.archivedAt || !sessionInfo.canDo('manage:users'),
                         onClick: () => client.mutate('users.unarchive', { id: user.id }),
                     },
                     {
-                        label: 'Rollen setzen',
+                        label: uiText("Rollen setzen"),
                         renderIcon: Icons.EditRole,
                         hideIf: !sessionInfo.isAdmin(),
                         onClick: () => showSetUserRolesModal(modals, user),
                     },
                     {
-                        label: 'Aktivieren',
+                        label: uiText("Aktivieren"),
                         renderIcon: Icons.Unlock,
                         hideIf: !user.deactivatedAt || !sessionInfo.isAdmin(),
                         onClick: () => client.mutate('users.activate', { id: user.id }),
                     },
                     {
-                        label: 'Deaktivieren',
+                        label: uiText("Deaktivieren"),
                         renderIcon: Icons.Lock,
                         hideIf: !!user.deactivatedAt || !sessionInfo.isAdmin(),
                         onClick: () => showDeactivateUserModal(modals, user),
                     },
                     {
-                        label: 'Passwort setzen',
+                        label: uiText("Passwort setzen"),
                         renderIcon: Icons.SetPassword,
                         hideIf: !sessionInfo.isAdmin() && sessionInfo.user.id !== user.id,
                         onClick: () => showSetUserPasswordModal(modals, user),
                     },
                     {
-                        label: 'Bearbeiten',
+                        label: uiText("Bearbeiten"),
                         renderIcon: Icons.Edit,
                         hideIf: !sessionInfo.canDo('manage:users'),
                         onClick: () => showModifyUserModal(modals, user),
                     },
                     {
-                        label: 'Vorgesetzten setzen',
+                        label: uiText("Vorgesetzten setzen"),
                         renderIcon: Icons.User,
                         hideIf: !sessionInfo.canDo('manage:users'),
                         onClick: () => showSetUserSupervisorModal(modals, user, supervisor),
                     },
                     {
-                        label: 'Vorgesetzten entfernen',
+                        label: uiText("Vorgesetzten entfernen"),
                         renderIcon: Icons.Reset,
                         hideIf: !sessionInfo.canDo('manage:users') || !(user as any).supervisorUserId,
                         onClick: () => client.mutate('users.update', { id: user.id, data: { supervisorUserId: null } as any }),
                     },
                     {
-                        label: 'Löschen',
+                        label: uiText("Löschen"),
                         renderIcon: Icons.Delete,
                         hideIf: !sessionInfo.canDo('delete:users'),
                         onClick: () => showDeleteUserModal(modals, user),
@@ -132,13 +133,9 @@ export default function UserDetailPage() {
             </>}
         />
 
-        {!!user.deactivatedAt && <MyCallout icon={Icons.Lock} color="amber">
-            Benutzer {user.deactivatedAt.getTime() > Date.now() ? "wird am" : "ist seit dem"} {formatDate(user.deactivatedAt)} deaktiviert
-        </MyCallout>}
+        {!!user.deactivatedAt && <MyCallout icon={Icons.Lock} color="amber">{uiText("Benutzer")}{user.deactivatedAt.getTime() > Date.now() ? uiText("wird am") : uiText("ist seit dem")} {formatDate(user.deactivatedAt)}{uiText("deaktiviert")}</MyCallout>}
 
-        {!!user.archivedAt && <MyCallout icon={Icons.Archive} color="grey">
-            Benutzer ist seit dem {formatDate(user.archivedAt)} archiviert
-        </MyCallout>}
+        {!!user.archivedAt && <MyCallout icon={Icons.Archive} color="grey">{uiText("Benutzer ist seit dem")}{formatDate(user.archivedAt)}{uiText("archiviert")}</MyCallout>}
 
         <MyDivider />
 
@@ -149,8 +146,8 @@ export default function UserDetailPage() {
             {!!user.email && <AttrList.Attr name="E-Mail" value={<MyLink to={`mailto:${user.email}`}>{user.email}</MyLink>} />}
             {!!user.phone && <AttrList.Attr name="Telefon" value={<MyLink to={`tel:${user.phone}`}>{user.phone}</MyLink>} />}
             <AttrList.Attr name="Vertrag" value={userContractName(user)} />
-            {!!supervisor && <AttrList.Attr name="Vorgesetzter" value={<MyLink to={`/users/${supervisor.id}`}>{userFullName(supervisor)}</MyLink>} />}
-            {!!user.costPerHour &&  <AttrList.Attr name="Kosten pro Std" value={formatCurrency(user.costPerHour)} />}
+            {!!supervisor && <AttrList.Attr name={uiText("Vorgesetzter")} value={<MyLink to={`/users/${supervisor.id}`}>{userFullName(supervisor)}</MyLink>} />}
+            {!!user.costPerHour &&  <AttrList.Attr name={uiText("Kosten pro Std")} value={formatCurrency(user.costPerHour)} />}
         </AttrList>
 
         <MyDivider />

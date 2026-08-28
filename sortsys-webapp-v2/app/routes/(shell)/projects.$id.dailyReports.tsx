@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useNavigate, useOutletContext } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -26,18 +27,18 @@ export default function ProjectDailyReportsPage() {
       }}
       columns={[
         {
-          label: 'Tag',
+          label: uiText("Tag"),
           render: row => formatDate(row.day),
           sortKey: row => row.day.getTime(),
         },
         {
-          label: 'Beschreibung',
+          label: uiText("Beschreibung"),
           render: row => row.summary ?? '',
           sortKey: row => row.summary?.toLowerCase() ?? '',
         },
         {
-          label: 'Arbeitszeit',
-          render: row => `${row.workHours.length} Einträge`,
+          label: uiText("Arbeitszeit"),
+          render: row => uiText(`${row.workHours.length} Einträge`, `${row.workHours.length} entries`),
           sortKey: row => row.workHours.length,
         },
       ]}

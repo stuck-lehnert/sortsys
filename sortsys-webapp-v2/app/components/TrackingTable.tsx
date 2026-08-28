@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import type { ToolTracking } from "~/type-helpers";
 import { MyTable, type MyTableColumn } from "./MyTable";
@@ -18,7 +19,7 @@ export function TrackingTable(props: {
 
     if (!props.omit?.includes("tool")) {
         columns.push({
-            label: 'Werkzeug',
+            label: uiText("Werkzeug"),
             render: async (tracking) => {
                 const [tool] = await client.query('tools.get', { id: tracking.toolId }, { strategy: 'cache-first' });
                 if (!tool) return 'Unbekannt';
@@ -29,7 +30,7 @@ export function TrackingTable(props: {
 
     if (!props.omit?.includes("project")) {
         columns.push({
-            label: 'Projekt',
+            label: uiText("Projekt"),
             render: async (tracking) => {
                 if (!tracking.projectId) return;
 
@@ -42,7 +43,7 @@ export function TrackingTable(props: {
 
     if (!props.omit?.includes("responsible")) {
         columns.push({
-            label: 'Verantwortlicher',
+            label: uiText("Verantwortlicher"),
             render: async (tracking) => {
                 if (!tracking.responsibleUserId) return;
 
@@ -55,7 +56,7 @@ export function TrackingTable(props: {
 
     if (!props.omit?.includes("author")) {
         columns.push({
-            label: 'Herausgeber',
+            label: uiText("Herausgeber"),
             render: async (tracking) => {
                 if (!tracking.startedByUserId) return;
 
@@ -68,13 +69,13 @@ export function TrackingTable(props: {
 
     if (!props.omit?.includes("timestamps")) {
         columns.push({
-            label: 'Von',
+            label: uiText("Von"),
             render: (tracking) => formatDate(tracking.startedAt),
             sortKey: (tracking) => tracking.startedAt.getTime(),
         });
 
         columns.push({
-            label: 'Bis',
+            label: uiText("Bis"),
             render: (tracking) => tracking.endedAt ? formatDate(tracking.endedAt) : 'offen',
             sortKey: (tracking) => (tracking.endedAt?.getTime() ?? Number.MAX_SAFE_INTEGER),
         });

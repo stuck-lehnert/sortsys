@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
@@ -21,9 +22,9 @@ function splitContactQuery(query: string | undefined) {
 export function showCreateContactModal(modals: MyModalsInterface, options: CreateContactModalOptions = {}) {
   modals.showForm({
     content: ({ context }) => <>
-        <MyForm.Input name="salutation" labelText="Anrede" />
-        <MyForm.Input name="firstName" labelText="Vorname" />
-        <MyForm.Input name="lastName" labelText="Nachname" />
+        <MyForm.Input name="salutation" labelText={uiText("Anrede")} />
+        <MyForm.Input name="firstName" labelText={uiText("Vorname")} />
+        <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
 
         {!!options.initialQuery && <NotifyLoaded onLoad={() => context.setValues(splitContactQuery(options.initialQuery))} />}
 
@@ -41,7 +42,7 @@ export function showCreateContactModal(modals: MyModalsInterface, options: Creat
 
       const firstName = `${values.firstName ?? ''}`.trim();
       const lastName = `${values.lastName ?? ''}`.trim();
-      if (!firstName && !lastName) throw new Error('Vorname oder Nachname ist erforderlich');
+      if (!firstName && !lastName) throw new Error(uiText("Vorname oder Nachname ist erforderlich"));
 
       const { emailAddresses, phoneNumbers } = processContactChannels(values);
 
@@ -69,8 +70,8 @@ export function showCreateContactModal(modals: MyModalsInterface, options: Creat
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Kontakt erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Kontakt erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -79,9 +80,9 @@ export function showCreateContactModal(modals: MyModalsInterface, options: Creat
 export function showModifyContactModal(modals: MyModalsInterface, contact: Contact) {
   modals.showForm({
     content: ({ context }) => <>
-        <MyForm.Input name="salutation" labelText="Anrede" />
-        <MyForm.Input name="firstName" labelText="Vorname" />
-        <MyForm.Input name="lastName" labelText="Nachname" />
+        <MyForm.Input name="salutation" labelText={uiText("Anrede")} />
+        <MyForm.Input name="firstName" labelText={uiText("Vorname")} />
+        <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
 
         <MyDivider />
 
@@ -108,7 +109,7 @@ export function showModifyContactModal(modals: MyModalsInterface, contact: Conta
 
       const firstName = `${values.firstName ?? ''}`.trim();
       const lastName = `${values.lastName ?? ''}`.trim();
-      if (!firstName && !lastName) throw new Error('Vorname oder Nachname ist erforderlich');
+      if (!firstName && !lastName) throw new Error(uiText("Vorname oder Nachname ist erforderlich"));
 
       const { emailAddresses, phoneNumbers } = processContactChannels(values);
 
@@ -130,9 +131,9 @@ export function showModifyContactModal(modals: MyModalsInterface, contact: Conta
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Kontakt bearbeiten',
+      modalHeading: uiText("Kontakt bearbeiten"),
       modalLabel: contactName(contact),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -141,13 +142,11 @@ export function showModifyContactModal(modals: MyModalsInterface, contact: Conta
 export function showDeleteContactModal(modals: MyModalsInterface, contact: Contact) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Kontakt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Kontakt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -161,9 +160,9 @@ export function showDeleteContactModal(modals: MyModalsInterface, contact: Conta
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Kontakt löschen',
+      modalHeading: uiText("Kontakt löschen"),
       modalLabel: contactName(contact),
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }

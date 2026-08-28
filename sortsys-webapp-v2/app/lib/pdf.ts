@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
 
@@ -423,7 +424,7 @@ function renderCardField(item: PdfCardItem) {
 }
 
 function renderCard(card: PdfCard) {
-  const fields = card.items.length ? card.items : [{ label: 'Hinweis', value: '-' }];
+  const fields = card.items.length ? card.items : [{ label: uiText("Hinweis"), value: '-' }];
   const lines: string[] = [
     '#block(width: 100%, fill: rgb("#f8fbff"), stroke: 0.65pt + rgb("#c8d8ec"), radius: 6pt, inset: 8pt)[',
     '  #table(',
@@ -485,7 +486,7 @@ function renderCardSection(section: PdfCardSection) {
   }
 
   if (!section.cards.length) {
-    lines.push(escapeTypstText(section.emptyMessage || 'Keine Daten verfügbar.'));
+    lines.push(escapeTypstText(section.emptyMessage || uiText('Keine Daten verfügbar.', 'No data available.')));
     lines.push('');
     return lines.join('\n');
   }
@@ -508,7 +509,7 @@ function renderSignatureFields(fields: PdfSignatureField[]) {
 
   fields.forEach((field) => {
     const title = escapeTypstText(field.title);
-    const hint = escapeTypstText(field.hint ?? 'Datum und Unterschrift');
+    const hint = escapeTypstText(field.hint ?? uiText('Datum und Unterschrift'));
     lines.push('  [');
     lines.push('    #block(width: 100%)[');
     lines.push(`      #text(size: 8.55pt, fill: rgb("#334155"))[*${title}*]`);
@@ -538,7 +539,7 @@ function renderImageSection(section: PreparedPdfImageSection) {
 
   const images = section.images.filter(image => !!image.shadowPath);
   if (!images.length) {
-    lines.push(escapeTypstText(section.emptyMessage || 'Keine Bilder verfügbar.'));
+    lines.push(escapeTypstText(section.emptyMessage || uiText('Keine Bilder verfügbar.', 'No images available.')));
     lines.push('');
     return lines.join('\n');
   }
@@ -622,7 +623,7 @@ function buildPdfDocumentBody({
   const cards = cardSections ?? [];
   if (!sections.length && !cards.length) {
     lines.push('== Inhalt');
-    lines.push(escapeTypstText(emptyMessage || 'Keine Daten verfügbar.'));
+    lines.push(escapeTypstText(emptyMessage || uiText('Keine Daten verfügbar.', 'No data available.')));
   } else {
     sections.forEach((section) => {
       lines.push(renderSection(section));
@@ -673,7 +674,7 @@ function buildPdfBatchDocument(options: { documents: PreparedStructuredPdfDocume
 
 export async function renderStructuredPdfBatch(options: RenderStructuredPdfBatchOptions): Promise<Uint8Array> {
   if (!options.documents.length) {
-    throw new Error('Die PDF konnte nicht erstellt werden.');
+    throw new Error(uiText("Die PDF konnte nicht erstellt werden."));
   }
 
   const { $typst } = await import('@myriaddreamin/typst.ts');
@@ -686,7 +687,7 @@ export async function renderStructuredPdfBatch(options: RenderStructuredPdfBatch
     const mainContent = buildPdfBatchDocument({ documents: preparedImages.documents }, logoShadowPath);
     const pdfData = await $typst.pdf({ mainContent });
     if (!pdfData?.length) {
-      throw new Error('Die PDF konnte nicht erstellt werden.');
+      throw new Error(uiText("Die PDF konnte nicht erstellt werden."));
     }
 
     return pdfData as Uint8Array;

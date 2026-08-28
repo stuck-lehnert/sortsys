@@ -4,11 +4,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { Authenticated } from "~/components/Authenticated";
 import { useDimensions } from "~/hooks/useDimensions";
+import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
 import { Icons } from "~/lib/icons";
+import { uiText, useI18n } from "~/lib/i18n";
 import { nowrap } from "~/lib/primitives";
 import type { PromiseOr } from "~/type-helpers";
 import { useUserActions, type UserAction } from "~/lib/userActions";
@@ -36,12 +38,17 @@ const MySideNavAction = function(props: {
 
 export default Authenticated(function() {
   const sessionInfo = useSessionInfo();
+  const { locale, t } = useI18n();
   const isAdmin = sessionInfo.isAdmin();
 
   const location = useLocation();
   const path = location.pathname;
   const modals = useMyModals();
   const { visibleActions, runAction } = useUserActions();
+  const [llmStatus] = useClientStream(
+    () => client.streamQuery('llm.status', undefined, { strategy: 'network-first' }),
+    [],
+  );
   const lastVisitKeyRef = useRef<string | null>(null);
   const canViewProjects = sessionInfo.canDo('view:projects');
   const canViewTools = sessionInfo.canDo('view:tools');
@@ -53,6 +60,7 @@ export default Authenticated(function() {
   const canViewDeployments = sessionInfo.canDo('view:projectDeployments');
   const canViewVacations = sessionInfo.canDo('view:userVacations') || sessionInfo.canDo('manage:userVacations');
   const canViewClientScripts = sessionInfo.canDo('view:clientScripts');
+  const canUseLlm = sessionInfo.canDo(':llm') && llmStatus?.tenantEnabled === true;
   const canSeeOrganisation = isAdmin;
   const workActions = visibleActions.filter(action => action.group === 'work');
   const createActions = visibleActions.filter(action => action.group === 'create');
@@ -103,7 +111,7 @@ export default Authenticated(function() {
 
     const timeout = window.setTimeout(() => {
       const title = document.title?.replace(/\s+[-|].*$/, '').trim() || visitPath;
-      void (client.mutate as any)('personalization.visits.append', {
+      void client.mutate('personalization.visits.append', {
         path: visitPath,
         title,
       });
@@ -139,7 +147,7 @@ export default Authenticated(function() {
 
       {isSmall && (
         <HeaderMenuButton
-          aria-label={isSideNavExpanded ? "Close menu" : "Open menu"}
+          aria-label={isSideNavExpanded ? t("shell.closeMenu") : t("shell.openMenu")}
           isActive={isSideNavExpanded}
           onClick={() => setIsSideNavExpanded((v) => !v)}
         />
@@ -152,7 +160,7 @@ export default Authenticated(function() {
       </HeaderName>
 
       <HeaderGlobalBar>
-        <HeaderGlobalAction aria-label="Befehle und Suche" onClick={() => showCommandPaletteModal(modals)}>
+        <HeaderGlobalAction aria-label={t("shell.search")} onClick={() => showCommandPaletteModal(modals)}>
           <Icons.Search />
         </HeaderGlobalAction>
       </HeaderGlobalBar>
@@ -160,54 +168,55 @@ export default Authenticated(function() {
 
     <SideNav expanded={isSideNavExpanded} onOverlayClick={() => setIsSideNavExpanded(false)}>
       <SideNavItems>
-        <MySideNavLink icon={Icons.Dashboard} href="/dashboard" title="Dashboard" />
+        <MySideNavLink icon={Icons.Dashboard} href="/dashboard" title={t("shell.dashboard")} />
+        {canUseLlm && <MySideNavLink icon={Icons.Magic} href="/llm" title={uiText("LLM")} />}
 
-        {!!workActions.length && <MySideNavMenu title="Arbeit erfassen" renderIcon={Icons.Create} defaultExpanded>
+        {!!workActions.length && <MySideNavMenu title={t("shell.captureWork")} renderIcon={Icons.Create} defaultExpanded>
           {workActions.map(action => <MySideNavUserAction key={action.id} action={action} />)}
         </MySideNavMenu>}
 
-        {!!createActions.length && <MySideNavMenu title="Stammdaten anlegen" renderIcon={Icons.Plus} defaultExpanded={false}>
-          {createActions.map(action => <MySideNavUserAction key={action.id} action={action} title={action.label.replace(/ erstellen$/, '')} />)}
+        {!!createActions.length && <MySideNavMenu title={t("shell.createMasterData")} renderIcon={Icons.Plus} defaultExpanded={false}>
+          {createActions.map(action => <MySideNavUserAction key={action.id} action={action} title={locale === "de" ? action.label.replace(/ erstellen$/, "") : action.label} />)}
         </MySideNavMenu>}
 
         <SideNavDivider />
 
-        <MySideNavMenu title="Projektarbeit" renderIcon={Icons.Project} defaultExpanded>
-          {canViewProjects && <MySideNavLink icon={Icons.Project} href="/projects" title="Projekte" />}
-          {canViewDeployments && <MySideNavLink icon={Icons.DailyReport} href="/deployments" title="Einsatzplanung" />}
-          {canViewVacations && <MySideNavLink icon={Icons.User} href="/vacations" title="Urlaub" />}
+        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded>
+          {canViewProjects && <MySideNavLink icon={Icons.Project} href="/projects" title={t("shell.projects")} />}
+          {canViewDeployments && <MySideNavLink icon={Icons.DailyReport} href="/deployments" title={t("shell.deployments")} />}
+          {canViewVacations && <MySideNavLink icon={Icons.User} href="/vacations" title={t("shell.vacations")} />}
         </MySideNavMenu>
 
-        <MySideNavMenu title="Material & Werkzeuge" renderIcon={Icons.Tool} defaultExpanded>
-          {canViewTools && <MySideNavLink icon={Icons.Tool} href="/tools" title="Werkzeuge" />}
-          {canViewToolInventories && <MySideNavLink icon={Icons.ToolInventory} href="/inventories" title="Inventur" />}
-          {canViewProducts && <MySideNavLink icon={Icons.Product} href="/products" title="Produkte & Lieferscheine" />}
+        <MySideNavMenu title={t("shell.materialTools")} renderIcon={Icons.Tool} defaultExpanded>
+          {canViewTools && <MySideNavLink icon={Icons.Tool} href="/tools" title={t("shell.tools")} />}
+          {canViewToolInventories && <MySideNavLink icon={Icons.ToolInventory} href="/inventories" title={t("shell.inventory")} />}
+          {canViewProducts && <MySideNavLink icon={Icons.Product} href="/products" title={t("shell.productsDeliveryNotes")} />}
         </MySideNavMenu>
 
-        <MySideNavMenu title="Benutzer & Kontakte" renderIcon={Icons.Customer} defaultExpanded={false}>
-          {canViewCustomers && <MySideNavLink icon={Icons.Customer} href="/customers" title="Kunden" />}
-          {canViewContacts && <MySideNavLink icon={Icons.Contact} href="/contacts" title="Kontakte" />}
-          {canViewUsers && <MySideNavLink icon={Icons.User} href="/users" title="Benutzer" />}
+        <MySideNavMenu title={t("shell.usersContacts")} renderIcon={Icons.Customer} defaultExpanded={false}>
+          {canViewCustomers && <MySideNavLink icon={Icons.Customer} href="/customers" title={t("shell.customers")} />}
+          {canViewContacts && <MySideNavLink icon={Icons.Contact} href="/contacts" title={t("shell.contacts")} />}
+          {canViewUsers && <MySideNavLink icon={Icons.User} href="/users" title={t("shell.users")} />}
         </MySideNavMenu>
 
-        {(!!adminActions.length || canSeeOrganisation || canViewClientScripts) && <MySideNavMenu title="Verwaltung" renderIcon={Icons.Info} defaultExpanded={false}>
+        {(!!adminActions.length || canSeeOrganisation || canViewClientScripts) && <MySideNavMenu title={t("shell.administration")} renderIcon={Icons.Info} defaultExpanded={false}>
           {adminActions.map(action => <MySideNavUserAction key={action.id} action={action} />)}
-          {canViewClientScripts && <MySideNavLink icon={Icons.Script} href="/scripts" title="Client-Skripte" />}
-          {canSeeOrganisation && <MySideNavLink icon={Icons.Info} href="/admin" title="Organisation" />}
+          {canViewClientScripts && <MySideNavLink icon={Icons.Script} href="/scripts" title={t("shell.clientScripts")} />}
+          {canSeeOrganisation && <MySideNavLink icon={Icons.Info} href="/admin" title={t("shell.organization")} />}
         </MySideNavMenu>}
 
         <SideNavDivider />
 
-        <MySideNavLink icon={Icons.Settings} href="/settings" title="Einstellungen" />
-        <MySideNavLink icon={Icons.Info} href="/docs" title="Hilfe & Begriffe" />
+        <MySideNavLink icon={Icons.Settings} href="/settings" title={t("shell.settings")} />
+        <MySideNavLink icon={Icons.Info} href="/docs" title={t("shell.help")} />
 
         <SideNavDivider />
 
-        <MySideNavAction icon={Icons.Logout} title="Abmelden" action={() => client.logout()} />
+        <MySideNavAction icon={Icons.Logout} title={t("shell.logout")} action={() => client.logout()} />
       </SideNavItems>
     </SideNav>
 
-    <Content className="main-container">
+    <Content className={'main-container' + (path.startsWith('/llm') ? ' main-container--llm' : '')}>
       <Outlet />
     </Content>
   </div>

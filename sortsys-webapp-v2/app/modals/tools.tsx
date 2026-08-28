@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tag } from "@sortsys/react-components";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
@@ -31,20 +32,20 @@ export function showCreateToolModal(modals: MyModalsInterface, options: CreateTo
   modals.showForm({
     content: ({ context }) => <>
       <MyForm.Input required
-        name="customId" labelText="Nummer" type="number"
+        name="customId" labelText={uiText("Nummer")} type="number"
         rules={[MyForm.Input.rules.posint]}
-        suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Nummer automatisch vorschlagen" aria-label="Nummer automatisch vorschlagen" onClick={async () => {
+        suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Nummer automatisch vorschlagen")} aria-label={uiText("Nummer automatisch vorschlagen")} onClick={async () => {
           const [id, err] = await client.query('tools.suggestNextCustomId', undefined);
           if (err) throw err;
           if (id) context.field('customId')?.setValue(id.toString());
         }}><Icons.Magic /></MyButton>}
       />
-      <p className="light">Interne Werkzeugnummer für Suche, Listen und Zuordnung.</p>
+      <p className="light">{uiText("Interne Werkzeugnummer für Suche, Listen und Zuordnung.")}</p>
 
       <MyDivider />
 
       <MyForm.Input required
-        name="brand" labelText="Marke"
+        name="brand" labelText={uiText("Marke")}
         suggestions={{
           prepare: () => client.query('tools.brands', undefined).then(([data]) => data ?? []),
           getItems: ({ query, init }) => init.filter((brand) => {
@@ -55,7 +56,7 @@ export function showCreateToolModal(modals: MyModalsInterface, options: CreateTo
       />
 
       <MyForm.Input required
-        name="category" labelText="Kategorie"
+        name="category" labelText={uiText("Kategorie")}
         suggestions={{
           prepare: () => client.query('tools.categories', undefined).then(([data]) => data ?? []),
           getItems: ({ query, init }) => init.filter((category) => {
@@ -65,26 +66,26 @@ export function showCreateToolModal(modals: MyModalsInterface, options: CreateTo
         }}
       />
 
-      <MyForm.Input name="label" labelText="Modell" />
+      <MyForm.Input name="label" labelText={uiText("Modell")} />
       {!!options.initialQuery && <NotifyLoaded onLoad={() => context.field('label')?.setValue(options.initialQuery)} />}
-      <p className="light">Modellbezeichnung oder ergänzende Typangabe.</p>
+      <p className="light">{uiText("Modellbezeichnung oder ergänzende Typangabe.")}</p>
 
       <MyDivider />
 
       <MyForm.Input
-        name="purchasePrice" labelText="Kaufpreis (EUR)"
+        name="purchasePrice" labelText={uiText("Kaufpreis (EUR)")}
         type="number" rules={[MyForm.Input.rules.posnum]}
       />
 
       <MyForm.Input
-        name="usageCostPerDay" labelText="Nutzungskosten pro Tag (EUR)"
+        name="usageCostPerDay" labelText={uiText("Nutzungskosten pro Tag (EUR)")}
         type="number" rules={[MyForm.Input.rules.posnum]}
       />
-      <p className="light">Tagessatz für interne Kostenberechnungen und Berichte.</p>
+      <p className="light">{uiText("Tagessatz für interne Kostenberechnungen und Berichte.")}</p>
     </>,
     modalProps: ({ }) => ({
-      modalHeading: 'Werkzeug erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Werkzeug erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
     onSubmit: async ({ hide, context, navigate }) => {
       const values = context.getValues();
@@ -124,11 +125,11 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
   modals.showForm({
     content: ({ context }) => <>
       <MyForm.Select
-        name="status" labelText="Status"
+        name="status" labelText={uiText("Status")}
         getOptions={() => [
-          { id: 'none', label: 'Kein Status' },
-          { id: 'lost', label: 'Abhanden' },
-          { id: 'broken', label: 'Defekt' },
+          { id: 'none', label: uiText("Kein Status") },
+          { id: 'lost', label: uiText("Abhanden") },
+          { id: 'broken', label: uiText("Defekt") },
         ]}
         buildOption={option => ({
           text: option.label,
@@ -139,7 +140,7 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
       <MyDivider />
 
       <MyForm.Input required
-        name="brand" labelText="Marke"
+        name="brand" labelText={uiText("Marke")}
         suggestions={{
           prepare: () => client.query('tools.brands', undefined).then(([data]) => data ?? []),
           getItems: ({ query, init }) => init.filter((brand) => {
@@ -150,7 +151,7 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
       />
 
       <MyForm.Input required
-        name="category" labelText="Kategorie"
+        name="category" labelText={uiText("Kategorie")}
         suggestions={{
           prepare: () => client.query('tools.categories', undefined).then(([data]) => data ?? []),
           getItems: ({ query, init }) => init.filter((brand) => {
@@ -160,21 +161,21 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
         }}
       />
 
-      <MyForm.Input name="label" labelText="Modell" />
-      <p className="light">Modellbezeichnung oder ergänzende Typangabe.</p>
+      <MyForm.Input name="label" labelText={uiText("Modell")} />
+      <p className="light">{uiText("Modellbezeichnung oder ergänzende Typangabe.")}</p>
 
       <MyDivider />
 
       <MyForm.Input
-        name="purchasePrice" labelText="Kaufpreis (EUR)"
+        name="purchasePrice" labelText={uiText("Kaufpreis (EUR)")}
         type="number" rules={[MyForm.Input.rules.posnum]}
       />
 
       <MyForm.Input
-        name="usageCostPerDay" labelText="Nutzungskosten pro Tag (EUR)"
+        name="usageCostPerDay" labelText={uiText("Nutzungskosten pro Tag (EUR)")}
         type="number" rules={[MyForm.Input.rules.posnum]}
       />
-      <p className="light">Tagessatz für interne Kostenberechnungen und Berichte.</p>
+      <p className="light">{uiText("Tagessatz für interne Kostenberechnungen und Berichte.")}</p>
 
       <NotifyLoaded onLoad={() => context.setValues({
         ...tool, status: tool.status ?? 'none',
@@ -206,8 +207,8 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
       hide();
     },
     modalProps: ({ }) => ({
-      modalHeading: 'Werkzeug bearbeiten',
-      primaryButtonText: 'Speichern',
+      modalHeading: uiText("Werkzeug bearbeiten"),
+      primaryButtonText: uiText("Speichern"),
       modalLabel: `${tool.customId} ${toolTitle(tool)}`,
     }),
   });
@@ -216,13 +217,11 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
 export function showDeleteToolModal(modals: MyModalsInterface, tool: Tool) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Werkzeug in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Werkzeug in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -236,9 +235,9 @@ export function showDeleteToolModal(modals: MyModalsInterface, tool: Tool) {
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Werkzeug löschen',
+      modalHeading: uiText("Werkzeug löschen"),
       modalLabel: `${tool.customId} ${toolTitle(tool)}`,
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }
@@ -254,7 +253,7 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
 
       return <>
       <MyForm.MultiSelect
-        name="responsible" labelText="Verantwortlicher"
+        name="responsible" labelText={uiText("Verantwortlicher")}
         minSelectedItems={1} maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('users.list', { search: query });
@@ -265,10 +264,10 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
         renderTile={item => <SmallUserTile data={item} noLink />}
         createAction={createEntityAction.user}
       />
-      <p className="light">Wer hat das Werkzeug bzw. die Werkzeuge entgegengenommen?</p>
+      <p className="light">{uiText("Wer hat das Werkzeug bzw. die Werkzeuge entgegengenommen?")}</p>
 
       <MyForm.MultiSelect
-        name="project" labelText="Projekt"
+        name="project" labelText={uiText("Projekt")}
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('projects.list', { search: query });
@@ -279,10 +278,10 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
         renderTile={item => <SmallProjectTile data={item} noLink />}
         createAction={createEntityAction.project}
       />
-      <p className="light">Mit welchem Projekt ist diese Buchung verknüpft?</p>
+      <p className="light">{uiText("Mit welchem Projekt ist diese Buchung verknüpft?")}</p>
 
       <MyForm.MultiSelect
-        name="tools" labelText="Werkzeuge"
+        name="tools" labelText={uiText("Werkzeuge")}
         minSelectedItems={1}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('tools.list', { search: query });
@@ -310,10 +309,10 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
         stringifyItem={({ item }) => toolSelectionChipLabel(item)}
         createAction={createEntityAction.tool}
       />
-      <p className="light">Welche Werkzeuge wurden ausgegeben?</p>
+      <p className="light">{uiText("Welche Werkzeuge wurden ausgegeben?")}</p>
 
-      <MyForm.Input name="comment" labelText="Kommentar" />
-      <p className="light">Gibt es wichtige Details zu dieser Buchung, die dokumentiert werden sollen?</p>
+      <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+      <p className="light">{uiText("Gibt es wichtige Details zu dieser Buchung, die dokumentiert werden sollen?")}</p>
 
       <NotifyLoaded onLoad={() => {
         if (props.tools?.length) context.field('tools')?.setValue(props.tools);
@@ -364,8 +363,8 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Werkzeuge einbuchen',
-      primaryButtonText: 'Buchen',
+      modalHeading: uiText("Werkzeuge einbuchen"),
+      primaryButtonText: uiText("Buchen"),
     }),
   });
 }
@@ -380,10 +379,10 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <p className="light">Die Umbuchung setzt einen neuen Verantwortlichen voraus. Das Projekt kann bei Bedarf mitgeführt werden.</p>
+      <p className="light">{uiText("Die Umbuchung setzt einen neuen Verantwortlichen voraus. Das Projekt kann bei Bedarf mitgeführt werden.")}</p>
 
       <MyForm.MultiSelect
-        name="transferToUser" labelText="Neuer Verantwortlicher"
+        name="transferToUser" labelText={uiText("Neuer Verantwortlicher")}
         minSelectedItems={1} maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('users.list', { search: query });
@@ -395,7 +394,7 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
       />
 
       <MyForm.MultiSelect
-        name="project" labelText="Neues Projekt"
+        name="project" labelText={uiText("Neues Projekt")}
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('projects.list', { search: query });
@@ -406,7 +405,7 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
         createAction={createEntityAction.project}
       />
 
-      <MyForm.Input name="notes" labelText="Kommentar" />
+      <MyForm.Input name="notes" labelText={uiText("Kommentar")} />
     </>;
     },
     onSubmit: async ({ context, hide }) => {
@@ -454,8 +453,8 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
       hide();
     },
     modalProps: ({ }) => ({
-      modalHeading: props.isRequest ? 'Werkzeugumbuchung anfragen' : 'Werkzeug umbuchen',
-      primaryButtonText: props.isRequest ? 'Anfrage stellen' : 'Umbuchen',
+      modalHeading: props.isRequest ? uiText("Werkzeugumbuchung anfragen") : uiText("Werkzeug umbuchen"),
+      primaryButtonText: props.isRequest ? uiText("Anfrage stellen") : uiText("Umbuchen"),
       modalLabel: `${props.tool.customId} ${toolTitle(props.tool)}`,
     }),
   });
@@ -464,8 +463,8 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
 export function showCreateToolInventoryModal(modals: MyModalsInterface, tool: Tool) {
   modals.showForm({
     content: () => <>
-      <MyForm.Input name="comment" labelText="Kommentar" />
-      <p className="light">Notiere Zustand, Fehlteile oder besondere Auffälligkeiten der Inventur.</p>
+      <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+      <p className="light">{uiText("Notiere Zustand, Fehlteile oder besondere Auffälligkeiten der Inventur.")}</p>
     </>,
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
@@ -481,9 +480,9 @@ export function showCreateToolInventoryModal(modals: MyModalsInterface, tool: To
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Inventur aufzeichnen',
+      modalHeading: uiText("Inventur aufzeichnen"),
       modalLabel: `${tool.customId} ${toolTitle(tool)}`,
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }

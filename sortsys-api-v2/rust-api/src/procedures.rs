@@ -12,6 +12,7 @@ mod common;
 mod contacts;
 mod customers;
 mod delivery_notes;
+mod llm;
 mod passkeys;
 mod personalization;
 mod products;
@@ -20,6 +21,8 @@ mod project_costs;
 mod project_daily_reports;
 mod project_files;
 mod project_schedule;
+
+pub(crate) use project_costs::overview_for_authenticated_user as project_cost_overview_for_authenticated_user;
 mod projects;
 mod regie_reports;
 mod remarks;
@@ -100,6 +103,7 @@ pub fn register(
     let builder = contacts::register(builder, Arc::clone(&state));
     let builder = customers::register(builder, Arc::clone(&state));
     let builder = delivery_notes::register(builder, Arc::clone(&state));
+    let builder = llm::register(builder, Arc::clone(&state));
     let builder = personalization::register(builder, Arc::clone(&state));
     let builder = products::register(builder, Arc::clone(&state));
     let builder = projects::register(builder, Arc::clone(&state));
@@ -115,6 +119,10 @@ pub fn register(
     let builder = users::register(builder, Arc::clone(&state));
     let builder = vacations::register(builder, Arc::clone(&state));
     remarks::register(builder, state)
+}
+
+pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    llm::register_contract(builder)
 }
 
 fn validate_report(input: &ErrorReportInput) -> Result<(), RpcError> {

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tile } from "@sortsys/react-components";
 import { useMemo, useState } from "react";
 import { MyButton } from "~/components/MyButton";
@@ -10,7 +11,7 @@ import type { User } from "~/type-helpers";
 
 export function meta() {
   return [
-    { title: "Vorgesetzte" },
+    { title: uiText("Vorgesetzte") },
   ];
 }
 
@@ -25,7 +26,7 @@ function sortUsers(users: User[]) {
 export default function UserSupervisorsPage() {
   const [users] = useClientStream(() => client.streamQuery('users.list', {}), []);
   const [defaultSupervisor] = useClientStream<{ userId: string | null } | null, any>(() => {
-    return (client.streamQuery as any)('users.supervisors.getDefault', undefined, { strategy: 'cache-first' });
+    return client.streamQuery('users.supervisors.getDefault', undefined, { strategy: 'cache-first' });
   }, []);
   const [expandedUserIds, setExpandedUserIds] = useState<Set<string>>(() => new Set());
 
@@ -96,13 +97,13 @@ export default function UserSupervisorsPage() {
       <div style={{ width: 18, borderTop: path.size ? '1px solid var(--ss-border)' : undefined, marginTop: 22 }} />
       <div style={{ flex: 1, minWidth: 220 }}>
         <SmallUserTile data={user} />
-        {isCycle && <div className="light" style={{ marginTop: 6 }}>Zyklus erkannt</div>}
+        {isCycle && <div className="light" style={{ marginTop: 6 }}>{uiText("Zyklus erkannt")}</div>}
         {!isCycle && !!children.length && <MyButton
           kind="ghost"
           size="sm"
           renderIcon={isExpanded ? Icons.AccordionExpanded : Icons.AccordionClosed}
           onClick={() => toggleExpanded(user.id)}
-        >{isExpanded ? 'Untergebene ausblenden' : `Untergebene anzeigen (${children.length})`}</MyButton>}
+        >{isExpanded ? uiText('Untergebene ausblenden', 'Hide direct reports') : uiText(`Untergebene anzeigen (${children.length})`, `Show direct reports (${children.length})`)}</MyButton>}
         {!isCycle && isExpanded && !!children.length && <div style={{ marginTop: 10, marginLeft: 18, display: 'grid', gap: 10 }}>
           {children.map(child => renderNode(child, nextPath))}
         </div>}
@@ -112,17 +113,16 @@ export default function UserSupervisorsPage() {
 
   return <>
     <div className="flex gap-2 w-full overlflow-x-auto">
-      <MyButton kind="ghost" size="sm" onClick={expandAll}>Alle aufklappen</MyButton>
+      <MyButton kind="ghost" size="sm" onClick={expandAll}>{uiText("Alle aufklappen")}</MyButton>
     </div>
 
-    {!!defaultSupervisorUser && <div className="light" style={{ marginTop: 8 }}>
-      Standard-Vorgesetzter: {userFullName(defaultSupervisorUser)}
+    {!!defaultSupervisorUser && <div className="light" style={{ marginTop: 8 }}>{uiText("Standard-Vorgesetzter:")}{userFullName(defaultSupervisorUser)}
     </div>}
 
     <div style={{ height: '1px' }} />
 
     {!users ? null : !graph.allUsers.length ? (
-      <Tile>Keine Benutzer vorhanden.</Tile>
+      <Tile>{uiText("Keine Benutzer vorhanden.")}</Tile>
     ) : (
       <div style={{ display: 'grid', gap: 16 }}>
         {graph.roots.map(root => <Tile key={root.id}>
@@ -130,7 +130,7 @@ export default function UserSupervisorsPage() {
         </Tile>)}
 
         {!!graph.cycleRoots.length && <Tile>
-          <h4>Zyklen oder verwaiste Einträge</h4>
+          <h4>{uiText("Zyklen oder verwaiste Einträge")}</h4>
           <div style={{ display: 'grid', gap: 10 }}>
             {graph.cycleRoots.map(user => renderNode(user, new Set()))}
           </div>

@@ -21,7 +21,7 @@ The build writes JavaScript, declarations, and package metadata to `dist/`.
 ```ts
 import { createClient } from "@sortsys/v2-client";
 
-const client = createClient("/api/v2");
+const client = createClient("/api/v2", "webapp");
 
 await client.login({
   tenant: "example",

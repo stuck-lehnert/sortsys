@@ -4,6 +4,7 @@
 SERVICE_PASSWORD_64_POSTGRES=replace-with-a-long-random-postgres-password
 SERVICE_BASE64_64_JWT=replace-with-a-long-random-jwt-secret
 SERVICE_BASE64_64_JOBRUNNER=replace-with-a-long-random-job-runner-token
+SERVICE_BASE64_64_LLM=replace-with-a-long-random-llm-encryption-key
 
 # Required. Generate this as documented in README.md. In Coolify, mark the
 # bcrypt value as Literal so its dollar signs are not interpolated.
@@ -12,6 +13,11 @@ ADMIN_HASH=replace-with-a-bcrypt-password-hash
 # Coolify assigns this from the webapp domain. Outside Coolify, it may be left
 # empty because it is informational; the stack does not publish a host port.
 SERVICE_URL_WEBAPP_80=
+
+# Optional. Set this to the publicly reachable MCP endpoint when the selected
+# provider/model supports remote MCP, for example:
+# https://sortsys.example/api/v2/internal/llm/mcp
+LLM_MCP_URL=
 
 # Optional overrides (the shown values are the Compose defaults).
 POSTGRES_IMAGE=postgres:17-alpine

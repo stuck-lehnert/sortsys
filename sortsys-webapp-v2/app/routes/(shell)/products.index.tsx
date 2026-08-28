@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { OperationalTag } from "@sortsys/react-components";
 import type { Route } from "./+types";
 import { useNavigate } from "react-router";
@@ -17,7 +18,7 @@ import { EXCEL_CURRENCY_NUM_FMT } from "~/lib/xlsx";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Produkte" },
+    { title: uiText("Produkte") },
   ];
 }
 
@@ -44,7 +45,7 @@ export default function ProductsPage() {
       content: ({ context }) => <>
         <MyForm.MultiSelect
           name="brand"
-          labelText="Hersteller"
+          labelText={uiText("Hersteller")}
           maxSelectedItems={1}
           prepare={async () => {
             const [data, err] = await client.query('products.brands.list', undefined);
@@ -63,7 +64,7 @@ export default function ProductsPage() {
 
         <MyForm.MultiSelect
           name="category"
-          labelText="Kategorie"
+          labelText={uiText("Kategorie")}
           maxSelectedItems={1}
           prepare={async () => {
             const [data, err] = await client.query('products.categories.list', undefined);
@@ -94,8 +95,8 @@ export default function ProductsPage() {
         hide();
       },
       modalProps: () => ({
-        modalHeading: "Produkte filtern",
-        primaryButtonText: 'Filter anwenden',
+        modalHeading: uiText("Produkte filtern"),
+        primaryButtonText: uiText("Filter anwenden"),
       }),
     });
   }
@@ -126,28 +127,28 @@ export default function ProductsPage() {
   return <>
     <div className="flex gap-2 w-full overlflow-x-auto">
       {!hasFilter ? <>
-        <OperationalTag renderIcon={Icons.Filter} text="Filter" onClick={showFilterModal} />
+        <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
       </> : <>
-        <OperationalTag renderIcon={Icons.FilterEdit} text="Filter ändern" onClick={showFilterModal} />
-        <OperationalTag renderIcon={Icons.FilterRemove} text="Filter aus" onClick={() => {
+        <OperationalTag renderIcon={Icons.FilterEdit} text={uiText("Filter ändern")} onClick={showFilterModal} />
+        <OperationalTag renderIcon={Icons.FilterRemove} text={uiText("Filter aus")} onClick={() => {
           setBrand(null);
           setCategory(null);
         }} />
       </>}
 
       <TableExportActions
-        title="Produkte"
+        title={uiText("Produkte")}
         fileName="Produkte"
         rows={loadProductExportRows}
         disabled={!products}
         columns={[
-          { header: 'Nummer', value: product => product.customId, align: 'right' },
-          { header: 'Bezeichnung', value: product => product.name, width: '2fr' },
-          { header: 'Hersteller', value: product => product.brand },
-          { header: 'Kategorie', value: product => product.categories?.join(', '), width: '1.5fr' },
-          { header: 'Basiseinheit', value: product => product.baseUnit },
+          { header: uiText("Nummer"), value: product => product.customId, align: 'right' },
+          { header: uiText("Bezeichnung"), value: product => product.name, width: '2fr' },
+          { header: uiText("Hersteller"), value: product => product.brand },
+          { header: uiText("Kategorie"), value: product => product.categories?.join(', '), width: '1.5fr' },
+          { header: uiText("Basiseinheit"), value: product => product.baseUnit },
           {
-            header: 'Aktueller Preis',
+            header: uiText("Aktueller Preis"),
             value: product => product.latestPrice,
             format: value => value == null ? '' : formatCurrency(Number(value)),
             excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
@@ -167,17 +168,17 @@ export default function ProductsPage() {
       onRowClick={row => navigate(`/products/${row.id}`)}
       columns={[
         {
-          label: 'Nummer',
+          label: uiText("Nummer"),
           render: row => row.customId.toString(),
           sortKey: row => row.customId,
         },
         {
-          label: 'Bezeichnung',
+          label: uiText("Bezeichnung"),
           render: row => row.name,
           sortKey: row => row.name.toLowerCase(),
         },
         {
-          label: 'Hersteller',
+          label: uiText("Hersteller"),
           render: row => row.brand,
           sortKey: row => row.brand?.toLowerCase() ?? '',
         },

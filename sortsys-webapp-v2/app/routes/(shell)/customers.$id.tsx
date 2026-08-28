@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -47,13 +48,13 @@ export default function CustomerDetailPage() {
       actions={<>
         <MyDropdown items={[
           {
-            label: 'Bearbeiten',
+            label: uiText("Bearbeiten"),
             renderIcon: Icons.Edit,
             hideIf: !sessionInfo.canDo('manage:customers'),
             onClick: () => showModifyCustomerModal(modals, customer),
           },
           {
-            label: 'Löschen',
+            label: uiText("Löschen"),
             renderIcon: Icons.Delete,
             hideIf: !sessionInfo.canDo('delete:customers'),
             onClick: () => showDeleteCustomerModal(modals, customer),
@@ -93,7 +94,7 @@ export default function CustomerDetailPage() {
       </div>
     </MyExpandable>}
 
-    {!!projects?.length && <MyExpandable title={`Projekte (${projects.length})`}>
+    {!!projects?.length && <MyExpandable title={uiText(`Projekte (${projects.length})`, `Projecte (${projects.length})`)}>
       <div className="space-y-2">
         {projects.map((project) => <ProjectTile key={project.id} project={project} omit={['customer']} />)}
       </div>

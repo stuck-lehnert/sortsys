@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useState } from "react";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -41,7 +42,7 @@ export default function RegieReportDetailPage() {
 
   const [report, err] = useClientStream(() => client.streamQuery('regieReports.get', { id: id! }), [id]);
 
-  useTitle(() => report ? `Regiebericht ${isoWeekLabel(new Date(report.day))}` : null, [report?.day]);
+  useTitle(() => report ? uiText(`Regiebericht ${isoWeekLabel(new Date(report.day))}`, `Time-and-material report ${isoWeekLabel(new Date(report.day))}`) : null, [report?.day]);
 
   useShortcut('Control+e', e => {
     if (!report || !sessionInfo.canDo('manage:regieReports')) return;
@@ -96,10 +97,10 @@ export default function RegieReportDetailPage() {
 
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
       const safeSuffix = `${currentReport.autoId}`.replace(/[^\w\-]+/g, '-');
-      deliverBlob(blob, `Regiebericht-${safeSuffix}.pdf`, target, pdfWindow);
+      deliverBlob(blob, uiText(`Regiebericht-${safeSuffix}.pdf`, `Time-and-material report-${safeSuffix}.pdf`), target, pdfWindow);
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || 'Unbekannter Fehler beim PDF-Export.');
+      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
     } finally {
       setIsPdfExporting(false);
     }
@@ -107,17 +108,17 @@ export default function RegieReportDetailPage() {
 
   return <>
     <MyHeader
-      title={`Regiebericht #${report.autoId}`}
+      title={uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`)}
       actions={<MyDropdown items={[
         {
-          label: isPdfExporting ? 'PDF wird erstellt...' : 'PDF',
+          label: isPdfExporting ? uiText("PDF wird erstellt...") : uiText("PDF"),
           renderIcon: Icons.Download,
           hideIf: !sessionInfo.canDo('view:regieReports'),
           disabled: isPdfExporting,
           onClick: () => exportRegieReportToPdf(),
         },
         {
-          label: 'Excel',
+          label: uiText("Excel"),
           renderIcon: Icons.Excel,
           hideIf: !sessionInfo.canDo('view:regieReports'),
           onClick: async () => {
@@ -151,11 +152,11 @@ export default function RegieReportDetailPage() {
             wb.creator = "exceljs";
             wb.created = new Date();
 
-            const ws = wb.addWorksheet('Regiebericht');
-            const title = `Regiebericht #${report.autoId}`;
+            const ws = wb.addWorksheet(uiText('Regiebericht'));
+            const title = uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`);
             const weekStart = startOfIsoWeek(new Date(report.day));
             const weekEnd = dayInIsoWeek(weekStart, WEEKDAY_NAMES.length - 1);
-            const subtitle = `${isoWeekLabel(weekStart)} (${formatDate(weekStart)} bis ${formatDate(weekEnd)}) — ${project?.title ?? 'Unbekannt'}`;
+            const subtitle = uiText(`${isoWeekLabel(weekStart)} (${formatDate(weekStart)} bis ${formatDate(weekEnd)}) — ${project?.title ?? 'Unbekannt'}`, `${isoWeekLabel(weekStart)} (${formatDate(weekStart)} to ${formatDate(weekEnd)}) — ${project?.title ?? 'Unbekannt'}`);
 
             ws.getCell(1, 1).value = title;
             ws.getCell(1, 1).font = { size: 18, bold: true };
@@ -246,7 +247,7 @@ export default function RegieReportDetailPage() {
               });
             let workHoursTable: TableMeta | null = null;
             if (workHourRows.length) {
-              addSectionTitle('Arbeitszeit je Mitarbeiter und Tag');
+              addSectionTitle(uiText('Arbeitszeit je Mitarbeiter und Tag'));
               workHoursTable = addTable(
                 ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES, 'Gesamt'],
                 workHourRows,
@@ -321,17 +322,17 @@ export default function RegieReportDetailPage() {
             });
 
             const safeSuffix = `${report.autoId}`.replace(/[^\w\-]+/g, '-');
-            downloadBlob(blob, `Regiebericht-${safeSuffix}.xlsx`);
+            downloadBlob(blob, uiText(`Regiebericht-${safeSuffix}.xlsx`, `Time-and-material report-${safeSuffix}.xlsx`));
           },
         },
         {
-          label: 'Bearbeiten',
+          label: uiText("Bearbeiten"),
           renderIcon: Icons.Edit,
           hideIf: !sessionInfo.canDo('manage:regieReports'),
           onClick: () => showModifyRegieReportModal(modals, report),
         },
         {
-          label: 'Löschen',
+          label: uiText("Löschen"),
           renderIcon: Icons.Delete,
           hideIf: !sessionInfo.canDo('delete:regieReports'),
           onClick: () => showDeleteRegieReportModal(modals, report),
@@ -339,12 +340,11 @@ export default function RegieReportDetailPage() {
       ]} />}
     />
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">
-      PDF-Export fehlgeschlagen: {pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
     </MyCallout>}
 
     <AttrList>
-      <AttrList.Attr name="Projekt" value={<Awaited promise={async () => {
+      <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
         const [project] = await client.query('projects.get', { id: report.projectId }, { strategy: 'cache-first' });
         if (!project) return 'Unbekannt';
         return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
@@ -352,9 +352,9 @@ export default function RegieReportDetailPage() {
 
       {!!report.summary && <AttrList.Attr name="Zusammenfassung" value={report.summary} />}
       <AttrList.Attr name="Kalenderwoche" value={isoWeekLabel(weekStart)} />
-      <AttrList.Attr name="Zeitraum" value={`${formatDate(weekStart)} bis ${formatDate(weekEnd)}`} />
-      <AttrList.Attr name="Erstellt am" value={formatDate(report.createdAt)} />
-      {!!report.createdByUserId && <AttrList.Attr name="Erstellt von" value={<Awaited promise={async () => {
+      <AttrList.Attr name={uiText("Zeitraum")} value={uiText(`${formatDate(weekStart)} bis ${formatDate(weekEnd)}`, `${formatDate(weekStart)} to ${formatDate(weekEnd)}`)} />
+      <AttrList.Attr name={uiText("Erstellt am")} value={formatDate(report.createdAt)} />
+      {!!report.createdByUserId && <AttrList.Attr name={uiText("Erstellt von")} value={<Awaited promise={async () => {
         const [user] = await client.query('users.get', { id: report.createdByUserId }, { strategy: 'cache-first' });
         if (!user) return 'Unbekannt';
         return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>
@@ -363,18 +363,18 @@ export default function RegieReportDetailPage() {
 
     <MyDivider />
 
-    {!!report.workHours.length && <MyExpandable title="Arbeitszeit">
+    {!!report.workHours.length && <MyExpandable title={uiText("Arbeitszeit")}>
       <MyTable
         className="th-25rem"
         rows={report.workHours}
         columns={[
           {
-            label: 'Tag',
+            label: uiText("Tag"),
             render: row => formatDate(row.day),
             sortKey: row => new Date(row.day).getTime(),
           },
           {
-            label: 'Mitarbeiter',
+            label: uiText("Mitarbeiter"),
             render: async row => {
               if (!row.userId) return 'Unbekannt';
               const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
@@ -383,7 +383,7 @@ export default function RegieReportDetailPage() {
             },
           },
           {
-            label: 'Stunden',
+            label: uiText("Stunden"),
             render: row => formatNumber(row.hours),
             sortKey: row => row.hours,
           },
@@ -393,14 +393,14 @@ export default function RegieReportDetailPage() {
       />
     </MyExpandable>}
 
-    {!!report.products.length && <MyExpandable title="Produkte">
+    {!!report.products.length && <MyExpandable title={uiText("Produkte")}>
       <MyTable
         className="th-25rem"
         persistentId="Products"
         rows={report.products}
         columns={[
           {
-            label: 'Bezeichnung',
+            label: uiText("Bezeichnung"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return 'Unbekannt';
@@ -408,7 +408,7 @@ export default function RegieReportDetailPage() {
             },
           },
           {
-            label: 'Menge',
+            label: uiText("Menge"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return `${formatNumber(row.quantity)} ???`;
@@ -417,7 +417,7 @@ export default function RegieReportDetailPage() {
             },
           },
           {
-            label: 'Basismenge',
+            label: uiText("Basismenge"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return formatNumber(row.quantity);
@@ -431,18 +431,18 @@ export default function RegieReportDetailPage() {
       />
     </MyExpandable>}
 
-    {!!report.specialRecords.length && <MyExpandable title="Sonderposten">
+    {!!report.specialRecords.length && <MyExpandable title={uiText("Sonderposten")}>
       <MyTable
         className="th-25rem"
         rows={report.specialRecords}
         columns={[
           {
-            label: 'Bezeichnung',
+            label: uiText("Bezeichnung"),
             render: row => row.name,
             sortKey: row => row.name,
           },
           {
-            label: 'Menge',
+            label: uiText("Menge"),
             render: row => `${formatNumber(row.amount)} ${row.unit}`,
             sortKey: row => row.amount,
           },

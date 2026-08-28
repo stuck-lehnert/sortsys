@@ -1,3 +1,4 @@
+import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { type QueryResult } from "@sortsys/v2-client";
 import { Colors } from "./colors";
 import type { ComponentProps } from "react";
@@ -32,10 +33,10 @@ export function toolTitle(tool: Tool): string {
 }
 
 export function toolStatus(tool: Tool) {
-  if (tool.status === 'lost') return 'abhanden';
-  if (tool.status === 'broken') return 'defekt';
-  if (!tool.available) return 'gebucht';
-  return 'verfügbar';
+  if (tool.status === 'lost') return uiText('abhanden', 'missing');
+  if (tool.status === 'broken') return uiText('defekt', 'broken');
+  if (!tool.available) return uiText('gebucht', 'booked');
+  return uiText('verfügbar', 'available');
 }
 
 export function toolStatusColor(tool: Tool): string {
@@ -64,8 +65,8 @@ export function userFullNameComma(user: { firstName?: string | null; lastName?: 
 
 export function userContractName(user: User): string {
   return {
-    'internal': 'Intern',
-    'external': 'Extern',
+    'internal': uiText('Intern'),
+    'external': uiText('Extern'),
     'subcontractor': 'SUB',
   }[user.contractType];
 }
@@ -90,25 +91,25 @@ export function formatDate(date?: Date | string | false | null, type?: 'short' |
     };
   }
 
-  return new Date(date).toLocaleDateString('de-DE', options);
+  return new Date(date).toLocaleDateString(currentLocaleTag(), options);
 }
 
 export function formatNumber(num: number): string {
-  return num.toLocaleString('de-DE', {
+  return num.toLocaleString(currentLocaleTag(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   });
 }
 
 export function formatCurrency(num: number): string {
-  return num.toLocaleString("de-DE", {
+  return num.toLocaleString(currentLocaleTag(), {
     style: "currency",
     currency: "EUR",
   });
 }
 
 export function formatPercent(num: number): string {
-  return `${num.toLocaleString('de-DE', {
+  return `${num.toLocaleString(currentLocaleTag(), {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;

@@ -11,6 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use axum::{Json, Router, extract::State, routing::post};
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -26,10 +27,14 @@ use reqwest::{Client, Method};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use tokio::time::{Duration, sleep};
+use tokio::{
+    net::TcpListener,
+    sync::Mutex,
+    time::{Duration, sleep},
+};
 use url::Url;
 
-use sortsys_api::{migrations, seed};
+use sortsys_api::{ids::Id, migrations, seed};
 
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -59,7 +64,7 @@ fn network_suite_tracks_every_generated_contract_procedure() {
         );
     }
 
-    assert_eq!(procedure_count, 198, "unexpected generated contract size");
+    assert_eq!(procedure_count, 199, "unexpected generated contract size");
 }
 
 #[tokio::test]
@@ -2664,6 +2669,692 @@ async fn global_admin_tenants_users_and_errors_use_real_databases() {
 }
 
 #[tokio::test]
+async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping network scenarios: live infrastructure is not configured");
+        return;
+    };
+
+    let admin_password = env::var("TEST_ADMIN_PASSWORD")
+        .expect("scripts/test-api must provide the global test admin password");
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url.clone());
+    let (openai_base_url, openai_requests) = start_openai_responses_mock().await;
+
+    let admin_login = rpc
+        .mutation(
+            "admin.login",
+            json!({ "tenant": null, "password": admin_password }),
+            None,
+        )
+        .await;
+    let admin_token = admin_login["token"].as_str().unwrap();
+
+    let configured = rpc
+        .mutation(
+            "admin.llm.settings.update",
+            json!({
+                "provider": "openai",
+                "model": "gpt-5.6-luna",
+                "baseUrl": openai_base_url,
+                "apiKey": "integration-secret-that-must-not-leak",
+            }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(configured["hasApiKey"], true);
+
+    let public_settings = rpc
+        .query("admin.llm.settings.get", Value::Null, Some(admin_token))
+        .await;
+    assert!(public_settings.get("apiKey").is_none());
+    assert_eq!(public_settings["model"], "gpt-5.6-luna");
+
+    let tenants = rpc
+        .query("admin.llm.tenants.list", Value::Null, Some(admin_token))
+        .await;
+    assert!(
+        tenants
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| { row["name"] == fixture.tenant && row["enabled"] == false })
+    );
+
+    rpc.mutation(
+        "admin.llm.tenants.update",
+        json!({
+            "name": fixture.tenant,
+            "enabled": true,
+            "monthlyTokenQuota": 50_000,
+        }),
+        Some(admin_token),
+    )
+    .await;
+
+    let login = rpc
+        .mutation(
+            "auth.login",
+            json!({
+                "tenant": fixture.tenant,
+                "username": fixture.admin_username,
+                "password": fixture.admin_password,
+            }),
+            None,
+        )
+        .await;
+    let token = login["token"].as_str().unwrap();
+
+    let status = rpc.query("llm.status", Value::Null, Some(token)).await;
+    assert_eq!(status["available"], true);
+    assert_eq!(status["monthlyTokenQuota"], 50_000);
+
+    let chat = rpc
+        .mutation("llm.chats.create", json!({}), Some(token))
+        .await;
+    let chat_id = chat["id"].as_str().unwrap();
+    let chat_id_sql = Id::decode(chat_id).unwrap().0;
+
+    let chat_id_default: Option<String> = sqlx::query_scalar(
+        r#"
+        SELECT column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'llm_chats'
+          AND column_name = 'id'
+        "#,
+    )
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    assert_eq!(chat_id_default.as_deref(), Some("id64()"));
+    assert!(chat_id_sql > 0);
+
+    let chats = rpc.query("llm.chats.list", Value::Null, Some(token)).await;
+    assert!(
+        chats
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == chat_id)
+    );
+
+    let chat_detail = rpc
+        .query("llm.chats.get", json!({ "chatId": chat_id }), Some(token))
+        .await;
+    assert_eq!(chat_detail["messages"].as_array().unwrap().len(), 0);
+
+    let cost_project = rpc
+        .mutation(
+            "projects.create",
+            json!({
+                "title": "Sanierung Verwaltungsgebäude – Kostenprüfung",
+                "address": {
+                    "streetAddress": "Prüfstraße 12",
+                    "zip": "90402",
+                    "city": "Nürnberg",
+                    "country": "Deutschland"
+                }
+            }),
+            Some(token),
+        )
+        .await;
+    let cost_project_id = cost_project["id"].clone();
+    let admin_user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+        .bind(&fixture.admin_username)
+        .fetch_one(&fixture.tenant_pool)
+        .await
+        .unwrap();
+
+    rpc.mutation(
+        "projects.costs.entries.create",
+        json!({
+            "projectId": cost_project_id,
+            "type": "offer",
+            "amount": 12_500,
+            "comment": "Beauftragtes Nettoangebot"
+        }),
+        Some(token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.costs.entries.create",
+        json!({
+            "projectId": cost_project_id,
+            "type": "invoice",
+            "amount": 6_800,
+            "comment": "Bisherige Nettorechnung"
+        }),
+        Some(token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.dailyReports.create",
+        json!({
+            "projectId": cost_project_id,
+            "day": "2026-08-20T00:00:00.000+02:00",
+            "summary": "Untergrund vorbereitet und erste Flächen beschichtet.",
+            "workHours": [{
+                "userId": Id(admin_user_id).encode(),
+                "hours": 7.5,
+                "costPerHour": 42,
+                "contractType": "internal"
+            }]
+        }),
+        Some(token),
+    )
+    .await;
+
+    let completed_chat = rpc
+        .mutation(
+            "llm.messages.send",
+            json!({
+                "chatId": chat_id,
+                "content": "Wie ist der aktuelle Kostenstand der Projekte?"
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        completed_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Die aktuelle Projektkostenübersicht wurde geladen."
+    );
+
+    let requests = openai_requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["model"], "gpt-5.6-luna");
+    assert_eq!(requests[0]["max_output_tokens"], 1200);
+    assert!(requests[0].get("messages").is_none());
+    assert!(requests[0].get("reasoning_effort").is_none());
+    assert!(
+        requests[0]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("Ressource project_costs")
+    );
+    assert!(requests[0]["tools"].as_array().unwrap().iter().any(|tool| {
+        tool["type"] == "function"
+            && tool["name"] == "sortsys_search"
+            && tool.get("function").is_none()
+    }));
+
+    let tool_output = requests[1]["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .and_then(|item| item["output"].as_str())
+        .map(|output| serde_json::from_str::<Value>(output).unwrap())
+        .expect("the second Responses request must contain the project-cost tool result");
+    assert_eq!(tool_output["amountsAreNet"], true);
+    assert_eq!(tool_output["scope"], "activeProjects");
+    assert!(tool_output["projectCount"].as_u64().unwrap() > 0);
+    assert!(tool_output["totals"]["costs"].as_f64().unwrap() > 0.0);
+    assert!(!tool_output["records"].as_array().unwrap().is_empty());
+    drop(requests);
+
+    let proposed_chat = rpc
+        .mutation(
+            "llm.messages.send",
+            json!({
+                "chatId": chat_id,
+                "content": "Lege das Projekt „Test Projekt LLM“ mit der Adresse „Musterstr. 42, Musterstadt“ an.",
+                "locale": "de"
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        proposed_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        ""
+    );
+    let proposal = proposed_chat["proposals"]
+        .as_array()
+        .unwrap()
+        .last()
+        .expect("the schema-backed proposal must be persisted");
+    assert_eq!(proposal["operations"][0]["path"], "projects.create");
+    assert_eq!(
+        proposal["operations"][0]["input"],
+        json!({
+            "title": "Test Projekt LLM",
+            "address": {
+                "streetAddress": "Musterstr. 42",
+                "city": "Musterstadt"
+            }
+        })
+    );
+
+    let requests = openai_requests.lock().await;
+    assert_eq!(requests.len(), 6);
+    let schema_tool = requests[2]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "sortsys_get_schema")
+        .expect("the provider must receive the on-demand schema tool");
+    assert_eq!(
+        schema_tool["parameters"]["properties"]["path"]["type"],
+        "string"
+    );
+
+    let schema = last_function_output(&requests[3]);
+    assert_eq!(schema["path"], "projects.create");
+    assert_eq!(schema["kind"], "mutation");
+    assert_eq!(
+        schema["inputSchema"]["properties"]["address"]["anyOf"][1]["type"],
+        "object"
+    );
+    assert_eq!(
+        schema["inputSchema"]["properties"]["address"]["anyOf"][1]["required"],
+        json!(["city", "streetAddress"])
+    );
+    assert!(
+        schema["inputType"]
+            .as_str()
+            .unwrap()
+            .contains("title: string")
+    );
+    assert!(
+        !schema["inputType"]
+            .as_str()
+            .unwrap()
+            .contains("name: string")
+    );
+
+    let validation_error = last_function_output(&requests[4]);
+    assert_eq!(validation_error["error"]["code"], "BAD_REQUEST");
+    assert!(
+        validation_error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("input.address must be an object")
+    );
+
+    let proposal_result = last_function_output(&requests[5]);
+    assert!(proposal_result["proposalId"].is_string());
+    drop(requests);
+
+    let declined_proposal_id = proposal["id"].as_str().unwrap().to_owned();
+    rpc.mutation(
+        "llm.proposals.review",
+        json!({
+            "proposalId": declined_proposal_id,
+            "decision": "decline",
+            "comment": null,
+        }),
+        Some(token),
+    )
+    .await;
+
+    let reloaded_chat = rpc
+        .query("llm.chats.get", json!({ "chatId": chat_id }), Some(token))
+        .await;
+    let declined_proposal = reloaded_chat["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["id"] == declined_proposal_id)
+        .expect("declined proposals must remain in the persisted chat history");
+    assert_eq!(declined_proposal["status"], "declined");
+    assert!(declined_proposal["assistantMessageId"].is_string());
+
+    let tobias_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO users (username, first_name, last_name, password)
+        VALUES ('tobias.schneider', 'Tobias', 'Schneider', 'nicht-zum-anmelden')
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    let assigned_tool_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO tools (custom_id, brand, category, label)
+        VALUES (9851, 'Bosch Professional', 'Bohrhammer', 'GBH 18V-26')
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"
+        INSERT INTO tool_trackings (
+          tool_id,
+          responsible_user_id,
+          started_by_user_id,
+          comment
+        )
+        VALUES ($1, $2, $3, 'Ausgabe für Baustelleneinsatz')
+        "#,
+    )
+    .bind(assigned_tool_id)
+    .bind(tobias_id)
+    .bind(fixture.user_id)
+    .execute(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    let tracking_chat = rpc
+        .mutation(
+            "llm.messages.send",
+            json!({
+                "chatId": chat_id,
+                "content": "Welches Werkzeug hat Tobias Schneider aktuell?"
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        tracking_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Tobias Schneider hat aktuell den Bohrhammer GBH 18V-26 von Bosch Professional."
+    );
+
+    let requests = openai_requests.lock().await;
+    assert_eq!(requests.len(), 8);
+    let tracking_output = last_function_output(&requests[7]);
+    assert_eq!(
+        tracking_output["records"][0]["responsible_first_name"],
+        "Tobias"
+    );
+    assert_eq!(
+        tracking_output["records"][0]["responsible_last_name"],
+        "Schneider"
+    );
+    assert_eq!(
+        tracking_output["records"][0]["tool_brand"],
+        "Bosch Professional"
+    );
+    assert_eq!(tracking_output["records"][0]["tool_label"], "GBH 18V-26");
+    drop(requests);
+    rpc.mutation(
+        "tools.inventories.create",
+        json!({
+            "toolId": Id(assigned_tool_id).encode(),
+            "comment": "Inventurprüfung durch Integrationstest"
+        }),
+        Some(token),
+    )
+    .await;
+
+    let inventory_chat = rpc
+        .mutation(
+            "llm.messages.send",
+            json!({
+                "chatId": chat_id,
+                "content": "Wurde der Bosch-Bohrhammer in den letzten 30 Tagen inventarisiert?"
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        inventory_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Der Bosch-Bohrhammer wurde innerhalb der letzten 30 Tage inventarisiert."
+    );
+
+    let requests = openai_requests.lock().await;
+    assert_eq!(requests.len(), 10);
+    let inventory_output = last_function_output(&requests[9]);
+    assert_eq!(inventory_output["days"], 30);
+    assert_eq!(inventory_output["hadInventory"], true);
+    assert_eq!(
+        inventory_output["records"][0]["tool_brand"],
+        "Bosch Professional"
+    );
+    assert_eq!(
+        inventory_output["records"][0]["last_inventory_comment"],
+        "Inventurprüfung durch Integrationstest"
+    );
+    drop(requests);
+
+    for (cost_type, relative_factor, constant) in
+        [("fgk", 0.15, 12.0), ("mgk", 0.08, 5.0), ("ngk", 0.04, 3.0)]
+    {
+        rpc.mutation(
+            "settings.costs.set",
+            json!({
+                "type": cost_type,
+                "effectiveAt": "2026-08-25T00:00:00.000+02:00",
+                "relativeFactor": relative_factor,
+                "constant": constant
+            }),
+            Some(token),
+        )
+        .await;
+    }
+
+    let common_costs_chat = rpc
+        .mutation(
+            "llm.messages.send",
+            json!({
+                "chatId": chat_id,
+                "content": "Wie hoch sind die aktuellen Gemeinkosten?"
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        common_costs_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Die aktuellen Gemeinkosten wurden aus den Mandanteneinstellungen geladen."
+    );
+
+    let requests = openai_requests.lock().await;
+    assert_eq!(requests.len(), 14);
+
+    let catalog_output = last_function_output(&requests[11]);
+    assert!(
+        catalog_output["procedures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|procedure| procedure["path"] == "settings.costs.get")
+    );
+
+    let common_cost_schema = last_function_output(&requests[12]);
+    assert_eq!(common_cost_schema["path"], "settings.costs.get");
+    assert_eq!(common_cost_schema["kind"], "query");
+
+    let common_cost_output = last_function_output(&requests[13]);
+    assert_eq!(common_cost_output["path"], "settings.costs.get");
+    assert_eq!(common_cost_output["data"]["fgk"]["relativeFactor"], 0.15);
+    assert_eq!(common_cost_output["data"]["fgk"]["constant"], 12.0);
+    assert_eq!(common_cost_output["data"]["mgk"]["relativeFactor"], 0.08);
+    assert_eq!(common_cost_output["data"]["mgk"]["constant"], 5.0);
+    assert_eq!(common_cost_output["data"]["ngk"]["relativeFactor"], 0.04);
+    assert_eq!(common_cost_output["data"]["ngk"]["constant"], 3.0);
+    drop(requests);
+
+    // Keep covering failed provider requests and their quota records separately.
+    rpc.mutation(
+        "admin.llm.settings.update",
+        json!({
+            "provider": "custom",
+            "model": "integration-unavailable-model",
+            "baseUrl": "http://127.0.0.1:9",
+            "apiKey": "integration-secret-that-must-not-leak",
+        }),
+        Some(admin_token),
+    )
+    .await;
+    rpc.expect_error(
+        "llm.messages.send",
+        Method::POST,
+        json!({ "chatId": chat_id, "content": "Zeige meine Projekte." }),
+        Some(token),
+        "INTERNAL_SERVER_ERROR",
+    )
+    .await;
+
+    let proposal_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO llm_change_proposals (
+          chat_id,
+          title,
+          summary,
+          operations
+        )
+        VALUES (
+          $1,
+          'Projekt anlegen',
+          'Legt ein Projekt über die normale Benutzer-API an.',
+          '[{"path":"projects.create","input":{"title":"Prüfprojekt"},"description":"Projekt anlegen"}]'::JSONB
+        )
+        RETURNING id
+        "#,
+    )
+    .bind(chat_id_sql)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    rpc.mutation(
+        "llm.proposals.review",
+        json!({
+            "proposalId": Id(proposal_id).encode(),
+            "decision": "requestRevision",
+            "comment": "Bitte eine Adresse ergänzen.",
+        }),
+        Some(token),
+    )
+    .await;
+
+    let reviewed_status: String =
+        sqlx::query_scalar("SELECT status FROM llm_change_proposals WHERE id = $1")
+            .bind(proposal_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(reviewed_status, "revision_requested");
+
+    let accepted_proposal_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO llm_change_proposals (
+          chat_id,
+          title,
+          summary,
+          operations
+        )
+        VALUES (
+          $1,
+          'Projekt anlegen',
+          'Vorschau für einen Schreibvorgang im Benutzerkontext.',
+          '[{"path":"projects.create","input":{"title":"LLM Prüfprojekt"},"description":"Projekt anlegen"}]'::JSONB
+        )
+        RETURNING id
+        "#,
+    )
+    .bind(chat_id_sql)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    // This mirrors the browser's accept flow: execute the ordinary mutation
+    // with the user's token first, then mark the preview as accepted.
+    let created_project = rpc
+        .mutation(
+            "projects.create",
+            json!({ "title": "LLM Prüfprojekt" }),
+            Some(token),
+        )
+        .await;
+    let created_project = rpc
+        .query(
+            "projects.get",
+            json!({ "id": created_project["id"] }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(created_project["title"], "LLM Prüfprojekt");
+
+    rpc.mutation(
+        "llm.proposals.review",
+        json!({
+            "proposalId": Id(accepted_proposal_id).encode(),
+            "decision": "accept",
+            "comment": null,
+            "executionResults": [{
+                "path": "projects.create",
+                "output": { "id": created_project["id"] }
+            }],
+        }),
+        Some(token),
+    )
+    .await;
+
+    let accepted_status: String =
+        sqlx::query_scalar("SELECT status FROM llm_change_proposals WHERE id = $1")
+            .bind(accepted_proposal_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(accepted_status, "accepted");
+
+    let execution_results: Value =
+        sqlx::query_scalar("SELECT execution_results FROM llm_change_proposals WHERE id = $1")
+            .bind(accepted_proposal_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(execution_results[0]["path"], "projects.create");
+    assert_eq!(execution_results[0]["output"]["id"], created_project["id"]);
+
+    let tenant_usage = rpc.query("llm.admin.usage", Value::Null, Some(token)).await;
+    assert!(tenant_usage.as_array().unwrap().iter().any(|row| {
+        row["provider"] == "openai"
+            && row["model"] == "gpt-5.6-luna"
+            && row["requestCount"] == 5
+            && row["failedRequests"] == 0
+    }));
+    assert!(tenant_usage.as_array().unwrap().iter().any(|row| {
+        row["provider"] == "custom"
+            && row["model"] == "integration-unavailable-model"
+            && row["failedRequests"] == 1
+    }));
+
+    let global_usage = rpc
+        .query("admin.llm.usage", Value::Null, Some(admin_token))
+        .await;
+    assert!(
+        global_usage
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| { row["tenant"] == fixture.tenant && row["failedRequests"] == 1 })
+    );
+
+    rpc.mutation(
+        "llm.chats.delete",
+        json!({ "chatId": chat_id }),
+        Some(token),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn managed_database_backups_restore_and_fork_use_real_postgres_and_s3() {
     let Some(environment) = TestEnvironment::from_env() else {
         eprintln!("skipping network scenarios: live infrastructure is not configured");
@@ -3201,6 +3892,32 @@ async fn passkey_registration_and_both_login_modes_use_real_postgres() {
 }
 
 async fn settings_scenarios(rpc: &RpcClient, token: &str) {
+    let mut session = rpc
+        .query("auth.sessionInfo", Value::Null, Some(token))
+        .await;
+    assert_eq!(session["user"]["locale"], "de");
+
+    rpc.mutation(
+        "settings.language.set",
+        json!({ "locale": "en" }),
+        Some(token),
+    )
+    .await;
+
+    session = rpc
+        .query("auth.sessionInfo", Value::Null, Some(token))
+        .await;
+    assert_eq!(session["user"]["locale"], "en");
+
+    rpc.expect_error(
+        "settings.language.set",
+        Method::POST,
+        json!({ "locale": "fr" }),
+        Some(token),
+        "BAD_REQUEST",
+    )
+    .await;
+
     rpc.mutation(
         "settings.tenantName.set",
         json!({ "companyName": "Rust Scenario GmbH" }),
@@ -3770,6 +4487,233 @@ impl Fixture {
             user_id,
         }
     }
+}
+
+type OpenAiRequestLog = std::sync::Arc<Mutex<Vec<Value>>>;
+
+async fn start_openai_responses_mock() -> (String, OpenAiRequestLog) {
+    let requests = OpenAiRequestLog::default();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route("/v1/responses", post(mock_openai_response))
+        .with_state(std::sync::Arc::clone(&requests));
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    (format!("http://{address}"), requests)
+}
+
+async fn mock_openai_response(
+    State(requests): State<OpenAiRequestLog>,
+    Json(request): Json<Value>,
+) -> Json<Value> {
+    let input = request["input"].as_array().unwrap();
+    let latest_user_content = input
+        .iter()
+        .rev()
+        .find(|item| item["role"] == "user")
+        .and_then(|item| item["content"].as_str());
+    let is_proposal_request = latest_user_content
+        == Some(
+            "Lege das Projekt „Test Projekt LLM“ mit der Adresse „Musterstr. 42, Musterstadt“ an.",
+        );
+    let is_tracking_request =
+        latest_user_content == Some("Welches Werkzeug hat Tobias Schneider aktuell?");
+    let is_inventory_request = latest_user_content
+        == Some("Wurde der Bosch-Bohrhammer in den letzten 30 Tagen inventarisiert?");
+    let is_common_costs_request =
+        latest_user_content == Some("Wie hoch sind die aktuellen Gemeinkosten?");
+    let last_tool_output = input
+        .iter()
+        .rev()
+        .find(|item| item["type"] == "function_call_output")
+        .and_then(|item| item["output"].as_str())
+        .and_then(|output| serde_json::from_str::<Value>(output).ok());
+    requests.lock().await.push(request);
+
+    let output = if is_proposal_request {
+        match last_tool_output {
+            None => json!([{
+                "type": "function_call",
+                "id": "fc_project_schema",
+                "call_id": "call_project_schema",
+                "name": "sortsys_get_schema",
+                "arguments": r#"{"path":"projects.create"}"#
+            }]),
+            Some(result) if result["path"] == "projects.create" => json!([{
+                "type": "function_call",
+                "id": "fc_invalid_address_proposal",
+                "call_id": "call_invalid_address_proposal",
+                "name": "sortsys_propose_change",
+                "arguments": serde_json::to_string(&json!({
+                    "title": "Test Projekt LLM",
+                    "summary": "Legt das gewünschte Projekt nach Freigabe an.",
+                    "operations": [{
+                        "path": "projects.create",
+                        "input": {
+                            "title": "Test Projekt LLM",
+                            "address": "Musterstr. 42, Musterstadt"
+                        },
+                        "description": "Projekt mit Adresse anlegen"
+                    }]
+                })).unwrap()
+            }]),
+            Some(result) if result.get("error").is_some() => json!([{
+                "type": "function_call",
+                "id": "fc_corrected_address_proposal",
+                "call_id": "call_corrected_address_proposal",
+                "name": "sortsys_propose_change",
+                "arguments": serde_json::to_string(&json!({
+                    "title": "Test Projekt LLM",
+                    "summary": "Legt das gewünschte Projekt nach Freigabe an.",
+                    "operations": [{
+                        "path": "projects.create",
+                        "input": {
+                            "title": "Test Projekt LLM",
+                            "address": {
+                                "streetAddress": "Musterstr. 42",
+                                "city": "Musterstadt"
+                            }
+                        },
+                        "description": "Projekt mit Adresse anlegen"
+                    }]
+                })).unwrap()
+            }]),
+            Some(result) if result.get("proposalId").is_some() => json!([{
+                "type": "message",
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": "<proposal-only>"
+                }]
+            }]),
+            Some(result) => panic!("unexpected proposal tool result: {result}"),
+        }
+    } else if is_tracking_request {
+        match last_tool_output {
+            None => json!([{
+                "type": "function_call",
+                "id": "fc_tool_trackings",
+                "call_id": "call_tool_trackings",
+                "name": "sortsys_search",
+                "arguments": r#"{"resource":"tool_trackings","query":"Tobias Schneider","limit":10}"#
+            }]),
+            Some(result) if !result["records"].as_array().unwrap().is_empty() => json!([{
+                "type": "message",
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Tobias Schneider hat aktuell den Bohrhammer GBH 18V-26 von Bosch Professional."
+                }]
+            }]),
+            Some(result) => panic!("unexpected tool-tracking result: {result}"),
+        }
+    } else if is_inventory_request {
+        match last_tool_output {
+            None => json!([{
+                "type": "function_call",
+                "id": "fc_tool_inventories",
+                "call_id": "call_tool_inventories",
+                "name": "sortsys_search",
+                "arguments": r#"{"resource":"tool_inventories","query":"Bosch","limit":10,"days":30,"hadInventory":true}"#
+            }]),
+            Some(result) if !result["records"].as_array().unwrap().is_empty() => json!([{
+                "type": "message",
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Der Bosch-Bohrhammer wurde innerhalb der letzten 30 Tage inventarisiert."
+                }]
+            }]),
+            Some(result) => panic!("unexpected tool-inventory result: {result}"),
+        }
+    } else if is_common_costs_request {
+        match last_tool_output {
+            None => json!([{
+                "type": "function_call",
+                "id": "fc_common_cost_catalog",
+                "call_id": "call_common_cost_catalog",
+                "name": "sortsys_find_procedures",
+                "arguments": r#"{"query":"Gemeinkosten","kind":"query"}"#
+            }]),
+            Some(result) if result.get("procedures").is_some() => json!([{
+                "type": "function_call",
+                "id": "fc_common_cost_schema",
+                "call_id": "call_common_cost_schema",
+                "name": "sortsys_get_schema",
+                "arguments": r#"{"path":"settings.costs.get"}"#
+            }]),
+            Some(result)
+                if result["path"] == "settings.costs.get"
+                    && result.get("inputSchema").is_some() =>
+            {
+                json!([{
+                    "type": "function_call",
+                    "id": "fc_common_cost_query",
+                    "call_id": "call_common_cost_query",
+                    "name": "sortsys_query",
+                    "arguments": r#"{"path":"settings.costs.get"}"#
+                }])
+            }
+            Some(result)
+                if result["path"] == "settings.costs.get" && result.get("data").is_some() =>
+            {
+                json!([{
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Die aktuellen Gemeinkosten wurden aus den Mandanteneinstellungen geladen."
+                    }]
+                }])
+            }
+            Some(result) => panic!("unexpected common-cost result: {result}"),
+        }
+    } else if last_tool_output.is_some() {
+        json!([{
+            "type": "message",
+            "role": "assistant",
+            "content": [{
+                "type": "output_text",
+                "text": "Die aktuelle Projektkostenübersicht wurde geladen."
+            }]
+        }])
+    } else {
+        json!([{
+            "type": "function_call",
+            "id": "fc_project_costs",
+            "call_id": "call_project_costs",
+            "name": "sortsys_search",
+            "arguments": "{\"resource\":\"project_costs\",\"limit\":25}"
+        }])
+    };
+
+    Json(json!({
+        "id": "resp_test",
+        "object": "response",
+        "model": "gpt-5.6-luna",
+        "output": output,
+        "usage": {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "total_tokens": 120
+        }
+    }))
+}
+
+fn last_function_output(request: &Value) -> Value {
+    request["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|item| item["type"] == "function_call_output")
+        .and_then(|item| item["output"].as_str())
+        .map(|output| serde_json::from_str(output).unwrap())
+        .expect("request must contain a function output")
 }
 
 struct RpcClient {

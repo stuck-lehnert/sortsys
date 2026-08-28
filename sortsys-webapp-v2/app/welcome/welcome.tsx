@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import logoDark from "./logo-dark.svg";
 import logoLight from "./logo-light.svg";
 
@@ -9,12 +10,12 @@ export function Welcome() {
           <div className="w-[500px] max-w-[100vw] p-4">
             <img
               src={logoLight}
-              alt="React Router"
+              alt={uiText("React Router", "React Router")}
               className="block w-full dark:hidden"
             />
             <img
               src={logoDark}
-              alt="React Router"
+              alt={uiText("React Router", "React Router")}
               className="hidden w-full dark:block"
             />
           </div>
@@ -22,7 +23,7 @@ export function Welcome() {
         <div className="max-w-[300px] w-full space-y-6 px-4">
           <nav className="rounded-3xl border border-gray-200 p-6 dark:border-gray-700 space-y-4">
             <p className="leading-6 text-gray-700 dark:text-gray-200 text-center">
-              What&apos;s next?
+              {uiText("Wie geht es weiter?", "What is next?")}
             </p>
             <ul>
               {resources.map(({ href, text, icon }) => (
@@ -49,7 +50,7 @@ export function Welcome() {
 const resources = [
   {
     href: "https://reactrouter.com/docs",
-    text: "React Router Docs",
+    text: uiText("React Router Docs"),
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -69,7 +70,7 @@ const resources = [
   },
   {
     href: "https://rmx.as/discord",
-    text: "Join Discord",
+    text: uiText("Join Discord"),
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"

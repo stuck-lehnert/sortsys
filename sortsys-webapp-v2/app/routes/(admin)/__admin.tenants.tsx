@@ -1,9 +1,11 @@
+import { uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { InlineLoading, Modal, OperationalTag, Tile } from "@sortsys/react-components";
 import { from } from "rxjs";
 import { useEffect, useMemo, useState } from "react";
 import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
+import { AttrList } from "~/components/AttrList";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
@@ -57,19 +59,19 @@ function getStateBadges(tenant: TenantSummary) {
   const entries: Array<{ icon: any; text: string; type: "green" | "red" | "cool-gray" | "purple" }> = [];
 
   if (tenant.locked_at) {
-    entries.push({ icon: Icons.Lock, text: "Gesperrt", type: "red" });
+    entries.push({ icon: Icons.Lock, text: uiText("Gesperrt"), type: "red" });
   }
 
   if (tenant.deleted_at) {
-    entries.push({ icon: Icons.Delete, text: "Gelöscht", type: "purple" });
+    entries.push({ icon: Icons.Delete, text: uiText("Gelöscht"), type: "purple" });
   }
 
   if (tenant.deactivated_at && !tenant.locked_at && !tenant.deleted_at) {
-    entries.push({ icon: Icons.Disable, text: "Deaktiviert", type: "cool-gray" });
+    entries.push({ icon: Icons.Disable, text: uiText("Deaktiviert"), type: "cool-gray" });
   }
 
   if (!entries.length) {
-    entries.push({ icon: Icons.Accept, text: "Aktiv", type: "green" });
+    entries.push({ icon: Icons.Accept, text: uiText("Aktiv"), type: "green" });
   }
 
   return entries;
@@ -92,11 +94,11 @@ function adminUserName(user: TenantAdminUser) {
 function AdminUserStateTags({ user }: { user: TenantAdminUser }) {
   const tags: Array<{ text: string; type: "green" | "red" | "cool-gray" | "purple"; icon: any }> = [];
 
-  if (user.isAdmin) tags.push({ text: ":admin", type: "green", icon: Icons.Role });
-  else tags.push({ text: "Kein Admin", type: "cool-gray", icon: Icons.Lock });
+  if (user.isAdmin) tags.push({ text: uiText(":admin"), type: "green", icon: Icons.Role });
+  else tags.push({ text: uiText("Kein Admin"), type: "cool-gray", icon: Icons.Lock });
 
-  if (user.deactivatedAt) tags.push({ text: "Deaktiviert", type: "red", icon: Icons.Disable });
-  if (user.archivedAt) tags.push({ text: "Archiviert", type: "purple", icon: Icons.Archive });
+  if (user.deactivatedAt) tags.push({ text: uiText("Deaktiviert"), type: "red", icon: Icons.Disable });
+  if (user.archivedAt) tags.push({ text: uiText("Archiviert"), type: "purple", icon: Icons.Archive });
 
   return <div className="flex flex-wrap gap-1">
     {tags.map(tag => <OperationalTag key={tag.text} type={tag.type} renderIcon={tag.icon} text={tag.text} />)}
@@ -105,7 +107,7 @@ function AdminUserStateTags({ user }: { user: TenantAdminUser }) {
 
 export function meta() {
   return [
-    { title: "Global Admin: Tenants" },
+    { title: uiText("Global Admin: Tenants") },
   ];
 }
 
@@ -206,7 +208,7 @@ export default function GlobalAdminTenantsPage() {
     setPendingAction(null);
 
     if (err) {
-      setActionErr(err.message || "Aktion fehlgeschlagen");
+      setActionErr(err.message || uiText("Aktion fehlgeschlagen"));
       return false;
     }
 
@@ -220,23 +222,23 @@ export default function GlobalAdminTenantsPage() {
         <MyForm.Input
           required
           name="name"
-          labelText="Mandantenname"
-          helperText="Kleinbuchstaben, Ziffern, Punkt/Bindestrich/Unterstrich"
+          labelText={uiText("Mandantenname")}
+          helperText={uiText("Kleinbuchstaben, Ziffern, Punkt/Bindestrich/Unterstrich")}
           rules={[MyForm.Input.rules.pattern(/^[a-z0-9_]+([\.\-][a-z0-9_]+)*$/)]}
         />
 
         <MyForm.Input
           required
           name="email"
-          labelText="Kontakt-E-Mail"
+          labelText={uiText("Kontakt-E-Mail")}
           rules={[MyForm.Input.rules.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)]}
         />
 
-        <MyForm.Input name="companyName" labelText="Firmenname" />
+        <MyForm.Input name="companyName" labelText={uiText("Firmenname")} />
 
         <MyForm.MultiSelect
           name="postgresDatabase"
-          labelText="Datenbank"
+          labelText={uiText("Datenbank")}
           minSelectedItems={0}
           maxSelectedItems={1}
           prepare={() => databaseOptions}
@@ -275,17 +277,17 @@ export default function GlobalAdminTenantsPage() {
         setPendingAction(null);
 
         if (err) {
-          setActionErr(err.message || "Mandant konnte nicht erstellt werden");
+          setActionErr(err.message || uiText("Mandant konnte nicht erstellt werden"));
           return;
         }
 
         setCreatePassword(result.adminPassword);
-        setActionInfo(`Mandant ${name} erstellt.`);
+        setActionInfo(uiText(`Mandant ${name} erstellt.`, `Tenant ${name} created.`));
         hide();
       },
       modalProps: () => ({
-        modalHeading: "Neuen Mandanten anlegen",
-        primaryButtonText: "Mandant erstellen",
+        modalHeading: uiText("Neuen Mandanten anlegen"),
+        primaryButtonText: uiText("Mandant erstellen"),
         noFullscreen: true,
       }),
     });
@@ -299,25 +301,25 @@ export default function GlobalAdminTenantsPage() {
 
     modals.showForm({
       content: ({ context }) => <>
-        <h4>Kontakt</h4>
+        <h4>{uiText("Kontakt")}</h4>
         <MyForm.Input
           required
           name="email"
-          labelText="Kontakt-E-Mail"
+          labelText={uiText("Kontakt-E-Mail")}
           rules={[MyForm.Input.rules.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)]}
         />
-        <MyForm.Input name="companyName" labelText="Firmenname" />
-        <MyForm.Input name="streetAddress" labelText="Strasse und Hausnummer" />
+        <MyForm.Input name="companyName" labelText={uiText("Firmenname")} />
+        <MyForm.Input name="streetAddress" labelText={uiText("Strasse und Hausnummer")} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <MyForm.Input name="zip" labelText="PLZ" />
-          <MyForm.Input name="city" labelText="Stadt" />
-          <MyForm.Input name="country" labelText="Land" />
+          <MyForm.Input name="zip" labelText={uiText("PLZ")} />
+          <MyForm.Input name="city" labelText={uiText("Stadt")} />
+          <MyForm.Input name="country" labelText={uiText("Land")} />
         </div>
 
-        <h4>Verbindung</h4>
+        <h4>{uiText("Verbindung")}</h4>
         <MyForm.MultiSelect
           name="postgresDatabase"
-          labelText="Datenbank"
+          labelText={uiText("Datenbank")}
           minSelectedItems={0}
           maxSelectedItems={1}
           prepare={() => databaseOptions}
@@ -330,31 +332,31 @@ export default function GlobalAdminTenantsPage() {
           renderTile={(item) => item.label}
         />
 
-        <h4>Objektspeicher (S3 kompatibel)</h4>
-        <MyForm.Checkbox name="storageEnabled" labelText="Objektspeicher aktivieren" />
-        <MyForm.Input name="storageBucket" labelText="Bucket" helperText="Name des Buckets für Projektdateien" />
-        <MyForm.Input name="storageRegion" labelText="Region" helperText="z. B. eu-central-1 oder us-east-1" />
-        <MyForm.Input name="storageEndpoint" labelText="Custom Endpoint" helperText="z. B. https://s3.example.com" />
-        <MyForm.Checkbox name="storageForcePathStyle" labelText="Path-Style URLs erzwingen" />
-        <MyForm.Input name="storageAccessKeyId" labelText="Access Key ID" />
-        <MyForm.Input name="storageSecretAccessKey" labelText="Secret Access Key" type="password" />
-        <MyForm.Input name="storageSessionToken" labelText="Session Token" />
-        <MyForm.Input name="storagePublicBaseUrl" labelText="Public Base URL" helperText="CDN/Public Hostname" />
-        <MyForm.Input name="storageKeyPrefix" labelText="Key Prefix" helperText="z. B. tenants/staging" />
+        <h4>{uiText("Objektspeicher (S3 kompatibel)")}</h4>
+        <MyForm.Checkbox name="storageEnabled" labelText={uiText("Objektspeicher aktivieren")} />
+        <MyForm.Input name="storageBucket" labelText={uiText("Bucket")} helperText={uiText("Name des Buckets für Projektdateien")} />
+        <MyForm.Input name="storageRegion" labelText={uiText("Region")} helperText={uiText("z. B. eu-central-1 oder us-east-1")} />
+        <MyForm.Input name="storageEndpoint" labelText={uiText("Custom Endpoint")} helperText={uiText("z. B. https://s3.example.com")} />
+        <MyForm.Checkbox name="storageForcePathStyle" labelText={uiText("Path-Style URLs erzwingen")} />
+        <MyForm.Input name="storageAccessKeyId" labelText={uiText("Access Key ID")} />
+        <MyForm.Input name="storageSecretAccessKey" labelText={uiText("Secret Access Key")} type="password" />
+        <MyForm.Input name="storageSessionToken" labelText={uiText("Session Token")} />
+        <MyForm.Input name="storagePublicBaseUrl" labelText={uiText("Public Base URL")} helperText={uiText("CDN/Public Hostname")} />
+        <MyForm.Input name="storageKeyPrefix" labelText={uiText("Key Prefix")} helperText={uiText("z. B. tenants/staging")} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <MyForm.Input name="storageUploadUrlTtlSec" labelText="Upload URL TTL (Sekunden)" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input name="storageDownloadUrlTtlSec" labelText="Download URL TTL (Sekunden)" rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input name="storageUploadUrlTtlSec" labelText={uiText("Upload URL TTL (Sekunden)")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input name="storageDownloadUrlTtlSec" labelText={uiText("Download URL TTL (Sekunden)")} rules={[MyForm.Input.rules.posint]} />
         </div>
 
-        <h4>SSO (Microsoft Entra ID)</h4>
-        <MyForm.Checkbox name="ssoEnabled" labelText="SSO aktivieren" />
-        <MyForm.Input name="ssoTenantId" labelText="Tenant ID" />
-        <MyForm.Input name="ssoClientId" labelText="Client ID" />
-        <MyForm.Input name="ssoObjectId" labelText="Object ID" />
+        <h4>{uiText("SSO (Microsoft Entra ID)")}</h4>
+        <MyForm.Checkbox name="ssoEnabled" labelText={uiText("SSO aktivieren")} />
+        <MyForm.Input name="ssoTenantId" labelText={uiText("Tenant ID")} />
+        <MyForm.Input name="ssoClientId" labelText={uiText("Client ID")} />
+        <MyForm.Input name="ssoObjectId" labelText={uiText("Object ID")} />
         <div className="flex flex-wrap gap-3">
-          <MyForm.Checkbox name="importUserUsername" labelText="Username importieren" />
-          <MyForm.Checkbox name="importUserName" labelText="Namen importieren" />
-          <MyForm.Checkbox name="importUserEmail" labelText="E-Mail importieren" />
+          <MyForm.Checkbox name="importUserUsername" labelText={uiText("Username importieren")} />
+          <MyForm.Checkbox name="importUserName" labelText={uiText("Namen importieren")} />
+          <MyForm.Checkbox name="importUserEmail" labelText={uiText("E-Mail importieren")} />
         </div>
 
         <NotifyLoaded onLoad={() => {
@@ -464,14 +466,14 @@ export default function GlobalAdminTenantsPage() {
               },
             },
           }),
-          `Mandant ${tenant.name} aktualisiert.`,
+          uiText(`Mandant ${tenant.name} aktualisiert.`, `Tenant ${tenant.name} updated.`),
         );
 
         if (ok) hide();
       },
       modalProps: () => ({
-        modalHeading: `Mandant bearbeiten: ${tenant.name}`,
-        primaryButtonText: "Änderungen speichern",
+        modalHeading: uiText(`Mandant bearbeiten: ${tenant.name}`, `Edit tenant: ${tenant.name}`),
+        primaryButtonText: uiText("Änderungen speichern"),
       }),
     });
   }
@@ -479,22 +481,21 @@ export default function GlobalAdminTenantsPage() {
   function showCreateAdminUserModal(tenant: TenantSummary) {
     modals.showForm({
       content: () => <>
-        <MyCallout icon={Icons.Info} color="blue">
-          Der Benutzer wird im Mandanten <b>{tenant.name}</b> erstellt und erhält automatisch die Rolle <b>:admin</b>.
+        <MyCallout icon={Icons.Info} color="blue">{uiText("Der Benutzer wird im Mandanten")}<b>{tenant.name}</b>{uiText(" erstellt und erhält automatisch die Rolle ")}<b>{uiText(":admin")}</b>.
         </MyCallout>
 
-        <MyForm.Input required name="username" labelText="Anmeldename"
+        <MyForm.Input required name="username" labelText={uiText("Anmeldename")}
           rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]} />
 
         <MyDivider />
 
-        <MyForm.Input required name="firstName" labelText="Vorname" />
-        <MyForm.Input name="lastName" labelText="Nachname" />
+        <MyForm.Input required name="firstName" labelText={uiText("Vorname")} />
+        <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
 
         <MyDivider />
 
-        <MyForm.Input name="email" labelText="E-Mail" />
-        <MyForm.Input name="phone" labelText="Telefon" />
+        <MyForm.Input name="email" labelText={uiText("E-Mail")} />
+        <MyForm.Input name="phone" labelText={uiText("Telefon")} />
 
       </>,
       onSubmit: async ({ context, hide }) => {
@@ -517,7 +518,7 @@ export default function GlobalAdminTenantsPage() {
           });
 
           if (err) {
-            setActionErr(err.message || "Admin-Benutzer konnte nicht erstellt werden");
+            setActionErr(err.message || uiText("Admin-Benutzer konnte nicht erstellt werden"));
             return;
           }
 
@@ -528,9 +529,9 @@ export default function GlobalAdminTenantsPage() {
         }
       },
       modalProps: () => ({
-        modalHeading: 'Admin-Benutzer erstellen',
+        modalHeading: uiText("Admin-Benutzer erstellen"),
         modalLabel: tenant.name,
-        primaryButtonText: 'Erstellen',
+        primaryButtonText: uiText("Erstellen"),
       }),
     });
   }
@@ -549,13 +550,13 @@ export default function GlobalAdminTenantsPage() {
     setPendingAction(null);
 
     if (err) {
-      setActionErr(err.message || "Admin-Rolle konnte nicht geändert werden");
+      setActionErr(err.message || uiText("Admin-Rolle konnte nicht geändert werden", "Admin role could not be changed"));
       return false;
     }
 
     setActionInfo(admin
-      ? `${user.username} ist jetzt :admin.`
-      : `${user.username} ist nicht mehr :admin.`);
+      ? uiText(`${user.username} ist jetzt :admin.`, `${user.username} is now :admin.`)
+      : uiText(`${user.username} ist nicht mehr :admin.`, `${user.username} is no longer :admin.`));
     return true;
   }
 
@@ -564,14 +565,14 @@ export default function GlobalAdminTenantsPage() {
       content: () => <>
         <MyCallout icon={admin ? Icons.Role : Icons.Deny} color={admin ? "blue" : "amber"}>
           {admin
-            ? <>Benutzer <b>{adminUserName(user)}</b> erhält im Mandanten <b>{tenant.name}</b> die Rolle <b>:admin</b>.</>
-            : <>Benutzer <b>{adminUserName(user)}</b> verliert im Mandanten <b>{tenant.name}</b> die Rolle <b>:admin</b>.</>}
+            ? <>{uiText("Benutzer ")}<b>{adminUserName(user)}</b>{uiText(" erhält im Mandanten ")}<b>{tenant.name}</b>{uiText(" die Rolle ")}<b>{uiText(":admin")}</b>.</>
+            : <>{uiText("Benutzer ")}<b>{adminUserName(user)}</b>{uiText(" verliert im Mandanten ")}<b>{tenant.name}</b>{uiText(" die Rolle ")}<b>{uiText(":admin")}</b>.</>}
         </MyCallout>
 
         {!admin && <MyForm.Checkbox
           required
           name="_confirm"
-          labelText="Ich habe verstanden, dass dieser Benutzer danach keinen global administrierbaren Mandantenzugang mehr hat."
+          labelText={uiText("Ich habe verstanden, dass dieser Benutzer danach keinen global administrierbaren Mandantenzugang mehr hat.")}
         />}
       </>,
       onSubmit: async ({ hide }) => {
@@ -579,9 +580,9 @@ export default function GlobalAdminTenantsPage() {
         if (ok) hide();
       },
       modalProps: () => ({
-        modalHeading: admin ? ":admin vergeben" : ":admin entfernen",
+        modalHeading: admin ? uiText(":admin vergeben") : uiText(":admin entfernen"),
         modalLabel: user.username,
-        primaryButtonText: admin ? "Vergeben" : "Entfernen",
+        primaryButtonText: admin ? uiText("Vergeben") : uiText("Entfernen"),
         danger: !admin,
         noFullscreen: true,
       }),
@@ -591,9 +592,7 @@ export default function GlobalAdminTenantsPage() {
   function showResetAdminUserPasswordModal(tenant: TenantSummary, user: TenantAdminUser) {
     modals.showForm({
       content: () => <>
-        <MyCallout icon={Icons.SetPassword} color="amber">
-          Für <b>{adminUserName(user)}</b> wird ein neues Passwort erzeugt. Es wird nur einmal angezeigt.
-        </MyCallout>
+        <MyCallout icon={Icons.SetPassword} color="amber">{uiText("Für")}<b>{adminUserName(user)}</b>{uiText("wird ein neues Passwort erzeugt. Es wird nur einmal angezeigt.")}</MyCallout>
       </>,
       onSubmit: async ({ hide }) => {
         setActionErr(null);
@@ -609,7 +608,7 @@ export default function GlobalAdminTenantsPage() {
         setPendingAction(null);
 
         if (err) {
-          setActionErr(err.message || "Passwort konnte nicht zurückgesetzt werden");
+          setActionErr(err.message || uiText("Passwort konnte nicht zurückgesetzt werden", "Password could not be reset"));
           return;
         }
 
@@ -617,9 +616,9 @@ export default function GlobalAdminTenantsPage() {
         hide();
       },
       modalProps: () => ({
-        modalHeading: "Admin-Passwort zurücksetzen",
+        modalHeading: uiText("Admin-Passwort zurücksetzen"),
         modalLabel: user.username,
-        primaryButtonText: "Zurücksetzen",
+        primaryButtonText: uiText("Zurücksetzen"),
         danger: true,
         noFullscreen: true,
       }),
@@ -641,14 +640,12 @@ export default function GlobalAdminTenantsPage() {
 
   const adminAccessMessages = <>
     {!!createdAdminUser && (
-      <AutoHideSuccessCallout resetKey={`${createdAdminUser.username}:${createdAdminUser.password}`} onHidden={() => setCreatedAdminUser(null)}>
-        Admin-Benutzer <b>{createdAdminUser.username}</b> erstellt. Initiales Passwort: <b>{createdAdminUser.password}</b>
+      <AutoHideSuccessCallout resetKey={`${createdAdminUser.username}:${createdAdminUser.password}`} onHidden={() => setCreatedAdminUser(null)}>{uiText("Admin-Benutzer")}<b>{createdAdminUser.username}</b>{uiText(" erstellt. Initiales Passwort: ")}<b>{createdAdminUser.password}</b>
       </AutoHideSuccessCallout>
     )}
 
     {!!resetAdminUser && (
-      <AutoHideSuccessCallout resetKey={`${resetAdminUser.username}:${resetAdminUser.password}`} onHidden={() => setResetAdminUser(null)}>
-        Passwort für <b>{resetAdminUser.username}</b> zurückgesetzt: <b>{resetAdminUser.password}</b>
+      <AutoHideSuccessCallout resetKey={`${resetAdminUser.username}:${resetAdminUser.password}`} onHidden={() => setResetAdminUser(null)}>{uiText("Passwort für")}<b>{resetAdminUser.username}</b>{uiText(" zurückgesetzt: ")}<b>{resetAdminUser.password}</b>
       </AutoHideSuccessCallout>
     )}
 
@@ -664,26 +661,24 @@ export default function GlobalAdminTenantsPage() {
   function renderAdminAccessPanel(tenant: TenantSummary) {
     return <Tile className="space-y-1">
       <MyHeader
-        title="Admin-Zugriff"
-        subtitle="Nur Benutzerkonto, :admin-Rolle und Passwort-Reset"
+        title={uiText("Admin-Zugriff")}
         actions={<MyButton
           size="sm"
           kind="secondary"
           renderIcon={Icons.User}
           loading={pendingAction === "createAdminUser"}
           onClick={() => showCreateAdminUserModal(tenant)}
-        >Admin-Benutzer</MyButton>}
+        >{uiText("Admin-Benutzer")}</MyButton>}
       />
 
       {adminAccessMessages}
 
       {!!tenantUsersErr && (
-        <MyCallout icon={Icons.Deny} color="red">
-          Benutzer konnten nicht geladen werden: {`${(tenantUsersErr as any)?.message ?? "Unbekannter Fehler"}`}
+        <MyCallout icon={Icons.Deny} color="red">{uiText("Benutzer konnten nicht geladen werden:")}{`${(tenantUsersErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
         </MyCallout>
       )}
 
-      {!tenantUsers && !tenantUsersErr && <InlineLoading description="Benutzer werden geladen..." />}
+      {!tenantUsers && !tenantUsersErr && <InlineLoading description={uiText("Benutzer werden geladen...")} />}
 
       {!!tenantUsers && <MyTable
         rows={tenantUserRows}
@@ -692,27 +687,27 @@ export default function GlobalAdminTenantsPage() {
         pagination={{ pageSizes: [10, 25, 50] }}
         columns={[
           {
-            label: "Benutzer",
+            label: uiText("Benutzer"),
             render: row => <b>{adminUserName(row)}</b>,
             sortKey: row => adminUserName(row).toLowerCase(),
           },
           {
-            label: "Anmeldename",
+            label: uiText("Anmeldename"),
             render: row => row.username,
             sortKey: row => row.username.toLowerCase(),
           },
           {
-            label: "E-Mail",
+            label: uiText("E-Mail"),
             render: row => row.email ?? "-",
             sortKey: row => row.email?.toLowerCase() ?? "",
           },
           {
-            label: "Status",
+            label: uiText("Status"),
             render: row => <AdminUserStateTags user={row} />,
             sortKey: row => `${row.isAdmin ? "0" : "1"}:${row.deactivatedAt ? "1" : "0"}:${row.archivedAt ? "1" : "0"}`,
           },
           {
-            label: "Aktionen",
+            label: uiText("Aktionen"),
             render: row => <div className="flex flex-wrap gap-1">
               <MyButton
                 size="sm"
@@ -721,7 +716,7 @@ export default function GlobalAdminTenantsPage() {
                 disabled={!row.isAdmin}
                 loading={pendingAction === `resetAdminPassword:${row.id}`}
                 onClick={() => showResetAdminUserPasswordModal(tenant, row)}
-              >Passwort</MyButton>
+              >{uiText("Passwort")}</MyButton>
 
               <MyButton
                 size="sm"
@@ -729,7 +724,7 @@ export default function GlobalAdminTenantsPage() {
                 renderIcon={row.isAdmin ? Icons.Deny : Icons.Role}
                 loading={pendingAction === `setAdmin:${row.id}`}
                 onClick={() => showSetAdminRoleModal(tenant, row, !row.isAdmin)}
-              >{row.isAdmin ? "Admin entfernen" : "Zum Admin"}</MyButton>
+              >{row.isAdmin ? uiText("Admin entfernen") : uiText("Zum Admin")}</MyButton>
             </div>,
           },
         ]}
@@ -738,34 +733,25 @@ export default function GlobalAdminTenantsPage() {
   }
 
   return <>
-    <MyHeader
-      title="Mandantenverwaltung"
-      subtitle="Globales Tenant-Management für den Master-Mandanten"
-      actions={<MyButton renderIcon={Icons.Plus} onClick={showCreateTenantModal}>Mandant erstellen</MyButton>}
-    />
+    <div className="global-admin-actions">
+      <MyButton renderIcon={Icons.Plus} onClick={showCreateTenantModal}>{uiText("Hinzufügen")}</MyButton>
+    </div>
 
     {!!createPassword && (
-      <AutoHideSuccessCallout resetKey={createPassword} onHidden={() => setCreatePassword(null)}>
-        Mandant erstellt. Initiales Admin-Passwort: <b>{createPassword}</b>
+      <AutoHideSuccessCallout resetKey={createPassword} onHidden={() => setCreatePassword(null)}>{uiText("Mandant erstellt. Initiales Admin-Passwort:")}<b>{createPassword}</b>
       </AutoHideSuccessCallout>
     )}
 
     {!adminAccessTenantName && adminAccessMessages}
 
     {!!pendingAction && (
-      <InlineLoading description="Aktion wird ausgeführt..." />
+      <InlineLoading description={uiText("Aktion wird ausgeführt...")} />
     )}
 
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+    <div className="space-y-3">
       <Tile className="space-y-2">
-        <MyHeader
-          title="Mandanten"
-          subtitle="Übersicht und Auswahl"
-        />
-
         {!!tenantsErr && (
-          <MyCallout icon={Icons.Deny} color="red">
-            Mandanten konnten nicht geladen werden: {`${(tenantsErr as any)?.message ?? "Unbekannter Fehler"}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten konnten nicht geladen werden:")}{`${(tenantsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -781,22 +767,22 @@ export default function GlobalAdminTenantsPage() {
           }}
           columns={[
             {
-              label: "Name",
+              label: uiText("Name"),
               render: (row) => <b>{row.name}</b>,
               sortKey: (row) => row.name.toLowerCase(),
             },
             {
-              label: "Firma",
+              label: uiText("Firma"),
               render: (row) => row.contact_details.companyName ?? "",
               sortKey: (row) => row.contact_details.companyName?.toLowerCase() ?? "",
             },
             {
-              label: "Kontakt",
+              label: uiText("Kontakt"),
               render: (row) => row.contact_details.email,
               sortKey: (row) => row.contact_details.email.toLowerCase(),
             },
             {
-              label: "Status",
+              label: uiText("Status"),
               render: (row) => <TenantStateTags tenant={row} />,
               sortKey: (row) => {
                 if (row.locked_at) return 0;
@@ -809,10 +795,9 @@ export default function GlobalAdminTenantsPage() {
         />
       </Tile>
 
-      <Tile className="space-y-2">
+      <Tile className={selectedTenantName ? "space-y-2" : "hidden"}>
         <MyHeader
-          title={selectedTenantName ? `Mandant: ${selectedTenantName}` : "Mandant auswählen"}
-          subtitle={selectedTenant ? selectedTenant.contact_details.email : ""}
+          title={selectedTenantName ?? ""}
           actions={selectedTenant ? (
             <>
               <MyButton
@@ -820,7 +805,7 @@ export default function GlobalAdminTenantsPage() {
                 kind="secondary"
                 renderIcon={Icons.Edit}
                 onClick={() => showEditTenantModal(selectedTenant)}
-              >Bearbeiten</MyButton>
+              >{uiText("Bearbeiten")}</MyButton>
 
               <MyButton
                 size="sm"
@@ -831,7 +816,7 @@ export default function GlobalAdminTenantsPage() {
                   setActionInfo(null);
                   setAdminAccessTenantName(selectedTenant.name);
                 }}
-              >Admin-Zugriff</MyButton>
+              >{uiText("Admin-Zugriff")}</MyButton>
 
               {selectedTenant.deactivated_at
                 ? <MyButton
@@ -842,10 +827,10 @@ export default function GlobalAdminTenantsPage() {
                     void runTenantAction(
                       "activate",
                       () => adminClient.mutate("admin.tenants.activate", { name: selectedTenant.name }),
-                      `Mandant ${selectedTenant.name} aktiviert.`,
+                      uiText(`Mandant ${selectedTenant.name} aktiviert.`, `Tenant ${selectedTenant.name} aktiviert.`),
                     );
                   }}
-                >Aktivieren</MyButton>
+                >{uiText("Aktivieren")}</MyButton>
                 : <MyButton
                   size="sm"
                   kind="secondary"
@@ -855,10 +840,10 @@ export default function GlobalAdminTenantsPage() {
                     void runTenantAction(
                       "deactivate",
                       () => adminClient.mutate("admin.tenants.deactivate", { name: selectedTenant.name }),
-                      `Mandant ${selectedTenant.name} deaktiviert.`,
+                      uiText(`Mandant ${selectedTenant.name} deaktiviert.`, `Tenant ${selectedTenant.name} deaktiviert.`),
                     );
                   }}
-                >Deaktivieren</MyButton>
+                >{uiText("Deaktivieren")}</MyButton>
               }
 
               {selectedTenant.locked_at
@@ -870,10 +855,10 @@ export default function GlobalAdminTenantsPage() {
                     void runTenantAction(
                       "unlock",
                       () => adminClient.mutate("admin.tenants.unlock", { name: selectedTenant.name }),
-                      `Mandant ${selectedTenant.name} entsperrt.`,
+                      uiText(`Mandant ${selectedTenant.name} entsperrt.`, `Tenant ${selectedTenant.name} entsperrt.`),
                     );
                   }}
-                >Entsperren</MyButton>
+                >{uiText("Entsperren")}</MyButton>
                 : <MyButton
                   size="sm"
                   kind="danger--tertiary"
@@ -883,10 +868,10 @@ export default function GlobalAdminTenantsPage() {
                     void runTenantAction(
                       "lock",
                       () => adminClient.mutate("admin.tenants.lock", { name: selectedTenant.name }),
-                      `Mandant ${selectedTenant.name} gesperrt.`,
+                      uiText(`Mandant ${selectedTenant.name} gesperrt.`, `Tenant ${selectedTenant.name} locked.`),
                     );
                   }}
-                >Sperren</MyButton>
+                >{uiText("Sperren")}</MyButton>
               }
 
               {selectedTenant.deleted_at
@@ -899,10 +884,10 @@ export default function GlobalAdminTenantsPage() {
                       void runTenantAction(
                         "undelete",
                         () => adminClient.mutate("admin.tenants.undelete", { name: selectedTenant.name }),
-                        `Mandant ${selectedTenant.name} wiederhergestellt.`,
+                        uiText(`Mandant ${selectedTenant.name} wiederhergestellt.`, `Tenant ${selectedTenant.name} wiederhergestellt.`),
                       );
                     }}
-                  >Wiederherstellen</MyButton>
+                  >{uiText("Wiederherstellen")}</MyButton>
 
                   <MyButton
                     size="sm"
@@ -913,10 +898,10 @@ export default function GlobalAdminTenantsPage() {
                       void runTenantAction(
                         "deleteForever",
                         () => adminClient.mutate("admin.tenants.deleteForever", { name: selectedTenant.name }),
-                        `Mandant ${selectedTenant.name} endgültig gelöscht.`,
+                        uiText(`Mandant ${selectedTenant.name} endgültig gelöscht.`, `Tenant ${selectedTenant.name} permanently deleted.`),
                       );
                     }}
-                  >Endgültig löschen</MyButton>
+                  >{uiText("Endgültig löschen")}</MyButton>
                 </>
                 : <MyButton
                   size="sm"
@@ -927,24 +912,17 @@ export default function GlobalAdminTenantsPage() {
                     void runTenantAction(
                       "delete",
                       () => adminClient.mutate("admin.tenants.delete", { name: selectedTenant.name }),
-                      `Mandant ${selectedTenant.name} gelöscht.`,
+                      uiText(`Mandant ${selectedTenant.name} gelöscht.`, `Tenant ${selectedTenant.name} deleted.`),
                     );
                   }}
-                >Löschen</MyButton>
+                >{uiText("Löschen")}</MyButton>
               }
             </>
           ) : null}
         />
 
-        {!selectedTenantName && (
-          <MyCallout icon={Icons.Info} color="blue">
-            Bitte zuerst links einen Mandanten auswählen.
-          </MyCallout>
-        )}
-
         {!!selectedTenantErr && (
-          <MyCallout icon={Icons.Deny} color="red">
-            Mandanten-Details konnten nicht geladen werden: {`${(selectedTenantErr as any)?.message ?? "Unbekannter Fehler"}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten-Details konnten nicht geladen werden:")}{`${(selectedTenantErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -957,51 +935,45 @@ export default function GlobalAdminTenantsPage() {
               {!!selectedTenant.deleted_at && <OperationalTag type="purple" text={`Seit ${formatDate(selectedTenant.deleted_at)}`} />}
             </div>
 
-            <div className="space-y-2">
-              <Tile className="space-y-1">
-                <h4>Kontakt</h4>
-                <div className="light">E-Mail: <b>{selectedTenant.contact_details.email}</b></div>
-                <div className="light">Firma: <b>{selectedTenant.contact_details.companyName ?? "-"}</b></div>
-                <div className="light">Adresse: <b>{getAddressLabel(selectedTenant)}</b></div>
-              </Tile>
-
-              <Tile className="space-y-1">
-                <h4>Verbindung</h4>
-                <div className="light">Datenbank: <b>{selectedTenantDatabaseLabel}</b></div>
-                <div className="light">Tenant: <b>{selectedTenant.name}</b></div>
-              </Tile>
-
-              <Tile className="space-y-1">
-                <h4>Objektspeicher</h4>
-                <div className="light">Status: <b>{selectedTenantStorage?.enabled ? "Aktiv" : "Inaktiv"}</b></div>
-                {!!selectedTenantStorage?.enabled && (
-                  <>
-                    <div className="light">Bucket: <b>{selectedTenantStorage.bucket ?? "-"}</b></div>
-                    <div className="light">Region: <b>{selectedTenantStorage.region ?? "-"}</b></div>
-                    <div className="light">Endpoint: <b>{selectedTenantStorage.endpoint ?? "-"}</b></div>
-                    <div className="light">Public Base URL: <b>{selectedTenantStorage.publicBaseUrl ?? "-"}</b></div>
-                    <div className="light">Key Prefix: <b>{selectedTenantStorage.keyPrefix ?? "-"}</b></div>
-                  </>
-                )}
-              </Tile>
-
-              <Tile className="space-y-1">
-                <h4>SSO (Entra ID)</h4>
-                <div className="light">Status: <b>{selectedTenantSso?.enabled ? "Aktiv" : "Inaktiv"}</b></div>
-                {!!selectedTenantSso?.enabled && (
-                  <>
-                    <div className="light">Tenant ID: <b>{selectedTenantSso.tenantId ?? "-"}</b></div>
-                    <div className="light">Client ID: <b>{selectedTenantSso.clientId ?? "-"}</b></div>
-                    <div className="light">Object ID: <b>{selectedTenantSso.objectId ?? "-"}</b></div>
-                    <div className="light">Import: <b>{[
+            <AttrList>
+              <AttrList.Attr name="E-Mail" value={selectedTenant.contact_details.email} />
+              <AttrList.Attr name="Firma" value={selectedTenant.contact_details.companyName ?? "-"} />
+              <AttrList.Attr name="Adresse" value={getAddressLabel(selectedTenant)} />
+              <AttrList.Attr name={uiText("Datenbank")} value={selectedTenantDatabaseLabel} />
+              <AttrList.Attr name="Mandant" value={selectedTenant.name} />
+              <AttrList.Attr
+                name="Objektspeicher"
+                value={selectedTenantStorage?.enabled ? "Aktiv" : "Inaktiv"}
+              />
+              {!!selectedTenantStorage?.enabled && (
+                <>
+                  <AttrList.Attr name="Bucket" value={selectedTenantStorage.bucket ?? "-"} />
+                  <AttrList.Attr name="Region" value={selectedTenantStorage.region ?? "-"} />
+                  <AttrList.Attr name="Endpoint" value={selectedTenantStorage.endpoint ?? "-"} />
+                  <AttrList.Attr name="Public Base URL" value={selectedTenantStorage.publicBaseUrl ?? "-"} />
+                  <AttrList.Attr name="Key Prefix" value={selectedTenantStorage.keyPrefix ?? "-"} />
+                </>
+              )}
+              <AttrList.Attr
+                name="SSO (Entra ID)"
+                value={selectedTenantSso?.enabled ? "Aktiv" : "Inaktiv"}
+              />
+              {!!selectedTenantSso?.enabled && (
+                <>
+                  <AttrList.Attr name="Tenant ID" value={selectedTenantSso.tenantId ?? "-"} />
+                  <AttrList.Attr name="Client ID" value={selectedTenantSso.clientId ?? "-"} />
+                  <AttrList.Attr name="Object ID" value={selectedTenantSso.objectId ?? "-"} />
+                  <AttrList.Attr
+                    name="Import"
+                    value={[
                       selectedTenantSso.importUserUsername ? "Username" : null,
                       selectedTenantSso.importUserName ? "Name" : null,
                       selectedTenantSso.importUserEmail ? "E-Mail" : null,
-                    ].filter(Boolean).join(", ") || "-"}</b></div>
-                  </>
-                )}
-              </Tile>
-            </div>
+                    ].filter(Boolean).join(", ") || "-"}
+                  />
+                </>
+              )}
+            </AttrList>
           </>
         )}
       </Tile>
@@ -1011,9 +983,9 @@ export default function GlobalAdminTenantsPage() {
       <Modal
         open
         passiveModal
-        modalHeading="Admin-Zugriff"
+        modalHeading={uiText("Admin-Zugriff")}
         modalLabel={adminAccessTenant.name}
-        closeButtonLabel="Schließen"
+        closeButtonLabel={uiText("Schließen")}
         onRequestClose={() => setAdminAccessTenantName(null)}
         data-fullheight="true"
         data-fullwidth="true"

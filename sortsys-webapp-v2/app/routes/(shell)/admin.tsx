@@ -1,4 +1,5 @@
-import { Tile } from "@sortsys/react-components";
+import { currentLocaleTag, uiText } from "~/lib/i18n";
+import { Heading, Tile } from "@sortsys/react-components";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
@@ -8,7 +9,7 @@ import { MyHeader } from "~/components/MyHeader";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
-import { formatDate, userFullName } from "~/lib/format";
+import { userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallUserTile } from "~/lib/tiles";
 import type { User } from "~/type-helpers";
@@ -20,12 +21,7 @@ type TenantLogoStatus = 'none' | 'uploading' | 'queued' | 'processing' | 'ready'
 
 type TenantLogoData = {
   status: TenantLogoStatus;
-  mimeType: string | null;
-  fileName: string | null;
-  width: number | null;
-  height: number | null;
   downloadUrl: string | null;
-  downloadExpiresAt: Date | string | null;
   error: string | null;
 };
 
@@ -34,19 +30,12 @@ type DefaultSupervisorData = {
 };
 
 function tenantLogoStatusLabel(status: TenantLogoStatus) {
-  if (status === 'none') return 'Kein Logo hinterlegt';
-  if (status === 'uploading') return 'Upload läuft';
-  if (status === 'queued') return 'In Warteschlange';
-  if (status === 'processing') return 'Wird verarbeitet';
-  if (status === 'ready') return 'Bereit';
-  return 'Fehlgeschlagen';
-}
-
-function tenantLogoStatusColor(status: TenantLogoStatus) {
-  if (status === 'ready') return 'green' as const;
-  if (status === 'failed') return 'red' as const;
-  if (status === 'uploading' || status === 'queued' || status === 'processing') return 'blue' as const;
-  return 'amber' as const;
+  if (status === 'none') return uiText('Kein Logo hinterlegt', 'No logo configured');
+  if (status === 'uploading') return uiText('Upload läuft', 'Uploading');
+  if (status === 'queued') return uiText('In Warteschlange', 'Queued');
+  if (status === 'processing') return uiText('Wird verarbeitet', 'Processing');
+  if (status === 'ready') return uiText('Bereit', 'Ready');
+  return uiText('Fehlgeschlagen');
 }
 
 function normalizeTenantLogoUploadMimeType(file: File) {
@@ -66,7 +55,7 @@ function normalizeTenantLogoUploadMimeType(file: File) {
 
 export function meta() {
   return [
-    { title: "Organisation" },
+    { title: uiText("Organisation") },
   ];
 }
 
@@ -87,8 +76,12 @@ export default function AdminPage() {
 
   const [users] = useClientStream(() => client.streamQuery('users.list', {}), []);
   const [defaultSupervisor] = useClientStream<DefaultSupervisorData | null, any>(() => {
-    return (client.streamQuery as any)('users.supervisors.getDefault', undefined, { strategy: 'cache-first' });
+    return client.streamQuery('users.supervisors.getDefault', undefined, { strategy: 'cache-first' });
   }, []);
+  const [llmUsage, llmUsageErr] = useClientStream(
+    () => client.streamQuery('llm.admin.usage', undefined, { strategy: 'network-first' }),
+    [],
+  );
 
   const defaultSupervisorUser = useMemo(() => {
     return ((users ?? []) as User[]).find(user => user.id === defaultSupervisor?.userId) ?? null;
@@ -108,7 +101,7 @@ export default function AdminPage() {
 
       if (loadErr) {
         if (!opts?.silent) {
-          setLogoErr(loadErr.message || 'Organisationslogo konnte nicht geladen werden.');
+          setLogoErr(loadErr.message || uiText('Organisationslogo konnte nicht geladen werden.'));
         }
         return null;
       }
@@ -148,7 +141,7 @@ export default function AdminPage() {
     try {
       const mimeType = normalizeTenantLogoUploadMimeType(file);
       if (!mimeType) {
-        throw new Error('Ungültiges Dateiformat. Erlaubt sind PNG, JPG/JPEG und WEBP.');
+        throw new Error(uiText("Ungültiges Dateiformat. Erlaubt sind PNG, JPG/JPEG und WEBP."));
       }
 
       const [createData, createErr] = await client.mutate('settings.tenantLogo.createUpload', {
@@ -157,7 +150,7 @@ export default function AdminPage() {
         sizeBytes: Number.isFinite(file.size) ? file.size : null,
       });
       if (createErr || !createData) {
-        throw createErr ?? new Error('Logo-Upload konnte nicht vorbereitet werden.');
+        throw createErr ?? new Error(uiText("Logo-Upload konnte nicht vorbereitet werden."));
       }
 
       const uploadResponse = await fetch(createData.uploadUrl, {
@@ -166,7 +159,7 @@ export default function AdminPage() {
         body: file,
       });
       if (!uploadResponse.ok) {
-        throw new Error(`Logo-Upload fehlgeschlagen (${uploadResponse.status})`);
+        throw new Error(uiText(`Logo-Upload fehlgeschlagen (${uploadResponse.status})`, `Logo-Upload failed (${uploadResponse.status})`));
       }
 
       const etag = uploadResponse.headers.get('etag');
@@ -178,12 +171,10 @@ export default function AdminPage() {
 
       const updated = await refreshTenantLogo();
       if (updated?.status === 'ready') {
-        setLogoInfo('Organisationslogo wurde erfolgreich aktualisiert.');
-      } else {
-        setLogoInfo('Upload abgeschlossen. Das Logo wird jetzt verarbeitet.');
+        setLogoInfo(uiText('Organisationslogo wurde erfolgreich aktualisiert.'));
       }
     } catch (err) {
-      setLogoErr((err as Error)?.message || 'Logo-Upload fehlgeschlagen.');
+      setLogoErr((err as Error)?.message || uiText('Logo-Upload fehlgeschlagen.'));
     } finally {
       setIsLogoUploading(false);
       if (logoFileInputRef.current) {
@@ -194,7 +185,7 @@ export default function AdminPage() {
 
   async function invalidateDefaultSupervisor() {
     await Promise.all([
-      (client.invalidate as any)('users.supervisors.getDefault'),
+      client.invalidate('users.supervisors.getDefault'),
       client.invalidate('users.list'),
     ]);
   }
@@ -204,11 +195,11 @@ export default function AdminPage() {
     setIsDefaultSupervisorClearing(true);
 
     try {
-      const [, err] = await (client.mutate as any)('users.supervisors.setDefault', { userId: null });
+      const [, err] = await client.mutate('users.supervisors.setDefault', { userId: null });
       if (err) throw err;
       await invalidateDefaultSupervisor();
     } catch (err) {
-      setDefaultSupervisorErr((err as Error)?.message || 'Standard-Vorgesetzter konnte nicht entfernt werden.');
+      setDefaultSupervisorErr((err as Error)?.message || uiText('Standard-Vorgesetzter konnte nicht entfernt werden.'));
     } finally {
       setIsDefaultSupervisorClearing(false);
     }
@@ -219,33 +210,14 @@ export default function AdminPage() {
   }
 
   const logoStatus = (tenantLogo?.status ?? 'none') as TenantLogoStatus;
-  const logoDownloadExpiresAt = tenantLogo?.downloadExpiresAt
-    ? new Date(tenantLogo.downloadExpiresAt)
-    : null;
-
-  const logoMeta: string[] = [];
-  if (tenantLogo?.fileName) logoMeta.push(tenantLogo.fileName);
-  if (tenantLogo?.width && tenantLogo?.height) logoMeta.push(`${tenantLogo.width} × ${tenantLogo.height} px`);
-  if (tenantLogo?.mimeType) logoMeta.push(tenantLogo.mimeType);
 
   return <>
-    <MyHeader title="Organisation" />
+    <MyHeader title={uiText("Organisation")} />
 
-    <Tile>
-      <MyCallout icon={Icons.Info} color="blue">
-        Diese Änderung schreibt direkt in die Mandanten-Stammdaten im Master-System.
-      </MyCallout>
-
-      <div style={{ height: 10 }} />
+    <Tile className="space-y-2">
 
       {!!saveErr && (
-        <>
-          <MyCallout icon={Icons.Deny} color="red">
-            {saveErr}
-          </MyCallout>
-
-          <div style={{ height: 10 }} />
-        </>
+        <MyCallout icon={Icons.Deny} color="red">{saveErr}</MyCallout>
       )}
 
       <MyForm
@@ -270,7 +242,7 @@ export default function AdminPage() {
           });
 
           if (updateErr) {
-            setSaveErr(updateErr.message || "Firmenname konnte nicht gespeichert werden.");
+            setSaveErr(updateErr.message || uiText("Firmenname konnte nicht gespeichert werden."));
             return;
           }
 
@@ -283,36 +255,18 @@ export default function AdminPage() {
         <MyForm.Input
           required
           name="companyName"
-          labelText="Firmenname"
-          helperText="Sichtbarer Firmenname des aktuellen Mandanten (z. B. Test Company GmbH)"
+          labelText={uiText("Firmenname")}
           rules={[MyForm.Input.rules.max(120)]}
         />
 
-        <MyForm.SubmitButton>Speichern</MyForm.SubmitButton>
+        <MyForm.SubmitButton>{uiText("Speichern")}</MyForm.SubmitButton>
       </MyForm>
     </Tile>
 
-    <div style={{ height: 10 }} />
-
-    <Tile>
-      <MyCallout icon={Icons.Info} color="blue">
-        Standard-Vorgesetzter für Benutzer ohne Vorgesetzten. Bestehende Benutzer ohne Vorgesetzten und neue Benutzer ohne Auswahl bekommen diesen Eintrag automatisch.
-      </MyCallout>
-
-      <div style={{ height: 10 }} />
+    <Tile className="space-y-2">
 
       {!!defaultSupervisorErr && (
-        <>
-          <MyCallout icon={Icons.Deny} color="red">{defaultSupervisorErr}</MyCallout>
-          <div style={{ height: 10 }} />
-        </>
-      )}
-
-      {!!defaultSupervisorUser && (
-        <>
-          <p className="light">Aktuell: {userFullName(defaultSupervisorUser)}</p>
-          <div style={{ height: 10 }} />
-        </>
+        <MyCallout icon={Icons.Deny} color="red">{defaultSupervisorErr}</MyCallout>
       )}
 
       <MyForm
@@ -327,9 +281,9 @@ export default function AdminPage() {
           const userId = values.supervisor?.at(0)?.id;
           if (!userId) return;
 
-          const [updated, err] = await (client.mutate as any)('users.supervisors.setDefault', { userId });
+          const [updated, err] = await client.mutate('users.supervisors.setDefault', { userId });
           if (err) {
-            setDefaultSupervisorErr(err.message || 'Standard-Vorgesetzter konnte nicht gespeichert werden.');
+            setDefaultSupervisorErr(err.message || uiText('Standard-Vorgesetzter konnte nicht gespeichert werden.'));
             return;
           }
           if (!updated) return;
@@ -339,7 +293,7 @@ export default function AdminPage() {
         <MyForm.MultiSelect
           required
           name="supervisor"
-          labelText="Standard-Vorgesetzter"
+          labelText={uiText("Standard-Vorgesetzter")}
           maxSelectedItems={1}
           getOptions={async ({ query }) => {
             const needle = query.trim().toLowerCase();
@@ -353,7 +307,7 @@ export default function AdminPage() {
         />
 
         <div className="flex gap-2 flex-wrap">
-          <MyForm.SubmitButton>Standard speichern</MyForm.SubmitButton>
+          <MyForm.SubmitButton>{uiText("Standard speichern")}</MyForm.SubmitButton>
           {!!defaultSupervisor?.userId && <MyButton
             kind="ghost"
             renderIcon={Icons.Reset}
@@ -361,83 +315,44 @@ export default function AdminPage() {
             onClick={() => {
               void clearDefaultSupervisor();
             }}
-          >Standard entfernen</MyButton>}
+          >{uiText("Standard entfernen")}</MyButton>}
         </div>
       </MyForm>
     </Tile>
 
-    <div style={{ height: 10 }} />
-
-    <Tile>
+    <Tile className="space-y-2">
       <input
         ref={logoFileInputRef}
         type="file"
         accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={(event) => {
           void uploadTenantLogo(event.target.files?.[0] ?? null);
         }}
       />
 
-      <MyCallout icon={Icons.Info} color="blue">
-        Organisationslogo für PDF-Exporte. Unterstützt werden PNG, JPG/JPEG und WEBP.
-        Das Bild wird nach dem Upload automatisch in Schwarz/Weiß als WEBP konvertiert.
-      </MyCallout>
-
-      <div style={{ height: 10 }} />
-
       {!!logoErr && (
-        <>
-          <MyCallout icon={Icons.Deny} color="red">{logoErr}</MyCallout>
-          <div style={{ height: 10 }} />
-        </>
+        <MyCallout icon={Icons.Deny} color="red">{logoErr}</MyCallout>
       )}
 
       {!!logoInfo && (
-        <>
-          <AutoHideSuccessCallout resetKey={logoInfo} onHidden={() => setLogoInfo(null)}>{logoInfo}</AutoHideSuccessCallout>
-          <div style={{ height: 10 }} />
-        </>
+        <AutoHideSuccessCallout resetKey={logoInfo} onHidden={() => setLogoInfo(null)}>{logoInfo}</AutoHideSuccessCallout>
       )}
 
       {tenantLogo?.status === 'failed' && !!tenantLogo.error && (
-        <>
-          <MyCallout icon={Icons.Deny} color="red">{tenantLogo.error}</MyCallout>
-          <div style={{ height: 10 }} />
-        </>
+        <MyCallout icon={Icons.Deny} color="red">{tenantLogo.error}</MyCallout>
       )}
 
-      <MyCallout icon={Icons.Info} color={tenantLogoStatusColor(logoStatus)}>
-        Status: {tenantLogoStatusLabel(logoStatus)}
-      </MyCallout>
+      {['uploading', 'queued', 'processing'].includes(logoStatus) && (
+        <p className="light">{tenantLogoStatusLabel(logoStatus)}</p>
+      )}
 
-      <div style={{ height: 10 }} />
-
-      <div className="flex gap-2 flex-wrap">
-        <MyButton
-          kind="ghost"
-          renderIcon={Icons.Create}
-          loading={isLogoUploading}
-          disabled={isLogoLoading}
-          onClick={() => logoFileInputRef.current?.click()}
-        >
-          Logo hochladen
-        </MyButton>
-
-        <MyButton
-          kind="ghost"
-          renderIcon={Icons.Reset}
-          loading={isLogoLoading}
-          disabled={isLogoUploading}
-          onClick={() => {
-            void refreshTenantLogo();
-          }}
-        >
-          Aktualisieren
-        </MyButton>
-      </div>
-
-      <div style={{ height: 12 }} />
+      <MyButton
+        renderIcon={Icons.Create}
+        loading={isLogoUploading}
+        disabled={isLogoLoading}
+        onClick={() => logoFileInputRef.current?.click()}
+      >{uiText("Logo hochladen")}</MyButton>
 
       {tenantLogo?.status === 'ready' && !!tenantLogo.downloadUrl
         ? (
@@ -450,7 +365,7 @@ export default function AdminPage() {
           }}>
             <img
               src={tenantLogo.downloadUrl}
-              alt="Organisationslogo"
+              alt={uiText("Organisationslogo")}
               style={{
                 display: 'block',
                 width: '100%',
@@ -460,15 +375,24 @@ export default function AdminPage() {
             />
           </div>
         )
-        : <p className="light">Noch kein Organisationslogo verfügbar.</p>}
+        : <p className="light">{uiText("Noch kein Organisationslogo verfügbar.")}</p>}
 
-      {!!logoMeta.length && (
-        <p className="light">{logoMeta.join(' · ')}</p>
+    </Tile>
+
+    <Tile className="space-y-2">
+      <Heading level={3} noMargin>{uiText("LLM-Verbrauch im laufenden Monat")}</Heading>
+
+      {!!llmUsageErr && (
+        <MyCallout icon={Icons.Deny} color="red">{llmUsageErr.message}</MyCallout>
       )}
 
-      {!!logoDownloadExpiresAt && !isNaN(logoDownloadExpiresAt.getTime()) && (
-        <p className="light">Link gültig bis: {formatDate(logoDownloadExpiresAt, 'long')}</p>
-      )}
+      {(llmUsage ?? []).map(row => <div key={row.provider + row.model} className="flex flex-wrap gap-2">
+        <b>{row.provider} / {row.model}</b>
+        <span>{new Intl.NumberFormat(currentLocaleTag()).format(row.totalTokens)}{uiText(" Token")}</span>
+        <span className="light">{row.requestCount}{uiText(" Anfragen, ")}{row.failedRequests}{uiText(" Fehler")}</span>
+      </div>)}
+
+      {!llmUsage?.length && <p className="light">{uiText("Noch kein Verbrauch in diesem Monat.")}</p>}
     </Tile>
   </>;
 }

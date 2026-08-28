@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import type { Route } from "./+types/vacations";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -39,7 +40,7 @@ type VacationRow = {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: 'Urlaub' },
+    { title: uiText("Urlaub") },
   ];
 }
 
@@ -51,7 +52,7 @@ export default function VacationsPage() {
   const [reloadCounter, setReloadCounter] = useState(0);
 
   const [vacations, err] = useClientStream<VacationRow[] | null, any>(() => {
-    return (client.streamQuery as any)('users.vacations.list', {}, { strategy: 'cache-first' });
+    return client.streamQuery('users.vacations.list', {}, { strategy: 'cache-first' });
   }, [reloadCounter]);
   const [users] = useClientStream(() => client.streamQuery('users.list', {
     includeArchived: canViewUsers ? true : undefined,
@@ -73,7 +74,7 @@ export default function VacationsPage() {
       content: ({ context }) => <>
         {canManageVacations && <MyForm.MultiSelect
           name="user"
-          labelText="Benutzer"
+          labelText={uiText("Benutzer")}
           minSelectedItems={1}
           maxSelectedItems={1}
           getOptions={async ({ query }) => {
@@ -89,14 +90,14 @@ export default function VacationsPage() {
 
         <div className="flex gap-2">
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="from" labelText="Von" type="date" />
+            <MyForm.Input required name="from" labelText={uiText("Von")} type="date" />
           </div>
           <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="to" labelText="Bis" type="date" />
+            <MyForm.Input required name="to" labelText={uiText("Bis")} type="date" />
           </div>
         </div>
 
-        <MyForm.Input textArea name="note" labelText="Kommentar" />
+        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
 
         <NotifyLoaded onLoad={() => {
           const today = startOfDay(new Date());
@@ -111,16 +112,16 @@ export default function VacationsPage() {
         const values = context.getValues();
         const from = parseDateInputValue(values.from);
         const to = parseDateInputValue(values.to);
-        if (!from || !to) throw new Error('Datum ist ungültig.');
-        if (from.getTime() > to.getTime()) throw new Error('Von muss vor Bis liegen.');
+        if (!from || !to) throw new Error(uiText("Datum ist ungültig."));
+        if (from.getTime() > to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
 
         const selectedUser = canManageVacations
           ? values.user?.at(0) as User | undefined
           : sessionInfo.user as User;
-        if (!selectedUser) throw new Error('Benutzer muss ausgewählt sein.');
+        if (!selectedUser) throw new Error(uiText("Benutzer muss ausgewählt sein."));
 
         const noteText = `${values.note ?? ''}`.trim();
-        const [created, createErr] = await (client.mutate as any)('users.vacations.create', {
+        const [created, createErr] = await client.mutate('users.vacations.create', {
           userId: selectedUser.id,
           from,
           to,
@@ -133,8 +134,8 @@ export default function VacationsPage() {
         hide();
       },
       modalProps: () => ({
-        modalHeading: canManageVacations ? 'Urlaub eintragen' : 'Urlaub beantragen',
-        primaryButtonText: canManageVacations ? 'Eintragen' : 'Beantragen',
+        modalHeading: canManageVacations ? uiText("Urlaub eintragen") : uiText("Urlaub beantragen"),
+        primaryButtonText: canManageVacations ? uiText("Eintragen") : uiText("Beantragen"),
       }),
     });
   }
@@ -146,11 +147,11 @@ export default function VacationsPage() {
 
   function showDenyModal(vacation: VacationRow) {
     modals.showForm({
-      content: () => <MyForm.Input required textArea name="reason" labelText="Ablehnungsgrund" />,
+      content: () => <MyForm.Input required textArea name="reason" labelText={uiText("Ablehnungsgrund")} />,
       onSubmit: async ({ context, hide }) => {
         const reason = `${context.getValues().reason ?? ''}`.trim();
-        if (!reason) throw new Error('Ablehnungsgrund fehlt.');
-        const [result, denyErr] = await (client.mutate as any)('users.vacations.deny', { id: vacation.id, reason });
+        if (!reason) throw new Error(uiText("Ablehnungsgrund fehlt."));
+        const [result, denyErr] = await client.mutate('users.vacations.deny', { id: vacation.id, reason });
         if (denyErr) throw denyErr;
         if (!result) return;
         reload();
@@ -158,21 +159,21 @@ export default function VacationsPage() {
       },
       modalProps: () => ({
         danger: true,
-        modalHeading: 'Urlaub ablehnen',
-        primaryButtonText: 'Ablehnen',
+        modalHeading: uiText("Urlaub ablehnen"),
+        primaryButtonText: uiText("Ablehnen"),
       }),
     });
   }
 
   async function approveVacation(vacation: VacationRow) {
-    const [result, approveErr] = await (client.mutate as any)('users.vacations.approve', { id: vacation.id });
+    const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
     if (approveErr) throw approveErr;
     if (!result) return;
     reload();
   }
 
   async function deleteVacation(vacation: VacationRow) {
-    const [result, deleteErr] = await (client.mutate as any)('users.vacations.delete', { id: vacation.id });
+    const [result, deleteErr] = await client.mutate('users.vacations.delete', { id: vacation.id });
     if (deleteErr) throw deleteErr;
     if (!result) return;
     reload();
@@ -180,30 +181,29 @@ export default function VacationsPage() {
 
   return <>
     <MyHeader
-      title="Urlaub"
+      title={uiText("Urlaub")}
       actions={<>
         <TableExportActions
-          title="Urlaub"
-          fileName="Urlaub"
+          title={uiText("Urlaub")}
+          fileName={uiText("Urlaub")}
           rows={rows}
           disabled={!vacations}
           columns={[
-            { header: 'Benutzer', value: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : 'Unbekannter Benutzer', width: '2fr' },
-            { header: 'Von', value: row => row.from },
-            { header: 'Bis', value: row => row.to },
-            { header: 'Status', value: row => vacationStatusLabel(row.status) },
-            { header: 'Kommentar', value: row => row.status === 'denied' ? row.denialReason ?? '' : row.note ?? '', width: '2fr' },
-            { header: 'Entschieden am', value: row => row.decidedAt },
+            { header: uiText("Benutzer"), value: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : uiText('Unbekannter Benutzer'), width: '2fr' },
+            { header: uiText("Von"), value: row => row.from },
+            { header: uiText("Bis"), value: row => row.to },
+            { header: uiText("Status"), value: row => vacationStatusLabel(row.status) },
+            { header: uiText("Kommentar"), value: row => row.status === 'denied' ? row.denialReason ?? '' : row.note ?? '', width: '2fr' },
+            { header: uiText("Entschieden am"), value: row => row.decidedAt },
           ]}
         />
         <MyButton renderIcon={Icons.Plus} onClick={showVacationForm}>
-          {canManageVacations ? 'Urlaub eintragen' : 'Urlaub beantragen'}
+          {canManageVacations ? uiText('Urlaub eintragen') : uiText('Urlaub beantragen')}
         </MyButton>
       </>}
     />
 
-    {!!err && <MyCallout icon={Icons.Deny} color="red">
-      Urlaube konnten nicht geladen werden: {err.message}
+    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Urlaube konnten nicht geladen werden:")}{err.message}
     </MyCallout>}
 
     <MyTable
@@ -212,36 +212,36 @@ export default function VacationsPage() {
       rows={rows}
       columns={[
         {
-          label: 'Benutzer',
-          render: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : 'Unbekannter Benutzer',
+          label: uiText("Benutzer"),
+          render: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : uiText('Unbekannter Benutzer'),
           sortKey: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!).toLowerCase() : '',
         },
         {
-          label: 'Von',
+          label: uiText("Von"),
           render: row => formatDate(row.from),
           sortKey: row => row.from.getTime(),
         },
         {
-          label: 'Bis',
+          label: uiText("Bis"),
           render: row => formatDate(row.to),
           sortKey: row => row.to.getTime(),
         },
         {
-          label: 'Status',
+          label: uiText("Status"),
           render: row => vacationStatusLabel(row.status),
           sortKey: row => row.status,
         },
         {
-          label: 'Kommentar',
+          label: uiText("Kommentar"),
           render: row => row.status === 'denied' ? row.denialReason ?? '' : row.note ?? '',
           sortKey: row => (row.note ?? row.denialReason ?? '').toLowerCase(),
         },
         {
-          label: 'Aktionen',
+          label: uiText("Aktionen"),
           render: row => <div className="flex gap-1 flex-wrap">
-            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} onClick={() => approveVacation(row)}>Freigeben</MyButton>}
-            {row.canDeny && <MyButton size="sm" kind="ghost" renderIcon={Icons.Deny} onClick={() => showDenyModal(row)}>Ablehnen</MyButton>}
-            {row.canDelete && <MyButton size="sm" kind="ghost" renderIcon={Icons.Delete} onClick={() => deleteVacation(row)}>Löschen</MyButton>}
+            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} onClick={() => approveVacation(row)}>{uiText("Freigeben")}</MyButton>}
+            {row.canDeny && <MyButton size="sm" kind="ghost" renderIcon={Icons.Deny} onClick={() => showDenyModal(row)}>{uiText("Ablehnen")}</MyButton>}
+            {row.canDelete && <MyButton size="sm" kind="ghost" renderIcon={Icons.Delete} onClick={() => deleteVacation(row)}>{uiText("Löschen")}</MyButton>}
           </div>,
           sortKey: () => '',
         },
@@ -255,7 +255,7 @@ export default function VacationsPage() {
 function vacationStatusLabel(status: VacationStatus) {
   if (status === 'approved') return 'Freigegeben';
   if (status === 'denied') return 'Abgelehnt';
-  return 'Beantragt';
+  return uiText('Beantragt');
 }
 
 function pad2(value: number) {

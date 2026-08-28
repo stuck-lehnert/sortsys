@@ -157,4 +157,20 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "260628121000_client_error_reports",
         include_str!("../migrations/260628121000_client_error_reports.sql"),
     ),
+    (
+        "260827120000_llm",
+        include_str!("../migrations/260827120000_llm.sql"),
+    ),
+    (
+        "260827130000_llm_proposal_execution_results",
+        include_str!("../migrations/260827130000_llm_proposal_execution_results.sql"),
+    ),
+    (
+        "260828120000_llm_random_ids",
+        include_str!("../migrations/260828120000_llm_random_ids.sql"),
+    ),
+    (
+        "260828130000_user_ui_locale",
+        include_str!("../migrations/260828130000_user_ui_locale.sql"),
+    ),
 ];

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import type { Role } from "~/type-helpers";
 
 export type RoleAccessLevel = 'view' | 'manage' | 'delete';
@@ -19,122 +20,123 @@ export type RolePreset = {
 export const ROLE_LEVELS: Array<{ id: RoleAccessLevel; label: string; description: string }> = [
   {
     id: 'view',
-    label: 'Lesen',
-    description: 'sehen, suchen, öffnen. Keine Änderungen.',
+    label: uiText("Lesen"),
+    description: uiText("sehen, suchen, öffnen. Keine Änderungen."),
   },
   {
     id: 'manage',
-    label: 'Bearbeiten',
-    description: 'anlegen und ändern. Lesen ist enthalten.',
+    label: uiText("Bearbeiten"),
+    description: uiText("anlegen und ändern. Lesen ist enthalten."),
   },
   {
     id: 'delete',
-    label: 'Löschen',
-    description: 'löschen oder endgültig entfernen. Separat vergeben.',
+    label: uiText("Löschen"),
+    description: uiText("löschen oder endgültig entfernen. Separat vergeben."),
   },
 ];
 
 export const ROLE_AREAS: RoleArea[] = [
   {
     key: 'projects',
-    label: 'Projekte',
-    description: 'Projektstammdaten, Status, Verantwortliche und Kostenbasis.',
+    label: uiText("Projekte"),
+    description: uiText("Projektstammdaten, Status, Verantwortliche und Kostenbasis."),
     roles: { view: 'view:projects', manage: 'manage:projects', delete: 'delete:projects' },
   },
   {
     key: 'projectDeployments',
-    label: 'Einsatzplanung',
-    description: 'Benutzer auf Projekte und Zeiträume planen.',
+    label: uiText("Einsatzplanung"),
+    description: uiText("Benutzer auf Projekte und Zeiträume planen."),
     roles: { view: 'view:projectDeployments', manage: 'manage:projectDeployments', delete: 'delete:projectDeployments' },
   },
   {
     key: 'dailyProjectReports',
-    label: 'Bautagesberichte',
-    description: 'Tagesweise Baustellen-Dokumentation mit Wetter und Arbeitszeiten.',
+    label: uiText("Bautagesberichte"),
+    description: uiText("Tagesweise Baustellen-Dokumentation mit Wetter und Arbeitszeiten."),
     roles: { view: 'view:dailyProjectReports', manage: 'manage:dailyProjectReports', delete: 'delete:dailyProjectReports' },
   },
   {
     key: 'regieReports',
-    label: 'Regieberichte',
-    description: 'Regieleistungen mit Arbeitszeit, Material und Sonderpositionen.',
+    label: uiText("Regieberichte"),
+    description: uiText("Regieleistungen mit Arbeitszeit, Material und Sonderpositionen."),
     roles: { view: 'view:regieReports', manage: 'manage:regieReports', delete: 'delete:regieReports' },
   },
   {
     key: 'deliveryNotes',
-    label: 'Lieferscheine',
-    description: 'Materiallieferungen auf Projekte erfassen und prüfen.',
+    label: uiText("Lieferscheine"),
+    description: uiText("Materiallieferungen auf Projekte erfassen und prüfen."),
     roles: { view: 'view:deliveryNotes', manage: 'manage:deliveryNotes', delete: 'delete:deliveryNotes' },
   },
   {
     key: 'tools',
-    label: 'Werkzeuge',
-    description: 'Werkzeugstamm, Verfügbarkeit und Stammdaten.',
+    label: uiText("Werkzeuge"),
+    description: uiText("Werkzeugstamm, Verfügbarkeit und Stammdaten."),
     roles: { view: 'view:tools', manage: 'manage:tools', delete: 'delete:tools' },
   },
   {
     key: 'toolTrackings',
-    label: 'Werkzeugbuchungen',
-    description: 'Werkzeuge ausgeben, zurücknehmen und umbuchen.',
+    label: uiText("Werkzeugbuchungen"),
+    description: uiText('Werkzeuge ausgeben, zurücknehmen und umbuchen.', 'Issue, return, and transfer tools.'),
     roles: { view: 'view:toolTrackings', manage: 'manage:toolTrackings', delete: 'delete:toolTrackings' },
   },
   {
     key: 'toolInventories',
-    label: 'Inventur',
-    description: 'Werkzeuginventuren ansehen, anlegen und abschließen.',
+    label: uiText("Inventur"),
+    description: uiText("Werkzeuginventuren ansehen, anlegen und abschließen."),
     roles: { view: 'view:toolInventories', manage: 'manage:toolInventories', delete: 'delete:toolInventories' },
   },
   {
     key: 'products',
-    label: 'Produkte',
-    description: 'Material- und Produktstamm.',
+    label: uiText("Produkte"),
+    description: uiText("Material- und Produktstamm."),
     roles: { view: 'view:products', manage: 'manage:products', delete: 'delete:products' },
   },
   {
     key: 'productVendors',
-    label: 'Händler',
-    description: 'Lieferanten/Händler für Produkte.',
+    label: uiText("Händler"),
+    description: uiText("Lieferanten/Händler für Produkte."),
     roles: { view: 'view:productVendors', manage: 'manage:productVendors', delete: 'delete:productVendors' },
   },
   {
     key: 'productPriceRecords',
-    label: 'Produktpreise',
-    description: 'Historische Produktpreise und Bezugspreise.',
+    label: uiText("Produktpreise"),
+    description: uiText("Historische Produktpreise und Bezugspreise."),
     roles: { view: 'view:productPriceRecords', manage: 'manage:productPriceRecords', delete: 'delete:productPriceRecords' },
   },
   {
     key: 'customers',
-    label: 'Kunden',
-    description: 'Kundenstamm und Kundendaten.',
+    label: uiText("Kunden"),
+    description: uiText("Kundenstamm und Kundendaten."),
     roles: { view: 'view:customers', manage: 'manage:customers', delete: 'delete:customers' },
   },
   {
     key: 'contacts',
-    label: 'Kontakte',
-    description: 'Kontaktpersonen, Telefonnummern und E-Mail-Adressen.',
+    label: uiText("Kontakte"),
+    description: uiText("Kontaktpersonen, Telefonnummern und E-Mail-Adressen."),
     roles: { view: 'view:contacts', manage: 'manage:contacts', delete: 'delete:contacts' },
   },
   {
     key: 'users',
-    label: 'Benutzer',
-    description: 'Benutzerkonten, Stammdaten, Passwörter und Vorgesetzte.',
+    label: uiText("Benutzer"),
+    description: uiText("Benutzerkonten, Stammdaten, Passwörter und Vorgesetzte."),
     roles: { view: 'view:users', manage: 'manage:users', delete: 'delete:users' },
   },
   {
     key: 'userVacations',
-    label: 'Urlaub',
-    description: 'Urlaube beantragen, einsehen und genehmigen.',
+    label: uiText("Urlaub"),
+    description: uiText("Urlaube beantragen, einsehen und genehmigen."),
     roles: { view: 'view:userVacations', manage: 'manage:userVacations', delete: 'delete:userVacations' },
   },
   {
     key: 'clientScripts',
-    label: 'Client-Skripte',
-    description: 'Browser-Skripte ansehen, bearbeiten und ausführen.',
+    label: uiText("Client-Skripte"),
+    description: uiText("Browser-Skripte ansehen, bearbeiten und ausführen."),
     roles: { view: 'view:clientScripts', manage: 'manage:clientScripts', delete: 'delete:clientScripts' },
   },
 ];
 
 export const ALL_FINE_GRAINED_ROLES: Role[] = [
   ':admin',
+  ':llm',
   ...ROLE_AREAS.flatMap(area => ROLE_LEVELS.map(level => area.roles[level.id]).filter(Boolean) as Role[]),
 ];
 
@@ -145,14 +147,14 @@ const allManageRoles = presetRoleAreas.map(area => area.roles.manage).filter(Boo
 export const ROLE_PRESETS: RolePreset[] = [
   {
     id: 'admin',
-    label: 'Administrator',
-    description: 'Alle Rechte inklusive Organisation, Rollen und gefährlicher Aktionen.',
+    label: uiText("Administrator"),
+    description: uiText("Alle Rechte inklusive Organisation, Rollen und gefährlicher Aktionen."),
     roles: [':admin'],
   },
   {
     id: 'bauleitung',
-    label: 'Bauleitung',
-    description: 'Projekte planen, Berichte erfassen, Lieferscheine prüfen, Kosten sehen.',
+    label: uiText("Bauleitung"),
+    description: uiText("Projekte planen, Berichte erfassen, Lieferscheine prüfen, Kosten sehen."),
     roles: [
       'view:users',
       'view:customers',
@@ -171,14 +173,14 @@ export const ROLE_PRESETS: RolePreset[] = [
   },
   {
     id: 'buero',
-    label: 'Büro',
-    description: 'Stammdaten pflegen, Material und Berichte erfassen, ohne Löschrechte.',
+    label: uiText("Büro"),
+    description: uiText("Stammdaten pflegen, Material und Berichte erfassen, ohne Löschrechte."),
     roles: [...allManageRoles],
   },
   {
     id: 'lager',
-    label: 'Lager',
-    description: 'Werkzeuge, Inventur, Materialstamm und Lieferscheine bearbeiten.',
+    label: uiText("Lager"),
+    description: uiText("Werkzeuge, Inventur, Materialstamm und Lieferscheine bearbeiten."),
     roles: [
       'view:projects',
       'view:users',
@@ -192,8 +194,8 @@ export const ROLE_PRESETS: RolePreset[] = [
   },
   {
     id: 'einkauf',
-    label: 'Einkauf',
-    description: 'Produkte, Händler, Preise und Lieferscheine pflegen.',
+    label: uiText("Einkauf"),
+    description: uiText("Produkte, Händler, Preise und Lieferscheine pflegen."),
     roles: [
       'view:projects',
       'view:customers',
@@ -205,8 +207,8 @@ export const ROLE_PRESETS: RolePreset[] = [
   },
   {
     id: 'personal',
-    label: 'Personal',
-    description: 'Benutzer, Vorgesetzte, Einsatzplanung und Urlaub verwalten.',
+    label: uiText("Personal"),
+    description: uiText("Benutzer, Vorgesetzte, Einsatzplanung und Urlaub verwalten."),
     roles: [
       'manage:users',
       'manage:userVacations',
@@ -216,8 +218,8 @@ export const ROLE_PRESETS: RolePreset[] = [
   },
   {
     id: 'lesen',
-    label: 'Nur Lesen',
-    description: 'Alle Bereiche sehen, nichts verändern.',
+    label: uiText("Nur Lesen"),
+    description: uiText("Alle Bereiche sehen, nichts verändern."),
     roles: allViewRoles,
   },
 ];

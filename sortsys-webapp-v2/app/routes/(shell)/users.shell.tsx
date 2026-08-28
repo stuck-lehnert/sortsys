@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
@@ -6,8 +7,8 @@ export default function UsersShell() {
   const navigate = useNavigate();
 
   const tabs = [
-    { path: '/users', label: 'Benutzer' },
-    { path: '/users/supervisors', label: 'Vorgesetzte' },
+    { path: '/users', label: uiText("Benutzer") },
+    { path: '/users/supervisors', label: uiText("Vorgesetzte") },
   ];
 
   const selectedIndex = tabs.findIndex(({ path: tabPath }) => path === tabPath);

@@ -19,6 +19,7 @@ use super::common::{
 use crate::{
     AppState,
     api::Success,
+    auth::AuthResult,
     error::RpcResult,
     ids::Id,
     rpc::{ProcedureRegistryBuilder, RequestContext},
@@ -220,6 +221,27 @@ async fn filter_options(state: &AppState, context: &RequestContext) -> RpcResult
 
 async fn overview(state: &AppState, context: &RequestContext, input: Value) -> RpcResult<Value> {
     let (_, pool) = cost_overview_pool(state, context).await?;
+
+    overview_from_pool(&pool, input).await
+}
+
+pub(crate) async fn overview_for_authenticated_user(
+    state: &AppState,
+    auth: &AuthResult,
+    input: Value,
+) -> RpcResult<Value> {
+    require_cost_overview_roles(auth)?;
+
+    let pool = state
+        .tenants
+        .tenant_pool(&auth.tenant)
+        .await
+        .map_err(internal)?;
+
+    overview_from_pool(&pool, input).await
+}
+
+async fn overview_from_pool(pool: &sqlx::PgPool, input: Value) -> RpcResult<Value> {
     let input = input.as_object();
 
     let status = input
@@ -423,7 +445,7 @@ async fn overview(state: &AppState, context: &RequestContext, input: Value) -> R
     .bind(status)
     .bind(closing_year.map(|year| year as i32))
     .bind(leader_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .map_err(internal)?;
 
@@ -844,19 +866,24 @@ fn common_at(history: &[CommonCostRow], cost_type: &str, at: DateTime<Utc>) -> C
         .unwrap_or_default()
 }
 
-async fn cost_overview_pool(
-    state: &AppState,
-    context: &RequestContext,
-) -> RpcResult<(crate::auth::AuthResult, sqlx::PgPool)> {
-    let (auth, pool) = super::common::authenticated_pool(state, context).await?;
-
+fn require_cost_overview_roles(auth: &AuthResult) -> RpcResult<()> {
     for role in [
         "view:projects",
         "view:deliveryNotes",
         "view:dailyProjectReports",
     ] {
-        super::common::require_role(&auth, role)?;
+        super::common::require_role(auth, role)?;
     }
+
+    Ok(())
+}
+
+async fn cost_overview_pool(
+    state: &AppState,
+    context: &RequestContext,
+) -> RpcResult<(AuthResult, sqlx::PgPool)> {
+    let (auth, pool) = super::common::authenticated_pool(state, context).await?;
+    require_cost_overview_roles(&auth)?;
 
     Ok((auth, pool))
 }

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { DataTable, Pagination, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tile } from "@sortsys/react-components";
 import { Fragment, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import { useIntUrlParam, useJsonUrlParam } from "~/hooks/useUrlParam";
@@ -164,11 +165,11 @@ export function MyTable<RowT extends Record<string, any> & { id: string | number
       if (pageSize !== _pageSize) setPageSize(_pageSize);
     }}
 
-    backwardText="Zurück"
-    forwardText="Weiter"
-    itemsPerPageText="Zeilen pro Seite"
-    itemRangeText={(min: any, max: any, total: any) => `Zeile ${min}-${max} von ${total}`}
-    pageRangeText={(curr: any, total: any) => `von ${total} Seiten`}
+    backwardText={uiText("Zurück")}
+    forwardText={uiText("Weiter")}
+    itemsPerPageText={uiText("Zeilen pro Seite")}
+    itemRangeText={(min: any, max: any, total: any) => uiText(`Zeile ${min}-${max} von ${total}`, `Row ${min}-${max} of ${total}`)}
+    pageRangeText={(curr: any, total: any) => uiText(`von ${total} Seiten`, `of ${total} pages`)}
     size="md"
   />;
 

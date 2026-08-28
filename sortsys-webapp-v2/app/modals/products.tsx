@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
@@ -24,15 +25,15 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
 
       return <>
-        <p className="light">Nummer, Bezeichnung und Basiseinheit definieren den Produktstamm für Auswertungen und Lieferscheine.</p>
+        <p className="light">{uiText("Nummer, Bezeichnung und Basiseinheit definieren den Produktstamm für Auswertungen und Lieferscheine.")}</p>
 
         <MyForm.Input
           required
           name="customId"
-          labelText="Nummer"
+          labelText={uiText("Nummer")}
           type="number"
           rules={[MyForm.Input.rules.posint]}
-          suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Nummer automatisch vorschlagen" aria-label="Nummer automatisch vorschlagen" onClick={async () => {
+          suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Nummer automatisch vorschlagen")} aria-label={uiText("Nummer automatisch vorschlagen")} onClick={async () => {
             const [id, err] = await client.query('products.suggestNextCustomId', undefined);
             if (err) throw err;
             if (id) context.field('customId')?.setValue(id.toString());
@@ -42,21 +43,21 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
         <MyDivider />
 
         <MyForm.Input required
-          name="name" labelText="Bezeichung" />
+          name="name" labelText={uiText("Bezeichung")} />
         {!!options.initialQuery && <NotifyLoaded onLoad={() => context.field('name')?.setValue(options.initialQuery)} />}
 
         <MyForm.Input
-          name="brand" labelText="Hersteller" />
+          name="brand" labelText={uiText("Hersteller")} />
 
         <MyForm.Input
-          name="description" labelText="Beschreibung" />
+          name="description" labelText={uiText("Beschreibung")} />
 
         <MyDivider />
 
         <MyForm.Input required
-          name="baseUnit" labelText="Basiseinheit (kleinste)"
+          name="baseUnit" labelText={uiText("Basiseinheit (kleinste)")}
           rules={[MyForm.Input.rules.max(15)]} />
-        <p className="light">Beispiel: m, kg oder Stk. Alle weiteren Einheiten werden darauf umgerechnet.</p>
+        <p className="light">{uiText("Beispiel: m, kg oder Stk. Alle weiteren Einheiten werden darauf umgerechnet.")}</p>
 
         <MyDivider />
 
@@ -65,7 +66,7 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
             <div className="basis-1/2 flex-1">
               <MyForm.Input
                 required
-                name={`unit:${id}:name`} labelText="Einheit"
+                name={`unit:${id}:name`} labelText={uiText("Einheit")}
                 autoFocus={autoFocusFieldName === `unit:${id}:name`}
                 suggestions={{
                   prepare: () => client.query('products.units.list', undefined).then(([data]) => data ?? []),
@@ -80,10 +81,10 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
             <div className="basis-1/2 flex-1">
               <MyForm.Input
                 required
-                name={`unit:${id}:value`} labelText="Basismenge"
+                name={`unit:${id}:value`} labelText={uiText("Basismenge")}
                 type="number"
                 rules={[MyForm.Input.rules.posnum]}
-                suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Einheit entfernen" aria-label="Einheit entfernen" onClick={() => {
+                suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Einheit entfernen")} aria-label={uiText("Einheit entfernen")} onClick={() => {
                   setOtherUnitIds(ids => ids.filter(_id => _id !== id));
                 }}><Icons.Delete /></MyButton>}
               />
@@ -95,7 +96,7 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
           const id = generateId();
           setOtherUnitIds(ids => [...ids, id]);
           setAutoFocusFieldName(`unit:${id}:name`);
-        }}>Weitere Einheit</MyButton>
+        }}>{uiText("Weitere Einheit")}</MyButton>
       </>
     },
     onSubmit: async ({ context, hide, navigate }) => {
@@ -144,8 +145,8 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Produkt erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Produkt erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -159,23 +160,23 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
       const initialOtherUnits = useRef<Record<string, [string, number]>>({}).current;
 
       return <>
-        <p className="light">Pflege hier Stammdaten und Einheiten für korrekte Mengen- und Kostenberechnungen.</p>
+        <p className="light">{uiText("Pflege hier Stammdaten und Einheiten für korrekte Mengen- und Kostenberechnungen.")}</p>
 
         <MyForm.Input required
-          name="name" labelText="Bezeichung" />
+          name="name" labelText={uiText("Bezeichung")} />
 
         <MyForm.Input
-          name="brand" labelText="Hersteller" />
+          name="brand" labelText={uiText("Hersteller")} />
 
         <MyForm.Input
-          name="description" labelText="Beschreibung" />
+          name="description" labelText={uiText("Beschreibung")} />
 
         <MyDivider />
 
         <MyForm.Input required
-          name="baseUnit" labelText="Basiseinheit (kleinste)"
+          name="baseUnit" labelText={uiText("Basiseinheit (kleinste)")}
           rules={[MyForm.Input.rules.max(15)]} />
-        <p className="light">Beispiel: m, kg oder Stk. Alle weiteren Einheiten werden darauf umgerechnet.</p>
+        <p className="light">{uiText("Beispiel: m, kg oder Stk. Alle weiteren Einheiten werden darauf umgerechnet.")}</p>
 
         <MyDivider />
 
@@ -184,7 +185,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
             <div className="basis-1/2 flex-1">
               <MyForm.Input
                 required
-                name={`unit:${id}:name`} labelText="Einheit"
+                name={`unit:${id}:name`} labelText={uiText("Einheit")}
                 autoFocus={autoFocusFieldName === `unit:${id}:name`}
                 suggestions={{
                   prepare: () => client.query('products.units.list', undefined).then(([data]) => data ?? []),
@@ -199,10 +200,10 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
             <div className="basis-1/2 flex-1">
               <MyForm.Input
                 required
-                name={`unit:${id}:value`} labelText="Basismenge"
+                name={`unit:${id}:value`} labelText={uiText("Basismenge")}
                 type="number"
                 rules={[MyForm.Input.rules.posnum]}
-                suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Einheit entfernen" aria-label="Einheit entfernen" onClick={() => {
+                suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Einheit entfernen")} aria-label={uiText("Einheit entfernen")} onClick={() => {
                   setOtherUnitIds(ids => ids.filter(_id => _id !== id));
                 }}><Icons.Delete /></MyButton>}
               />
@@ -222,7 +223,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
           const id = generateId();
           setOtherUnitIds(ids => [...ids, id]);
           setAutoFocusFieldName(`unit:${id}:name`);
-        }}>Weitere Einheit</MyButton>
+        }}>{uiText("Weitere Einheit")}</MyButton>
 
         <NotifyLoaded onLoad={async () => {
           context.setValues({
@@ -279,9 +280,9 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Produkt bearbeiten',
+      modalHeading: uiText("Produkt bearbeiten"),
       modalLabel: productTitle(product),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -289,14 +290,11 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
 export function showDeleteProductModal(modals: MyModalsInterface, product: Product) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Produkt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        Dies betrifft insbesondere auch Kostenschätzungen.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Produkt in Verbindung stehenden Daten werden damit ebenfalls gelöscht. Dies betrifft insbesondere auch Kostenschätzungen.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -310,9 +308,9 @@ export function showDeleteProductModal(modals: MyModalsInterface, product: Produ
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Produkt löschen',
+      modalHeading: uiText("Produkt löschen"),
       modalLabel: productTitle(product),
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }
@@ -322,7 +320,7 @@ export function showSetProductCategoriesModal(modals: MyModalsInterface, product
     content: ({ context }) => <>
       <MyForm.MultiSelect
         name="categories"
-        labelText="Kategorien"
+        labelText={uiText("Kategorien")}
         prepare={async () => {
           const [data, err] = await client.query('products.categories.list', undefined);
           if (err) throw err;
@@ -358,9 +356,9 @@ export function showSetProductCategoriesModal(modals: MyModalsInterface, product
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Kategorien bearbeiten',
+      modalHeading: uiText("Kategorien bearbeiten"),
       modalLabel: productTitle(product),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -374,7 +372,7 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
       <MyForm.Input
         required
         type="number"
-        name="price" labelText="Gesamtpreis (EUR)"
+        name="price" labelText={uiText("Gesamtpreis (EUR)")}
         rules={[MyForm.Input.rules.num]}
       />
       
@@ -383,14 +381,14 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
           <MyForm.Input
             required
             type="number"
-            name="amount" labelText="Menge"
+            name="amount" labelText={uiText("Menge")}
             rules={[MyForm.Input.rules.posnum]}
           />
         </div>
 
         <div className="basis-1/2 flex-1">
           <MyForm.Select
-            name="unit" labelText="Einheit"
+            name="unit" labelText={uiText("Einheit")}
             getOptions={() => {
               return [product.baseUnit, ...Object.keys(product.otherUnits)].map(e => ({ id: e }));
             }}
@@ -401,7 +399,7 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
 
       <MyForm.MultiSelect
         maxSelectedItems={1}
-        name="vendor" labelText="Händler"
+        name="vendor" labelText={uiText("Händler")}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('products.vendors.list', { search: query });
           if (err) throw err;
@@ -412,11 +410,11 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
         createAction={createEntityAction.productVendor}
       />
 
-      <MyForm.Input name="comment" labelText="Kommentar" />
+      <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
 
-      <MyForm.DateInput required name="date" labelText="Datum" />
+      <MyForm.DateInput required name="date" labelText={uiText("Datum")} />
 
-      <MyForm.Checkbox name="isRealPurchase" labelText="Echter Einkauf?" />
+      <MyForm.Checkbox name="isRealPurchase" labelText={uiText("Echter Einkauf?")} />
 
       <NotifyLoaded onLoad={() => {
         context.field('date')?.setValue(startOfDay(new Date()));
@@ -454,9 +452,9 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Preis verzeichnen',
+      modalHeading: uiText("Preis verzeichnen"),
       modalLabel: `${product.customId} ${productTitle(product)}`,
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }

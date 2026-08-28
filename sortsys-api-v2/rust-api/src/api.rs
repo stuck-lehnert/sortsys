@@ -29,12 +29,13 @@ pub fn registry(state: Arc<AppState>) -> ProcedureRegistry {
 }
 
 pub fn contract_registry() -> ProcedureRegistry {
-    crate::contract_generated::FULL_CONTRACT
+    let builder = crate::contract_generated::FULL_CONTRACT
         .iter()
         .fold(ProcedureRegistryBuilder::default(), |builder, spec| {
             builder.raw_stub(spec)
-        })
-        .build()
+        });
+
+    crate::procedures::register_contract(builder).build()
 }
 
 fn register_auth(
@@ -129,6 +130,7 @@ fn register_auth(
                             contract_type: auth.user.contract_type,
                             phone: auth.user.phone,
                             email: auth.user.email,
+                            locale: auth.user.locale,
                         },
                         session: SessionInfoSession {
                             id: wire_id(&auth.session.id)?,
@@ -200,6 +202,8 @@ struct SessionInfoUser {
     contract_type: String,
     phone: Option<String>,
     email: Option<String>,
+    #[ts(type = "\"de\" | \"en\"")]
+    locale: String,
 }
 
 #[derive(Debug, Serialize, TS)]

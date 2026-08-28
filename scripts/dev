@@ -6,13 +6,17 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$ROOT_DIR/sortsys-api-v2"
 CLIENT_DIR="$ROOT_DIR/sortsys-webapp-v2"
 JOB_RUNNER_DIR="$ROOT_DIR/sortsys-v2-job_runner"
+DEV_ENV_FILE="${DEV_ENV_FILE:-$ROOT_DIR/.env}"
 
 DEV_NETWORK="sortsys-dev-network"
 DEV_PG_CONTAINER="sortsys-dev-postgres"
 DEV_S3_CONTAINER="sortsys-dev-s3"
 DEV_API_CONTAINER="sortsys-dev-api"
 DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
+DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
+DEV_GO_BUILD_CACHE_VOLUME="sortsys-dev-go-build-cache"
+DEV_GO_MODULE_CACHE_VOLUME="sortsys-dev-go-module-cache"
 
 DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-docker.io/library/postgres:17}"
 DEV_S3_IMAGE="${DEV_S3_IMAGE:-docker.io/minio/minio:latest}"
@@ -36,7 +40,9 @@ DEV_S3_SECRET_ACCESS_KEY="${DEV_S3_SECRET_ACCESS_KEY:-minioadmin}"
 DEV_PG_ADMIN_PASSWORD="${TEST_PG_PASSWORD:-dev-postgres}"
 DEV_JOB_RUNNER_TOKEN="${DEV_JOB_RUNNER_TOKEN:-dev-job-runner-token}"
 DEV_JWT_SECRET="${DEV_JWT_SECRET:-dev-jwt-secret}"
-DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$bYhNs6tw02/o1DyPROQgsOmEQnimAMR5Na.diX2hasHiAkZLX9Xva}"
+DEV_LLM_ENCRYPTION_KEY="${DEV_LLM_ENCRYPTION_KEY:-dev-llm-encryption-key}"
+# Development global-admin password: 123456
+DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$A20B6GFXZPxMInilSMwRy.q3tixzPl9Bq0tgyrCvNAHUQI2BHqlPa}"
 
 DEV_MASTER_DATABASE_NAME="${DEV_MASTER_DATABASE_NAME:-live_sortsys_api_test_tenants}"
 DEV_TEST_TENANT_NAME="${DEV_TEST_TENANT_NAME:-test}"
@@ -44,13 +50,20 @@ DEV_TEST_DATABASE_NAME="${DEV_TEST_DATABASE_NAME:-live_sortsys_api_test}"
 DEV_TEST_DATABASE_USER="${DEV_TEST_DATABASE_USER:-live_sortsys_api_test_app}"
 DEV_LIVE_POSTGRES_HOST_NAME="${DEV_LIVE_POSTGRES_HOST_NAME:-dev-local-postgres}"
 
-DEV_ALL_CONTAINERS=(
+DEV_SERVICE_CONTAINERS=(
   "$DEV_PG_CONTAINER"
   "$DEV_S3_CONTAINER"
   "$DEV_API_CONTAINER"
   "$DEV_WEBAPP_CONTAINER"
   "${DEV_JOB_RUNNER_CONTAINERS[0]}"
   "${DEV_JOB_RUNNER_CONTAINERS[1]}"
+)
+
+# Cleanup also covers short-lived helper containers. Only service containers
+# belong in DEV_SERVICE_CONTAINERS because the monitor expects them to persist.
+DEV_ALL_CONTAINERS=(
+  "${DEV_SERVICE_CONTAINERS[@]}"
+  "$DEV_CLIENT_BUILD_CONTAINER"
 )
 
 if command -v podman >/dev/null 2>&1; then
@@ -71,11 +84,92 @@ runtime_pull_args=()
 runtime_mount_suffix=""
 runtime_user_args=()
 runtime_env_args=(-e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm)
+runtime_llm_env_args=()
+DEV_LLM_ENV_CONTENT=""
 
 if [ "$CONTAINER_RUNTIME" = "podman" ]; then
   runtime_pull_args=(--pull=never)
   runtime_mount_suffix=":z"
 fi
+
+prepare_llm_environment() {
+  local source_file="$DEV_ENV_FILE"
+
+  if [ ! -f "$source_file" ]; then
+    source_file="/dev/null"
+  fi
+
+  # Parse only the supported LLM settings. Do not source .env: it is data, not
+  # trusted shell code. Already exported variables override values from the file.
+  DEV_LLM_ENV_CONTENT="$(awk '
+    BEGIN {
+      names[1] = "OPENAI_API_KEY"
+      names[2] = "OPENAI_MODEL"
+      names[3] = "ANTHROPIC_API_KEY"
+      names[4] = "ANTHROPIC_MODEL"
+      names[5] = "DEEPSEEK_API_KEY"
+      names[6] = "DEEPSEEK_MODEL"
+      names[7] = "LLM_MCP_URL"
+
+      for (position = 1; position <= 7; position++) {
+        allowed[names[position]] = 1
+      }
+    }
+
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      sub(/^[ \t]*/, "", line)
+
+      if (line == "" || line ~ /^#/) next
+
+      sub(/^export[ \t]+/, "", line)
+      separator = index(line, "=")
+      if (separator == 0) next
+
+      key = substr(line, 1, separator - 1)
+      sub(/[ \t]*$/, "", key)
+      if (!(key in allowed)) next
+
+      value = substr(line, separator + 1)
+      sub(/^[ \t]*/, "", value)
+      sub(/[ \t]*$/, "", value)
+
+      first = substr(value, 1, 1)
+      last = substr(value, length(value), 1)
+      if ((first == "\"" && last == "\"") || (first == "\047" && last == "\047")) {
+        value = substr(value, 2, length(value) - 2)
+      }
+
+      values[key] = value
+    }
+
+    END {
+      for (position = 1; position <= 7; position++) {
+        key = names[position]
+
+        if (key in ENVIRON) {
+          print key "=" ENVIRON[key]
+        } else if (key in values) {
+          print key "=" values[key]
+        }
+      }
+    }
+  ' "$source_file")"
+
+  if [ -n "$DEV_LLM_ENV_CONTENT" ]; then
+    runtime_llm_env_args=(--env-file /dev/stdin)
+    echo "Using development LLM configuration"
+  else
+    runtime_llm_env_args=()
+    echo "No development LLM credentials found; assistant remains disabled"
+  fi
+}
+
+cleanup_llm_environment() {
+  DEV_LLM_ENV_CONTENT=""
+  runtime_llm_env_args=()
+}
 
 image_exists() {
   local image="$1"
@@ -97,14 +191,28 @@ container_is_running() {
 }
 
 cleanup_containers() {
+  local pids=()
+
   for container_name in "${DEV_ALL_CONTAINERS[@]}"; do
-    "$CONTAINER_RUNTIME" rm -f "$container_name" >/dev/null 2>&1 || true
+    "$CONTAINER_RUNTIME" rm -f "$container_name" >/dev/null 2>&1 &
+    pids+=("$!")
+  done
+
+  for pid in "${pids[@]}"; do
+    wait "$pid" || true
   done
 }
 
 kill_containers() {
+  local pids=()
+
   for container_name in "${DEV_ALL_CONTAINERS[@]}"; do
-    "$CONTAINER_RUNTIME" kill "$container_name" >/dev/null 2>&1 || true
+    "$CONTAINER_RUNTIME" kill "$container_name" >/dev/null 2>&1 &
+    pids+=("$!")
+  done
+
+  for pid in "${pids[@]}"; do
+    wait "$pid" || true
   done
 }
 
@@ -188,30 +296,51 @@ initialize_master_database() {
     -c "CREATE DATABASE \"${DEV_MASTER_DATABASE_NAME}\";" >/dev/null
 }
 
-start_infra() {
-  cleanup_containers
-  ensure_network
+prepare_images() {
+  local images=(
+    "$DEV_POSTGRES_IMAGE"
+    "$DEV_BUN_IMAGE"
+    "$DEV_RUST_IMAGE"
+    "$DEV_NODE_IMAGE"
+    "$DEV_GO_IMAGE"
+  )
+  local labels=("PostgreSQL" "Bun" "Rust" "Node.js" "Go")
+  local pids=()
+  local failed=0
 
-  if ! ensure_image "$DEV_POSTGRES_IMAGE" 5; then
-    echo "Failed to prepare postgres image: ${DEV_POSTGRES_IMAGE}"
-    exit 1
-  fi
+  for image in "${images[@]}"; do
+    ensure_image "$image" 5 &
+    pids+=("$!")
+  done
 
-  if ! ensure_image "$DEV_S3_IMAGE" 5; then
+  ensure_image "$DEV_S3_IMAGE" 5 &
+  local s3_pid="$!"
+
+  for index in "${!pids[@]}"; do
+    if ! wait "${pids[$index]}"; then
+      echo "Failed to prepare ${labels[$index]} image: ${images[$index]}"
+      failed=1
+    fi
+  done
+
+  if ! wait "$s3_pid"; then
     echo "Failed to prepare S3 image: ${DEV_S3_IMAGE}"
     echo "Trying fallback image: ${DEV_S3_IMAGE_FALLBACK}"
+
     if ! ensure_image "$DEV_S3_IMAGE_FALLBACK" 5; then
       echo "Failed to prepare both primary and fallback S3 images"
-      exit 1
+      failed=1
+    else
+      DEV_S3_IMAGE="$DEV_S3_IMAGE_FALLBACK"
     fi
-    DEV_S3_IMAGE="$DEV_S3_IMAGE_FALLBACK"
   fi
 
+  return "$failed"
+}
+
+start_postgres() {
   echo "Starting development PostgreSQL on port ${DEV_PG_PORT}"
 
-  # Image preparation can take long enough for an overlapping stale cleanup
-  # process to remove the shared network. Reconcile it immediately before the
-  # first container is attached.
   ensure_network
   "$CONTAINER_RUNTIME" run -d \
     --rm \
@@ -228,22 +357,24 @@ start_infra() {
     if ! container_is_running "$DEV_PG_CONTAINER"; then
       echo "PostgreSQL container stopped unexpectedly"
       "$CONTAINER_RUNTIME" logs "$DEV_PG_CONTAINER" || true
-      exit 1
+      return 1
     fi
 
     if "$CONTAINER_RUNTIME" exec "$DEV_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
-      break
-    fi
-
-    if [ "$i" -eq 120 ]; then
-      echo "PostgreSQL did not become ready in time"
-      exit 1
+      return 0
     fi
 
     sleep 1
   done
 
+  echo "PostgreSQL did not become ready in time"
+  return 1
+}
+
+start_s3() {
   echo "Starting development S3 on port ${DEV_S3_PORT}"
+
+  ensure_network
   "$CONTAINER_RUNTIME" run -d \
     --rm \
     --name "$DEV_S3_CONTAINER" \
@@ -257,7 +388,7 @@ start_infra() {
   echo "Waiting for S3 port readiness"
   if ! wait_for_tcp_port "127.0.0.1" "$DEV_S3_PORT" "S3" 120; then
     "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
-    exit 1
+    return 1
   fi
 
   echo "Initializing MinIO development bucket ${DEV_S3_BUCKET}"
@@ -265,63 +396,68 @@ start_infra() {
     if "$CONTAINER_RUNTIME" exec "$DEV_S3_CONTAINER" \
       mc alias set sortsys-dev http://127.0.0.1:9000 \
         "$DEV_S3_ACCESS_KEY_ID" "$DEV_S3_SECRET_ACCESS_KEY" >/dev/null 2>&1; then
-      break
-    fi
-
-    if [ "$i" -eq 120 ]; then
-      echo "MinIO did not become API-ready in time"
-      "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
-      exit 1
+      "$CONTAINER_RUNTIME" exec "$DEV_S3_CONTAINER" \
+        mc mb --ignore-existing "sortsys-dev/${DEV_S3_BUCKET}" >/dev/null
+      return 0
     fi
 
     sleep 1
   done
-  "$CONTAINER_RUNTIME" exec "$DEV_S3_CONTAINER" \
-    mc mb --ignore-existing "sortsys-dev/${DEV_S3_BUCKET}" >/dev/null
+
+  echo "MinIO did not become API-ready in time"
+  "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
+  return 1
 }
 
-build_local_api_client_package() {
-  if ! ensure_image "$DEV_BUN_IMAGE" 5; then
-    echo "Failed to prepare bun image: ${DEV_BUN_IMAGE}"
-    exit 1
-  fi
+ensure_local_api_client_package() {
+  echo "Checking local API client package"
 
-  echo "Building local API client package (containerized bun)"
   "$CONTAINER_RUNTIME" run --rm \
+    --name "$DEV_CLIENT_BUILD_CONTAINER" \
     "${runtime_pull_args[@]}" \
     "${runtime_user_args[@]}" \
     "${runtime_env_args[@]}" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
     -w /workspace/sortsys-api-v2/client \
     "$DEV_BUN_IMAGE" \
-    sh -lc 'bun install && bun run build'
+    sh -lc '
+      set -eu
+
+      if bun ./scripts/check-dist-current.mjs; then
+        echo "Local API client package is current"
+      else
+        echo "Client inputs changed; rebuilding local API client package"
+        bun install
+        bun run build
+      fi
+    '
 }
 
-start_api_container() {
-  local pg_master_dsn
-
-  if ! ensure_image "$DEV_RUST_IMAGE" 5; then
-    echo "Failed to prepare rust image: ${DEV_RUST_IMAGE}"
-    exit 1
-  fi
-
+build_api_development_image() {
   echo "Building cached Rust development image with PostgreSQL 17 clients"
   "$CONTAINER_RUNTIME" build \
     --build-arg "RUST_IMAGE=$DEV_RUST_IMAGE" \
     --file "$SERVER_DIR/rust-api/Dockerfile.test" \
     --tag "$DEV_API_IMAGE" \
     "$SERVER_DIR" >/dev/null
+}
+
+start_api_container() {
+  local pg_master_dsn
 
   pg_master_dsn="postgres://postgres:${DEV_PG_ADMIN_PASSWORD}@${DEV_PG_CONTAINER}:5432/${DEV_MASTER_DATABASE_NAME}"
 
+  prepare_llm_environment
+
   echo "Starting containerized API on port ${DEV_API_PORT}"
 
-  "$CONTAINER_RUNTIME" run -d \
+  printf '%s\n' "$DEV_LLM_ENV_CONTENT" | "$CONTAINER_RUNTIME" run -d \
     --rm \
     --name "$DEV_API_CONTAINER" \
     "${runtime_pull_args[@]}" \
     "${runtime_user_args[@]}" \
     "${runtime_env_args[@]}" \
+    "${runtime_llm_env_args[@]}" \
     --network "$DEV_NETWORK" \
     -p "${DEV_API_PORT}:${DEV_API_PORT}" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
@@ -329,6 +465,7 @@ start_api_container() {
     -e PORT="$DEV_API_PORT" \
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$DEV_JWT_SECRET" \
+    -e LLM_ENCRYPTION_KEY="$DEV_LLM_ENCRYPTION_KEY" \
     -e ADMIN_HASH="$DEV_ADMIN_HASH" \
     -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
     -e TEST_PG_HOST="$DEV_PG_CONTAINER" \
@@ -367,6 +504,9 @@ start_api_container() {
       exec cargo run --package sortsys-api --bin sortsys-api
     ' >/dev/null
 
+  # Values parsed from .env are needed only while Docker creates the container.
+  cleanup_llm_environment
+
   if ! wait_for_tcp_port "127.0.0.1" "$DEV_API_PORT" "API" 180; then
     "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" || true
     exit 1
@@ -374,11 +514,6 @@ start_api_container() {
 }
 
 start_job_runner_containers() {
-  if ! ensure_image "$DEV_GO_IMAGE" 5; then
-    echo "Failed to prepare go image: ${DEV_GO_IMAGE}"
-    exit 1
-  fi
-
   echo "Starting 2 containerized Go job runners with source watching"
   for idx in "${!DEV_JOB_RUNNER_CONTAINERS[@]}"; do
     local container_name="${DEV_JOB_RUNNER_CONTAINERS[$idx]}"
@@ -392,6 +527,8 @@ start_job_runner_containers() {
       "${runtime_env_args[@]}" \
       --network "$DEV_NETWORK" \
       -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
+      -v "${DEV_GO_BUILD_CACHE_VOLUME}:/tmp/go-build" \
+      -v "${DEV_GO_MODULE_CACHE_VOLUME}:/tmp/go" \
       -w /workspace/sortsys-v2-job_runner \
       -e JOB_RUNNER_WS_URL="ws://${DEV_API_CONTAINER}:${DEV_API_PORT}/internal/job-runners/ws" \
       -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
@@ -459,11 +596,6 @@ start_job_runner_containers() {
 }
 
 start_webapp_container() {
-  if ! ensure_image "$DEV_NODE_IMAGE" 5; then
-    echo "Failed to prepare node image: ${DEV_NODE_IMAGE}"
-    exit 1
-  fi
-
   echo "Starting containerized webapp dev server on port ${DEV_WEBAPP_PORT}"
   "$CONTAINER_RUNTIME" run -d \
     --rm \
@@ -476,18 +608,70 @@ start_webapp_container() {
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
     -w /workspace/sortsys-webapp-v2 \
     -e CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}" \
+    -e DEV_WEBAPP_PORT="$DEV_WEBAPP_PORT" \
     "$DEV_NODE_IMAGE" \
-    sh -lc "npm --prefix /workspace/sortsys-dwgviewer ci && npm install && npm run dev -- --host 0.0.0.0 --port ${DEV_WEBAPP_PORT}" >/dev/null
+    sh -lc '
+      set -eu
+
+      dependency_hash() {
+        directory="$1"
+        extra_input="${2:-}"
+        {
+          sha256sum "$directory/package.json"
+          if [ -f "$directory/package-lock.json" ]; then
+            sha256sum "$directory/package-lock.json"
+          fi
+          if [ -n "$extra_input" ] && [ -f "$extra_input" ]; then
+            sha256sum "$extra_input"
+          fi
+        } | sha256sum | cut -d" " -f1
+      }
+
+      ensure_dependencies() {
+        directory="$1"
+        install_mode="$2"
+        extra_input="${3:-}"
+        stamp="$directory/node_modules/.sortsys-dev-dependencies"
+        expected="$(dependency_hash "$directory" "$extra_input")"
+        actual=""
+
+        if [ -f "$stamp" ]; then
+          actual="$(sed -n "1p" "$stamp")"
+        fi
+
+        if [ ! -d "$directory/node_modules" ] || [ "$actual" != "$expected" ]; then
+          echo "Installing dependencies for $(basename "$directory")"
+
+          if [ "$install_mode" = "ci" ]; then
+            npm --prefix "$directory" ci
+          else
+            npm --prefix "$directory" install
+          fi
+
+          printf "%s\n" "$expected" > "$stamp"
+        else
+          echo "Dependencies for $(basename "$directory") are current"
+        fi
+      }
+
+      ensure_dependencies /workspace/sortsys-dwgviewer ci
+      ensure_dependencies \
+        /workspace/sortsys-webapp-v2 \
+        install \
+        /workspace/sortsys-api-v2/client/dist/package.json
+
+      exec npm run dev -- --host 0.0.0.0 --port "$DEV_WEBAPP_PORT"
+    ' >/dev/null
 
   if ! wait_for_tcp_port "127.0.0.1" "$DEV_WEBAPP_PORT" "Webapp" 240; then
     "$CONTAINER_RUNTIME" logs "$DEV_WEBAPP_CONTAINER" || true
-    exit 1
+    return 1
   fi
 }
 
 monitor_containers() {
   while true; do
-    for container_name in "${DEV_ALL_CONTAINERS[@]}"; do
+    for container_name in "${DEV_SERVICE_CONTAINERS[@]}"; do
       if ! container_is_running "$container_name"; then
         echo "Container stopped unexpectedly: ${container_name}"
         "$CONTAINER_RUNTIME" logs "$container_name" || true
@@ -501,12 +685,14 @@ monitor_containers() {
 
 cleanup() {
   trap - INT TERM EXIT
+  cleanup_llm_environment
   cleanup_containers
   cleanup_network
 }
 
 force_shutdown() {
   trap - INT TERM EXIT
+  cleanup_llm_environment
   kill_containers
   cleanup_containers
   cleanup_network
@@ -520,12 +706,44 @@ if [ "$DEV_API_PORT" != "3000" ]; then
   echo "Warning: webapp dev client currently targets API port 3000 in-browser."
 fi
 
-start_infra
+cleanup_containers
+ensure_network
+prepare_images
+
+start_postgres &
+postgres_pid="$!"
+start_s3 &
+s3_pid="$!"
+build_api_development_image &
+api_image_pid="$!"
+(
+  ensure_local_api_client_package
+  start_webapp_container
+) &
+webapp_pid="$!"
+
+if ! wait "$postgres_pid"; then
+  echo "PostgreSQL startup failed"
+  exit 1
+fi
 initialize_master_database
-build_local_api_client_package
+
+if ! wait "$s3_pid"; then
+  echo "S3 startup failed"
+  exit 1
+fi
+if ! wait "$api_image_pid"; then
+  echo "API development image build failed"
+  exit 1
+fi
+
 start_api_container
 start_job_runner_containers
-start_webapp_container
+
+if ! wait "$webapp_pid"; then
+  echo "Webapp startup failed"
+  exit 1
+fi
 
 echo
 echo "sortsys dev stack is running (containerized)"

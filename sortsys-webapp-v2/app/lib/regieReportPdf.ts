@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
 import { type PdfTableSection, type StructuredPdfDocument } from "~/lib/pdf";
 import { upmatchUnit } from "~/lib/utils";
@@ -108,16 +109,16 @@ export function buildRegieReportPdfDocument(props: {
   ]);
 
   const summaryRows: string[][] = [
-    ["Projekt", projectTitle],
+    [uiText("Projekt"), projectTitle],
     ["Kalenderwoche", isoWeekLabel(weekStart)],
-    ["Zeitraum", `${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`],
+    [uiText("Zeitraum"), uiText(`${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`, `${formatDate(weekStart, "long")} to ${formatDate(weekEnd, "long")}`)],
     ["Gesamtstunden", formatNumber(totalHours)],
   ];
 
   const sections: PdfTableSection[] = [
     {
-      title: "Zusammenfassung",
-      columns: ["Kennzahl", "Wert"],
+      title: uiText("Zusammenfassung"),
+      columns: [uiText("Kennzahl"), uiText("Wert")],
       rows: summaryRows,
       withHeader: false,
       align: ["left", "left"],
@@ -127,7 +128,7 @@ export function buildRegieReportPdfDocument(props: {
 
   if (workHourRows.length > 0) {
     sections.push({
-      title: "Arbeitszeit je Mitarbeiter und Tag",
+      title: uiText("Arbeitszeit je Mitarbeiter und Tag"),
       columns: ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES, "Gesamt"],
       rows: workHourRows,
       align: ["left", ...WEEKDAY_SHORT_NAMES.map(() => "right" as const), "right"],
@@ -136,9 +137,9 @@ export function buildRegieReportPdfDocument(props: {
   }
 
   sections.push({
-    title: "Beschreibung der Arbeiten",
+    title: uiText("Beschreibung der Arbeiten"),
     columns: ["Inhalt"],
-    rows: [[`${report.summary ?? ""}`.trim() || "Keine Beschreibung"]],
+    rows: [[`${report.summary ?? ""}`.trim() || uiText("Keine Beschreibung")]],
     withHeader: false,
     align: ["left"],
     columnWidths: ["1fr"],
@@ -146,7 +147,7 @@ export function buildRegieReportPdfDocument(props: {
 
   if (productRows.length > 0) {
     sections.push({
-      title: "Produkte",
+      title: uiText("Produkte"),
       columns: ["Bezeichnung", "Menge", "Basismenge"],
       rows: productRows,
       align: ["left", "right", "right"],
@@ -156,7 +157,7 @@ export function buildRegieReportPdfDocument(props: {
 
   if (specialRows.length > 0) {
     sections.push({
-      title: "Sonderposten",
+      title: uiText("Sonderposten"),
       columns: ["Bezeichnung", "Menge"],
       rows: specialRows,
       align: ["left", "right"],
@@ -165,16 +166,16 @@ export function buildRegieReportPdfDocument(props: {
   }
 
   return {
-    title: `Regiebericht #${report.autoId}`,
+    title: uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`),
     reportLabel: projectTitle,
     showReportLabel: true,
     sections,
-    emptyMessage: "Keine Daten zum Regiebericht verfugbar.",
+    emptyMessage: uiText("Keine Daten zum Regiebericht verfugbar."),
     signatures: includeSignatures === false
       ? undefined
       : [
-          { title: "Bauleiter" },
-          { title: "Bauherr" },
+          { title: uiText("Bauleiter") },
+          { title: uiText("Bauherr") },
         ],
   };
 }

@@ -13,7 +13,7 @@ async function prompt(rl: ReturnType<typeof createInterface>, question: string, 
 }
 
 const API_HOST = process.env.SORTSYS_API_HOST ?? 'https://app.sortsys.de/api/v2';
-const client = createClient(API_HOST);
+const client = createClient(API_HOST, "init-tenant");
 const rl = createInterface({ input, output });
 
 try {

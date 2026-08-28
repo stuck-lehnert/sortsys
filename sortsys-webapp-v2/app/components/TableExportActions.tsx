@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { Icons } from "~/lib/icons";
@@ -29,7 +30,7 @@ export function TableExportActions<RowT>(props: {
         subtitle: props.subtitle,
       });
     } catch (err) {
-      window.alert((err as Error)?.message || 'Export fehlgeschlagen.');
+      window.alert((err as Error)?.message || uiText('Export fehlgeschlagen.'));
     } finally {
       setPending(null);
     }
@@ -43,7 +44,7 @@ export function TableExportActions<RowT>(props: {
       disabled={props.disabled || !!pending}
       loading={pending === 'pdf'}
       onClick={() => void run('pdf')}
-    >PDF</MyButton>
+    >{uiText("PDF")}</MyButton>
     <MyButton
       kind="ghost"
       size="sm"
@@ -51,6 +52,6 @@ export function TableExportActions<RowT>(props: {
       disabled={props.disabled || !!pending}
       loading={pending === 'excel'}
       onClick={() => void run('excel')}
-    >Excel</MyButton>
+    >{uiText("Excel")}</MyButton>
   </>;
 }

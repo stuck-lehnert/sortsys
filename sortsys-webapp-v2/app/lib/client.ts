@@ -1,5 +1,6 @@
 import { createClient, type Client } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
+import { uiText } from "./i18n";
 
 const HOST = (() => {
   if (typeof window !== 'object') return '';
@@ -14,7 +15,7 @@ const HOST = (() => {
   return '/api/v2';
 })();
 
-const baseClient = createClient(HOST);
+const baseClient = createClient(HOST, "webapp");
 
 type ClientErrorReportInput = {
   level?: 'error' | 'warning';
@@ -69,7 +70,7 @@ export async function reportClientError(input: ClientErrorReportInput) {
 
 function errorMessage(err: unknown) {
   if (err instanceof Error) return err.message;
-  return `${err || 'Unbekannter Fehler'}`;
+  return `${err || uiText('Unbekannter Fehler')}`;
 }
 
 function errorStack(err: unknown) {
@@ -91,6 +92,19 @@ export const client: Client = {
     }
     return result;
   }) as Client['query'],
+  queryDynamic: async (path, input, opts) => {
+    const result = await baseClient.queryDynamic(path, input, opts);
+    const err = result[1];
+    if (err) {
+      void reportClientError({
+        source: 'client.queryDynamic',
+        message: errorMessage(err),
+        stack: errorStack(err),
+        metadata: { trpcPath: path },
+      });
+    }
+    return result;
+  },
   streamQuery: ((path: any, input: any, opts: any) => {
     return new Observable((subscriber) => {
       const subscription = baseClient.streamQuery(path, input, opts).subscribe({
@@ -136,4 +150,17 @@ export const client: Client = {
     }
     return result;
   }) as Client['mutate'],
+  mutateDynamic: async (path, input, opts) => {
+    const result = await baseClient.mutateDynamic(path, input, opts);
+    const err = result[1];
+    if (err && path !== 'errorReports.report') {
+      void reportClientError({
+        source: 'client.mutateDynamic',
+        message: errorMessage(err),
+        stack: errorStack(err),
+        metadata: { trpcPath: path },
+      });
+    }
+    return result;
+  },
 };

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 type EncodedCredentialDescriptor = {
   id: string;
   type: 'public-key';
@@ -35,7 +36,7 @@ export function isPasskeySupported() {
 }
 
 export async function createPasskeyCredential(options: EncodedCreationOptions) {
-  if (!isPasskeySupported()) throw new Error('Passkeys werden von diesem Browser nicht unterstützt.');
+  if (!isPasskeySupported()) throw new Error(uiText("Passkeys werden von diesem Browser nicht unterstützt."));
 
   const credential = await navigator.credentials.create({
     publicKey: {
@@ -49,9 +50,9 @@ export async function createPasskeyCredential(options: EncodedCreationOptions) {
     },
   });
 
-  if (!(credential instanceof PublicKeyCredential)) throw new Error('Passkey-Erstellung wurde abgebrochen.');
+  if (!(credential instanceof PublicKeyCredential)) throw new Error(uiText("Passkey-Erstellung wurde abgebrochen."));
   const response = credential.response;
-  if (!(response instanceof AuthenticatorAttestationResponse)) throw new Error('Ungültige Passkey-Antwort.');
+  if (!(response instanceof AuthenticatorAttestationResponse)) throw new Error(uiText("Ungültige Passkey-Antwort."));
 
   return {
     id: credential.id,
@@ -66,7 +67,7 @@ export async function createPasskeyCredential(options: EncodedCreationOptions) {
 }
 
 export async function getPasskeyCredential(options: EncodedRequestOptions) {
-  if (!isPasskeySupported()) throw new Error('Passkeys werden von diesem Browser nicht unterstützt.');
+  if (!isPasskeySupported()) throw new Error(uiText("Passkeys werden von diesem Browser nicht unterstützt."));
 
   const credential = await navigator.credentials.get({
     publicKey: {
@@ -76,9 +77,9 @@ export async function getPasskeyCredential(options: EncodedRequestOptions) {
     },
   });
 
-  if (!(credential instanceof PublicKeyCredential)) throw new Error('Passkey-Anmeldung wurde abgebrochen.');
+  if (!(credential instanceof PublicKeyCredential)) throw new Error(uiText("Passkey-Anmeldung wurde abgebrochen."));
   const response = credential.response;
-  if (!(response instanceof AuthenticatorAssertionResponse)) throw new Error('Ungültige Passkey-Antwort.');
+  if (!(response instanceof AuthenticatorAssertionResponse)) throw new Error(uiText("Ungültige Passkey-Antwort."));
 
   return {
     id: credential.id,

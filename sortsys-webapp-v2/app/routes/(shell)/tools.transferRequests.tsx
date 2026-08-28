@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useMemo } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
@@ -22,13 +23,13 @@ export default function ToolTransferRequestsPage() {
     if (!requests) return;
 
     return <>
-        <MyExpandable title="Offen" initiallyExpanded>
+        <MyExpandable title={uiText("Offen")} initiallyExpanded>
             <MyTable
                 className="th-20rem"
                 rows={open}
                 columns={[
                     {
-                        label: 'Aktionen',
+                        label: uiText("Aktionen"),
                         render: row => {
                             const enabled = sessionInfo.canDo('manage:toolTrackings') || row.transferToUserId === sessionInfo.user.id;
 
@@ -45,7 +46,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Werkzeug',
+                        label: uiText("Werkzeug"),
                         render: async (row) => {
                             const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
                             if (!tool) return 'Unbekannt';
@@ -53,7 +54,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Verantwortlich',
+                        label: uiText("Verantwortlich"),
                         render: async (row) => {
                             if (!row.responsibleUserId) return;
             
@@ -63,7 +64,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Umbuchen auf',
+                        label: uiText("Umbuchen auf"),
                         render: async (row) => {
                             if (!row.transferToUserId) return;
             
@@ -83,7 +84,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Angefragt am',
+                        label: uiText("Angefragt am"),
                         render: row => formatDate(row.createdAt),
                     },
                 ]}
@@ -91,13 +92,13 @@ export default function ToolTransferRequestsPage() {
             />
         </MyExpandable>
 
-        {!!accepted.length && <MyExpandable title="Genehmigt">
+        {!!accepted.length && <MyExpandable title={uiText("Genehmigt")}>
             <MyTable
                 className="th-20rem"
                 rows={accepted}
                 columns={[
                     {
-                        label: 'Werkzeug',
+                        label: uiText("Werkzeug"),
                         render: async (row) => {
                             const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
                             if (!tool) return 'Unbekannt';
@@ -105,7 +106,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Verantwortlich',
+                        label: uiText("Verantwortlich"),
                         render: async (row) => {
                             if (!row.responsibleUserId) return;
             
@@ -115,7 +116,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Umbuchen auf',
+                        label: uiText("Umbuchen auf"),
                         render: async (row) => {
                             if (!row.transferToUserId) return;
             
@@ -135,7 +136,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Angefragt am',
+                        label: uiText("Angefragt am"),
                         render: row => formatDate(row.createdAt),
                     },
                 ]}
@@ -143,13 +144,13 @@ export default function ToolTransferRequestsPage() {
             />
         </MyExpandable>}
         
-        {!!denied.length && <MyExpandable title="Abgelehnt">
+        {!!denied.length && <MyExpandable title={uiText("Abgelehnt")}>
             <MyTable
                 className="th-20rem"
                 rows={denied}
                 columns={[
                     {
-                        label: 'Werkzeug',
+                        label: uiText("Werkzeug"),
                         render: async (row) => {
                             const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
                             if (!tool) return 'Unbekannt';
@@ -157,7 +158,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Verantwortlich',
+                        label: uiText("Verantwortlich"),
                         render: async (row) => {
                             if (!row.responsibleUserId) return;
             
@@ -167,7 +168,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Umbuchen auf',
+                        label: uiText("Umbuchen auf"),
                         render: async (row) => {
                             if (!row.transferToUserId) return;
             
@@ -187,7 +188,7 @@ export default function ToolTransferRequestsPage() {
                         },
                     },
                     {
-                        label: 'Angefragt am',
+                        label: uiText("Angefragt am"),
                         render: row => formatDate(row.createdAt),
                     },
                 ]}

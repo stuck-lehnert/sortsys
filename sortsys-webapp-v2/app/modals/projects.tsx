@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Fragment, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
@@ -50,14 +51,14 @@ function ProjectContactsFormFields({ context, modals, projectId }: {
   const initialValues = useRef<Record<string, { contact: ProjectContactFormContact; label: string | null }>>({}).current;
 
   return <>
-    <h4>Ansprechpartner</h4>
-    <p className="light">Mehrere Ansprechpartner können hinterlegt werden.</p>
+    <h4>{uiText("Ansprechpartner")}</h4>
+    <p className="light">{uiText("Mehrere Ansprechpartner können hinterlegt werden.")}</p>
 
     {rowIds.map(id => <Fragment key={id}>
       <div className="flex gap-2 items-end">
         <div className="grow flex flex-col gap-2">
           <MyForm.MultiSelect
-            labelText="Kontakt"
+            labelText={uiText("Kontakt")}
             name={`projectContact:${id}:contact`}
             autoFocus={autoFocusFieldName === `projectContact:${id}:contact`}
             minSelectedItems={1}
@@ -74,8 +75,8 @@ function ProjectContactsFormFields({ context, modals, projectId }: {
 
           <MyForm.Input
             name={`projectContact:${id}:label`}
-            labelText="Rolle"
-            suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Ansprechpartner entfernen" aria-label="Ansprechpartner entfernen" onClick={() => {
+            labelText={uiText("Rolle")}
+            suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Ansprechpartner entfernen")} aria-label={uiText("Ansprechpartner entfernen")} onClick={() => {
               setRowIds(ids => ids.filter(_id => _id !== id));
             }}><Icons.Delete /></MyButton>}
           />
@@ -99,7 +100,7 @@ function ProjectContactsFormFields({ context, modals, projectId }: {
       const id = generateId();
       setRowIds(ids => [...ids, id]);
       setAutoFocusFieldName(`projectContact:${id}:contact`);
-    }}>Ansprechpartner</MyButton>
+    }}>{uiText("Ansprechpartner")}</MyButton>
 
     {!!projectId && <NotifyLoaded onLoad={async () => {
       const [contacts] = await client.query('projects.contacts.list', { projectId });
@@ -120,15 +121,15 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <MyForm.Input required name="title" labelText="Titel" />
+      <MyForm.Input required name="title" labelText={uiText("Titel")} />
       {!!options.initialQuery && <NotifyLoaded onLoad={() => context.field('title')?.setValue(options.initialQuery)} />}
-      <p className="light">Verwende einen klaren Projektnamen, damit das Projekt in Listen schnell gefunden wird.</p>
+      <p className="light">{uiText("Verwende einen klaren Projektnamen, damit das Projekt in Listen schnell gefunden wird.")}</p>
 
       <MyForm.DateInput
         name="orderReceivedAt"
-        labelText="Auftrag erhalten am"
+        labelText={uiText("Auftrag erhalten am")}
       />
-      <p className="light">Wann wurde der Auftrag bestätigt bzw. erhalten?</p>
+      <p className="light">{uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}</p>
 
       <MyDivider />
 
@@ -137,7 +138,7 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
       <MyDivider />
 
       <MyForm.MultiSelect
-        labelText="Kunde"
+        labelText={uiText("Kunde")}
         name="customer"
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
@@ -149,10 +150,10 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
         renderTile={item => <SmallCustomerTile data={item} noLink />}
         createAction={createEntityAction.customer}
       />
-      <p className="light">Kunde für Zuordnung in Auswertungen und Exporten.</p>
+      <p className="light">{uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}</p>
 
       <MyForm.MultiSelect
-        labelText="Verantwortlicher Projektleiter"
+        labelText={uiText("Verantwortlicher Projektleiter")}
         name="responsibleProjectLeader"
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
@@ -164,7 +165,7 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
         renderTile={item => <SmallUserTile data={item} noLink />}
         createAction={createEntityAction.user}
       />
-      <p className="light">Wer verantwortet das Projekt übergreifend?</p>
+      <p className="light">{uiText("Wer verantwortet das Projekt übergreifend?")}</p>
 
       <ProjectContactsFormFields context={context} modals={modals} />
     </>;
@@ -203,8 +204,8 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Projekt erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Projekt erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -215,14 +216,14 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <MyForm.Input required name="title" labelText="Titel" />
-      <p className="light">Änderungen am Titel wirken sich direkt auf Suche, Listen und Exporte aus.</p>
+      <MyForm.Input required name="title" labelText={uiText("Titel")} />
+      <p className="light">{uiText("Änderungen am Titel wirken sich direkt auf Suche, Listen und Exporte aus.")}</p>
 
       <MyForm.DateInput
         name="orderReceivedAt"
-        labelText="Auftrag erhalten am"
+        labelText={uiText("Auftrag erhalten am")}
       />
-      <p className="light">Wann wurde der Auftrag bestätigt bzw. erhalten?</p>
+      <p className="light">{uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}</p>
 
       <MyDivider />
 
@@ -233,7 +234,7 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
       <MyDivider />
 
       <MyForm.MultiSelect
-        labelText="Kunde"
+        labelText={uiText("Kunde")}
         name="customer"
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
@@ -245,10 +246,10 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
         renderTile={item => <SmallCustomerTile data={item} noLink />}
         createAction={createEntityAction.customer}
       />
-      <p className="light">Kunde für Zuordnung in Auswertungen und Exporten.</p>
+      <p className="light">{uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}</p>
 
       <MyForm.MultiSelect
-        labelText="Verantwortlicher Projektleiter"
+        labelText={uiText("Verantwortlicher Projektleiter")}
         name="responsibleProjectLeader"
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
@@ -260,7 +261,7 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
         renderTile={item => <SmallUserTile data={item} noLink />}
         createAction={createEntityAction.user}
       />
-      <p className="light">Wer verantwortet das Projekt übergreifend?</p>
+      <p className="light">{uiText("Wer verantwortet das Projekt übergreifend?")}</p>
 
       <ProjectContactsFormFields context={context} modals={modals} projectId={project.id} />
 
@@ -306,8 +307,8 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Projekt bearbeiten',
-      primaryButtonText: 'Speichern',
+      modalHeading: uiText("Projekt bearbeiten"),
+      primaryButtonText: uiText("Speichern"),
       modalLabel: project.title,
     }),
   });
@@ -316,13 +317,11 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
 export function showDeleteProjectModal(modals: MyModalsInterface, project: Project) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Projekt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Projekt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -336,9 +335,9 @@ export function showDeleteProjectModal(modals: MyModalsInterface, project: Proje
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Projekt löschen',
+      modalHeading: uiText("Projekt löschen"),
       modalLabel: project.title,
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }
@@ -348,16 +347,16 @@ export function showCreateProjectInterruptionModal(modals: MyModalsInterface, pr
     content: ({ context }) => <>
       <div className="flex gap-2">
         <div className="basis-1/2 flex-1">
-          <MyForm.DateInput required name="from" labelText="Von" />
+          <MyForm.DateInput required name="from" labelText={uiText("Von")} />
         </div>
         <div className="basis-1/2 flex-1">
-          <MyForm.DateInput required name="to" labelText="Bis" />
+          <MyForm.DateInput required name="to" labelText={uiText("Bis")} />
         </div>
       </div>
 
-      <MyForm.Input required name="reason" labelText="Grund" />
-      <MyForm.Input textArea name="note" labelText="Kommentar" />
-      <p className="light">Unterbrechungen erscheinen in der Einsatzplanung und markieren betroffene Einsätze.</p>
+      <MyForm.Input required name="reason" labelText={uiText("Grund")} />
+      <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
+      <p className="light">{uiText("Unterbrechungen erscheinen in der Einsatzplanung und markieren betroffene Einsätze.")}</p>
 
       <NotifyLoaded onLoad={() => {
         const today = startOfDay(new Date());
@@ -371,13 +370,13 @@ export function showCreateProjectInterruptionModal(modals: MyModalsInterface, pr
       const values = context.getValues();
       const from = parseDateValue(values.from);
       const to = parseDateValue(values.to);
-      if (!from || !to) throw new Error('Datum ist ungültig.');
-      if (from.getTime() > to.getTime()) throw new Error('Von muss vor Bis liegen.');
+      if (!from || !to) throw new Error(uiText("Datum ist ungültig."));
+      if (from.getTime() > to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
 
       const reason = `${values.reason ?? ''}`.trim();
-      if (!reason) throw new Error('Grund fehlt.');
+      if (!reason) throw new Error(uiText("Grund fehlt."));
 
-      const [data, err] = await (client.mutate as any)('projects.unavailability.create', {
+      const [data, err] = await client.mutate('projects.unavailability.create', {
         projectId: project.id,
         from,
         to,
@@ -390,9 +389,9 @@ export function showCreateProjectInterruptionModal(modals: MyModalsInterface, pr
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Unterbrechung eintragen',
+      modalHeading: uiText("Unterbrechung eintragen"),
       modalLabel: project.title,
-      primaryButtonText: 'Eintragen',
+      primaryButtonText: uiText("Eintragen"),
       noFullscreen: true,
     }),
   });
@@ -430,18 +429,18 @@ const financialEntryConfig: Record<ProjectFinancialEntryType, {
   label: string;
 }> = {
   offer: {
-    createHeading: 'Angebotssumme erfassen',
-    editHeading: 'Angebotssumme bearbeiten',
-    deleteHeading: 'Angebotssumme löschen',
-    deleteNoun: 'Angebotssumme',
-    label: 'Angebotssumme (EUR)',
+    createHeading: uiText("Angebotssumme erfassen", "Record quotation total"),
+    editHeading: uiText("Angebotssumme bearbeiten", "Edit quotation total"),
+    deleteHeading: uiText("Angebotssumme löschen", "Delete quotation total"),
+    deleteNoun: uiText("Angebotssumme", "quotation total"),
+    label: uiText("Angebotssumme (EUR)"),
   },
   invoice: {
-    createHeading: 'Rechnungssumme erfassen',
-    editHeading: 'Rechnungssumme bearbeiten',
-    deleteHeading: 'Rechnungssumme löschen',
-    deleteNoun: 'Rechnungssumme',
-    label: 'Rechnungssumme (EUR)',
+    createHeading: uiText("Rechnungssumme erfassen", "Record invoice total"),
+    editHeading: uiText("Rechnungssumme bearbeiten", "Edit invoice total"),
+    deleteHeading: uiText("Rechnungssumme löschen", "Delete invoice total"),
+    deleteNoun: uiText("Rechnungssumme", "invoice total"),
+    label: uiText("Rechnungssumme (EUR)"),
   },
 };
 
@@ -456,12 +455,12 @@ function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project
         labelText={config.label}
         rules={[MyForm.Input.rules.posnum]}
       />
-      <p className="light">Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.</p>
+      <p className="light">{uiText("Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.")}</p>
 
       <MyForm.Input
         textArea
         name="comment"
-        labelText="Kommentar"
+        labelText={uiText("Kommentar")}
       />
     </>,
     onSubmit: async ({ context, hide }) => {
@@ -486,7 +485,7 @@ function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project
     modalProps: () => ({
       modalHeading: config.createHeading,
       modalLabel: project.title,
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
       noFullscreen: true,
     }),
   });
@@ -515,12 +514,12 @@ export function showModifyProjectFinancialEntryModal(
         labelText={config.label}
         rules={[MyForm.Input.rules.posnum]}
       />
-      <p className="light">Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.</p>
+      <p className="light">{uiText("Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.")}</p>
 
       <MyForm.Input
         textArea
         name="comment"
-        labelText="Kommentar"
+        labelText={uiText("Kommentar")}
       />
 
       <NotifyLoaded onLoad={() => {
@@ -554,7 +553,7 @@ export function showModifyProjectFinancialEntryModal(
     modalProps: () => ({
       modalHeading: config.editHeading,
       modalLabel: project.title,
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
       noFullscreen: true,
     }),
   });
@@ -569,18 +568,16 @@ export function showDeleteProjectFinancialEntryModal(
 
   modals.showDefault({
     content: () => <>
-      <p>
-        Soll die <b>{config.deleteNoun}</b> über <b>{entry.amount.toFixed(2)} EUR</b> wirklich gelöscht werden?
-        {' '}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p>{uiText("Soll die")}<b>{config.deleteNoun}</b>{uiText(" über ")}<b>{entry.amount.toFixed(2)}{uiText(" EUR")}</b>{uiText("wirklich gelöscht werden?")}{' '}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
-      {!!entry.comment && <p className="light">Kommentar: {entry.comment}</p>}
+      {!!entry.comment && <p className="light">{uiText("Kommentar: ")}{entry.comment}</p>}
     </>,
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
       modalHeading: config.deleteHeading,
       modalLabel: project.title,
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
     onPrimaryAction: async ({ hide }) => {
       const [data, err] = await client.mutate('projects.costs.entries.delete', {

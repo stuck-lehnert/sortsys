@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import type { Route } from "./+types";
 import { useNavigate } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -10,7 +11,7 @@ import { formatAddress } from "~/lib/format";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Kontakte" },
+    { title: uiText("Kontakte") },
   ];
 }
 
@@ -21,19 +22,19 @@ export default function CustomersPage() {
 
   return <>
     <MyHeader
-      title="Kontakte"
+      title={uiText("Kontakte")}
       actions={<TableExportActions
-        title="Kontakte"
+        title={uiText("Kontakte")}
         fileName="Kontakte"
         rows={constacts ?? []}
         disabled={!constacts}
         columns={[
-          { header: 'Anrede', value: contact => contact.salutation },
-          { header: 'Vorname', value: contact => contact.firstName },
-          { header: 'Nachname', value: contact => contact.lastName },
-          { header: 'Anschrift', value: contact => formatAddress(contact.address), width: '2fr' },
-          { header: 'Telefon', value: contact => contact.phoneNumbers.map(entry => entry.number).join('\n'), width: '2fr' },
-          { header: 'E-Mail', value: contact => contact.emailAddresses.map(entry => entry.email).join('\n'), width: '2fr' },
+          { header: uiText("Anrede"), value: contact => contact.salutation },
+          { header: uiText("Vorname"), value: contact => contact.firstName },
+          { header: uiText("Nachname"), value: contact => contact.lastName },
+          { header: uiText("Anschrift"), value: contact => formatAddress(contact.address), width: '2fr' },
+          { header: uiText("Telefon"), value: contact => contact.phoneNumbers.map(entry => entry.number).join('\n'), width: '2fr' },
+          { header: uiText("E-Mail"), value: contact => contact.emailAddresses.map(entry => entry.email).join('\n'), width: '2fr' },
         ]}
       />}
     />
@@ -46,22 +47,22 @@ export default function CustomersPage() {
       onRowClick={row => navigate(`/contacts/${row.id}`)}
       columns={[
         {
-          label: 'Anrede',
+          label: uiText("Anrede"),
           render: row => row.salutation,
           sortKey: row => row.salutation?.toLowerCase() ?? '',
         },
         {
-          label: 'Vorname',
+          label: uiText("Vorname"),
           render: row => row.firstName ?? '',
           sortKey: row => row.firstName?.toLowerCase() ?? '',
         },
         {
-          label: 'Nachname',
+          label: uiText("Nachname"),
           render: row => row.lastName,
           sortKey: row => row.lastName?.toLowerCase() ?? '',
         },
         {
-          label: 'Anschrift',
+          label: uiText("Anschrift"),
           render: row => formatAddress(row.address),
           sortKey: row => formatAddress(row.address).toLowerCase(),
         },

@@ -10,7 +10,7 @@ use chrono::{Datelike, Duration, Utc};
 use serde_json::json;
 use sqlx::{PgPool, Row};
 
-use crate::{AppState, managed_db};
+use crate::{AppState, llm, managed_db};
 
 pub type SeedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -172,10 +172,100 @@ pub async fn bootstrap_development(state: &AppState) -> SeedResult<SeedSummary> 
     }
 
     ensure_development_users(&tenant_pool).await?;
+    configure_development_llm(state, &tenant_name, &tenant_pool).await?;
 
     // Include the stable Doe accounts and their planning records in the
     // displayed summary, not only the randomized portion created above.
     current_summary(&tenant_pool).await
+}
+
+async fn configure_development_llm(
+    state: &AppState,
+    tenant_name: &str,
+    tenant_pool: &PgPool,
+) -> SeedResult<()> {
+    let provider = [
+        (
+            "openai",
+            "OPENAI_API_KEY",
+            "OPENAI_MODEL",
+            "gpt-5.6-luna",
+            None,
+        ),
+        (
+            "anthropic",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_MODEL",
+            "claude-haiku-4-5",
+            None,
+        ),
+        (
+            "deepseek",
+            "DEEPSEEK_API_KEY",
+            "DEEPSEEK_MODEL",
+            "deepseek-v4-flash",
+            Some("https://api.deepseek.com"),
+        ),
+    ]
+    .into_iter()
+    .find_map(
+        |(provider, key_name, model_name, default_model, base_url)| {
+            env::var(key_name)
+                .ok()
+                .filter(|value| value.trim().chars().next().is_some())
+                .map(|api_key| {
+                    let model = env::var(model_name)
+                        .ok()
+                        .filter(|value| value.trim().chars().next().is_some())
+                        .unwrap_or_else(|| default_model.to_owned());
+
+                    (provider, model, api_key, base_url)
+                })
+        },
+    );
+
+    let Some((provider, model, api_key, base_url)) = provider else {
+        return Ok(());
+    };
+
+    llm::save_configuration(state, provider, &model, base_url, Some(api_key.trim())).await?;
+
+    sqlx::query(
+        r#"
+        UPDATE __tenants
+        SET options = JSONB_SET(
+          COALESCE(options, '{}'::JSONB),
+          '{llm}',
+          '{"enabled": true, "monthlyTokenQuota": null}'::JSONB,
+          TRUE
+        )
+        WHERE name = $1
+        "#,
+    )
+    .bind(tenant_name)
+    .execute(state.tenants.master())
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_role_assignments (user_id, role_name)
+        SELECT id, ':llm'
+        FROM users
+        WHERE username IN ('john.doe', 'frank.doe')
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .execute(tenant_pool)
+    .await?;
+
+    tracing::info!(
+        provider,
+        model,
+        tenant = tenant_name,
+        "enabled development LLM"
+    );
+
+    Ok(())
 }
 
 /// Populates a migrated tenant with the same broad entity graph as the legacy

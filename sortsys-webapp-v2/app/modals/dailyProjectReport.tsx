@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Fragment, useEffect, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
@@ -105,7 +106,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
       return <>
         <MyForm.MultiSelect
           minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText="Projekt"
+          name="project" labelText={uiText("Projekt")}
           getOptions={async ({ query }) => {
             const [data, err] = await client.query('projects.list', { search: query });
             if (err) throw err;
@@ -115,35 +116,35 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
           renderTile={item => <SmallProjectTile data={item} noLink />}
           createAction={createEntityAction.project}
         />
-        <p className="light">Wähle das Projekt, für das der Bautagesbericht erstellt wird.</p>
+        <p className="light">{uiText("Wähle das Projekt, für das der Bautagesbericht erstellt wird.")}</p>
 
-        <MyForm.Input textArea name="summary" labelText="Beschreibung der Arbeiten" />
+        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
 
         <MyForm.DateInput
           required
           name="day"
-          labelText="Tag"
+          labelText={uiText("Tag")}
           rules={[date => {
             if (!date) return null;
             const today = new Date();
             today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return 'Datum darf nicht in der Zukunft liegen';
+            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
             return null;
           }]}
         />
-        <p className="light">Der Berichtstag darf nicht in der Zukunft liegen.</p>
+        <p className="light">{uiText("Der Berichtstag darf nicht in der Zukunft liegen.")}</p>
 
         <MyDivider />
 
-        <h4>Arbeitszeit</h4>
-        <p className="light">Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.</p>
+        <h4>{uiText("Arbeitszeit")}</h4>
+        <p className="light">{uiText("Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.")}</p>
 
         {workHourIds.map(id => {
           return <Fragment key={id}>
             <div className="flex flex-col gap-2">
               <MyForm.MultiSelect
                 name={`workHour:${id}:user`}
-                labelText="Mitarbeiter"
+                labelText={uiText("Mitarbeiter")}
                 autoFocus={autoFocusFieldName === `workHour:${id}:user`}
                 minSelectedItems={1} maxSelectedItems={1}
                 getOptions={async ({ query }) => {
@@ -161,7 +162,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
                   <MyForm.Input
                     required
                     name={`workHour:${id}:hours`}
-                    labelText="Stunden"
+                    labelText={uiText("Stunden")}
                     type="number"
                     rules={[
                       MyForm.Input.rules.posnum,
@@ -169,11 +170,11 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
                         if (!value.trim()) return null;
                         const hours = parseFloatCustom(value);
                         if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return 'Stunden müssen zwischen 0 und 10 liegen';
+                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
                         return null;
                       },
                     ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Arbeitszeit entfernen" aria-label="Arbeitszeit entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
                       setWorkHourIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -189,20 +190,20 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
           const id = generateId();
           setWorkHourIds(ids => [...ids, id]);
           setAutoFocusFieldName(`workHour:${id}:user`);
-        }}>Arbeitszeit</MyButton>
+        }}>{uiText("Arbeitszeit")}</MyButton>
 
         <MyDivider />
 
-        <h4>Wetter</h4>
-        <p className="light">Wetterangaben helfen bei der späteren Dokumentation.</p>
+        <h4>{uiText("Wetter")}</h4>
+        <p className="light">{uiText("Wetterangaben helfen bei der späteren Dokumentation.")}</p>
 
-        <MyForm.Input name="weatherSummary" labelText="Wetterbeschreibung" />
+        <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
 
         <div className="flex gap-2">
           <MyForm.Input
             className="flex-1"
             name="temperatureC"
-            labelText="Temperatur (°C)"
+            labelText={uiText("Temperatur (°C)")}
             type="number"
             rules={[MyForm.Input.rules.num]}
           />
@@ -210,7 +211,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
           <MyForm.Input
             className="flex-1"
             name="precipitationMm"
-            labelText="Niederschlag (mm)"
+            labelText={uiText("Niederschlag (mm)")}
             type="number"
             rules={[MyForm.Input.rules.num]}
           />
@@ -218,7 +219,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
           <MyForm.Input
             className="flex-1"
             name="windKph"
-            labelText="Wind (km/h)"
+            labelText={uiText("Wind (km/h)")}
             type="number"
             rules={[MyForm.Input.rules.num]}
           />
@@ -236,7 +237,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
       if (!projectId) return;
 
       const dayInput = values.day ? new Date(values.day) : new Date();
-      if (isNaN(dayInput.getTime())) throw new Error('Invalid day');
+      if (isNaN(dayInput.getTime())) throw new Error(uiText("Invalid day"));
       const day = dailyReportDayKey(dayInput);
 
       const workHours: {
@@ -287,8 +288,8 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Bautagesbericht erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Bautagesbericht erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -310,7 +311,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
       return <>
         <MyForm.MultiSelect
           minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText="Projekt"
+          name="project" labelText={uiText("Projekt")}
           getOptions={async ({ query }) => {
             const [data, err] = await client.query('projects.list', { search: query });
             if (err) throw err;
@@ -320,23 +321,23 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           renderTile={item => <SmallProjectTile data={item} noLink />}
           createAction={createEntityAction.project}
         />
-        <p className="light">Wähle das Projekt, für das der Bauwochenbericht erstellt wird.</p>
+        <p className="light">{uiText("Wähle das Projekt, für das der Bauwochenbericht erstellt wird.")}</p>
 
         <MyForm.DateInput
           required
           name="week"
-          labelText="Woche (beliebiger Tag)"
+          labelText={uiText("Woche (beliebiger Tag)")}
           rules={[date => {
             if (!date) return null;
             const today = new Date();
             today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return 'Datum darf nicht in der Zukunft liegen';
+            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
             return null;
           }]}
         />
-        <p className="light">Wähle einen beliebigen Tag der Zielwoche; es wird automatisch auf Montag bis Sonntag erweitert.</p>
+        <p className="light">{uiText("Wähle einen beliebigen Tag der Zielwoche; es wird automatisch auf Montag bis Sonntag erweitert.")}</p>
 
-        <h4>Einzutragende Tage</h4>
+        <h4>{uiText("Einzutragende Tage")}</h4>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {WEEKDAY_NAMES.map((weekday, dayIndex) => (
@@ -358,17 +359,15 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           ))}
         </div>
 
-        <p className="light">
-          Die Woche beginnt am Montag. Nur ausgewählte und ausgefüllte Tage werden erstellt.
-        </p>
+        <p className="light">{uiText("Die Woche beginnt am Montag. Nur ausgewählte und ausgefüllte Tage werden erstellt.")}</p>
 
         {!selectedDayIndexes.length && (
-          <p className="light">Bitte mindestens einen Tag auswählen.</p>
+          <p className="light">{uiText("Bitte mindestens einen Tag auswählen.")}</p>
         )}
 
         <MyDivider />
 
-        <h3 style={{ marginBottom: '0.25rem' }}>Tagesberichte</h3>
+        <h3 style={{ marginBottom: '0.25rem' }}>{uiText("Tagesberichte")}</h3>
 
         {WEEKDAY_NAMES.map((weekday, dayIndex) => {
           if (!selectedDaySet.has(dayIndex)) return null;
@@ -381,17 +380,17 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
             <MyForm.Input
               textArea
               name={`day:${dayIndex}:summary`}
-              labelText="Beschreibung der Arbeiten"
+              labelText={uiText("Beschreibung der Arbeiten")}
             />
 
-            <h6>Arbeitszeit</h6>
+            <h6>{uiText("Arbeitszeit")}</h6>
 
             {workHourIds.map(id => {
               return <Fragment key={id}>
                 <div className="flex flex-col gap-2">
                   <MyForm.MultiSelect
                     name={`day:${dayIndex}:workHour:${id}:user`}
-                    labelText="Mitarbeiter"
+                    labelText={uiText("Mitarbeiter")}
                     autoFocus={autoFocusFieldName === `day:${dayIndex}:workHour:${id}:user`}
                     minSelectedItems={1} maxSelectedItems={1}
                     getOptions={async ({ query }) => {
@@ -409,7 +408,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
                       <MyForm.Input
                         required
                         name={`day:${dayIndex}:workHour:${id}:hours`}
-                        labelText="Stunden"
+                        labelText={uiText("Stunden")}
                         type="number"
                         rules={[
                           MyForm.Input.rules.posnum,
@@ -417,11 +416,11 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
                             if (!value.trim()) return null;
                             const hours = parseFloatCustom(value);
                             if (isNaN(hours)) return null;
-                            if (hours < 0 || hours > 10) return 'Stunden müssen zwischen 0 und 10 liegen';
+                            if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
                             return null;
                           },
                         ]}
-                        suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Arbeitszeit entfernen" aria-label="Arbeitszeit entfernen" onClick={() => {
+                        suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
                           setWorkHourIdsByDay(map => ({
                             ...map,
                             [dayIndex]: (map[dayIndex] ?? []).filter(_id => _id !== id),
@@ -443,22 +442,22 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
                 [dayIndex]: [...(map[dayIndex] ?? []), id],
               }));
               setAutoFocusFieldName(`day:${dayIndex}:workHour:${id}:user`);
-            }}>Arbeitszeit</MyButton>
+            }}>{uiText("Arbeitszeit")}</MyButton>
 
             <div style={{ height: '0.75rem' }} />
 
-            <h6>Wetter</h6>
+            <h6>{uiText("Wetter")}</h6>
 
             <MyForm.Input
               name={`day:${dayIndex}:weatherSummary`}
-              labelText="Wetterbeschreibung"
+              labelText={uiText("Wetterbeschreibung")}
             />
 
             <div className="flex gap-2">
               <MyForm.Input
                 className="flex-1"
                 name={`day:${dayIndex}:temperatureC`}
-                labelText="Temperatur (°C)"
+                labelText={uiText("Temperatur (°C)")}
                 type="number"
                 rules={[MyForm.Input.rules.num]}
               />
@@ -466,7 +465,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
               <MyForm.Input
                 className="flex-1"
                 name={`day:${dayIndex}:precipitationMm`}
-                labelText="Niederschlag (mm)"
+                labelText={uiText("Niederschlag (mm)")}
                 type="number"
                 rules={[MyForm.Input.rules.num]}
               />
@@ -474,7 +473,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
               <MyForm.Input
                 className="flex-1"
                 name={`day:${dayIndex}:windKph`}
-                labelText="Wind (km/h)"
+                labelText={uiText("Wind (km/h)")}
                 type="number"
                 rules={[MyForm.Input.rules.num]}
               />
@@ -507,11 +506,11 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         .map((_, dayIndex) => dayIndex)
         .filter((dayIndex) => !!values[`enabledDay:${dayIndex}`]);
       if (!selectedDayIndexes.length) {
-        throw new Error('Bitte mindestens einen Tag auswählen');
+        throw new Error(uiText("Bitte mindestens einen Tag auswählen"));
       }
 
       const weekInput = values.week ? new Date(values.week) : new Date();
-      if (isNaN(weekInput.getTime())) throw new Error('Invalid week');
+      if (isNaN(weekInput.getTime())) throw new Error(uiText("Invalid week"));
 
       const weekStart = startOfWeek(weekInput);
 
@@ -523,7 +522,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         if (`${raw ?? ''}`.trim() === '') return null;
 
         const parsed = parseFloatCustom(raw);
-        if (isNaN(parsed)) throw new Error(`${dayLabel}: Ungültiger Zahlenwert`);
+        if (isNaN(parsed)) throw new Error(uiText(`${dayLabel}: Ungültiger Zahlenwert`, `${dayLabel}: Invalid number`));
         return parsed;
       };
 
@@ -576,7 +575,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 
           const hours = parseFloatCustom(values[`day:${dayIndex}:workHour:${id}:hours`]);
           if (isNaN(hours) || hours < 0 || hours > 10) {
-            throw new Error(`${dayLabel}: Stunden müssen zwischen 0 und 10 liegen`);
+            throw new Error(uiText(`${dayLabel}: Stunden müssen zwischen 0 und 10 liegen`, `${dayLabel}: Hours must be between 0 and 10`));
           }
 
           workHours.push({
@@ -595,11 +594,11 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           windKph !== null ||
           !!workHours.length;
         if (!hasInput) continue;
-        if (!workHours.length) throw new Error(`${dayLabel}: Mindestens eine Arbeitszeit erforderlich`);
+        if (!workHours.length) throw new Error(uiText(`${dayLabel}: Mindestens eine Arbeitszeit erforderlich`, `${dayLabel}: At least one time entry is required`));
 
         const day = dayInWeek(weekStart, dayIndex);
         if (day.getTime() > today.getTime()) {
-          throw new Error(`${dayLabel}: Datum darf nicht in der Zukunft liegen`);
+          throw new Error(uiText(`${dayLabel}: Datum darf nicht in der Zukunft liegen`, `${dayLabel}: Date cannot be in the future`));
         }
 
         const hasWeather =
@@ -624,7 +623,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         });
       }
 
-      if (!records.length) throw new Error('Bitte mindestens einen Tagesbericht ausfüllen');
+      if (!records.length) throw new Error(uiText("Bitte mindestens einen Tagesbericht ausfüllen"));
 
       const weekEnd = dayInWeek(weekStart, WEEKDAY_NAMES.length - 1);
       const [existingReports, existingReportsErr] = await client.query('projects.dailyReports.list', {
@@ -639,7 +638,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         .filter(record => existingDays.has(record.day))
         .map(record => record.dayLabel);
       if (duplicateDays.length) {
-        throw new Error(`Es existieren bereits Bautagesberichte für: ${duplicateDays.join(', ')}`);
+        throw new Error(uiText(`Es existieren bereits Bautagesberichte für: ${duplicateDays.join(', ')}`, `Daily reports already exist for: ${duplicateDays.join(', ')}`));
       }
 
       for (const record of records) {
@@ -660,8 +659,8 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Bauwochenbericht erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Bauwochenbericht erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -673,13 +672,9 @@ export function showExportWeeklyDailyProjectReportsModal(
 ) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Es werden alle vorhandenen Bauwochenberichte des Projekts exportiert, nach Kalenderwoche aufsteigend.
-      </p>
-      <p className="light">
-        PDF: eine Datei mit Seitenumbruch nach jeder Woche. Excel: eine Arbeitsmappe mit einem Tabellenblatt je Woche.
-      </p>
-      <MyForm.Checkbox name="hideHours" labelText="Stunden ausblenden" />
+      <p className="light">{uiText("Es werden alle vorhandenen Bauwochenberichte des Projekts exportiert, nach Kalenderwoche aufsteigend.")}</p>
+      <p className="light">{uiText("PDF: eine Datei mit Seitenumbruch nach jeder Woche. Excel: eine Arbeitsmappe mit einem Tabellenblatt je Woche.")}</p>
+      <MyForm.Checkbox name="hideHours" labelText={uiText("Stunden ausblenden")} />
     </>,
     onSubmit: async ({ hide, context }) => {
       const hideHours = !!context.getValues().hideHours;
@@ -699,7 +694,7 @@ export function showExportWeeklyDailyProjectReportsModal(
         });
 
       if (!reportList.length) {
-        throw new Error('Für dieses Projekt sind keine Bautagesberichte vorhanden');
+        throw new Error(uiText("Für dieses Projekt sind keine Bautagesberichte vorhanden"));
       }
 
       const userIds = [...new Set(
@@ -777,9 +772,9 @@ export function showExportWeeklyDailyProjectReportsModal(
           const enteredDayIndexes = Array.from(reportSummaryByDay.keys()).sort((left, right) => left - right);
 
           const summaryRows: string[][] = [
-            ['Projekt', project.title],
+            [uiText('Projekt'), project.title],
             ['Kalenderwoche', `KW ${weekNumber}`],
-            ['Zeitraum', `${formatDate(weekStart, 'long')} bis ${formatDate(weekEnd, 'long')}`],
+            [uiText('Zeitraum'), uiText(`${formatDate(weekStart, 'long')} bis ${formatDate(weekEnd, 'long')}`, `${formatDate(weekStart, 'long')} to ${formatDate(weekEnd, 'long')}`)],
             ['Berichtstage', `${orderedWeekReports.length}`],
           ];
           if (project.address) {
@@ -795,8 +790,8 @@ export function showExportWeeklyDailyProjectReportsModal(
 
           const sections: PdfTableSection[] = [
             {
-              title: 'Zusammenfassung',
-              columns: ['Kennzahl', 'Wert'],
+              title: uiText("Zusammenfassung"),
+              columns: [uiText('Kennzahl'), uiText('Wert')],
               rows: summaryRows,
               withHeader: false,
               align: ['left', 'left'],
@@ -816,7 +811,7 @@ export function showExportWeeklyDailyProjectReportsModal(
               : ['2fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.68fr'), '0.82fr'];
 
             sections.push({
-              title: hideHours ? 'Anwesenheit je Mitarbeiter und Tag' : 'Arbeitszeit je Mitarbeiter und Tag',
+              title: hideHours ? uiText("Anwesenheit je Mitarbeiter und Tag") : uiText("Arbeitszeit je Mitarbeiter und Tag"),
               columns: workerColumns,
               rows: workerRows.map((row) => {
                 const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
@@ -832,11 +827,11 @@ export function showExportWeeklyDailyProjectReportsModal(
             const weekday = WEEKDAY_NAMES[dayIndex]!;
             const dayDate = dayInWeek(weekStart, dayIndex);
             const summaries = (reportSummaryByDay.get(dayIndex) ?? []).join(' / ').trim();
-            return [`${weekday}, ${formatDate(dayDate, 'long')}`, summaries || 'Keine Beschreibung'];
+            return [`${weekday}, ${formatDate(dayDate, 'long')}`, summaries || uiText('Keine Beschreibung')];
           });
           if (workDescriptionRows.length > 0) {
             sections.push({
-              title: 'Beschreibung der Arbeiten',
+              title: uiText("Beschreibung der Arbeiten"),
               columns: ['Tag', 'Inhalt'],
               rows: workDescriptionRows,
               withHeader: false,
@@ -863,9 +858,9 @@ export function showExportWeeklyDailyProjectReportsModal(
         const documents = weeklyExports.map((weeklyExport) => {
           return {
             title: `${project.title} — KW ${weeklyExport.weekNumber}`,
-            reportLabel: 'Bauwochenbericht',
+            reportLabel: uiText("Bauwochenbericht"),
             sections: weeklyExport.sections,
-            emptyMessage: 'Keine Daten zum Bauwochenbericht verfügbar.',
+            emptyMessage: uiText("Keine Daten zum Bauwochenbericht verfügbar."),
           };
         });
 
@@ -889,7 +884,7 @@ export function showExportWeeklyDailyProjectReportsModal(
         const ws = addUniqueWorksheet(wb, worksheetName, usedWorksheetNames);
 
         const headerLines = [
-          `Projekt: ${project.title}`,
+          uiText(`Projekt: ${project.title}`, `Project: ${project.title}`),
           project.address ? `Anschrift: ${formatAddress(project.address)}` : null,
           `Kalenderwoche: KW ${weeklyExport.weekNumber}`,
           `Wochenbeginn: ${formatDate(weeklyExport.weekStart)}`,
@@ -908,7 +903,7 @@ export function showExportWeeklyDailyProjectReportsModal(
         });
 
         let cursor = 3 + headerLines.length;
-        ws.getCell(cursor, 1).value = hideHours ? 'Anwesenheit je Mitarbeiter und Tag' : 'Arbeitszeit je Mitarbeiter und Tag';
+        ws.getCell(cursor, 1).value = hideHours ? uiText('Anwesenheit je Mitarbeiter und Tag') : uiText('Arbeitszeit je Mitarbeiter und Tag');
         ws.getCell(cursor, 1).font = { bold: true, size: 14 };
 
         cursor += 2;
@@ -943,7 +938,7 @@ export function showExportWeeklyDailyProjectReportsModal(
           cursor += 1;
         }
 
-        ws.getCell(cursor, 1).value = 'Beschreibung der Arbeiten';
+        ws.getCell(cursor, 1).value = uiText('Beschreibung der Arbeiten');
         ws.getCell(cursor, 1).font = { bold: true, size: 14 };
 
         cursor += 2;
@@ -956,7 +951,7 @@ export function showExportWeeklyDailyProjectReportsModal(
 
           cursor += 1;
 
-          const summary = (weeklyExport.reportSummaryByDay.get(dayIndex) ?? []).join('\n\n').trim() || 'Keine Beschreibung';
+          const summary = (weeklyExport.reportSummaryByDay.get(dayIndex) ?? []).join('\n\n').trim() || uiText('Keine Beschreibung');
           const summaryHeight = Math.max(2, Math.ceil((summary.length / 90) * 3));
           const summaryEndRow = cursor + summaryHeight - 1;
 
@@ -994,10 +989,10 @@ export function showExportWeeklyDailyProjectReportsModal(
     modalProps: () => ({
       noFullscreen: true,
       modalHeading: format === 'pdf'
-        ? 'Bauwochenberichte als PDF exportieren'
-        : 'Bauwochenberichte als Excel exportieren',
+        ? uiText("Bauwochenberichte als PDF exportieren")
+        : uiText("Bauwochenberichte als Excel exportieren"),
       modalLabel: project.title,
-      primaryButtonText: 'Exportieren',
+      primaryButtonText: uiText("Exportieren"),
     }),
   });
 }
@@ -1020,7 +1015,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
       return <>
         <MyForm.MultiSelect
           minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText="Projekt"
+          name="project" labelText={uiText("Projekt")}
           disabled
           getOptions={async ({ query }) => {
             const [data, err] = await client.query('projects.list', { search: query });
@@ -1031,23 +1026,23 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
           renderTile={item => <SmallProjectTile data={item} noLink />}
           renderTileDisallowUndo
         />
-        <p className="light">Projekt ist bei bestehenden Berichten fix. Der Tag kann geändert werden.</p>
+        <p className="light">{uiText("Projekt ist bei bestehenden Berichten fix. Der Tag kann geändert werden.")}</p>
 
-        <MyForm.Input textArea name="summary" labelText="Beschreibung der Arbeiten" />
+        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
 
-        <MyForm.DateInput required name="day" labelText="Tag" />
+        <MyForm.DateInput required name="day" labelText={uiText("Tag")} />
 
         <MyDivider />
 
-        <h4>Arbeitszeit</h4>
-        <p className="light">Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.</p>
+        <h4>{uiText("Arbeitszeit")}</h4>
+        <p className="light">{uiText("Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.")}</p>
 
         {workHourIds.map(id => {
           return <Fragment key={id}>
             <div className="flex flex-col gap-2">
               <MyForm.MultiSelect
                 name={`workHour:${id}:user`}
-                labelText="Mitarbeiter"
+                labelText={uiText("Mitarbeiter")}
                 autoFocus={autoFocusFieldName === `workHour:${id}:user`}
                 minSelectedItems={1} maxSelectedItems={1}
                 getOptions={async ({ query }) => {
@@ -1065,7 +1060,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                   <MyForm.Input
                     required
                     name={`workHour:${id}:hours`}
-                    labelText="Stunden"
+                    labelText={uiText("Stunden")}
                     type="number"
                     rules={[
                       MyForm.Input.rules.posnum,
@@ -1073,11 +1068,11 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                         if (!value.trim()) return null;
                         const hours = parseFloatCustom(value);
                         if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return 'Stunden müssen zwischen 0 und 10 liegen';
+                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
                         return null;
                       },
                     ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Arbeitszeit entfernen" aria-label="Arbeitszeit entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
                       setWorkHourIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -1104,20 +1099,20 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
           const id = generateId();
           setWorkHourIds(ids => [...ids, id]);
           setAutoFocusFieldName(`workHour:${id}:user`);
-        }}>Arbeitszeit</MyButton>
+        }}>{uiText("Arbeitszeit")}</MyButton>
 
         <MyDivider />
 
-        <h4>Wetter</h4>
-        <p className="light">Wetterangaben helfen bei der späteren Dokumentation.</p>
+        <h4>{uiText("Wetter")}</h4>
+        <p className="light">{uiText("Wetterangaben helfen bei der späteren Dokumentation.")}</p>
 
-        <MyForm.Input name="weatherSummary" labelText="Wetterbeschreibung" />
+        <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
 
         <div className="flex gap-2">
           <MyForm.Input
             className="flex-1"
             name="temperatureC"
-            labelText="Temperatur (°C)"
+            labelText={uiText("Temperatur (°C)")}
             type="number"
             rules={[MyForm.Input.rules.num]}
           />
@@ -1125,7 +1120,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
           <MyForm.Input
             className="flex-1"
             name="precipitationMm"
-            labelText="Niederschlag (mm)"
+            labelText={uiText("Niederschlag (mm)")}
             type="number"
             rules={[MyForm.Input.rules.num]}
           />
@@ -1133,7 +1128,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
           <MyForm.Input
             className="flex-1"
             name="windKph"
-            labelText="Wind (km/h)"
+            labelText={uiText("Wind (km/h)")}
             type="number"
             rules={[MyForm.Input.rules.num]}
           />
@@ -1248,9 +1243,9 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Bautagesbericht bearbeiten',
+      modalHeading: uiText("Bautagesbericht bearbeiten"),
       modalLabel: formatDate(report.day),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -1258,13 +1253,11 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
 export function showDeleteDailyProjectReportModal(modals: MyModalsInterface, report: DailyProjectReport) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Bautagesbericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Bautagesbericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -1282,9 +1275,9 @@ export function showDeleteDailyProjectReportModal(modals: MyModalsInterface, rep
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Bautagesbericht löschen',
+      modalHeading: uiText("Bautagesbericht löschen"),
       modalLabel: formatDate(report.day),
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }

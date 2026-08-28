@@ -9,6 +9,8 @@ pub struct Config {
     pub master_dsn: Arc<str>,
     pub admin_hash: Arc<str>,
     pub job_runner_token: Arc<str>,
+    pub llm_encryption_key: Option<Arc<[u8]>>,
+    pub llm_mcp_url: Option<Arc<str>>,
     pub production: bool,
 }
 
@@ -26,6 +28,12 @@ impl Config {
             .filter(|value| !value.is_empty())
             .or_else(|| (!production).then(|| "dev-job-runner-token".to_owned()))
             .ok_or(ConfigError::Missing("JOB_RUNNER_TOKEN"))?;
+        let llm_encryption_key = optional("LLM_ENCRYPTION_KEY")
+            .filter(|value| !value.is_empty())
+            .map(|value| Arc::from(value.into_bytes()));
+        let llm_mcp_url = optional("LLM_MCP_URL")
+            .filter(|value| !value.is_empty())
+            .map(Arc::from);
 
         Ok(Self {
             port,
@@ -33,6 +41,8 @@ impl Config {
             master_dsn: Arc::from(master_dsn),
             admin_hash: Arc::from(admin_hash),
             job_runner_token: Arc::from(job_runner_token),
+            llm_encryption_key,
+            llm_mcp_url,
             production,
         })
     }

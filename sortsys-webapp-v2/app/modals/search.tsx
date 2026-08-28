@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { MyForm } from "~/components/MyForm";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { useRefState } from "~/hooks/useRefState";
@@ -116,7 +117,7 @@ export function showGlobalSearchModal(modals: MyModalsInterface) {
         }
 
         if (users?.length) {
-          pushCategory('Benutzer', users, user => <SmallUserTile data={user} onLinkClick={hide} />)
+          pushCategory(uiText('Benutzer'), users, user => <SmallUserTile data={user} onLinkClick={hide} />)
         }
 
         if (products?.length) {
@@ -150,7 +151,7 @@ export function showGlobalSearchModal(modals: MyModalsInterface) {
         }
 
         if (productVendors?.length) {
-          pushCategory('Händler', productVendors, vendor => <SmallProductVendorTile data={vendor} onLinkClick={hide} />);
+          pushCategory(uiText("Händler"), productVendors, vendor => <SmallProductVendorTile data={vendor} onLinkClick={hide} />);
         }
 
         return results;
@@ -158,7 +159,7 @@ export function showGlobalSearchModal(modals: MyModalsInterface) {
 
       return <div className="h-full max-h-full flex flex-col gap-2 items-stretch my-container" style={{ padding: 0 }}>
         <div className="shrink-0">
-          <MyForm.Input id={inputId} labelText="Suchen" onValueChange={q => setQuery(q, q !== query())} />
+          <MyForm.Input id={inputId} labelText={uiText("Suchen")} onValueChange={q => setQuery(q, q !== query())} />
           <NotifyLoaded onLoad={() => document.getElementById(inputId)?.focus()} />
         </div>
         <div className="relative grow overflow-hidden">
@@ -173,10 +174,10 @@ export function showGlobalSearchModal(modals: MyModalsInterface) {
       </div>;
     },
     modalProps: ({ hide }) => ({
-      modalHeading: 'Suchen',
+      modalHeading: uiText("Suchen"),
       primaryButtonDisabled: true,
       useFullscreen: true,
-      secondaryButtonText: 'Schließen',
+      secondaryButtonText: uiText("Schließen"),
       onSecondarySubmit: hide,
     }),
   });

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
@@ -12,8 +13,8 @@ type CreateProductVendorModalOptions = {
 export function showCreateProductVendorModal(modals: MyModalsInterface, options: CreateProductVendorModalOptions = {}) {
   modals.showForm({
     content: ({ context }) => <>
-      <MyForm.Input required name="name" labelText="Name" />
-      <MyForm.Input name="description" labelText="Beschreibung" />
+      <MyForm.Input required name="name" labelText={uiText("Name")} />
+      <MyForm.Input name="description" labelText={uiText("Beschreibung")} />
       {!!options.initialQuery && <NotifyLoaded onLoad={() => context.field('name')?.setValue(options.initialQuery)} />}
     </>,
     onSubmit: async ({ context, hide, navigate }) => {
@@ -39,8 +40,8 @@ export function showCreateProductVendorModal(modals: MyModalsInterface, options:
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Händler erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Händler erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -48,8 +49,8 @@ export function showCreateProductVendorModal(modals: MyModalsInterface, options:
 export function showModifyProductVendorModal(modals: MyModalsInterface, vendor: ProductVendor) {
   modals.showForm({
     content: ({ context }) => <>
-      <MyForm.Input required name="name" labelText="Name" />
-      <MyForm.Input name="description" labelText="Beschreibung" />
+      <MyForm.Input required name="name" labelText={uiText("Name")} />
+      <MyForm.Input name="description" labelText={uiText("Beschreibung")} />
 
       <NotifyLoaded onLoad={() => context.setValues(vendor)} />
     </>,
@@ -70,9 +71,9 @@ export function showModifyProductVendorModal(modals: MyModalsInterface, vendor: 
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Händler bearbeiten',
+      modalHeading: uiText("Händler bearbeiten"),
       modalLabel: vendor.name,
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -80,13 +81,11 @@ export function showModifyProductVendorModal(modals: MyModalsInterface, vendor: 
 export function showDeleteProductVendorModal(modals: MyModalsInterface, vendor: ProductVendor) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Händler in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Händler in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -100,9 +99,9 @@ export function showDeleteProductVendorModal(modals: MyModalsInterface, vendor: 
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Händler löschen',
+      modalHeading: uiText("Händler löschen"),
       modalLabel: vendor.name,
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }

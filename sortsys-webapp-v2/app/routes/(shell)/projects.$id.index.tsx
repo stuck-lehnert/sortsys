@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useOutletContext } from "react-router";
 import { from } from "rxjs";
 import { AttrList } from "~/components/AttrList";
@@ -22,7 +23,7 @@ import type { Project } from "~/type-helpers";
 import { useMemo, useState } from "react";
 
 function safeFilePart(value: string) {
-  return value.replace(/[^\w\-]+/g, '-') || 'Projekt';
+  return value.replace(/[^\w\-]+/g, '-') || uiText('Projekt');
 }
 
 function contactPhoneLines(contact: { phoneNumbers: { name?: string | null; number: string }[] }) {
@@ -51,9 +52,9 @@ function contactCardItems(contact: { address?: Parameters<typeof formatAddress>[
   const email = contactEmailLines(contact);
 
   return [
-    address ? { label: 'Anschrift', value: address } : null,
-    phone ? { label: 'Telefon', value: phone } : null,
-    email ? { label: 'E-Mail', value: email } : null,
+    address ? { label: uiText("Anschrift"), value: address } : null,
+    phone ? { label: uiText("Telefon"), value: phone } : null,
+    email ? { label: uiText("E-Mail"), value: email } : null,
   ].filter(Boolean) as { label: string; value: string }[];
 }
 
@@ -80,7 +81,7 @@ export default function ProjectDetailPage() {
   const [contacts] = useClientStream(() => client.streamQuery('projects.contacts.list', { projectId: project.id! }), [project.id]);
   const [trackings] = useClientStream(() => client.streamQuery('tools.trackings.list', { projectId: project.id!, finished: false }), [project.id]);
 
-  useTitle(() => project ? `Übersicht – ${project.title}` : null, [JSON.stringify(project)]);
+  useTitle(() => project ? uiText(`Übersicht – ${project.title}`, `Overview – ${project.title}`) : null, [JSON.stringify(project)]);
 
   const sortedTrackings = useMemo(() => {
     if (!trackings) return null;
@@ -105,12 +106,12 @@ export default function ProjectDetailPage() {
         : [null, null] as const;
 
       const projectRows: string[][] = [
-        ['Projekt', project.title],
+        [uiText('Projekt'), project.title],
         ['Anschrift', formatAddress(project.address) || '-'],
       ];
       if (project.orderReceivedAt) projectRows.push(['Auftrag erhalten am', formatDate(project.orderReceivedAt, 'long')]);
       if (project.customerId || currentCustomer) {
-        projectRows.push(['Kunde', currentCustomer ? customerName(currentCustomer) : 'Unbekannt']);
+        projectRows.push([uiText('Kunde'), currentCustomer ? customerName(currentCustomer) : 'Unbekannt']);
         projectRows.push(['Kundenanschrift', currentCustomer?.address ? formatAddress(currentCustomer.address) : '-']);
         const customerPhone = currentCustomer ? contactPhoneLines(currentCustomer) : null;
         const customerEmail = currentCustomer ? contactEmailLines(currentCustomer) : null;
@@ -120,9 +121,9 @@ export default function ProjectDetailPage() {
       if (project.responsibleProjectLeaderUserId) {
         if (canViewUsers) {
           const [user] = await client.query('users.get', { id: project.responsibleProjectLeaderUserId }, { strategy: 'cache-first' });
-          projectRows.push(['Verantwortlicher Projektleiter', user ? userFullName(user) : 'Unbekannt']);
+          projectRows.push([uiText('Verantwortlicher Projektleiter'), user ? userFullName(user) : 'Unbekannt']);
         } else {
-          projectRows.push(['Verantwortlicher Projektleiter', 'Keine Berechtigung']);
+          projectRows.push([uiText('Verantwortlicher Projektleiter'), uiText('Keine Berechtigung')]);
         }
       }
 
@@ -132,8 +133,8 @@ export default function ProjectDetailPage() {
 
       const sections: PdfTableSection[] = [
         {
-          title: 'Projektdaten',
-          columns: ['Feld', 'Wert'],
+          title: uiText("Projektdaten"),
+          columns: ['Feld', uiText('Wert')],
           rows: projectRows,
           withHeader: false,
           align: ['left', 'left'],
@@ -147,9 +148,9 @@ export default function ProjectDetailPage() {
         .map((remark) => [formatDate(remark.createdAt, 'long'), remark.body]);
       if (remarkRows.length) {
         sections.push({
-          title: 'Vermerke',
-          subtitle: `${remarkRows.length} ${remarkRows.length === 1 ? 'Vermerk' : 'Vermerke'} zum Projekt`,
-          columns: ['Datum', 'Vermerk'],
+          title: uiText("Vermerke"),
+          subtitle: uiText(`${remarkRows.length} ${remarkRows.length === 1 ? "Vermerk" : "Vermerke"} zum Projekt`, `${remarkRows.length} ${remarkRows.length === 1 ? "note" : "notes"} for the project`),
+          columns: [uiText('Datum'), 'Vermerk'],
           rows: remarkRows,
           align: ['left', 'left'],
           columnWidths: ['0.8fr', '2.2fr'],
@@ -158,8 +159,8 @@ export default function ProjectDetailPage() {
 
       if (sortedContacts.length) {
         cardSections.push({
-          title: 'Ansprechpartner',
-          subtitle: `${sortedContacts.length} ${sortedContacts.length === 1 ? 'Kontakt' : 'Kontakte'} für dieses Projekt`,
+          title: uiText("Ansprechpartner"),
+          subtitle: uiText(`${sortedContacts.length} ${sortedContacts.length === 1 ? "Kontakt" : "Kontakte"} für dieses Projekt`, `${sortedContacts.length} ${sortedContacts.length === 1 ? "contact" : "contacts"} for this project`),
           cards: sortedContacts.map(contact => ({
             title: contactName(contact),
             badge: contact.label ?? 'Ansprechpartner',
@@ -168,9 +169,9 @@ export default function ProjectDetailPage() {
         });
       } else {
         sections.push({
-          title: 'Ansprechpartner',
+          title: uiText("Ansprechpartner"),
           columns: ['Hinweis'],
-          rows: [['Keine Ansprechpartner hinterlegt.']],
+          rows: [[uiText('Keine Ansprechpartner hinterlegt.')]],
           withHeader: false,
           align: ['left'],
           columnWidths: ['1fr'],
@@ -179,16 +180,16 @@ export default function ProjectDetailPage() {
 
       const pdfData = await renderStructuredPdf({
         title: project.title,
-        reportLabel: 'Datenblatt',
+        reportLabel: uiText("Datenblatt"),
         sections,
         cardSections,
-        emptyMessage: 'Keine Projektdaten verfügbar.',
+        emptyMessage: uiText("Keine Projektdaten verfügbar."),
       });
 
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
       deliverBlob(blob, `Datenblatt-${safeFilePart(project.title)}.pdf`);
     } catch (err) {
-      setContactSheetPrintErr((err as Error)?.message || 'Unbekannter Fehler beim Erstellen des Datenblatts.');
+      setContactSheetPrintErr((err as Error)?.message || uiText('Unbekannter Fehler beim Erstellen des Datenblatts.'));
     } finally {
       setIsContactSheetPrinting(false);
     }
@@ -203,24 +204,23 @@ export default function ProjectDetailPage() {
         loading={isContactSheetPrinting}
         disabled={isContactSheetPrinting}
         onClick={() => void downloadProjectContactSheet()}
-      >Datenblatt</MyButton>
+      >{uiText("Datenblatt")}</MyButton>
     </div>}
 
-    {!!contactSheetPrintErr && <MyCallout icon={Icons.Deny} color="red">
-      Datenblatt konnte nicht erstellt werden: {contactSheetPrintErr}
+    {!!contactSheetPrintErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Datenblatt konnte nicht erstellt werden:")}{contactSheetPrintErr}
     </MyCallout>}
 
     {hasProjectMeta && <>
       <AttrList>
         {!!project.address && <AttrList.Attr name="Anschrift" value={<MyLink target="_blank" to={addressUrl(project.address)}>{formatAddress(project.address)}</MyLink>} />}
-        {!!customer && <AttrList.Attr name="Kunde" value={<MyLink to={`/customers/${customer.id}`}>{customerName(customer)}</MyLink>} />}
+        {!!customer && <AttrList.Attr name={uiText("Kunde")} value={<MyLink to={`/customers/${customer.id}`}>{customerName(customer)}</MyLink>} />}
         {!!project.orderReceivedAt && <AttrList.Attr name="Auftrag erhalten am" value={formatDate(project.orderReceivedAt, 'long')} />}
         {!!project.responsibleProjectLeaderUserId && <AttrList.Attr
-          name="Verantwortlicher Projektleiter"
+          name={uiText("Verantwortlicher Projektleiter")}
           value={
             !!responsibleProjectLeader
               ? <MyLink to={`/users/${responsibleProjectLeader.id}`}>{userFullName(responsibleProjectLeader)}</MyLink>
-              : (canViewUsers ? 'Unbekannt' : 'Keine Berechtigung')
+              : (canViewUsers ? 'Unbekannt' : uiText('Keine Berechtigung'))
           }
         />}
       </AttrList>

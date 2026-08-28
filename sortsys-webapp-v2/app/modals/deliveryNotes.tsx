@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
@@ -38,7 +39,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
       const forceUpdate = useForceUpdate();
 
       return <>
-        <MyForm.MultiSelect name="project" labelText="Projekt"
+        <MyForm.MultiSelect name="project" labelText={uiText("Projekt")}
           minSelectedItems={1} maxSelectedItems={1}
           getOptions={async ({ query }) => {
             const [data, err] = await client.query('projects.list', { search: query });
@@ -49,15 +50,15 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
           renderTile={item => <SmallProjectTile data={item} noLink />}
           createAction={createEntityAction.project}
         />
-        <p className="light">Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.</p>
+        <p className="light">{uiText("Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.")}</p>
 
-        <MyForm.Input name="comment" labelText="Kommentar" />
-        <p className="light">Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.</p>
+        <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+        <p className="light">{uiText("Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.")}</p>
 
         <MyDivider />
 
-        <h4>Produkte</h4>
-        <p className="light">Erfasse gelieferte Produkte mit Menge und Einheit.</p>
+        <h4>{uiText("Produkte")}</h4>
+        <p className="light">{uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}</p>
 
         {recordIds.map(id => {
           const currentProduct = () => {
@@ -67,7 +68,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
           return <Fragment key={id}>
             <MyForm.MultiSelect
               name={`record:${id}:product`}
-              labelText="Produkt"
+              labelText={uiText("Produkt")}
               autoFocus={autoFocusFieldName === `record:${id}:product`}
               minSelectedItems={1} maxSelectedItems={1}
               getOptions={async ({ query }) => {
@@ -86,7 +87,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                 <div className="basis-1/2 flex-1">
                   <MyForm.Input
                     required
-                    name={`record:${id}:amount`} labelText="Anzahl"
+                    name={`record:${id}:amount`} labelText={uiText("Anzahl")}
                     type="number"
                     rules={[MyForm.Input.rules.num]}
                   />
@@ -95,7 +96,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                 <div className="basis-1/2 flex-1">
                   <MyForm.Select
                     name={`record:${id}:unit`}
-                    labelText="Einheit"
+                    labelText={uiText("Einheit")}
                     getOptions={() => {
                       const _product = currentProduct();
                       if (!_product) return [];
@@ -103,7 +104,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                     }}
                     getOptionsDeps={[currentProduct()?.id]}
                     buildOption={({ id }) => ({ text: id, value: id })}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Eintrag entfernen" aria-label="Eintrag entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
                       setRecordIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -120,12 +121,12 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
           const id = generateId();
           setRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`record:${id}:product`);
-        }}>Eintrag</MyButton>
+        }}>{uiText("Eintrag")}</MyButton>
 
         <MyDivider />
 
-        <h4>Sonderposten</h4>
-        <p className="light">Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.</p>
+        <h4>{uiText("Sonderposten")}</h4>
+        <p className="light">{uiText("Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.")}</p>
 
         {specialRecordIds.map(id => {
           return <Fragment key={id}>
@@ -135,7 +136,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                   <MyForm.Input
                     required
                     name={`specialRecord:${id}:name`}
-                    labelText="Bezeichnung"
+                    labelText={uiText("Bezeichnung")}
                     autoFocus={autoFocusFieldName === `specialRecord:${id}:name`}
                   />
                 </div>
@@ -145,7 +146,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:amount`}
-                      labelText="Menge"
+                      labelText={uiText("Menge")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
                     />
@@ -155,17 +156,17 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:unit`}
-                      labelText="Einheit"
+                      labelText={uiText("Einheit")}
                     />
                   </div>
 
                   <div className="basis-1/3 flex-1">
                     <MyForm.Input
                       name={`specialRecord:${id}:pricePerUnit`}
-                      labelText="Preis pro Einheit"
+                      labelText={uiText("Preis pro Einheit")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
-                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Sonderposten entfernen" aria-label="Sonderposten entfernen" onClick={() => {
+                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={() => {
                         setSpecialRecordIds(ids => ids.filter(_id => _id !== id));
                       }}><Icons.Delete /></MyButton>}
                     />
@@ -182,7 +183,7 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
           const id = generateId();
           setSpecialRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`specialRecord:${id}:name`);
-        }}>Sonderposten</MyButton>
+        }}>{uiText("Sonderposten")}</MyButton>
       </>;
     },
     onSubmit: async ({ context, hide, navigate }) => {
@@ -279,8 +280,8 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Lieferschein schreiben',
-      primaryButtonText: 'Speichern',
+      modalHeading: uiText("Lieferschein schreiben"),
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -308,7 +309,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
       const forceUpdate = useForceUpdate();
 
       return <>
-        <MyForm.MultiSelect name="project" labelText="Projekt"
+        <MyForm.MultiSelect name="project" labelText={uiText("Projekt")}
           minSelectedItems={1} maxSelectedItems={1}
           getOptions={async ({ query }) => {
             const [data, err] = await client.query('projects.list', { search: query });
@@ -319,15 +320,15 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           renderTile={item => <SmallProjectTile data={item} noLink />}
           createAction={createEntityAction.project}
         />
-        <p className="light">Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.</p>
+        <p className="light">{uiText("Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.")}</p>
 
-        <MyForm.Input name="comment" labelText="Kommentar" />
-        <p className="light">Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.</p>
+        <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+        <p className="light">{uiText("Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.")}</p>
 
         <MyDivider />
 
-        <h4>Produkte</h4>
-        <p className="light">Erfasse gelieferte Produkte mit Menge und Einheit.</p>
+        <h4>{uiText("Produkte")}</h4>
+        <p className="light">{uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}</p>
 
         {recordIds.map(id => {
           const currentProduct = () => {
@@ -337,7 +338,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           return <Fragment key={id}>
             <MyForm.MultiSelect
               name={`record:${id}:product`}
-              labelText="Produkt"
+              labelText={uiText("Produkt")}
               autoFocus={autoFocusFieldName === `record:${id}:product`}
               minSelectedItems={1} maxSelectedItems={1}
               getOptions={async ({ query }) => {
@@ -356,7 +357,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                 <div className="basis-1/2 flex-1">
                   <MyForm.Input
                     required
-                    name={`record:${id}:amount`} labelText="Anzahl"
+                    name={`record:${id}:amount`} labelText={uiText("Anzahl")}
                     type="number"
                     rules={[MyForm.Input.rules.num]}
                   />
@@ -365,7 +366,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                 <div className="basis-1/2 flex-1">
                   <MyForm.Select
                     name={`record:${id}:unit`}
-                    labelText="Einheit"
+                    labelText={uiText("Einheit")}
                     getOptions={() => {
                       const _product = currentProduct();
                       if (!_product) return [];
@@ -373,7 +374,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                     }}
                     getOptionsDeps={[currentProduct()?.id]}
                     buildOption={({ id }) => ({ text: id, value: id })}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Eintrag entfernen" aria-label="Eintrag entfernen" onClick={() => {
+                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
                       setRecordIds(ids => ids.filter(_id => _id !== id));
                     }}><Icons.Delete /></MyButton>}
                   />
@@ -406,12 +407,12 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           const id = generateId();
           setRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`record:${id}:product`);
-        }}>Eintrag</MyButton>
+        }}>{uiText("Eintrag")}</MyButton>
 
         <MyDivider />
 
-        <h4>Sonderposten</h4>
-        <p className="light">Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.</p>
+        <h4>{uiText("Sonderposten")}</h4>
+        <p className="light">{uiText("Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.")}</p>
 
         {specialRecordIds.map(id => {
           return <Fragment key={id}>
@@ -421,7 +422,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                   <MyForm.Input
                     required
                     name={`specialRecord:${id}:name`}
-                    labelText="Bezeichnung"
+                    labelText={uiText("Bezeichnung")}
                     autoFocus={autoFocusFieldName === `specialRecord:${id}:name`}
                   />
                 </div>
@@ -431,7 +432,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:amount`}
-                      labelText="Menge"
+                      labelText={uiText("Menge")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
                     />
@@ -441,17 +442,17 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                     <MyForm.Input
                       required
                       name={`specialRecord:${id}:unit`}
-                      labelText="Einheit"
+                      labelText={uiText("Einheit")}
                     />
                   </div>
 
                   <div className="basis-1/3 flex-1">
                     <MyForm.Input
                       name={`specialRecord:${id}:pricePerUnit`}
-                      labelText="Preis pro Einheit"
+                      labelText={uiText("Preis pro Einheit")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
-                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title="Sonderposten entfernen" aria-label="Sonderposten entfernen" onClick={() => {
+                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={() => {
                         setSpecialRecordIds(ids => ids.filter(_id => _id !== id));
                       }}><Icons.Delete /></MyButton>}
                     />
@@ -480,7 +481,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           const id = generateId();
           setSpecialRecordIds(ids => [...ids, id]);
           setAutoFocusFieldName(`specialRecord:${id}:name`);
-        }}>Sonderposten</MyButton>
+        }}>{uiText("Sonderposten")}</MyButton>
 
         <NotifyLoaded onLoad={async () => {
           context.setValues({ comment: note.comment ?? '' });
@@ -617,9 +618,9 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Lieferschein bearbeiten',
+      modalHeading: uiText("Lieferschein bearbeiten"),
       modalLabel: `#${note.autoId}`,
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -627,13 +628,11 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
 export function showDeleteDeliveryNoteModal(modals: MyModalsInterface, note: DeliveryNote) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Lieferschein in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Lieferschein in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -647,9 +646,9 @@ export function showDeleteDeliveryNoteModal(modals: MyModalsInterface, note: Del
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Lieferschein löschen',
+      modalHeading: uiText("Lieferschein löschen"),
       modalLabel: `#${note.autoId}`,
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }

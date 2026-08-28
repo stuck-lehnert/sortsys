@@ -24,6 +24,7 @@ import { Loading } from "@sortsys/react-components";
 import { useForceUpdate } from "./hooks/useForceUpdate";
 import { MyModalsProvider } from "./hooks/useMyModals";
 import { useTheme } from "./hooks/useTheme";
+import { I18nProvider, uiText, useI18n } from "./lib/i18n";
 
 export const links: Route.LinksFunction = () => [
   {
@@ -90,13 +91,13 @@ function _AppInner() {
 function serializeUnknownError(error: unknown) {
   if (error instanceof Error) {
     return {
-      message: error.message || error.name || 'Unbekannter Fehler',
+      message: error.message || error.name || uiText('Unbekannter Fehler'),
       stack: error.stack ?? null,
     };
   }
 
   return {
-    message: `${error || 'Unbekannter Fehler'}`,
+    message: `${error || uiText('Unbekannter Fehler')}`,
     stack: null,
   };
 }
@@ -143,7 +144,8 @@ function ClientErrorReporter(): undefined {
   return;
 }
 
-export default function App() {
+function AppContent() {
+  const { setLocale, t } = useI18n();
   const [restored, setRestored] = useState(false);
   const forceUpdate = useForceUpdate();
   const location = useLocation();
@@ -153,12 +155,15 @@ export default function App() {
     client.restoreSession().finally(() => setRestored(true));
   }, []);
 
-  useEffect(() => client.listenAuthState(forceUpdate), []);
+  useEffect(() => client.listenAuthState(() => {
+    if (!client.loggedIn()) setLocale('de');
+    forceUpdate();
+  }), [forceUpdate, setLocale]);
 
   if (!restored) {
     return (
       <div className="app-session-loading-overlay">
-        <Loading active className="app-session-loading" description="Lädt..." />
+        <Loading active className="app-session-loading" description={t("common.loading")} />
       </div>
     );
   }
@@ -170,6 +175,12 @@ export default function App() {
   return <SessionInfoProvider>
     <_AppInner />
   </SessionInfoProvider>;
+}
+
+export default function App() {
+  return <I18nProvider>
+    <AppContent />
+  </I18nProvider>;
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

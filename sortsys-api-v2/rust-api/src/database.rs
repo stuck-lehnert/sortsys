@@ -238,6 +238,30 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         );
         CREATE INDEX IF NOT EXISTS idx___postgres_databases_host ON __postgres_databases (host_id, name);
         CREATE INDEX IF NOT EXISTS idx___postgres_database_backups_db_created ON __postgres_database_backups (database_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS __llm_settings (
+          singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+          provider VARCHAR(32) NOT NULL,
+          model VARCHAR(255) NOT NULL,
+          base_url TEXT,
+          api_key_ciphertext TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS __llm_usage (
+          id BIGSERIAL PRIMARY KEY,
+          tenant_name VARCHAR(127) NOT NULL REFERENCES __tenants(name) ON DELETE CASCADE,
+          user_id BIGINT NOT NULL,
+          chat_id BIGINT,
+          provider VARCHAR(32) NOT NULL,
+          model VARCHAR(255) NOT NULL,
+          input_tokens BIGINT NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+          output_tokens BIGINT NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+          total_tokens BIGINT NOT NULL DEFAULT 0 CHECK (total_tokens >= 0),
+          status VARCHAR(16) NOT NULL CHECK (status IN ('succeeded', 'failed')),
+          error TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx___llm_usage_tenant_created
+          ON __llm_usage (tenant_name, created_at DESC);
         "#,
     )
     .execute(pool)

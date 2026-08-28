@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Heading } from "@sortsys/react-components";
 import { useState } from "react";
 import { MyDivider } from "~/components/MyDivider";
@@ -36,13 +37,13 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <MyForm.Input required name="username" labelText="Anmeldename"
+      <MyForm.Input required name="username" labelText={uiText("Anmeldename")}
         rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]} />
 
       <MyDivider />
 
-      <MyForm.Input required name="firstName" labelText="Vorname" />
-      <MyForm.Input name="lastName" labelText="Nachname" />
+      <MyForm.Input required name="firstName" labelText={uiText("Vorname")} />
+      <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
 
       {!!options.initialQuery && <NotifyLoaded onLoad={() => context.setValues({
         username: usernameFromQuery(options.initialQuery),
@@ -51,12 +52,12 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
 
       <MyDivider />
 
-      <MyForm.Input name="email" labelText="E-Mail" />
-      <MyForm.Input name="phone" labelText="Telefon" />
+      <MyForm.Input name="email" labelText={uiText("E-Mail")} />
+      <MyForm.Input name="phone" labelText={uiText("Telefon")} />
 
       <MyForm.MultiSelect
         name="supervisor"
-        labelText="Vorgesetzter"
+        labelText={uiText("Vorgesetzter")}
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [users, err] = await client.query('users.list', {}, { strategy: 'cache-first' });
@@ -74,16 +75,16 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
 
       <MyDivider />
 
-      <MyForm.Select name="contractType" labelText="Vertrag"
+      <MyForm.Select name="contractType" labelText={uiText("Vertrag")}
         getOptions={() => [
-          { id: 'internal', text: 'Intern' },
-          { id: 'external', text: 'Extern' },
-          { id: 'subcontractor', text: 'Subunternehmer' },
+          { id: 'internal', text: uiText("Intern") },
+          { id: 'external', text: uiText("Extern") },
+          { id: 'subcontractor', text: uiText("Subunternehmer") },
         ]}
         buildOption={({ id, text }) => ({ value: id, text })}
       />
 
-      <MyForm.Input name="costPerHour" labelText="Kosten pro Stunde (EUR)"
+      <MyForm.Input name="costPerHour" labelText={uiText("Kosten pro Stunde (EUR)")}
         type="number"
         rules={[MyForm.Input.rules.num]} />
     </>;
@@ -118,8 +119,8 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Benutzer erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Benutzer erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -130,22 +131,22 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <MyForm.Input required name="username" labelText="Anmeldename"
+      <MyForm.Input required name="username" labelText={uiText("Anmeldename")}
         rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]} />
 
       <MyDivider />
 
-      <MyForm.Input required name="firstName" labelText="Vorname" />
-      <MyForm.Input name="lastName" labelText="Nachname" />
+      <MyForm.Input required name="firstName" labelText={uiText("Vorname")} />
+      <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
 
       <MyDivider />
 
-      <MyForm.Input name="email" labelText="E-Mail" />
-      <MyForm.Input name="phone" labelText="Telefon" />
+      <MyForm.Input name="email" labelText={uiText("E-Mail")} />
+      <MyForm.Input name="phone" labelText={uiText("Telefon")} />
 
       <MyForm.MultiSelect
         name="supervisor"
-        labelText="Vorgesetzter"
+        labelText={uiText("Vorgesetzter")}
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [users, err] = await client.query('users.list', {}, { strategy: 'cache-first' });
@@ -164,16 +165,16 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
 
       <MyDivider />
 
-      <MyForm.Select name="contractType" labelText="Vertrag"
+      <MyForm.Select name="contractType" labelText={uiText("Vertrag")}
         getOptions={() => [
-          { id: 'internal', text: 'Intern' },
-          { id: 'external', text: 'Extern' },
-          { id: 'subcontractor', text: 'Subunternehmer' },
+          { id: 'internal', text: uiText("Intern") },
+          { id: 'external', text: uiText("Extern") },
+          { id: 'subcontractor', text: uiText("Subunternehmer") },
         ]}
         buildOption={({ id, text }) => ({ value: id, text })}
       />
 
-      <MyForm.Input name="costPerHour" labelText="Kosten pro Stunde (EUR)"
+      <MyForm.Input name="costPerHour" labelText={uiText("Kosten pro Stunde (EUR)")}
         type="number"
         rules={[MyForm.Input.rules.num]} />
 
@@ -213,9 +214,9 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Benutzer bearbeiten',
+      modalHeading: uiText("Benutzer bearbeiten"),
       modalLabel: userFullName(user),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -229,7 +230,7 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
       <MyForm.MultiSelect
         required
         name="supervisor"
-        labelText="Vorgesetzter"
+        labelText={uiText("Vorgesetzter")}
         maxSelectedItems={1}
         getOptions={async ({ query }) => {
           const [users, err] = await client.query('users.list', {}, { strategy: 'cache-first' });
@@ -277,9 +278,9 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Vorgesetzten setzen',
+      modalHeading: uiText("Vorgesetzten setzen"),
       modalLabel: userFullName(user),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -287,13 +288,11 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
 export function showDeleteUserModal(modals: MyModalsInterface, user: User) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Benutzer in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Benutzer in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -307,9 +306,9 @@ export function showDeleteUserModal(modals: MyModalsInterface, user: User) {
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Benutzer löschen',
+      modalHeading: uiText("Benutzer löschen"),
       modalLabel: userFullName(user),
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }
@@ -317,9 +316,7 @@ export function showDeleteUserModal(modals: MyModalsInterface, user: User) {
 export function showDeactivateUserModal(modals: MyModalsInterface, user: User) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Durch die Deaktivierung verliert der betreffende Benutzer mit sofortiger Wirkung die Fähigkeit, sich am System anzumelden.
-      </p>
+      <p className="light">{uiText("Durch die Deaktivierung verliert der betreffende Benutzer mit sofortiger Wirkung die Fähigkeit, sich am System anzumelden.")}</p>
 
       {/*<p>
         Alternativ kann auch ein Zeitpunkt in der Zukunft gewählt werden, an dem der Benutzer deaktiviert werden soll.
@@ -334,9 +331,9 @@ export function showDeactivateUserModal(modals: MyModalsInterface, user: User) {
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Benutzer deaktivieren',
+      modalHeading: uiText("Benutzer deaktivieren"),
       modalLabel: userFullName(user),
-      primaryButtonText: 'Deaktivieren',
+      primaryButtonText: uiText("Deaktivieren"),
     }),
   });
 }
@@ -345,7 +342,7 @@ export function showSetUserPasswordModal(modals: MyModalsInterface, user: User) 
   modals.showForm({
     content: ({ context }) => <>
       <MyForm.Input required
-        type="password" name="password" labelText="Passwort"
+        type="password" name="password" labelText={uiText("Passwort")}
         autoComplete="new-password"
         rules={[
           MyForm.Input.rules.min(10),
@@ -359,19 +356,19 @@ export function showSetUserPasswordModal(modals: MyModalsInterface, user: User) 
                 }, 0);
             };
 
-            if (entropy(value) < 2.8) return 'Passwort zu schwach!';
+            if (entropy(value) < 2.8) return uiText('Passwort zu schwach!', 'Password is too weak!');
             return null;
           },
         ]}
       />
 
       <MyForm.Input required
-        type="password" name="confirmPassword" labelText="Passwort bestätigen"
+        type="password" name="confirmPassword" labelText={uiText("Passwort bestätigen")}
         autoComplete="new-password"
         rules={[
           value => {
             if (context.field('password')?.getValue() === value) return null;
-            return 'Passwörter stimmen nicht überein';
+            return uiText('Passwörter stimmen nicht überein', 'Passwords do not match');
           },
         ]}
       />
@@ -391,9 +388,9 @@ export function showSetUserPasswordModal(modals: MyModalsInterface, user: User) 
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Passwort setzen',
+      modalHeading: uiText("Passwort setzen"),
       modalLabel: userFullName(user),
-      primaryButtonText: 'Passwort setzen',
+      primaryButtonText: uiText("Passwort setzen"),
     }),
   })
 }
@@ -411,6 +408,7 @@ export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
 
   function roleLabel(role: Role) {
     if (role === ':admin') return 'Administrator';
+    if (role === ':llm') return 'LLM';
 
     for (const area of ROLE_AREAS) {
       for (const level of ROLE_LEVELS) {
@@ -482,7 +480,7 @@ export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
       });
 
       return <>
-        <Heading level={3}>Vorlagen</Heading>
+        <Heading level={3}>{uiText("Vorlagen")}</Heading>
         <div className="role-preset-grid">
           {ROLE_PRESETS.map(preset => {
             const presetRoles = expandRolesForUi(preset.roles);
@@ -503,19 +501,19 @@ export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
 
         <div className="role-tools-grid">
           <div>
-            <label className="ss-label" htmlFor="role-search-input">Rechte suchen</label>
+            <label className="ss-label" htmlFor="role-search-input">{uiText("Rechte suchen")}</label>
             <input
               id="role-search-input"
               className="ss-input"
               value={roleSearch}
               onChange={event => setRoleSearch(event.target.value)}
-              placeholder="z.B. Projekte, löschen, Urlaub"
+              placeholder={uiText("z.B. Projekte, löschen, Urlaub")}
             />
           </div>
 
           <MyForm.MultiSelect
             name="_copyUser"
-            labelText="Rechte von Benutzer kopieren"
+            labelText={uiText("Rechte von Benutzer kopieren")}
             maxSelectedItems={1}
             getOptions={async ({ query }) => {
               const [users, err] = await client.query('users.list', { search: query }, { strategy: 'cache-first' });
@@ -536,28 +534,29 @@ export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
           />
         </div>
 
-        {!!copiedFrom && <p className="light">Kopiert von: {copiedFrom}</p>}
+        {!!copiedFrom && <p className="light">{uiText("Kopiert von: ")}{copiedFrom}</p>}
 
         <div className="role-admin-row">
-          <MyForm.Checkbox name=":admin" labelText="Administrator: alle Rechte, inklusive Rollen und Organisation" onValueChange={refresh} />
+          <div>
+            <MyForm.Checkbox name=":admin" labelText={uiText("Administrator: alle Rechte, inklusive Rollen und Organisation")} onValueChange={refresh} />
+            <MyForm.Checkbox name=":llm" labelText={uiText("LLM verwenden")} onValueChange={refresh} />
+          </div>
           <MyButton
             kind="ghost"
             renderIcon={Icons.Reset}
             onClick={() => applyRoles([])}
-          >
-            Alle Rechte entfernen
-          </MyButton>
+          >{uiText("Alle Rechte entfernen")}</MyButton>
         </div>
 
         <div className="role-diff-panel">
-          <b>Änderungen vor dem Speichern</b>
+          <b>{uiText("Änderungen vor dem Speichern")}</b>
           {!initialRoles
-            ? <span className="light">Rechte werden geladen ...</span>
+            ? <span className="light">{uiText("Rechte werden geladen ...")}</span>
             : (!diff.added.length && !diff.removed.length)
-              ? <span className="light">Keine Änderungen.</span>
+              ? <span className="light">{uiText("Keine Änderungen.")}</span>
               : <div className="role-diff-columns">
-                <div><b>Neu</b><span>{diff.added.length ? summarizeRoles(diff.added).join(', ') : '-'}</span></div>
-                <div><b>Entfernt</b><span>{diff.removed.length ? summarizeRoles(diff.removed).join(', ') : '-'}</span></div>
+                <div><b>{uiText("Neu")}</b><span>{diff.added.length ? summarizeRoles(diff.added).join(', ') : '-'}</span></div>
+                <div><b>{uiText("Entfernt")}</b><span>{diff.removed.length ? summarizeRoles(diff.removed).join(', ') : '-'}</span></div>
               </div>}
         </div>
 
@@ -585,7 +584,7 @@ export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
           </section>)}
         </div>
 
-        {!visibleAreas.length && <p className="light">Keine Rechte passen zur Suche.</p>}
+        {!visibleAreas.length && <p className="light">{uiText("Keine Rechte passen zur Suche.")}</p>}
 
         <NotifyLoaded onLoad={async () => {
           const [roles, err] = await client.query('users.roles.get', { userId: user.id });
@@ -615,9 +614,9 @@ export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Rollen setzen',
+      modalHeading: uiText("Rollen setzen"),
       modalLabel: userFullName(user),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }

@@ -58,6 +58,8 @@ The API reads the following environment variables:
 | `JWT_SECRET` | yes | secret used to sign sessions |
 | `ADMIN_HASH` | yes | bcrypt password hash for the global administrator |
 | `JOB_RUNNER_TOKEN` | in production | shared secret for job-runner WebSocket connections |
+| `LLM_ENCRYPTION_KEY` | for LLM setup | secret used to encrypt provider API keys in the master database |
+| `LLM_MCP_URL` | no | public URL of the sortsys MCP endpoint; without it, providers use function tools |
 | `PORT` | no | HTTP port, default `3000` |
 | `NODE_ENV` | no | set to `production` to enable production requirements |
 
@@ -76,4 +78,3 @@ The image includes PostgreSQL 17 client tools because backup and restore procedu
 ## License
 
 This workspace is licensed under the [GNU Affero General Public License v3.0 only](LICENSE).
-

@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { MyDivider } from '~/components/MyDivider';
 import { MyForm } from '~/components/MyForm';
 import { useCreateEntityAction } from '~/hooks/useCreateEntityAction';
@@ -19,8 +20,8 @@ export function showCreateCustomerModal(modals: MyModalsInterface, options: Crea
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <MyForm.Input name="salutation" labelText="Anrede" />
-      <MyForm.Input required name="name" labelText="Name" />
+      <MyForm.Input name="salutation" labelText={uiText("Anrede")} />
+      <MyForm.Input required name="name" labelText={uiText("Name")} />
       {!!options.initialQuery && <NotifyLoaded onLoad={() => context.field('name')?.setValue(options.initialQuery)} />}
 
       <MyDivider />
@@ -34,7 +35,7 @@ export function showCreateCustomerModal(modals: MyModalsInterface, options: Crea
       <MyDivider />
 
       <MyForm.MultiSelect
-        labelText="Ansprechpartner"
+        labelText={uiText("Ansprechpartner")}
         name="contacts"
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('contacts.list', { search: query });
@@ -79,8 +80,8 @@ export function showCreateCustomerModal(modals: MyModalsInterface, options: Crea
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Kunde erstellen',
-      primaryButtonText: 'Erstellen',
+      modalHeading: uiText("Kunde erstellen"),
+      primaryButtonText: uiText("Erstellen"),
     }),
   });
 }
@@ -91,8 +92,8 @@ export function showModifyCustomerModal(modals: MyModalsInterface, customer: Cus
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
-      <MyForm.Input name="salutation" labelText="Anrede" />
-      <MyForm.Input required name="name" labelText="Name" />
+      <MyForm.Input name="salutation" labelText={uiText("Anrede")} />
+      <MyForm.Input required name="name" labelText={uiText("Name")} />
 
       <MyDivider />
 
@@ -107,7 +108,7 @@ export function showModifyCustomerModal(modals: MyModalsInterface, customer: Cus
       <MyDivider />
 
       <MyForm.MultiSelect
-        labelText="Ansprechpartner"
+        labelText={uiText("Ansprechpartner")}
         name="contacts"
         getOptions={async ({ query }) => {
           const [data, err] = await client.query('contacts.list', { search: query });
@@ -155,9 +156,9 @@ export function showModifyCustomerModal(modals: MyModalsInterface, customer: Cus
       hide();
     },
     modalProps: () => ({
-      modalHeading: 'Kunde bearbeiten',
+      modalHeading: uiText("Kunde bearbeiten"),
       modalLabel: customerName(customer),
-      primaryButtonText: 'Speichern',
+      primaryButtonText: uiText("Speichern"),
     }),
   });
 }
@@ -165,13 +166,11 @@ export function showModifyCustomerModal(modals: MyModalsInterface, customer: Cus
 export function showDeleteCustomerModal(modals: MyModalsInterface, customer: Customer) {
   modals.showForm({
     content: () => <>
-      <p className="light">
-        Alle mit diesem Kunden in Verbindung stehenden Daten werden damit ebenfalls gelöscht.
-        {" "}<b>Diese Aktion kann nicht rückgängig gemacht werden.</b>
+      <p className="light">{uiText("Alle mit diesem Kunden in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       <MyForm.Checkbox
         required name="_understood"
-        labelText="Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann."
+        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
       />
     </>,
     onSubmit: async ({ hide, pathname, navigate }) => {
@@ -185,9 +184,9 @@ export function showDeleteCustomerModal(modals: MyModalsInterface, customer: Cus
     modalProps: () => ({
       danger: true,
       noFullscreen: true,
-      modalHeading: 'Kunde löschen',
+      modalHeading: uiText("Kunde löschen"),
       modalLabel: customerName(customer),
-      primaryButtonText: 'Löschen',
+      primaryButtonText: uiText("Löschen"),
     }),
   });
 }

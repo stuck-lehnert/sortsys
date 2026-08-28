@@ -1,3 +1,4 @@
+import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { Heading, Tile } from "@sortsys/react-components";
 import { useMemo, useState } from "react";
@@ -12,7 +13,7 @@ import { Icons } from "~/lib/icons";
 type ErrorReport = QueryResult<'admin.errors.list'>[number];
 
 function formatTimestamp(value: Date) {
-  return `${formatDate(value)} ${value.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+  return `${formatDate(value)} ${value.toLocaleTimeString(currentLocaleTag(), { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 export default function GlobalAdminErrorsPage() {
@@ -26,37 +27,34 @@ export default function GlobalAdminErrorsPage() {
   const selected = useMemo(() => rows.find(row => row.id === selectedId) ?? rows[0] ?? null, [rows, selectedId]);
 
   return <>
-    <Heading level={3}>Fehlerberichte</Heading>
-
-    {!!err && <MyCallout icon={Icons.Deny} color="red">
-      Fehlerberichte konnten nicht geladen werden: {err.message}
+    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Fehlerberichte konnten nicht geladen werden:")}{err.message}
     </MyCallout>}
 
     <MyTable
       rows={rows}
       columns={[
         {
-          label: 'Zeit',
+          label: uiText("Zeit"),
           render: row => formatTimestamp(row.createdAt),
           sortKey: row => row.createdAt.getTime(),
         },
         {
-          label: 'Mandant',
+          label: uiText("Mandant"),
           render: row => row.tenant,
           sortKey: row => row.tenant,
         },
         {
-          label: 'Quelle',
+          label: uiText("Quelle"),
           render: row => row.source,
           sortKey: row => row.source,
         },
         {
-          label: 'Meldung',
+          label: uiText("Meldung"),
           render: row => <MyButton kind="ghost" size="sm" onClick={() => setSelectedId(row.id)}>{row.message}</MyButton>,
           sortKey: row => row.message,
         },
         {
-          label: 'Benutzer',
+          label: uiText("Benutzer"),
           render: row => row.username ?? row.createdByUserId ?? '-',
           sortKey: row => row.username ?? row.createdByUserId ?? '',
         },
@@ -74,7 +72,7 @@ export default function GlobalAdminErrorsPage() {
       {!!selected.stack && <pre className="overflow-x-auto"><code>{selected.stack}</code></pre>}
       {!!selected.componentStack && <pre className="overflow-x-auto"><code>{selected.componentStack}</code></pre>}
       {!!selected.metadata && <pre className="overflow-x-auto"><code>{JSON.stringify(selected.metadata, null, 2)}</code></pre>}
-      {!!selected.userAgent && <div className="light">User-Agent: {selected.userAgent}</div>}
+      {!!selected.userAgent && <div className="light">{uiText("User-Agent: ")}{selected.userAgent}</div>}
     </Tile>}
   </>;
 }

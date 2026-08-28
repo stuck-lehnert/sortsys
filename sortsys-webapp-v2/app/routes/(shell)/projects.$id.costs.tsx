@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useOutletContext } from "react-router";
 import { AttrList } from "~/components/AttrList";
 import { MyButton } from "~/components/MyButton";
@@ -56,7 +57,7 @@ function isoWeekLabel(date: Date) {
   return `KW ${info.weekNumber}/${info.isoYear}`;
 }
 
-const MISSING_INVOICE_NOTICE = 'Gewinn/Verlust kann nicht berechnet werden, da Rechnungssummen fehlen.';
+const MISSING_INVOICE_NOTICE = uiText('Gewinn/Verlust kann nicht berechnet werden, da Rechnungssummen fehlen.');
 
 function hasNumberData(value: number | null | undefined) {
   return Math.abs(Number(value ?? 0)) > 0.000001;
@@ -167,7 +168,7 @@ export default function ProjectDetailCosts() {
       const sections: PdfTableSection[] = [];
 
       const buildCommonCostsSection = (sourceCommonCosts = commonCosts): PdfTableSection => ({
-        title: 'Gemeinkosten',
+        title: uiText("Gemeinkosten"),
         columns: ['Kostenart', 'Basis', 'Gemeinkosten'],
         rows: [
           ['LKG', formatCurrencyOrDash(sourceCommonCosts.fgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.fgk.overheadCost)],
@@ -190,7 +191,7 @@ export default function ProjectDetailCosts() {
 
         return {
           title,
-          columns: ['Erfasst am', 'Betrag', 'Kommentar'],
+          columns: ['Erfasst am', 'Betrag', uiText('Kommentar')],
           rows,
           align: ['left', 'right', 'left'],
           columnWidths: ['1fr', '0.8fr', '2fr'],
@@ -203,7 +204,7 @@ export default function ProjectDetailCosts() {
       if (offers.length > 0 || hasNumberData(offersTotal)) {
         const offersAmount = formatCurrencyOrDash(offersTotal);
         const offersSummary = offers.length > 1
-          ? `${offersAmount} (${offers.length} Einträge)`
+          ? uiText(`${offersAmount} (${offers.length} Einträge)`, `${offersAmount} (${offers.length} entries)`)
           : offersAmount;
         summaryRows.push(['Angebotssummen', offersSummary]);
       }
@@ -218,9 +219,9 @@ export default function ProjectDetailCosts() {
         ]);
       }
       sections.push({
-        title: 'Zusammenfassung',
+        title: uiText("Zusammenfassung"),
         subtitle: !hasInvoices ? MISSING_INVOICE_NOTICE : undefined,
-        columns: ['Kennzahl', 'Wert'],
+        columns: [uiText('Kennzahl'), uiText('Wert')],
         rows: summaryRows,
         withHeader: false,
         align: ['left', 'right'],
@@ -236,12 +237,12 @@ export default function ProjectDetailCosts() {
       if (hasNumberData(costs.totalCosts.products)) costAreaRows.push(['Produkte', formatCurrencyOrDash(costs.totalCosts.products)]);
       if (hasNumberData(costs.totalCosts.specialRecords)) costAreaRows.push(['Sonderposten', formatCurrencyOrDash(costs.totalCosts.specialRecords)]);
       if (hasNumberData(costs.totalCosts.toolTrackings)) costAreaRows.push(['Werkzeuge', formatCurrencyOrDash(costs.totalCosts.toolTrackings)]);
-      if (hasNumberData(workHoursTotal)) costAreaRows.push(['Arbeitszeit', formatCurrencyOrDash(workHoursTotal)]);
-      if (hasNumberData(subcontractorWorkHoursTotal)) costAreaRows.push(['Nachunternehmer-Arbeitszeit', formatCurrencyOrDash(subcontractorWorkHoursTotal)]);
+      if (hasNumberData(workHoursTotal)) costAreaRows.push([uiText('Arbeitszeit'), formatCurrencyOrDash(workHoursTotal)]);
+      if (hasNumberData(subcontractorWorkHoursTotal)) costAreaRows.push([uiText('Nachunternehmer-Arbeitszeit'), formatCurrencyOrDash(subcontractorWorkHoursTotal)]);
       if (hasNumberData(commonCostsOverhead)) costAreaRows.push(['Gemeinkosten', formatCurrencyOrDash(commonCostsOverhead)]);
       if (costAreaRows.length > 0) {
         sections.push({
-          title: 'Kostenbereiche',
+          title: uiText("Kostenbereiche"),
           columns: ['Bereich', 'Betrag'],
           rows: costAreaRows,
           withHeader: false,
@@ -403,8 +404,8 @@ export default function ProjectDetailCosts() {
 
         if (weeklyEntries.length > 0) {
           sections.push({
-            title: 'Wochenweise Kosten',
-            columns: ['Woche', 'Produkte', 'Sonderposten', 'Werkzeuge', 'Arbeitszeit', 'NU-Arbeitszeit', 'Gesamt'],
+            title: uiText("Wochenweise Kosten"),
+            columns: ['Woche', 'Produkte', 'Sonderposten', 'Werkzeuge', uiText('Arbeitszeit'), uiText('NU-Arbeitszeit'), 'Gesamt'],
             rows: weeklyEntries.map((entry) => [
               entry.weekLabel,
               formatCurrencyOrDash(entry.products),
@@ -427,11 +428,11 @@ export default function ProjectDetailCosts() {
             ['Gesamtkosten', { value: formatCurrencyOrDash(weeklyTotal), bold: true }],
             ['Produkte', formatCurrencyOrDash(entry.products)],
             ['Sonderposten', formatCurrencyOrDash(entry.specialRecordsCost)],
-            ['Arbeitszeit', formatCurrencyOrDash(entry.workHours)],
+            [uiText('Arbeitszeit'), formatCurrencyOrDash(entry.workHours)],
           ];
 
           if (hasNumberData(entry.subcontractorWorkHours)) {
-            weeklySummaryRows.push(['Nachunternehmer-Arbeitszeit', formatCurrencyOrDash(entry.subcontractorWorkHours)]);
+            weeklySummaryRows.push([uiText('Nachunternehmer-Arbeitszeit'), formatCurrencyOrDash(entry.subcontractorWorkHours)]);
           }
 
           if (hasNumberData(entry.toolTrackingsCost)) {
@@ -439,8 +440,8 @@ export default function ProjectDetailCosts() {
           }
 
           weeklySections.push({
-            title: 'Zusammenfassung',
-            columns: ['Kennzahl', 'Wert'],
+            title: uiText("Zusammenfassung"),
+            columns: [uiText('Kennzahl'), uiText('Wert')],
             rows: weeklySummaryRows,
             withHeader: false,
             align: ['left', 'right'],
@@ -491,8 +492,8 @@ export default function ProjectDetailCosts() {
 
           if (weeklyProductRows.length > 0) {
             weeklySections.push({
-              title: 'Produkte',
-              columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', 'Kosten'],
+              title: uiText("Produkte"),
+              columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
               rows: weeklyProductRows,
               align: ['left', 'right', 'right', 'right', 'right'],
               columnWidths: ['1.95fr', '0.95fr', '1fr', '1fr', '0.9fr'],
@@ -510,8 +511,8 @@ export default function ProjectDetailCosts() {
 
           if (weeklySpecialRows.length > 0) {
             weeklySections.push({
-              title: 'Sonderposten',
-              columns: ['Bezeichnung', 'Menge', 'Kosten', 'Lieferschein'],
+              title: uiText("Sonderposten"),
+              columns: ['Bezeichnung', 'Menge', uiText('Kosten'), uiText('Lieferschein')],
               rows: weeklySpecialRows,
               align: ['left', 'right', 'right', 'right'],
               columnWidths: ['1.9fr', '1fr', '1fr', '0.8fr'],
@@ -529,8 +530,8 @@ export default function ProjectDetailCosts() {
 
           if (weeklyWorkHourRows.length > 0) {
             weeklySections.push({
-              title: 'Arbeitszeit',
-              columns: ['Tag', 'Mitarbeiter', 'Stunden', 'Kosten'],
+              title: uiText("Arbeitszeit"),
+              columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
               rows: weeklyWorkHourRows,
               align: ['left', 'left', 'right', 'right'],
               columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
@@ -548,8 +549,8 @@ export default function ProjectDetailCosts() {
 
           if (weeklySubcontractorWorkHourRows.length > 0) {
             weeklySections.push({
-              title: 'Nachunternehmer-Arbeitszeit',
-              columns: ['Tag', 'Mitarbeiter', 'Stunden', 'Kosten'],
+              title: uiText("Nachunternehmer-Arbeitszeit"),
+              columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
               rows: weeklySubcontractorWorkHourRows,
               align: ['left', 'left', 'right', 'right'],
               columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
@@ -570,8 +571,8 @@ export default function ProjectDetailCosts() {
 
           if (weeklyDeliveryRows.length > 0) {
             weeklySections.push({
-              title: 'Lieferscheine',
-              columns: ['Datum', 'Nummer', 'Kosten'],
+              title: uiText("Lieferscheine"),
+              columns: [uiText('Datum'), uiText('Nummer'), uiText('Kosten')],
               rows: weeklyDeliveryRows,
               align: ['left', 'left', 'right'],
               columnWidths: ['1.2fr', '1fr', '1fr'],
@@ -596,8 +597,8 @@ export default function ProjectDetailCosts() {
 
           if (weeklyToolRows.length > 0) {
             weeklySections.push({
-              title: 'Werkzeuge',
-              columns: ['Werkzeug', 'Von', 'Bis', 'Tage', 'Kosten'],
+              title: uiText("Werkzeuge"),
+              columns: [uiText('Werkzeug'), uiText('Von'), uiText('Bis'), 'Tage', uiText('Kosten')],
               rows: weeklyToolRows,
               align: ['left', 'center', 'center', 'right', 'right'],
               columnWidths: ['2fr', '0.9fr', '0.9fr', '0.6fr', '0.9fr'],
@@ -606,18 +607,18 @@ export default function ProjectDetailCosts() {
 
           return {
             title: `${project.title} — ${entry.weekLabel}`,
-            reportLabel: 'Projektkostenbericht Wochenweise',
+            reportLabel: uiText("Projektkostenbericht Wochenweise"),
             sections: weeklySections,
-            emptyMessage: 'Keine Kosteninformationen verfügbar.',
+            emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
           };
         });
 
         const documents = [
           {
             title: project.title,
-            reportLabel: 'Projektkostenbericht Wochenweise',
+            reportLabel: uiText("Projektkostenbericht Wochenweise"),
             sections,
-            emptyMessage: 'Keine Kosteninformationen verfügbar.',
+            emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
           },
           ...weeklyDocuments,
         ];
@@ -626,7 +627,7 @@ export default function ProjectDetailCosts() {
 
         const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
         const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-        deliverBlob(blob, `Projektkosten-wochenweise-${safeTitle}.pdf`, target, pdfWindow);
+        deliverBlob(blob, uiText(`Projektkosten-wochenweise-${safeTitle}.pdf`, `Projectkosten-wochenweise-${safeTitle}.pdf`), target, pdfWindow);
         return;
       }
 
@@ -663,8 +664,8 @@ export default function ProjectDetailCosts() {
       });
       if (productRows.length > 0) {
         sections.push({
-          title: 'Produkte',
-          columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', 'Kosten'],
+          title: uiText("Produkte"),
+          columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
           rows: productRows,
           align: ['left', 'right', 'right', 'right', 'right'],
           columnWidths: ['1.95fr', '0.95fr', '1fr', '1fr', '0.9fr'],
@@ -683,8 +684,8 @@ export default function ProjectDetailCosts() {
       ]);
       if (specialRows.length > 0) {
         sections.push({
-          title: 'Sonderposten',
-          columns: ['Bezeichnung', 'Menge', 'Kosten', 'Lieferschein'],
+          title: uiText("Sonderposten"),
+          columns: ['Bezeichnung', 'Menge', uiText('Kosten'), uiText('Lieferschein')],
           rows: specialRows,
           align: ['left', 'right', 'right', 'right'],
           columnWidths: ['1.9fr', '1fr', '1fr', '0.8fr'],
@@ -718,8 +719,8 @@ export default function ProjectDetailCosts() {
       ]);
       if (workHourRows.length > 0) {
         sections.push({
-          title: 'Arbeitszeit',
-          columns: ['Tag', 'Mitarbeiter', 'Stunden', 'Kosten'],
+          title: uiText("Arbeitszeit"),
+          columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
           rows: workHourRows,
           align: ['left', 'left', 'right', 'right'],
           columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
@@ -736,8 +737,8 @@ export default function ProjectDetailCosts() {
       ]);
       if (subcontractorWorkHourRows.length > 0) {
         sections.push({
-          title: 'Nachunternehmer-Arbeitszeit',
-          columns: ['Tag', 'Mitarbeiter', 'Stunden', 'Kosten'],
+          title: uiText("Nachunternehmer-Arbeitszeit"),
+          columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
           rows: subcontractorWorkHourRows,
           align: ['left', 'left', 'right', 'right'],
           columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
@@ -751,8 +752,8 @@ export default function ProjectDetailCosts() {
       ]);
       if (deliveryRows.length > 0) {
         sections.push({
-          title: 'Lieferscheine',
-          columns: ['Datum', 'Nummer', 'Kosten'],
+          title: uiText("Lieferscheine"),
+          columns: [uiText('Datum'), uiText('Nummer'), uiText('Kosten')],
           rows: deliveryRows,
           align: ['left', 'left', 'right'],
           columnWidths: ['1.2fr', '1fr', '1fr'],
@@ -761,8 +762,8 @@ export default function ProjectDetailCosts() {
 
       if (toolRows.length > 0) {
         sections.push({
-          title: 'Werkzeuge',
-          columns: ['Werkzeug', 'Von', 'Bis', 'Tage', 'Kosten'],
+          title: uiText("Werkzeuge"),
+          columns: [uiText('Werkzeug'), uiText('Von'), uiText('Bis'), 'Tage', uiText('Kosten')],
           rows: toolRows,
           align: ['left', 'center', 'center', 'right', 'right'],
           columnWidths: ['2fr', '0.9fr', '0.9fr', '0.6fr', '0.9fr'],
@@ -771,17 +772,17 @@ export default function ProjectDetailCosts() {
 
       const pdfData = await renderStructuredPdf({
         title: project.title,
-        reportLabel: 'Projektkostenbericht',
+        reportLabel: uiText("Projektkostenbericht"),
         sections,
-        emptyMessage: 'Keine Kosteninformationen verfügbar.',
+        emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
       });
 
       const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      deliverBlob(blob, `Projektkosten-${safeTitle}.pdf`, target, pdfWindow);
+      deliverBlob(blob, uiText(`Projektkosten-${safeTitle}.pdf`, `Projectkosten-${safeTitle}.pdf`), target, pdfWindow);
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || 'Unbekannter Fehler beim PDF-Export.');
+      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
     } finally {
       setIsPdfExporting(false);
     }
@@ -794,17 +795,17 @@ export default function ProjectDetailCosts() {
   ) => {
     const columns: MyTableColumn<ProjectFinancialEntry>[] = [
       {
-        label: 'Erfasst am',
+        label: uiText("Erfasst am"),
         render: (row: ProjectFinancialEntry) => formatDate(row.createdAt, 'long'),
         sortKey: (row: ProjectFinancialEntry) => row.createdAt.getTime(),
       },
       {
-        label: 'Betrag',
+        label: uiText("Betrag"),
         render: (row: ProjectFinancialEntry) => formatCurrency(row.amount),
         sortKey: (row: ProjectFinancialEntry) => row.amount,
       },
       {
-        label: 'Kommentar',
+        label: uiText("Kommentar"),
         render: (row: ProjectFinancialEntry) => row.comment || '',
         sortKey: (row: ProjectFinancialEntry) => (row.comment || '').toLowerCase(),
       },
@@ -812,21 +813,21 @@ export default function ProjectDetailCosts() {
 
     if (canManageProjectFinancialEntries) {
       columns.push({
-        label: 'Aktionen',
+        label: uiText("Aktionen"),
         render: (row: ProjectFinancialEntry) => <div className="flex items-center gap-1">
           <MyButton
             size="sm"
             kind="ghost"
-            aria-label="Bearbeiten"
-            title="Bearbeiten"
+            aria-label={uiText("Bearbeiten")}
+            title={uiText("Bearbeiten")}
             onClick={() => showModifyProjectFinancialEntryModal(modals, project, row)}
           ><Icons.Edit /></MyButton>
 
           <MyButton
             size="sm"
             kind="danger--tertiary"
-            aria-label="Löschen"
-            title="Löschen"
+            aria-label={uiText("Löschen")}
+            title={uiText("Löschen")}
             onClick={() => showDeleteProjectFinancialEntryModal(modals, project, row)}
           ><Icons.Delete /></MyButton>
         </div>,
@@ -852,7 +853,7 @@ export default function ProjectDetailCosts() {
         renderIcon={Icons.Download}
         loading={isPdfExporting}
         onClick={() => exportCostsToPdf('overall')}
-      >PDF</MyButton>
+      >{uiText("PDF")}</MyButton>
 
       <MyButton
         kind="ghost"
@@ -860,7 +861,7 @@ export default function ProjectDetailCosts() {
         renderIcon={Icons.Download}
         loading={isPdfExporting}
         onClick={() => exportCostsToPdf('weekly')}
-      >PDF (wochenweise)</MyButton>
+      >{uiText("PDF (wochenweise)")}</MyButton>
 
       <MyButton
         kind="ghost"
@@ -976,14 +977,14 @@ export default function ProjectDetailCosts() {
 
             addSectionTitle('Gesamtkosten');
             const totalsTable = addTable(
-              ['Bereich', 'Kosten', 'LKG', 'MGK', 'NUGK', 'Gesamt'],
+              ['Bereich', uiText('Kosten'), 'LKG', 'MGK', 'NUGK', 'Gesamt'],
               [
                 ['Produkte', 0, 0, 0, 0, 0],
                 ['Sonderposten', 0, 0, 0, 0, 0],
                 ['Lieferscheine', 0, 0, 0, 0, 0],
                 ['Werkzeuge', 0, 0, 0, 0, 0],
-                ['Arbeitszeit', 0, 0, 0, 0, 0],
-                ['Nachunternehmer-Arbeitszeit', 0, 0, 0, 0, 0],
+                [uiText('Arbeitszeit'), 0, 0, 0, 0, 0],
+                [uiText('Nachunternehmer-Arbeitszeit'), 0, 0, 0, 0, 0],
                 ['Gesamt', 0, 0, 0, 0, 0],
               ],
             );
@@ -1028,7 +1029,7 @@ export default function ProjectDetailCosts() {
             if (productRows.length) {
               addSectionTitle('Produkte');
               productsTable = addTable(
-                ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', 'Kosten'],
+                ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
                 productRows,
               );
             }
@@ -1053,7 +1054,7 @@ export default function ProjectDetailCosts() {
             if (specialRows.length) {
               addSectionTitle('Sonderposten');
               specialTable = addTable(
-                ['Bezeichnung', 'Menge', 'Einheit', 'pro Einheit', 'Gesamt', 'Lieferschein'],
+                ['Bezeichnung', 'Menge', 'Einheit', 'pro Einheit', 'Gesamt', uiText('Lieferschein')],
                 specialRows,
               );
             }
@@ -1093,7 +1094,7 @@ export default function ProjectDetailCosts() {
             if (toolRows.length) {
               addSectionTitle('Werkzeuge');
               toolsTable = addTable(
-                ['Werkzeug', 'Von', 'Bis', 'Tage', 'pro Tag', 'Gesamt'],
+                [uiText('Werkzeug'), uiText('Von'), uiText('Bis'), 'Tage', 'pro Tag', 'Gesamt'],
                 toolRows,
               );
             }
@@ -1146,9 +1147,9 @@ export default function ProjectDetailCosts() {
             });
             let workHoursTable: TableMeta | null = null;
             if (workHourRows.length) {
-              addSectionTitle('Arbeitszeit');
+              addSectionTitle(uiText('Arbeitszeit'));
               workHoursTable = addTable(
-                ['Mitarbeiter', 'Tag', 'Stunden', 'pro Stunde', 'Kosten'],
+                ['Mitarbeiter', 'Tag', uiText('Stunden'), 'pro Stunde', uiText('Kosten')],
                 workHourRows,
               );
             }
@@ -1178,9 +1179,9 @@ export default function ProjectDetailCosts() {
             });
             let subcontractorWorkHoursTable: TableMeta | null = null;
             if (subcontractorWorkHourRows.length) {
-              addSectionTitle('Nachunternehmer-Arbeitszeit');
+              addSectionTitle(uiText('Nachunternehmer-Arbeitszeit'));
               subcontractorWorkHoursTable = addTable(
-                ['Mitarbeiter', 'Tag', 'Stunden', 'pro Stunde', 'Kosten'],
+                ['Mitarbeiter', 'Tag', uiText('Stunden'), 'pro Stunde', uiText('Kosten')],
                 subcontractorWorkHourRows,
               );
             }
@@ -1206,7 +1207,7 @@ export default function ProjectDetailCosts() {
             if (deliveryNoteRows.length) {
               addSectionTitle('Lieferscheine');
               deliveryNotesTable = addTable(
-                ['Lieferschein', 'Kosten'],
+                [uiText('Lieferschein'), uiText('Kosten')],
                 deliveryNoteRows,
               );
             }
@@ -1355,13 +1356,12 @@ export default function ProjectDetailCosts() {
               type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
             const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
-            downloadBlob(blob, `Projektkosten-${safeTitle}.xlsx`);
+            downloadBlob(blob, uiText(`Projektkosten-${safeTitle}.xlsx`, `Projectkosten-${safeTitle}.xlsx`));
         }}
-      >Excel</MyButton>
+      >{uiText("Excel")}</MyButton>
     </div>
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">
-      PDF-Export fehlgeschlagen: {pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
     </MyCallout>}
 
     <AttrList>
@@ -1369,12 +1369,12 @@ export default function ProjectDetailCosts() {
       <AttrList.Attr
         name="Angebotssummen"
         value={formatCurrency(offersTotal)}
-        third={`${offers.length} ${offers.length === 1 ? 'Eintrag' : 'Einträge'}`}
+        third={uiText(`${offers.length} ${offers.length === 1 ? 'Eintrag' : 'Einträge'}`, `${offers.length} ${offers.length === 1 ? 'entry' : 'entries'}`)}
       />
       <AttrList.Attr
         name="Rechnungssummen"
         value={formatCurrency(invoicesTotal)}
-        third={`${invoices.length} ${invoices.length === 1 ? 'Eintrag' : 'Einträge'}`}
+        third={uiText(`${invoices.length} ${invoices.length === 1 ? 'Eintrag' : 'Einträge'}`, `${invoices.length} ${invoices.length === 1 ? 'entry' : 'entries'}`)}
       />
       {hasInvoices && <AttrList.Attr
         name="Gewinn/Verlust"
@@ -1412,7 +1412,7 @@ export default function ProjectDetailCosts() {
         rows={costs.products.map(p => ({ ...p, id: p.productId }))}
         columns={[
           {
-            label: 'Bezeichnung',
+            label: uiText("Bezeichnung"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return 'Unbekannt';
@@ -1420,7 +1420,7 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'Menge',
+            label: uiText("Menge"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return `${formatNumber(row.quantity)} ???`;
@@ -1429,7 +1429,7 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'Basismenge',
+            label: uiText("Basismenge"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return formatNumber(row.quantity);
@@ -1438,7 +1438,7 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'mittlerer EP',
+            label: uiText("mittlerer EP"),
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               const quantity = Number(row.quantity ?? 0);
@@ -1447,7 +1447,7 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => !!row.totalCost && formatCurrency(row.totalCost),
             sortKey: row => row.totalCost,
           },
@@ -1463,26 +1463,26 @@ export default function ProjectDetailCosts() {
         rows={costs.specialRecords}
         columns={[
           {
-            label: 'Bezeichnung',
+            label: uiText("Bezeichnung"),
             render: row => row.name,
             sortKey: row => row.name.toLowerCase(),
           },
           {
-            label: 'Menge',
+            label: uiText("Menge"),
             render: row => `${formatNumber(row.amount)} ${row.unit}`,
           },
           {
-            label: 'Preis pro Einheit',
+            label: uiText("Preis pro Einheit"),
             render: row => !!row.pricePerUnit && formatCurrency(row.pricePerUnit),
             sortKey: row => row.pricePerUnit ?? 0,
           },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => !!row.totalCost && formatCurrency(row.totalCost),
             sortKey: row => row.totalCost,
           },
           {
-            label: 'Lieferschein',
+            label: uiText("Lieferschein"),
             render: row => <MyLink to={`/products/deliveryNotes/${row.noteId}`}>{`#${row.noteAutoId}`}</MyLink>,
             sortKey: row => row.noteAutoId,
           },
@@ -1498,7 +1498,7 @@ export default function ProjectDetailCosts() {
         rows={costs.toolTrackings}
         columns={[
           {
-            label: 'Werkzeug',
+            label: uiText("Werkzeug"),
             render: async row => {
               const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
               if (!tool) return 'Unbekannt';
@@ -1506,17 +1506,17 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'Von',
+            label: uiText("Von"),
             render: row => formatDate(row.startedAt),
             sortKey: row => row.startedAt.getTime(),
           },
           {
-            label: 'Bis',
+            label: uiText("Bis"),
             render: row => row.endedAt ? formatDate(row.endedAt) : 'offen',
             sortKey: row => (row.endedAt?.getTime() ?? Number.MAX_SAFE_INTEGER),
           },
           {
-            label: 'Tage',
+            label: uiText("Tage"),
             render: row => {
               let start = startOfDay(row.startedAt);
               let end = endOfDay(row.endedAt || new Date());
@@ -1535,7 +1535,7 @@ export default function ProjectDetailCosts() {
           //   sortKey: row => row.toolUsageCostPerDay!,
           // },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => !!row.totalCost && formatCurrency(row.totalCost),
             sortKey: row => row.totalCost,
           },
@@ -1545,13 +1545,13 @@ export default function ProjectDetailCosts() {
       />
     </MyExpandable>}
 
-    {!!regularWorkHours.length && <MyExpandable title={`Arbeitszeit (${formatCurrency(workHoursTotal)})`}>
+    {!!regularWorkHours.length && <MyExpandable title={uiText(`Arbeitszeit (${formatCurrency(workHoursTotal)})`, `Working time (${formatCurrency(workHoursTotal)})`)}>
       <MyTable
         className="th-25rem"
         rows={regularWorkHours}
         columns={[
           {
-            label: 'Benutzer',
+            label: uiText("Benutzer"),
             render: async row => {
               if (!row.userId) return 'Unbekannt';
               const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
@@ -1560,17 +1560,17 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'Tag',
+            label: uiText("Tag"),
             render: row => formatDate(row.day),
             sortKey: row => row.day.getTime(),
           },
           {
-            label: 'Stunden',
+            label: uiText("Stunden"),
             render: row => formatNumber(row.hours),
             sortKey: row => row.hours,
           },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => !!row.totalCost && formatCurrency(row.totalCost),
             sortKey: row => row.totalCost,
           },
@@ -1580,13 +1580,13 @@ export default function ProjectDetailCosts() {
       />
     </MyExpandable>}
 
-    {!!subcontractorWorkHours.length && <MyExpandable title={`Nachunternehmer-Arbeitszeit (${formatCurrency(subcontractorWorkHoursTotal)})`}>
+    {!!subcontractorWorkHours.length && <MyExpandable title={uiText(`Nachunternehmer-Arbeitszeit (${formatCurrency(subcontractorWorkHoursTotal)})`, `Subcontractor work (${formatCurrency(subcontractorWorkHoursTotal)})`)}>
       <MyTable
         className="th-25rem"
         rows={subcontractorWorkHours}
         columns={[
           {
-            label: 'Benutzer',
+            label: uiText("Benutzer"),
             render: async row => {
               if (!row.userId) return 'Unbekannt';
               const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
@@ -1595,17 +1595,17 @@ export default function ProjectDetailCosts() {
             },
           },
           {
-            label: 'Tag',
+            label: uiText("Tag"),
             render: row => formatDate(row.day),
             sortKey: row => row.day.getTime(),
           },
           {
-            label: 'Stunden',
+            label: uiText("Stunden"),
             render: row => formatNumber(row.hours),
             sortKey: row => row.hours,
           },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => !!row.totalCost && formatCurrency(row.totalCost),
             sortKey: row => row.totalCost,
           },
@@ -1621,11 +1621,11 @@ export default function ProjectDetailCosts() {
         rows={costs.deliveryNotes.map(e => ({ ...e, id: e.noteId }))}
         columns={[
           {
-            label: 'Produkt',
-            render: row => <MyLink to={`/products/deliveryNotes/${row.id}`}>{`Lieferschein #${row.autoId}`}</MyLink>,
+            label: uiText("Produkt"),
+            render: row => <MyLink to={`/products/deliveryNotes/${row.id}`}>{uiText(`Lieferschein #${row.autoId}`, `Delivery note #${row.autoId}`)}</MyLink>,
           },
           {
-            label: 'Kosten',
+            label: uiText("Kosten"),
             render: row => !!row.totalCost && formatCurrency(row.totalCost),
             sortKey: row => row.totalCost,
           },

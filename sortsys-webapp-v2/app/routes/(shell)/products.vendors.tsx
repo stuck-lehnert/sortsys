@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { useNavigate } from "react-router";
 import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -7,7 +8,7 @@ import { SmallProductVendorTile } from "~/lib/tiles";
 import { TableExportActions } from "~/components/TableExportActions";
 
 export const meta: Route.MetaFunction = () => [
-  { title: 'Händler' },
+  { title: uiText("Händler") },
 ];
 
 export default function ProductVendorsPage() {
@@ -18,15 +19,15 @@ export default function ProductVendorsPage() {
   return <>
     <div className="flex gap-2 w-full overflow-x-auto">
       <TableExportActions
-        title="Händler"
+        title={uiText("Händler")}
         fileName="Haendler"
         rows={vendors ?? []}
         disabled={!vendors}
         columns={[
-          { header: 'Name', value: vendor => vendor.name, width: '2fr' },
-          { header: 'Beschreibung', value: vendor => vendor.description, width: '2fr' },
-          { header: 'Erstellt am', value: vendor => vendor.createdAt },
-          { header: 'Geändert am', value: vendor => vendor.modifiedAt },
+          { header: uiText("Name"), value: vendor => vendor.name, width: '2fr' },
+          { header: uiText("Beschreibung"), value: vendor => vendor.description, width: '2fr' },
+          { header: uiText("Erstellt am"), value: vendor => vendor.createdAt },
+          { header: uiText("Geändert am"), value: vendor => vendor.modifiedAt },
         ]}
       />
     </div>
@@ -39,12 +40,12 @@ export default function ProductVendorsPage() {
       rows={vendors ?? []}
       columns={[
         {
-          label: 'Name',
+          label: uiText("Name"),
           render: row => row.name,
           sortKey: row => row.name.toLowerCase(),
         },
         {
-          label: 'Beschreibung',
+          label: uiText("Beschreibung"),
           render: row => row.description,
           sortKey: row => row.description?.toLowerCase() ?? '',
         },

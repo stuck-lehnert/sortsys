@@ -1,3 +1,4 @@
+import { uiText, useI18n } from "~/lib/i18n";
 import { createContext, useContext, useEffect, useState } from "react";
 import { type QueryResult } from "@sortsys/v2-client";
 import { client } from "~/lib/client";
@@ -15,6 +16,7 @@ type SessionInfo = QueryResult<'auth.sessionInfo'> & {
 const SessionInfoContext = createContext<SessionInfo | null>(null);
 
 export function SessionInfoProvider(props: any) {
+  const { setLocale } = useI18n();
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
 
   useEffect(() => {
@@ -23,13 +25,14 @@ export function SessionInfoProvider(props: any) {
       return;
     }
 
-    const stream = client.streamQuery('auth.sessionInfo', undefined, { strategy: 'cache-first' });
-    stream.subscribe(([data]) => {
+    const stream = client.streamQuery('auth.sessionInfo', undefined, { strategy: 'network-first' });
+    const subscription = stream.subscribe(([data]) => {
       if (!data) {
         setSessionInfo(null);
         return;
       }
 
+      setLocale(data.user.locale);
       setSessionInfo({
         ...data,
         hasRole(role) {
@@ -47,14 +50,16 @@ export function SessionInfoProvider(props: any) {
           return false;
         },
         supportsProjectFiles() {
-          return !!(data as any)?.tenant?.objectStorageEnabled;
+          return data.tenant.objectStorageEnabled;
         },
       });
     });
-  }, [client.loggedIn()]);
+
+    return () => subscription.unsubscribe();
+  }, [setLocale]);
 
   if (!sessionInfo) return <div className="app-session-loading-overlay">
-    <Loading active className="app-session-loading" description="Lädt..." />
+    <Loading active className="app-session-loading" description={uiText("Lädt...")} />
   </div>;
 
   return <SessionInfoContext.Provider value={sessionInfo}>
@@ -64,6 +69,6 @@ export function SessionInfoProvider(props: any) {
 
 export function useSessionInfo() {
   const sessionInfo = useContext(SessionInfoContext);
-  if (!sessionInfo) throw new Error("useSessionInfo must be used within a SessionInfoProvider");
+  if (!sessionInfo) throw new Error(uiText("useSessionInfo must be used within a SessionInfoProvider"));
   return sessionInfo;
 }

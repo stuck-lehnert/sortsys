@@ -6,8 +6,12 @@
   "scripts": {
     "build": "react-router build",
     "dev": "react-router dev",
+    "lint:client-casts": "node ../sortsys-api-v2/client/scripts/check-no-client-method-any-casts.mjs",
     "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc"
+    "typecheck": "bun run lint:client-casts && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
+    "lint:i18n": "node ./scripts/check-i18n.mjs",
+    "test:i18n": "bun test app/lib/i18n.test.mjs",
+    "lint:llm-naming": "node ./scripts/check-llm-naming.mjs"
   },
   "dependencies": {
     "@carbon/icons-react": "^11.71.0",
@@ -27,8 +31,10 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-error-boundary": "^6.0.0",
+    "react-markdown": "^10.1.0",
     "react-router": "7.10.1",
     "recharts": "^3.6.0",
+    "remark-gfm": "^4.0.1",
     "rxjs": "^7.8.2"
   },
   "devDependencies": {

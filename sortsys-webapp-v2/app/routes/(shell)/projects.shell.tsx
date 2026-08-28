@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -11,12 +12,12 @@ export default function ProjectsShell() {
   const tabs = [
     {
       path: '/projects',
-      label: 'Projekte',
+      label: uiText("Projekte"),
       hideIf: false,
     },
     {
       path: '/projects/costs',
-      label: 'Kostenübersicht',
+      label: uiText("Kostenübersicht"),
       hideIf: !sessionInfo.canDo('view:projects')
         || !sessionInfo.canDo('view:deliveryNotes')
         || !sessionInfo.canDo('view:dailyProjectReports'),

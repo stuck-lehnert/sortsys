@@ -1,3 +1,4 @@
+import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { InlineLoading, OperationalTag, Tile } from "@sortsys/react-components";
 import { from } from "rxjs";
@@ -53,7 +54,7 @@ function formatBytes(value: number | null) {
 function formatDateTime(value: Date | string | number | null | undefined) {
   if (!value) return "";
 
-  return new Date(value).toLocaleString("de-DE", {
+  return new Date(value).toLocaleString(currentLocaleTag(), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -74,7 +75,7 @@ function fileToBase64(file: File) {
     };
 
     reader.onerror = () => {
-      reject(reader.error ?? new Error("Datei konnte nicht gelesen werden"));
+      reject(reader.error ?? new Error(uiText("Datei konnte nicht gelesen werden")));
     };
 
     reader.readAsDataURL(file);
@@ -83,7 +84,7 @@ function fileToBase64(file: File) {
 
 export function meta() {
   return [
-    { title: "Global Admin: Datenbankverwaltung" },
+    { title: uiText("Global Admin: Datenbankverwaltung") },
   ];
 }
 
@@ -179,25 +180,25 @@ export default function GlobalAdminDatabasesPage() {
   function showCreateHostModal() {
     modals.showForm({
       content: ({ context }) => <>
-        <h4>Postgres-Verbindung</h4>
-        <MyForm.Input required name="name" labelText="Name" />
-        <MyForm.Input required name="host" labelText="Host" />
-        <MyForm.Input required name="port" labelText="Port" rules={[MyForm.Input.rules.posint]} />
-        <MyForm.Input required name="adminDatabase" labelText="Admin-Datenbank" />
-        <MyForm.Input required name="adminUsername" labelText="Admin-Username" />
-        <MyForm.Input required name="adminPassword" type="password" labelText="Admin-Passwort" />
+        <h4>{uiText("Postgres-Verbindung")}</h4>
+        <MyForm.Input required name="name" labelText={uiText("Name")} />
+        <MyForm.Input required name="host" labelText={uiText("Host")} />
+        <MyForm.Input required name="port" labelText={uiText("Port")} rules={[MyForm.Input.rules.posint]} />
+        <MyForm.Input required name="adminDatabase" labelText={uiText("Admin-Datenbank")} />
+        <MyForm.Input required name="adminUsername" labelText={uiText("Admin-Username")} />
+        <MyForm.Input required name="adminPassword" type="password" labelText={uiText("Admin-Passwort")} />
 
-        <h4>Backup-Ziel (S3)</h4>
-        <MyForm.Checkbox name="backupEnabled" labelText="Backups aktivieren" />
-        <MyForm.Input name="backupBucket" labelText="Bucket" />
-        <MyForm.Input name="backupRegion" labelText="Region" />
-        <MyForm.Input name="backupEndpoint" labelText="Endpoint" />
-        <MyForm.Input name="backupPublicBaseUrl" labelText="Public Base URL" />
-        <MyForm.Checkbox name="backupForcePathStyle" labelText="Path-Style URLs erzwingen" />
-        <MyForm.Input name="backupAccessKeyId" labelText="Access Key ID" />
-        <MyForm.Input name="backupSecretAccessKey" type="password" labelText="Secret Access Key" />
-        <MyForm.Input name="backupSessionToken" labelText="Session Token" />
-        <MyForm.Input name="backupKeyPrefix" labelText="Key Prefix" />
+        <h4>{uiText("Backup-Ziel (S3)")}</h4>
+        <MyForm.Checkbox name="backupEnabled" labelText={uiText("Backups aktivieren")} />
+        <MyForm.Input name="backupBucket" labelText={uiText("Bucket")} />
+        <MyForm.Input name="backupRegion" labelText={uiText("Region")} />
+        <MyForm.Input name="backupEndpoint" labelText={uiText("Endpoint")} />
+        <MyForm.Input name="backupPublicBaseUrl" labelText={uiText("Public Base URL")} />
+        <MyForm.Checkbox name="backupForcePathStyle" labelText={uiText("Path-Style URLs erzwingen")} />
+        <MyForm.Input name="backupAccessKeyId" labelText={uiText("Access Key ID")} />
+        <MyForm.Input name="backupSecretAccessKey" type="password" labelText={uiText("Secret Access Key")} />
+        <MyForm.Input name="backupSessionToken" labelText={uiText("Session Token")} />
+        <MyForm.Input name="backupKeyPrefix" labelText={uiText("Key Prefix")} />
 
         <NotifyLoaded onLoad={() => {
           context.setValues({
@@ -236,17 +237,17 @@ export default function GlobalAdminDatabasesPage() {
           });
 
           if (err || !created) {
-            throw new Error(err?.message || "Host konnte nicht erstellt werden");
+            throw new Error(err?.message || uiText("Host konnte nicht erstellt werden"));
           }
 
-          setActionInfo(`Postgres-Host ${created.name} erstellt.`);
+          setActionInfo(uiText(`Postgres-Host ${created.name} erstellt.`, `PostgreSQL host ${created.name} created.`));
         });
 
         if (ok) hide();
       },
       modalProps: () => ({
-        modalHeading: "Postgres-Host hinzufügen",
-        primaryButtonText: "Host speichern",
+        modalHeading: uiText("Postgres-Host hinzufügen"),
+        primaryButtonText: uiText("Host speichern"),
       }),
     });
   }
@@ -256,7 +257,7 @@ export default function GlobalAdminDatabasesPage() {
       content: ({ context }) => <>
         <MyForm.MultiSelect
           name="host"
-          labelText="Host"
+          labelText={uiText("Host")}
           minSelectedItems={1}
           maxSelectedItems={1}
           prepare={() => hostOptions}
@@ -272,23 +273,23 @@ export default function GlobalAdminDatabasesPage() {
         <MyForm.Input
           required
           name="name"
-          labelText="Datenbankname"
-          helperText="Nur Kleinbuchstaben, Ziffern und Unterstrich"
+          labelText={uiText("Datenbankname")}
+          helperText={uiText("Nur Kleinbuchstaben, Ziffern und Unterstrich")}
           rules={[MyForm.Input.rules.pattern(IDENTIFIER_REGEX)]}
         />
 
         <MyForm.Input
           name="username"
-          labelText="Username"
-          helperText="Leer lassen für automatische Vergabe"
+          labelText={uiText("Username")}
+          helperText={uiText("Leer lassen für automatische Vergabe")}
           rules={[MyForm.Input.rules.pattern(IDENTIFIER_REGEX)]}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <MyForm.Input required name="retentionDaily" labelText="Daily" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input required name="retentionWeekly" labelText="Weekly" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input required name="retentionMonthly" labelText="Monthly" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input required name="retentionYearly" labelText="Yearly" rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionDaily" labelText={uiText("Daily")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionWeekly" labelText={uiText("Weekly")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionMonthly" labelText={uiText("Monthly")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionYearly" labelText={uiText("Yearly")} rules={[MyForm.Input.rules.posint]} />
         </div>
 
         <NotifyLoaded onLoad={() => {
@@ -304,7 +305,7 @@ export default function GlobalAdminDatabasesPage() {
         const ok = await runAction("createDatabase", async () => {
           const values = context.getValues();
           const host = (values.host ?? [])[0];
-          if (!host?.id) throw new Error("Bitte einen Host auswählen");
+          if (!host?.id) throw new Error(uiText("Bitte einen Host auswählen"));
 
           const [created, err] = await adminClient.mutate("admin.databases.create", {
             hostId: `${host.id}`,
@@ -317,21 +318,21 @@ export default function GlobalAdminDatabasesPage() {
           });
 
           if (err || !created) {
-            throw new Error(err?.message || "Datenbank konnte nicht erstellt werden");
+            throw new Error(err?.message || uiText("Datenbank konnte nicht erstellt werden"));
           }
 
           setCreatedCredentials({
             username: created.username,
             password: created.password,
           });
-          setActionInfo(`Datenbank ${created.name} erstellt.`);
+          setActionInfo(uiText(`Datenbank ${created.name} erstellt.`, `Database ${created.name} created.`));
         });
 
         if (ok) hide();
       },
       modalProps: () => ({
-        modalHeading: "Datenbank erstellen",
-        primaryButtonText: "Erstellen",
+        modalHeading: uiText("Datenbank erstellen"),
+        primaryButtonText: uiText("Erstellen"),
       }),
     });
   }
@@ -340,10 +341,10 @@ export default function GlobalAdminDatabasesPage() {
     modals.showForm({
       content: ({ context }) => <>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <MyForm.Input required name="retentionDaily" labelText="Daily" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input required name="retentionWeekly" labelText="Weekly" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input required name="retentionMonthly" labelText="Monthly" rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input required name="retentionYearly" labelText="Yearly" rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionDaily" labelText={uiText("Daily")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionWeekly" labelText={uiText("Weekly")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionMonthly" labelText={uiText("Monthly")} rules={[MyForm.Input.rules.posint]} />
+          <MyForm.Input required name="retentionYearly" labelText={uiText("Yearly")} rules={[MyForm.Input.rules.posint]} />
         </div>
 
         <NotifyLoaded onLoad={() => {
@@ -368,15 +369,16 @@ export default function GlobalAdminDatabasesPage() {
             },
           });
 
-          if (err) throw new Error(err.message || "Retention konnte nicht aktualisiert werden");
-          setActionInfo(`Retention-Regeln für ${database.name} gespeichert.`);
+          if (err) throw new Error(err.message || uiText("Retention konnte nicht aktualisiert werden"));
+          setActionInfo(uiText(`Retention-Regeln für ${database.name} gespeichert.`, `Retention rules for ${database.name} saved.`));
         });
 
         if (ok) hide();
       },
       modalProps: () => ({
-        modalHeading: `Retention bearbeiten: ${database.name}`,
-        primaryButtonText: "Speichern",
+        modalHeading: uiText(`Retention bearbeiten: ${database.name}`, `Edit retention: ${database.name}`),
+        primaryButtonText: uiText("Speichern"),
+        noFullscreen: true,
       }),
     });
   }
@@ -387,16 +389,16 @@ export default function GlobalAdminDatabasesPage() {
         <MyForm.Input
           required
           name="name"
-          labelText="Neue Datenbank"
+          labelText={uiText("Neue Datenbank")}
           rules={[MyForm.Input.rules.pattern(IDENTIFIER_REGEX)]}
-          helperText="Erlaubt: [a-z][a-z0-9_]{0,62}"
+          helperText={uiText("Erlaubt: [a-z][a-z0-9_]{0,62}")}
         />
 
         <MyForm.Input
           name="username"
-          labelText="Username"
+          labelText={uiText("Username")}
           rules={[MyForm.Input.rules.pattern(IDENTIFIER_REGEX)]}
-          helperText="Leer lassen für automatische Vergabe"
+          helperText={uiText("Leer lassen für automatische Vergabe")}
         />
 
         <NotifyLoaded onLoad={() => {
@@ -414,11 +416,11 @@ export default function GlobalAdminDatabasesPage() {
           const username = asOptionalString(values.username)?.toLowerCase() ?? null;
 
           if (!IDENTIFIER_REGEX.test(name)) {
-            throw new Error("Ungültiger Datenbankname. Erlaubt: [a-z][a-z0-9_]{0,62}");
+            throw new Error(uiText("Ungültiger Datenbankname. Erlaubt: [a-z][a-z0-9_]{0,62}"));
           }
 
           if (username && !IDENTIFIER_REGEX.test(username)) {
-            throw new Error("Ungültiger Username. Erlaubt: [a-z][a-z0-9_]{0,62}");
+            throw new Error(uiText("Ungültiger Username. Erlaubt: [a-z][a-z0-9_]{0,62}"));
           }
 
           const [forked, err] = await adminClient.mutate("admin.databases.forkFromBackup", {
@@ -428,7 +430,7 @@ export default function GlobalAdminDatabasesPage() {
           });
 
           if (err || !forked) {
-            throw new Error(err?.message || "Fork aus Backup fehlgeschlagen");
+            throw new Error(err?.message || uiText("Fork aus Backup fehlgeschlagen"));
           }
 
           setForkedCredentials({
@@ -436,14 +438,14 @@ export default function GlobalAdminDatabasesPage() {
             username: forked.username,
             password: forked.password,
           });
-          setActionInfo(`Neue Datenbank ${forked.name} wurde aus Backup ${backup.id} erzeugt.`);
+          setActionInfo(uiText(`Neue Datenbank ${forked.name} wurde aus Backup ${backup.id} erzeugt.`, `Created database ${forked.name} from backup ${backup.id}.`));
         });
 
         if (ok) hide();
       },
       modalProps: () => ({
-        modalHeading: `Backup ${backup.id} fork-en`,
-        primaryButtonText: "Fork erstellen",
+        modalHeading: uiText(`Backup ${backup.id} fork-en`, `Fork backup ${backup.id}`),
+        primaryButtonText: uiText("Fork erstellen"),
         noFullscreen: true,
       }),
     });
@@ -451,7 +453,7 @@ export default function GlobalAdminDatabasesPage() {
 
   function triggerUploadRestoreForSelectedDatabase() {
     if (!selectedDatabase) {
-      setActionErr("Bitte zuerst eine Datenbank auswählen");
+      setActionErr(uiText("Bitte zuerst eine Datenbank auswählen", "Select a database first"));
       return;
     }
 
@@ -470,7 +472,7 @@ export default function GlobalAdminDatabasesPage() {
     if (!selectedUploadFile) return;
 
     if (!selectedUploadFile.name.toLowerCase().endsWith(".sql.gz")) {
-      setActionErr("Bitte eine .sql.gz Datei auswählen");
+      setActionErr(uiText("Bitte eine .sql.gz Datei auswählen", "Select a .sql.gz file"));
       return;
     }
 
@@ -478,7 +480,7 @@ export default function GlobalAdminDatabasesPage() {
     const targetDatabase = (databases ?? []).find((database) => database.id === targetDatabaseId) ?? null;
 
     if (!targetDatabase) {
-      setActionErr("Ausgewählte Datenbank wurde nicht gefunden");
+      setActionErr(uiText("Ausgewählte Datenbank wurde nicht gefunden", "Selected database was not found"));
       return;
     }
 
@@ -492,7 +494,7 @@ export default function GlobalAdminDatabasesPage() {
       });
 
       if (uploadErr || !uploadedBackup) {
-        throw new Error(uploadErr?.message || "Backup-Upload fehlgeschlagen");
+        throw new Error(uploadErr?.message || uiText("Backup-Upload fehlgeschlagen"));
       }
 
       const [, restoreErr] = await adminClient.mutate("admin.databases.backups.restore", {
@@ -501,10 +503,10 @@ export default function GlobalAdminDatabasesPage() {
       });
 
       if (restoreErr) {
-        throw new Error(restoreErr.message || "Restore aus Upload-Backup fehlgeschlagen");
+        throw new Error(restoreErr.message || uiText("Restore aus Upload-Backup fehlgeschlagen"));
       }
 
-      setActionInfo(`Backup ${selectedUploadFile.name} wurde in ${targetDatabase.name} wiederhergestellt.`);
+      setActionInfo(uiText(`Backup ${selectedUploadFile.name} wurde in ${targetDatabase.name} wiederhergestellt.`, `Backup ${selectedUploadFile.name} restored into ${targetDatabase.name}.`));
     });
   }
 
@@ -517,11 +519,6 @@ export default function GlobalAdminDatabasesPage() {
       onChange={handleUploadFileSelected}
     />
 
-    <MyHeader
-      title="Datenbankverwaltung"
-      subtitle="Postgres-Hosts, Instanzen, Backups und Retention-Regeln"
-    />
-
     {!!actionInfo && (
       <AutoHideSuccessCallout resetKey={actionInfo} onHidden={() => setActionInfo(null)}>{actionInfo}</AutoHideSuccessCallout>
     )}
@@ -531,55 +528,33 @@ export default function GlobalAdminDatabasesPage() {
     )}
 
     {!!pendingAction && (
-      <InlineLoading description="Aktion wird ausgeführt..." />
+      <InlineLoading description={uiText("Aktion wird ausgeführt...")} />
     )}
 
     {!!createdCredentials && (
-      <AutoHideSuccessCallout resetKey={`${createdCredentials.username}:${createdCredentials.password}`} onHidden={() => setCreatedCredentials(null)}>
-        Datenbank erstellt. Zugangsdaten: <b>{createdCredentials.username}</b> / <b>{createdCredentials.password}</b>
+      <AutoHideSuccessCallout resetKey={`${createdCredentials.username}:${createdCredentials.password}`} onHidden={() => setCreatedCredentials(null)}>{uiText("Datenbank erstellt. Zugangsdaten:")}<b>{createdCredentials.username}</b> / <b>{createdCredentials.password}</b>
       </AutoHideSuccessCallout>
     )}
 
     {!!rotatedCredentials && (
-      <AutoHideSuccessCallout resetKey={`${rotatedCredentials.username}:${rotatedCredentials.password}`} onHidden={() => setRotatedCredentials(null)}>
-        Zugangsdaten rotiert. Neuer Login: <b>{rotatedCredentials.username}</b> / <b>{rotatedCredentials.password}</b>
+      <AutoHideSuccessCallout resetKey={`${rotatedCredentials.username}:${rotatedCredentials.password}`} onHidden={() => setRotatedCredentials(null)}>{uiText("Zugangsdaten rotiert. Neuer Login:")}<b>{rotatedCredentials.username}</b> / <b>{rotatedCredentials.password}</b>
       </AutoHideSuccessCallout>
     )}
 
     {!!forkedCredentials && (
-      <AutoHideSuccessCallout resetKey={`${forkedCredentials.database}:${forkedCredentials.username}:${forkedCredentials.password}`} onHidden={() => setForkedCredentials(null)}>
-        Fork erstellt: <b>{forkedCredentials.database}</b> · Login: <b>{forkedCredentials.username}</b> / <b>{forkedCredentials.password}</b>
+      <AutoHideSuccessCallout resetKey={`${forkedCredentials.database}:${forkedCredentials.username}:${forkedCredentials.password}`} onHidden={() => setForkedCredentials(null)}>{uiText("Fork erstellt:")}<b>{forkedCredentials.database}</b>{uiText(" · Login: ")}<b>{forkedCredentials.username}</b> / <b>{forkedCredentials.password}</b>
       </AutoHideSuccessCallout>
     )}
 
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <Tile className="space-y-1">
-        <div className="light">Hosts</div>
-        <h3>{hosts?.length ?? 0}</h3>
-      </Tile>
-
-      <Tile className="space-y-1">
-        <div className="light">Verwaltete Datenbanken</div>
-        <h3>{databaseRows.length}</h3>
-      </Tile>
-
-      <Tile className="space-y-1">
-        <div className="light">Ausgewählte Datenbank</div>
-        <h4>{selectedDatabase?.name ?? "-"}</h4>
-      </Tile>
-    </div>
-
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+    <div className="grid gap-4">
       <Tile className="space-y-2">
         <MyHeader
-          title="Postgres-Hosts"
-          subtitle="Verfügbare Host-Konfigurationen"
-          actions={<MyButton size="sm" renderIcon={Icons.Plus} onClick={showCreateHostModal}>Host hinzufügen</MyButton>}
+          title={uiText("Postgres-Hosts")}
+          actions={<MyButton size="sm" renderIcon={Icons.Plus} onClick={showCreateHostModal}>{uiText("Host hinzufügen")}</MyButton>}
         />
 
         {!!hostsErr && (
-          <MyCallout icon={Icons.Deny} color="red">
-            Hosts konnten nicht geladen werden: {`${(hostsErr as any)?.message ?? "Unbekannter Fehler"}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Hosts konnten nicht geladen werden:")}{`${(hostsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -590,23 +565,23 @@ export default function GlobalAdminDatabasesPage() {
           pagination={{ pageSizes: [10, 25, 50] }}
           columns={[
             {
-              label: "Name",
+              label: uiText("Name"),
               render: (row: HostSummary) => <b>{row.name}</b>,
               sortKey: (row: HostSummary) => row.name,
             },
             {
-              label: "Endpoint",
+              label: uiText("Endpoint"),
               render: (row: HostSummary) => `${row.connectionDetails.host}:${row.connectionDetails.port}`,
               sortKey: (row: HostSummary) => `${row.connectionDetails.host}:${row.connectionDetails.port}`,
             },
             {
-              label: "Backup",
+              label: uiText("Backup"),
               render: (row: HostSummary) => row.backupDetails.enabled
-                ? <OperationalTag type="green" text="Aktiv" renderIcon={Icons.Accept} />
-                : <OperationalTag type="cool-gray" text="Inaktiv" renderIcon={Icons.Disable} />,
+                ? <OperationalTag type="green" text={uiText("Aktiv")} renderIcon={Icons.Accept} />
+                : <OperationalTag type="cool-gray" text={uiText("Inaktiv")} renderIcon={Icons.Disable} />,
             },
             {
-              label: "Aktion",
+              label: uiText("Aktion"),
               render: (row: HostSummary) => {
                 const linkedDatabaseCount = databaseCountByHostId.get(row.id) ?? 0;
                 const isDeleteDisabled = linkedDatabaseCount > 0;
@@ -617,15 +592,15 @@ export default function GlobalAdminDatabasesPage() {
                   renderIcon={Icons.Delete}
                   disabled={isDeleteDisabled}
                   loading={pendingAction === `deleteHost:${row.id}`}
-                  title={isDeleteDisabled ? `${linkedDatabaseCount} Datenbank(en) sind noch mit diesem Host verknüpft` : undefined}
+                  title={isDeleteDisabled ? uiText(`${linkedDatabaseCount} Datenbank(en) sind noch mit diesem Host verknüpft`, `${linkedDatabaseCount} database(s) are still linked to this host`) : undefined}
                   onClick={() => {
                     void runAction(`deleteHost:${row.id}`, async () => {
                       const [, err] = await adminClient.mutate("admin.databases.hosts.delete", { hostId: row.id });
-                      if (err) throw new Error(err.message || "Host konnte nicht gelöscht werden");
-                      setActionInfo(`Host ${row.name} gelöscht.`);
+                      if (err) throw new Error(err.message || uiText("Host konnte nicht gelöscht werden"));
+                      setActionInfo(uiText(`Host ${row.name} gelöscht.`, `Host ${row.name} deleted.`));
                     });
                   }}
-                >Löschen</MyButton>;
+                >{uiText("Löschen")}</MyButton>;
               },
             },
           ]}
@@ -634,19 +609,17 @@ export default function GlobalAdminDatabasesPage() {
 
       <Tile className="space-y-2">
         <MyHeader
-          title="Verwaltete Datenbanken"
-          subtitle="Datenbanken und Zugangsdaten"
-          actions={<MyButton size="sm" renderIcon={Icons.Plus} disabled={!hostOptions.length} onClick={showCreateDatabaseModal}>Datenbank erstellen</MyButton>}
+          title={uiText("Datenbanken")}
+          actions={<MyButton size="sm" renderIcon={Icons.Plus} disabled={!hostOptions.length} onClick={showCreateDatabaseModal}>{uiText("Datenbank erstellen")}</MyButton>}
         />
 
         {!!databasesErr && (
-          <MyCallout icon={Icons.Deny} color="red">
-            Datenbanken konnten nicht geladen werden: {`${(databasesErr as any)?.message ?? "Unbekannter Fehler"}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Datenbanken konnten nicht geladen werden:")}{`${(databasesErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
         {!hostOptions.length && (
-          <MyCallout icon={Icons.Info} color="blue">Bitte zuerst einen Postgres-Host anlegen.</MyCallout>
+          <MyCallout icon={Icons.Info} color="blue">{uiText("Bitte zuerst einen Postgres-Host anlegen.")}</MyCallout>
         )}
 
         <MyTable
@@ -657,112 +630,94 @@ export default function GlobalAdminDatabasesPage() {
           onRowClick={(row) => setSelectedDatabaseId(row.id)}
           columns={[
             {
-              label: "Host",
+              label: uiText("Host"),
               render: (row: DatabaseSummary) => row.hostName,
               sortKey: (row: DatabaseSummary) => row.hostName,
             },
             {
-              label: "Datenbank",
+              label: uiText("Datenbank"),
               render: (row: DatabaseSummary) => <b>{row.name}</b>,
               sortKey: (row: DatabaseSummary) => row.name,
             },
             {
-              label: "Username",
+              label: uiText("Username"),
               render: (row: DatabaseSummary) => row.username,
               sortKey: (row: DatabaseSummary) => row.username,
             },
             {
-              label: "Retention",
+              label: uiText("Retention"),
               render: (row: DatabaseSummary) => `${row.retentionDaily}/${row.retentionWeekly}/${row.retentionMonthly}/${row.retentionYearly}`,
             },
             {
-              label: "Erstellt",
+              label: uiText("Erstellt"),
               render: (row: DatabaseSummary) => formatDate(row.createdAt),
               sortKey: (row: DatabaseSummary) => row.createdAt.getTime(),
             },
           ]}
         />
 
-        {!selectedDatabase && (
-          <MyCallout icon={Icons.Info} color="blue">Für weitere Aktionen eine Datenbank auswählen.</MyCallout>
-        )}
-
-        {!!selectedDatabase && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div className="light">Host: <b>{selectedDatabase.hostName}</b></div>
-            <div className="light">Username: <b>{selectedDatabase.username}</b></div>
-            <div className="light">Retention: <b>{selectedDatabase.retentionDaily}/{selectedDatabase.retentionWeekly}/{selectedDatabase.retentionMonthly}/{selectedDatabase.retentionYearly}</b></div>
-            <div className="light">Erstellt: <b>{formatDate(selectedDatabase.createdAt)}</b></div>
-          </div>
-        )}
       </Tile>
     </div>
 
-    <Tile className="space-y-2">
-      <MyHeader
-        title={selectedDatabase ? `Backups: ${selectedDatabase.name}` : "Datenbank auswählen"}
-        subtitle={selectedDatabase ? `${selectedDatabase.hostName} · ${selectedDatabase.username}` : ""}
-        actions={selectedDatabase ? (
-          <>
-            <MyButton
-              size="sm"
-              kind="secondary"
-              renderIcon={Icons.FilterEdit}
-              onClick={() => showRetentionModal(selectedDatabase)}
-            >Retention bearbeiten</MyButton>
+    {!!selectedDatabase && (
+      <Tile className="space-y-2">
+        <MyHeader
+          title={`Backups: ${selectedDatabase.name}`}
+          actions={(
+            <>
+              <MyButton
+                size="sm"
+                kind="secondary"
+                renderIcon={Icons.FilterEdit}
+                onClick={() => showRetentionModal(selectedDatabase)}
+              >{uiText("Retention bearbeiten")}</MyButton>
 
-            <MyButton
-              size="sm"
-              kind="secondary"
-              renderIcon={Icons.Create}
-              onClick={triggerUploadRestoreForSelectedDatabase}
-            >Backup hochladen</MyButton>
+              <MyButton
+                size="sm"
+                kind="secondary"
+                renderIcon={Icons.Create}
+                onClick={triggerUploadRestoreForSelectedDatabase}
+              >{uiText("Backup hochladen")}</MyButton>
 
-            <MyButton
-              size="sm"
-              kind="secondary"
-              renderIcon={Icons.SetPassword}
-              loading={pendingAction === "rotateCredentials"}
-              onClick={() => {
-                void runAction("rotateCredentials", async () => {
-                  const [rotated, err] = await adminClient.mutate("admin.databases.rotateCredentials", { databaseId: selectedDatabase.id });
-                  if (err || !rotated) throw new Error(err?.message || "Zugangsdaten konnten nicht rotiert werden");
-                  setRotatedCredentials({ username: rotated.username, password: rotated.password });
-                  setActionInfo(`Zugangsdaten für ${selectedDatabase.name} wurden rotiert.`);
-                });
-              }}
-            >Credentials rotieren</MyButton>
-
-            <MyButton
-              size="sm"
-              renderIcon={Icons.Track}
-              loading={pendingAction === "backupNow"}
-              onClick={() => {
-                void runAction("backupNow", async () => {
-                  const [, err] = await adminClient.mutate("admin.databases.backups.createNow", {
-                    databaseId: selectedDatabase.id,
-                    kind: "manual",
+              <MyButton
+                size="sm"
+                kind="secondary"
+                renderIcon={Icons.SetPassword}
+                loading={pendingAction === "rotateCredentials"}
+                onClick={() => {
+                  void runAction("rotateCredentials", async () => {
+                    const [rotated, err] = await adminClient.mutate("admin.databases.rotateCredentials", { databaseId: selectedDatabase.id });
+                    if (err || !rotated) throw new Error(err?.message || uiText("Zugangsdaten konnten nicht rotiert werden"));
+                    setRotatedCredentials({ username: rotated.username, password: rotated.password });
+                    setActionInfo(uiText(`Zugangsdaten für ${selectedDatabase.name} wurden rotiert.`, `Credentials for ${selectedDatabase.name} rotated.`));
                   });
-                  if (err) throw new Error(err.message || "Backup konnte nicht erstellt werden");
-                  setActionInfo(`Backup für ${selectedDatabase.name} gestartet.`);
-                });
-              }}
-            >Backup jetzt</MyButton>
-          </>
-        ) : null}
-      />
+                }}
+              >{uiText("Credentials rotieren")}</MyButton>
 
-      {!selectedDatabase && (
-        <MyCallout icon={Icons.Info} color="blue">Bitte oben eine Datenbank auswählen.</MyCallout>
-      )}
+              <MyButton
+                size="sm"
+                renderIcon={Icons.Track}
+                loading={pendingAction === "backupNow"}
+                onClick={() => {
+                  void runAction("backupNow", async () => {
+                    const [, err] = await adminClient.mutate("admin.databases.backups.createNow", {
+                      databaseId: selectedDatabase.id,
+                      kind: "manual",
+                    });
+                    if (err) throw new Error(err.message || uiText("Backup konnte nicht erstellt werden"));
+                    setActionInfo(uiText(`Backup für ${selectedDatabase.name} gestartet.`, `Backup for ${selectedDatabase.name} started.`));
+                  });
+                }}
+              >{uiText("Backup jetzt")}</MyButton>
+            </>
+          )}
+        />
 
-      {!!selectedDatabase && !!backupsErr && (
-        <MyCallout icon={Icons.Deny} color="red">
-          Backups konnten nicht geladen werden: {`${(backupsErr as any)?.message ?? "Unbekannter Fehler"}`}
-        </MyCallout>
-      )}
+        {!!backupsErr && (
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Backups konnten nicht geladen werden:")}{`${(backupsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          </MyCallout>
+        )}
 
-      {!!selectedDatabase && (
         <MyTable
           rows={backups ?? []}
           persistentId="GlobalAdminDatabaseBackups"
@@ -770,37 +725,37 @@ export default function GlobalAdminDatabasesPage() {
           pagination={{ pageSizes: [10, 25, 50] }}
           columns={[
             {
-              label: "Typ",
+              label: uiText("Typ"),
               render: (row: BackupSummary) => row.kind === "auto" ? "Auto" : "Manuell",
               sortKey: (row: BackupSummary) => row.kind,
             },
             {
-              label: "Status",
+              label: uiText("Status"),
               render: (row: BackupSummary) => {
                 if (row.state === "uploaded") {
-                  return <OperationalTag type="green" text="Fertig" renderIcon={Icons.Accept} />;
+                  return <OperationalTag type="green" text={uiText("Fertig")} renderIcon={Icons.Accept} />;
                 }
 
                 if (row.state === "processing") {
-                  return <OperationalTag type="cool-gray" text="Läuft" renderIcon={Icons.Track} />;
+                  return <OperationalTag type="cool-gray" text={uiText("Läuft")} renderIcon={Icons.Track} />;
                 }
 
-                return <OperationalTag type="red" text="Fehlgeschlagen" renderIcon={Icons.Deny} />;
+                return <OperationalTag type="red" text={uiText("Fehlgeschlagen")} renderIcon={Icons.Deny} />;
               },
               sortKey: (row: BackupSummary) => row.state,
             },
             {
-              label: "Erstellt",
+              label: uiText("Erstellt"),
               render: (row: BackupSummary) => formatDateTime(row.createdAt),
               sortKey: (row: BackupSummary) => row.createdAt.getTime(),
             },
             {
-              label: "Größe",
+              label: uiText("Größe"),
               render: (row: BackupSummary) => formatBytes(row.sizeBytes),
               sortKey: (row: BackupSummary) => row.sizeBytes ?? 0,
             },
             {
-              label: "Aktionen",
+              label: uiText("Aktionen"),
               render: (row: BackupSummary) => (
                 <div className="flex gap-1">
                   <MyButton
@@ -817,13 +772,13 @@ export default function GlobalAdminDatabasesPage() {
                         });
 
                         if (err || !result) {
-                          throw new Error(err?.message || "Download-URL konnte nicht erstellt werden");
+                          throw new Error(err?.message || uiText("Download-URL konnte nicht erstellt werden"));
                         }
 
                         window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
                       });
                     }}
-                  >Download</MyButton>
+                  >{uiText("Download")}</MyButton>
 
                   <MyButton
                     size="sm"
@@ -832,7 +787,7 @@ export default function GlobalAdminDatabasesPage() {
                     disabled={row.state !== "uploaded"}
                     loading={pendingAction === `fork:${row.id}`}
                     onClick={() => showForkBackupModal(row)}
-                  >Fork</MyButton>
+                  >{uiText("Fork")}</MyButton>
 
                   <MyButton
                     size="sm"
@@ -842,24 +797,24 @@ export default function GlobalAdminDatabasesPage() {
                     loading={pendingAction === `restore:${row.id}`}
                     onClick={() => {
                       if (!selectedDatabase) return;
-                      if (!window.confirm("Backup wirklich in die ausgewählte Datenbank zurückspielen? Die aktuelle Datenbank wird überschrieben.")) return;
+                      if (!window.confirm(uiText("Backup wirklich in die ausgewählte Datenbank zurückspielen? Die aktuelle Datenbank wird überschrieben.", "Restore this backup into the selected database? The current database will be overwritten."))) return;
 
                       void runAction(`restore:${row.id}`, async () => {
                         const [, err] = await adminClient.mutate("admin.databases.backups.restore", {
                           backupId: row.id,
                           targetDatabaseId: selectedDatabase.id,
                         });
-                        if (err) throw new Error(err.message || "Restore fehlgeschlagen");
-                        setActionInfo(`Backup ${row.id} wurde nach ${selectedDatabase.name} wiederhergestellt.`);
+                        if (err) throw new Error(err.message || uiText("Restore fehlgeschlagen"));
+                        setActionInfo(uiText(`Backup ${row.id} wurde nach ${selectedDatabase.name} wiederhergestellt.`, `Backup ${row.id} restored into ${selectedDatabase.name}.`));
                       });
                     }}
-                  >Restore</MyButton>
+                  >{uiText("Restore")}</MyButton>
                 </div>
               ),
             },
           ]}
         />
-      )}
-    </Tile>
+      </Tile>
+    )}
   </>;
 }

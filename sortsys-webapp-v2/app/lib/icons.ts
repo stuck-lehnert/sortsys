@@ -2,6 +2,7 @@ import Add from "@carbon/icons-react/es/Add";
 import AddAlt from "@carbon/icons-react/es/AddAlt";
 import ArrowLeft from "@carbon/icons-react/es/ArrowLeft";
 import Box from "@carbon/icons-react/es/Box";
+import Chat from "@carbon/icons-react/es/Chat";
 import Catalog from "@carbon/icons-react/es/Catalog";
 import Checkmark from "@carbon/icons-react/es/Checkmark";
 import ChevronDown from "@carbon/icons-react/es/ChevronDown";
@@ -70,6 +71,7 @@ export const Icons = {
     Dashboard: Home,
     Settings: Settings,
     Script: Code,
+    Chat: Chat,
 
     Create: AddAlt,
     Edit: Edit,

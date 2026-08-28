@@ -1,3 +1,4 @@
+import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
@@ -22,7 +23,7 @@ function parseDateInput(value: unknown, fieldLabel: string) {
   if (!text) throw new Error(`${fieldLabel} fehlt`);
 
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) throw new Error(`${fieldLabel} ist ungültig`);
+  if (!match) throw new Error(uiText(`${fieldLabel} ist ungültig`, `${fieldLabel} is invalid`));
 
   const year = Number(match[1]);
   const month = Number(match[2]);
@@ -35,7 +36,7 @@ function parseDateInput(value: unknown, fieldLabel: string) {
     || parsed.getMonth() !== month - 1
     || parsed.getDate() !== day
   ) {
-    throw new Error(`${fieldLabel} ist ungültig`);
+    throw new Error(uiText(`${fieldLabel} ist ungültig`, `${fieldLabel} is invalid`));
   }
 
   parsed.setHours(0, 0, 0, 0);
@@ -43,7 +44,7 @@ function parseDateInput(value: unknown, fieldLabel: string) {
 }
 
 function formatDateTime(value: Date) {
-  return value.toLocaleString("de-DE", {
+  return value.toLocaleString(currentLocaleTag(), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -95,20 +96,18 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
       <MyForm.Input
         required
         name="fromDate"
-        labelText="Von"
+        labelText={uiText("Von")}
         type="date"
       />
 
       <MyForm.Input
         required
         name="toDate"
-        labelText="Bis"
+        labelText={uiText("Bis")}
         type="date"
       />
 
-      <p className="light">
-        Es werden alle Lieferscheine des Projekts im ausgewählten Zeitraum konsolidiert.
-      </p>
+      <p className="light">{uiText("Es werden alle Lieferscheine des Projekts im ausgewählten Zeitraum konsolidiert.")}</p>
 
       <NotifyLoaded onLoad={() => {
         const now = new Date();
@@ -125,10 +124,10 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
 
-      const fromDate = parseDateInput(values.fromDate, "Von");
-      const toDateInclusive = parseDateInput(values.toDate, "Bis");
+      const fromDate = parseDateInput(values.fromDate, uiText("Von"));
+      const toDateInclusive = parseDateInput(values.toDate, uiText("Bis"));
       if (fromDate.getTime() > toDateInclusive.getTime()) {
-        throw new Error("Von darf nicht nach Bis liegen");
+        throw new Error(uiText("Von darf nicht nach Bis liegen"));
       }
 
       const from = new Date(fromDate);
@@ -155,7 +154,7 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
         });
 
       if (!filteredNotes.length) {
-        throw new Error("Im ausgewahlten Zeitraum sind keine Lieferscheine vorhanden");
+        throw new Error(uiText("Im ausgewahlten Zeitraum sind keine Lieferscheine vorhanden"));
       }
 
       const noteDetails = await Promise.all(filteredNotes.map(async (note) => {
@@ -164,7 +163,7 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
         }, { strategy: "cache-first" });
 
         if (costsErr) throw costsErr;
-        if (!costs) throw new Error(`Kosten fur Lieferschein #${note.autoId} konnten nicht geladen werden`);
+        if (!costs) throw new Error(uiText(`Kosten für Lieferschein #${note.autoId} konnten nicht geladen werden`, `Costs for delivery note #${note.autoId} could not be loaded`));
 
         return { note, costs };
       }));
@@ -187,15 +186,15 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
       const DECIMAL_NUM_FMT = "#,##0.00";
 
       const summarySheet = wb.addWorksheet("Lieferscheine");
-      summarySheet.getCell(1, 1).value = "Lieferschein Export (Zeitraum)";
+      summarySheet.getCell(1, 1).value = uiText("Lieferschein Export (Zeitraum)");
       summarySheet.getCell(1, 1).font = { bold: true, size: 16 };
       summarySheet.mergeCells(1, 1, 1, 6);
 
-      summarySheet.getCell(2, 1).value = `Projekt: ${project.title}`;
+      summarySheet.getCell(2, 1).value = uiText(`Projekt: ${project.title}`, `Project: ${project.title}`);
       summarySheet.mergeCells(2, 1, 2, 6);
-      summarySheet.getCell(3, 1).value = `Von: ${formatDate(fromDate, 'long')}`;
+      summarySheet.getCell(3, 1).value = uiText(`Von: ${formatDate(fromDate, 'long')}`, `From: ${formatDate(fromDate, 'long')}`);
       summarySheet.mergeCells(3, 1, 3, 6);
-      summarySheet.getCell(4, 1).value = `Bis: ${formatDate(toDateInclusive, 'long')}`;
+      summarySheet.getCell(4, 1).value = uiText(`Bis: ${formatDate(toDateInclusive, 'long')}`, `To: ${formatDate(toDateInclusive, 'long')}`);
       summarySheet.mergeCells(4, 1, 4, 6);
 
       summarySheet.addTable({
@@ -205,12 +204,12 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
         totalsRow: false,
         style: { theme: "TableStyleLight1", showRowStripes: true },
         columns: [
-          { name: "Lieferschein" },
+          { name: uiText("Lieferschein") },
           { name: "Zeitstempel" },
           { name: "Produkte" },
           { name: "Sonderposten" },
           { name: "Gesamtkosten" },
-          { name: "Kommentar" },
+          { name: uiText("Kommentar") },
         ],
         rows: noteDetails.map(({ note, costs }) => [
           `#${note.autoId}`,
@@ -293,15 +292,15 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
           totalsRow: false,
           style: { theme: "TableStyleLight1", showRowStripes: true },
           columns: [
-            { name: "Lieferschein" },
+            { name: uiText("Lieferschein") },
             { name: "Zeitstempel" },
             { name: "Typ" },
             { name: "Artikel" },
             { name: "Menge" },
             { name: "Einheit" },
             { name: "Preis" },
-            { name: "Kosten" },
-            { name: "Kommentar" },
+            { name: uiText("Kosten") },
+            { name: uiText("Kommentar") },
           ],
           rows: itemRows,
         });
@@ -334,15 +333,15 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
       const safeTitle = sanitizeFilePart(project.title);
       const fromPart = toDateInputValue(fromDate).replace(/[^0-9]/g, "");
       const toPart = toDateInputValue(toDateInclusive).replace(/[^0-9]/g, "");
-      downloadBlob(blob, `Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`);
+      downloadBlob(blob, uiText(`Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`, `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`));
 
       hide();
     },
     modalProps: () => ({
       noFullscreen: true,
-      modalHeading: "Lieferscheine als Excel exportieren",
+      modalHeading: uiText("Lieferscheine als Excel exportieren"),
       modalLabel: project.title,
-      primaryButtonText: "Exportieren",
+      primaryButtonText: uiText("Exportieren"),
     }),
   });
 }
@@ -355,12 +354,8 @@ export function showExportProjectRegieReportsModal(
   modals.showForm({
     content: () => <>
       {format === 'pdf'
-        ? <p className="light">
-            Es werden alle Regieberichte des Projekts in einer PDF-Datei exportiert. Jeder Bericht umfasst eine Kalenderwoche, startet auf einer neuen Seite und endet mit Signaturfeldern fur Bauleiter und Bauherr.
-          </p>
-        : <p className="light">
-            Es werden alle Regieberichte des Projekts exportiert. Jeder Bericht wird in einem eigenen Tabellenblatt mit Stundenmatrix je Mitarbeiter und Wochentag abgelegt.
-          </p>}
+        ? <p className="light">{uiText("Es werden alle Regieberichte des Projekts in einer PDF-Datei exportiert. Jeder Bericht umfasst eine Kalenderwoche, startet auf einer neuen Seite und endet mit Signaturfeldern fur Bauleiter und Bauherr.")}</p>
+        : <p className="light">{uiText("Es werden alle Regieberichte des Projekts exportiert. Jeder Bericht wird in einem eigenen Tabellenblatt mit Stundenmatrix je Mitarbeiter und Wochentag abgelegt.")}</p>}
     </>,
     onSubmit: async ({ hide }) => {
       const [reports, reportsErr] = await client.query("regieReports.list", {
@@ -379,7 +374,7 @@ export function showExportProjectRegieReportsModal(
         });
 
       if (!reportList.length) {
-        throw new Error("Fur dieses Projekt sind keine Regieberichte vorhanden");
+        throw new Error(uiText("Fur dieses Projekt sind keine Regieberichte vorhanden"));
       }
 
       const productIds = [...new Set(
@@ -422,7 +417,7 @@ export function showExportProjectRegieReportsModal(
         const blob = new Blob([pdfData] as any, { type: "application/pdf" });
 
         const safeTitle = sanitizeFilePart(project.title);
-        deliverBlob(blob, `Regieberichte-${safeTitle}.pdf`);
+        deliverBlob(blob, uiText(`Regieberichte-${safeTitle}.pdf`, `Time-and-material reporte-${safeTitle}.pdf`));
         hide();
         return;
       }
@@ -447,22 +442,22 @@ export function showExportProjectRegieReportsModal(
           usedWorksheetNames,
         );
 
-        ws.getCell(1, 1).value = `Regiebericht #${report.autoId}`;
+        ws.getCell(1, 1).value = uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`);
         ws.getCell(1, 1).font = { size: 16, bold: true };
         ws.mergeCells(1, 1, 1, 9);
 
-        ws.getCell(2, 1).value = `Projekt: ${project.title}`;
+        ws.getCell(2, 1).value = uiText(`Projekt: ${project.title}`, `Project: ${project.title}`);
         ws.mergeCells(2, 1, 2, 9);
 
         ws.getCell(3, 1).value = `Kalenderwoche: ${weekLabel}`;
         ws.mergeCells(3, 1, 3, 9);
 
-        ws.getCell(4, 1).value = `Zeitraum: ${formatDate(weekStart)} bis ${formatDate(weekEnd)}`;
+        ws.getCell(4, 1).value = uiText(`Zeitraum: ${formatDate(weekStart)} bis ${formatDate(weekEnd)}`, `Period: ${formatDate(weekStart)} to ${formatDate(weekEnd)}`);
         ws.mergeCells(4, 1, 4, 9);
 
         let cursor = 6;
         if (`${report.summary ?? ""}`.trim()) {
-          ws.getCell(cursor, 1).value = "Beschreibung der Arbeiten";
+          ws.getCell(cursor, 1).value = uiText("Beschreibung der Arbeiten");
           ws.getCell(cursor, 1).font = { bold: true, size: 12 };
           cursor += 1;
 
@@ -526,7 +521,7 @@ export function showExportProjectRegieReportsModal(
           });
         let workHoursTable: { firstDataRow: number; rowCount: number; } | null = null;
         if (workHoursRows.length) {
-          addSectionTitle("Arbeitszeit je Mitarbeiter und Tag");
+          addSectionTitle(uiText("Arbeitszeit je Mitarbeiter und Tag"));
           workHoursTable = addTable(
             `RegieWorkHours_${index + 1}`,
             ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES, "Gesamt"],
@@ -575,7 +570,7 @@ export function showExportProjectRegieReportsModal(
           addSectionTitle("Sonderposten");
           specialTable = addTable(
             `RegieSpecial_${index + 1}`,
-            ["Bezeichnung", "Menge", "Einheit", "Kommentar"],
+            ["Bezeichnung", "Menge", "Einheit", uiText("Kommentar")],
             specialRows,
           );
         }
@@ -605,17 +600,17 @@ export function showExportProjectRegieReportsModal(
       });
 
       const safeTitle = sanitizeFilePart(project.title);
-      downloadBlob(blob, `Regieberichte-${safeTitle}.xlsx`);
+      downloadBlob(blob, uiText(`Regieberichte-${safeTitle}.xlsx`, `Time-and-material reporte-${safeTitle}.xlsx`));
 
       hide();
     },
     modalProps: () => ({
       noFullscreen: true,
       modalHeading: format === 'pdf'
-        ? "Regieberichte als PDF exportieren"
-        : "Regieberichte als Excel exportieren",
+        ? uiText("Regieberichte als PDF exportieren")
+        : uiText("Regieberichte als Excel exportieren"),
       modalLabel: project.title,
-      primaryButtonText: "Exportieren",
+      primaryButtonText: uiText("Exportieren"),
     }),
   });
 }

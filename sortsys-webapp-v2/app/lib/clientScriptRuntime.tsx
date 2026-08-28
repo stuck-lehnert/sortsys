@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { Modal } from "@sortsys/react-components";
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { MyCallout } from "~/components/MyCallout";
@@ -61,14 +62,14 @@ function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {
     return {
       name: err.name || 'Error',
-      message: err.message || 'Unbekannter Fehler',
+      message: err.message || uiText('Unbekannter Fehler'),
       stack: err.stack,
     };
   }
 
   return {
     name: 'Error',
-    message: `${err ?? 'Unbekannter Fehler'}`,
+    message: `${err ?? uiText('Unbekannter Fehler')}`,
   };
 }
 
@@ -136,7 +137,7 @@ function assertAllowedImports(code: string) {
   const allowed = ALLOWED_SCRIPT_IMPORTS.join('|');
   const stripped = code.replace(new RegExp(`\\bimport\\s*\\(\\s*(['"])(?:${allowed})\\1\\s*\\)`, 'g'), '');
   if (/\bimport\s*(?:\(|[\w*{])/.test(stripped) || /(^|\n)\s*export\s+/m.test(stripped)) {
-    throw new Error(`Nur dynamische Imports dieser Module sind erlaubt: ${ALLOWED_SCRIPT_IMPORTS.join(', ')}`);
+    throw new Error(uiText(`Nur dynamische Imports dieser Module sind erlaubt: ${ALLOWED_SCRIPT_IMPORTS.join(', ')}`, `Only dynamic imports of these modules are allowed: ${ALLOWED_SCRIPT_IMPORTS.join(', ')}`));
   }
 }
 
@@ -167,9 +168,9 @@ const rpc = globalThis.__sortsysRpc;
 function normalize(input) {
   input = input && typeof input === 'object' ? input : {};
   return {
-    title: String(input.title ?? 'Bestätigung'),
+    title: String(input.title ?? ${JSON.stringify(uiText('Bestätigung', 'Confirmation'))}),
     content: String(input.content ?? ''),
-    buttonText: String(input.buttonText ?? 'Bestätigen'),
+    buttonText: String(input.buttonText ?? ${JSON.stringify(uiText('Bestätigen', 'Confirm'))}),
   };
 }
 export function requireConfirmation(input) {
@@ -215,9 +216,9 @@ function prepareField(field) {
 export async function showModalForm(config) {
   config = config && typeof config === 'object' ? config : {};
   const prepared = {
-    title: String(config.title ?? 'Formular'),
+    title: String(config.title ?? ${JSON.stringify(uiText('Formular', 'Form'))}),
     content: String(config.content ?? ''),
-    primaryButtonText: String(config.primaryButtonText ?? 'Speichern'),
+    primaryButtonText: String(config.primaryButtonText ?? ${JSON.stringify(uiText('Speichern', 'Save'))}),
     fields: Array.isArray(config.fields) ? config.fields.map(prepareField) : [],
   };
 
@@ -454,8 +455,8 @@ const callbacks = new Map();
 let nextId = 1;
 
 function serializeError(err) {
-  if (err instanceof Error) return { name: err.name || 'Error', message: err.message || 'Unbekannter Fehler', stack: err.stack };
-  return { name: 'Error', message: String(err ?? 'Unbekannter Fehler') };
+  if (err instanceof Error) return { name: err.name || 'Error', message: err.message || ${JSON.stringify(uiText('Unbekannter Fehler', 'Unknown error'))}, stack: err.stack };
+  return { name: 'Error', message: String(err ?? ${JSON.stringify(uiText('Unbekannter Fehler', 'Unknown error'))}) };
 }
 
 function lockGlobal(name) {
@@ -498,7 +499,7 @@ onmessage = async event => {
   if (message.type === 'callback') {
     try {
       const callback = callbacks.get(message.callbackId);
-      if (typeof callback !== 'function') throw new Error('Callback nicht gefunden.');
+      if (typeof callback !== 'function') throw new Error(${JSON.stringify(uiText('Callback nicht gefunden.', 'Callback not found.'))});
       const value = await callback(...(message.args ?? []));
       postMessage({ type: 'callbackResult', id: message.id, value });
     } catch (err) {
@@ -560,15 +561,15 @@ function showScriptConfirmation(modals: MyModalsInterface, input: { title?: stri
 
     modals.show(({ visible, hide }) => <Modal
       open={visible}
-      modalHeading={input.title || 'Bestätigung'}
-      primaryButtonText={input.buttonText || 'Bestätigen'}
-      secondaryButtonText="Abbrechen"
+      modalHeading={input.title || uiText('Bestätigung', 'Confirmation')}
+      primaryButtonText={input.buttonText || uiText('Bestätigen', 'Confirm')}
+      secondaryButtonText={uiText("Abbrechen")}
       danger={!!input.danger}
       onRequestClose={() => settle(false, hide)}
       onRequestSubmit={() => settle(true, hide)}
     >
       <div className="script-confirmation-content" data-danger={input.danger ? 'true' : undefined}>
-        {!!input.danger && <MyCallout icon={Icons.Deny} color="red">Gefährliche Aktion. Prüfe die Auswirkungen vor dem Fortfahren.</MyCallout>}
+        {!!input.danger && <MyCallout icon={Icons.Deny} color="red">{uiText("Gefährliche Aktion. Prüfe die Auswirkungen vor dem Fortfahren.", "Dangerous action. Review the impact before continuing.")}</MyCallout>}
         <div className="script-html-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(input.content ?? '') }} />
       </div>
     </Modal>);
@@ -636,7 +637,7 @@ function ScriptModalForm(props: {
       if (!field.validateCallbackId) continue;
       const result = await props.callCallback(field.validateCallbackId, [values[field.name], values]);
       if (typeof result === 'string' && result.trim()) return result.trim();
-      if (result === false) return `${field.label} ist ungültig.`;
+      if (result === false) return uiText(`${field.label} ist ungültig.`, `${field.label} is invalid.`);
     }
     return null;
   }
@@ -736,8 +737,8 @@ function ScriptModalFormContent(props: {
     data-fullwidth="true"
     open={props.visible}
     modalHeading={props.config.title || 'Formular'}
-    primaryButtonText={props.config.primaryButtonText || 'Speichern'}
-    secondaryButtonText="Abbrechen"
+    primaryButtonText={props.config.primaryButtonText || uiText('Speichern')}
+    secondaryButtonText={uiText("Abbrechen")}
     primaryButtonDisabled={context.loading()}
     onRequestClose={() => props.settle({ confirmed: false })}
     onRequestSubmit={() => context.submit()}
@@ -777,9 +778,9 @@ async function handleClientRequest(
   sleep: (ms: unknown) => Promise<void>,
   onLog?: (values: unknown[]) => void,
 ) {
-  if (kind === 'client.query') return await (client.query as any)(payload.path, payload.input, payload.opts);
-  if (kind === 'client.mutate') return await (client.mutate as any)(payload.path, payload.input, payload.opts);
-  if (kind === 'client.invalidate') return await (client.invalidate as any)(payload.path);
+  if (kind === 'client.query') return await client.queryDynamic(payload.path, payload.input, payload.opts);
+  if (kind === 'client.mutate') return await client.mutateDynamic(payload.path, payload.input, payload.opts);
+  if (kind === 'client.invalidate') return await client.invalidate(payload.path);
   if (kind === 'client.invalidateCascading') return await client.invalidateCascading(payload.path);
   if (kind === 'popup.confirm') return await showScriptConfirmation(modals, payload);
   if (kind === 'modalForm.show') return await showScriptModalForm(modals, payload, callCallback);
@@ -831,11 +832,11 @@ export function runClientScript(modals: MyModalsInterface, code: string, onLog?:
 
   const sleep = (ms: unknown) => {
     if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) {
-      return Promise.reject(new Error('sleep erwartet nicht-negative Millisekunden.'));
+      return Promise.reject(new Error(uiText("sleep erwartet nicht-negative Millisekunden.")));
     }
 
     if (ms > SCRIPT_TIMEOUT_MS) {
-      return Promise.reject(new Error(`sleep darf höchstens ${SCRIPT_TIMEOUT_MS} ms dauern.`));
+      return Promise.reject(new Error(uiText(`sleep darf höchstens ${SCRIPT_TIMEOUT_MS} ms dauern.`, `sleep may take at most ${SCRIPT_TIMEOUT_MS} ms.`)));
     }
 
     return new Promise<void>((resolve) => {
@@ -854,7 +855,7 @@ export function runClientScript(modals: MyModalsInterface, code: string, onLog?:
   return new Promise<ScriptRunResult>((resolve) => {
     const timeout = window.setTimeout(() => {
       cleanup();
-      resolve({ ok: false, error: { name: 'TimeoutError', message: 'Skript wurde nach 120 Sekunden beendet.' } });
+      resolve({ ok: false, error: { name: 'TimeoutError', message: uiText('Skript wurde nach 120 Sekunden beendet.') } });
     }, SCRIPT_TIMEOUT_MS);
 
     const finish = (result: ScriptRunResult) => {
@@ -922,7 +923,7 @@ export function useClientScriptRunner() {
   }, []);
 
   const run = useCallback(async (code: string) => {
-    if (runningRef.current) throw new Error('Es läuft bereits ein Skript.');
+    if (runningRef.current) throw new Error(uiText("Es läuft bereits ein Skript."));
     runningRef.current = true;
     setRunning(true);
     clearLogs();
@@ -972,13 +973,13 @@ export function ScriptConsole(props: { entries: ScriptLogEntry[]; resizable?: bo
     data-resizable={props.resizable ? 'true' : undefined}
     style={props.resizable ? { height } : undefined}
     role="log"
-    aria-label="Skript-Konsole"
+    aria-label={uiText("Skript-Konsole", "Script console")}
   >
     {!!props.resizable && <div
       className="script-console-resize-handle"
       role="separator"
       aria-orientation="horizontal"
-      aria-label="Konsolenhöhe ändern"
+      aria-label={uiText("Konsolenhöhe ändern", "Resize console")}
       tabIndex={0}
       onPointerDown={startResize}
       onKeyDown={event => {
@@ -987,7 +988,7 @@ export function ScriptConsole(props: { entries: ScriptLogEntry[]; resizable?: bo
       }}
     />}
     <div className="script-console-body">
-      <div className="script-console-title">Konsole</div>
+      <div className="script-console-title">{uiText("Konsole", "Console")}</div>
       {props.entries.map(entry => <div key={entry.id} className="script-console-entry">
         <span className="script-console-time">{entry.timestamp.toLocaleTimeString()}</span>
         <div className="script-console-values">{entry.values.map(renderLogValue)}</div>

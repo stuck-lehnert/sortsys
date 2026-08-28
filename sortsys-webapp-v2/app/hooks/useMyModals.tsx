@@ -1,3 +1,4 @@
+import { uiText } from "~/lib/i18n";
 import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
 import { useForceUpdate } from "./useForceUpdate";
 import { generateId } from "~/lib/utils";
@@ -152,9 +153,9 @@ function _Modals(props: {
           open={visible}
           onRequestClose={hide}
           // primaryButtonDisabled={context.loading()}
-          secondaryButtonText="Abbrechen"
+          secondaryButtonText={uiText("Abbrechen")}
           onRequestSubmit={onRequestSubmit}
-          closeButtonLabel="Abbrechen"
+          closeButtonLabel={uiText("Abbrechen")}
           // shouldSubmitOnEnter
           primaryButtonDisabled={context.loading()}
           primaryButtonText={primaryButtonText}
