@@ -136,7 +136,7 @@ export default function ToolDetailPage() {
 
         {!!tool.archivedSince && <MyCallout icon={Icons.Archive} color="grey">{uiText("Werkzeug ist seit dem")}{formatDate(tool.archivedSince)}{uiText("archiviert")}</MyCallout>}
 
-        {!!latestInventory && <MyCallout icon={Icons.Info} color="blue">{uiText("Letzte Inventur am")}{formatDate(latestInventory.createdAt)}
+        {!!latestInventory && <MyCallout icon={Icons.Info} color="blue">{uiText("Letzte Inventur am")} {formatDate(latestInventory.createdAt)}
             {!!latestInventory.comment && <>
                 <br /><span className="light">{latestInventory.comment}</span>
             </>}
