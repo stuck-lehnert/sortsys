@@ -286,15 +286,23 @@ wait_for_container_log() {
 copy_api_workspace_into_container() {
   local container_name="$1"
 
-  tar --exclude=./target --exclude=./client/node_modules -C "$API_DIR" -cf - . |
-    "$CONTAINER_RUNTIME" cp - "${container_name}:/sortsys-api-v2"
+  # Podman requires the destination of a streamed archive to exist already.
+  # Include the workspace directory in the archive and extract it below `/`,
+  # which exists even before the container has been started.
+  tar \
+    --exclude=sortsys-api-v2/target \
+    --exclude=sortsys-api-v2/client/node_modules \
+    -C "$ROOT_DIR" \
+    -cf - \
+    sortsys-api-v2 |
+    "$CONTAINER_RUNTIME" cp - "${container_name}:/"
 }
 
 copy_job_runner_workspace_into_container() {
   local container_name="$1"
 
-  tar -C "$JOB_RUNNER_DIR" -cf - . |
-    "$CONTAINER_RUNTIME" cp - "${container_name}:/sortsys-v2-job_runner"
+  tar -C "$ROOT_DIR" -cf - sortsys-v2-job_runner |
+    "$CONTAINER_RUNTIME" cp - "${container_name}:/"
 }
 
 validate_pg_identifier() {
