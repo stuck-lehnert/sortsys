@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - predeploy
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust builds
+        uses: actions/cache@v5
+        with:
+          path: |
+            /tmp/sortsys-api-v2-cargo-registry
+            /tmp/sortsys-api-v2-rust-target
+            sortsys-dwgviewer/lib/target
+          key: rust-${{ runner.os }}-${{ hashFiles('sortsys-api-v2/Cargo.lock', 'sortsys-dwgviewer/lib/Cargo.lock') }}
+          restore-keys: |
+            rust-${{ runner.os }}-
+
+      - name: Set up Go 1.25
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: sortsys-v2-job_runner/go.sum
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: sortsys-dwgviewer/package-lock.json
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Run all checks
+        run: ./scripts/ci
+
+  promote:
+    name: Promote predeploy to deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --heads origin deploy >/dev/null; then
+            git fetch --no-tags origin refs/heads/deploy:refs/remotes/origin/deploy
+
+            if ! git merge-base --is-ancestor origin/deploy "$GITHUB_SHA"; then
+              echo "predeploy must contain the current deploy history." >&2
+              echo "Revert unwanted releases on master instead of rewriting deployment history." >&2
+              exit 1
+            fi
+          fi
+
+          git push origin "$GITHUB_SHA:refs/heads/deploy"

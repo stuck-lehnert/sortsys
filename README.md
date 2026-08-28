@@ -38,13 +38,19 @@ Press `Ctrl+C` to stop the stack and remove its development containers. The port
 
 ## Tests
 
-The integration test script creates isolated PostgreSQL, MinIO, API, and job-runner containers. It runs the Rust unit and network tests, database and object-storage scenarios, Go tests, contract checks, and client tests.
+The API integration script creates isolated PostgreSQL, MinIO, API, and job-runner containers. It runs the Rust unit and network tests, database and object-storage scenarios, contract checks, and client tests.
 
 ```bash
 ./scripts/test-api
 ```
 
-Package-specific checks are documented in each subproject README.
+Run the same complete repository check as GitHub Actions with:
+
+```bash
+./scripts/ci
+```
+
+This also checks the Go job runner, Rust DWG parser, DWG viewer, WebAssembly build, and web application. The [CI branch flow](.github/BRANCHES.md) documents how `master`, `predeploy`, and `deploy` are used.
 
 ## Deployment
 
