@@ -1,6 +1,7 @@
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { MyHeader } from "~/components/MyHeader";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useI18n } from "~/lib/i18n";
 
 export default function SettingsShell() {
@@ -32,7 +33,9 @@ export default function SettingsShell() {
         </TabList>
       </Tabs>
 
-      <Outlet />
+      <ScopedErrorBoundary scope="settings.content" resetKey={path}>
+        <Outlet />
+      </ScopedErrorBoundary>
     </div>
   );
 }

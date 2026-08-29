@@ -12,6 +12,7 @@ import {
 } from "@sortsys/react-components";
 import { useEffect, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
 import { adminClient, logoutGlobalAdmin, restoreAdminSession } from "~/lib/adminClient";
 import { Icons } from "~/lib/icons";
@@ -81,7 +82,9 @@ export default function GlobalAdminLayout() {
           </TabList>
         </Tabs>
 
-        <Outlet />
+        <ScopedErrorBoundary scope="global-admin.content" resetKey={location.pathname}>
+          <Outlet />
+        </ScopedErrorBoundary>
       </Content>
     </>
   );

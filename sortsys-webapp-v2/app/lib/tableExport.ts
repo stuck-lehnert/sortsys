@@ -1,7 +1,9 @@
 import { uiText } from "~/lib/i18n";
+import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { formatDate } from "~/lib/format";
 import { renderStructuredPdf, type PdfTableAlign } from "~/lib/pdf";
-import { deliverBlob, downloadBlob } from "~/lib/utils";
+import { deliverBlob } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 import { exportToExcel } from "~/lib/xlsx";
 
 export type TableExportFormat = 'excel' | 'pdf';
@@ -23,6 +25,7 @@ export type TableExportOptions<RowT> = {
   rows: RowT[];
   columns: TableExportColumn<RowT>[];
   subtitle?: string;
+  modals: MyModalsInterface;
 };
 
 function normalizeFileName(value: string) {
@@ -56,7 +59,7 @@ export async function exportTable<RowT>(options: TableExportOptions<RowT>) {
     const blob = new Blob([bytes] as any, {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
-    downloadBlob(blob, `${fileBase}.xlsx`);
+    await openExcelExport(options.modals, blob, `${fileBase}.xlsx`);
     return;
   }
 

@@ -21,7 +21,8 @@ import { MyDropdown } from "~/components/MyDropdown";
 import { Icons } from "~/lib/icons";
 import { renderStructuredPdf, type PdfTableSection } from "~/lib/pdf";
 import { showDeleteDeliveryNoteModal, showModifyDeliveryNoteModal } from "~/modals/deliveryNotes";
-import { deliverBlob, downloadBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 
 function formatProductAmount(amount: number, unit: string) {
   const normalizedUnit = `${unit ?? ''}`.trim();
@@ -374,7 +375,7 @@ export default function DeliveryNoteDetailPage() {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
-    downloadBlob(blob, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
+    await openExcelExport(modals, blob, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
   }
 
   return <>

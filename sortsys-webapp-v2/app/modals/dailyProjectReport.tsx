@@ -11,7 +11,8 @@ import { formatAddress, formatDate, formatNumber, userFullName } from "~/lib/for
 import { Icons } from "~/lib/icons";
 import { renderStructuredPdfBatch, type PdfTableSection } from "~/lib/pdf";
 import { dailyReportDayKey, SmallProjectTile, SmallUserTile } from "~/lib/tiles";
-import { deliverBlob, downloadBlob, generateId, parseFloatCustom } from "~/lib/utils";
+import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 import type { DailyProjectReport, Project, User } from "~/type-helpers";
 
 const WEEKDAY_NAMES = [
@@ -983,7 +984,7 @@ export function showExportWeeklyDailyProjectReportsModal(
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
 
-      downloadBlob(blob, `Bauwochenberichte-${safeTitle}.xlsx`);
+      await openExcelExport(modals, blob, uiText(`Bauwochenberichte-${safeTitle}.xlsx`, `Weekly-construction-reports-${safeTitle}.xlsx`));
       hide();
     },
     modalProps: () => ({

@@ -15,7 +15,8 @@ import { client } from "~/lib/client";
 import { formatCurrency, formatDate, formatNumber, formatPercent, gainOrLossColor, productTitle, toolTitle, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { renderStructuredPdf, renderStructuredPdfBatch, type PdfTableSection } from "~/lib/pdf";
-import { deliverBlob, downloadBlob, endOfDay, startOfDay, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import { deliverBlob, endOfDay, startOfDay, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 import {
   showDeleteProjectFinancialEntryModal,
   showModifyProjectFinancialEntryModal,
@@ -1356,7 +1357,7 @@ export default function ProjectDetailCosts() {
               type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
             const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
-            downloadBlob(blob, uiText(`Projektkosten-${safeTitle}.xlsx`, `Projectkosten-${safeTitle}.xlsx`));
+            await openExcelExport(modals, blob, uiText(`Projektkosten-${safeTitle}.xlsx`, `Project-costs-${safeTitle}.xlsx`));
         }}
       >{uiText("Excel")}</MyButton>
     </div>

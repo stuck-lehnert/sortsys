@@ -3,6 +3,7 @@ import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDropdown } from "~/components/MyDropdown";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { MyHeader } from "~/components/MyHeader";
 import { showRemarkFormModal } from "~/components/Remarks";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -194,6 +195,8 @@ export default function ProjectDetailShell() {
             </TabList>
         </Tabs>
 
-        <Outlet context={{ project }} />
+        <ScopedErrorBoundary scope="project.content" resetKey={path}>
+            <Outlet context={{ project }} />
+        </ScopedErrorBoundary>
     </>;
 }

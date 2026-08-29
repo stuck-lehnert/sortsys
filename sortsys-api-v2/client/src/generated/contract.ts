@@ -49,6 +49,7 @@ export type QueryInputs = {
   "llm.chats.get": { chatId: Id, };
   "llm.chats.list": void;
   "llm.status": void;
+  "office.exports.officeConfig": { sessionToken: string, };
   "personalization.actions.list": undefined | void | { limit?: undefined | number; };
   "personalization.activity.list": undefined | void | { limit?: undefined | number; resourceType?: undefined | null | "user" | "customer" | "project" | "contact" | "product" | "tool" | "productVendor" | "deliveryNote" | "regieReport" | "dailyProjectReport"; resourceId?: undefined | null | string; contextId?: undefined | null | string; includeProjectContext?: undefined | false | true; };
   "personalization.visits.list": undefined | void | { limit?: undefined | number; };
@@ -70,6 +71,7 @@ export type QueryInputs = {
   "projects.dailyReports.list": { projectId?: undefined | null | string; from?: unknown; to?: unknown; limit?: undefined | number; offset?: undefined | number; };
   "projects.deployments.list": { from: unknown; to: unknown; since?: unknown; projectId?: undefined | null | string; userId?: undefined | null | string; };
   "projects.files.list": { projectId: string; };
+  "projects.files.officeConfig": { projectId: Id, fileId: Id, };
   "projects.get": { id: string; };
   "projects.list": { search?: undefined | null | string; finished?: undefined | null | false | true; customerId?: undefined | null | string; };
   "projects.unavailability.list": { from?: unknown; to?: unknown; projectId?: undefined | null | string; };
@@ -130,6 +132,7 @@ export type QueryOutputs = {
   "llm.chats.get": { chat: ChatSummary, messages: Array<ChatMessage>, proposals: Array<ChangeProposal>, };
   "llm.chats.list": Array<{ id: Id, title: string, createdAt: Date, updatedAt: Date, }>;
   "llm.status": { available: boolean, hasRole: boolean, tenantEnabled: boolean, providerConfigured: boolean, provider: string | null, model: string | null, monthlyTokenQuota: bigint | null, usedTokens: bigint, };
+  "office.exports.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
   "personalization.actions.list": { id: string; actionId: string; label: string; href: null | string; usedAt: Date; }[];
   "personalization.activity.list": { resourceType: "user" | "customer" | "project" | "contact" | "product" | "tool" | "productVendor" | "deliveryNote" | "regieReport" | "dailyProjectReport"; resourceId: string; contextId: null | string; contextTitle: null | string; contextDate: null | Date; title: string; description: null | string; action: "created" | "updated"; occurredAt: Date; createdAt: Date; modifiedAt: null | Date; }[];
   "personalization.visits.list": { id: string; path: string; title: null | string; visitedAt: Date; }[];
@@ -151,6 +154,7 @@ export type QueryOutputs = {
   "projects.dailyReports.list": { id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: "internal" | "external" | "subcontractor"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }[];
   "projects.deployments.list": { id: string; projectId: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[];
   "projects.files.list": { id: string; projectId: string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[];
+  "projects.files.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
   "projects.get": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; };
   "projects.list": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; }[];
   "projects.unavailability.list": { id: string; projectId: string; from: Date; to: Date; reason: string; note: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
@@ -234,6 +238,7 @@ export type MutationInputs = {
   "llm.chats.delete": { chatId: Id, };
   "llm.messages.send": { chatId: Id, content: string, locale?: AssistantLocale, };
   "llm.proposals.review": { proposalId: Id, decision: ProposalDecision, comment?: string | null, executionResults?: Array<ProposalExecutionResult> | null, };
+  "office.exports.createUpload": { fileName: string, mimeType: string, sizeBytes: number, };
   "personalization.actions.append": { actionId: string; label: string; href?: undefined | null | string; };
   "personalization.visits.append": { path: string; title?: undefined | null | string; };
   "products.categories.set": { id: string; categories: string[]; };
@@ -371,6 +376,7 @@ export type MutationOutputs = {
   "llm.chats.delete": { success: true, };
   "llm.messages.send": { chat: ChatSummary, messages: Array<ChatMessage>, proposals: Array<ChangeProposal>, };
   "llm.proposals.review": { success: true, };
+  "office.exports.createUpload": { uploadUrl: string, uploadMethod: string, uploadHeaders: { [key in string]: string }, expiresAt: string, sessionToken: string, };
   "personalization.actions.append": { success: true; };
   "personalization.visits.append": { success: true; };
   "products.categories.set": { success: true; };

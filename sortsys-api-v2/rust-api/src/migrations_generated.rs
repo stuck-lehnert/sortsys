@@ -173,4 +173,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "260828130000_user_ui_locale",
         include_str!("../migrations/260828130000_user_ui_locale.sql"),
     ),
+    (
+        "260829120000_onlyoffice_project_files",
+        include_str!("../migrations/260829120000_onlyoffice_project_files.sql"),
+    ),
 ];

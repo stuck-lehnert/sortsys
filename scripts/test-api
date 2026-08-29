@@ -41,6 +41,7 @@ TEST_S3_PUBLIC_BASE_URL="${TEST_S3_PUBLIC_BASE_URL:-}"
 TEST_JOB_RUNNER_TOKEN="${TEST_JOB_RUNNER_TOKEN:-test-job-runner-token}"
 TEST_JWT_SECRET="${TEST_JWT_SECRET:-test-jwt-secret}"
 TEST_LLM_ENCRYPTION_KEY="${TEST_LLM_ENCRYPTION_KEY:-test-llm-encryption-key}"
+TEST_ONLYOFFICE_JWT_SECRET="${TEST_ONLYOFFICE_JWT_SECRET:-test-onlyoffice-jwt-secret}"
 TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-test-admin-password}"
 TEST_ADMIN_HASH="${TEST_ADMIN_HASH:-\$2y\$04\$xUemhNQXp2VbrgKfIppnS.5nj9ovs9zOMPZuo.5rg4cyQvIDn5c2.}"
 
@@ -386,7 +387,8 @@ start_infra() {
       exit 1
     fi
 
-    if "$CONTAINER_RUNTIME" exec "$TEST_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+    # The image's temporary init server only accepts Unix-socket connections.
+    if "$CONTAINER_RUNTIME" exec "$TEST_PG_CONTAINER" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then
       break
     fi
 
@@ -439,6 +441,10 @@ start_api_container() {
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$TEST_JWT_SECRET" \
     -e LLM_ENCRYPTION_KEY="$TEST_LLM_ENCRYPTION_KEY" \
+    -e ONLYOFFICE_PUBLIC_URL="http://${TEST_S3_CONTAINER}:9000" \
+    -e ONLYOFFICE_INTERNAL_URL="http://${TEST_S3_CONTAINER}:9000" \
+    -e ONLYOFFICE_CALLBACK_URL="http://127.0.0.1:3000/internal/onlyoffice/callback" \
+    -e ONLYOFFICE_JWT_SECRET="$TEST_ONLYOFFICE_JWT_SECRET" \
     -e ADMIN_HASH="$TEST_ADMIN_HASH" \
     -e JOB_RUNNER_TOKEN="$TEST_JOB_RUNNER_TOKEN" \
     -e TEST_PG_HOST="$TEST_PG_CONTAINER" \

@@ -6,7 +6,8 @@ import { client } from "~/lib/client";
 import { formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
 import { renderStructuredPdfBatch } from "~/lib/pdf";
 import { buildRegieReportPdfDocument } from "~/lib/regieReportPdf";
-import { deliverBlob, downloadBlob, upmatchUnit } from "~/lib/utils";
+import { deliverBlob, upmatchUnit } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
 import type { Project } from "~/type-helpers";
 
@@ -333,7 +334,7 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
       const safeTitle = sanitizeFilePart(project.title);
       const fromPart = toDateInputValue(fromDate).replace(/[^0-9]/g, "");
       const toPart = toDateInputValue(toDateInclusive).replace(/[^0-9]/g, "");
-      downloadBlob(blob, uiText(`Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`, `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`));
+      await openExcelExport(modals, blob, uiText(`Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`, `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`));
 
       hide();
     },
@@ -600,7 +601,7 @@ export function showExportProjectRegieReportsModal(
       });
 
       const safeTitle = sanitizeFilePart(project.title);
-      downloadBlob(blob, uiText(`Regieberichte-${safeTitle}.xlsx`, `Time-and-material reporte-${safeTitle}.xlsx`));
+      await openExcelExport(modals, blob, uiText(`Regieberichte-${safeTitle}.xlsx`, `Time-and-material-reports-${safeTitle}.xlsx`));
 
       hide();
     },

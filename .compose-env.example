@@ -5,14 +5,18 @@ SERVICE_PASSWORD_64_POSTGRES=replace-with-a-long-random-postgres-password
 SERVICE_BASE64_64_JWT=replace-with-a-long-random-jwt-secret
 SERVICE_BASE64_64_JOBRUNNER=replace-with-a-long-random-job-runner-token
 SERVICE_BASE64_64_LLM=replace-with-a-long-random-llm-encryption-key
+SERVICE_BASE64_64_ONLYOFFICE=replace-with-a-long-random-onlyoffice-jwt-secret
 
 # Required. Generate this as documented in README.md. In Coolify, mark the
 # bcrypt value as Literal so its dollar signs are not interpolated.
 ADMIN_HASH=replace-with-a-bcrypt-password-hash
 
-# Coolify assigns this from the webapp domain. Outside Coolify, it may be left
-# empty because it is informational; the stack does not publish a host port.
+# Coolify assigns this from the webapp domain. Outside Coolify, set the
+# browser-reachable HTTPS origin; ONLYOFFICE uses it for signed callbacks.
 SERVICE_URL_WEBAPP_80=
+
+# Public URL for the browser-based document editor. Coolify creates it.
+SERVICE_URL_ONLYOFFICE_80=
 
 # Optional. Set this to the publicly reachable MCP endpoint when the selected
 # provider/model supports remote MCP, for example:
@@ -21,6 +25,7 @@ LLM_MCP_URL=
 
 # Optional overrides (the shown values are the Compose defaults).
 POSTGRES_IMAGE=postgres:17-alpine
+ONLYOFFICE_IMAGE=onlyoffice/documentserver:9.4.0.1
 POSTGRES_DB=sortsys
 POSTGRES_USER=sortsys
 JOB_RUNNER_ID=sortsys-compose-1

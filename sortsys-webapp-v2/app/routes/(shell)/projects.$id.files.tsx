@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Modal } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
+import { OnlyOfficeEditor } from "~/components/OnlyOfficeEditor";
 import { useOutletContext } from "react-router";
 import { from } from "rxjs";
 import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
@@ -18,7 +19,7 @@ import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { downloadBlob } from "~/lib/utils";
 import type { Project } from "~/type-helpers";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ProjectFileEntry = {
   id: string;
@@ -42,6 +43,12 @@ type ProjectFileEntry = {
   downloadExpiresAt?: Date | null;
   downloadAttachmentUrl?: string | null;
   downloadAttachmentExpiresAt?: Date | null;
+};
+
+type OnlyOfficeSession = {
+  apiUrl: string;
+  canEdit: boolean;
+  config: Record<string, unknown>;
 };
 
 function formatBytes(bytes: number | null | undefined) {
@@ -109,6 +116,21 @@ function isDwgAttachment(file: ProjectFileEntry) {
     || mimeType.includes("dwg");
 }
 
+function isOnlyOfficeAttachment(file: ProjectFileEntry) {
+  const extension = file.fileName.toLowerCase().split(".").pop();
+
+  return !!extension && new Set([
+    "csv", "djvu", "doc", "docm", "docx", "dot", "dotm", "dotx", "dps",
+    "dpt", "epub", "et", "ett", "fb2", "fodp", "fods", "fodt", "hml",
+    "htm", "html", "hwp", "hwpx", "key", "md", "mht", "mhtml", "numbers",
+    "odg", "odp", "ods", "odt", "otp", "ots", "ott", "oxps", "pages",
+    "pdf", "pot", "potm", "potx", "pps", "ppsm", "ppsx", "ppt", "pptm",
+    "pptx", "rtf", "stw", "sxc", "sxi", "sxw", "txt", "vsdm", "vsdx",
+    "vssm", "vssx", "vstm", "vstx", "wps", "wpt", "xls", "xlsb", "xlsm",
+    "xlsx", "xlt", "xltm", "xltx", "xps",
+  ]).has(extension);
+}
+
 export default function ProjectFilesPage() {
   const { project } = useOutletContext<{ project: Project }>();
   const sessionInfo = useSessionInfo();
@@ -134,6 +156,10 @@ export default function ProjectFilesPage() {
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
   const [activeDwgFileId, setActiveDwgFileId] = useState<string | null>(null);
+  const [activeOfficeFileId, setActiveOfficeFileId] = useState<string | null>(null);
+  const [officeSession, setOfficeSession] = useState<OnlyOfficeSession | null>(null);
+  const [officeError, setOfficeError] = useState<string | null>(null);
+  const [officeLoading, setOfficeLoading] = useState(false);
   const [isImageViewerMobile, setIsImageViewerMobile] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -168,6 +194,11 @@ export default function ProjectFilesPage() {
     return attachments.find(file => file.id === activeDwgFileId) ?? null;
   }, [activeDwgFileId, attachments]);
 
+  const activeOfficeFile = useMemo(() => {
+    if (!activeOfficeFileId) return null;
+    return attachments.find(file => file.id === activeOfficeFileId) ?? null;
+  }, [activeOfficeFileId, attachments]);
+
   const documentFiles = useMemo(() => {
     return attachments.filter(entry => entry.kind !== 'image' || isDwgAttachment(entry));
   }, [attachments]);
@@ -193,6 +224,14 @@ export default function ProjectFilesPage() {
     if (attachments.some(entry => entry.id === activeDwgFileId)) return;
     setActiveDwgFileId(null);
   }, [activeDwgFileId, attachments]);
+
+  useEffect(() => {
+    if (!activeOfficeFileId) return;
+    if (attachments.some(entry => entry.id === activeOfficeFileId)) return;
+
+    setActiveOfficeFileId(null);
+    setOfficeSession(null);
+  }, [activeOfficeFileId, attachments]);
 
   const imageCardUrl = (file: ProjectFileEntry) => file.previewUrl || file.thumbnailUrl || file.downloadUrl || null;
   const attachmentDownloadUrl = (file: ProjectFileEntry) => file.downloadAttachmentUrl || file.downloadUrl || null;
@@ -233,6 +272,38 @@ export default function ProjectFilesPage() {
   const closeDwgViewer = () => {
     setActiveDwgFileId(null);
   };
+
+  const openOfficeEditor = async (file: ProjectFileEntry) => {
+    setActiveOfficeFileId(file.id);
+    setOfficeSession(null);
+    setOfficeError(null);
+    setOfficeLoading(true);
+
+    const [session, error] = await client.query("projects.files.officeConfig", {
+      fileId: file.id,
+      projectId: project.id,
+    });
+
+    setOfficeLoading(false);
+
+    if (error || !session) {
+      setOfficeError(
+        error?.message
+          ?? uiText("Das Dokument konnte nicht geöffnet werden.", "The document could not be opened."),
+      );
+      return;
+    }
+
+    setOfficeSession(session);
+  };
+
+  const closeOfficeEditor = useCallback(() => {
+    setActiveOfficeFileId(null);
+    setOfficeSession(null);
+    setOfficeError(null);
+
+    void client.invalidate("projects.files.list");
+  }, []);
 
   const toggleAttachmentSelection = (fileId: string) => {
     setSelectedAttachmentIds((previous) => {
@@ -712,6 +783,16 @@ export default function ProjectFilesPage() {
                 </button>;
               }
 
+              if (isOnlyOfficeAttachment(row)) {
+                return <button
+                  type="button"
+                  className="ss-link project-files-file-link"
+                  onClick={() => openOfficeEditor(row)}
+                >
+                  {row.fileName}
+                </button>;
+              }
+
               return <a href={url} target="_blank" rel="noreferrer" className="ss-link">{row.fileName}</a>;
             },
             sortKey: (row) => row.fileName.toLowerCase(),
@@ -730,6 +811,44 @@ export default function ProjectFilesPage() {
         pagination={{ pageSizes: [10, 25, 50] }}
       />
     </MyExpandable>}
+
+
+    {!!activeOfficeFile && (
+      <Modal
+        open
+        passiveModal
+        modalHeading={officeSession?.canEdit
+          ? uiText("Dokument bearbeiten", "Edit document")
+          : uiText("Dokument ansehen", "View document")}
+        modalLabel={activeOfficeFile.fileName}
+        closeButtonLabel={uiText("Schließen", "Close")}
+        onRequestClose={closeOfficeEditor}
+        data-fullheight="true"
+        data-fullwidth="true"
+        className="project-files-office-modal"
+      >
+        {officeLoading && (
+          <div className="project-files-office-status">
+            {uiText("Dokument wird geöffnet …", "Opening document …")}
+          </div>
+        )}
+
+        {!!officeError && (
+          <div className="project-files-office-status">
+            <MyCallout icon={Icons.Deny} color="red">{officeError}</MyCallout>
+          </div>
+        )}
+
+        {!!officeSession && (
+          <OnlyOfficeEditor
+            apiUrl={officeSession.apiUrl}
+            config={officeSession.config}
+            onError={setOfficeError}
+            onRequestClose={closeOfficeEditor}
+          />
+        )}
+      </Modal>
+    )}
 
 
     {!!activeDwgFile && (

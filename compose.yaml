@@ -9,11 +9,38 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
+    stop_grace_period: 1m
+
+  onlyoffice:
+    # Version 9.4.0 is unusable with common tracking-protection lists because
+    # they block its required Analytics.js module.
+    image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:9.3.1.2}
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "false"
+      SERVICE_URL_ONLYOFFICE_80: ${SERVICE_URL_ONLYOFFICE_80}
+    expose:
+      - "80"
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-state:/var/lib/onlyoffice
+      - onlyoffice-database:/var/lib/postgresql
+      - onlyoffice-logs:/var/log/onlyoffice
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/healthcheck"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    shm_size: "2gb"
     stop_grace_period: 1m
 
   api:
@@ -30,10 +57,16 @@ services:
       JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
       LLM_ENCRYPTION_KEY: ${SERVICE_BASE64_64_LLM}
       LLM_MCP_URL: ${LLM_MCP_URL:-}
+      ONLYOFFICE_PUBLIC_URL: ${SERVICE_URL_ONLYOFFICE_80}
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice
+      ONLYOFFICE_CALLBACK_URL: ${SERVICE_URL_WEBAPP_80}/api/v2/internal/onlyoffice/callback
+      ONLYOFFICE_JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
     expose:
       - "3000"
     depends_on:
       postgres:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/ping"]
@@ -87,3 +120,7 @@ services:
 
 volumes:
   postgres-data:
+  onlyoffice-data:
+  onlyoffice-state:
+  onlyoffice-database:
+  onlyoffice-logs:

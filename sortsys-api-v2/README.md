@@ -60,6 +60,10 @@ The API reads the following environment variables:
 | `JOB_RUNNER_TOKEN` | in production | shared secret for job-runner WebSocket connections |
 | `LLM_ENCRYPTION_KEY` | for LLM setup | secret used to encrypt provider API keys in the master database |
 | `LLM_MCP_URL` | no | public URL of the sortsys MCP endpoint; without it, providers use function tools |
+| `ONLYOFFICE_PUBLIC_URL` | for document editing | browser-reachable Document Server origin |
+| `ONLYOFFICE_INTERNAL_URL` | no | Document Server origin used by the API; defaults to the public origin |
+| `ONLYOFFICE_CALLBACK_URL` | for document editing | public API callback URL reachable by Document Server |
+| `ONLYOFFICE_JWT_SECRET` | for document editing | shared JWT secret; must match Document Server |
 | `PORT` | no | HTTP port, default `3000` |
 | `NODE_ENV` | no | set to `production` to enable production requirements |
 

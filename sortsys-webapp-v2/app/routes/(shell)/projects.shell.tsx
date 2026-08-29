@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 
 export default function ProjectsShell() {
@@ -41,6 +42,8 @@ export default function ProjectsShell() {
       </TabList>
     </Tabs>
 
-    <Outlet />
+    <ScopedErrorBoundary scope="projects.content" resetKey={path}>
+      <Outlet />
+    </ScopedErrorBoundary>
   </>;
 }

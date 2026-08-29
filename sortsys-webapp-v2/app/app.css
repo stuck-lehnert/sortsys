@@ -2866,6 +2866,113 @@ b {
   text-align: left;
 }
 
+:is(
+  .project-files-office-modal,
+  .project-files-dwg-modal,
+  .project-files-image-modal
+) .ss-modal-header {
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.45rem;
+}
+
+:is(
+  .project-files-office-modal,
+  .project-files-dwg-modal,
+  .project-files-image-modal
+) .ss-modal-header__text {
+  align-items: baseline;
+  flex-direction: row;
+  gap: 0.4rem;
+  overflow: hidden;
+}
+
+:is(
+  .project-files-office-modal,
+  .project-files-dwg-modal,
+  .project-files-image-modal
+) .ss-modal-heading {
+  flex: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  order: 1;
+}
+
+:is(
+  .project-files-office-modal,
+  .project-files-dwg-modal,
+  .project-files-image-modal
+) .ss-modal-label {
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  overflow: hidden;
+  order: 2;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.project-files-office-modal .ss-modal-content {
+  padding: 0 !important;
+  overflow: hidden;
+  position: relative;
+}
+
+.project-files-office-editor-shell {
+  block-size: 100%;
+  min-block-size: 0;
+  position: relative;
+}
+
+.project-files-office-editor {
+  block-size: 100%;
+  inline-size: 100%;
+  min-block-size: 0;
+}
+
+.project-files-office-loading[hidden] {
+  display: none;
+}
+
+.project-files-office-loading {
+  align-items: center;
+  background: var(--ss-surface);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 1;
+}
+
+.project-files-office-status {
+  align-items: center;
+  background: var(--ss-surface);
+  block-size: 100%;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: absolute;
+  z-index: 2;
+}
+
+.scoped-error-boundary {
+  box-sizing: border-box;
+  max-inline-size: 48rem;
+  padding: 1rem;
+}
+
+.scoped-error-boundary__content {
+  align-items: start;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.scoped-error-boundary__content > button {
+  justify-self: start;
+}
+
 .project-files-dwg-modal .ss-modal-content {
   padding: 0 !important;
   overflow: hidden;

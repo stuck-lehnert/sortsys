@@ -12,6 +12,8 @@ mod job_runner_media;
 pub mod job_runners;
 pub mod llm;
 pub mod object_storage;
+pub mod office_exports;
+pub mod onlyoffice;
 pub mod rpc;
 pub mod seed;
 pub mod superjson;
@@ -63,6 +65,8 @@ pub fn registry_with_state(state: Arc<AppState>) -> ProcedureRegistry {
 pub fn app_with_state(state: Arc<AppState>) -> axum::Router {
     rpc::http_router(registry_with_state(Arc::clone(&state)))
         .merge(job_runners::router(Arc::clone(&state)))
+        .merge(onlyoffice::router(Arc::clone(&state)))
+        .merge(office_exports::router(Arc::clone(&state)))
         .merge(llm::mcp_router(state))
 }
 pub fn app() -> axum::Router {

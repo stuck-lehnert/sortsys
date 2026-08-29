@@ -11,7 +11,16 @@ pub struct Config {
     pub job_runner_token: Arc<str>,
     pub llm_encryption_key: Option<Arc<[u8]>>,
     pub llm_mcp_url: Option<Arc<str>>,
+    pub onlyoffice: Option<OnlyOfficeConfig>,
     pub production: bool,
+}
+
+#[derive(Clone)]
+pub struct OnlyOfficeConfig {
+    pub public_url: Arc<str>,
+    pub internal_url: Arc<str>,
+    pub callback_url: Arc<str>,
+    pub jwt_secret: Arc<[u8]>,
 }
 
 impl Config {
@@ -34,6 +43,7 @@ impl Config {
         let llm_mcp_url = optional("LLM_MCP_URL")
             .filter(|value| !value.is_empty())
             .map(Arc::from);
+        let onlyoffice = onlyoffice_config()?;
 
         Ok(Self {
             port,
@@ -43,9 +53,37 @@ impl Config {
             job_runner_token: Arc::from(job_runner_token),
             llm_encryption_key,
             llm_mcp_url,
+            onlyoffice,
             production,
         })
     }
+}
+
+fn onlyoffice_config() -> Result<Option<OnlyOfficeConfig>, ConfigError> {
+    let public_url = optional("ONLYOFFICE_PUBLIC_URL").filter(|value| !value.is_empty());
+    let internal_url = optional("ONLYOFFICE_INTERNAL_URL").filter(|value| !value.is_empty());
+    let callback_url = optional("ONLYOFFICE_CALLBACK_URL").filter(|value| !value.is_empty());
+    let jwt_secret = optional("ONLYOFFICE_JWT_SECRET").filter(|value| !value.is_empty());
+
+    if public_url.is_none()
+        && internal_url.is_none()
+        && callback_url.is_none()
+        && jwt_secret.is_none()
+    {
+        return Ok(None);
+    }
+
+    let public_url = public_url.ok_or(ConfigError::Missing("ONLYOFFICE_PUBLIC_URL"))?;
+    let callback_url = callback_url.ok_or(ConfigError::Missing("ONLYOFFICE_CALLBACK_URL"))?;
+    let jwt_secret = jwt_secret.ok_or(ConfigError::Missing("ONLYOFFICE_JWT_SECRET"))?;
+    let internal_url = internal_url.unwrap_or_else(|| public_url.clone());
+
+    Ok(Some(OnlyOfficeConfig {
+        public_url: Arc::from(public_url.trim_end_matches('/')),
+        internal_url: Arc::from(internal_url.trim_end_matches('/')),
+        callback_url: Arc::from(callback_url),
+        jwt_secret: Arc::from(jwt_secret.into_bytes()),
+    }))
 }
 
 fn required(name: &'static str) -> Result<String, ConfigError> {

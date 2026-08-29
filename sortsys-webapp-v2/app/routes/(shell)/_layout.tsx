@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from "react";
 import React, { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { Authenticated } from "~/components/Authenticated";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useDimensions } from "~/hooks/useDimensions";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
@@ -217,7 +218,9 @@ export default Authenticated(function() {
     </SideNav>
 
     <Content className={'main-container' + (path.startsWith('/llm') ? ' main-container--llm' : '')}>
-      <Outlet />
+      <ScopedErrorBoundary scope="application.content" resetKey={`${location.pathname}${location.search}`}>
+        <Outlet />
+      </ScopedErrorBoundary>
     </Content>
   </div>
 })

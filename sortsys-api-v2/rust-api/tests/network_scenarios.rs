@@ -19,6 +19,7 @@ use base64::{
 use bcrypt::hash;
 use ciborium::value::Value as CborValue;
 use flate2::read::GzDecoder;
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use p256::{
     ecdsa::{Signature, SigningKey, signature::Signer},
     elliptic_curve::rand_core::OsRng,
@@ -426,6 +427,283 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     assert!(downloaded_file.status().is_success());
     assert_eq!(downloaded_file.bytes().await.unwrap().as_ref(), file_bytes);
 
+    // The editor session is exercised without a Document Server process here:
+    // its signed source request and save callbacks still traverse the real API,
+    // PostgreSQL, and MinIO paths used in production.
+    let document_bytes = include_bytes!("../../test-files/blank.pdf");
+    let created_document = rpc
+        .mutation(
+            "projects.files.createUpload",
+            json!({
+                "projectId": project_id,
+                "fileName": "Baustellenbericht.pdf",
+                "mimeType": "application/pdf",
+                "sizeBytes": document_bytes.len(),
+            }),
+            Some(&token),
+        )
+        .await;
+    let document_upload = rpc
+        .http
+        .put(created_document["uploadUrl"].as_str().unwrap())
+        .header("Content-Type", "application/pdf")
+        .body(document_bytes.as_slice())
+        .send()
+        .await
+        .unwrap();
+    assert!(document_upload.status().is_success());
+    let document_etag = document_upload
+        .headers()
+        .get("etag")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
+    rpc.mutation(
+        "projects.files.completeUpload",
+        json!({
+            "projectId": project_id,
+            "fileId": created_document["fileId"],
+            "etag": document_etag,
+        }),
+        Some(&token),
+    )
+    .await;
+
+    let office_config = rpc
+        .query(
+            "projects.files.officeConfig",
+            json!({
+                "projectId": project_id,
+                "fileId": created_document["fileId"],
+            }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(office_config["canEdit"], true);
+    assert_eq!(office_config["config"]["documentType"], "pdf");
+    assert_eq!(office_config["config"]["document"]["fileType"], "pdf");
+    assert!(office_config["config"]["token"].is_string());
+    assert_eq!(
+        office_config["config"]["editorConfig"]["customization"]["autosave"],
+        true
+    );
+    assert_eq!(
+        office_config["config"]["editorConfig"]["customization"]["forcesave"],
+        false
+    );
+
+    let onlyoffice_secret = env::var("ONLYOFFICE_JWT_SECRET").unwrap();
+    let source_url = office_config["config"]["document"]["url"].as_str().unwrap();
+    let source_request_token = encode(
+        &Header::new(Algorithm::HS256),
+        &json!({ "payload": { "url": source_url } }),
+        &EncodingKey::from_secret(onlyoffice_secret.as_bytes()),
+    )
+    .unwrap();
+    let office_source = rpc
+        .http
+        .get(source_url)
+        .bearer_auth(source_request_token)
+        .send()
+        .await
+        .unwrap();
+    assert!(office_source.status().is_success());
+    assert_eq!(
+        office_source.bytes().await.unwrap().as_ref(),
+        document_bytes
+    );
+
+    let document_key = office_config["config"]["document"]["key"].as_str().unwrap();
+    let callback_url = office_config["config"]["editorConfig"]["callbackUrl"]
+        .as_str()
+        .unwrap();
+    let replacement_url = listed_file["downloadUrl"].as_str().unwrap();
+    let force_save_payload = json!({
+        "key": document_key,
+        "status": 6,
+        "url": replacement_url,
+    });
+    let force_save_token = encode(
+        &Header::new(Algorithm::HS256),
+        &json!({ "payload": force_save_payload }),
+        &EncodingKey::from_secret(onlyoffice_secret.as_bytes()),
+    )
+    .unwrap();
+    let force_save = rpc
+        .http
+        .post(callback_url)
+        .bearer_auth(force_save_token)
+        .json(&force_save_payload)
+        .send()
+        .await
+        .unwrap();
+    assert!(force_save.status().is_success());
+    assert_eq!(force_save.json::<Value>().await.unwrap()["error"], 0);
+
+    let document_file_id = Id::decode(created_document["fileId"].as_str().unwrap())
+        .unwrap()
+        .0;
+    let saved_document = sqlx::query_as::<_, (i64, Option<i64>, Option<i64>)>(
+        r#"
+        SELECT office_version, size_bytes, office_modified_by_user_id
+        FROM project_files
+        WHERE id = $1
+        "#,
+    )
+    .bind(document_file_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(saved_document.0, 1);
+    assert_eq!(saved_document.1, Some(file_bytes.len() as i64));
+    assert!(saved_document.2.is_some());
+
+    let files_after_force_save = rpc
+        .query(
+            "projects.files.list",
+            json!({ "projectId": project_id }),
+            Some(&token),
+        )
+        .await;
+    let saved_file = files_after_force_save
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["id"] == created_document["fileId"])
+        .unwrap();
+    let saved_bytes = rpc
+        .http
+        .get(saved_file["downloadUrl"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert!(saved_bytes.status().is_success());
+    assert_eq!(saved_bytes.bytes().await.unwrap().as_ref(), file_bytes);
+
+    let final_save_payload = json!({
+        "key": document_key,
+        "status": 2,
+        "url": replacement_url,
+    });
+    let final_save_token = encode(
+        &Header::new(Algorithm::HS256),
+        &json!({ "payload": final_save_payload }),
+        &EncodingKey::from_secret(onlyoffice_secret.as_bytes()),
+    )
+    .unwrap();
+    let final_save = rpc
+        .http
+        .post(callback_url)
+        .bearer_auth(final_save_token)
+        .json(&final_save_payload)
+        .send()
+        .await
+        .unwrap();
+    assert!(final_save.status().is_success());
+    assert_eq!(final_save.json::<Value>().await.unwrap()["error"], 0);
+
+    let final_version: i64 =
+        sqlx::query_scalar("SELECT office_version FROM project_files WHERE id = $1")
+            .bind(document_file_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(final_version, 2);
+
+    // Browser-generated workbooks use a temporary, user-owned S3 object. The
+    // source request below exercises the signed handoff that Document Server
+    // performs without requiring that large service in CI.
+    let export_bytes = b"PK-sortsys-test-workbook";
+    let created_export = rpc
+        .mutation(
+            "office.exports.createUpload",
+            json!({
+                "fileName": "Projektkosten.xlsx",
+                "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "sizeBytes": export_bytes.len(),
+            }),
+            Some(&token),
+        )
+        .await;
+    let export_upload = rpc
+        .http
+        .put(created_export["uploadUrl"].as_str().unwrap())
+        .header(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        .body(export_bytes.as_slice())
+        .send()
+        .await
+        .unwrap();
+    assert!(export_upload.status().is_success());
+
+    let export_config = rpc
+        .query(
+            "office.exports.officeConfig",
+            json!({ "sessionToken": created_export["sessionToken"] }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(export_config["canEdit"], false);
+    assert_eq!(export_config["config"]["documentType"], "cell");
+    assert_eq!(export_config["config"]["document"]["fileType"], "xlsx");
+    assert_eq!(export_config["config"]["editorConfig"]["mode"], "view");
+    assert_eq!(
+        export_config["config"]["document"]["permissions"]["edit"],
+        false
+    );
+    assert_eq!(
+        export_config["config"]["document"]["permissions"]["comment"],
+        false
+    );
+    assert_eq!(
+        export_config["config"]["document"]["permissions"]["download"],
+        true
+    );
+    assert!(
+        export_config["config"]["editorConfig"]
+            .get("callbackUrl")
+            .is_none()
+    );
+
+    let export_source_url = export_config["config"]["document"]["url"].as_str().unwrap();
+    let export_source_token = encode(
+        &Header::new(Algorithm::HS256),
+        &json!({ "payload": { "url": export_source_url } }),
+        &EncodingKey::from_secret(onlyoffice_secret.as_bytes()),
+    )
+    .unwrap();
+    let export_source = rpc
+        .http
+        .get(export_source_url)
+        .bearer_auth(&export_source_token)
+        .send()
+        .await
+        .unwrap();
+    assert!(export_source.status().is_success());
+    assert_eq!(export_source.bytes().await.unwrap().as_ref(), export_bytes);
+
+    let removed_export_callback = rpc
+        .http
+        .post(format!(
+            "{}/internal/onlyoffice/export-callback",
+            rpc.base_url
+        ))
+        .json(&json!({
+            "key": export_config["config"]["document"]["key"],
+            "status": 6,
+            "url": replacement_url,
+        }))
+        .send()
+        .await
+        .unwrap();
+    let removed_export_callback: Value = removed_export_callback.json().await.unwrap();
+    assert_eq!(
+        removed_export_callback["error"]["json"]["data"]["code"],
+        "NOT_FOUND"
+    );
+
     let photo_day = "2026-08-24T00:00:00.000+02:00";
     rpc.mutation(
         "projects.dailyReports.create",
@@ -450,6 +728,12 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     rpc.mutation(
         "projects.dailyReports.photos.remove",
         json!({ "projectId": project_id, "day": photo_day, "fileId": created_file["fileId"] }),
+        Some(&token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.files.delete",
+        json!({ "projectId": project_id, "fileId": created_document["fileId"] }),
         Some(&token),
     )
     .await;

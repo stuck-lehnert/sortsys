@@ -22,7 +22,8 @@ import { Icons } from "~/lib/icons";
 import { renderStructuredPdf } from "~/lib/pdf";
 import { buildRegieReportPdfDocument } from "~/lib/regieReportPdf";
 import { showDeleteRegieReportModal, showModifyRegieReportModal } from "~/modals/regieReports";
-import { deliverBlob, downloadBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
 
 function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
@@ -322,7 +323,7 @@ export default function RegieReportDetailPage() {
             });
 
             const safeSuffix = `${report.autoId}`.replace(/[^\w\-]+/g, '-');
-            downloadBlob(blob, uiText(`Regiebericht-${safeSuffix}.xlsx`, `Time-and-material report-${safeSuffix}.xlsx`));
+            await openExcelExport(modals, blob, uiText(`Regiebericht-${safeSuffix}.xlsx`, `Time-and-material report-${safeSuffix}.xlsx`));
           },
         },
         {

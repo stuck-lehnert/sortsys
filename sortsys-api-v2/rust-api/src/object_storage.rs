@@ -179,6 +179,23 @@ pub fn build_project_object_key(
     }
 }
 
+pub fn build_export_object_key(config: &EnabledStorage, user_id: i64, file_name: &str) -> String {
+    let prefix = clean_path(config.key_prefix.as_deref().unwrap_or_default());
+    let safe_name = normalize_file_name(file_name);
+    let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
+    let nonce = unique_nonce();
+    let path = format!(
+        "exports/{}/{timestamp}-{nonce}-{safe_name}",
+        Id(user_id).encode()
+    );
+
+    if prefix.is_empty() {
+        path
+    } else {
+        format!("{prefix}/{path}")
+    }
+}
+
 pub fn build_thumbnail_object_key(source_object_key: &str) -> String {
     format!("{}.thumb.webp", clean_path(source_object_key))
 }

@@ -484,19 +484,33 @@ async fn delete(
 }
 
 #[derive(Clone, Copy)]
-enum FileAction {
+pub(crate) enum FileAction {
     View,
     Upload,
     Delete,
 }
 
-async fn ensure_access(
+pub(crate) async fn ensure_access(
     pool: &PgPool,
     auth: &AuthResult,
     project_id: Id,
     action: FileAction,
     created_by_user_id: Option<i64>,
 ) -> RpcResult<()> {
+    if access_allowed(pool, auth, project_id, action, created_by_user_id).await? {
+        Ok(())
+    } else {
+        Err(forbidden())
+    }
+}
+
+pub(crate) async fn access_allowed(
+    pool: &PgPool,
+    auth: &AuthResult,
+    project_id: Id,
+    action: FileAction,
+    created_by_user_id: Option<i64>,
+) -> RpcResult<bool> {
     let project_exists =
         sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)")
             .bind(project_id.0)
@@ -509,11 +523,11 @@ async fn ensure_access(
     }
 
     if auth.can_do("manage:projects") {
-        return Ok(());
+        return Ok(true);
     }
 
     if matches!(action, FileAction::View) && auth.can_do("view:projects") {
-        return Ok(());
+        return Ok(true);
     }
 
     let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
@@ -532,11 +546,13 @@ async fn ensure_access(
     .map_err(internal)?;
 
     match (action, assignment.as_deref()) {
-        (FileAction::View, Some(_)) => Ok(()),
-        (FileAction::Upload, Some("leader" | "contributor")) => Ok(()),
-        (FileAction::Delete, Some("leader")) => Ok(()),
-        (FileAction::Delete, Some("contributor")) if created_by_user_id == Some(user_id) => Ok(()),
-        _ => Err(forbidden()),
+        (FileAction::View, Some(_)) => Ok(true),
+        (FileAction::Upload, Some("leader" | "contributor")) => Ok(true),
+        (FileAction::Delete, Some("leader")) => Ok(true),
+        (FileAction::Delete, Some("contributor")) if created_by_user_id == Some(user_id) => {
+            Ok(true)
+        }
+        _ => Ok(false),
     }
 }
 

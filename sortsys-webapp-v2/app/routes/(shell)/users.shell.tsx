@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 
 export default function UsersShell() {
   const path = useLocation().pathname;
@@ -27,6 +28,8 @@ export default function UsersShell() {
       </TabList>
     </Tabs>
 
-    <Outlet />
+    <ScopedErrorBoundary scope="users.content" resetKey={path}>
+      <Outlet />
+    </ScopedErrorBoundary>
   </>;
 }

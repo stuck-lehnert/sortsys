@@ -4,7 +4,7 @@ This package contains the German-language sortsys browser interface. It is built
 
 ## Development
 
-For the complete application with PostgreSQL, MinIO, API, workers, generated client, and seed data, run this from the repository root:
+For the complete application with PostgreSQL, MinIO, ONLYOFFICE Document Server, API, workers, generated client, and seed data, run this from the repository root:
 
 ```bash
 ./scripts/dev
@@ -37,6 +37,8 @@ npm run build
 ```
 
 The production container serves the static build through Nginx. `API_UPSTREAM` selects the internal API origin and defaults to `http://api:3000`; `CLIENT_MAX_BODY_SIZE` defaults to `64m`.
+
+Supported project attachments open in the embedded ONLYOFFICE editor. The browser loads Document Server's API from the URL returned by the authenticated Rust API; no provider token or storage URL is kept in frontend configuration.
 
 ## Local packages
 

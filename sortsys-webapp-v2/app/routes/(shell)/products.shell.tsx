@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 
 export default function ProductsShell() {
@@ -45,6 +46,8 @@ export default function ProductsShell() {
             </TabList>
         </Tabs>
 
-        <Outlet />
+        <ScopedErrorBoundary scope="products.content" resetKey={path}>
+            <Outlet />
+        </ScopedErrorBoundary>
     </>;
 }

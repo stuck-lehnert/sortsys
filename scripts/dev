@@ -11,16 +11,24 @@ DEV_ENV_FILE="${DEV_ENV_FILE:-$ROOT_DIR/.env}"
 DEV_NETWORK="sortsys-dev-network"
 DEV_PG_CONTAINER="sortsys-dev-postgres"
 DEV_S3_CONTAINER="sortsys-dev-s3"
+DEV_ONLYOFFICE_CONTAINER="sortsys-dev-onlyoffice"
 DEV_API_CONTAINER="sortsys-dev-api"
 DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
 DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
 DEV_GO_BUILD_CACHE_VOLUME="sortsys-dev-go-build-cache"
 DEV_GO_MODULE_CACHE_VOLUME="sortsys-dev-go-module-cache"
+DEV_ONLYOFFICE_DATA_VOLUME="sortsys-dev-onlyoffice-9-3-1-data"
+DEV_ONLYOFFICE_STATE_VOLUME="sortsys-dev-onlyoffice-9-3-1-state"
+DEV_ONLYOFFICE_DATABASE_VOLUME="sortsys-dev-onlyoffice-9-3-1-database"
+DEV_ONLYOFFICE_LOGS_VOLUME="sortsys-dev-onlyoffice-logs"
 
 DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-docker.io/library/postgres:17}"
 DEV_S3_IMAGE="${DEV_S3_IMAGE:-docker.io/minio/minio:latest}"
 DEV_S3_IMAGE_FALLBACK="${DEV_S3_IMAGE_FALLBACK:-quay.io/minio/minio:latest}"
+# ONLYOFFICE 9.4.0 cannot load when common tracking-protection lists block
+# its required Analytics.js module. Remove this pin after the upstream fix ships.
+DEV_ONLYOFFICE_IMAGE="${DEV_ONLYOFFICE_IMAGE:-docker.io/onlyoffice/documentserver:9.3.1.2}"
 DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-docker.io/oven/bun:1.4.0}"
 DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-docker.io/library/rust:1.88-bookworm}"
 DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.88-pg17}"
@@ -31,6 +39,8 @@ DEV_API_PORT="${DEV_API_PORT:-3000}"
 DEV_WEBAPP_PORT="${DEV_WEBAPP_PORT:-5173}"
 DEV_PG_PORT="${DEV_PG_PORT:-32532}"
 DEV_S3_PORT="${DEV_S3_PORT:-39100}"
+DEV_ONLYOFFICE_PORT="${DEV_ONLYOFFICE_PORT:-39180}"
+DEV_ONLYOFFICE_PUBLIC_URL="${DEV_ONLYOFFICE_PUBLIC_URL:-http://127.0.0.1:${DEV_ONLYOFFICE_PORT}}"
 DEV_S3_PUBLIC_BASE_URL="${DEV_S3_PUBLIC_BASE_URL:-http://127.0.0.1:${DEV_S3_PORT}}"
 
 DEV_S3_REGION="${DEV_S3_REGION:-us-east-1}"
@@ -41,6 +51,7 @@ DEV_PG_ADMIN_PASSWORD="${TEST_PG_PASSWORD:-dev-postgres}"
 DEV_JOB_RUNNER_TOKEN="${DEV_JOB_RUNNER_TOKEN:-dev-job-runner-token}"
 DEV_JWT_SECRET="${DEV_JWT_SECRET:-dev-jwt-secret}"
 DEV_LLM_ENCRYPTION_KEY="${DEV_LLM_ENCRYPTION_KEY:-dev-llm-encryption-key}"
+DEV_ONLYOFFICE_JWT_SECRET="${DEV_ONLYOFFICE_JWT_SECRET:-dev-onlyoffice-jwt-secret}"
 # Development global-admin password: 123456
 DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$A20B6GFXZPxMInilSMwRy.q3tixzPl9Bq0tgyrCvNAHUQI2BHqlPa}"
 
@@ -53,6 +64,7 @@ DEV_LIVE_POSTGRES_HOST_NAME="${DEV_LIVE_POSTGRES_HOST_NAME:-dev-local-postgres}"
 DEV_SERVICE_CONTAINERS=(
   "$DEV_PG_CONTAINER"
   "$DEV_S3_CONTAINER"
+  "$DEV_ONLYOFFICE_CONTAINER"
   "$DEV_API_CONTAINER"
   "$DEV_WEBAPP_CONTAINER"
   "${DEV_JOB_RUNNER_CONTAINERS[0]}"
@@ -221,11 +233,14 @@ cleanup_network() {
 }
 
 ensure_network() {
-  if "$CONTAINER_RUNTIME" network inspect "$DEV_NETWORK" >/dev/null 2>&1; then
-    return 0
-  fi
+  local create_output
 
-  "$CONTAINER_RUNTIME" network create "$DEV_NETWORK" >/dev/null
+  if ! create_output="$($CONTAINER_RUNTIME network create "$DEV_NETWORK" 2>&1)"; then
+    if ! "$CONTAINER_RUNTIME" network inspect "$DEV_NETWORK" >/dev/null 2>&1; then
+      echo "$create_output" >&2
+      return 1
+    fi
+  fi
 }
 
 ensure_image() {
@@ -299,12 +314,13 @@ initialize_master_database() {
 prepare_images() {
   local images=(
     "$DEV_POSTGRES_IMAGE"
+    "$DEV_ONLYOFFICE_IMAGE"
     "$DEV_BUN_IMAGE"
     "$DEV_RUST_IMAGE"
     "$DEV_NODE_IMAGE"
     "$DEV_GO_IMAGE"
   )
-  local labels=("PostgreSQL" "Bun" "Rust" "Node.js" "Go")
+  local labels=("PostgreSQL" "ONLYOFFICE" "Bun" "Rust" "Node.js" "Go")
   local pids=()
   local failed=0
 
@@ -360,7 +376,8 @@ start_postgres() {
       return 1
     fi
 
-    if "$CONTAINER_RUNTIME" exec "$DEV_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+    # The image's temporary init server only accepts Unix-socket connections.
+    if "$CONTAINER_RUNTIME" exec "$DEV_PG_CONTAINER" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then
       return 0
     fi
 
@@ -406,6 +423,52 @@ start_s3() {
 
   echo "MinIO did not become API-ready in time"
   "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
+  return 1
+}
+
+start_onlyoffice() {
+  echo "Starting development ONLYOFFICE on port ${DEV_ONLYOFFICE_PORT}"
+
+  ensure_network
+
+  # Document Server must fetch signed document and callback URLs from the API
+  # over the isolated development network.
+  "$CONTAINER_RUNTIME" run -d \
+    --rm \
+    --name "$DEV_ONLYOFFICE_CONTAINER" \
+    "${runtime_pull_args[@]}" \
+    --network "$DEV_NETWORK" \
+    --shm-size=2g \
+    -p "${DEV_ONLYOFFICE_PORT}:80" \
+    -e JWT_ENABLED="true" \
+    -e JWT_SECRET="$DEV_ONLYOFFICE_JWT_SECRET" \
+    -e JWT_HEADER="Authorization" \
+    -e JWT_IN_BODY="false" \
+    -e ALLOW_PRIVATE_IP_ADDRESS="true" \
+    -v "${DEV_ONLYOFFICE_DATA_VOLUME}:/var/www/onlyoffice/Data" \
+    -v "${DEV_ONLYOFFICE_STATE_VOLUME}:/var/lib/onlyoffice" \
+    -v "${DEV_ONLYOFFICE_DATABASE_VOLUME}:/var/lib/postgresql" \
+    -v "${DEV_ONLYOFFICE_LOGS_VOLUME}:/var/log/onlyoffice" \
+    "$DEV_ONLYOFFICE_IMAGE" >/dev/null
+
+  echo "Waiting for ONLYOFFICE readiness"
+  for ((i = 1; i <= 300; i++)); do
+    if ! container_is_running "$DEV_ONLYOFFICE_CONTAINER"; then
+      echo "ONLYOFFICE container stopped unexpectedly"
+      "$CONTAINER_RUNTIME" logs "$DEV_ONLYOFFICE_CONTAINER" || true
+      return 1
+    fi
+
+    if "$CONTAINER_RUNTIME" exec "$DEV_ONLYOFFICE_CONTAINER" \
+      curl --fail --silent http://127.0.0.1/healthcheck >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  echo "ONLYOFFICE did not become ready in time"
+  "$CONTAINER_RUNTIME" logs "$DEV_ONLYOFFICE_CONTAINER" || true
   return 1
 }
 
@@ -466,6 +529,10 @@ start_api_container() {
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$DEV_JWT_SECRET" \
     -e LLM_ENCRYPTION_KEY="$DEV_LLM_ENCRYPTION_KEY" \
+    -e ONLYOFFICE_PUBLIC_URL="$DEV_ONLYOFFICE_PUBLIC_URL" \
+    -e ONLYOFFICE_INTERNAL_URL="http://${DEV_ONLYOFFICE_CONTAINER}" \
+    -e ONLYOFFICE_CALLBACK_URL="http://${DEV_API_CONTAINER}:${DEV_API_PORT}/internal/onlyoffice/callback" \
+    -e ONLYOFFICE_JWT_SECRET="$DEV_ONLYOFFICE_JWT_SECRET" \
     -e ADMIN_HASH="$DEV_ADMIN_HASH" \
     -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
     -e TEST_PG_HOST="$DEV_PG_CONTAINER" \
@@ -683,8 +750,19 @@ monitor_containers() {
   done
 }
 
+stop_background_jobs() {
+  local pid
+
+  for pid in $(jobs -pr); do
+    kill "$pid" >/dev/null 2>&1 || true
+  done
+
+  wait >/dev/null 2>&1 || true
+}
+
 cleanup() {
   trap - INT TERM EXIT
+  stop_background_jobs
   cleanup_llm_environment
   cleanup_containers
   cleanup_network
@@ -692,6 +770,7 @@ cleanup() {
 
 force_shutdown() {
   trap - INT TERM EXIT
+  stop_background_jobs
   cleanup_llm_environment
   kill_containers
   cleanup_containers
@@ -714,6 +793,8 @@ start_postgres &
 postgres_pid="$!"
 start_s3 &
 s3_pid="$!"
+start_onlyoffice &
+onlyoffice_pid="$!"
 build_api_development_image &
 api_image_pid="$!"
 (
@@ -730,6 +811,10 @@ initialize_master_database
 
 if ! wait "$s3_pid"; then
   echo "S3 startup failed"
+  exit 1
+fi
+if ! wait "$onlyoffice_pid"; then
+  echo "ONLYOFFICE startup failed"
   exit 1
 fi
 if ! wait "$api_image_pid"; then
@@ -752,6 +837,7 @@ echo "- Webapp:   http://127.0.0.1:${DEV_WEBAPP_PORT}"
 echo "- Postgres: 127.0.0.1:${DEV_PG_PORT}"
 echo "- MasterDB: ${DEV_MASTER_DATABASE_NAME}"
 echo "- S3:       http://127.0.0.1:${DEV_S3_PORT}"
+echo "- ONLYOFFICE: ${DEV_ONLYOFFICE_PUBLIC_URL}"
 echo
 echo "Use '${CONTAINER_RUNTIME} logs -f <container>' to inspect logs."
 echo "Press Ctrl+C to stop and clean up all containers."

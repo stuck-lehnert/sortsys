@@ -19,7 +19,7 @@ mod products;
 mod project_contacts;
 mod project_costs;
 mod project_daily_reports;
-mod project_files;
+pub(crate) mod project_files;
 mod project_schedule;
 
 pub(crate) use project_costs::overview_for_authenticated_user as project_cost_overview_for_authenticated_user;
@@ -110,6 +110,8 @@ pub fn register(
     let builder = project_costs::register(builder, Arc::clone(&state));
     let builder = project_schedule::register(builder, Arc::clone(&state));
     let builder = project_files::register(builder, Arc::clone(&state));
+    let builder = crate::onlyoffice::register(builder, Arc::clone(&state));
+    let builder = crate::office_exports::register(builder, Arc::clone(&state));
     let builder = project_daily_reports::register(builder, Arc::clone(&state));
     let builder = project_contacts::register(builder, Arc::clone(&state));
     let builder = regie_reports::register(builder, Arc::clone(&state));
@@ -122,7 +124,10 @@ pub fn register(
 }
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    llm::register_contract(builder)
+    let builder = llm::register_contract(builder);
+    let builder = crate::office_exports::register_contract(builder);
+
+    crate::onlyoffice::register_contract(builder)
 }
 
 fn validate_report(input: &ErrorReportInput) -> Result<(), RpcError> {

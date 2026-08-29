@@ -3,6 +3,7 @@ import { useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { Icons } from "~/lib/icons";
 import { exportTable, type TableExportColumn, type TableExportFormat } from "~/lib/tableExport";
+import { useMyModals } from "~/hooks/useMyModals";
 
 export function TableExportActions<RowT>(props: {
   title: string;
@@ -12,6 +13,7 @@ export function TableExportActions<RowT>(props: {
   subtitle?: string;
   disabled?: boolean;
 }) {
+  const modals = useMyModals();
   const [pending, setPending] = useState<TableExportFormat | null>(null);
 
   async function run(format: TableExportFormat) {
@@ -28,6 +30,7 @@ export function TableExportActions<RowT>(props: {
         rows,
         columns: props.columns,
         subtitle: props.subtitle,
+        modals,
       });
     } catch (err) {
       window.alert((err as Error)?.message || uiText('Export fehlgeschlagen.'));

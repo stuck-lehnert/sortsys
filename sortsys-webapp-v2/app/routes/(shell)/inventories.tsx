@@ -20,7 +20,8 @@ import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { renderStructuredPdf, type PdfTableSection } from "~/lib/pdf";
 import { SmallTile } from "~/lib/tiles";
-import { deliverBlob, downloadBlob, type BlobTarget } from "~/lib/utils";
+import { deliverBlob, type BlobTarget } from "~/lib/utils";
+import { openExcelExport } from "~/lib/officeExports";
 import { exportToExcel } from "~/lib/xlsx";
 import type { Route } from "./+types";
 
@@ -153,7 +154,7 @@ export default function InventoryOverviewPage() {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
-    downloadBlob(blob, uiText(`Inventuruebersicht-${days}Tage.xlsx`, `Inventoryuebersicht-${days}Tage.xlsx`));
+    await openExcelExport(modals, blob, uiText(`Inventuruebersicht-${days}Tage.xlsx`, `Inventory-overview-${days}-days.xlsx`));
   }
 
   async function exportInventoryOverviewToPdf(target: BlobTarget = 'open') {
