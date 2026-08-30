@@ -13,6 +13,11 @@ map $http_x_forwarded_host $forwarded_host {
   '' $http_host;
 }
 
+map $forwarded_proto $onlyoffice_content_security_policy {
+  ~*^https(?:,|$) "upgrade-insecure-requests";
+  default "";
+}
+
 server {
   listen 80 default_server;
   server_name _;
@@ -52,6 +57,10 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
+
+    # ONLYOFFICE may still emit an http:// cache URL behind chained TLS proxies.
+    # Upgrade those editor requests in secure browser contexts without affecting local HTTP.
+    add_header Content-Security-Policy $onlyoffice_content_security_policy always;
     proxy_buffering off;
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
