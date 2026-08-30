@@ -711,6 +711,27 @@ fn internal_document_url(configuration: &OnlyOfficeConfig, value: &str) -> RpcRe
         return Err(forbidden("Document URL does not belong to ONLYOFFICE"));
     }
 
+    let public_base_path = public.path().trim_end_matches('/');
+    // Browser-facing URLs include the reverse proxy's /office prefix. The
+    // internal Document Server does not know that prefix, so retain only the
+    // path below the configured public base before downloading a saved file.
+    let requested_path = requested.path();
+    let internal_path = if public_base_path.is_empty() {
+        requested_path
+    } else if requested_path == public_base_path {
+        "/"
+    } else {
+        requested_path
+            .strip_prefix(public_base_path)
+            .filter(|path| path.starts_with('/'))
+            .ok_or_else(|| forbidden("Document URL is outside the ONLYOFFICE public path"))?
+    };
+    let internal_base_path = internal_origin.path().trim_end_matches('/');
+    let rewritten_path = match internal_base_path {
+        "" => internal_path.to_owned(),
+        base => format!("{base}{internal_path}"),
+    };
+
     let mut rewritten = requested;
     rewritten
         .set_scheme(internal_origin.scheme())
@@ -721,6 +742,7 @@ fn internal_document_url(configuration: &OnlyOfficeConfig, value: &str) -> RpcRe
     rewritten
         .set_port(internal_origin.port())
         .map_err(|_| internal("Could not rewrite ONLYOFFICE URL port"))?;
+    rewritten.set_path(&rewritten_path);
 
     Ok(rewritten)
 }
@@ -926,20 +948,29 @@ mod tests {
     #[test]
     fn callback_downloads_accept_only_the_configured_document_server() {
         let configuration = OnlyOfficeConfig {
-            public_url: Arc::from("https://office.example.test"),
+            public_url: Arc::from("https://sortsys.example.test/office"),
             internal_url: Arc::from("http://onlyoffice:80"),
             callback_url: Arc::from("http://api:3000/internal/onlyoffice/callback"),
             jwt_secret: Arc::from(b"test-secret".as_slice()),
         };
         let rewritten = internal_document_url(
             &configuration,
-            "https://office.example.test/cache/files/document.docx?token=one",
+            "https://sortsys.example.test/office/cache/files/document.docx?token=one",
         )
         .unwrap();
 
         assert_eq!(rewritten.scheme(), "http");
         assert_eq!(rewritten.host_str(), Some("onlyoffice"));
         assert_eq!(rewritten.port_or_known_default(), Some(80));
+        assert_eq!(rewritten.path(), "/cache/files/document.docx");
+        assert_eq!(rewritten.query(), Some("token=one"));
+        assert!(
+            internal_document_url(
+                &configuration,
+                "https://sortsys.example.test/office-other/file"
+            )
+            .is_err()
+        );
         assert!(internal_document_url(&configuration, "https://attacker.invalid/file").is_err());
     }
 }

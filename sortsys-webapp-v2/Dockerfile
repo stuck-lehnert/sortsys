@@ -36,6 +36,7 @@ COPY --from=builder /app/sortsys-webapp-v2/build/client/ /usr/share/nginx/html/
 COPY sortsys-webapp-v2/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 ENV API_UPSTREAM=http://api:3000 \
+    ONLYOFFICE_UPSTREAM=http://onlyoffice \
     CLIENT_MAX_BODY_SIZE=64m
 
 EXPOSE 80

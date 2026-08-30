@@ -64,7 +64,7 @@ docker compose --env-file .compose-env up -d
 
 We recommend deploying [`compose.yaml`](compose.yaml) with [Coolify](https://github.com/coollabsio/coolify). Coolify generates and persists the required passwords, secrets, and public service URLs automatically. The only required value you must set yourself is `ADMIN_HASH`, which must contain a bcrypt hash for the global administrator password. Mark it as a literal value in Coolify so the dollar signs in the hash are not interpolated.
 
-The Compose stack includes an [ONLYOFFICE Document Server](https://github.com/ONLYOFFICE/DocumentServer) for editing project documents in the browser. Give both `webapp` and `onlyoffice` a public HTTPS domain in Coolify. The API signs editor configurations, source downloads, and save callbacks with the generated `SERVICE_BASE64_64_ONLYOFFICE` secret. Do not change that secret while documents are open.
+The Compose stack includes an [ONLYOFFICE Document Server](https://github.com/ONLYOFFICE/DocumentServer) for editing project documents in the browser. Assign a public HTTPS domain only to `webapp`; the same domain serves ONLYOFFICE below `/office/`. The API signs editor configurations, source downloads, and save callbacks with the generated `SERVICE_BASE64_64_ONLYOFFICE` secret. Do not change that secret while documents are open.
 
 Object storage is not part of the production Compose stack. Configure an external S3-compatible service for tenant files and backups, or leave those features disabled.
 
