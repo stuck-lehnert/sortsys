@@ -184,15 +184,17 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
+  let message = uiText("Etwas ist schiefgegangen.", "Something went wrong.");
+  let details = uiText("Die Seite konnte nicht vollständig geladen werden.", "The page could not be loaded completely.");
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
+    message = error.status === 404
+      ? uiText("Seite nicht gefunden", "Page not found")
+      : uiText("Fehler beim Laden", "Loading error");
     details =
       error.status === 404
-        ? "The requested page could not be found."
+        ? uiText("Die angeforderte Seite gibt es nicht oder nicht mehr.", "The requested page does not exist or is no longer available.")
         : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
@@ -220,14 +222,26 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }, [error]);
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
+    <main className="root-error-page">
+      <section className="root-error-panel" role="alert">
+        {isRouteErrorResponse(error) && <div className="root-error-code">{error.status}</div>}
+        <h1>{message}</h1>
+        <p>{details}</p>
+
+        <div className="root-error-actions">
+          <a href="/">{uiText("Zur Startseite", "Go to home")}</a>
+          <button type="button" onClick={() => window.location.reload()}>
+            {uiText("Neu laden", "Reload")}
+          </button>
+        </div>
+
+        {stack && <details className="root-error-details">
+          <summary>{uiText("Technische Details", "Technical details")}</summary>
+          <pre className="w-full p-4 overflow-x-auto">
+            <code>{stack}</code>
+          </pre>
+        </details>}
+      </section>
     </main>
   );
 }

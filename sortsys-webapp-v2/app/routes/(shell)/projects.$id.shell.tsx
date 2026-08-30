@@ -175,11 +175,15 @@ export default function ProjectDetailShell() {
         />
 
         {!!project.finishedAt && (
-            <MyCallout icon={Icons.Finish} color="grey">{uiText("Projekt ist seit dem")}{formatDate(project.finishedAt)}{uiText("abgeschlossen")}</MyCallout>
+            <MyCallout icon={Icons.Finish} color="grey">
+                {uiText(`Projekt ist seit ${formatDate(project.finishedAt)} abgeschlossen.`, `Project has been completed since ${formatDate(project.finishedAt)}.`)}
+            </MyCallout>
         )}
 
         {!!archivedAt && (
-            <MyCallout icon={Icons.Archive} color="grey">{uiText("Projekt ist seit dem")}{formatDate(archivedAt)}{uiText("archiviert")}</MyCallout>
+            <MyCallout icon={Icons.Archive} color="grey">
+                {uiText(`Projekt ist seit ${formatDate(archivedAt)} archiviert.`, `Project has been archived since ${formatDate(archivedAt)}.`)}
+            </MyCallout>
         )}
 
         <Tabs

@@ -50,11 +50,13 @@ export default function VacationsPage() {
   const canManageVacations = sessionInfo.canDo('manage:userVacations' as any);
   const canViewUsers = sessionInfo.canDo('view:users');
   const [reloadCounter, setReloadCounter] = useState(0);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [vacations, err] = useClientStream<VacationRow[] | null, any>(() => {
     return client.streamQuery('users.vacations.list', {}, { strategy: 'cache-first' });
   }, [reloadCounter]);
-  const [users] = useClientStream(() => client.streamQuery('users.list', {
+  const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {
     includeArchived: canViewUsers ? true : undefined,
   }), [canViewUsers]);
 
@@ -165,18 +167,53 @@ export default function VacationsPage() {
     });
   }
 
-  async function approveVacation(vacation: VacationRow) {
-    const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
-    if (approveErr) throw approveErr;
-    if (!result) return;
-    reload();
+  async function runVacationAction(actionName: string, action: () => Promise<void>) {
+    setPendingAction(actionName);
+    setActionError(null);
+
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : uiText("Die Aktion ist fehlgeschlagen.", "The action failed."));
+      return false;
+    } finally {
+      setPendingAction(null);
+    }
   }
 
-  async function deleteVacation(vacation: VacationRow) {
-    const [result, deleteErr] = await client.mutate('users.vacations.delete', { id: vacation.id });
-    if (deleteErr) throw deleteErr;
-    if (!result) return;
-    reload();
+  async function approveVacation(vacation: VacationRow) {
+    await runVacationAction(`approve:${vacation.id}`, async () => {
+      const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
+      if (approveErr) throw approveErr;
+      if (result) reload();
+    });
+  }
+
+  function showDeleteVacationModal(vacation: VacationRow) {
+    modals.showDefault({
+      content: () => <p>
+        {uiText(
+          `Urlaub vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} löschen?`,
+          `Delete vacation from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
+        )} {uiText("Diese Aktion kann nicht rückgängig gemacht werden.", "This action cannot be undone.")}
+      </p>,
+      onPrimaryAction: async ({ hide }) => {
+        const ok = await runVacationAction(`delete:${vacation.id}`, async () => {
+          const [result, deleteErr] = await client.mutate('users.vacations.delete', { id: vacation.id });
+          if (deleteErr) throw deleteErr;
+          if (result) reload();
+        });
+
+        if (ok) hide();
+      },
+      modalProps: () => ({
+        danger: true,
+        modalHeading: uiText("Urlaub löschen", "Delete vacation"),
+        primaryButtonText: uiText("Löschen", "Delete"),
+        secondaryButtonText: uiText("Abbrechen", "Cancel"),
+      }),
+    });
   }
 
   return <>
@@ -203,13 +240,16 @@ export default function VacationsPage() {
       </>}
     />
 
-    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Urlaube konnten nicht geladen werden:")}{err.message}
-    </MyCallout>}
+    {!!usersError && <MyCallout kind="error" title={uiText("Benutzerdaten konnten nicht geladen werden", "User data could not be loaded")} />}
+
+    {!!actionError && <MyCallout kind="error" title={uiText("Aktion fehlgeschlagen", "Action failed")} subtitle={actionError} />}
 
     <MyTable
       topPagination
       persistentId="Vacations"
       rows={rows}
+      loading={!vacations}
+      error={err}
       columns={[
         {
           label: uiText("Benutzer"),
@@ -239,9 +279,9 @@ export default function VacationsPage() {
         {
           label: uiText("Aktionen"),
           render: row => <div className="flex gap-1 flex-wrap">
-            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} onClick={() => approveVacation(row)}>{uiText("Freigeben")}</MyButton>}
+            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} loading={pendingAction === `approve:${row.id}`} disabled={!!pendingAction} onClick={() => void approveVacation(row)}>{uiText("Freigeben")}</MyButton>}
             {row.canDeny && <MyButton size="sm" kind="ghost" renderIcon={Icons.Deny} onClick={() => showDenyModal(row)}>{uiText("Ablehnen")}</MyButton>}
-            {row.canDelete && <MyButton size="sm" kind="ghost" renderIcon={Icons.Delete} onClick={() => deleteVacation(row)}>{uiText("Löschen")}</MyButton>}
+            {row.canDelete && <MyButton size="sm" kind="ghost" renderIcon={Icons.Delete} disabled={!!pendingAction} onClick={() => showDeleteVacationModal(row)}>{uiText("Löschen")}</MyButton>}
           </div>,
           sortKey: () => '',
         },
@@ -253,8 +293,8 @@ export default function VacationsPage() {
 }
 
 function vacationStatusLabel(status: VacationStatus) {
-  if (status === 'approved') return 'Freigegeben';
-  if (status === 'denied') return 'Abgelehnt';
+  if (status === 'approved') return uiText('Freigegeben', 'Approved');
+  if (status === 'denied') return uiText('Abgelehnt', 'Denied');
   return uiText('Beantragt');
 }
 

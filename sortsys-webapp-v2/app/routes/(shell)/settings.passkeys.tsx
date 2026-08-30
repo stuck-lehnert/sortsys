@@ -99,7 +99,7 @@ export default function PasskeySettingsPage() {
 
     modals.showDefault({
       content: () => (
-        <p>{uiText("Passkey")}<b>{passkey.label}</b>{uiText("wirklich entfernen?")}</p>
+        <p>{uiText(`Passkey „${passkey.label}“ wirklich entfernen?`, `Remove passkey “${passkey.label}”?`)}</p>
       ),
       modalProps: () => ({
         danger: true,
@@ -152,10 +152,11 @@ export default function PasskeySettingsPage() {
           <div key={passkey.id} className="settings-passkey-row">
             <div className="settings-passkey-details">
               <strong>{passkey.label}</strong>
-              <span className="light text-sm">{uiText("Erstellt")}{formatDate(passkey.createdAt, "long")}
-                {passkey.lastUsedAt
-                  ? ` · Zuletzt genutzt ${formatDate(passkey.lastUsedAt, "long")}`
-                  : ""}
+              <span className="light text-sm">{uiText(`Erstellt am ${formatDate(passkey.createdAt, "long")}`, `Created on ${formatDate(passkey.createdAt, "long")}`)}
+                {passkey.lastUsedAt ? uiText(
+                  ` · Zuletzt genutzt ${formatDate(passkey.lastUsedAt, "long")}`,
+                  ` · Last used ${formatDate(passkey.lastUsedAt, "long")}`,
+                ) : ""}
               </span>
             </div>
 

@@ -410,7 +410,7 @@ export default function DeliveryNoteDetailPage() {
       ]} />}
     />
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
     </MyCallout>}
 
     <AttrList>

@@ -12,6 +12,7 @@ import { MyLink } from "~/components/MyLink";
 import { SmallProjectTile } from "~/lib/tiles";
 import { useBoolUrlParam } from "~/hooks/useUrlParam";
 import { TableExportActions } from "~/components/TableExportActions";
+import { MyHeader } from "~/components/MyHeader";
 
 export function meta({ }: Route.MetaArgs) {
   return [
@@ -23,12 +24,14 @@ export default function ProjectsPage() {
   const navigate = useNavigate();
 
   const [finishedOnly, setFinishedOnly] = useBoolUrlParam('finished');
-  const [projects] = useClientStream(() => client.streamQuery('projects.list', {
+  const [projects, projectsError] = useClientStream(() => client.streamQuery('projects.list', {
     finished: finishedOnly,
   }), [finishedOnly]);
 
   return <>
-    <div className="flex gap-2 w-full overlflow-x-auto">
+    <MyHeader
+      title={uiText("Projekte")}
+      actions={<div className="list-page-actions">
       {!finishedOnly ? (
         <OperationalTag
           renderIcon={Icons.Resume}
@@ -57,15 +60,16 @@ export default function ProjectsPage() {
         ]}
       />
 
-    </div>
-
-    <div style={{ height: '1px' }} />
+      </div>}
+    />
 
     <MyTable
       topPagination
       className=""
       persistentId="Projects"
       rows={projects ?? []}
+      loading={!projects}
+      error={projectsError}
       onRowClick={row => navigate(`/projects/${row.id}`)}
       columns={[
         {

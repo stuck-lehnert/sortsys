@@ -316,10 +316,10 @@ export default function DailyProjectReportDetailPage() {
       ]} />}
     />
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
     </MyCallout>}
 
-    {!!photoErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Foto-Aktion fehlgeschlagen:")}{photoErr}
+    {!!photoErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Foto-Aktion fehlgeschlagen:")} {photoErr}
     </MyCallout>}
 
     <AttrList>

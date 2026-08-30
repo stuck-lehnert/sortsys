@@ -674,7 +674,7 @@ export default function GlobalAdminTenantsPage() {
       {adminAccessMessages}
 
       {!!tenantUsersErr && (
-        <MyCallout icon={Icons.Deny} color="red">{uiText("Benutzer konnten nicht geladen werden:")}{`${(tenantUsersErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+        <MyCallout icon={Icons.Deny} color="red">{uiText("Benutzer konnten nicht geladen werden:")} {`${(tenantUsersErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
         </MyCallout>
       )}
 
@@ -751,7 +751,7 @@ export default function GlobalAdminTenantsPage() {
     <div className="space-y-3">
       <Tile className="space-y-2">
         {!!tenantsErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten konnten nicht geladen werden:")}{`${(tenantsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten konnten nicht geladen werden:")} {`${(tenantsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -922,7 +922,7 @@ export default function GlobalAdminTenantsPage() {
         />
 
         {!!selectedTenantErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten-Details konnten nicht geladen werden:")}{`${(selectedTenantErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten-Details konnten nicht geladen werden:")} {`${(selectedTenantErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 

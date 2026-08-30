@@ -568,7 +568,7 @@ export function showDeleteProjectFinancialEntryModal(
 
   modals.showDefault({
     content: () => <>
-      <p>{uiText("Soll die")}<b>{config.deleteNoun}</b>{uiText(" über ")}<b>{entry.amount.toFixed(2)}{uiText(" EUR")}</b>{uiText("wirklich gelöscht werden?")}{' '}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+      <p>{uiText("Soll die")} <b>{config.deleteNoun}</b> {uiText("über")} <b>{entry.amount.toFixed(2)} {uiText("EUR")}</b> {uiText("wirklich gelöscht werden?")} <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
       </p>
       {!!entry.comment && <p className="light">{uiText("Kommentar: ")}{entry.comment}</p>}
     </>,

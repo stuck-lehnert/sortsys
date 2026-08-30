@@ -1,25 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export function Awaited({ promise, deps }: {
     promise: Promise<React.ReactNode> | (() => Promise<React.ReactNode>);
     deps?: any[];
 }) {
-    const [hasData, setHasData] = useState(false);
-    const nodeRef = useRef<React.ReactNode | null>(null);
+    const [node, setNode] = useState<React.ReactNode>();
 
     useEffect(() => {
-        (async () => {
-            if (typeof promise === 'function'){
-                nodeRef.current = await promise() ?? null;
-            } else {
-                nodeRef.current = await promise ?? null;
+        let cancelled = false;
+        setNode(undefined);
+
+        void (async () => {
+            try {
+                const result = typeof promise === 'function'
+                    ? await promise()
+                    : await promise;
+
+                if (!cancelled) setNode(result ?? '\u200b');
+            } catch {
+                if (!cancelled) setNode('—');
             }
-
-            setHasData(true);
         })();
-    }, deps ?? []);
 
-    if (!hasData) return;
+        return () => {
+            cancelled = true;
+        };
+    }, deps ?? [promise]);
 
-    return nodeRef.current ?? '\u200b';
+    return node;
 }

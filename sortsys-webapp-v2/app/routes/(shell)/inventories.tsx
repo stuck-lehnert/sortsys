@@ -81,12 +81,12 @@ export default function InventoryOverviewPage() {
   const [daysParam, setDaysParam] = useIntUrlParam('days');
   const days = positiveWholeDays(daysParam) ?? persistedDays;
 
-  const [inventoriedTools] = useClientStream(() => client.streamQuery('tools.inventories.overview', {
+  const [inventoriedTools, inventoriedToolsError] = useClientStream(() => client.streamQuery('tools.inventories.overview', {
     days,
     hadInventory: true,
   }), [days]);
 
-  const [missingTools] = useClientStream(() => client.streamQuery('tools.inventories.overview', {
+  const [missingTools, missingToolsError] = useClientStream(() => client.streamQuery('tools.inventories.overview', {
     days,
     hadInventory: false,
   }), [days]);
@@ -284,22 +284,20 @@ export default function InventoryOverviewPage() {
     <MyHeader
       title={uiText("Inventur")}
       subtitle={uiText("Werkzeuge mit und ohne Inventur im gewählten Zeitraum")}
+      actions={<div className="list-page-actions">
+        <OperationalTag
+          renderIcon={Icons.Filter}
+          text={uiText(`Zeitraum: ${days} Tage`, `Period: ${days} days`)}
+          onClick={showDaysFilterModal}
+        />
+        <MyButton kind="ghost" size="sm" renderIcon={Icons.Download} loading={isPdfExporting} onClick={() => exportInventoryOverviewToPdf()}>{uiText("PDF")}</MyButton>
+        <MyButton kind="ghost" size="sm" renderIcon={Icons.Excel} onClick={exportInventoryOverviewToExcel}>{uiText("Excel")}</MyButton>
+      </div>}
     />
 
-    <div className="flex gap-2 w-full overflow-x-auto">
-      <OperationalTag
-        renderIcon={Icons.Filter}
-        text={uiText(`Zeitraum: ${days} Tage`, `Period: ${days} days`)}
-        onClick={showDaysFilterModal}
-      />
-      <MyButton kind="ghost" size="sm" renderIcon={Icons.Download} loading={isPdfExporting} onClick={() => exportInventoryOverviewToPdf()}>{uiText("PDF")}</MyButton>
-      <MyButton kind="ghost" size="sm" renderIcon={Icons.Excel} onClick={exportInventoryOverviewToExcel}>{uiText("Excel")}</MyButton>
-    </div>
-
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
     </MyCallout>}
 
-    <div style={{ height: '1px' }} />
 
     <MyExpandable title={uiText(`Inventiert in den letzten ${days} Tagen (${inventoriedTools?.length ?? 0})`, `Inventoried in the last ${days} days (${inventoriedTools?.length ?? 0})`)} initiallyExpanded>
       <MyTable
@@ -307,6 +305,8 @@ export default function InventoryOverviewPage() {
         persistentId="InventoriesRecent"
         rows={inventoriedTools ?? []}
         onRowClick={row => navigate(`/tools/${row.id}`)}
+        loading={!inventoriedTools}
+        error={inventoriedToolsError}
         columns={columns as any}
         pagination={{}}
         renderSmallViewport={row => <SmallTile
@@ -324,6 +324,8 @@ export default function InventoryOverviewPage() {
         persistentId="InventoriesMissing"
         rows={missingTools ?? []}
         onRowClick={row => navigate(`/tools/${row.id}`)}
+        loading={!missingTools}
+        error={missingToolsError}
         columns={columns as any}
         pagination={{}}
         renderSmallViewport={row => <SmallTile

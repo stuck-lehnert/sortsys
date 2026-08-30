@@ -15,6 +15,7 @@ import { useStringUrlParam } from "~/hooks/useUrlParam";
 import { formatCurrency } from "~/lib/format";
 import { TableExportActions } from "~/components/TableExportActions";
 import { EXCEL_CURRENCY_NUM_FMT } from "~/lib/xlsx";
+import { MyHeader } from "~/components/MyHeader";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -29,7 +30,7 @@ export default function ProductsPage() {
   const [category, setCategory] = useStringUrlParam('category');
   const [brand, setBrand] = useStringUrlParam('brand');
 
-  const [products] = useClientStream(() => client.streamQuery('products.list', {
+  const [products, productsError] = useClientStream(() => client.streamQuery('products.list', {
     category,
   }), [category]);
 
@@ -125,7 +126,9 @@ export default function ProductsPage() {
   }
 
   return <>
-    <div className="flex gap-2 w-full overlflow-x-auto">
+    <MyHeader
+      title={uiText("Produkte")}
+      actions={<div className="list-page-actions">
       {!hasFilter ? <>
         <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
       </> : <>
@@ -156,15 +159,16 @@ export default function ProductsPage() {
           },
         ]}
       />
-    </div>
-
-    <div style={{ height: '1px' }} />
+      </div>}
+    />
 
     <MyTable
       topPagination
       className=""
       persistentId="Products"
       rows={filteredProducts ?? []}
+      loading={!products}
+      error={productsError}
       onRowClick={row => navigate(`/products/${row.id}`)}
       columns={[
         {

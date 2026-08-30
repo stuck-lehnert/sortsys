@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type UrlWriteMode = "replace" | "push";
 
 function readSearchParam(name: string): string | null {
+  if (typeof window === "undefined") return null;
+
   const sp = new URLSearchParams(window.location.search);
   return sp.get(name);
 }
@@ -12,6 +14,8 @@ function writeSearchParam(
   value: string | null | undefined,
   mode: UrlWriteMode = "replace"
 ) {
+  if (typeof window === "undefined") return;
+
   const url = new URL(window.location.href);
 
   if (value == null || value === "") url.searchParams.delete(name);
@@ -37,14 +41,16 @@ function useLazyUrlParam<T>(
     flushStrategy = "raf",
   } = options ?? {};
 
-  const initial = useMemo(() => decode(readSearchParam(name)), [name, decode]);
-  const [state, setState] = useState<T>(initial);
+  const [state, setState] = useState<T>(() => decode(null));
+  const decodeRef = useRef(decode);
 
   // Use `undefined` as "nothing pending" so `null` can be a real value.
   const pendingRef = useRef<T | undefined>(undefined);
 
   const rafRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
+  decodeRef.current = decode;
+
 
   const flush = useCallback(() => {
     if (pendingRef.current === undefined) return;
@@ -54,6 +60,8 @@ function useLazyUrlParam<T>(
   }, [name, encode, writeMode]);
 
   const scheduleFlush = useCallback(() => {
+    if (typeof window === "undefined") return;
+
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -87,7 +95,13 @@ function useLazyUrlParam<T>(
   );
 
   useEffect(() => {
+    // Reading after hydration keeps the server and browser's first render identical.
+    setState(decodeRef.current(readSearchParam(name)));
+  }, [name]);
+
+  useEffect(() => {
     if (!syncOnPopState) return;
+    if (typeof window === "undefined") return;
 
     const onPopState = () => {
       const next = decode(readSearchParam(name));
@@ -101,6 +115,8 @@ function useLazyUrlParam<T>(
 
   useEffect(() => {
     return () => {
+      if (typeof window === "undefined") return;
+
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       if (timerRef.current != null) window.clearTimeout(timerRef.current);
     };

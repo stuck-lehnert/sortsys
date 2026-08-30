@@ -11,6 +11,7 @@ import { toolTitle, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProjectTile, SmallToolTile, SmallUserTile } from "~/lib/tiles";
 import { TableExportActions } from "~/components/TableExportActions";
+import { MyHeader } from "~/components/MyHeader";
 
 export function meta() {
     return [
@@ -28,7 +29,7 @@ export default function ToolTrackingsPage() {
 
     const hasFilter = !!(projectId || authorId || responsibleId || toolId);
 
-    const [trackings] = useClientStream(() => client.streamQuery('tools.trackings.list', {
+    const [trackings, trackingsError] = useClientStream(() => client.streamQuery('tools.trackings.list', {
         projectId: projectId ?? undefined,
         startedByUserId: authorId ?? undefined,
         responsibleUserId: responsibleId ?? undefined,
@@ -157,7 +158,9 @@ export default function ToolTrackingsPage() {
     }
 
     return <>
-        <div className="flex gap-2 w-full overlflow-x-auto items-center">
+        <MyHeader
+            title={uiText("Buchungshistorie")}
+            actions={<div className="list-page-actions">
             {!hasFilter ? (
                 <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
             ) : (
@@ -186,12 +189,13 @@ export default function ToolTrackingsPage() {
                     { header: uiText("Bis"), value: tracking => tracking.endedAt ?? 'offen' },
                 ]}
             />
-        </div>
-
-        <div style={{ height: '1px' }} />
+            </div>}
+        />
 
         <TrackingTable
             trackings={trackings ?? []}
+            loading={!trackings}
+            error={trackingsError}
             className=""
             topPagination
         />

@@ -1,5 +1,6 @@
 import { uiText } from "~/lib/i18n";
-import { useMemo } from "react";
+import type { Route } from "./+types/tools.transferRequests";
+import { useMemo, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyTable } from "~/components/MyTable";
@@ -9,24 +10,42 @@ import { client } from "~/lib/client";
 import { formatDate, toolTitle, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { MyLink } from "~/components/MyLink";
+import { MyCallout } from "~/components/MyCallout";
+import { MyHeader } from "~/components/MyHeader";
+
+export function meta({}: Route.MetaArgs) {
+    return [
+        { title: uiText("Umbuchungsanfragen", "Transfer requests") },
+    ];
+}
 
 export default function ToolTransferRequestsPage() {
     const sessionInfo = useSessionInfo();
 
-    let [requests] = useClientStream(() => client.streamQuery('tools.trackings.transfers.list', {}));
-    requests ??= [];
+    const [requests, requestsError] = useClientStream(() => client.streamQuery('tools.trackings.transfers.list', {}));
+    const [pendingAction, setPendingAction] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const requestRows = requests ?? [];
 
-    const open = useMemo(() => requests.filter(req => req.status === 'open'), [requests]);
-    const accepted = useMemo(() => requests.filter(req => req.status === 'accepted'), [requests]);
-    const denied = useMemo(() => requests.filter(req => req.status === 'denied'), [requests]);
-
-    if (!requests) return;
+    const open = useMemo(() => requestRows.filter(req => req.status === 'open'), [requestRows]);
+    const accepted = useMemo(() => requestRows.filter(req => req.status === 'accepted'), [requestRows]);
+    const denied = useMemo(() => requestRows.filter(req => req.status === 'denied'), [requestRows]);
 
     return <>
+        <MyHeader title={uiText("Umbuchungsanfragen", "Transfer requests")} />
+
+        {!!actionError && <MyCallout
+            kind="error"
+            title={uiText("Umbuchung konnte nicht verarbeitet werden", "Transfer request could not be processed")}
+            subtitle={actionError}
+        />}
+
         <MyExpandable title={uiText("Offen")} initiallyExpanded>
             <MyTable
                 className="th-20rem"
                 rows={open}
+                loading={!requests}
+                error={requestsError}
                 columns={[
                     {
                         label: uiText("Aktionen"),
@@ -34,14 +53,25 @@ export default function ToolTransferRequestsPage() {
                             const enabled = sessionInfo.canDo('manage:toolTrackings') || row.transferToUserId === sessionInfo.user.id;
 
                             const createAction = (action: 'accept' | 'deny') => async () => {
-                                await client.mutate(`tools.trackings.transfers.${action}`, {
-                                    id: row.id,
-                                });
+                                const actionName = `${action}:${row.id}`;
+                                setPendingAction(actionName);
+                                setActionError(null);
+
+                                try {
+                                    const [, error] = await client.mutate(`tools.trackings.transfers.${action}`, {
+                                        id: row.id,
+                                    });
+                                    if (error) throw error;
+                                } catch (error) {
+                                    setActionError(error instanceof Error ? error.message : uiText("Die Aktion ist fehlgeschlagen.", "The action failed."));
+                                } finally {
+                                    setPendingAction(null);
+                                }
                             };
 
-                            return <div className='flex'>
-                                <MyButton kind="ghost" onClick={createAction('accept')} disabled={!enabled}><Icons.Accept /></MyButton>
-                                <MyButton kind="ghost" onClick={createAction('deny')} disabled={!enabled}><Icons.Deny /></MyButton>
+                            return <div className="flex gap-1 flex-wrap">
+                                <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} loading={pendingAction === `accept:${row.id}`} onClick={createAction('accept')} disabled={!enabled || !!pendingAction}>{uiText("Annehmen", "Accept")}</MyButton>
+                                <MyButton size="sm" kind="ghost" renderIcon={Icons.Deny} loading={pendingAction === `deny:${row.id}`} onClick={createAction('deny')} disabled={!enabled || !!pendingAction}>{uiText("Ablehnen", "Deny")}</MyButton>
                             </div>;
                         },
                     },
@@ -49,7 +79,7 @@ export default function ToolTransferRequestsPage() {
                         label: uiText("Werkzeug"),
                         render: async (row) => {
                             const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
-                            if (!tool) return 'Unbekannt';
+                            if (!tool) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/tools/${tool.id}`}>{tool.customId} {toolTitle(tool)}</MyLink>;
                         },
                     },
@@ -59,7 +89,7 @@ export default function ToolTransferRequestsPage() {
                             if (!row.responsibleUserId) return;
             
                             const [user] = await client.query('users.get', { id: row.responsibleUserId }, { strategy: 'cache-first' });
-                            if (!user) return 'Unbekannt';
+                            if (!user) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
                         },
                     },
@@ -69,17 +99,17 @@ export default function ToolTransferRequestsPage() {
                             if (!row.transferToUserId) return;
             
                             const [user] = await client.query('users.get', { id: row.transferToUserId }, { strategy: 'cache-first' });
-                            if (!user) return 'Unbekannt';
+                            if (!user) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
                         },
                     },
                     {
-                        label: '',
+                        label: uiText('Projekt', 'Project'),
                         render: async (row) => {
                             if (!row.projectId) return;
 
                             const [project] = await client.query('projects.get', { id: row.projectId }, { strategy: 'cache-first' });
-                            if (!project) return 'Unbekannt';
+                            if (!project) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
                         },
                     },
@@ -101,7 +131,7 @@ export default function ToolTransferRequestsPage() {
                         label: uiText("Werkzeug"),
                         render: async (row) => {
                             const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
-                            if (!tool) return 'Unbekannt';
+                            if (!tool) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/tools/${tool.id}`}>{tool.customId} {toolTitle(tool)}</MyLink>;
                         },
                     },
@@ -111,7 +141,7 @@ export default function ToolTransferRequestsPage() {
                             if (!row.responsibleUserId) return;
             
                             const [user] = await client.query('users.get', { id: row.responsibleUserId }, { strategy: 'cache-first' });
-                            if (!user) return 'Unbekannt';
+                            if (!user) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
                         },
                     },
@@ -121,17 +151,17 @@ export default function ToolTransferRequestsPage() {
                             if (!row.transferToUserId) return;
             
                             const [user] = await client.query('users.get', { id: row.transferToUserId }, { strategy: 'cache-first' });
-                            if (!user) return 'Unbekannt';
+                            if (!user) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
                         },
                     },
                     {
-                        label: '',
+                        label: uiText('Projekt', 'Project'),
                         render: async (row) => {
                             if (!row.projectId) return;
             
                             const [project] = await client.query('projects.get', { id: row.projectId }, { strategy: 'cache-first' });
-                            if (!project) return 'Unbekannt';
+                            if (!project) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
                         },
                     },
@@ -153,7 +183,7 @@ export default function ToolTransferRequestsPage() {
                         label: uiText("Werkzeug"),
                         render: async (row) => {
                             const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
-                            if (!tool) return 'Unbekannt';
+                            if (!tool) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/tools/${tool.id}`}>{tool.customId} {toolTitle(tool)}</MyLink>;
                         },
                     },
@@ -163,7 +193,7 @@ export default function ToolTransferRequestsPage() {
                             if (!row.responsibleUserId) return;
             
                             const [user] = await client.query('users.get', { id: row.responsibleUserId }, { strategy: 'cache-first' });
-                            if (!user) return 'Unbekannt';
+                            if (!user) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
                         },
                     },
@@ -173,17 +203,17 @@ export default function ToolTransferRequestsPage() {
                             if (!row.transferToUserId) return;
             
                             const [user] = await client.query('users.get', { id: row.transferToUserId }, { strategy: 'cache-first' });
-                            if (!user) return 'Unbekannt';
+                            if (!user) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
                         },
                     },
                     {
-                        label: '',
+                        label: uiText('Projekt', 'Project'),
                         render: async (row) => {
                             if (!row.projectId) return;
             
                             const [project] = await client.query('projects.get', { id: row.projectId }, { strategy: 'cache-first' });
-                            if (!project) return 'Unbekannt';
+                            if (!project) return uiText('Unbekannt', 'Unknown');
                             return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
                         },
                     },

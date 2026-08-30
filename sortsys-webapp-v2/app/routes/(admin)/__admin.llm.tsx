@@ -154,7 +154,7 @@ export default function GlobalAdminLlmPage() {
 
       <MyButton loading={saving} disabled={!model.trim()} onClick={() => void saveSettings()}>{uiText("Speichern")}</MyButton>
 
-      {settings && <p className="light">{uiText("Datenzugriff:")}{settings.mcpAvailable ? 'MCP' : 'Tool-Calls'}
+      {settings && <p className="light">{uiText("Datenzugriff:")} {settings.mcpAvailable ? 'MCP' : 'Tool-Calls'}
       </p>}
     </Tile>
 

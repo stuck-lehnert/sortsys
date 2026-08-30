@@ -22,7 +22,7 @@
     "smoke:wasm:rust:fixtures": "npm run build:wasm:rust && node ./scripts/smoke-rust-dwg-fixtures.mjs"
   },
   "dependencies": {
-    "pdfjs-dist": "^6.1.200"
+    "pdfjs-dist": "^6.3.289"
   },
   "peerDependencies": {
     "react": "^19.0.0",

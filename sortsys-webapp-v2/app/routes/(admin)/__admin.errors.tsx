@@ -27,7 +27,7 @@ export default function GlobalAdminErrorsPage() {
   const selected = useMemo(() => rows.find(row => row.id === selectedId) ?? rows[0] ?? null, [rows, selectedId]);
 
   return <>
-    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Fehlerberichte konnten nicht geladen werden:")}{err.message}
+    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Fehlerberichte konnten nicht geladen werden:")} {err.message}
     </MyCallout>}
 
     <MyTable

@@ -1362,7 +1362,7 @@ export default function ProjectDetailCosts() {
       >{uiText("Excel")}</MyButton>
     </div>
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")}{pdfExportErr}
+    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
     </MyCallout>}
 
     <AttrList>

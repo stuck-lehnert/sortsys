@@ -1,7 +1,9 @@
 import { uiText } from "~/lib/i18n";
-import { Tile } from "@sortsys/react-components";
+import { InlineLoading, Tile } from "@sortsys/react-components";
 import { useMemo, useState } from "react";
 import { MyButton } from "~/components/MyButton";
+import { MyCallout } from "~/components/MyCallout";
+import { MyHeader } from "~/components/MyHeader";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { userFullName } from "~/lib/format";
@@ -24,8 +26,8 @@ function sortUsers(users: User[]) {
 }
 
 export default function UserSupervisorsPage() {
-  const [users] = useClientStream(() => client.streamQuery('users.list', {}), []);
-  const [defaultSupervisor] = useClientStream<{ userId: string | null } | null, any>(() => {
+  const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {}), []);
+  const [defaultSupervisor, defaultSupervisorError] = useClientStream<{ userId: string | null } | null, any>(() => {
     return client.streamQuery('users.supervisors.getDefault', undefined, { strategy: 'cache-first' });
   }, []);
   const [expandedUserIds, setExpandedUserIds] = useState<Set<string>>(() => new Set());
@@ -75,7 +77,12 @@ export default function UserSupervisorsPage() {
     return graph.allUsers.find(user => user.id === defaultSupervisor?.userId) ?? null;
   }, [graph.allUsers, defaultSupervisor?.userId]);
 
-  const expandAll = () => setExpandedUserIds(new Set(graph.expandableUserIds));
+  const allExpanded = graph.expandableUserIds.length > 0
+    && graph.expandableUserIds.every(userId => expandedUserIds.has(userId));
+
+  const toggleAll = () => {
+    setExpandedUserIds(allExpanded ? new Set() : new Set(graph.expandableUserIds));
+  };
 
   const toggleExpanded = (userId: string) => {
     setExpandedUserIds(current => {
@@ -112,16 +119,23 @@ export default function UserSupervisorsPage() {
   };
 
   return <>
-    <div className="flex gap-2 w-full overlflow-x-auto">
-      <MyButton kind="ghost" size="sm" onClick={expandAll}>{uiText("Alle aufklappen")}</MyButton>
-    </div>
+    <MyHeader
+      title={uiText("Vorgesetzte")}
+      actions={<MyButton kind="ghost" size="sm" disabled={!graph.expandableUserIds.length} onClick={toggleAll}>
+        {allExpanded ? uiText("Alle zuklappen", "Collapse all") : uiText("Alle aufklappen", "Expand all")}
+      </MyButton>}
+    />
 
-    {!!defaultSupervisorUser && <div className="light" style={{ marginTop: 8 }}>{uiText("Standard-Vorgesetzter:")}{userFullName(defaultSupervisorUser)}
-    </div>}
+    {!!defaultSupervisorUser && <p className="light">
+      {uiText(`Standard-Vorgesetzter: ${userFullName(defaultSupervisorUser)}`, `Default supervisor: ${userFullName(defaultSupervisorUser)}`)}
+    </p>}
 
-    <div style={{ height: '1px' }} />
+    {!!(usersError || defaultSupervisorError) && <MyCallout
+      kind="error"
+      title={uiText("Vorgesetztenstruktur konnte nicht vollständig geladen werden", "The supervisor hierarchy could not be loaded completely")}
+    />}
 
-    {!users ? null : !graph.allUsers.length ? (
+    {!users ? <Tile><InlineLoading description={uiText("Vorgesetztenstruktur wird geladen …", "Loading supervisor hierarchy …")} /></Tile> : !graph.allUsers.length ? (
       <Tile>{uiText("Keine Benutzer vorhanden.")}</Tile>
     ) : (
       <div style={{ display: 'grid', gap: 16 }}>

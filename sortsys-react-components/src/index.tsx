@@ -6,6 +6,7 @@ import React, {
   isValidElement,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
   type HTMLAttributes,
@@ -177,6 +178,7 @@ export const Button = forwardRef<HTMLButtonElement, any>(function Button(props, 
       {...rest}
       type={rest.type || "button"}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       className={cx(
         "ss-btn",
         `ss-btn--${mapTagType(kind)}`,
@@ -186,7 +188,8 @@ export const Button = forwardRef<HTMLButtonElement, any>(function Button(props, 
         className,
       )}
     >
-      {!!Icon && <Icon size={16} className="ss-btn__icon" />}
+      {!!loading && <span className="ss-spinner ss-spinner--small" aria-hidden="true" />}
+      {!loading && !!Icon && <Icon size={16} className="ss-btn__icon" />}
       {!!visibleChildren.length && (
         iconOnly
           ? <span className="ss-btn__icon-only-child">{children}</span>
@@ -313,12 +316,19 @@ export const SideNavItem = SideNavLink;
 
 export function SideNavMenu({ title, renderIcon: Icon, children, className, defaultExpanded = false, ...props }: any) {
   const [open, setOpen] = useState(!!defaultExpanded);
+  const itemsId = useId();
+
+  useEffect(() => {
+    if (defaultExpanded) setOpen(true);
+  }, [defaultExpanded]);
 
   return (
     <div {...props} className={cx("ss-side-nav-menu", className)}>
       <button
         type="button"
         className="ss-side-nav-menu__trigger"
+        aria-controls={itemsId}
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         {!!Icon && <Icon size={16} className="ss-side-nav__icon" />}
@@ -326,7 +336,7 @@ export function SideNavMenu({ title, renderIcon: Icon, children, className, defa
         <span className="ss-side-nav-menu__caret" aria-hidden="true">{open ? "-" : "+"}</span>
       </button>
 
-      {open && <div className="ss-side-nav-menu__items">{children}</div>}
+      {open && <div id={itemsId} className="ss-side-nav-menu__items">{children}</div>}
     </div>
   );
 }
@@ -1023,6 +1033,29 @@ export function MenuItemSelectable({
   );
 }
 
+let modalScrollLockCount = 0;
+let bodyOverflowBeforeModal = "";
+
+function lockBodyScroll() {
+  if (!ensureDomAvailable()) return;
+
+  if (modalScrollLockCount === 0) {
+    bodyOverflowBeforeModal = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
+  modalScrollLockCount += 1;
+}
+
+function unlockBodyScroll() {
+  if (!ensureDomAvailable() || modalScrollLockCount === 0) return;
+
+  modalScrollLockCount -= 1;
+  if (modalScrollLockCount === 0) {
+    document.body.style.overflow = bodyOverflowBeforeModal;
+    bodyOverflowBeforeModal = "";
+  }
+}
+
 export function Modal({
   open,
   onRequestClose,
@@ -1032,41 +1065,117 @@ export function Modal({
   primaryButtonText = "Speichern",
   secondaryButtonText = "Abbrechen",
   primaryButtonDisabled,
+  primaryButtonLoading,
   secondaryButtonDisabled,
   closeButtonLabel,
   shouldSubmitOnEnter,
   passiveModal,
+  danger,
   children,
   className,
   ...props
 }: any) {
   const hasPrimaryAction = typeof onRequestSubmit === "function";
-
-  useEffect(() => {
-    if (!open) return;
-
-    const listener = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onRequestClose?.();
-      }
-
-      if (event.key === "Enter" && hasPrimaryAction && shouldSubmitOnEnter && !primaryButtonDisabled) {
-        onRequestSubmit?.();
-      }
-    };
-
-    window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
-  }, [open, onRequestClose, onRequestSubmit, shouldSubmitOnEnter, primaryButtonDisabled, hasPrimaryAction]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const headingId = useId();
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const modalRuntimeRef = useRef({
+    hasPrimaryAction,
+    onRequestClose,
+    onRequestSubmit,
+    primaryButtonDisabled,
+    primaryButtonLoading,
+    shouldSubmitOnEnter,
+  });
+  modalRuntimeRef.current = {
+    hasPrimaryAction,
+    onRequestClose,
+    onRequestSubmit,
+    primaryButtonDisabled,
+    primaryButtonLoading,
+    shouldSubmitOnEnter,
+  };
 
   useEffect(() => {
     if (!open || !ensureDomAvailable()) return;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    lockBodyScroll();
 
+    const focusFrame = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const initialFocus = container.querySelector<HTMLElement>("[autofocus]")
+        ?? container.querySelector<HTMLElement>(
+          ".ss-modal-content input:not([disabled]), .ss-modal-content textarea:not([disabled]), .ss-modal-content select:not([disabled]), .ss-modal-content button:not([disabled]), .ss-modal-content a[href], .ss-modal-content [tabindex]:not([tabindex='-1'])",
+        )
+        ?? container.querySelector<HTMLElement>(
+          "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        );
+
+      (initialFocus ?? container).focus({ preventScroll: true });
+    });
+
+    const listener = (event: KeyboardEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const visibleDialogs = [...document.querySelectorAll<HTMLElement>(".ss-modal-container")];
+      if (visibleDialogs.at(-1) !== container) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        modalRuntimeRef.current.onRequestClose?.();
+        return;
+      }
+
+      if (event.key === "Tab") {
+        const focusable = [...container.querySelectorAll<HTMLElement>(
+          "a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        )].filter(element => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+
+        if (!focusable.length) {
+          event.preventDefault();
+          container.focus();
+          return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+
+      const runtime = modalRuntimeRef.current;
+      if (event.key === "Enter" && runtime.hasPrimaryAction && runtime.shouldSubmitOnEnter && !runtime.primaryButtonDisabled && !runtime.primaryButtonLoading) {
+        const target = event.target;
+        if (
+          target instanceof HTMLTextAreaElement
+          || target instanceof HTMLButtonElement
+          || (target instanceof HTMLElement && target.isContentEditable)
+        ) return;
+
+        event.preventDefault();
+        runtime.onRequestSubmit?.();
+      }
+    };
+
+    window.addEventListener("keydown", listener);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", listener);
+      unlockBodyScroll();
+
+      const previouslyFocused = previouslyFocusedRef.current;
+      if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true });
     };
   }, [open]);
 
@@ -1081,11 +1190,19 @@ export function Modal({
         onRequestClose?.();
       }}
     >
-      <div className="ss-modal-container" role="dialog" aria-modal="true">
+      <div
+        ref={containerRef}
+        className="ss-modal-container"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={modalHeading ? headingId : undefined}
+        aria-label={!modalHeading ? modalLabel || "Dialog" : undefined}
+        tabIndex={-1}
+      >
         <header className="ss-modal-header">
           <div className="ss-modal-header__text">
             {!!modalLabel && <div className="ss-modal-label">{modalLabel}</div>}
-            {!!modalHeading && <h3 className="ss-modal-heading">{modalHeading}</h3>}
+            {!!modalHeading && <h3 id={headingId} className="ss-modal-heading">{modalHeading}</h3>}
           </div>
 
           <button
@@ -1112,8 +1229,9 @@ export function Modal({
 
             {hasPrimaryAction && (
               <Button
-                kind="primary"
-                disabled={primaryButtonDisabled}
+                kind={danger ? "danger" : "primary"}
+                disabled={primaryButtonDisabled || primaryButtonLoading}
+                loading={primaryButtonLoading}
                 onClick={() => onRequestSubmit?.()}
               >
                 {primaryButtonText}

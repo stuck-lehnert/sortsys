@@ -32,10 +32,12 @@ function useEntitySearchEntries(query: string, close: () => void) {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<PaletteEntry[]>([]);
   const trimmedQuery = normalizeSearch(query);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setEntries([]);
+    setSearching(!!trimmedQuery);
     if (!trimmedQuery) return;
 
     const timeout = window.setTimeout(async () => {
@@ -82,7 +84,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `project:${project.id}`,
         title: project.title,
         subtitle: uiText("Projekt"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.Project,
         href: `/projects/${project.id}`,
       }));
@@ -90,7 +92,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `tool:${tool.id}`,
         title: `${tool.customId} ${toolTitle(tool)}`,
         subtitle: uiText("Werkzeug"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.Tool,
         href: `/tools/${tool.id}`,
       }));
@@ -98,7 +100,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `user:${user.id}`,
         title: userFullName(user),
         subtitle: uiText("Benutzer"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.User,
         href: `/users/${user.id}`,
       }));
@@ -106,7 +108,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `product:${product.id}`,
         title: `${product.customId} ${productTitle(product)}`,
         subtitle: uiText("Produkt"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.Product,
         href: `/products/${product.id}`,
       }));
@@ -114,7 +116,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `customer:${customer.id}`,
         title: customerName(customer),
         subtitle: uiText("Kunde"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.Customer,
         href: `/customers/${customer.id}`,
       }));
@@ -122,7 +124,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `contact:${contact.id}`,
         title: contactName(contact),
         subtitle: uiText("Kontakt"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.Contact,
         href: `/contacts/${contact.id}`,
       }));
@@ -130,20 +132,21 @@ function useEntitySearchEntries(query: string, close: () => void) {
         id: `productVendor:${vendor.id}`,
         title: vendor.name,
         subtitle: uiText("Händler"),
-        group: 'Treffer',
+        group: uiText('Treffer', 'Results'),
         icon: Icons.ProductVendor,
         href: `/products/vendors/${vendor.id}`,
       }));
       (deliveryNote ?? []).slice(0, 3).forEach(note => pushLink(nextEntries, {
         id: `deliveryNote:${note.id}`,
         title: uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`),
-        subtitle: `Erfasst ${formatDate(note.createdAt)}`,
-        group: 'Treffer',
+        subtitle: uiText(`Erfasst ${formatDate(note.createdAt)}`, `Recorded ${formatDate(note.createdAt)}`),
+        group: uiText('Treffer', 'Results'),
         icon: Icons.DeliveryNote,
         href: `/products/deliveryNotes/${note.id}`,
       }));
 
       setEntries(nextEntries);
+      setSearching(false);
     }, 180);
 
     return () => {
@@ -152,13 +155,16 @@ function useEntitySearchEntries(query: string, close: () => void) {
     };
   }, [close, navigate, trimmedQuery]);
 
-  return entries;
+  return { entries, searching };
 }
 
-function PaletteRow({ entry, active, onHover }: { entry: PaletteEntry; active: boolean; onHover: () => void }) {
+function PaletteRow({ entry, active, onHover, optionId }: { entry: PaletteEntry; active: boolean; onHover: () => void; optionId: string }) {
   const Icon = entry.icon;
   return <button
+    id={optionId}
     type="button"
+    role="option"
+    aria-selected={active}
     className={`command-palette-row${active ? ' is-active' : ''}`}
     onMouseEnter={onHover}
     onClick={() => void entry.run()}
@@ -186,13 +192,14 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
   modals.showDefault({
     content: ({ hide, replace }) => {
       const inputId = useId();
+      const resultsId = useId();
       const [query, setQuery] = useState('');
       const [activeIndex, setActiveIndex] = useState(0);
       const [recentActionIds, setRecentActionIds] = useState<string[]>([]);
       const { visibleActions, runAction } = useUserActions(modals);
       const commandQuery = normalizeSearch(query.startsWith('>') ? query.slice(1) : query);
       const commandOnly = query.trim().startsWith('>');
-      const entityEntries = useEntitySearchEntries(commandOnly ? '' : query, hide);
+      const { entries: entityEntries, searching } = useEntitySearchEntries(commandOnly ? '' : query, hide);
 
       useEffect(() => {
         let active = true;
@@ -230,7 +237,7 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
           id: `recent:${action.id}`,
           title: action.label,
           subtitle: action.description,
-          group: 'Zuletzt verwendet',
+          group: uiText('Zuletzt verwendet', 'Recently used'),
           icon: action.icon,
           run: runVisibleAction(action),
         }));
@@ -241,7 +248,7 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
             id: `action:${action.id}`,
             title: action.label,
             subtitle: action.description,
-            group: action.group === 'work' ? uiText('Arbeit') : action.group === 'create' ? 'Anlegen' : action.group === 'admin' ? 'Verwaltung' : 'Navigation',
+            group: action.group === 'work' ? uiText('Arbeit', 'Work') : action.group === 'create' ? uiText('Anlegen', 'Create') : action.group === 'admin' ? uiText('Verwaltung', 'Administration') : uiText('Navigation', 'Navigation'),
             icon: action.icon,
             run: runVisibleAction(action),
           }));
@@ -263,14 +270,18 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
       }
 
       return <div className="command-palette">
-        <label className="command-palette-label" htmlFor={inputId}>{uiText("Befehl oder Suche")}</label>
+        <label className="command-palette-label" htmlFor={inputId}>{uiText("Befehl oder Suche", "Command or search")}</label>
         <div className="command-palette-input-wrap">
           <Icons.Search size={20} />
           <input
             id={inputId}
             className="command-palette-input"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={resultsId}
+            aria-activedescendant={entries[activeIndex] ? `${resultsId}-${activeIndex}` : undefined}
             value={query}
-            placeholder={uiText("Tippe > für Befehle, sonst Suche")}
+            placeholder={uiText("Tippe > für Befehle, sonst Suche", "Type > for commands, otherwise search")}
             onChange={event => setQuery(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'ArrowDown') {
@@ -289,7 +300,7 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
         </div>
         <NotifyLoaded onLoad={() => document.getElementById(inputId)?.focus()} />
 
-        <div className="command-palette-results">
+        <div id={resultsId} className="command-palette-results" role="listbox" aria-busy={searching}>
           {groupEntries(entries).map(([group, groupRows]) => <section key={group} className="command-palette-group">
             <div className="command-palette-group-title">{group}</div>
             {groupRows.map(entry => {
@@ -298,11 +309,14 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
                 key={entry.id}
                 entry={entry}
                 active={index === activeIndex}
+                optionId={`${resultsId}-${index}`}
                 onHover={() => setActiveIndex(index)}
               />;
             })}
           </section>)}
-          {!entries.length && <div className="command-palette-empty">{uiText("Keine Treffer.")}</div>}
+          {!entries.length && <div className="command-palette-empty" role="status">
+            {searching ? uiText('Suche läuft …', 'Searching …') : uiText("Keine Treffer.", "No results.")}
+          </div>}
         </div>
       </div>;
     },

@@ -1,10 +1,11 @@
-import { uiText } from "~/lib/i18n";
-import { OperationalTag } from "@sortsys/react-components";
+import { currentLocaleTag, uiText } from "~/lib/i18n";
+import { InlineLoading, OperationalTag } from "@sortsys/react-components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/deployments";
 import { MyButton } from "~/components/MyButton";
 import { MyForm } from "~/components/MyForm";
 import { MyHeader } from "~/components/MyHeader";
+import { MyCallout } from "~/components/MyCallout";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
@@ -19,8 +20,6 @@ import { SmallProjectTile, SmallUserTile } from "~/lib/tiles";
 import type { Project, ProjectDeployment, User } from "~/type-helpers";
 import { useNavigate } from "react-router";
 import { TableExportActions } from "~/components/TableExportActions";
-
-const WEEKDAY_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] as const;
 
 type ViewMode = 'day' | 'week';
 type RowMode = 'project' | 'user';
@@ -119,24 +118,26 @@ export default function DeploymentsPage() {
     return { start, endExclusive };
   }, [focusDayKey, viewMode]);
 
-  const [projects] = useClientStream(() => client.streamQuery('projects.list', {}), []);
-  const [users] = useClientStream(() => client.streamQuery('users.list', {
+  const [projects, projectsError] = useClientStream(() => client.streamQuery('projects.list', {}), []);
+  const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {
     includeArchived: canViewAllUsers ? true : undefined,
   }), [canViewAllUsers]);
   const [deployments, setDeployments] = useState<ProjectDeployment[]>([]);
   const [deploymentsReloadCounter, setDeploymentsReloadCounter] = useState(0);
   const [unavailabilityReloadCounter, setUnavailabilityReloadCounter] = useState(0);
+  const [deploymentsLoading, setDeploymentsLoading] = useState(true);
+  const [deploymentsError, setDeploymentsError] = useState<unknown>(null);
   const deploymentsSinceRef = useRef<Date | null>(null);
   const rangeEndInclusive = useMemo(() => addDays(range.endExclusive, -1), [range.endExclusive]);
 
-  const [vacations] = useClientStream<DeploymentVacation[] | null, any>(() => {
+  const [vacations, vacationsError] = useClientStream<DeploymentVacation[] | null, any>(() => {
     return client.streamQuery('users.vacations.list', {
       from: range.start,
       to: rangeEndInclusive,
       includeDenied: false,
     }, { strategy: 'cache-first' });
   }, [range.start.getTime(), rangeEndInclusive.getTime()]);
-  const [projectUnavailability] = useClientStream<ProjectUnavailabilityPeriod[] | null, any>(() => {
+  const [projectUnavailability, projectUnavailabilityError] = useClientStream<ProjectUnavailabilityPeriod[] | null, any>(() => {
     return client.streamQuery('projects.unavailability.list', {
       from: range.start,
       to: rangeEndInclusive,
@@ -153,6 +154,10 @@ export default function DeploymentsPage() {
 
     const rangeFrom = range.start;
     const rangeTo = range.endExclusive;
+    setDeployments([]);
+    setDeploymentsLoading(true);
+    setDeploymentsError(null);
+
 
     const clearTimer = () => {
       if (timer !== null) {
@@ -180,12 +185,18 @@ export default function DeploymentsPage() {
         to: rangeTo,
       }, { strategy: 'network-only' });
 
-      if (stopped || err || !rows) {
+      if (stopped) return;
+      if (err || !rows) {
+        setDeploymentsError(err ?? new Error(uiText("Einsätze konnten nicht geladen werden.", "Deployments could not be loaded.")));
+        setDeploymentsLoading(false);
+        deploymentsSinceRef.current = null;
         scheduleNextPull();
         return;
       }
 
       setDeployments(rows);
+      setDeploymentsError(null);
+      setDeploymentsLoading(false);
       scheduleNextPull();
     };
 
@@ -208,10 +219,15 @@ export default function DeploymentsPage() {
 
       const [rows, err] = await client.query('projects.deployments.list', queryInput, { strategy: 'network-only' });
 
-      if (stopped || err || !rows) {
+      if (stopped) return;
+      if (err || !rows) {
+        setDeploymentsError(err ?? new Error(uiText("Einsätze konnten nicht aktualisiert werden.", "Deployments could not be refreshed.")));
+        deploymentsSinceRef.current = sinceForRequest;
         scheduleNextPull();
         return;
       }
+
+      setDeploymentsError(null);
 
       if (rows.length > 0) {
         setDeployments(previous => upsertDeployments(previous, rows));
@@ -863,6 +879,9 @@ export default function DeploymentsPage() {
     showDeploymentForm({ mode: 'create', preset: { day: focusDay } });
   });
 
+  const planningError = deploymentsError || projectsError || usersError || vacationsError || projectUnavailabilityError;
+  const planningLoading = deploymentsLoading || !projects || !users;
+
   return <>
     <MyHeader title={uiText("Einsatzplanung")} />
 
@@ -872,18 +891,19 @@ export default function DeploymentsPage() {
           size="sm"
           kind="secondary"
           onClick={() => setViewRaw(viewMode === 'day' ? 'week' : 'day')}
-        >{uiText("Ansicht: ")}{viewMode === 'day' ? 'Tag' : 'Woche'}</MyButton>
+        >{uiText(`Ansicht: ${viewMode === 'day' ? 'Tag' : 'Woche'}`, `View: ${viewMode === 'day' ? 'Day' : 'Week'}`)}</MyButton>
 
         <MyButton
           size="sm"
           kind="secondary"
           onClick={() => setRowMode(rowMode === 'project' ? 'user' : 'project')}
-        >{uiText("Zeilen: ")}{rowMode === 'project' ? 'Projekte' : uiText('Benutzer')}</MyButton>
+        >{uiText(`Zeilen: ${rowMode === 'project' ? 'Projekte' : 'Benutzer'}`, `Rows: ${rowMode === 'project' ? 'Projects' : 'Users'}`)}</MyButton>
 
         <MyButton size="sm" kind="ghost" renderIcon={Icons.TakeBack} onClick={() => shiftFocus('prev')}>{uiText("Zurück")}</MyButton>
 
         <input
           className="ss-input pep-date-input"
+          aria-label={uiText("Datum auswählen", "Select date")}
           type="date"
           value={toDateInputValue(focusDay)}
           onChange={event => {
@@ -942,7 +962,15 @@ export default function DeploymentsPage() {
 
     {!canViewAllDeployments && <p className="light">{uiText("Du siehst deine eigenen Einsätze.")}</p>}
 
-    {viewMode === 'day' && <div className="pep-board">
+    {!!planningError && <MyCallout
+      kind="error"
+      title={uiText("Einsatzplanung konnte nicht vollständig geladen werden", "Resource planning could not be loaded completely")}
+      subtitle={planningError instanceof Error ? planningError.message : String(planningError)}
+    />}
+
+    {planningLoading && <div className="pep-loading"><InlineLoading description={uiText("Einsatzplanung wird geladen …", "Loading resource planning …")} /></div>}
+
+    {!planningLoading && viewMode === 'day' && <div className="pep-board">
       {!rowEntities.length && <div className="pep-empty-row light">{uiText("Keine Einsätze im gewählten Zeitraum.")}</div>}
 
       {rowEntities.map(row => {
@@ -999,13 +1027,13 @@ export default function DeploymentsPage() {
       })}
     </div>}
 
-    {viewMode === 'week' && <div className="pep-week-wrap">
+    {!planningLoading && viewMode === 'week' && <div className="pep-week-wrap">
       <table className="pep-week-table">
         <thead>
           <tr>
             <th className="pep-week-user-head">{rowHeading}</th>
             {weekDays.map(day => {
-              const dayOfWeek = WEEKDAY_SHORT[(day.getDay() + 6) % 7]!;
+              const dayOfWeek = day.toLocaleDateString(currentLocaleTag(), { weekday: 'short' });
               return <th key={toDateInputValue(day)}>
                 <div>{dayOfWeek}</div>
                 <div className="pep-week-date">{formatDate(day)}</div>

@@ -11,6 +11,7 @@ import { useUserActions, type UserAction } from "~/lib/userActions";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { Icons, type Icon } from "~/lib/icons";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -41,8 +42,6 @@ type ActivityItem = {
   occurredAt: Date;
 };
 
-const DASHBOARD_PINNED_VISITS_KEY = "sortsys.dashboard.pinnedVisits";
-
 type PinnedVisit = Pick<VisitHistoryItem, 'path' | 'title' | 'visitedAt'>;
 
 function normalizeLlmPath(path: string) {
@@ -50,8 +49,30 @@ function normalizeLlmPath(path: string) {
 }
 
 function visitLabel(visit: PinnedVisit) {
-  if (/^\/llm(?:[/?#]|$)/.test(visit.path)) return 'LLM';
+  const pathname = visit.path.split(/[?#]/, 1)[0];
+  const knownLabels: Record<string, string> = {
+    '/dashboard': uiText('Dashboard'),
+    '/projects': uiText('Projekte', 'Projects'),
+    '/projects/costs': uiText('Kostenübersicht', 'Cost overview'),
+    '/deployments': uiText('Einsatzplanung', 'Resource planning'),
+    '/vacations': uiText('Urlaub', 'Leave'),
+    '/tools': uiText('Werkzeuge', 'Tools'),
+    '/tools/trackings': uiText('Buchungshistorie', 'Booking history'),
+    '/inventories': uiText('Inventur', 'Inventory'),
+    '/products': uiText('Produkte', 'Products'),
+    '/products/deliveryNotes': uiText('Lieferscheine', 'Delivery notes'),
+    '/products/vendors': uiText('Händler', 'Vendors'),
+    '/customers': uiText('Kunden', 'Customers'),
+    '/contacts': uiText('Kontakte', 'Contacts'),
+    '/users': uiText('Benutzer', 'Users'),
+    '/settings': uiText('Einstellungen', 'Settings'),
+    '/docs': uiText('Hilfe & Begriffe', 'Help & terms'),
+    '/scripts': uiText('Client-Skripte', 'Client scripts'),
+    '/admin': uiText('Organisation', 'Organization'),
+  };
 
+  if (/^\/llm(?:[/?#]|$)/.test(visit.path)) return 'LLM';
+  if (knownLabels[pathname]) return knownLabels[pathname];
   return visit.title || visit.path;
 }
 
@@ -93,11 +114,11 @@ function uniqueRecentVisits(visits: VisitHistoryItem[] | null | undefined) {
     .slice(0, 8);
 }
 
-function readPinnedVisits(): PinnedVisit[] {
+function readPinnedVisits(storageKey: string): PinnedVisit[] {
   if (typeof window !== 'object') return [];
 
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(DASHBOARD_PINNED_VISITS_KEY) ?? '[]');
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]');
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter(item => item && typeof item.path === 'string')
@@ -171,8 +192,16 @@ const ACTIVITY_META: Record<ActivityItem['resourceType'], { label: string; icon:
 };
 
 export default function DashboardPage() {
+  const sessionInfo = useSessionInfo();
   const { visibleActions, runAction } = useUserActions();
-  const [pinnedVisits, setPinnedVisits] = useState<PinnedVisit[]>(() => readPinnedVisits());
+  const pinnedVisitsStorageKey = useMemo(() => {
+    const tenant = typeof window === 'object'
+      ? window.localStorage.getItem('sortsys.tenant')?.trim() || 'default'
+      : 'default';
+
+    return `webapp::dashboard.pinnedVisits:${tenant}:${sessionInfo.user.id}`;
+  }, [sessionInfo.user.id]);
+  const [pinnedVisits, setPinnedVisits] = useState<PinnedVisit[]>(() => readPinnedVisits(pinnedVisitsStorageKey));
   const [draggedPinnedPath, setDraggedPinnedPath] = useState<string | null>(null);
   const [dragOverPinnedPath, setDragOverPinnedPath] = useState<string | null>(null);
   const [actionHistory] = useClientStream<ActionHistoryItem[] | null, any>(() => {
@@ -194,8 +223,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (typeof window !== 'object') return;
-    window.localStorage.setItem(DASHBOARD_PINNED_VISITS_KEY, JSON.stringify(pinnedVisits));
-  }, [pinnedVisits]);
+    window.localStorage.setItem(pinnedVisitsStorageKey, JSON.stringify(pinnedVisits));
+  }, [pinnedVisits, pinnedVisitsStorageKey]);
 
   function isPinned(path: string) {
     return pinnedVisits.some(item => item.path === path);
@@ -330,7 +359,10 @@ export default function DashboardPage() {
       </div>
     </Tile>}
 
-    {(!!quickActions.length || !!recentVisits.length) && <div className="dashboard-personal-grid">
+    {(actionHistory === null || visitHistory === null) ? <Tile className="dashboard-loading" role="status">
+      <span className="my-table-state__spinner" aria-hidden="true" />
+      <span>{uiText('Dashboard wird geladen …', 'Loading dashboard …')}</span>
+    </Tile> : (!!quickActions.length || !!recentVisits.length) && <div className="dashboard-personal-grid">
       {!!quickActions.length && <Tile className="dashboard-quick-actions">
         <div className="dashboard-section-head">
           <div>
@@ -369,7 +401,7 @@ export default function DashboardPage() {
         {groupedActivity.map(group => <section key={group.key} className="dashboard-activity-group">
           <div className="dashboard-activity-group-head">
             {group.href ? <Link to={group.href}>{group.label}</Link> : <span>{group.label}</span>}
-            <small>{group.items.length}{uiText(" Änderungen")}</small>
+            <small>{group.items.length === 1 ? uiText('1 Änderung', '1 change') : uiText(`${group.items.length} Änderungen`, `${group.items.length} changes`)}</small>
           </div>
           <ul className="dashboard-activity-list">
             {group.items.map(item => {
@@ -397,7 +429,9 @@ export default function DashboardPage() {
             })}
           </ul>
         </section>)}
-      </div> : <p className="light">{uiText("Noch keine Aktivität sichtbar.")}</p>}
+      </div> : activity === null
+        ? <div className="dashboard-activity-loading"><span className="my-table-state__spinner" aria-hidden="true" />{uiText('Aktivitäten werden geladen …', 'Loading activity …')}</div>
+        : <p className="light">{uiText("Noch keine Aktivität sichtbar.", "No activity is visible yet.")}</p>}
     </Tile>
   </>;
 };

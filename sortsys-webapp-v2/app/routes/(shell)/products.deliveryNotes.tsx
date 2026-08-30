@@ -8,6 +8,7 @@ import { MyLink } from "~/components/MyLink";
 import { SmallDeliveryNoteTile } from "~/lib/tiles";
 import type { Route } from "./+types";
 import { TableExportActions } from "~/components/TableExportActions";
+import { MyHeader } from "~/components/MyHeader";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -17,10 +18,12 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DeliverNotesPage() {
   const navigate = useNavigate();
-  const [notes] = useClientStream(() => client.streamQuery('deliveryNotes.list', {}), []);
+  const [notes, notesError] = useClientStream(() => client.streamQuery('deliveryNotes.list', {}), []);
 
   return <>
-    <div className="flex gap-2 w-full overflow-x-auto">
+    <MyHeader
+      title={uiText("Lieferscheine")}
+      actions={<div className="list-page-actions">
       <TableExportActions
         title={uiText("Lieferscheine")}
         fileName="Lieferscheine"
@@ -33,14 +36,15 @@ export default function DeliverNotesPage() {
           { header: uiText("Kommentar"), value: note => note.comment, width: '2fr' },
         ]}
       />
-    </div>
-
-    <div style={{ height: '1px' }} />
+      </div>}
+    />
 
     <MyTable
       topPagination
       persistentId="DeliveryNotes"
       rows={notes ?? []}
+      loading={!notes}
+      error={notesError}
       onRowClick={row => navigate(`/products/deliveryNotes/${row.id}`)}
       columns={[
         {

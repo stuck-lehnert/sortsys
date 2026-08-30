@@ -84,7 +84,7 @@ export function EntityActivityTimeline({
   }), [resourceType, resourceId, includeProjectContext, limit]);
 
   if (err) {
-    return <MyCallout icon={Icons.Info} color="amber">{uiText("Aktivität konnte nicht geladen werden:")}{err.message}
+    return <MyCallout icon={Icons.Info} color="amber">{uiText("Aktivität konnte nicht geladen werden:")} {err.message}
     </MyCallout>;
   }
 

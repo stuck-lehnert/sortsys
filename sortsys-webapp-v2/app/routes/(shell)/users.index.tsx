@@ -9,6 +9,7 @@ import { OperationalTag } from "@sortsys/react-components";
 import { Icons } from "~/lib/icons";
 import { useBoolUrlParam } from "~/hooks/useUrlParam";
 import { TableExportActions } from "~/components/TableExportActions";
+import { MyHeader } from "~/components/MyHeader";
 
 export function meta() {
   return [
@@ -20,7 +21,7 @@ export default function UsersPage() {
   const navigate = useNavigate();
 
   const [archivedOnly, setArchivedOnly] = useBoolUrlParam('archived');
-  const [users] = useClientStream(() => client.streamQuery('users.list', {
+  const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {
     includeArchived: archivedOnly || undefined,
   }), [archivedOnly]);
 
@@ -29,9 +30,11 @@ export default function UsersPage() {
     : (users ?? []);
 
   return <>
-    <div className="flex gap-2 w-full overlflow-x-auto">
+    <MyHeader
+      title={uiText("Benutzer")}
+      actions={<div className="list-page-actions">
       {!archivedOnly ? (
-        <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht Archviert")} onClick={() => setArchivedOnly(true)} />
+        <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht archiviert", "Not archived")} onClick={() => setArchivedOnly(true)} />
       ) : (
         <OperationalTag renderIcon={Icons.Archive} text={uiText("Archiviert")} onClick={() => setArchivedOnly(false)} />
       )}
@@ -50,15 +53,16 @@ export default function UsersPage() {
           { header: uiText("Deaktiviert am"), value: user => user.deactivatedAt },
         ]}
       />
-    </div>
-
-    <div style={{ height: '1px' }} />
+      </div>}
+    />
     
     <MyTable
       topPagination
       className=""
       persistentId="Users"
       rows={visibleUsers}
+      loading={!users}
+      error={usersError}
       onRowClick={row => navigate(`/users/${row.id}`)}
       columns={[
         {

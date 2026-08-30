@@ -1,5 +1,5 @@
 import { uiText } from "~/lib/i18n";
-import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { useForceUpdate } from "./useForceUpdate";
 import { generateId } from "~/lib/utils";
 import { Modal } from "@sortsys/react-components";
@@ -7,6 +7,7 @@ import { MyForm, type MyPublicFormContext } from "~/components/MyForm";
 import type { PromiseOr } from "~/type-helpers";
 import { useLocation, useNavigate } from "react-router";
 import { useLoading } from "./useLoading";
+import { MyCallout } from "~/components/MyCallout";
 
 type MyModal = {
   id: string;
@@ -46,6 +47,7 @@ export interface MyModalsInterface {
       content: (props: { hide: () => void; replace: (callback: () => void) => void }) => React.ReactNode;
       modalProps: (props: { hide: () => void }) => Omit<React.ComponentProps<typeof Modal>, 'id' | 'key' | 'open' | 'onRequestClose' | 'isFullWidth'> & {
         useFullscreen?: boolean;
+        noFullscreen?: boolean;
       };
       onPrimaryAction?: (props: {
         hide: () => void;
@@ -102,18 +104,32 @@ function _Modals(props: {
         const pathname = useLocation().pathname;
 
         const [loading, process] = useLoading();
+        const [actionError, setActionError] = useState<string | null>(null);
 
         const content = props.content({ hide, replace });
 
-        const { useFullscreen, ...modalProps } = props.modalProps?.({ hide }) ?? {};
+        const { useFullscreen, noFullscreen, ...modalProps } = props.modalProps?.({ hide }) ?? {};
 
-        const onRequestSubmit = typeof modalProps.onRequestSubmit === 'function'
-          ? () => process(() => modalProps.onRequestSubmit?.())
+        const submitAction = typeof modalProps.onRequestSubmit === 'function'
+          ? () => modalProps.onRequestSubmit?.()
           : props.onPrimaryAction
-            ? () => process(() => props.onPrimaryAction?.({ hide, navigate, pathname }))
-            : undefined;
+            ? () => props.onPrimaryAction?.({ hide, navigate, pathname })
+            : null;
+        const onRequestSubmit = submitAction
+          ? () => process(async () => {
+            setActionError(null);
 
-        const dataProps = useFullscreen ? {
+            try {
+              await submitAction();
+            } catch (error) {
+              setActionError(error instanceof Error && error.message.trim()
+                ? error.message
+                : uiText("Die Aktion konnte nicht ausgeführt werden.", "The action could not be completed."));
+            }
+          })
+          : undefined;
+
+        const dataProps = useFullscreen && !noFullscreen ? {
           ['data-fullheight']: 'true',
           ['data-fullwidth']: 'true',
         } : {};
@@ -122,10 +138,19 @@ function _Modals(props: {
           {...dataProps}
           {...modalProps}
           open={visible}
+          closeButtonLabel={modalProps.closeButtonLabel ?? uiText("Schließen", "Close")}
+          secondaryButtonText={modalProps.secondaryButtonText ?? uiText("Abbrechen", "Cancel")}
           onRequestClose={hide}
           primaryButtonDisabled={loading() || modalProps.primaryButtonDisabled}
+          primaryButtonLoading={loading()}
           onRequestSubmit={onRequestSubmit}
         >
+          {!!actionError && <MyCallout
+            kind="error"
+            title={uiText("Aktion fehlgeschlagen", "Action failed")}
+            subtitle={actionError}
+          />}
+
           {content}
         </Modal>;
       }, options);
@@ -158,6 +183,7 @@ function _Modals(props: {
           closeButtonLabel={uiText("Abbrechen")}
           // shouldSubmitOnEnter
           primaryButtonDisabled={context.loading()}
+          primaryButtonLoading={context.loading()}
           primaryButtonText={primaryButtonText}
           // primaryButtonDisabled={!noFullscreen || context.loading()}
           // primaryButtonText={!!noFullscreen && primaryButtonText}

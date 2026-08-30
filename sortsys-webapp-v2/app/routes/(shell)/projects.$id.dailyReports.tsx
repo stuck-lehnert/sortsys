@@ -11,7 +11,7 @@ export default function ProjectDailyReportsPage() {
   const { project } = useOutletContext<{ project: Project }>();
   const navigate = useNavigate();
 
-  const [reports] = useClientStream(
+  const [reports, reportsError] = useClientStream(
     () => client.streamQuery('projects.dailyReports.list', { projectId: project.id }),
     [project.id],
   );
@@ -21,6 +21,8 @@ export default function ProjectDailyReportsPage() {
       topPagination
       persistentId="DailyProjectReports"
       rows={reports ?? []}
+      loading={!reports}
+      error={reportsError}
       onRowClick={row => {
         const day = dailyReportDayKey(row.day);
         navigate(`/projects/${project.id}/dailyReports/${day}`);

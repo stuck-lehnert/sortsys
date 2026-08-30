@@ -14,6 +14,7 @@ import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { SmallTile, SmallToolTile, ToolTile } from "~/lib/tiles";
 import { useMemo } from "react";
 import { TableExportActions } from "~/components/TableExportActions";
+import { MyHeader } from "~/components/MyHeader";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -126,9 +127,11 @@ export default function ToolsPage() {
     const hasFilter = !!(status || brand || category);
 
     return <>
-        <div className="flex gap-2 w-full overlflow-x-auto">
+        <MyHeader
+            title={uiText("Werkzeuge")}
+            actions={<div className="list-page-actions">
             {!archivedOnly ? (
-                <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht Archiviert")} onClick={() => setArchivedOnly(true)} />
+                <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht archiviert", "Not archived")} onClick={() => setArchivedOnly(true)} />
             ) : (
                 <OperationalTag renderIcon={Icons.Archive} text={uiText("Archiviert")} onClick={() => setArchivedOnly(false)} />
             )}
@@ -158,15 +161,16 @@ export default function ToolsPage() {
                     { header: uiText("Archiviert am"), value: tool => tool.archivedSince },
                 ]}
             />
-        </div>
-
-        <div style={{ height: '1px' }} />
+            </div>}
+        />
 
         <MyTable 
             topPagination
             className=""
             persistentId="Tools"
             rows={filteredData ?? []}
+            loading={!data}
+            error={err}
             onRowClick={row => navigate(`/tools/${row.id}`)}
             columns={[
                 {

@@ -67,8 +67,14 @@ export default function ProjectDetailPage() {
   const [isContactSheetPrinting, setIsContactSheetPrinting] = useState(false);
   const [contactSheetPrintErr, setContactSheetPrintErr] = useState<string | null>(null);
 
-  const [customer] = useClientStream(() => client.streamQuery('customers.get', { id: project.customerId ?? '0' }), [project.customerId]);
-  const [responsibleProjectLeader] = useClientStream(
+  const [customer, customerError] = useClientStream(() => {
+    if (!project.customerId) {
+      return from([[null, null] as [null, null]]);
+    }
+
+    return client.streamQuery('customers.get', { id: project.customerId });
+  }, [project.customerId]);
+  const [responsibleProjectLeader, responsibleProjectLeaderError] = useClientStream(
     () => {
       if (!project.responsibleProjectLeaderUserId || !canViewUsers) {
         return from([[null, null] as [null, null]]);
@@ -78,8 +84,8 @@ export default function ProjectDetailPage() {
     },
     [project.responsibleProjectLeaderUserId, canViewUsers],
   );
-  const [contacts] = useClientStream(() => client.streamQuery('projects.contacts.list', { projectId: project.id! }), [project.id]);
-  const [trackings] = useClientStream(() => client.streamQuery('tools.trackings.list', { projectId: project.id!, finished: false }), [project.id]);
+  const [contacts, contactsError] = useClientStream(() => client.streamQuery('projects.contacts.list', { projectId: project.id! }), [project.id]);
+  const [trackings, trackingsError] = useClientStream(() => client.streamQuery('tools.trackings.list', { projectId: project.id!, finished: false }), [project.id]);
 
   useTitle(() => project ? uiText(`Übersicht – ${project.title}`, `Overview – ${project.title}`) : null, [JSON.stringify(project)]);
 
@@ -207,14 +213,19 @@ export default function ProjectDetailPage() {
       >{uiText("Datenblatt")}</MyButton>
     </div>}
 
-    {!!contactSheetPrintErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Datenblatt konnte nicht erstellt werden:")}{contactSheetPrintErr}
+    {!!contactSheetPrintErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Datenblatt konnte nicht erstellt werden:")} {contactSheetPrintErr}
     </MyCallout>}
+
+    {!!(customerError || responsibleProjectLeaderError || contactsError) && <MyCallout
+      kind="error"
+      title={uiText("Verknüpfte Projektdaten konnten nicht geladen werden", "Related project data could not be loaded")}
+    />}
 
     {hasProjectMeta && <>
       <AttrList>
-        {!!project.address && <AttrList.Attr name="Anschrift" value={<MyLink target="_blank" to={addressUrl(project.address)}>{formatAddress(project.address)}</MyLink>} />}
+        {!!project.address && <AttrList.Attr name={uiText("Anschrift", "Address")} value={<MyLink target="_blank" to={addressUrl(project.address)}>{formatAddress(project.address)}</MyLink>} />}
         {!!customer && <AttrList.Attr name={uiText("Kunde")} value={<MyLink to={`/customers/${customer.id}`}>{customerName(customer)}</MyLink>} />}
-        {!!project.orderReceivedAt && <AttrList.Attr name="Auftrag erhalten am" value={formatDate(project.orderReceivedAt, 'long')} />}
+        {!!project.orderReceivedAt && <AttrList.Attr name={uiText("Auftrag erhalten am", "Order received on")} value={formatDate(project.orderReceivedAt, 'long')} />}
         {!!project.responsibleProjectLeaderUserId && <AttrList.Attr
           name={uiText("Verantwortlicher Projektleiter")}
           value={
@@ -232,14 +243,14 @@ export default function ProjectDetailPage() {
 
     <EntityActivityTimeline resourceType="project" resourceId={project.id} includeProjectContext />
 
-    {!!contacts?.length && <MyExpandable title={`Ansprechpartner (${contacts.length})`}>
+    {!!contacts?.length && <MyExpandable title={uiText(`Ansprechpartner (${contacts.length})`, `Contacts (${contacts.length})`)}>
       <div className="space-y-2">
         {contacts.map((contact) => <ContactTile key={contact.id} contact={contact} />)}
       </div>
     </MyExpandable>}
 
-    {!!sortedTrackings?.length && <MyExpandable title={`Gebuchte Werkzeuge (${sortedTrackings.length})`}>
-      <TrackingTable trackings={sortedTrackings} omit={['project']} />
-    </MyExpandable>}
+    <MyExpandable title={uiText(`Gebuchte Werkzeuge (${sortedTrackings?.length ?? 0})`, `Booked tools (${sortedTrackings?.length ?? 0})`)}>
+      <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['project']} />
+    </MyExpandable>
   </>;
 }

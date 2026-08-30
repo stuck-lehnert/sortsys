@@ -139,6 +139,15 @@ function focusFirstInvalidField(root: HTMLFormElement | null) {
   target?.scrollIntoView({ block: "center", inline: "nearest" });
 }
 
+function formErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+
+  return typeof document === "object" && document.documentElement.lang === "en"
+    ? "The action could not be completed."
+    : "Die Aktion konnte nicht ausgeführt werden.";
+}
+
 function CloseIcon({ size = 14, className }: { size?: number; className?: string }) {
   return (
     <svg
@@ -172,6 +181,8 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
   const fieldsRef = useRef<Record<string, MyFormField>>({});
   const formElementRef = useRef<HTMLFormElement | null>(null);
   const [loading, process] = useLoading();
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const submissionErrorRef = useRef<HTMLDivElement | null>(null);
 
   const formContext: MyFormContext = {
     loading,
@@ -189,12 +200,19 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
 
     submit: () => {
       process(async () => {
-        await formContext.validate();
-        if (formContext.hasError()) {
-          requestAnimationFrame(() => focusFirstInvalidField(formElementRef.current));
-          return;
+        setSubmissionError(null);
+
+        try {
+          await formContext.validate();
+          if (formContext.hasError()) {
+            requestAnimationFrame(() => focusFirstInvalidField(formElementRef.current));
+            return;
+          }
+          await onSubmit?.(formContext);
+        } catch (error) {
+          setSubmissionError(formErrorMessage(error));
+          requestAnimationFrame(() => submissionErrorRef.current?.focus());
         }
-        await onSubmit?.(formContext);
       });
     },
 
@@ -231,7 +249,14 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
         formContext.submit();
       }}
     >
-      <MyFormContext.Provider value={formContext}>{children}</MyFormContext.Provider>
+      <MyFormContext.Provider value={formContext}>
+        {!!submissionError && <div ref={submissionErrorRef} className="ss-form-submit-error" role="alert" tabIndex={-1}>
+          <span className="ss-form-submit-error__mark" aria-hidden="true">!</span>
+          <span>{submissionError}</span>
+        </div>}
+
+        {children}
+      </MyFormContext.Provider>
 
       {!!notifyLoaded && (
         <NotifyLoaded

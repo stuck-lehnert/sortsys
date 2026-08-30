@@ -1,5 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
+import { Loading } from "@sortsys/react-components";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { NotFound } from "./_404";
@@ -19,6 +20,7 @@ import { useShortcut } from "~/hooks/useShortcut";
 import { showDeleteContactModal, showModifyContactModal } from "~/modals/contacts";
 import { addressUrl } from "~/lib/utils";
 import { Remarks } from "~/components/Remarks";
+import { MyCallout } from "~/components/MyCallout";
 
 export default function ContactDetailPage() {
   const { id } = useParams();
@@ -27,8 +29,8 @@ export default function ContactDetailPage() {
   const sessionInfo = useSessionInfo();
   
   const [contact, err] = useClientStream(() => client.streamQuery('contacts.get', { id: id! }), [id]);
-  const [projects] = useClientStream(() => client.streamQuery('contacts.projects.list', { contactId: id! }), [id]);
-  const [customers] = useClientStream(() => client.streamQuery('contacts.customers.list', { contactId: id! }), [id]);
+  const [projects, projectsError] = useClientStream(() => client.streamQuery('contacts.projects.list', { contactId: id! }), [id]);
+  const [customers, customersError] = useClientStream(() => client.streamQuery('contacts.customers.list', { contactId: id! }), [id]);
 
   useTitle(() => contact ? contactName(contact) : null, [contact]);
 
@@ -39,7 +41,7 @@ export default function ContactDetailPage() {
   });
 
   if (err) return <NotFound reason="resourceNotFound" />;
-  if (!contact) return;
+  if (!contact) return <Loading withOverlay />;
 
   return <>
     <MyHeader
@@ -63,34 +65,39 @@ export default function ContactDetailPage() {
     />
 
     <AttrList>
-      {!!contact.salutation && <AttrList.Attr name="Anrede" value={contact.salutation} />}
-      <AttrList.Attr name="Vorname" value={contact.firstName} />
-      {!!contact.lastName && <AttrList.Attr name="Nachname" value={contact.lastName} />}
-      {!!contact.address && <AttrList.Attr name="Anschrift" value={
+      {!!contact.salutation && <AttrList.Attr name={uiText("Anrede", "Salutation")} value={contact.salutation} />}
+      <AttrList.Attr name={uiText("Vorname", "First name")} value={contact.firstName} />
+      {!!contact.lastName && <AttrList.Attr name={uiText("Nachname", "Last name")} value={contact.lastName} />}
+      {!!contact.address && <AttrList.Attr name={uiText("Anschrift", "Address")} value={
         <MyLink to={addressUrl(contact.address)} target="_blank">{formatAddress(contact.address)}</MyLink>
       } />}
     </AttrList>
 
     <AttrList>
       {contact.emailAddresses.map(({ email, name }, i) => {
-        return <AttrList.Attr key={i} name={name ?? `E-Mail ${i + 1}`} value={<MyLink to={`mailto:${email}`}>{email}</MyLink>} />
+        return <AttrList.Attr key={i} name={name ?? uiText(`E-Mail ${i + 1}`, `Email ${i + 1}`)} value={<MyLink to={`mailto:${email}`}>{email}</MyLink>} />
       })}
       {contact.phoneNumbers.map(({ number, name }, i) => {
-        return <AttrList.Attr key={i} name={name ?? `Telefon ${i + 1}`} value={<MyLink to={`tel:${number}`}>{number}</MyLink>} />
+        return <AttrList.Attr key={i} name={name ?? uiText(`Telefon ${i + 1}`, `Phone ${i + 1}`)} value={<MyLink to={`tel:${number}`}>{number}</MyLink>} />
       })}
     </AttrList>
 
     <MyDivider />
 
     <Remarks resourceType="contact" resourceId={contact.id} canManage={sessionInfo.canDo('manage:contacts')} />
+    {!!(projectsError || customersError) && <MyCallout
+      kind="error"
+      title={uiText("Verknüpfte Daten konnten nicht geladen werden", "Related data could not be loaded")}
+    />}
 
-    {!!customers?.length && <MyExpandable title={`Kunden (${customers.length})`}>
+
+    {!!customers?.length && <MyExpandable title={uiText(`Kunden (${customers.length})`, `Customers (${customers.length})`)}>
       <div className="space-y-2">
         {customers.map(customer => <CustomerTile key={customer.id} customer={customer} />)}
       </div>
     </MyExpandable>}
 
-    {!!projects?.length && <MyExpandable title={uiText(`Projekte (${projects.length})`, `Projecte (${projects.length})`)}>
+    {!!projects?.length && <MyExpandable title={uiText(`Projekte (${projects.length})`, `Projects (${projects.length})`)}>
       <div className="space-y-2">
         {projects.map(project => <ProjectTile key={project.id} project={project} />)}
       </div>

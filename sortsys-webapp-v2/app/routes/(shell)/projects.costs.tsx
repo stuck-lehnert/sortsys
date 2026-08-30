@@ -108,9 +108,9 @@ export default function ProjectCostsOverviewPage() {
   const tableRows = (rows ?? []).map(row => ({ ...row, id: row.projectId }));
 
   return <>
-    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Kostenübersicht konnte nicht geladen werden:")}{err.message}
+    {!!err && <MyCallout icon={Icons.Deny} color="red">{uiText("Kostenübersicht konnte nicht geladen werden:")} {err.message}
     </MyCallout>}
-    {!!filterOptionsErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Filteroptionen konnten nicht geladen werden:")}{filterOptionsErr.message}
+    {!!filterOptionsErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Filteroptionen konnten nicht geladen werden:")} {filterOptionsErr.message}
     </MyCallout>}
 
     <div className="flex gap-2 w-full overlflow-x-auto">

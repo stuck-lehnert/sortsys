@@ -18,7 +18,7 @@ export function meta({}: Route.MetaArgs) {
 export default function CustomersPage() {
   const navigate = useNavigate();
 
-  const [customers] = useClientStream(() => client.streamQuery('customers.list', {}));
+  const [customers, customersError] = useClientStream(() => client.streamQuery('customers.list', {}));
 
   return <>
     <MyHeader
@@ -43,6 +43,8 @@ export default function CustomersPage() {
       topPagination
       persistentId="Customers"
       rows={customers ?? []}
+      loading={!customers}
+      error={customersError}
       onRowClick={row => navigate(`/customers/${row.id}`)}
       columns={[
         {

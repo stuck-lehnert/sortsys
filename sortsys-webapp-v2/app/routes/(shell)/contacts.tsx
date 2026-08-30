@@ -15,10 +15,10 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function CustomersPage() {
+export default function ContactsPage() {
   const navigate = useNavigate();
 
-  const [constacts] = useClientStream(() => client.streamQuery('contacts.list', {}));
+  const [contacts, contactsError] = useClientStream(() => client.streamQuery('contacts.list', {}));
 
   return <>
     <MyHeader
@@ -26,8 +26,8 @@ export default function CustomersPage() {
       actions={<TableExportActions
         title={uiText("Kontakte")}
         fileName="Kontakte"
-        rows={constacts ?? []}
-        disabled={!constacts}
+        rows={contacts ?? []}
+        disabled={!contacts}
         columns={[
           { header: uiText("Anrede"), value: contact => contact.salutation },
           { header: uiText("Vorname"), value: contact => contact.firstName },
@@ -43,7 +43,9 @@ export default function CustomersPage() {
       topPagination
       className=""
       persistentId="Contacts"
-      rows={constacts ?? []}
+      rows={contacts ?? []}
+      loading={!contacts}
+      error={contactsError}
       onRowClick={row => navigate(`/contacts/${row.id}`)}
       columns={[
         {

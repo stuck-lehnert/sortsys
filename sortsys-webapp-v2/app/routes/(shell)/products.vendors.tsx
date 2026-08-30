@@ -6,6 +6,7 @@ import { client } from "~/lib/client";
 import type { Route } from "./+types";
 import { SmallProductVendorTile } from "~/lib/tiles";
 import { TableExportActions } from "~/components/TableExportActions";
+import { MyHeader } from "~/components/MyHeader";
 
 export const meta: Route.MetaFunction = () => [
   { title: uiText("Händler") },
@@ -14,10 +15,12 @@ export const meta: Route.MetaFunction = () => [
 export default function ProductVendorsPage() {
   const navigate = useNavigate();
 
-  const [vendors] = useClientStream(() => client.streamQuery('products.vendors.list', {}), []);
+  const [vendors, vendorsError] = useClientStream(() => client.streamQuery('products.vendors.list', {}), []);
 
   return <>
-    <div className="flex gap-2 w-full overflow-x-auto">
+    <MyHeader
+      title={uiText("Händler")}
+      actions={<div className="list-page-actions">
       <TableExportActions
         title={uiText("Händler")}
         fileName="Haendler"
@@ -30,14 +33,15 @@ export default function ProductVendorsPage() {
           { header: uiText("Geändert am"), value: vendor => vendor.modifiedAt },
         ]}
       />
-    </div>
-
-    <div style={{ height: '1px' }} />
+      </div>}
+    />
 
     <MyTable
       topPagination
       className=""
       rows={vendors ?? []}
+      loading={!vendors}
+      error={vendorsError}
       columns={[
         {
           label: uiText("Name"),

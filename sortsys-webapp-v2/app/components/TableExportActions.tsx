@@ -4,6 +4,7 @@ import { MyButton } from "~/components/MyButton";
 import { Icons } from "~/lib/icons";
 import { exportTable, type TableExportColumn, type TableExportFormat } from "~/lib/tableExport";
 import { useMyModals } from "~/hooks/useMyModals";
+import { MyCallout } from "~/components/MyCallout";
 
 export function TableExportActions<RowT>(props: {
   title: string;
@@ -33,7 +34,17 @@ export function TableExportActions<RowT>(props: {
         modals,
       });
     } catch (err) {
-      window.alert((err as Error)?.message || uiText('Export fehlgeschlagen.'));
+      const message = err instanceof Error && err.message
+        ? err.message
+        : uiText("Der Export konnte nicht erstellt werden.", "The export could not be created.");
+
+      modals.showDefault({
+        content: () => <MyCallout kind="error" title={uiText("Export fehlgeschlagen", "Export failed")} subtitle={message} />,
+        modalProps: () => ({
+          modalHeading: uiText("Export fehlgeschlagen", "Export failed"),
+          passiveModal: true,
+        }),
+      });
     } finally {
       setPending(null);
     }

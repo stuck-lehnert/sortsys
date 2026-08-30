@@ -543,7 +543,14 @@ export default function ProjectFilesPage() {
 
     modals.showDefault({
       content: () => <>
-        <p>{uiText("Soll")}{selectedAttachments.length === 1 ? '' : 'en'} <b>{selectedAttachments.length}{uiText(" ausgewählte Datei(en)")}</b>{uiText("wirklich gelöscht werden?")}{' '}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+        <p>
+          {selectedAttachments.length === 1
+            ? uiText("Soll die ausgewählte Datei wirklich gelöscht werden?", "Delete the selected file?")
+            : uiText(
+              `Sollen ${selectedAttachments.length} ausgewählte Dateien wirklich gelöscht werden?`,
+              `Delete ${selectedAttachments.length} selected files?`,
+            )}{" "}
+          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.", "This action cannot be undone.")}</b>
         </p>
       </>,
       modalProps: () => ({
@@ -648,7 +655,7 @@ export default function ProjectFilesPage() {
     </div>
 
     {!!projectFilesErr && (
-      <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")}{`${(projectFilesErr as any)?.message ?? uiText('Unbekannter Fehler')}`}
+      <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")} {`${(projectFilesErr as any)?.message ?? uiText('Unbekannter Fehler')}`}
       </MyCallout>
     )}
 
@@ -939,7 +946,7 @@ export default function ProjectFilesPage() {
           >
             <div>
               <div style={{ fontWeight: 600 }}>{activeImage.fileName}</div>
-              <div className="light" style={{ fontSize: '.9rem' }}>{uiText("Bild")}{(activeImageIndex ?? 0) + 1}{uiText(" von ")}{imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}
+              <div className="light" style={{ fontSize: '.9rem' }}>{uiText("Bild", "Image")} {(activeImageIndex ?? 0) + 1} {uiText("von", "of")} {imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}
               </div>
             </div>
 

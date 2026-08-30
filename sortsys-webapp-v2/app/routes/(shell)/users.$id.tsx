@@ -1,4 +1,5 @@
 import { uiText } from "~/lib/i18n";
+import { Loading } from "@sortsys/react-components";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -29,7 +30,7 @@ export default function UserDetailPage() {
     const sessionInfo = useSessionInfo();
 
     const [user, err] = useClientStream(() => client.streamQuery('users.get', { id: id! }), [id]);
-    const [trackings] = useClientStream(() => client.streamQuery('tools.trackings.list', { responsibleUserId: id!, finished: false }), [id]);
+    const [trackings, trackingsError] = useClientStream(() => client.streamQuery('tools.trackings.list', { responsibleUserId: id!, finished: false }), [id]);
     const [supervisor, setSupervisor] = useState<User | null>(null);
 
     useTitle(() => user ? userFullName(user) : null, [user]);
@@ -52,7 +53,7 @@ export default function UserDetailPage() {
         
     const sortedTrackings = useMemo(() => {
         if (!trackings) return null;
-        return trackings.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+        return [...trackings].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
     }, [trackings]);
 
     useShortcut('Control+e', e => {
@@ -62,7 +63,7 @@ export default function UserDetailPage() {
     });
 
     if (err) return <NotFound reason="resourceNotFound" />;
-    if (!user) return;
+    if (!user) return <Loading withOverlay />;
 
     return <>
         <MyHeader
@@ -70,7 +71,7 @@ export default function UserDetailPage() {
             actions={<>
                 <MyDropdown items={[
                     {
-                        label: uiText("Archvieren"),
+                        label: uiText("Archivieren", "Archive"),
                         renderIcon: Icons.Archive,
                         hideIf: !!user.archivedAt || !user.deactivatedAt || !sessionInfo.canDo('manage:users'),
                         onClick: () => client.mutate('users.archive', { id: user.id }),
@@ -133,32 +134,33 @@ export default function UserDetailPage() {
             </>}
         />
 
-        {!!user.deactivatedAt && <MyCallout icon={Icons.Lock} color="amber">{uiText("Benutzer")}{user.deactivatedAt.getTime() > Date.now() ? uiText("wird am") : uiText("ist seit dem")} {formatDate(user.deactivatedAt)}{uiText("deaktiviert")}</MyCallout>}
+        {!!user.deactivatedAt && <MyCallout icon={Icons.Lock} color="amber">
+            {user.deactivatedAt.getTime() > Date.now()
+                ? uiText(`Benutzer wird am ${formatDate(user.deactivatedAt)} deaktiviert.`, `User will be deactivated on ${formatDate(user.deactivatedAt)}.`)
+                : uiText(`Benutzer ist seit ${formatDate(user.deactivatedAt)} deaktiviert.`, `User has been deactivated since ${formatDate(user.deactivatedAt)}.`)}
+        </MyCallout>}
 
-        {!!user.archivedAt && <MyCallout icon={Icons.Archive} color="grey">{uiText("Benutzer ist seit dem")}{formatDate(user.archivedAt)}{uiText("archiviert")}</MyCallout>}
+        {!!user.archivedAt && <MyCallout icon={Icons.Archive} color="grey">
+            {uiText(`Benutzer ist seit ${formatDate(user.archivedAt)} archiviert.`, `User has been archived since ${formatDate(user.archivedAt)}.`)}
+        </MyCallout>}
 
         <MyDivider />
 
         <AttrList>
-            <AttrList.Attr name="Vorname" value={user.firstName} />
-            {!!user.lastName && <AttrList.Attr name="Nachname" value={user.lastName} />}
-            <AttrList.Attr name="Anmeldename" value={<code>{user.username}</code>} />
-            {!!user.email && <AttrList.Attr name="E-Mail" value={<MyLink to={`mailto:${user.email}`}>{user.email}</MyLink>} />}
-            {!!user.phone && <AttrList.Attr name="Telefon" value={<MyLink to={`tel:${user.phone}`}>{user.phone}</MyLink>} />}
-            <AttrList.Attr name="Vertrag" value={userContractName(user)} />
+            <AttrList.Attr name={uiText("Vorname", "First name")} value={user.firstName} />
+            {!!user.lastName && <AttrList.Attr name={uiText("Nachname", "Last name")} value={user.lastName} />}
+            <AttrList.Attr name={uiText("Anmeldename", "Username")} value={<code>{user.username}</code>} />
+            {!!user.email && <AttrList.Attr name={uiText("E-Mail")} value={<MyLink to={`mailto:${user.email}`}>{user.email}</MyLink>} />}
+            {!!user.phone && <AttrList.Attr name={uiText("Telefon", "Phone")} value={<MyLink to={`tel:${user.phone}`}>{user.phone}</MyLink>} />}
+            <AttrList.Attr name={uiText("Vertrag", "Contract")} value={userContractName(user)} />
             {!!supervisor && <AttrList.Attr name={uiText("Vorgesetzter")} value={<MyLink to={`/users/${supervisor.id}`}>{userFullName(supervisor)}</MyLink>} />}
             {!!user.costPerHour &&  <AttrList.Attr name={uiText("Kosten pro Std")} value={formatCurrency(user.costPerHour)} />}
         </AttrList>
 
         <MyDivider />
         
-        {/* {!!sortedTrackings?.length && <div style={{ marginTop: '1rem' }}>
-            <h4>Buchungshistorie</h4>
-            <TrackingTable trackings={sortedTrackings} omit={['responsible']} />
-        </div>} */}
-        
-        {!!sortedTrackings?.length && <MyExpandable title={`Gebuchte Werkzeuge (${sortedTrackings.length})`}>
-            <TrackingTable trackings={sortedTrackings} omit={['responsible']} />
-        </MyExpandable>}
+        <MyExpandable title={uiText(`Gebuchte Werkzeuge (${sortedTrackings?.length ?? 0})`, `Booked tools (${sortedTrackings?.length ?? 0})`)}>
+            <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['responsible']} />
+        </MyExpandable>
     </>;
 }

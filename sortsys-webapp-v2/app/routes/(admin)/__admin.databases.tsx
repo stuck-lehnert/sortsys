@@ -554,7 +554,7 @@ export default function GlobalAdminDatabasesPage() {
         />
 
         {!!hostsErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Hosts konnten nicht geladen werden:")}{`${(hostsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Hosts konnten nicht geladen werden:")} {`${(hostsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -614,7 +614,7 @@ export default function GlobalAdminDatabasesPage() {
         />
 
         {!!databasesErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Datenbanken konnten nicht geladen werden:")}{`${(databasesErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Datenbanken konnten nicht geladen werden:")} {`${(databasesErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -714,7 +714,7 @@ export default function GlobalAdminDatabasesPage() {
         />
 
         {!!backupsErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Backups konnten nicht geladen werden:")}{`${(backupsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          <MyCallout icon={Icons.Deny} color="red">{uiText("Backups konnten nicht geladen werden:")} {`${(backupsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
           </MyCallout>
         )}
 
@@ -797,15 +797,31 @@ export default function GlobalAdminDatabasesPage() {
                     loading={pendingAction === `restore:${row.id}`}
                     onClick={() => {
                       if (!selectedDatabase) return;
-                      if (!window.confirm(uiText("Backup wirklich in die ausgewählte Datenbank zurückspielen? Die aktuelle Datenbank wird überschrieben.", "Restore this backup into the selected database? The current database will be overwritten."))) return;
+                      modals.showDefault({
+                        content: () => <MyCallout
+                          kind="warning"
+                          title={uiText("Aktuelle Datenbank wird überschrieben", "The current database will be overwritten")}
+                          subtitle={uiText(
+                            `Das Backup wird in „${selectedDatabase.name}“ wiederhergestellt. Dieser Vorgang ersetzt den aktuellen Datenbestand.`,
+                            `The backup will be restored into “${selectedDatabase.name}”. This replaces its current data.`,
+                          )}
+                        />,
+                        onPrimaryAction: async ({ hide }) => {
+                          const [, err] = await adminClient.mutate("admin.databases.backups.restore", {
+                            backupId: row.id,
+                            targetDatabaseId: selectedDatabase.id,
+                          });
+                          if (err) throw new Error(err.message || uiText("Restore fehlgeschlagen", "Restore failed"));
 
-                      void runAction(`restore:${row.id}`, async () => {
-                        const [, err] = await adminClient.mutate("admin.databases.backups.restore", {
-                          backupId: row.id,
-                          targetDatabaseId: selectedDatabase.id,
-                        });
-                        if (err) throw new Error(err.message || uiText("Restore fehlgeschlagen"));
-                        setActionInfo(uiText(`Backup ${row.id} wurde nach ${selectedDatabase.name} wiederhergestellt.`, `Backup ${row.id} restored into ${selectedDatabase.name}.`));
+                          setActionInfo(uiText(`Backup ${row.id} wurde nach ${selectedDatabase.name} wiederhergestellt.`, `Backup ${row.id} restored into ${selectedDatabase.name}.`));
+                          hide();
+                        },
+                        modalProps: () => ({
+                          danger: true,
+                          modalHeading: uiText("Backup wiederherstellen", "Restore backup"),
+                          primaryButtonText: uiText("Wiederherstellen", "Restore"),
+                          secondaryButtonText: uiText("Abbrechen", "Cancel"),
+                        }),
                       });
                     }}
                   >{uiText("Restore")}</MyButton>

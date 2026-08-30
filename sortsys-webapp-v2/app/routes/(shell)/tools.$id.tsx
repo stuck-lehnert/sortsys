@@ -33,19 +33,19 @@ export default function ToolDetailPage() {
     const modals = useMyModals();
 
     const [tool, err] = useClientStream(() => client.streamQuery('tools.get', { id: id! }), [id]);
-    const [inventories] = useClientStream(() => client.streamQuery('tools.inventories.list', { toolId: id! }), [id]);
-    const [trackings] = useClientStream(() => client.streamQuery('tools.trackings.list', { toolId: id! }), [id]);
+    const [inventories, inventoriesError] = useClientStream(() => client.streamQuery('tools.inventories.list', { toolId: id! }), [id]);
+    const [trackings, trackingsError] = useClientStream(() => client.streamQuery('tools.trackings.list', { toolId: id! }), [id]);
 
     useTitle(() => tool ? `${tool.customId} ${toolTitle(tool)}` : null, [JSON.stringify(tool)]);
     
     const sortedTrackings = useMemo(() => {
         if (!trackings) return null;
-        return trackings.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+        return [...trackings].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
     }, [trackings]);
 
     const sortedInventories = useMemo(() => {
         if (!inventories) return null;
-        return inventories.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return [...inventories].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }, [inventories]);
 
     const activeTracking = sortedTrackings?.find(tracking => !tracking.endedAt) ?? null;
@@ -58,7 +58,7 @@ export default function ToolDetailPage() {
     });
 
     if (err) return <NotFound reason="resourceNotFound" />;
-    if (!tool) return;
+    if (!tool) return <Loading withOverlay />;
 
     return <>
         <MyHeader
@@ -100,7 +100,7 @@ export default function ToolDetailPage() {
                             onClick: () => showCreateToolInventoryModal(modals, tool),
                         },
                         {
-                            label: uiText("Archvieren"),
+                            label: uiText("Archivieren", "Archive"),
                             renderIcon: Icons.Archive,
                             hideIf: !!tool.archivedSince || !sessionInfo.canDo('manage:tools'),
                             onClick: async () => {
@@ -134,7 +134,11 @@ export default function ToolDetailPage() {
             </>}
         />
 
-        {!!tool.archivedSince && <MyCallout icon={Icons.Archive} color="grey">{uiText("Werkzeug ist seit dem")}{formatDate(tool.archivedSince)}{uiText("archiviert")}</MyCallout>}
+        {!!tool.archivedSince && <MyCallout icon={Icons.Archive} color="grey">
+            {uiText(`Werkzeug ist seit ${formatDate(tool.archivedSince)} archiviert.`, `Tool has been archived since ${formatDate(tool.archivedSince)}.`)}
+        </MyCallout>}
+
+        {!!inventoriesError && <MyCallout kind="error" title={uiText("Inventurdaten konnten nicht geladen werden", "Inventory data could not be loaded")} />}
 
         {!!latestInventory && <MyCallout icon={Icons.Info} color="blue">{uiText("Letzte Inventur am")} {formatDate(latestInventory.createdAt)}
             {!!latestInventory.comment && <>
@@ -146,16 +150,16 @@ export default function ToolDetailPage() {
 
         <AttrList>
             <AttrList.Attr name={uiText("Nummer")} value={tool.customId} />
-            <AttrList.Attr name="Marke" value={<MyLink to={`/tools?brand=${encodeURIComponent(tool.brand)}`}>{tool.brand}</MyLink>} />
-            <AttrList.Attr name="Kategorie" value={<MyLink to={`/tools?category=${encodeURIComponent(tool.category)}`}>{tool.category}</MyLink>} />
-            <AttrList.Attr name="Gebucht" value={!tool.available ? 'Ja' : 'Nein'} />
-            {!!tool.label && <AttrList.Attr name="Modell" value={tool.label} />}
-            {!!tool.status && <AttrList.Attr name="Status" value={toolStatus(tool)} />}
+            <AttrList.Attr name={uiText("Marke", "Brand")} value={<MyLink to={`/tools?brand=${encodeURIComponent(tool.brand)}`}>{tool.brand}</MyLink>} />
+            <AttrList.Attr name={uiText("Kategorie", "Category")} value={<MyLink to={`/tools?category=${encodeURIComponent(tool.category)}`}>{tool.category}</MyLink>} />
+            <AttrList.Attr name={uiText("Gebucht", "Booked")} value={!tool.available ? uiText("Ja", "Yes") : uiText("Nein", "No")} />
+            {!!tool.label && <AttrList.Attr name={uiText("Modell", "Model")} value={tool.label} />}
+            {!!tool.status && <AttrList.Attr name={uiText("Status")} value={toolStatus(tool)} />}
         </AttrList>
 
         <AttrList>
-            {typeof tool.purchasePrice === 'number' && <AttrList.Attr name="Kaufpreis" value={formatCurrency(tool.purchasePrice)} />}
-            {typeof tool.usageCostPerDay === 'number' && <AttrList.Attr name="Nutzungskosten pro Tag" value={formatCurrency(tool.usageCostPerDay)} />}
+            {typeof tool.purchasePrice === 'number' && <AttrList.Attr name={uiText("Kaufpreis", "Purchase price")} value={formatCurrency(tool.purchasePrice)} />}
+            {typeof tool.usageCostPerDay === 'number' && <AttrList.Attr name={uiText("Nutzungskosten pro Tag", "Usage cost per day")} value={formatCurrency(tool.usageCostPerDay)} />}
         </AttrList>
 
         <MyDivider />
@@ -164,8 +168,8 @@ export default function ToolDetailPage() {
 
         <EntityActivityTimeline resourceType="tool" resourceId={tool.id} />
                 
-        {!!sortedTrackings?.length && <MyExpandable initiallyExpanded title={`Buchungshistorie (${sortedTrackings?.length})`}>
-            <TrackingTable trackings={sortedTrackings} omit={['tool']} />
-        </MyExpandable>}
+        <MyExpandable initiallyExpanded title={uiText(`Buchungshistorie (${sortedTrackings?.length ?? 0})`, `Booking history (${sortedTrackings?.length ?? 0})`)}>
+            <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['tool']} />
+        </MyExpandable>
     </>;
 }

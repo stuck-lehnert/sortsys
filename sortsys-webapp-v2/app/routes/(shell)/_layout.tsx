@@ -67,15 +67,26 @@ export default Authenticated(function() {
   const createActions = visibleActions.filter(action => action.group === 'create');
   const adminActions = visibleActions.filter(action => action.group === 'admin');
 
-  const { width, height } = useDimensions();
-
-  const isSmall = width < 1100;
+  const { width } = useDimensions();
+  const isSmall = width <= 1000;
   const [isSideNavExpanded, setIsSideNavExpanded] = useState(!isSmall);
 
   useEffect(() => setIsSideNavExpanded(!isSmall), [isSmall]);
+
+  useEffect(() => {
+    if (!isSmall || !isSideNavExpanded) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsSideNavExpanded(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isSideNavExpanded, isSmall]);
+
   const closeOnNavigate = () => {
     if (isSmall) setIsSideNavExpanded(false);
   };
+  const isPathActive = (href: string) => path === href || path.startsWith(`${href}/`);
 
   useShortcut('Control+k', e => {
     e.preventDefault();
@@ -126,7 +137,7 @@ export default Authenticated(function() {
     href: string;
     icon: React.ComponentType;
   }) {
-    return <SideNavLink as={Link} replace to={props.href} renderIcon={props.icon} isActive={path.startsWith(props.href)} onClick={closeOnNavigate}>
+    return <SideNavLink as={Link} to={props.href} renderIcon={props.icon} isActive={isPathActive(props.href)} onClick={closeOnNavigate}>
       {props.title}
     </SideNavLink>
   }
@@ -136,8 +147,8 @@ export default Authenticated(function() {
       icon={action.icon}
       title={title ?? action.label}
       action={async () => {
-        await runAction(action);
         closeOnNavigate();
+        await runAction(action);
       }}
     />;
   }
@@ -161,14 +172,23 @@ export default Authenticated(function() {
       </HeaderName>
 
       <HeaderGlobalBar>
-        <HeaderGlobalAction aria-label={t("shell.search")} onClick={() => showCommandPaletteModal(modals)}>
+        <HeaderGlobalAction
+          aria-label={t("shell.search")}
+          title={`${t("shell.search")} (Ctrl+K)`}
+          onClick={() => showCommandPaletteModal(modals)}
+        >
           <Icons.Search />
         </HeaderGlobalAction>
       </HeaderGlobalBar>
     </Header>
 
-    <SideNav expanded={isSideNavExpanded} onOverlayClick={() => setIsSideNavExpanded(false)}>
-      <SideNavItems>
+    <SideNav
+      expanded={isSideNavExpanded}
+      aria-hidden={isSmall && !isSideNavExpanded ? true : undefined}
+      inert={isSmall && !isSideNavExpanded ? true : undefined}
+      onOverlayClick={() => setIsSideNavExpanded(false)}
+    >
+      <SideNavItems aria-label={t("shell.mainNavigation")}>
         <MySideNavLink icon={Icons.Dashboard} href="/dashboard" title={t("shell.dashboard")} />
         {canUseLlm && <MySideNavLink icon={Icons.Magic} href="/llm" title={uiText("LLM")} />}
 
@@ -182,25 +202,25 @@ export default Authenticated(function() {
 
         <SideNavDivider />
 
-        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded>
+        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded={isPathActive('/projects') || isPathActive('/deployments') || isPathActive('/vacations')}>
           {canViewProjects && <MySideNavLink icon={Icons.Project} href="/projects" title={t("shell.projects")} />}
           {canViewDeployments && <MySideNavLink icon={Icons.DailyReport} href="/deployments" title={t("shell.deployments")} />}
           {canViewVacations && <MySideNavLink icon={Icons.User} href="/vacations" title={t("shell.vacations")} />}
         </MySideNavMenu>
 
-        <MySideNavMenu title={t("shell.materialTools")} renderIcon={Icons.Tool} defaultExpanded>
+        <MySideNavMenu title={t("shell.materialTools")} renderIcon={Icons.Tool} defaultExpanded={isPathActive('/tools') || isPathActive('/inventories') || isPathActive('/products')}>
           {canViewTools && <MySideNavLink icon={Icons.Tool} href="/tools" title={t("shell.tools")} />}
           {canViewToolInventories && <MySideNavLink icon={Icons.ToolInventory} href="/inventories" title={t("shell.inventory")} />}
           {canViewProducts && <MySideNavLink icon={Icons.Product} href="/products" title={t("shell.productsDeliveryNotes")} />}
         </MySideNavMenu>
 
-        <MySideNavMenu title={t("shell.usersContacts")} renderIcon={Icons.Customer} defaultExpanded={false}>
+        <MySideNavMenu title={t("shell.usersContacts")} renderIcon={Icons.Customer} defaultExpanded={isPathActive('/customers') || isPathActive('/contacts') || isPathActive('/users')}>
           {canViewCustomers && <MySideNavLink icon={Icons.Customer} href="/customers" title={t("shell.customers")} />}
           {canViewContacts && <MySideNavLink icon={Icons.Contact} href="/contacts" title={t("shell.contacts")} />}
           {canViewUsers && <MySideNavLink icon={Icons.User} href="/users" title={t("shell.users")} />}
         </MySideNavMenu>
 
-        {(!!adminActions.length || canSeeOrganisation || canViewClientScripts) && <MySideNavMenu title={t("shell.administration")} renderIcon={Icons.Info} defaultExpanded={false}>
+        {(!!adminActions.length || canSeeOrganisation || canViewClientScripts) && <MySideNavMenu title={t("shell.administration")} renderIcon={Icons.Info} defaultExpanded={isPathActive('/scripts') || isPathActive('/admin')}>
           {adminActions.map(action => <MySideNavUserAction key={action.id} action={action} />)}
           {canViewClientScripts && <MySideNavLink icon={Icons.Script} href="/scripts" title={t("shell.clientScripts")} />}
           {canSeeOrganisation && <MySideNavLink icon={Icons.Info} href="/admin" title={t("shell.organization")} />}

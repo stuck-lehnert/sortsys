@@ -14,11 +14,11 @@ export function SSHeader({
   return (
     <div {...props} className={`ss-page-header ${props.className ?? ""}`}>
       <div className="ss-page-header__main">
-        <Heading level={3} noMargin className="ss-page-header__title">{title}</Heading>
-        {!!subtitle && <Heading level={6} noMargin className="ss-page-header__subtitle">{subtitle}</Heading>}
+        <Heading level={1} noMargin className="ss-page-header__title">{title}</Heading>
+        {!!subtitle && <p className="ss-page-header__subtitle">{subtitle}</p>}
       </div>
 
-      <div className="ss-page-header__actions">{actions}</div>
+      {!!actions && <div className="ss-page-header__actions">{actions}</div>}
     </div>
   );
 }

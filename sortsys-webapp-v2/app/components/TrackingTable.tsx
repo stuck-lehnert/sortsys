@@ -12,6 +12,8 @@ export function TrackingTable(props: {
     omit?: ("tool" | "project" | "author" | "responsible" | "timestamps")[];
     className?: string;
     topPagination?: boolean;
+    loading?: boolean;
+    error?: unknown;
 }) {
     const sessionInfo = useSessionInfo();
 
@@ -81,9 +83,9 @@ export function TrackingTable(props: {
         });
     }
 
-    if (!props.trackings?.length) return;
-
     return <MyTable
+        loading={props.loading}
+        error={props.error}
         rows={props.trackings}
         columns={columns}
         pagination={{}}

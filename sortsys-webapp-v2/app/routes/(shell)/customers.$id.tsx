@@ -1,5 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import { useParams } from "react-router";
+import { Loading } from "@sortsys/react-components";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { NotFound } from "./_404";
@@ -20,6 +21,7 @@ import { MyExpandable } from "~/components/MyExpandable";
 import { ContactTile, ProjectTile } from "~/lib/tiles";
 import { Remarks } from "~/components/Remarks";
 import { EntityActivityTimeline } from "~/components/EntityActivityTimeline";
+import { MyCallout } from "~/components/MyCallout";
 
 export default function CustomerDetailPage() {
   const { id } = useParams();
@@ -28,8 +30,8 @@ export default function CustomerDetailPage() {
   const sessionInfo = useSessionInfo();
 
   const [customer, err] = useClientStream(() => client.streamQuery('customers.get', { id: id! }), [id]);
-  const [contacts] = useClientStream(() => client.streamQuery('customers.contacts.list', { customerId: id! }), [id]);
-  const [projects] = useClientStream(() => client.streamQuery('projects.list', { customerId: id! }), [id]);
+  const [contacts, contactsError] = useClientStream(() => client.streamQuery('customers.contacts.list', { customerId: id! }), [id]);
+  const [projects, projectsError] = useClientStream(() => client.streamQuery('projects.list', { customerId: id! }), [id]);
 
   useTitle(() => customer ? customerName(customer) : null, [customer]);
 
@@ -40,7 +42,7 @@ export default function CustomerDetailPage() {
   });
 
   if (err) return <NotFound reason="resourceNotFound" />
-  if (!customer) return;
+  if (!customer) return <Loading withOverlay />;
 
   return <>
     <MyHeader
@@ -66,19 +68,19 @@ export default function CustomerDetailPage() {
     <MyDivider />
 
     <AttrList>
-      {!!customer.salutation && <AttrList.Attr name="Anrede" value={customer.salutation} />}
-      <AttrList.Attr name="Name" value={customer.name} />
-      {!!customer.address && <AttrList.Attr name="Anschrift" value={
+      {!!customer.salutation && <AttrList.Attr name={uiText("Anrede", "Salutation")} value={customer.salutation} />}
+      <AttrList.Attr name={uiText("Name")} value={customer.name} />
+      {!!customer.address && <AttrList.Attr name={uiText("Anschrift", "Address")} value={
         <MyLink to={addressUrl(customer.address)} target="_blank">{formatAddress(customer.address)}</MyLink>
       } />}
     </AttrList>
 
     <AttrList>
       {customer.emailAddresses.map(({ email, name }, i) => {
-        return <AttrList.Attr key={i} name={name ?? `E-Mail ${i + 1}`} value={<MyLink to={`mailto:${email}`}>{email}</MyLink>} />
+        return <AttrList.Attr key={i} name={name ?? uiText(`E-Mail ${i + 1}`, `Email ${i + 1}`)} value={<MyLink to={`mailto:${email}`}>{email}</MyLink>} />
       })}
       {customer.phoneNumbers.map(({ number, name }, i) => {
-        return <AttrList.Attr key={i} name={name ?? `Telefon ${i + 1}`} value={<MyLink to={`tel:${number}`}>{number}</MyLink>} />
+        return <AttrList.Attr key={i} name={name ?? uiText(`Telefon ${i + 1}`, `Phone ${i + 1}`)} value={<MyLink to={`tel:${number}`}>{number}</MyLink>} />
       })}
     </AttrList>
 
@@ -87,14 +89,19 @@ export default function CustomerDetailPage() {
     <Remarks resourceType="customer" resourceId={customer.id} canManage={sessionInfo.canDo('manage:customers')} />
 
     <EntityActivityTimeline resourceType="customer" resourceId={customer.id} />
+    {!!(contactsError || projectsError) && <MyCallout
+      kind="error"
+      title={uiText("Verknüpfte Daten konnten nicht geladen werden", "Related data could not be loaded")}
+    />}
 
-    {!!contacts?.length && <MyExpandable title={`Ansprechpartner (${contacts.length})`}>
+
+    {!!contacts?.length && <MyExpandable title={uiText(`Ansprechpartner (${contacts.length})`, `Contacts (${contacts.length})`)}>
       <div className="space-y-2">
         {contacts.map((contact) => <ContactTile key={contact.id} contact={contact} />)}
       </div>
     </MyExpandable>}
 
-    {!!projects?.length && <MyExpandable title={uiText(`Projekte (${projects.length})`, `Projecte (${projects.length})`)}>
+    {!!projects?.length && <MyExpandable title={uiText(`Projekte (${projects.length})`, `Projects (${projects.length})`)}>
       <div className="space-y-2">
         {projects.map((project) => <ProjectTile key={project.id} project={project} omit={['customer']} />)}
       </div>
