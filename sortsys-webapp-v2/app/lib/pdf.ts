@@ -93,7 +93,7 @@ type RenderStructuredPdfBatchOptions = {
 
 let typstPdfRuntimeSetup: Promise<void> | null = null;
 let typstPdfFontSetup: Promise<void> | null = null;
-const TYPST_COMPILER_WASM_URL = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0-rc2/pkg/typst_ts_web_compiler_bg.wasm';
+const TYPST_COMPILER_WASM_URL = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0/pkg/typst_ts_web_compiler_bg.wasm';
 const TYPST_SANS_FONT_FAMILY = 'Ubuntu';
 const TYPST_SANS_FONT_URLS = [
   'https://cdn.jsdelivr.net/gh/google/fonts@main/ufl/ubuntu/Ubuntu-Regular.ttf',

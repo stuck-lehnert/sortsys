@@ -479,7 +479,7 @@ impl ExportSessionClaims {
 
 #[cfg(test)]
 mod tests {
-    use super::{CreateExportUploadInput, export_document_key};
+    use super::{CreateExportUploadInput, export_document_key, sibling_url};
 
     #[test]
     fn export_document_keys_are_object_specific() {
@@ -488,6 +488,20 @@ mod tests {
 
         assert_ne!(first, second);
         assert!(first.starts_with("sortsys-export-"));
+    }
+
+    #[test]
+    fn export_source_urls_use_the_internal_api_origin() {
+        let source_url = sibling_url(
+            "http://api:3000/internal/onlyoffice/callback",
+            "exports/session-token",
+        )
+        .unwrap();
+
+        assert_eq!(
+            source_url,
+            "http://api:3000/internal/onlyoffice/exports/session-token"
+        );
     }
 
     #[test]

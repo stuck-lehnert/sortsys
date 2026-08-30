@@ -11,11 +11,6 @@ SERVICE_BASE64_64_ONLYOFFICE=replace-with-a-long-random-onlyoffice-jwt-secret
 # bcrypt value as Literal so its dollar signs are not interpolated.
 ADMIN_HASH=replace-with-a-bcrypt-password-hash
 
-# Coolify assigns this single public origin to the webapp. Outside Coolify,
-# set it to the browser-reachable HTTPS origin. ONLYOFFICE is served from
-# /office/ on the same origin.
-SERVICE_URL_WEBAPP_80=
-
 # Optional. Set this to the publicly reachable MCP endpoint when the selected
 # provider/model supports remote MCP, for example:
 # https://sortsys.example/api/v2/internal/llm/mcp

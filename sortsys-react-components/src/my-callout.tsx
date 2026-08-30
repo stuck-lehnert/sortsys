@@ -1,5 +1,6 @@
-import type { ComponentType, HTMLAttributes } from "react";
+import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 import { InlineNotification } from "./index.js";
+import { resolveCalloutKind } from "./my-callout-kind.js";
 
 type IconLike = ComponentType<{
   size?: number;
@@ -7,35 +8,22 @@ type IconLike = ComponentType<{
   color?: string;
 }>;
 
-function resolveKind(color: string) {
-  const normalized = color.toLowerCase();
-
-  if (normalized === "green" || normalized === "teal" || normalized === "lime") {
-    return "success";
-  }
-
-  if (normalized === "red" || normalized === "pink" || normalized === "deeporange") {
-    return "danger";
-  }
-
-  if (normalized === "amber" || normalized === "yellow" || normalized === "orange") {
-    return "warning";
-  }
-
-  return "info";
-}
-
 export function SSCallout(_props: HTMLAttributes<HTMLDivElement> & {
-  color: string;
-  icon: IconLike;
+  color?: string;
+  icon?: IconLike;
+  kind?: string;
+  title?: ReactNode;
+  subtitle?: ReactNode;
 }) {
-  const { icon: Icon, className, children, color, ...props } = _props;
+  const { icon: Icon, className, children, color, kind, title, subtitle, ...props } = _props;
 
   return (
     <InlineNotification
       {...props}
       className={className}
-      kind={resolveKind(color)}
+      kind={resolveCalloutKind(kind, color)}
+      title={title}
+      subtitle={subtitle}
       renderIcon={Icon}
     >
       {children}

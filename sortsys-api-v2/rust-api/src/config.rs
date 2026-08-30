@@ -73,10 +73,19 @@ fn onlyoffice_config() -> Result<Option<OnlyOfficeConfig>, ConfigError> {
         return Ok(None);
     }
 
-    let public_url = public_url.ok_or(ConfigError::Missing("ONLYOFFICE_PUBLIC_URL"))?;
-    let callback_url = callback_url.ok_or(ConfigError::Missing("ONLYOFFICE_CALLBACK_URL"))?;
+    let public_url = validate_public_url(
+        "ONLYOFFICE_PUBLIC_URL",
+        public_url.ok_or(ConfigError::Missing("ONLYOFFICE_PUBLIC_URL"))?,
+    )?;
+    let callback_url = validate_absolute_http_url(
+        "ONLYOFFICE_CALLBACK_URL",
+        callback_url.ok_or(ConfigError::Missing("ONLYOFFICE_CALLBACK_URL"))?,
+    )?;
     let jwt_secret = jwt_secret.ok_or(ConfigError::Missing("ONLYOFFICE_JWT_SECRET"))?;
-    let internal_url = internal_url.unwrap_or_else(|| public_url.clone());
+    let internal_url = validate_absolute_http_url(
+        "ONLYOFFICE_INTERNAL_URL",
+        internal_url.unwrap_or_else(|| public_url.clone()),
+    )?;
 
     Ok(Some(OnlyOfficeConfig {
         public_url: Arc::from(public_url.trim_end_matches('/')),
@@ -84,6 +93,31 @@ fn onlyoffice_config() -> Result<Option<OnlyOfficeConfig>, ConfigError> {
         callback_url: Arc::from(callback_url),
         jwt_secret: Arc::from(jwt_secret.into_bytes()),
     }))
+}
+
+fn validate_public_url(name: &'static str, value: String) -> Result<String, ConfigError> {
+    let relative_path = value.starts_with('/')
+        && !value.starts_with("//")
+        && !value.contains('?')
+        && !value.contains('#');
+    if relative_path || is_absolute_http_url(&value) {
+        return Ok(value);
+    }
+
+    Err(ConfigError::InvalidPublicUrl { name, value })
+}
+
+fn validate_absolute_http_url(name: &'static str, value: String) -> Result<String, ConfigError> {
+    if !is_absolute_http_url(&value) {
+        return Err(ConfigError::InvalidAbsoluteUrl { name, value });
+    }
+
+    Ok(value)
+}
+
+fn is_absolute_http_url(value: &str) -> bool {
+    url::Url::parse(value)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
 }
 
 fn required(name: &'static str) -> Result<String, ConfigError> {
@@ -105,4 +139,40 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("invalid PORT value: {0:?}")]
     InvalidPort(String),
+    #[error("{name} must be an absolute HTTP(S) URL, got {value:?}")]
+    InvalidAbsoluteUrl { name: &'static str, value: String },
+    #[error("{name} must be an absolute HTTP(S) URL or a root-relative path, got {value:?}")]
+    InvalidPublicUrl { name: &'static str, value: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConfigError, validate_absolute_http_url, validate_public_url};
+
+    #[test]
+    fn onlyoffice_server_urls_must_have_an_http_origin() {
+        assert!(
+            validate_absolute_http_url(
+                "ONLYOFFICE_PUBLIC_URL",
+                "https://app.sortsys.de/office".to_owned(),
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_absolute_http_url("ONLYOFFICE_INTERNAL_URL", "http://onlyoffice".to_owned(),)
+                .is_ok()
+        );
+        assert!(matches!(
+            validate_public_url("ONLYOFFICE_PUBLIC_URL", "office".to_owned()),
+            Err(ConfigError::InvalidPublicUrl { .. })
+        ));
+        assert!(validate_public_url("ONLYOFFICE_PUBLIC_URL", "/office".to_owned()).is_ok());
+        assert!(
+            validate_public_url(
+                "ONLYOFFICE_PUBLIC_URL",
+                "https://app.sortsys.de/office".to_owned()
+            )
+            .is_ok()
+        );
+    }
 }

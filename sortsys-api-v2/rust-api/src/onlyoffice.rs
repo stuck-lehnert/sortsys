@@ -700,18 +700,33 @@ fn sibling_url(callback_url: &str, sibling: &str) -> RpcResult<String> {
 
 fn internal_document_url(configuration: &OnlyOfficeConfig, value: &str) -> RpcResult<Url> {
     let requested = Url::parse(value).map_err(|_| bad_request("Invalid document URL"))?;
-    let public = Url::parse(&configuration.public_url).map_err(internal)?;
+    let public = match Url::parse(&configuration.public_url) {
+        Ok(url) => Some(url),
+        Err(url::ParseError::RelativeUrlWithoutBase)
+            if configuration.public_url.starts_with('/')
+                && !configuration.public_url.starts_with("//") =>
+        {
+            None
+        }
+        Err(error) => return Err(internal(error)),
+    };
     let internal_origin = Url::parse(&configuration.internal_url).map_err(internal)?;
 
     if same_origin(&requested, &internal_origin) {
         return Ok(requested);
     }
 
-    if !same_origin(&requested, &public) {
+    if public
+        .as_ref()
+        .is_some_and(|url| !same_origin(&requested, url))
+    {
         return Err(forbidden("Document URL does not belong to ONLYOFFICE"));
     }
 
-    let public_base_path = public.path().trim_end_matches('/');
+    let public_base_path = public
+        .as_ref()
+        .map_or(configuration.public_url.as_ref(), Url::path)
+        .trim_end_matches('/');
     // Browser-facing URLs include the reverse proxy's /office prefix. The
     // internal Document Server does not know that prefix, so retain only the
     // path below the configured public base before downloading a saved file.
@@ -972,5 +987,29 @@ mod tests {
             .is_err()
         );
         assert!(internal_document_url(&configuration, "https://attacker.invalid/file").is_err());
+    }
+
+    #[test]
+    fn callback_downloads_support_same_origin_public_paths() {
+        let configuration = OnlyOfficeConfig {
+            public_url: Arc::from("/office"),
+            internal_url: Arc::from("http://onlyoffice:80"),
+            callback_url: Arc::from("http://api:3000/internal/onlyoffice/callback"),
+            jwt_secret: Arc::from(b"test-secret".as_slice()),
+        };
+        let rewritten = internal_document_url(
+            &configuration,
+            "https://app.sortsys.de/office/cache/files/export.xlsx?token=one",
+        )
+        .unwrap();
+
+        assert_eq!(
+            rewritten.as_str(),
+            "http://onlyoffice/cache/files/export.xlsx?token=one"
+        );
+        assert!(
+            internal_document_url(&configuration, "https://app.sortsys.de/unrelated/file.xlsx")
+                .is_err()
+        );
     }
 }
