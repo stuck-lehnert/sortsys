@@ -125,6 +125,8 @@ pub fn register(
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     let builder = llm::register_contract(builder);
+    let builder = delivery_notes::register_contract(builder);
+    let builder = products::register_contract(builder);
     let builder = crate::office_exports::register_contract(builder);
 
     crate::onlyoffice::register_contract(builder)

@@ -15,6 +15,7 @@ use crate::{
 
 pub const THUMBNAIL_JOB_TYPE: &str = "project_file_thumbnail_generate";
 pub const TENANT_LOGO_JOB_TYPE: &str = "tenant_logo_generate";
+pub const DELIVERY_NOTE_OCR_JOB_TYPE: &str = "delivery_note_ocr";
 
 const DEFAULT_LEASE_SECONDS: i32 = 90;
 const MIN_LEASE_SECONDS: i32 = 5;
@@ -260,6 +261,47 @@ pub async fn fail(
         should_retry,
         job: updated,
     }))
+}
+
+pub async fn enqueue(
+    state: &AppState,
+    tenant_name: &str,
+    job_type: &str,
+    payload: Value,
+    max_attempts: i32,
+) -> RpcResult<i64> {
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO __jobs (tenant_name, type, payload, max_attempts)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        "#,
+    )
+    .bind(tenant_name)
+    .bind(job_type)
+    .bind(Json(payload))
+    .bind(max_attempts.clamp(1, 20))
+    .fetch_one(state.tenants.master())
+    .await
+    .map_err(internal)
+}
+
+pub async fn get(state: &AppState, job_id: i64) -> RpcResult<Option<QueueJob>> {
+    sqlx::query_as::<_, QueueJob>("SELECT * FROM __jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(state.tenants.master())
+        .await
+        .map_err(internal)
+}
+
+pub async fn delete_finished(state: &AppState, job_id: i64) -> RpcResult<()> {
+    sqlx::query("DELETE FROM __jobs WHERE id = $1 AND state IN ('succeeded', 'failed')")
+        .bind(job_id)
+        .execute(state.tenants.master())
+        .await
+        .map_err(internal)?;
+
+    Ok(())
 }
 
 pub async fn release_runner_jobs(state: &AppState, runner_id: &str) -> RpcResult<u64> {

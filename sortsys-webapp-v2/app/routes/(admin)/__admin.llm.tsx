@@ -27,6 +27,10 @@ export default function GlobalAdminLlmPage() {
     () => adminClient.streamQuery('admin.llm.settings.get', undefined, { strategy: 'network-first' }),
     [],
   );
+  const [scanSettings, scanSettingsErr] = useClientStream(
+    () => adminClient.streamQuery('admin.llm.scanSettings.get', undefined, { strategy: 'network-first' }),
+    [],
+  );
   const [tenants, tenantsErr] = useClientStream(
     () => adminClient.streamQuery('admin.llm.tenants.list', undefined, { strategy: 'network-first' }),
     [],
@@ -44,6 +48,11 @@ export default function GlobalAdminLlmPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tenantDrafts, setTenantDrafts] = useState<Record<string, TenantSettings>>({});
+  const [scanProvider, setScanProvider] = useState('openai');
+  const [scanModel, setScanModel] = useState(providerModels.openai);
+  const [scanBaseUrl, setScanBaseUrl] = useState('');
+  const [scanApiKey, setScanApiKey] = useState('');
+  const [savingScan, setSavingScan] = useState(false);
 
   useEffect(() => {
     if (!settings) return;
@@ -53,6 +62,13 @@ export default function GlobalAdminLlmPage() {
   }, [settings]);
 
   useEffect(() => {
+    if (!scanSettings) return;
+    setScanProvider(scanSettings.provider);
+    setScanModel(scanSettings.model);
+    setScanBaseUrl(scanSettings.baseUrl ?? '');
+  }, [scanSettings]);
+
+  useEffect(() => {
     if (!tenants) return;
     setTenantDrafts(Object.fromEntries(tenants.map(tenant => [tenant.name, tenant])));
   }, [tenants]);
@@ -60,11 +76,11 @@ export default function GlobalAdminLlmPage() {
   const usageRows = useMemo(
     () => (usage ?? []).map(row => ({
       ...row,
-      id: row.tenant + ':' + row.provider + ':' + row.model,
+      id: row.tenant + ':' + row.purpose + ':' + row.provider + ':' + row.model,
     })),
     [usage],
   );
-  const loadError = settingsErr ?? tenantsErr ?? usageErr;
+  const loadError = settingsErr ?? scanSettingsErr ?? tenantsErr ?? usageErr;
 
   async function saveSettings() {
     setSaving(true);
@@ -87,6 +103,33 @@ export default function GlobalAdminLlmPage() {
     setApiKey('');
     setMessage(uiText(`Provider ${updated.provider} wurde gespeichert.`, `Provider ${updated.provider} saved.`));
     await adminClient.invalidate('admin.llm.settings.get');
+  }
+
+
+  async function saveScanSettings() {
+    setSavingScan(true);
+    setError(null);
+    setMessage(null);
+
+    const [updated, err] = await adminClient.mutate('admin.llm.scanSettings.update', {
+      provider: scanProvider as 'openai',
+      model: scanModel,
+      baseUrl: scanBaseUrl.trim() || null,
+      apiKey: scanApiKey.trim() || null,
+    });
+
+    setSavingScan(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+
+    setScanApiKey('');
+    setMessage(uiText(
+      'Scan-Modell ' + updated.provider + ' wurde gespeichert.',
+      'Scan model ' + updated.provider + ' saved.',
+    ));
+    await adminClient.invalidate('admin.llm.scanSettings.get');
   }
 
   async function saveTenant(tenant: TenantSettings) {
@@ -159,6 +202,81 @@ export default function GlobalAdminLlmPage() {
     </Tile>
 
     <Tile className="space-y-2">
+      <Heading level={3} noMargin>{uiText("Lieferschein-Scans", "Delivery note scans")}</Heading>
+      <p className="light">
+        {scanProvider === "deepseek" || scanProvider === "custom"
+          ? uiText(
+            "OpenAI-kompatible Modelle erhalten Bilder. Für PDF-Dateien wähle OpenAI oder Anthropic.",
+            "OpenAI-compatible models receive images. Choose OpenAI or Anthropic for PDF files.",
+          )
+          : uiText(
+            "Dieses Modell liest PDFs, Fotos und handschriftliche Ergänzungen. Es gleicht Positionen mit dem Produktstamm und dessen Einheiten ab.",
+            "This model reads PDFs, photos, and handwritten additions. It matches lines against the product catalogue and its units.",
+          )}
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <label>
+          <span className="ss-label">{uiText("Anbieter", "Provider")}</span>
+          <select
+            className="ss-input"
+            value={scanProvider}
+            onChange={event => {
+              const next = event.currentTarget.value;
+              setScanProvider(next);
+              setScanModel(providerModels[next] ?? '');
+            }}
+          >
+            <option value="openai">{uiText("OpenAI", "OpenAI")}</option>
+            <option value="anthropic">{uiText("Anthropic", "Anthropic")}</option>
+            <option value="deepseek">{uiText("DeepSeek", "DeepSeek")}</option>
+            <option value="custom">{uiText("OpenAI-kompatibel", "OpenAI-compatible")}</option>
+          </select>
+        </label>
+
+        <label>
+          <span className="ss-label">{uiText("Modell", "Model")}</span>
+          <input
+            className="ss-input"
+            value={scanModel}
+            onChange={event => setScanModel(event.currentTarget.value)}
+          />
+        </label>
+
+        <label>
+          <span className="ss-label">{uiText("Basis-URL (optional)", "Base URL (optional)")}</span>
+          <input
+            className="ss-input"
+            value={scanBaseUrl}
+            onChange={event => setScanBaseUrl(event.currentTarget.value)}
+          />
+        </label>
+
+        <label>
+          <span className="ss-label">
+            {uiText("API-Schlüssel", "API key")} {scanSettings?.hasApiKey
+              ? uiText("(nur zum Ersetzen)", "(only to replace)")
+              : ''}
+          </span>
+          <input
+            className="ss-input"
+            type="password"
+            value={scanApiKey}
+            onChange={event => setScanApiKey(event.currentTarget.value)}
+          />
+        </label>
+      </div>
+
+      <MyButton
+        loading={savingScan}
+        disabled={!scanModel.trim()}
+        onClick={() => void saveScanSettings()}
+      >
+        {uiText("Scan-Modell speichern", "Save scan model")}
+      </MyButton>
+    </Tile>
+
+    <Tile className="space-y-2">
       <Heading level={3} noMargin>{uiText("Mandanten")}</Heading>
 
       <div className="space-y-2">
@@ -210,6 +328,7 @@ export default function GlobalAdminLlmPage() {
         rows={usageRows}
         columns={[
           { label: uiText("Mandant"), render: row => row.tenant, sortKey: row => row.tenant },
+          { label: uiText("Zweck", "Purpose"), render: row => row.purpose === "delivery_note_scan" ? uiText("Dokumentimport", "Document import") : uiText("Chat", "Chat"), sortKey: row => row.purpose },
           { label: uiText("Provider / Modell"), render: row => row.provider + ' / ' + row.model, sortKey: row => row.provider + ' ' + row.model },
           { label: uiText("Anfragen"), render: row => formatTokens(row.requestCount), sortKey: row => Number(row.requestCount) },
           { label: uiText("Eingabe"), render: row => formatTokens(row.inputTokens), sortKey: row => Number(row.inputTokens) },

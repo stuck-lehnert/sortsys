@@ -9,6 +9,9 @@ import { SmallDeliveryNoteTile } from "~/lib/tiles";
 import type { Route } from "./+types";
 import { TableExportActions } from "~/components/TableExportActions";
 import { MyHeader } from "~/components/MyHeader";
+import { MyButton } from "~/components/MyButton";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { Icons } from "~/lib/icons";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -18,12 +21,27 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DeliverNotesPage() {
   const navigate = useNavigate();
+  const sessionInfo = useSessionInfo();
   const [notes, notesError] = useClientStream(() => client.streamQuery('deliveryNotes.list', {}), []);
+  const [llmStatus] = useClientStream(() => client.streamQuery('llm.status', undefined), []);
 
   return <>
     <MyHeader
       title={uiText("Lieferscheine")}
       actions={<div className="list-page-actions">
+      {sessionInfo.canDo("manage:deliveryNotes")
+        && sessionInfo.canDo("manage:products")
+        && sessionInfo.canDo("view:productVendors")
+        && sessionInfo.canDo("view:productPriceRecords")
+        && sessionInfo.canDo(":llm")
+        && sessionInfo.supportsProjectFiles()
+        && llmStatus?.tenantEnabled
+        && llmStatus.scanProviderConfigured
+        && <MyButton
+        kind="secondary"
+        renderIcon={Icons.DeliveryNote}
+        onClick={() => navigate("/import")}
+      >{uiText("Einlesen", "Import")}</MyButton>}
       <TableExportActions
         title={uiText("Lieferscheine")}
         fileName="Lieferscheine"

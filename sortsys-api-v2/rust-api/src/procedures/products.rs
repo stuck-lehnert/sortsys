@@ -3,12 +3,14 @@
 use std::{collections::HashSet, sync::Arc};
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sqlx::{FromRow, PgPool, types::Json};
+use ts_rs::TS;
 
 use super::common::{
-    authorized_pool, bad_request, input_id, input_object, input_string, internal, not_found,
-    optional_input_id, optional_input_string,
+    authorized_pool, bad_request, forbidden, input_id, input_object, input_string, internal,
+    not_found, optional_input_id, optional_input_string,
 };
 use crate::{
     AppState,
@@ -161,11 +163,56 @@ pub fn register(
         async move { delete_price_record(&state, &context, input).await }
     });
 
+    let price_import_state = Arc::clone(&state);
+    builder = builder.mutation(
+        "products.priceImports.apply",
+        move |context, input: ApplyPriceImportInput| {
+            let state = Arc::clone(&price_import_state);
+
+            async move { apply_price_import(&state, &context, input).await }
+        },
+    );
+
     builder.query_json("products.suggestNextCustomId", move |context, input| {
         let state = Arc::clone(&state);
 
         async move { suggest_next_custom_id(&state, &context, input).await }
     })
+}
+
+pub fn register_contract(mut builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    builder = builder.mutation_stub::<ApplyPriceImportInput, ApplyPriceImportResult>(
+        "products.priceImports.apply",
+    );
+
+    builder
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplyPriceImportInput {
+    vendor_id: Id,
+    #[ts(type = "Date")]
+    effective_at: DateTime<Utc>,
+    is_real_purchase: bool,
+    rows: Vec<ApplyPriceImportRow>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplyPriceImportRow {
+    product_id: Option<Id>,
+    product_name: String,
+    base_unit: String,
+    price_per_base_unit: f64,
+    comment: Option<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct ApplyPriceImportResult {
+    created_products: usize,
+    created_price_records: usize,
 }
 
 #[derive(FromRow)]
@@ -931,6 +978,148 @@ async fn create_price_record(
     .map_err(internal)?;
 
     Ok(json!({ "id": Id(record_id) }))
+}
+
+async fn apply_price_import(
+    state: &AppState,
+    context: &RequestContext,
+    input: ApplyPriceImportInput,
+) -> RpcResult<ApplyPriceImportResult> {
+    let (auth, pool) = authorized_pool(state, context, "view:productPriceRecords").await?;
+
+    if input.rows.is_empty() || input.rows.len() > 20_000 {
+        return Err(bad_request(
+            "price import must contain between 1 and 20000 rows",
+        ));
+    }
+    if input.rows.iter().any(|row| row.product_id.is_none()) && !auth.can_do("manage:products") {
+        return Err(forbidden());
+    }
+
+    let vendor_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM product_vendors WHERE id = $1)")
+            .bind(input.vendor_id.0)
+            .fetch_one(&pool)
+            .await
+            .map_err(internal)?;
+    if !vendor_exists {
+        return Err(bad_request("selected vendor does not exist"));
+    }
+
+    for row in &input.rows {
+        if !row.price_per_base_unit.is_finite() || row.price_per_base_unit < 0.0 {
+            return Err(bad_request("price import contains an invalid net price"));
+        }
+        if row.product_name.trim().is_empty() || row.product_name.trim().len() > 255 {
+            return Err(bad_request("price import contains an invalid product name"));
+        }
+        if row.base_unit.trim().is_empty() || row.base_unit.trim().len() > 10 {
+            return Err(bad_request("price import contains an invalid base unit"));
+        }
+        if row
+            .comment
+            .as_deref()
+            .is_some_and(|comment| comment.len() > 255)
+        {
+            return Err(bad_request("price import contains an overlong comment"));
+        }
+    }
+
+    let mut transaction = pool.begin().await.map_err(internal)?;
+
+    // Product numbers are tenant-local and sequential. The transaction lock
+    // prevents two simultaneous imports from allocating the same number.
+    sqlx::query("SELECT pg_advisory_xact_lock(736678011)")
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal)?;
+    let mut next_custom_id: i32 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(custom_id), 0) + 1 FROM products")
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal)?;
+
+    let mut created_products = 0;
+    let mut created_price_records = 0;
+
+    for row in input.rows {
+        let product_id = if let Some(product_id) = row.product_id {
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM products WHERE id = $1)")
+                    .bind(product_id.0)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(internal)?;
+            if !exists {
+                return Err(bad_request("price import references a missing product"));
+            }
+
+            product_id.0
+        } else {
+            let product_id: i64 = sqlx::query_scalar(
+                r#"
+                INSERT INTO products (
+                    custom_id,
+                    name,
+                    brand,
+                    description,
+                    base_unit,
+                    other_units
+                )
+                VALUES ($1, $2, NULL, NULL, $3, '{}'::jsonb)
+                RETURNING id
+                "#,
+            )
+            .bind(next_custom_id)
+            .bind(row.product_name.trim())
+            .bind(row.base_unit.trim())
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal)?;
+
+            next_custom_id = next_custom_id
+                .checked_add(1)
+                .ok_or_else(|| bad_request("no product numbers remain"))?;
+            created_products += 1;
+            product_id
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO product_price_records (
+                product_id,
+                vendor_id,
+                price,
+                timestamp,
+                is_real_purchase,
+                comment
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+        )
+        .bind(product_id)
+        .bind(input.vendor_id.0)
+        .bind(row.price_per_base_unit)
+        .bind(input.effective_at)
+        .bind(input.is_real_purchase)
+        .bind(
+            row.comment
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal)?;
+        created_price_records += 1;
+    }
+
+    transaction.commit().await.map_err(internal)?;
+
+    Ok(ApplyPriceImportResult {
+        created_products,
+        created_price_records,
+    })
 }
 
 async fn update_price_record(

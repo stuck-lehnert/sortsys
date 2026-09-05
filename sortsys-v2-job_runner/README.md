@@ -12,7 +12,7 @@ JOB_RUNNER_TOKEN=dev-job-runner-token \
 go run ./cmd/job-runner
 ```
 
-The repository-level `scripts/dev` command starts two watched runner instances automatically.
+The repository-level `scripts/dev` command starts two watched media runners and one OCR runner automatically.
 
 ## Configuration
 
@@ -30,13 +30,16 @@ The repository-level `scripts/dev` command starts two watched runner instances a
 | `JOB_RUNNER_RETRY_AFTER_SEC` | `60` | retry delay after failures, with a minimum of 5 seconds |
 | `JOB_RUNNER_USER_AGENT` | `sortsys-v2-job-runner/0.1` | WebSocket client user agent |
 
-## Container image
+## Container images
 
 ```bash
 docker build -t sortsys-job-runner:local .
+docker build -f Dockerfile.ocr -t sortsys-ocr-job-runner:local .
 ```
 
-The final image runs as an unprivileged user and contains only the statically linked runner plus CA certificates.
+The default image handles thumbnails and logos. The OCR image accepts only `delivery_note_ocr` jobs when `JOB_RUNNER_JOB_TYPE` is set accordingly. It first reads an existing PDF text layer. Scanned pages and images are processed locally with Poppler, ImageMagick, and Tesseract using German and English language data.
+
+Both images run without root privileges. OCR jobs receive short-lived signed download URLs; they do not receive tenant database credentials or LLM API keys.
 
 ## License
 

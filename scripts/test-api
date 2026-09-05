@@ -15,6 +15,7 @@ TEST_S3_CONTAINER="${TEST_S3_CONTAINER:-sortsys-test-api-s3-${TEST_RUN_SUFFIX}}"
 TEST_API_CONTAINER="${TEST_API_CONTAINER:-sortsys-test-api-api-${TEST_RUN_SUFFIX}}"
 TEST_JOB_RUNNER_1_CONTAINER="${TEST_JOB_RUNNER_1_CONTAINER:-sortsys-test-api-job-runner-1-${TEST_RUN_SUFFIX}}"
 TEST_JOB_RUNNER_2_CONTAINER="${TEST_JOB_RUNNER_2_CONTAINER:-sortsys-test-api-job-runner-2-${TEST_RUN_SUFFIX}}"
+TEST_OCR_JOB_RUNNER_CONTAINER="${TEST_OCR_JOB_RUNNER_CONTAINER:-sortsys-test-api-ocr-job-runner-${TEST_RUN_SUFFIX}}"
 TEST_JOB_RUNNER_CONTAINERS=("$TEST_JOB_RUNNER_1_CONTAINER" "$TEST_JOB_RUNNER_2_CONTAINER")
 
 TEST_POSTGRES_IMAGE="${TEST_POSTGRES_IMAGE:-docker.io/library/postgres:17-bookworm}"
@@ -22,6 +23,7 @@ TEST_S3_IMAGE="${TEST_S3_IMAGE:-docker.io/minio/minio:latest}"
 TEST_S3_IMAGE_FALLBACK="${TEST_S3_IMAGE_FALLBACK:-quay.io/minio/minio:latest}"
 TEST_RUST_IMAGE="${TEST_RUST_IMAGE:-docker.io/library/rust:1.88-bookworm}"
 TEST_API_TEST_IMAGE="${TEST_API_TEST_IMAGE:-localhost/sortsys-api-test:rust-1.88-pg17}"
+TEST_OCR_JOB_RUNNER_IMAGE="${TEST_OCR_JOB_RUNNER_IMAGE:-localhost/sortsys-ocr-job-runner-test:latest}"
 TEST_GO_IMAGE="${TEST_GO_IMAGE:-docker.io/library/golang:1.25}"
 TEST_BUN_IMAGE="${TEST_BUN_IMAGE:-docker.io/oven/bun:1.4.0}"
 TEST_CARGO_TARGET_DIR="${TEST_CARGO_TARGET_DIR:-/tmp/sortsys-api-v2-rust-target}"
@@ -55,6 +57,7 @@ TEST_ALL_CONTAINERS=(
   "$TEST_PG_CONTAINER"
   "$TEST_S3_CONTAINER"
   "$TEST_API_CONTAINER"
+  "$TEST_OCR_JOB_RUNNER_CONTAINER"
   "${TEST_JOB_RUNNER_CONTAINERS[0]}"
   "${TEST_JOB_RUNNER_CONTAINERS[1]}"
 )
@@ -259,6 +262,14 @@ build_api_test_image() {
     "$API_DIR" >/dev/null
 }
 
+build_ocr_job_runner_test_image() {
+  echo "Building cached local OCR job runner test image"
+  "$CONTAINER_RUNTIME" build \
+    --file "$JOB_RUNNER_DIR/Dockerfile.ocr" \
+    --tag "$TEST_OCR_JOB_RUNNER_IMAGE" \
+    "$JOB_RUNNER_DIR" >/dev/null
+}
+
 wait_for_container_log() {
   local container_name="$1"
   local pattern="$2"
@@ -358,6 +369,7 @@ start_infra() {
   fi
 
   build_api_test_image
+  build_ocr_job_runner_test_image
 
   if ! ensure_image "$TEST_GO_IMAGE" 5; then
     echo "Failed to prepare go image: ${TEST_GO_IMAGE}"
@@ -506,6 +518,31 @@ start_job_runner_containers() {
   done
 }
 
+start_ocr_job_runner_container() {
+  echo "Starting OCR job runner test container"
+  "$CONTAINER_RUNTIME" create \
+    --name "$TEST_OCR_JOB_RUNNER_CONTAINER" \
+    "${runtime_pull_args[@]}" \
+    "${runtime_user_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$TEST_NETWORK" \
+    -e JOB_RUNNER_WS_URL="ws://${TEST_API_CONTAINER}:3000/internal/job-runners/ws" \
+    -e JOB_RUNNER_WS_IGNORE_PROXY="true" \
+    -e JOB_RUNNER_TOKEN="$TEST_JOB_RUNNER_TOKEN" \
+    -e JOB_RUNNER_ID="test-ocr-runner-1" \
+    -e JOB_RUNNER_JOB_TYPE="delivery_note_ocr" \
+    -e JOB_RUNNER_LEASE_SEC="300" \
+    "$TEST_OCR_JOB_RUNNER_IMAGE" >/dev/null
+
+  "$CONTAINER_RUNTIME" start "$TEST_OCR_JOB_RUNNER_CONTAINER" >/dev/null
+
+  if ! container_is_running "$TEST_OCR_JOB_RUNNER_CONTAINER"; then
+    echo "OCR job runner test container failed to start"
+    "$CONTAINER_RUNTIME" logs "$TEST_OCR_JOB_RUNNER_CONTAINER" || true
+    exit 1
+  fi
+}
+
 api_exec() {
   "$CONTAINER_RUNTIME" exec \
     -w /sortsys-api-v2 \
@@ -569,6 +606,7 @@ start_infra
 initialize_master_database
 start_api_container
 start_job_runner_containers
+start_ocr_job_runner_container
 run_api_tests "$@"
 
 echo

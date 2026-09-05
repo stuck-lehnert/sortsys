@@ -13,7 +13,7 @@ use crate::{
     AppState,
     error::{ErrorCode, RpcError, RpcResult},
     ids::Id,
-    job_queue::{QueueJob, TENANT_LOGO_JOB_TYPE, THUMBNAIL_JOB_TYPE},
+    job_queue::{DELIVERY_NOTE_OCR_JOB_TYPE, QueueJob, TENANT_LOGO_JOB_TYPE, THUMBNAIL_JOB_TYPE},
     object_storage::{self, Audience, EnabledStorage},
 };
 
@@ -34,6 +34,13 @@ pub async fn prepare(state: &AppState, job: &QueueJob) -> RpcResult<Value> {
             let storage = required_storage(state, &job.tenant_name).await?;
 
             add_logo_urls(&mut payload, &storage, media)?;
+        }
+        DELIVERY_NOTE_OCR_JOB_TYPE => {
+            let media: DeliveryNoteOcrPayload = parse(job.payload.0.clone())?;
+            media.validate()?;
+            let storage = required_storage(state, &job.tenant_name).await?;
+
+            add_delivery_note_ocr_url(&mut payload, &storage, media)?;
         }
         _ => {}
     }
@@ -216,6 +223,31 @@ fn add_logo_urls(
     payload.insert(
         "logoUploadExpiresAt".to_owned(),
         json!(logo_upload.expires_at),
+    );
+
+    Ok(())
+}
+
+fn add_delivery_note_ocr_url(
+    payload: &mut Map<String, Value>,
+    storage: &EnabledStorage,
+    media: DeliveryNoteOcrPayload,
+) -> RpcResult<()> {
+    let source_download = object_storage::create_download_url(
+        storage,
+        &media.source_object_key,
+        media.source_file_name.as_deref(),
+        false,
+        Audience::Internal,
+    )?;
+
+    payload.insert(
+        "sourceDownloadUrl".to_owned(),
+        json!(source_download.download_url),
+    );
+    payload.insert(
+        "sourceDownloadExpiresAt".to_owned(),
+        json!(source_download.expires_at),
     );
 
     Ok(())
@@ -453,6 +485,33 @@ fn webp_file_name(file_name: Option<&str>) -> String {
 
 fn internal(error: impl std::fmt::Display) -> RpcError {
     RpcError::new(ErrorCode::InternalServerError, error.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryNoteOcrPayload {
+    source_object_key: String,
+    source_mime_type: String,
+    source_file_name: Option<String>,
+}
+
+impl DeliveryNoteOcrPayload {
+    fn validate(&self) -> RpcResult<()> {
+        if self.source_object_key.trim().is_empty()
+            || !matches!(
+                self.source_mime_type.as_str(),
+                "application/pdf"
+                    | "image/jpeg"
+                    | "image/png"
+                    | "image/webp"
+                    | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        {
+            return Err(internal("Invalid delivery-note OCR job payload"));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]

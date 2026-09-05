@@ -16,6 +16,7 @@ import (
 
 const thumbnailJobType = "project_file_thumbnail_generate"
 const tenantLogoJobType = "tenant_logo_generate"
+const deliveryNoteOCRJobType = "delivery_note_ocr"
 const maxSourceImageBytes = 100 * 1024 * 1024
 
 type Runner struct {
@@ -59,11 +60,11 @@ type acquireResult struct {
 }
 
 type acquiredJob struct {
-	ID         string              `json:"id"`
-	Type       string              `json:"type"`
-	TenantName string              `json:"tenantName"`
-	Attempts   int                 `json:"attempts"`
-	Payload    json.RawMessage     `json:"payload"`
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	TenantName string          `json:"tenantName"`
+	Attempts   int             `json:"attempts"`
+	Payload    json.RawMessage `json:"payload"`
 }
 
 type thumbnailJobPayload struct {
@@ -118,11 +119,11 @@ type thumbnailCompleteResult struct {
 }
 
 type tenantLogoCompleteResult struct {
-	LogoObjectKey  string `json:"logoObjectKey"`
-	LogoMimeType   string `json:"logoMimeType"`
-	SourceMimeType string `json:"sourceMimeType,omitempty"`
-	SourceFileName string `json:"sourceFileName,omitempty"`
-	SourceSizeBytes int64 `json:"sourceSizeBytes,omitempty"`
+	LogoObjectKey   string `json:"logoObjectKey"`
+	LogoMimeType    string `json:"logoMimeType"`
+	SourceMimeType  string `json:"sourceMimeType,omitempty"`
+	SourceFileName  string `json:"sourceFileName,omitempty"`
+	SourceSizeBytes int64  `json:"sourceSizeBytes,omitempty"`
 	SourceETag      string `json:"sourceEtag,omitempty"`
 	Width           int    `json:"width,omitempty"`
 	Height          int    `json:"height,omitempty"`
@@ -278,6 +279,13 @@ func (r *Runner) processJob(ctx context.Context, client *wsClient, job *acquired
 			break
 		}
 		result, err = r.generateAndUploadTenantLogo(ctx, payload)
+	case deliveryNoteOCRJobType:
+		payload, parseErr := parseDeliveryNoteOCRJobPayload(job.Payload)
+		if parseErr != nil {
+			err = parseErr
+			break
+		}
+		result, err = r.extractDeliveryNoteText(ctx, payload)
 	default:
 		err = fmt.Errorf("unsupported job type %q", job.Type)
 	}
@@ -305,6 +313,8 @@ func (r *Runner) processJob(ctx context.Context, client *wsClient, job *acquired
 		log.Printf("job %s completed thumbnail (%dx%d, %d bytes)", job.ID, typed.Width, typed.Height, typed.SizeBytes)
 	case tenantLogoCompleteResult:
 		log.Printf("job %s completed logo (%dx%d, %d bytes)", job.ID, typed.Width, typed.Height, typed.SizeBytes)
+	case deliveryNoteOCRCompleteResult:
+		log.Printf("job %s completed OCR (%s, %.0f%%, %d pages)", job.ID, typed.Method, typed.Confidence*100, typed.PageCount)
 	default:
 		log.Printf("job %s completed", job.ID)
 	}

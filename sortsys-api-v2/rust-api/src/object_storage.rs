@@ -196,6 +196,32 @@ pub fn build_export_object_key(config: &EnabledStorage, user_id: i64, file_name:
     }
 }
 
+pub fn delivery_note_scan_object_prefix(config: &EnabledStorage, user_id: i64) -> String {
+    let prefix = clean_path(config.key_prefix.as_deref().unwrap_or_default());
+    let path = format!("scans/delivery-notes/{}/", Id(user_id).encode());
+
+    if prefix.is_empty() {
+        path
+    } else {
+        format!("{prefix}/{path}")
+    }
+}
+
+pub fn build_delivery_note_scan_object_key(
+    config: &EnabledStorage,
+    user_id: i64,
+    file_name: &str,
+) -> String {
+    let safe_name = normalize_file_name(file_name);
+    let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
+    let nonce = unique_nonce();
+
+    format!(
+        "{}{timestamp}-{nonce}-{safe_name}",
+        delivery_note_scan_object_prefix(config, user_id)
+    )
+}
+
 pub fn build_thumbnail_object_key(source_object_key: &str) -> String {
     format!("{}.thumb.webp", clean_path(source_object_key))
 }

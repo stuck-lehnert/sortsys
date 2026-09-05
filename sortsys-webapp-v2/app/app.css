@@ -3194,3 +3194,398 @@ b {
   background: var(--ss-surface);
   border-color: var(--ss-border-strong);
 }
+
+.delivery-scan-picker {
+  align-items: center;
+  border: 1px dashed var(--ss-border-strong);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  justify-content: space-between;
+  min-block-size: 10rem;
+  padding: clamp(1rem, 4vw, 2rem);
+}
+
+.delivery-scan-picker.is-selected {
+  border-style: solid;
+  min-block-size: auto;
+}
+
+.delivery-scan-picker-copy {
+  min-inline-size: min(100%, 16rem);
+}
+
+.delivery-scan-picker-copy p {
+  margin-block: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.delivery-scan-selected-files {
+  display: grid;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  max-block-size: 12rem;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.delivery-scan-selected-files li {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.delivery-scan-selected-files li > span {
+  color: var(--ss-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-scan-selected-files button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--ss-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  padding: 0.25rem;
+}
+
+.delivery-scan-selected-files button:hover {
+  color: var(--ss-danger);
+}
+
+.delivery-scan-picker-actions,
+.delivery-scan-start {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.delivery-scan-start {
+  justify-content: space-between;
+}
+
+.delivery-scan-start > :last-child {
+  margin-inline-start: auto;
+}
+
+.delivery-scan-start p {
+  margin: 0;
+}
+
+.delivery-scan-upload {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.delivery-scan-history {
+  display: grid;
+  gap: 1rem;
+  margin-block-start: 2rem;
+}
+
+.delivery-scan-history-empty {
+  border-block: 1px solid var(--ss-border);
+  margin: 0;
+  padding-block: 1rem;
+}
+
+.delivery-scan-history-list {
+  border-block-start: 1px solid var(--ss-border);
+}
+
+.delivery-scan-history-row {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-block-end: 1px solid var(--ss-border);
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 0.75rem;
+  grid-template-columns: 2rem minmax(0, 1fr) auto 1rem;
+  inline-size: 100%;
+  padding: 0.875rem 0.5rem;
+  text-align: start;
+}
+
+.delivery-scan-history-row[aria-disabled="true"] {
+  cursor: default;
+}
+
+.delivery-scan-history-row:not([aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--ss-accent-strong) 6%, transparent);
+}
+
+.delivery-scan-history-icon {
+  align-items: center;
+  block-size: 2rem;
+  border: 1px solid var(--ss-border);
+  color: var(--ss-text-secondary);
+  display: flex;
+  inline-size: 2rem;
+  justify-content: center;
+}
+
+.delivery-scan-history-icon svg {
+  block-size: 1rem;
+  inline-size: 1rem;
+}
+
+.delivery-scan-history-row[data-state="completed"] .delivery-scan-history-icon {
+  border-color: color-mix(in srgb, var(--ss-success) 45%, var(--ss-border));
+  color: var(--ss-success);
+}
+
+.delivery-scan-history-row[data-state="failed"] .delivery-scan-history-icon {
+  border-color: color-mix(in srgb, var(--ss-danger) 45%, var(--ss-border));
+  color: var(--ss-danger);
+}
+
+.delivery-scan-history-row[data-state="queued"] .delivery-scan-history-icon,
+.delivery-scan-history-row[data-state="ocr"] .delivery-scan-history-icon,
+.delivery-scan-history-row[data-state="matching"] .delivery-scan-history-icon {
+  animation: delivery-scan-pulse 1.4s ease-in-out infinite;
+  border-color: var(--ss-accent-strong);
+  color: var(--ss-accent-strong);
+}
+
+.delivery-scan-history-file {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.delivery-scan-history-file strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-scan-history-file time {
+  color: var(--ss-text-secondary);
+  font-size: 0.8125rem;
+  margin-block-start: 0.15rem;
+}
+
+.delivery-scan-history-file > span {
+  color: var(--ss-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.price-import-editor {
+  display: grid;
+  gap: 1rem;
+  min-block-size: 0;
+}
+
+.price-import-fields {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1fr) minmax(14rem, 1.4fr);
+}
+
+.price-import-fields label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.price-import-fields label > span {
+  color: var(--ss-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.price-import-fields input,
+.price-import-fields select,
+.price-import-table input,
+.price-import-table select {
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border-strong);
+  color: var(--ss-text-primary);
+  font: inherit;
+  min-block-size: 2.5rem;
+  min-inline-size: 0;
+  padding-inline: 0.625rem;
+  width: 100%;
+}
+
+.price-import-fields .price-import-checkbox {
+  align-items: center;
+  display: flex;
+  min-block-size: 2.5rem;
+}
+
+.price-import-checkbox input,
+.price-import-table input[type="checkbox"] {
+  inline-size: 1rem;
+  min-block-size: auto;
+  width: 1rem;
+}
+
+.price-import-summary {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+}
+
+.price-import-table-wrap {
+  border-block: 1px solid var(--ss-border);
+  min-block-size: 0;
+  overflow: auto;
+}
+
+.price-import-table {
+  border-collapse: collapse;
+  min-inline-size: 70rem;
+  width: 100%;
+}
+
+.price-import-table th,
+.price-import-table td {
+  border-block-end: 1px solid var(--ss-border);
+  padding: 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.price-import-table th {
+  background: var(--ss-surface);
+  font-size: 0.8125rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.price-import-table td:first-child {
+  inline-size: 2rem;
+}
+
+.price-import-table td:nth-child(2) {
+  inline-size: 18rem;
+}
+
+.price-import-table td:nth-child(4) {
+  inline-size: 7rem;
+}
+
+.price-import-table td:nth-child(5) {
+  inline-size: 12rem;
+}
+
+.price-import-table small {
+  color: var(--ss-text-secondary);
+  display: block;
+  font-size: 0.75rem;
+  margin-block-start: 0.2rem;
+}
+
+.price-import-pagination {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.delivery-scan-history-state {
+  color: var(--ss-text-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.delivery-scan-history-row[data-state="completed"] .delivery-scan-history-state {
+  color: var(--ss-success);
+}
+
+.delivery-scan-history-row[data-state="failed"] .delivery-scan-history-state {
+  color: var(--ss-danger);
+}
+
+@keyframes delivery-scan-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (max-width: 36rem) {
+  .delivery-scan-history-row {
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+  }
+
+  .delivery-scan-history-row > svg {
+    display: none;
+  }
+
+  .delivery-scan-history-state {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .price-import-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .price-import-table-wrap {
+    border: 0;
+    overflow: visible;
+  }
+
+  .price-import-table,
+  .price-import-table tbody,
+  .price-import-table tr,
+  .price-import-table td {
+    display: block;
+    min-inline-size: 0;
+    width: 100%;
+  }
+
+  .price-import-table thead {
+    display: none;
+  }
+
+  .price-import-table tr {
+    border-block: 1px solid var(--ss-border);
+    padding-block: 0.5rem;
+  }
+
+  .price-import-table td {
+    border: 0;
+    inline-size: auto !important;
+    padding-block: 0.35rem;
+  }
+
+  .price-import-table td::before {
+    color: var(--ss-text-secondary);
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-block-end: 0.2rem;
+  }
+
+  .price-import-table td:first-child {
+    text-align: end;
+  }
+
+  .price-import-pagination {
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .delivery-scan-history-row[data-state="queued"] .delivery-scan-history-icon,
+  .delivery-scan-history-row[data-state="ocr"] .delivery-scan-history-icon,
+  .delivery-scan-history-row[data-state="matching"] .delivery-scan-history-icon {
+    animation: none;
+  }
+}

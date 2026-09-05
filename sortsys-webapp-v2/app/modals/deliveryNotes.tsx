@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
+import { MyCallout } from "~/components/MyCallout";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
@@ -12,7 +13,7 @@ import { productTitle } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProductTile, SmallProjectTile } from "~/lib/tiles";
 import { generateId, parseFloatCustom, upmatchUnit } from "~/lib/utils";
-import type { DeliveryNote, Product } from "~/type-helpers";
+import type { DeliveryNote, Product, Project } from "~/type-helpers";
 
 function quantityInUnit(product: Product, baseQuantity: number, unit: string | null | undefined): [number, string | null] {
   if (!unit) return upmatchUnit(product, baseQuantity);
@@ -22,28 +23,79 @@ function quantityInUnit(product: Product, baseQuantity: number, unit: string | n
   return [baseQuantity / factor, unit];
 }
 
-export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
+export type DeliveryNotePrefill = {
+  project?: Project | null;
+  deliveryDate?: Date | null;
+  comment?: string | null;
+  records: {
+    product: Product;
+    amount: number;
+    unit: string;
+    comment?: string | null;
+  }[];
+  specialRecords: {
+    name: string;
+    unit: string;
+    amount: number;
+    pricePerUnit: number | null;
+    comment?: string | null;
+  }[];
+  warnings?: string[];
+};
+
+
+export function showCreateDeliveryNoteModal(
+  modals: MyModalsInterface,
+  prefill?: DeliveryNotePrefill,
+) {
   modals.showForm({
     content: ({ context }) => {
-      const [recordIds, setRecordIds] = useState<string[]>([]);
-      const [specialRecordIds, setSpecialRecordIds] = useState<string[]>([]);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const initialRecordValues = useRef<Record<string, DeliveryNotePrefill["records"][number]>>({}).current;
+      const initialSpecialRecordValues = useRef<Record<string, DeliveryNotePrefill["specialRecords"][number]>>({}).current;
+
+      const [recordIds, setRecordIds] = useState<string[]>(() => {
+        if (!prefill) return [generateId()];
+
+        return prefill.records.map(record => {
+          const id = generateId();
+          initialRecordValues[id] = record;
+
+          return id;
+        });
+      });
+      const [specialRecordIds, setSpecialRecordIds] = useState<string[]>(() =>
+        (prefill?.specialRecords ?? []).map(record => {
+          const id = generateId();
+          initialSpecialRecordValues[id] = record;
+
+          return id;
+        })
+      );
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(
+        prefill ? null : "record:" + recordIds[0] + ":product",
+      );
       const createEntityAction = useCreateEntityAction(modals);
-
-      useEffect(() => {
-        const id = generateId();
-        setRecordIds([id]);
-        setAutoFocusFieldName(`record:${id}:product`);
-      }, []);
-
       const forceUpdate = useForceUpdate();
 
       return <>
-        <MyForm.MultiSelect name="project" labelText={uiText("Projekt")}
-          minSelectedItems={1} maxSelectedItems={1}
+        {prefill?.warnings?.map((warning, index) =>
+          <MyCallout
+            key={index}
+            kind="warning"
+            title={uiText("Bitte prüfen", "Please review")}
+            subtitle={warning}
+          />
+        )}
+
+        <MyForm.MultiSelect
+          name="project"
+          labelText={uiText("Projekt")}
+          minSelectedItems={1}
+          maxSelectedItems={1}
           getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
+            const [data, error] = await client.query("projects.list", { search: query });
+            if (error) throw error;
+
             return data ?? [];
           }}
           renderItem={({ item }) => item.title}
@@ -51,6 +103,12 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
           createAction={createEntityAction.project}
         />
         <p className="light">{uiText("Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.")}</p>
+
+        <MyForm.DateInput
+          required
+          name="deliveryDate"
+          labelText={uiText("Lieferdatum", "Delivery date")}
+        />
 
         <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
         <p className="light">{uiText("Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.")}</p>
@@ -61,33 +119,36 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
         <p className="light">{uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}</p>
 
         {recordIds.map(id => {
-          const currentProduct = () => {
-            return (context?.field(`record:${id}:product`)?.getValue()?.[0] ?? null) as Product | null;
-          };
+          const prefix = "record:" + id + ":";
+          const currentProduct = () =>
+            (context.field(prefix + "product")?.getValue()?.[0] ?? null) as Product | null;
 
           return <Fragment key={id}>
             <MyForm.MultiSelect
-              name={`record:${id}:product`}
+              name={prefix + "product"}
               labelText={uiText("Produkt")}
-              autoFocus={autoFocusFieldName === `record:${id}:product`}
-              minSelectedItems={1} maxSelectedItems={1}
+              autoFocus={autoFocusFieldName === prefix + "product"}
+              minSelectedItems={1}
+              maxSelectedItems={1}
               getOptions={async ({ query }) => {
-                const [data, err] = await client.query('products.list', { search: query });
-                if (err) throw err;
+                const [data, error] = await client.query("products.list", { search: query });
+                if (error) throw error;
+
                 return data ?? [];
               }}
-              renderItem={({ item }) => `${item.customId} ${productTitle(item)}`}
+              renderItem={({ item }) => item.customId + " " + productTitle(item)}
               renderTile={item => <SmallProductTile data={item} noLink />}
               createAction={createEntityAction.product}
               onValueChange={forceUpdate}
             />
 
-            <div key={id} className="flex gap-2 items-end">
+            <div className="flex gap-2 items-end">
               <div className="grow flex gap-2">
                 <div className="basis-1/2 flex-1">
                   <MyForm.Input
                     required
-                    name={`record:${id}:amount`} labelText={uiText("Anzahl")}
+                    name={prefix + "amount"}
+                    labelText={uiText("Anzahl")}
                     type="number"
                     rules={[MyForm.Input.rules.num]}
                   />
@@ -95,57 +156,93 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
 
                 <div className="basis-1/2 flex-1">
                   <MyForm.Select
-                    name={`record:${id}:unit`}
+                    name={prefix + "unit"}
                     labelText={uiText("Einheit")}
                     getOptions={() => {
-                      const _product = currentProduct();
-                      if (!_product) return [];
-                      return [_product.baseUnit, ...Object.keys(_product.otherUnits)].map(e => ({ id: e }));
+                      const product = currentProduct();
+                      if (!product) return [];
+
+                      return [product.baseUnit, ...Object.keys(product.otherUnits)].map(unit => ({ id: unit }));
                     }}
                     getOptionsDeps={[currentProduct()?.id]}
-                    buildOption={({ id }) => ({ text: id, value: id })}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
-                      setRecordIds(ids => ids.filter(_id => _id !== id));
-                    }}><Icons.Delete /></MyButton>}
+                    buildOption={({ id: unit }) => ({ text: unit, value: unit })}
+                    suffix={
+                      <MyButton
+                        kind="ghost"
+                        size="sm"
+                        className="ss-input-suffix-btn"
+                        title={uiText("Eintrag entfernen")}
+                        aria-label={uiText("Eintrag entfernen")}
+                        onClick={() => setRecordIds(ids => ids.filter(currentId => currentId !== id))}
+                      >
+                        <Icons.Delete />
+                      </MyButton>
+                    }
                   />
                 </div>
               </div>
-
             </div>
 
-            <div style={{ height: '1rem' }} />
+            <MyForm.Input
+              name={prefix + "comment"}
+              labelText={uiText("Positionskommentar", "Line comment")}
+            />
+
+            <NotifyLoaded onLoad={() => {
+              const initial = initialRecordValues[id];
+              if (!initial) return;
+
+              context.setValues({
+                [prefix + "product"]: [initial.product],
+                [prefix + "amount"]: initial.amount,
+                [prefix + "comment"]: initial.comment ?? "",
+              });
+              window.setTimeout(() => {
+                context.setValues({ [prefix + "unit"]: initial.unit });
+              }, 0);
+            }} />
+
+            <div style={{ height: "1rem" }} />
           </Fragment>;
         })}
 
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setRecordIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`record:${id}:product`);
-        }}>{uiText("Eintrag")}</MyButton>
+        <MyButton
+          kind="secondary"
+          renderIcon={Icons.Plus}
+          onClick={() => {
+            const id = generateId();
+            setRecordIds(ids => [...ids, id]);
+            setAutoFocusFieldName("record:" + id + ":product");
+          }}
+        >
+          {uiText("Eintrag")}
+        </MyButton>
 
         <MyDivider />
 
         <h4>{uiText("Sonderposten")}</h4>
-        <p className="light">{uiText("Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.")}</p>
+        <p className="light">
+          {uiText("Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.")}
+        </p>
 
         {specialRecordIds.map(id => {
+          const prefix = "specialRecord:" + id + ":";
+
           return <Fragment key={id}>
             <div className="flex gap-2 items-end">
               <div className="grow flex flex-col gap-2">
-                <div>
-                  <MyForm.Input
-                    required
-                    name={`specialRecord:${id}:name`}
-                    labelText={uiText("Bezeichnung")}
-                    autoFocus={autoFocusFieldName === `specialRecord:${id}:name`}
-                  />
-                </div>
+                <MyForm.Input
+                  required
+                  name={prefix + "name"}
+                  labelText={uiText("Bezeichnung")}
+                  autoFocus={autoFocusFieldName === prefix + "name"}
+                />
 
                 <div className="flex gap-2">
                   <div className="basis-1/3 flex-1">
                     <MyForm.Input
                       required
-                      name={`specialRecord:${id}:amount`}
+                      name={prefix + "amount"}
                       labelText={uiText("Menge")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
@@ -155,107 +252,152 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
                   <div className="basis-1/3 flex-1">
                     <MyForm.Input
                       required
-                      name={`specialRecord:${id}:unit`}
+                      name={prefix + "unit"}
                       labelText={uiText("Einheit")}
                     />
                   </div>
 
                   <div className="basis-1/3 flex-1">
                     <MyForm.Input
-                      name={`specialRecord:${id}:pricePerUnit`}
+                      name={prefix + "pricePerUnit"}
                       labelText={uiText("Preis pro Einheit")}
                       type="number"
                       rules={[MyForm.Input.rules.num]}
-                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={() => {
-                        setSpecialRecordIds(ids => ids.filter(_id => _id !== id));
-                      }}><Icons.Delete /></MyButton>}
+                      suffix={
+                        <MyButton
+                          kind="ghost"
+                          size="sm"
+                          className="ss-input-suffix-btn"
+                          title={uiText("Sonderposten entfernen")}
+                          aria-label={uiText("Sonderposten entfernen")}
+                          onClick={() => setSpecialRecordIds(ids => ids.filter(currentId => currentId !== id))}
+                        >
+                          <Icons.Delete />
+                        </MyButton>
+                      }
                     />
                   </div>
                 </div>
+
+                <MyForm.Input
+                  name={prefix + "comment"}
+                  labelText={uiText("Positionskommentar", "Line comment")}
+                />
               </div>
             </div>
 
-            <div style={{ height: '1rem' }} />
+            <NotifyLoaded onLoad={() => {
+              const initial = initialSpecialRecordValues[id];
+              if (!initial) return;
+
+              context.setValues({
+                [prefix + "name"]: initial.name,
+                [prefix + "unit"]: initial.unit,
+                [prefix + "amount"]: initial.amount,
+                [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
+                [prefix + "comment"]: initial.comment ?? "",
+              });
+            }} />
+
+            <div style={{ height: "1rem" }} />
           </Fragment>;
         })}
 
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setSpecialRecordIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`specialRecord:${id}:name`);
-        }}>{uiText("Sonderposten")}</MyButton>
+        <MyButton
+          kind="secondary"
+          renderIcon={Icons.Plus}
+          onClick={() => {
+            const id = generateId();
+            setSpecialRecordIds(ids => [...ids, id]);
+            setAutoFocusFieldName("specialRecord:" + id + ":name");
+          }}
+        >
+          {uiText("Sonderposten")}
+        </MyButton>
+
+        <NotifyLoaded onLoad={() => {
+          context.setValues({
+            comment: prefill?.comment ?? "",
+            deliveryDate: prefill?.deliveryDate ?? new Date(),
+          });
+
+          if (prefill?.project) {
+            context.setValues({ project: [prefill.project] });
+          }
+        }} />
       </>;
     },
     onSubmit: async ({ context, hide, navigate }) => {
       const values = context.getValues();
-
-      const projectId = values.project[0].id;
+      const projectId = values.project?.[0]?.id;
       if (!projectId) return;
 
       const records: {
         productId: string;
         quantity: number;
         unit: string;
-        comment?: string | null;
+        comment: string | null;
       }[] = [];
-
       const specialRecords: {
         name: string;
         unit: string;
         amount: number;
         pricePerUnit: number | null;
+        comment: string | null;
       }[] = [];
 
       const recordIds = new Set<string>();
       const specialRecordIds = new Set<string>();
-      Object.keys(values).forEach(key => {
-        if (!key.startsWith('record:')) return;
-        const [, id] = key.split(':');
-        recordIds.add(id);
-      });
 
       Object.keys(values).forEach(key => {
-        if (!key.startsWith('specialRecord:')) return;
-        const [, id] = key.split(':');
+        if (!key.startsWith("record:")) return;
+
+        const [, id] = key.split(":");
+        recordIds.add(id);
+      });
+      Object.keys(values).forEach(key => {
+        if (!key.startsWith("specialRecord:")) return;
+
+        const [, id] = key.split(":");
         specialRecordIds.add(id);
       });
 
       recordIds.forEach(id => {
-        const product = values[`record:${id}:product`]?.at(0);
+        const prefix = "record:" + id + ":";
+        const product = values[prefix + "product"]?.at(0);
         if (!product?.id) throw new Error();
 
         const units = [product.baseUnit, ...Object.keys(product.otherUnits)] as string[];
-
-        const quantity = parseFloatCustom(values[`record:${id}:amount`]);
+        const quantity = parseFloatCustom(values[prefix + "amount"]);
         if (!quantity || isNaN(quantity)) throw new Error();
 
-        const unit = values[`record:${id}:unit`];
+        const unit = values[prefix + "unit"];
         if (!units.includes(unit)) throw new Error();
 
-        let inBaseUnits = quantity;
-        if (unit !== product.baseUnit) {
-          inBaseUnits *= product.otherUnits[unit];
-        }
+        const factor = unit === product.baseUnit ? 1 : product.otherUnits[unit];
+        const comment = String(values[prefix + "comment"] ?? "").trim() || null;
 
-        records.push({ productId: product.id, quantity: inBaseUnits, unit });
+        records.push({
+          productId: product.id,
+          quantity: quantity * factor,
+          unit,
+          comment,
+        });
       });
 
       specialRecordIds.forEach(id => {
-        const name = values[`specialRecord:${id}:name`];
-        if (!name) throw new Error();
+        const prefix = "specialRecord:" + id + ":";
+        const name = values[prefix + "name"];
+        const unit = values[prefix + "unit"];
+        const amount = parseFloatCustom(values[prefix + "amount"]);
+        if (!name || !unit || !amount || isNaN(amount)) throw new Error();
 
-        const unit = values[`specialRecord:${id}:unit`];
-        if (!unit) throw new Error();
-
-        const amount = parseFloatCustom(values[`specialRecord:${id}:amount`]);
-        if (!amount || isNaN(amount)) throw new Error();
-
-        const rawPricePerUnit = values[`specialRecord:${id}:pricePerUnit`];
+        const rawPricePerUnit = values[prefix + "pricePerUnit"];
         let pricePerUnit: number | null = null;
-        if (`${rawPricePerUnit ?? ''}`.trim()) {
-          const parsedPrice = parseFloatCustom(rawPricePerUnit);
-          if (isNaN(parsedPrice)) throw new Error();
-          pricePerUnit = parsedPrice;
+
+        if (String(rawPricePerUnit ?? "").trim()) {
+          pricePerUnit = parseFloatCustom(rawPricePerUnit);
+          if (isNaN(pricePerUnit)) throw new Error();
         }
 
         specialRecords.push({
@@ -263,20 +405,22 @@ export function showCreateDeliveryNoteModal(modals: MyModalsInterface) {
           unit,
           amount,
           pricePerUnit,
+          comment: String(values[prefix + "comment"] ?? "").trim() || null,
         });
       });
 
-      const [data, err] = await client.mutate('deliveryNotes.create', {
+      const [data, error] = await client.mutate("deliveryNotes.create", {
         projectId,
+        effectiveTimestamp: values.deliveryDate ?? null,
         records,
         specialRecords,
-        comment: values.comment,
+        comment: String(values.comment ?? "").trim() || null,
       });
 
-      if (err) throw err;
+      if (error) throw error;
       if (!data) return;
 
-      navigate(`/products/deliveryNotes/${data.id}`);
+      navigate("/products/deliveryNotes/" + data.id);
       hide();
     },
     modalProps: () => ({

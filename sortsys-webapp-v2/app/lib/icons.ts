@@ -3,6 +3,7 @@ import AddAlt from "@carbon/icons-react/es/AddAlt";
 import ArrowLeft from "@carbon/icons-react/es/ArrowLeft";
 import Box from "@carbon/icons-react/es/Box";
 import Chat from "@carbon/icons-react/es/Chat";
+import Camera from "@carbon/icons-react/es/Camera";
 import Catalog from "@carbon/icons-react/es/Catalog";
 import Checkmark from "@carbon/icons-react/es/Checkmark";
 import ChevronDown from "@carbon/icons-react/es/ChevronDown";
@@ -49,6 +50,7 @@ import TrashCan from "@carbon/icons-react/es/TrashCan";
 import Undo from "@carbon/icons-react/es/Undo";
 import Unlocked from "@carbon/icons-react/es/Unlocked";
 import UpdateNow from "@carbon/icons-react/es/UpdateNow";
+import Upload from "@carbon/icons-react/es/Upload";
 import User from "@carbon/icons-react/es/User";
 
 export type Icon = (typeof Icons)[keyof typeof Icons];
@@ -64,6 +66,8 @@ export const Icons = {
     Customer: OrderDetails,
     Contact: Identification,
     DeliveryNote: DocumentMultiple_01,
+    Camera: Camera,
+    Upload: Upload,
     PriceRecord: CurrencyEuro,
     RegieReport: Document,
     DailyReport: Report,

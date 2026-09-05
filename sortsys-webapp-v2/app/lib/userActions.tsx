@@ -1,5 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import { useMemo } from "react";
+import { useClientStream } from "~/hooks/useClientStream";
 import { useNavigate } from "react-router";
 import { useMyModals, type MyModalsInterface } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -29,6 +30,7 @@ export type UserAction = {
   requiredRole?: Role;
   requiredRoles?: Role[];
   href?: string;
+  available?: boolean;
   run: () => void | Promise<void>;
 };
 
@@ -37,6 +39,10 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
   const contextModals = useMyModals();
   const modals = modalsOverride ?? contextModals;
   const navigate = useNavigate();
+  const [llmStatus] = useClientStream(
+    () => client.streamQuery("llm.status", undefined, { strategy: "network-first" }),
+    [],
+  );
 
   const actions = useMemo<UserAction[]>(() => [
     {
@@ -50,12 +56,35 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     },
     {
       id: 'deliveryNotes.create',
-      label: uiText("Lieferschein erfassen"),
+      label: uiText("Lieferschein"),
       description: uiText("Materiallieferung für Projekt dokumentieren."),
       group: 'work',
       icon: Icons.DeliveryNote,
       requiredRole: 'manage:deliveryNotes',
       run: () => showCreateDeliveryNoteModal(modals),
+    },
+    {
+      id: "deliveryNotes.scan",
+      label: uiText("Einlesen", "Import"),
+      description: uiText(
+        "Lieferschein, Rechnung oder Preisliste aus PDF, Excel oder Foto einlesen.",
+        "Import a delivery note, invoice, or price list from PDF, Excel, or photo.",
+      ),
+      group: "work",
+      icon: Icons.Upload,
+      requiredRoles: [
+        "manage:deliveryNotes",
+        "view:products",
+        "manage:products",
+        "view:productVendors",
+        "view:productPriceRecords",
+        ":llm",
+      ],
+      href: "/import",
+      available: sessionInfo.supportsProjectFiles()
+        && llmStatus?.tenantEnabled === true
+        && llmStatus.scanProviderConfigured === true,
+      run: () => navigate("/import"),
     },
     {
       id: 'dailyReports.create',
@@ -176,14 +205,15 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
       requiredRole: 'manage:projects',
       run: () => showManageCommonCostsModal(modals),
     },
-  ], [modals, navigate]);
+  ], [llmStatus, modals, navigate, sessionInfo]);
 
   const visibleActions = useMemo(() => actions.filter(action => {
     const requiredRoles = [
       ...(action.requiredRole ? [action.requiredRole] : []),
       ...(action.requiredRoles ?? []),
     ];
-    return requiredRoles.every(role => sessionInfo.canDo(role));
+    return action.available !== false
+      && requiredRoles.every(role => sessionInfo.canDo(role));
   }), [actions, sessionInfo]);
 
   async function runAction(action: UserAction) {
@@ -196,5 +226,5 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
     await action.run();
   }
 
-  return { actions, visibleActions, runAction };
+  return { actions, visibleActions, runAction, llmStatus };
 }

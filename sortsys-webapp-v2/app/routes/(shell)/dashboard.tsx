@@ -60,6 +60,8 @@ function visitLabel(visit: PinnedVisit) {
     '/tools/trackings': uiText('Buchungshistorie', 'Booking history'),
     '/inventories': uiText('Inventur', 'Inventory'),
     '/products': uiText('Produkte', 'Products'),
+    '/import': uiText('Einlesen', 'Import'),
+    '/products/import': uiText('Einlesen', 'Import'),
     '/products/deliveryNotes': uiText('Lieferscheine', 'Delivery notes'),
     '/products/vendors': uiText('Händler', 'Vendors'),
     '/customers': uiText('Kunden', 'Customers'),

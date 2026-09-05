@@ -5,7 +5,6 @@ import { Link, Outlet, useLocation } from "react-router";
 import { Authenticated } from "~/components/Authenticated";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useDimensions } from "~/hooks/useDimensions";
-import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
@@ -45,11 +44,7 @@ export default Authenticated(function() {
   const location = useLocation();
   const path = location.pathname;
   const modals = useMyModals();
-  const { visibleActions, runAction } = useUserActions();
-  const [llmStatus] = useClientStream(
-    () => client.streamQuery('llm.status', undefined, { strategy: 'network-first' }),
-    [],
-  );
+  const { visibleActions, runAction, llmStatus } = useUserActions();
   const lastVisitKeyRef = useRef<string | null>(null);
   const canViewProjects = sessionInfo.canDo('view:projects');
   const canViewTools = sessionInfo.canDo('view:tools');

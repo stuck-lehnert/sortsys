@@ -15,6 +15,7 @@ DEV_ONLYOFFICE_CONTAINER="sortsys-dev-onlyoffice"
 DEV_API_CONTAINER="sortsys-dev-api"
 DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
 DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
+DEV_OCR_JOB_RUNNER_CONTAINER="sortsys-dev-ocr-job-runner"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
 DEV_GO_BUILD_CACHE_VOLUME="sortsys-dev-go-build-cache"
 DEV_GO_MODULE_CACHE_VOLUME="sortsys-dev-go-module-cache"
@@ -32,6 +33,7 @@ DEV_ONLYOFFICE_IMAGE="${DEV_ONLYOFFICE_IMAGE:-docker.io/onlyoffice/documentserve
 DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-docker.io/oven/bun:1.4.0}"
 DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-docker.io/library/rust:1.88-bookworm}"
 DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.88-pg17}"
+DEV_OCR_JOB_RUNNER_IMAGE="${DEV_OCR_JOB_RUNNER_IMAGE:-localhost/sortsys-ocr-job-runner-dev:latest}"
 DEV_NODE_IMAGE="${DEV_NODE_IMAGE:-docker.io/library/node:22}"
 DEV_GO_IMAGE="${DEV_GO_IMAGE:-docker.io/library/golang:1.25}"
 
@@ -67,6 +69,7 @@ DEV_SERVICE_CONTAINERS=(
   "$DEV_ONLYOFFICE_CONTAINER"
   "$DEV_API_CONTAINER"
   "$DEV_WEBAPP_CONTAINER"
+  "$DEV_OCR_JOB_RUNNER_CONTAINER"
   "${DEV_JOB_RUNNER_CONTAINERS[0]}"
   "${DEV_JOB_RUNNER_CONTAINERS[1]}"
 )
@@ -580,6 +583,38 @@ start_api_container() {
   fi
 }
 
+build_ocr_job_runner_image() {
+  echo "Building cached local OCR job runner image"
+  "$CONTAINER_RUNTIME" build \
+    -f "$JOB_RUNNER_DIR/Dockerfile.ocr" \
+    -t "$DEV_OCR_JOB_RUNNER_IMAGE" \
+    "$JOB_RUNNER_DIR" >/dev/null
+}
+
+start_ocr_job_runner_container() {
+  echo "Starting local OCR job runner"
+  "$CONTAINER_RUNTIME" run -d \
+    --rm \
+    --name "$DEV_OCR_JOB_RUNNER_CONTAINER" \
+    "${runtime_pull_args[@]}" \
+    "${runtime_user_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$DEV_NETWORK" \
+    -e JOB_RUNNER_WS_URL="ws://${DEV_API_CONTAINER}:${DEV_API_PORT}/internal/job-runners/ws" \
+    -e JOB_RUNNER_WS_IGNORE_PROXY="true" \
+    -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
+    -e JOB_RUNNER_ID="dev-ocr-runner-1" \
+    -e JOB_RUNNER_JOB_TYPE="delivery_note_ocr" \
+    -e JOB_RUNNER_LEASE_SEC="300" \
+    "$DEV_OCR_JOB_RUNNER_IMAGE" >/dev/null
+
+  if ! container_is_running "$DEV_OCR_JOB_RUNNER_CONTAINER"; then
+    echo "OCR job runner container failed to start"
+    "$CONTAINER_RUNTIME" logs "$DEV_OCR_JOB_RUNNER_CONTAINER" || true
+    exit 1
+  fi
+}
+
 start_job_runner_containers() {
   echo "Starting 2 containerized Go job runners with source watching"
   for idx in "${!DEV_JOB_RUNNER_CONTAINERS[@]}"; do
@@ -797,6 +832,8 @@ start_onlyoffice &
 onlyoffice_pid="$!"
 build_api_development_image &
 api_image_pid="$!"
+build_ocr_job_runner_image &
+ocr_image_pid="$!"
 (
   ensure_local_api_client_package
   start_webapp_container
@@ -821,9 +858,14 @@ if ! wait "$api_image_pid"; then
   echo "API development image build failed"
   exit 1
 fi
+if ! wait "$ocr_image_pid"; then
+  echo "OCR job runner image build failed"
+  exit 1
+fi
 
 start_api_container
 start_job_runner_containers
+start_ocr_job_runner_container
 
 if ! wait "$webapp_pid"; then
   echo "Webapp startup failed"

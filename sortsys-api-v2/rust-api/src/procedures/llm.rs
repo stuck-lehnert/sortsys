@@ -108,6 +108,23 @@ pub fn register(
         },
     );
 
+    let scan_settings_get_state = Arc::clone(&state);
+    builder = builder.query("admin.llm.scanSettings.get", move |context, _input: ()| {
+        let state = Arc::clone(&scan_settings_get_state);
+
+        async move { global_scan_settings(&state, &context).await }
+    });
+
+    let scan_settings_update_state = Arc::clone(&state);
+    builder = builder.mutation(
+        "admin.llm.scanSettings.update",
+        move |context, input: UpdateSettingsInput| {
+            let state = Arc::clone(&scan_settings_update_state);
+
+            async move { update_global_scan_settings(&state, &context, input).await }
+        },
+    );
+
     let tenants_state = Arc::clone(&state);
     builder = builder.query("admin.llm.tenants.list", move |context, _input: ()| {
         let state = Arc::clone(&tenants_state);
@@ -144,6 +161,9 @@ pub fn register_contract(mut builder: ProcedureRegistryBuilder) -> ProcedureRegi
     builder = builder.query_stub::<(), Option<GlobalSettings>>("admin.llm.settings.get");
     builder =
         builder.mutation_stub::<UpdateSettingsInput, GlobalSettings>("admin.llm.settings.update");
+    builder = builder.query_stub::<(), Option<GlobalSettings>>("admin.llm.scanSettings.get");
+    builder = builder
+        .mutation_stub::<UpdateSettingsInput, GlobalSettings>("admin.llm.scanSettings.update");
     builder = builder.query_stub::<(), Vec<TenantLlmSettings>>("admin.llm.tenants.list");
     builder = builder
         .mutation_stub::<UpdateTenantLlmInput, TenantLlmSettings>("admin.llm.tenants.update");
@@ -161,6 +181,7 @@ async fn status(state: &AppState, context: &RequestContext) -> RpcResult<LlmStat
     let (tenant_enabled, monthly_token_quota) = llm::tenant_llm_options(&tenant.options);
     let has_role = auth.can_do(":llm");
     let provider = llm::public_configuration(state).await?;
+    let scan_provider_configured = llm::public_scan_configuration(state).await?.is_some();
     let used_tokens = current_month_usage(state, &auth.tenant).await?;
 
     Ok(LlmStatus {
@@ -168,6 +189,7 @@ async fn status(state: &AppState, context: &RequestContext) -> RpcResult<LlmStat
         has_role,
         tenant_enabled,
         provider_configured: provider.is_some(),
+        scan_provider_configured,
         provider: provider.as_ref().map(|value| value.provider.clone()),
         model: provider.map(|value| value.model),
         monthly_token_quota,
@@ -523,6 +545,40 @@ async fn update_global_settings(
         .ok_or_else(|| internal("LLM settings were not saved"))
 }
 
+async fn global_scan_settings(
+    state: &AppState,
+    context: &RequestContext,
+) -> RpcResult<Option<GlobalSettings>> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+
+    Ok(llm::public_scan_configuration(state)
+        .await?
+        .map(GlobalSettings::from))
+}
+
+async fn update_global_scan_settings(
+    state: &AppState,
+    context: &RequestContext,
+    input: UpdateSettingsInput,
+) -> RpcResult<GlobalSettings> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+
+    llm::save_scan_configuration(
+        state,
+        input.provider.as_str(),
+        &input.model,
+        input.base_url.as_deref(),
+        input.api_key.as_deref(),
+    )
+    .await?;
+
+    global_scan_settings(state, context)
+        .await?
+        .ok_or_else(|| internal("Scan LLM settings were not saved"))
+}
+
 async fn global_tenants(
     state: &AppState,
     context: &RequestContext,
@@ -612,6 +668,7 @@ async fn usage_rows(state: &AppState, tenant: Option<&str>) -> RpcResult<Vec<Usa
           usage.tenant_name,
           usage.provider,
           usage.model,
+          usage.purpose,
           COUNT(*)::BIGINT AS request_count,
           COALESCE(SUM(usage.input_tokens), 0)::BIGINT AS input_tokens,
           COALESCE(SUM(usage.output_tokens), 0)::BIGINT AS output_tokens,
@@ -620,7 +677,7 @@ async fn usage_rows(state: &AppState, tenant: Option<&str>) -> RpcResult<Vec<Usa
         FROM __llm_usage AS usage
         WHERE usage.created_at >= DATE_TRUNC('month', NOW())
           AND ($1::TEXT IS NULL OR usage.tenant_name = $1)
-        GROUP BY usage.tenant_name, usage.provider, usage.model
+        GROUP BY usage.tenant_name, usage.provider, usage.model, usage.purpose
         ORDER BY usage.tenant_name, usage.provider, usage.model
         "#,
     )
@@ -885,6 +942,7 @@ struct LlmStatus {
     has_role: bool,
     tenant_enabled: bool,
     provider_configured: bool,
+    scan_provider_configured: bool,
     provider: Option<String>,
     model: Option<String>,
     monthly_token_quota: Option<i64>,
@@ -1043,6 +1101,7 @@ struct UsageRow {
     tenant_name: String,
     provider: String,
     model: String,
+    purpose: String,
     request_count: i64,
     input_tokens: i64,
     output_tokens: i64,
@@ -1056,6 +1115,7 @@ struct UsageSummary {
     tenant: String,
     provider: String,
     model: String,
+    purpose: String,
     request_count: i64,
     input_tokens: i64,
     output_tokens: i64,
@@ -1069,6 +1129,7 @@ impl From<UsageRow> for UsageSummary {
             tenant: row.tenant_name,
             provider: row.provider,
             model: row.model,
+            purpose: row.purpose,
             request_count: row.request_count,
             input_tokens: row.input_tokens,
             output_tokens: row.output_tokens,

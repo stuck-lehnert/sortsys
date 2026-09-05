@@ -25,6 +25,16 @@ pub fn decode(envelope: Value) -> Value {
         .map(|(path, _)| path.clone())
         .collect::<Vec<_>>();
 
+    let bigint_paths = object
+        .get("meta")
+        .and_then(|meta| meta.get("values"))
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|values| values.iter())
+        .filter(|(_, marker)| marker.get(0).and_then(Value::as_str) == Some("bigint"))
+        .map(|(path, _)| path.clone())
+        .collect::<Vec<_>>();
+
     for path in undefined_paths {
         if path.is_empty() {
             value = Value::Null;
@@ -32,7 +42,47 @@ pub fn decode(envelope: Value) -> Value {
             remove_undefined(&mut value, &path.split('.').collect::<Vec<_>>());
         }
     }
+
+    for path in bigint_paths {
+        restore_bigint(&mut value, &path.split('.').collect::<Vec<_>>());
+    }
     value
+}
+
+fn restore_bigint(value: &mut Value, path: &[&str]) {
+    if path.is_empty() {
+        let Value::String(text) = value else {
+            return;
+        };
+
+        if let Ok(number) = text.parse::<i64>() {
+            *value = Value::from(number);
+        } else if let Ok(number) = text.parse::<u64>() {
+            *value = Value::from(number);
+        }
+
+        return;
+    }
+
+    let Some((head, tail)) = path.split_first() else {
+        return;
+    };
+
+    match value {
+        Value::Object(object) => {
+            if let Some(value) = object.get_mut(*head) {
+                restore_bigint(value, tail);
+            }
+        }
+        Value::Array(array) => {
+            if let Ok(index) = head.parse::<usize>()
+                && let Some(value) = array.get_mut(index)
+            {
+                restore_bigint(value, tail);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn remove_undefined(value: &mut Value, path: &[&str]) {
@@ -150,6 +200,31 @@ mod tests {
         });
 
         assert_eq!(decode(input), json!({ "keep": 1, "nested": {} }));
+    }
+
+    #[test]
+    fn restores_bigints_marked_by_superjson() {
+        let input = json!({
+            "json": {
+                "sizeBytes": "2645483",
+                "nested": [{ "quota": "9007199254740991" }]
+            },
+            "meta": {
+                "values": {
+                    "sizeBytes": ["bigint"],
+                    "nested.0.quota": ["bigint"]
+                },
+                "v": 1
+            }
+        });
+
+        assert_eq!(
+            decode(input),
+            json!({
+                "sizeBytes": 2_645_483_i64,
+                "nested": [{ "quota": 9_007_199_254_740_991_i64 }]
+            }),
+        );
     }
 
     #[test]

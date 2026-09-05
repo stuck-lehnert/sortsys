@@ -29,7 +29,10 @@ use crate::{
     rpc::{ProcedureKind, RequestContext},
 };
 
-pub use provider::{ChatTurn, Completion, TokenUsage, complete};
+pub use provider::{
+    ChatTurn, Completion, DocumentScanInput, ScanCompletion, ScanOriginal, TokenUsage, complete,
+    parse_document_scan,
+};
 
 pub(crate) const PROPOSAL_ONLY_MARKER: &str = "<proposal-only>";
 
@@ -199,6 +202,162 @@ pub async fn public_configuration(
     }))
 }
 
+pub async fn load_scan_configuration(state: &AppState) -> RpcResult<Option<ProviderConfiguration>> {
+    let row = sqlx::query(
+        r#"
+        SELECT provider, model, base_url, api_key_ciphertext
+        FROM __llm_scan_settings
+        WHERE singleton
+        "#,
+    )
+    .fetch_optional(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let ciphertext: String = row.try_get("api_key_ciphertext").map_err(internal)?;
+
+    Ok(Some(ProviderConfiguration {
+        provider: row.try_get("provider").map_err(internal)?,
+        model: row.try_get("model").map_err(internal)?,
+        base_url: row.try_get("base_url").map_err(internal)?,
+        api_key: decrypt_secret(state, &ciphertext)?,
+    }))
+}
+
+pub async fn public_scan_configuration(
+    state: &AppState,
+) -> RpcResult<Option<PublicProviderConfiguration>> {
+    let row = sqlx::query(
+        r#"
+        SELECT provider, model, base_url, api_key_ciphertext
+        FROM __llm_scan_settings
+        WHERE singleton
+        "#,
+    )
+    .fetch_optional(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    Ok(Some(PublicProviderConfiguration {
+        provider: row.try_get("provider").map_err(internal)?,
+        model: row.try_get("model").map_err(internal)?,
+        base_url: row.try_get("base_url").map_err(internal)?,
+        has_api_key: row
+            .try_get::<String, _>("api_key_ciphertext")
+            .is_ok_and(|value| !value.is_empty()),
+        mcp_available: false,
+    }))
+}
+
+pub async fn save_scan_configuration(
+    state: &AppState,
+    provider: &str,
+    model: &str,
+    base_url: Option<&str>,
+    api_key: Option<&str>,
+) -> RpcResult<()> {
+    validate_provider(provider)?;
+
+    if model.trim().is_empty() || model.len() > 255 {
+        return Err(bad_request(
+            "model must contain between 1 and 255 characters",
+        ));
+    }
+
+    let existing_ciphertext: Option<String> =
+        sqlx::query_scalar("SELECT api_key_ciphertext FROM __llm_scan_settings WHERE singleton")
+            .fetch_optional(state.tenants.master())
+            .await
+            .map_err(internal)?;
+
+    let ciphertext = match api_key.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(api_key) => encrypt_secret(state, api_key)?,
+        None => existing_ciphertext.ok_or_else(|| bad_request("missing apiKey"))?,
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO __llm_scan_settings (
+          singleton,
+          provider,
+          model,
+          base_url,
+          api_key_ciphertext,
+          updated_at
+        )
+        VALUES (TRUE, $1, $2, $3, $4, NOW())
+        ON CONFLICT (singleton) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          model = EXCLUDED.model,
+          base_url = EXCLUDED.base_url,
+          api_key_ciphertext = EXCLUDED.api_key_ciphertext,
+          updated_at = NOW()
+        "#,
+    )
+    .bind(provider)
+    .bind(model.trim())
+    .bind(base_url.map(str::trim).filter(|value| !value.is_empty()))
+    .bind(ciphertext)
+    .execute(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    Ok(())
+}
+
+pub async fn record_scan_usage(
+    state: &AppState,
+    auth: &AuthResult,
+    configuration: &ProviderConfiguration,
+    usage: &TokenUsage,
+    error: Option<&str>,
+) -> RpcResult<()> {
+    let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO __llm_usage (
+          tenant_name,
+          user_id,
+          purpose,
+          provider,
+          model,
+          input_tokens,
+          output_tokens,
+          total_tokens,
+          status,
+          error
+        )
+        VALUES ($1, $2, 'delivery_note_scan', $3, $4, $5, $6, $7, $8, $9)
+        "#,
+    )
+    .bind(&auth.tenant)
+    .bind(user_id)
+    .bind(&configuration.provider)
+    .bind(&configuration.model)
+    .bind(usage.input_tokens)
+    .bind(usage.output_tokens)
+    .bind(usage.total_tokens)
+    .bind(if error.is_some() {
+        "failed"
+    } else {
+        "succeeded"
+    })
+    .bind(error)
+    .execute(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    Ok(())
+}
 pub async fn save_configuration(
     state: &AppState,
     provider: &str,
@@ -295,6 +454,61 @@ pub async fn ensure_user_access(state: &AppState, auth: &AuthResult) -> RpcResul
         return Err(RpcError::new(
             ErrorCode::PreconditionFailed,
             "No LLM provider has been configured",
+        ));
+    }
+
+    if let Some(quota) = quota {
+        let used: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(SUM(total_tokens), 0)::BIGINT
+            FROM __llm_usage
+            WHERE tenant_name = $1
+              AND created_at >= DATE_TRUNC('month', NOW())
+            "#,
+        )
+        .bind(&auth.tenant)
+        .fetch_one(state.tenants.master())
+        .await
+        .map_err(internal)?;
+
+        if used >= quota {
+            return Err(RpcError::new(
+                ErrorCode::TooManyRequests,
+                "The tenant's monthly LLM quota has been reached",
+            ));
+        }
+    }
+
+    Ok(quota)
+}
+
+pub async fn ensure_scan_access(state: &AppState, auth: &AuthResult) -> RpcResult<Option<i64>> {
+    if !auth.can_do(":llm") {
+        return Err(RpcError::new(
+            ErrorCode::Forbidden,
+            "The :llm role is required",
+        ));
+    }
+
+    let tenant = state
+        .tenants
+        .tenant(&auth.tenant)
+        .await
+        .map_err(internal)?
+        .ok_or_else(|| RpcError::new(ErrorCode::NotFound, "Tenant not found"))?;
+    let (enabled, quota) = tenant_llm_options(&tenant.options);
+
+    if !enabled {
+        return Err(RpcError::new(
+            ErrorCode::Forbidden,
+            "LLM access is disabled for this tenant",
+        ));
+    }
+
+    if load_scan_configuration(state).await?.is_none() {
+        return Err(RpcError::new(
+            ErrorCode::PreconditionFailed,
+            "No scan LLM provider has been configured",
         ));
     }
 
@@ -833,7 +1047,7 @@ async fn search_records(state: &AppState, auth: &AuthResult, arguments: Value) -
             require_role(auth, "view:products")?;
             rows_as_json(
                 &pool,
-                "SELECT id, custom_id, name, brand, description, base_unit FROM products WHERE $1 = '' OR _search @@ websearch_to_tsquery('simple', $1) ORDER BY modified_at DESC LIMIT $2",
+                "SELECT id, custom_id AS \"customId\", name, brand, description, base_unit AS \"baseUnit\", other_units AS \"otherUnits\" FROM products WHERE $1 = '' OR _search @@ websearch_to_tsquery('simple', $1) ORDER BY modified_at DESC LIMIT $2",
                 query,
                 limit,
             )

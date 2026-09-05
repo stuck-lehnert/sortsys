@@ -214,6 +214,29 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         CREATE INDEX IF NOT EXISTS idx___jobs_open ON __jobs (state, available_at, lease_expires_at, id);
         CREATE INDEX IF NOT EXISTS idx___jobs_runner ON __jobs (acquired_by_runner_id, state);
         CREATE INDEX IF NOT EXISTS idx___jobs_tenant ON __jobs (tenant_name, type, state);
+        CREATE TABLE IF NOT EXISTS __delivery_note_scans (
+          id BIGSERIAL PRIMARY KEY,
+          tenant_name VARCHAR(127) NOT NULL REFERENCES __tenants(name) ON DELETE CASCADE,
+          user_id BIGINT NOT NULL,
+          job_id BIGINT UNIQUE REFERENCES __jobs(id) ON DELETE SET NULL,
+          source_object_key TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          mime_type TEXT NOT NULL,
+          size_bytes BIGINT NOT NULL,
+          source_documents JSONB,
+          state VARCHAR(20) NOT NULL DEFAULT 'queued'
+            CHECK (state IN ('queued', 'ocr', 'matching', 'completed', 'failed')),
+          result JSONB,
+          error TEXT,
+          processor_lease_expires_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          completed_at TIMESTAMPTZ
+        );
+        ALTER TABLE __delivery_note_scans
+          ADD COLUMN IF NOT EXISTS source_documents JSONB;
+        CREATE INDEX IF NOT EXISTS idx___delivery_note_scans_user_created
+          ON __delivery_note_scans (tenant_name, user_id, created_at DESC);
         CREATE TABLE IF NOT EXISTS __postgres_hosts (
           id BIGSERIAL PRIMARY KEY, name VARCHAR(127) NOT NULL UNIQUE,
           connection_details JSONB NOT NULL, backup_details JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -246,6 +269,14 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
           api_key_ciphertext TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS __llm_scan_settings (
+          singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+          provider VARCHAR(32) NOT NULL,
+          model VARCHAR(255) NOT NULL,
+          base_url TEXT,
+          api_key_ciphertext TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
         CREATE TABLE IF NOT EXISTS __llm_usage (
           id BIGSERIAL PRIMARY KEY,
           tenant_name VARCHAR(127) NOT NULL REFERENCES __tenants(name) ON DELETE CASCADE,
@@ -260,6 +291,8 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
           error TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE __llm_usage
+          ADD COLUMN IF NOT EXISTS purpose VARCHAR(32) NOT NULL DEFAULT 'chat';
         CREATE INDEX IF NOT EXISTS idx___llm_usage_tenant_created
           ON __llm_usage (tenant_name, created_at DESC);
         "#,

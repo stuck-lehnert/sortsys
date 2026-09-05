@@ -96,6 +96,29 @@ services:
       start_period: 10s
     stop_grace_period: 30s
 
+  ocr-job-runner:
+    build:
+      context: ./sortsys-v2-job_runner
+      dockerfile: Dockerfile.ocr
+    restart: unless-stopped
+    environment:
+      JOB_RUNNER_WS_URL: ws://api:3000/internal/job-runners/ws
+      JOB_RUNNER_WS_IGNORE_PROXY: "true"
+      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
+      JOB_RUNNER_ID: ${OCR_JOB_RUNNER_ID:-sortsys-compose-ocr-1}
+      JOB_RUNNER_JOB_TYPE: delivery_note_ocr
+      JOB_RUNNER_LEASE_SEC: "300"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+
   webapp:
     build:
       context: .

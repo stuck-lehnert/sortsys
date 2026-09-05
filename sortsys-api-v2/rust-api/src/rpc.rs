@@ -520,5 +520,14 @@ mod tests {
         let contract = registry().typescript_contract();
         assert!(contract.contains("\"ping\": void;"));
         assert!(contract.contains("\"ping\": string;"));
+
+        let full_contract = crate::api::contract_registry().typescript_contract();
+
+        assert!(full_contract.contains(
+            "\"deliveryNotes.scan.createUpload\": { fileName: string, mimeType: string, sizeBytes: number, };"
+        ));
+        assert!(full_contract.contains(
+            "\"deliveryNotes.scan.parse\": { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };"
+        ));
     }
 }

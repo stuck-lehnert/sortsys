@@ -2994,6 +2994,26 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     assert!(public_settings.get("apiKey").is_none());
     assert_eq!(public_settings["model"], "gpt-5.6-luna");
 
+    let scan_configured = rpc
+        .mutation(
+            "admin.llm.scanSettings.update",
+            json!({
+                "provider": "openai",
+                "model": "gpt-5.6-luna",
+                "baseUrl": openai_base_url,
+                "apiKey": "integration-scan-secret-that-must-not-leak",
+            }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(scan_configured["hasApiKey"], true);
+
+    let public_scan_settings = rpc
+        .query("admin.llm.scanSettings.get", Value::Null, Some(admin_token))
+        .await;
+    assert!(public_scan_settings.get("apiKey").is_none());
+    assert_eq!(public_scan_settings["model"], "gpt-5.6-luna");
+
     let tenants = rpc
         .query("admin.llm.tenants.list", Value::Null, Some(admin_token))
         .await;
@@ -3029,8 +3049,294 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         .await;
     let token = login["token"].as_str().unwrap();
 
+    let scan_product_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO products (
+          custom_id,
+          name,
+          brand,
+          description,
+          base_unit,
+          other_units
+        )
+        VALUES (
+          99101,
+          'Kalkzementputz MEP-it',
+          'Knauf',
+          'Mineralischer Maschinenputz',
+          'kg',
+          '{"Sack": 25}'::JSONB
+        )
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    let scan_bytes = include_bytes!("fixtures/delivery-note-ocr.png").to_vec();
+    let upload = rpc
+        .mutation(
+            "deliveryNotes.scan.createUpload",
+            json!({
+                "fileName": "handschriftlicher-lieferschein.png",
+                "mimeType": "image/png",
+                "sizeBytes": scan_bytes.len(),
+            }),
+            Some(token),
+        )
+        .await;
+    let upload_response = Client::new()
+        .put(upload["uploadUrl"].as_str().unwrap())
+        .header("content-type", "image/png")
+        .body(scan_bytes.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert!(upload_response.status().is_success());
+
+    let pdf_bytes = include_bytes!("../../test-files/blank.pdf").to_vec();
+    let pdf_upload = rpc
+        .mutation(
+            "deliveryNotes.scan.createUpload",
+            json!({
+                "fileName": "lieferschein-seite-2.pdf",
+                "mimeType": "application/pdf",
+                "sizeBytes": pdf_bytes.len(),
+            }),
+            Some(token),
+        )
+        .await;
+    let pdf_upload_response = Client::new()
+        .put(pdf_upload["uploadUrl"].as_str().unwrap())
+        .header("content-type", "application/pdf")
+        .body(pdf_bytes.clone())
+        .send()
+        .await
+        .unwrap();
+    assert!(pdf_upload_response.status().is_success());
+
+    let scan_document = json!({
+        "objectKey": upload["objectKey"],
+        "fileName": "handschriftlicher-lieferschein.png",
+        "mimeType": "image/png",
+        "sizeBytes": scan_bytes.len(),
+    });
+    let pdf_document = json!({
+        "objectKey": pdf_upload["objectKey"],
+        "fileName": "lieferschein-seite-2.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": pdf_bytes.len(),
+    });
+    let scan_job = rpc
+        .mutation(
+            "deliveryNotes.scan.start",
+            json!({ "documents": [scan_document, pdf_document] }),
+            Some(token),
+        )
+        .await;
+    let scan_id = scan_job["scanId"].as_str().unwrap();
+    let decoded_scan_id = Id::decode(scan_id).unwrap().0;
+    let master = PgPool::connect(&environment.master_dsn).await.unwrap();
+    let scan_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+
+    // Observe PostgreSQL directly: no browser request is needed to advance the scan.
+    loop {
+        let state = sqlx::query_scalar::<_, String>(
+            "SELECT state FROM __delivery_note_scans WHERE id = $1",
+        )
+        .bind(decoded_scan_id)
+        .fetch_one(&master)
+        .await
+        .unwrap();
+
+        if state == "completed" {
+            break;
+        }
+
+        assert!(matches!(state.as_str(), "queued" | "ocr" | "matching"));
+        assert!(
+            tokio::time::Instant::now() < scan_deadline,
+            "delivery-note scan did not finish in the background"
+        );
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    let status = rpc
+        .query(
+            "deliveryNotes.scan.status",
+            json!({ "scanId": scan_id }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(status["state"], "completed");
+
+    let scan_history = rpc
+        .query("deliveryNotes.scan.list", Value::Null, Some(token))
+        .await;
+    let history_entry = scan_history
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == scan_id)
+        .expect("completed scan should remain in the user history");
+    assert_eq!(
+        history_entry["fileName"],
+        "handschriftlicher-lieferschein.png"
+    );
+    assert_eq!(history_entry["fileNames"].as_array().unwrap().len(), 2);
+    assert_eq!(history_entry["state"], "completed");
+    assert_eq!(history_entry["documentType"], "deliveryNote");
+
+    let parsed_scan = rpc
+        .mutation(
+            "deliveryNotes.scan.complete",
+            json!({ "scanId": scan_id }),
+            Some(token),
+        )
+        .await;
+
+    assert_eq!(parsed_scan["documentType"], "deliveryNote");
+    let parsed_scan = &parsed_scan["deliveryNote"];
+    assert_eq!(parsed_scan["supplier"], "Baustoffhandel Muster");
+    assert_eq!(
+        parsed_scan["records"][0]["productId"],
+        Id(scan_product_id).encode()
+    );
+    assert_eq!(parsed_scan["records"][0]["displayQuantity"], 2.0);
+    assert_eq!(parsed_scan["records"][0]["quantity"], 50.0);
+    assert_eq!(parsed_scan["records"][0]["unit"], "Sack");
+    assert_eq!(parsed_scan["records"][0]["baseUnit"], "kg");
+    assert_eq!(parsed_scan["specialRecords"][0]["name"], "Handschuhe");
+    assert_eq!(parsed_scan["specialRecords"][0]["unit"], "Paar");
+
+    let scan_requests = openai_requests.lock().await;
+    assert_eq!(scan_requests.len(), 2);
+    assert_eq!(scan_requests[0]["text"]["format"]["name"], "document_scan");
+    assert_eq!(scan_requests[0]["service_tier"], "fast");
+    assert!(
+        scan_requests[0]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("human-readable values in German")
+    );
+    let scan_content = scan_requests[0]["input"][0]["content"].as_array().unwrap();
+    assert!(scan_content.iter().any(|item| item["type"] == "input_file"));
+
+    let transcript = scan_content
+        .iter()
+        .find(|item| item["type"] == "input_text")
+        .and_then(|item| item["text"].as_str())
+        .unwrap();
+    assert!(transcript.contains("2 Sack Kalkzementputz MEP-it"));
+    assert!(transcript.contains("handschriftlicher-lieferschein.png"));
+    assert!(transcript.contains("lieferschein-seite-2.pdf"));
+    assert!(transcript.contains("Original attached: true"));
+    let product_search_output = last_function_output(&scan_requests[1]);
+    assert_eq!(product_search_output["records"][0]["baseUnit"], "kg");
+    assert_eq!(
+        product_search_output["records"][0]["otherUnits"]["Sack"],
+        25
+    );
+    drop(scan_requests);
+
+    let price_upload = rpc
+        .mutation(
+            "deliveryNotes.scan.createUpload",
+            json!({
+                "fileName": "preisliste-september.png",
+                "mimeType": "image/png",
+                "sizeBytes": scan_bytes.len(),
+            }),
+            Some(token),
+        )
+        .await;
+    let upload_response = Client::new()
+        .put(price_upload["uploadUrl"].as_str().unwrap())
+        .header("content-type", "image/png")
+        .body(scan_bytes.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert!(upload_response.status().is_success());
+
+    let parsed_prices = rpc
+        .mutation(
+            "deliveryNotes.scan.parse",
+            json!({
+                "objectKey": price_upload["objectKey"],
+                "fileName": "preisliste-september.png",
+                "mimeType": "image/png",
+                "sizeBytes": scan_bytes.len(),
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(parsed_prices["documentType"], "priceList");
+    let prices = &parsed_prices["priceList"];
+    assert_eq!(prices["supplier"], "Baustoffhandel Muster");
+    assert_eq!(prices["rows"][0]["productId"], Id(scan_product_id).encode());
+    assert_eq!(prices["rows"][0]["pricePerBaseUnit"], 0.5);
+    assert_eq!(prices["rows"][1]["productId"], Value::Null);
+    assert_eq!(prices["rows"][1]["productName"], "Arbeitshandschuhe, Paar");
+
+    let vendor = rpc
+        .mutation(
+            "products.vendors.create",
+            json!({
+                "name": "Baustoffhandel Muster",
+                "description": null,
+            }),
+            Some(token),
+        )
+        .await;
+    let vendor_id = vendor["id"].as_str().unwrap();
+    let imported = rpc
+        .mutation(
+            "products.priceImports.apply",
+            json!({
+                "vendorId": vendor_id,
+                "effectiveAt": "2026-09-01T10:00:00.000Z",
+                "isRealPurchase": false,
+                "rows": prices["rows"].as_array().unwrap().iter().map(|row| json!({
+                    "productId": row["productId"],
+                    "productName": row["productName"],
+                    "baseUnit": row["baseUnit"],
+                    "pricePerBaseUnit": row["pricePerBaseUnit"],
+                    "comment": row["comment"],
+                })).collect::<Vec<_>>(),
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(imported["createdProducts"], 1);
+    assert_eq!(imported["createdPriceRecords"], 2);
+
+    let imported_product_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE name = 'Arbeitshandschuhe, Paar'")
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(imported_product_count, 1);
+
+    let imported_price_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM product_price_records WHERE vendor_id = $1")
+            .bind(Id::decode(vendor_id).unwrap().0)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(imported_price_count, 2);
+
+    // The remaining chat assertions intentionally use their historical request
+    // indexes. The price-list scan has already been asserted independently.
+    let mut requests = openai_requests.lock().await;
+    assert_eq!(requests.len(), 4);
+    requests.truncate(2);
+    drop(requests);
+
     let status = rpc.query("llm.status", Value::Null, Some(token)).await;
     assert_eq!(status["available"], true);
+    assert_eq!(status["scanProviderConfigured"], true);
     assert_eq!(status["monthlyTokenQuota"], 50_000);
 
     let chat = rpc
@@ -3150,24 +3456,24 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     let requests = openai_requests.lock().await;
-    assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0]["model"], "gpt-5.6-luna");
-    assert_eq!(requests[0]["max_output_tokens"], 1200);
-    assert!(requests[0].get("messages").is_none());
-    assert!(requests[0].get("reasoning_effort").is_none());
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[2]["model"], "gpt-5.6-luna");
+    assert_eq!(requests[2]["max_output_tokens"], 1200);
+    assert!(requests[2].get("messages").is_none());
+    assert!(requests[2].get("reasoning_effort").is_none());
     assert!(
-        requests[0]["instructions"]
+        requests[2]["instructions"]
             .as_str()
             .unwrap()
             .contains("Ressource project_costs")
     );
-    assert!(requests[0]["tools"].as_array().unwrap().iter().any(|tool| {
+    assert!(requests[2]["tools"].as_array().unwrap().iter().any(|tool| {
         tool["type"] == "function"
             && tool["name"] == "sortsys_search"
             && tool.get("function").is_none()
     }));
 
-    let tool_output = requests[1]["input"]
+    let tool_output = requests[3]["input"]
         .as_array()
         .unwrap()
         .iter()
@@ -3219,8 +3525,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     let requests = openai_requests.lock().await;
-    assert_eq!(requests.len(), 6);
-    let schema_tool = requests[2]["tools"]
+    assert_eq!(requests.len(), 8);
+    let schema_tool = requests[4]["tools"]
         .as_array()
         .unwrap()
         .iter()
@@ -3231,7 +3537,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         "string"
     );
 
-    let schema = last_function_output(&requests[3]);
+    let schema = last_function_output(&requests[5]);
     assert_eq!(schema["path"], "projects.create");
     assert_eq!(schema["kind"], "mutation");
     assert_eq!(
@@ -3255,7 +3561,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .contains("name: string")
     );
 
-    let validation_error = last_function_output(&requests[4]);
+    let validation_error = last_function_output(&requests[6]);
     assert_eq!(validation_error["error"]["code"], "BAD_REQUEST");
     assert!(
         validation_error["error"]["message"]
@@ -3264,7 +3570,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .contains("input.address must be an object")
     );
 
-    let proposal_result = last_function_output(&requests[5]);
+    let proposal_result = last_function_output(&requests[7]);
     assert!(proposal_result["proposalId"].is_string());
     drop(requests);
 
@@ -3351,8 +3657,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     let requests = openai_requests.lock().await;
-    assert_eq!(requests.len(), 8);
-    let tracking_output = last_function_output(&requests[7]);
+    assert_eq!(requests.len(), 10);
+    let tracking_output = last_function_output(&requests[9]);
     assert_eq!(
         tracking_output["records"][0]["responsible_first_name"],
         "Tobias"
@@ -3397,8 +3703,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     let requests = openai_requests.lock().await;
-    assert_eq!(requests.len(), 10);
-    let inventory_output = last_function_output(&requests[9]);
+    assert_eq!(requests.len(), 12);
+    let inventory_output = last_function_output(&requests[11]);
     assert_eq!(inventory_output["days"], 30);
     assert_eq!(inventory_output["hadInventory"], true);
     assert_eq!(
@@ -3447,9 +3753,9 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     let requests = openai_requests.lock().await;
-    assert_eq!(requests.len(), 14);
+    assert_eq!(requests.len(), 16);
 
-    let catalog_output = last_function_output(&requests[11]);
+    let catalog_output = last_function_output(&requests[13]);
     assert!(
         catalog_output["procedures"]
             .as_array()
@@ -3458,11 +3764,11 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .any(|procedure| procedure["path"] == "settings.costs.get")
     );
 
-    let common_cost_schema = last_function_output(&requests[12]);
+    let common_cost_schema = last_function_output(&requests[14]);
     assert_eq!(common_cost_schema["path"], "settings.costs.get");
     assert_eq!(common_cost_schema["kind"], "query");
 
-    let common_cost_output = last_function_output(&requests[13]);
+    let common_cost_output = last_function_output(&requests[15]);
     assert_eq!(common_cost_output["path"], "settings.costs.get");
     assert_eq!(common_cost_output["data"]["fgk"]["relativeFactor"], 0.15);
     assert_eq!(common_cost_output["data"]["fgk"]["constant"], 12.0);
@@ -3610,12 +3916,21 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     assert!(tenant_usage.as_array().unwrap().iter().any(|row| {
         row["provider"] == "openai"
             && row["model"] == "gpt-5.6-luna"
+            && row["purpose"] == "chat"
             && row["requestCount"] == 5
+            && row["failedRequests"] == 0
+    }));
+    assert!(tenant_usage.as_array().unwrap().iter().any(|row| {
+        row["provider"] == "openai"
+            && row["model"] == "gpt-5.6-luna"
+            && row["purpose"] == "delivery_note_scan"
+            && row["requestCount"] == 2
             && row["failedRequests"] == 0
     }));
     assert!(tenant_usage.as_array().unwrap().iter().any(|row| {
         row["provider"] == "custom"
             && row["model"] == "integration-unavailable-model"
+            && row["purpose"] == "chat"
             && row["failedRequests"] == 1
     }));
 
@@ -4800,6 +5115,15 @@ async fn mock_openai_response(
         .rev()
         .find(|item| item["role"] == "user")
         .and_then(|item| item["content"].as_str());
+    let is_scan_request =
+        request.pointer("/text/format/name").and_then(Value::as_str) == Some("document_scan");
+    let scan_text = input
+        .iter()
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .find(|item| item["type"] == "input_text")
+        .and_then(|item| item["text"].as_str())
+        .unwrap_or("");
+    let is_price_scan = scan_text.contains("preisliste-september.png");
     let is_proposal_request = latest_user_content
         == Some(
             "Lege das Projekt „Test Projekt LLM“ mit der Adresse „Musterstr. 42, Musterstadt“ an.",
@@ -4818,7 +5142,91 @@ async fn mock_openai_response(
         .and_then(|output| serde_json::from_str::<Value>(output).ok());
     requests.lock().await.push(request);
 
-    let output = if is_proposal_request {
+    let output = if is_scan_request {
+        match last_tool_output {
+            None => json!([{
+                "type": "function_call",
+                "id": "fc_scan_products",
+                "call_id": "call_scan_products",
+                "name": "sortsys_search_products",
+                "arguments": r#"{"query":"Kalkzementputz MEP","limit":10}"#
+            }]),
+            Some(result) => {
+                let product_id = result["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|product| product["name"] == "Kalkzementputz MEP-it")
+                    .and_then(|product| product["id"].as_str())
+                    .unwrap();
+
+                let result = if is_price_scan {
+                    json!({
+                        "documentType": "priceList",
+                        "supplier": "Baustoffhandel Muster",
+                        "documentNumber": "PL-09-2026",
+                        "documentDate": "2026-09-01",
+                        "comment": null,
+                        "lines": [{
+                            "sourceText": "Kalkzementputz MEP-it, Sack 12,50 EUR",
+                            "name": "Kalkzementputz MEP-it",
+                            "quantity": 1,
+                            "unit": "Sack",
+                            "productId": product_id,
+                            "pricePerUnit": 12.5,
+                            "confidence": 0.99,
+                            "comment": null
+                        }, {
+                            "sourceText": "Arbeitshandschuhe Paar 4,90 EUR",
+                            "name": "Arbeitshandschuhe, Paar",
+                            "quantity": 1,
+                            "unit": "Paar",
+                            "productId": null,
+                            "pricePerUnit": 4.9,
+                            "confidence": 0.94,
+                            "comment": null
+                        }]
+                    })
+                } else {
+                    json!({
+                        "documentType": "deliveryNote",
+                        "supplier": "Baustoffhandel Muster",
+                        "documentNumber": "LS-2026-1042",
+                        "documentDate": "2026-08-28",
+                        "comment": "Handschriftlicher Zusatz erkannt",
+                        "lines": [{
+                            "sourceText": "2 Sack MEP it Kalkzementputz",
+                            "name": "Kalkzementputz MEP-it",
+                            "quantity": 2,
+                            "unit": "Sack",
+                            "productId": product_id,
+                            "pricePerUnit": null,
+                            "confidence": 0.97,
+                            "comment": null
+                        }, {
+                            "sourceText": "3 Paar Handschuhe (handschriftlich)",
+                            "name": "Handschuhe",
+                            "quantity": 3,
+                            "unit": "Paar",
+                            "productId": null,
+                            "pricePerUnit": null,
+                            "confidence": 0.72,
+                            "comment": "handschriftlich"
+                        }]
+                    })
+                };
+
+                json!([{
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{
+                        "type": "output_text",
+                        "text": serde_json::to_string(&result).unwrap()
+                    }]
+                }])
+            }
+        }
+    } else if is_proposal_request {
         match last_tool_output {
             None => json!([{
                 "type": "function_call",

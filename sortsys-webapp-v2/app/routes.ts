@@ -62,6 +62,15 @@ export default [
             route("vendors", "routes/(shell)/products.vendors.tsx"),
         ]),
         route("products/:id", "routes/(shell)/products.$id.tsx"),
+        route("import", "routes/(shell)/products.deliveryNotes.import.tsx"),
+        route(
+            "products/import",
+            "routes/(shell)/products.import.redirect.tsx",
+        ),
+        route(
+            "products/deliveryNotes/import",
+            "routes/(shell)/products.deliveryNotes.import.redirect.tsx",
+        ),
         route("products/deliveryNotes/:id", "routes/(shell)/products.deliveryNotes.$id.tsx"),
         route("products/vendors/:id", "routes/(shell)/products.vendors.$id.tsx"),
 
