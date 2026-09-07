@@ -435,7 +435,8 @@ async fn review_proposal(
     input: ReviewProposalInput,
 ) -> RpcResult<Success> {
     let (auth, pool) = authenticated_llm_pool(state, context).await?;
-    let status = match input.decision {
+    let accepted = matches!(&input.decision, ProposalDecision::Accept);
+    let status = match &input.decision {
         ProposalDecision::Accept => "accepted",
         ProposalDecision::Decline => "declined",
         ProposalDecision::RequestRevision => "revision_requested",
@@ -462,7 +463,7 @@ async fn review_proposal(
         .transpose()
         .map_err(internal)?;
 
-    if !matches!(input.decision, ProposalDecision::Accept) && execution_results.is_some() {
+    if !accepted && execution_results.is_some() {
         return Err(bad_request(
             "executionResults are only valid when accepting a proposal",
         ));
@@ -499,7 +500,145 @@ async fn review_proposal(
         ));
     }
 
+    if accepted
+        && input.continue_conversation.unwrap_or(false)
+        && let Err(error) =
+            continue_after_accepted_proposal(state, &auth, &pool, input.proposal_id.0).await
+    {
+        // Acceptance already succeeded. A provider outage must not undo the
+        // user's mutation or turn the persisted receipt back into a failure.
+        tracing::warn!(
+            proposal_id = input.proposal_id.0,
+            error = %error.message,
+            "could not continue LLM conversation after accepted proposal"
+        );
+    }
+
     Ok(Success { success: true })
+}
+
+async fn continue_after_accepted_proposal(
+    state: &AppState,
+    auth: &AuthResult,
+    pool: &PgPool,
+    proposal_id: i64,
+) -> RpcResult<()> {
+    let chat_id: i64 = sqlx::query_scalar("SELECT chat_id FROM llm_change_proposals WHERE id = $1")
+        .bind(proposal_id)
+        .fetch_one(pool)
+        .await
+        .map_err(internal)?;
+    let Some(configuration) = llm::load_configuration(state).await? else {
+        return Ok(());
+    };
+
+    let mut turns = load_recent_turns(pool, chat_id).await?;
+    let continuation_instruction = if auth.user.locale == "en" {
+        format!(
+            "The user accepted and executed the proposal in the preceding trusted result. Continue any unfinished step from the original request now. Use the execution results, especially returned IDs. If nothing remains, answer exactly {}.",
+            llm::NO_FOLLOW_UP_MARKER,
+        )
+    } else {
+        format!(
+            "Der Benutzer hat den Vorschlag im unmittelbar vorhergehenden vertrauenswürdigen Ergebnis angenommen und ausgeführt. Setze jetzt jeden noch offenen Schritt der ursprünglichen Anfrage fort. Verwende die Ausführungsergebnisse, insbesondere zurückgegebene IDs. Falls nichts offen ist, antworte exakt mit {}.",
+            llm::NO_FOLLOW_UP_MARKER,
+        )
+    };
+    turns.push(ChatTurn {
+        role: "user".to_owned(),
+        content: continuation_instruction,
+    });
+
+    let completion = llm::complete(
+        state,
+        auth,
+        chat_id,
+        &configuration,
+        &turns,
+        &auth.user.locale,
+    )
+    .await;
+    let completion = match completion {
+        Ok(completion) => {
+            llm::record_usage(
+                state,
+                auth,
+                chat_id,
+                &configuration,
+                &completion.usage,
+                None,
+            )
+            .await?;
+            completion
+        }
+        Err(error) => {
+            llm::record_usage(
+                state,
+                auth,
+                chat_id,
+                &configuration,
+                &TokenUsage::default(),
+                Some(&error.message),
+            )
+            .await?;
+            return Err(error);
+        }
+    };
+
+    let mut transaction = pool.begin().await.map_err(internal)?;
+    let has_unassigned_proposal: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM llm_change_proposals WHERE chat_id = $1 AND assistant_message_id IS NULL)",
+    )
+    .bind(chat_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(internal)?;
+
+    if !has_unassigned_proposal && completion.content.trim() == llm::NO_FOLLOW_UP_MARKER {
+        transaction.rollback().await.map_err(internal)?;
+        return Ok(());
+    }
+
+    let assistant_content =
+        if has_unassigned_proposal && completion.content.trim() == llm::PROPOSAL_ONLY_MARKER {
+            ""
+        } else {
+            completion.content.as_str()
+        };
+    let message_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO llm_messages (chat_id, role, content)
+        VALUES ($1, 'assistant', $2)
+        RETURNING id
+        "#,
+    )
+    .bind(chat_id)
+    .bind(assistant_content)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(internal)?;
+
+    sqlx::query(
+        r#"
+        UPDATE llm_change_proposals
+        SET assistant_message_id = $2
+        WHERE chat_id = $1
+          AND assistant_message_id IS NULL
+        "#,
+    )
+    .bind(chat_id)
+    .bind(message_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(internal)?;
+    sqlx::query("UPDATE llm_chats SET updated_at = NOW() WHERE id = $1")
+        .bind(chat_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal)?;
+    transaction.commit().await.map_err(internal)?;
+
+    Ok(())
 }
 
 async fn tenant_usage(state: &AppState, context: &RequestContext) -> RpcResult<Vec<UsageSummary>> {
@@ -781,13 +920,43 @@ async fn load_recent_turns(pool: &PgPool, chat_id: i64) -> RpcResult<Vec<ChatTur
         r#"
         SELECT role, content
         FROM (
-          SELECT id, role, content, created_at
-          FROM llm_messages
-          WHERE chat_id = $1
-          ORDER BY created_at DESC, id DESC
+          SELECT role, content, occurred_at, id, entry_kind
+          FROM (
+            SELECT
+              role,
+              content,
+              created_at AS occurred_at,
+              id,
+              0 AS entry_kind
+            FROM llm_messages
+            WHERE chat_id = $1
+
+            UNION ALL
+
+            SELECT
+              'assistant' AS role,
+              CONCAT(
+                '<trusted-proposal-result>',
+                JSONB_BUILD_OBJECT(
+                  'title', title,
+                  'summary', summary,
+                  'operations', operations,
+                  'executionResults', execution_results
+                )::TEXT,
+                '</trusted-proposal-result>'
+              ) AS content,
+              reviewed_at AS occurred_at,
+              id,
+              1 AS entry_kind
+            FROM llm_change_proposals
+            WHERE chat_id = $1
+              AND status = 'accepted'
+              AND execution_results IS NOT NULL
+          ) AS timeline
+          ORDER BY occurred_at DESC, entry_kind DESC, id DESC
           LIMIT 40
         ) AS recent
-        ORDER BY created_at, id
+        ORDER BY occurred_at, entry_kind, id
         "#,
     )
     .bind(chat_id)
@@ -873,6 +1042,9 @@ struct ReviewProposalInput {
     #[serde(default)]
     #[ts(optional = nullable)]
     execution_results: Option<Vec<ProposalExecutionResult>>,
+    #[serde(default)]
+    #[ts(optional)]
+    continue_conversation: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]

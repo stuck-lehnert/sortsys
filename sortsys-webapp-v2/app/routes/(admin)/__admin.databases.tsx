@@ -1,9 +1,8 @@
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
-import { InlineLoading, OperationalTag, Tile } from "@sortsys/react-components";
+import { InlineLoading, OperationalTag, Tile, useNotifications } from "@sortsys/react-components";
 import { from } from "rxjs";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyForm } from "~/components/MyForm";
@@ -11,6 +10,7 @@ import { MyHeader } from "~/components/MyHeader";
 import { MyTable } from "~/components/MyTable";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
+import { useCredentialNotification } from "~/hooks/useCredentialNotification";
 import { useMyModals } from "~/hooks/useMyModals";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
@@ -90,14 +90,11 @@ export function meta() {
 
 export default function GlobalAdminDatabasesPage() {
   const modals = useMyModals();
+  const notifications = useNotifications();
+  const showCredentialNotification = useCredentialNotification();
 
   const [selectedDatabaseId, setSelectedDatabaseId] = useState<string | null>(null);
-  const [actionInfo, setActionInfo] = useState<string | null>(null);
-  const [actionErr, setActionErr] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [createdCredentials, setCreatedCredentials] = useState<{ username: string; password: string } | null>(null);
-  const [rotatedCredentials, setRotatedCredentials] = useState<{ username: string; password: string } | null>(null);
-  const [forkedCredentials, setForkedCredentials] = useState<{ database: string; username: string; password: string } | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const uploadTargetDatabaseIdRef = useRef<string | null>(null);
 
@@ -163,14 +160,15 @@ export default function GlobalAdminDatabasesPage() {
 
   async function runAction(actionName: string, action: () => Promise<void>) {
     setPendingAction(actionName);
-    setActionErr(null);
-    setActionInfo(null);
 
     try {
       await action();
       return true;
     } catch (error) {
-      setActionErr(`${(error as any)?.message ?? error}`);
+      notifications.danger({
+        title: uiText("Aktion fehlgeschlagen", "Action failed"),
+        content: error instanceof Error ? error.message : `${error}`,
+      });
       return false;
     } finally {
       setPendingAction(null);
@@ -240,7 +238,9 @@ export default function GlobalAdminDatabasesPage() {
             throw new Error(err?.message || uiText("Host konnte nicht erstellt werden"));
           }
 
-          setActionInfo(uiText(`Postgres-Host ${created.name} erstellt.`, `PostgreSQL host ${created.name} created.`));
+          notifications.success({
+            title: uiText(`Postgres-Host ${created.name} erstellt.`, `PostgreSQL host ${created.name} created.`),
+          });
         });
 
         if (ok) hide();
@@ -321,11 +321,13 @@ export default function GlobalAdminDatabasesPage() {
             throw new Error(err?.message || uiText("Datenbank konnte nicht erstellt werden"));
           }
 
-          setCreatedCredentials({
-            username: created.username,
-            password: created.password,
+          showCredentialNotification({
+            title: uiText(`Datenbank ${created.name} erstellt`, `Database ${created.name} created`),
+            fields: [
+              { label: uiText("Benutzername", "Username"), value: created.username },
+              { label: uiText("Passwort", "Password"), value: created.password },
+            ],
           });
-          setActionInfo(uiText(`Datenbank ${created.name} erstellt.`, `Database ${created.name} created.`));
         });
 
         if (ok) hide();
@@ -370,7 +372,9 @@ export default function GlobalAdminDatabasesPage() {
           });
 
           if (err) throw new Error(err.message || uiText("Retention konnte nicht aktualisiert werden"));
-          setActionInfo(uiText(`Retention-Regeln für ${database.name} gespeichert.`, `Retention rules for ${database.name} saved.`));
+          notifications.success({
+            title: uiText(`Retention-Regeln für ${database.name} gespeichert.`, `Retention rules for ${database.name} saved.`),
+          });
         });
 
         if (ok) hide();
@@ -433,12 +437,14 @@ export default function GlobalAdminDatabasesPage() {
             throw new Error(err?.message || uiText("Fork aus Backup fehlgeschlagen"));
           }
 
-          setForkedCredentials({
-            database: forked.name,
-            username: forked.username,
-            password: forked.password,
+          showCredentialNotification({
+            title: uiText(`Datenbank ${forked.name} erstellt`, `Database ${forked.name} created`),
+            description: uiText(`Aus Backup ${backup.id}`, `From backup ${backup.id}`),
+            fields: [
+              { label: uiText("Benutzername", "Username"), value: forked.username },
+              { label: uiText("Passwort", "Password"), value: forked.password },
+            ],
           });
-          setActionInfo(uiText(`Neue Datenbank ${forked.name} wurde aus Backup ${backup.id} erzeugt.`, `Created database ${forked.name} from backup ${backup.id}.`));
         });
 
         if (ok) hide();
@@ -453,7 +459,9 @@ export default function GlobalAdminDatabasesPage() {
 
   function triggerUploadRestoreForSelectedDatabase() {
     if (!selectedDatabase) {
-      setActionErr(uiText("Bitte zuerst eine Datenbank auswählen", "Select a database first"));
+      notifications.warning({
+        title: uiText("Bitte zuerst eine Datenbank auswählen", "Select a database first"),
+      });
       return;
     }
 
@@ -472,7 +480,9 @@ export default function GlobalAdminDatabasesPage() {
     if (!selectedUploadFile) return;
 
     if (!selectedUploadFile.name.toLowerCase().endsWith(".sql.gz")) {
-      setActionErr(uiText("Bitte eine .sql.gz Datei auswählen", "Select a .sql.gz file"));
+      notifications.warning({
+        title: uiText("Bitte eine .sql.gz Datei auswählen", "Select a .sql.gz file"),
+      });
       return;
     }
 
@@ -480,7 +490,9 @@ export default function GlobalAdminDatabasesPage() {
     const targetDatabase = (databases ?? []).find((database) => database.id === targetDatabaseId) ?? null;
 
     if (!targetDatabase) {
-      setActionErr(uiText("Ausgewählte Datenbank wurde nicht gefunden", "Selected database was not found"));
+      notifications.danger({
+        title: uiText("Ausgewählte Datenbank wurde nicht gefunden", "Selected database was not found"),
+      });
       return;
     }
 
@@ -506,7 +518,9 @@ export default function GlobalAdminDatabasesPage() {
         throw new Error(restoreErr.message || uiText("Restore aus Upload-Backup fehlgeschlagen"));
       }
 
-      setActionInfo(uiText(`Backup ${selectedUploadFile.name} wurde in ${targetDatabase.name} wiederhergestellt.`, `Backup ${selectedUploadFile.name} restored into ${targetDatabase.name}.`));
+      notifications.success({
+        title: uiText(`Backup ${selectedUploadFile.name} wurde in ${targetDatabase.name} wiederhergestellt.`, `Backup ${selectedUploadFile.name} restored into ${targetDatabase.name}.`),
+      });
     });
   }
 
@@ -519,31 +533,8 @@ export default function GlobalAdminDatabasesPage() {
       onChange={handleUploadFileSelected}
     />
 
-    {!!actionInfo && (
-      <AutoHideSuccessCallout resetKey={actionInfo} onHidden={() => setActionInfo(null)}>{actionInfo}</AutoHideSuccessCallout>
-    )}
-
-    {!!actionErr && (
-      <MyCallout icon={Icons.Deny} color="red">{actionErr}</MyCallout>
-    )}
-
     {!!pendingAction && (
       <InlineLoading description={uiText("Aktion wird ausgeführt...")} />
-    )}
-
-    {!!createdCredentials && (
-      <AutoHideSuccessCallout resetKey={`${createdCredentials.username}:${createdCredentials.password}`} onHidden={() => setCreatedCredentials(null)}>{uiText("Datenbank erstellt. Zugangsdaten:")}<b>{createdCredentials.username}</b> / <b>{createdCredentials.password}</b>
-      </AutoHideSuccessCallout>
-    )}
-
-    {!!rotatedCredentials && (
-      <AutoHideSuccessCallout resetKey={`${rotatedCredentials.username}:${rotatedCredentials.password}`} onHidden={() => setRotatedCredentials(null)}>{uiText("Zugangsdaten rotiert. Neuer Login:")}<b>{rotatedCredentials.username}</b> / <b>{rotatedCredentials.password}</b>
-      </AutoHideSuccessCallout>
-    )}
-
-    {!!forkedCredentials && (
-      <AutoHideSuccessCallout resetKey={`${forkedCredentials.database}:${forkedCredentials.username}:${forkedCredentials.password}`} onHidden={() => setForkedCredentials(null)}>{uiText("Fork erstellt:")}<b>{forkedCredentials.database}</b>{uiText(" · Login: ")}<b>{forkedCredentials.username}</b> / <b>{forkedCredentials.password}</b>
-      </AutoHideSuccessCallout>
     )}
 
     <div className="grid gap-4">
@@ -597,7 +588,9 @@ export default function GlobalAdminDatabasesPage() {
                     void runAction(`deleteHost:${row.id}`, async () => {
                       const [, err] = await adminClient.mutate("admin.databases.hosts.delete", { hostId: row.id });
                       if (err) throw new Error(err.message || uiText("Host konnte nicht gelöscht werden"));
-                      setActionInfo(uiText(`Host ${row.name} gelöscht.`, `Host ${row.name} deleted.`));
+                      notifications.success({
+                        title: uiText(`Host ${row.name} gelöscht.`, `Host ${row.name} deleted.`),
+                      });
                     });
                   }}
                 >{uiText("Löschen")}</MyButton>;
@@ -688,8 +681,14 @@ export default function GlobalAdminDatabasesPage() {
                   void runAction("rotateCredentials", async () => {
                     const [rotated, err] = await adminClient.mutate("admin.databases.rotateCredentials", { databaseId: selectedDatabase.id });
                     if (err || !rotated) throw new Error(err?.message || uiText("Zugangsdaten konnten nicht rotiert werden"));
-                    setRotatedCredentials({ username: rotated.username, password: rotated.password });
-                    setActionInfo(uiText(`Zugangsdaten für ${selectedDatabase.name} wurden rotiert.`, `Credentials for ${selectedDatabase.name} rotated.`));
+                    showCredentialNotification({
+                      title: uiText("Zugangsdaten rotiert", "Credentials rotated"),
+                      description: selectedDatabase.name,
+                      fields: [
+                        { label: uiText("Benutzername", "Username"), value: rotated.username },
+                        { label: uiText("Passwort", "Password"), value: rotated.password },
+                      ],
+                    });
                   });
                 }}
               >{uiText("Credentials rotieren")}</MyButton>
@@ -705,7 +704,9 @@ export default function GlobalAdminDatabasesPage() {
                       kind: "manual",
                     });
                     if (err) throw new Error(err.message || uiText("Backup konnte nicht erstellt werden"));
-                    setActionInfo(uiText(`Backup für ${selectedDatabase.name} gestartet.`, `Backup for ${selectedDatabase.name} started.`));
+                    notifications.info({
+                      title: uiText(`Backup für ${selectedDatabase.name} gestartet.`, `Backup for ${selectedDatabase.name} started.`),
+                    });
                   });
                 }}
               >{uiText("Backup jetzt")}</MyButton>
@@ -813,7 +814,9 @@ export default function GlobalAdminDatabasesPage() {
                           });
                           if (err) throw new Error(err.message || uiText("Restore fehlgeschlagen", "Restore failed"));
 
-                          setActionInfo(uiText(`Backup ${row.id} wurde nach ${selectedDatabase.name} wiederhergestellt.`, `Backup ${row.id} restored into ${selectedDatabase.name}.`));
+                          notifications.success({
+                            title: uiText(`Backup ${row.id} wurde nach ${selectedDatabase.name} wiederhergestellt.`, `Backup ${row.id} restored into ${selectedDatabase.name}.`),
+                          });
                           hide();
                         },
                         modalProps: () => ({

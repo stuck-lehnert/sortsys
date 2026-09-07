@@ -266,7 +266,7 @@ export type MutationInputs = {
   "llm.chats.create": { title?: string | null, };
   "llm.chats.delete": { chatId: Id, };
   "llm.messages.send": { chatId: Id, content: string, locale?: AssistantLocale, };
-  "llm.proposals.review": { proposalId: Id, decision: ProposalDecision, comment?: string | null, executionResults?: Array<ProposalExecutionResult> | null, };
+  "llm.proposals.review": { proposalId: Id, decision: ProposalDecision, comment?: string | null, executionResults?: Array<ProposalExecutionResult> | null, continueConversation?: boolean, };
   "office.exports.createUpload": { fileName: string, mimeType: string, sizeBytes: number, };
   "personalization.actions.append": { actionId: string; label: string; href?: undefined | null | string; };
   "personalization.visits.append": { path: string; title?: undefined | null | string; };

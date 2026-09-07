@@ -3946,6 +3946,142 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     rpc.mutation(
+        "admin.llm.settings.update",
+        json!({
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "baseUrl": openai_base_url,
+            "apiKey": "integration-secret-that-must-not-leak",
+        }),
+        Some(admin_token),
+    )
+    .await;
+    sqlx::query(
+        r#"
+        INSERT INTO products (custom_id, name, brand, description, base_unit, other_units)
+        VALUES (
+          (SELECT COALESCE(MAX(custom_id), 0) + 1 FROM products),
+          'MIP-02F',
+          'Mipa',
+          'Feinspachtel',
+          'kg',
+          '{}'::JSONB
+        )
+        "#,
+    )
+    .execute(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    let fuzzy_product_chat = rpc
+        .mutation(
+            "llm.messages.send",
+            json!({
+                "chatId": chat_id,
+                "content": "Finde das Produkt Mip 02f."
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        fuzzy_product_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Das Katalogprodukt MIP-02F wurde gefunden."
+    );
+
+    let requests = openai_requests.lock().await;
+    let fuzzy_product_output = last_function_output(requests.last().unwrap());
+    assert_eq!(fuzzy_product_output["records"][0]["name"], "MIP-02F");
+    assert_eq!(fuzzy_product_output["records"][0]["baseUnit"], "kg");
+    drop(requests);
+
+    let last_assistant_message_id: i64 = sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM llm_messages
+        WHERE chat_id = $1
+          AND role = 'assistant'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(chat_id_sql)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    let continued_proposal_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO llm_change_proposals (
+          chat_id,
+          assistant_message_id,
+          title,
+          summary,
+          operations
+        )
+        VALUES (
+          $1,
+          $2,
+          'Ersten Schritt ausführen',
+          'Danach ist noch ein Folgeauftrag offen.',
+          '[{"path":"projects.create","input":{"title":"Mehrschritt-Projekt"},"description":"Projekt anlegen"}]'::JSONB
+        )
+        RETURNING id
+        "#,
+    )
+    .bind(chat_id_sql)
+    .bind(last_assistant_message_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    rpc.mutation(
+        "llm.proposals.review",
+        json!({
+            "proposalId": Id(continued_proposal_id).encode(),
+            "decision": "accept",
+            "comment": null,
+            "executionResults": [{
+                "path": "projects.create",
+                "output": { "id": created_project["id"] }
+            }],
+            "continueConversation": true
+        }),
+        Some(token),
+    )
+    .await;
+
+    let continued_chat = rpc
+        .query("llm.chats.get", json!({ "chatId": chat_id }), Some(token))
+        .await;
+    assert_eq!(
+        continued_chat["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Der offene Folgeauftrag wird jetzt fortgesetzt."
+    );
+
+    let requests = openai_requests.lock().await;
+    let continuation_request = requests.last().unwrap();
+    assert!(
+        continuation_request["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| {
+                turn["role"] == "assistant"
+                    && turn["content"]
+                        .as_str()
+                        .is_some_and(|content| content.contains("<trusted-proposal-result>"))
+            })
+    );
+    drop(requests);
+
+    rpc.mutation(
         "llm.chats.delete",
         json!({ "chatId": chat_id }),
         Some(token),
@@ -5134,6 +5270,10 @@ async fn mock_openai_response(
         == Some("Wurde der Bosch-Bohrhammer in den letzten 30 Tagen inventarisiert?");
     let is_common_costs_request =
         latest_user_content == Some("Wie hoch sind die aktuellen Gemeinkosten?");
+    let is_fuzzy_product_request = latest_user_content == Some("Finde das Produkt Mip 02f.");
+    let is_continuation_request = latest_user_content.is_some_and(|content| {
+        content.contains("unmittelbar vorhergehenden vertrauenswürdigen Ergebnis")
+    });
     let last_tool_output = input
         .iter()
         .rev()
@@ -5363,6 +5503,42 @@ async fn mock_openai_response(
                 }])
             }
             Some(result) => panic!("unexpected common-cost result: {result}"),
+        }
+    } else if is_continuation_request {
+        json!([{
+            "type": "message",
+            "role": "assistant",
+            "content": [{
+                "type": "output_text",
+                "text": "Der offene Folgeauftrag wird jetzt fortgesetzt."
+            }]
+        }])
+    } else if is_fuzzy_product_request {
+        match last_tool_output {
+            None => json!([{
+                "type": "function_call",
+                "id": "fc_fuzzy_product",
+                "call_id": "call_fuzzy_product",
+                "name": "sortsys_search",
+                "arguments": r#"{"resource":"products","query":"Mip 02f","limit":10}"#
+            }]),
+            Some(result)
+                if result["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|product| product["name"] == "MIP-02F") =>
+            {
+                json!([{
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Das Katalogprodukt MIP-02F wurde gefunden."
+                    }]
+                }])
+            }
+            Some(result) => panic!("unexpected fuzzy product result: {result}"),
         }
     } else if last_tool_output.is_some() {
         json!([{

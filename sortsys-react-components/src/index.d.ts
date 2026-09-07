@@ -1,5 +1,7 @@
 import * as React from "react";
 
+export * from "./notifications";
+
 export type OperationalTagType =
   | "green"
   | "red"

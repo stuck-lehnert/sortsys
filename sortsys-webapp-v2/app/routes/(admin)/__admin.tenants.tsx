@@ -1,9 +1,8 @@
 import { uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
-import { InlineLoading, Modal, OperationalTag, Tile } from "@sortsys/react-components";
+import { InlineLoading, Modal, OperationalTag, Tile, useNotifications } from "@sortsys/react-components";
 import { from } from "rxjs";
 import { useEffect, useMemo, useState } from "react";
-import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
 import { AttrList } from "~/components/AttrList";
 import { MyCallout } from "~/components/MyCallout";
@@ -13,6 +12,7 @@ import { MyHeader } from "~/components/MyHeader";
 import { MyTable } from "~/components/MyTable";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
+import { useCredentialNotification } from "~/hooks/useCredentialNotification";
 import { useMyModals } from "~/hooks/useMyModals";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
@@ -113,14 +113,11 @@ export function meta() {
 
 export default function GlobalAdminTenantsPage() {
   const modals = useMyModals();
+  const notifications = useNotifications();
+  const showCredentialNotification = useCredentialNotification();
 
   const [selectedTenantName, setSelectedTenantName] = useState<string | null>(null);
   const [adminAccessTenantName, setAdminAccessTenantName] = useState<string | null>(null);
-  const [createPassword, setCreatePassword] = useState<string | null>(null);
-  const [createdAdminUser, setCreatedAdminUser] = useState<{ username: string; password: string } | null>(null);
-  const [resetAdminUser, setResetAdminUser] = useState<{ username: string; password: string } | null>(null);
-  const [actionInfo, setActionInfo] = useState<string | null>(null);
-  const [actionErr, setActionErr] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const [tenants, tenantsErr] = useClientStream(
@@ -202,18 +199,22 @@ export default function GlobalAdminTenantsPage() {
 
   async function runTenantAction(actionName: string, action: () => Promise<[unknown, Error | null]>, successMessage: string) {
     setPendingAction(actionName);
-    setActionErr(null);
 
-    const [, err] = await action();
-    setPendingAction(null);
+    try {
+      const [, err] = await action();
+      if (err) throw err;
 
-    if (err) {
-      setActionErr(err.message || uiText("Aktion fehlgeschlagen"));
+      notifications.success({ title: successMessage });
+      return true;
+    } catch (error) {
+      notifications.danger({
+        title: uiText("Aktion fehlgeschlagen", "Action failed"),
+        content: error instanceof Error ? error.message : `${error}`,
+      });
       return false;
+    } finally {
+      setPendingAction(null);
     }
-
-    setActionInfo(successMessage);
-    return true;
   }
 
   function showCreateTenantModal() {
@@ -252,8 +253,6 @@ export default function GlobalAdminTenantsPage() {
         />
       </>,
       onSubmit: async ({ context, hide }) => {
-        setActionErr(null);
-        setActionInfo(null);
         setPendingAction("createTenant");
 
         const values = context.getValues();
@@ -277,12 +276,20 @@ export default function GlobalAdminTenantsPage() {
         setPendingAction(null);
 
         if (err) {
-          setActionErr(err.message || uiText("Mandant konnte nicht erstellt werden"));
+          notifications.danger({
+            title: uiText("Mandant konnte nicht erstellt werden", "Tenant could not be created"),
+            content: err.message,
+          });
           return;
         }
 
-        setCreatePassword(result.adminPassword);
-        setActionInfo(uiText(`Mandant ${name} erstellt.`, `Tenant ${name} created.`));
+        showCredentialNotification({
+          title: uiText(`Mandant ${name} erstellt`, `Tenant ${name} created`),
+          fields: [{
+            label: uiText("Initiales Admin-Passwort", "Initial admin password"),
+            value: result.adminPassword,
+          }],
+        });
         hide();
       },
       modalProps: () => ({
@@ -499,9 +506,6 @@ export default function GlobalAdminTenantsPage() {
 
       </>,
       onSubmit: async ({ context, hide }) => {
-        setActionErr(null);
-        setActionInfo(null);
-        setCreatedAdminUser(null);
         setPendingAction("createAdminUser");
 
         try {
@@ -518,11 +522,21 @@ export default function GlobalAdminTenantsPage() {
           });
 
           if (err) {
-            setActionErr(err.message || uiText("Admin-Benutzer konnte nicht erstellt werden"));
+            notifications.danger({
+              title: uiText("Admin-Benutzer konnte nicht erstellt werden", "Admin user could not be created"),
+              content: err.message,
+            });
             return;
           }
 
-          setCreatedAdminUser({ username, password: result.password });
+          showCredentialNotification({
+            title: uiText("Admin-Benutzer erstellt", "Admin user created"),
+            description: tenant.name,
+            fields: [
+              { label: uiText("Benutzername", "Username"), value: username },
+              { label: uiText("Passwort", "Password"), value: result.password },
+            ],
+          });
           hide();
         } finally {
           setPendingAction(null);
@@ -537,8 +551,6 @@ export default function GlobalAdminTenantsPage() {
   }
 
   async function setTenantUserAdmin(tenant: TenantSummary, user: TenantAdminUser, admin: boolean) {
-    setActionErr(null);
-    setActionInfo(null);
     setPendingAction(`setAdmin:${user.id}`);
 
     const [, err] = await adminClient.mutate("admin.users.setAdmin", {
@@ -550,13 +562,18 @@ export default function GlobalAdminTenantsPage() {
     setPendingAction(null);
 
     if (err) {
-      setActionErr(err.message || uiText("Admin-Rolle konnte nicht geändert werden", "Admin role could not be changed"));
+      notifications.danger({
+        title: uiText("Admin-Rolle konnte nicht geändert werden", "Admin role could not be changed"),
+        content: err.message,
+      });
       return false;
     }
 
-    setActionInfo(admin
-      ? uiText(`${user.username} ist jetzt :admin.`, `${user.username} is now :admin.`)
-      : uiText(`${user.username} ist nicht mehr :admin.`, `${user.username} is no longer :admin.`));
+    notifications.success({
+      title: admin
+        ? uiText(`${user.username} ist jetzt :admin.`, `${user.username} is now :admin.`)
+        : uiText(`${user.username} ist nicht mehr :admin.`, `${user.username} is no longer :admin.`),
+    });
     return true;
   }
 
@@ -595,9 +612,6 @@ export default function GlobalAdminTenantsPage() {
         <MyCallout icon={Icons.SetPassword} color="amber">{uiText("Für")}<b>{adminUserName(user)}</b>{uiText("wird ein neues Passwort erzeugt. Es wird nur einmal angezeigt.")}</MyCallout>
       </>,
       onSubmit: async ({ hide }) => {
-        setActionErr(null);
-        setActionInfo(null);
-        setResetAdminUser(null);
         setPendingAction(`resetAdminPassword:${user.id}`);
 
         const [result, err] = await adminClient.mutate("admin.users.resetPassword", {
@@ -608,11 +622,21 @@ export default function GlobalAdminTenantsPage() {
         setPendingAction(null);
 
         if (err) {
-          setActionErr(err.message || uiText("Passwort konnte nicht zurückgesetzt werden", "Password could not be reset"));
+          notifications.danger({
+            title: uiText("Passwort konnte nicht zurückgesetzt werden", "Password could not be reset"),
+            content: err.message,
+          });
           return;
         }
 
-        setResetAdminUser({ username: user.username, password: result.password });
+        showCredentialNotification({
+          title: uiText("Admin-Passwort zurückgesetzt", "Admin password reset"),
+          description: tenant.name,
+          fields: [
+            { label: uiText("Benutzername", "Username"), value: user.username },
+            { label: uiText("Passwort", "Password"), value: result.password },
+          ],
+        });
         hide();
       },
       modalProps: () => ({
@@ -638,26 +662,6 @@ export default function GlobalAdminTenantsPage() {
       : tenantRows.find(tenant => tenant.name === adminAccessTenantName) ?? null
     : null;
 
-  const adminAccessMessages = <>
-    {!!createdAdminUser && (
-      <AutoHideSuccessCallout resetKey={`${createdAdminUser.username}:${createdAdminUser.password}`} onHidden={() => setCreatedAdminUser(null)}>{uiText("Admin-Benutzer")}<b>{createdAdminUser.username}</b>{uiText(" erstellt. Initiales Passwort: ")}<b>{createdAdminUser.password}</b>
-      </AutoHideSuccessCallout>
-    )}
-
-    {!!resetAdminUser && (
-      <AutoHideSuccessCallout resetKey={`${resetAdminUser.username}:${resetAdminUser.password}`} onHidden={() => setResetAdminUser(null)}>{uiText("Passwort für")}<b>{resetAdminUser.username}</b>{uiText(" zurückgesetzt: ")}<b>{resetAdminUser.password}</b>
-      </AutoHideSuccessCallout>
-    )}
-
-    {!!actionInfo && (
-      <AutoHideSuccessCallout resetKey={actionInfo} onHidden={() => setActionInfo(null)}>{actionInfo}</AutoHideSuccessCallout>
-    )}
-
-    {!!actionErr && (
-      <MyCallout icon={Icons.Deny} color="red">{actionErr}</MyCallout>
-    )}
-  </>;
-
   function renderAdminAccessPanel(tenant: TenantSummary) {
     return <Tile className="space-y-1">
       <MyHeader
@@ -670,9 +674,6 @@ export default function GlobalAdminTenantsPage() {
           onClick={() => showCreateAdminUserModal(tenant)}
         >{uiText("Admin-Benutzer")}</MyButton>}
       />
-
-      {adminAccessMessages}
-
       {!!tenantUsersErr && (
         <MyCallout icon={Icons.Deny} color="red">{uiText("Benutzer konnten nicht geladen werden:")} {`${(tenantUsersErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
         </MyCallout>
@@ -737,13 +738,6 @@ export default function GlobalAdminTenantsPage() {
       <MyButton renderIcon={Icons.Plus} onClick={showCreateTenantModal}>{uiText("Hinzufügen")}</MyButton>
     </div>
 
-    {!!createPassword && (
-      <AutoHideSuccessCallout resetKey={createPassword} onHidden={() => setCreatePassword(null)}>{uiText("Mandant erstellt. Initiales Admin-Passwort:")}<b>{createPassword}</b>
-      </AutoHideSuccessCallout>
-    )}
-
-    {!adminAccessTenantName && adminAccessMessages}
-
     {!!pendingAction && (
       <InlineLoading description={uiText("Aktion wird ausgeführt...")} />
     )}
@@ -762,8 +756,6 @@ export default function GlobalAdminTenantsPage() {
           pagination={{ pageSizes: [10, 25, 50] }}
           onRowClick={(row) => {
             setSelectedTenantName(row.name);
-            setActionErr(null);
-            setActionInfo(null);
           }}
           columns={[
             {
@@ -812,8 +804,6 @@ export default function GlobalAdminTenantsPage() {
                 kind="secondary"
                 renderIcon={Icons.User}
                 onClick={() => {
-                  setActionErr(null);
-                  setActionInfo(null);
                   setAdminAccessTenantName(selectedTenant.name);
                 }}
               >{uiText("Admin-Zugriff")}</MyButton>

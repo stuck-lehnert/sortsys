@@ -27,6 +27,10 @@
     "./my-form": {
       "types": "./src/my-form.d.ts",
       "default": "./src/my-form.tsx"
+    },
+    "./notifications": {
+      "types": "./src/notifications.d.ts",
+      "default": "./src/notifications-runtime.tsx"
     }
   },
   "peerDependencies": {

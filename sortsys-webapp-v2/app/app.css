@@ -3589,3 +3589,44 @@ b {
     animation: none;
   }
 }
+
+/* One-time credentials stay selectable and readable inside persistent notifications. */
+.credential-notification-fields {
+  margin: 0.55rem 0 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.credential-notification-fields > div {
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: minmax(5rem, auto) minmax(0, 1fr);
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+}
+
+.credential-notification-fields dt {
+  color: var(--ss-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.credential-notification-fields dd {
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.credential-notification-fields code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--ss-text-primary);
+  font-size: 0.82rem;
+  user-select: all;
+}
+
+@media (max-width: 28rem) {
+  .credential-notification-fields > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+}

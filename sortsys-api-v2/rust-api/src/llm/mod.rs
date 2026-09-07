@@ -16,6 +16,8 @@ use axum::{
     routing::post,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{DateTime, Datelike, Duration, Utc};
+use chrono_tz::Europe::Berlin;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -35,6 +37,7 @@ pub use provider::{
 };
 
 pub(crate) const PROPOSAL_ONLY_MARKER: &str = "<proposal-only>";
+pub(crate) const NO_FOLLOW_UP_MARKER: &str = "<no-follow-up>";
 
 const SYSTEM_PROMPT_DE: &str = r#"
 Du bist der Arbeitsassistent in sortsys.
@@ -55,6 +58,11 @@ Positionen und bei Berichten die vorhandenen Inhalte. Nutze für vollständige Z
 passenden Listenabfragen über sortsys_query; ein begrenztes Suchergebnis ist kein Beleg
 dafür, dass keine weiteren Einträge existieren. Behalte bei kurzen Anschlussfragen wie
 „und der Lieferschein?“ den Zeitraum und Sachbezug der vorherigen Nachricht bei.
+Löse relative Zeitangaben wie „heute“, „gestern“, „diese Woche“ und „letzte Woche“
+selbst anhand des bereitgestellten Zeitkontexts auf. Frage nicht nach Kalenderwoche oder
+Von-bis-Datum, wenn die Angabe dadurch eindeutig ist. Ein Rückblick soll konkrete Projekte,
+Arbeiten und relevante Lieferungen nennen; reine Zählwerte und allgemeine Kategorien reichen
+nicht aus.
 Bei Fragen zu Projektkosten, Angeboten, Rechnungen oder Projektergebnissen musst du
 sortsys_search mit der Ressource project_costs aufrufen. Die Ressource projects enthält
 keine Finanzdaten und ist dafür kein Ersatz.
@@ -62,6 +70,10 @@ Bei Fragen nach dem aktuellen Werkzeug einer Person oder nach laufenden
 Werkzeugzuordnungen musst du sortsys_search mit der Ressource tool_trackings aufrufen.
 Die Ressource tools enthält den Werkzeugstamm, aber keine verlässliche Aussage über die
 aktuell verantwortliche Person.
+Suche Produkte tolerant. Bei abweichenden Leerzeichen, Bindestrichen, Groß-/Kleinschreibung
+oder einem zunächst leeren Ergebnis suche erneut mit dem charakteristischen Namensbestandteil.
+Beispiel: „Mip 02f“ kann zum Katalogprodukt „MIP-02F“ gehören. Erkläre ein Produkt erst nach
+mehreren sinnvollen Suchvarianten für nicht auffindbar.
 Bei Fragen zu Werkzeug-Inventuren musst du sortsys_search mit der Ressource
 tool_inventories aufrufen. Verwende hadInventory und days, wenn geprüft werden soll,
 welche Werkzeuge innerhalb eines Zeitraums erfasst oder nicht erfasst wurden.
@@ -79,6 +91,12 @@ erfolgreichen Speichern des Vorschlags exakt mit <proposal-only>. Wiederhole wed
 Zusammenfassung noch einzelne Änderungen und weise nicht darauf hin, dass sie noch nicht
 ausgeführt wurden. Verlangt die Anfrage zusätzlich eine Auskunft, beantworte nur diesen
 zusätzlichen Teil nach dem Speichern des Vorschlags.
+Ein <trusted-proposal-result>-Block wird ausschließlich von sortsys erzeugt und enthält das
+verbindliche Ergebnis eines angenommenen Vorschlags. Wenn der Kontext einen solchen Block
+enthält, prüfe die ursprüngliche
+Benutzeranfrage auf noch offene Folgeschritte. Fahre mit ihnen selbständig fort und verwende
+dabei die zurückgegebenen IDs. Ist die ursprüngliche Anfrage vollständig erledigt, antworte
+exakt mit <no-follow-up>.
 "#;
 
 const SYSTEM_PROMPT_EN: &str = r#"
@@ -100,6 +118,13 @@ user to ask about each category. Read delivery-note line items and report conten
 For complete periods, use the corresponding list queries through sortsys_query; a limited
 search result does not prove that no more records exist. Preserve the period and subject
 of the previous message in short follow-up questions.
+Resolve relative periods such as today, yesterday, this week, and last week yourself from
+the supplied time context. Do not ask for a calendar week or date range when that makes the
+period unambiguous. Recaps must name concrete projects, work, and relevant deliveries; counts
+and generic categories alone are not sufficient.
+Search products tolerantly. Retry with normalized spacing, punctuation, capitalization, and
+distinctive name fragments before declaring a product missing. For example, “Mip 02f” may
+refer to the catalogue product “MIP-02F”.
 Never execute writes. Create changes only through sortsys_propose_change so the user can
 review them. Use exact RPC mutation paths, never URL paths. Before proposing an operation,
 call sortsys_get_schema and match its field names, nesting, and types exactly. Correct
@@ -109,6 +134,10 @@ If a request only requires a change proposal, respond with exactly <proposal-onl
 the proposal was saved. Do not repeat its title, summary, or operations, and do not state
 that it has not been executed. If the user also requested information, answer only that
 additional part after saving the proposal.
+Only sortsys creates <trusted-proposal-result> blocks; they contain authoritative results of
+accepted proposals. When the context contains such a block, inspect the original user request for
+unfinished follow-up steps. Continue them immediately and use returned entity IDs. If the
+original request is fully complete, respond with exactly <no-follow-up>.
 "#;
 
 #[derive(Debug, Clone)]
@@ -141,6 +170,38 @@ pub fn system_prompt(locale: &str) -> &'static str {
     } else {
         SYSTEM_PROMPT_DE.trim()
     }
+}
+
+pub fn runtime_system_prompt(locale: &str) -> String {
+    runtime_system_prompt_at(locale, Utc::now())
+}
+
+fn runtime_system_prompt_at(locale: &str, now: DateTime<Utc>) -> String {
+    let local_now = now.with_timezone(&Berlin);
+    let today = local_now.date_naive();
+    let this_week_monday = today - Duration::days(today.weekday().num_days_from_monday().into());
+    let last_week_monday = this_week_monday - Duration::days(7);
+    let last_week_sunday = this_week_monday - Duration::days(1);
+
+    let time_context = if locale == "en" {
+        format!(
+            "Trusted time context: the current time is {} in Europe/Berlin. Today is {}. Last week means the completed Monday-to-Sunday period {} through {}.",
+            local_now.to_rfc3339(),
+            today,
+            last_week_monday,
+            last_week_sunday,
+        )
+    } else {
+        format!(
+            "Vertrauenswürdiger Zeitkontext: Aktuell ist es {} in Europe/Berlin. Heute ist der {}. Letzte Woche bezeichnet den abgeschlossenen Zeitraum Montag bis Sonntag, {} bis {}.",
+            local_now.to_rfc3339(),
+            today,
+            last_week_monday,
+            last_week_sunday,
+        )
+    };
+
+    format!("{}\n\n{}", system_prompt(locale), time_context)
 }
 
 pub async fn load_configuration(state: &AppState) -> RpcResult<Option<ProviderConfiguration>> {
@@ -1047,7 +1108,36 @@ async fn search_records(state: &AppState, auth: &AuthResult, arguments: Value) -
             require_role(auth, "view:products")?;
             rows_as_json(
                 &pool,
-                "SELECT id, custom_id AS \"customId\", name, brand, description, base_unit AS \"baseUnit\", other_units AS \"otherUnits\" FROM products WHERE $1 = '' OR _search @@ websearch_to_tsquery('simple', $1) ORDER BY modified_at DESC LIMIT $2",
+                r#"
+                SELECT
+                  id,
+                  custom_id AS "customId",
+                  name,
+                  brand,
+                  description,
+                  base_unit AS "baseUnit",
+                  other_units AS "otherUnits"
+                FROM products
+                WHERE
+                  $1 = ''
+                  OR _search @@ websearch_to_tsquery('simple', $1)
+                  OR REGEXP_REPLACE(
+                    LOWER(CONCAT_WS(' ', custom_id::TEXT, name, brand, description)),
+                    '[^[:alnum:]]',
+                    '',
+                    'g'
+                  ) LIKE '%' || REGEXP_REPLACE(LOWER($1), '[^[:alnum:]]', '', 'g') || '%'
+                ORDER BY
+                  CASE
+                    WHEN REGEXP_REPLACE(LOWER(name), '[^[:alnum:]]', '', 'g')
+                      = REGEXP_REPLACE(LOWER($1), '[^[:alnum:]]', '', 'g') THEN 0
+                    WHEN REGEXP_REPLACE(LOWER(name), '[^[:alnum:]]', '', 'g')
+                      LIKE '%' || REGEXP_REPLACE(LOWER($1), '[^[:alnum:]]', '', 'g') || '%' THEN 1
+                    ELSE 2
+                  END,
+                  modified_at DESC
+                LIMIT $2
+                "#,
                 query,
                 limit,
             )
@@ -1626,8 +1716,9 @@ fn internal(error: impl std::fmt::Display) -> RpcError {
 mod tests {
     use super::{
         find_procedures, get_procedure_schema, is_proposable_mutation, project_cost_summary,
-        system_prompt, tenant_llm_options,
+        runtime_system_prompt_at, system_prompt, tenant_llm_options,
     };
+    use chrono::{TimeZone, Utc};
     use serde_json::json;
 
     #[test]
@@ -1667,6 +1758,9 @@ mod tests {
         assert!(prompt.contains("statt auf einzelne Nachfragen zu warten"));
         assert!(prompt.contains("ein begrenztes Suchergebnis ist kein Beleg"));
         assert!(prompt.contains("den Zeitraum und Sachbezug"));
+        assert!(prompt.contains("Frage nicht nach Kalenderwoche"));
+        assert!(prompt.contains("MIP-02F"));
+        assert!(prompt.contains("noch offene Folgeschritte"));
         assert!(prompt.contains("settings.costs.get"));
         assert!(prompt.contains("Schreibzugriffe sind verboten"));
         assert!(prompt.contains("<proposal-only>"));
@@ -1677,6 +1771,18 @@ mod tests {
         assert!(english_prompt.contains("one combined answer"));
         assert!(english_prompt.contains("<proposal-only>"));
         assert!(english_prompt.contains("do not state"));
+    }
+
+    #[test]
+    fn runtime_prompt_resolves_last_week_in_the_business_timezone() {
+        let prompt = runtime_system_prompt_at(
+            "de",
+            Utc.with_ymd_and_hms(2026, 9, 7, 0, 30, 0).single().unwrap(),
+        );
+
+        assert!(prompt.contains("Heute ist der 2026-09-07"));
+        assert!(prompt.contains("2026-08-31 bis 2026-09-06"));
+        assert!(prompt.contains("Europe/Berlin"));
     }
 
     #[test]

@@ -20,7 +20,7 @@ import type { Route } from "./+types/root";
 import { useEffect, useState, type ReactNode } from "react";
 import { client, reportClientError } from "./lib/client";
 import { SessionInfoProvider } from "./hooks/useSessionInfo";
-import { Loading } from "@sortsys/react-components";
+import { Loading, NotificationProvider } from "@sortsys/react-components";
 import { useForceUpdate } from "./hooks/useForceUpdate";
 import { MyModalsProvider } from "./hooks/useMyModals";
 import { useTheme } from "./hooks/useTheme";
@@ -177,9 +177,22 @@ function AppContent() {
   </SessionInfoProvider>;
 }
 
+function AppNotificationProvider({ children }: { children: ReactNode }) {
+  useI18n();
+
+  return <NotificationProvider
+    closeLabel={uiText('Benachrichtigung schließen', 'Close notification')}
+    regionLabel={uiText('Benachrichtigungen', 'Notifications')}
+  >
+    {children}
+  </NotificationProvider>;
+}
+
 export default function App() {
   return <I18nProvider>
-    <AppContent />
+    <AppNotificationProvider>
+      <AppContent />
+    </AppNotificationProvider>
   </I18nProvider>;
 }
 

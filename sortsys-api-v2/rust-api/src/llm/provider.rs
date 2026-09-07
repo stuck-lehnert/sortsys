@@ -10,9 +10,11 @@ use crate::{
     error::{ErrorCode, RpcError, RpcResult},
 };
 
-use super::{ProviderConfiguration, execute_tool, system_prompt, tool_definitions};
+use super::{ProviderConfiguration, execute_tool, runtime_system_prompt, tool_definitions};
 
-const MAX_TOOL_ROUNDS: usize = 8;
+// Recaps can require several schema lookups and data queries. Keep a hard cap,
+// but leave enough room for models that issue those calls sequentially.
+const MAX_TOOL_ROUNDS: usize = 16;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatTurn {
@@ -50,7 +52,7 @@ pub async fn complete(
     turns: &[ChatTurn],
     locale: &str,
 ) -> RpcResult<Completion> {
-    let prompt = system_prompt(locale);
+    let prompt = runtime_system_prompt(locale);
     let supports_native_mcp = state.config.llm_mcp_url.is_some()
         && matches!(configuration.provider.as_str(), "openai" | "anthropic");
 
@@ -61,9 +63,9 @@ pub async fn complete(
             .map_err(internal)?;
 
         let result = match configuration.provider.as_str() {
-            "openai" => openai_mcp(state, configuration, turns, &delegated_token, prompt).await,
+            "openai" => openai_mcp(state, configuration, turns, &delegated_token, &prompt).await,
             "anthropic" => {
-                anthropic_mcp(state, configuration, turns, &delegated_token, prompt).await
+                anthropic_mcp(state, configuration, turns, &delegated_token, &prompt).await
             }
             _ => unreachable!(),
         };
@@ -79,12 +81,12 @@ pub async fn complete(
     }
 
     match configuration.provider.as_str() {
-        "anthropic" => anthropic_tools(state, auth, chat_id, configuration, turns, prompt).await,
+        "anthropic" => anthropic_tools(state, auth, chat_id, configuration, turns, &prompt).await,
         "openai" => {
-            openai_responses_tools(state, auth, chat_id, configuration, turns, prompt).await
+            openai_responses_tools(state, auth, chat_id, configuration, turns, &prompt).await
         }
         "deepseek" | "custom" => {
-            openai_compatible_tools(state, auth, chat_id, configuration, turns, prompt).await
+            openai_compatible_tools(state, auth, chat_id, configuration, turns, &prompt).await
         }
         _ => Err(RpcError::new(
             ErrorCode::BadRequest,

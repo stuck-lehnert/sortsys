@@ -1240,6 +1240,205 @@ button.ss-operational-tag:focus-visible {
   background: color-mix(in srgb, var(--ss-accent) 8%, var(--ss-surface));
 }
 
+.ss-notification-region {
+  position: fixed;
+  inset-block-start: 1rem;
+  inset-inline-end: 1rem;
+  z-index: 260;
+  inline-size: min(25rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.55rem;
+  pointer-events: none;
+}
+
+.ss-notification {
+  --ss-notification-color: var(--ss-accent-strong);
+
+  position: relative;
+  min-inline-size: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 0.22rem auto minmax(0, 1fr) auto;
+  align-items: start;
+  border: 1px solid var(--ss-border-strong);
+  background: var(--ss-surface-elevated);
+  color: var(--ss-text-primary);
+  box-shadow: var(--ss-shadow-strong);
+  pointer-events: auto;
+  animation: ss-notification-enter 180ms ease-out both;
+}
+
+.ss-notification[data-state="leaving"] {
+  pointer-events: none;
+  animation: ss-notification-leave 180ms ease-in both;
+}
+
+.ss-notification--success {
+  --ss-notification-color: var(--ss-success);
+}
+
+.ss-notification--warning {
+  --ss-notification-color: var(--ss-warning);
+}
+
+.ss-notification--danger {
+  --ss-notification-color: var(--ss-danger);
+}
+
+.ss-notification__accent {
+  align-self: stretch;
+  background: var(--ss-notification-color);
+}
+
+.ss-notification__icon {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+  margin: 0.78rem 0 0.78rem 0.72rem;
+  color: var(--ss-notification-color);
+}
+
+.ss-notification__icon svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ss-notification__body {
+  min-inline-size: 0;
+  padding: 0.72rem 0.65rem 0.72rem 0.62rem;
+}
+
+.ss-notification__title {
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.ss-notification__content {
+  margin-block-start: 0.18rem;
+  overflow-wrap: anywhere;
+  color: var(--ss-text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.ss-notification__content:first-child {
+  margin-block-start: 0;
+}
+
+.ss-notification__actions {
+  margin-block-start: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+}
+
+.ss-notification__actions button {
+  appearance: none;
+  min-block-size: 1.7rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ss-accent-strong);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ss-notification__actions button:hover {
+  opacity: 0.8;
+}
+
+.ss-notification__actions button:focus-visible,
+.ss-notification__close:focus-visible {
+  outline: 2px solid var(--ss-focus-ring-strong);
+  outline-offset: 2px;
+}
+
+.ss-notification__close {
+  appearance: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  margin: 0.28rem 0.28rem 0 0;
+  padding: 0.62rem;
+  border: 0;
+  background: transparent;
+  color: var(--ss-text-secondary);
+  cursor: pointer;
+}
+
+.ss-notification__close:hover {
+  background: var(--ss-surface-muted);
+  color: var(--ss-text-primary);
+}
+
+.ss-notification__close svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.ss-notification__timer {
+  position: absolute;
+  inset: auto 0 0 0.22rem;
+  block-size: 2px;
+  background: var(--ss-notification-color);
+  transform-origin: left;
+  animation-name: ss-notification-timer;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+.ss-notification[data-paused="true"] .ss-notification__timer {
+  animation-play-state: paused;
+}
+
+@keyframes ss-notification-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-0.45rem);
+  }
+}
+
+@keyframes ss-notification-leave {
+  to {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
+@keyframes ss-notification-timer {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (max-width: 40rem) {
+  .ss-notification-region {
+    inset-block-start: 0.5rem;
+    inset-inline: 0.5rem;
+    inline-size: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-notification,
+  .ss-notification[data-state="leaving"] {
+    animation-duration: 1ms;
+  }
+}
+
 .ss-page-header {
   inline-size: 100%;
   display: flex;

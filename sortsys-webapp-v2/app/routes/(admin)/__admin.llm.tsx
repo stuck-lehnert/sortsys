@@ -1,6 +1,6 @@
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
-import { Heading, Tile } from "@sortsys/react-components";
+import { Heading, Tile, useNotifications } from "@sortsys/react-components";
 import { useEffect, useMemo, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -23,6 +23,8 @@ function formatTokens(value: number | bigint) {
 }
 
 export default function GlobalAdminLlmPage() {
+  const notifications = useNotifications();
+
   const [settings, settingsErr] = useClientStream(
     () => adminClient.streamQuery('admin.llm.settings.get', undefined, { strategy: 'network-first' }),
     [],
@@ -45,8 +47,6 @@ export default function GlobalAdminLlmPage() {
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [tenantDrafts, setTenantDrafts] = useState<Record<string, TenantSettings>>({});
   const [scanProvider, setScanProvider] = useState('openai');
   const [scanModel, setScanModel] = useState(providerModels.openai);
@@ -84,8 +84,6 @@ export default function GlobalAdminLlmPage() {
 
   async function saveSettings() {
     setSaving(true);
-    setError(null);
-    setMessage(null);
 
     const [updated, err] = await adminClient.mutate('admin.llm.settings.update', {
       provider: provider as 'openai',
@@ -96,20 +94,23 @@ export default function GlobalAdminLlmPage() {
 
     setSaving(false);
     if (err) {
-      setError(err.message);
+      notifications.danger({
+        title: uiText("LLM-Konfiguration konnte nicht gespeichert werden", "LLM configuration could not be saved"),
+        content: err.message,
+      });
       return;
     }
 
     setApiKey('');
-    setMessage(uiText(`Provider ${updated.provider} wurde gespeichert.`, `Provider ${updated.provider} saved.`));
+    notifications.success({
+      title: uiText(`Provider ${updated.provider} wurde gespeichert.`, `Provider ${updated.provider} saved.`),
+    });
     await adminClient.invalidate('admin.llm.settings.get');
   }
 
 
   async function saveScanSettings() {
     setSavingScan(true);
-    setError(null);
-    setMessage(null);
 
     const [updated, err] = await adminClient.mutate('admin.llm.scanSettings.update', {
       provider: scanProvider as 'openai',
@@ -120,22 +121,24 @@ export default function GlobalAdminLlmPage() {
 
     setSavingScan(false);
     if (err) {
-      setError(err.message);
+      notifications.danger({
+        title: uiText("Scan-Modell konnte nicht gespeichert werden", "Scan model could not be saved"),
+        content: err.message,
+      });
       return;
     }
 
     setScanApiKey('');
-    setMessage(uiText(
-      'Scan-Modell ' + updated.provider + ' wurde gespeichert.',
-      'Scan model ' + updated.provider + ' saved.',
-    ));
+    notifications.success({
+      title: uiText(
+        'Scan-Modell ' + updated.provider + ' wurde gespeichert.',
+        'Scan model ' + updated.provider + ' saved.',
+      ),
+    });
     await adminClient.invalidate('admin.llm.scanSettings.get');
   }
 
   async function saveTenant(tenant: TenantSettings) {
-    setError(null);
-    setMessage(null);
-
     const [updated, err] = await adminClient.mutate('admin.llm.tenants.update', {
       name: tenant.name,
       enabled: tenant.enabled,
@@ -143,19 +146,22 @@ export default function GlobalAdminLlmPage() {
     });
 
     if (err) {
-      setError(err.message);
+      notifications.danger({
+        title: uiText("Mandant konnte nicht gespeichert werden", "Tenant could not be saved"),
+        content: err.message,
+      });
       return;
     }
 
     setTenantDrafts(previous => ({ ...previous, [updated.name]: updated }));
-    setMessage(uiText(`${updated.name} wurde gespeichert.`, `${updated.name} saved.`));
+    notifications.success({
+      title: uiText(`${updated.name} wurde gespeichert.`, `${updated.name} saved.`),
+    });
     await adminClient.invalidate('admin.llm.tenants.list');
   }
 
   return <>
     {!!loadError && <MyCallout icon={Icons.Deny} color="red">{loadError.message}</MyCallout>}
-    {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
-    {!!message && <MyCallout icon={Icons.Accept} color="green">{message}</MyCallout>}
 
     <Tile className="space-y-2">
       <Heading level={3} noMargin>{uiText("Provider")}</Heading>

@@ -588,6 +588,7 @@ export default function LlmPage() {
       decision: 'accept',
       comment: null,
       executionResults,
+      continueConversation: true,
     });
     setPending(null);
 
