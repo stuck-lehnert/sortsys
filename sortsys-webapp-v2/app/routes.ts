@@ -26,6 +26,7 @@ export default [
         route("scripts", "routes/(shell)/scripts.tsx"),
         route("deployments", "routes/(shell)/deployments.tsx"),
         route("vacations", "routes/(shell)/vacations.tsx"),
+        route("documents", "routes/(shell)/documents.tsx"),
         route("llm/chats", "routes/(shell)/llm.chats.tsx"),
         route("llm/:chatId?", "routes/(shell)/llm.tsx"),
 

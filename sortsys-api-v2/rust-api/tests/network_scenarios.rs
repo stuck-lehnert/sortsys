@@ -427,15 +427,57 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     assert!(downloaded_file.status().is_success());
     assert_eq!(downloaded_file.bytes().await.unwrap().as_ref(), file_bytes);
 
+    let plans_folder = rpc
+        .mutation(
+            "projects.files.folders.create",
+            json!({
+                "projectId": project_id,
+                "name": "Planung",
+            }),
+            Some(&token),
+        )
+        .await;
+    let approvals_folder = rpc
+        .mutation(
+            "projects.files.folders.create",
+            json!({
+                "projectId": project_id,
+                "parentFolderId": plans_folder["id"],
+                "name": "Freigaben",
+            }),
+            Some(&token),
+        )
+        .await;
+
+    let folders = rpc
+        .query(
+            "projects.files.folders.list",
+            json!({ "projectId": project_id }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(folders.as_array().unwrap().len(), 2);
+    let listed_approvals_folder = folders
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|folder| folder["id"] == approvals_folder["id"])
+        .unwrap();
+    assert_eq!(
+        listed_approvals_folder["parentFolderId"],
+        plans_folder["id"]
+    );
+
     // The editor session is exercised without a Document Server process here:
     // its signed source request and save callbacks still traverse the real API,
     // PostgreSQL, and MinIO paths used in production.
-    let document_bytes = include_bytes!("../../test-files/blank.pdf");
+    let document_bytes = include_bytes!("../../test-files/searchable-project-document.pdf");
     let created_document = rpc
         .mutation(
             "projects.files.createUpload",
             json!({
                 "projectId": project_id,
+                "folderId": plans_folder["id"],
                 "fileName": "Baustellenbericht.pdf",
                 "mimeType": "application/pdf",
                 "sizeBytes": document_bytes.len(),
@@ -468,6 +510,182 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
         Some(&token),
     )
     .await;
+
+    let document_file_id = Id::decode(created_document["fileId"].as_str().unwrap())
+        .unwrap()
+        .0;
+    let mut extraction = None;
+
+    for _ in 0..60 {
+        extraction = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+            r#"
+            SELECT
+                text_extraction_status,
+                extracted_text,
+                text_extraction_method
+            FROM project_files
+            WHERE id = $1
+            "#,
+        )
+        .bind(document_file_id)
+        .fetch_optional(&fixture.tenant_pool)
+        .await
+        .unwrap();
+
+        if extraction.as_ref().is_some_and(|row| row.0 == "ready") {
+            break;
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    let extraction = extraction.expect("uploaded PDF must have extraction state");
+    assert_eq!(extraction.0, "ready");
+    assert_eq!(extraction.2.as_deref(), Some("embedded_pdf_text"));
+    assert!(
+        extraction
+            .1
+            .as_deref()
+            .is_some_and(|text| text.contains("Brandschutzabschottung"))
+    );
+
+    let search_results = rpc
+        .query(
+            "projects.files.search",
+            json!({ "query": "Brandschutzabschottung", "limit": 20 }),
+            Some(&token),
+        )
+        .await;
+    assert!(search_results.as_array().unwrap().iter().any(|result| {
+        result["id"] == created_document["fileId"]
+            && result["excerpt"]
+                .as_str()
+                .is_some_and(|excerpt| excerpt.contains("Brandschutzabschottung"))
+    }));
+
+    let restricted_username = format!("document-reader-{}", unique_suffix());
+    let restricted_password = "Document-Reader-123!";
+    let restricted_password_hash = hash(restricted_password, 4).unwrap();
+    let restricted_user_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO users (username, first_name, password, deactivated_at)
+        VALUES ($1, 'Document Reader', $2, NULL)
+        RETURNING id
+        "#,
+    )
+    .bind(&restricted_username)
+    .bind(restricted_password_hash)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    let restricted_login = rpc
+        .mutation(
+            "auth.login",
+            json!({
+                "tenant": fixture.tenant,
+                "username": restricted_username,
+                "password": restricted_password,
+            }),
+            None,
+        )
+        .await;
+    let restricted_token = restricted_login["token"].as_str().unwrap();
+
+    let hidden_results = rpc
+        .query(
+            "projects.files.search",
+            json!({ "query": "Brandschutzabschottung", "limit": 20 }),
+            Some(restricted_token),
+        )
+        .await;
+    assert!(hidden_results.as_array().unwrap().is_empty());
+
+    sqlx::query(
+        "INSERT INTO project_user_assignments (project_id, user_id, type) VALUES ($1, $2, 'member')",
+    )
+    .bind(Id::decode(project_id).unwrap().0)
+    .bind(restricted_user_id)
+    .execute(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    let assigned_results = rpc
+        .query(
+            "projects.files.search",
+            json!({ "query": "Brandschutzabschottung", "limit": 20 }),
+            Some(restricted_token),
+        )
+        .await;
+    assert_eq!(assigned_results.as_array().unwrap().len(), 1);
+
+    rpc.mutation(
+        "projects.files.rename",
+        json!({
+            "projectId": project_id,
+            "fileId": created_document["fileId"],
+            "fileName": "Baustellenbericht freigegeben.pdf",
+        }),
+        Some(&token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.files.move",
+        json!({
+            "projectId": project_id,
+            "fileIds": [created_document["fileId"].clone()],
+            "folderId": approvals_folder["id"],
+        }),
+        Some(&token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.files.folders.move",
+        json!({
+            "projectId": project_id,
+            "folderId": approvals_folder["id"],
+            "parentFolderId": null,
+        }),
+        Some(&token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.files.folders.rename",
+        json!({
+            "projectId": project_id,
+            "folderId": approvals_folder["id"],
+            "name": "Freigegebene Pläne",
+        }),
+        Some(&token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.files.folders.delete",
+        json!({
+            "projectId": project_id,
+            "folderId": plans_folder["id"],
+        }),
+        Some(&token),
+    )
+    .await;
+
+    let organized_files = rpc
+        .query(
+            "projects.files.list",
+            json!({ "projectId": project_id }),
+            Some(&token),
+        )
+        .await;
+    let organized_document = organized_files
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["id"] == created_document["fileId"])
+        .unwrap();
+    assert_eq!(organized_document["folderId"], approvals_folder["id"]);
+    assert_eq!(
+        organized_document["fileName"],
+        "Baustellenbericht freigegeben.pdf"
+    );
 
     let office_config = rpc
         .query(
@@ -517,7 +735,7 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     let callback_url = office_config["config"]["editorConfig"]["callbackUrl"]
         .as_str()
         .unwrap();
-    let replacement_url = listed_file["downloadUrl"].as_str().unwrap();
+    let replacement_url = organized_document["downloadUrl"].as_str().unwrap();
     let force_save_payload = json!({
         "key": document_key,
         "status": 6,
@@ -540,9 +758,6 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     assert!(force_save.status().is_success());
     assert_eq!(force_save.json::<Value>().await.unwrap()["error"], 0);
 
-    let document_file_id = Id::decode(created_document["fileId"].as_str().unwrap())
-        .unwrap()
-        .0;
     let saved_document = sqlx::query_as::<_, (i64, Option<i64>, Option<i64>)>(
         r#"
         SELECT office_version, size_bytes, office_modified_by_user_id
@@ -555,7 +770,7 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     .await
     .unwrap();
     assert_eq!(saved_document.0, 1);
-    assert_eq!(saved_document.1, Some(file_bytes.len() as i64));
+    assert_eq!(saved_document.1, Some(document_bytes.len() as i64));
     assert!(saved_document.2.is_some());
 
     let files_after_force_save = rpc
@@ -578,7 +793,7 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
         .await
         .unwrap();
     assert!(saved_bytes.status().is_success());
-    assert_eq!(saved_bytes.bytes().await.unwrap().as_ref(), file_bytes);
+    assert_eq!(saved_bytes.bytes().await.unwrap().as_ref(), document_bytes);
 
     let final_save_payload = json!({
         "key": document_key,
@@ -738,6 +953,15 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
     )
     .await;
     rpc.mutation(
+        "projects.files.folders.delete",
+        json!({
+            "projectId": project_id,
+            "folderId": approvals_folder["id"],
+        }),
+        Some(&token),
+    )
+    .await;
+    rpc.mutation(
         "projects.files.delete",
         json!({ "projectId": project_id, "fileId": created_file["fileId"] }),
         Some(&token),
@@ -847,13 +1071,13 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
 
     // The session row proves this test used the public login endpoint rather
     // than constructing an authenticated request in-process.
-    let session_user_id = sqlx::query_scalar::<_, i64>(
-        "SELECT user_id FROM user_sessions ORDER BY created_at DESC LIMIT 1",
-    )
-    .fetch_one(&fixture.tenant_pool)
-    .await
-    .unwrap();
-    assert_eq!(session_user_id, fixture.user_id);
+    let session_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM user_sessions WHERE user_id = $1")
+            .bind(fixture.user_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert!(session_count > 0);
 }
 
 #[tokio::test]

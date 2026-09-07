@@ -42,6 +42,24 @@ services:
     shm_size: "2gb"
     stop_grace_period: 1m
 
+  drawio:
+    image: ${DRAWIO_IMAGE:-jgraph/drawio:31.1.8}
+    restart: unless-stopped
+    environment:
+      # The official image derives its Tomcat context path from this URL.
+      # A relative same-origin URL keeps Coolify's generated domain authoritative.
+      DRAWIO_SERVER_URL: ${DRAWIO_SERVER_URL:-/drawio/}
+      DRAWIO_BASE_URL: ${DRAWIO_BASE_URL:-/drawio}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/drawio/"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 45s
+    stop_grace_period: 30s
+
   api:
     build:
       context: ./sortsys-api-v2
@@ -60,6 +78,7 @@ services:
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice
       ONLYOFFICE_CALLBACK_URL: http://api:3000/internal/onlyoffice/callback
       ONLYOFFICE_JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
+      DRAWIO_PUBLIC_URL: /drawio
     expose:
       - "3000"
     depends_on:
@@ -106,7 +125,7 @@ services:
       JOB_RUNNER_WS_IGNORE_PROXY: "true"
       JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
       JOB_RUNNER_ID: ${OCR_JOB_RUNNER_ID:-sortsys-compose-ocr-1}
-      JOB_RUNNER_JOB_TYPE: delivery_note_ocr
+      JOB_RUNNER_JOB_TYPE: delivery_note_ocr,project_file_pdf_extract
       JOB_RUNNER_LEASE_SEC: "300"
     depends_on:
       api:
@@ -128,6 +147,7 @@ services:
       SERVICE_URL_WEBAPP_80: /
       API_UPSTREAM: http://api:3000
       ONLYOFFICE_UPSTREAM: http://onlyoffice
+      DRAWIO_UPSTREAM: http://drawio:8080
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-64m}
     expose:
       - "80"
@@ -135,6 +155,8 @@ services:
       api:
         condition: service_healthy
       onlyoffice:
+        condition: service_healthy
+      drawio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]

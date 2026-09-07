@@ -4,7 +4,7 @@ This package contains the German-language sortsys browser interface. It is built
 
 ## Development
 
-For the complete application with PostgreSQL, MinIO, ONLYOFFICE Document Server, API, workers, generated client, and seed data, run this from the repository root:
+For the complete application with PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, API, workers, generated client, and seed data, run this from the repository root:
 
 ```bash
 ./scripts/dev
@@ -36,9 +36,11 @@ npm run typecheck
 npm run build
 ```
 
-The production container serves the static build through Nginx. `API_UPSTREAM` selects the internal API origin and defaults to `http://api:3000`; `CLIENT_MAX_BODY_SIZE` defaults to `64m`.
+The production container serves the static build through Nginx. `API_UPSTREAM` selects the internal API origin, while `ONLYOFFICE_UPSTREAM` and `DRAWIO_UPSTREAM` select the internal editor services. `CLIENT_MAX_BODY_SIZE` defaults to `64m`.
 
-Supported project attachments open in the embedded ONLYOFFICE editor. The browser loads Document Server's API from the URL returned by the authenticated Rust API; no provider token or storage URL is kept in frontend configuration.
+Users can create DOCX, PPTX, XLSX, and diagrams.net files directly in a project's attachment area. Office files open in ONLYOFFICE; diagrams open in the embedded diagrams.net editor. Both editors save through authenticated API procedures.
+
+Uploaded PDFs are indexed in the background. The **Documents** view searches file names and recognized PDF text across every project the current user may access.
 
 ## Local packages
 
@@ -49,4 +51,3 @@ Supported project attachments open in the embedded ONLYOFFICE editor. The browse
 ## License
 
 This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
-

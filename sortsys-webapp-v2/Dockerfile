@@ -37,6 +37,7 @@ COPY sortsys-webapp-v2/nginx.conf.template /etc/nginx/templates/default.conf.tem
 
 ENV API_UPSTREAM=http://api:3000 \
     ONLYOFFICE_UPSTREAM=http://onlyoffice \
+    DRAWIO_UPSTREAM=http://drawio:8080 \
     CLIENT_MAX_BODY_SIZE=64m
 
 EXPOSE 80

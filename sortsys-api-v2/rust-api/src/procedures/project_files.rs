@@ -15,8 +15,9 @@ use crate::{
     AppState,
     api::Success,
     auth::AuthResult,
-    error::RpcResult,
+    error::{RpcError, RpcResult},
     ids::Id,
+    job_queue::PROJECT_FILE_PDF_EXTRACT_JOB_TYPE,
     object_storage::{self, Audience, EnabledStorage},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
@@ -30,6 +31,14 @@ pub fn register(
     let list_state = Arc::clone(&state);
     let upload_state = Arc::clone(&state);
     let complete_state = Arc::clone(&state);
+    let delete_state = Arc::clone(&state);
+    let rename_state = Arc::clone(&state);
+    let move_files_state = Arc::clone(&state);
+    let list_folders_state = Arc::clone(&state);
+    let create_folder_state = Arc::clone(&state);
+    let rename_folder_state = Arc::clone(&state);
+    let move_folder_state = Arc::clone(&state);
+    let search_state = Arc::clone(&state);
 
     builder
         .query(
@@ -65,10 +74,100 @@ pub fn register(
         .mutation(
             "projects.files.delete",
             move |context, input: DeleteFileInput| {
-                let state = Arc::clone(&state);
+                let state = Arc::clone(&delete_state);
 
                 async move { delete(&state, &context, input).await }
             },
+        )
+        .mutation(
+            "projects.files.rename",
+            move |context, mut input: RenameFileInput| {
+                let state = Arc::clone(&rename_state);
+
+                async move {
+                    normalize_item_name(&mut input.file_name, "fileName")?;
+                    rename_file(&state, &context, input).await
+                }
+            },
+        )
+        .mutation(
+            "projects.files.move",
+            move |context, input: MoveFilesInput| {
+                let state = Arc::clone(&move_files_state);
+
+                async move { move_files(&state, &context, input).await }
+            },
+        )
+        .query(
+            "projects.files.folders.list",
+            move |context, input: ProjectFilesInput| {
+                let state = Arc::clone(&list_folders_state);
+
+                async move { list_folders(&state, &context, input.project_id).await }
+            },
+        )
+        .mutation(
+            "projects.files.folders.create",
+            move |context, mut input: CreateFolderInput| {
+                let state = Arc::clone(&create_folder_state);
+
+                async move {
+                    normalize_item_name(&mut input.name, "name")?;
+                    create_folder(&state, &context, input).await
+                }
+            },
+        )
+        .mutation(
+            "projects.files.folders.rename",
+            move |context, mut input: RenameFolderInput| {
+                let state = Arc::clone(&rename_folder_state);
+
+                async move {
+                    normalize_item_name(&mut input.name, "name")?;
+                    rename_folder(&state, &context, input).await
+                }
+            },
+        )
+        .mutation(
+            "projects.files.folders.move",
+            move |context, input: MoveFolderInput| {
+                let state = Arc::clone(&move_folder_state);
+
+                async move { move_folder(&state, &context, input).await }
+            },
+        )
+        .mutation(
+            "projects.files.folders.delete",
+            move |context, input: DeleteFolderInput| {
+                let state = Arc::clone(&state);
+
+                async move { delete_folder(&state, &context, input).await }
+            },
+        )
+        .query(
+            "projects.files.search",
+            move |context, mut input: SearchProjectFilesInput| {
+                let state = Arc::clone(&search_state);
+
+                async move {
+                    input.normalize()?;
+                    search(&state, &context, input).await
+                }
+            },
+        )
+}
+
+pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    builder
+        .mutation_stub::<RenameFileInput, Success>("projects.files.rename")
+        .mutation_stub::<MoveFilesInput, Success>("projects.files.move")
+        .query_stub::<ProjectFilesInput, Vec<ProjectFileFolder>>("projects.files.folders.list")
+        .mutation_stub::<CreateFolderInput, CreateFolderOutput>("projects.files.folders.create")
+        .mutation_stub::<RenameFolderInput, Success>("projects.files.folders.rename")
+        .mutation_stub::<MoveFolderInput, Success>("projects.files.folders.move")
+        .mutation_stub::<DeleteFolderInput, Success>("projects.files.folders.delete")
+        .query_stub::<SearchProjectFilesInput, Vec<ProjectFileSearchResult>>(
+            "projects.files.search",
         )
 }
 
@@ -80,6 +179,8 @@ async fn list(
     let (auth, pool) = authenticated_pool(state, context).await?;
 
     ensure_access(&pool, &auth, project_id, FileAction::View, None).await?;
+
+    queue_pending_pdf_extractions(state, &auth.tenant, &pool, Some(project_id)).await?;
 
     let rows = select_project_files(&pool, project_id).await?;
     build_output_rows(state, &auth.tenant, rows).await
@@ -101,6 +202,7 @@ pub(crate) async fn load_report_photos(
             relation.report_id,
             file.id,
             file.project_id,
+            file.folder_id,
             file.file_name,
             file.mime_type,
             file.kind,
@@ -110,8 +212,10 @@ pub(crate) async fn load_report_photos(
             file.thumbnail_object_key,
             file.thumbnail_width,
             file.thumbnail_height,
+            file.text_extraction_status,
             file.created_by_user_id,
             file.created_at,
+            file.modified_at,
             file.uploaded_at,
             file.object_key
         FROM daily_project_report_files AS relation
@@ -141,6 +245,7 @@ async fn select_project_files(pool: &PgPool, project_id: Id) -> RpcResult<Vec<Pr
         SELECT
             file.id,
             file.project_id,
+            file.folder_id,
             file.file_name,
             file.mime_type,
             file.kind,
@@ -150,8 +255,10 @@ async fn select_project_files(pool: &PgPool, project_id: Id) -> RpcResult<Vec<Pr
             file.thumbnail_object_key,
             file.thumbnail_width,
             file.thumbnail_height,
+            file.text_extraction_status,
             file.created_by_user_id,
             file.created_at,
+            file.modified_at,
             file.uploaded_at,
             file.object_key
         FROM project_files AS file
@@ -243,6 +350,7 @@ fn build_output_row(
     Ok(ProjectFile {
         id: Id(row.id),
         project_id: Id(row.project_id),
+        folder_id: row.folder_id.map(Id),
         file_name: row.file_name,
         mime_type: row.mime_type,
         kind: output_kind,
@@ -259,8 +367,10 @@ fn build_output_row(
         preview_expires_at,
         thumbnail_width: row.thumbnail_width,
         thumbnail_height: row.thumbnail_height,
+        text_extraction_status: row.text_extraction_status,
         created_by_user_id: row.created_by_user_id.map(Id),
         created_at: row.created_at,
+        modified_at: row.modified_at,
         uploaded_at: row.uploaded_at,
         download_url,
         download_expires_at,
@@ -278,6 +388,7 @@ async fn create_upload(
     let creator_id = auth.user.id.parse::<i64>().map_err(internal)?;
 
     ensure_access(&pool, &auth, input.project_id, FileAction::Upload, None).await?;
+    ensure_folder_in_project(&pool, input.project_id, input.folder_id).await?;
 
     let storage = object_storage::tenant_config(&state.tenants, &auth.tenant, true)
         .await?
@@ -286,10 +397,15 @@ async fn create_upload(
         object_storage::build_project_object_key(&storage, input.project_id, &input.file_name);
     let kind = file_kind(&input.file_name, &input.mime_type);
 
+    // Photos keep using the dedicated gallery. A selected folder only applies
+    // to document-style attachments, including DWG files.
+    let folder_id = (kind == "file").then_some(input.folder_id).flatten();
+
     let file_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO project_files (
             project_id,
+            folder_id,
             storage_bucket,
             object_key,
             file_name,
@@ -299,11 +415,12 @@ async fn create_upload(
             status,
             created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)
         RETURNING id
         "#,
     )
     .bind(input.project_id.0)
+    .bind(folder_id.map(|id| id.0))
     .bind(&storage.bucket)
     .bind(&object_key)
     .bind(&input.file_name)
@@ -349,7 +466,8 @@ async fn complete_upload(
             kind,
             object_key,
             mime_type,
-            file_name
+            file_name,
+            office_version
         FROM project_files
         WHERE id = $1
           AND project_id = $2
@@ -372,6 +490,7 @@ async fn complete_upload(
     .await?;
 
     let is_image = row.kind == "image";
+    let is_pdf = is_pdf(&row.file_name, &row.mime_type);
     let thumbnail_key =
         is_image.then(|| object_storage::build_thumbnail_object_key(&row.object_key));
 
@@ -381,6 +500,7 @@ async fn complete_upload(
         SET
             status = 'uploaded',
             uploaded_at = NOW(),
+            modified_at = NOW(),
             etag = $3,
             thumbnail_status = $4,
             thumbnail_object_key = $5,
@@ -389,7 +509,15 @@ async fn complete_upload(
             thumbnail_height = NULL,
             thumbnail_size_bytes = NULL,
             thumbnail_etag = NULL,
-            thumbnail_generated_at = NULL
+            thumbnail_generated_at = NULL,
+            text_extraction_status = $7,
+            extracted_text = NULL,
+            text_extraction_method = NULL,
+            text_extraction_confidence = NULL,
+            text_extraction_page_count = NULL,
+            text_extraction_error = NULL,
+            text_extraction_version = NULL,
+            text_extracted_at = NULL
         WHERE id = $1
           AND project_id = $2
         "#,
@@ -400,6 +528,7 @@ async fn complete_upload(
     .bind(if is_image { "queued" } else { "none" })
     .bind(&thumbnail_key)
     .bind(is_image.then_some("image/webp"))
+    .bind(if is_pdf { "queued" } else { "not_applicable" })
     .execute(&pool)
     .await
     .map_err(internal)?;
@@ -428,7 +557,412 @@ async fn complete_upload(
         }
     }
 
+    if is_pdf {
+        let payload = pdf_extraction_payload(
+            row.project_id,
+            row.id,
+            &row.object_key,
+            &row.mime_type,
+            &row.file_name,
+            row.office_version,
+        );
+
+        if let Err(error) = enqueue_job(
+            state,
+            &auth.tenant,
+            PROJECT_FILE_PDF_EXTRACT_JOB_TYPE,
+            payload,
+        )
+        .await
+        {
+            set_text_extraction_failed(&pool, row.id, "OCR job could not be queued").await?;
+            return Err(error);
+        }
+    }
+
     Ok(Success { success: true })
+}
+
+async fn list_folders(
+    state: &AppState,
+    context: &RequestContext,
+    project_id: Id,
+) -> RpcResult<Vec<ProjectFileFolder>> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    ensure_access(&pool, &auth, project_id, FileAction::View, None).await?;
+
+    let rows = sqlx::query_as::<_, ProjectFileFolderRow>(
+        r#"
+        SELECT
+            id,
+            project_id,
+            parent_folder_id,
+            name,
+            created_by_user_id,
+            created_at,
+            modified_at
+        FROM project_file_folders
+        WHERE project_id = $1
+        ORDER BY LOWER(name), id
+        "#,
+    )
+    .bind(project_id.0)
+    .fetch_all(&pool)
+    .await
+    .map_err(internal)?;
+
+    Ok(rows.into_iter().map(ProjectFileFolder::from).collect())
+}
+
+async fn create_folder(
+    state: &AppState,
+    context: &RequestContext,
+    input: CreateFolderInput,
+) -> RpcResult<CreateFolderOutput> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+    let creator_id = auth.user.id.parse::<i64>().map_err(internal)?;
+
+    ensure_access(&pool, &auth, input.project_id, FileAction::Upload, None).await?;
+    ensure_folder_in_project(&pool, input.project_id, input.parent_folder_id).await?;
+
+    let folder_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO project_file_folders (
+            project_id,
+            parent_folder_id,
+            name,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        "#,
+    )
+    .bind(input.project_id.0)
+    .bind(input.parent_folder_id.map(|id| id.0))
+    .bind(input.name)
+    .bind(creator_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(item_write_error)?;
+
+    Ok(CreateFolderOutput { id: Id(folder_id) })
+}
+
+async fn rename_folder(
+    state: &AppState,
+    context: &RequestContext,
+    input: RenameFolderInput,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    ensure_access(&pool, &auth, input.project_id, FileAction::Upload, None).await?;
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE project_file_folders
+        SET
+            name = $3,
+            modified_at = NOW()
+        WHERE id = $1
+          AND project_id = $2
+        "#,
+    )
+    .bind(input.folder_id.0)
+    .bind(input.project_id.0)
+    .bind(input.name)
+    .execute(&pool)
+    .await
+    .map_err(item_write_error)?;
+
+    if updated.rows_affected() == 0 {
+        return Err(not_found());
+    }
+
+    Ok(Success { success: true })
+}
+
+async fn move_folder(
+    state: &AppState,
+    context: &RequestContext,
+    input: MoveFolderInput,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    ensure_access(&pool, &auth, input.project_id, FileAction::Upload, None).await?;
+    ensure_folder_in_project(&pool, input.project_id, Some(input.folder_id)).await?;
+    ensure_folder_in_project(&pool, input.project_id, input.parent_folder_id).await?;
+
+    if input.parent_folder_id == Some(input.folder_id) {
+        return Err(bad_request("A folder cannot be moved into itself"));
+    }
+
+    if let Some(parent_folder_id) = input.parent_folder_id {
+        let destination_is_descendant = sqlx::query_scalar::<_, bool>(
+            r#"
+            WITH RECURSIVE descendants AS (
+                SELECT id
+                FROM project_file_folders
+                WHERE id = $1
+                  AND project_id = $2
+
+                UNION ALL
+
+                SELECT child.id
+                FROM project_file_folders AS child
+                INNER JOIN descendants AS parent
+                    ON child.parent_folder_id = parent.id
+                WHERE child.project_id = $2
+            )
+            SELECT EXISTS (
+                SELECT 1
+                FROM descendants
+                WHERE id = $3
+            )
+            "#,
+        )
+        .bind(input.folder_id.0)
+        .bind(input.project_id.0)
+        .bind(parent_folder_id.0)
+        .fetch_one(&pool)
+        .await
+        .map_err(internal)?;
+
+        if destination_is_descendant {
+            return Err(bad_request(
+                "A folder cannot be moved into one of its subfolders",
+            ));
+        }
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE project_file_folders
+        SET
+            parent_folder_id = $3,
+            modified_at = NOW()
+        WHERE id = $1
+          AND project_id = $2
+        "#,
+    )
+    .bind(input.folder_id.0)
+    .bind(input.project_id.0)
+    .bind(input.parent_folder_id.map(|id| id.0))
+    .execute(&pool)
+    .await
+    .map_err(item_write_error)?;
+
+    Ok(Success { success: true })
+}
+
+async fn delete_folder(
+    state: &AppState,
+    context: &RequestContext,
+    input: DeleteFolderInput,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    let created_by_user_id = sqlx::query_scalar::<_, Option<i64>>(
+        r#"
+        SELECT created_by_user_id
+        FROM project_file_folders
+        WHERE id = $1
+          AND project_id = $2
+        "#,
+    )
+    .bind(input.folder_id.0)
+    .bind(input.project_id.0)
+    .fetch_optional(&pool)
+    .await
+    .map_err(internal)?
+    .ok_or_else(not_found)?;
+
+    ensure_access(
+        &pool,
+        &auth,
+        input.project_id,
+        FileAction::Delete,
+        created_by_user_id,
+    )
+    .await?;
+
+    let contains_items = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT
+            EXISTS (
+                SELECT 1
+                FROM project_files
+                WHERE project_id = $1
+                  AND folder_id = $2
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM project_file_folders
+                WHERE project_id = $1
+                  AND parent_folder_id = $2
+            )
+        "#,
+    )
+    .bind(input.project_id.0)
+    .bind(input.folder_id.0)
+    .fetch_one(&pool)
+    .await
+    .map_err(internal)?;
+
+    if contains_items {
+        return Err(bad_request("Only empty folders can be deleted"));
+    }
+
+    sqlx::query("DELETE FROM project_file_folders WHERE id = $1 AND project_id = $2")
+        .bind(input.folder_id.0)
+        .bind(input.project_id.0)
+        .execute(&pool)
+        .await
+        .map_err(internal)?;
+
+    Ok(Success { success: true })
+}
+
+async fn rename_file(
+    state: &AppState,
+    context: &RequestContext,
+    input: RenameFileInput,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    ensure_access(&pool, &auth, input.project_id, FileAction::Upload, None).await?;
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE project_files
+        SET
+            file_name = $3,
+            modified_at = NOW()
+        WHERE id = $1
+          AND project_id = $2
+          AND status = 'uploaded'
+        "#,
+    )
+    .bind(input.file_id.0)
+    .bind(input.project_id.0)
+    .bind(input.file_name)
+    .execute(&pool)
+    .await
+    .map_err(item_write_error)?;
+
+    if updated.rows_affected() == 0 {
+        return Err(not_found());
+    }
+
+    Ok(Success { success: true })
+}
+
+async fn move_files(
+    state: &AppState,
+    context: &RequestContext,
+    input: MoveFilesInput,
+) -> RpcResult<Success> {
+    if input.file_ids.is_empty() || input.file_ids.len() > 200 {
+        return Err(bad_request(
+            "fileIds must contain between 1 and 200 entries",
+        ));
+    }
+
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    ensure_access(&pool, &auth, input.project_id, FileAction::Upload, None).await?;
+    ensure_folder_in_project(&pool, input.project_id, input.folder_id).await?;
+
+    let file_ids = input.file_ids.iter().map(|id| id.0).collect::<Vec<_>>();
+    let movable_file_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM project_files
+        WHERE project_id = $1
+          AND id = ANY($2)
+          AND status = 'uploaded'
+          AND kind = 'file'
+        "#,
+    )
+    .bind(input.project_id.0)
+    .bind(&file_ids)
+    .fetch_all(&pool)
+    .await
+    .map_err(internal)?;
+
+    if movable_file_ids.len() != file_ids.len() {
+        return Err(bad_request(
+            "Only existing document attachments can be moved",
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE project_files
+        SET
+            folder_id = $3,
+            modified_at = NOW()
+        WHERE project_id = $1
+          AND id = ANY($2)
+        "#,
+    )
+    .bind(input.project_id.0)
+    .bind(&file_ids)
+    .bind(input.folder_id.map(|id| id.0))
+    .execute(&pool)
+    .await
+    .map_err(item_write_error)?;
+
+    Ok(Success { success: true })
+}
+
+async fn ensure_folder_in_project(
+    pool: &PgPool,
+    project_id: Id,
+    folder_id: Option<Id>,
+) -> RpcResult<()> {
+    let Some(folder_id) = folder_id else {
+        return Ok(());
+    };
+
+    let exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM project_file_folders
+            WHERE id = $1
+              AND project_id = $2
+        )
+        "#,
+    )
+    .bind(folder_id.0)
+    .bind(project_id.0)
+    .fetch_one(pool)
+    .await
+    .map_err(internal)?;
+
+    if exists { Ok(()) } else { Err(not_found()) }
+}
+
+fn normalize_item_name(value: &mut String, field: &str) -> RpcResult<()> {
+    trim_required(value, field, 255)?;
+
+    if matches!(value.as_str(), "." | "..") || value.contains(['/', '\\']) {
+        return Err(bad_request(format!("invalid {field}")));
+    }
+
+    Ok(())
+}
+
+fn item_write_error(error: sqlx::Error) -> RpcError {
+    if error
+        .as_database_error()
+        .is_some_and(|database_error| database_error.is_unique_violation())
+    {
+        bad_request("An item with this name already exists in the destination folder")
+    } else {
+        internal(error)
+    }
 }
 
 async fn delete(
@@ -466,7 +1000,7 @@ async fn delete(
         .await?
         .expect("required storage configuration");
 
-    cancel_thumbnail_jobs(state, &auth.tenant, input.file_id).await?;
+    cancel_file_jobs(state, &auth.tenant, input.file_id).await?;
     object_storage::delete_object(&storage, &row.object_key).await?;
 
     if let Some(thumbnail_key) = row.thumbnail_object_key.as_deref() {
@@ -481,6 +1015,250 @@ async fn delete(
         .map_err(internal)?;
 
     Ok(Success { success: true })
+}
+
+async fn search(
+    state: &AppState,
+    context: &RequestContext,
+    input: SearchProjectFilesInput,
+) -> RpcResult<Vec<ProjectFileSearchResult>> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+
+    queue_pending_pdf_extractions(state, &auth.tenant, &pool, input.project_id).await?;
+
+    let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
+    let can_view_all = auth.can_do("view:projects") || auth.can_do("manage:projects");
+    let rows = sqlx::query_as::<_, ProjectFileSearchRow>(
+        r#"
+        WITH document_query AS (
+            SELECT
+                WEBSEARCH_TO_TSQUERY('german', $1)
+                || WEBSEARCH_TO_TSQUERY('english', $1)
+                || PLAINTO_TSQUERY('simple', $1) AS value
+        )
+        SELECT
+            file.id,
+            file.project_id,
+            project.title AS project_title,
+            file.file_name,
+            file.mime_type,
+            file.modified_at,
+            file.text_extraction_status,
+            NULLIF(
+                TS_HEADLINE(
+                    'german',
+                    COALESCE(file.extracted_text, ''),
+                    document_query.value,
+                    'StartSel=<<, StopSel=>>, MaxFragments=3, MaxWords=36, MinWords=12'
+                ),
+                ''
+            ) AS excerpt,
+            TS_RANK_CD(file.search_vector, document_query.value)::DOUBLE PRECISION AS rank
+        FROM project_files AS file
+        INNER JOIN projects AS project
+            ON project.id = file.project_id
+        CROSS JOIN document_query
+        WHERE file.status = 'uploaded'
+          AND file.search_vector @@ document_query.value
+          AND ($2::BIGINT IS NULL OR file.project_id = $2)
+          AND (
+              $4
+              OR EXISTS (
+                  SELECT 1
+                  FROM project_user_assignments AS assignment
+                  WHERE assignment.project_id = file.project_id
+                    AND assignment.user_id = $3
+              )
+          )
+        ORDER BY rank DESC, file.modified_at DESC, file.id DESC
+        LIMIT $5
+        "#,
+    )
+    .bind(&input.query)
+    .bind(input.project_id.map(|id| id.0))
+    .bind(user_id)
+    .bind(can_view_all)
+    .bind(input.limit)
+    .fetch_all(&pool)
+    .await
+    .map_err(internal)?;
+
+    Ok(rows
+        .into_iter()
+        .map(ProjectFileSearchResult::from)
+        .collect())
+}
+
+pub async fn backfill_pdf_text_extraction_jobs(state: &AppState) {
+    let tenant_names = match state.tenants.live_tenant_names().await {
+        Ok(names) => names,
+        Err(error) => {
+            tracing::warn!(error = %error, "could not list tenants for PDF text extraction backfill");
+            return;
+        }
+    };
+
+    for tenant_name in tenant_names {
+        let pool = match state.tenants.tenant_pool(&tenant_name).await {
+            Ok(pool) => pool,
+            Err(error) => {
+                tracing::warn!(tenant = %tenant_name, error = %error, "could not open tenant for PDF text extraction backfill");
+                continue;
+            }
+        };
+
+        loop {
+            match queue_pending_pdf_extractions(state, &tenant_name, &pool, None).await {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(tenant = %tenant_name, error = %error, "could not queue PDF text extraction backfill");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn queue_pending_pdf_extractions(
+    state: &AppState,
+    tenant_name: &str,
+    pool: &PgPool,
+    project_id: Option<Id>,
+) -> RpcResult<usize> {
+    let files = sqlx::query_as::<_, PendingPdfRow>(
+        r#"
+        SELECT
+            id,
+            project_id,
+            object_key,
+            mime_type,
+            file_name,
+            office_version
+        FROM project_files
+        WHERE status = 'uploaded'
+          AND text_extraction_status = 'pending'
+          AND ($1::BIGINT IS NULL OR project_id = $1)
+        ORDER BY id
+        LIMIT 50
+        "#,
+    )
+    .bind(project_id.map(|id| id.0))
+    .fetch_all(pool)
+    .await
+    .map_err(internal)?;
+
+    let mut queued_count = 0;
+
+    for file in files {
+        let claimed = sqlx::query(
+            r#"
+            UPDATE project_files
+            SET text_extraction_status = 'queued'
+            WHERE id = $1
+              AND text_extraction_status = 'pending'
+            "#,
+        )
+        .bind(file.id)
+        .execute(pool)
+        .await
+        .map_err(internal)?;
+
+        if claimed.rows_affected() == 0 {
+            continue;
+        }
+
+        let payload = pdf_extraction_payload(
+            file.project_id,
+            file.id,
+            &file.object_key,
+            &file.mime_type,
+            &file.file_name,
+            file.office_version,
+        );
+
+        if let Err(error) = enqueue_job(
+            state,
+            tenant_name,
+            PROJECT_FILE_PDF_EXTRACT_JOB_TYPE,
+            payload,
+        )
+        .await
+        {
+            sqlx::query(
+                "UPDATE project_files SET text_extraction_status = 'pending' WHERE id = $1",
+            )
+            .bind(file.id)
+            .execute(pool)
+            .await
+            .map_err(internal)?;
+
+            tracing::warn!(
+                project_file_id = file.id,
+                error = %error,
+                "could not queue PDF text extraction"
+            );
+        } else {
+            queued_count += 1;
+        }
+    }
+
+    Ok(queued_count)
+}
+
+pub(crate) async fn queue_pdf_extraction_after_edit(
+    state: &AppState,
+    tenant_name: &str,
+    pool: &PgPool,
+    file: PdfExtractionFile<'_>,
+) -> RpcResult<()> {
+    let payload = pdf_extraction_payload(
+        file.project_id,
+        file.file_id,
+        file.object_key,
+        file.mime_type,
+        file.file_name,
+        file.version,
+    );
+
+    sqlx::query(
+        r#"
+        UPDATE project_files
+        SET
+            text_extraction_status = 'queued',
+            extracted_text = NULL,
+            text_extraction_method = NULL,
+            text_extraction_confidence = NULL,
+            text_extraction_page_count = NULL,
+            text_extraction_error = NULL,
+            text_extraction_version = NULL,
+            text_extracted_at = NULL
+        WHERE id = $1
+        "#,
+    )
+    .bind(file.file_id)
+    .execute(pool)
+    .await
+    .map_err(internal)?;
+
+    if let Err(error) = enqueue_job(
+        state,
+        tenant_name,
+        PROJECT_FILE_PDF_EXTRACT_JOB_TYPE,
+        payload,
+    )
+    .await
+    {
+        sqlx::query("UPDATE project_files SET text_extraction_status = 'pending' WHERE id = $1")
+            .bind(file.file_id)
+            .execute(pool)
+            .await
+            .map_err(internal)?;
+
+        return Err(error);
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -586,7 +1364,7 @@ async fn enqueue_job(
     Ok(())
 }
 
-async fn cancel_thumbnail_jobs(state: &AppState, tenant_name: &str, file_id: Id) -> RpcResult<()> {
+async fn cancel_file_jobs(state: &AppState, tenant_name: &str, file_id: Id) -> RpcResult<()> {
     sqlx::query(
         r#"
         UPDATE __jobs
@@ -599,19 +1377,74 @@ async fn cancel_thumbnail_jobs(state: &AppState, tenant_name: &str, file_id: Id)
             last_error = 'project_file_deleted',
             updated_at = NOW()
         WHERE tenant_name = LOWER($1)
-          AND type = $2
+          AND type = ANY($2)
           AND payload ->> 'projectFileId' = $3
           AND state IN ('pending', 'processing')
         "#,
     )
     .bind(tenant_name)
-    .bind(THUMBNAIL_JOB_TYPE)
+    .bind([THUMBNAIL_JOB_TYPE, PROJECT_FILE_PDF_EXTRACT_JOB_TYPE])
     .bind(file_id.encode())
     .execute(state.tenants.master())
     .await
     .map_err(internal)?;
 
     Ok(())
+}
+
+async fn set_text_extraction_failed(pool: &PgPool, file_id: i64, error: &str) -> RpcResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE project_files
+        SET
+            text_extraction_status = 'failed',
+            text_extraction_error = $2
+        WHERE id = $1
+        "#,
+    )
+    .bind(file_id)
+    .bind(error)
+    .execute(pool)
+    .await
+    .map_err(internal)?;
+
+    Ok(())
+}
+
+fn pdf_extraction_payload(
+    project_id: i64,
+    file_id: i64,
+    object_key: &str,
+    mime_type: &str,
+    file_name: &str,
+    version: i64,
+) -> Value {
+    json!({
+        "projectId": Id(project_id),
+        "projectFileId": Id(file_id),
+        "sourceObjectKey": object_key,
+        "sourceMimeType": "application/pdf",
+        "sourceFileName": file_name,
+        "contentVersion": version,
+        "originalMimeType": mime_type,
+    })
+}
+
+pub(crate) fn is_pdf(file_name: &str, mime_type: &str) -> bool {
+    file_name.to_ascii_lowercase().ends_with(".pdf")
+        || mime_type
+            .split(';')
+            .next()
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/pdf"))
+}
+
+pub(crate) struct PdfExtractionFile<'a> {
+    pub project_id: i64,
+    pub file_id: i64,
+    pub object_key: &'a str,
+    pub mime_type: &'a str,
+    pub file_name: &'a str,
+    pub version: i64,
 }
 
 fn file_kind(file_name: &str, mime_type: &str) -> &'static str {
@@ -653,10 +1486,44 @@ struct ProjectFilesInput {
 
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SearchProjectFilesInput {
+    query: String,
+
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    project_id: Option<Id>,
+
+    #[serde(default = "default_search_limit")]
+    limit: i64,
+}
+
+impl SearchProjectFilesInput {
+    fn normalize(&mut self) -> RpcResult<()> {
+        trim_required(&mut self.query, "query", 200)?;
+
+        if self.query.chars().count() < 2 {
+            return Err(bad_request("query must contain at least 2 characters"));
+        }
+
+        self.limit = self.limit.clamp(1, 100);
+        Ok(())
+    }
+}
+
+fn default_search_limit() -> i64 {
+    50
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateUploadInput {
     project_id: Id,
     file_name: String,
     mime_type: String,
+
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    folder_id: Option<Id>,
 
     #[serde(default)]
     #[ts(optional = nullable)]
@@ -697,6 +1564,62 @@ struct DeleteFileInput {
     file_id: Id,
 }
 
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenameFileInput {
+    project_id: Id,
+    file_id: Id,
+    file_name: String,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MoveFilesInput {
+    project_id: Id,
+    file_ids: Vec<Id>,
+
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    folder_id: Option<Id>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreateFolderInput {
+    project_id: Id,
+    name: String,
+
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    parent_folder_id: Option<Id>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenameFolderInput {
+    project_id: Id,
+    folder_id: Id,
+    name: String,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MoveFolderInput {
+    project_id: Id,
+    folder_id: Id,
+
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    parent_folder_id: Option<Id>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeleteFolderInput {
+    project_id: Id,
+    folder_id: Id,
+}
+
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct CreateUploadOutput {
@@ -711,10 +1634,16 @@ struct CreateUploadOutput {
 }
 
 #[derive(Debug, Serialize, TS)]
+struct CreateFolderOutput {
+    id: Id,
+}
+
+#[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectFile {
     id: Id,
     project_id: Id,
+    folder_id: Option<Id>,
     file_name: String,
     mime_type: String,
     kind: String,
@@ -733,10 +1662,14 @@ pub(crate) struct ProjectFile {
 
     thumbnail_width: Option<i32>,
     thumbnail_height: Option<i32>,
+    text_extraction_status: String,
     created_by_user_id: Option<Id>,
 
     #[ts(type = "Date")]
     created_at: DateTime<Utc>,
+
+    #[ts(type = "Date")]
+    modified_at: DateTime<Utc>,
 
     #[ts(type = "Date | null")]
     uploaded_at: Option<DateTime<Utc>>,
@@ -756,6 +1689,7 @@ pub(crate) struct ProjectFile {
 struct ProjectFileRow {
     id: i64,
     project_id: i64,
+    folder_id: Option<i64>,
     file_name: String,
     mime_type: String,
     kind: String,
@@ -765,10 +1699,108 @@ struct ProjectFileRow {
     thumbnail_object_key: Option<String>,
     thumbnail_width: Option<i32>,
     thumbnail_height: Option<i32>,
+    text_extraction_status: String,
     created_by_user_id: Option<i64>,
     created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
     uploaded_at: Option<DateTime<Utc>>,
     object_key: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct ProjectFileSearchResult {
+    id: Id,
+    project_id: Id,
+    project_title: String,
+    file_name: String,
+    mime_type: String,
+    text_extraction_status: String,
+    excerpt: Option<String>,
+    rank: f64,
+
+    #[ts(type = "Date")]
+    modified_at: DateTime<Utc>,
+}
+
+impl From<ProjectFileSearchRow> for ProjectFileSearchResult {
+    fn from(row: ProjectFileSearchRow) -> Self {
+        Self {
+            id: Id(row.id),
+            project_id: Id(row.project_id),
+            project_title: row.project_title,
+            file_name: row.file_name,
+            mime_type: row.mime_type,
+            text_extraction_status: row.text_extraction_status,
+            excerpt: row.excerpt,
+            rank: row.rank,
+            modified_at: row.modified_at,
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct ProjectFileSearchRow {
+    id: i64,
+    project_id: i64,
+    project_title: String,
+    file_name: String,
+    mime_type: String,
+    text_extraction_status: String,
+    excerpt: Option<String>,
+    rank: f64,
+    modified_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct PendingPdfRow {
+    id: i64,
+    project_id: i64,
+    object_key: String,
+    mime_type: String,
+    file_name: String,
+    office_version: i64,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct ProjectFileFolder {
+    id: Id,
+    project_id: Id,
+    parent_folder_id: Option<Id>,
+    name: String,
+    created_by_user_id: Option<Id>,
+
+    #[ts(type = "Date")]
+    created_at: DateTime<Utc>,
+
+    #[ts(type = "Date")]
+    modified_at: DateTime<Utc>,
+}
+
+impl From<ProjectFileFolderRow> for ProjectFileFolder {
+    fn from(row: ProjectFileFolderRow) -> Self {
+        Self {
+            id: Id(row.id),
+            project_id: Id(row.project_id),
+            parent_folder_id: row.parent_folder_id.map(Id),
+            name: row.name,
+            created_by_user_id: row.created_by_user_id.map(Id),
+            created_at: row.created_at,
+            modified_at: row.modified_at,
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct ProjectFileFolderRow {
+    id: i64,
+    project_id: i64,
+    parent_folder_id: Option<i64>,
+    name: String,
+    created_by_user_id: Option<i64>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
 }
 
 #[derive(Debug, FromRow)]
@@ -788,6 +1820,7 @@ struct UploadCompletionRow {
     object_key: String,
     mime_type: String,
     file_name: String,
+    office_version: i64,
 }
 
 #[derive(Debug, FromRow)]

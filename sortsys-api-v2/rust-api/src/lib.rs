@@ -5,6 +5,7 @@ pub mod auth;
 pub mod config;
 mod contract_generated;
 pub mod database;
+pub mod drawio;
 pub mod error;
 pub mod ids;
 pub mod job_queue;
@@ -46,6 +47,10 @@ impl AppState {
             auth,
         }))
     }
+}
+
+pub async fn backfill_pdf_text_extraction_jobs(state: &AppState) {
+    procedures::project_files::backfill_pdf_text_extraction_jobs(state).await;
 }
 
 use rpc::{ProcedureRegistry, RequestContext};

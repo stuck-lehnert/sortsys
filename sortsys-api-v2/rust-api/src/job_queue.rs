@@ -16,6 +16,7 @@ use crate::{
 pub const THUMBNAIL_JOB_TYPE: &str = "project_file_thumbnail_generate";
 pub const TENANT_LOGO_JOB_TYPE: &str = "tenant_logo_generate";
 pub const DELIVERY_NOTE_OCR_JOB_TYPE: &str = "delivery_note_ocr";
+pub const PROJECT_FILE_PDF_EXTRACT_JOB_TYPE: &str = "project_file_pdf_extract";
 
 const DEFAULT_LEASE_SECONDS: i32 = 90;
 const MIN_LEASE_SECONDS: i32 = 5;

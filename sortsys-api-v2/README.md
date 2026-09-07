@@ -64,6 +64,7 @@ The API reads the following environment variables:
 | `ONLYOFFICE_INTERNAL_URL` | no | Document Server origin used by the API; defaults to the public origin |
 | `ONLYOFFICE_CALLBACK_URL` | for document editing | public API callback URL reachable by Document Server |
 | `ONLYOFFICE_JWT_SECRET` | for document editing | shared JWT secret; must match Document Server |
+| `DRAWIO_PUBLIC_URL` | for diagram editing | browser-reachable diagrams.net URL; may be a same-origin path such as `/drawio` |
 | `PORT` | no | HTTP port, default `3000` |
 | `NODE_ENV` | no | set to `production` to enable production requirements |
 

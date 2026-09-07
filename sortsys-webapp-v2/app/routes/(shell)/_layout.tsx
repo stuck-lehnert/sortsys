@@ -47,6 +47,7 @@ export default Authenticated(function() {
   const { visibleActions, runAction, llmStatus } = useUserActions();
   const lastVisitKeyRef = useRef<string | null>(null);
   const canViewProjects = sessionInfo.canDo('view:projects');
+  const canSearchDocuments = sessionInfo.supportsProjectFiles();
   const canViewTools = sessionInfo.canDo('view:tools');
   const canViewUsers = sessionInfo.canDo('view:users');
   const canViewProducts = sessionInfo.canDo('view:products') || sessionInfo.canDo('view:deliveryNotes') || sessionInfo.canDo('view:productVendors');
@@ -197,8 +198,9 @@ export default Authenticated(function() {
 
         <SideNavDivider />
 
-        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded={isPathActive('/projects') || isPathActive('/deployments') || isPathActive('/vacations')}>
+        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded={isPathActive('/projects') || isPathActive('/documents') || isPathActive('/deployments') || isPathActive('/vacations')}>
           {canViewProjects && <MySideNavLink icon={Icons.Project} href="/projects" title={t("shell.projects")} />}
+          {canSearchDocuments && <MySideNavLink icon={Icons.DocumentAdd} href="/documents" title={t("shell.documents")} />}
           {canViewDeployments && <MySideNavLink icon={Icons.DailyReport} href="/deployments" title={t("shell.deployments")} />}
           {canViewVacations && <MySideNavLink icon={Icons.User} href="/vacations" title={t("shell.vacations")} />}
         </MySideNavMenu>

@@ -1,19 +1,30 @@
 import { uiText } from "~/lib/i18n";
-import { Modal } from "@sortsys/react-components";
+import { Modal, useNotifications } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
+import { DrawioEditor } from "~/components/DrawioEditor";
 import { OnlyOfficeEditor } from "~/components/OnlyOfficeEditor";
-import { useOutletContext } from "react-router";
+import { ZoomableImage } from "~/components/ZoomableImage";
+import {
+  ProjectFileBrowser,
+  type ProjectFileBrowserFile,
+  type ProjectFileBrowserFolder,
+} from "~/components/ProjectFileBrowser";
+import { useOutletContext, useSearchParams } from "react-router";
 import { from } from "rxjs";
 import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDropdown } from "~/components/MyDropdown";
 import { MyExpandable } from "~/components/MyExpandable";
-import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useTitle } from "~/hooks/useTitle";
+import {
+  createBlankProjectFile,
+  NEW_PROJECT_FILE_TYPES,
+  type NewProjectFileType,
+} from "~/lib/blankProjectFiles";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
@@ -24,6 +35,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type ProjectFileEntry = {
   id: string;
   projectId: string;
+  folderId: string | null;
   fileName: string;
   mimeType: string;
   kind: 'image' | 'file';
@@ -36,8 +48,10 @@ type ProjectFileEntry = {
   previewExpiresAt?: Date | null;
   thumbnailWidth?: number | null;
   thumbnailHeight?: number | null;
+  textExtractionStatus: string;
   createdByUserId: string | null;
   createdAt: Date;
+  modifiedAt: Date;
   uploadedAt: Date | null;
   downloadUrl?: string | null;
   downloadExpiresAt?: Date | null;
@@ -49,6 +63,14 @@ type OnlyOfficeSession = {
   apiUrl: string;
   canEdit: boolean;
   config: Record<string, unknown>;
+};
+
+type DrawioSession = {
+  editorUrl: string;
+  canEdit: boolean;
+  fileName: string;
+  version: bigint;
+  xml: string;
 };
 
 function formatBytes(bytes: number | null | undefined) {
@@ -131,10 +153,25 @@ function isOnlyOfficeAttachment(file: ProjectFileEntry) {
   ]).has(extension);
 }
 
+function isDrawioAttachment(file: ProjectFileEntry) {
+  return file.fileName.toLocaleLowerCase().endsWith(".drawio");
+}
+
+function isVideoAttachment(file: ProjectFileEntry) {
+  if (file.mimeType.toLocaleLowerCase().startsWith("video/")) return true;
+
+  const extension = file.fileName.toLocaleLowerCase().split(".").pop();
+  return !!extension && new Set([
+    "3g2", "3gp", "avi", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "ogv", "ogg", "webm",
+  ]).has(extension);
+}
+
 export default function ProjectFilesPage() {
   const { project } = useOutletContext<{ project: Project }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const sessionInfo = useSessionInfo();
   const modals = useMyModals();
+  const notifications = useNotifications();
 
   const supportsProjectFiles = sessionInfo.supportsProjectFiles();
 
@@ -149,20 +186,47 @@ export default function ProjectFilesPage() {
     [project.id, supportsProjectFiles],
   );
 
+  const [projectFolders, projectFoldersErr] = useClientStream(
+    () => {
+      if (!supportsProjectFiles) {
+        return from([[[], null] as [Array<ProjectFileBrowserFolder>, null]]);
+      }
+
+      return client.streamQuery("projects.files.folders.list", { projectId: project.id! });
+    },
+    [project.id, supportsProjectFiles],
+  );
+
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [uploadInfo, setUploadInfo] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [batchBusyAction, setBatchBusyAction] = useState<'download' | 'delete' | null>(null);
+  const [batchBusyAction, setBatchBusyAction] = useState<'download' | 'delete' | 'move' | 'organize' | null>(null);
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+  const [activeVideoFileId, setActiveVideoFileId] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [activeDwgFileId, setActiveDwgFileId] = useState<string | null>(null);
   const [activeOfficeFileId, setActiveOfficeFileId] = useState<string | null>(null);
   const [officeSession, setOfficeSession] = useState<OnlyOfficeSession | null>(null);
   const [officeError, setOfficeError] = useState<string | null>(null);
   const [officeLoading, setOfficeLoading] = useState(false);
-  const [isImageViewerMobile, setIsImageViewerMobile] = useState(false);
-
+  const [activeDrawioFileId, setActiveDrawioFileId] = useState<string | null>(null);
+  const [drawioSession, setDrawioSession] = useState<DrawioSession | null>(null);
+  const [drawioError, setDrawioError] = useState<string | null>(null);
+  const [drawioLoading, setDrawioLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadDestinationRef = useRef<string | null>(null);
+  const pendingOpenFileIdRef = useRef<string | null>(null);
+  const openedUrlFileIdRef = useRef<string | null>(null);
+
+  const clearOpenFileParam = useCallback(() => {
+    if (!searchParams.has("file")) return;
+
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete("file");
+    openedUrlFileIdRef.current = null;
+    setSearchParams(nextSearchParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useTitle(() => project ? uiText(`Anhänge – ${project.title}`, `Attachments – ${project.title}`) : null, [JSON.stringify(project)]);
 
@@ -171,6 +235,23 @@ export default function ProjectFilesPage() {
       .slice()
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }, [projectFiles]);
+  useEffect(() => {
+    const requestedFileId = searchParams.get("file");
+    const pendingFileId = pendingOpenFileIdRef.current;
+    const fileId = pendingFileId ?? requestedFileId;
+    if (!fileId) return;
+    if (!pendingFileId && openedUrlFileIdRef.current === fileId) return;
+
+    const file = attachments.find(candidate => candidate.id === fileId);
+    if (!file) return;
+
+    pendingOpenFileIdRef.current = null;
+    if (requestedFileId === fileId) {
+      openedUrlFileIdRef.current = fileId;
+    }
+    openBrowserFile(file);
+  }, [attachments, searchParams]);
+
 
   const selectedAttachmentIdSet = useMemo(() => {
     return new Set(selectedAttachmentIds);
@@ -189,6 +270,11 @@ export default function ProjectFilesPage() {
     return imageFiles[activeImageIndex] ?? null;
   }, [activeImageIndex, imageFiles]);
 
+  const activeVideo = useMemo(() => {
+    if (!activeVideoFileId) return null;
+    return attachments.find(file => file.id === activeVideoFileId) ?? null;
+  }, [activeVideoFileId, attachments]);
+
   const activeDwgFile = useMemo(() => {
     if (!activeDwgFileId) return null;
     return attachments.find(file => file.id === activeDwgFileId) ?? null;
@@ -198,17 +284,24 @@ export default function ProjectFilesPage() {
     if (!activeOfficeFileId) return null;
     return attachments.find(file => file.id === activeOfficeFileId) ?? null;
   }, [activeOfficeFileId, attachments]);
+  const activeDrawioFile = useMemo(() => {
+    if (!activeDrawioFileId) return null;
+    return attachments.find(file => file.id === activeDrawioFileId) ?? null;
+  }, [activeDrawioFileId, attachments]);
+
 
   const documentFiles = useMemo(() => {
     return attachments.filter(entry => entry.kind !== 'image' || isDwgAttachment(entry));
   }, [attachments]);
 
-  const documentRows = useMemo(() => {
-    return documentFiles.map((entry) => ({
-      ...entry,
-      isSelected: selectedAttachmentIdSet.has(entry.id),
-    }));
-  }, [documentFiles, selectedAttachmentIdSet]);
+  const folders = useMemo(() => {
+    return ((projectFolders ?? []) as ProjectFileBrowserFolder[]).slice();
+  }, [projectFolders]);
+
+  const selectedDocumentIds = useMemo(() => {
+    const documentIds = new Set(documentFiles.map(file => file.id));
+    return selectedAttachmentIds.filter(id => documentIds.has(id));
+  }, [documentFiles, selectedAttachmentIds]);
 
   useEffect(() => {
     setSelectedAttachmentIds((previous) => {
@@ -218,6 +311,12 @@ export default function ProjectFilesPage() {
       return filtered;
     });
   }, [attachments]);
+
+  useEffect(() => {
+    if (!activeVideoFileId) return;
+    if (attachments.some(entry => entry.id === activeVideoFileId)) return;
+    setActiveVideoFileId(null);
+  }, [activeVideoFileId, attachments]);
 
   useEffect(() => {
     if (!activeDwgFileId) return;
@@ -232,6 +331,14 @@ export default function ProjectFilesPage() {
     setActiveOfficeFileId(null);
     setOfficeSession(null);
   }, [activeOfficeFileId, attachments]);
+  useEffect(() => {
+    if (!activeDrawioFileId) return;
+    if (attachments.some(entry => entry.id === activeDrawioFileId)) return;
+
+    setActiveDrawioFileId(null);
+    setDrawioSession(null);
+  }, [activeDrawioFileId, attachments]);
+
 
   const imageCardUrl = (file: ProjectFileEntry) => file.previewUrl || file.thumbnailUrl || file.downloadUrl || null;
   const attachmentDownloadUrl = (file: ProjectFileEntry) => file.downloadAttachmentUrl || file.downloadUrl || null;
@@ -262,6 +369,19 @@ export default function ProjectFilesPage() {
 
   const closeImageViewer = () => {
     setActiveImageIndex(null);
+    clearOpenFileParam();
+  };
+
+  const openVideoViewer = (file: ProjectFileEntry) => {
+    if (!attachmentDownloadUrl(file)) return;
+    setVideoError(null);
+    setActiveVideoFileId(file.id);
+  };
+
+  const closeVideoViewer = () => {
+    setActiveVideoFileId(null);
+    setVideoError(null);
+    clearOpenFileParam();
   };
 
   const openDwgViewer = (file: ProjectFileEntry) => {
@@ -271,6 +391,7 @@ export default function ProjectFilesPage() {
 
   const closeDwgViewer = () => {
     setActiveDwgFileId(null);
+    clearOpenFileParam();
   };
 
   const openOfficeEditor = async (file: ProjectFileEntry) => {
@@ -301,9 +422,61 @@ export default function ProjectFilesPage() {
     setActiveOfficeFileId(null);
     setOfficeSession(null);
     setOfficeError(null);
+    clearOpenFileParam();
 
     void client.invalidate("projects.files.list");
-  }, []);
+  }, [clearOpenFileParam]);
+  const openDrawioEditor = async (file: ProjectFileEntry) => {
+    setActiveDrawioFileId(file.id);
+    setDrawioSession(null);
+    setDrawioError(null);
+    setDrawioLoading(true);
+
+    const [session, error] = await client.query("projects.files.drawioConfig", {
+      fileId: file.id,
+      projectId: project.id,
+    });
+
+    setDrawioLoading(false);
+
+    if (error || !session) {
+      setDrawioError(
+        error?.message
+          ?? uiText("Das Diagramm konnte nicht geöffnet werden.", "The diagram could not be opened."),
+      );
+      return;
+    }
+
+    setDrawioSession(session);
+  };
+
+  const closeDrawioEditor = useCallback(() => {
+    setActiveDrawioFileId(null);
+    setDrawioSession(null);
+    setDrawioError(null);
+    clearOpenFileParam();
+
+    void client.invalidate("projects.files.list");
+  }, [clearOpenFileParam]);
+
+  const saveDrawio = useCallback(async (xml: string, version: bigint) => {
+    if (!activeDrawioFileId) {
+      throw new Error(uiText("Das Diagramm ist nicht mehr geöffnet.", "The diagram is no longer open."));
+    }
+
+    const [result, error] = await client.mutate("projects.files.drawioSave", {
+      projectId: project.id,
+      fileId: activeDrawioFileId,
+      version,
+      xml,
+    });
+    if (error || !result) {
+      throw error ?? new Error(uiText("Das Diagramm konnte nicht gespeichert werden.", "The diagram could not be saved."));
+    }
+
+    return result.version;
+  }, [activeDrawioFileId, project.id]);
+
 
   const toggleAttachmentSelection = (fileId: string) => {
     setSelectedAttachmentIds((previous) => {
@@ -352,18 +525,8 @@ export default function ProjectFilesPage() {
       },
     ];
 
-    attachments.forEach((attachment) => {
-      items.push({
-        selectable: true,
-        selected: selectedAttachmentIdSet.has(attachment.id),
-        label: uiText(`[${attachment.kind === 'image' ? "Bild" : "Datei"}] ${attachment.fileName}`, `[${attachment.kind === 'image' ? "Image" : "File"}] ${attachment.fileName}`),
-        disabled: !!batchBusyAction,
-        onClick: () => toggleAttachmentSelection(attachment.id),
-      });
-    });
-
     return items;
-  }, [attachments, batchBusyAction, selectedAttachmentIdSet, selectedAttachmentIds.length]);
+  }, [attachments.length, batchBusyAction, selectedAttachmentIds.length]);
 
   const showPreviousImage = () => {
     setActiveImageIndex((value) => {
@@ -395,16 +558,6 @@ export default function ProjectFilesPage() {
   }, [activeImageIndex, imageFiles.length]);
 
   useEffect(() => {
-    const update = () => {
-      setIsImageViewerMobile(window.innerWidth < 768);
-    };
-
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
-
-  useEffect(() => {
     if (activeImageIndex == null) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -430,7 +583,44 @@ export default function ProjectFilesPage() {
     };
   }, [activeImageIndex, imageFiles.length]);
 
-  async function uploadSelectedFiles(fileList: FileList | null) {
+  async function uploadProjectFile(file: File, folderId: string | null) {
+    const [uploadData, createError] = await client.mutate("projects.files.createUpload", {
+      projectId: project.id,
+      folderId,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: Number.isFinite(file.size) ? file.size : null,
+    });
+    if (createError || !uploadData) {
+      throw createError ?? new Error(uiText("Upload konnte nicht vorbereitet werden.", "Upload could not be prepared."));
+    }
+
+    const response = await fetch(uploadData.uploadUrl, {
+      method: uploadData.uploadMethod,
+      headers: uploadData.uploadHeaders,
+      body: file,
+    });
+    if (!response.ok) {
+      throw new Error(uiText(
+        `Datei-Upload fehlgeschlagen (${response.status})`,
+        `File upload failed (${response.status})`,
+      ));
+    }
+
+    const [, completeError] = await client.mutate("projects.files.completeUpload", {
+      projectId: project.id,
+      fileId: uploadData.fileId,
+      etag: response.headers.get("etag"),
+    });
+    if (completeError) throw completeError;
+
+    return uploadData.fileId;
+  }
+
+  async function uploadSelectedFiles(
+    fileList: FileList | File[] | null,
+    folderId: string | null = null,
+  ) {
     if (!fileList?.length) return;
     if (isUploading) return;
     if (batchBusyAction) return;
@@ -443,30 +633,7 @@ export default function ProjectFilesPage() {
 
     try {
       for (const file of selected) {
-        const [uploadData, createErr] = await client.mutate('projects.files.createUpload', {
-          projectId: project.id,
-          fileName: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: Number.isFinite(file.size) ? file.size : null,
-        });
-        if (createErr || !uploadData) throw createErr ?? new Error(uiText("Upload konnte nicht vorbereitet werden."));
-
-        const uploadRes = await fetch(uploadData.uploadUrl, {
-          method: uploadData.uploadMethod,
-          headers: uploadData.uploadHeaders,
-          body: file,
-        });
-        if (!uploadRes.ok) {
-          throw new Error(uiText(`Datei-Upload fehlgeschlagen (${uploadRes.status})`, `File-Upload failed (${uploadRes.status})`));
-        }
-
-        const etag = uploadRes.headers.get('etag');
-        const [, completeErr] = await client.mutate('projects.files.completeUpload', {
-          projectId: project.id,
-          fileId: uploadData.fileId,
-          etag,
-        });
-        if (completeErr) throw completeErr;
+        await uploadProjectFile(file, folderId);
       }
 
       await client.invalidate('projects.files.list');
@@ -477,6 +644,420 @@ export default function ProjectFilesPage() {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  }
+
+  function chooseFilesForUpload(folderId: string | null) {
+    uploadDestinationRef.current = folderId;
+    fileInputRef.current?.click();
+  }
+
+  function invalidateFileBrowser() {
+    return Promise.all([
+      client.invalidate("projects.files.list"),
+      client.invalidate("projects.files.folders.list"),
+    ]);
+  }
+
+  function notifyOrganizationError(error: unknown) {
+    notifications.danger({
+      title: uiText("Aktion fehlgeschlagen", "Action failed"),
+      content: error instanceof Error
+        ? error.message
+        : uiText("Die Dateiablage konnte nicht aktualisiert werden.", "The file storage could not be updated."),
+    });
+  }
+
+  function folderPath(folder: ProjectFileBrowserFolder) {
+    const names = [folder.name];
+    const seen = new Set([folder.id]);
+    let parentFolderId = folder.parentFolderId;
+
+    while (parentFolderId && !seen.has(parentFolderId)) {
+      seen.add(parentFolderId);
+      const parent = folders.find(candidate => candidate.id === parentFolderId);
+      if (!parent) break;
+
+      names.unshift(parent.name);
+      parentFolderId = parent.parentFolderId;
+    }
+
+    return names.join(" / ");
+  }
+
+  function isFolderInside(candidateId: string, ancestorId: string) {
+    const seen = new Set<string>();
+    let folderId: string | null = candidateId;
+
+    while (folderId && !seen.has(folderId)) {
+      if (folderId === ancestorId) return true;
+      seen.add(folderId);
+      folderId = folders.find(folder => folder.id === folderId)?.parentFolderId ?? null;
+    }
+
+    return false;
+  }
+
+  async function moveFiles(fileIds: string[], folderId: string | null) {
+    if (!fileIds.length) return;
+
+    setBatchBusyAction("move");
+
+    try {
+      const [, error] = await client.mutate("projects.files.move", {
+        projectId: project.id,
+        fileIds,
+        folderId,
+      });
+      if (error) throw error;
+
+      await invalidateFileBrowser();
+      setSelectedAttachmentIds(previous => previous.filter(id => !fileIds.includes(id)));
+      notifications.success({
+        title: fileIds.length === 1
+          ? uiText("Datei verschoben", "File moved")
+          : uiText("Dateien verschoben", "Files moved"),
+      });
+    } finally {
+      setBatchBusyAction(null);
+    }
+  }
+
+  function showMoveFilesModal(fileIds: string[]) {
+    if (!fileIds.length) return;
+
+    const firstFile = documentFiles.find(file => file.id === fileIds[0]);
+    const destinationRef = { current: firstFile?.folderId ?? "" };
+    const destinations = folders.slice().sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
+
+    modals.showDefault({
+      content: () => <label className="project-file-dialog-field">
+        <span>{uiText("Zielordner", "Destination folder")}</span>
+        <select
+          className="ss-input"
+          defaultValue={destinationRef.current}
+          onChange={(event) => {
+            destinationRef.current = event.currentTarget.value;
+          }}
+        >
+          <option value="">{uiText("Anhänge", "Attachments")}</option>
+          {destinations.map(folder => <option key={folder.id} value={folder.id}>{folderPath(folder)}</option>)}
+        </select>
+      </label>,
+      modalProps: () => ({
+        noFullscreen: true,
+        modalHeading: fileIds.length === 1
+          ? uiText("Datei verschieben", "Move file")
+          : uiText("Dateien verschieben", "Move files"),
+        modalLabel: project.title,
+        primaryButtonText: uiText("Verschieben", "Move"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        await moveFiles(fileIds, destinationRef.current || null);
+        hide();
+      },
+    });
+  }
+
+  async function moveFolder(folder: ProjectFileBrowserFolder, parentFolderId: string | null) {
+    if (folder.parentFolderId === parentFolderId) return;
+
+    setBatchBusyAction("organize");
+
+    try {
+      const [, error] = await client.mutate("projects.files.folders.move", {
+        projectId: project.id,
+        folderId: folder.id,
+        parentFolderId,
+      });
+      if (error) throw error;
+
+      await invalidateFileBrowser();
+      notifications.success({ title: uiText("Ordner verschoben", "Folder moved") });
+    } finally {
+      setBatchBusyAction(null);
+    }
+  }
+
+  function showMoveFolderModal(folder: ProjectFileBrowserFolder) {
+    const destinationRef = { current: folder.parentFolderId ?? "" };
+    const destinations = folders
+      .filter(candidate => !isFolderInside(candidate.id, folder.id))
+      .sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
+
+    modals.showDefault({
+      content: () => <label className="project-file-dialog-field">
+        <span>{uiText("Zielordner", "Destination folder")}</span>
+        <select
+          className="ss-input"
+          defaultValue={destinationRef.current}
+          onChange={(event) => {
+            destinationRef.current = event.currentTarget.value;
+          }}
+        >
+          <option value="">{uiText("Anhänge", "Attachments")}</option>
+          {destinations.map(destination => <option key={destination.id} value={destination.id}>
+            {folderPath(destination)}
+          </option>)}
+        </select>
+      </label>,
+      modalProps: () => ({
+        noFullscreen: true,
+        modalHeading: uiText("Ordner verschieben", "Move folder"),
+        modalLabel: folder.name,
+        primaryButtonText: uiText("Verschieben", "Move"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        await moveFolder(folder, destinationRef.current || null);
+        hide();
+      },
+    });
+  }
+
+  function showCreateFileModal(type: NewProjectFileType, folderId: string | null) {
+    const definition = NEW_PROJECT_FILE_TYPES.find(candidate => candidate.type === type);
+    if (!definition) return;
+
+    const defaultBaseName: Record<NewProjectFileType, string> = {
+      docx: uiText("Unbenanntes Dokument", "Untitled document"),
+      pptx: uiText("Neue Präsentation", "New presentation"),
+      xlsx: uiText("Neue Arbeitsmappe", "New workbook"),
+      drawio: uiText("Neues Diagramm", "New diagram"),
+    };
+    const nameRef = { current: `${defaultBaseName[type]}${definition.extension}` };
+
+    modals.showDefault({
+      content: () => <label className="project-file-dialog-field">
+        <span>{uiText("Dateiname", "File name")}</span>
+        <input
+          className="ss-input"
+          autoFocus
+          defaultValue={nameRef.current}
+          maxLength={255}
+          onFocus={(event) => {
+            const extensionStart = event.currentTarget.value.length - definition.extension.length;
+            event.currentTarget.setSelectionRange(0, Math.max(0, extensionStart));
+          }}
+          onChange={(event) => {
+            nameRef.current = event.currentTarget.value;
+          }}
+        />
+      </label>,
+      modalProps: () => ({
+        noFullscreen: true,
+        modalHeading: uiText("Neue Datei", "New file"),
+        modalLabel: uiText(definition.germanLabel, definition.englishLabel),
+        primaryButtonText: uiText("Erstellen", "Create"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        let fileName = nameRef.current.trim();
+        if (!fileName) {
+          throw new Error(uiText("Gib einen Dateinamen ein.", "Enter a file name."));
+        }
+        if (!fileName.toLocaleLowerCase().endsWith(definition.extension)) {
+          fileName += definition.extension;
+        }
+
+        setIsUploading(true);
+        try {
+          const file = await createBlankProjectFile(type, fileName);
+          const fileId = await uploadProjectFile(file, folderId);
+          pendingOpenFileIdRef.current = fileId;
+
+          await client.invalidate("projects.files.list");
+          notifications.success({
+            title: uiText("Datei erstellt", "File created"),
+            content: fileName,
+          });
+          hide();
+        } finally {
+          setIsUploading(false);
+        }
+      },
+    });
+  }
+
+  function showCreateFolderModal(parentFolderId: string | null) {
+    const nameRef = { current: "" };
+
+    modals.showDefault({
+      content: () => <label className="project-file-dialog-field">
+        <span>{uiText("Ordnername", "Folder name")}</span>
+        <input
+          className="ss-input"
+          autoFocus
+          maxLength={255}
+          onChange={(event) => {
+            nameRef.current = event.currentTarget.value;
+          }}
+        />
+      </label>,
+      modalProps: () => ({
+        noFullscreen: true,
+        modalHeading: uiText("Neuer Ordner", "New folder"),
+        modalLabel: project.title,
+        primaryButtonText: uiText("Erstellen", "Create"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        const name = nameRef.current.trim();
+        if (!name) throw new Error(uiText("Gib einen Ordnernamen ein.", "Enter a folder name."));
+
+        const [, error] = await client.mutate("projects.files.folders.create", {
+          projectId: project.id,
+          parentFolderId,
+          name,
+        });
+        if (error) throw error;
+
+        await invalidateFileBrowser();
+        notifications.success({ title: uiText("Ordner erstellt", "Folder created") });
+        hide();
+      },
+    });
+  }
+
+  function showRenameFolderModal(folder: ProjectFileBrowserFolder) {
+    const nameRef = { current: folder.name };
+
+    modals.showDefault({
+      content: () => <label className="project-file-dialog-field">
+        <span>{uiText("Ordnername", "Folder name")}</span>
+        <input
+          className="ss-input"
+          autoFocus
+          defaultValue={folder.name}
+          maxLength={255}
+          onChange={(event) => {
+            nameRef.current = event.currentTarget.value;
+          }}
+        />
+      </label>,
+      modalProps: () => ({
+        noFullscreen: true,
+        modalHeading: uiText("Ordner umbenennen", "Rename folder"),
+        modalLabel: folder.name,
+        primaryButtonText: uiText("Speichern", "Save"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        const name = nameRef.current.trim();
+        if (!name) throw new Error(uiText("Gib einen Ordnernamen ein.", "Enter a folder name."));
+
+        const [, error] = await client.mutate("projects.files.folders.rename", {
+          projectId: project.id,
+          folderId: folder.id,
+          name,
+        });
+        if (error) throw error;
+
+        await invalidateFileBrowser();
+        notifications.success({ title: uiText("Ordner umbenannt", "Folder renamed") });
+        hide();
+      },
+    });
+  }
+
+  function showRenameFileModal(file: ProjectFileBrowserFile) {
+    const nameRef = { current: file.fileName };
+
+    modals.showDefault({
+      content: () => <label className="project-file-dialog-field">
+        <span>{uiText("Dateiname", "File name")}</span>
+        <input
+          className="ss-input"
+          autoFocus
+          defaultValue={file.fileName}
+          maxLength={255}
+          onChange={(event) => {
+            nameRef.current = event.currentTarget.value;
+          }}
+        />
+      </label>,
+      modalProps: () => ({
+        noFullscreen: true,
+        modalHeading: uiText("Datei umbenennen", "Rename file"),
+        modalLabel: file.fileName,
+        primaryButtonText: uiText("Speichern", "Save"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        const fileName = nameRef.current.trim();
+        if (!fileName) throw new Error(uiText("Gib einen Dateinamen ein.", "Enter a file name."));
+
+        const [, error] = await client.mutate("projects.files.rename", {
+          projectId: project.id,
+          fileId: file.id,
+          fileName,
+        });
+        if (error) throw error;
+
+        await invalidateFileBrowser();
+        notifications.success({ title: uiText("Datei umbenannt", "File renamed") });
+        hide();
+      },
+    });
+  }
+
+  function showDeleteFolderModal(folder: ProjectFileBrowserFolder) {
+    const hasContents = folders.some(candidate => candidate.parentFolderId === folder.id)
+      || documentFiles.some(file => file.folderId === folder.id);
+
+    if (hasContents) {
+      notifications.warning({
+        title: uiText("Ordner ist nicht leer", "Folder is not empty"),
+        content: uiText(
+          "Verschiebe oder lösche zuerst die enthaltenen Dateien und Unterordner.",
+          "Move or delete the contained files and subfolders first.",
+        ),
+      });
+      return;
+    }
+
+    modals.showDefault({
+      content: () => <p>{uiText(
+        `Soll der Ordner „${folder.name}“ gelöscht werden?`,
+        `Delete the folder “${folder.name}”?`,
+      )}</p>,
+      modalProps: () => ({
+        danger: true,
+        noFullscreen: true,
+        modalHeading: uiText("Ordner löschen", "Delete folder"),
+        modalLabel: project.title,
+        primaryButtonText: uiText("Löschen", "Delete"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        const [, error] = await client.mutate("projects.files.folders.delete", {
+          projectId: project.id,
+          folderId: folder.id,
+        });
+        if (error) throw error;
+
+        await invalidateFileBrowser();
+        notifications.success({ title: uiText("Ordner gelöscht", "Folder deleted") });
+        hide();
+      },
+    });
+  }
+
+  function openBrowserFile(file: ProjectFileBrowserFile) {
+    const attachment = attachments.find(candidate => candidate.id === file.id);
+    if (!attachment) return;
+
+    if (isDwgAttachment(attachment)) {
+      openDwgViewer(attachment);
+    } else if (isVideoAttachment(attachment)) {
+      openVideoViewer(attachment);
+    } else if (isDrawioAttachment(attachment)) {
+      void openDrawioEditor(attachment);
+    } else if (isOnlyOfficeAttachment(attachment)) {
+      void openOfficeEditor(attachment);
+    } else {
+      const url = attachment.downloadUrl || attachment.downloadAttachmentUrl;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  function downloadBrowserFile(file: ProjectFileBrowserFile) {
+    const attachment = attachments.find(candidate => candidate.id === file.id);
+    const url = attachment ? attachmentDownloadUrl(attachment) : null;
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
 
   async function downloadSelectedAsZip() {
@@ -538,17 +1119,17 @@ export default function ProjectFilesPage() {
     }
   }
 
-  function showDeleteSelectedFilesConfirmModal() {
-    if (!selectedAttachments.length) return;
+  function showDeleteSelectedFilesConfirmModal(filesToDelete = selectedAttachments) {
+    if (!filesToDelete.length) return;
 
     modals.showDefault({
       content: () => <>
         <p>
-          {selectedAttachments.length === 1
+          {filesToDelete.length === 1
             ? uiText("Soll die ausgewählte Datei wirklich gelöscht werden?", "Delete the selected file?")
             : uiText(
-              `Sollen ${selectedAttachments.length} ausgewählte Dateien wirklich gelöscht werden?`,
-              `Delete ${selectedAttachments.length} selected files?`,
+              `Sollen ${filesToDelete.length} ausgewählte Dateien wirklich gelöscht werden?`,
+              `Delete ${filesToDelete.length} selected files?`,
             )}{" "}
           <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.", "This action cannot be undone.")}</b>
         </p>
@@ -567,7 +1148,7 @@ export default function ProjectFilesPage() {
         setUploadInfo(null);
         setBatchBusyAction('delete');
 
-        const selectedIds = selectedAttachments.map(file => file.id);
+        const selectedIds = filesToDelete.map(file => file.id);
         const selectedIdsSet = new Set(selectedIds);
 
         try {
@@ -604,20 +1185,11 @@ export default function ProjectFilesPage() {
       type="file"
       multiple
       style={{ display: 'none' }}
-      onChange={(event) => uploadSelectedFiles(event.target.files)}
+      onChange={(event) => uploadSelectedFiles(event.target.files, uploadDestinationRef.current)}
     />
 
     <div className="project-files-toolbar mb-2">
       <div className="project-files-toolbar-left">
-        <MyButton
-          size="sm"
-          kind="ghost"
-          renderIcon={Icons.Create}
-          loading={isUploading}
-          disabled={!!batchBusyAction}
-          onClick={() => fileInputRef.current?.click()}
-        >{uiText("Dateien hochladen")}</MyButton>
-
         {!!selectedAttachmentIds.length && <>
           <MyButton
             size="sm"
@@ -627,6 +1199,15 @@ export default function ProjectFilesPage() {
             loading={batchBusyAction === 'download'}
             onClick={downloadSelectedAsZip}
           >{uiText("Auswahl ZIP")}</MyButton>
+
+          {!!selectedDocumentIds.length && <MyButton
+            size="sm"
+            kind="ghost"
+            renderIcon={Icons.FolderMove}
+            disabled={!!batchBusyAction}
+            loading={batchBusyAction === 'move'}
+            onClick={() => showMoveFilesModal(selectedDocumentIds)}
+          >{uiText("Auswahl verschieben", "Move selection")}</MyButton>}
 
           <MyButton
             size="sm"
@@ -654,8 +1235,8 @@ export default function ProjectFilesPage() {
       </div>}
     </div>
 
-    {!!projectFilesErr && (
-      <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")} {`${(projectFilesErr as any)?.message ?? uiText('Unbekannter Fehler')}`}
+    {!!(projectFilesErr || projectFoldersErr) && (
+      <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")} {`${(projectFilesErr ?? projectFoldersErr as Error | null)?.message ?? uiText('Unbekannter Fehler')}`}
       </MyCallout>
     )}
 
@@ -667,7 +1248,7 @@ export default function ProjectFilesPage() {
       <MyCallout icon={Icons.Deny} color="red">{uploadErr}</MyCallout>
     )}
 
-    {!attachments.length && (
+    {!attachments.length && !folders.length && (
       <div className="light">{uiText("Noch keine Projektanhänge vorhanden.")}</div>
     )}
 
@@ -747,78 +1328,82 @@ export default function ProjectFilesPage() {
       </div>
     </MyExpandable>}
 
-    {!!documentFiles.length && <MyExpandable title={uiText(`Dateien (${documentFiles.length})`, `Files (${documentFiles.length})`)} initiallyExpanded>
-      <MyTable
-        tableClassName="project-files-table"
-        rows={documentRows}
-        columns={[
-          {
-            label: '',
-            render: (row) => {
-              const isSelected = row.isSelected;
+    <section className="project-files-documents">
+      <h3>{uiText(`Dateien (${documentFiles.length})`, `Files (${documentFiles.length})`)}</h3>
 
-              return <MyButton
-                size="sm"
-                kind="ghost"
-                title={isSelected ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
-                aria-label={isSelected ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
-                renderIcon={isSelected ? Icons.Accept : undefined}
-                style={{
-                  inlineSize: '1.55rem',
-                  blockSize: '1.55rem',
-                  minInlineSize: '1.55rem',
-                  minBlockSize: '1.55rem',
-                  padding: 0,
-                }}
-                onClick={() => toggleAttachmentSelection(row.id)}
-              />;
-            },
-          },
-          {
-            label: uiText("Datei"),
-            render: (row) => {
-              const url = attachmentDownloadUrl(row);
-              if (!url) return row.fileName;
-
-              if (isDwgAttachment(row)) {
-                return <button
-                  type="button"
-                  className="ss-link project-files-file-link"
-                  onClick={() => openDwgViewer(row)}
-                >
-                  {row.fileName}
-                </button>;
-              }
-
-              if (isOnlyOfficeAttachment(row)) {
-                return <button
-                  type="button"
-                  className="ss-link project-files-file-link"
-                  onClick={() => openOfficeEditor(row)}
-                >
-                  {row.fileName}
-                </button>;
-              }
-
-              return <a href={url} target="_blank" rel="noreferrer" className="ss-link">{row.fileName}</a>;
-            },
-            sortKey: (row) => row.fileName.toLowerCase(),
-          },
-          {
-            label: uiText("Größe"),
-            render: (row) => formatBytes(row.sizeBytes),
-            sortKey: (row) => row.sizeBytes ?? 0,
-          },
-          {
-            label: uiText("Erfasst"),
-            render: (row) => formatDate(row.createdAt),
-            sortKey: (row) => row.createdAt.getTime(),
-          },
-        ]}
-        pagination={{ pageSizes: [10, 25, 50] }}
+      <ProjectFileBrowser
+        files={documentFiles}
+        folders={folders}
+        selectedFileIds={selectedAttachmentIdSet}
+        busy={isUploading || !!batchBusyAction}
+        onToggleFile={toggleAttachmentSelection}
+        onOpenFile={openBrowserFile}
+        onDownloadFile={downloadBrowserFile}
+        onRenameFile={showRenameFileModal}
+        onDeleteFile={(file) => {
+          const attachment = attachments.find(candidate => candidate.id === file.id);
+          if (attachment) showDeleteSelectedFilesConfirmModal([attachment]);
+        }}
+        onMoveFiles={(fileIds, folderId) => {
+          void moveFiles(fileIds, folderId).catch(notifyOrganizationError);
+        }}
+        onChooseFileDestination={showMoveFilesModal}
+        onCreateFolder={showCreateFolderModal}
+        onCreateFile={showCreateFileModal}
+        onRenameFolder={showRenameFolderModal}
+        onMoveFolder={(folder, parentFolderId) => {
+          void moveFolder(folder, parentFolderId).catch(notifyOrganizationError);
+        }}
+        onChooseFolderDestination={showMoveFolderModal}
+        onDeleteFolder={showDeleteFolderModal}
+        onUploadFiles={(files, folderId) => {
+          void uploadSelectedFiles(files, folderId);
+        }}
+        onChooseUpload={chooseFilesForUpload}
       />
-    </MyExpandable>}
+    </section>
 
+
+    {!!activeDrawioFile && (
+      <Modal
+        open
+        passiveModal
+        modalHeading={drawioSession?.canEdit
+          ? uiText("Diagramm bearbeiten", "Edit diagram")
+          : uiText("Diagramm ansehen", "View diagram")}
+        modalLabel={activeDrawioFile.fileName}
+        closeButtonLabel={uiText("Schließen", "Close")}
+        onRequestClose={closeDrawioEditor}
+        data-fullheight="true"
+        data-fullwidth="true"
+        className="project-files-drawio-modal"
+      >
+        {drawioLoading && (
+          <div className="project-files-office-status">
+            {uiText("Diagramm wird geöffnet …", "Opening diagram …")}
+          </div>
+        )}
+
+        {!!drawioError && (
+          <div className="project-files-office-status">
+            <MyCallout icon={Icons.Deny} color="red">{drawioError}</MyCallout>
+          </div>
+        )}
+
+        {!!drawioSession && (
+          <DrawioEditor
+            editorUrl={drawioSession.editorUrl}
+            fileName={drawioSession.fileName}
+            xml={drawioSession.xml}
+            version={drawioSession.version}
+            canEdit={drawioSession.canEdit}
+            onSave={saveDrawio}
+            onClose={closeDrawioEditor}
+            onError={setDrawioError}
+          />
+        )}
+      </Modal>
+    )}
 
     {!!activeOfficeFile && (
       <Modal
@@ -917,6 +1502,73 @@ export default function ProjectFilesPage() {
       </Modal>
     )}
 
+    {!!activeVideo && (
+      <Modal
+        open
+        passiveModal
+        modalHeading={uiText("Video", "Video")}
+        modalLabel={activeVideo.fileName}
+        closeButtonLabel={uiText("Schließen", "Close")}
+        onRequestClose={closeVideoViewer}
+        data-fullheight="true"
+        data-fullwidth="true"
+        className="project-files-video-modal"
+      >
+        <div className="project-files-media-viewer">
+          <div className="project-files-media-header">
+            <div className="project-files-media-details">
+              <strong>{activeVideo.fileName}</strong>
+              <span>{formatBytes(activeVideo.sizeBytes)} · {formatDate(activeVideo.createdAt)}</span>
+            </div>
+
+            <MyDropdown
+              items={[
+                {
+                  label: uiText("Original öffnen", "Open original"),
+                  renderIcon: Icons.Search,
+                  hideIf: !activeVideo.downloadUrl,
+                  onClick: () => {
+                    if (!activeVideo.downloadUrl) return;
+                    window.open(activeVideo.downloadUrl, "_blank", "noopener,noreferrer");
+                  },
+                },
+                {
+                  label: uiText("Herunterladen", "Download"),
+                  renderIcon: Icons.Download,
+                  hideIf: !activeVideo.downloadAttachmentUrl && !activeVideo.downloadUrl,
+                  onClick: () => {
+                    const url = activeVideo.downloadAttachmentUrl || activeVideo.downloadUrl;
+                    if (url) window.open(url, "_blank", "noopener,noreferrer");
+                  },
+                },
+              ]}
+            />
+          </div>
+
+          <div className="project-files-video-stage">
+            {videoError
+              ? <MyCallout icon={Icons.Deny} color="red">{videoError}</MyCallout>
+              : <video
+                key={activeVideo.id}
+                controls
+                playsInline
+                preload="metadata"
+                aria-label={activeVideo.fileName}
+                onError={() => setVideoError(uiText(
+                  "Das Video kann in diesem Browser nicht wiedergegeben werden.",
+                  "This video cannot be played in this browser.",
+                ))}
+              >
+                <source
+                  src={activeVideo.downloadUrl || activeVideo.downloadAttachmentUrl || undefined}
+                  type={activeVideo.mimeType.toLocaleLowerCase().startsWith("video/") ? activeVideo.mimeType : undefined}
+                />
+              </video>}
+          </div>
+        </div>
+      </Modal>
+    )}
+
     {!!activeImage && (
       <Modal
         open
@@ -929,89 +1581,48 @@ export default function ProjectFilesPage() {
         data-fullwidth="true"
         className="project-files-image-modal"
       >
-        <div style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          background: 'var(--ss-surface)',
-        }}>
-          <div
-            className="flex flex-wrap gap-2 items-center justify-between"
-            style={{
-              padding: isImageViewerMobile ? '0.65rem 0.75rem' : '0.75rem 1rem',
-              borderBottom: '1px solid var(--ss-border)',
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 600 }}>{activeImage.fileName}</div>
-              <div className="light" style={{ fontSize: '.9rem' }}>{uiText("Bild", "Image")} {(activeImageIndex ?? 0) + 1} {uiText("von", "of")} {imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}
-              </div>
+        <div className="project-files-media-viewer">
+          <div className="project-files-media-header">
+            <div className="project-files-media-details">
+              <strong>{activeImage.fileName}</strong>
+              <span>{uiText("Bild", "Image")} {(activeImageIndex ?? 0) + 1} {uiText("von", "of")} {imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}</span>
             </div>
 
-            <div className="flex flex-wrap gap-2 items-center">
-              <MyDropdown
-                items={[
-                  {
-                    label: uiText("Original öffnen"),
-                    renderIcon: Icons.Search,
-                    hideIf: !activeImage.downloadUrl,
-                    onClick: () => {
-                      if (!activeImage.downloadUrl) return;
-                      window.open(activeImage.downloadUrl, '_blank', 'noopener,noreferrer');
-                    },
+            <MyDropdown
+              items={[
+                {
+                  label: uiText("Original öffnen", "Open original"),
+                  renderIcon: Icons.Search,
+                  hideIf: !activeImage.downloadUrl,
+                  onClick: () => {
+                    if (!activeImage.downloadUrl) return;
+                    window.open(activeImage.downloadUrl, "_blank", "noopener,noreferrer");
                   },
-                  {
-                    label: uiText("Herunterladen"),
-                    renderIcon: Icons.Download,
-                    hideIf: !activeImage.downloadAttachmentUrl && !activeImage.downloadUrl,
-                    onClick: () => {
-                      const attachmentUrl = activeImage.downloadAttachmentUrl || activeImage.downloadUrl;
-                      if (!attachmentUrl) return;
-                      window.open(attachmentUrl, '_blank', 'noopener,noreferrer');
-                    },
+                },
+                {
+                  label: uiText("Herunterladen", "Download"),
+                  renderIcon: Icons.Download,
+                  hideIf: !activeImage.downloadAttachmentUrl && !activeImage.downloadUrl,
+                  onClick: () => {
+                    const url = activeImage.downloadAttachmentUrl || activeImage.downloadUrl;
+                    if (url) window.open(url, "_blank", "noopener,noreferrer");
                   },
-                ]}
-              />
-            </div>
+                },
+              ]}
+            />
           </div>
 
-          <div
-            className="flex flex-wrap gap-2 items-center justify-between"
-            style={{
-              padding: isImageViewerMobile ? '0.6rem 0.75rem' : '0.65rem 1rem',
-              borderBottom: '1px solid var(--ss-border)',
-            }}
-          >
-            <MyButton size="sm" kind="secondary" onClick={showPreviousImage}>{uiText("← Zurück")}</MyButton>
-
-            <MyButton size="sm" kind="secondary" onClick={showNextImage}>{uiText("Weiter →")}</MyButton>
-          </div>
-
-          <div style={{
-            minHeight: 0,
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-            background: 'var(--ss-surface-muted)',
-          }}>
-            {activeImage.downloadUrl
-              ? <img
+          {activeImage.downloadUrl
+            ? <ZoomableImage
                 src={activeImage.downloadUrl}
                 alt={activeImage.fileName}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                  display: 'block',
-                }}
+                hasMultipleImages={imageFiles.length > 1}
+                onPrevious={showPreviousImage}
+                onNext={showNextImage}
               />
-              : <MyCallout icon={Icons.Info} color="amber">{uiText("Für dieses Bild konnte keine Vorschau geladen werden.")}</MyCallout>
-            }
-          </div>
+            : <div className="project-files-media-unavailable">
+              <MyCallout icon={Icons.Info} color="amber">{uiText("Für dieses Bild konnte keine Vorschau geladen werden.")}</MyCallout>
+            </div>}
         </div>
       </Modal>
     )}

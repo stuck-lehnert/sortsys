@@ -731,7 +731,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.files.createUpload",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; fileName: string; mimeType: string; sizeBytes?: undefined | null | number; }",
+        input_ts: "{ projectId: string; fileName: string; mimeType: string; folderId?: undefined | null | string; sizeBytes?: undefined | null | number; }",
         output_ts: "{ fileId: string; objectKey: string; uploadUrl: string; uploadMethod: \"PUT\"; uploadHeaders: Record<string, string>; expiresAt: Date; }",
     },
     RawContractSpec {
@@ -744,7 +744,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "projects.files.list",
         kind: ProcedureKind::Query,
         input_ts: "{ projectId: string; }",
-        output_ts: "{ id: string; projectId: string; fileName: string; mimeType: string; kind: \"file\" | \"image\"; sizeBytes: null | number; status: \"uploaded\" | \"pending\"; thumbnailStatus: \"none\" | \"processing\" | \"failed\" | \"queued\" | \"ready\"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]",
+        output_ts: "{ id: string; projectId: string; folderId: null | string; fileName: string; mimeType: string; kind: \"file\" | \"image\"; sizeBytes: null | number; status: \"uploaded\" | \"pending\"; thumbnailStatus: \"none\" | \"processing\" | \"failed\" | \"queued\" | \"ready\"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; textExtractionStatus: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]",
     },
     RawContractSpec {
         path: "projects.finish",

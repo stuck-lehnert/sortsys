@@ -1,15 +1,19 @@
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { MyCallout } from "~/components/MyCallout";
+import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyLink } from "~/components/MyLink";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { Icons, type Icon } from "~/lib/icons";
 import { dailyReportDayKey } from "~/lib/tiles";
+import { useEffect, useState } from "react";
 
 type ActivityItem = QueryResult<'personalization.activity.list'>[number];
 type ActivityResourceType = ActivityItem['resourceType'];
+
+const COLLAPSED_ACTIVITY_COUNT = 6;
 
 const ACTIVITY_META: Record<ActivityResourceType, { label: string; icon: Icon; href: (item: ActivityItem) => string | null }> = {
   project: { label: uiText("Projekt"), icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
@@ -69,13 +73,14 @@ export function EntityActivityTimeline({
   resourceType,
   resourceId,
   includeProjectContext,
-  limit = 25,
+  limit = 50,
 }: {
   resourceType: ActivityResourceType;
   resourceId: string;
   includeProjectContext?: boolean;
   limit?: number;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const [items, err] = useClientStream(() => client.streamQuery('personalization.activity.list', {
     limit,
     resourceType,
@@ -83,16 +88,29 @@ export function EntityActivityTimeline({
     includeProjectContext: !!includeProjectContext,
   }), [resourceType, resourceId, includeProjectContext, limit]);
 
+  useEffect(() => {
+    setShowAll(false);
+  }, [resourceType, resourceId]);
+
   if (err) {
     return <MyCallout icon={Icons.Info} color="amber">{uiText("Aktivität konnte nicht geladen werden:")} {err.message}
     </MyCallout>;
   }
 
-  return <MyExpandable title={uiText(`Aktivität (${items?.length ?? 0})`, `Activity (${items?.length ?? 0})`)} initiallyExpanded={false}>
+  const visibleItems = showAll ? items : items?.slice(0, COLLAPSED_ACTIVITY_COUNT);
+
+  return <MyExpandable title={uiText(`Aktivität (${items?.length ?? 0})`, `Activity (${items?.length ?? 0})`)} initiallyExpanded>
     {!items?.length
       ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
-      : <div className="entity-activity-timeline">
-        {items.map(item => <ActivityTimelineRow key={`${item.resourceType}:${item.resourceId}:${item.occurredAt.toISOString()}`} item={item} />)}
-      </div>}
+      : <>
+        <div className="entity-activity-timeline">
+          {visibleItems?.map(item => <ActivityTimelineRow key={`${item.resourceType}:${item.resourceId}:${item.occurredAt.toISOString()}`} item={item} />)}
+        </div>
+        {items.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-more">
+          <MyButton kind="ghost" size="sm" onClick={() => setShowAll(value => !value)}>
+            {showAll ? uiText("Weniger anzeigen", "Show less") : uiText("Mehr anzeigen", "Show more")}
+          </MyButton>
+        </div>}
+      </>}
   </MyExpandable>;
 }

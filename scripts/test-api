@@ -530,7 +530,7 @@ start_ocr_job_runner_container() {
     -e JOB_RUNNER_WS_IGNORE_PROXY="true" \
     -e JOB_RUNNER_TOKEN="$TEST_JOB_RUNNER_TOKEN" \
     -e JOB_RUNNER_ID="test-ocr-runner-1" \
-    -e JOB_RUNNER_JOB_TYPE="delivery_note_ocr" \
+    -e JOB_RUNNER_JOB_TYPE="delivery_note_ocr,project_file_pdf_extract" \
     -e JOB_RUNNER_LEASE_SEC="300" \
     "$TEST_OCR_JOB_RUNNER_IMAGE" >/dev/null
 

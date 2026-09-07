@@ -13,7 +13,10 @@ use crate::{
     AppState,
     error::{ErrorCode, RpcError, RpcResult},
     ids::Id,
-    job_queue::{DELIVERY_NOTE_OCR_JOB_TYPE, QueueJob, TENANT_LOGO_JOB_TYPE, THUMBNAIL_JOB_TYPE},
+    job_queue::{
+        DELIVERY_NOTE_OCR_JOB_TYPE, PROJECT_FILE_PDF_EXTRACT_JOB_TYPE, QueueJob,
+        TENANT_LOGO_JOB_TYPE, THUMBNAIL_JOB_TYPE,
+    },
     object_storage::{self, Audience, EnabledStorage},
 };
 
@@ -42,6 +45,13 @@ pub async fn prepare(state: &AppState, job: &QueueJob) -> RpcResult<Value> {
 
             add_delivery_note_ocr_url(&mut payload, &storage, media)?;
         }
+        PROJECT_FILE_PDF_EXTRACT_JOB_TYPE => {
+            let media: ProjectFilePdfPayload = parse(job.payload.0.clone())?;
+            media.validate()?;
+            let storage = required_storage(state, &job.tenant_name).await?;
+
+            add_project_file_pdf_url(&mut payload, &storage, &media)?;
+        }
         _ => {}
     }
 
@@ -64,6 +74,11 @@ pub async fn mark_processing(state: &AppState, job: &QueueJob) -> RpcResult<()> 
         TENANT_LOGO_JOB_TYPE => {
             let payload: LogoPayload = parse(job.payload.0.clone())?;
             set_logo_status(state, &job.tenant_name, &payload, "processing", None, None).await
+        }
+        PROJECT_FILE_PDF_EXTRACT_JOB_TYPE => {
+            let payload: ProjectFilePdfPayload = parse(job.payload.0.clone())?;
+            set_pdf_text_extraction(state, &job.tenant_name, &payload, "processing", None, None)
+                .await
         }
         _ => Ok(()),
     }
@@ -98,6 +113,18 @@ pub async fn complete(state: &AppState, job: &QueueJob, result: &Value) -> RpcRe
 
             Ok(())
         }
+        PROJECT_FILE_PDF_EXTRACT_JOB_TYPE => {
+            let payload: ProjectFilePdfPayload = parse(job.payload.0.clone())?;
+            set_pdf_text_extraction(
+                state,
+                &job.tenant_name,
+                &payload,
+                "ready",
+                Some(result),
+                None,
+            )
+            .await
+        }
         _ => Ok(()),
     }
 }
@@ -118,6 +145,10 @@ pub async fn mark_failed(
         TENANT_LOGO_JOB_TYPE => {
             let payload: LogoPayload = parse(job.payload.0.clone())?;
             set_logo_status(state, &job.tenant_name, &payload, status, None, error).await
+        }
+        PROJECT_FILE_PDF_EXTRACT_JOB_TYPE => {
+            let payload: ProjectFilePdfPayload = parse(job.payload.0.clone())?;
+            set_pdf_text_extraction(state, &job.tenant_name, &payload, status, None, error).await
         }
         _ => Ok(()),
     }
@@ -253,6 +284,31 @@ fn add_delivery_note_ocr_url(
     Ok(())
 }
 
+fn add_project_file_pdf_url(
+    payload: &mut Map<String, Value>,
+    storage: &EnabledStorage,
+    media: &ProjectFilePdfPayload,
+) -> RpcResult<()> {
+    let source_download = object_storage::create_download_url(
+        storage,
+        &media.source_object_key,
+        Some(&media.source_file_name),
+        false,
+        Audience::Internal,
+    )?;
+
+    payload.insert(
+        "sourceDownloadUrl".to_owned(),
+        json!(source_download.download_url),
+    );
+    payload.insert(
+        "sourceDownloadExpiresAt".to_owned(),
+        json!(source_download.expires_at),
+    );
+
+    Ok(())
+}
+
 async fn required_storage(state: &AppState, tenant: &str) -> RpcResult<EnabledStorage> {
     object_storage::tenant_config(&state.tenants, tenant, true)
         .await?
@@ -310,6 +366,67 @@ async fn set_thumbnail_status(
     .bind(result_text(result, "sourceFileName"))
     .bind(result_i64(result, "sourceSizeBytes"))
     .bind(result_text(result, "sourceEtag"))
+    .execute(&pool)
+    .await
+    .map_err(internal)?;
+
+    Ok(())
+}
+
+async fn set_pdf_text_extraction(
+    state: &AppState,
+    tenant: &str,
+    payload: &ProjectFilePdfPayload,
+    status: &str,
+    result: Option<&Value>,
+    error: Option<&str>,
+) -> RpcResult<()> {
+    let pool = state.tenants.tenant_pool(tenant).await.map_err(internal)?;
+    let file_id = Id::decode(&payload.project_file_id).map_err(internal)?;
+    let result = result.and_then(Value::as_object);
+    let extracted_text = result_text(result, "text");
+    let method = result_text(result, "method");
+    let confidence = result_f64(result, "confidence");
+    let page_count = result_i32(result, "pageCount");
+    let failure = error.map(|message| message.chars().take(2_000).collect::<String>());
+
+    sqlx::query(
+        r#"
+        UPDATE project_files
+        SET
+            text_extraction_status = $3,
+            extracted_text = CASE WHEN $3 = 'ready' THEN $4 ELSE extracted_text END,
+            text_extraction_method = CASE WHEN $3 = 'ready' THEN $5 ELSE text_extraction_method END,
+            text_extraction_confidence = CASE
+                WHEN $3 = 'ready' THEN $6
+                ELSE text_extraction_confidence
+            END,
+            text_extraction_page_count = CASE
+                WHEN $3 = 'ready' THEN $7
+                ELSE text_extraction_page_count
+            END,
+            text_extraction_error = CASE WHEN $3 = 'failed' THEN $8 ELSE NULL END,
+            text_extraction_version = CASE
+                WHEN $3 = 'ready' THEN $2
+                ELSE text_extraction_version
+            END,
+            text_extracted_at = CASE
+                WHEN $3 = 'ready' THEN NOW()
+                ELSE text_extracted_at
+            END
+        WHERE id = $1
+          AND office_version = $2
+          AND status = 'uploaded'
+        "#,
+    )
+    .bind(file_id.0)
+    .bind(payload.content_version)
+    .bind(status)
+    .bind(extracted_text)
+    .bind(method)
+    .bind(confidence)
+    .bind(page_count)
+    .bind(failure)
     .execute(&pool)
     .await
     .map_err(internal)?;
@@ -453,6 +570,13 @@ fn result_i32(result: Option<&Map<String, Value>>, key: &str) -> Option<i32> {
     result_i64(result, key).and_then(|value| i32::try_from(value).ok())
 }
 
+fn result_f64(result: Option<&Map<String, Value>>, key: &str) -> Option<f64> {
+    result?
+        .get(key)
+        .and_then(Value::as_f64)
+        .filter(|value| (0.0..=1.0).contains(value))
+}
+
 fn update_owned(target: &mut Option<String>, value: Option<&str>) {
     if let Some(value) = value {
         *target = Some(value.to_owned());
@@ -508,6 +632,33 @@ impl DeliveryNoteOcrPayload {
             )
         {
             return Err(internal("Invalid delivery-note OCR job payload"));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectFilePdfPayload {
+    project_id: String,
+    project_file_id: String,
+    source_object_key: String,
+    source_mime_type: String,
+    source_file_name: String,
+    content_version: i64,
+}
+
+impl ProjectFilePdfPayload {
+    fn validate(&self) -> RpcResult<()> {
+        if Id::decode(&self.project_id).is_err()
+            || Id::decode(&self.project_file_id).is_err()
+            || self.source_object_key.trim().is_empty()
+            || self.source_file_name.trim().is_empty()
+            || self.source_mime_type != "application/pdf"
+            || self.content_version < 1
+        {
+            return Err(internal("Invalid project-file PDF extraction payload"));
         }
 
         Ok(())

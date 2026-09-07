@@ -111,6 +111,7 @@ pub fn register(
     let builder = project_schedule::register(builder, Arc::clone(&state));
     let builder = project_files::register(builder, Arc::clone(&state));
     let builder = crate::onlyoffice::register(builder, Arc::clone(&state));
+    let builder = crate::drawio::register(builder, Arc::clone(&state));
     let builder = crate::office_exports::register(builder, Arc::clone(&state));
     let builder = project_daily_reports::register(builder, Arc::clone(&state));
     let builder = project_contacts::register(builder, Arc::clone(&state));
@@ -127,6 +128,8 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = llm::register_contract(builder);
     let builder = delivery_notes::register_contract(builder);
     let builder = products::register_contract(builder);
+    let builder = project_files::register_contract(builder);
+    let builder = crate::drawio::register_contract(builder);
     let builder = crate::office_exports::register_contract(builder);
 
     crate::onlyoffice::register_contract(builder)

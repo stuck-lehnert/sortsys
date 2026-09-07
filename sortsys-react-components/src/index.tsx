@@ -1056,6 +1056,24 @@ function unlockBodyScroll() {
   }
 }
 
+function isEnterSubmittableControl(target: EventTarget | null) {
+  if (target instanceof HTMLSelectElement) return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+
+  // These controls use Enter for their own interaction or do not represent a
+  // single-line value that a user would naturally confirm with Enter.
+  return ![
+    "button",
+    "checkbox",
+    "color",
+    "file",
+    "radio",
+    "range",
+    "reset",
+    "submit",
+  ].includes(target.type);
+}
+
 export function Modal({
   open,
   onRequestClose,
@@ -1068,7 +1086,7 @@ export function Modal({
   primaryButtonLoading,
   secondaryButtonDisabled,
   closeButtonLabel,
-  shouldSubmitOnEnter,
+  shouldSubmitOnEnter = true,
   passiveModal,
   danger,
   children,
@@ -1155,17 +1173,28 @@ export function Modal({
       }
 
       const runtime = modalRuntimeRef.current;
-      if (event.key === "Enter" && runtime.hasPrimaryAction && runtime.shouldSubmitOnEnter && !runtime.primaryButtonDisabled && !runtime.primaryButtonLoading) {
-        const target = event.target;
-        if (
-          target instanceof HTMLTextAreaElement
-          || target instanceof HTMLButtonElement
-          || (target instanceof HTMLElement && target.isContentEditable)
-        ) return;
+      if (
+        event.key !== "Enter"
+        || event.defaultPrevented
+        || event.isComposing
+        || event.repeat
+        || !runtime.hasPrimaryAction
+        || !runtime.shouldSubmitOnEnter
+        || runtime.primaryButtonDisabled
+        || runtime.primaryButtonLoading
+      ) return;
 
-        event.preventDefault();
-        runtime.onRequestSubmit?.();
-      }
+      const target = event.target;
+      if (!isEnterSubmittableControl(target)) return;
+
+      // Enter selects an autocomplete result while its option list is open.
+      // Submitting the surrounding dialog at the same time would skip that
+      // selection and persist the previous value.
+      const openComboBox = target.closest(".ss-combobox")?.querySelector("[role='listbox']");
+      if (openComboBox) return;
+
+      event.preventDefault();
+      runtime.onRequestSubmit?.();
     };
 
     window.addEventListener("keydown", listener);

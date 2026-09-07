@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { firstValueFrom } from "rxjs";
 import superjson from "superjson";
 
 import type { Cache } from "./cache";
@@ -110,6 +111,32 @@ test("dynamic calls use the normal authenticated transport", async () => {
       authorization: "Bearer session-token",
     },
   ]);
+});
+
+test("stream queries accept bigint input in cache keys and on the wire", async () => {
+  let wireInput: unknown;
+  const fetch = async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    const encodedInput = url.searchParams.get("input");
+    if (!encodedInput) throw new Error("missing batched query input");
+
+    const batch = JSON.parse(encodedInput) as Record<string, Parameters<typeof superjson.deserialize>[0]>;
+    wireInput = superjson.deserialize(batch["0"]!);
+    return success([]);
+  };
+  const client = createClient("https://api.example.test", "test", {
+    fetch: fetch as typeof globalThis.fetch,
+  });
+
+  const [result, error] = await firstValueFrom(client.streamQuery(
+    "projects.files.search",
+    { query: "Brandschutz", limit: 50n },
+    { strategy: "network-only" },
+  ));
+
+  expect(error).toBeNull();
+  expect(result).toEqual([]);
+  expect(wireInput).toEqual({ query: "Brandschutz", limit: 50n });
 });
 
 test("login isolates pending anonymous queries and authenticates sessionInfo", async () => {

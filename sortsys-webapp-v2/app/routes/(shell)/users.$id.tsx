@@ -159,8 +159,10 @@ export default function UserDetailPage() {
 
         <MyDivider />
         
-        <MyExpandable title={uiText(`Gebuchte Werkzeuge (${sortedTrackings?.length ?? 0})`, `Booked tools (${sortedTrackings?.length ?? 0})`)}>
-            <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['responsible']} />
-        </MyExpandable>
+        {(!trackings || !!trackingsError || !!sortedTrackings?.length) && (
+            <MyExpandable title={uiText(`Gebuchte Werkzeuge (${sortedTrackings?.length ?? 0})`, `Booked tools (${sortedTrackings?.length ?? 0})`)}>
+                <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['responsible']} />
+            </MyExpandable>
+        )}
     </>;
 }

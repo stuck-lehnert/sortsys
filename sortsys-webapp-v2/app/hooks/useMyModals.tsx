@@ -65,7 +65,7 @@ export interface MyModalsInterface {
       modalProps?: (props: {
         hide: () => void;
         context: MyPublicFormContext;
-      }) => Omit<React.ComponentProps<typeof Modal>, 'id' | 'key' | 'open' | 'onRequestClose' | 'isFullWidth' | 'primaryButtonDisabled' | 'secondaryButtonText' | 'secondaryButtonDisabled' | 'shouldSubmitOnEnter'> & {
+      }) => Omit<React.ComponentProps<typeof Modal>, 'id' | 'key' | 'open' | 'onRequestClose' | 'isFullWidth' | 'primaryButtonDisabled' | 'secondaryButtonText' | 'secondaryButtonDisabled'> & {
         noFullscreen?: boolean;
       };
 

@@ -373,9 +373,22 @@ async fn save_callback_inner(
             office_version = $4,
             office_modified_at = NOW(),
             office_modified_by_user_id = $5,
+            modified_at = NOW(),
             size_bytes = $6,
             etag = $7,
-            uploaded_at = NOW()
+            uploaded_at = NOW(),
+            text_extraction_status = CASE
+                WHEN LOWER(file_name) LIKE '%.pdf' OR LOWER(mime_type) = 'application/pdf'
+                    THEN 'pending'
+                ELSE text_extraction_status
+            END,
+            extracted_text = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE extracted_text END,
+            text_extraction_method = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE text_extraction_method END,
+            text_extraction_confidence = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE text_extraction_confidence END,
+            text_extraction_page_count = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE text_extraction_page_count END,
+            text_extraction_error = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE text_extraction_error END,
+            text_extraction_version = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE text_extraction_version END,
+            text_extracted_at = CASE WHEN LOWER(file_name) LIKE '%.pdf' THEN NULL ELSE text_extracted_at END
         WHERE id = $1
           AND project_id = $2
           AND office_version = $3
@@ -399,6 +412,27 @@ async fn save_callback_inner(
         ));
     }
 
+    if result.rows_affected() > 0 && project_files::is_pdf(&file.file_name, &file.mime_type) {
+        let extraction = project_files::PdfExtractionFile {
+            project_id: file.project_id,
+            file_id: file.id,
+            object_key: &file.object_key,
+            mime_type: &file.mime_type,
+            file_name: &file.file_name,
+            version: next_version,
+        };
+
+        if let Err(error) =
+            project_files::queue_pdf_extraction_after_edit(state, &claims.tenant, &pool, extraction)
+                .await
+        {
+            tracing::warn!(
+                file_id = file.id,
+                error = %error,
+                "could not queue edited PDF for text extraction"
+            );
+        }
+    }
     Ok(())
 }
 

@@ -12,6 +12,7 @@ pub struct Config {
     pub llm_encryption_key: Option<Arc<[u8]>>,
     pub llm_mcp_url: Option<Arc<str>>,
     pub onlyoffice: Option<OnlyOfficeConfig>,
+    pub drawio: Option<DrawioConfig>,
     pub production: bool,
 }
 
@@ -21,6 +22,11 @@ pub struct OnlyOfficeConfig {
     pub internal_url: Arc<str>,
     pub callback_url: Arc<str>,
     pub jwt_secret: Arc<[u8]>,
+}
+
+#[derive(Clone)]
+pub struct DrawioConfig {
+    pub public_url: Arc<str>,
 }
 
 impl Config {
@@ -44,6 +50,7 @@ impl Config {
             .filter(|value| !value.is_empty())
             .map(Arc::from);
         let onlyoffice = onlyoffice_config()?;
+        let drawio = drawio_config()?;
 
         Ok(Self {
             port,
@@ -54,6 +61,7 @@ impl Config {
             llm_encryption_key,
             llm_mcp_url,
             onlyoffice,
+            drawio,
             production,
         })
     }
@@ -92,6 +100,17 @@ fn onlyoffice_config() -> Result<Option<OnlyOfficeConfig>, ConfigError> {
         internal_url: Arc::from(internal_url.trim_end_matches('/')),
         callback_url: Arc::from(callback_url),
         jwt_secret: Arc::from(jwt_secret.into_bytes()),
+    }))
+}
+
+fn drawio_config() -> Result<Option<DrawioConfig>, ConfigError> {
+    let Some(public_url) = optional("DRAWIO_PUBLIC_URL").filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let public_url = validate_public_url("DRAWIO_PUBLIC_URL", public_url)?;
+
+    Ok(Some(DrawioConfig {
+        public_url: Arc::from(public_url.trim_end_matches('/')),
     }))
 }
 

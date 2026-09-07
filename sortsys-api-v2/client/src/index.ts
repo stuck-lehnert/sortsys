@@ -17,8 +17,8 @@ import { concat, from, Observable, Subject } from "rxjs";
  */
 export type CacheMode = "cache-first" | "cache-only" | "network-first" | "network-only";
 
-function stableStringify(value: any) {
-  function normalize(x: any): any {
+function stableStringify(value: unknown) {
+  function normalize(x: unknown): unknown {
     if (x === null || typeof x !== "object") return x;
 
     if (Array.isArray(x)) {
@@ -26,9 +26,10 @@ function stableStringify(value: any) {
     }
 
     // Plain object: sort keys
-    const out: any = {};
-    for (const k of Object.keys(x).sort()) {
-      const v = x[k];
+    const record = x as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(record).sort()) {
+      const v = record[k];
       // Match JSON.stringify behavior: omit undefined, functions, symbols
       if (v === undefined || typeof v === "function" || typeof v === "symbol") continue;
       out[k] = normalize(v);
@@ -37,7 +38,10 @@ function stableStringify(value: any) {
     return out;
   }
 
-  return JSON.stringify(normalize(value));
+  // SuperJSON turns values outside plain JSON—notably bigint and Date—into a
+  // JSON-safe value plus type metadata. Sorting that envelope gives equal
+  // inputs equal keys without collapsing different dates or numeric types.
+  return JSON.stringify(normalize(superjson.serialize(value)));
 }
 
 const _td = new TextDecoder();

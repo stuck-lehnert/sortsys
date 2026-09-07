@@ -66,6 +66,27 @@ server {
     proxy_send_timeout 3600s;
   }
 
+  location = /drawio {
+    return 308 /drawio/;
+  }
+
+  location /drawio/ {
+    # The official image serves its web application at /drawio. Preserve that
+    # path instead of stripping it while proxying.
+    proxy_pass ${DRAWIO_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $forwarded_host;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+  }
+
   location /assets/ {
     try_files $uri =404;
     expires 1y;

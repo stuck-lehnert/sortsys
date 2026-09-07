@@ -37,7 +37,7 @@ docker build -t sortsys-job-runner:local .
 docker build -f Dockerfile.ocr -t sortsys-ocr-job-runner:local .
 ```
 
-The default image handles thumbnails and logos. The OCR image accepts only `delivery_note_ocr` jobs when `JOB_RUNNER_JOB_TYPE` is set accordingly. It first reads an existing PDF text layer. Scanned pages and images are processed locally with Poppler, ImageMagick, and Tesseract using German and English language data.
+The default image handles thumbnails and logos. The OCR image accepts `delivery_note_ocr` and `project_file_pdf_extract` jobs when `JOB_RUNNER_JOB_TYPE` is set accordingly. It first reads an existing PDF text layer. Scanned pages and images are processed locally with Poppler, ImageMagick, and Tesseract using German and English language data.
 
 Both images run without root privileges. OCR jobs receive short-lived signed download URLs; they do not receive tenant database credentials or LLM API keys.
 

@@ -1,6 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import { Button, Menu, MenuItem, MenuItemSelectable } from "@sortsys/react-components";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import React, { useRef, useState } from "react";
 import { useRefState } from "~/hooks/useRefState";
 import { Icons } from "~/lib/icons";
@@ -17,12 +17,13 @@ type MenuItemProps = _MenuItemProps & {
 
 export function MyDropdown(_props: {
     icon?: React.ComponentType;
-    // children?: React.ReactNode;
-
+    label?: ReactNode;
+    ariaLabel?: string;
     items: MenuItemProps[];
     menuClassName?: string;
+    size?: "sm" | "md";
 }) {
-    let { icon: Icon, items, menuClassName, ...props } = _props;
+    let { icon: Icon, label, ariaLabel, items, menuClassName, size = "md" } = _props;
 
     Icon ??= Icons.DropdownMenu;
 
@@ -38,7 +39,7 @@ export function MyDropdown(_props: {
 
     return <>
         <div ref={triggerRef}>
-            <Button kind="ghost" onClick={() => {
+            <Button kind="ghost" size={size} renderIcon={Icon} aria-label={ariaLabel} onClick={() => {
                 if (triggerRef.current) {
                     const rect = triggerRef.current.getBoundingClientRect();
                     setMenuPosition({ x: rect.right, y: rect.bottom });
@@ -46,7 +47,7 @@ export function MyDropdown(_props: {
 
                 setOpen((value) => !value);
             }} >
-                <Icon />
+                {label}
             </Button>
         </div>
 

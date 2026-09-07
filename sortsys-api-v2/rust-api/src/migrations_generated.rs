@@ -177,4 +177,12 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "260829120000_onlyoffice_project_files",
         include_str!("../migrations/260829120000_onlyoffice_project_files.sql"),
     ),
+    (
+        "260907120000_project_file_folders",
+        include_str!("../migrations/260907120000_project_file_folders.sql"),
+    ),
+    (
+        "260907130000_project_file_full_text",
+        include_str!("../migrations/260907130000_project_file_full_text.sql"),
+    ),
 ];

@@ -17,6 +17,7 @@ import (
 const thumbnailJobType = "project_file_thumbnail_generate"
 const tenantLogoJobType = "tenant_logo_generate"
 const deliveryNoteOCRJobType = "delivery_note_ocr"
+const projectFilePDFExtractJobType = "project_file_pdf_extract"
 const maxSourceImageBytes = 100 * 1024 * 1024
 
 type Runner struct {
@@ -279,7 +280,7 @@ func (r *Runner) processJob(ctx context.Context, client *wsClient, job *acquired
 			break
 		}
 		result, err = r.generateAndUploadTenantLogo(ctx, payload)
-	case deliveryNoteOCRJobType:
+	case deliveryNoteOCRJobType, projectFilePDFExtractJobType:
 		payload, parseErr := parseDeliveryNoteOCRJobPayload(job.Payload)
 		if parseErr != nil {
 			err = parseErr

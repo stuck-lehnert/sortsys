@@ -249,8 +249,10 @@ export default function ProjectDetailPage() {
       </div>
     </MyExpandable>}
 
-    <MyExpandable title={uiText(`Gebuchte Werkzeuge (${sortedTrackings?.length ?? 0})`, `Booked tools (${sortedTrackings?.length ?? 0})`)}>
-      <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['project']} />
-    </MyExpandable>
+    {(!trackings || !!trackingsError || !!sortedTrackings?.length) && (
+      <MyExpandable title={uiText(`Gebuchte Werkzeuge (${sortedTrackings?.length ?? 0})`, `Booked tools (${sortedTrackings?.length ?? 0})`)}>
+        <TrackingTable trackings={sortedTrackings ?? []} loading={!trackings} error={trackingsError} omit={['project']} />
+      </MyExpandable>
+    )}
   </>;
 }

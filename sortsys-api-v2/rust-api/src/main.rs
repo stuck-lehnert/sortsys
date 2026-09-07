@@ -17,6 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.port);
     let state = AppState::connect(config).await?;
+    let backfill_state = state.clone();
+    tokio::spawn(async move {
+        sortsys_api::backfill_pdf_text_extraction_jobs(&backfill_state).await;
+    });
+
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     tracing::info!(%address, "sortsys Rust API listening");
