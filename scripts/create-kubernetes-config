@@ -1190,7 +1190,7 @@ spec:
                   name: sortsys-runtime
                   key: NO_PROXY
             - name: JOB_RUNNER_JOB_TYPE
-              value: "project_file_thumbnail_generate,tenant_logo_generate"
+              value: "project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract"
             - name: JOB_RUNNER_POLL_LIMIT
               value: "10"
             - name: JOB_RUNNER_POLL_INTERVAL_MS

@@ -2,6 +2,24 @@ package runner
 
 import "testing"
 
+func TestLoadConfigFromEnvAcceptsEverySupportedJobTypeByDefault(t *testing.T) {
+	const expectedJobTypes = "project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract"
+
+	t.Setenv("JOB_RUNNER_WS_URL", "ws://localhost:3000/internal/job-runners/ws")
+	t.Setenv("JOB_RUNNER_TOKEN", "test-token")
+	t.Setenv("JOB_RUNNER_ID", "runner-test")
+	t.Setenv("JOB_RUNNER_JOB_TYPE", "")
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("LoadConfigFromEnv returned error: %v", err)
+	}
+
+	if cfg.JobType != expectedJobTypes {
+		t.Fatalf("unexpected default job types: got %q, want %q", cfg.JobType, expectedJobTypes)
+	}
+}
+
 func TestLoadConfigFromEnvWSIgnoreProxy(t *testing.T) {
 	t.Setenv("JOB_RUNNER_WS_URL", "ws://localhost:3000/internal/job-runners/ws")
 	t.Setenv("JOB_RUNNER_TOKEN", "test-token")

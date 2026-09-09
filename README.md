@@ -23,7 +23,7 @@ You need Bash and either Docker or Podman. Start the complete development stack 
 ./scripts/dev
 ```
 
-The script starts PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, the Rust API, media and OCR runners, and the web application. It recreates and seeds the development tenant on each run.
+The script starts PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, the Rust API, two job runners, and the web application. Both runners handle media and OCR work. The development tenant is recreated and seeded on each run.
 
 | Service | Default address |
 | --- | --- |

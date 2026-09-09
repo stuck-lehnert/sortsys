@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const defaultJobTypes = "project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract"
+
 type Config struct {
 	WSURL          string
 	WSIgnoreProxy  bool
@@ -31,7 +33,7 @@ func LoadConfigFromEnv() (Config, error) {
 		LeaseSec:       envInt("JOB_RUNNER_LEASE_SEC", 90),
 		PollLimit:      envInt("JOB_RUNNER_POLL_LIMIT", 10),
 		PollIntervalMS: envInt("JOB_RUNNER_POLL_INTERVAL_MS", 800),
-		JobType:        envString("JOB_RUNNER_JOB_TYPE", "project_file_thumbnail_generate,tenant_logo_generate"),
+		JobType:        envString("JOB_RUNNER_JOB_TYPE", defaultJobTypes),
 		JPEGQuality:    envInt("JOB_RUNNER_JPEG_QUALITY", 85),
 		RetryAfterSec:  envInt("JOB_RUNNER_RETRY_AFTER_SEC", 60),
 		UserAgent:      envString("JOB_RUNNER_USER_AGENT", "sortsys-v2-job-runner/0.1"),

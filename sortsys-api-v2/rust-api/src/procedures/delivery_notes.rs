@@ -2187,7 +2187,7 @@ fn validate_ocr_result(result: &DeliveryNoteOcrResult) -> RpcResult<()> {
         || !(0..=100).contains(&result.page_count)
         || result.text.len() > 2_000_000
     {
-        return Err(internal("OCR runner returned an invalid result"));
+        return Err(internal("OCR job returned an invalid result"));
     }
 
     Ok(())
