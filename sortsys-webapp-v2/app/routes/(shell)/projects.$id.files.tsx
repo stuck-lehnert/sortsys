@@ -11,7 +11,6 @@ import {
 } from "~/components/ProjectFileBrowser";
 import { useOutletContext, useSearchParams } from "react-router";
 import { from } from "rxjs";
-import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDropdown } from "~/components/MyDropdown";
@@ -197,8 +196,6 @@ export default function ProjectFilesPage() {
     [project.id, supportsProjectFiles],
   );
 
-  const [uploadErr, setUploadErr] = useState<string | null>(null);
-  const [uploadInfo, setUploadInfo] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [batchBusyAction, setBatchBusyAction] = useState<'download' | 'delete' | 'move' | 'organize' | null>(null);
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
@@ -625,8 +622,6 @@ export default function ProjectFilesPage() {
     if (isUploading) return;
     if (batchBusyAction) return;
 
-    setUploadErr(null);
-    setUploadInfo(null);
     setIsUploading(true);
 
     const selected = Array.from(fileList);
@@ -637,9 +632,16 @@ export default function ProjectFilesPage() {
       }
 
       await client.invalidate('projects.files.list');
-      setUploadInfo(uiText(`${selected.length} Datei(en) erfolgreich hochgeladen.`, `${selected.length} file(s) uploaded successfully.`));
+      notifications.success({
+        title: selected.length === 1
+          ? uiText("Datei hochgeladen", "File uploaded")
+          : uiText(`${selected.length} Dateien hochgeladen`, `${selected.length} files uploaded`),
+      });
     } catch (err) {
-      setUploadErr((err as Error)?.message || uiText('Datei-Upload fehlgeschlagen.'));
+      notifications.danger({
+        title: uiText("Upload fehlgeschlagen", "Upload failed"),
+        content: (err as Error)?.message || uiText("Die Datei konnte nicht hochgeladen werden.", "The file could not be uploaded."),
+      });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1064,8 +1066,6 @@ export default function ProjectFilesPage() {
     if (!selectedAttachments.length) return;
     if (batchBusyAction) return;
 
-    setUploadErr(null);
-    setUploadInfo(null);
     setBatchBusyAction('download');
 
     try {
@@ -1111,9 +1111,17 @@ export default function ProjectFilesPage() {
         .slice(0, 80) || 'projekt';
 
       downloadBlob(zipBlob, uiText(`Projektanhaenge-${safeProjectTitle}.zip`, `Projectanhaenge-${safeProjectTitle}.zip`));
-      setUploadInfo(uiText(`${candidates.length} Datei(en) als ZIP heruntergeladen.`, `${candidates.length} file(s) downloaded as a ZIP archive.`));
+      notifications.success({
+        title: uiText("ZIP-Archiv heruntergeladen", "ZIP archive downloaded"),
+        content: candidates.length === 1
+          ? uiText("1 Datei enthalten", "Contains 1 file")
+          : uiText(`${candidates.length} Dateien enthalten`, `Contains ${candidates.length} files`),
+      });
     } catch (err) {
-      setUploadErr((err as Error)?.message || uiText('ZIP-Download fehlgeschlagen.', 'ZIP download failed.'));
+      notifications.danger({
+        title: uiText("ZIP-Download fehlgeschlagen", "ZIP download failed"),
+        content: (err as Error)?.message || uiText("Das ZIP-Archiv konnte nicht erstellt werden.", "The ZIP archive could not be created."),
+      });
     } finally {
       setBatchBusyAction(null);
     }
@@ -1144,8 +1152,6 @@ export default function ProjectFilesPage() {
       onPrimaryAction: async ({ hide }) => {
         if (batchBusyAction) return;
 
-        setUploadErr(null);
-        setUploadInfo(null);
         setBatchBusyAction('delete');
 
         const selectedIds = filesToDelete.map(file => file.id);
@@ -1164,10 +1170,17 @@ export default function ProjectFilesPage() {
           await client.invalidate('projects.files.list');
 
           setSelectedAttachmentIds(previous => previous.filter(id => !selectedIdsSet.has(id)));
-          setUploadInfo(uiText(`${selectedIds.length} Datei(en) wurden entfernt.`, `${selectedIds.length} file(s) removed.`));
+          notifications.success({
+            title: selectedIds.length === 1
+              ? uiText("Datei gelöscht", "File deleted")
+              : uiText(`${selectedIds.length} Dateien gelöscht`, `${selectedIds.length} files deleted`),
+          });
           hide();
         } catch (err) {
-          setUploadErr((err as Error)?.message || uiText('Dateien konnten nicht entfernt werden.'));
+          notifications.danger({
+            title: uiText("Löschen fehlgeschlagen", "Deletion failed"),
+            content: (err as Error)?.message || uiText("Die Dateien konnten nicht gelöscht werden.", "The files could not be deleted."),
+          });
         } finally {
           setBatchBusyAction(null);
         }
@@ -1238,14 +1251,6 @@ export default function ProjectFilesPage() {
     {!!(projectFilesErr || projectFoldersErr) && (
       <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")} {`${(projectFilesErr ?? projectFoldersErr as Error | null)?.message ?? uiText('Unbekannter Fehler')}`}
       </MyCallout>
-    )}
-
-    {!!uploadInfo && (
-      <AutoHideSuccessCallout resetKey={uploadInfo} onHidden={() => setUploadInfo(null)}>{uploadInfo}</AutoHideSuccessCallout>
-    )}
-
-    {!!uploadErr && (
-      <MyCallout icon={Icons.Deny} color="red">{uploadErr}</MyCallout>
     )}
 
     {!attachments.length && !folders.length && (

@@ -1,6 +1,4 @@
-import { Tile } from '@sortsys/react-components';
-import { useState } from 'react';
-import { AutoHideSuccessCallout } from '~/components/AutoHideSuccessCallout';
+import { Tile, useNotifications } from '@sortsys/react-components';
 import { MyForm, type MyPublicFormContext } from '~/components/MyForm';
 import { client } from '~/lib/client';
 import { uiText, useI18n } from '~/lib/i18n';
@@ -11,7 +9,7 @@ export function meta() {
 
 export default function LanguageSettingsPage() {
   const { locale, setLocale, t } = useI18n();
-  const [saved, setSaved] = useState(false);
+  const notifications = useNotifications();
 
   async function saveLanguage(context: MyPublicFormContext) {
     const value = context.getValues().locale;
@@ -22,17 +20,12 @@ export default function LanguageSettingsPage() {
 
     await client.invalidate('auth.sessionInfo');
     setLocale(value);
-    setSaved(true);
+    notifications.success({
+      title: uiText("Die Sprache wurde gespeichert", "Language saved"),
+    });
   }
 
   return <Tile className="settings-section">
-    {saved && <AutoHideSuccessCallout
-      resetKey={locale}
-      onHidden={() => setSaved(false)}
-    >
-      {t('language.saved')}
-    </AutoHideSuccessCallout>}
-
     <MyForm
       className="settings-form"
       notifyLoaded={context => context.setValues({ locale })}

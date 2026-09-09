@@ -1,7 +1,6 @@
 import { currentLocaleTag, uiText } from "~/lib/i18n";
-import { Heading, Tile } from "@sortsys/react-components";
+import { Heading, Tile, useNotifications } from "@sortsys/react-components";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyForm } from "~/components/MyForm";
@@ -61,13 +60,13 @@ export function meta() {
 
 export default function AdminPage() {
   const sessionInfo = useSessionInfo();
+  const notifications = useNotifications();
   const isAdmin = sessionInfo.isAdmin();
   const formRef = MyForm.useContextRef();
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [logoErr, setLogoErr] = useState<string | null>(null);
-  const [logoInfo, setLogoInfo] = useState<string | null>(null);
   const [defaultSupervisorErr, setDefaultSupervisorErr] = useState<string | null>(null);
   const [tenantLogo, setTenantLogo] = useState<TenantLogoData | null>(null);
   const [isLogoLoading, setIsLogoLoading] = useState(false);
@@ -135,7 +134,6 @@ export default function AdminPage() {
     if (!file) return;
 
     setLogoErr(null);
-    setLogoInfo(null);
     setIsLogoUploading(true);
 
     try {
@@ -171,7 +169,9 @@ export default function AdminPage() {
 
       const updated = await refreshTenantLogo();
       if (updated?.status === 'ready') {
-        setLogoInfo(uiText('Organisationslogo wurde erfolgreich aktualisiert.'));
+        notifications.success({
+          title: uiText("Organisationslogo aktualisiert", "Organization logo updated"),
+        });
       }
     } catch (err) {
       setLogoErr((err as Error)?.message || uiText('Logo-Upload fehlgeschlagen.'));
@@ -333,10 +333,6 @@ export default function AdminPage() {
 
       {!!logoErr && (
         <MyCallout icon={Icons.Deny} color="red">{logoErr}</MyCallout>
-      )}
-
-      {!!logoInfo && (
-        <AutoHideSuccessCallout resetKey={logoInfo} onHidden={() => setLogoInfo(null)}>{logoInfo}</AutoHideSuccessCallout>
       )}
 
       {tenantLogo?.status === 'failed' && !!tenantLogo.error && (

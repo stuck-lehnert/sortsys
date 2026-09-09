@@ -17,6 +17,7 @@ import { Icons } from "~/lib/icons";
 import { renderStructuredPdf, renderStructuredPdfBatch, type PdfTableSection } from "~/lib/pdf";
 import { deliverBlob, endOfDay, startOfDay, type BlobTarget, upmatchUnit } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
+import { EXCEL_DATE_NUM_FMT } from "~/lib/xlsx";
 import {
   showDeleteProjectFinancialEntryModal,
   showModifyProjectFinancialEntryModal,
@@ -875,7 +876,6 @@ export default function ProjectDetailCosts() {
 
             const CURRENCY_NUM_FMT = '#,##0.00 [$€-407]';
             const DECIMAL_NUM_FMT = '#,##0.00';
-            const DATE_NUM_FMT = 'dd.mm.yyyy';
             const PERCENT_NUM_FMT = '0.00%';
 
             const toColumnName = (column: number) => {
@@ -1103,8 +1103,8 @@ export default function ProjectDetailCosts() {
               for (let i = 0; i < toolsTable.rowCount; i++) {
                 const row = toolsTable.firstDataRow + i;
 
-                ws.getCell(row, 2).numFmt = DATE_NUM_FMT;
-                ws.getCell(row, 3).numFmt = DATE_NUM_FMT;
+                ws.getCell(row, 2).numFmt = EXCEL_DATE_NUM_FMT;
+                ws.getCell(row, 3).numFmt = EXCEL_DATE_NUM_FMT;
 
                 ws.getCell(row, 4).value = {
                   formula: `IF(${cellRef(row, 2)}="",0,MAX(IF(${cellRef(row, 3)}="",TODAY(),${cellRef(row, 3)})-${cellRef(row, 2)}+1,0))`,
@@ -1158,7 +1158,7 @@ export default function ProjectDetailCosts() {
               for (let i = 0; i < workHoursTable.rowCount; i++) {
                 const row = workHoursTable.firstDataRow + i;
 
-                ws.getCell(row, 2).numFmt = DATE_NUM_FMT;
+                ws.getCell(row, 2).numFmt = EXCEL_DATE_NUM_FMT;
                 ws.getCell(row, 3).numFmt = DECIMAL_NUM_FMT;
                 ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
 
@@ -1190,7 +1190,7 @@ export default function ProjectDetailCosts() {
               for (let i = 0; i < subcontractorWorkHoursTable.rowCount; i++) {
                 const row = subcontractorWorkHoursTable.firstDataRow + i;
 
-                ws.getCell(row, 2).numFmt = DATE_NUM_FMT;
+                ws.getCell(row, 2).numFmt = EXCEL_DATE_NUM_FMT;
                 ws.getCell(row, 3).numFmt = DECIMAL_NUM_FMT;
                 ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
 

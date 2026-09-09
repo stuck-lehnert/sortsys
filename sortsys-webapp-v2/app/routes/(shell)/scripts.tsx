@@ -1,9 +1,8 @@
 import { uiText } from "~/lib/i18n";
-import { Checkbox, Modal, TextArea, TextInput, Tile } from "@sortsys/react-components";
+import { Checkbox, Modal, TextArea, TextInput, Tile, useNotifications } from "@sortsys/react-components";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Link } from "react-router";
 import { ScriptCodePreview, ScriptEditor } from "~/components/ScriptEditor";
-import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyForm } from "~/components/MyForm";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -55,6 +54,7 @@ export function meta() {
 export default function ClientScriptsPage() {
   const sessionInfo = useSessionInfo();
   const modals = useMyModals();
+  const notifications = useNotifications();
   const canView = sessionInfo.canDo('view:clientScripts');
   const canManage = sessionInfo.canDo('manage:clientScripts');
   const canDelete = sessionInfo.canDo('delete:clientScripts');
@@ -70,7 +70,6 @@ export default function ClientScriptsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
 
   const isDraft = !selectedId;
@@ -148,7 +147,6 @@ export default function ClientScriptsPage() {
   }, [selectedId, canView]);
 
   function newScript() {
-    setInfo(null);
     setError(null);
 
     modals.showForm({
@@ -159,7 +157,6 @@ export default function ClientScriptsPage() {
 
         setIsSaving(true);
         setError(null);
-        setInfo(null);
         try {
           const [data, err] = await client.mutate('clientScripts.create', {
             name: trimmedName,
@@ -172,7 +169,7 @@ export default function ClientScriptsPage() {
 
           const script = data as ClientScriptDetail;
           hide();
-          setInfo(uiText('Skript erstellt.'));
+          notifications.success({ title: uiText("Skript erstellt", "Script created") });
           await loadScripts(script.id);
           await loadScript(script.id);
           setEditMode(true);
@@ -201,7 +198,6 @@ export default function ClientScriptsPage() {
 
     setIsSaving(true);
     setError(null);
-    setInfo(null);
     try {
       const [data, err] = await client.mutate('clientScripts.update', {
         id: selectedId,
@@ -215,7 +211,7 @@ export default function ClientScriptsPage() {
       if (!data) throw new Error(uiText("Skript konnte nicht gespeichert werden."));
 
       const script = data as ClientScriptDetail;
-      setInfo(uiText('Skript gespeichert.'));
+      notifications.success({ title: uiText("Skript gespeichert", "Script saved") });
       setLoadedScript(current => current?.id === script.id
         ? {
           ...current,
@@ -241,7 +237,6 @@ export default function ClientScriptsPage() {
 
     setIsSaving(true);
     setError(null);
-    setInfo(null);
     try {
       const [data, err] = await client.mutate('clientScripts.update', {
         id: selectedId,
@@ -253,7 +248,7 @@ export default function ClientScriptsPage() {
       if (!data) throw new Error(uiText("Skript konnte nicht gespeichert werden."));
 
       const script = data as ClientScriptDetail;
-      setInfo(uiText('Skript gespeichert.'));
+      notifications.success({ title: uiText("Skript gespeichert", "Script saved") });
       setLoadedScript(current => current?.id === script.id
         ? { ...current, code: script.code, modifiedAt: script.modifiedAt }
         : script);
@@ -304,7 +299,7 @@ export default function ClientScriptsPage() {
     try {
       const [, err] = await client.mutate('clientScripts.delete', { id: selectedId });
       if (err) throw err;
-      setInfo(uiText('Skript gelöscht.', 'Script deleted.'));
+      notifications.success({ title: uiText("Skript gelöscht", "Script deleted") });
       await loadScripts(null);
       setSelectedId(null);
     } catch (err) {
@@ -316,7 +311,6 @@ export default function ClientScriptsPage() {
 
   async function runCurrentScript() {
     setError(null);
-    setInfo(null);
     try {
       const result = await runScript(code);
       if (!result.ok) {
@@ -343,7 +337,6 @@ export default function ClientScriptsPage() {
       </div>
 
       {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
-      {!!info && <AutoHideSuccessCallout resetKey={info} onHidden={() => setInfo(null)}>{info}</AutoHideSuccessCallout>}
 
       <ScriptEditor value={code} onChange={setCode} onRun={() => {
         if (!canRunCurrentScript) return;
@@ -397,7 +390,6 @@ export default function ClientScriptsPage() {
         </div>
 
         {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
-        {!!info && <AutoHideSuccessCallout resetKey={info} onHidden={() => setInfo(null)}>{info}</AutoHideSuccessCallout>}
 
         <div className="script-meta-grid">
           <TextInput id="script-name" labelText={uiText("Name")} value={name} disabled={!canManage} onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.currentTarget.value)} />

@@ -7,7 +7,9 @@
  */
 export const EXCEL_CURRENCY_NUM_FMT = '#,##0.00 [$€-407]';
 export const EXCEL_PERCENT_NUM_FMT = '0.00%';
-export const EXCEL_DATE_NUM_FMT = 'dd.mm.yyyy';
+// Dots must be quoted: an unquoted dot is a locale-sensitive decimal separator
+// and is therefore rendered as a comma in German spreadsheet applications.
+export const EXCEL_DATE_NUM_FMT = 'dd"."mm"."yyyy';
 
 export async function exportToExcel(
     { sheetName, ...data }: {

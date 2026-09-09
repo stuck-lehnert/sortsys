@@ -1,7 +1,6 @@
 import { uiText } from "~/lib/i18n";
-import { Tile } from "@sortsys/react-components";
+import { Tile, useNotifications } from "@sortsys/react-components";
 import { useState } from "react";
-import { AutoHideSuccessCallout } from "~/components/AutoHideSuccessCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyForm } from "~/components/MyForm";
@@ -27,8 +26,8 @@ export function meta({}: Route.MetaArgs) {
 
 export default function PasskeySettingsPage() {
   const modals = useMyModals();
+  const notifications = useNotifications();
   const [reloadCounter, setReloadCounter] = useState(0);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [passkeys, passkeysErr] = useClientStream<Passkey[] | null, any>(() => {
@@ -41,7 +40,6 @@ export default function PasskeySettingsPage() {
 
   function showAddPasskeyModal() {
     setError(null);
-    setMessage(null);
 
     modals.showForm({
       content: ({ context }) => (
@@ -87,7 +85,7 @@ export default function PasskeySettingsPage() {
         }
 
         setReloadCounter(value => value + 1);
-        setMessage(uiText("Passkey gespeichert."));
+        notifications.success({ title: uiText("Passkey gespeichert", "Passkey saved") });
         hide();
       },
     });
@@ -95,7 +93,6 @@ export default function PasskeySettingsPage() {
 
   function showDeletePasskeyModal(passkey: Passkey) {
     setError(null);
-    setMessage(null);
 
     modals.showDefault({
       content: () => (
@@ -118,7 +115,7 @@ export default function PasskeySettingsPage() {
         }
 
         setReloadCounter(value => value + 1);
-        setMessage("Passkey entfernt.");
+        notifications.success({ title: uiText("Passkey entfernt", "Passkey removed") });
         hide();
       },
     });
@@ -141,12 +138,6 @@ export default function PasskeySettingsPage() {
       {!!passkeysErr && (
         <MyCallout icon={Icons.Deny} color="red">{uiText("Passkeys konnten nicht geladen werden.")}</MyCallout>
       )}
-      {!!message && (
-        <AutoHideSuccessCallout resetKey={message} onHidden={() => setMessage(null)}>
-          {message}
-        </AutoHideSuccessCallout>
-      )}
-
       <div className="settings-passkey-list">
         {(passkeys ?? []).map(passkey => (
           <div key={passkey.id} className="settings-passkey-row">
