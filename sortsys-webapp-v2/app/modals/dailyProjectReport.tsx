@@ -304,10 +304,41 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
       const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>(() => {
         return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex);
       });
+      const [pendingCopiedValues, setPendingCopiedValues] = useState<{
+        id: string;
+        values: Record<string, unknown>;
+      } | null>(null);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
       const createEntityAction = useCreateEntityAction(modals);
 
       const selectedDaySet = new Set(selectedDayIndexes);
+
+      function copyWorkHoursFromPreviousDay(dayIndex: number) {
+        if (dayIndex <= 0 || (workHourIdsByDay[dayIndex]?.length ?? 0) > 0) return;
+
+        const previousDayIndex = dayIndex - 1;
+        const previousWorkHourIds = workHourIdsByDay[previousDayIndex] ?? [];
+        if (!selectedDaySet.has(previousDayIndex) || !previousWorkHourIds.length) return;
+
+        const currentValues = context.getValues();
+        const copiedValues: Record<string, unknown> = {};
+        const copiedIds = previousWorkHourIds.map((sourceId) => {
+          const targetId = generateId();
+          const sourcePrefix = `day:${previousDayIndex}:workHour:${sourceId}`;
+          const targetPrefix = `day:${dayIndex}:workHour:${targetId}`;
+
+          copiedValues[`${targetPrefix}:user`] = currentValues[`${sourcePrefix}:user`] ?? [];
+          copiedValues[`${targetPrefix}:hours`] = currentValues[`${sourcePrefix}:hours`] ?? null;
+
+          return targetId;
+        });
+
+        setWorkHourIdsByDay((days) => ({
+          ...days,
+          [dayIndex]: copiedIds,
+        }));
+        setPendingCopiedValues({ id: generateId(), values: copiedValues });
+      }
 
       return <>
         <MyForm.MultiSelect
@@ -374,6 +405,10 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           if (!selectedDaySet.has(dayIndex)) return null;
 
           const workHourIds = workHourIdsByDay[dayIndex] ?? [];
+          const previousDayHasWorkHours = dayIndex > 0
+            && selectedDaySet.has(dayIndex - 1)
+            && (workHourIdsByDay[dayIndex - 1]?.length ?? 0) > 0;
+          const canCopyPreviousDay = workHourIds.length === 0 && previousDayHasWorkHours;
 
           return <Fragment key={weekday}>
             <h4 style={{ marginBottom: '0.25rem' }}>{weekday}</h4>
@@ -384,7 +419,16 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
               labelText={uiText("Beschreibung der Arbeiten")}
             />
 
-            <h6>{uiText("Arbeitszeit")}</h6>
+            <div className="flex items-center justify-between gap-2">
+              <h6 style={{ marginBottom: 0 }}>{uiText("Arbeitszeit")}</h6>
+              {canCopyPreviousDay && <MyButton
+                kind="ghost"
+                size="sm"
+                onClick={() => copyWorkHoursFromPreviousDay(dayIndex)}
+              >
+                {uiText("Vom Vortag kopieren", "Copy previous day")}
+              </MyButton>}
+            </div>
 
             {workHourIds.map(id => {
               return <Fragment key={id}>
@@ -495,6 +539,14 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           ])) as Record<string, boolean>);
           context.field('week')?.setValue(new Date());
         }} />
+
+        {!!pendingCopiedValues && <NotifyLoaded
+          key={pendingCopiedValues.id}
+          onLoad={() => {
+            context.setValues(pendingCopiedValues.values);
+            setPendingCopiedValues(null);
+          }}
+        />}
       </>;
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
