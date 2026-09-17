@@ -60,12 +60,28 @@ TEST_ALL_CONTAINERS=(
   "${TEST_JOB_RUNNER_CONTAINERS[1]}"
 )
 
-if command -v podman >/dev/null 2>&1; then
-  CONTAINER_RUNTIME="podman"
-elif command -v docker >/dev/null 2>&1; then
-  CONTAINER_RUNTIME="docker"
-else
-  echo "podman or docker is required to run ./scripts/test-api"
+# Set CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman to override detection.
+if [ -z "${CONTAINER_RUNTIME:-}" ]; then
+  if command -v podman >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="podman"
+  elif command -v docker >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="docker"
+  else
+    echo "podman or docker is required to run ./scripts/test-api" >&2
+    exit 1
+  fi
+fi
+
+case "$CONTAINER_RUNTIME" in
+  docker|podman) ;;
+  *)
+    echo "CONTAINER_RUNTIME must be docker or podman" >&2
+    exit 1
+    ;;
+esac
+
+if ! command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1; then
+  echo "Selected container runtime is not installed: ${CONTAINER_RUNTIME}" >&2
   exit 1
 fi
 
@@ -182,6 +198,7 @@ resolve_ports
 mkdir -p "$TEST_CARGO_TARGET_DIR" "$TEST_CARGO_REGISTRY_DIR"
 
 echo "Using test run suffix: ${TEST_RUN_SUFFIX}"
+echo "Using container runtime: ${CONTAINER_RUNTIME}"
 echo "Using test network: ${TEST_NETWORK}"
 echo "Using test containers:"
 echo "  pg=${TEST_PG_CONTAINER}"
@@ -478,6 +495,51 @@ start_api_container() {
   fi
 }
 
+check_test_connectivity() {
+  local output
+  local attempt
+
+  echo "Checking PostgreSQL and S3 connectivity from the API container"
+
+  # Probe through container DNS, not the published host ports. A healthy service
+  # inside its own container does not prove that the API can reach it.
+  for ((attempt = 1; attempt <= 20; attempt++)); do
+    if output="$("$CONTAINER_RUNTIME" exec "$TEST_API_CONTAINER" bash -ec '
+      PGPASSWORD="$TEST_PG_PASSWORD" PGCONNECT_TIMEOUT=3 psql \
+        -h "$TEST_PG_HOST" -p "$TEST_PG_PORT" -U "$TEST_PG_USER" \
+        -d "$DEV_MASTER_DATABASE_NAME" -v ON_ERROR_STOP=1 -Atc "SELECT 1" >/dev/null
+
+      curl --noproxy "*" --fail --silent --show-error \
+        --connect-timeout 3 --max-time 5 \
+        "$TEST_S3_ENDPOINT/minio/health/ready" >/dev/null
+    ' 2>&1)"; then
+      echo "PostgreSQL and S3 are reachable from the API container"
+      return 0
+    fi
+
+    if ! container_is_running "$TEST_API_CONTAINER"; then
+      echo "API container stopped during the connectivity check" >&2
+      printf '%s\n' "$output" >&2
+      return 1
+    fi
+
+    if [ "$attempt" -eq 1 ] || [ $((attempt % 5)) -eq 0 ]; then
+      echo "Connectivity check failed (${attempt}/20):" >&2
+      printf '%s\n' "$output" >&2
+    fi
+
+    if [ "$attempt" -lt 20 ]; then
+      sleep 1
+    fi
+  done
+
+  echo "Test-network connectivity failed; API tests have not been started" >&2
+  "$CONTAINER_RUNTIME" exec "$TEST_API_CONTAINER" cat /etc/resolv.conf >&2 || true
+  "$CONTAINER_RUNTIME" exec "$TEST_API_CONTAINER" \
+    getent hosts "$TEST_PG_CONTAINER" "$TEST_S3_CONTAINER" >&2 || true
+  return 1
+}
+
 start_job_runner_containers() {
   echo "Starting job runner test containers"
   for idx in "${!TEST_JOB_RUNNER_CONTAINERS[@]}"; do
@@ -569,6 +631,7 @@ trap on_exit EXIT
 start_infra
 initialize_master_database
 start_api_container
+check_test_connectivity
 start_job_runner_containers
 run_api_tests "$@"
 

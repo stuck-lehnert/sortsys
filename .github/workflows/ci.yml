@@ -65,6 +65,8 @@ jobs:
           bun-version: 1.4.0
 
       - name: Run all checks
+        env:
+          CONTAINER_RUNTIME: docker
         run: ./scripts/ci
 
   promote:
