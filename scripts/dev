@@ -127,9 +127,13 @@ prepare_llm_environment() {
       names[4] = "ANTHROPIC_MODEL"
       names[5] = "DEEPSEEK_API_KEY"
       names[6] = "DEEPSEEK_MODEL"
-      names[7] = "LLM_MCP_URL"
+      names[7] = "LLAMA_API_KEY"
+      names[8] = "LLAMA_MODEL"
+      names[9] = "META_API_KEY"
+      names[10] = "META_MODEL"
+      names[11] = "LLM_MCP_URL"
 
-      for (position = 1; position <= 7; position++) {
+      for (position = 1; position <= 11; position++) {
         allowed[names[position]] = 1
       }
     }
@@ -163,7 +167,7 @@ prepare_llm_environment() {
     }
 
     END {
-      for (position = 1; position <= 7; position++) {
+      for (position = 1; position <= 11; position++) {
         key = names[position]
 
         if (key in ENVIRON) {

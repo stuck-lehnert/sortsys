@@ -277,6 +277,66 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
           api_key_ciphertext TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS __llm_provider_accounts (
+          provider VARCHAR(32) PRIMARY KEY
+            CHECK (provider IN ('openai', 'anthropic', 'meta', 'deepseek', 'custom')),
+          base_url TEXT,
+          api_key_ciphertext TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS __llm_use_case_settings (
+          use_case VARCHAR(32) PRIMARY KEY
+            CHECK (use_case IN ('chat', 'document_import', 'onlyoffice')),
+          provider VARCHAR(32) NOT NULL
+            REFERENCES __llm_provider_accounts(provider) ON DELETE RESTRICT,
+          model VARCHAR(255) NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        ALTER TABLE __llm_use_case_settings
+          DROP CONSTRAINT IF EXISTS __llm_use_case_settings_use_case_check;
+        ALTER TABLE __llm_use_case_settings
+          ADD CONSTRAINT __llm_use_case_settings_use_case_check
+            CHECK (use_case IN ('chat', 'document_import', 'onlyoffice'));
+        INSERT INTO __llm_provider_accounts (
+          provider,
+          base_url,
+          api_key_ciphertext,
+          updated_at
+        )
+        SELECT provider, base_url, api_key_ciphertext, updated_at
+        FROM __llm_settings
+        WHERE singleton
+        ON CONFLICT (provider) DO NOTHING;
+        INSERT INTO __llm_provider_accounts (
+          provider,
+          base_url,
+          api_key_ciphertext,
+          updated_at
+        )
+        SELECT provider, base_url, api_key_ciphertext, updated_at
+        FROM __llm_scan_settings
+        WHERE singleton
+        ON CONFLICT (provider) DO NOTHING;
+        INSERT INTO __llm_use_case_settings (use_case, provider, model, updated_at)
+        SELECT 'chat', settings.provider, settings.model, settings.updated_at
+        FROM __llm_settings AS settings
+        WHERE settings.singleton
+          AND EXISTS (
+            SELECT 1
+            FROM __llm_provider_accounts AS account
+            WHERE account.provider = settings.provider
+          )
+        ON CONFLICT (use_case) DO NOTHING;
+        INSERT INTO __llm_use_case_settings (use_case, provider, model, updated_at)
+        SELECT 'document_import', settings.provider, settings.model, settings.updated_at
+        FROM __llm_scan_settings AS settings
+        WHERE settings.singleton
+          AND EXISTS (
+            SELECT 1
+            FROM __llm_provider_accounts AS account
+            WHERE account.provider = settings.provider
+          )
+        ON CONFLICT (use_case) DO NOTHING;
         CREATE TABLE IF NOT EXISTS __llm_usage (
           id BIGSERIAL PRIMARY KEY,
           tenant_name VARCHAR(127) NOT NULL REFERENCES __tenants(name) ON DELETE CASCADE,

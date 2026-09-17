@@ -200,6 +200,20 @@ async fn configure_development_llm(
             None,
         ),
         (
+            "meta",
+            "LLAMA_API_KEY",
+            "LLAMA_MODEL",
+            "Llama-4-Scout-17B-16E-Instruct-FP8",
+            None,
+        ),
+        (
+            "meta",
+            "META_API_KEY",
+            "META_MODEL",
+            "Llama-4-Scout-17B-16E-Instruct-FP8",
+            None,
+        ),
+        (
             "deepseek",
             "DEEPSEEK_API_KEY",
             "DEEPSEEK_MODEL",
@@ -230,6 +244,7 @@ async fn configure_development_llm(
 
     llm::save_configuration(state, provider, &model, base_url, Some(api_key.trim())).await?;
     llm::save_scan_configuration(state, provider, &model, base_url, Some(api_key.trim())).await?;
+    llm::save_use_case_configuration(state, llm::ONLYOFFICE_USE_CASE, provider, &model).await?;
 
     sqlx::query(
         r#"

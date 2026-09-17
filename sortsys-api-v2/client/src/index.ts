@@ -517,6 +517,19 @@ export function createClient(endpoint: string, realm: string, opts?: {
         return [data, null];
       }
 
+      async function _networkResult() {
+        const payload = await _fetch();
+
+        // Keep a usable cached response on failure; without one, preserve the
+        // error instead of emitting an empty result that looks like loading.
+        if (payload[1] && opts?.strategy === 'network-first') {
+          const cached = await _lookup(cacheKey);
+          if (cached !== null) return [cached, null] as typeof payload;
+        }
+
+        return _process(payload);
+      }
+
       async function* createGenerator() {
         if (opts!.strategy === 'cache-first' || opts!.strategy === 'cache-only') {
           const cached = await _lookup(cacheKey);
@@ -524,21 +537,14 @@ export function createClient(endpoint: string, realm: string, opts?: {
           if (opts!.strategy === 'cache-only') return;
         }
 
-        const [data, err] = await _process(await _fetch());
-        yield [data, err];
-
-        if (err && opts?.strategy === 'network-first') {
-          const data = await _lookup(cacheKey);
-          yield [data, null];
-        }
+        yield await _networkResult();
       }
 
       const generator = from(createGenerator());
 
       const listener = new Observable<any>((sub) => {
         const _listener = async () => {
-          const [data, err] = await _fetch();
-          if (data && !err) sub.next([data, err]);
+          sub.next(await _networkResult());
         };
 
         _streamQueryListeners.push([cacheKey, _listener]);

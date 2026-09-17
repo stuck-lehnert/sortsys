@@ -91,6 +91,60 @@ pub fn register(
         async move { tenant_usage(&state, &context).await }
     });
 
+    let provider_accounts_state = Arc::clone(&state);
+    builder = builder.query("admin.llm.providers.list", move |context, _input: ()| {
+        let state = Arc::clone(&provider_accounts_state);
+
+        async move { global_provider_accounts(&state, &context).await }
+    });
+
+    let update_provider_account_state = Arc::clone(&state);
+    builder = builder.mutation(
+        "admin.llm.providers.update",
+        move |context, input: UpdateProviderAccountInput| {
+            let state = Arc::clone(&update_provider_account_state);
+
+            async move { update_provider_account(&state, &context, input).await }
+        },
+    );
+
+    let delete_provider_account_state = Arc::clone(&state);
+    builder = builder.mutation(
+        "admin.llm.providers.delete",
+        move |context, input: ProviderInput| {
+            let state = Arc::clone(&delete_provider_account_state);
+
+            async move { delete_provider_account(&state, &context, input).await }
+        },
+    );
+
+    let provider_models_state = Arc::clone(&state);
+    builder = builder.query(
+        "admin.llm.providers.models",
+        move |context, input: ProviderInput| {
+            let state = Arc::clone(&provider_models_state);
+
+            async move { global_provider_models(&state, &context, input).await }
+        },
+    );
+
+    let use_cases_state = Arc::clone(&state);
+    builder = builder.query("admin.llm.useCases.list", move |context, _input: ()| {
+        let state = Arc::clone(&use_cases_state);
+
+        async move { global_use_cases(&state, &context).await }
+    });
+
+    let update_use_case_state = Arc::clone(&state);
+    builder = builder.mutation(
+        "admin.llm.useCases.update",
+        move |context, input: UpdateUseCaseInput| {
+            let state = Arc::clone(&update_use_case_state);
+
+            async move { update_use_case(&state, &context, input).await }
+        },
+    );
+
     let settings_get_state = Arc::clone(&state);
     builder = builder.query("admin.llm.settings.get", move |context, _input: ()| {
         let state = Arc::clone(&settings_get_state);
@@ -158,6 +212,16 @@ pub fn register_contract(mut builder: ProcedureRegistryBuilder) -> ProcedureRegi
     builder = builder.mutation_stub::<SendMessageInput, ChatDetail>("llm.messages.send");
     builder = builder.mutation_stub::<ReviewProposalInput, Success>("llm.proposals.review");
     builder = builder.query_stub::<(), Vec<UsageSummary>>("llm.admin.usage");
+    builder = builder.query_stub::<(), Vec<ProviderAccountSettings>>("admin.llm.providers.list");
+    builder = builder.mutation_stub::<UpdateProviderAccountInput, ProviderAccountSettings>(
+        "admin.llm.providers.update",
+    );
+    builder = builder.mutation_stub::<ProviderInput, Success>("admin.llm.providers.delete");
+    builder =
+        builder.query_stub::<ProviderInput, Vec<ProviderModelOption>>("admin.llm.providers.models");
+    builder = builder.query_stub::<(), Vec<UseCaseSettings>>("admin.llm.useCases.list");
+    builder =
+        builder.mutation_stub::<UpdateUseCaseInput, UseCaseSettings>("admin.llm.useCases.update");
     builder = builder.query_stub::<(), Option<GlobalSettings>>("admin.llm.settings.get");
     builder =
         builder.mutation_stub::<UpdateSettingsInput, GlobalSettings>("admin.llm.settings.update");
@@ -650,6 +714,119 @@ async fn tenant_usage(state: &AppState, context: &RequestContext) -> RpcResult<V
     usage_rows(state, Some(&auth.tenant)).await
 }
 
+async fn global_provider_accounts(
+    state: &AppState,
+    context: &RequestContext,
+) -> RpcResult<Vec<ProviderAccountSettings>> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+
+    Ok(llm::public_provider_accounts(state)
+        .await?
+        .into_iter()
+        .map(ProviderAccountSettings::from)
+        .collect())
+}
+
+async fn update_provider_account(
+    state: &AppState,
+    context: &RequestContext,
+    input: UpdateProviderAccountInput,
+) -> RpcResult<ProviderAccountSettings> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+    let provider = input.provider.as_str();
+
+    llm::save_provider_account(
+        state,
+        provider,
+        input.base_url.as_deref(),
+        input.api_key.as_deref(),
+    )
+    .await?;
+
+    global_provider_accounts(state, context)
+        .await?
+        .into_iter()
+        .find(|account| account.provider == provider)
+        .ok_or_else(|| internal("Provider credentials were not saved"))
+}
+
+async fn delete_provider_account(
+    state: &AppState,
+    context: &RequestContext,
+    input: ProviderInput,
+) -> RpcResult<Success> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+
+    llm::delete_provider_account(state, input.provider.as_str()).await?;
+
+    Ok(Success { success: true })
+}
+
+async fn global_provider_models(
+    state: &AppState,
+    context: &RequestContext,
+    input: ProviderInput,
+) -> RpcResult<Vec<ProviderModelOption>> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+
+    Ok(
+        llm::available_provider_models(state, input.provider.as_str())
+            .await?
+            .into_iter()
+            .map(ProviderModelOption::from)
+            .collect(),
+    )
+}
+
+async fn global_use_cases(
+    state: &AppState,
+    context: &RequestContext,
+) -> RpcResult<Vec<UseCaseSettings>> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+
+    Ok(llm::public_use_case_configurations(state)
+        .await?
+        .into_iter()
+        .map(|(use_case, configuration)| UseCaseSettings {
+            use_case: public_use_case_name(&use_case).to_owned(),
+            provider: configuration.as_ref().map(|value| value.provider.clone()),
+            model: configuration.map(|value| value.model),
+        })
+        .collect())
+}
+
+async fn update_use_case(
+    state: &AppState,
+    context: &RequestContext,
+    input: UpdateUseCaseInput,
+) -> RpcResult<UseCaseSettings> {
+    let admin_for = admin_for(state, context).await?;
+    require_global(&admin_for)?;
+    let use_case = input.use_case.as_str();
+
+    llm::save_use_case_configuration(state, use_case, input.provider.as_str(), &input.model)
+        .await?;
+
+    global_use_cases(state, context)
+        .await?
+        .into_iter()
+        .find(|settings| settings.use_case == public_use_case_name(use_case))
+        .ok_or_else(|| internal("LLM use-case settings were not saved"))
+}
+
+fn public_use_case_name(use_case: &str) -> &str {
+    match use_case {
+        llm::DOCUMENT_IMPORT_USE_CASE => "documentImport",
+        llm::ONLYOFFICE_USE_CASE => "onlyoffice",
+        _ => "chat",
+    }
+}
+
 async fn global_settings(
     state: &AppState,
     context: &RequestContext,
@@ -1082,6 +1259,7 @@ struct UpdateSettingsInput {
 enum ProviderName {
     Openai,
     Anthropic,
+    Meta,
     Deepseek,
     Custom,
 }
@@ -1091,10 +1269,56 @@ impl ProviderName {
         match self {
             Self::Openai => "openai",
             Self::Anthropic => "anthropic",
+            Self::Meta => "meta",
             Self::Deepseek => "deepseek",
             Self::Custom => "custom",
         }
     }
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProviderInput {
+    provider: ProviderName,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpdateProviderAccountInput {
+    provider: ProviderName,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    base_url: Option<String>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+enum LlmUseCase {
+    Chat,
+    DocumentImport,
+    Onlyoffice,
+}
+
+impl LlmUseCase {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Chat => llm::CHAT_USE_CASE,
+            Self::DocumentImport => llm::DOCUMENT_IMPORT_USE_CASE,
+            Self::Onlyoffice => llm::ONLYOFFICE_USE_CASE,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpdateUseCaseInput {
+    use_case: LlmUseCase,
+    provider: ProviderName,
+    model: String,
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -1246,6 +1470,49 @@ struct GlobalSettings {
     base_url: Option<String>,
     has_api_key: bool,
     mcp_available: bool,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct ProviderAccountSettings {
+    provider: String,
+    base_url: Option<String>,
+    has_api_key: bool,
+}
+
+impl From<llm::PublicProviderAccount> for ProviderAccountSettings {
+    fn from(value: llm::PublicProviderAccount) -> Self {
+        Self {
+            provider: value.provider,
+            base_url: value.base_url,
+            has_api_key: value.has_api_key,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct ProviderModelOption {
+    id: String,
+    name: String,
+}
+
+impl From<llm::AvailableProviderModel> for ProviderModelOption {
+    fn from(value: llm::AvailableProviderModel) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct UseCaseSettings {
+    #[ts(type = "\"chat\" | \"documentImport\" | \"onlyoffice\"")]
+    use_case: String,
+    provider: Option<String>,
+    model: Option<String>,
 }
 
 impl From<llm::PublicProviderConfiguration> for GlobalSettings {

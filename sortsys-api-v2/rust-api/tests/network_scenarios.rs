@@ -11,7 +11,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    routing::{get, post},
+};
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -3200,10 +3204,9 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
 
     let configured = rpc
         .mutation(
-            "admin.llm.settings.update",
+            "admin.llm.providers.update",
             json!({
                 "provider": "openai",
-                "model": "gpt-5.6-luna",
                 "baseUrl": openai_base_url,
                 "apiKey": "integration-secret-that-must-not-leak",
             }),
@@ -3212,31 +3215,127 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         .await;
     assert_eq!(configured["hasApiKey"], true);
 
+    let configured_meta = rpc
+        .mutation(
+            "admin.llm.providers.update",
+            json!({
+                "provider": "meta",
+                "baseUrl": openai_base_url,
+                "apiKey": "second-integration-secret-that-must-not-leak",
+            }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(configured_meta["hasApiKey"], true);
+
+    let provider_accounts = rpc
+        .query("admin.llm.providers.list", Value::Null, Some(admin_token))
+        .await;
+    let provider_accounts = provider_accounts.as_array().unwrap();
+    assert_eq!(provider_accounts.len(), 2);
+    assert!(
+        provider_accounts
+            .iter()
+            .any(|account| { account["provider"] == "openai" && account.get("apiKey").is_none() })
+    );
+    assert!(
+        provider_accounts
+            .iter()
+            .any(|account| account["provider"] == "meta" && account.get("apiKey").is_none())
+    );
+
+    let models = rpc
+        .query(
+            "admin.llm.providers.models",
+            json!({ "provider": "openai" }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(models[0]["id"], "gpt-5.6-luna");
+    assert_eq!(models[0]["name"], "GPT-5.6 Luna");
+
+    let meta_models = rpc
+        .query(
+            "admin.llm.providers.models",
+            json!({ "provider": "meta" }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(meta_models, models);
+
+    rpc.mutation(
+        "admin.llm.useCases.update",
+        json!({
+            "useCase": "chat",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+        }),
+        Some(admin_token),
+    )
+    .await;
+    rpc.mutation(
+        "admin.llm.useCases.update",
+        json!({
+            "useCase": "documentImport",
+            "provider": "meta",
+            "model": "gpt-5.6-luna",
+        }),
+        Some(admin_token),
+    )
+    .await;
+
+    rpc.mutation(
+        "admin.llm.useCases.update",
+        json!({ "useCase": "onlyoffice", "provider": "openai", "model": "gpt-5.6-luna" }),
+        Some(admin_token),
+    )
+    .await;
+
+    let use_cases = rpc
+        .query("admin.llm.useCases.list", Value::Null, Some(admin_token))
+        .await;
+    assert_eq!(use_cases.as_array().unwrap().len(), 3);
+    assert!(use_cases.as_array().unwrap().iter().any(|settings| {
+        settings["useCase"] == "onlyoffice"
+            && settings["provider"] == "openai"
+            && settings["model"] == "gpt-5.6-luna"
+    }));
+    assert!(use_cases.as_array().unwrap().iter().any(|settings| {
+        settings["useCase"] == "chat"
+            && settings["provider"] == "openai"
+            && settings["model"] == "gpt-5.6-luna"
+    }));
+    assert!(use_cases.as_array().unwrap().iter().any(|settings| {
+        settings["useCase"] == "documentImport"
+            && settings["provider"] == "meta"
+            && settings["model"] == "gpt-5.6-luna"
+    }));
+
     let public_settings = rpc
         .query("admin.llm.settings.get", Value::Null, Some(admin_token))
         .await;
     assert!(public_settings.get("apiKey").is_none());
     assert_eq!(public_settings["model"], "gpt-5.6-luna");
 
-    let scan_configured = rpc
-        .mutation(
-            "admin.llm.scanSettings.update",
-            json!({
-                "provider": "openai",
-                "model": "gpt-5.6-luna",
-                "baseUrl": openai_base_url,
-                "apiKey": "integration-scan-secret-that-must-not-leak",
-            }),
-            Some(admin_token),
-        )
-        .await;
-    assert_eq!(scan_configured["hasApiKey"], true);
-
     let public_scan_settings = rpc
         .query("admin.llm.scanSettings.get", Value::Null, Some(admin_token))
         .await;
     assert!(public_scan_settings.get("apiKey").is_none());
     assert_eq!(public_scan_settings["model"], "gpt-5.6-luna");
+    assert_eq!(public_scan_settings["provider"], "meta");
+
+    // The remaining scan scenarios use the OpenAI Responses mock. Switching
+    // only this use case also verifies that the chat assignment stays intact.
+    rpc.mutation(
+        "admin.llm.useCases.update",
+        json!({
+            "useCase": "documentImport",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+        }),
+        Some(admin_token),
+    )
+    .await;
 
     let tenants = rpc
         .query("admin.llm.tenants.list", Value::Null, Some(admin_token))
@@ -3272,6 +3371,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         )
         .await;
     let token = login["token"].as_str().unwrap();
+
+    onlyoffice_ai_scenarios(&rpc, &fixture, token, admin_token, &openai_base_url).await;
 
     let scan_product_id: i64 = sqlx::query_scalar(
         r#"
@@ -5450,12 +5551,316 @@ impl Fixture {
 
 type OpenAiRequestLog = std::sync::Arc<Mutex<Vec<Value>>>;
 
+async fn onlyoffice_ai_scenarios(
+    rpc: &RpcClient,
+    fixture: &Fixture,
+    token: &str,
+    admin_token: &str,
+    provider_url: &str,
+) {
+    const BRIDGE_GUID: &str = "asc.{A8D34691-265A-41B8-81D0-291963228DD8}";
+    let export = rpc
+        .mutation(
+            "office.exports.createUpload",
+            json!({
+                "fileName": "KI-Test.xlsx",
+                "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "sizeBytes": 4,
+            }),
+            Some(token),
+        )
+        .await;
+    let config = rpc
+        .query(
+            "office.exports.officeConfig",
+            json!({
+                "sessionToken": export["sessionToken"]
+            }),
+            Some(token),
+        )
+        .await;
+    let serialized = config.to_string();
+    assert!(!serialized.contains("integration-secret-that-must-not-leak"));
+    assert!(!serialized.contains("second-integration-secret-that-must-not-leak"));
+    assert_eq!(config["config"]["document"]["permissions"]["edit"], false);
+
+    let plugins = &config["config"]["editorConfig"]["plugins"];
+    assert_eq!(plugins["autostart"][0], BRIDGE_GUID);
+    let settings = &plugins["options"][BRIDGE_GUID]["settings"];
+    assert_eq!(settings["models"][0]["name"], "gpt-5.6-luna");
+    let delegation = settings["providers"]["sortsys"]["key"].as_str().unwrap();
+    let provider = &settings["providers"]["sortsys"];
+    let gateway = provider["url"].as_str().unwrap();
+
+    // Public plugin assets contain no credentials; only editor options carry
+    // the user-scoped delegation. The provider key is not even in its JWT.
+    let payload = delegation.split('.').nth(1).unwrap();
+    let payload = String::from_utf8(URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
+    assert!(!payload.contains("integration-secret"));
+    assert!(payload.contains("onlyoffice-ai"));
+    let plugin = rpc
+        .http
+        .get(plugins["pluginsData"][0].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(plugin.json::<Value>().await.unwrap()["guid"], BRIDGE_GUID);
+    let script = rpc
+        .http
+        .get(format!("{gateway}/plugin/bridge.js"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(!script.contains(delegation));
+    assert!(script.contains("ai_onCustomInit"));
+
+    rpc.expect_error(
+        "auth.sessionInfo",
+        Method::GET,
+        Value::Null,
+        Some(delegation),
+        "UNAUTHORIZED",
+    )
+    .await;
+    rpc.expect_error(
+        "admin.llm.providers.list",
+        Method::GET,
+        Value::Null,
+        Some(delegation),
+        "UNAUTHORIZED",
+    )
+    .await;
+    let mcp = rpc
+        .http
+        .post(format!("{}/internal/llm/mcp", rpc.base_url))
+        .bearer_auth(delegation)
+        .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(mcp.json::<Value>().await.unwrap()["error"].is_object());
+
+    let models_url = format!("{gateway}/v1/models");
+    assert_eq!(
+        rpc.http.get(&models_url).send().await.unwrap().status(),
+        401
+    );
+    assert_eq!(
+        rpc.http
+            .get(&models_url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let models = rpc
+        .http
+        .get(&models_url)
+        .bearer_auth(delegation)
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(models["data"][0]["id"], "sortsys-onlyoffice");
+
+    let completion_url = format!("{gateway}/v1/chat/completions");
+    let input = json!({ "model": "sortsys-onlyoffice", "messages": [{ "role": "user", "content": "ONLYOFFICE test" }],
+        "target": "http://attacker.invalid", "max_tokens": 999999, "tools": [{ "name": "steal_credentials" }] });
+    let mut invalid = input.clone();
+    invalid["model"] = json!("unapproved-model");
+    assert_eq!(
+        rpc.http
+            .post(&completion_url)
+            .bearer_auth(delegation)
+            .json(&invalid)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+
+    for provider_name in ["openai", "anthropic", "meta"] {
+        if provider_name == "anthropic" {
+            rpc.mutation(
+                "admin.llm.providers.update",
+                json!({
+                    "provider": provider_name, "baseUrl": provider_url,
+                    "apiKey": "integration-secret-that-must-not-leak"
+                }),
+                Some(admin_token),
+            )
+            .await;
+        }
+        rpc.mutation(
+            "admin.llm.useCases.update",
+            json!({
+                "useCase": "onlyoffice", "provider": provider_name, "model": "gpt-5.6-luna"
+            }),
+            Some(admin_token),
+        )
+        .await;
+        let response = rpc
+            .http
+            .post(&completion_url)
+            .bearer_auth(delegation)
+            .json(&input)
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success(), "{provider_name} failed");
+        let response = response.json::<Value>().await.unwrap();
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "Document answer [redacted]"
+        );
+        assert!(!response.to_string().contains("integration-secret"));
+    }
+
+    rpc.mutation(
+        "admin.llm.useCases.update",
+        json!({
+            "useCase": "onlyoffice", "provider": "openai", "model": "gpt-5.6-luna"
+        }),
+        Some(admin_token),
+    )
+    .await;
+    let mut streamed = input.clone();
+    streamed["stream"] = json!(true);
+    let stream = rpc
+        .http
+        .post(&completion_url)
+        .bearer_auth(delegation)
+        .json(&streamed)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stream.headers()["content-type"], "text/event-stream");
+    assert!(stream.text().await.unwrap().contains("data: [DONE]"));
+
+    let usage = rpc.query("llm.admin.usage", Value::Null, Some(token)).await;
+    assert!(
+        usage
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["purpose"] == "onlyoffice" && row["totalTokens"] == 36)
+    );
+    let global_usage = rpc
+        .query("admin.llm.usage", Value::Null, Some(admin_token))
+        .await;
+    assert!(
+        global_usage
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["tenant"] == fixture.tenant && row["purpose"] == "onlyoffice")
+    );
+
+    // Existing editor tokens must honor current tenant flags and quotas.
+    for (enabled, quota, status) in [(false, None, 403), (true, Some(1), 429)] {
+        rpc.mutation(
+            "admin.llm.tenants.update",
+            json!({
+                "name": fixture.tenant, "enabled": enabled, "monthlyTokenQuota": quota
+            }),
+            Some(admin_token),
+        )
+        .await;
+        assert_eq!(
+            rpc.http
+                .get(&models_url)
+                .bearer_auth(delegation)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            status
+        );
+        let disabled_config = rpc
+            .query(
+                "office.exports.officeConfig",
+                json!({ "sessionToken": export["sessionToken"] }),
+                Some(token),
+            )
+            .await;
+        assert!(disabled_config["config"]["editorConfig"]["plugins"]["autostart"].is_null());
+    }
+    rpc.mutation(
+        "admin.llm.tenants.update",
+        json!({
+            "name": fixture.tenant, "enabled": true, "monthlyTokenQuota": 50_000
+        }),
+        Some(admin_token),
+    )
+    .await;
+
+    sqlx::query("DELETE FROM user_role_assignments WHERE user_id = $1 AND role_name = ':admin'")
+        .bind(fixture.user_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        rpc.http
+            .get(&models_url)
+            .bearer_auth(delegation)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    sqlx::query("INSERT INTO user_role_assignments (user_id, role_name) VALUES ($1, ':admin')")
+        .bind(fixture.user_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+
+    let second_login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": fixture.admin_username, "password": fixture.admin_password
+    }), None).await;
+    let second_token = second_login["token"].as_str().unwrap();
+    let second_config = rpc
+        .query(
+            "office.exports.officeConfig",
+            json!({ "sessionToken": export["sessionToken"] }),
+            Some(second_token),
+        )
+        .await;
+    let second_delegation = second_config["config"]["editorConfig"]["plugins"]["options"]
+        [BRIDGE_GUID]["settings"]["providers"]["sortsys"]["key"]
+        .as_str()
+        .unwrap();
+    rpc.mutation("auth.logout", Value::Null, Some(second_token))
+        .await;
+    assert_eq!(
+        rpc.http
+            .get(&models_url)
+            .bearer_auth(second_delegation)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+}
+
 async fn start_openai_responses_mock() -> (String, OpenAiRequestLog) {
     let requests = OpenAiRequestLog::default();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = Router::new()
         .route("/v1/responses", post(mock_openai_response))
+        .route("/v1/models", get(mock_openai_models))
+        .route("/v1/messages", post(mock_office_anthropic))
+        .route("/v1/chat/completions", post(mock_office_compatible))
         .with_state(std::sync::Arc::clone(&requests));
 
     tokio::spawn(async move {
@@ -5465,10 +5870,68 @@ async fn start_openai_responses_mock() -> (String, OpenAiRequestLog) {
     (format!("http://{address}"), requests)
 }
 
-async fn mock_openai_response(
-    State(requests): State<OpenAiRequestLog>,
+async fn mock_openai_models() -> Json<Value> {
+    Json(json!({
+        "object": "list",
+        "data": [{
+            "id": "gpt-5.6-luna",
+            "object": "model",
+            "display_name": "GPT-5.6 Luna"
+        }]
+    }))
+}
+
+async fn mock_office_anthropic(
+    headers: axum::http::HeaderMap,
     Json(request): Json<Value>,
 ) -> Json<Value> {
+    assert_eq!(
+        headers["x-api-key"],
+        "integration-secret-that-must-not-leak"
+    );
+    assert_eq!(headers["anthropic-version"], "2023-06-01");
+    assert_eq!(request["max_tokens"], 8192);
+    assert!(request.get("tools").is_none());
+    Json(
+        json!({ "content": [{ "type": "text", "text": "Document answer integration-secret-that-must-not-leak" }],
+        "usage": { "input_tokens": 12, "output_tokens": 6 } }),
+    )
+}
+
+async fn mock_office_compatible(
+    headers: axum::http::HeaderMap,
+    Json(request): Json<Value>,
+) -> Json<Value> {
+    assert_eq!(
+        headers["authorization"],
+        "Bearer second-integration-secret-that-must-not-leak"
+    );
+    assert_eq!(request["max_tokens"], 8192);
+    assert!(request.get("tools").is_none());
+    Json(
+        json!({ "choices": [{ "message": { "content": "Document answer second-integration-secret-that-must-not-leak" } }],
+        "usage": { "prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18 } }),
+    )
+}
+
+async fn mock_openai_response(
+    State(requests): State<OpenAiRequestLog>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<Value>,
+) -> Json<Value> {
+    if request.get("tools").is_none() {
+        assert_eq!(
+            headers["authorization"],
+            "Bearer integration-secret-that-must-not-leak"
+        );
+        assert_eq!(request["max_output_tokens"], 8192);
+        assert_eq!(request["model"], "gpt-5.6-luna");
+        assert!(request.get("target").is_none());
+        return Json(
+            json!({ "output": [{ "type": "message", "content": [{ "type": "output_text", "text": "Document answer integration-secret-that-must-not-leak" }] }],
+            "usage": { "input_tokens": 12, "output_tokens": 6, "total_tokens": 18 } }),
+        );
+    }
     let input = request["input"].as_array().unwrap();
     let latest_user_content = input
         .iter()

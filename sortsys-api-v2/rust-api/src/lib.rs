@@ -72,6 +72,7 @@ pub fn app_with_state(state: Arc<AppState>) -> axum::Router {
         .merge(job_runners::router(Arc::clone(&state)))
         .merge(onlyoffice::router(Arc::clone(&state)))
         .merge(office_exports::router(Arc::clone(&state)))
+        .merge(llm::office::router(Arc::clone(&state)))
         .merge(llm::mcp_router(state))
 }
 pub fn app() -> axum::Router {

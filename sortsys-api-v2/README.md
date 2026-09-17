@@ -70,6 +70,18 @@ The API reads the following environment variables:
 
 Each value can instead be mounted at `/run/secrets/SORTSYS_API_V2_<NAME>`.
 
+## ONLYOFFICE AI
+
+In the global admin LLM page, configure a provider account, then choose its provider and model under **ONLYOFFICE**. This selection is independent of Chat and Document import. New editor sessions automatically configure ONLYOFFICE's built-in AI plugin for chat, summarization, translation, and text analysis.
+
+Provider API keys are stored encrypted in the master database. ONLYOFFICE sends AI requests through the sortsys API using a token tied to the user's session. The API decrypts the provider key and forwards text conversations to the selected model. This endpoint does not accept custom destination URLs or calls to sortsys procedures. Provider error details and response metadata stay on the server.
+
+The user needs `:llm` (included in `:admin`), and LLM access must be enabled for the tenant. The gateway rechecks the session, roles, tenant settings, and monthly token quota on every request. Usage appears separately as ONLYOFFICE in the global usage overview and contributes to tenant usage and quotas.
+
+`scripts/dev` configures this use case with the development provider when credentials are present. Restart an already running dev API after changing its Rust code, and reopen documents after changing the ONLYOFFICE model.
+
+The integration uses ONLYOFFICE's [plugin configuration](https://api.onlyoffice.com/docs/docs-api/usage-api/config/editor/plugins/) and the [built-in AI plugin](https://api.onlyoffice.com/docs/ai/guides/ai-plugin/), included in the configured Document Server image. No provider keys are installed in Document Server.
+
 ## Container image
 
 Build the production API image from this directory:

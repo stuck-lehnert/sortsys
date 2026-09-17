@@ -201,6 +201,21 @@ impl AuthService {
         Ok((auth, chat_id))
     }
 
+    pub(crate) async fn authenticate_office_ai(
+        &self,
+        headers: &HeaderMap,
+    ) -> RpcResult<AuthResult> {
+        let claims = self.decode(bearer(headers)?)?;
+
+        if claims.purpose.as_deref() != Some("onlyoffice-ai") {
+            return Err(unauthorized("An ONLYOFFICE AI delegation is required"));
+        }
+
+        // Re-read the session and roles: logout or revoked access takes effect
+        // immediately, even while an editor still holds its delegation token.
+        self.authenticate_claims(claims).await
+    }
+
     async fn authenticate_claims(&self, claims: Claims) -> RpcResult<AuthResult> {
         let tenant = claims
             .tenant
@@ -358,6 +373,27 @@ impl AuthService {
                 chat_id: Some(chat_id),
                 iat: now,
                 exp: now + MCP_TOKEN_TTL_SECONDS,
+            },
+            &EncodingKey::from_secret(&self.jwt_secret),
+        )
+    }
+
+    pub(crate) fn issue_office_ai_token(
+        &self,
+        auth: &AuthResult,
+    ) -> jsonwebtoken::errors::Result<String> {
+        let now = unix_time();
+
+        encode(
+            &Header::new(Algorithm::HS512),
+            &Claims {
+                tenant: Some(auth.tenant.clone()),
+                session_id: Some(auth.session.id.clone()),
+                admin_for: None,
+                purpose: Some("onlyoffice-ai".to_owned()),
+                chat_id: None,
+                iat: now,
+                exp: (now + 24 * 60 * 60).min(auth.session.expires_at.timestamp() as usize),
             },
             &EncodingKey::from_secret(&self.jwt_secret),
         )

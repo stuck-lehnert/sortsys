@@ -167,6 +167,8 @@ async fn editor_config(
             }
         }
     });
+    crate::llm::office::configure_editor(state, context, &auth, &mut config).await?;
+
     let config_token = sign(configuration, &config)?;
     config["token"] = Value::String(config_token);
 

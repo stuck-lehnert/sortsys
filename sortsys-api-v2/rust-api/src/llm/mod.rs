@@ -1,5 +1,6 @@
 //! LLM configuration, provider access, MCP transport, and safe data tools.
 
+pub mod office;
 mod provider;
 mod schema;
 
@@ -148,6 +149,28 @@ pub struct ProviderConfiguration {
     pub api_key: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ProviderAccountConfiguration {
+    pub provider: String,
+    pub base_url: Option<String>,
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicProviderAccount {
+    pub provider: String,
+    pub base_url: Option<String>,
+    pub has_api_key: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableProviderModel {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicProviderConfiguration {
@@ -157,6 +180,10 @@ pub struct PublicProviderConfiguration {
     pub has_api_key: bool,
     pub mcp_available: bool,
 }
+
+pub const CHAT_USE_CASE: &str = "chat";
+pub const DOCUMENT_IMPORT_USE_CASE: &str = "document_import";
+pub const ONLYOFFICE_USE_CASE: &str = "onlyoffice";
 
 pub fn mcp_router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -204,14 +231,26 @@ fn runtime_system_prompt_at(locale: &str, now: DateTime<Utc>) -> String {
     format!("{}\n\n{}", system_prompt(locale), time_context)
 }
 
-pub async fn load_configuration(state: &AppState) -> RpcResult<Option<ProviderConfiguration>> {
+async fn load_use_case_configuration(
+    state: &AppState,
+    use_case: &str,
+) -> RpcResult<Option<ProviderConfiguration>> {
+    validate_use_case(use_case)?;
+
     let row = sqlx::query(
         r#"
-        SELECT provider, model, base_url, api_key_ciphertext
-        FROM __llm_settings
-        WHERE singleton
+        SELECT
+          settings.provider,
+          settings.model,
+          account.base_url,
+          account.api_key_ciphertext
+        FROM __llm_use_case_settings AS settings
+        INNER JOIN __llm_provider_accounts AS account
+          ON account.provider = settings.provider
+        WHERE settings.use_case = $1
         "#,
     )
+    .bind(use_case)
     .fetch_optional(state.tenants.master())
     .await
     .map_err(internal)?;
@@ -231,16 +270,26 @@ pub async fn load_configuration(state: &AppState) -> RpcResult<Option<ProviderCo
     }))
 }
 
-pub async fn public_configuration(
+async fn public_use_case_configuration(
     state: &AppState,
+    use_case: &str,
 ) -> RpcResult<Option<PublicProviderConfiguration>> {
+    validate_use_case(use_case)?;
+
     let row = sqlx::query(
         r#"
-        SELECT provider, model, base_url, api_key_ciphertext
-        FROM __llm_settings
-        WHERE singleton
+        SELECT
+          settings.provider,
+          settings.model,
+          account.base_url,
+          account.api_key_ciphertext
+        FROM __llm_use_case_settings AS settings
+        INNER JOIN __llm_provider_accounts AS account
+          ON account.provider = settings.provider
+        WHERE settings.use_case = $1
         "#,
     )
+    .bind(use_case)
     .fetch_optional(state.tenants.master())
     .await
     .map_err(internal)?;
@@ -263,14 +312,40 @@ pub async fn public_configuration(
     }))
 }
 
+pub async fn load_configuration(state: &AppState) -> RpcResult<Option<ProviderConfiguration>> {
+    load_use_case_configuration(state, CHAT_USE_CASE).await
+}
+
+pub async fn public_configuration(
+    state: &AppState,
+) -> RpcResult<Option<PublicProviderConfiguration>> {
+    public_use_case_configuration(state, CHAT_USE_CASE).await
+}
+
 pub async fn load_scan_configuration(state: &AppState) -> RpcResult<Option<ProviderConfiguration>> {
+    load_use_case_configuration(state, DOCUMENT_IMPORT_USE_CASE).await
+}
+
+pub async fn public_scan_configuration(
+    state: &AppState,
+) -> RpcResult<Option<PublicProviderConfiguration>> {
+    public_use_case_configuration(state, DOCUMENT_IMPORT_USE_CASE).await
+}
+
+async fn load_provider_account(
+    state: &AppState,
+    provider: &str,
+) -> RpcResult<Option<ProviderAccountConfiguration>> {
+    validate_provider(provider)?;
+
     let row = sqlx::query(
         r#"
-        SELECT provider, model, base_url, api_key_ciphertext
-        FROM __llm_scan_settings
-        WHERE singleton
+        SELECT provider, base_url, api_key_ciphertext
+        FROM __llm_provider_accounts
+        WHERE provider = $1
         "#,
     )
+    .bind(provider)
     .fetch_optional(state.tenants.master())
     .await
     .map_err(internal)?;
@@ -281,41 +356,175 @@ pub async fn load_scan_configuration(state: &AppState) -> RpcResult<Option<Provi
 
     let ciphertext: String = row.try_get("api_key_ciphertext").map_err(internal)?;
 
-    Ok(Some(ProviderConfiguration {
+    Ok(Some(ProviderAccountConfiguration {
         provider: row.try_get("provider").map_err(internal)?,
-        model: row.try_get("model").map_err(internal)?,
         base_url: row.try_get("base_url").map_err(internal)?,
         api_key: decrypt_secret(state, &ciphertext)?,
     }))
 }
 
-pub async fn public_scan_configuration(
-    state: &AppState,
-) -> RpcResult<Option<PublicProviderConfiguration>> {
-    let row = sqlx::query(
+pub async fn public_provider_accounts(state: &AppState) -> RpcResult<Vec<PublicProviderAccount>> {
+    let rows = sqlx::query(
         r#"
-        SELECT provider, model, base_url, api_key_ciphertext
-        FROM __llm_scan_settings
-        WHERE singleton
+        SELECT provider, base_url, api_key_ciphertext
+        FROM __llm_provider_accounts
+        ORDER BY provider
         "#,
     )
+    .fetch_all(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(PublicProviderAccount {
+                provider: row.try_get("provider").map_err(internal)?,
+                base_url: row.try_get("base_url").map_err(internal)?,
+                has_api_key: row
+                    .try_get::<String, _>("api_key_ciphertext")
+                    .is_ok_and(|value| !value.is_empty()),
+            })
+        })
+        .collect()
+}
+
+pub async fn save_provider_account(
+    state: &AppState,
+    provider: &str,
+    base_url: Option<&str>,
+    api_key: Option<&str>,
+) -> RpcResult<()> {
+    validate_provider(provider)?;
+
+    let existing_ciphertext: Option<String> = sqlx::query_scalar(
+        "SELECT api_key_ciphertext FROM __llm_provider_accounts WHERE provider = $1",
+    )
+    .bind(provider)
     .fetch_optional(state.tenants.master())
     .await
     .map_err(internal)?;
 
-    let Some(row) = row else {
-        return Ok(None);
+    let ciphertext = match api_key.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(api_key) => encrypt_secret(state, api_key)?,
+        None => existing_ciphertext.ok_or_else(|| bad_request("missing apiKey"))?,
     };
 
-    Ok(Some(PublicProviderConfiguration {
-        provider: row.try_get("provider").map_err(internal)?,
-        model: row.try_get("model").map_err(internal)?,
-        base_url: row.try_get("base_url").map_err(internal)?,
-        has_api_key: row
-            .try_get::<String, _>("api_key_ciphertext")
-            .is_ok_and(|value| !value.is_empty()),
-        mcp_available: false,
-    }))
+    sqlx::query(
+        r#"
+        INSERT INTO __llm_provider_accounts (
+          provider,
+          base_url,
+          api_key_ciphertext,
+          updated_at
+        )
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (provider) DO UPDATE SET
+          base_url = EXCLUDED.base_url,
+          api_key_ciphertext = EXCLUDED.api_key_ciphertext,
+          updated_at = NOW()
+        "#,
+    )
+    .bind(provider)
+    .bind(base_url.map(str::trim).filter(|value| !value.is_empty()))
+    .bind(ciphertext)
+    .execute(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    Ok(())
+}
+
+pub async fn delete_provider_account(state: &AppState, provider: &str) -> RpcResult<()> {
+    validate_provider(provider)?;
+
+    let assigned: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM __llm_use_case_settings WHERE provider = $1)",
+    )
+    .bind(provider)
+    .fetch_one(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    if assigned {
+        return Err(RpcError::new(
+            ErrorCode::Conflict,
+            "The provider is still assigned to a use case",
+        ));
+    }
+
+    sqlx::query("DELETE FROM __llm_provider_accounts WHERE provider = $1")
+        .bind(provider)
+        .execute(state.tenants.master())
+        .await
+        .map_err(internal)?;
+
+    Ok(())
+}
+
+pub async fn available_provider_models(
+    state: &AppState,
+    provider: &str,
+) -> RpcResult<Vec<AvailableProviderModel>> {
+    let account = load_provider_account(state, provider)
+        .await?
+        .ok_or_else(|| bad_request("Provider credentials have not been configured"))?;
+
+    provider::available_models(&account).await
+}
+
+pub async fn save_use_case_configuration(
+    state: &AppState,
+    use_case: &str,
+    provider: &str,
+    model: &str,
+) -> RpcResult<()> {
+    validate_use_case(use_case)?;
+    validate_provider(provider)?;
+
+    let model = model.trim();
+    if model.is_empty() || model.len() > 255 {
+        return Err(bad_request(
+            "model must contain between 1 and 255 characters",
+        ));
+    }
+
+    if load_provider_account(state, provider).await?.is_none() {
+        return Err(bad_request("Provider credentials have not been configured"));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO __llm_use_case_settings (use_case, provider, model, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (use_case) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          model = EXCLUDED.model,
+          updated_at = NOW()
+        "#,
+    )
+    .bind(use_case)
+    .bind(provider)
+    .bind(model)
+    .execute(state.tenants.master())
+    .await
+    .map_err(internal)?;
+
+    Ok(())
+}
+
+pub async fn public_use_case_configurations(
+    state: &AppState,
+) -> RpcResult<Vec<(String, Option<PublicProviderConfiguration>)>> {
+    let mut configurations = Vec::with_capacity(2);
+
+    for use_case in [CHAT_USE_CASE, DOCUMENT_IMPORT_USE_CASE, ONLYOFFICE_USE_CASE] {
+        configurations.push((
+            use_case.to_owned(),
+            public_use_case_configuration(state, use_case).await?,
+        ));
+    }
+
+    Ok(configurations)
 }
 
 pub async fn save_scan_configuration(
@@ -325,53 +534,8 @@ pub async fn save_scan_configuration(
     base_url: Option<&str>,
     api_key: Option<&str>,
 ) -> RpcResult<()> {
-    validate_provider(provider)?;
-
-    if model.trim().is_empty() || model.len() > 255 {
-        return Err(bad_request(
-            "model must contain between 1 and 255 characters",
-        ));
-    }
-
-    let existing_ciphertext: Option<String> =
-        sqlx::query_scalar("SELECT api_key_ciphertext FROM __llm_scan_settings WHERE singleton")
-            .fetch_optional(state.tenants.master())
-            .await
-            .map_err(internal)?;
-
-    let ciphertext = match api_key.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(api_key) => encrypt_secret(state, api_key)?,
-        None => existing_ciphertext.ok_or_else(|| bad_request("missing apiKey"))?,
-    };
-
-    sqlx::query(
-        r#"
-        INSERT INTO __llm_scan_settings (
-          singleton,
-          provider,
-          model,
-          base_url,
-          api_key_ciphertext,
-          updated_at
-        )
-        VALUES (TRUE, $1, $2, $3, $4, NOW())
-        ON CONFLICT (singleton) DO UPDATE SET
-          provider = EXCLUDED.provider,
-          model = EXCLUDED.model,
-          base_url = EXCLUDED.base_url,
-          api_key_ciphertext = EXCLUDED.api_key_ciphertext,
-          updated_at = NOW()
-        "#,
-    )
-    .bind(provider)
-    .bind(model.trim())
-    .bind(base_url.map(str::trim).filter(|value| !value.is_empty()))
-    .bind(ciphertext)
-    .execute(state.tenants.master())
-    .await
-    .map_err(internal)?;
-
-    Ok(())
+    save_provider_account(state, provider, base_url, api_key).await?;
+    save_use_case_configuration(state, DOCUMENT_IMPORT_USE_CASE, provider, model).await
 }
 
 pub async fn record_scan_usage(
@@ -426,53 +590,8 @@ pub async fn save_configuration(
     base_url: Option<&str>,
     api_key: Option<&str>,
 ) -> RpcResult<()> {
-    validate_provider(provider)?;
-
-    if model.trim().is_empty() || model.len() > 255 {
-        return Err(bad_request(
-            "model must contain between 1 and 255 characters",
-        ));
-    }
-
-    let existing_ciphertext: Option<String> =
-        sqlx::query_scalar("SELECT api_key_ciphertext FROM __llm_settings WHERE singleton")
-            .fetch_optional(state.tenants.master())
-            .await
-            .map_err(internal)?;
-
-    let ciphertext = match api_key.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(api_key) => encrypt_secret(state, api_key)?,
-        None => existing_ciphertext.ok_or_else(|| bad_request("missing apiKey"))?,
-    };
-
-    sqlx::query(
-        r#"
-        INSERT INTO __llm_settings (
-          singleton,
-          provider,
-          model,
-          base_url,
-          api_key_ciphertext,
-          updated_at
-        )
-        VALUES (TRUE, $1, $2, $3, $4, NOW())
-        ON CONFLICT (singleton) DO UPDATE SET
-          provider = EXCLUDED.provider,
-          model = EXCLUDED.model,
-          base_url = EXCLUDED.base_url,
-          api_key_ciphertext = EXCLUDED.api_key_ciphertext,
-          updated_at = NOW()
-        "#,
-    )
-    .bind(provider)
-    .bind(model.trim())
-    .bind(base_url.map(str::trim).filter(|value| !value.is_empty()))
-    .bind(ciphertext)
-    .execute(state.tenants.master())
-    .await
-    .map_err(internal)?;
-
-    Ok(())
+    save_provider_account(state, provider, base_url, api_key).await?;
+    save_use_case_configuration(state, CHAT_USE_CASE, provider, model).await
 }
 
 pub fn tenant_llm_options(tenant_options: &Value) -> (bool, Option<i64>) {
@@ -1568,10 +1687,24 @@ fn required_text(value: &Value, field: &str, max: usize) -> RpcResult<String> {
 }
 
 fn validate_provider(provider: &str) -> RpcResult<()> {
-    if matches!(provider, "openai" | "anthropic" | "deepseek" | "custom") {
+    if matches!(
+        provider,
+        "openai" | "anthropic" | "meta" | "deepseek" | "custom"
+    ) {
         Ok(())
     } else {
         Err(bad_request("unsupported provider"))
+    }
+}
+
+fn validate_use_case(use_case: &str) -> RpcResult<()> {
+    if matches!(
+        use_case,
+        CHAT_USE_CASE | DOCUMENT_IMPORT_USE_CASE | ONLYOFFICE_USE_CASE
+    ) {
+        Ok(())
+    } else {
+        Err(bad_request("unsupported LLM use case"))
     }
 }
 

@@ -1,7 +1,9 @@
 //! Provider adapters and the local tool-call fallback.
 
+use std::time::Duration;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
@@ -10,7 +12,10 @@ use crate::{
     error::{ErrorCode, RpcError, RpcResult},
 };
 
-use super::{ProviderConfiguration, execute_tool, runtime_system_prompt, tool_definitions};
+use super::{
+    AvailableProviderModel, ProviderAccountConfiguration, ProviderConfiguration, execute_tool,
+    runtime_system_prompt, tool_definitions,
+};
 
 // Recaps can require several schema lookups and data queries. Keep a hard cap,
 // but leave enough room for models that issue those calls sequentially.
@@ -29,6 +34,83 @@ pub struct TokenUsage {
     pub total_tokens: i64,
 }
 
+pub(super) async fn available_models(
+    account: &ProviderAccountConfiguration,
+) -> RpcResult<Vec<AvailableProviderModel>> {
+    let endpoint = endpoint(
+        account
+            .base_url
+            .as_deref()
+            .unwrap_or_else(|| default_provider_base_url(&account.provider)),
+        "v1/models",
+    );
+    let client = reqwest::Client::new();
+    let request = match account.provider.as_str() {
+        "anthropic" => client
+            .get(format!("{endpoint}?limit=1000"))
+            .header("x-api-key", &account.api_key)
+            .header("anthropic-version", "2023-06-01"),
+        _ => client.get(endpoint).bearer_auth(&account.api_key),
+    };
+    let response = request
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(internal)?;
+    let value = checked_json(response)
+        .await
+        .map_err(ProviderError::into_rpc)?;
+
+    Ok(model_options(&value))
+}
+
+fn model_options(value: &Value) -> Vec<AvailableProviderModel> {
+    let records = value
+        .get("data")
+        .or_else(|| value.get("models"))
+        .and_then(Value::as_array)
+        .or_else(|| value.as_array());
+    let mut models = records
+        .into_iter()
+        .flatten()
+        .filter_map(|record| {
+            let id = record
+                .get("id")
+                .or_else(|| record.get("identifier"))
+                .and_then(Value::as_str)?
+                .trim();
+
+            if id.is_empty() {
+                return None;
+            }
+
+            let name = record
+                .get("display_name")
+                .or_else(|| record.get("displayName"))
+                .or_else(|| record.get("name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(id);
+
+            Some(AvailableProviderModel {
+                id: id.to_owned(),
+                name: name.to_owned(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    models.dedup_by(|left, right| left.id == right.id);
+    models.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    models
+}
+
 impl TokenUsage {
     fn add(&mut self, other: &Self) {
         self.input_tokens += other.input_tokens;
@@ -42,6 +124,122 @@ pub struct Completion {
     pub content: String,
     pub usage: TokenUsage,
     pub transport: &'static str,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(super) struct OfficeMessage {
+    pub role: String,
+    pub content: String,
+}
+
+/// Adapt the editor's text-only conversation without sortsys tools or MCP.
+/// Never pass through browser-selected URLs, headers, models or output limits.
+pub(super) async fn office_completion(
+    configuration: &ProviderConfiguration,
+    messages: &[OfficeMessage],
+) -> RpcResult<Completion> {
+    let base = configuration
+        .base_url
+        .as_deref()
+        .unwrap_or_else(|| default_provider_base_url(&configuration.provider));
+    let (path, body) = match configuration.provider.as_str() {
+        "openai" => (
+            "v1/responses",
+            json!({
+                "model": configuration.model,
+                "input": messages,
+                "max_output_tokens": 8192,
+                "store": false
+            }),
+        ),
+        "anthropic" => {
+            let system = messages
+                .iter()
+                .filter(|message| message.role == "system")
+                .map(|message| message.content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let turns = messages
+                .iter()
+                .filter(|message| message.role != "system")
+                .collect::<Vec<_>>();
+            (
+                "v1/messages",
+                json!({ "model": configuration.model, "system": system,
+                "messages": turns, "max_tokens": 8192 }),
+            )
+        }
+        _ => (
+            "v1/chat/completions",
+            json!({ "model": configuration.model,
+            "messages": messages, "max_tokens": 8192 }),
+        ),
+    };
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| office_provider_error())?;
+    let request = client
+        .post(endpoint(base, path))
+        .json(&body)
+        .timeout(Duration::from_secs(120));
+    let request = if configuration.provider == "anthropic" {
+        request
+            .header("x-api-key", &configuration.api_key)
+            .header("anthropic-version", "2023-06-01")
+    } else {
+        request.bearer_auth(&configuration.api_key)
+    };
+    let mut response = request.send().await.map_err(|_| office_provider_error())?;
+
+    if !response.status().is_success() {
+        // A provider might echo authentication headers in an error. Never
+        // expose its raw body, URL, or transport error through this gateway.
+        return Err(office_provider_error());
+    }
+
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| office_provider_error())?
+    {
+        if bytes.len() + chunk.len() > 2 * 1024 * 1024 {
+            return Err(office_provider_error());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| office_provider_error())?;
+    let (content, usage) = match configuration.provider.as_str() {
+        "openai" => (responses_text(&value), responses_usage(&value)),
+        "anthropic" => (anthropic_text(&value), anthropic_usage(&value)),
+        _ => (
+            value
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            chat_completions_usage(&value),
+        ),
+    };
+
+    if content.trim().is_empty() {
+        return Err(office_provider_error());
+    }
+
+    Ok(Completion {
+        content: content.replace(&configuration.api_key, "[redacted]"),
+        usage,
+        transport: "onlyoffice",
+    })
+}
+
+fn office_provider_error() -> RpcError {
+    RpcError::new(
+        ErrorCode::PreconditionFailed,
+        "ONLYOFFICE LLM request failed",
+    )
 }
 
 pub async fn complete(
@@ -85,7 +283,7 @@ pub async fn complete(
         "openai" => {
             openai_responses_tools(state, auth, chat_id, configuration, turns, &prompt).await
         }
-        "deepseek" | "custom" => {
+        "meta" | "deepseek" | "custom" => {
             openai_compatible_tools(state, auth, chat_id, configuration, turns, &prompt).await
         }
         _ => Err(RpcError::new(
@@ -176,7 +374,9 @@ pub async fn parse_document_scan(
     match configuration.provider.as_str() {
         "openai" => openai_scan(state, auth, configuration, &input, &prompt).await,
         "anthropic" => anthropic_scan(state, auth, configuration, &input, &prompt).await,
-        "deepseek" | "custom" => compatible_scan(state, auth, configuration, &input, &prompt).await,
+        "meta" | "deepseek" | "custom" => {
+            compatible_scan(state, auth, configuration, &input, &prompt).await
+        }
         _ => Err(RpcError::new(
             ErrorCode::BadRequest,
             "Unsupported scan LLM provider",
@@ -405,13 +605,11 @@ async fn compatible_scan(
     input: &DocumentScanInput,
     prompt: &str,
 ) -> RpcResult<ScanCompletion> {
-    let default_base = if configuration.provider == "deepseek" {
-        "https://api.deepseek.com"
-    } else {
-        "https://api.openai.com"
-    };
     let endpoint = endpoint(
-        configuration.base_url.as_deref().unwrap_or(default_base),
+        configuration
+            .base_url
+            .as_deref()
+            .unwrap_or_else(|| default_provider_base_url(&configuration.provider)),
         "v1/chat/completions",
     );
     let attachable_originals = input
@@ -831,12 +1029,11 @@ async fn openai_compatible_tools(
     turns: &[ChatTurn],
     prompt: &str,
 ) -> RpcResult<Completion> {
-    let default_base = match configuration.provider.as_str() {
-        "deepseek" => "https://api.deepseek.com",
-        _ => "https://api.openai.com",
-    };
     let endpoint = endpoint(
-        configuration.base_url.as_deref().unwrap_or(default_base),
+        configuration
+            .base_url
+            .as_deref()
+            .unwrap_or_else(|| default_provider_base_url(&configuration.provider)),
         "v1/chat/completions",
     );
     let tools = openai_chat_function_tools();
@@ -1214,6 +1411,15 @@ fn endpoint(base: &str, path: &str) -> String {
     }
 }
 
+fn default_provider_base_url(provider: &str) -> &'static str {
+    match provider {
+        "anthropic" => "https://api.anthropic.com",
+        "meta" => "https://api.llama.com/compat",
+        "deepseek" => "https://api.deepseek.com",
+        _ => "https://api.openai.com",
+    }
+}
+
 fn request(url: &str) -> reqwest::RequestBuilder {
     reqwest::Client::new()
         .post(url)
@@ -1302,10 +1508,41 @@ mod tests {
     use crate::error::{ErrorCode, RpcError};
 
     use super::{
-        ProviderConfiguration, endpoint, openai_compatible_request_body,
-        openai_response_function_tools, openai_responses_request_body, recoverable_tool_error,
-        responses_text, scan_prompt,
+        ProviderConfiguration, default_provider_base_url, endpoint, model_options,
+        openai_compatible_request_body, openai_response_function_tools,
+        openai_responses_request_body, recoverable_tool_error, responses_text, scan_prompt,
     };
+
+    #[test]
+    fn model_lists_support_openai_anthropic_and_meta_shapes() {
+        let models = model_options(&json!({
+            "data": [
+                { "id": "gpt-b", "owned_by": "openai" },
+                { "id": "claude-a", "display_name": "Claude A" },
+                { "identifier": "llama-c", "name": "Llama C" }
+            ]
+        }));
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| (model.id.as_str(), model.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("claude-a", "Claude A"),
+                ("gpt-b", "gpt-b"),
+                ("llama-c", "Llama C")
+            ]
+        );
+    }
+
+    #[test]
+    fn meta_uses_the_official_compatibility_endpoint() {
+        assert_eq!(
+            endpoint(default_provider_base_url("meta"), "v1/chat/completions"),
+            "https://api.llama.com/compat/v1/chat/completions"
+        );
+    }
 
     #[test]
     fn delivery_note_scan_prompt_uses_the_users_language() {

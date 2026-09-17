@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { firstValueFrom } from "rxjs";
+import { firstValueFrom, take, tap, toArray } from "rxjs";
 import superjson from "superjson";
 
 import type { Cache } from "./cache";
@@ -44,6 +44,100 @@ function memoryCache() {
 
   return { cache, values };
 }
+
+function modelListFailure() {
+  return new Response(JSON.stringify([{
+    error: superjson.serialize({
+      message: "Provider model lookup failed",
+      code: -32603,
+      data: { code: "INTERNAL_SERVER_ERROR", httpCode: 500 },
+    }),
+  }]));
+}
+
+test("provider model streams send the admin token and provider input", async () => {
+  const models = [{ id: "gpt-5.6-luna", name: "GPT-5.6 Luna" }];
+  const client = createClient("https://api.example.test", "global-admin", {
+    fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/admin.llm.providers.models");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer admin-token");
+      expect(JSON.parse(url.searchParams.get("input")!)["0"].json).toEqual({ provider: "openai" });
+      return success(models);
+    }) as typeof globalThis.fetch,
+  });
+  client.setToken("admin-token");
+
+  const [result, error] = await firstValueFrom(client.streamQuery(
+    "admin.llm.providers.models", { provider: "openai" }, { strategy: "network-only" },
+  ));
+
+  expect(result).toEqual(models);
+  expect(error).toBeNull();
+});
+
+test("network-first model streams do not overwrite errors with an empty fallback", async () => {
+  const client = createClient("https://api.example.test", "test", {
+    fetch: (async (_input: string | URL | Request, _init?: RequestInit) => modelListFailure()) as typeof globalThis.fetch,
+  });
+  const results: unknown[] = [];
+  let receivedFirst: () => void = () => {};
+  const first = new Promise<void>(resolve => { receivedFirst = resolve; });
+  const subscription = client.streamQuery(
+    "admin.llm.providers.models", { provider: "openai" }, { strategy: "network-first" },
+  ).subscribe(result => {
+    results.push(result);
+    receivedFirst();
+  });
+
+  await first;
+  // Let the generator finish before checking that no empty fallback followed.
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
+  subscription.unsubscribe();
+
+  expect(results).toHaveLength(1);
+  expect(results[0]).toEqual([null, expect.objectContaining({ message: "Provider model lookup failed" })]);
+});
+
+test("network-first model streams preserve a cached list when the provider fails", async () => {
+  const { cache, values } = memoryCache();
+  const models = [{ id: "gpt-5.6-luna", name: "GPT-5.6 Luna" }];
+  const seedClient = createClient("https://api.example.test", "test", {
+    cache, fetch: (async (_input: string | URL | Request, _init?: RequestInit) => success(models)) as typeof globalThis.fetch,
+  });
+  await seedClient.query("admin.llm.providers.models", { provider: "openai" }, { strategy: "network-only" });
+  const client = createClient("https://api.example.test", "test", {
+    cache, fetch: (async (_input: string | URL | Request, _init?: RequestInit) => modelListFailure()) as typeof globalThis.fetch,
+  });
+
+  const result = await firstValueFrom(client.streamQuery(
+    "admin.llm.providers.models", { provider: "openai" }, { strategy: "network-first" },
+  ));
+
+  expect(result).toEqual([models, null]);
+  expect(values.size).toBe(1);
+});
+
+test("model stream refreshes emit failures instead of silently ignoring them", async () => {
+  let requests = 0;
+  const client = createClient("https://api.example.test", "test", {
+    fetch: (async (_input: string | URL | Request, _init?: RequestInit) => ++requests === 1 ? success([]) : modelListFailure()) as typeof globalThis.fetch,
+  });
+  const results = await firstValueFrom(client.streamQuery(
+    "admin.llm.providers.models", { provider: "openai" }, { strategy: "network-only" },
+  ).pipe(
+    tap(() => {
+      if (requests === 1) {
+        setTimeout(() => void client.invalidate("admin.llm.providers.models"), 0);
+      }
+    }),
+    take(2),
+    toArray(),
+  ));
+
+  expect(results[0]).toEqual([[], null]);
+  expect(results[1]).toEqual([null, expect.objectContaining({ message: "Provider model lookup failed" })]);
+});
 
 test("token state and listeners are independent of the transport", () => {
   const client = createClient("https://api.example.test", "test");
