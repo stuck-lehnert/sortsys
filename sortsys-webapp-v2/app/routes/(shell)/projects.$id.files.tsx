@@ -3,6 +3,7 @@ import { Modal, useNotifications } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
 import { DrawioEditor } from "~/components/DrawioEditor";
 import { OnlyOfficeEditor } from "~/components/OnlyOfficeEditor";
+import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { ZoomableImage } from "~/components/ZoomableImage";
 import {
   ProjectFileBrowser,
@@ -25,11 +26,15 @@ import {
   type NewProjectFileType,
 } from "~/lib/blankProjectFiles";
 import { client } from "~/lib/client";
+import { attachmentPreviewKind } from "~/lib/attachmentPreview";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { downloadBlob } from "~/lib/utils";
 import type { Project } from "~/type-helpers";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+const PdfAttachmentViewer = lazy(() => import("~/components/PdfAttachmentViewer"));
+const EmailAttachmentViewer = lazy(() => import("~/components/EmailAttachmentViewer"));
 
 type ProjectFileEntry = {
   id: string;
@@ -145,7 +150,7 @@ function isOnlyOfficeAttachment(file: ProjectFileEntry) {
     "dpt", "epub", "et", "ett", "fb2", "fodp", "fods", "fodt", "hml",
     "htm", "html", "hwp", "hwpx", "key", "md", "mht", "mhtml", "numbers",
     "odg", "odp", "ods", "odt", "otp", "ots", "ott", "oxps", "pages",
-    "pdf", "pot", "potm", "potx", "pps", "ppsm", "ppsx", "ppt", "pptm",
+    "pot", "potm", "potx", "pps", "ppsm", "ppsx", "ppt", "pptm",
     "pptx", "rtf", "stw", "sxc", "sxi", "sxw", "txt", "vsdm", "vsdx",
     "vssm", "vssx", "vstm", "vstx", "wps", "wpt", "xls", "xlsb", "xlsm",
     "xlsx", "xlt", "xltm", "xltx", "xps",
@@ -204,6 +209,7 @@ export default function ProjectFilesPage() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [activeDwgFileId, setActiveDwgFileId] = useState<string | null>(null);
   const [activeOfficeFileId, setActiveOfficeFileId] = useState<string | null>(null);
+  const [activePreviewFileId, setActivePreviewFileId] = useState<string | null>(null);
   const [officeSession, setOfficeSession] = useState<OnlyOfficeSession | null>(null);
   const [officeError, setOfficeError] = useState<string | null>(null);
   const [officeLoading, setOfficeLoading] = useState(false);
@@ -281,6 +287,9 @@ export default function ProjectFilesPage() {
     if (!activeOfficeFileId) return null;
     return attachments.find(file => file.id === activeOfficeFileId) ?? null;
   }, [activeOfficeFileId, attachments]);
+  const activePreviewFile = useMemo(() => {
+    return attachments.find(file => file.id === activePreviewFileId) ?? null;
+  }, [activePreviewFileId, attachments]);
   const activeDrawioFile = useMemo(() => {
     if (!activeDrawioFileId) return null;
     return attachments.find(file => file.id === activeDrawioFileId) ?? null;
@@ -328,6 +337,11 @@ export default function ProjectFilesPage() {
     setActiveOfficeFileId(null);
     setOfficeSession(null);
   }, [activeOfficeFileId, attachments]);
+  useEffect(() => {
+    if (activePreviewFileId && !attachments.some(file => file.id === activePreviewFileId)) {
+      setActivePreviewFileId(null);
+    }
+  }, [activePreviewFileId, attachments]);
   useEffect(() => {
     if (!activeDrawioFileId) return;
     if (attachments.some(entry => entry.id === activeDrawioFileId)) return;
@@ -422,6 +436,10 @@ export default function ProjectFilesPage() {
     clearOpenFileParam();
 
     void client.invalidate("projects.files.list");
+  }, [clearOpenFileParam]);
+  const closeAttachmentPreview = useCallback(() => {
+    setActivePreviewFileId(null);
+    clearOpenFileParam();
   }, [clearOpenFileParam]);
   const openDrawioEditor = async (file: ProjectFileEntry) => {
     setActiveDrawioFileId(file.id);
@@ -1042,7 +1060,9 @@ export default function ProjectFilesPage() {
     const attachment = attachments.find(candidate => candidate.id === file.id);
     if (!attachment) return;
 
-    if (isDwgAttachment(attachment)) {
+    if (attachmentPreviewKind(attachment)) {
+      setActivePreviewFileId(attachment.id);
+    } else if (isDwgAttachment(attachment)) {
       openDwgViewer(attachment);
     } else if (isVideoAttachment(attachment)) {
       openVideoViewer(attachment);
@@ -1407,6 +1427,47 @@ export default function ProjectFilesPage() {
             onError={setDrawioError}
           />
         )}
+      </Modal>
+    )}
+
+    {!!activePreviewFile && (
+      <Modal
+        open
+        passiveModal
+        modalHeading={attachmentPreviewKind(activePreviewFile) === "pdf"
+          ? uiText("PDF ansehen", "View PDF")
+          : uiText("E-Mail ansehen", "View email")}
+        modalLabel={activePreviewFile.fileName}
+        closeButtonLabel={uiText("Schließen", "Close")}
+        onRequestClose={closeAttachmentPreview}
+        data-fullheight="true"
+        data-fullwidth="true"
+        className="project-files-office-modal"
+      >
+        <ScopedErrorBoundary scope="project-attachment-preview" resetKey={activePreviewFile.id}>
+          <Suspense fallback={<div className="project-files-office-status" role="status">
+            {uiText("Vorschau wird geladen …", "Loading preview …")}
+          </div>}>
+            {activePreviewFile.downloadUrl || activePreviewFile.downloadAttachmentUrl
+              ? attachmentPreviewKind(activePreviewFile) === "pdf"
+                ? <PdfAttachmentViewer
+                    key={activePreviewFile.id}
+                    url={(activePreviewFile.downloadUrl || activePreviewFile.downloadAttachmentUrl)!}
+                    downloadUrl={attachmentDownloadUrl(activePreviewFile)!}
+                  />
+                : <EmailAttachmentViewer
+                    key={activePreviewFile.id}
+                    url={(activePreviewFile.downloadUrl || activePreviewFile.downloadAttachmentUrl)!}
+                    downloadUrl={attachmentDownloadUrl(activePreviewFile)!}
+                    format={attachmentPreviewKind(activePreviewFile) === "msg" ? "msg" : "eml"}
+                  />
+              : <div className="project-files-office-status">
+                  <MyCallout color="amber" icon={Icons.Info}>
+                    {uiText("Für diese Datei ist kein Download-Link verfügbar.", "No download link is available for this file.")}
+                  </MyCallout>
+                </div>}
+          </Suspense>
+        </ScopedErrorBoundary>
       </Modal>
     )}
 

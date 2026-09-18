@@ -39,5 +39,6 @@ echo "Running webapp checks"
   bun install --frozen-lockfile
   bun run typecheck
   bun run test:i18n
+  bun run test:attachments
   bun run build
 )

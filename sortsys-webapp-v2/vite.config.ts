@@ -24,6 +24,7 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom'],
     alias: [
+      { find: /^iconv-lite$/, replacement: fileURLToPath(new URL('./app/lib/msgTextEncoding.ts', import.meta.url)) },
       { find: /^exceljs$/, replacement: exceljsBareBrowserBuild },
       { find: /^@sortsys\/dwgviewer$/, replacement: dwgviewerEntry },
       { find: /^@sortsys\/dwgviewer\/styles\.css$/, replacement: dwgviewerStyles },
@@ -41,6 +42,22 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         globIgnores: [
+          '**/pdf.worker*.mjs',
+          '**/pdf-*.js',
+          '**/emailSanitizer*.js',
+          '**/openjpeg*.wasm',
+          '**/openjpeg_nowasm_fallback*.js',
+          '**/qcms*.wasm',
+          '**/jbig2*.wasm',
+          '**/jbig2_nowasm_fallback*.js',
+          '**/quickjs-eval*',
+          '**/PdfAttachmentViewer*.js',
+          '**/PdfAttachmentViewer*.css',
+          '**/EmailAttachmentViewer*.js',
+          '**/emailPreview.worker*.js',
+          '**/*.bcmap',
+          '**/*.ttf',
+          '**/*.pfb',
           '**/exceljs*.js',
           '**/jszip*.js',
           '**/editor.main*.js',
