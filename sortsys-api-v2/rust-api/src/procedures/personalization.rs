@@ -20,6 +20,10 @@ use crate::{
 const VISIT_HISTORY_LIMIT: i64 = 100;
 const ACTION_HISTORY_LIMIT: i64 = 200;
 
+pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    builder.query_stub::<Option<ActivityListInput>, Vec<Activity>>("personalization.activity.list")
+}
+
 pub fn register(
     mut builder: ProcedureRegistryBuilder,
     state: Arc<AppState>,
@@ -235,7 +239,24 @@ async fn list_activity(
     let resource_id = input.resource_id.map(|id| id.0);
     let context_id = input.context_id.map(|id| id.0);
 
-    let rows = sqlx::query_as::<_, ActivityRow>(ACTIVITY_SQL)
+    let supervised_users: Vec<i64> = super::vacations::supervised_user_ids(pool, user_id)
+        .await?
+        .into_iter()
+        .collect();
+
+    // Deduplicate only the dashboard overview, after applying visibility. Entity
+    // timelines and cursor pages retain every individual audit event.
+    let selection = if input.latest_per_resource.unwrap_or(false) {
+        "SELECT * FROM (
+            SELECT DISTINCT ON (resource_type, resource_id) * FROM visible
+            ORDER BY resource_type, resource_id, occurred_at DESC, id DESC
+        ) AS latest"
+    } else {
+        "SELECT * FROM visible"
+    };
+    let sql = format!("{ACTIVITY_SQL} {selection} ORDER BY occurred_at DESC, id DESC LIMIT $16");
+
+    let rows = sqlx::query_as::<_, ActivityRow>(&sql)
         .bind(user_id)
         .bind(auth.can_do("view:projects"))
         .bind(auth.can_do("view:tools"))
@@ -252,6 +273,19 @@ async fn list_activity(
         .bind(context_id)
         .bind(input.include_project_context.unwrap_or(false))
         .bind(limit)
+        .bind(auth.can_do("view:projectDeployments"))
+        .bind(input.cursor.map(|id| id.0))
+        .bind(auth.can_do("view:userVacations") || auth.can_do("view:projectDeployments"))
+        .bind(auth.is_admin())
+        .bind(supervised_users)
+        .bind(auth.can_do("view:toolTrackings"))
+        .bind(auth.can_do("view:toolInventories"))
+        .bind(auth.can_do("view:productPriceRecords"))
+        .bind(
+            auth.can_do("view:projects")
+                && auth.can_do("view:deliveryNotes")
+                && auth.can_do("view:dailyProjectReports"),
+        )
         .fetch_all(pool)
         .await
         .map_err(internal)?;
@@ -259,294 +293,108 @@ async fn list_activity(
     Ok(rows.into_iter().map(Activity::from).collect())
 }
 
-// Each UNION branch is guarded by the matching role parameter. Projects and
-// tools also expose records assigned to the current user, as the legacy API did.
+// History visibility follows current roles and assignments, including deleted
+// entities. A stored actor is not an access grant to the reader.
 const ACTIVITY_SQL: &str = r#"
-    WITH activity AS (
-        SELECT
-            'project'::text AS resource_type,
-            project.id AS resource_id,
-            NULL::bigint AS context_id,
-            NULL::timestamptz AS context_date,
-            project.title::text AS title,
-            NULL::text AS description,
-            CASE
-                WHEN project.modified_at
-                    > project.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END AS action,
-            GREATEST(
-                project.created_at,
-                project.modified_at
-            ) AS occurred_at,
-            project.created_at,
-            project.modified_at
-        FROM projects AS project
-        WHERE $2
-           OR EXISTS (
-               SELECT 1
-               FROM project_user_assignments AS assignment
-               WHERE assignment.project_id = project.id
-                 AND assignment.user_id = $1
-           )
-
-        UNION ALL
-
-        SELECT
-            'tool',
-            tool.id,
-            NULL,
-            NULL,
-            CONCAT(
-                '#',
-                tool.custom_id,
-                ' ',
-                tool.brand,
-                ' ',
-                tool.category,
-                COALESCE(' ' || tool.label, '')
-            ),
-            NULL,
-            CASE
-                WHEN tool.modified_at
-                    > tool.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END,
-            GREATEST(tool.created_at, tool.modified_at),
-            tool.created_at,
-            tool.modified_at
-        FROM tools AS tool
-        WHERE $3
-           OR EXISTS (
-               SELECT 1
-               FROM tool_trackings AS tracking
-               WHERE tracking.tool_id = tool.id
-                 AND tracking.ended_at IS NULL
-                 AND tracking.responsible_user_id = $1
-           )
-
-        UNION ALL
-
-        SELECT
-            'user',
-            users.id,
-            NULL,
-            NULL,
-            CONCAT(
-                users.first_name,
-                COALESCE(' ' || users.last_name, '')
-            ),
-            users.username,
-            CASE
-                WHEN users.modified_at
-                    > users.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END,
-            GREATEST(users.created_at, users.modified_at),
-            users.created_at,
-            users.modified_at
-        FROM users
-        WHERE $4
-          AND users.archived_at IS NULL
-
-        UNION ALL
-
-        SELECT
-            'customer',
-            customer.id,
-            NULL,
-            NULL,
-            CONCAT(
-                COALESCE(customer.salutation || ' ', ''),
-                customer.name
-            ),
-            NULL,
-            CASE
-                WHEN customer.modified_at
-                    > customer.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END,
-            GREATEST(customer.created_at, customer.modified_at),
-            customer.created_at,
-            customer.modified_at
-        FROM customers AS customer
-        WHERE $5
-
-        UNION ALL
-
-        SELECT
-            'contact',
-            contact.id,
-            NULL,
-            NULL,
-            CONCAT(
-                COALESCE(contact.salutation || ' ', ''),
-                COALESCE(contact.first_name, ''),
-                COALESCE(' ' || contact.last_name, '')
-            ),
-            NULL,
-            CASE
-                WHEN contact.modified_at
-                    > contact.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END,
-            GREATEST(contact.created_at, contact.modified_at),
-            contact.created_at,
-            contact.modified_at
-        FROM contacts AS contact
-        WHERE $6
-
-        UNION ALL
-
-        SELECT
-            'product',
-            product.id,
-            NULL,
-            NULL,
-            CONCAT(
-                '#',
-                product.custom_id,
-                ' ',
-                COALESCE(product.brand || ' ', ''),
-                product.name
-            ),
-            product.description,
-            CASE
-                WHEN product.modified_at
-                    > product.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END,
-            GREATEST(product.created_at, product.modified_at),
-            product.created_at,
-            product.modified_at
-        FROM products AS product
-        WHERE $7
-
-        UNION ALL
-
-        SELECT
-            'productVendor',
-            vendor.id,
-            NULL,
-            NULL,
-            vendor.name,
-            vendor.description,
-            CASE
-                WHEN vendor.modified_at
-                    > vendor.created_at + interval '1 second'
-                    THEN 'updated'
-                ELSE 'created'
-            END,
-            GREATEST(vendor.created_at, vendor.modified_at),
-            vendor.created_at,
-            vendor.modified_at
-        FROM product_vendors AS vendor
-        WHERE $8
-
-        UNION ALL
-
-        SELECT
-            'deliveryNote',
-            note.id,
-            note.project_id,
-            NULL,
-            CONCAT('Lieferschein #', note.auto_id),
-            NULL,
-            'created',
-            note.created_at,
-            note.created_at,
-            NULL
-        FROM product_delivery_notes AS note
-        WHERE $9
-
-        UNION ALL
-
-        SELECT
-            'regieReport',
-            report.id,
-            report.project_id,
-            report.day::timestamptz,
-            CONCAT(
-                'Regiebericht ',
-                to_char(report.day, 'DD.MM.YYYY')
-            ),
-            report.summary,
-            'created',
-            report.created_at,
-            report.created_at,
-            NULL
-        FROM regie_reports AS report
-        WHERE $10
-
-        UNION ALL
-
-        SELECT
-            'dailyProjectReport',
-            report.id,
-            report.project_id,
-            report.day::timestamptz,
-            CONCAT(
-                'Bautagesbericht ',
-                to_char(report.day, 'DD.MM.YYYY')
-            ),
-            report.summary,
-            'created',
-            report.created_at,
-            report.created_at,
-            NULL
-        FROM daily_project_reports AS report
-        WHERE $11
-    )
+    WITH visible AS (
     SELECT
-        activity.resource_type,
-        activity.resource_id,
-        activity.context_id,
-        project.title AS context_title,
-        activity.context_date,
-        activity.title,
-        activity.description,
-        activity.action,
-        activity.occurred_at,
-        activity.created_at,
-        activity.modified_at
-    FROM activity
-    LEFT JOIN projects AS project
-      ON project.id = activity.context_id
-    WHERE (
-        CASE
-            WHEN $15
-             AND $12 = 'project'
-             AND $13 IS NOT NULL
-                THEN (
-                    activity.resource_type = 'project'
-                    AND activity.resource_id = $13
-                )
-                OR activity.context_id = $13
-            ELSE (
-                $12::text IS NULL
-                OR activity.resource_type = $12
-            )
-            AND (
-                $13::bigint IS NULL
-                OR activity.resource_id = $13
+        change.id,
+        change.entity_table,
+        change.entity_id,
+        change.changed_columns,
+        change.actor_user_id,
+        change.actor_kind,
+        COALESCE(change.actor_name, NULLIF(CONCAT_WS(' ', actor.first_name, actor.last_name), '')) AS actor_name,
+        change.is_imported,
+        change.resource_type,
+        change.resource_id,
+        CASE WHEN $2 OR context_assignment.user_id IS NOT NULL THEN change.context_id END AS context_id,
+        CASE WHEN $2 OR context_assignment.user_id IS NOT NULL
+            THEN COALESCE(project.title, change.context_title) END AS context_title,
+        CASE WHEN $2 OR context_assignment.user_id IS NOT NULL
+            THEN change.context_date::timestamp AT TIME ZONE 'UTC' END AS context_date,
+        CASE WHEN change.title = change.entity_table OR change.entity_table NOT IN (
+            'projects', 'tools', 'users', 'customers', 'contacts', 'products',
+            'product_vendors', 'product_delivery_notes', 'regie_reports', 'daily_project_reports',
+            'project_files', 'project_file_folders'
+        ) THEN COALESCE(change.resource_title,
+            entity_activity_resource_title(change.resource_type, change.resource_id), '')
+            ELSE change.title END AS title,
+        COALESCE(change.resource_title,
+            entity_activity_resource_title(change.resource_type, change.resource_id),
+            NULLIF(change.title, change.entity_table)) AS resource_title,
+        change.description,
+        change.action,
+        change.occurred_at,
+        COALESCE(change.entity_created_at, change.occurred_at) AS created_at,
+        CASE WHEN change.action IN ('updated', 'completed', 'resumed') THEN change.occurred_at END AS modified_at
+    FROM entity_changes AS change
+    LEFT JOIN projects AS project ON project.id = change.context_id
+    LEFT JOIN users AS actor ON actor.id = change.actor_user_id
+    LEFT JOIN project_user_assignments AS context_assignment
+        ON context_assignment.project_id = change.context_id AND context_assignment.user_id = $1
+    LEFT JOIN project_deployments AS deployment
+        ON deployment.id = CASE WHEN change.entity_table = 'project_deployments'
+            THEN change.entity_id::bigint END
+    LEFT JOIN tool_trackings AS tracking
+        ON tracking.id = CASE WHEN change.entity_table = 'tool_trackings'
+            THEN change.entity_id::bigint END
+    WHERE CASE change.resource_type
+        WHEN 'project' THEN $2 OR EXISTS (
+            SELECT 1 FROM project_user_assignments
+            WHERE project_id = change.resource_id AND user_id = $1
+        )
+        WHEN 'tool' THEN CASE
+            WHEN change.entity_table IN ('tool_trackings', 'tool_tracking_transfer_requests')
+                THEN $22 OR $1 = ANY(change.participant_user_ids)
+                    OR COALESCE(change.subject_user_id, tracking.responsible_user_id) = $1
+            WHEN change.entity_table = 'tool_inventories' THEN $23
+            ELSE $3 OR EXISTS (
+                SELECT 1 FROM tool_trackings
+                WHERE tool_id = change.resource_id AND responsible_user_id = $1 AND ended_at IS NULL
             )
         END
-    )
+        WHEN 'user' THEN CASE
+            WHEN change.entity_table = 'user_passkeys' THEN change.resource_id = $1
+            WHEN change.entity_table = 'user_role_assignments' THEN $20 OR change.resource_id = $1
+            WHEN change.entity_table = 'user_vacations'
+                THEN $19 OR change.resource_id = $1 OR change.resource_id = ANY($21::bigint[])
+            ELSE $4 OR change.resource_id = $1
+        END
+        WHEN 'customer' THEN $5
+        WHEN 'contact' THEN $6
+        WHEN 'product' THEN $7
+        WHEN 'productVendor' THEN $8
+        WHEN 'deliveryNote' THEN $9
+        WHEN 'regieReport' THEN $10
+        WHEN 'dailyProjectReport' THEN $11
+        ELSE FALSE
+    END
+      AND (change.entity_table <> 'project_deployments'
+          OR $17 OR COALESCE(change.subject_user_id, deployment.user_id) = $1)
+      AND (change.entity_table <> 'project_unavailability_periods'
+          OR $17 OR context_assignment.user_id IS NOT NULL)
+      AND (change.entity_table <> 'project_financial_entries' OR $25)
+      AND (change.entity_table <> 'product_price_records' OR $24)
+      AND (change.entity_table <> 'users'
+          OR change.action <> 'updated'
+          OR NOT (change.changed_columns && ARRAY['password', 'password_hash']::text[])
+          OR $20 OR change.resource_id = $1)
+      AND (change.resource_type NOT IN ('deliveryNote', 'regieReport', 'dailyProjectReport')
+          OR change.context_id IS NULL OR $2 OR context_assignment.user_id IS NOT NULL)
       AND (
-          $14::bigint IS NULL
-          OR activity.context_id = $14
+        CASE WHEN $15 AND $12 = 'project' AND $13 IS NOT NULL
+            THEN (change.resource_type = 'project' AND change.resource_id = $13) OR change.context_id = $13
+            ELSE ($12::text IS NULL OR change.resource_type = $12)
+                AND ($13::bigint IS NULL OR change.resource_id = $13)
+        END
       )
-    ORDER BY
-        activity.occurred_at DESC,
-        activity.resource_type,
-        activity.resource_id
-    LIMIT $16
+      AND ($14::bigint IS NULL OR (change.context_id = $14
+          AND ($2 OR context_assignment.user_id IS NOT NULL)))
+      AND ($18::bigint IS NULL OR (change.occurred_at, change.id) < (
+          SELECT occurred_at, id FROM entity_changes WHERE id = $18
+      ))
+    )
 "#;
 
 #[derive(Debug, Default, Deserialize, TS)]
@@ -630,6 +478,12 @@ impl AppendActionInput {
 struct ActivityListInput {
     #[serde(default)]
     #[ts(optional)]
+    latest_per_resource: Option<bool>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    cursor: Option<Id>,
+    #[serde(default)]
+    #[ts(optional, type = "number")]
     limit: Option<i64>,
     #[serde(default)]
     #[ts(optional = nullable)]
@@ -700,12 +554,21 @@ struct Action {
 
 #[derive(FromRow)]
 struct ActivityRow {
+    id: Id,
+    entity_table: String,
+    entity_id: String,
+    changed_columns: Vec<String>,
+    actor_user_id: Option<Id>,
+    actor_kind: String,
+    actor_name: Option<String>,
+    is_imported: bool,
     resource_type: String,
     resource_id: i64,
     context_id: Option<i64>,
     context_title: Option<String>,
     context_date: Option<DateTime<Utc>>,
     title: String,
+    resource_title: Option<String>,
     description: Option<String>,
     action: String,
     occurred_at: DateTime<Utc>,
@@ -716,6 +579,14 @@ struct ActivityRow {
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct Activity {
+    id: Id,
+    entity_table: String,
+    entity_id: String,
+    changed_columns: Vec<String>,
+    actor_user_id: Option<Id>,
+    actor_kind: String,
+    actor_name: Option<String>,
+    is_imported: bool,
     #[ts(type = "ActivityResourceType")]
     resource_type: String,
     resource_id: Id,
@@ -724,8 +595,9 @@ struct Activity {
     #[ts(type = "Date | null")]
     context_date: Option<DateTime<Utc>>,
     title: String,
+    resource_title: Option<String>,
     description: Option<String>,
-    #[ts(type = "\"created\" | \"updated\"")]
+    #[ts(type = "\"created\" | \"updated\" | \"deleted\" | \"completed\" | \"resumed\"")]
     action: String,
     #[ts(type = "Date")]
     occurred_at: DateTime<Utc>,
@@ -737,12 +609,21 @@ struct Activity {
 impl From<ActivityRow> for Activity {
     fn from(row: ActivityRow) -> Self {
         Self {
+            id: row.id,
+            entity_table: row.entity_table,
+            entity_id: row.entity_id,
+            changed_columns: row.changed_columns,
+            actor_user_id: row.actor_user_id,
+            actor_kind: row.actor_kind,
+            actor_name: row.actor_name,
+            is_imported: row.is_imported,
             resource_type: row.resource_type,
             resource_id: Id(row.resource_id),
             context_id: row.context_id.map(Id),
             context_title: row.context_title,
             context_date: row.context_date,
             title: row.title,
+            resource_title: row.resource_title,
             description: row.description,
             action: row.action,
             occurred_at: row.occurred_at,

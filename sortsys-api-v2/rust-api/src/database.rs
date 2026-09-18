@@ -42,6 +42,13 @@ impl TenantStore {
             .min_connections(0)
             .max_connections(1)
             .idle_timeout(Duration::from_secs(3 * 60))
+            .after_connect(|connection, _| Box::pin(crate::audit::prepare_connection(connection)))
+            .before_acquire(|connection, _| {
+                Box::pin(async move {
+                    crate::audit::prepare_connection(connection).await?;
+                    Ok(true)
+                })
+            })
             .connect(master_dsn)
             .await?;
         ensure_master_schema(&master).await?;
@@ -109,6 +116,13 @@ impl TenantStore {
             .min_connections(0)
             .max_connections(5)
             .idle_timeout(Duration::from_secs(60))
+            .after_connect(|connection, _| Box::pin(crate::audit::prepare_connection(connection)))
+            .before_acquire(|connection, _| {
+                Box::pin(async move {
+                    crate::audit::prepare_connection(connection).await?;
+                    Ok(true)
+                })
+            })
             .connect(&dsn)
             .await?;
         crate::migrations::apply(pool.clone()).await?;
@@ -359,6 +373,9 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     )
     .execute(pool)
     .await?;
+    sqlx::raw_sql(include_str!("../schema/master_entity_changes.sql"))
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

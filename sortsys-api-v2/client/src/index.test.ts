@@ -55,6 +55,34 @@ function modelListFailure() {
   }]));
 }
 
+test("entity mutations refresh active activity streams", async () => {
+  let queryCount = 0;
+  let firstQuery: () => void = () => {};
+  const receivedFirst = new Promise<void>(resolve => { firstQuery = resolve; });
+  const client = createClient("https://api.example.test", "history", {
+    cache: memoryCache().cache,
+    fetch: (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/personalization.activity.list") {
+        queryCount++;
+        return success([{ id: `event-${queryCount}` }]);
+      }
+      expect(url.pathname).toBe("/projects.update");
+      return success({ success: true });
+    }) as typeof globalThis.fetch,
+  });
+  const updates = firstValueFrom(client.streamQuery(
+    "personalization.activity.list", { resourceType: "project", resourceId: "1" }, { strategy: "network-only" },
+  ).pipe(tap(([data]) => { if (data) firstQuery(); }), take(2), toArray()));
+  await receivedFirst;
+  // The initial generator completes before the long-lived listener subscribes.
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
+  const [, error] = await client.mutate("projects.update", { id: "1", data: { title: "Updated project" } });
+  expect(error).toBeNull();
+  expect(await updates).toEqual([[ [{ id: "event-1" }], null ], [ [{ id: "event-2" }], null ]]);
+  expect(queryCount).toBe(2);
+});
+
 test("provider model streams send the admin token and provider input", async () => {
   const models = [{ id: "gpt-5.6-luna", name: "GPT-5.6 Luna" }];
   const client = createClient("https://api.example.test", "global-admin", {

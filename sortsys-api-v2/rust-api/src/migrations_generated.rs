@@ -185,4 +185,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "260907130000_project_file_full_text",
         include_str!("../migrations/260907130000_project_file_full_text.sql"),
     ),
+    (
+        "260918140000_entity_changes",
+        include_str!("../migrations/260918140000_entity_changes.sql"),
+    ),
 ];

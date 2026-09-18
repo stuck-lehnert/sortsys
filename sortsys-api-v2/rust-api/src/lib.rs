@@ -1,6 +1,7 @@
 //! Native sortsys API library and application-state assembly.
 
 pub mod api;
+pub mod audit;
 pub mod auth;
 pub mod config;
 mod contract_generated;
@@ -74,6 +75,7 @@ pub fn app_with_state(state: Arc<AppState>) -> axum::Router {
         .merge(office_exports::router(Arc::clone(&state)))
         .merge(llm::office::router(Arc::clone(&state)))
         .merge(llm::mcp_router(state))
+        .layer(axum::middleware::from_fn(audit::middleware))
 }
 pub fn app() -> axum::Router {
     rpc::http_router(registry())

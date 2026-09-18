@@ -3,6 +3,8 @@ import type { Route } from "./+types/dashboard";
 import { Heading, Tile } from "@sortsys/react-components";
 import { MyHeader } from "~/components/MyHeader";
 import { MyButton } from "~/components/MyButton";
+import { activityActionLabel, activityActorLabel, activityTitle } from "~/lib/activity";
+import type { QueryResult } from "@sortsys/v2-client";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
@@ -30,17 +32,7 @@ type VisitHistoryItem = {
   visitedAt: Date;
 };
 
-type ActivityItem = {
-  resourceType: 'project' | 'tool' | 'user' | 'customer' | 'contact' | 'product' | 'productVendor' | 'deliveryNote' | 'regieReport' | 'dailyProjectReport';
-  resourceId: string;
-  contextId: string | null;
-  contextTitle: string | null;
-  contextDate: Date | null;
-  title: string;
-  description: string | null;
-  action: 'created' | 'updated';
-  occurredAt: Date;
-};
+type ActivityItem = QueryResult<'personalization.activity.list'>[number];
 
 type PinnedVisit = Pick<VisitHistoryItem, 'path' | 'title' | 'visitedAt'>;
 
@@ -145,12 +137,12 @@ function groupActivity(activity: ActivityItem[] | null | undefined) {
 
     if (item.resourceType === 'project') {
       key = `project:${item.resourceId}`;
-      label = uiText(`Projekt: ${item.title}`, `Project: ${item.title}`);
-      href = `/projects/${item.resourceId}`;
+      label = uiText(`Projekt: ${item.resourceTitle || activityTitle(item)}`, `Project: ${item.resourceTitle || activityTitle(item)}`);
+      href = item.action === 'deleted' && item.entityTable === 'projects' ? null : `/projects/${item.resourceId}`;
     } else if (item.resourceType === 'customer') {
       key = `customer:${item.resourceId}`;
-      label = uiText(`Kunde: ${item.title}`, `Customer: ${item.title}`);
-      href = `/customers/${item.resourceId}`;
+      label = uiText(`Kunde: ${item.resourceTitle || activityTitle(item)}`, `Customer: ${item.resourceTitle || activityTitle(item)}`);
+      href = item.action === 'deleted' && item.entityTable === 'customers' ? null : `/customers/${item.resourceId}`;
     } else if (item.contextId) {
       key = `project:${item.contextId}`;
       label = uiText(`Projekt: ${item.contextTitle || item.contextId}`, `Project: ${item.contextTitle || item.contextId}`);
@@ -213,7 +205,7 @@ export default function DashboardPage() {
     return client.streamQuery('personalization.visits.list', { limit: 30 });
   }, []);
   const [activity] = useClientStream<ActivityItem[] | null, any>(() => {
-    return client.streamQuery('personalization.activity.list', { limit: 25 });
+    return client.streamQuery('personalization.activity.list', { limit: 25, latestPerResource: true });
   }, []);
 
   const quickActions = useMemo(() => {
@@ -408,14 +400,15 @@ export default function DashboardPage() {
           <ul className="dashboard-activity-list">
             {group.items.map(item => {
               const meta = ACTIVITY_META[item.resourceType];
-              const href = meta.href(item);
+              const href = item.action === 'deleted' ? null : meta.href(item);
               const Icon = meta.icon;
-              const key = `${item.resourceType}:${item.resourceId}:${item.occurredAt.getTime()}`;
-              const actionText = item.action === 'updated' ? uiText('Geändert', 'Changed') : uiText('Erstellt');
+              const key = item.id;
+              const actionText = activityActionLabel(item);
               const content = <span className="dashboard-activity-row-inner">
                 <span className="dashboard-activity-icon"><Icon size={18} /></span>
                 <span className="dashboard-activity-main">
-                  <span className="dashboard-activity-title">{item.title}</span>
+                  <span className="dashboard-activity-title">{activityTitle(item)}</span>
+                  <span className="dashboard-activity-description">{activityActorLabel(item)}</span>
                   {!!item.description && group.key === 'other' && <span className="dashboard-activity-description">{item.description}</span>}
                 </span>
                 <span className="dashboard-activity-kind">{meta.label}</span>

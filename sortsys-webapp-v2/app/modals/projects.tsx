@@ -13,6 +13,7 @@ import type { Contact, Project } from "~/type-helpers";
 import { FormAddress, processFormAddress } from "./_utils";
 import { SmallContactTile, SmallCustomerTile, SmallUserTile } from "~/lib/tiles";
 import { generateId, parseFloatCustom } from "~/lib/utils";
+import { projectContactsEqual, type ProjectContactSelection } from "~/lib/projectContacts";
 
 type ProjectContactFormContact = Contact & { label?: string | null };
 
@@ -40,10 +41,11 @@ function projectContactPayload(values: Record<string, any>) {
   }).filter(Boolean) as { contactId: string; label: string | null }[];
 }
 
-function ProjectContactsFormFields({ context, modals, projectId }: {
+function ProjectContactsFormFields({ context, modals, projectId, onLoaded }: {
   context: MyPublicFormContext;
   modals: MyModalsInterface;
   projectId?: string;
+  onLoaded?: (contacts: ProjectContactFormContact[]) => void;
 }) {
   const createEntityAction = useCreateEntityAction(modals);
   const [rowIds, setRowIds] = useState<string[]>([]);
@@ -91,6 +93,10 @@ function ProjectContactsFormFields({ context, modals, projectId }: {
           [`projectContact:${id}:contact`]: [initial.contact],
           [`projectContact:${id}:label`]: initial.label ?? '',
         });
+        // Publish the baseline only after all existing row fields are initialized.
+        if (id === rowIds.at(-1)) {
+          onLoaded?.(Object.values(initialValues).map(({ contact, label }) => ({ ...contact, label })));
+        }
       }} />
 
       <div style={{ height: '1rem' }} />
@@ -105,6 +111,7 @@ function ProjectContactsFormFields({ context, modals, projectId }: {
     {!!projectId && <NotifyLoaded onLoad={async () => {
       const [contacts] = await client.query('projects.contacts.list', { projectId });
       if (!contacts) return;
+      if (!contacts.length) onLoaded?.([]);
 
       const ids = contacts.map(() => generateId());
       contacts.forEach((contact, index) => {
@@ -211,6 +218,8 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
 }
 
 export function showModifyProjectModal(modals: MyModalsInterface, project: Project) {
+  let initialProjectContacts: ProjectContactSelection[] | null = null;
+
   modals.showForm({
     content: ({ context }) => {
       const createEntityAction = useCreateEntityAction(modals);
@@ -263,7 +272,9 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
       />
       <p className="light">{uiText("Wer verantwortet das Projekt übergreifend?")}</p>
 
-      <ProjectContactsFormFields context={context} modals={modals} projectId={project.id} />
+      <ProjectContactsFormFields context={context} modals={modals} projectId={project.id} onLoaded={contacts => {
+        initialProjectContacts = contacts.map(contact => ({ contactId: contact.id, label: contact.label }));
+      }} />
 
       <NotifyLoaded onLoad={() => {
         context.setValues(project);
@@ -284,25 +295,34 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
 
       processFormAddress(values);
 
-      const [[data, err]] = await Promise.all([
-        client.mutate('projects.update', {
-          id: project.id,
-          data: {
-            title: values.title,
-            address: values.address,
-            customerId: values.customer.at(0)?.id ?? null,
-            responsibleProjectLeaderUserId: values.responsibleProjectLeader?.at(0)?.id ?? null,
-            orderReceivedAt: values.orderReceivedAt ?? null,
-          },
-        }),
-        client.mutate('projects.contacts.set', {
-          projectId: project.id,
-          contacts: projectContactPayload(values),
-        }),
-      ]);
+      const contacts = projectContactPayload(values);
+      if (initialProjectContacts === null && contacts.length) {
+        throw new Error(uiText("Die Ansprechpartner sind noch nicht geladen. Bitte erneut versuchen.", "Contacts have not loaded. Please try again."));
+      }
+
+      const [data, err] = await client.mutate('projects.update', {
+        id: project.id,
+        data: {
+          title: values.title,
+          address: values.address,
+          customerId: values.customer.at(0)?.id ?? null,
+          responsibleProjectLeaderUserId: values.responsibleProjectLeader?.at(0)?.id ?? null,
+          orderReceivedAt: values.orderReceivedAt ?? null,
+        },
+      });
 
       if (err) throw err;
       if (!data) return;
+
+      // A title-only edit must not overwrite contacts changed by another user.
+      // If loading failed, leave those unknown relationships untouched.
+      if (initialProjectContacts !== null && !projectContactsEqual(initialProjectContacts, contacts)) {
+        const [, contactsError] = await client.mutate('projects.contacts.set', {
+          projectId: project.id,
+          contacts,
+        });
+        if (contactsError) throw contactsError;
+      }
 
       hide();
     },

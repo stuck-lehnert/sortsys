@@ -73,6 +73,1061 @@ fn network_suite_tracks_every_generated_contract_procedure() {
 }
 
 #[tokio::test]
+async fn entity_history_retains_every_change_actor_deletion_and_rollback() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping entity history: integration environment is not configured");
+        return;
+    };
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url);
+    let login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": fixture.admin_username, "password": fixture.admin_password,
+    }), None).await;
+    let token = login["token"].as_str().unwrap();
+
+    let project = rpc
+        .mutation(
+            "projects.create",
+            json!({"title": "Renovierung Rathaus"}),
+            Some(token),
+        )
+        .await;
+    let project_id = project["id"].as_str().unwrap();
+    for title in ["Renovierung Rathaus West", "Renovierung Rathaus Nord"] {
+        rpc.mutation(
+            "projects.update",
+            json!({"id": project_id, "data": {"title": title}}),
+            Some(token),
+        )
+        .await;
+    }
+    let numeric_id = Id::decode(project_id).unwrap().0;
+    let count_before: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM entity_changes WHERE resource_type = 'project' AND resource_id = $1",
+    )
+    .bind(numeric_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    // Trigger writes share the business transaction and must roll back with it.
+    let mut transaction = fixture.tenant_pool.begin().await.unwrap();
+    sqlx::query("UPDATE projects SET title = 'Rolled back' WHERE id = $1")
+        .bind(numeric_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    transaction.rollback().await.unwrap();
+    sqlx::query("UPDATE projects SET title = title WHERE id = $1")
+        .bind(numeric_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let count_after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM entity_changes WHERE resource_type = 'project' AND resource_id = $1",
+    )
+    .bind(numeric_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        count_before, count_after,
+        "rollback and timestamp-only updates must not create activity"
+    );
+
+    rpc.mutation("projects.delete", json!({"id": project_id}), Some(token))
+        .await;
+    let history = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": project_id, "limit": 50,
+            }),
+            Some(token),
+        )
+        .await;
+    let events = history.as_array().unwrap();
+    assert_eq!(events.len(), 4);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event["action"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["deleted", "updated", "updated", "created"]
+    );
+    for event in events {
+        assert_eq!(event["actorUserId"], Id(fixture.user_id).encode());
+        assert_eq!(event["actorName"], "Scenario Admin");
+        assert_eq!(event["entityId"], numeric_id.to_string());
+        assert_eq!(event["isImported"], false);
+    }
+    assert_eq!(events[0]["title"], "Renovierung Rathaus Nord");
+    assert!(
+        events[1]["changedColumns"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("title"))
+    );
+    assert!(
+        !events[1]["changedColumns"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("modified_at"))
+    );
+    let ids = events
+        .iter()
+        .map(|event| event["id"].as_str().unwrap())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(ids.len(), 4, "rapid edits must retain distinct history IDs");
+
+    // Cursor pagination must neither lose nor repeat events.
+    let mut cursor: Option<String> = None;
+    let mut pages = Vec::new();
+    loop {
+        let page = rpc.query("personalization.activity.list", json!({
+            "resourceType": "project", "resourceId": project_id, "limit": 1, "cursor": cursor,
+        }), Some(token)).await;
+        let Some(event) = page.as_array().unwrap().first() else {
+            break;
+        };
+        cursor = Some(event["id"].as_str().unwrap().to_owned());
+        pages.push(cursor.clone().unwrap());
+        assert!(pages.len() <= 4);
+    }
+    assert_eq!(
+        pages,
+        events
+            .iter()
+            .map(|event| event["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    );
+
+    let other_id: i64 = sqlx::query_scalar("INSERT INTO users (username, first_name, password, deactivated_at) VALUES ('history.viewer', 'History Viewer', $1, NULL) RETURNING id")
+        .bind(hash(&fixture.admin_password, 4).unwrap()).fetch_one(&fixture.tenant_pool).await.unwrap();
+    let other_login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": "history.viewer", "password": fixture.admin_password,
+    }), None).await;
+    let other_token = other_login["token"].as_str().unwrap();
+    let hidden = rpc
+        .query(
+            "personalization.activity.list",
+            json!({"resourceType": "project", "resourceId": project_id}),
+            Some(other_token),
+        )
+        .await;
+    assert_eq!(
+        hidden,
+        json!([]),
+        "deleted history must not bypass current permissions"
+    );
+    sqlx::query("INSERT INTO user_role_assignments (user_id, role_name) VALUES ($1, ':admin')")
+        .bind(other_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+
+    // Simultaneous requests and connection reuse cannot leak the other actor.
+    let (first, second) = tokio::join!(
+        rpc.mutation(
+            "projects.create",
+            json!({"title": "First actor project"}),
+            Some(token)
+        ),
+        rpc.mutation(
+            "projects.create",
+            json!({"title": "Second actor project"}),
+            Some(other_token)
+        )
+    );
+    for (project, expected_actor) in [(first, fixture.user_id), (second, other_id)] {
+        let events = rpc
+            .query(
+                "personalization.activity.list",
+                json!({"resourceType": "project", "resourceId": project["id"]}),
+                Some(token),
+            )
+            .await;
+        assert_eq!(events[0]["actorUserId"], Id(expected_actor).encode());
+    }
+
+    let row = sqlx::query("INSERT INTO project_user_assignments (project_id, user_id, type) SELECT id, $1, 'member' FROM projects LIMIT 1")
+        .bind(other_id).execute(&fixture.tenant_pool).await.unwrap();
+    assert_eq!(row.rows_affected(), 1);
+    let association: Value = sqlx::query_scalar("SELECT entity_key FROM entity_changes WHERE entity_table = 'project_user_assignments' ORDER BY occurred_at DESC LIMIT 1")
+        .fetch_one(&fixture.tenant_pool).await.unwrap();
+    assert!(association["project_id"].is_number() && association["user_id"].is_number());
+    let actor: Option<i64> = sqlx::query_scalar("SELECT actor_user_id FROM entity_changes WHERE entity_table = 'project_user_assignments' ORDER BY occurred_at DESC LIMIT 1")
+        .fetch_one(&fixture.tenant_pool).await.unwrap();
+    assert!(
+        actor.is_none(),
+        "unscoped database writes are system activity"
+    );
+
+    // Later schema additions are picked up automatically, including text keys.
+    sqlx::query("CREATE TABLE history_future_entity (id TEXT PRIMARY KEY, label TEXT)")
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    migrations::apply(fixture.tenant_pool.clone())
+        .await
+        .unwrap();
+
+    sqlx::query("INSERT INTO history_future_entity VALUES ('alpha', 'Example')")
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM history_future_entity WHERE id = 'alpha'")
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let future_count: i64 = sqlx::query_scalar("SELECT count(*) FROM entity_changes WHERE entity_table = 'history_future_entity' AND entity_id = 'alpha'")
+        .fetch_one(&fixture.tenant_pool).await.unwrap();
+    assert_eq!(future_count, 2);
+
+    assert!(
+        sqlx::query("DELETE FROM entity_changes")
+            .execute(&fixture.tenant_pool)
+            .await
+            .is_err(),
+        "audit rows must be immutable"
+    );
+}
+
+#[tokio::test]
+async fn activity_visibility_and_readable_names_follow_current_access() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping activity access: integration environment is not configured");
+        return;
+    };
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url.clone());
+    let admin_login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": fixture.admin_username, "password": fixture.admin_password,
+    }), None).await;
+    let admin_token = admin_login["token"].as_str().unwrap();
+    let password = hash(&fixture.admin_password, 4).unwrap();
+
+    let mut users = Vec::new();
+    for (username, name) in [
+        ("history.owner", "Alex Weber"),
+        ("history.staff", "Sam Meyer"),
+        ("history.stranger", "Kim Braun"),
+    ] {
+        let id: i64 = sqlx::query_scalar("INSERT INTO users (username, first_name, password, deactivated_at) VALUES ($1, $2, $3, NULL) RETURNING id")
+            .bind(username).bind(name).bind(&password)
+            .fetch_one(&fixture.tenant_pool).await.unwrap();
+        users.push(id);
+    }
+    let (owner, staff, stranger) = (users[0], users[1], users[2]);
+    sqlx::query("UPDATE users SET supervisor_user_id = $1 WHERE id = $2")
+        .bind(owner)
+        .bind(staff)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO user_role_assignments (user_id, role_name) VALUES ($1, 'view:users'), ($2, 'view:products')")
+        .bind(owner).bind(stranger).execute(&fixture.tenant_pool).await.unwrap();
+    let owner_login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": "history.owner", "password": fixture.admin_password,
+    }), None).await;
+    let owner_token = owner_login["token"].as_str().unwrap();
+    let has_table = |events: &Value, table: &str| {
+        events
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["entityTable"] == table)
+    };
+
+    let assigned = rpc
+        .mutation(
+            "projects.create",
+            json!({"title": "Zugewiesenes Projekt"}),
+            Some(admin_token),
+        )
+        .await;
+    let private = rpc
+        .mutation(
+            "projects.create",
+            json!({"title": "Vertrauliches Projekt"}),
+            Some(admin_token),
+        )
+        .await;
+    let assigned_id = Id::decode(assigned["id"].as_str().unwrap()).unwrap().0;
+    let private_id = Id::decode(private["id"].as_str().unwrap()).unwrap().0;
+    sqlx::query("INSERT INTO resource_notes (project_id, body) VALUES ($1, 'Public project note'), ($2, 'Private project note')")
+        .bind(assigned_id).bind(private_id).execute(&fixture.tenant_pool).await.unwrap();
+    sqlx::query("INSERT INTO project_file_folders (project_id, name) VALUES ($1, 'Pläne')")
+        .bind(assigned_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO project_financial_entries (project_id, type, amount) VALUES ($1, 'offer', 100)")
+        .bind(assigned_id).execute(&fixture.tenant_pool).await.unwrap();
+
+    let before_assignment = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": assigned["id"],
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert_eq!(before_assignment, json!([]));
+    sqlx::query("INSERT INTO project_user_assignments (project_id, user_id, type) VALUES ($1, $2, 'member')")
+        .bind(assigned_id).bind(owner).execute(&fixture.tenant_pool).await.unwrap();
+    let project_events = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": assigned["id"],
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(has_table(&project_events, "resource_notes"));
+    assert!(has_table(&project_events, "project_file_folders"));
+    assert!(!has_table(&project_events, "project_financial_entries"));
+    assert!(
+        project_events
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|event| event["title"] != event["entityTable"])
+    );
+    assert!(
+        project_events
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|event| event["resourceTitle"] == "Zugewiesenes Projekt")
+    );
+    let private_events = rpc.query("personalization.activity.list", json!({
+        "resourceType": "project", "resourceId": private["id"], "includeProjectContext": true,
+    }), Some(owner_token)).await;
+    assert_eq!(private_events, json!([]));
+
+    // A report role alone must not expose an unassigned project's history.
+    for project in [assigned_id, private_id] {
+        sqlx::query("INSERT INTO daily_project_reports (project_id, day, summary) VALUES ($1, CURRENT_DATE, 'Progress')")
+            .bind(project).execute(&fixture.tenant_pool).await.unwrap();
+    }
+    let no_reports = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "dailyProjectReport",
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert_eq!(no_reports, json!([]));
+    sqlx::query("INSERT INTO user_role_assignments (user_id, role_name) VALUES ($1, 'view:dailyProjectReports')")
+        .bind(owner).execute(&fixture.tenant_pool).await.unwrap();
+    let reports = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "dailyProjectReport",
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert_eq!(reports.as_array().unwrap().len(), 1);
+    assert_eq!(reports[0]["contextId"], assigned["id"]);
+
+    // Profile visibility is not permission/security/leave visibility.
+    for user in [owner, staff, stranger] {
+        sqlx::query("INSERT INTO user_vacations (user_id, \"from\", \"to\") VALUES ($1, CURRENT_DATE, CURRENT_DATE)")
+            .bind(user).execute(&fixture.tenant_pool).await.unwrap();
+        sqlx::query("INSERT INTO user_passkeys (user_id, credential_id, public_key_jwk, label) VALUES ($1, $2, '{}'::jsonb, 'Test key')")
+            .bind(user).bind(format!("history-key-{user}")).execute(&fixture.tenant_pool).await.unwrap();
+    }
+    sqlx::query("UPDATE users SET password = $1 WHERE id = $2")
+        .bind(hash("Changed-Password-123!", 4).unwrap())
+        .bind(stranger)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let stranger_events = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "user", "resourceId": Id(stranger),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(!has_table(&stranger_events, "user_vacations"));
+    assert!(!has_table(&stranger_events, "user_role_assignments"));
+    assert!(!has_table(&stranger_events, "user_passkeys"));
+    assert!(!stranger_events.as_array().unwrap().iter().any(|event| {
+        event["action"] == "updated"
+            && event["changedColumns"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("password"))
+    }));
+    let own_events = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "user", "resourceId": Id(owner),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(has_table(&own_events, "user_vacations"));
+    assert!(has_table(&own_events, "user_role_assignments"));
+    assert!(has_table(&own_events, "user_passkeys"));
+    let staff_events = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "user", "resourceId": Id(staff),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(has_table(&staff_events, "user_vacations"));
+    assert!(!has_table(&staff_events, "user_passkeys"));
+    let admin_staff_events = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "user", "resourceId": Id(staff),
+            }),
+            Some(admin_token),
+        )
+        .await;
+    assert!(
+        !has_table(&admin_staff_events, "user_passkeys"),
+        "passkeys remain owner-only"
+    );
+
+    // Old booking participants retain their own booking history, not others'.
+    let tool: i64 = sqlx::query_scalar("INSERT INTO tools (custom_id, brand, category, label) VALUES (817, 'Makita', 'Bohrmaschine', 'DHP') RETURNING id")
+        .fetch_one(&fixture.tenant_pool).await.unwrap();
+    sqlx::query("INSERT INTO tool_trackings (tool_id, responsible_user_id, ended_at) VALUES ($1, $2, NOW())")
+        .bind(tool).bind(stranger).execute(&fixture.tenant_pool).await.unwrap();
+    let booking: i64 = sqlx::query_scalar("INSERT INTO tool_trackings (tool_id, responsible_user_id, project_id) VALUES ($1, $2, $3) RETURNING id")
+        .bind(tool).bind(owner).bind(private_id).fetch_one(&fixture.tenant_pool).await.unwrap();
+    sqlx::query("INSERT INTO tool_inventories (tool_id) VALUES ($1)")
+        .bind(tool)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let tools = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "tool", "resourceId": Id(tool),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert_eq!(
+        tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["entityTable"] == "tool_trackings")
+            .count(),
+        1
+    );
+    assert!(!has_table(&tools, "tool_inventories"));
+    assert!(!tools.to_string().contains("Vertrauliches Projekt"));
+    let own_booking = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["entityTable"] == "tool_trackings")
+        .unwrap();
+    assert_eq!(own_booking["contextId"], Value::Null);
+    sqlx::query("DELETE FROM tool_trackings WHERE id = $1")
+        .bind(booking)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let deleted_booking = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "tool", "resourceId": Id(tool),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(
+        deleted_booking
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["entityTable"] == "tool_trackings" && event["action"] == "deleted")
+    );
+    sqlx::query("INSERT INTO user_role_assignments (user_id, role_name) VALUES ($1, 'view:toolInventories')")
+        .bind(owner).execute(&fixture.tenant_pool).await.unwrap();
+    let inventories = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "tool", "resourceId": Id(tool),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(has_table(&inventories, "tool_inventories"));
+
+    // Latest-per-object runs after filtering, without truncating full history.
+    let overview = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "limit": 50, "latestPerResource": true,
+            }),
+            Some(owner_token),
+        )
+        .await;
+    let mut resources = std::collections::HashSet::new();
+    for event in overview.as_array().unwrap() {
+        assert!(resources.insert((
+            event["resourceType"].to_string(),
+            event["resourceId"].to_string()
+        )));
+        assert_ne!(event["title"], event["entityTable"]);
+    }
+    assert!(project_events.as_array().unwrap().len() > 1);
+
+    // Revoking a relationship takes effect even for an already logged-in user.
+    sqlx::query("DELETE FROM project_user_assignments WHERE project_id = $1 AND user_id = $2")
+        .bind(assigned_id)
+        .bind(owner)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let revoked = rpc.query("personalization.activity.list", json!({
+        "resourceType": "project", "resourceId": assigned["id"], "includeProjectContext": true,
+    }), Some(owner_token)).await;
+    assert_eq!(revoked, json!([]));
+    sqlx::query("UPDATE users SET supervisor_user_id = NULL WHERE id = $1")
+        .bind(staff)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let former_staff = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "user", "resourceId": Id(staff),
+            }),
+            Some(owner_token),
+        )
+        .await;
+    assert!(!has_table(&former_staff, "user_vacations"));
+
+    let foreign_fixture = Fixture::create(&environment).await;
+    let foreign_login = rpc.mutation("auth.login", json!({
+        "tenant": foreign_fixture.tenant, "username": foreign_fixture.admin_username, "password": foreign_fixture.admin_password,
+    }), None).await;
+    let foreign_events = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": assigned["id"],
+            }),
+            Some(foreign_login["token"].as_str().unwrap()),
+        )
+        .await;
+    assert_eq!(
+        foreign_events,
+        json!([]),
+        "tenant admin access does not cross tenants"
+    );
+}
+
+#[tokio::test]
+async fn activity_distinguishes_project_lifecycle_and_changed_resource_fields() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping fine-grained activity: integration environment is not configured");
+        return;
+    };
+    let fixture = Fixture::create(&environment).await;
+
+    // Development databases may have applied the two provisional migrations.
+    // Consolidation must preserve their append-only history and avoid imports.
+    let old_count: i64 = sqlx::query_scalar("SELECT count(*) FROM entity_changes")
+        .fetch_one(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "ALTER TABLE entity_changes DROP CONSTRAINT entity_changes_action_check;
+         ALTER TABLE entity_changes ADD CONSTRAINT entity_changes_action_check
+             CHECK (action IN ('created', 'updated', 'deleted'));
+         DELETE FROM __migrations WHERE name = '260918140000_entity_changes';
+         INSERT INTO __migrations (name) VALUES
+             ('260918120000_entity_changes'), ('260918130000_entity_activity_context');",
+    )
+    .execute(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    migrations::apply(fixture.tenant_pool.clone())
+        .await
+        .unwrap();
+    let upgraded_count: i64 = sqlx::query_scalar("SELECT count(*) FROM entity_changes")
+        .fetch_one(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        old_count, upgraded_count,
+        "schema upgrade must not rewrite or duplicate history"
+    );
+
+    let rpc = RpcClient::new(environment.api_base_url);
+    let login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": fixture.admin_username, "password": fixture.admin_password,
+    }), None).await;
+    let token = login["token"].as_str().unwrap();
+    let project = rpc
+        .mutation("projects.create", json!({"title": "Rathaus"}), Some(token))
+        .await;
+    let numeric_id = Id::decode(project["id"].as_str().unwrap()).unwrap().0;
+
+    for path in [
+        "projects.finish",
+        "projects.finish",
+        "projects.resume",
+        "projects.resume",
+    ] {
+        rpc.mutation(path, json!({"id": project["id"]}), Some(token))
+            .await;
+    }
+    let history = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": project["id"],
+            }),
+            Some(token),
+        )
+        .await;
+    let events = history.as_array().unwrap();
+    assert_eq!(events.len(), 3, "repeated finish/resume calls are no-ops");
+    assert_eq!(events[0]["action"], "resumed");
+    assert_eq!(events[1]["action"], "completed");
+    for event in &events[..2] {
+        assert_eq!(event["changedColumns"], json!(["finished_at"]));
+        assert_eq!(event["actorUserId"], Id(fixture.user_id).encode());
+        assert!(event["modifiedAt"].is_string());
+    }
+
+    // Capture the fields from one business write, not a guessed UI diff.
+    sqlx::query("UPDATE projects SET title = 'Rathaus West', address = '{\"city\":\"Bamberg\"}'::jsonb, finished_at = NOW() WHERE id = $1")
+        .bind(numeric_id).execute(&fixture.tenant_pool).await.unwrap();
+    let history = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": project["id"],
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(history[0]["action"], "completed");
+    assert_eq!(
+        history[0]["changedColumns"],
+        json!(["address", "finished_at", "title"])
+    );
+
+    // All root entity kinds use the same database trigger and HTTP activity API.
+    for (resource_type, insert, update, expected) in [
+        (
+            "tool",
+            "INSERT INTO tools (custom_id, brand, category, label) VALUES (990001, 'Bosch', 'Bohrmaschine', 'GBH') RETURNING id",
+            "UPDATE tools SET brand = 'Makita', status = 'broken', label = 'HR' WHERE id = $1",
+            vec!["brand", "label", "status"],
+        ),
+        (
+            "user",
+            "INSERT INTO users (username, first_name) VALUES ('activity.fields', 'Alex') RETURNING id",
+            "UPDATE users SET first_name = 'Kim', phone = '0911 123456' WHERE id = $1",
+            vec!["first_name", "phone"],
+        ),
+        (
+            "customer",
+            "INSERT INTO customers (name) VALUES ('Musterbau') RETURNING id",
+            "UPDATE customers SET name = 'Musterbau GmbH', address = '{}'::jsonb WHERE id = $1",
+            vec!["address", "name"],
+        ),
+        (
+            "contact",
+            "INSERT INTO contacts (first_name) VALUES ('Alex') RETURNING id",
+            "UPDATE contacts SET first_name = 'Kim', last_name = 'Weber' WHERE id = $1",
+            vec!["first_name", "last_name"],
+        ),
+        (
+            "product",
+            "INSERT INTO products (custom_id, name, base_unit, other_units) VALUES (990001, 'Mörtel', 'kg', '{}'::jsonb) RETURNING id",
+            "UPDATE products SET name = 'Kalkmörtel', brand = 'Knauf' WHERE id = $1",
+            vec!["brand", "name"],
+        ),
+        (
+            "productVendor",
+            "INSERT INTO product_vendors (name) VALUES ('Baustoffhandel') RETURNING id",
+            "UPDATE product_vendors SET name = 'Baustoffhandel Weber', description = 'Regional' WHERE id = $1",
+            vec!["description", "name"],
+        ),
+    ] {
+        let id: i64 = sqlx::query_scalar(insert)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+        sqlx::query(update)
+            .bind(id)
+            .execute(&fixture.tenant_pool)
+            .await
+            .unwrap();
+        let history = rpc
+            .query(
+                "personalization.activity.list",
+                json!({
+                    "resourceType": resource_type, "resourceId": Id(id).encode(),
+                }),
+                Some(token),
+            )
+            .await;
+        assert_eq!(history[0]["action"], "updated", "{resource_type}");
+        assert_eq!(
+            history[0]["changedColumns"],
+            json!(expected),
+            "{resource_type}"
+        );
+    }
+
+    for (resource_type, table) in [
+        ("deliveryNote", "product_delivery_notes"),
+        ("regieReport", "regie_reports"),
+        ("dailyProjectReport", "daily_project_reports"),
+    ] {
+        let (insert, update, fields) = if table == "product_delivery_notes" {
+            (
+                format!("INSERT INTO {table} (project_id) VALUES ($1) RETURNING id"),
+                format!("UPDATE {table} SET comment = 'Material geliefert' WHERE id = $1"),
+                vec!["comment"],
+            )
+        } else {
+            (
+                format!(
+                    "INSERT INTO {table} (project_id, day, summary) VALUES ($1, CURRENT_DATE, 'Arbeiten') RETURNING id"
+                ),
+                format!("UPDATE {table} SET summary = 'Innenausbau fertig' WHERE id = $1"),
+                vec!["summary"],
+            )
+        };
+        let id: i64 = sqlx::query_scalar(&insert)
+            .bind(numeric_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+        sqlx::query(&update)
+            .bind(id)
+            .execute(&fixture.tenant_pool)
+            .await
+            .unwrap();
+        let history = rpc
+            .query(
+                "personalization.activity.list",
+                json!({
+                    "resourceType": resource_type, "resourceId": Id(id).encode(),
+                }),
+                Some(token),
+            )
+            .await;
+        assert_eq!(history[0]["action"], "updated", "{resource_type}");
+        assert_eq!(
+            history[0]["changedColumns"],
+            json!(fields),
+            "{resource_type}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn project_title_edits_do_not_rewrite_contact_relationships() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping project edit regression: integration environment is not configured");
+        return;
+    };
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url);
+    let login = rpc.mutation("auth.login", json!({
+        "tenant": fixture.tenant, "username": fixture.admin_username, "password": fixture.admin_password,
+    }), None).await;
+    let token = login["token"].as_str().unwrap();
+    let project = rpc
+        .mutation(
+            "projects.create",
+            json!({"title": "Sockelsanierung"}),
+            Some(token),
+        )
+        .await;
+    let first = rpc
+        .mutation(
+            "contacts.create",
+            json!({"firstName": "Alex", "lastName": "Weber"}),
+            Some(token),
+        )
+        .await;
+    let second = rpc
+        .mutation(
+            "contacts.create",
+            json!({"firstName": "Sam", "lastName": "Meyer"}),
+            Some(token),
+        )
+        .await;
+    let third = rpc
+        .mutation(
+            "contacts.create",
+            json!({"firstName": "Kim", "lastName": "Braun"}),
+            Some(token),
+        )
+        .await;
+    let project_id = Id::decode(project["id"].as_str().unwrap()).unwrap().0;
+    let first_id = Id::decode(first["id"].as_str().unwrap()).unwrap().0;
+    let contacts = json!([
+        {"contactId": first["id"], "label": "Bauleitung"},
+        {"contactId": second["id"], "label": null},
+    ]);
+    rpc.mutation(
+        "projects.contacts.set",
+        json!({
+            "projectId": project["id"], "contacts": contacts,
+        }),
+        Some(token),
+    )
+    .await;
+
+    let before: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM entity_changes WHERE resource_type = 'project' AND resource_id = $1",
+    )
+    .bind(project_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    let original_versions: Vec<String> = sqlx::query_scalar(
+        "SELECT xmin::text FROM project_contacts WHERE project_id = $1 ORDER BY contact_id",
+    )
+    .bind(project_id)
+    .fetch_all(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    // Reproduce the old form's parallel requests, not just a title-only RPC.
+    for title in [
+        "Sockelsanierung – Bamberg",
+        "Sockelsanierung – Bamberg, Mozartgasse 117",
+    ] {
+        let (_, _) = tokio::join!(
+            rpc.mutation(
+                "projects.update",
+                json!({
+                    "id": project["id"], "data": {"title": title},
+                }),
+                Some(token)
+            ),
+            rpc.mutation(
+                "projects.contacts.set",
+                json!({
+                    "projectId": project["id"], "contacts": contacts,
+                }),
+                Some(token)
+            ),
+        );
+        let versions: Vec<String> = sqlx::query_scalar(
+            "SELECT xmin::text FROM project_contacts WHERE project_id = $1 ORDER BY contact_id",
+        )
+        .bind(project_id)
+        .fetch_all(&fixture.tenant_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            versions, original_versions,
+            "unchanged links must not even be rewritten"
+        );
+    }
+    let after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM entity_changes WHERE resource_type = 'project' AND resource_id = $1",
+    )
+    .bind(project_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        after,
+        before + 2,
+        "two title edits produce exactly two events"
+    );
+    let history = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": project["id"],
+            }),
+            Some(token),
+        )
+        .await;
+    for event in history.as_array().unwrap().iter().take(2) {
+        assert_eq!(event["entityTable"], "projects");
+        assert_eq!(event["action"], "updated");
+        assert_eq!(event["changedColumns"], json!(["title"]));
+    }
+
+    // Reordering, normalized labels, duplicate IDs and repeated adds are no-ops.
+    rpc.mutation(
+        "projects.contacts.set",
+        json!({
+            "projectId": project["id"],
+            "contacts": [
+                {"contactId": second["id"], "label": " "},
+                {"contactId": first["id"], "label": "Old label"},
+                {"contactId": first["id"], "label": " Bauleitung "},
+            ],
+        }),
+        Some(token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.contacts.add",
+        json!({
+            "projectId": project["id"], "contactId": first["id"], "label": "Bauleitung",
+        }),
+        Some(token),
+    )
+    .await;
+    let same_versions: Vec<String> = sqlx::query_scalar(
+        "SELECT xmin::text FROM project_contacts WHERE project_id = $1 ORDER BY contact_id",
+    )
+    .bind(project_id)
+    .fetch_all(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(same_versions, original_versions);
+
+    // A changed label is one update, not a removal and another insertion.
+    rpc.mutation(
+        "projects.contacts.set",
+        json!({
+            "projectId": project["id"],
+            "contacts": [
+                {"contactId": first["id"], "label": "Architekt"},
+                {"contactId": second["id"], "label": null},
+            ],
+        }),
+        Some(token),
+    )
+    .await;
+    let label_history = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": project["id"],
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(label_history.as_array().unwrap().len() as i64, after + 1);
+    assert_eq!(label_history[0]["entityTable"], "project_contacts");
+    assert_eq!(label_history[0]["action"], "updated");
+    assert_eq!(label_history[0]["changedColumns"], json!(["label"]));
+    let retained_version: String = sqlx::query_scalar(
+        "SELECT xmin::text FROM project_contacts WHERE project_id = $1 AND contact_id = $2",
+    )
+    .bind(project_id)
+    .bind(first_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    rpc.mutation(
+        "projects.contacts.set",
+        json!({
+            "projectId": project["id"],
+            "contacts": [
+                {"contactId": first["id"], "label": "Architekt"},
+                {"contactId": third["id"], "label": null},
+            ],
+        }),
+        Some(token),
+    )
+    .await;
+    let replacement_history = rpc
+        .query(
+            "personalization.activity.list",
+            json!({
+                "resourceType": "project", "resourceId": project["id"],
+            }),
+            Some(token),
+        )
+        .await;
+    assert_eq!(
+        replacement_history.as_array().unwrap().len() as i64,
+        after + 3
+    );
+    let recent_actions = replacement_history
+        .as_array()
+        .unwrap()
+        .iter()
+        .take(2)
+        .map(|event| event["action"].as_str().unwrap())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        recent_actions,
+        std::collections::HashSet::from(["created", "deleted"])
+    );
+    let still_retained: String = sqlx::query_scalar(
+        "SELECT xmin::text FROM project_contacts WHERE project_id = $1 AND contact_id = $2",
+    )
+    .bind(project_id)
+    .bind(first_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(still_retained, retained_version);
+
+    rpc.mutation(
+        "projects.contacts.set",
+        json!({
+            "projectId": project["id"], "contacts": [],
+        }),
+        Some(token),
+    )
+    .await;
+    rpc.mutation(
+        "projects.contacts.set",
+        json!({
+            "projectId": project["id"], "contacts": [],
+        }),
+        Some(token),
+    )
+    .await;
+    let final_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM entity_changes WHERE resource_type = 'project' AND resource_id = $1",
+    )
+    .bind(project_id)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(final_count, after + 5);
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM project_contacts WHERE project_id = $1")
+            .bind(project_id)
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    assert_eq!(remaining, 0);
+}
+
+#[tokio::test]
 async fn core_legacy_scenarios_work_over_the_batched_wire_protocol() {
     let Some(environment) = TestEnvironment::from_env() else {
         eprintln!("skipping network scenarios: PG_MASTER_DSN is not configured");

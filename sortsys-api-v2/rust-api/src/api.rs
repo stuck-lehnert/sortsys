@@ -31,6 +31,7 @@ pub fn registry(state: Arc<AppState>) -> ProcedureRegistry {
 pub fn contract_registry() -> ProcedureRegistry {
     let builder = crate::contract_generated::FULL_CONTRACT
         .iter()
+        .filter(|spec| spec.path != "personalization.activity.list")
         .fold(ProcedureRegistryBuilder::default(), |builder, spec| {
             builder.raw_stub(spec)
         });

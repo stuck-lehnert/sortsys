@@ -1,5 +1,6 @@
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
+import { activityActionLabel, activityActorLabel, activityTitle } from "~/lib/activity";
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
@@ -8,7 +9,7 @@ import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { Icons, type Icon } from "~/lib/icons";
 import { dailyReportDayKey } from "~/lib/tiles";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ActivityItem = QueryResult<'personalization.activity.list'>[number];
 type ActivityResourceType = ActivityItem['resourceType'];
@@ -44,24 +45,22 @@ function formatTimestamp(value: Date) {
   });
 }
 
-function actionLabel(action: ActivityItem['action']) {
-  return action === 'updated' ? uiText('Geändert', 'Changed') : uiText('Erstellt');
-}
-
 function ActivityTimelineRow({ item }: { item: ActivityItem }) {
   const meta = ACTIVITY_META[item.resourceType];
   const Icon = meta.icon;
-  const href = meta.href(item);
+  const href = item.action === 'deleted' ? null : meta.href(item);
 
   return <div className="entity-activity-row">
     <div className="entity-activity-dot"><Icon size={16} /></div>
     <div className="entity-activity-main">
       <div className="entity-activity-title">
-        <span>{actionLabel(item.action)}: </span>
-        {href ? <MyLink to={href}>{item.title}</MyLink> : item.title}
+        <span>{activityActionLabel(item)}: </span>
+        {href ? <MyLink to={href}>{activityTitle(item)}</MyLink> : activityTitle(item)}
       </div>
       <div className="entity-activity-meta">
         {meta.label} · {formatTimestamp(item.occurredAt)}
+        {' · '}{activityActorLabel(item)}
+        {item.isImported && <> · {uiText('Übernommen', 'Imported')}</>}
         {!!item.contextTitle && <>{uiText(" · Projekt ")}{item.contextTitle}</>}
       </div>
       {!!item.description && <div className="entity-activity-description">{item.description}</div>}
@@ -81,6 +80,13 @@ export function EntityActivityTimeline({
   limit?: number;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [older, setOlder] = useState<ActivityItem[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyComplete, setHistoryComplete] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyKey = `${resourceType}:${resourceId}:${!!includeProjectContext}`;
+  const currentHistoryKey = useRef(historyKey);
+  currentHistoryKey.current = historyKey;
   const [items, err] = useClientStream(() => client.streamQuery('personalization.activity.list', {
     limit,
     resourceType,
@@ -90,27 +96,62 @@ export function EntityActivityTimeline({
 
   useEffect(() => {
     setShowAll(false);
-  }, [resourceType, resourceId]);
+    setOlder([]);
+    setHistoryComplete(false);
+    setLoadingOlder(false);
+    setHistoryError(null);
+  }, [resourceType, resourceId, includeProjectContext]);
 
   if (err) {
     return <MyCallout icon={Icons.Info} color="amber">{uiText("Aktivität konnte nicht geladen werden:")} {err.message}
     </MyCallout>;
   }
 
-  const visibleItems = showAll ? items : items?.slice(0, COLLAPSED_ACTIVITY_COUNT);
+  const allItems = [...new Map([...(items ?? []), ...older].map(item => [item.id, item])).values()];
+  const visibleItems = showAll ? allItems : allItems.slice(0, COLLAPSED_ACTIVITY_COUNT);
+  const canLoadOlder = !historyComplete && (items?.length ?? 0) >= Math.min(limit, 50);
 
-  return <MyExpandable title={uiText(`Aktivität (${items?.length ?? 0})`, `Activity (${items?.length ?? 0})`)} initiallyExpanded>
+  const loadOlder = async () => {
+    const cursor = allItems.at(-1)?.id;
+    if (!cursor || loadingOlder) return;
+    const requestedHistory = historyKey;
+    setLoadingOlder(true);
+    setHistoryError(null);
+
+    try {
+      const [page, error] = await client.query('personalization.activity.list', {
+        resourceType, resourceId, includeProjectContext: !!includeProjectContext, limit, cursor,
+      });
+      if (error) throw error;
+      if (!page) return;
+      if (currentHistoryKey.current !== requestedHistory) return;
+      setOlder(previous => [...previous, ...page]);
+      setHistoryComplete(page.length < Math.min(limit, 50));
+    } catch {
+      if (currentHistoryKey.current === requestedHistory) {
+        setHistoryError(uiText('Ältere Aktivitäten konnten nicht geladen werden.', 'Older activities could not be loaded.'));
+      }
+    } finally {
+      if (currentHistoryKey.current === requestedHistory) setLoadingOlder(false);
+    }
+  };
+
+  return <MyExpandable title={uiText(`Aktivität (${allItems.length})`, `Activity (${allItems.length})`)} initiallyExpanded>
     {!items?.length
       ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
       : <>
         <div className="entity-activity-timeline">
-          {visibleItems?.map(item => <ActivityTimelineRow key={`${item.resourceType}:${item.resourceId}:${item.occurredAt.toISOString()}`} item={item} />)}
+          {visibleItems.map(item => <ActivityTimelineRow key={item.id} item={item} />)}
         </div>
-        {items.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-more">
+        {allItems.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-more">
           <MyButton kind="ghost" size="sm" onClick={() => setShowAll(value => !value)}>
             {showAll ? uiText("Weniger anzeigen", "Show less") : uiText("Mehr anzeigen", "Show more")}
           </MyButton>
         </div>}
+        {showAll && canLoadOlder && <MyButton kind="ghost" size="sm" loading={loadingOlder} onClick={() => void loadOlder()}>
+          {uiText('Ältere Aktivitäten laden', 'Load older activities')}
+        </MyButton>}
+        {historyError && <div role="alert">{historyError}</div>}
       </>}
   </MyExpandable>;
 }

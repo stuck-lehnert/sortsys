@@ -70,6 +70,39 @@ The API reads the following environment variables:
 
 Each value can instead be mounted at `/run/secrets/SORTSYS_API_V2_<NAME>`.
 
+## Entity activity visibility
+
+Events retain the changed column names, not copies of field values. The UI
+labels the fields in German or English. Project completion and resumption
+are separate actions; neither is inferred from the project's current state.
+
+Recording a change does not grant anyone access to it. The API checks current
+roles and relationships before grouping or paginating history:
+
+- Project history requires `view:projects` or a current project assignment.
+  Losing that assignment removes access, including to old events.
+- Delivery notes and reports require their own read role and access to the
+  associated project. A project assignment alone does not grant report access.
+- Financial events require the same roles as project cost queries:
+  `view:projects`, `view:deliveryNotes` and `view:dailyProjectReports`.
+- Deployments require scheduling access or concern the reader themselves.
+  Inventory and product-price events require their respective read roles.
+- Tool bookings and transfers are visible to their participants or users with
+  `view:toolTrackings`. Private project context is omitted.
+- Users can read their own profile and permission history. Other users'
+  permissions require tenant admin access; password changes require admin
+  access or ownership. Passkey history is visible only to its owner.
+- Vacation history is visible to the employee, their current supervisors
+  (including indirect supervisors), or users with vacation/scheduling read
+  access. `view:users` alone does not grant this access.
+- Other entities follow their respective read roles. Tenant databases keep
+  tenants separate. An actor ID is attribution, not an access grant.
+
+Deleted objects remain in history, subject to these current access checks.
+The dashboard shows the latest visible event per object; entity timelines keep
+every event. Development seed writes are labelled as sample data, not as actions
+of a real user.
+
 ## ONLYOFFICE AI
 
 In the global admin LLM page, configure a provider account, then choose its provider and model under **ONLYOFFICE**. This selection is independent of Chat and Document import. New editor sessions automatically configure ONLYOFFICE's built-in AI plugin for chat, summarization, translation, and text analysis.

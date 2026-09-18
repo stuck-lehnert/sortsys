@@ -149,7 +149,9 @@ impl ProcedureRegistry {
             .into_wire();
         }
 
-        match (procedure.handler)(context, input).await {
+        // Batches run concurrently within one HTTP task: each procedure needs
+        // its own actor scope rather than sharing the middleware's scope.
+        match crate::audit::scope((procedure.handler)(context, input)).await {
             Ok(output) => json!({
                 "result": {
                     "data": superjson::encode(output),

@@ -290,6 +290,9 @@ async fn configure_development_llm(
 pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSummary> {
     let mut random = SeedRng::new(seed);
     let mut transaction = pool.begin().await?;
+    // Label fixture writes explicitly; they are not actions of a logged-in user.
+    sqlx::query("SELECT set_config('sortsys.actor_kind', 'seed', true), set_config('sortsys.actor_id', '', true), set_config('sortsys.actor_name', '', true)")
+        .execute(&mut *transaction).await?;
     let password_hash = hash("123456", 4)?;
 
     let user_count = 50 + random.range(5);
@@ -1005,6 +1008,8 @@ pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSu
 pub async fn ensure_development_users(pool: &PgPool) -> SeedResult<()> {
     let password_hash = hash("123456", 12)?;
     let mut transaction = pool.begin().await?;
+    sqlx::query("SELECT set_config('sortsys.actor_kind', 'seed', true), set_config('sortsys.actor_id', '', true), set_config('sortsys.actor_name', '', true)")
+        .execute(&mut *transaction).await?;
     let users = [
         (
             "john.doe",

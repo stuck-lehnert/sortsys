@@ -124,7 +124,10 @@ fn authenticated_user_id(auth: &AuthResult) -> RpcResult<i64> {
     auth.user.id.parse().map_err(internal)
 }
 
-async fn supervised_user_ids(pool: &PgPool, supervisor_user_id: i64) -> RpcResult<HashSet<i64>> {
+pub(super) async fn supervised_user_ids(
+    pool: &PgPool,
+    supervisor_user_id: i64,
+) -> RpcResult<HashSet<i64>> {
     // A recursive CTE preserves the legacy behavior where senior supervisors
     // inherit access to every level below their direct reports.
     let rows: Vec<i64> = sqlx::query_scalar(

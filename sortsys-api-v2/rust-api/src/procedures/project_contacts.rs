@@ -181,6 +181,7 @@ async fn add_contact(
         VALUES ($1, $2, $3)
         ON CONFLICT (project_id, contact_id)
         DO UPDATE SET label = EXCLUDED.label
+        WHERE project_contacts.label IS DISTINCT FROM EXCLUDED.label
         "#,
     )
     .bind(input.project_id.0)
@@ -212,15 +213,31 @@ async fn set_contacts(
 
     let mut transaction = pool.begin().await.map_err(internal)?;
 
-    sqlx::query("DELETE FROM project_contacts WHERE project_id = $1")
+    // Serialize replacements for this project, without rewriting retained links.
+    sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE id = $1 FOR UPDATE")
         .bind(input.project_id.0)
-        .execute(&mut *transaction)
+        .fetch_optional(&mut *transaction)
         .await
-        .map_err(internal)?;
+        .map_err(internal)?
+        .ok_or_else(not_found)?;
+
+    let raw_ids = contact_ids.iter().map(|id| id.0).collect::<Vec<_>>();
+    sqlx::query(
+        "DELETE FROM project_contacts
+         WHERE project_id = $1 AND NOT (contact_id = ANY($2::bigint[]))",
+    )
+    .bind(input.project_id.0)
+    .bind(raw_ids)
+    .execute(&mut *transaction)
+    .await
+    .map_err(internal)?;
 
     for (contact_id, label) in contact_by_id {
         sqlx::query(
-            "INSERT INTO project_contacts (project_id, contact_id, label) VALUES ($1, $2, $3)",
+            "INSERT INTO project_contacts (project_id, contact_id, label)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (project_id, contact_id) DO UPDATE SET label = EXCLUDED.label
+             WHERE project_contacts.label IS DISTINCT FROM EXCLUDED.label",
         )
         .bind(input.project_id.0)
         .bind(contact_id)

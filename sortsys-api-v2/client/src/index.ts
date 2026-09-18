@@ -583,6 +583,12 @@ export function createClient(endpoint: string, realm: string, opts?: {
           client.setToken(null);
         }
         await client.invalidateCascading(path);
+        // Entity history is shared by the dashboard and entity timelines rather
+        // than living under the mutated entity's query namespace.
+        if (/^(users|projects|tools|products|customers|contacts|regieReports|settings|remarks)\./.test(path)
+          || /^auth\.(password|passkeys)\./.test(path)) {
+          await client.invalidate('personalization.activity.list');
+        }
         return [data, null];
       } catch (e) {
         _autoLogoutOnAuthError(e, requestAuthScope);

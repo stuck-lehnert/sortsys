@@ -37,6 +37,12 @@ async fn apply_inner(pool: PgPool) -> Result<(), sqlx::Error> {
             .execute(&mut *transaction)
             .await?;
     }
+    // Discover new entity tables after schema updates without duplicating the
+    // initial history imports or requiring each migration to list its triggers.
+    sqlx::query("SELECT install_entity_change_triggers()")
+        .execute(&mut *transaction)
+        .await?;
+
     transaction.commit().await
 }
 
@@ -52,6 +58,6 @@ mod tests {
             assert!(!sql.trim().is_empty());
             previous = name;
         }
-        assert_eq!(MIGRATIONS.len(), 46);
+        assert_eq!(MIGRATIONS.len(), 47);
     }
 }

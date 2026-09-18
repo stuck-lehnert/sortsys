@@ -248,6 +248,16 @@ impl AuthService {
         .map_err(|error| RpcError::new(ErrorCode::InternalServerError, error.to_string()))?
         .ok_or_else(|| unauthorized("Session closed, deleted, expired or user deactivated"))?;
 
+        crate::audit::user(
+            &tenant,
+            row.user_id,
+            [Some(row.first_name.as_str()), row.last_name.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+
         Ok(AuthResult {
             tenant,
             user: AuthUser {
@@ -290,6 +300,7 @@ impl AuthService {
                 return Err(unauthorized("Tenant got deleted"));
             }
         }
+        crate::audit::admin(&admin_for);
         Ok(admin_for)
     }
 

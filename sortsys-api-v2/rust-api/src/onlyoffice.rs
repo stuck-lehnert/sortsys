@@ -214,6 +214,8 @@ async fn download_source_inner(
         .ok_or_else(|| failed_dependency("ONLYOFFICE is not configured"))?;
     validate_outbox_token(configuration, headers, None)?;
     let claims: FileSessionClaims = decode_session_claims(configuration, token)?;
+
+    crate::audit::user(&claims.tenant, claims.user_id, String::new());
     let pool = state
         .tenants
         .tenant_pool(&claims.tenant)
@@ -315,6 +317,10 @@ async fn save_callback_inner(
             "Document key does not match the callback session",
         ));
     }
+
+    // Autosaves arrive without a browser bearer token. Attribute them using the
+    // signed editor session rather than treating Document Server as the actor.
+    crate::audit::user(&claims.tenant, claims.user_id, String::new());
 
     // Status 1 and 4 are presence notifications. Status 3 and 7 report an
     // error that already occurred inside Document Server; acknowledging them
