@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { VitePWA } from 'vite-plugin-pwa';
+import { pdfjsViewerPlugin } from "./scripts/pdfjsViewerPlugin";
 
 const exceljsBareBrowserBuild = fileURLToPath(
   new URL('./node_modules/exceljs/dist/exceljs.bare.min.js', import.meta.url),
@@ -36,12 +37,14 @@ export default defineConfig({
     },
   },
   plugins: [
-    reactRouter(), tsconfigPaths(),
+    reactRouter(), tsconfigPaths(), pdfjsViewerPlugin(),
 
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
+        navigateFallbackDenylist: [/^\/pdfjs\//],
         globIgnores: [
+          '**/pdfjs/**',
           '**/pdf.worker*.mjs',
           '**/pdf-*.js',
           '**/emailSanitizer*.js',

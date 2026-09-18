@@ -42,6 +42,11 @@ Users can create DOCX, PPTX, XLSX, and diagrams.net files directly in a project'
 
 Uploaded PDFs are indexed in the background. The **Documents** view searches file names and recognized PDF text across every project the current user may access.
 
+PDF attachments open in the locally hosted [Mozilla PDF.js viewer](https://github.com/mozilla/pdf.js),
+with its own search, page navigation, zoom, print and download controls.
+The viewer loads on demand and follows the user's UI language.
+See [the vendored release](vendor/pdfjs/README.md) for license and update details.
+
 ## Local packages
 
 - `@sortsys/v2-client` provides typed queries, mutations, authentication, and caching.

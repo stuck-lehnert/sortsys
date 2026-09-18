@@ -28,46 +28,12 @@
   gap: .75rem;
 }
 
-.attachment-pdf-scroll {
+.attachment-pdf-frame {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 16px;
-  background: var(--ss-surface-muted);
-}
-
-.attachment-pdf-page {
-  position: relative;
-  margin: 0 auto 16px;
-  background: white;
-  box-shadow: 0 1px 4px #0002;
-  flex-shrink: 0;
-}
-
-.attachment-pdf-page canvas {
-  display: block;
   width: 100%;
-  height: 100%;
-}
-
-.attachment-pdf-page .textLayer {
-  inset: 0;
-}
-
-.attachment-pdf-page-input {
-  display: flex;
-  align-items: center;
-  gap: .3rem;
-  font-size: .85rem;
-}
-
-.attachment-pdf-page-input input {
-  width: 3.5rem;
-  padding: .2rem;
-  color: inherit;
-  background: var(--ss-surface);
-  border: 1px solid var(--ss-border);
+  border: 0;
+  background: white;
 }
 
 .attachment-email-metadata {

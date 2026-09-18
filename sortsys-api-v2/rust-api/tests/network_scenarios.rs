@@ -6905,6 +6905,46 @@ async fn onlyoffice_ai_scenarios(
             .status(),
         401
     );
+
+    // Reopening an editor after logging in again must yield a working new
+    // delegation, while the previously logged-out delegation stays revoked.
+    let login = rpc
+        .mutation(
+            "auth.login",
+            json!({ "tenant": fixture.tenant, "username": fixture.admin_username,
+                "password": fixture.admin_password }),
+            None,
+        )
+        .await;
+    let new_token = login["token"].as_str().unwrap();
+    let reopened = rpc
+        .query(
+            "office.exports.officeConfig",
+            json!({ "sessionToken": export["sessionToken"] }),
+            Some(new_token),
+        )
+        .await;
+    let new_delegation = reopened["config"]["editorConfig"]["plugins"]["options"][BRIDGE_GUID]
+        ["settings"]["providers"]["sortsys"]["key"]
+        .as_str()
+        .unwrap();
+    assert_ne!(new_delegation, second_delegation);
+
+    for (delegation, expected_status) in [(second_delegation, 401), (new_delegation, 200)] {
+        assert_eq!(
+            rpc.http
+                .post(&completion_url)
+                .bearer_auth(delegation)
+                .json(&input)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            expected_status
+        );
+    }
+    rpc.mutation("auth.logout", Value::Null, Some(new_token))
+        .await;
 }
 
 async fn start_openai_responses_mock() -> (String, OpenAiRequestLog) {

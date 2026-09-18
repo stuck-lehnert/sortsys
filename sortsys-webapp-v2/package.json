@@ -11,7 +11,7 @@
     "typecheck": "bun run lint:client-casts && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
     "lint:i18n": "node ./scripts/check-i18n.mjs",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/components/MyCallout.test.mjs",
-    "test:attachments": "bun test app/lib/attachmentPreviews.test.mjs",
+    "test:attachments": "bun test app/lib/attachmentPreviews.test.mjs app/lib/pdfViewer.test.mjs scripts/pdfjsViewerPlugin.test.mjs",
     "lint:llm-naming": "node ./scripts/check-llm-naming.mjs"
   },
   "dependencies": {
