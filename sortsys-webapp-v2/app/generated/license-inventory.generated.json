@@ -1,0 +1,4989 @@
+{
+  "server": {
+    "api": [
+      {
+        "ecosystem": "Rust",
+        "name": "adler2",
+        "version": "2.0.1",
+        "license": "0BSD OR MIT OR Apache-2.0",
+        "source": "https://github.com/oyvindln/adler2"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "aead",
+        "version": "0.5.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "aes",
+        "version": "0.8.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/block-ciphers"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "aes-gcm",
+        "version": "0.10.3",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/AEADs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "aho-corasick",
+        "version": "1.1.5",
+        "license": "Unlicense OR MIT",
+        "source": "https://github.com/BurntSushi/aho-corasick"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "alloc-no-stdlib",
+        "version": "2.0.4",
+        "license": "BSD-3-Clause",
+        "source": "https://github.com/dropbox/rust-alloc-no-stdlib"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "alloc-stdlib",
+        "version": "0.2.4",
+        "license": "BSD-3-Clause",
+        "source": "https://github.com/dropbox/rust-alloc-no-stdlib"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "allocator-api2",
+        "version": "0.2.21",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/zakarumych/allocator-api2"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "android_system_properties",
+        "version": "0.1.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/nical/android_system_properties"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "async-compression",
+        "version": "0.4.43",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Nullus157/async-compression"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "atoi",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://github.com/pacman82/atoi-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "atomic-waker",
+        "version": "1.1.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/smol-rs/atomic-waker"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "axum",
+        "version": "0.8.9",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/axum"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "axum-core",
+        "version": "0.5.6",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/axum"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "base16ct",
+        "version": "0.2.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/base16ct"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "base64",
+        "version": "0.22.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/marshallpierce/rust-base64"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "base64ct",
+        "version": "1.8.3",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "bcrypt",
+        "version": "0.17.1",
+        "license": "MIT",
+        "source": "https://github.com/Keats/rust-bcrypt"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "bitflags",
+        "version": "2.13.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/bitflags/bitflags"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "block-buffer",
+        "version": "0.10.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "blowfish",
+        "version": "0.9.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/block-ciphers"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "brotli",
+        "version": "8.0.4",
+        "license": "BSD-3-Clause AND MIT",
+        "source": "https://github.com/dropbox/rust-brotli"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "brotli-decompressor",
+        "version": "5.0.3",
+        "license": "BSD-3-Clause/MIT",
+        "source": "https://github.com/dropbox/rust-brotli-decompressor"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "bumpalo",
+        "version": "3.20.3",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/fitzgen/bumpalo"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "byteorder",
+        "version": "1.5.0",
+        "license": "Unlicense OR MIT",
+        "source": "https://github.com/BurntSushi/byteorder"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "bytes",
+        "version": "1.12.1",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/bytes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "cfg-if",
+        "version": "1.0.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/cfg-if"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "chacha20",
+        "version": "0.10.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/stream-ciphers"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "chrono",
+        "version": "0.4.45",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/chronotope/chrono"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "chrono-tz",
+        "version": "0.10.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/chronotope/chrono-tz"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ciborium",
+        "version": "0.2.2",
+        "license": "Apache-2.0",
+        "source": "https://github.com/enarx/ciborium"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ciborium-io",
+        "version": "0.2.2",
+        "license": "Apache-2.0",
+        "source": "https://github.com/enarx/ciborium"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ciborium-ll",
+        "version": "0.2.2",
+        "license": "Apache-2.0",
+        "source": "https://github.com/enarx/ciborium"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "cipher",
+        "version": "0.4.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "compression-codecs",
+        "version": "0.4.38",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Nullus157/async-compression"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "compression-core",
+        "version": "0.4.32",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Nullus157/async-compression"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "const-oid",
+        "version": "0.9.6",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/const-oid"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "core-foundation-sys",
+        "version": "0.8.7",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/core-foundation-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "cpufeatures",
+        "version": "0.2.17",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "cpufeatures",
+        "version": "0.3.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crc",
+        "version": "3.4.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/mrhooray/crc-rs.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crc-catalog",
+        "version": "2.5.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/akhilles/crc-catalog.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crc32fast",
+        "version": "1.5.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/srijs/rust-crc32fast"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crossbeam-queue",
+        "version": "0.3.13",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/crossbeam-rs/crossbeam"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crossbeam-utils",
+        "version": "0.8.22",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/crossbeam-rs/crossbeam"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crunchy",
+        "version": "0.2.4",
+        "license": "MIT",
+        "source": "https://github.com/eira-fransham/crunchy"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crypto-bigint",
+        "version": "0.5.5",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/crypto-bigint"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "crypto-common",
+        "version": "0.1.7",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ctr",
+        "version": "0.9.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/block-modes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "curve25519-dalek",
+        "version": "4.1.3",
+        "license": "BSD-3-Clause",
+        "source": "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "curve25519-dalek-derive",
+        "version": "0.1.1",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/dalek-cryptography/curve25519-dalek"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "data-encoding",
+        "version": "2.11.1",
+        "license": "MIT",
+        "source": "https://github.com/ia0/data-encoding"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "der",
+        "version": "0.7.10",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/der"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "deranged",
+        "version": "0.5.8",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/jhpratt/deranged"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "digest",
+        "version": "0.10.7",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "displaydoc",
+        "version": "0.2.7",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/yaahc/displaydoc"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "dotenvy",
+        "version": "0.15.7",
+        "license": "MIT",
+        "source": "https://github.com/allan2/dotenvy"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ecdsa",
+        "version": "0.16.9",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/signatures/tree/master/ecdsa"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ed25519",
+        "version": "2.2.3",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/signatures/tree/master/ed25519"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ed25519-dalek",
+        "version": "2.2.0",
+        "license": "BSD-3-Clause",
+        "source": "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "either",
+        "version": "1.18.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rayon-rs/either"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "elliptic-curve",
+        "version": "0.13.8",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/traits/tree/master/elliptic-curve"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "email_address",
+        "version": "0.2.9",
+        "license": "MIT",
+        "source": "https://github.com/johnstonskj/rust-email_address.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "equivalent",
+        "version": "1.0.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/indexmap-rs/equivalent"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "errno",
+        "version": "0.3.14",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/lambda-fairy/rust-errno"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "etcetera",
+        "version": "0.8.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/lunacookies/etcetera"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "event-listener",
+        "version": "5.4.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/smol-rs/event-listener"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ff",
+        "version": "0.13.1",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/zkcrypto/ff"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "fiat-crypto",
+        "version": "0.2.9",
+        "license": "MIT OR Apache-2.0 OR BSD-1-Clause",
+        "source": "https://github.com/mit-plv/fiat-crypto"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "flate2",
+        "version": "1.1.9",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/flate2-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "flume",
+        "version": "0.11.1",
+        "license": "Apache-2.0/MIT",
+        "source": "https://github.com/zesterer/flume"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "foldhash",
+        "version": "0.1.5",
+        "license": "Zlib",
+        "source": "https://github.com/orlp/foldhash"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "form_urlencoded",
+        "version": "1.2.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/rust-url"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-channel",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-core",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-executor",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-intrusive",
+        "version": "0.5.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Matthias247/futures-intrusive"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-io",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-macro",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-sink",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-task",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "futures-util",
+        "version": "0.3.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/futures-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "generic-array",
+        "version": "0.14.7",
+        "license": "MIT",
+        "source": "https://github.com/fizyk20/generic-array.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "getrandom",
+        "version": "0.2.17",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/getrandom"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "getrandom",
+        "version": "0.3.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/getrandom"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "getrandom",
+        "version": "0.4.3",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/getrandom"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ghash",
+        "version": "0.5.1",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/universal-hashes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "group",
+        "version": "0.13.0",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/zkcrypto/group"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "half",
+        "version": "2.7.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/VoidStarKat/half-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hashbrown",
+        "version": "0.15.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/hashbrown"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hashbrown",
+        "version": "0.17.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/hashbrown"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hashlink",
+        "version": "0.10.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/kyren/hashlink"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "heck",
+        "version": "0.5.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/withoutboats/heck"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hex",
+        "version": "0.4.3",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/KokaKiwi/rust-hex"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hkdf",
+        "version": "0.12.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/KDFs/"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hmac",
+        "version": "0.12.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/MACs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "home",
+        "version": "0.5.12",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/cargo"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "http",
+        "version": "1.5.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/hyperium/http"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "http-body",
+        "version": "1.1.0",
+        "license": "MIT",
+        "source": "https://github.com/hyperium/http-body"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "http-body-util",
+        "version": "0.1.5",
+        "license": "MIT",
+        "source": "https://github.com/hyperium/http-body"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "httparse",
+        "version": "1.10.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/seanmonstar/httparse"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "httpdate",
+        "version": "1.0.3",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/pyfisch/httpdate"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hyper",
+        "version": "1.11.0",
+        "license": "MIT",
+        "source": "https://github.com/hyperium/hyper"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hyper-rustls",
+        "version": "0.27.9",
+        "license": "Apache-2.0 OR ISC OR MIT",
+        "source": "https://github.com/rustls/hyper-rustls"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hyper-util",
+        "version": "0.1.20",
+        "license": "MIT",
+        "source": "https://github.com/hyperium/hyper-util"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "iana-time-zone",
+        "version": "0.1.65",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/strawlab/iana-time-zone"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "iana-time-zone-haiku",
+        "version": "0.1.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/strawlab/iana-time-zone"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_collections",
+        "version": "2.3.0",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_locale_core",
+        "version": "2.3.0",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_normalizer",
+        "version": "2.3.0",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_normalizer_data",
+        "version": "2.3.0",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_properties",
+        "version": "2.3.0",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_properties_data",
+        "version": "2.3.0",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "icu_provider",
+        "version": "2.3.1",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "idna",
+        "version": "1.1.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/rust-url/"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "idna_adapter",
+        "version": "1.2.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/hsivonen/idna_adapter"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "indexmap",
+        "version": "2.14.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/indexmap-rs/indexmap"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "inout",
+        "version": "0.1.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ipnet",
+        "version": "2.12.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/krisprice/ipnet"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "itoa",
+        "version": "1.0.18",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/itoa"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "js-sys",
+        "version": "0.3.104",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "jsonwebtoken",
+        "version": "10.4.0",
+        "license": "MIT",
+        "source": "https://github.com/Keats/jsonwebtoken"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "lazy_static",
+        "version": "1.5.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang-nursery/lazy-static.rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "libc",
+        "version": "0.2.189",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/libc"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "libm",
+        "version": "0.2.16",
+        "license": "MIT",
+        "source": "https://github.com/rust-lang/compiler-builtins"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "libredox",
+        "version": "0.1.20",
+        "license": "MIT",
+        "source": "https://gitlab.redox-os.org/redox-os/libredox.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "libsqlite3-sys",
+        "version": "0.30.1",
+        "license": "MIT",
+        "source": "https://github.com/rusqlite/rusqlite"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "litemap",
+        "version": "0.8.3",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "lock_api",
+        "version": "0.4.14",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Amanieu/parking_lot"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "log",
+        "version": "0.4.34",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/log"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "lru-slab",
+        "version": "0.1.2",
+        "license": "MIT OR Apache-2.0 OR Zlib",
+        "source": "https://github.com/Ralith/lru-slab"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "matchers",
+        "version": "0.2.0",
+        "license": "MIT",
+        "source": "https://github.com/hawkw/matchers"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "matchit",
+        "version": "0.8.4",
+        "license": "MIT AND BSD-3-Clause",
+        "source": "https://github.com/ibraheemdev/matchit"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "md-5",
+        "version": "0.10.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/hashes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "memchr",
+        "version": "2.8.3",
+        "license": "Unlicense OR MIT",
+        "source": "https://github.com/BurntSushi/memchr"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "mime",
+        "version": "0.3.17",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/hyperium/mime"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "miniz_oxide",
+        "version": "0.8.9",
+        "license": "MIT OR Zlib OR Apache-2.0",
+        "source": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "mio",
+        "version": "1.2.2",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/mio"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "nu-ansi-term",
+        "version": "0.50.3",
+        "license": "MIT",
+        "source": "https://github.com/nushell/nu-ansi-term"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "num-bigint",
+        "version": "0.4.8",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-num/num-bigint"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "num-bigint-dig",
+        "version": "0.8.6",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/dignifiedquire/num-bigint"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "num-conv",
+        "version": "0.2.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/jhpratt/num-conv"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "num-integer",
+        "version": "0.1.47",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-num/num-integer"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "num-iter",
+        "version": "0.1.46",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-num/num-iter"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "num-traits",
+        "version": "0.2.19",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-num/num-traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "once_cell",
+        "version": "1.21.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/matklad/once_cell"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "opaque-debug",
+        "version": "0.3.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "p256",
+        "version": "0.13.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/elliptic-curves/tree/master/p256"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "p384",
+        "version": "0.13.1",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/elliptic-curves/tree/master/p384"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "parking",
+        "version": "2.2.1",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/smol-rs/parking"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "parking_lot",
+        "version": "0.12.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Amanieu/parking_lot"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "parking_lot_core",
+        "version": "0.9.12",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Amanieu/parking_lot"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "pem",
+        "version": "3.0.6",
+        "license": "MIT",
+        "source": "https://github.com/jcreekmore/pem-rs.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "pem-rfc7468",
+        "version": "0.7.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/pem-rfc7468"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "percent-encoding",
+        "version": "2.3.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/rust-url/"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "phf",
+        "version": "0.12.1",
+        "license": "MIT",
+        "source": "https://github.com/rust-phf/rust-phf"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "phf_shared",
+        "version": "0.12.1",
+        "license": "MIT",
+        "source": "https://github.com/rust-phf/rust-phf"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "pin-project-lite",
+        "version": "0.2.17",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/taiki-e/pin-project-lite"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "pkcs1",
+        "version": "0.7.5",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/pkcs1"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "pkcs8",
+        "version": "0.10.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/pkcs8"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "plain",
+        "version": "0.2.3",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/randomites/plain"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "polyval",
+        "version": "0.6.2",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/universal-hashes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "potential_utf",
+        "version": "0.1.6",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "powerfmt",
+        "version": "0.2.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/jhpratt/powerfmt"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ppv-lite86",
+        "version": "0.2.21",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/cryptocorrosion/cryptocorrosion"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "primeorder",
+        "version": "0.13.6",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "proc-macro2",
+        "version": "1.0.107",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/proc-macro2"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "quinn",
+        "version": "0.11.11",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/quinn-rs/quinn"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "quinn-proto",
+        "version": "0.11.17",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/quinn-rs/quinn"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "quinn-udp",
+        "version": "0.5.15",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/quinn-rs/quinn"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "quote",
+        "version": "1.0.47",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/quote"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "r-efi",
+        "version": "5.3.0",
+        "license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+        "source": "https://github.com/r-efi/r-efi"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "r-efi",
+        "version": "6.0.0",
+        "license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+        "source": "https://github.com/r-efi/r-efi"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand",
+        "version": "0.10.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand",
+        "version": "0.8.8",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand",
+        "version": "0.9.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand_chacha",
+        "version": "0.3.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand_chacha",
+        "version": "0.9.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand_core",
+        "version": "0.10.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand_core"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand_core",
+        "version": "0.6.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand_core",
+        "version": "0.9.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rand"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rand_pcg",
+        "version": "0.10.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-random/rngs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "redox_syscall",
+        "version": "0.5.18",
+        "license": "MIT",
+        "source": "https://gitlab.redox-os.org/redox-os/syscall"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "redox_syscall",
+        "version": "0.9.3",
+        "license": "MIT",
+        "source": "https://gitlab.redox-os.org/redox-os/syscall"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "regex",
+        "version": "1.13.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/regex"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "regex-automata",
+        "version": "0.4.18",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/regex"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "regex-syntax",
+        "version": "0.8.11",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/regex"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "reqwest",
+        "version": "0.12.28",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/seanmonstar/reqwest"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rfc6979",
+        "version": "0.4.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/signatures/tree/master/rfc6979"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ring",
+        "version": "0.17.14",
+        "license": "Apache-2.0 AND ISC",
+        "source": "https://github.com/briansmith/ring"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rsa",
+        "version": "0.9.10",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/RSA"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rustc-hash",
+        "version": "2.1.3",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/rust-lang/rustc-hash"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rustls",
+        "version": "0.23.43",
+        "license": "Apache-2.0 OR ISC OR MIT",
+        "source": "https://github.com/rustls/rustls"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rustls-pki-types",
+        "version": "1.15.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rustls/pki-types"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rustls-webpki",
+        "version": "0.103.15",
+        "license": "ISC",
+        "source": "https://github.com/rustls/webpki"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ryu",
+        "version": "1.0.23",
+        "license": "Apache-2.0 OR BSL-1.0",
+        "source": "https://github.com/dtolnay/ryu"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "scopeguard",
+        "version": "1.2.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/bluss/scopeguard"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sec1",
+        "version": "0.7.3",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/sec1"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde",
+        "version": "1.0.229",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/serde"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_core",
+        "version": "1.0.229",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/serde"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_derive",
+        "version": "1.0.229",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/serde"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_json",
+        "version": "1.0.151",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/json"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_path_to_error",
+        "version": "0.1.20",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/path-to-error"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_urlencoded",
+        "version": "0.7.1",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/nox/serde_urlencoded"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sha1",
+        "version": "0.10.7",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/hashes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sha2",
+        "version": "0.10.9",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/hashes"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sharded-slab",
+        "version": "0.1.7",
+        "license": "MIT",
+        "source": "https://github.com/hawkw/sharded-slab"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "signal-hook-registry",
+        "version": "1.4.8",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/vorner/signal-hook"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "signature",
+        "version": "2.2.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/traits/tree/master/signature"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "simd-adler32",
+        "version": "0.3.10",
+        "license": "MIT",
+        "source": "https://github.com/mcountryman/simd-adler32"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "simple_asn1",
+        "version": "0.6.4",
+        "license": "ISC",
+        "source": "https://github.com/acw/simple_asn1"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "siphasher",
+        "version": "1.0.3",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/jedisct1/rust-siphash"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "slab",
+        "version": "0.4.12",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/slab"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "smallvec",
+        "version": "1.15.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/rust-smallvec"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "socket2",
+        "version": "0.6.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/socket2"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "spin",
+        "version": "0.9.9",
+        "license": "MIT",
+        "source": "https://github.com/mvdnes/spin-rs.git"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "spki",
+        "version": "0.7.3",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/formats/tree/master/spki"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx-core",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx-macros",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx-macros-core",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx-mysql",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx-postgres",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sqlx-sqlite",
+        "version": "0.8.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/launchbadge/sqlx"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "stable_deref_trait",
+        "version": "1.2.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/storyyeller/stable_deref_trait"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "stringprep",
+        "version": "0.1.5",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/sfackler/rust-stringprep"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "subtle",
+        "version": "2.6.1",
+        "license": "BSD-3-Clause",
+        "source": "https://github.com/dalek-cryptography/subtle"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "syn",
+        "version": "2.0.119",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/syn"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "syn",
+        "version": "3.0.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/syn"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "sync_wrapper",
+        "version": "1.0.2",
+        "license": "Apache-2.0",
+        "source": "https://github.com/Actyx/sync_wrapper"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "synstructure",
+        "version": "0.13.2",
+        "license": "MIT",
+        "source": "https://github.com/mystor/synstructure"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "termcolor",
+        "version": "1.4.1",
+        "license": "Unlicense OR MIT",
+        "source": "https://github.com/BurntSushi/termcolor"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "thiserror",
+        "version": "2.0.20",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/thiserror"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "thiserror-impl",
+        "version": "2.0.20",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/thiserror"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "thread_local",
+        "version": "1.1.10",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/Amanieu/thread_local-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "time",
+        "version": "0.3.55",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/time-rs/time"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "time-core",
+        "version": "0.1.9",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/time-rs/time"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "time-macros",
+        "version": "0.2.32",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/time-rs/time"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tinystr",
+        "version": "0.8.4",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tinyvec",
+        "version": "1.12.0",
+        "license": "Zlib OR Apache-2.0 OR MIT",
+        "source": "https://github.com/Lokathor/tinyvec"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tinyvec_macros",
+        "version": "0.1.1",
+        "license": "MIT OR Apache-2.0 OR Zlib",
+        "source": "https://github.com/Soveu/tinyvec_macros"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tokio",
+        "version": "1.53.1",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tokio"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tokio-macros",
+        "version": "2.7.2",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tokio"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tokio-rustls",
+        "version": "0.26.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rustls/tokio-rustls"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tokio-stream",
+        "version": "0.1.19",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tokio"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tokio-tungstenite",
+        "version": "0.29.0",
+        "license": "MIT",
+        "source": "https://github.com/snapview/tokio-tungstenite"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tokio-util",
+        "version": "0.7.19",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tokio"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tower",
+        "version": "0.5.3",
+        "license": "MIT",
+        "source": "https://github.com/tower-rs/tower"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tower-http",
+        "version": "0.6.11",
+        "license": "MIT",
+        "source": "https://github.com/tower-rs/tower-http"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tower-layer",
+        "version": "0.3.3",
+        "license": "MIT",
+        "source": "https://github.com/tower-rs/tower"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tower-service",
+        "version": "0.3.3",
+        "license": "MIT",
+        "source": "https://github.com/tower-rs/tower"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tracing",
+        "version": "0.1.44",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tracing"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tracing-attributes",
+        "version": "0.1.31",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tracing"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tracing-core",
+        "version": "0.1.36",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tracing"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tracing-log",
+        "version": "0.2.0",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tracing"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tracing-subscriber",
+        "version": "0.3.23",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/tracing"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "try-lock",
+        "version": "0.2.5",
+        "license": "MIT",
+        "source": "https://github.com/seanmonstar/try-lock"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ts-rs",
+        "version": "12.0.1",
+        "license": "MIT",
+        "source": "https://github.com/Aleph-Alpha/ts-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "ts-rs-macros",
+        "version": "12.0.1",
+        "license": "MIT",
+        "source": "https://github.com/Aleph-Alpha/ts-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "tungstenite",
+        "version": "0.29.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/snapview/tungstenite-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "typenum",
+        "version": "1.20.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/paholg/typenum"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "unicode-bidi",
+        "version": "0.3.18",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/unicode-bidi"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "unicode-ident",
+        "version": "1.0.24",
+        "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+        "source": "https://github.com/dtolnay/unicode-ident"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "unicode-normalization",
+        "version": "0.1.25",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/unicode-rs/unicode-normalization"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "unicode-properties",
+        "version": "0.1.4",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/unicode-rs/unicode-properties"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "universal-hash",
+        "version": "0.5.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RustCrypto/traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "untrusted",
+        "version": "0.9.0",
+        "license": "ISC",
+        "source": "https://github.com/briansmith/untrusted"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "url",
+        "version": "2.5.8",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/servo/rust-url"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "utf8_iter",
+        "version": "1.0.4",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/hsivonen/utf8_iter"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "valuable",
+        "version": "0.1.1",
+        "license": "MIT",
+        "source": "https://github.com/tokio-rs/valuable"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "want",
+        "version": "0.3.1",
+        "license": "MIT",
+        "source": "https://github.com/seanmonstar/want"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasi",
+        "version": "0.11.1+wasi-snapshot-preview1",
+        "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+        "source": "https://github.com/bytecodealliance/wasi"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasip2",
+        "version": "1.0.4+wasi-0.2.12",
+        "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+        "source": "https://github.com/bytecodealliance/wasi-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasite",
+        "version": "0.1.0",
+        "license": "Apache-2.0 OR BSL-1.0 OR MIT",
+        "source": "https://github.com/ardaku/wasite"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasm-bindgen",
+        "version": "0.2.127",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasm-bindgen-futures",
+        "version": "0.4.77",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasm-bindgen-macro",
+        "version": "0.2.127",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasm-bindgen-macro-support",
+        "version": "0.2.127",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasm-bindgen-shared",
+        "version": "0.2.127",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wasm-streams",
+        "version": "0.4.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/MattiasBuelens/wasm-streams/"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "web-sys",
+        "version": "0.3.104",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "web-time",
+        "version": "1.1.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/daxpedda/web-time"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "webpki-roots",
+        "version": "0.26.11",
+        "license": "CDLA-Permissive-2.0",
+        "source": "https://github.com/rustls/webpki-roots"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "webpki-roots",
+        "version": "1.0.9",
+        "license": "CDLA-Permissive-2.0",
+        "source": "https://github.com/rustls/webpki-roots"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "whoami",
+        "version": "1.6.1",
+        "license": "Apache-2.0 OR BSL-1.0 OR MIT",
+        "source": "https://github.com/ardaku/whoami"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "winapi-util",
+        "version": "0.1.11",
+        "license": "Unlicense OR MIT",
+        "source": "https://github.com/BurntSushi/winapi-util"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_aarch64_gnullvm",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_aarch64_gnullvm",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_aarch64_msvc",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_aarch64_msvc",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_i686_gnu",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_i686_gnu",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_i686_gnullvm",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_i686_msvc",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_i686_msvc",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_x86_64_gnu",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_x86_64_gnu",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_x86_64_gnullvm",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_x86_64_gnullvm",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_x86_64_msvc",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows_x86_64_msvc",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-core",
+        "version": "0.62.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-implement",
+        "version": "0.60.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-interface",
+        "version": "0.59.3",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-link",
+        "version": "0.2.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-result",
+        "version": "0.4.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-strings",
+        "version": "0.5.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-sys",
+        "version": "0.48.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-sys",
+        "version": "0.52.0",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-sys",
+        "version": "0.61.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-targets",
+        "version": "0.48.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "windows-targets",
+        "version": "0.52.6",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/microsoft/windows-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "wit-bindgen",
+        "version": "0.57.1",
+        "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+        "source": "https://github.com/bytecodealliance/wit-bindgen"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "writeable",
+        "version": "0.6.4",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "yoke",
+        "version": "0.8.3",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "yoke-derive",
+        "version": "0.8.2",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerocopy",
+        "version": "0.8.56",
+        "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+        "source": "https://github.com/google/zerocopy"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerocopy-derive",
+        "version": "0.8.56",
+        "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+        "source": "https://github.com/google/zerocopy"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerofrom",
+        "version": "0.1.8",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerofrom-derive",
+        "version": "0.1.7",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zeroize",
+        "version": "1.9.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zeroize_derive",
+        "version": "1.5.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/RustCrypto/utils"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerotrie",
+        "version": "0.2.5",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerovec",
+        "version": "0.11.8",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zerovec-derive",
+        "version": "0.11.6",
+        "license": "Unicode-3.0",
+        "source": "https://github.com/unicode-org/icu4x"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zmij",
+        "version": "1.0.23",
+        "license": "MIT",
+        "source": "https://github.com/dtolnay/zmij"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zstd",
+        "version": "0.13.3",
+        "license": "MIT",
+        "source": "https://github.com/gyscos/zstd-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zstd-safe",
+        "version": "7.2.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/gyscos/zstd-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zstd-sys",
+        "version": "2.0.16+zstd.1.5.7",
+        "license": "MIT/Apache-2.0",
+        "source": "https://github.com/gyscos/zstd-rs"
+      }
+    ],
+    "jobRunner": [
+      {
+        "ecosystem": "Go",
+        "name": "github.com/gorilla/websocket",
+        "version": "v1.5.3",
+        "license": "BSD-2-Clause",
+        "source": "https://github.com/gorilla/websocket"
+      },
+      {
+        "ecosystem": "Go",
+        "name": "github.com/HugoSmits86/nativewebp",
+        "version": "v1.2.1",
+        "license": "MIT",
+        "source": "https://github.com/HugoSmits86/nativewebp"
+      },
+      {
+        "ecosystem": "Go",
+        "name": "golang.org/x/image",
+        "version": "v0.41.0",
+        "license": "BSD-3-Clause",
+        "source": "https://pkg.go.dev/golang.org/x/image@v0.41.0"
+      },
+      {
+        "ecosystem": "Go",
+        "name": "golang.org/x/text",
+        "version": "v0.37.0",
+        "license": "BSD-3-Clause",
+        "source": "https://pkg.go.dev/golang.org/x/text@v0.37.0"
+      }
+    ]
+  },
+  "client": {
+    "webapp": [
+      {
+        "ecosystem": "npm",
+        "name": "@carbon/icon-helpers",
+        "version": "10.81.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficon-helpers/v/10.81.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@carbon/icons-react",
+        "version": "11.87.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficons-react/v/11.87.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@fast-csv/format",
+        "version": "4.3.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40fast-csv%2Fformat/v/4.3.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@fast-csv/parse",
+        "version": "4.3.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40fast-csv%2Fparse/v/4.3.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@fontsource-variable/jetbrains-mono",
+        "version": "5.3.0",
+        "license": "OFL-1.1",
+        "source": "https://www.npmjs.com/package/%40fontsource-variable%2Fjetbrains-mono/v/5.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@fontsource/ubuntu",
+        "version": "5.3.0",
+        "license": "UFL-1.0",
+        "source": "https://www.npmjs.com/package/%40fontsource%2Fubuntu/v/5.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@ibm/telemetry-js",
+        "version": "1.11.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40ibm%2Ftelemetry-js/v/1.11.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@kenjiuno/decompressrtf",
+        "version": "0.1.4",
+        "license": "BSD-2-Clause",
+        "source": "https://www.npmjs.com/package/%40kenjiuno%2Fdecompressrtf/v/0.1.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@kenjiuno/msgreader",
+        "version": "1.28.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40kenjiuno%2Fmsgreader/v/1.28.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@mjackson/node-fetch-server",
+        "version": "0.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40mjackson%2Fnode-fetch-server/v/0.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@myriaddreamin/typst-ts-web-compiler",
+        "version": "0.7.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40myriaddreamin%2Ftypst-ts-web-compiler/v/0.7.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@myriaddreamin/typst.ts",
+        "version": "0.7.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40myriaddreamin%2Ftypst.ts/v/0.7.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-android-arm64",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-android-arm64/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-android-arm64",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-android-arm64/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-darwin-arm64",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-arm64/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-darwin-arm64",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-arm64/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-darwin-x64",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-x64/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-darwin-x64",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-x64/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-arm-gnueabihf",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm-gnueabihf/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-arm-gnueabihf",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm-gnueabihf/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-arm64-gnu",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-gnu/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-arm64-gnu",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-gnu/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-arm64-musl",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-musl/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-arm64-musl",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-musl/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-riscv64-gnu",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-riscv64-gnu/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-riscv64-gnu",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-riscv64-gnu/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-x64-gnu",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-gnu/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-x64-gnu",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-gnu/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-x64-musl",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-musl/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-linux-x64-musl",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-musl/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-win32-arm64-msvc",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-arm64-msvc/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-win32-arm64-msvc",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-arm64-msvc/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-win32-x64-msvc",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-x64-msvc/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@napi-rs/canvas-win32-x64-msvc",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-x64-msvc/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-router/express",
+        "version": "7.18.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40react-router%2Fexpress/v/7.18.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-router/node",
+        "version": "7.18.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40react-router%2Fnode/v/7.18.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-router/serve",
+        "version": "7.18.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40react-router%2Fserve/v/7.18.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@reduxjs/toolkit",
+        "version": "2.12.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40reduxjs%2Ftoolkit/v/2.12.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@standard-schema/spec",
+        "version": "1.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40standard-schema%2Fspec/v/1.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@standard-schema/utils",
+        "version": "0.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40standard-schema%2Futils/v/0.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-array",
+        "version": "3.2.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-array/v/3.2.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-color",
+        "version": "3.1.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-color/v/3.1.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-ease",
+        "version": "3.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-ease/v/3.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-interpolate",
+        "version": "3.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-interpolate/v/3.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-path",
+        "version": "3.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-path/v/3.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-scale",
+        "version": "4.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-scale/v/4.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-shape",
+        "version": "3.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-shape/v/3.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-time",
+        "version": "3.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-time/v/3.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/d3-timer",
+        "version": "3.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fd3-timer/v/3.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/debug",
+        "version": "4.1.13",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fdebug/v/4.1.13"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/estree",
+        "version": "1.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Festree/v/1.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/estree-jsx",
+        "version": "1.0.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Festree-jsx/v/1.0.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/hast",
+        "version": "3.0.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fhast/v/3.0.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/mdast",
+        "version": "4.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fmdast/v/4.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/ms",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fms/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/node",
+        "version": "14.18.63",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fnode/v/14.18.63"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/react",
+        "version": "19.2.18",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Freact/v/19.2.18"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/trusted-types",
+        "version": "2.0.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Ftrusted-types/v/2.0.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/unist",
+        "version": "2.0.11",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Funist/v/2.0.11"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/unist",
+        "version": "3.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Funist/v/3.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@types/use-sync-external-store",
+        "version": "0.0.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Fuse-sync-external-store/v/0.0.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@ungap/structured-clone",
+        "version": "1.4.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/%40ungap%2Fstructured-clone/v/1.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "accepts",
+        "version": "1.3.8",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/accepts/v/1.3.8"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "archiver",
+        "version": "5.3.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/archiver/v/5.3.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "archiver-utils",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/archiver-utils/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "archiver-utils",
+        "version": "3.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/archiver-utils/v/3.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "array-flatten",
+        "version": "1.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/array-flatten/v/1.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "async",
+        "version": "3.2.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/async/v/3.2.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "bail",
+        "version": "2.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/bail/v/2.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "balanced-match",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/balanced-match/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "base64-js",
+        "version": "1.5.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/base64-js/v/1.5.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "basic-auth",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/basic-auth/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "big-integer",
+        "version": "1.6.52",
+        "license": "Unlicense",
+        "source": "https://www.npmjs.com/package/big-integer/v/1.6.52"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "binary",
+        "version": "0.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/binary/v/0.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "bl",
+        "version": "4.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/bl/v/4.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "bluebird",
+        "version": "3.4.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/bluebird/v/3.4.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "body-parser",
+        "version": "1.20.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/body-parser/v/1.20.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "brace-expansion",
+        "version": "1.1.18",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/brace-expansion/v/1.1.18"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "brace-expansion",
+        "version": "2.1.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/brace-expansion/v/2.1.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "buffer",
+        "version": "5.7.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/buffer/v/5.7.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "buffer-crc32",
+        "version": "0.2.13",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/buffer-crc32/v/0.2.13"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "buffer-from",
+        "version": "1.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/buffer-from/v/1.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "buffer-indexof-polyfill",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/buffer-indexof-polyfill/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "buffers",
+        "version": "0.1.1",
+        "license": "UNKNOWN",
+        "source": "https://www.npmjs.com/package/buffers/v/0.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "bytes",
+        "version": "3.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/bytes/v/3.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "call-bind-apply-helpers",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/call-bind-apply-helpers/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "call-bound",
+        "version": "1.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/call-bound/v/1.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "ccount",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/ccount/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "chainsaw",
+        "version": "0.1.0",
+        "license": "MIT/X11",
+        "source": "https://www.npmjs.com/package/chainsaw/v/0.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "character-entities",
+        "version": "2.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/character-entities/v/2.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "character-entities-html4",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/character-entities-html4/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "character-entities-legacy",
+        "version": "3.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/character-entities-legacy/v/3.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "character-reference-invalid",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/character-reference-invalid/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "clsx",
+        "version": "2.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/clsx/v/2.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "comma-separated-tokens",
+        "version": "2.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/comma-separated-tokens/v/2.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "compress-commons",
+        "version": "4.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/compress-commons/v/4.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "compressible",
+        "version": "2.0.18",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/compressible/v/2.0.18"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "compression",
+        "version": "1.8.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/compression/v/1.8.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "concat-map",
+        "version": "0.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/concat-map/v/0.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "content-disposition",
+        "version": "0.5.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/content-disposition/v/0.5.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "content-type",
+        "version": "1.0.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/content-type/v/1.0.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "cookie",
+        "version": "0.7.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/cookie/v/0.7.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "cookie",
+        "version": "1.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/cookie/v/1.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "cookie-signature",
+        "version": "1.0.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/cookie-signature/v/1.0.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "core-util-is",
+        "version": "1.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/core-util-is/v/1.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "crc-32",
+        "version": "1.2.2",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/crc-32/v/1.2.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "crc32-stream",
+        "version": "4.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/crc32-stream/v/4.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "csstype",
+        "version": "3.2.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/csstype/v/3.2.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-array",
+        "version": "3.2.4",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-array/v/3.2.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-color",
+        "version": "3.1.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-color/v/3.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-ease",
+        "version": "3.0.1",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/d3-ease/v/3.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-format",
+        "version": "3.1.2",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-format/v/3.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-interpolate",
+        "version": "3.0.1",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-interpolate/v/3.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-path",
+        "version": "3.1.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-path/v/3.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-scale",
+        "version": "4.0.2",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-scale/v/4.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-shape",
+        "version": "3.2.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-shape/v/3.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-time",
+        "version": "3.1.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-time/v/3.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-time-format",
+        "version": "4.1.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-time-format/v/4.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "d3-timer",
+        "version": "3.0.1",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/d3-timer/v/3.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "dayjs",
+        "version": "1.11.23",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/dayjs/v/1.11.23"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "debug",
+        "version": "2.6.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/debug/v/2.6.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "debug",
+        "version": "4.4.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/debug/v/4.4.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "decimal.js-light",
+        "version": "2.5.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/decimal.js-light/v/2.5.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "decode-named-character-reference",
+        "version": "1.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/decode-named-character-reference/v/1.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "depd",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/depd/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "dequal",
+        "version": "2.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/dequal/v/2.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "destroy",
+        "version": "1.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/destroy/v/1.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "devlop",
+        "version": "1.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/devlop/v/1.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "dompurify",
+        "version": "3.4.14",
+        "license": "(MPL-2.0 OR Apache-2.0)",
+        "source": "https://www.npmjs.com/package/dompurify/v/3.4.14"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "dunder-proto",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/dunder-proto/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "duplexer2",
+        "version": "0.1.4",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/duplexer2/v/0.1.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "ee-first",
+        "version": "1.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/ee-first/v/1.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "encodeurl",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/encodeurl/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "end-of-stream",
+        "version": "1.4.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/end-of-stream/v/1.4.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "entities",
+        "version": "8.1.0",
+        "license": "BSD-2-Clause",
+        "source": "https://www.npmjs.com/package/entities/v/8.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "es-define-property",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/es-define-property/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "es-errors",
+        "version": "1.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/es-errors/v/1.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "es-object-atoms",
+        "version": "1.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/es-object-atoms/v/1.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "es-toolkit",
+        "version": "1.52.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/es-toolkit/v/1.52.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "escape-html",
+        "version": "1.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/escape-html/v/1.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "escape-string-regexp",
+        "version": "5.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/escape-string-regexp/v/5.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "estree-util-is-identifier-name",
+        "version": "3.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/estree-util-is-identifier-name/v/3.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "etag",
+        "version": "1.8.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/etag/v/1.8.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "eventemitter3",
+        "version": "5.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/eventemitter3/v/5.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "exceljs",
+        "version": "4.4.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/exceljs/v/4.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "express",
+        "version": "4.22.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/express/v/4.22.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "extend",
+        "version": "3.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/extend/v/3.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "fast-csv",
+        "version": "4.3.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/fast-csv/v/4.3.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "finalhandler",
+        "version": "1.3.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/finalhandler/v/1.3.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "forwarded",
+        "version": "0.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/forwarded/v/0.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "fresh",
+        "version": "0.5.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/fresh/v/0.5.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "fs-constants",
+        "version": "1.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/fs-constants/v/1.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "fs.realpath",
+        "version": "1.0.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/fs.realpath/v/1.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "fstream",
+        "version": "1.0.12",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/fstream/v/1.0.12"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "function-bind",
+        "version": "1.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/function-bind/v/1.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "get-intrinsic",
+        "version": "1.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/get-intrinsic/v/1.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "get-port",
+        "version": "5.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/get-port/v/5.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "get-proto",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/get-proto/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "glob",
+        "version": "7.2.3",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/glob/v/7.2.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "gopd",
+        "version": "1.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/gopd/v/1.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "graceful-fs",
+        "version": "4.2.11",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/graceful-fs/v/4.2.11"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "has-symbols",
+        "version": "1.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/has-symbols/v/1.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "hasown",
+        "version": "2.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/hasown/v/2.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "hast-util-to-jsx-runtime",
+        "version": "2.3.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/hast-util-to-jsx-runtime/v/2.3.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "hast-util-whitespace",
+        "version": "3.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/hast-util-whitespace/v/3.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "html-url-attributes",
+        "version": "3.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/html-url-attributes/v/3.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "http-errors",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/http-errors/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "iconv-lite",
+        "version": "0.4.24",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/iconv-lite/v/0.4.24"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "iconv-lite",
+        "version": "0.6.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/iconv-lite/v/0.6.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "idb",
+        "version": "7.1.1",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/idb/v/7.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "ieee754",
+        "version": "1.2.1",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/ieee754/v/1.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "immediate",
+        "version": "3.0.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/immediate/v/3.0.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "immer",
+        "version": "11.1.18",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/immer/v/11.1.18"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "inflight",
+        "version": "1.0.6",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/inflight/v/1.0.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "inherits",
+        "version": "2.0.4",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/inherits/v/2.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "inline-style-parser",
+        "version": "0.2.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/inline-style-parser/v/0.2.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "internmap",
+        "version": "2.0.3",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/internmap/v/2.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "ipaddr.js",
+        "version": "1.9.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/ipaddr.js/v/1.9.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "is-alphabetical",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/is-alphabetical/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "is-alphanumerical",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/is-alphanumerical/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "is-decimal",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/is-decimal/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "is-hexadecimal",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/is-hexadecimal/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "is-plain-obj",
+        "version": "4.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/is-plain-obj/v/4.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "isarray",
+        "version": "1.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/isarray/v/1.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "isbot",
+        "version": "5.2.2",
+        "license": "Unlicense",
+        "source": "https://www.npmjs.com/package/isbot/v/5.2.2"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "itoa",
+        "version": "1.0.18",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/itoa"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "js-tokens",
+        "version": "4.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/js-tokens/v/4.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "jszip",
+        "version": "3.10.1",
+        "license": "(MIT OR GPL-3.0-or-later)",
+        "source": "https://www.npmjs.com/package/jszip/v/3.10.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lazystream",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lazystream/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lie",
+        "version": "3.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lie/v/3.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "listenercount",
+        "version": "1.0.1",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/listenercount/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.defaults",
+        "version": "4.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.defaults/v/4.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.difference",
+        "version": "4.5.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.difference/v/4.5.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.escaperegexp",
+        "version": "4.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.escaperegexp/v/4.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.flatten",
+        "version": "4.4.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.flatten/v/4.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.groupby",
+        "version": "4.6.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.groupby/v/4.6.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.isboolean",
+        "version": "3.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.isboolean/v/3.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.isequal",
+        "version": "4.5.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.isequal/v/4.5.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.isfunction",
+        "version": "3.0.9",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.isfunction/v/3.0.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.isnil",
+        "version": "4.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.isnil/v/4.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.isplainobject",
+        "version": "4.0.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.isplainobject/v/4.0.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.isundefined",
+        "version": "3.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.isundefined/v/3.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.union",
+        "version": "4.6.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.union/v/4.6.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash.uniq",
+        "version": "4.5.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lodash.uniq/v/4.5.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "longest-streak",
+        "version": "3.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/longest-streak/v/3.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "loose-envify",
+        "version": "1.4.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/loose-envify/v/1.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "markdown-table",
+        "version": "3.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/markdown-table/v/3.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "marked",
+        "version": "14.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/marked/v/14.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "math-intrinsics",
+        "version": "1.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/math-intrinsics/v/1.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-find-and-replace",
+        "version": "3.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-find-and-replace/v/3.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-from-markdown",
+        "version": "2.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-from-markdown/v/2.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-gfm",
+        "version": "3.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-gfm/v/3.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-gfm-autolink-literal",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-gfm-autolink-literal/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-gfm-footnote",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-gfm-footnote/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-gfm-strikethrough",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-gfm-strikethrough/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-gfm-table",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-gfm-table/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-gfm-task-list-item",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-gfm-task-list-item/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-mdx-expression",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-mdx-expression/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-mdx-jsx",
+        "version": "3.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-mdx-jsx/v/3.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-mdxjs-esm",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-mdxjs-esm/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-phrasing",
+        "version": "4.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-phrasing/v/4.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-to-hast",
+        "version": "13.2.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-to-hast/v/13.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-to-markdown",
+        "version": "2.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-to-markdown/v/2.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mdast-util-to-string",
+        "version": "4.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mdast-util-to-string/v/4.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "media-typer",
+        "version": "0.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/media-typer/v/0.3.0"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "memchr",
+        "version": "2.8.3",
+        "license": "Unlicense OR MIT",
+        "source": "https://github.com/BurntSushi/memchr"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "merge-descriptors",
+        "version": "1.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/merge-descriptors/v/1.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "methods",
+        "version": "1.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/methods/v/1.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark",
+        "version": "4.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark/v/4.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-core-commonmark",
+        "version": "2.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-core-commonmark/v/2.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm",
+        "version": "3.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm/v/3.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm-autolink-literal",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm-autolink-literal/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm-footnote",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm-footnote/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm-strikethrough",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm-strikethrough/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm-table",
+        "version": "2.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm-table/v/2.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm-tagfilter",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm-tagfilter/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-extension-gfm-task-list-item",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-extension-gfm-task-list-item/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-factory-destination",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-factory-destination/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-factory-label",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-factory-label/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-factory-space",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-factory-space/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-factory-title",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-factory-title/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-factory-whitespace",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-factory-whitespace/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-character",
+        "version": "2.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-character/v/2.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-chunked",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-chunked/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-classify-character",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-classify-character/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-combine-extensions",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-combine-extensions/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-decode-numeric-character-reference",
+        "version": "2.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-decode-numeric-character-reference/v/2.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-decode-string",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-decode-string/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-encode",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-encode/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-html-tag-name",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-html-tag-name/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-normalize-identifier",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-normalize-identifier/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-resolve-all",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-resolve-all/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-sanitize-uri",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-sanitize-uri/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-subtokenize",
+        "version": "2.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-subtokenize/v/2.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-symbol",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-symbol/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "micromark-util-types",
+        "version": "2.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/micromark-util-types/v/2.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mime",
+        "version": "1.6.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mime/v/1.6.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mime-db",
+        "version": "1.52.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mime-db/v/1.52.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mime-db",
+        "version": "1.54.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mime-db/v/1.54.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mime-types",
+        "version": "2.1.35",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mime-types/v/2.1.35"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "minimatch",
+        "version": "3.1.5",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/minimatch/v/3.1.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "minimatch",
+        "version": "5.1.9",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/minimatch/v/5.1.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "minimist",
+        "version": "1.2.8",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/minimist/v/1.2.8"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "mkdirp",
+        "version": "0.5.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/mkdirp/v/0.5.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "monaco-editor",
+        "version": "0.55.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/monaco-editor/v/0.55.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "morgan",
+        "version": "1.12.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/morgan/v/1.12.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "ms",
+        "version": "2.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/ms/v/2.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "ms",
+        "version": "2.1.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/ms/v/2.1.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "negotiator",
+        "version": "0.6.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/negotiator/v/0.6.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "negotiator",
+        "version": "0.6.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/negotiator/v/0.6.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "normalize-path",
+        "version": "3.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/normalize-path/v/3.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "object-assign",
+        "version": "4.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/object-assign/v/4.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "object-inspect",
+        "version": "1.13.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/object-inspect/v/1.13.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "on-finished",
+        "version": "2.4.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/on-finished/v/2.4.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "on-headers",
+        "version": "1.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/on-headers/v/1.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "once",
+        "version": "1.4.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/once/v/1.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "pako",
+        "version": "1.0.11",
+        "license": "(MIT AND Zlib)",
+        "source": "https://www.npmjs.com/package/pako/v/1.0.11"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "parse-entities",
+        "version": "4.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/parse-entities/v/4.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "parse5",
+        "version": "8.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/parse5/v/8.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "parseurl",
+        "version": "1.3.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/parseurl/v/1.3.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "path-is-absolute",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/path-is-absolute/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "path-to-regexp",
+        "version": "0.1.13",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/path-to-regexp/v/0.1.13"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "pdfjs-dist",
+        "version": "6.3.289",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/pdfjs-dist/v/6.3.289"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "postal-mime",
+        "version": "3.0.0",
+        "license": "MIT-0",
+        "source": "https://www.npmjs.com/package/postal-mime/v/3.0.0"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "proc-macro2",
+        "version": "1.0.107",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/proc-macro2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "process-nextick-args",
+        "version": "2.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/process-nextick-args/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "prop-types",
+        "version": "15.8.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/prop-types/v/15.8.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "property-information",
+        "version": "7.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/property-information/v/7.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "proxy-addr",
+        "version": "2.0.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/proxy-addr/v/2.0.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "qs",
+        "version": "6.16.0",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/qs/v/6.16.0"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "quote",
+        "version": "1.0.47",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/quote"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "range-parser",
+        "version": "1.2.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/range-parser/v/1.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "raw-body",
+        "version": "2.5.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/raw-body/v/2.5.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react",
+        "version": "19.2.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react/v/19.2.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react",
+        "version": "19.2.8",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react/v/19.2.8"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-dom",
+        "version": "19.2.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-dom/v/19.2.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-dom",
+        "version": "19.2.8",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-dom/v/19.2.8"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-error-boundary",
+        "version": "6.1.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-error-boundary/v/6.1.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-is",
+        "version": "16.13.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-is/v/16.13.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-is",
+        "version": "19.2.8",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-is/v/19.2.8"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-markdown",
+        "version": "10.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-markdown/v/10.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-redux",
+        "version": "9.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-redux/v/9.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-router",
+        "version": "7.18.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/react-router/v/7.18.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "readable-stream",
+        "version": "2.3.8",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/readable-stream/v/2.3.8"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "readable-stream",
+        "version": "3.6.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/readable-stream/v/3.6.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "readdir-glob",
+        "version": "1.1.3",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/readdir-glob/v/1.1.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "recharts",
+        "version": "3.10.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/recharts/v/3.10.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "redux",
+        "version": "5.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/redux/v/5.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "redux-thunk",
+        "version": "3.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/redux-thunk/v/3.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "remark-gfm",
+        "version": "4.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/remark-gfm/v/4.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "remark-parse",
+        "version": "11.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/remark-parse/v/11.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "remark-rehype",
+        "version": "11.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/remark-rehype/v/11.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "remark-stringify",
+        "version": "11.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/remark-stringify/v/11.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "reselect",
+        "version": "5.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/reselect/v/5.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "rimraf",
+        "version": "2.7.1",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/rimraf/v/2.7.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "rxjs",
+        "version": "7.8.2",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/rxjs/v/7.8.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "safe-buffer",
+        "version": "5.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/safe-buffer/v/5.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "safe-buffer",
+        "version": "5.2.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/safe-buffer/v/5.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "safer-buffer",
+        "version": "2.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/safer-buffer/v/2.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "saxes",
+        "version": "5.0.1",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/saxes/v/5.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "scheduler",
+        "version": "0.27.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/scheduler/v/0.27.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "send",
+        "version": "0.19.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/send/v/0.19.2"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde",
+        "version": "1.0.229",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/serde"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_core",
+        "version": "1.0.229",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/serde"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_derive",
+        "version": "1.0.229",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/serde"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "serde_json",
+        "version": "1.0.151",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/serde-rs/json"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "serve-static",
+        "version": "1.16.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/serve-static/v/1.16.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "set-cookie-parser",
+        "version": "2.7.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/set-cookie-parser/v/2.7.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "setimmediate",
+        "version": "1.0.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/setimmediate/v/1.0.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "setprototypeof",
+        "version": "1.2.0",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/setprototypeof/v/1.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "side-channel",
+        "version": "1.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/side-channel/v/1.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "side-channel-list",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/side-channel-list/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "side-channel-map",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/side-channel-map/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "side-channel-weakmap",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/side-channel-weakmap/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "source-map",
+        "version": "0.6.1",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/source-map/v/0.6.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "source-map-support",
+        "version": "0.5.21",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/source-map-support/v/0.5.21"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "space-separated-tokens",
+        "version": "2.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/space-separated-tokens/v/2.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "statuses",
+        "version": "2.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/statuses/v/2.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "string_decoder",
+        "version": "1.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/string_decoder/v/1.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "string_decoder",
+        "version": "1.3.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/string_decoder/v/1.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "stringify-entities",
+        "version": "4.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/stringify-entities/v/4.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "style-to-js",
+        "version": "1.1.21",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/style-to-js/v/1.1.21"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "style-to-object",
+        "version": "1.0.14",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/style-to-object/v/1.0.14"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "syn",
+        "version": "3.0.4",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/syn"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "tar-stream",
+        "version": "2.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/tar-stream/v/2.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "tiny-invariant",
+        "version": "1.3.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/tiny-invariant/v/1.3.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "tmp",
+        "version": "0.2.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/tmp/v/0.2.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "toidentifier",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/toidentifier/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "traverse",
+        "version": "0.3.9",
+        "license": "MIT/X11",
+        "source": "https://www.npmjs.com/package/traverse/v/0.3.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "trim-lines",
+        "version": "3.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/trim-lines/v/3.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "trough",
+        "version": "2.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/trough/v/2.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "tslib",
+        "version": "2.8.1",
+        "license": "0BSD",
+        "source": "https://www.npmjs.com/package/tslib/v/2.8.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "type-is",
+        "version": "1.6.18",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/type-is/v/1.6.18"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "typescript",
+        "version": "5.9.3",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/typescript/v/5.9.3"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "unicode-ident",
+        "version": "1.0.24",
+        "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+        "source": "https://github.com/dtolnay/unicode-ident"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unified",
+        "version": "11.0.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unified/v/11.0.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unist-util-is",
+        "version": "6.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unist-util-is/v/6.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unist-util-position",
+        "version": "5.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unist-util-position/v/5.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unist-util-stringify-position",
+        "version": "4.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unist-util-stringify-position/v/4.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unist-util-visit",
+        "version": "5.1.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unist-util-visit/v/5.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unist-util-visit-parents",
+        "version": "6.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unist-util-visit-parents/v/6.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unpipe",
+        "version": "1.0.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unpipe/v/1.0.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "unzipper",
+        "version": "0.10.14",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/unzipper/v/0.10.14"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "use-sync-external-store",
+        "version": "1.6.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/use-sync-external-store/v/1.6.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "util-deprecate",
+        "version": "1.0.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/util-deprecate/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "utils-merge",
+        "version": "1.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/utils-merge/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "uuid",
+        "version": "11.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/uuid/v/11.1.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "vary",
+        "version": "1.1.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/vary/v/1.1.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "vfile",
+        "version": "6.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/vfile/v/6.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "vfile-message",
+        "version": "4.0.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/vfile-message/v/4.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "victory-vendor",
+        "version": "37.3.6",
+        "license": "MIT AND ISC",
+        "source": "https://www.npmjs.com/package/victory-vendor/v/37.3.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "wrappy",
+        "version": "1.0.2",
+        "license": "ISC",
+        "source": "https://www.npmjs.com/package/wrappy/v/1.0.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "xmlchars",
+        "version": "2.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/xmlchars/v/2.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "zip-stream",
+        "version": "4.1.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/zip-stream/v/4.1.1"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "zmij",
+        "version": "1.0.23",
+        "license": "MIT",
+        "source": "https://github.com/dtolnay/zmij"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "zwitch",
+        "version": "2.0.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/zwitch/v/2.0.4"
+      }
+    ]
+  }
+}

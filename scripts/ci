@@ -37,6 +37,7 @@ echo "Running webapp checks"
 (
   cd sortsys-webapp-v2
   bun install --frozen-lockfile
+  bun run licenses:check
   bun run typecheck
   bun run test:i18n
   bun run test:attachments

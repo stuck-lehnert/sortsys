@@ -1,6 +1,7 @@
 import { createClient, type Client } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
 import { uiText } from "./i18n";
+import { BUILD_REVISION } from "./buildInfo";
 
 const HOST = (() => {
   if (typeof window !== 'object') return '';
@@ -15,7 +16,9 @@ const HOST = (() => {
   return '/api/v2';
 })();
 
-const baseClient = createClient(HOST, "webapp");
+const baseClient = createClient(HOST, "webapp", {
+  revision: BUILD_REVISION,
+});
 
 type ClientErrorReportInput = {
   level?: 'error' | 'warning';

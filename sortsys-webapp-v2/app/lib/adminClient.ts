@@ -1,4 +1,5 @@
 import { createClient } from "@sortsys/v2-client";
+import { BUILD_REVISION } from "./buildInfo";
 
 const HOST = (() => {
   if (typeof window !== "object") return "";
@@ -13,7 +14,9 @@ const HOST = (() => {
   return "/api/v2";
 })();
 
-export const adminClient = createClient(HOST, "global-admin");
+export const adminClient = createClient(HOST, "global-admin", {
+  revision: BUILD_REVISION,
+});
 
 export function isBrowser() {
   return typeof window === "object" && typeof localStorage !== "undefined";

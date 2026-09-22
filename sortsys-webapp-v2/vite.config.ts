@@ -1,5 +1,6 @@
 import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig } from "vite";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { VitePWA } from 'vite-plugin-pwa';
@@ -21,7 +22,25 @@ const dwgviewerSource = fileURLToPath(
   new URL('../sortsys-dwgviewer', import.meta.url),
 );
 
+function resolveBuildRevision() {
+  const configuredRevision = process.env.SORTSYS_REVISION?.trim();
+  if (configuredRevision) return configuredRevision;
+
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: webappSource,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "development";
+  }
+}
+
 export default defineConfig({
+  define: {
+    __SORTSYS_REVISION__: JSON.stringify(resolveBuildRevision()),
+  },
   resolve: {
     dedupe: ['react', 'react-dom'],
     alias: [

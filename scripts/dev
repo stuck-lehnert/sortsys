@@ -37,6 +37,7 @@ DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.88-pg17}"
 DEV_JOB_RUNNER_IMAGE="${DEV_JOB_RUNNER_IMAGE:-localhost/sortsys-job-runner-dev:latest}"
 DEV_NODE_IMAGE="${DEV_NODE_IMAGE:-docker.io/library/node:22}"
 DEV_GO_IMAGE="${DEV_GO_IMAGE:-docker.io/library/golang:1.25-bookworm}"
+DEV_REVISION="$(git -C "$ROOT_DIR" rev-parse --verify HEAD 2>/dev/null || printf development)"
 
 DEV_API_PORT="${DEV_API_PORT:-3000}"
 DEV_WEBAPP_PORT="${DEV_WEBAPP_PORT:-5173}"
@@ -736,6 +737,7 @@ start_webapp_container() {
     -w /workspace/sortsys-webapp-v2 \
     -e CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}" \
     -e DEV_WEBAPP_PORT="$DEV_WEBAPP_PORT" \
+    -e SORTSYS_REVISION="$DEV_REVISION" \
     "$DEV_NODE_IMAGE" \
     sh -lc '
       set -eu

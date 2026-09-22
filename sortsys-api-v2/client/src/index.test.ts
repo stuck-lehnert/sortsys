@@ -333,13 +333,33 @@ test("realms keep cache entries separate in a shared cache", async () => {
   await webapp.query("auth.sessionInfo", undefined, { strategy: "network-only" });
   await admin.query("auth.sessionInfo", undefined, { strategy: "network-only" });
 
-  expect([...values.keys()].some((key) => key.startsWith("webapp::rpc:"))).toBe(true);
-  expect([...values.keys()].some((key) => key.startsWith("global-admin::rpc:"))).toBe(true);
+  expect([...values.keys()].some((key) => key.startsWith("webapp::revision:unknown::rpc:"))).toBe(true);
+  expect([...values.keys()].some((key) => key.startsWith("global-admin::revision:unknown::rpc:"))).toBe(true);
 
   await admin.clearCache();
 
-  expect([...values.keys()].some((key) => key.startsWith("webapp::rpc:"))).toBe(true);
-  expect([...values.keys()].some((key) => key.startsWith("global-admin::rpc:"))).toBe(false);
+  expect([...values.keys()].some((key) => key.startsWith("webapp::revision:unknown::rpc:"))).toBe(true);
+  expect([...values.keys()].some((key) => key.startsWith("global-admin::revision:unknown::rpc:"))).toBe(false);
+});
+
+test("revisions isolate responses and remove stale cache entries", async () => {
+  const { cache, values } = memoryCache();
+  values.set("webapp::rpc:legacy.query:input:auth", new Uint8Array([1]));
+  values.set("webapp::revision:1234567890::rpc:old.query:input:auth", new Uint8Array([2]));
+  values.set("global-admin::revision:1234567890::rpc:kept.query:input:auth", new Uint8Array([3]));
+
+  const client = createClient("https://api.example.test", "webapp", {
+    cache,
+    revision: "abcdef1234567890",
+    fetch: (async (_input: string | URL | Request, _init?: RequestInit) => success({ ok: true })) as typeof globalThis.fetch,
+  });
+
+  await client.query("auth.sessionInfo", undefined, { strategy: "network-only" });
+
+  expect([...values.keys()].some((key) => key.startsWith("webapp::rpc:"))).toBe(false);
+  expect([...values.keys()].some((key) => key.startsWith("webapp::revision:1234567890::rpc:"))).toBe(false);
+  expect([...values.keys()].some((key) => key.startsWith("webapp::revision:abcdef1234::rpc:"))).toBe(true);
+  expect([...values.keys()].some((key) => key.startsWith("global-admin::revision:1234567890::rpc:"))).toBe(true);
 });
 
 test("realms persist independent browser sessions", async () => {
@@ -415,4 +435,5 @@ test("realms persist independent browser sessions", async () => {
 test("client realms must be unambiguous", () => {
   expect(() => createClient("https://api.example.test", "  ")).toThrow();
   expect(() => createClient("https://api.example.test", "webapp::admin")).toThrow();
+  expect(() => createClient("https://api.example.test", "webapp", { revision: "bad/revision" })).toThrow();
 });

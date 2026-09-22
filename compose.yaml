@@ -121,6 +121,8 @@ services:
     build:
       context: .
       dockerfile: sortsys-webapp-v2/Dockerfile
+      args:
+        SORTSYS_REVISION: ${SORTSYS_REVISION:-development}
     restart: unless-stopped
     environment:
       SERVICE_URL_WEBAPP_80: /

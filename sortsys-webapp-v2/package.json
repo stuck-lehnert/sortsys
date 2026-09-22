@@ -8,6 +8,8 @@
     "dev": "react-router dev",
     "lint:client-casts": "node ../sortsys-api-v2/client/scripts/check-no-client-method-any-casts.mjs",
     "lint:box-shadows": "node ./scripts/check-no-box-shadows.mjs",
+    "licenses:generate": "node ../scripts/generate-license-inventory.mjs",
+    "licenses:check": "node ../scripts/generate-license-inventory.mjs --check",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "bun run lint:client-casts && bun run lint:box-shadows && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
     "lint:i18n": "node ./scripts/check-i18n.mjs",

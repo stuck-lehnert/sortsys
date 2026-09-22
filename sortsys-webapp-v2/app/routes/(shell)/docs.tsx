@@ -39,6 +39,7 @@ export default function DocsPage() {
         <p className="light docs-page-lead">{uiText("Kurze Einstiege, danach ausführliche Kapitel zu Begriffen und Abläufen.")}</p>
       </div>
       <div className="ss-page-header__actions">
+        <Link to="/licenses">{uiText("Lizenzen", "Licenses")}</Link>
         <a
           href="https://github.com/stuck-lehnert/sortsys/issues"
           target="_blank"

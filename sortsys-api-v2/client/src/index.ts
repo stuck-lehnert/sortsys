@@ -218,6 +218,7 @@ export interface Client {
 export function createClient(endpoint: string, realm: string, opts?: {
   cache?: Cache;
   fetch?: typeof globalThis.fetch;
+  revision?: string;
 }): Client {
   const normalizedRealm = realm.trim();
   if (!normalizedRealm) {
@@ -227,10 +228,35 @@ export function createClient(endpoint: string, realm: string, opts?: {
     throw new Error(`Client realm must not contain "${REALM_SEPARATOR}".`);
   }
 
+  const normalizedRevision = (opts?.revision?.trim() || "unknown").slice(0, 10);
+  if (!/^[a-zA-Z0-9._-]+$/.test(normalizedRevision)) {
+    throw new Error("Client revision contains unsupported characters.");
+  }
+
   const realmPrefix = `${normalizedRealm}${REALM_SEPARATOR}`;
-  const rpcCachePrefix = `${realmPrefix}rpc:`;
+  const revisionCachePrefix = `${realmPrefix}revision:`;
+  const rpcCachePrefix = `${revisionCachePrefix}${normalizedRevision}${REALM_SEPARATOR}rpc:`;
+  const legacyRpcCachePrefix = `${realmPrefix}rpc:`;
   const tokenStorageKey = `${realmPrefix}token`;
   const cache = opts?.cache ?? createCache();
+
+  // Query response shapes can change between builds. Keep session storage stable,
+  // but remove response entries written by older application revisions.
+  const staleCacheCleanup = (async () => {
+    const deletions: Promise<void>[] = [];
+
+    for (const key of await cache.keys()) {
+      const isLegacyEntry = key.startsWith(legacyRpcCachePrefix);
+      const isOtherRevision = key.startsWith(revisionCachePrefix)
+        && !key.startsWith(rpcCachePrefix);
+
+      if (isLegacyEntry || isOtherRevision) {
+        deletions.push(cache.delete(key));
+      }
+    }
+
+    await Promise.all(deletions);
+  })().catch(() => {});
 
   let bearerToken: string | null = null;
 
@@ -259,7 +285,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
   function _scopedCacheKey(key: string) {
     if (key.startsWith(rpcCachePrefix)) return key;
-    if (key.startsWith("rpc:")) return `${realmPrefix}${key}`;
+    if (key.startsWith("rpc:")) return `${revisionCachePrefix}${normalizedRevision}${REALM_SEPARATOR}${key}`;
 
     return null;
   }
@@ -297,6 +323,8 @@ export function createClient(endpoint: string, realm: string, opts?: {
   }
 
   async function _lookup(cacheKey: string) {
+    await staleCacheCleanup;
+
     return cache.getBytes(cacheKey).then(bytes => {
       if (!bytes) return null;
 

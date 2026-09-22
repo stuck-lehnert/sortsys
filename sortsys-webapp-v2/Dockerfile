@@ -16,6 +16,8 @@ RUN rustup target add wasm32-unknown-unknown \
 
 FROM node:22-alpine AS builder
 ENV NODE_OPTIONS=--max-old-space-size=4096
+ARG SORTSYS_REVISION=development
+ENV SORTSYS_REVISION=${SORTSYS_REVISION}
 WORKDIR /app/sortsys-dwgviewer
 COPY sortsys-dwgviewer/package.json sortsys-dwgviewer/package-lock.json ./
 RUN npm ci

@@ -23,6 +23,7 @@ export default [
         ]),
         route("docs", "routes/(shell)/docs.tsx"),
         route("docs/:id", "routes/(shell)/docs.$id.tsx"),
+        route("licenses", "routes/(shell)/licenses.tsx"),
         route("scripts", "routes/(shell)/scripts.tsx"),
         route("deployments", "routes/(shell)/deployments.tsx"),
         route("vacations", "routes/(shell)/vacations.tsx"),
