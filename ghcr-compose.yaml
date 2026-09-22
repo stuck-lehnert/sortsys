@@ -1,0 +1,149 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sortsys}
+      POSTGRES_USER: ${POSTGRES_USER:-sortsys}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    stop_grace_period: 1m
+
+  onlyoffice:
+    # Version 9.4.0 is unusable with common tracking-protection lists because
+    # they block its required Analytics.js module.
+    image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:9.3.1.2}
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "false"
+    expose:
+      - "80"
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-state:/var/lib/onlyoffice
+      - onlyoffice-database:/var/lib/postgresql
+      - onlyoffice-logs:/var/log/onlyoffice
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/healthcheck"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    shm_size: "2gb"
+    stop_grace_period: 1m
+
+  drawio:
+    image: ${DRAWIO_IMAGE:-jgraph/drawio:31.1.8}
+    restart: unless-stopped
+    environment:
+      # The official image derives its Tomcat context path from this URL.
+      # A relative same-origin URL keeps Coolify's generated domain authoritative.
+      DRAWIO_SERVER_URL: ${DRAWIO_SERVER_URL:-/drawio/}
+      DRAWIO_BASE_URL: ${DRAWIO_BASE_URL:-/drawio}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/drawio/"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 45s
+    stop_grace_period: 30s
+
+  api:
+    image: ghcr.io/stuck-lehnert/sortsys-api:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PG_MASTER_DSN: postgresql://${POSTGRES_USER:-sortsys}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/${POSTGRES_DB:-sortsys}
+      JWT_SECRET: ${SERVICE_BASE64_64_JWT}
+      ADMIN_HASH: ${ADMIN_HASH:?Set ADMIN_HASH to a bcrypt hash for the global administrator}
+      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
+      LLM_ENCRYPTION_KEY: ${SERVICE_BASE64_64_LLM}
+      LLM_MCP_URL: ${LLM_MCP_URL:-}
+      ONLYOFFICE_PUBLIC_URL: /office
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice
+      ONLYOFFICE_CALLBACK_URL: http://api:3000/internal/onlyoffice/callback
+      ONLYOFFICE_JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
+      DRAWIO_PUBLIC_URL: /drawio
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      onlyoffice:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+
+  job-runner:
+    image: ghcr.io/stuck-lehnert/sortsys-jobrunner:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      JOB_RUNNER_WS_URL: ws://api:3000/internal/job-runners/ws
+      JOB_RUNNER_WS_IGNORE_PROXY: "true"
+      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
+      JOB_RUNNER_ID: ${JOB_RUNNER_ID:-sortsys-compose-1}
+      JOB_RUNNER_JOB_TYPE: ${JOB_RUNNER_JOB_TYPE:-project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract}
+      JOB_RUNNER_LEASE_SEC: "300"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+
+  webapp:
+    image: ghcr.io/stuck-lehnert/sortsys-webapp:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      SERVICE_URL_WEBAPP_80: /
+      API_UPSTREAM: http://api:3000
+      ONLYOFFICE_UPSTREAM: http://onlyoffice
+      DRAWIO_UPSTREAM: http://drawio:8080
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-64m}
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+      onlyoffice:
+        condition: service_healthy
+      drawio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres-data:
+  onlyoffice-data:
+  onlyoffice-state:
+  onlyoffice-database:
+  onlyoffice-logs:

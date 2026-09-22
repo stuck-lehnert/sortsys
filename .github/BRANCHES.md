@@ -35,4 +35,4 @@ Push the current `master` revision to `predeploy`:
 git push origin master:predeploy
 ```
 
-GitHub runs the complete test job once. If it succeeds, the promotion job fast-forwards `deploy`. No workflow runs again on `deploy`.
+GitHub runs the complete test job once. If it succeeds, the promotion job fast-forwards `deploy`. The push to `deploy` then builds and publishes the API, job runner, and webapp containers to GHCR with both the ten-character commit tag and `latest`.
