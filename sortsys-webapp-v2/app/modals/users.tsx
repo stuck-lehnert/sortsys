@@ -31,6 +31,18 @@ function usernameFromQuery(query: string | undefined) {
   return `${query ?? ''}`.toLowerCase().replaceAll(/[^a-z0-9_.-]+/g, '');
 }
 
+function parseVacationDays(value: unknown) {
+  const text = `${value ?? ''}`.trim();
+  if (!text) return null;
+
+  const days = Number(text);
+  if (!Number.isInteger(days) || days < 0 || days > 366) {
+    throw new Error(uiText("Urlaubstage müssen eine ganze Zahl zwischen 0 und 366 sein.", "Leave days must be an integer between 0 and 366."));
+  }
+
+  return days;
+}
+
 export function showCreateUserModal(modals: MyModalsInterface, options: CreateUserModalOptions = {}) {
   modals.showForm({
     content: ({ context }) => {
@@ -87,6 +99,12 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
       <MyForm.Input name="costPerHour" labelText={uiText("Kosten pro Stunde (EUR)")}
         type="number"
         rules={[MyForm.Input.rules.num]} />
+
+      <MyForm.Input name="vacationDaysPerYear" labelText={uiText("Urlaubstage pro Jahr", "Leave days per year")}
+        type="number"
+        min={0}
+        max={366}
+        rules={[MyForm.Input.rules.int]} />
     </>;
     },
     onSubmit: async ({ context, hide, navigate }) => {
@@ -99,6 +117,8 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
         values.costPerHour = parseFloatCustom(values.costPerHour);
         if (isNaN(values.costPerHour)) return;
       }
+
+      values.vacationDaysPerYear = parseVacationDays(values.vacationDaysPerYear);
       values.supervisorUserId = values.supervisor?.at(0)?.id ?? null;
       delete values.supervisor;
 
@@ -178,6 +198,12 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
         type="number"
         rules={[MyForm.Input.rules.num]} />
 
+      <MyForm.Input name="vacationDaysPerYear" labelText={uiText("Urlaubstage pro Jahr", "Leave days per year")}
+        type="number"
+        min={0}
+        max={366}
+        rules={[MyForm.Input.rules.int]} />
+
       <NotifyLoaded onLoad={() => {
         context.setValues({ ...user, supervisor: [] });
 
@@ -200,6 +226,8 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
         values.costPerHour = parseFloatCustom(values.costPerHour);
         if (isNaN(values.costPerHour)) return;
       }
+
+      values.vacationDaysPerYear = parseVacationDays(values.vacationDaysPerYear);
       values.supervisorUserId = values.supervisor?.at(0)?.id ?? null;
       delete values.supervisor;
 

@@ -122,8 +122,8 @@ export const ROLE_AREAS: RoleArea[] = [
   },
   {
     key: 'userVacations',
-    label: uiText("Urlaub"),
-    description: uiText("Urlaube beantragen, einsehen und genehmigen."),
+    label: uiText("Abwesenheiten", "Absences"),
+    description: uiText("Urlaub und andere Abwesenheiten eintragen, einsehen und genehmigen.", "Add, view, and approve leave and other absences."),
     roles: { view: 'view:userVacations', manage: 'manage:userVacations', delete: 'delete:userVacations' },
   },
   {
@@ -208,7 +208,7 @@ export const ROLE_PRESETS: RolePreset[] = [
   {
     id: 'personal',
     label: uiText("Personal"),
-    description: uiText("Benutzer, Vorgesetzte, Einsatzplanung und Urlaub verwalten."),
+    description: uiText("Benutzer, Vorgesetzte, Einsatzplanung und Abwesenheiten verwalten.", "Manage users, supervisors, resource planning, and absences."),
     roles: [
       'manage:users',
       'manage:userVacations',

@@ -65,6 +65,8 @@ const FIELD_LABELS: Record<string, FieldLabel> = {
   tool_usage_cost_per_day: () => uiText("Tageskosten", "Daily cost"),
   cost_per_hour: () => uiText("Stundensatz", "Hourly cost"),
   contract_type: () => uiText("Beschäftigungsart", "Employment type"),
+  vacation_days_per_year: () => uiText("Urlaubsanspruch", "Leave allowance"),
+  absence_type: () => uiText("Abwesenheitstyp", "Absence type"),
   password: () => uiText("Passwort", "Password"),
   password_hash: () => uiText("Passwort", "Password"),
   totp_uri: () => uiText("Zwei-Faktor-Anmeldung", "Two-factor authentication"),
@@ -222,7 +224,7 @@ export function activityActionLabel(item: ActivityItem) {
 
   // Related records are changes to a subarea, not another creation of its owner.
   const subjects: Record<string, string> = {
-    user_vacations: uiText("Urlaub", "Leave"),
+    user_vacations: uiText("Abwesenheit", "Absence"),
     user_passkeys: uiText("Passkey", "Passkey"),
     resource_notes: uiText("Notiz", "Note"),
     project_files: uiText("Datei", "File"),

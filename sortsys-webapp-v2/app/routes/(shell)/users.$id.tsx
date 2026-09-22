@@ -155,6 +155,7 @@ export default function UserDetailPage() {
             <AttrList.Attr name={uiText("Vertrag", "Contract")} value={userContractName(user)} />
             {!!supervisor && <AttrList.Attr name={uiText("Vorgesetzter")} value={<MyLink to={`/users/${supervisor.id}`}>{userFullName(supervisor)}</MyLink>} />}
             {!!user.costPerHour &&  <AttrList.Attr name={uiText("Kosten pro Std")} value={formatCurrency(user.costPerHour)} />}
+            {user.vacationDaysPerYear !== null && <AttrList.Attr name={uiText("Urlaubstage pro Jahr", "Leave days per year")} value={user.vacationDaysPerYear} />}
         </AttrList>
 
         <MyDivider />

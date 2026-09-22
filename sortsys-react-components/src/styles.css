@@ -25,8 +25,6 @@
 
   --ss-content-gutter: clamp(0.9rem, 1.1vw + 0.52rem, 1.45rem);
 
-  --ss-shadow-soft: 0 8px 20px rgba(17, 41, 66, 0.08);
-  --ss-shadow-strong: 0 18px 42px rgba(17, 41, 66, 0.18);
   --ss-radius-xs: 0;
   --ss-radius-sm: 0;
   --ss-radius-md: 0;
@@ -245,24 +243,17 @@ h6 {
   gap: 0.35rem;
   background: var(--ss-surface-muted);
   color: var(--ss-text-primary);
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--ss-border) 62%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--ss-border-strong) 60%, transparent);
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .ss-btn:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--ss-border-strong) 85%, var(--ss-border));
   background: color-mix(in srgb, var(--ss-bg-accent) 75%, var(--ss-surface));
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--ss-border-strong) 55%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--ss-border-strong) 74%, transparent);
 }
 
 .ss-btn:active:not(:disabled) {
   background: color-mix(in srgb, var(--ss-bg-accent) 82%, var(--ss-surface));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ss-border-strong) 50%, transparent);
 }
 
 .ss-btn:focus-visible {
@@ -280,9 +271,6 @@ h6 {
   border-color: color-mix(in srgb, var(--ss-accent-strong) 78%, #0b2d5c);
   background: color-mix(in srgb, var(--ss-accent-strong) 88%, var(--ss-accent));
   color: var(--ss-accent-contrast);
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #0a2349 20%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, #082349 26%, transparent);
 }
 
 .ss-btn--primary:hover:not(:disabled) {
@@ -293,7 +281,6 @@ h6 {
 .ss-btn--primary:active:not(:disabled) {
   border-color: color-mix(in srgb, var(--ss-accent-strong) 75%, #082349);
   background: color-mix(in srgb, var(--ss-accent-strong) 84%, #082349);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #082349 24%, transparent);
 }
 
 .ss-btn--primary:focus-visible {
@@ -365,7 +352,6 @@ h6 {
   background: var(--ss-surface);
   border: 1px solid var(--ss-border) !important;
   border-radius: var(--ss-radius-md);
-  box-shadow: var(--ss-shadow-soft);
   padding: 0.6rem;
 }
 
@@ -602,7 +588,6 @@ button.ss-operational-tag {
 
 button.ss-operational-tag:hover {
   background: color-mix(in srgb, var(--ss-bg-accent) 56%, var(--ss-surface));
-  box-shadow: var(--ss-shadow-soft);
 }
 
 button.ss-operational-tag:focus-visible {
@@ -755,10 +740,6 @@ button.ss-operational-tag:focus-visible {
   min-inline-size: 0;
 }
 
-.ss-single-select-preview__item .ss-tile {
-  box-shadow: none;
-}
-
 .ss-label {
   color: var(--ss-text-secondary);
   font-weight: 620;
@@ -778,8 +759,7 @@ button.ss-operational-tag:focus-visible {
   background: linear-gradient(180deg, var(--ss-surface), color-mix(in srgb, var(--ss-surface-muted) 35%, var(--ss-surface)));
   min-block-size: 2rem;
   padding: 0.36rem 0.56rem;
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ss-border-strong) 42%, transparent);
-  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .ss-input::placeholder {
@@ -799,9 +779,6 @@ button.ss-operational-tag:focus-visible {
   outline: 2px solid var(--ss-focus-ring);
   outline-offset: 1px;
   border-color: color-mix(in srgb, var(--ss-accent) 62%, var(--ss-border));
-  box-shadow:
-    inset 0 -1px 0 color-mix(in srgb, var(--ss-accent) 55%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--ss-accent) 28%, transparent);
 }
 
 .ss-input:disabled {
@@ -907,7 +884,6 @@ button.ss-operational-tag:focus-visible {
   border: 1px solid var(--ss-border);
   border-radius: var(--ss-radius-sm);
   background: var(--ss-surface);
-  box-shadow: var(--ss-shadow-strong);
 }
 
 .ss-combobox__item,
@@ -1017,7 +993,6 @@ button.ss-operational-tag:focus-visible {
   border: 1px solid var(--ss-border);
   border-radius: var(--ss-radius-sm);
   background: color-mix(in srgb, var(--ss-surface) 96%, transparent);
-  box-shadow: var(--ss-shadow-strong);
 }
 
 .ss-menu__item {
@@ -1089,7 +1064,6 @@ button.ss-operational-tag:focus-visible {
   border: 1px solid var(--ss-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-surface);
-  box-shadow: var(--ss-shadow-strong);
   overflow: hidden;
 }
 
@@ -1263,7 +1237,6 @@ button.ss-operational-tag:focus-visible {
   border: 1px solid var(--ss-border-strong);
   background: var(--ss-surface-elevated);
   color: var(--ss-text-primary);
-  box-shadow: var(--ss-shadow-strong);
   pointer-events: auto;
   animation: ss-notification-enter 180ms ease-out both;
 }
@@ -1523,13 +1496,13 @@ button.ss-operational-tag:focus-visible {
 .ss-table-header.is-sortable {
   cursor: pointer;
   user-select: none;
-  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
 .ss-table-header.is-sortable:hover {
   background: color-mix(in srgb, var(--ss-bg-accent) 62%, var(--ss-surface));
   color: var(--ss-text-primary);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ss-accent) 55%, transparent);
+  border-block-end-color: color-mix(in srgb, var(--ss-accent) 55%, var(--ss-border));
 }
 
 .ss-table-header.is-sortable:hover .ss-table-sort-indicator {

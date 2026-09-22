@@ -16,6 +16,19 @@ type ActivityResourceType = ActivityItem['resourceType'];
 
 const COLLAPSED_ACTIVITY_COUNT = 6;
 
+const RESOURCE_TABLES: Partial<Record<ActivityResourceType, string>> = {
+  project: 'projects',
+  tool: 'tools',
+  user: 'users',
+  customer: 'customers',
+  contact: 'contacts',
+  product: 'products',
+  productVendor: 'product_vendors',
+  deliveryNote: 'product_delivery_notes',
+  regieReport: 'regie_reports',
+  dailyProjectReport: 'daily_project_reports',
+};
+
 const ACTIVITY_META: Record<ActivityResourceType, { label: string; icon: Icon; href: (item: ActivityItem) => string | null }> = {
   project: { label: uiText("Projekt"), icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
   tool: { label: uiText("Werkzeug"), icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
@@ -45,25 +58,48 @@ function formatTimestamp(value: Date) {
   });
 }
 
-function ActivityTimelineRow({ item }: { item: ActivityItem }) {
+function ActivityTimelineRow({
+  item,
+  scopeResourceId,
+  scopeResourceType,
+}: {
+  item: ActivityItem;
+  scopeResourceId: string;
+  scopeResourceType: ActivityResourceType;
+}) {
   const meta = ACTIVITY_META[item.resourceType];
   const Icon = meta.icon;
   const href = item.action === 'deleted' ? null : meta.href(item);
+  const itemTitle = activityTitle(item);
+  const isScopeResource = item.resourceType === scopeResourceType && item.resourceId === scopeResourceId;
+  const isScopeOwnerTitle = isScopeResource && (
+    item.entityTable === RESOURCE_TABLES[scopeResourceType]
+    || itemTitle === item.resourceTitle
+    || itemTitle === item.contextTitle
+  );
+  const contextIsCurrentProject = scopeResourceType === 'project' && item.contextId === scopeResourceId;
+  const description = item.description?.trim();
+  const descriptionIsRepeated = !!description && [itemTitle, item.resourceTitle, item.contextTitle]
+    .some(label => label?.trim() === description);
 
   return <div className="entity-activity-row">
     <div className="entity-activity-dot"><Icon size={16} /></div>
     <div className="entity-activity-main">
       <div className="entity-activity-title">
-        <span>{activityActionLabel(item)}: </span>
-        {href ? <MyLink to={href}>{activityTitle(item)}</MyLink> : activityTitle(item)}
+        <span>{activityActionLabel(item)}</span>
+        {!isScopeOwnerTitle && <>
+          {': '}
+          {href ? <MyLink to={href}>{itemTitle}</MyLink> : itemTitle}
+        </>}
       </div>
       <div className="entity-activity-meta">
-        {meta.label} · {formatTimestamp(item.occurredAt)}
+        {!isScopeResource && <>{meta.label} · </>}
+        {formatTimestamp(item.occurredAt)}
         {' · '}{activityActorLabel(item)}
         {item.isImported && <> · {uiText('Übernommen', 'Imported')}</>}
-        {!!item.contextTitle && <>{uiText(" · Projekt ")}{item.contextTitle}</>}
+        {!!item.contextTitle && !contextIsCurrentProject && <>{uiText(" · Projekt ")}{item.contextTitle}</>}
       </div>
-      {!!item.description && <div className="entity-activity-description">{item.description}</div>}
+      {!!description && !descriptionIsRepeated && <div className="entity-activity-description">{description}</div>}
     </div>
   </div>;
 }
@@ -138,10 +174,15 @@ export function EntityActivityTimeline({
 
   return <MyExpandable title={uiText(`Aktivität (${allItems.length})`, `Activity (${allItems.length})`)} initiallyExpanded>
     {!items?.length
-      ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
+        ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
       : <>
         <div className="entity-activity-timeline">
-          {visibleItems.map(item => <ActivityTimelineRow key={item.id} item={item} />)}
+          {visibleItems.map(item => <ActivityTimelineRow
+            key={item.id}
+            item={item}
+            scopeResourceId={resourceId}
+            scopeResourceType={resourceType}
+          />)}
         </div>
         {allItems.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-more">
           <MyButton kind="ghost" size="sm" onClick={() => setShowAll(value => !value)}>

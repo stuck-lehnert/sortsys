@@ -1,11 +1,14 @@
-//! Vacation request procedures.
+//! Absence request procedures.
 //!
 //! The authorization model is hierarchical: supervisors can see and decide
 //! requests for every user below them, not just direct reports.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
+};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
 use sqlx::{FromRow, PgPool};
 
@@ -161,6 +164,9 @@ struct VacationRow {
     user_id: i64,
     from: NaiveDate,
     to: NaiveDate,
+    absence_type: String,
+    label: Option<String>,
+    vacation_days_per_year: Option<i16>,
     status: String,
     note: Option<String>,
     denial_reason: Option<String>,
@@ -171,6 +177,12 @@ struct VacationRow {
     modified_at: DateTime<Utc>,
 }
 
+#[derive(FromRow)]
+struct ApprovedVacationRange {
+    from: NaiveDate,
+    to: NaiveDate,
+}
+
 async fn list(state: &AppState, context: &RequestContext, input: Value) -> RpcResult<Value> {
     let (auth, pool) = authenticate(state, context).await?;
     let input = require_object(&input)?;
@@ -178,7 +190,7 @@ async fn list(state: &AppState, context: &RequestContext, input: Value) -> RpcRe
     let from = optional_date(input, "from")?;
     let to = optional_date(input, "to")?;
     if from.zip(to).is_some_and(|(from, to)| from > to) {
-        return Err(bad_request("invalid vacation range"));
+        return Err(bad_request("invalid absence range"));
     }
 
     let requested_user_id = optional_id(input, "userId")?;
@@ -210,25 +222,29 @@ async fn list(state: &AppState, context: &RequestContext, input: Value) -> RpcRe
     let rows = sqlx::query_as::<_, VacationRow>(
         r#"
         SELECT
-            id,
-            user_id,
-            "from",
-            "to",
-            status,
-            note,
-            denial_reason,
-            requested_by_user_id,
-            decided_by_user_id,
-            decided_at,
-            created_at,
-            modified_at
+            user_vacations.id,
+            user_vacations.user_id,
+            user_vacations."from",
+            user_vacations."to",
+            user_vacations.absence_type,
+            user_vacations.label,
+            users.vacation_days_per_year,
+            user_vacations.status,
+            user_vacations.note,
+            user_vacations.denial_reason,
+            user_vacations.requested_by_user_id,
+            user_vacations.decided_by_user_id,
+            user_vacations.decided_at,
+            user_vacations.created_at,
+            user_vacations.modified_at
         FROM user_vacations
-        WHERE ($1::date IS NULL OR "to" >= $1)
-          AND ($2::date IS NULL OR "from" <= $2)
-          AND ($3::bigint IS NULL OR user_id = $3)
-          AND ($4 OR status <> 'denied')
-          AND ($5::bigint[] IS NULL OR user_id = ANY($5))
-        ORDER BY "from" DESC, id DESC
+        JOIN users ON users.id = user_vacations.user_id
+        WHERE ($1::date IS NULL OR user_vacations."to" >= $1)
+          AND ($2::date IS NULL OR user_vacations."from" <= $2)
+          AND ($3::bigint IS NULL OR user_vacations.user_id = $3)
+          AND ($4 OR user_vacations.status <> 'denied')
+          AND ($5::bigint[] IS NULL OR user_vacations.user_id = ANY($5))
+        ORDER BY user_vacations."from" DESC, user_vacations.id DESC
         "#,
     )
     .bind(from)
@@ -243,6 +259,16 @@ async fn list(state: &AppState, context: &RequestContext, input: Value) -> RpcRe
     let may_manage = auth.can_do("manage:userVacations");
     let may_delete = auth.can_do("delete:userVacations") || may_manage;
 
+    let mut vacation_usage_by_id = HashMap::new();
+    for row in &rows {
+        let may_decide = row.status == "requested"
+            && (auth.is_admin() || supervised_users.contains(&row.user_id));
+
+        if may_decide && row.absence_type == "vacation" {
+            vacation_usage_by_id.insert(row.id, vacation_usage(&pool, row).await?);
+        }
+    }
+
     let vacations = rows
         .into_iter()
         .map(|row| {
@@ -256,6 +282,8 @@ async fn list(state: &AppState, context: &RequestContext, input: Value) -> RpcRe
                 "userId": Id(row.user_id),
                 "from": wire_date(row.from),
                 "to": wire_date(row.to),
+                "type": row.absence_type,
+                "label": row.label,
                 "status": row.status,
                 "note": row.note,
                 "denialReason": row.denial_reason,
@@ -267,6 +295,7 @@ async fn list(state: &AppState, context: &RequestContext, input: Value) -> RpcRe
                 "canApprove": may_decide,
                 "canDeny": may_decide,
                 "canDelete": may_delete_this,
+                "vacationUsage": vacation_usage_by_id.remove(&row.id).unwrap_or_default(),
             })
         })
         .collect();
@@ -281,8 +310,11 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
     let from = require_date(input, "from")?;
     let to = require_date(input, "to")?;
     if from > to {
-        return Err(bad_request("invalid vacation range"));
+        return Err(bad_request("invalid absence range"));
     }
+
+    let absence_type = normalize_absence_type(input.get("type"))?;
+    let label = normalize_absence_label(absence_type, input.get("label"))?;
 
     let actor_user_id = authenticated_user_id(&auth)?;
     let vacation_user_id = optional_id(input, "userId")?.unwrap_or(actor_user_id);
@@ -331,6 +363,8 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
             requested_by_user_id,
             "from",
             "to",
+            absence_type,
+            label,
             status,
             note,
             decided_by_user_id,
@@ -344,7 +378,9 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
             $5,
             $6,
             $7,
-            CASE WHEN $7::bigint IS NULL THEN NULL ELSE NOW() END
+            $8,
+            $9,
+            CASE WHEN $9::bigint IS NULL THEN NULL ELSE NOW() END
         )
         RETURNING id, status
         "#,
@@ -353,6 +389,8 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
     .bind(actor_user_id)
     .bind(from)
     .bind(to)
+    .bind(absence_type)
+    .bind(label.as_deref())
     .bind(status)
     .bind(note)
     .bind(deciding_user_id)
@@ -384,9 +422,10 @@ async fn decide(
 
     let vacation: Option<(i64, String)> = sqlx::query_as(
         r#"
-        SELECT user_id, status
+        SELECT user_vacations.user_id, user_vacations.status
         FROM user_vacations
-        WHERE id = $1
+        JOIN users ON users.id = user_vacations.user_id
+        WHERE user_vacations.id = $1
         "#,
     )
     .bind(vacation_id)
@@ -456,9 +495,10 @@ async fn delete(state: &AppState, context: &RequestContext, input: Value) -> Rpc
 
     let vacation: Option<(Option<i64>, String)> = sqlx::query_as(
         r#"
-        SELECT requested_by_user_id, status
+        SELECT user_vacations.requested_by_user_id, user_vacations.status
         FROM user_vacations
-        WHERE id = $1
+        JOIN users ON users.id = user_vacations.user_id
+        WHERE user_vacations.id = $1
         "#,
     )
     .bind(vacation_id)
@@ -493,4 +533,139 @@ fn forbidden() -> RpcError {
 
 fn conflict() -> RpcError {
     RpcError::new(ErrorCode::Conflict, "Conflict").with_http_code(409)
+}
+
+async fn vacation_usage(pool: &PgPool, vacation: &VacationRow) -> RpcResult<Vec<Value>> {
+    let first_day = NaiveDate::from_ymd_opt(vacation.from.year(), 1, 1)
+        .ok_or_else(|| internal("invalid vacation start year"))?;
+    let last_day = NaiveDate::from_ymd_opt(vacation.to.year(), 12, 31)
+        .ok_or_else(|| internal("invalid vacation end year"))?;
+
+    let approved_ranges = sqlx::query_as::<_, ApprovedVacationRange>(
+        r#"
+        SELECT "from", "to"
+        FROM user_vacations
+        WHERE user_id = $1
+          AND absence_type = 'vacation'
+          AND status = 'approved'
+          AND "to" >= $2
+          AND "from" <= $3
+        "#,
+    )
+    .bind(vacation.user_id)
+    .bind(first_day)
+    .bind(last_day)
+    .fetch_all(pool)
+    .await
+    .map_err(internal)?;
+
+    let mut approved_by_year = BTreeMap::<i32, HashSet<NaiveDate>>::new();
+    for range in approved_ranges {
+        add_business_days(&mut approved_by_year, range.from, range.to);
+    }
+
+    let mut requested_by_year = BTreeMap::<i32, HashSet<NaiveDate>>::new();
+    add_business_days(&mut requested_by_year, vacation.from, vacation.to);
+
+    Ok(requested_by_year
+        .into_iter()
+        .map(|(year, requested_days)| {
+            let approved_days = approved_by_year.remove(&year).unwrap_or_default();
+            let total_after_approval = approved_days.union(&requested_days).count() as i64;
+            let allowance_days = vacation.vacation_days_per_year.map(i64::from);
+
+            json!({
+                "year": year,
+                "allowanceDays": allowance_days,
+                "approvedDays": approved_days.len(),
+                "requestedDays": requested_days.len(),
+                "remainingAfterApproval": allowance_days.map(|days| days - total_after_approval),
+            })
+        })
+        .collect())
+}
+
+fn add_business_days(
+    days_by_year: &mut BTreeMap<i32, HashSet<NaiveDate>>,
+    from: NaiveDate,
+    to: NaiveDate,
+) {
+    let mut day = from;
+
+    while day <= to {
+        if day.weekday().number_from_monday() <= 5 {
+            days_by_year.entry(day.year()).or_default().insert(day);
+        }
+
+        let Some(next_day) = day.succ_opt() else {
+            break;
+        };
+        day = next_day;
+    }
+}
+
+fn normalize_absence_type(value: Option<&Value>) -> RpcResult<&'static str> {
+    match value.and_then(Value::as_str).unwrap_or("vacation") {
+        "vacation" => Ok("vacation"),
+        "other" => Ok("other"),
+        _ => Err(bad_request("invalid absence type")),
+    }
+}
+
+fn normalize_absence_label(absence_type: &str, value: Option<&Value>) -> RpcResult<Option<String>> {
+    if absence_type == "vacation" {
+        if value.is_some_and(|value| !value.is_null()) {
+            return Err(bad_request("vacation absence must not have a label"));
+        }
+
+        return Ok(None);
+    }
+
+    let label = value
+        .and_then(Value::as_str)
+        .ok_or_else(|| bad_request("other absence requires a label"))?
+        .trim();
+    if label.is_empty() {
+        return Err(bad_request("other absence requires a label"));
+    }
+    if label.chars().count() > 63 {
+        return Err(bad_request("absence label exceeds 63 characters"));
+    }
+
+    Ok(Some(label.to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{normalize_absence_label, normalize_absence_type};
+
+    #[test]
+    fn normalizes_absence_types_and_custom_labels() {
+        assert_eq!(normalize_absence_type(None).unwrap(), "vacation");
+        assert_eq!(
+            normalize_absence_type(Some(&json!("other"))).unwrap(),
+            "other"
+        );
+        assert!(normalize_absence_type(Some(&json!("training"))).is_err());
+
+        assert_eq!(normalize_absence_label("vacation", None).unwrap(), None);
+        assert_eq!(
+            normalize_absence_label("vacation", Some(&json!(null))).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_absence_label("other", Some(&json!("  ÜLO  "))).unwrap(),
+            Some("ÜLO".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_absence_labels() {
+        assert!(normalize_absence_label("vacation", Some(&json!("Urlaub"))).is_err());
+        assert!(normalize_absence_label("other", None).is_err());
+        assert!(normalize_absence_label("other", Some(&json!("   "))).is_err());
+        assert!(normalize_absence_label("other", Some(&json!("a".repeat(64)))).is_err());
+    }
 }

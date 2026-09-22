@@ -38,7 +38,6 @@ export default function ProductPriceChart({ records, baseUnit }: {
         contentStyle={{
           borderRadius: 10,
           border: "1px solid rgba(0,0,0,0.08)",
-          boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
         }}
         formatter={(value) => [`${formatCurrency(Number(value))} / ${baseUnit}`, "Preis"]}
       />

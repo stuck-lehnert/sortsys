@@ -520,9 +520,9 @@ await requireConfirmation({
       'Ein Einsatz kann mehrere Tage umfassen und einen Kommentar tragen. Für kurze Änderungen lässt er sich direkt im gewählten Zeitraum bearbeiten, ohne einen neuen Eintrag anzulegen.',
       'Projektzuweisungen helfen bei Wochenplanung, Kapazitätsprüfung und Abstimmung zwischen Bauleitung, Büro und Teams.',
       'Abwesenheiten werden gemeinsam mit Projektplanung betrachtet. Dadurch werden Doppelbelegungen und Konflikte früher sichtbar.',
-      'Neben Urlaub werden auch Unterbrechungen eines Projekts angezeigt. Überschneidungen mit Urlaub oder einer Projektunterbrechung sind im Plan markiert und sollten vor der Einsatzbestätigung geprüft werden.',
+      'Neben Einsätzen zeigt der Plan Abwesenheiten von Personen und Unterbrechungen von Projekten. Überschneidungen sind markiert und sollten vor der Einsatzbestätigung geprüft werden.',
       'Planung und Ist-Dokumentation bleiben getrennt. Was geplant war, steht in der Einsatzplanung; was tatsächlich passiert ist, steht in Tages- oder Regieberichten.',
-      'Eine Warnung im Plan ändert weder Urlaub noch Unterbrechung automatisch. Der zuständige Planer entscheidet, ob der Einsatz verschoben, gekürzt oder bewusst beibehalten wird.',
+      'Eine Warnung im Plan ändert weder Abwesenheit noch Unterbrechung automatisch. Der zuständige Planer entscheidet, ob der Einsatz verschoben, gekürzt oder bewusst beibehalten wird.',
       'Wenn ein Projekt abgeschlossen ist, sollte es nicht weiter als laufende Einsatzstelle genutzt werden. Offene Planungen sollten geprüft oder angepasst werden.',
       'Für Besprechungen oder die Weitergabe an Teams kann der sichtbare Plan als PDF exportiert werden. Exportiert wird der aktuell gewählte Tag oder die aktuell gewählte Woche.',
     ],
@@ -536,7 +536,7 @@ await requireConfirmation({
       {
         question: 'Was bedeutet eine Warnung an einem Einsatz?',
         answer: [
-          'Für denselben Zeitraum liegt Urlaub oder eine Projektunterbrechung vor. Der Eintrag bleibt bestehen, bis ein Planer ihn prüft und gegebenenfalls ändert.',
+          'Für denselben Zeitraum liegt eine Abwesenheit oder eine Projektunterbrechung vor. Der Eintrag bleibt bestehen, bis ein Planer ihn prüft und gegebenenfalls ändert.',
         ],
       },
       {
@@ -556,24 +556,25 @@ await requireConfirmation({
   },
   {
     id: 'urlaub',
-    title: 'Urlaub',
-    lead: 'Urlaub beschreibt geplante Abwesenheit einer Person.',
+    title: 'Abwesenheiten',
+    lead: 'Abwesenheiten halten fest, wann eine Person nicht eingeplant werden kann.',
     category: 'Personal',
     paragraphs: [
-      'Urlaubseinträge enthalten Zeitraum, Status und optional eine Notiz. Sie können angefragt, genehmigt oder abgelehnt werden.',
+      'Beim Eintragen wird zuerst der Typ gewählt. Urlaub hat keine zusätzliche Bezeichnung. Für sonstige Abwesenheiten wird eine kurze Bezeichnung wie ÜLO, Berufsschule oder Schulung angegeben.',
       'Von und Bis bezeichnen den ersten und letzten Abwesenheitstag. Für einzelne freie Tage werden beide Felder auf denselben Kalendertag gesetzt.',
       'Genehmigte Abwesenheiten beeinflussen die Einsatzplanung. Personen sollen nicht auf Projekte geplant werden, wenn sie nicht verfügbar sind.',
-      'Auch beantragter Urlaub ist in der Einsatzplanung erkennbar, wird dort aber als Antrag gekennzeichnet. Erst die Entscheidung macht aus dem Antrag eine genehmigte oder abgelehnte Abwesenheit.',
+      'Auch beantragte Abwesenheiten sind in der Einsatzplanung sichtbar und dort als Antrag gekennzeichnet. Nach der Entscheidung gelten sie als genehmigt oder abgelehnt.',
       'Abwesenheiten sind kein Projektvorgang. Sie wirken aber indirekt auf Projekte, weil verfügbare Kapazität für Baustellenplanung fehlt.',
+      'Für Benutzer kann ein jährlicher Urlaubsanspruch hinterlegt werden. Vor der Freigabe eines Urlaubsantrags zeigt sortsys die bereits freigegebenen, die beantragten und die verbleibenden Arbeitstage an und warnt bei einer Überschreitung.',
       'Ein Antrag bleibt der Person zugeordnet, unabhängig davon, auf welchen Projekten sie gerade eingeplant ist. Konflikte werden im Plan angezeigt und nicht durch eine automatische Umbuchung gelöst.',
       'Die Entscheidung liegt bei Vorgesetzten oder Benutzern mit entsprechender Berechtigung. Dadurch bleibt der Stand der Abwesenheiten nachvollziehbar.',
-      'Eine Notiz sollte nur Angaben enthalten, die für die Entscheidung oder Vertretung gebraucht werden. Private Details zur Abwesenheit gehören nicht in den Urlaubsantrag.',
+      'Eine Notiz sollte nur Angaben enthalten, die für die Entscheidung oder Vertretung gebraucht werden. Private Details gehören nicht in den Eintrag.',
     ],
     faqs: [
       {
         question: 'Was ist der Unterschied zwischen beantragt und genehmigt?',
         answer: [
-          'Beantragt bedeutet, dass die Entscheidung noch aussteht. Genehmigter Urlaub gilt als bestätigte Abwesenheit; ein abgelehnter Antrag wird nicht als Urlaub eingeplant.',
+          'Beantragt bedeutet, dass die Entscheidung noch aussteht. Eine genehmigte Abwesenheit wird in der Planung berücksichtigt; ein abgelehnter Antrag nicht.',
         ],
       },
       {
@@ -583,13 +584,13 @@ await requireConfirmation({
         ],
       },
       {
-        question: 'Wer darf über Urlaub entscheiden?',
+        question: 'Wer darf über Abwesenheiten entscheiden?',
         answer: [
-          'Vorgesetzte und Benutzer mit den passenden Urlaubsrechten können Anträge bearbeiten. Fehlt diese Berechtigung, kann ein Antrag nicht genehmigt oder abgelehnt werden.',
+          'Vorgesetzte und Benutzer mit den passenden Rechten können Anträge bearbeiten. Fehlt diese Berechtigung, kann ein Antrag nicht genehmigt oder abgelehnt werden.',
         ],
       },
     ],
-    keywords: ['abwesenheit', 'ferien', 'beantragt', 'genehmigt', 'abgelehnt', 'genehmigung', 'vorgesetzter', 'planung', 'projektkapazität'],
+    keywords: ['abwesenheit', 'ferien', 'beantragt', 'genehmigt', 'abgelehnt', 'genehmigung', 'vorgesetzter', 'planung', 'projektkapazität', 'ülo', 'schulung'],
   },
   {
     id: 'produkt',

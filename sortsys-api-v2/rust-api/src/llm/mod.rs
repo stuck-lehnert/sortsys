@@ -1167,7 +1167,7 @@ async fn search_records(state: &AppState, auth: &AuthResult, arguments: Value) -
             require_role(auth, "view:userVacations")?;
             rows_as_json(
                 &pool,
-                "SELECT vacation.id, vacation.user_id, vacation.\"from\", vacation.\"to\", vacation.status, vacation.note, user_account.first_name, user_account.last_name FROM user_vacations AS vacation JOIN users AS user_account ON user_account.id = vacation.user_id WHERE $1 = '' OR LOWER(CONCAT_WS(' ', user_account.first_name, user_account.last_name, vacation.note, vacation.status)) LIKE '%' || LOWER($1) || '%' ORDER BY vacation.\"from\" DESC LIMIT $2",
+                "SELECT vacation.id, vacation.user_id, vacation.\"from\", vacation.\"to\", vacation.absence_type, vacation.label, vacation.status, vacation.note, user_account.first_name, user_account.last_name FROM user_vacations AS vacation JOIN users AS user_account ON user_account.id = vacation.user_id WHERE $1 = '' OR LOWER(CONCAT_WS(' ', user_account.first_name, user_account.last_name, vacation.absence_type, vacation.label, vacation.note, vacation.status)) LIKE '%' || LOWER($1) || '%' ORDER BY vacation.\"from\" DESC LIMIT $2",
                 query,
                 limit,
             )

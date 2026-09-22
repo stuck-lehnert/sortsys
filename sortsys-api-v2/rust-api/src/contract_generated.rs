@@ -1097,7 +1097,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "users.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ username: string; firstName: string; lastName?: undefined | null | string; email?: undefined | null | string; phone?: undefined | null | string; contractType?: undefined | \"internal\" | \"external\" | \"subcontractor\"; costPerHour?: undefined | null | number; supervisorUserId?: undefined | null | string; }",
+        input_ts: "{ username: string; firstName: string; lastName?: undefined | null | string; email?: undefined | null | string; phone?: undefined | null | string; contractType?: undefined | \"internal\" | \"external\" | \"subcontractor\"; costPerHour?: undefined | null | number; vacationDaysPerYear?: undefined | null | number; supervisorUserId?: undefined | null | string; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
@@ -1116,13 +1116,13 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "users.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; }",
-        output_ts: "{ id: string; salutation: null | string; firstName: string; lastName: null | string; username: string; email: null | string; phone: null | string; contractType: \"internal\" | \"external\" | \"subcontractor\"; costPerHour: null | number; supervisorUserId: null | string; createdAt: Date; modifiedAt: Date; deactivatedAt: null | Date; archivedAt: null | Date; }",
+        output_ts: "{ id: string; salutation: null | string; firstName: string; lastName: null | string; username: string; email: null | string; phone: null | string; contractType: \"internal\" | \"external\" | \"subcontractor\"; costPerHour: null | number; vacationDaysPerYear: null | number; supervisorUserId: null | string; createdAt: Date; modifiedAt: Date; deactivatedAt: null | Date; archivedAt: null | Date; }",
     },
     RawContractSpec {
         path: "users.list",
         kind: ProcedureKind::Query,
         input_ts: "{ search?: undefined | null | string; deactivated?: undefined | null | false | true; includeArchived?: undefined | false | true; }",
-        output_ts: "{ id: string; salutation: null | string; firstName: string; lastName: null | string; username: string; email: null | string; phone: null | string; contractType: \"internal\" | \"external\" | \"subcontractor\"; costPerHour: null | number; supervisorUserId: null | string; createdAt: Date; modifiedAt: Date; deactivatedAt: null | Date; archivedAt: null | Date; }[]",
+        output_ts: "{ id: string; salutation: null | string; firstName: string; lastName: null | string; username: string; email: null | string; phone: null | string; contractType: \"internal\" | \"external\" | \"subcontractor\"; costPerHour: null | number; vacationDaysPerYear: null | number; supervisorUserId: null | string; createdAt: Date; modifiedAt: Date; deactivatedAt: null | Date; archivedAt: null | Date; }[]",
     },
     RawContractSpec {
         path: "users.roles.get",
@@ -1163,7 +1163,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "users.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; data: { username?: undefined | string; firstName?: undefined | string; lastName?: undefined | null | string; email?: undefined | null | string; phone?: undefined | null | string; contractType?: undefined | null | \"internal\" | \"external\" | \"subcontractor\"; costPerHour?: undefined | null | number; supervisorUserId?: undefined | null | string; }; }",
+        input_ts: "{ id: string; data: { username?: undefined | string; firstName?: undefined | string; lastName?: undefined | null | string; email?: undefined | null | string; phone?: undefined | null | string; contractType?: undefined | null | \"internal\" | \"external\" | \"subcontractor\"; costPerHour?: undefined | null | number; vacationDaysPerYear?: undefined | null | number; supervisorUserId?: undefined | null | string; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -1175,7 +1175,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "users.vacations.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ from: unknown; to: unknown; userId?: undefined | null | string; note?: undefined | null | string; }",
+        input_ts: "{ from: unknown; to: unknown; userId?: undefined | null | string; type?: undefined | \"vacation\" | \"other\"; label?: undefined | null | string; note?: undefined | null | string; }",
         output_ts: "{ id: string; status: \"denied\" | \"requested\" | \"approved\"; }",
     },
     RawContractSpec {
@@ -1194,6 +1194,6 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "users.vacations.list",
         kind: ProcedureKind::Query,
         input_ts: "{ from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; }",
-        output_ts: "{ id: string; userId: string; from: Date; to: Date; status: \"denied\" | \"requested\" | \"approved\"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; }[]",
+        output_ts: "{ id: string; userId: string; from: Date; to: Date; type: \"vacation\" | \"other\"; label: null | string; status: \"denied\" | \"requested\" | \"approved\"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[]",
     },
 ];

@@ -5,7 +5,6 @@ import { MyCallout } from "~/components/MyCallout";
 import { MyForm } from "~/components/MyForm";
 import { MyHeader } from "~/components/MyHeader";
 import { MyTable } from "~/components/MyTable";
-import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -13,18 +12,29 @@ import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
 import { formatDate, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { SmallUserTile } from "~/lib/tiles";
 import type { User } from "~/type-helpers";
 import { useMemo, useState } from "react";
 import { TableExportActions } from "~/components/TableExportActions";
+import { showCreateAbsenceModal } from "~/modals/absences";
 
+type AbsenceType = 'vacation' | 'other';
 type VacationStatus = 'requested' | 'approved' | 'denied';
+
+type VacationUsage = {
+  year: number;
+  allowanceDays: number | null;
+  approvedDays: number;
+  requestedDays: number;
+  remainingAfterApproval: number | null;
+};
 
 type VacationRow = {
   id: string;
   userId: string;
   from: Date;
   to: Date;
+  type: AbsenceType;
+  label: string | null;
   status: VacationStatus;
   note: string | null;
   denialReason: string | null;
@@ -36,11 +46,12 @@ type VacationRow = {
   canApprove: boolean;
   canDeny: boolean;
   canDelete: boolean;
+  vacationUsage: VacationUsage[];
 };
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: uiText("Urlaub") },
+    { title: uiText("Abwesenheiten", "Absences") },
   ];
 }
 
@@ -71,85 +82,23 @@ export default function VacationsPage() {
 
   const reload = () => setReloadCounter(value => value + 1);
 
-  function showVacationForm() {
-    modals.showForm({
-      content: ({ context }) => <>
-        {canManageVacations && <MyForm.MultiSelect
-          name="user"
-          labelText={uiText("Benutzer")}
-          minSelectedItems={1}
-          maxSelectedItems={1}
-          getOptions={async ({ query }) => {
-            const needle = query.trim().toLowerCase();
-            return (users ?? []).filter(user => {
-              if (!needle) return true;
-              return userFullName(user).toLowerCase().includes(needle);
-            });
-          }}
-          renderItem={({ item }) => userFullName(item)}
-          renderTile={item => <SmallUserTile data={item} noLink />}
-        />}
-
-        <div className="flex gap-2">
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="from" labelText={uiText("Von")} type="date" />
-          </div>
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="to" labelText={uiText("Bis")} type="date" />
-          </div>
-        </div>
-
-        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
-
-        <NotifyLoaded onLoad={() => {
-          const today = startOfDay(new Date());
-          context.setValues({
-            from: toDateInputValue(today),
-            to: toDateInputValue(today),
-            user: canManageVacations ? [] : [sessionInfo.user],
-          });
-        }} />
-      </>,
-      onSubmit: async ({ context, hide }) => {
-        const values = context.getValues();
-        const from = parseDateInputValue(values.from);
-        const to = parseDateInputValue(values.to);
-        if (!from || !to) throw new Error(uiText("Datum ist ungültig."));
-        if (from.getTime() > to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
-
-        const selectedUser = canManageVacations
-          ? values.user?.at(0) as User | undefined
-          : sessionInfo.user as User;
-        if (!selectedUser) throw new Error(uiText("Benutzer muss ausgewählt sein."));
-
-        const noteText = `${values.note ?? ''}`.trim();
-        const [created, createErr] = await client.mutate('users.vacations.create', {
-          userId: selectedUser.id,
-          from,
-          to,
-          note: noteText ? noteText : null,
-        });
-        if (createErr) throw createErr;
-        if (!created) return;
-
-        reload();
-        hide();
-      },
-      modalProps: () => ({
-        modalHeading: canManageVacations ? uiText("Urlaub eintragen") : uiText("Urlaub beantragen"),
-        primaryButtonText: canManageVacations ? uiText("Eintragen") : uiText("Beantragen"),
-      }),
+  function showAbsenceForm() {
+    showCreateAbsenceModal(modals, {
+      users: users ?? [],
+      currentUser: sessionInfo.user as User,
+      canManage: canManageVacations,
+      onCreated: reload,
     });
   }
 
   useShortcut('Control+n', e => {
     e.preventDefault();
-    showVacationForm();
+    showAbsenceForm();
   });
 
   function showDenyModal(vacation: VacationRow) {
     modals.showForm({
-      content: () => <MyForm.Input required textArea name="reason" labelText={uiText("Ablehnungsgrund")} />,
+      content: () => <MyForm.Input required autoFocus textArea name="reason" labelText={uiText("Ablehnungsgrund")} />,
       onSubmit: async ({ context, hide }) => {
         const reason = `${context.getValues().reason ?? ''}`.trim();
         if (!reason) throw new Error(uiText("Ablehnungsgrund fehlt."));
@@ -161,8 +110,9 @@ export default function VacationsPage() {
       },
       modalProps: () => ({
         danger: true,
-        modalHeading: uiText("Urlaub ablehnen"),
+        modalHeading: uiText("Abwesenheit ablehnen", "Reject absence"),
         primaryButtonText: uiText("Ablehnen"),
+        noFullscreen: true,
       }),
     });
   }
@@ -182,11 +132,62 @@ export default function VacationsPage() {
     }
   }
 
-  async function approveVacation(vacation: VacationRow) {
-    await runVacationAction(`approve:${vacation.id}`, async () => {
-      const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
-      if (approveErr) throw approveErr;
-      if (result) reload();
+  function showApproveModal(vacation: VacationRow) {
+    const user = userMap.get(vacation.userId);
+    const missingAllowance = vacation.vacationUsage.some(usage => usage.allowanceDays === null);
+    const exceededAllowance = vacation.vacationUsage.find(usage =>
+      usage.remainingAfterApproval !== null && usage.remainingAfterApproval < 0
+    );
+
+    modals.showDefault({
+      content: () => <div className="flex flex-col gap-3">
+        <p>{uiText(
+          `${absenceLabel(vacation)} für ${user ? userFullName(user) : 'den Benutzer'} vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} freigeben?`,
+          `Approve ${absenceLabel(vacation).toLowerCase()} for ${user ? userFullName(user) : 'the user'} from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
+        )}</p>
+
+        {vacation.type === 'vacation' && missingAllowance && <MyCallout
+          kind="warning"
+          title={uiText("Kein Urlaubsanspruch hinterlegt", "No leave allowance recorded")}
+          subtitle={uiText("Die Freigabe ist trotzdem möglich.", "The request can still be approved.")}
+        />}
+
+        {!!exceededAllowance && <MyCallout
+          kind="warning"
+          title={uiText("Urlaubsanspruch wird überschritten", "Leave allowance will be exceeded")}
+          subtitle={uiText(
+            `${Math.abs(exceededAllowance.remainingAfterApproval ?? 0)} Arbeitstage über dem Anspruch für ${exceededAllowance.year}.`,
+            `${Math.abs(exceededAllowance.remainingAfterApproval ?? 0)} working days over the allowance for ${exceededAllowance.year}.`,
+          )}
+        />}
+
+        {vacation.type === 'vacation' && vacation.vacationUsage.map(usage => <div key={usage.year}>
+          <strong>{usage.year}</strong>
+          <div>{uiText(
+            `${usage.approvedDays} bereits freigegeben · ${usage.requestedDays} beantragt`,
+            `${usage.approvedDays} already approved · ${usage.requestedDays} requested`,
+          )}</div>
+          {usage.allowanceDays !== null && <div>{uiText(
+            `${usage.remainingAfterApproval} von ${usage.allowanceDays} Arbeitstagen verbleiben`,
+            `${usage.remainingAfterApproval} of ${usage.allowanceDays} working days remaining`,
+          )}</div>}
+        </div>)}
+      </div>,
+      onPrimaryAction: async ({ hide }) => {
+        const ok = await runVacationAction(`approve:${vacation.id}`, async () => {
+          const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
+          if (approveErr) throw approveErr;
+          if (result) reload();
+        });
+
+        if (ok) hide();
+      },
+      modalProps: () => ({
+        modalHeading: uiText("Abwesenheit freigeben", "Approve absence"),
+        primaryButtonText: uiText("Freigeben", "Approve"),
+        secondaryButtonText: uiText("Abbrechen", "Cancel"),
+        noFullscreen: true,
+      }),
     });
   }
 
@@ -194,8 +195,8 @@ export default function VacationsPage() {
     modals.showDefault({
       content: () => <p>
         {uiText(
-          `Urlaub vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} löschen?`,
-          `Delete vacation from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
+          `${absenceLabel(vacation)} vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} löschen?`,
+          `Delete ${absenceLabel(vacation).toLowerCase()} from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
         )} {uiText("Diese Aktion kann nicht rückgängig gemacht werden.", "This action cannot be undone.")}
       </p>,
       onPrimaryAction: async ({ hide }) => {
@@ -209,7 +210,7 @@ export default function VacationsPage() {
       },
       modalProps: () => ({
         danger: true,
-        modalHeading: uiText("Urlaub löschen", "Delete vacation"),
+        modalHeading: uiText("Abwesenheit löschen", "Delete absence"),
         primaryButtonText: uiText("Löschen", "Delete"),
         secondaryButtonText: uiText("Abbrechen", "Cancel"),
       }),
@@ -218,15 +219,17 @@ export default function VacationsPage() {
 
   return <>
     <MyHeader
-      title={uiText("Urlaub")}
+      title={uiText("Abwesenheiten", "Absences")}
       actions={<>
         <TableExportActions
-          title={uiText("Urlaub")}
-          fileName={uiText("Urlaub")}
+          title={uiText("Abwesenheiten", "Absences")}
+          fileName={uiText("Abwesenheiten", "Absences")}
           rows={rows}
           disabled={!vacations}
           columns={[
             { header: uiText("Benutzer"), value: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : uiText('Unbekannter Benutzer'), width: '2fr' },
+            { header: uiText("Typ", "Type"), value: row => absenceTypeLabel(row.type) },
+            { header: uiText("Bezeichnung", "Label"), value: row => row.label ?? '' },
             { header: uiText("Von"), value: row => row.from },
             { header: uiText("Bis"), value: row => row.to },
             { header: uiText("Status"), value: row => vacationStatusLabel(row.status) },
@@ -234,8 +237,8 @@ export default function VacationsPage() {
             { header: uiText("Entschieden am"), value: row => row.decidedAt },
           ]}
         />
-        <MyButton renderIcon={Icons.Plus} onClick={showVacationForm}>
-          {canManageVacations ? uiText('Urlaub eintragen') : uiText('Urlaub beantragen')}
+        <MyButton renderIcon={Icons.Plus} onClick={showAbsenceForm}>
+          {canManageVacations ? uiText('Abwesenheit eintragen', 'Add absence') : uiText('Abwesenheit beantragen', 'Request absence')}
         </MyButton>
       </>}
     />
@@ -255,6 +258,16 @@ export default function VacationsPage() {
           label: uiText("Benutzer"),
           render: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : uiText('Unbekannter Benutzer'),
           sortKey: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!).toLowerCase() : '',
+        },
+        {
+          label: uiText("Typ", "Type"),
+          render: row => absenceTypeLabel(row.type),
+          sortKey: row => row.type,
+        },
+        {
+          label: uiText("Bezeichnung", "Label"),
+          render: row => row.label ?? '–',
+          sortKey: row => row.label?.toLowerCase() ?? '',
         },
         {
           label: uiText("Von"),
@@ -279,7 +292,7 @@ export default function VacationsPage() {
         {
           label: uiText("Aktionen"),
           render: row => <div className="flex gap-1 flex-wrap">
-            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} loading={pendingAction === `approve:${row.id}`} disabled={!!pendingAction} onClick={() => void approveVacation(row)}>{uiText("Freigeben")}</MyButton>}
+            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} loading={pendingAction === `approve:${row.id}`} disabled={!!pendingAction} onClick={() => showApproveModal(row)}>{uiText("Freigeben")}</MyButton>}
             {row.canDeny && <MyButton size="sm" kind="ghost" renderIcon={Icons.Deny} onClick={() => showDenyModal(row)}>{uiText("Ablehnen")}</MyButton>}
             {row.canDelete && <MyButton size="sm" kind="ghost" renderIcon={Icons.Delete} disabled={!!pendingAction} onClick={() => showDeleteVacationModal(row)}>{uiText("Löschen")}</MyButton>}
           </div>,
@@ -292,41 +305,20 @@ export default function VacationsPage() {
   </>;
 }
 
+function absenceTypeLabel(type: AbsenceType) {
+  return type === 'vacation'
+    ? uiText('Urlaub', 'Leave')
+    : uiText('Sonstige Abwesenheit', 'Other absence');
+}
+
+function absenceLabel(absence: Pick<VacationRow, 'type' | 'label'>) {
+  return absence.type === 'vacation'
+    ? absenceTypeLabel('vacation')
+    : absence.label?.trim() || absenceTypeLabel('other');
+}
+
 function vacationStatusLabel(status: VacationStatus) {
   if (status === 'approved') return uiText('Freigegeben', 'Approved');
   if (status === 'denied') return uiText('Abgelehnt', 'Denied');
   return uiText('Beantragt');
-}
-
-function pad2(value: number) {
-  return `${value}`.padStart(2, '0');
-}
-
-function startOfDay(date: Date) {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function toDateInputValue(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function parseDateInputValue(value: unknown): Date | null {
-  const text = `${value ?? ''}`.trim();
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-
-  const date = new Date(year, month - 1, day);
-  if (isNaN(date.getTime())) return null;
-  if (date.getFullYear() !== year) return null;
-  if (date.getMonth() !== month - 1) return null;
-  if (date.getDate() !== day) return null;
-
-  date.setHours(0, 0, 0, 0);
-  return date;
 }

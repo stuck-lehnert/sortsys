@@ -47,7 +47,7 @@ function visitLabel(visit: PinnedVisit) {
     '/projects': uiText('Projekte', 'Projects'),
     '/projects/costs': uiText('Kostenübersicht', 'Cost overview'),
     '/deployments': uiText('Einsatzplanung', 'Resource planning'),
-    '/vacations': uiText('Urlaub', 'Leave'),
+    '/vacations': uiText('Abwesenheiten', 'Absences'),
     '/tools': uiText('Werkzeuge', 'Tools'),
     '/tools/trackings': uiText('Buchungshistorie', 'Booking history'),
     '/inventories': uiText('Inventur', 'Inventory'),

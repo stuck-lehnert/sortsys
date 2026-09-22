@@ -20,6 +20,8 @@ use super::{
 // Recaps can require several schema lookups and data queries. Keep a hard cap,
 // but leave enough room for models that issue those calls sequentially.
 const MAX_TOOL_ROUNDS: usize = 16;
+const OPENAI_SCAN_MAX_OUTPUT_TOKENS: usize = 65_536;
+const SCAN_MAX_OUTPUT_TOKENS: usize = 65_536;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatTurn {
@@ -443,7 +445,7 @@ async fn openai_scan(
                         "schema": scan_result_schema()
                     }
                 },
-                "max_output_tokens": 4000
+                "max_output_tokens": OPENAI_SCAN_MAX_OUTPUT_TOKENS
             }))
             .send()
             .await
@@ -543,7 +545,7 @@ async fn anthropic_scan(
             .header("anthropic-version", "2023-06-01")
             .json(&json!({
                 "model": configuration.model,
-                "max_tokens": 4000,
+                "max_tokens": SCAN_MAX_OUTPUT_TOKENS,
                 "system": prompt,
                 "messages": messages,
                 "tools": tools
@@ -652,7 +654,7 @@ async fn compatible_scan(
                 "tools": tools,
                 "tool_choice": "auto",
                 "response_format": { "type": "json_object" },
-                "max_tokens": 4000
+                "max_tokens": SCAN_MAX_OUTPUT_TOKENS
             }))
             .send()
             .await
@@ -1508,9 +1510,10 @@ mod tests {
     use crate::error::{ErrorCode, RpcError};
 
     use super::{
-        ProviderConfiguration, default_provider_base_url, endpoint, model_options,
-        openai_compatible_request_body, openai_response_function_tools,
-        openai_responses_request_body, recoverable_tool_error, responses_text, scan_prompt,
+        OPENAI_SCAN_MAX_OUTPUT_TOKENS, ProviderConfiguration, SCAN_MAX_OUTPUT_TOKENS,
+        default_provider_base_url, endpoint, model_options, openai_compatible_request_body,
+        openai_response_function_tools, openai_responses_request_body, recoverable_tool_error,
+        responses_text, scan_prompt,
     };
 
     #[test]
@@ -1554,6 +1557,12 @@ mod tests {
         assert!(german.contains("text copied from the document unchanged"));
         assert!(german.contains("Keep comments brief and use null"));
         assert!(german.contains("Never describe OCR, catalogue searches, matching"));
+    }
+
+    #[test]
+    fn scan_output_limits_leave_room_for_structured_price_sections() {
+        assert_eq!(OPENAI_SCAN_MAX_OUTPUT_TOKENS, 65_536);
+        assert_eq!(SCAN_MAX_OUTPUT_TOKENS, 65_536);
     }
 
     #[test]

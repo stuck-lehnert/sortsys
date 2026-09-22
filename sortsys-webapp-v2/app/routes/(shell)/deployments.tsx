@@ -18,8 +18,10 @@ import { formatDate, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProjectTile, SmallUserTile } from "~/lib/tiles";
 import type { Project, ProjectDeployment, User } from "~/type-helpers";
-import { useNavigate } from "react-router";
 import { TableExportActions } from "~/components/TableExportActions";
+import type { MutateInput } from "@sortsys/v2-client";
+import { isoWeekInfo } from "~/lib/week";
+import { showCreateAbsenceModal } from "~/modals/absences";
 
 type ViewMode = 'day' | 'week';
 type RowMode = 'project' | 'user';
@@ -59,6 +61,8 @@ type DeploymentVacation = {
   userId: string;
   from: Date;
   to: Date;
+  type: 'vacation' | 'other';
+  label: string | null;
   status: 'requested' | 'approved' | 'denied';
   note: string | null;
 };
@@ -72,6 +76,18 @@ type ProjectUnavailabilityPeriod = {
   note: string | null;
 };
 
+function absenceLabel(absence: Pick<DeploymentVacation, 'type' | 'label'>) {
+  if (absence.type === 'vacation') return uiText('Urlaub', 'Leave');
+  return absence.label?.trim() || uiText('Sonstige Abwesenheit', 'Other absence');
+}
+
+function absenceStatusLabel(absence: DeploymentVacation) {
+  const label = absenceLabel(absence);
+  return absence.status === 'requested'
+    ? uiText(`${label} beantragt`, `${label} requested`)
+    : label;
+}
+
 export function meta({}: Route.MetaArgs) {
   return [
     { title: uiText("Einsatzplanung") },
@@ -80,20 +96,23 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DeploymentsPage() {
   const modals = useMyModals();
-  const navigate = useNavigate();
   const sessionInfo = useSessionInfo();
   const createEntityAction = useCreateEntityAction(modals);
 
   const canViewAllDeployments = sessionInfo.canDo('view:projectDeployments');
   const canManageDeployments = sessionInfo.canDo('manage:projectDeployments');
   const canDeleteDeployments = sessionInfo.canDo('delete:projectDeployments');
+  const canManageVacations = sessionInfo.canDo('manage:userVacations');
   const canViewAllUsers = sessionInfo.canDo('view:users');
 
   const [viewRaw, setViewRaw] = useStringUrlParam('view');
   const [dayRaw, setDayRaw] = useStringUrlParam('day');
+  const [searchRaw, setSearchRaw] = useStringUrlParam('q');
   const [showEmptyRows, setShowEmptyRows] = useBoolUrlParam('all');
+  const [showWeekend, setShowWeekend] = useBoolUrlParam('weekend');
 
-  const viewMode: ViewMode = viewRaw === 'week' ? 'week' : 'day';
+  const viewMode: ViewMode = viewRaw === 'day' ? 'day' : 'week';
+  const normalizedSearch = (searchRaw ?? '').trim().toLocaleLowerCase(currentLocaleTag());
   const [rowMode, setRowMode] = useState<RowMode>(() => {
     if (typeof window !== 'object') return 'project';
 
@@ -117,6 +136,10 @@ export default function DeploymentsPage() {
     const endExclusive = addDays(start, viewMode === 'week' ? 7 : 1);
     return { start, endExclusive };
   }, [focusDayKey, viewMode]);
+  const visibleRangeEndExclusive = useMemo(() => {
+    if (viewMode === 'week' && !showWeekend) return addDays(range.start, 5);
+    return range.endExclusive;
+  }, [range.endExclusive, range.start, showWeekend, viewMode]);
 
   const [projects, projectsError] = useClientStream(() => client.streamQuery('projects.list', {}), []);
   const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {
@@ -125,6 +148,7 @@ export default function DeploymentsPage() {
   const [deployments, setDeployments] = useState<ProjectDeployment[]>([]);
   const [deploymentsReloadCounter, setDeploymentsReloadCounter] = useState(0);
   const [unavailabilityReloadCounter, setUnavailabilityReloadCounter] = useState(0);
+  const [vacationReloadCounter, setVacationReloadCounter] = useState(0);
   const [deploymentsLoading, setDeploymentsLoading] = useState(true);
   const [deploymentsError, setDeploymentsError] = useState<unknown>(null);
   const deploymentsSinceRef = useRef<Date | null>(null);
@@ -136,7 +160,7 @@ export default function DeploymentsPage() {
       to: rangeEndInclusive,
       includeDenied: false,
     }, { strategy: 'cache-first' });
-  }, [range.start.getTime(), rangeEndInclusive.getTime()]);
+  }, [range.start.getTime(), rangeEndInclusive.getTime(), vacationReloadCounter]);
   const [projectUnavailability, projectUnavailabilityError] = useClientStream<ProjectUnavailabilityPeriod[] | null, any>(() => {
     return client.streamQuery('projects.unavailability.list', {
       from: range.start,
@@ -391,12 +415,23 @@ export default function DeploymentsPage() {
     if (!showEmptyRows) {
       values = values.filter(row => {
         if (rowMode === 'user') {
-          return (deploymentsByUserId.get(row.id)?.length ?? 0) > 0
-            || (vacationsByUserId.get(row.id) ?? []).some(vacation => periodOverlapsWindow(vacation, range.start, range.endExclusive));
+          return (deploymentsByUserId.get(row.id) ?? []).some(item => deploymentOverlapsWindow(item, range.start, visibleRangeEndExclusive))
+            || (vacationsByUserId.get(row.id) ?? []).some(vacation => periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive));
         }
 
-        return (deploymentsByProjectId.get(row.id)?.length ?? 0) > 0
-          || (unavailabilityByProjectId.get(row.id) ?? []).some(period => periodOverlapsWindow(period, range.start, range.endExclusive));
+        return (deploymentsByProjectId.get(row.id) ?? []).some(item => deploymentOverlapsWindow(item, range.start, visibleRangeEndExclusive))
+          || (unavailabilityByProjectId.get(row.id) ?? []).some(period => periodOverlapsWindow(period, range.start, visibleRangeEndExclusive));
+      });
+    }
+
+    if (normalizedSearch) {
+      values = values.filter(row => {
+        if (row.label.toLocaleLowerCase(currentLocaleTag()).includes(normalizedSearch)) return true;
+
+        return deploymentsForRow(row.id).some(item => {
+          const searchable = rowMode === 'project' ? item.userLabel : item.projectLabel;
+          return searchable.toLocaleLowerCase(currentLocaleTag()).includes(normalizedSearch);
+        });
       });
     }
 
@@ -409,9 +444,9 @@ export default function DeploymentsPage() {
     projectMap,
     projectUnavailability,
     projects,
-    range.endExclusive,
     range.start,
     rowMode,
+    normalizedSearch,
     sessionInfo.user,
     showEmptyRows,
     unavailabilityByProjectId,
@@ -419,9 +454,33 @@ export default function DeploymentsPage() {
     users,
     vacations,
     vacationsByUserId,
+    visibleRangeEndExclusive,
   ]);
 
   const rowHeading = rowMode === 'project' ? uiText('Projekt') : uiText('Benutzer');
+  const absenceRows = useMemo(() => {
+    if (rowMode !== 'project') return [] as { id: string; label: string; vacations: DeploymentVacation[] }[];
+
+    const rows = new Map<string, DeploymentVacation[]>();
+    (vacations ?? [])
+      .filter(vacation => periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive))
+      .forEach(vacation => {
+        const entries = rows.get(vacation.userId) ?? [];
+        entries.push(vacation);
+        rows.set(vacation.userId, entries);
+      });
+
+    return Array.from(rows, ([id, entries]) => {
+      const user = userMap.get(id);
+      return {
+        id,
+        label: user ? userFullName(user) : uiText('Unbekannter Benutzer'),
+        vacations: entries,
+      };
+    })
+      .filter(row => !normalizedSearch || row.label.toLocaleLowerCase(currentLocaleTag()).includes(normalizedSearch))
+      .sort((left, right) => left.label.localeCompare(right.label, currentLocaleTag()));
+  }, [normalizedSearch, range.start, rowMode, userMap, vacations, visibleRangeEndExclusive]);
 
   const exportRows = useMemo(() => {
     const vacationRows = (vacations ?? [])
@@ -429,7 +488,7 @@ export default function DeploymentsPage() {
       .map(vacation => {
         const user = userMap.get(vacation.userId);
         return {
-          kind: uiText('Urlaub'),
+          kind: absenceLabel(vacation),
           project: '',
           user: user ? userFullName(user) : uiText('Unbekannter Benutzer'),
           from: vacation.from,
@@ -480,8 +539,8 @@ export default function DeploymentsPage() {
 
   const weekDays = useMemo(() => {
     if (viewMode !== 'week') return [] as Date[];
-    return Array.from({ length: 7 }, (_, index) => addDays(range.start, index));
-  }, [range.start, viewMode]);
+    return Array.from({ length: showWeekend ? 7 : 5 }, (_, index) => addDays(range.start, index));
+  }, [range.start, showWeekend, viewMode]);
 
   function shiftFocus(direction: 'prev' | 'next') {
     const step = viewMode === 'week' ? 7 : 1;
@@ -500,9 +559,9 @@ export default function DeploymentsPage() {
       content: ({ context, hide }) => <>
         <MyForm.MultiSelect
           name="user"
-          labelText={uiText("Benutzer")}
+          labelText={deployment ? uiText("Mitarbeiter", "Employee") : uiText("Mitarbeitende", "Employees")}
           minSelectedItems={1}
-          maxSelectedItems={1}
+          maxSelectedItems={deployment ? 1 : undefined}
           getOptions={async ({ query }) => {
             const needle = query.trim().toLowerCase();
             return (users ?? []).filter(user => {
@@ -606,7 +665,8 @@ export default function DeploymentsPage() {
       onSubmit: async ({ context, hide }) => {
         const values = context.getValues();
 
-        const user = values.user?.at(0) as User | undefined;
+        const selectedUsers = (values.user ?? []) as User[];
+        const user = selectedUsers.at(0);
         const project = values.project?.at(0) as Project | undefined;
         if (!user || !project) throw new Error(uiText("Benutzer und Projekt müssen ausgewählt sein."));
 
@@ -616,7 +676,7 @@ export default function DeploymentsPage() {
         if (from.getTime() >= to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
 
         const noteText = `${values.note ?? ''}`.trim();
-        const payload = {
+        const payload: MutateInput<'projects.deployments.create'> = {
           userId: user.id,
           projectId: project.id,
           from,
@@ -625,9 +685,17 @@ export default function DeploymentsPage() {
         };
 
         if (options.mode === 'create') {
-          const [created, createErr] = await client.mutate('projects.deployments.create', payload as any);
-          if (createErr) throw createErr;
-          if (!created) return;
+          for (const selectedUser of selectedUsers) {
+            const [created, createErr] = await client.mutate('projects.deployments.create', {
+              ...payload,
+              userId: selectedUser.id,
+            });
+            if (createErr) {
+              setDeploymentsReloadCounter(value => value + 1);
+              throw createErr;
+            }
+            if (!created) return;
+          }
           setDeploymentsReloadCounter(value => value + 1);
         } else {
           if (!deployment) return;
@@ -635,7 +703,7 @@ export default function DeploymentsPage() {
           const [updated, updateErr] = await client.mutate('projects.deployments.update', {
             id: deployment.deployment.id,
             data: payload,
-          } as any);
+          });
           if (updateErr) throw updateErr;
           if (!updated) return;
           setDeploymentsReloadCounter(value => value + 1);
@@ -774,7 +842,7 @@ export default function DeploymentsPage() {
       .filter(period => periodOverlapsWindow(period, segmentStart, segmentEnd));
 
     overlappingVacations.forEach(vacation => {
-      labels.push(vacation.status === 'requested' ? uiText('Urlaub beantragt', 'Leave requested') : uiText('Urlaub', 'Leave'));
+      labels.push(absenceStatusLabel(vacation));
     });
     overlappingUnavailability.forEach(period => {
       labels.push(uiText(`Projekt gesperrt: ${period.reason}`, `Project unavailable: ${period.reason}`));
@@ -783,17 +851,27 @@ export default function DeploymentsPage() {
     return labels;
   }
 
+  function showAbsenceForm() {
+    showCreateAbsenceModal(modals, {
+      users: (users ?? []) as User[],
+      currentUser: sessionInfo.user as User,
+      canManage: canManageVacations,
+      initialDay: focusDay,
+      onCreated: () => setVacationReloadCounter(value => value + 1),
+    });
+  }
+
   function renderVacationMarker(vacation: DeploymentVacation, key: string) {
     const user = userMap.get(vacation.userId);
     const title = [
-      vacation.status === 'requested' ? uiText('Urlaub beantragt', 'Leave requested') : uiText('Urlaub', 'Leave'),
+      absenceStatusLabel(vacation),
       user ? userFullName(user) : null,
       `${formatDate(vacation.from)} - ${formatDate(vacation.to)}`,
       vacation.note ? uiText(`Kommentar: ${vacation.note}`, `Comment: ${vacation.note}`) : null,
     ].filter(Boolean).join('\n');
 
     return <span key={key} className="pep-marker pep-marker--vacation" title={title}>
-      {vacation.status === 'requested' ? uiText('Urlaub beantragt', 'Leave requested') : uiText('Urlaub', 'Leave')}
+      {absenceStatusLabel(vacation)}
     </span>;
   }
 
@@ -858,18 +936,18 @@ export default function DeploymentsPage() {
         title={title}
         onClick={() => showDeploymentForm({ mode: 'edit', deployment: item })}
       >
-        <span className="pep-entry__time">{segmentTimeLabel}</span>
         <span className="pep-entry__project">{primaryLabel}</span>
+        <span className="pep-entry__time">{segmentTimeLabel}</span>
         {!!warningLabels.length && <span className="pep-entry__warning">!</span>}
-        {!!item.deployment.note && <span className="pep-entry__note">{uiText("Kommentar")}</span>}
+        {!!item.deployment.note && <span className="pep-entry__note">{item.deployment.note}</span>}
       </button>;
     }
 
     return <div key={key} className={`pep-entry${warningLabels.length ? ' pep-entry--warning' : ''}`} style={style} title={title}>
-      <span className="pep-entry__time">{segmentTimeLabel}</span>
       <span className="pep-entry__project">{primaryLabel}</span>
+      <span className="pep-entry__time">{segmentTimeLabel}</span>
       {!!warningLabels.length && <span className="pep-entry__warning">!</span>}
-      {!!item.deployment.note && <span className="pep-entry__note">{uiText("Kommentar")}</span>}
+      {!!item.deployment.note && <span className="pep-entry__note">{item.deployment.note}</span>}
     </div>;
   }
 
@@ -881,25 +959,44 @@ export default function DeploymentsPage() {
 
   const planningError = deploymentsError || projectsError || usersError || vacationsError || projectUnavailabilityError;
   const planningLoading = deploymentsLoading || !projects || !users;
+  const selectedWeek = isoWeekInfo(range.start);
+  const periodLabel = viewMode === 'week'
+    ? uiText(
+      `KW ${String(selectedWeek.weekNumber).padStart(2, '0')} ${selectedWeek.isoYear}`,
+      `Week ${String(selectedWeek.weekNumber).padStart(2, '0')} ${selectedWeek.isoYear}`,
+    )
+    : formatDate(focusDay);
+  const plannedUserCount = new Set(plannedDeployments
+    .filter(item => deploymentOverlapsWindow(item, range.start, visibleRangeEndExclusive))
+    .map(item => item.deployment.userId)).size;
+  const absenceCount = (vacations ?? []).filter(vacation => periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive)).length;
 
-  return <>
+  return <div className="pep-page">
     <MyHeader title={uiText("Einsatzplanung")} />
 
-    <div className="pep-toolbar">
-      <div className="pep-toolbar__group">
+    <section className="pep-controls" aria-label={uiText("Planung steuern", "Planning controls")}>
+      <div className="pep-period-nav">
         <MyButton
+          className="pep-icon-button"
           size="sm"
-          kind="secondary"
-          onClick={() => setViewRaw(viewMode === 'day' ? 'week' : 'day')}
-        >{uiText(`Ansicht: ${viewMode === 'day' ? 'Tag' : 'Woche'}`, `View: ${viewMode === 'day' ? 'Day' : 'Week'}`)}</MyButton>
+          kind="ghost"
+          title={viewMode === 'week' ? uiText("Vorherige Woche", "Previous week") : uiText("Vorheriger Tag", "Previous day")}
+          aria-label={viewMode === 'week' ? uiText("Vorherige Woche", "Previous week") : uiText("Vorheriger Tag", "Previous day")}
+          onClick={() => shiftFocus('prev')}
+        ><Icons.Previous size={18} /></MyButton>
+
+        <div className="pep-period-nav__label" aria-live="polite">
+          <strong>{periodLabel}</strong>
+        </div>
 
         <MyButton
+          className="pep-icon-button"
           size="sm"
-          kind="secondary"
-          onClick={() => setRowMode(rowMode === 'project' ? 'user' : 'project')}
-        >{uiText(`Zeilen: ${rowMode === 'project' ? 'Projekte' : 'Benutzer'}`, `Rows: ${rowMode === 'project' ? 'Projects' : 'Users'}`)}</MyButton>
-
-        <MyButton size="sm" kind="ghost" renderIcon={Icons.TakeBack} onClick={() => shiftFocus('prev')}>{uiText("Zurück")}</MyButton>
+          kind="ghost"
+          title={viewMode === 'week' ? uiText("Nächste Woche", "Next week") : uiText("Nächster Tag", "Next day")}
+          aria-label={viewMode === 'week' ? uiText("Nächste Woche", "Next week") : uiText("Nächster Tag", "Next day")}
+          onClick={() => shiftFocus('next')}
+        ><Icons.Next size={18} /></MyButton>
 
         <input
           className="ss-input pep-date-input"
@@ -919,13 +1016,66 @@ export default function DeploymentsPage() {
           }}
         />
 
-        <MyButton size="sm" kind="ghost" renderIcon={Icons.Transfer} onClick={() => shiftFocus('next')}>{uiText("Weiter")}</MyButton>
+        <MyButton size="sm" kind="ghost" onClick={() => setDayRaw(toDateInputValue(today))}>
+          {uiText("Heute", "Today")}
+        </MyButton>
       </div>
 
-      <div className="pep-toolbar__group">
+      <div className="pep-view-controls">
+        <div className="pep-segment" role="group" aria-label={uiText("Zeitraum", "Period")}>
+          <button
+            type="button"
+            className={viewMode === 'week' ? 'is-active' : undefined}
+            aria-pressed={viewMode === 'week'}
+            onClick={() => setViewRaw('week')}
+          >{uiText("Woche", "Week")}</button>
+          <button
+            type="button"
+            className={viewMode === 'day' ? 'is-active' : undefined}
+            aria-pressed={viewMode === 'day'}
+            onClick={() => setViewRaw('day')}
+          >{uiText("Tag", "Day")}</button>
+        </div>
+
+        <div className="pep-segment" role="group" aria-label={uiText("Zeilen", "Rows")}>
+          <button
+            type="button"
+            className={rowMode === 'project' ? 'is-active' : undefined}
+            aria-pressed={rowMode === 'project'}
+            onClick={() => setRowMode('project')}
+          >{uiText("Projekte", "Projects")}</button>
+          <button
+            type="button"
+            className={rowMode === 'user' ? 'is-active' : undefined}
+            aria-pressed={rowMode === 'user'}
+            onClick={() => setRowMode('user')}
+          >{uiText("Mitarbeitende", "Employees")}</button>
+        </div>
+
+        <label className="pep-search">
+          <Icons.Search size={17} aria-hidden="true" />
+          <span className="sr-only">{uiText("Planung durchsuchen", "Search planning")}</span>
+          <input
+            type="search"
+            value={searchRaw ?? ''}
+            placeholder={rowMode === 'project'
+              ? uiText("Projekt oder Mitarbeiter suchen", "Search project or employee")
+              : uiText("Mitarbeiter oder Projekt suchen", "Search employee or project")}
+            onChange={event => setSearchRaw(event.currentTarget.value || null)}
+          />
+          {!!searchRaw && <button
+            type="button"
+            title={uiText("Suche löschen", "Clear search")}
+            aria-label={uiText("Suche löschen", "Clear search")}
+            onClick={() => setSearchRaw(null)}
+          ><Icons.Close size={16} /></button>}
+        </label>
+      </div>
+
+      <div className="pep-actions">
         {canManageDeployments && <MyButton
           size="sm"
-          kind="secondary"
+          kind="primary"
           renderIcon={Icons.Plus}
           onClick={() => showDeploymentForm({ mode: 'create', preset: { day: focusDay } })}
         >{uiText("Einsatz hinzufügen")}</MyButton>}
@@ -934,14 +1084,20 @@ export default function DeploymentsPage() {
           size="sm"
           kind="secondary"
           renderIcon={Icons.User}
-          onClick={() => navigate('/vacations')}
-        >{uiText("Urlaub")}</MyButton>
+          onClick={showAbsenceForm}
+        >{canManageVacations ? uiText("Abwesenheit eintragen", "Add absence") : uiText("Abwesenheit beantragen", "Request absence")}</MyButton>
 
         <OperationalTag
           renderIcon={showEmptyRows ? Icons.FilterEdit : Icons.Filter}
-          text={showEmptyRows ? uiText('Mit freien Zeilen') : uiText('Nur mit Einsatz')}
+          text={showEmptyRows ? uiText('Alle Zeilen', 'All rows') : uiText('Nur belegte', 'Assigned only')}
           onClick={() => setShowEmptyRows(!showEmptyRows)}
         />
+
+        {viewMode === 'week' && <OperationalTag
+          renderIcon={showWeekend ? Icons.FilterEdit : Icons.Filter}
+          text={showWeekend ? uiText('Mit Wochenende', 'With weekend') : uiText('Mo–Fr', 'Mon–Fri')}
+          onClick={() => setShowWeekend(!showWeekend)}
+        />}
 
         <TableExportActions
           title={uiText("Einsatzplanung")}
@@ -958,7 +1114,13 @@ export default function DeploymentsPage() {
           ]}
         />
       </div>
-    </div>
+    </section>
+
+    {!planningLoading && <div className="pep-summary" aria-live="polite">
+      <span><strong>{rowEntities.length}</strong> {rowMode === 'project' ? uiText("Projekte", "projects") : uiText("Mitarbeitende", "employees")}</span>
+      <span><strong>{plannedUserCount}</strong> {uiText("eingeplant", "assigned")}</span>
+      {!!absenceCount && <span><strong>{absenceCount}</strong> {uiText("Abwesenheiten", "absences")}</span>}
+    </div>}
 
     {!canViewAllDeployments && <p className="light">{uiText("Du siehst deine eigenen Einsätze.")}</p>}
 
@@ -1029,12 +1191,18 @@ export default function DeploymentsPage() {
 
     {!planningLoading && viewMode === 'week' && <div className="pep-week-wrap">
       <table className="pep-week-table">
+        <colgroup>
+          <col className="pep-week-entity-column" />
+          {weekDays.map(day => <col key={toDateInputValue(day)} className="pep-week-day-column" />)}
+        </colgroup>
+
         <thead>
           <tr>
             <th className="pep-week-user-head">{rowHeading}</th>
             {weekDays.map(day => {
               const dayOfWeek = day.toLocaleDateString(currentLocaleTag(), { weekday: 'short' });
-              return <th key={toDateInputValue(day)}>
+              const isToday = isSameCalendarDay(day, today);
+              return <th key={toDateInputValue(day)} className={isToday ? 'pep-is-today' : undefined}>
                 <div>{dayOfWeek}</div>
                 <div className="pep-week-date">{formatDate(day)}</div>
               </th>;
@@ -1044,7 +1212,9 @@ export default function DeploymentsPage() {
 
         <tbody>
           {!rowEntities.length && <tr>
-            <td colSpan={8} className="pep-empty-row light">{uiText("Keine Einsätze im gewählten Zeitraum.")}</td>
+            <td colSpan={weekDays.length + 1} className="pep-empty-row light">
+              {normalizedSearch ? uiText("Keine passenden Einträge.", "No matching entries.") : uiText("Keine Einsätze im gewählten Zeitraum.")}
+            </td>
           </tr>}
 
           {rowEntities.map(row => {
@@ -1053,26 +1223,7 @@ export default function DeploymentsPage() {
             return <tr key={row.id}>
               <td className="pep-week-user-cell">
                 <div className="pep-week-user-content">
-                  <span>{row.label}</span>
-
-                  {canManageDeployments && <MyButton
-                    type="button"
-                    size="sm"
-                    kind="ghost"
-                    className="pep-add-btn"
-                    title={uiText("Einsatz hinzufügen")}
-                    aria-label={uiText("Einsatz hinzufügen")}
-                    onClick={() => showDeploymentForm({
-                      mode: 'create',
-                      preset: {
-                        userId: rowMode === 'user' ? row.id : undefined,
-                        projectId: rowMode === 'project' ? row.id : undefined,
-                        day: range.start,
-                      },
-                    })}
-                  >
-                    <Icons.Plus size={16} />
-                  </MyButton>}
+                  <span title={row.label}>{row.label}</span>
                 </div>
               </td>
 
@@ -1091,9 +1242,27 @@ export default function DeploymentsPage() {
                   return [{ item, start: segment.start, end: segment.end }];
                 });
 
-                return <td key={`${row.id}:${toDateInputValue(day)}`} className="pep-week-cell">
+                const isEmpty = !segments.length && !cellVacations.length && !cellUnavailability.length;
+                const preset = {
+                  userId: rowMode === 'user' ? row.id : undefined,
+                  projectId: rowMode === 'project' ? row.id : undefined,
+                  day: dayStart,
+                };
+
+                return <td
+                  key={`${row.id}:${toDateInputValue(day)}`}
+                  className={`pep-week-cell${isSameCalendarDay(day, today) ? ' pep-is-today' : ''}`}
+                >
                   <div className="pep-week-cell-entries">
-                    {!segments.length && !cellVacations.length && !cellUnavailability.length && <span className="pep-week-empty">-</span>}
+                    {isEmpty && (canManageDeployments
+                      ? <button
+                        type="button"
+                        className="pep-week-empty-action"
+                        title={uiText("Einsatz einplanen", "Assign deployment")}
+                        aria-label={uiText("Einsatz einplanen", "Assign deployment")}
+                        onClick={() => showDeploymentForm({ mode: 'create', preset })}
+                      ><Icons.Plus size={15} /> <span className="sr-only">{uiText("Einsatz einplanen", "Assign deployment")}</span></button>
+                      : <span className="pep-week-empty">–</span>)}
                     {cellVacations.map(vacation => renderVacationMarker(vacation, `vacation:${vacation.id}:${toDateInputValue(day)}`))}
                     {cellUnavailability.map(period => renderUnavailabilityMarker(period, `project-stop:${period.id}:${toDateInputValue(day)}`))}
 
@@ -1105,15 +1274,55 @@ export default function DeploymentsPage() {
                       segmentWindowStart: dayStart,
                       segmentWindowEnd: dayEnd,
                     }))}
+
+                    {!isEmpty && canManageDeployments && <button
+                      type="button"
+                      className="pep-week-add-action"
+                      title={uiText("Weiteren Einsatz einplanen", "Add another assignment")}
+                      aria-label={uiText("Weiteren Einsatz einplanen", "Add another assignment")}
+                      onClick={() => showDeploymentForm({ mode: 'create', preset })}
+                    ><Icons.Plus size={14} /></button>}
                   </div>
                 </td>;
               })}
             </tr>;
           })}
+
+          {rowMode === 'project' && absenceRows.length > 0 && <>
+            <tr>
+              <td colSpan={weekDays.length + 1} className="pep-week-section-heading">
+                {uiText('Abwesenheiten', 'Absences')}
+              </td>
+            </tr>
+
+            {absenceRows.map(row => <tr key={`absence:${row.id}`} className="pep-week-absence-row">
+              <td className="pep-week-user-cell">
+                <div className="pep-week-user-content">
+                  <span title={row.label}>{row.label}</span>
+                </div>
+              </td>
+
+              {weekDays.map(day => {
+                const dayStart = startOfDay(day);
+                const dayEnd = addDays(dayStart, 1);
+                const cellVacations = row.vacations.filter(vacation => periodOverlapsWindow(vacation, dayStart, dayEnd));
+
+                return <td
+                  key={`absence:${row.id}:${toDateInputValue(day)}`}
+                  className={`pep-week-cell${isSameCalendarDay(day, today) ? ' pep-is-today' : ''}`}
+                >
+                  <div className="pep-week-cell-entries">
+                    {!cellVacations.length && <span className="pep-week-empty">–</span>}
+                    {cellVacations.map(vacation => renderVacationMarker(vacation, `absence:${vacation.id}:${toDateInputValue(day)}`))}
+                  </div>
+                </td>;
+              })}
+            </tr>)}
+          </>}
         </tbody>
       </table>
     </div>}
-  </>;
+  </div>;
 }
 
 function colorForProject(projectId: string) {
@@ -1263,6 +1472,17 @@ function periodOverlapsWindow(period: { from: Date; to: Date }, windowStart: Dat
   const periodEndExclusive = addDays(startOfDay(new Date(period.to)), 1);
   return periodStart.getTime() < windowEndExclusive.getTime()
     && periodEndExclusive.getTime() > windowStart.getTime();
+}
+
+function deploymentOverlapsWindow(deployment: Pick<PlannedDeployment, 'from' | 'to'>, windowStart: Date, windowEndExclusive: Date) {
+  return deployment.from.getTime() < windowEndExclusive.getTime()
+    && deployment.to.getTime() > windowStart.getTime();
+}
+
+function isSameCalendarDay(left: Date, right: Date) {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
 }
 
 function clipSegment(from: Date, to: Date, windowStart: Date, windowEnd: Date) {

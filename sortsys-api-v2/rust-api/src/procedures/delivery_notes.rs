@@ -859,6 +859,7 @@ const MAX_SCAN_BYTES: i64 = 20 * 1024 * 1024;
 const MAX_SCAN_FILES: usize = 20;
 const MAX_SCAN_TOTAL_BYTES: i64 = 100 * 1024 * 1024;
 const OCR_FALLBACK_CONFIDENCE: f64 = 0.72;
+const SCAN_STRUCTURED_RESULT_ATTEMPTS: usize = 2;
 const OCR_JOB_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Deserialize, TS)]
@@ -1904,51 +1905,95 @@ async fn analyze_stored_scan(
         } else {
             chunk
         };
-        let completion = match llm::parse_document_scan(
-            state,
-            auth,
-            &configuration,
-            llm::DocumentScanInput {
-                ocr_text: chunk,
-                ocr_confidence: ocr.confidence,
-                ocr_method: ocr.method.clone(),
-                originals: if index == 0 {
-                    originals.clone()
-                } else {
-                    Vec::new()
-                },
-                file_names: documents
-                    .iter()
-                    .map(|document| document.source.file_name.clone())
-                    .collect(),
-            },
-        )
-        .await
-        {
-            Ok(completion) => completion,
-            Err(error) => {
-                let usage = llm::TokenUsage::default();
-                let _ = llm::record_scan_usage(
-                    state,
-                    auth,
-                    &configuration,
-                    &usage,
-                    Some(&error.message),
-                )
-                .await;
+        let file_names = documents
+            .iter()
+            .map(|document| document.source.file_name.clone())
+            .collect::<Vec<_>>();
+        let mut attempt = 0;
 
-                return Err(error);
+        let raw = loop {
+            attempt += 1;
+
+            let completion = match llm::parse_document_scan(
+                state,
+                auth,
+                &configuration,
+                llm::DocumentScanInput {
+                    ocr_text: chunk.clone(),
+                    ocr_confidence: ocr.confidence,
+                    ocr_method: ocr.method.clone(),
+                    originals: if index == 0 {
+                        originals.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    file_names: file_names.clone(),
+                },
+            )
+            .await
+            {
+                Ok(completion) => completion,
+                Err(error) => {
+                    let usage = llm::TokenUsage::default();
+                    let _ = llm::record_scan_usage(
+                        state,
+                        auth,
+                        &configuration,
+                        &usage,
+                        Some(&error.message),
+                    )
+                    .await;
+
+                    return Err(error);
+                }
+            };
+
+            match parse_raw_scan_result(&completion.content) {
+                Ok(raw) => {
+                    llm::record_scan_usage(state, auth, &configuration, &completion.usage, None)
+                        .await?;
+
+                    break raw;
+                }
+                Err(error) => {
+                    let usage_error = format!("Invalid structured scan result: {error}");
+                    llm::record_scan_usage(
+                        state,
+                        auth,
+                        &configuration,
+                        &completion.usage,
+                        Some(&usage_error),
+                    )
+                    .await?;
+
+                    if attempt < SCAN_STRUCTURED_RESULT_ATTEMPTS {
+                        continue;
+                    }
+
+                    tracing::warn!(
+                        section = index + 1,
+                        attempts = attempt,
+                        response_bytes = completion.content.len(),
+                        error = %error,
+                        "scan model returned invalid structured data"
+                    );
+
+                    let message = if auth.user.locale == "en" {
+                        format!(
+                            "The scan model returned an incomplete result for section {} after retrying.",
+                            index + 1
+                        )
+                    } else {
+                        format!(
+                            "Das Einlesemodell hat für Abschnitt {} auch nach einem erneuten Versuch ein unvollständiges Ergebnis geliefert.",
+                            index + 1
+                        )
+                    };
+
+                    return Err(internal(message));
+                }
             }
         };
-
-        llm::record_scan_usage(state, auth, &configuration, &completion.usage, None).await?;
-
-        let raw: RawScanResult = serde_json::from_str(&completion.content).map_err(|error| {
-            internal(format!(
-                "Scan LLM returned invalid structured data in section {}: {error}",
-                index + 1
-            ))
-        })?;
 
         if let Some(result) = &mut raw_result {
             merge_raw_scan_result(result, raw);
@@ -2091,6 +2136,21 @@ fn scan_transcript_chunks(transcript: &str, is_workbook: bool) -> Vec<String> {
     } else {
         chunks
     }
+}
+
+fn parse_raw_scan_result(content: &str) -> Result<RawScanResult, serde_json::Error> {
+    let trimmed = content.trim();
+    let without_opening_fence = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .unwrap_or(trimmed)
+        .trim_start();
+    let structured = without_opening_fence
+        .strip_suffix("```")
+        .unwrap_or(without_opening_fence)
+        .trim_end();
+
+    serde_json::from_str(structured)
 }
 
 fn merge_raw_scan_result(target: &mut RawScanResult, mut source: RawScanResult) {
@@ -2661,8 +2721,8 @@ mod tests {
 
     use super::{
         DeliveryNoteOcrResult, MAX_SCAN_BYTES, ParseScanInput, RecognizedScanDocument, ScanProduct,
-        combine_ocr_documents, parse_product_records, parse_special_records, product_unit_factor,
-        scan_transcript_chunks, validate_scan_documents, validate_scan_file,
+        combine_ocr_documents, parse_product_records, parse_raw_scan_result, parse_special_records,
+        product_unit_factor, scan_transcript_chunks, validate_scan_documents, validate_scan_file,
     };
     use sqlx::types::Json;
 
@@ -2718,6 +2778,23 @@ mod tests {
         assert!(chunks[1].contains("Artikel 50\tStk\t50.50"));
         assert!(chunks[2].contains("Artikel 75\tStk\t75.50"));
         assert!(chunks[3].contains("Artikel 85\tStk\t85.50"));
+    }
+
+    #[test]
+    fn structured_scan_results_accept_plain_json_and_provider_code_fences() {
+        let result = r#"{
+            "documentType": "priceList",
+            "supplier": "Baustoffhandel",
+            "documentNumber": null,
+            "documentDate": "2025-07-01",
+            "comment": null,
+            "lines": []
+        }"#;
+
+        assert!(parse_raw_scan_result(result).is_ok());
+        assert!(parse_raw_scan_result(&format!("```json\n{result}\n```")).is_ok());
+        assert!(parse_raw_scan_result(&format!("```\n{result}\n```")).is_ok());
+        assert!(parse_raw_scan_result(r#"{"documentType":"priceList","supplier":"cut"#).is_err());
     }
 
     #[test]

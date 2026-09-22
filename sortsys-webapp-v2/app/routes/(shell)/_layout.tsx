@@ -234,7 +234,11 @@ export default Authenticated(function() {
       </SideNavItems>
     </SideNav>
 
-    <Content className={'main-container' + (path.startsWith('/llm') ? ' main-container--llm' : '')}>
+    <Content className={[
+      'main-container',
+      path.startsWith('/llm') ? 'main-container--llm' : '',
+      path === '/deployments' ? 'main-container--deployments' : '',
+    ].filter(Boolean).join(' ')}>
       <ScopedErrorBoundary scope="application.content" resetKey={`${location.pathname}${location.search}`}>
         <Outlet />
       </ScopedErrorBoundary>

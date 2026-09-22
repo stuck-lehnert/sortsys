@@ -321,9 +321,9 @@ pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSu
             r#"
             INSERT INTO users (
                 username, first_name, last_name, email, phone, password,
-                deactivated_at, cost_per_hour, contract_type
+                deactivated_at, cost_per_hour, contract_type, vacation_days_per_year
             )
-            VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9)
             RETURNING id
             "#,
         )
@@ -335,6 +335,7 @@ pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSu
         .bind(&password_hash)
         .bind(cost_per_hour)
         .bind(contract_type)
+        .bind((contract_type == "internal").then_some(30_i16))
         .fetch_one(&mut *transaction)
         .await?;
 
@@ -635,9 +636,9 @@ pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSu
             r#"
             INSERT INTO user_vacations (
                 user_id, requested_by_user_id, decided_by_user_id,
-                "from", "to", status, note, denial_reason, decided_at
+                "from", "to", absence_type, label, status, note, denial_reason, decided_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             "#,
         )
         .bind(user_ids[(index * 5 + 1) % user_ids.len()])
@@ -645,8 +646,14 @@ pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSu
         .bind(decided.then_some(user_ids[0]))
         .bind(from)
         .bind(to)
+        .bind(if ABSENCE_LABELS[index % ABSENCE_LABELS.len()].is_some() {
+            "other"
+        } else {
+            "vacation"
+        })
+        .bind(ABSENCE_LABELS[index % ABSENCE_LABELS.len()])
         .bind(status)
-        .bind(VACATION_NOTES[index % VACATION_NOTES.len()])
+        .bind(ABSENCE_NOTES[index % ABSENCE_NOTES.len()])
         .bind((status == "denied").then_some(DENIAL_REASONS[index % DENIAL_REASONS.len()]))
         .bind(decided.then_some(Utc::now() - Duration::days(random.range(14) as i64)))
         .execute(&mut *transaction)
@@ -1032,15 +1039,17 @@ pub async fn ensure_development_users(pool: &PgPool) -> SeedResult<()> {
         let id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO users (
-                username, first_name, last_name, email, phone, password, deactivated_at
+                username, first_name, last_name, email, phone, password, deactivated_at,
+                vacation_days_per_year
             )
-            VALUES ($1, $2, $3, $4, $5, $6, NULL)
+            VALUES ($1, $2, $3, $4, $5, $6, NULL, 30)
             ON CONFLICT (username) DO UPDATE SET
                 first_name = EXCLUDED.first_name,
                 last_name = EXCLUDED.last_name,
                 email = EXCLUDED.email,
                 phone = EXCLUDED.phone,
                 password = EXCLUDED.password,
+                vacation_days_per_year = EXCLUDED.vacation_days_per_year,
                 deactivated_at = NULL,
                 archived_at = NULL
             RETURNING id
@@ -1912,13 +1921,22 @@ const DEPLOYMENT_NOTES: &[&str] = &[
     "Sockelbereiche ausbessern und Schlussbeschichtung auftragen.",
 ];
 
-const VACATION_NOTES: &[&str] = &[
+const ABSENCE_LABELS: &[Option<&str>] = &[
+    None,
+    None,
+    Some("ÜLO"),
+    Some("Berufsschule"),
+    Some("Schulung"),
+    Some("Freizeitausgleich"),
+];
+
+const ABSENCE_NOTES: &[&str] = &[
     "Jahresurlaub",
     "Familienurlaub",
-    "Brückentage",
-    "Kurzurlaub",
-    "Resturlaub aus dem Vorjahr",
-    "Bereits mit der Kolonne abgestimmt",
+    "Überbetriebliche Lehrlingsunterweisung",
+    "Blockunterricht laut Schulplan",
+    "Herstellerschulung zum Brandschutzsystem",
+    "Ausgleich für geleistete Mehrarbeit",
 ];
 
 const DENIAL_REASONS: &[&str] = &[

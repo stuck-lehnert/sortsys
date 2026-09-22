@@ -34,6 +34,7 @@ const USER_SELECT: &str = r#"
         phone,
         contract_type,
         cost_per_hour,
+        vacation_days_per_year,
         supervisor_user_id,
         created_at,
         modified_at,
@@ -171,6 +172,7 @@ struct UserRow {
     phone: Option<String>,
     contract_type: String,
     cost_per_hour: Option<f64>,
+    vacation_days_per_year: Option<i16>,
     supervisor_user_id: Option<i64>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
@@ -190,6 +192,7 @@ impl UserRow {
             "phone": self.phone,
             "contractType": self.contract_type,
             "costPerHour": show_cost.then_some(self.cost_per_hour).flatten(),
+            "vacationDaysPerYear": show_cost.then_some(self.vacation_days_per_year).flatten(),
             "supervisorUserId": self.supervisor_user_id.map(Id),
             "createdAt": self.created_at,
             "modifiedAt": self.modified_at,
@@ -300,6 +303,8 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
     let cost_per_hour = input.get("costPerHour").and_then(Value::as_f64);
     validate_hourly_cost(cost_per_hour)?;
 
+    let vacation_days_per_year = optional_vacation_days(input, "vacationDaysPerYear")?;
+
     let created_by_user_id = auth.user.id.parse::<i64>().map_err(internal)?;
     let user_id: i64 = sqlx::query_scalar(
         r#"
@@ -311,10 +316,11 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
             phone,
             contract_type,
             cost_per_hour,
+            vacation_days_per_year,
             supervisor_user_id,
             created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id
         "#,
     )
@@ -325,6 +331,7 @@ async fn create(state: &AppState, context: &RequestContext, input: Value) -> Rpc
     .bind(nullable_trimmed(input, "phone"))
     .bind(contract_type)
     .bind(cost_per_hour)
+    .bind(vacation_days_per_year)
     .bind(supervisor_user_id)
     .bind(created_by_user_id)
     .fetch_one(&pool)
@@ -387,6 +394,12 @@ async fn update(state: &AppState, context: &RequestContext, input: Value) -> Rpc
     };
     validate_hourly_cost(cost_per_hour)?;
 
+    let vacation_days_per_year = if changes.contains_key("vacationDaysPerYear") {
+        optional_vacation_days(changes, "vacationDaysPerYear")?
+    } else {
+        current.vacation_days_per_year
+    };
+
     let supervisor_user_id = if changes.contains_key("supervisorUserId") {
         optional_input_id(changes, "supervisorUserId")?
     } else {
@@ -405,7 +418,8 @@ async fn update(state: &AppState, context: &RequestContext, input: Value) -> Rpc
             phone = $6,
             contract_type = $7,
             cost_per_hour = $8,
-            supervisor_user_id = $9
+            vacation_days_per_year = $9,
+            supervisor_user_id = $10
         WHERE id = $1
         "#,
     )
@@ -417,6 +431,7 @@ async fn update(state: &AppState, context: &RequestContext, input: Value) -> Rpc
     .bind(phone)
     .bind(contract_type)
     .bind(cost_per_hour)
+    .bind(vacation_days_per_year)
     .bind(supervisor_user_id)
     .execute(&pool)
     .await
@@ -497,6 +512,22 @@ fn validate_hourly_cost(cost_per_hour: Option<f64>) -> RpcResult<()> {
     }
 
     Ok(())
+}
+
+fn optional_vacation_days(input: &Map<String, Value>, key: &str) -> RpcResult<Option<i16>> {
+    let Some(value) = input.get(key) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    let days = value
+        .as_i64()
+        .filter(|days| (0..=366).contains(days))
+        .ok_or_else(|| bad_request("invalid vacationDaysPerYear"))?;
+
+    Ok(Some(days as i16))
 }
 
 async fn ensure_valid_supervisor(
@@ -851,7 +882,11 @@ fn success() -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_contract_type, validate_hourly_cost, validate_username};
+    use serde_json::json;
+
+    use super::{
+        optional_vacation_days, validate_contract_type, validate_hourly_cost, validate_username,
+    };
 
     #[test]
     fn validates_usernames_like_the_legacy_schema() {
@@ -866,5 +901,28 @@ mod tests {
         assert!(validate_contract_type("temporary").is_err());
         assert!(validate_hourly_cost(Some(0.0)).is_ok());
         assert!(validate_hourly_cost(Some(-0.01)).is_err());
+    }
+
+    #[test]
+    fn validates_annual_vacation_days() {
+        let valid = json!({ "vacationDaysPerYear": 30 });
+        let empty = json!({ "vacationDaysPerYear": null });
+        let negative = json!({ "vacationDaysPerYear": -1 });
+        let fractional = json!({ "vacationDaysPerYear": 2.5 });
+
+        assert_eq!(
+            optional_vacation_days(valid.as_object().unwrap(), "vacationDaysPerYear").unwrap(),
+            Some(30)
+        );
+        assert_eq!(
+            optional_vacation_days(empty.as_object().unwrap(), "vacationDaysPerYear").unwrap(),
+            None
+        );
+        assert!(
+            optional_vacation_days(negative.as_object().unwrap(), "vacationDaysPerYear").is_err()
+        );
+        assert!(
+            optional_vacation_days(fractional.as_object().unwrap(), "vacationDaysPerYear").is_err()
+        );
     }
 }

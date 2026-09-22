@@ -2171,10 +2171,11 @@ async fn users_roles_and_vacations_use_real_postgres() {
             password,
             contract_type,
             cost_per_hour,
+            vacation_days_per_year,
             supervisor_user_id,
             deactivated_at
         )
-        VALUES ('integration.employee', 'Integration Employee', $1, 'internal', 37.5, $2, NULL)
+        VALUES ('integration.employee', 'Integration Employee', $1, 'internal', 37.5, 30, $2, NULL)
         RETURNING id
         "#,
     )
@@ -2251,6 +2252,7 @@ async fn users_roles_and_vacations_use_real_postgres() {
             json!({
                 "from": "2026-09-14T00:00:00.000+02:00",
                 "to": "2026-09-18T00:00:00.000+02:00",
+                "type": "vacation",
                 "note": "Database integration vacation",
             }),
             Some(&employee_token),
@@ -2266,6 +2268,27 @@ async fn users_roles_and_vacations_use_real_postgres() {
         "FORBIDDEN",
     )
     .await;
+
+    let requested_vacations = rpc
+        .query(
+            "users.vacations.list",
+            json!({ "userId": employee_id }),
+            Some(&admin_token),
+        )
+        .await;
+    let requested_vacation = requested_vacations
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == vacation["id"])
+        .unwrap();
+    assert_eq!(requested_vacation["vacationUsage"][0]["allowanceDays"], 30);
+    assert_eq!(requested_vacation["vacationUsage"][0]["approvedDays"], 0);
+    assert_eq!(requested_vacation["vacationUsage"][0]["requestedDays"], 5);
+    assert_eq!(
+        requested_vacation["vacationUsage"][0]["remainingAfterApproval"],
+        25
+    );
     rpc.mutation(
         "users.vacations.approve",
         json!({ "id": vacation["id"] }),
@@ -2273,17 +2296,35 @@ async fn users_roles_and_vacations_use_real_postgres() {
     )
     .await;
 
-    let vacation_status =
-        sqlx::query_scalar::<_, String>("SELECT status FROM user_vacations WHERE id = $1")
-            .bind(
-                sortsys_api::ids::Id::decode(vacation["id"].as_str().unwrap())
-                    .unwrap()
-                    .0,
-            )
-            .fetch_one(&fixture.tenant_pool)
-            .await
-            .unwrap();
-    assert_eq!(vacation_status, "approved");
+    let listed_absences = rpc
+        .query(
+            "users.vacations.list",
+            json!({
+                "from": "2026-09-14",
+                "to": "2026-09-18",
+            }),
+            Some(&employee_token),
+        )
+        .await;
+    assert!(listed_absences.as_array().unwrap().iter().any(|entry| {
+        entry["id"] == vacation["id"] && entry["type"] == "vacation" && entry["label"].is_null()
+    }));
+
+    let vacation_state = sqlx::query_as::<_, (String, String, Option<String>)>(
+        "SELECT status, absence_type, label FROM user_vacations WHERE id = $1",
+    )
+    .bind(
+        sortsys_api::ids::Id::decode(vacation["id"].as_str().unwrap())
+            .unwrap()
+            .0,
+    )
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        vacation_state,
+        ("approved".to_owned(), "vacation".to_owned(), None)
+    );
 
     let created_user = rpc
         .mutation(
@@ -2416,6 +2457,8 @@ async fn users_roles_and_vacations_use_real_postgres() {
             json!({
                 "from": "2026-10-05T00:00:00.000+02:00",
                 "to": "2026-10-06T00:00:00.000+02:00",
+                "type": "other",
+                "label": "ÜLO",
                 "note": "Deny this request",
             }),
             Some(&employee_token),
@@ -2434,13 +2477,12 @@ async fn users_roles_and_vacations_use_real_postgres() {
             Some(&admin_token),
         )
         .await;
-    assert!(
-        vacations
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| { entry["id"] == denied_vacation["id"] && entry["status"] == "denied" })
-    );
+    assert!(vacations.as_array().unwrap().iter().any(|entry| {
+        entry["id"] == denied_vacation["id"]
+            && entry["type"] == "other"
+            && entry["label"] == "ÜLO"
+            && entry["status"] == "denied"
+    }));
     rpc.mutation(
         "users.vacations.delete",
         json!({ "id": denied_vacation["id"] }),
