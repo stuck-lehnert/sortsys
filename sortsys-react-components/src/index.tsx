@@ -560,12 +560,14 @@ export function SelectItem({ text, children, ...props }: any) {
 export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(props, ref) {
   const {
     titleText,
+    helperText,
     items = [],
     itemToString = (item: any) => asOptionText(item),
     itemToElement,
     onInputChange,
     value,
     className,
+    id,
     invalid,
     invalidText,
     disabled,
@@ -595,11 +597,12 @@ export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(prop
 
   return (
     <div ref={wrapperRef} className={cx("ss-field ss-combobox", className)}>
-      {!!titleText && <label className="ss-label">{titleText}</label>}
+      {!!titleText && <label className="ss-label" htmlFor={id}>{titleText}</label>}
 
       <input
         ref={ref}
         {...rest}
+        id={id}
         value={internalValue}
         disabled={disabled}
         className={cx("ss-input", invalid && "is-invalid")}
@@ -640,6 +643,7 @@ export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(prop
         </ul>
       )}
 
+      {!!helperText && <div className="ss-field__hint">{helperText}</div>}
       {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
     </div>
   );

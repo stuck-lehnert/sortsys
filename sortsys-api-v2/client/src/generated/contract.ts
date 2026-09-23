@@ -2,7 +2,7 @@
 
 export type ActivityResourceType = "project" | "tool" | "user" | "customer" | "contact" | "product" | "productVendor" | "deliveryNote" | "regieReport" | "dailyProjectReport";
 
-export type ApplyPriceImportRow = { productId: Id | null, productName: string, baseUnit: string, pricePerBaseUnit: number, comment: string | null, };
+export type ApplyPriceImportRow = { productId: Id | null, productName: string, brand: string | null, description: string | null, baseUnit: string, otherUnits: { [key in string]: number }, pricePerBaseUnit: number, comment: string | null, };
 
 export type AssistantLocale = "de" | "en";
 
@@ -34,7 +34,7 @@ export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
 
 export type ScanJobState = "queued" | "ocr" | "matching" | "completed" | "failed";
 
-export type ScannedPriceRow = { sourceText: string, productId: Id | null, customId: number | null, productName: string, baseUnit: string, sourceUnit: string, pricePerBaseUnit: number, confidence: number, comment: string | null, };
+export type ScannedPriceRow = { sourceText: string, productId: Id | null, customId: number | null, productName: string, brand: string | null, description: string | null, otherUnits: Record<string, number>, baseUnit: string, sourceUnit: string, pricePerBaseUnit: number, confidence: number, comment: string | null, };
 
 export type ScannedProductRecord = { sourceText: string, productId: Id, customId: number, productName: string, quantity: number, displayQuantity: number, unit: string, baseUnit: string, confidence: number, comment: string | null, };
 

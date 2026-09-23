@@ -1,6 +1,9 @@
 //! Product catalogue, vendor, category, unit, and price-record procedures.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -203,7 +206,11 @@ struct ApplyPriceImportInput {
 struct ApplyPriceImportRow {
     product_id: Option<Id>,
     product_name: String,
+    brand: Option<String>,
+    description: Option<String>,
     base_unit: String,
+    #[serde(default)]
+    other_units: HashMap<String, f64>,
     price_per_base_unit: f64,
     comment: Option<String>,
 }
@@ -1013,8 +1020,31 @@ async fn apply_price_import(
         if row.product_name.trim().is_empty() || row.product_name.trim().len() > 255 {
             return Err(bad_request("price import contains an invalid product name"));
         }
-        if row.base_unit.trim().is_empty() || row.base_unit.trim().len() > 10 {
+        if row.base_unit.trim().is_empty() || row.base_unit.trim().len() > 8 {
             return Err(bad_request("price import contains an invalid base unit"));
+        }
+        if row.product_id.is_none() {
+            if row.brand.as_deref().is_some_and(|value| value.len() > 127)
+                || row
+                    .description
+                    .as_deref()
+                    .is_some_and(|value| value.len() > 511)
+            {
+                return Err(bad_request("price import contains invalid product details"));
+            }
+            if row.other_units.len() > 64
+                || row.other_units.iter().any(|(unit, factor)| {
+                    unit.trim().is_empty()
+                        || unit.len() > 32
+                        || unit.eq_ignore_ascii_case(row.base_unit.trim())
+                        || !factor.is_finite()
+                        || *factor <= 0.0
+                })
+            {
+                return Err(bad_request(
+                    "price import contains invalid unit conversions",
+                ));
+            }
         }
         if row
             .comment
@@ -1066,13 +1096,26 @@ async fn apply_price_import(
                     base_unit,
                     other_units
                 )
-                VALUES ($1, $2, NULL, NULL, $3, '{}'::jsonb)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
                 "#,
             )
             .bind(next_custom_id)
             .bind(row.product_name.trim())
+            .bind(
+                row.brand
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty()),
+            )
+            .bind(
+                row.description
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty()),
+            )
             .bind(row.base_unit.trim())
+            .bind(Json(&row.other_units))
             .fetch_one(&mut *transaction)
             .await
             .map_err(internal)?;

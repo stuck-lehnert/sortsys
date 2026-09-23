@@ -189,7 +189,7 @@ async fn configure_development_llm(
             "openai",
             "OPENAI_API_KEY",
             "OPENAI_MODEL",
-            "gpt-5.6-luna",
+            "gpt-6-luna",
             None,
         ),
         (

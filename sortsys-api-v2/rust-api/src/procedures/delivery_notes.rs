@@ -1,6 +1,10 @@
 //! Product delivery notes and their cost calculation.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -1018,12 +1022,25 @@ enum RawScanDocumentType {
 struct RawScanLine {
     source_text: String,
     name: String,
+    brand: Option<String>,
+    description: Option<String>,
     quantity: f64,
     unit: String,
+    base_unit: Option<String>,
+    #[serde(default)]
+    unit_conversions: Vec<RawUnitConversion>,
     product_id: Option<Id>,
     price_per_unit: Option<f64>,
     confidence: f64,
     comment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawUnitConversion {
+    unit: String,
+    quantity: f64,
+    in_unit: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -1081,6 +1098,10 @@ struct ScannedPriceRow {
     product_id: Option<Id>,
     custom_id: Option<i32>,
     product_name: String,
+    brand: Option<String>,
+    description: Option<String>,
+    #[ts(type = "Record<string, number>")]
+    other_units: HashMap<String, f64>,
     base_unit: String,
     source_unit: String,
     price_per_base_unit: f64,
@@ -1115,11 +1136,12 @@ struct ScannedSpecialRecord {
     comment: Option<String>,
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, Clone, FromRow)]
 struct ScanProduct {
     id: i64,
     custom_id: i32,
     name: String,
+    brand: Option<String>,
     base_unit: String,
     other_units: Json<Value>,
 }
@@ -2353,7 +2375,7 @@ async fn normalize_delivery_note_result(
         let product = match line.product_id {
             Some(product_id) => sqlx::query_as::<_, ScanProduct>(
                 r#"
-                    SELECT id, custom_id, name, base_unit, other_units
+                    SELECT id, custom_id, name, brand, base_unit, other_units
                     FROM products
                     WHERE id = $1
                     "#,
@@ -2443,6 +2465,18 @@ async fn normalize_price_list_result(
 
     let mut rows = Vec::with_capacity(raw.lines.len());
     let mut warnings = Vec::new();
+    // Read the catalogue once for a conservative second pass when the model
+    // leaves products unmatched in a large price list.
+    let catalogue = if raw.lines.iter().any(|line| line.product_id.is_none()) {
+        sqlx::query_as::<_, ScanProduct>(
+            "SELECT id, custom_id, name, brand, base_unit, other_units FROM products",
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(internal)?
+    } else {
+        Vec::new()
+    };
 
     for line in raw.lines {
         let Some(source_price) = line
@@ -2480,7 +2514,7 @@ async fn normalize_price_list_result(
         let product = match line.product_id {
             Some(product_id) => sqlx::query_as::<_, ScanProduct>(
                 r#"
-                SELECT id, custom_id, name, base_unit, other_units
+                SELECT id, custom_id, name, brand, base_unit, other_units
                 FROM products
                 WHERE id = $1
                 "#,
@@ -2489,7 +2523,7 @@ async fn normalize_price_list_result(
             .fetch_optional(pool)
             .await
             .map_err(internal)?,
-            None => None,
+            None => find_unambiguous_product_match(&catalogue, &line),
         };
 
         let normalized = product.and_then(|product| {
@@ -2498,6 +2532,9 @@ async fn normalize_price_list_result(
                 product_id: Some(Id(product.id)),
                 custom_id: Some(product.custom_id),
                 product_name: product.name,
+                brand: product.brand,
+                description: None,
+                other_units: serde_json::from_value(product.other_units.0).unwrap_or_default(),
                 base_unit: product.base_unit,
                 source_unit,
                 price_per_base_unit: source_price / factor,
@@ -2526,14 +2563,35 @@ async fn normalize_price_list_result(
             warnings.push(warning);
         }
 
+        let (base_unit, other_units, factor) = match proposed_unit_factors(&line) {
+            Some(units) => units,
+            None => {
+                let warning = if locale == "en" {
+                    format!(
+                        "“{}” has no usable conversion to the proposed base unit. The source unit was retained.",
+                        line.source_text
+                    )
+                } else {
+                    format!(
+                        "„{}“ hat keine verwendbare Umrechnung in die vorgeschlagene Basiseinheit. Die Ausgangseinheit wurde beibehalten.",
+                        line.source_text
+                    )
+                };
+                warnings.push(warning);
+                (line.unit.trim().to_owned(), HashMap::new(), 1.0)
+            }
+        };
         rows.push(ScannedPriceRow {
             source_text: line.source_text,
             product_id: None,
             custom_id: None,
             product_name: line.name.trim().to_owned(),
-            base_unit: line.unit.trim().to_owned(),
+            brand: clean_optional_text(line.brand),
+            description: clean_optional_text(line.description),
+            base_unit,
+            other_units,
             source_unit: line.unit.trim().to_owned(),
-            price_per_base_unit: source_price,
+            price_per_base_unit: source_price / factor,
             confidence: line.confidence.clamp(0.0, 1.0),
             comment: clean_optional_text(line.comment),
         });
@@ -2555,10 +2613,160 @@ async fn normalize_price_list_result(
     })
 }
 
+fn normalize_match_text(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|character| character.is_alphanumeric())
+        .collect()
+}
+
+fn find_unambiguous_product_match(
+    catalogue: &[ScanProduct],
+    line: &RawScanLine,
+) -> Option<ScanProduct> {
+    let source = normalize_match_text(&line.source_text);
+    let mut matches = catalogue.iter().filter(|product| {
+        let name = normalize_match_text(&product.name);
+        if name.chars().count() < 6 || !source.contains(&name) {
+            return false;
+        }
+
+        if product.brand.as_deref().is_some_and(|brand| {
+            !brand.trim().is_empty() && !source.contains(&normalize_match_text(brand))
+        }) {
+            return false;
+        }
+
+        product_unit_factor(product, &line.unit).is_some()
+    });
+
+    let first = matches.next()?.clone();
+    matches.next().is_none().then_some(first)
+}
+
+fn normalized_unit(unit: &str) -> String {
+    let normalized = normalize_match_text(unit);
+    match normalized.as_str() {
+        "pal" | "palette" | "paletten" => "palette".to_owned(),
+        "stk" | "stück" | "stueck" => "stück".to_owned(),
+        "saecke" | "säcke" | "sack" => "sack".to_owned(),
+        _ => normalized,
+    }
+}
+
+fn is_package_unit(unit: &str) -> bool {
+    matches!(
+        normalized_unit(unit).as_str(),
+        "sack"
+            | "palette"
+            | "packung"
+            | "karton"
+            | "gebinde"
+            | "eimer"
+            | "kanister"
+            | "beutel"
+            | "fass"
+            | "bigbag"
+            | "rolle"
+    )
+}
+
+fn proposed_unit_factors(line: &RawScanLine) -> Option<(String, HashMap<String, f64>, f64)> {
+    if line.unit_conversions.len() > 64 {
+        return None;
+    }
+
+    let mut base_unit = line
+        .base_unit
+        .as_deref()
+        .map(str::trim)
+        .filter(|unit| !unit.is_empty())
+        .unwrap_or(line.unit.trim())
+        .to_owned();
+
+    // A package cannot be the base when its contents are stated.
+    let mut visited = HashSet::new();
+    while is_package_unit(&base_unit) {
+        if !visited.insert(normalized_unit(&base_unit)) {
+            return None;
+        }
+
+        let Some(conversion) = line
+            .unit_conversions
+            .iter()
+            .find(|conversion| normalized_unit(&conversion.unit) == normalized_unit(&base_unit))
+        else {
+            break;
+        };
+        base_unit = conversion.in_unit.trim().to_owned();
+    }
+
+    if base_unit.is_empty() || base_unit.len() > 8 {
+        return None;
+    }
+
+    let mut conversion_units = HashSet::new();
+    for conversion in &line.unit_conversions {
+        let unit = conversion.unit.trim();
+        if unit.is_empty()
+            || unit.len() > 32
+            || conversion.in_unit.trim().is_empty()
+            || !conversion.quantity.is_finite()
+            || conversion.quantity <= 0.0
+            || !conversion_units.insert(normalized_unit(unit))
+        {
+            return None;
+        }
+    }
+
+    let mut factors = HashMap::from([(normalized_unit(&base_unit), 1.0_f64)]);
+    let mut other_units = HashMap::new();
+
+    // Resolve nested packaging against the base unit: 40 Sack × 30 kg.
+    for _ in 0..line.unit_conversions.len() {
+        let mut changed = false;
+
+        for conversion in &line.unit_conversions {
+            let unit = conversion.unit.trim();
+            let key = normalized_unit(unit);
+            let parent = normalized_unit(&conversion.in_unit);
+            let Some(parent_factor) = factors.get(&parent) else {
+                continue;
+            };
+            let factor = conversion.quantity * parent_factor;
+            if !factor.is_finite() || factor <= 0.0 {
+                return None;
+            }
+
+            if let Some(existing) = factors.get(&key) {
+                if (existing - factor).abs() > 1e-9 * existing.max(factor) {
+                    return None;
+                }
+            } else {
+                factors.insert(key, factor);
+                changed = true;
+            }
+            other_units.insert(unit.to_owned(), factor);
+        }
+
+        if !changed {
+            break;
+        }
+    }
+
+    if other_units.len() != line.unit_conversions.len() {
+        return None;
+    }
+
+    let source_factor = *factors.get(&normalized_unit(&line.unit))?;
+    Some((base_unit, other_units, source_factor))
+}
+
 fn product_unit_factor(product: &ScanProduct, scanned_unit: &str) -> Option<(String, f64)> {
     let scanned_unit = scanned_unit.trim();
 
-    if scanned_unit.eq_ignore_ascii_case(&product.base_unit) {
+    if normalized_unit(scanned_unit) == normalized_unit(&product.base_unit) {
         return Some((product.base_unit.clone(), 1.0));
     }
 
@@ -2567,7 +2775,7 @@ fn product_unit_factor(product: &ScanProduct, scanned_unit: &str) -> Option<(Str
         .0
         .as_object()?
         .iter()
-        .find(|(unit, _)| unit.eq_ignore_ascii_case(scanned_unit))
+        .find(|(unit, _)| normalized_unit(unit) == normalized_unit(scanned_unit))
         .and_then(|(unit, factor)| {
             factor
                 .as_f64()
@@ -2717,12 +2925,15 @@ fn success() -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use serde_json::json;
 
     use super::{
-        DeliveryNoteOcrResult, MAX_SCAN_BYTES, ParseScanInput, RecognizedScanDocument, ScanProduct,
-        combine_ocr_documents, parse_product_records, parse_raw_scan_result, parse_special_records,
-        product_unit_factor, scan_transcript_chunks, validate_scan_documents, validate_scan_file,
+        DeliveryNoteOcrResult, MAX_SCAN_BYTES, ParseScanInput, RawScanLine, RawUnitConversion,
+        RecognizedScanDocument, ScanProduct, combine_ocr_documents, find_unambiguous_product_match,
+        parse_product_records, parse_raw_scan_result, parse_special_records, product_unit_factor,
+        proposed_unit_factors, scan_transcript_chunks, validate_scan_documents, validate_scan_file,
     };
     use sqlx::types::Json;
 
@@ -2745,6 +2956,7 @@ mod tests {
             id: 1,
             custom_id: 42,
             name: "Kalkzementputz".to_owned(),
+            brand: None,
             base_unit: "kg".to_owned(),
             other_units: Json(json!({ "Sack": 25 })),
         };
@@ -2758,6 +2970,68 @@ mod tests {
             Some(("kg".to_owned(), 1.0))
         );
         assert_eq!(product_unit_factor(&product, "Palette"), None);
+    }
+
+    #[test]
+    fn supplier_abbreviation_matches_perlfix_only_with_brand_and_units() {
+        let perlfix = ScanProduct {
+            id: 233,
+            custom_id: 233,
+            name: "Perlfix".to_owned(),
+            brand: Some("Knauf".to_owned()),
+            base_unit: "kg".to_owned(),
+            other_units: Json(json!({ "Sack": 30, "Palette": 1200 })),
+        };
+        let line = RawScanLine {
+            source_text: "KNAUF-ANSETZB.-PERLFIX A 30 KG (1 PAL. = 40 SACK)".to_owned(),
+            name: "Knauf Perlfix".to_owned(),
+            brand: Some("Knauf".to_owned()),
+            description: Some("Ansetzgips 30 kg".to_owned()),
+            quantity: 1.0,
+            unit: "Sack".to_owned(),
+            base_unit: Some("Sack".to_owned()),
+            unit_conversions: vec![
+                RawUnitConversion {
+                    unit: "Palette".to_owned(),
+                    quantity: 40.0,
+                    in_unit: "Sack".to_owned(),
+                },
+                RawUnitConversion {
+                    unit: "Sack".to_owned(),
+                    quantity: 30.0,
+                    in_unit: "kg".to_owned(),
+                },
+            ],
+            product_id: None,
+            price_per_unit: Some(8.4),
+            confidence: 0.9,
+            comment: None,
+        };
+
+        assert_eq!(
+            find_unambiguous_product_match(std::slice::from_ref(&perlfix), &line)
+                .map(|product| product.id),
+            Some(perlfix.id)
+        );
+        assert_eq!(
+            proposed_unit_factors(&line),
+            Some((
+                "kg".to_owned(),
+                HashMap::from([("Sack".to_owned(), 30.0), ("Palette".to_owned(), 1200.0),]),
+                30.0,
+            ))
+        );
+        assert_eq!(
+            product_unit_factor(&perlfix, &line.unit),
+            Some(("Sack".to_owned(), 30.0))
+        );
+
+        let other_brand = ScanProduct {
+            brand: Some("Rigips".to_owned()),
+            ..perlfix.clone()
+        };
+        assert!(find_unambiguous_product_match(&[other_brand], &line).is_none());
+        assert!(find_unambiguous_product_match(&[perlfix.clone(), perlfix], &line).is_none());
     }
 
     #[test]

@@ -4496,6 +4496,22 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     .await
     .unwrap();
 
+    let perlfix_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO products (
+          custom_id, name, brand, description, base_unit, other_units
+        )
+        VALUES (
+          99102, 'Perlfix', 'Knauf', 'Ansetzgips 30 kg', 'kg',
+          '{"Sack": 30, "Palette": 1200}'::JSONB
+        )
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
     let scan_bytes = include_bytes!("fixtures/delivery-note-ocr.png").to_vec();
     let upload = rpc
         .mutation(
@@ -4701,6 +4717,16 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     assert_eq!(prices["rows"][0]["pricePerBaseUnit"], 0.5);
     assert_eq!(prices["rows"][1]["productId"], Value::Null);
     assert_eq!(prices["rows"][1]["productName"], "Arbeitshandschuhe, Paar");
+    assert_eq!(prices["rows"][2]["productId"], Id(perlfix_id).encode());
+    assert_eq!(prices["rows"][2]["baseUnit"], "kg");
+    assert!((prices["rows"][2]["pricePerBaseUnit"].as_f64().unwrap() - 0.28).abs() < 1e-9);
+    assert_eq!(prices["rows"][3]["productId"], Value::Null);
+    assert_eq!(prices["rows"][3]["otherUnits"]["Sack"].as_f64(), Some(30.0));
+    assert_eq!(
+        prices["rows"][3]["otherUnits"]["Palette"].as_f64(),
+        Some(1200.0)
+    );
+    assert!((prices["rows"][3]["pricePerBaseUnit"].as_f64().unwrap() - 0.5).abs() < 1e-9);
 
     let vendor = rpc
         .mutation(
@@ -4723,7 +4749,10 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
                 "rows": prices["rows"].as_array().unwrap().iter().map(|row| json!({
                     "productId": row["productId"],
                     "productName": row["productName"],
+                    "brand": row["brand"],
+                    "description": row["description"],
                     "baseUnit": row["baseUnit"],
+                    "otherUnits": row["otherUnits"],
                     "pricePerBaseUnit": row["pricePerBaseUnit"],
                     "comment": row["comment"],
                 })).collect::<Vec<_>>(),
@@ -4731,8 +4760,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             Some(token),
         )
         .await;
-    assert_eq!(imported["createdProducts"], 1);
-    assert_eq!(imported["createdPriceRecords"], 2);
+    assert_eq!(imported["createdProducts"], 2);
+    assert_eq!(imported["createdPriceRecords"], 4);
 
     let imported_product_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE name = 'Arbeitshandschuhe, Paar'")
@@ -4747,7 +4776,20 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .fetch_one(&fixture.tenant_pool)
             .await
             .unwrap();
-    assert_eq!(imported_price_count, 2);
+    assert_eq!(imported_price_count, 4);
+
+    let created: (Option<String>, Option<String>, String, sqlx::types::Json<Value>) =
+        sqlx::query_as(
+            "SELECT brand, description, base_unit, other_units FROM products WHERE name = 'Schnellspachtel X30'",
+        )
+        .fetch_one(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    assert_eq!(created.0.as_deref(), Some("Knauf"));
+    assert_eq!(created.1.as_deref(), Some("Spachtelmasse, 30 kg"));
+    assert_eq!(created.2, "kg");
+    assert_eq!(created.3.0["Sack"].as_f64(), Some(30.0));
+    assert_eq!(created.3.0["Palette"].as_f64(), Some(1200.0));
 
     // The remaining chat assertions intentionally use their historical request
     // indexes. The price-list scan has already been asserted independently.
@@ -7148,6 +7190,38 @@ async fn mock_openai_response(
                             "productId": null,
                             "pricePerUnit": 4.9,
                             "confidence": 0.94,
+                            "comment": null
+                        }, {
+                            "sourceText": "KNAUF-ANSETZB.-PERLFIX A 30 KG (1 PAL. = 40 SACK)",
+                            "name": "Knauf Perlfix",
+                            "brand": "Knauf",
+                            "description": "Ansetzgips 30 kg",
+                            "quantity": 1,
+                            "unit": "Sack",
+                            "baseUnit": "kg",
+                            "unitConversions": [
+                                {"unit": "Sack", "quantity": 30, "inUnit": "kg"},
+                                {"unit": "Palette", "quantity": 40, "inUnit": "Sack"}
+                            ],
+                            "productId": null,
+                            "pricePerUnit": 8.4,
+                            "confidence": 0.95,
+                            "comment": null
+                        }, {
+                            "sourceText": "KNAUF-SCHNELLSPACHTEL X30 30 KG (1 PAL. = 40 SACK)",
+                            "name": "Schnellspachtel X30",
+                            "brand": "Knauf",
+                            "description": "Spachtelmasse, 30 kg",
+                            "quantity": 1,
+                            "unit": "Sack",
+                            "baseUnit": "Sack",
+                            "unitConversions": [
+                                {"unit": "Palette", "quantity": 40, "inUnit": "Sack"},
+                                {"unit": "Sack", "quantity": 30, "inUnit": "kg"}
+                            ],
+                            "productId": null,
+                            "pricePerUnit": 15.0,
+                            "confidence": 0.93,
                             "comment": null
                         }]
                     })
