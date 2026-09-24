@@ -2539,6 +2539,156 @@ async fn users_roles_and_vacations_use_real_postgres() {
 }
 
 #[tokio::test]
+async fn delivery_notes_use_the_earliest_price_when_no_historical_price_exists() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping network scenarios: live infrastructure is not configured");
+        return;
+    };
+
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url);
+    let login = rpc
+        .mutation(
+            "auth.login",
+            json!({
+                "tenant": fixture.tenant,
+                "username": fixture.admin_username,
+                "password": fixture.admin_password,
+            }),
+            None,
+        )
+        .await;
+    let token = login["token"].as_str().unwrap();
+
+    let project = rpc
+        .mutation(
+            "projects.create",
+            json!({ "title": "Historical delivery prices" }),
+            Some(token),
+        )
+        .await;
+    let product = rpc
+        .mutation(
+            "products.create",
+            json!({
+                "customId": 9102,
+                "name": "Historical price test product",
+                "baseUnit": "kg",
+            }),
+            Some(token),
+        )
+        .await;
+    let note = rpc
+        .mutation(
+            "deliveryNotes.create",
+            json!({
+                "projectId": project["id"],
+                "effectiveTimestamp": "2026-02-01T10:00:00.000Z",
+                "records": [{
+                    "productId": product["id"],
+                    "quantity": 3,
+                    "unit": "kg",
+                }],
+                "specialRecords": [],
+            }),
+            Some(token),
+        )
+        .await;
+
+    // Insert the later price first so the fallback depends on its date, not insertion order.
+    rpc.mutation(
+        "products.priceRecords.create",
+        json!({
+            "productId": product["id"],
+            "pricePerBaseUnit": 30,
+            "timestamp": "2026-04-01T10:00:00.000Z",
+            "isRealPurchase": true,
+        }),
+        Some(token),
+    )
+    .await;
+    let earliest_price = rpc
+        .mutation(
+            "products.priceRecords.create",
+            json!({
+                "productId": product["id"],
+                "pricePerBaseUnit": 20,
+                "timestamp": "2026-03-01T10:00:00.000Z",
+                "isRealPurchase": true,
+            }),
+            Some(token),
+        )
+        .await;
+
+    async fn assert_selected_price(
+        rpc: &RpcClient,
+        token: &str,
+        project: &Value,
+        note: &Value,
+        price: &Value,
+        expected_cost: f64,
+    ) {
+        let note_costs = rpc
+            .query(
+                "deliveryNotes.costs.get",
+                json!({ "id": note["id"] }),
+                Some(token),
+            )
+            .await;
+        assert_eq!(note_costs["totalCost"], expected_cost);
+        assert_eq!(note_costs["records"][0]["priceRecord"]["id"], price["id"]);
+
+        let project_costs = rpc
+            .query(
+                "projects.costs.get",
+                json!({ "projectId": project["id"] }),
+                Some(token),
+            )
+            .await;
+        assert_eq!(
+            project_costs["deliveryNotes"][0]["totalCost"],
+            expected_cost
+        );
+        assert_eq!(
+            project_costs["products"][0]["priceRecord"]["id"],
+            price["id"]
+        );
+
+        let overview = rpc
+            .query(
+                "projects.costs.overview",
+                json!({ "status": "all" }),
+                Some(token),
+            )
+            .await;
+        let project_overview = overview
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["projectId"] == project["id"])
+            .unwrap();
+        assert_eq!(project_overview["costs"], expected_cost);
+    }
+
+    assert_selected_price(&rpc, token, &project, &note, &earliest_price, 60.0).await;
+
+    let historical_price = rpc
+        .mutation(
+            "products.priceRecords.create",
+            json!({
+                "productId": product["id"],
+                "pricePerBaseUnit": 10,
+                "timestamp": "2026-01-01T10:00:00.000Z",
+                "isRealPurchase": true,
+            }),
+            Some(token),
+        )
+        .await;
+
+    assert_selected_price(&rpc, token, &project, &note, &historical_price, 30.0).await;
+}
+
+#[tokio::test]
 async fn products_delivery_notes_and_project_costs_use_real_postgres() {
     let Some(environment) = TestEnvironment::from_env() else {
         eprintln!("skipping network scenarios: live infrastructure is not configured");

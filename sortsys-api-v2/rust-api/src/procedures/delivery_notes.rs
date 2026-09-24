@@ -761,18 +761,36 @@ async fn costs(state: &AppState, context: &RequestContext, input: Value) -> RpcR
     } else {
         sqlx::query_as::<_, LatestPriceRow>(
             r#"
-            SELECT DISTINCT ON (product_id)
-                product_id,
-                id,
-                vendor_id,
-                timestamp,
-                price,
-                is_real_purchase,
-                comment
-            FROM product_price_records
-            WHERE product_id = ANY($1)
-              AND timestamp <= $2
-            ORDER BY product_id, timestamp DESC
+            SELECT price_record.product_id,
+                   price_record.id,
+                   price_record.vendor_id,
+                   price_record.timestamp,
+                   price_record.price,
+                   price_record.is_real_purchase,
+                   price_record.comment
+            FROM unnest($1::bigint[]) AS product(product_id)
+            JOIN LATERAL (
+                SELECT *
+                FROM product_price_records AS price_record
+                WHERE price_record.id = COALESCE(
+                    (
+                        SELECT historical.id
+                        FROM product_price_records AS historical
+                        WHERE historical.product_id = product.product_id
+                          AND historical.timestamp <= $2
+                        ORDER BY historical.timestamp DESC, historical.id DESC
+                        LIMIT 1
+                    ),
+                    (
+                        SELECT earliest.id
+                        FROM product_price_records AS earliest
+                        WHERE earliest.product_id = product.product_id
+                          AND earliest.timestamp > $2
+                        ORDER BY earliest.timestamp ASC, earliest.id ASC
+                        LIMIT 1
+                    )
+                )
+            ) AS price_record ON TRUE
             "#,
         )
         .bind(product_ids)

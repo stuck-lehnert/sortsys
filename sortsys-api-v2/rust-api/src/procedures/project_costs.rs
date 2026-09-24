@@ -316,10 +316,24 @@ async fn overview_from_pool(pool: &sqlx::PgPool, input: Value) -> RpcResult<Valu
                 LEFT JOIN LATERAL (
                     SELECT price_record.price
                     FROM product_price_records AS price_record
-                    WHERE price_record.product_id = record.product_id
-                      AND price_record."timestamp" <= note.effective_timestamp
-                    ORDER BY price_record."timestamp" DESC
-                    LIMIT 1
+                    WHERE price_record.id = COALESCE(
+                        (
+                            SELECT historical.id
+                            FROM product_price_records AS historical
+                            WHERE historical.product_id = record.product_id
+                              AND historical."timestamp" <= note.effective_timestamp
+                            ORDER BY historical."timestamp" DESC, historical.id DESC
+                            LIMIT 1
+                        ),
+                        (
+                            SELECT earliest.id
+                            FROM product_price_records AS earliest
+                            WHERE earliest.product_id = record.product_id
+                              AND earliest."timestamp" > note.effective_timestamp
+                            ORDER BY earliest."timestamp" ASC, earliest.id ASC
+                            LIMIT 1
+                        )
+                    )
                 ) AS price ON TRUE
                 WHERE record.note_id = note.id
             ) AS product_cost ON TRUE
@@ -514,10 +528,24 @@ async fn get(state: &AppState, context: &RequestContext, input: Value) -> RpcRes
             LEFT JOIN LATERAL (
                 SELECT price_record.price
                 FROM product_price_records AS price_record
-                WHERE price_record.product_id = record.product_id
-                  AND price_record."timestamp" <= note.effective_timestamp
-                ORDER BY price_record."timestamp" DESC
-                LIMIT 1
+                WHERE price_record.id = COALESCE(
+                    (
+                        SELECT historical.id
+                        FROM product_price_records AS historical
+                        WHERE historical.product_id = record.product_id
+                          AND historical."timestamp" <= note.effective_timestamp
+                        ORDER BY historical."timestamp" DESC, historical.id DESC
+                        LIMIT 1
+                    ),
+                    (
+                        SELECT earliest.id
+                        FROM product_price_records AS earliest
+                        WHERE earliest.product_id = record.product_id
+                          AND earliest."timestamp" > note.effective_timestamp
+                        ORDER BY earliest."timestamp" ASC, earliest.id ASC
+                        LIMIT 1
+                    )
+                )
             ) AS price ON TRUE
             WHERE record.note_id = note.id
         ) AS product_cost ON TRUE
@@ -566,10 +594,24 @@ async fn get(state: &AppState, context: &RequestContext, input: Value) -> RpcRes
             LEFT JOIN LATERAL (
                 SELECT price_record.*
                 FROM product_price_records AS price_record
-                WHERE price_record.product_id = record.product_id
-                  AND price_record."timestamp" <= note.effective_timestamp
-                ORDER BY price_record."timestamp" DESC
-                LIMIT 1
+                WHERE price_record.id = COALESCE(
+                    (
+                        SELECT historical.id
+                        FROM product_price_records AS historical
+                        WHERE historical.product_id = record.product_id
+                          AND historical."timestamp" <= note.effective_timestamp
+                        ORDER BY historical."timestamp" DESC, historical.id DESC
+                        LIMIT 1
+                    ),
+                    (
+                        SELECT earliest.id
+                        FROM product_price_records AS earliest
+                        WHERE earliest.product_id = record.product_id
+                          AND earliest."timestamp" > note.effective_timestamp
+                        ORDER BY earliest."timestamp" ASC, earliest.id ASC
+                        LIMIT 1
+                    )
+                )
             ) AS price ON TRUE
         )
         SELECT
