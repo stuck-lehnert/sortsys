@@ -51,7 +51,7 @@ export function MyExpandable(_props: {
         
         <div ref={contentDivRef} className="my-expandable--content" style={{
             height: height,
-            overflowY: 'hidden',
+            overflowY: height === 'auto' ? 'visible' : 'hidden',
             transitionDuration: `${transitionDurationMS}ms`,
             paddingBottom: '1px',
         }}>

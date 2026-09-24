@@ -757,6 +757,12 @@ textarea {
   height: 65rem;
 }
 
+.my-expandable--content .ss-data-table-content,
+.my-expandable--content .ss-tile[class*="th-"] {
+  height: auto;
+  overflow-y: visible;
+}
+
 
 .attr-list {
   font-size: 0.95em;
