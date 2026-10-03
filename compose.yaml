@@ -19,7 +19,7 @@ services:
   onlyoffice:
     # Version 9.4.0 is unusable with common tracking-protection lists because
     # they block its required Analytics.js module.
-    image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:9.3.1.2}
+    image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:9.4.0.1}
     restart: unless-stopped
     environment:
       JWT_ENABLED: "true"
