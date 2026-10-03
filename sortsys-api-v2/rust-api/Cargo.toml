@@ -20,7 +20,7 @@ futures-util = "0.3"
 getrandom = "0.4"
 hex = "0.4"
 hmac = "0.12"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 percent-encoding = "2"
 p256 = { version = "0.13", features = ["ecdsa"] }
 regex = "1"
