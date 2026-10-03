@@ -48,7 +48,7 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@react-router/dev": "7.18.3",
+    "@react-router/dev": "8.4.0",
     "@types/node": "^22",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
