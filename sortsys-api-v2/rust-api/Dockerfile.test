@@ -1,6 +1,6 @@
 ARG RUST_IMAGE=docker.io/library/rust:1.88-bookworm
 
-FROM docker.io/library/postgres:17-bookworm AS postgres-client
+FROM docker.io/library/postgres:18-bookworm AS postgres-client
 
 FROM ${RUST_IMAGE}
 
