@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { hashApiContract } from "../../sortsys-api-v2/client/scripts/build-fingerprint.mjs";
 
-const pkgUrl = new URL("../node_modules/@sortsys/v2-client/package.json", import.meta.url);
+const pkgUrl = new URL("../node_modules/@sortsys/v2-client/dist/package.json", import.meta.url);
 const installedPkg = JSON.parse(await readFile(pkgUrl, "utf8"));
 const expected = await hashApiContract();
 const actual = installedPkg.sortsysApiSourceHash;

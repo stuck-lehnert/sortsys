@@ -1,7 +1,7 @@
 import type { MutateResult, QueryResult } from "@sortsys/v2-client";
 import { Checkbox, ComboBox, TextArea, TextInput } from "@sortsys/react-components";
 import { Icons } from "~/lib/icons";
-import { type ChangeEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
@@ -37,7 +37,9 @@ type AutocompleteOption<T> = {
   value: T;
 };
 
-const pageSize = 25;
+function roundPrice(value: number) {
+  return Number.isFinite(value) ? Math.round((value + Number.EPSILON) * 10_000) / 10_000 : value;
+}
 
 function formatPrice(value: number) {
   if (!Number.isFinite(value)) return "—";
@@ -245,7 +247,9 @@ function PriceImportEditor({
 }) {
   const formId = useId();
   const [page, setPage] = useState(0);
-  const [expandedRow, setExpandedRow] = useState<number | null>(0);
+  const [pageSize, setPageSize] = useState(1);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [warningsOpen, setWarningsOpen] = useState(false);
   const [state, setState] = useState<PriceImportState>(() => ({
     vendorId: "",
@@ -254,6 +258,7 @@ function PriceImportEditor({
     isRealPurchase: documentType === "invoice",
     rows: result.rows.map(row => ({
       ...row,
+      pricePerBaseUnit: roundPrice(row.pricePerBaseUnit),
       included: true,
       conversionsText: formatConversions(row.otherUnits),
       conversionWarning: null,
@@ -262,13 +267,42 @@ function PriceImportEditor({
 
   controller.current = state;
 
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    // A collapsed row has a stable height; show only the rows that fit.
+    const measure = () => {
+      const heading = list.querySelector<HTMLElement>(".price-import-row-head");
+      if (!heading || list.clientHeight <= 0) return;
+
+      const gap = parseFloat(window.getComputedStyle(list).rowGap) || 0;
+      const rowHeight = heading.getBoundingClientRect().height + 2;
+      const capacity = Math.max(1, Math.floor((list.clientHeight + gap) / (rowHeight + gap)));
+
+      setPageSize(current => current === capacity ? current : capacity);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, []);
+
   const selectedCount = state.rows.filter(row => row.included).length;
   const newProductCount = state.rows.filter(row => row.included && !row.productId).length;
   const pageCount = Math.max(1, Math.ceil(state.rows.length / pageSize));
-  const visibleRows = useMemo(
-    () => state.rows.slice(page * pageSize, (page + 1) * pageSize),
-    [page, state.rows],
-  );
+  const visibleRows = useMemo(() => state.rows
+    .slice(page * pageSize, (page + 1) * pageSize)
+    .map((row, index) => ({ row, index, absoluteIndex: page * pageSize + index }))
+    .filter(item => expandedRow === null || item.absoluteIndex === expandedRow),
+  [expandedRow, page, pageSize, state.rows]);
+
+  useEffect(() => {
+    setPage(current => expandedRow === null
+      ? Math.min(current, pageCount - 1)
+      : Math.floor(expandedRow / pageSize));
+  }, [expandedRow, pageCount, pageSize]);
   const warningsByRow = useMemo(
     () => result.rows.map(row => row.sourceText
       ? result.warnings.filter(warning => warning.includes(row.sourceText))
@@ -322,7 +356,7 @@ function PriceImportEditor({
       description: product.description,
       otherUnits: product.otherUnits,
       conversionsText: formatConversions(product.otherUnits),
-      pricePerBaseUnit: convertedPrice,
+      pricePerBaseUnit: roundPrice(convertedPrice),
       conversionWarning: oldFactor && newFactor ? null : uiText(
         `Keine Umrechnung von ${row.sourceUnit} nach ${product.baseUnit} vorhanden. Nettopreis prüfen.`,
         `No conversion from ${row.sourceUnit} to ${product.baseUnit}. Check the net price.`,
@@ -330,7 +364,7 @@ function PriceImportEditor({
     });
   }
 
-  return <div className="price-import-editor">
+  return <div className="price-import-editor" data-detail={expandedRow !== null}>
     <div className="price-import-fields">
       <AutocompleteSelect
         label={uiText("Händler", "Vendor")}
@@ -386,11 +420,11 @@ function PriceImportEditor({
           `${newProductCount} new products`,
         )}</span>
       </div>
-      <Checkbox
+      {expandedRow === null && <Checkbox
         id={`${formId}-select-page`}
         className="price-import-select-page"
         labelText={uiText("Alle auf dieser Seite", "All on this page")}
-        checked={visibleRows.every(row => row.included)}
+        checked={visibleRows.every(({ row }) => row.included)}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
           const included = event.currentTarget.checked;
           setState(current => ({
@@ -401,7 +435,7 @@ function PriceImportEditor({
                 : row),
           }));
         }}
-      />
+      />}
     </div>
 
     {!!generalWarnings.length && <details
@@ -415,9 +449,8 @@ function PriceImportEditor({
       {warningsOpen && <ul>{generalWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
     </details>}
 
-    <div className="price-import-list">
-      {visibleRows.map((row, index) => {
-        const absoluteIndex = page * pageSize + index;
+    <div className="price-import-list" data-detail={expandedRow !== null} ref={listRef}>
+      {visibleRows.map(({ row, index, absoluteIndex }) => {
         const expanded = expandedRow === absoluteIndex;
         const rowWarnings = warningsByRow[absoluteIndex] ?? [];
 
@@ -425,6 +458,8 @@ function PriceImportEditor({
           className="price-import-row"
           data-included={row.included}
           data-needs-review={rowWarnings.length > 0}
+          data-existing-product={!!row.productId}
+          data-expanded={expanded}
           key={absoluteIndex}
         >
           <div className="price-import-row-head">
@@ -572,7 +607,15 @@ function PriceImportEditor({
       })}
     </div>
 
-    {pageCount > 1 && <div className="price-import-pagination">
+    {expandedRow !== null ? <div className="price-import-pagination">
+      <span>{uiText(
+        `Position ${expandedRow + 1} von ${state.rows.length}`,
+        `Item ${expandedRow + 1} of ${state.rows.length}`,
+      )}</span>
+      <MyButton kind="secondary" size="sm" onClick={() => setExpandedRow(null)}>
+        {uiText("Zur Übersicht", "Back to list")}
+      </MyButton>
+    </div> : pageCount > 1 && <div className="price-import-pagination">
       <MyButton
         kind="secondary"
         size="sm"
@@ -615,6 +658,7 @@ export function showPriceImportModal(
         ? uiText("Preise aus Rechnung übernehmen", "Import invoice prices")
         : uiText("Preise aus Preisliste übernehmen", "Import price list prices"),
       className: "price-import-modal",
+      useFullscreen: true,
       primaryButtonText: uiText("Preise speichern", "Save prices"),
     }),
     onPrimaryAction: async ({ hide }) => {
@@ -661,7 +705,7 @@ export function showPriceImportModal(
           description: row.description?.trim() || null,
           baseUnit: row.baseUnit.trim(),
           otherUnits,
-          pricePerBaseUnit: row.pricePerBaseUnit,
+          pricePerBaseUnit: roundPrice(row.pricePerBaseUnit),
           comment: row.comment?.trim() || null,
         };
       });

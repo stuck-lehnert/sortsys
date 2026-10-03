@@ -34,7 +34,7 @@ The script starts PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, t
 | ONLYOFFICE Document Server | `http://127.0.0.1:39180` |
 | diagrams.net | `http://127.0.0.1:39181` |
 
-The seeded tenant is `test`. Its default users are `john.doe` and `frank.doe`; both use the development password `123456`, and `john.doe` is an administrator. These credentials are for local development only.
+The seeded tenant is `test`. Its default users are `john.doe` and `frank.doe`; both use the development password `123456`, and `john.doe` is an administrator. These credentials are for local development only. Startup also installs the Sortsys company logo through the normal upload API and waits for its WebP conversion and download to succeed.
 
 Press `Ctrl+C` to stop the stack and remove its development containers. The port and image defaults can be changed through the `DEV_*` variables declared near the top of [`scripts/dev`](scripts/dev).
 

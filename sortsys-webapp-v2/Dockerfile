@@ -25,6 +25,7 @@ RUN npm ci
 WORKDIR /app/sortsys-webapp-v2
 COPY sortsys-webapp-v2/package.json sortsys-webapp-v2/package-lock.json ./
 COPY --from=api-client-builder /app/sortsys-api-v2/client/dist /app/sortsys-api-v2/client/dist
+COPY --from=api-client-builder /app/sortsys-api-v2/client/package.json /app/sortsys-api-v2/client/package.json
 COPY sortsys-react-components /app/sortsys-react-components
 RUN npm ci
 COPY sortsys-dwgviewer/ /app/sortsys-dwgviewer/

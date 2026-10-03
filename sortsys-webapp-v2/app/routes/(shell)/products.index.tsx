@@ -145,7 +145,7 @@ export default function ProductsPage() {
         rows={loadProductExportRows}
         disabled={!products}
         columns={[
-          { header: uiText("Nummer"), value: product => product.customId, align: 'right' },
+          { header: uiText("Nummer"), pdfHeader: uiText('Nr.', 'No.'), value: product => product.customId, align: 'right' },
           { header: uiText("Bezeichnung"), value: product => product.name, width: '2fr' },
           { header: uiText("Hersteller"), value: product => product.brand },
           { header: uiText("Kategorie"), value: product => product.categories?.join(', '), width: '1.5fr' },

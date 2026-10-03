@@ -19,7 +19,7 @@ import { useShortcut } from "~/hooks/useShortcut";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyDropdown } from "~/components/MyDropdown";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdf, type PdfTableSection } from "~/lib/pdf";
+import { renderStructuredPdf, buildPdfProductSection, type PdfTableSection } from "~/lib/pdf";
 import { showDeleteDeliveryNoteModal, showModifyDeliveryNoteModal } from "~/modals/deliveryNotes";
 import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
@@ -78,6 +78,9 @@ export default function DeliveryNoteDetailPage() {
 
     try {
       const [project] = await client.query('projects.get', { id: currentNote.projectId }, { strategy: 'cache-first' });
+      const [customer] = project?.customerId
+        ? await client.query('customers.get', { id: project.customerId }, { strategy: 'cache-first' })
+        : [null];
 
       const productIds = [...new Set(currentNote.records.map((record) => record.productId))];
       const productEntries = await Promise.all(productIds.map(async (productId) => {
@@ -108,13 +111,14 @@ export default function DeliveryNoteDetailPage() {
           ? `${formatCurrency(totalCost / baseQuantity)}${baseUnit ? `/${baseUnit}` : ''}`
           : '-';
 
-        return [
-          product ? `${product.customId} ${productTitle(product)}` : 'Unbekannt',
-          formatProductAmount(amount, unit),
-          formatBaseQuantity(baseQuantity, baseUnit, unit),
-          avgUnitPrice,
-          totalCost != null ? formatCurrency(totalCost) : '-',
-        ];
+        return {
+          number: product ? `${product.customId}` : '-',
+          name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${record.productId})`, `Unknown product (${record.productId})`),
+          quantity: formatProductAmount(amount, unit),
+          baseQuantity: formatBaseQuantity(baseQuantity, baseUnit, unit),
+          price: avgUnitPrice,
+          cost: totalCost != null ? formatCurrency(totalCost) : '-',
+        };
       });
 
       const sortedSpecialRecords = [...currentNote.specialRecords].sort((left, right) => {
@@ -131,16 +135,13 @@ export default function DeliveryNoteDetailPage() {
         ];
       });
 
-      const summaryRows: string[][] = [
+      const summaryRows: PdfTableSection['rows'] = [
         [uiText('Projekt'), project?.title ?? 'Unbekannt'],
         [uiText('Datum'), formatDate(currentNote.effectiveTimestamp, 'long')],
         [uiText('Nummer'), `#${currentNote.autoId}`],
       ];
-      if (currentNote.comment) {
-        summaryRows.push([uiText('Kommentar'), currentNote.comment]);
-      }
       if (costs) {
-        summaryRows.push(['Gesamtkosten', formatCurrency(costs.totalCost)]);
+        summaryRows.push([uiText('Gesamtkosten', 'Total cost'), { value: formatCurrency(costs.totalCost), bold: true }]);
       }
 
       const sections: PdfTableSection[] = [
@@ -148,20 +149,19 @@ export default function DeliveryNoteDetailPage() {
           title: uiText("Zusammenfassung"),
           columns: [uiText('Kennzahl'), uiText('Wert')],
           rows: summaryRows,
+          presentation: 'summary',
           withHeader: false,
           align: ['left', 'left'],
           columnWidths: ['1fr', '2fr'],
         },
       ];
 
+      if (currentNote.comment?.trim()) {
+        sections.push({ title: uiText('Kommentar'), columns: [''], rows: [[currentNote.comment]], withHeader: false });
+      }
+
       if (productRows.length > 0) {
-        sections.push({
-          title: uiText("Produkte"),
-          columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
-          rows: productRows,
-          align: ['left', 'right', 'right', 'right', 'right'],
-          columnWidths: ['1.8fr', '1fr', '1fr', '1fr', '0.9fr'],
-        });
+        sections.push(buildPdfProductSection(productRows));
       }
 
       if (specialRows.length > 0) {
@@ -170,7 +170,7 @@ export default function DeliveryNoteDetailPage() {
           columns: ['Bezeichnung', 'Menge', 'Preis pro Einheit', uiText('Kosten')],
           rows: specialRows,
           align: ['left', 'right', 'right', 'right'],
-          columnWidths: ['1.6fr', '1fr', '1fr', '1fr'],
+          columnWidths: ['2.5fr', '1.1fr', '1.2fr', '1.1fr'],
         });
       }
 
@@ -178,6 +178,20 @@ export default function DeliveryNoteDetailPage() {
         title: uiText(`Lieferschein #${currentNote.autoId}`, `Delivery note #${currentNote.autoId}`),
         reportLabel: uiText("Lieferschein"),
         showReportLabel: false,
+        layout: customer?.address ? {
+          kind: 'letter',
+          form: 'B',
+          date: new Date(currentNote.effectiveTimestamp),
+          recipient: {
+            name: [customer.salutation, customer.name].filter(Boolean).join(' '),
+            lines: [
+              customer.address.streetAddress,
+              [customer.address.zip, customer.address.city].filter(Boolean).join(' '),
+              customer.address.country ?? '',
+            ],
+          },
+          information: [{ label: uiText('Nummer'), value: `#${currentNote.autoId}` }],
+        } : undefined,
         sections,
         emptyMessage: uiText("Keine Daten zum Lieferschein verfügbar."),
       });

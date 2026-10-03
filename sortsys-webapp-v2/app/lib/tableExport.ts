@@ -1,4 +1,4 @@
-import { uiText } from "~/lib/i18n";
+import { buildTablePdfDocument } from "~/lib/pdfTableExport";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { formatDate } from "~/lib/format";
 import { renderStructuredPdf, type PdfTableAlign } from "~/lib/pdf";
@@ -11,6 +11,8 @@ export type TableExportCell = string | number | boolean | Date | null | undefine
 
 export type TableExportColumn<RowT> = {
   header: string;
+  /** Optional compact heading for the PDF only. */
+  pdfHeader?: string;
   value: (row: RowT) => TableExportCell;
   format?: (value: TableExportCell, row: RowT) => string;
   excelNumberFormat?: string;
@@ -68,20 +70,16 @@ export async function exportTable<RowT>(options: TableExportOptions<RowT>) {
     return column.format?.(value, options.rows[rowIndex]!) ?? formatExportCell(value);
   }));
 
-  const pdfData = await renderStructuredPdf({
+  const pdfData = await renderStructuredPdf(buildTablePdfDocument({
     title: options.title,
-    reportLabel: uiText("Tabellenexport"),
-    sections: [{
-      title: '',
-      columns: headers,
-      rows,
-      align: options.columns.map(column => column.align ?? 'left'),
-      columnWidths: options.columns.some(column => column.width)
-        ? options.columns.map(column => column.width ?? '1fr')
-        : undefined,
-    }],
-    emptyMessage: uiText("Keine Daten vorhanden."),
-  });
+    subtitle: options.subtitle,
+    headers: options.columns.map(column => column.pdfHeader ?? column.header),
+    rows,
+    align: options.columns.map(column => column.align ?? 'left'),
+    columnWidths: options.columns.some(column => column.width)
+      ? options.columns.map(column => column.width ?? '1fr')
+      : undefined,
+  }));
 
   const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
   deliverBlob(blob, `${fileBase}.pdf`);

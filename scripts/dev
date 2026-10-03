@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/container-images.sh"
 SERVER_DIR="$ROOT_DIR/sortsys-api-v2"
 CLIENT_DIR="$ROOT_DIR/sortsys-webapp-v2"
 JOB_RUNNER_DIR="$ROOT_DIR/sortsys-v2-job_runner"
@@ -24,19 +25,19 @@ DEV_ONLYOFFICE_STATE_VOLUME="sortsys-dev-onlyoffice-9-3-1-state"
 DEV_ONLYOFFICE_DATABASE_VOLUME="sortsys-dev-onlyoffice-9-3-1-database"
 DEV_ONLYOFFICE_LOGS_VOLUME="sortsys-dev-onlyoffice-logs"
 
-DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-docker.io/library/postgres:17}"
-DEV_S3_IMAGE="${DEV_S3_IMAGE:-docker.io/minio/minio:latest}"
-DEV_S3_IMAGE_FALLBACK="${DEV_S3_IMAGE_FALLBACK:-quay.io/minio/minio:latest}"
+DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-$(sortsys_container_image dev-postgres)}"
+DEV_S3_IMAGE="${DEV_S3_IMAGE:-$(sortsys_container_image minio)}"
+DEV_S3_IMAGE_FALLBACK="${DEV_S3_IMAGE_FALLBACK:-$(sortsys_container_image minio-fallback)}"
 # ONLYOFFICE 9.4.0 cannot load when common tracking-protection lists block
 # its required Analytics.js module. Remove this pin after the upstream fix ships.
-DEV_ONLYOFFICE_IMAGE="${DEV_ONLYOFFICE_IMAGE:-docker.io/onlyoffice/documentserver:9.3.1.2}"
-DEV_DRAWIO_IMAGE="${DEV_DRAWIO_IMAGE:-docker.io/jgraph/drawio:31.1.8}"
-DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-docker.io/oven/bun:1.4.0}"
-DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-docker.io/library/rust:1.88-bookworm}"
+DEV_ONLYOFFICE_IMAGE="${DEV_ONLYOFFICE_IMAGE:-$(sortsys_container_image onlyoffice)}"
+DEV_DRAWIO_IMAGE="${DEV_DRAWIO_IMAGE:-$(sortsys_container_image drawio)}"
+DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-$(sortsys_container_image bun)}"
+DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-$(sortsys_container_image rust)}"
 DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.88-pg17}"
 DEV_JOB_RUNNER_IMAGE="${DEV_JOB_RUNNER_IMAGE:-localhost/sortsys-job-runner-dev:latest}"
-DEV_NODE_IMAGE="${DEV_NODE_IMAGE:-docker.io/library/node:22}"
-DEV_GO_IMAGE="${DEV_GO_IMAGE:-docker.io/library/golang:1.25-bookworm}"
+DEV_NODE_IMAGE="${DEV_NODE_IMAGE:-$(sortsys_container_image node)}"
+DEV_GO_IMAGE="${DEV_GO_IMAGE:-$(sortsys_container_image go)}"
 DEV_REVISION="$(git -C "$ROOT_DIR" rev-parse --verify HEAD 2>/dev/null || printf development)"
 
 DEV_API_PORT="${DEV_API_PORT:-3000}"
@@ -294,6 +295,23 @@ wait_for_tcp_port() {
   done
 
   echo "${label} did not become reachable on ${host}:${port}"
+  return 1
+}
+
+wait_for_api_ready() {
+  local attempt
+  echo "Waiting for API startup after compilation and development seeding"
+  for ((attempt = 1; attempt <= 600; attempt++)); do
+    if ! container_is_running "$DEV_API_CONTAINER"; then
+      echo "API container stopped during startup" >&2
+      return 1
+    fi
+    if "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" 2>&1 | grep -F 'sortsys Rust API listening' >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "API did not finish startup in time" >&2
   return 1
 }
 
@@ -623,7 +641,7 @@ start_api_container() {
   # Values parsed from .env are needed only while Docker creates the container.
   cleanup_llm_environment
 
-  if ! wait_for_tcp_port "127.0.0.1" "$DEV_API_PORT" "API" 180; then
+  if ! wait_for_api_ready; then
     "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" || true
     exit 1
   fi
@@ -721,6 +739,23 @@ start_job_runner_containers() {
       exit 1
     fi
   done
+}
+
+initialize_development_logo() {
+  echo "Installing Sortsys as the development company logo"
+  "$CONTAINER_RUNTIME" run --rm \
+    "${runtime_pull_args[@]}" \
+    "${runtime_user_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$DEV_NETWORK" \
+    -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
+    -w /workspace \
+    -e DEV_TEST_TENANT_NAME="$DEV_TEST_TENANT_NAME" \
+    -e DEV_LOGO_API_URL="http://${DEV_API_CONTAINER}:${DEV_API_PORT}" \
+    -e DEV_LOGO_S3_PUBLIC_BASE_URL="$DEV_S3_PUBLIC_BASE_URL" \
+    -e DEV_LOGO_S3_INTERNAL_BASE_URL="http://${DEV_S3_CONTAINER}:9000" \
+    "$DEV_BUN_IMAGE" \
+    bun scripts/dev-logo.mjs
 }
 
 start_webapp_container() {
@@ -903,6 +938,8 @@ if ! wait "$webapp_pid"; then
   echo "Webapp startup failed"
   exit 1
 fi
+
+initialize_development_logo
 
 echo
 echo "sortsys dev stack is running (containerized)"

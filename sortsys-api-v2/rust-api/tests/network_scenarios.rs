@@ -4661,6 +4661,15 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     .fetch_one(&fixture.tenant_pool)
     .await
     .unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO products (custom_id, name, brand, base_unit, other_units)
+        VALUES (99103, 'Maxit IP 15 E', 'Maxit', 'kg', '{"Sack": 30}'::JSONB)
+        "#,
+    )
+    .execute(&fixture.tenant_pool)
+    .await
+    .unwrap();
 
     let scan_bytes = include_bytes!("fixtures/delivery-note-ocr.png").to_vec();
     let upload = rpc
@@ -4877,6 +4886,10 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         Some(1200.0)
     );
     assert!((prices["rows"][3]["pricePerBaseUnit"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+    assert_eq!(prices["rows"][4]["productId"], Value::Null);
+    assert_eq!(prices["rows"][4]["productName"], "Maxit IP 18 E");
+    assert_eq!(prices["rows"][4]["brand"], "Maxit");
+    assert!((prices["rows"][4]["pricePerBaseUnit"].as_f64().unwrap() - 0.243).abs() < 1e-9);
 
     let vendor = rpc
         .mutation(
@@ -4910,8 +4923,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             Some(token),
         )
         .await;
-    assert_eq!(imported["createdProducts"], 2);
-    assert_eq!(imported["createdPriceRecords"], 4);
+    assert_eq!(imported["createdProducts"], 3);
+    assert_eq!(imported["createdPriceRecords"], 5);
 
     let imported_product_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE name = 'Arbeitshandschuhe, Paar'")
@@ -4926,7 +4939,21 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .fetch_one(&fixture.tenant_pool)
             .await
             .unwrap();
-    assert_eq!(imported_price_count, 4);
+    assert_eq!(imported_price_count, 5);
+    let maxit_net_price: f64 = sqlx::query_scalar(
+        r#"
+        SELECT price.price
+        FROM product_price_records AS price
+        JOIN products AS product ON product.id = price.product_id
+        WHERE product.name = 'Maxit IP 18 E'
+          AND price.vendor_id = $1
+        "#,
+    )
+    .bind(Id::decode(vendor_id).unwrap().0)
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+    assert!((maxit_net_price - 0.243).abs() < 1e-9);
 
     let created: (Option<String>, Option<String>, String, sqlx::types::Json<Value>) =
         sqlx::query_as(
@@ -6976,13 +7003,15 @@ async fn onlyoffice_ai_scenarios(
         400
     );
 
-    for provider_name in ["openai", "anthropic", "meta"] {
-        if provider_name == "anthropic" {
+    for provider_name in ["openai", "anthropic", "meta", "openrouter"] {
+        if provider_name == "anthropic" || provider_name == "openrouter" {
             rpc.mutation(
                 "admin.llm.providers.update",
                 json!({
                     "provider": provider_name, "baseUrl": provider_url,
-                    "apiKey": "integration-secret-that-must-not-leak"
+                    "apiKey": if provider_name == "openrouter" {
+                        "second-integration-secret-that-must-not-leak"
+                    } else { "integration-secret-that-must-not-leak" }
                 }),
                 Some(admin_token),
             )
@@ -7372,6 +7401,22 @@ async fn mock_openai_response(
                             "productId": null,
                             "pricePerUnit": 15.0,
                             "confidence": 0.93,
+                            "comment": null
+                        }, {
+                            "sourceText": "126600 MAXIT IP18 E A 30 KG (1 Pal = 42 Sack)_x000D_ KALKZEMENTPUTZ LEICHT | 8.1 | Sack | 10 | 7.2899999999999991",
+                            "name": "IP 18 E",
+                            "brand": "MAXIT",
+                            "description": "Kalkzementputz leicht, 30 kg",
+                            "quantity": 1,
+                            "unit": "Sack",
+                            "baseUnit": "kg",
+                            "unitConversions": [
+                                {"unit": "Sack", "quantity": 30, "inUnit": "kg"},
+                                {"unit": "Palette", "quantity": 42, "inUnit": "Sack"}
+                            ],
+                            "productId": null,
+                            "pricePerUnit": 8.1,
+                            "confidence": 0.94,
                             "comment": null
                         }]
                     })

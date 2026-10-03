@@ -171,6 +171,7 @@ const inventory = {
     webapp: deduplicate([
       ...clientNpm,
       ...dwgNpm,
+      ...JSON.parse(readFileSync(join(root, "sortsys-webapp-v2/vendor/font-licenses.json"), "utf8")),
       ...cargoLicenses(join(root, "sortsys-dwgviewer/lib/Cargo.toml")),
     ]),
   },

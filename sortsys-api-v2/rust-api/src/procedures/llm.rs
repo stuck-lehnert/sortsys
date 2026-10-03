@@ -1260,6 +1260,7 @@ enum ProviderName {
     Openai,
     Anthropic,
     Meta,
+    Openrouter,
     Deepseek,
     Custom,
 }
@@ -1270,6 +1271,7 @@ impl ProviderName {
             Self::Openai => "openai",
             Self::Anthropic => "anthropic",
             Self::Meta => "meta",
+            Self::Openrouter => "openrouter",
             Self::Deepseek => "deepseek",
             Self::Custom => "custom",
         }

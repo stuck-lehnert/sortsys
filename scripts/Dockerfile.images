@@ -1,0 +1,17 @@
+# Image defaults used by the shell scripts, read by container-images.sh.
+# Dependabot can update FROM instructions; it cannot update shell literals.
+# This file is an image catalog and is not built as an application container.
+FROM docker.io/library/postgres:17 AS dev-postgres
+FROM docker.io/library/postgres:17-bookworm AS test-postgres
+FROM docker.io/library/postgres:17-alpine AS kubernetes-postgres
+FROM docker.io/minio/minio:latest AS minio
+FROM quay.io/minio/minio:latest AS minio-fallback
+# ONLYOFFICE 9.4.0 has a known Analytics.js tracking-protection regression.
+FROM docker.io/onlyoffice/documentserver:9.3.1.2 AS onlyoffice
+FROM docker.io/jgraph/drawio:31.1.8 AS drawio
+FROM docker.io/oven/bun:1.4.0 AS bun
+FROM docker.io/library/rust:1.88-bookworm AS rust
+FROM docker.io/library/node:22 AS node
+FROM docker.io/library/golang:1.25-bookworm AS go
+FROM docker.io/amazon/aws-cli:latest AS aws-cli
+FROM docker.io/library/python:3.12-alpine AS python

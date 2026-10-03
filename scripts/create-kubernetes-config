@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/container-images.sh"
 
 fail() {
   echo "error: $*" >&2
@@ -646,7 +647,7 @@ prompt_default API_PORT "API container/service port" "3000"
 prompt_default API_NODE_PORT "API NodePort" "32300"
 prompt_default WEBAPP_NODE_PORT "Webapp NodePort" "32080"
 
-prompt_default POSTGRES_IMAGE "Postgres image" "docker.io/library/postgres:17-alpine"
+prompt_default POSTGRES_IMAGE "Postgres image" "$(sortsys_container_image kubernetes-postgres)"
 prompt_default POSTGRES_SERVICE_NAME "Postgres internal service name" "sortsys-postgres"
 prompt_default POSTGRES_STORAGE_SIZE "Postgres PVC size" "20Gi"
 prompt_default POSTGRES_STORAGE_CLASS "Postgres storageClassName (empty for default)" ""

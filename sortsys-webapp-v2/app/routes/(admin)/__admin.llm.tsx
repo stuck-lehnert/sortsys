@@ -1,16 +1,17 @@
 import type { MutateInput, QueryResult } from "@sortsys/v2-client";
-import { Heading, Tile, useNotifications } from "@sortsys/react-components";
-import { useEffect, useMemo, useState } from "react";
+import { Heading, Modal, Tile, useNotifications } from "@sortsys/react-components";
+import { useMemo, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
+import { useMyModals } from "~/hooks/useMyModals";
 import { adminClient } from "~/lib/adminClient";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { Icons } from "~/lib/icons";
 
 type ProviderName = MutateInput<"admin.llm.providers.update">["provider"];
-type SupportedProvider = Extract<ProviderName, "openai" | "anthropic" | "meta">;
+type SupportedProvider = Extract<ProviderName, "openai" | "anthropic" | "meta" | "openrouter">;
 type ProviderAccount = QueryResult<"admin.llm.providers.list">[number];
 type UseCaseName = MutateInput<"admin.llm.useCases.update">["useCase"];
 type UseCaseSettings = QueryResult<"admin.llm.useCases.list">[number];
@@ -23,10 +24,11 @@ const PROVIDERS: Array<{
   { id: "openai", endpoint: "https://api.openai.com/v1" },
   { id: "anthropic", endpoint: "https://api.anthropic.com/v1" },
   { id: "meta", endpoint: "https://api.llama.com/compat/v1" },
+  { id: "openrouter", endpoint: "https://openrouter.ai/api/v1" },
 ];
 
-function isSupportedProvider(value: string | null): value is SupportedProvider {
-  return value === "openai" || value === "anthropic" || value === "meta";
+function isSupportedProvider(value: string | null | undefined): value is SupportedProvider {
+  return value === "openai" || value === "anthropic" || value === "meta" || value === "openrouter";
 }
 
 function providerLabel(provider: string) {
@@ -37,6 +39,8 @@ function providerLabel(provider: string) {
       return uiText("Anthropic", "Anthropic");
     case "meta":
       return uiText("Meta", "Meta");
+    case "openrouter":
+      return "OpenRouter";
     default:
       return provider;
   }
@@ -46,107 +50,139 @@ function formatTokens(value: number | bigint) {
   return new Intl.NumberFormat(currentLocaleTag()).format(value);
 }
 
-function ProviderAccountEditor({
-  provider,
+function ProviderAccountDialog({
+  visible,
+  hide,
   account,
+  availableProviders,
 }: {
-  provider: (typeof PROVIDERS)[number];
-  account: ProviderAccount | undefined;
+  visible: boolean;
+  hide: () => void;
+  account?: ProviderAccount;
+  availableProviders: typeof PROVIDERS;
 }) {
   const notifications = useNotifications();
-  const [baseUrl, setBaseUrl] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const initialProvider = account?.provider;
+  const [provider, setProvider] = useState<SupportedProvider>(
+    isSupportedProvider(initialProvider)
+      ? initialProvider
+      : availableProviders[0]?.id ?? "openai",
+  );
+  const [baseUrl, setBaseUrl] = useState(account?.baseUrl ?? "");
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
-  const label = providerLabel(provider.id);
-
-  useEffect(() => {
-    setBaseUrl(account?.baseUrl ?? "");
-  }, [account?.baseUrl]);
+  const [error, setError] = useState<string | null>(null);
+  const selectedProvider = PROVIDERS.find(option => option.id === provider);
 
   async function saveAccount() {
-    setSaving(true);
+    if (saving || (!account && !apiKey.trim())) return;
 
-    const [, error] = await adminClient.mutate("admin.llm.providers.update", {
-      provider: provider.id,
+    setSaving(true);
+    setError(null);
+
+    const [, saveError] = await adminClient.mutate("admin.llm.providers.update", {
+      provider,
       baseUrl: baseUrl.trim() || null,
       apiKey: apiKey.trim() || null,
     });
 
     setSaving(false);
 
-    if (error) {
-      notifications.danger({
-        title: uiText("Zugang konnte nicht gespeichert werden", "Account could not be saved"),
-        content: error.message,
-      });
+    if (saveError) {
+      setError(saveError.message);
       return;
     }
 
-    setApiKey("");
     notifications.success({
       title: uiText(
-        `${label}-Zugang gespeichert`,
-        `${label} account saved`,
+        `${providerLabel(provider)}-Zugang gespeichert`,
+        `${providerLabel(provider)} account saved`,
       ),
     });
 
     await adminClient.invalidateCascading("admin.llm.providers");
+    hide();
   }
 
   return (
-    <form
-      className="space-y-2 border-t border-[var(--ss-border)] pt-2"
-      onSubmit={event => {
-        event.preventDefault();
-        void saveAccount();
-      }}
+    <Modal
+      open={visible}
+      modalHeading={account
+        ? uiText("Provider bearbeiten", "Edit provider")
+        : uiText("Provider hinzufügen", "Add provider")}
+      primaryButtonText={uiText("Speichern", "Save")}
+      primaryButtonDisabled={saving || (!account && !apiKey.trim())}
+      primaryButtonLoading={saving}
+      secondaryButtonText={uiText("Abbrechen", "Cancel")}
+      closeButtonLabel={uiText("Schließen", "Close")}
+      onRequestClose={hide}
+      onRequestSubmit={() => formRef.current?.requestSubmit()}
     >
-      <div className="flex items-center justify-between gap-2">
-        <Heading level={4} noMargin>{label}</Heading>
-        <span className="light">
-          {account?.hasApiKey
-            ? uiText("Eingerichtet", "Configured")
-            : uiText("Nicht eingerichtet", "Not configured")}
-        </span>
-      </div>
-
-      <label>
-        <span className="ss-label">{uiText("API-Endpunkt", "API endpoint")}</span>
-        <input
-          className="ss-input"
-          type="url"
-          placeholder={provider.endpoint}
-          value={baseUrl}
-          onChange={event => setBaseUrl(event.currentTarget.value)}
-        />
-      </label>
-
-      <label>
-        <span className="ss-label">
-          {uiText("API-Schlüssel", "API key")}
-          {account?.hasApiKey
-            ? uiText(" (leer lassen, um ihn beizubehalten)", " (leave empty to keep it)")
-            : ""}
-        </span>
-        <input
-          className="ss-input"
-          type="password"
-          autoComplete="new-password"
-          value={apiKey}
-          onChange={event => setApiKey(event.currentTarget.value)}
-        />
-      </label>
-
-      <MyButton
-        type="submit"
-        size="sm"
-        kind="secondary"
-        loading={saving}
-        disabled={!account?.hasApiKey && !apiKey.trim()}
+      <form
+        ref={formRef}
+        className="space-y-3"
+        onSubmit={event => {
+          event.preventDefault();
+          void saveAccount();
+        }}
       >
-        {uiText("Zugang speichern", "Save account")}
-      </MyButton>
-    </form>
+        {account ? (
+          <div>
+            <span className="ss-label">{uiText("Provider", "Provider")}</span>
+            <strong>{providerLabel(provider)}</strong>
+          </div>
+        ) : (
+          <label>
+            <span className="ss-label">{uiText("Provider", "Provider")}</span>
+            <select
+              className="ss-input"
+              value={provider}
+              onChange={event => {
+                const value = event.currentTarget.value;
+                if (isSupportedProvider(value)) setProvider(value);
+              }}
+            >
+              {availableProviders.map(option => (
+                <option key={option.id} value={option.id}>{providerLabel(option.id)}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label>
+          <span className="ss-label">{uiText("API-Endpunkt (optional)", "API endpoint (optional)")}</span>
+          <input
+            className="ss-input"
+            type="url"
+            placeholder={selectedProvider?.endpoint}
+            value={baseUrl}
+            onChange={event => setBaseUrl(event.currentTarget.value)}
+          />
+        </label>
+
+        <label>
+          <span className="ss-label">{uiText("API-Schlüssel", "API key")}</span>
+          <input
+            className="ss-input"
+            type="password"
+            autoComplete="new-password"
+            required={!account}
+            value={apiKey}
+            onChange={event => setApiKey(event.currentTarget.value)}
+          />
+        </label>
+
+        {account?.hasApiKey && (
+          <p className="light">{uiText(
+            "Leer lassen, um den bisherigen Schlüssel zu behalten.",
+            "Leave empty to keep the current key.",
+          )}</p>
+        )}
+        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+        <button type="submit" hidden />
+      </form>
+    </Modal>
   );
 }
 
@@ -221,45 +257,44 @@ function ModelSelect({
   );
 }
 
-function UseCaseEditor({
+function UseCaseDialog({
+  visible,
+  hide,
   useCase,
   title,
-  description,
   accounts,
   settings,
 }: {
+  visible: boolean;
+  hide: () => void;
   useCase: UseCaseName;
   title: string;
-  description: string;
   accounts: ProviderAccount[];
-  settings: UseCaseSettings | undefined;
+  settings?: UseCaseSettings;
 }) {
   const notifications = useNotifications();
-  const configuredProviders = PROVIDERS.filter(provider => (
-    accounts.some(account => account.provider === provider.id && account.hasApiKey)
+  const configuredProviders = PROVIDERS.filter(option => (
+    accounts.some(account => account.provider === option.id && account.hasApiKey)
   ));
-  const configuredProviderKey = configuredProviders.map(provider => provider.id).join(":");
-  const [provider, setProvider] = useState<SupportedProvider | "">("");
-  const [model, setModel] = useState("");
+  const currentProvider = settings?.provider;
+  const initialProvider = isSupportedProvider(currentProvider)
+    && configuredProviders.some(option => option.id === currentProvider)
+    ? currentProvider
+    : configuredProviders[0]?.id ?? "";
+  const [provider, setProvider] = useState<SupportedProvider | "">(initialProvider);
+  const [model, setModel] = useState(
+    initialProvider === settings?.provider ? settings?.model ?? "" : "",
+  );
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const currentProvider = settings?.provider ?? null;
-    const assignedProvider = isSupportedProvider(currentProvider)
-      && configuredProviders.some(option => option.id === currentProvider)
-      ? currentProvider
-      : configuredProviders[0]?.id ?? "";
-
-    setProvider(assignedProvider);
-    setModel(assignedProvider === settings?.provider ? settings?.model ?? "" : "");
-  }, [settings?.provider, settings?.model, configuredProviderKey]);
+  const [error, setError] = useState<string | null>(null);
 
   async function saveUseCase() {
-    if (!provider || !model) return;
+    if (!provider || !model || saving) return;
 
     setSaving(true);
+    setError(null);
 
-    const [, error] = await adminClient.mutate("admin.llm.useCases.update", {
+    const [, saveError] = await adminClient.mutate("admin.llm.useCases.update", {
       useCase,
       provider,
       model,
@@ -267,63 +302,161 @@ function UseCaseEditor({
 
     setSaving(false);
 
-    if (error) {
-      notifications.danger({
-        title: uiText("Modell konnte nicht gespeichert werden", "Model could not be saved"),
-        content: error.message,
-      });
+    if (saveError) {
+      setError(saveError.message);
       return;
     }
 
     notifications.success({
       title: uiText(`${title}-Modell gespeichert`, `${title} model saved`),
     });
+
     await adminClient.invalidate("admin.llm.useCases.list");
+    hide();
   }
 
   return (
-    <form
-      className="space-y-2 border-t border-[var(--ss-border)] pt-2"
-      onSubmit={event => {
-        event.preventDefault();
-        void saveUseCase();
-      }}
+    <Modal
+      open={visible}
+      modalHeading={title}
+      primaryButtonText={uiText("Speichern", "Save")}
+      primaryButtonDisabled={saving || !provider || !model}
+      primaryButtonLoading={saving}
+      secondaryButtonText={uiText("Abbrechen", "Cancel")}
+      closeButtonLabel={uiText("Schließen", "Close")}
+      onRequestClose={hide}
+      onRequestSubmit={() => void saveUseCase()}
     >
-      <div>
-        <Heading level={4} noMargin>{title}</Heading>
-        <span className="light">{description}</span>
-      </div>
+      <form
+        className="space-y-3"
+        onSubmit={event => {
+          event.preventDefault();
+          void saveUseCase();
+        }}
+      >
+        <label>
+          <span className="ss-label">{uiText("Provider", "Provider")}</span>
+          <select
+            className="ss-input"
+            value={provider}
+            disabled={configuredProviders.length === 0}
+            onChange={event => {
+              const nextProvider = event.currentTarget.value;
+              if (!isSupportedProvider(nextProvider)) return;
 
-      <label>
-        <span className="ss-label">{uiText("Provider", "Provider")}</span>
-        <select
-          className="ss-input"
-          value={provider}
-          disabled={configuredProviders.length === 0}
-          onChange={event => {
-            const nextProvider = event.currentTarget.value;
+              setProvider(nextProvider);
+              setModel("");
+            }}
+          >
+            {configuredProviders.length === 0 && (
+              <option value="">{uiText("Zuerst Provider hinzufügen", "Add a provider first")}</option>
+            )}
+            {configuredProviders.map(option => (
+              <option key={option.id} value={option.id}>{providerLabel(option.id)}</option>
+            ))}
+          </select>
+        </label>
 
-            if (!isSupportedProvider(nextProvider)) return;
+        {!!provider && <ModelSelect provider={provider} value={model} onChange={setModel} />}
+        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+        <button type="submit" hidden />
+      </form>
+    </Modal>
+  );
+}
 
-            setProvider(nextProvider);
-            setModel("");
-          }}
-        >
-          {configuredProviders.length === 0 && (
-            <option value="">{uiText("Zuerst Zugang einrichten", "Configure an account first")}</option>
-          )}
-          {configuredProviders.map(option => (
-            <option key={option.id} value={option.id}>{providerLabel(option.id)}</option>
-          ))}
-        </select>
-      </label>
+function TenantDialog({
+  visible,
+  hide,
+  tenant,
+}: {
+  visible: boolean;
+  hide: () => void;
+  tenant: TenantSettings;
+}) {
+  const notifications = useNotifications();
+  const [enabled, setEnabled] = useState(tenant.enabled);
+  const [quota, setQuota] = useState(tenant.monthlyTokenQuota?.toString() ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-      {!!provider && <ModelSelect provider={provider} value={model} onChange={setModel} />}
+  async function saveTenant() {
+    if (saving) return;
 
-      <MyButton type="submit" size="sm" loading={saving} disabled={!provider || !model}>
-        {uiText("Auswahl speichern", "Save selection")}
-      </MyButton>
-    </form>
+    if (quota && !/^[1-9]\d*$/.test(quota)) {
+      setError(uiText("Bitte eine ganze Zahl größer als null eingeben.", "Enter a whole number greater than zero."));
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    const [updated, saveError] = await adminClient.mutate("admin.llm.tenants.update", {
+      name: tenant.name,
+      enabled,
+      monthlyTokenQuota: quota ? BigInt(quota) : null,
+    });
+
+    setSaving(false);
+
+    if (saveError) {
+      setError(saveError.message);
+      return;
+    }
+
+    notifications.success({
+      title: uiText(`${updated.name} wurde gespeichert.`, `${updated.name} saved.`),
+    });
+
+    await adminClient.invalidate("admin.llm.tenants.list");
+    hide();
+  }
+
+  return (
+    <Modal
+      open={visible}
+      modalHeading={tenant.name}
+      primaryButtonText={uiText("Speichern", "Save")}
+      primaryButtonDisabled={saving}
+      primaryButtonLoading={saving}
+      secondaryButtonText={uiText("Abbrechen", "Cancel")}
+      closeButtonLabel={uiText("Schließen", "Close")}
+      onRequestClose={hide}
+      onRequestSubmit={() => void saveTenant()}
+    >
+      <form
+        className="space-y-3"
+        onSubmit={event => {
+          event.preventDefault();
+          void saveTenant();
+        }}
+      >
+        <label className="flex gap-2 items-center">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={event => setEnabled(event.currentTarget.checked)}
+          />
+          {uiText("LLM für diesen Mandanten aktivieren", "Enable LLM for this tenant")}
+        </label>
+
+        <label>
+          <span className="ss-label">{uiText("Monatliche Tokenquote", "Monthly token quota")}</span>
+          <input
+            className="ss-input"
+            type="number"
+            min={1}
+            step={1}
+            placeholder={uiText("Unbegrenzt", "Unlimited")}
+            value={quota}
+            onChange={event => setQuota(event.currentTarget.value)}
+          />
+        </label>
+
+        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+        <button type="submit" hidden />
+      </form>
+    </Modal>
   );
 }
 
@@ -345,13 +478,13 @@ export default function GlobalAdminLlmPage() {
     () => adminClient.streamQuery("admin.llm.usage", undefined, { strategy: "network-first" }),
     [],
   );
-  const [tenantDrafts, setTenantDrafts] = useState<Record<string, TenantSettings>>({});
-
-  useEffect(() => {
-    if (!tenants) return;
-
-    setTenantDrafts(Object.fromEntries(tenants.map(tenant => [tenant.name, tenant])));
-  }, [tenants]);
+  const modals = useMyModals();
+  const configuredAccounts = (accounts ?? []).filter(account => (
+    account.hasApiKey && isSupportedProvider(account.provider)
+  ));
+  const availableProviders = PROVIDERS.filter(provider => (
+    !configuredAccounts.some(account => account.provider === provider.id)
+  ));
 
   const usageRows = useMemo(
     () => (usage ?? []).map(row => ({
@@ -362,26 +495,65 @@ export default function GlobalAdminLlmPage() {
   );
   const loadError = accountsError ?? useCasesError ?? tenantsError ?? usageError;
 
-  async function saveTenant(tenant: TenantSettings) {
-    const [updated, error] = await adminClient.mutate("admin.llm.tenants.update", {
-      name: tenant.name,
-      enabled: tenant.enabled,
-      monthlyTokenQuota: tenant.monthlyTokenQuota,
-    });
+  function showProviderDialog(account?: ProviderAccount) {
+    modals.show(({ visible, hide }) => (
+      <ProviderAccountDialog
+        visible={visible}
+        hide={hide}
+        account={account}
+        availableProviders={availableProviders}
+      />
+    ));
+  }
 
-    if (error) {
-      notifications.danger({
-        title: uiText("Mandant konnte nicht gespeichert werden", "Tenant could not be saved"),
-        content: error.message,
-      });
-      return;
-    }
+  function showUseCaseDialog(useCase: UseCaseName, title: string) {
+    modals.show(({ visible, hide }) => (
+      <UseCaseDialog
+        visible={visible}
+        hide={hide}
+        useCase={useCase}
+        title={title}
+        accounts={accounts ?? []}
+        settings={(useCases ?? []).find(settings => settings.useCase === useCase)}
+      />
+    ));
+  }
 
-    setTenantDrafts(previous => ({ ...previous, [updated.name]: updated }));
-    notifications.success({
-      title: uiText(`${updated.name} wurde gespeichert.`, `${updated.name} saved.`),
+  function showTenantDialog(tenant: TenantSettings) {
+    modals.show(({ visible, hide }) => (
+      <TenantDialog visible={visible} hide={hide} tenant={tenant} />
+    ));
+  }
+
+  function showRemoveProvider(account: ProviderAccount) {
+    const provider = account.provider;
+    if (!isSupportedProvider(provider)) return;
+
+    modals.showDefault({
+      content: () => (
+        <p>{uiText(
+          `${providerLabel(account.provider)}-Zugang entfernen?`,
+          `Remove the ${providerLabel(account.provider)} account?`,
+        )}</p>
+      ),
+      modalProps: () => ({
+        modalHeading: uiText("Provider entfernen", "Remove provider"),
+        primaryButtonText: uiText("Entfernen", "Remove"),
+      }),
+      onPrimaryAction: async ({ hide }) => {
+        const [, error] = await adminClient.mutate("admin.llm.providers.delete", {
+          provider,
+        });
+
+        if (error) throw new Error(error.message);
+
+        notifications.success({
+          title: uiText("Provider entfernt", "Provider removed"),
+        });
+        await adminClient.invalidateCascading("admin.llm.providers");
+        hide();
+      },
     });
-    await adminClient.invalidate("admin.llm.tenants.list");
   }
 
   return (
@@ -389,94 +561,132 @@ export default function GlobalAdminLlmPage() {
       {!!loadError && <MyCallout icon={Icons.Deny} color="red">{loadError.message}</MyCallout>}
 
       <Tile className="space-y-3">
-        <Heading level={3} noMargin>{uiText("Provider-Zugänge", "Provider accounts")}</Heading>
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-          {PROVIDERS.map(provider => (
-            <ProviderAccountEditor
-              key={provider.id}
-              provider={provider}
-              account={(accounts ?? []).find(account => account.provider === provider.id)}
-            />
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Heading level={3} noMargin>{uiText("Provider-Zugänge", "Provider accounts")}</Heading>
+          <MyButton
+            size="sm"
+            onClick={() => showProviderDialog()}
+            disabled={!accounts || availableProviders.length === 0}
+          >
+            {uiText("Provider hinzufügen", "Add provider")}
+          </MyButton>
         </div>
+
+        {configuredAccounts.length === 0 ? (
+          <p className="light">{uiText(
+            "Noch kein Provider eingerichtet.",
+            "No provider configured yet.",
+          )}</p>
+        ) : (
+          <div>
+            {configuredAccounts.map(account => (
+              <div
+                key={account.provider}
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ss-border)] py-2"
+              >
+                <div className="min-w-0">
+                  <strong>{providerLabel(account.provider)}</strong>
+                  <div className="light truncate">
+                    {account.baseUrl || PROVIDERS.find(option => option.id === account.provider)?.endpoint}
+                  </div>
+                  {(useCases ?? []).some(settings => settings.provider === account.provider) && (
+                    <div className="light">{uiText("In Verwendung", "In use")}</div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <MyButton kind="secondary" size="sm" onClick={() => showProviderDialog(account)}>
+                    {uiText("Bearbeiten", "Edit")}
+                  </MyButton>
+                  <MyButton
+                    kind="secondary"
+                    size="sm"
+                    disabled={(useCases ?? []).some(settings => settings.provider === account.provider)}
+                    onClick={() => showRemoveProvider(account)}
+                  >
+                    {uiText("Entfernen", "Remove")}
+                  </MyButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Tile>
 
       <Tile className="space-y-3">
         <Heading level={3} noMargin>{uiText("Modelle nach Anwendungsfall", "Models by use case")}</Heading>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <UseCaseEditor
-            useCase="chat"
-            title={uiText("Chat", "Chat")}
-            description={uiText("Antworten und Aktionen im LLM-Chat", "Answers and actions in LLM chat")}
-            accounts={accounts ?? []}
-            settings={(useCases ?? []).find(settings => settings.useCase === "chat")}
-          />
-          <UseCaseEditor
-            useCase="documentImport"
-            title={uiText("Einlesen", "Document import")}
-            description={uiText("Lieferscheine, Rechnungen und Preislisten", "Delivery notes, invoices, and price lists")}
-            accounts={accounts ?? []}
-            settings={(useCases ?? []).find(settings => settings.useCase === "documentImport")}
-          />
-          <UseCaseEditor
-            useCase="onlyoffice"
-            title={uiText("ONLYOFFICE", "ONLYOFFICE")}
-            description={uiText("Texte in Dokumenten bearbeiten, übersetzen und zusammenfassen", "Edit, translate, and summarize document text")}
-            accounts={accounts ?? []}
-            settings={(useCases ?? []).find(settings => settings.useCase === "onlyoffice")}
-          />
+        <div>
+          {([
+            {
+              useCase: "chat",
+              title: uiText("Chat", "Chat"),
+              description: uiText("Antworten und Aktionen im LLM-Chat", "Answers and actions in LLM chat"),
+            },
+            {
+              useCase: "documentImport",
+              title: uiText("Einlesen", "Document import"),
+              description: uiText("Lieferscheine, Rechnungen und Preislisten", "Delivery notes, invoices, and price lists"),
+            },
+            {
+              useCase: "onlyoffice",
+              title: uiText("ONLYOFFICE", "ONLYOFFICE"),
+              description: uiText("Texte in Dokumenten bearbeiten", "Edit document text"),
+            },
+          ] satisfies Array<{ useCase: UseCaseName; title: string; description: string }>).map(item => {
+            const settings = (useCases ?? []).find(entry => entry.useCase === item.useCase);
+
+            return (
+              <div
+                key={item.useCase}
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ss-border)] py-2"
+              >
+                <div className="min-w-0">
+                  <strong>{item.title}</strong>
+                  <div className="light">{item.description}</div>
+                  <div className="truncate">
+                    {settings?.provider && settings.model
+                      ? `${providerLabel(settings.provider)} · ${settings.model}`
+                      : uiText("Kein Modell ausgewählt", "No model selected")}
+                  </div>
+                </div>
+                <MyButton
+                  kind="secondary"
+                  size="sm"
+                  disabled={configuredAccounts.length === 0}
+                  onClick={() => showUseCaseDialog(item.useCase, item.title)}
+                >
+                  {uiText("Ändern", "Change")}
+                </MyButton>
+              </div>
+            );
+          })}
         </div>
       </Tile>
 
       <Tile className="space-y-2">
         <Heading level={3} noMargin>{uiText("Mandanten", "Tenants")}</Heading>
-
-        <div className="space-y-2">
-          {Object.values(tenantDrafts).map(tenant => (
+        <div>
+          {(tenants ?? []).map(tenant => (
             <div
               key={tenant.name}
-              className="grid grid-cols-1 md:grid-cols-[minmax(10rem,1fr)_auto_minmax(12rem,auto)_auto] gap-2 items-end"
+              className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ss-border)] py-2"
             >
-              <b>{tenant.name}</b>
-              <label className="flex gap-1 items-center pb-1">
-                <input
-                  type="checkbox"
-                  checked={tenant.enabled}
-                  onChange={event => {
-                    const enabled = event.currentTarget.checked;
-
-                    setTenantDrafts(previous => ({
-                      ...previous,
-                      [tenant.name]: { ...previous[tenant.name], enabled },
-                    }));
-                  }}
-                />
-                {uiText("Aktiv", "Active")}
-              </label>
-              <label>
-                <span className="ss-label">{uiText("Monatliche Tokenquote", "Monthly token quota")}</span>
-                <input
-                  className="ss-input"
-                  type="number"
-                  min={1}
-                  placeholder={uiText("Unbegrenzt", "Unlimited")}
-                  value={tenant.monthlyTokenQuota?.toString() ?? ""}
-                  onChange={event => {
-                    const value = event.currentTarget.value;
-                    const monthlyTokenQuota = value ? BigInt(value) : null;
-
-                    setTenantDrafts(previous => ({
-                      ...previous,
-                      [tenant.name]: {
-                        ...previous[tenant.name],
-                        monthlyTokenQuota,
-                      },
-                    }));
-                  }}
-                />
-              </label>
-              <MyButton kind="secondary" size="sm" onClick={() => void saveTenant(tenant)}>
-                {uiText("Speichern", "Save")}
+              <div>
+                <strong>{tenant.name}</strong>
+                <div className="light">
+                  {tenant.enabled
+                    ? uiText("Aktiv", "Active")
+                    : uiText("Inaktiv", "Inactive")}
+                  {" · "}
+                  {tenant.monthlyTokenQuota == null
+                    ? uiText("Ohne Tokenlimit", "No token limit")
+                    : uiText(
+                      `${formatTokens(tenant.monthlyTokenQuota)} Token pro Monat`,
+                      `${formatTokens(tenant.monthlyTokenQuota)} tokens per month`,
+                    )}
+                </div>
+              </div>
+              <MyButton kind="secondary" size="sm" onClick={() => showTenantDialog(tenant)}>
+                {uiText("Bearbeiten", "Edit")}
               </MyButton>
             </div>
           ))}

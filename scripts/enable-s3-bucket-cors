@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AWS_CLI_IMAGE="${AWS_CLI_IMAGE:-docker.io/amazon/aws-cli:latest}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/container-images.sh"
+AWS_CLI_IMAGE="${AWS_CLI_IMAGE:-$(sortsys_container_image aws-cli)}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
 
 CORS_RULE_ID="${CORS_RULE_ID:-sortsys-webapp-cors}"

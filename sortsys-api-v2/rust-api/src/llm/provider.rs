@@ -285,7 +285,7 @@ pub async fn complete(
         "openai" => {
             openai_responses_tools(state, auth, chat_id, configuration, turns, &prompt).await
         }
-        "meta" | "deepseek" | "custom" => {
+        "meta" | "openrouter" | "deepseek" | "custom" => {
             openai_compatible_tools(state, auth, chat_id, configuration, turns, &prompt).await
         }
         _ => Err(RpcError::new(
@@ -339,9 +339,13 @@ record. For price lists and invoices, productId null means a proposed new produc
 
 Never invent product ids, units, quantities, prices, or illegible handwriting. Put uncertain
 readings in the line comment and lower confidence. For unmatched price lines, choose a concise
-product name that follows the naming style of similar catalogue search results; keep the
-manufacturer in brand and useful material details in description. Preserve model, dimension,
-and quality details needed to distinguish products. For a new product, choose the smallest
+product name that follows the naming style of similar catalogue search results. Set brand
+to the manufacturer, but keep the manufacturer in name when comparable catalogue names include it.
+For example, if nearby products are named "Maxit IP 15 E" and "Maxit IP 20 E", propose
+"Maxit IP 18 E" for "MAXIT IP18 E A 30 KG", not "IP 18 E". If comparable names omit the
+manufacturer, omit it from name as well. Keep useful material details in description.
+Preserve model, dimension, and quality details needed to distinguish products. For a new product,
+choose the smallest
 physical unit stated in the document as baseUnit. Never choose Sack or Palette as baseUnit when
 a weight or volume per package is stated. Describe each printed conversion as
 {unit, quantity, inUnit}, meaning 1 unit = quantity inUnit. For example, 1 Sack = 30 kg and
@@ -349,9 +353,14 @@ a weight or volume per package is stated. Describe each printed conversion as
 {"unit":"Palette","quantity":40,"inUnit":"Sack"}]. The server derives 1200 kg per
 Palette. Search the catalogue for every row, preferably with parallel tool calls. Prices and
 quantities must describe the unit printed in the document; the server converts them to the
-catalogue or proposed base unit. pricePerUnit is always the net unit price, not a line total.
-Divide a line total by quantity when necessary. If only a gross price is printed, convert it
-only when the VAT rate is explicit in the document.
+catalogue or proposed base unit. pricePerUnit is always the discounted net unit price,
+not a list price, gross price, or line total. Apply each line's stated percentage or fixed
+discount before returning pricePerUnit. If both an undiscounted price and a final discounted
+net price are printed, use the final discounted price. For example, 8.10 EUR per Sack less
+10% discount means pricePerUnit = 7.29 EUR per Sack, not 8.10 EUR. Divide a discounted line
+total by quantity when necessary. Do not subtract the discount twice. If only a gross price
+is printed, convert it only when the VAT rate is explicit in the document; otherwise leave
+pricePerUnit null rather than recording a gross amount as net.
 "#;
 
 fn scan_prompt(locale: &str) -> String {
@@ -388,7 +397,7 @@ pub async fn parse_document_scan(
     match configuration.provider.as_str() {
         "openai" => openai_scan(state, auth, configuration, &input, &prompt).await,
         "anthropic" => anthropic_scan(state, auth, configuration, &input, &prompt).await,
-        "meta" | "deepseek" | "custom" => {
+        "meta" | "openrouter" | "deepseek" | "custom" => {
             compatible_scan(state, auth, configuration, &input, &prompt).await
         }
         _ => Err(RpcError::new(
@@ -1505,6 +1514,7 @@ fn default_provider_base_url(provider: &str) -> &'static str {
     match provider {
         "anthropic" => "https://api.anthropic.com",
         "meta" => "https://api.llama.com/compat",
+        "openrouter" => "https://openrouter.ai/api/v1",
         "deepseek" => "https://api.deepseek.com",
         _ => "https://api.openai.com",
     }
@@ -1636,6 +1646,27 @@ mod tests {
     }
 
     #[test]
+    fn openrouter_uses_its_api_prefix_and_model_slugs() {
+        assert_eq!(
+            endpoint(
+                default_provider_base_url("openrouter"),
+                "v1/chat/completions"
+            ),
+            "https://openrouter.ai/api/v1/chat/completions"
+        );
+        assert_eq!(
+            endpoint(default_provider_base_url("openrouter"), "v1/models"),
+            "https://openrouter.ai/api/v1/models"
+        );
+
+        let models = model_options(&json!({
+            "data": [{ "id": "openai/gpt-4", "name": "GPT-4" }]
+        }));
+        assert_eq!(models[0].id, "openai/gpt-4");
+        assert_eq!(models[0].name, "GPT-4");
+    }
+
+    #[test]
     fn delivery_note_scan_prompt_uses_the_users_language() {
         let german = scan_prompt("de");
         let english = scan_prompt("en");
@@ -1645,6 +1676,9 @@ mod tests {
         assert!(german.contains("text copied from the document unchanged"));
         assert!(german.contains("Keep comments brief and use null"));
         assert!(german.contains("Never describe OCR, catalogue searches, matching"));
+        assert!(german.contains("Maxit IP 18 E"));
+        assert!(german.contains("pricePerUnit = 7.29 EUR per Sack"));
+        assert!(german.contains("gross amount as net"));
     }
 
     #[test]

@@ -1689,7 +1689,7 @@ fn required_text(value: &Value, field: &str, max: usize) -> RpcResult<String> {
 fn validate_provider(provider: &str) -> RpcResult<()> {
     if matches!(
         provider,
-        "openai" | "anthropic" | "meta" | "deepseek" | "custom"
+        "openai" | "anthropic" | "meta" | "openrouter" | "deepseek" | "custom"
     ) {
         Ok(())
     } else {

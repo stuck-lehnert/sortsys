@@ -293,11 +293,16 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         );
         CREATE TABLE IF NOT EXISTS __llm_provider_accounts (
           provider VARCHAR(32) PRIMARY KEY
-            CHECK (provider IN ('openai', 'anthropic', 'meta', 'deepseek', 'custom')),
+            CHECK (provider IN ('openai', 'anthropic', 'meta', 'openrouter', 'deepseek', 'custom')),
           base_url TEXT,
           api_key_ciphertext TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE __llm_provider_accounts
+          DROP CONSTRAINT IF EXISTS __llm_provider_accounts_provider_check;
+        ALTER TABLE __llm_provider_accounts
+          ADD CONSTRAINT __llm_provider_accounts_provider_check
+            CHECK (provider IN ('openai', 'anthropic', 'meta', 'openrouter', 'deepseek', 'custom'));
         CREATE TABLE IF NOT EXISTS __llm_use_case_settings (
           use_case VARCHAR(32) PRIMARY KEY
             CHECK (use_case IN ('chat', 'document_import', 'onlyoffice')),

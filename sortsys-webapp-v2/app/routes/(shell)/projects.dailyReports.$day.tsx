@@ -19,7 +19,7 @@ import { MyTable } from "~/components/MyTable";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyDropdown } from "~/components/MyDropdown";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdf, type PdfImageSection, type PdfTableSection } from "~/lib/pdf";
+import { renderStructuredPdf, formatPdfNumber, type PdfImageSection, type PdfTableSection } from "~/lib/pdf";
 import { deliverBlob, type BlobTarget } from "~/lib/utils";
 import { showDeleteDailyProjectReportModal, showModifyDailyProjectReportModal } from "~/modals/dailyProjectReport";
 import { of } from 'rxjs';
@@ -76,43 +76,46 @@ export default function DailyProjectReportDetailPage() {
         const user = entry.userId ? userMap.get(entry.userId) : null;
         return [
           user ? userFullName(user) : 'Unbekannt',
-          formatNumber(entry.hours),
+          formatPdfNumber(entry.hours),
         ];
       });
 
       const totalHours = currentReport.workHours.reduce((sum, entry) => sum + Number(entry.hours ?? 0), 0);
 
-      const summaryRows: string[][] = [
+      const summaryRows: PdfTableSection['rows'] = [
         [uiText('Projekt'), project?.title ?? 'Unbekannt'],
         ['Tag', formatDate(currentReport.day, 'long')],
-        ['Gesamtstunden', formatNumber(totalHours)],
+        [uiText('Gesamtstunden', 'Total hours'), { value: `${formatPdfNumber(totalHours)} h`, bold: true }],
       ];
-      if (currentReport.summary) {
-        summaryRows.push([uiText('Beschreibung der Arbeiten'), currentReport.summary]);
-      }
 
       const sections: PdfTableSection[] = [
         {
           title: uiText("Zusammenfassung"),
           columns: [uiText('Kennzahl'), uiText('Wert')],
           rows: summaryRows,
+          presentation: 'summary',
           withHeader: false,
           align: ['left', 'left'],
           columnWidths: ['1fr', '2fr'],
         },
       ];
 
+      if (currentReport.summary?.trim()) {
+        sections.push({ title: uiText('Beschreibung der Arbeiten'), columns: [''], rows: [[currentReport.summary]], withHeader: false });
+      }
+
       if (workHourRows.length > 0) {
         sections.push({
           title: uiText("Arbeitszeit"),
           columns: ['Mitarbeiter', uiText('Stunden')],
           rows: workHourRows,
+          totalRows: [[uiText('Gesamt', 'Total'), formatPdfNumber(totalHours)]],
           align: ['left', 'right'],
           columnWidths: ['2fr', '1fr'],
         });
       }
 
-      if (currentReport.weather && Object.values(currentReport.weather).some(Boolean)) {
+      if (currentReport.weather && Object.values(currentReport.weather).some(value => value != null && value !== '')) {
         const weatherRows: string[][] = [];
         if (currentReport.weather.summary) weatherRows.push([uiText('Beschreibung'), currentReport.weather.summary]);
         if (typeof currentReport.weather.temperatureC === 'number') weatherRows.push(['Temperatur', `${formatNumber(currentReport.weather.temperatureC)} °C`]);
@@ -132,9 +135,9 @@ export default function DailyProjectReportDetailPage() {
       }
 
       const photoImages = (currentReport.photos ?? [])
-        .map(photo => ({
-          title: photo.fileName,
-          caption: formatDate(photo.createdAt),
+        .map((photo, index) => ({
+          title: uiText(`Foto ${index + 1}`, `Photo ${index + 1}`),
+          caption: `${photo.fileName} · ${formatDate(photo.createdAt)}`,
           url: photo.downloadUrl || photo.previewUrl || photo.thumbnailUrl || '',
           fileName: photo.fileName,
           mimeType: photo.mimeType,

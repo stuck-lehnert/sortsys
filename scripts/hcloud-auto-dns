@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE=${IMAGE:-docker.io/library/python:3.12-alpine}
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/container-images.sh"
+IMAGE=${IMAGE:-$(sortsys_container_image python)}
 ZONE=${ZONE:-sortsys.de}
 SUBDOMAIN=${SUBDOMAIN:-auto}
 TTL=${TTL:-1800}

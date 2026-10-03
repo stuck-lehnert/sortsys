@@ -4578,18 +4578,35 @@ b {
   font-size: 0.8125rem;
 }
 
-.price-import-modal .ss-modal-container {
-  inline-size: min(64rem, calc(100vw - 1.6rem));
+.ss-modal.price-import-modal[data-fullheight="true"] .ss-modal-container {
+  inline-size: min(80rem, 100vw);
+  max-inline-size: 80rem;
+  min-block-size: 100dvh;
+  max-block-size: 100dvh;
 }
 
-.price-import-modal .ss-modal-content {
+.ss-modal.price-import-modal[data-fullheight="true"] .ss-modal-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: hidden;
   padding: 1rem 1.25rem;
 }
 
 .price-import-editor {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 1rem;
   min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.price-import-editor[data-detail="true"] .price-import-fields,
+.price-import-editor[data-detail="true"] > .price-import-checkbox,
+.price-import-editor[data-detail="true"] > .price-import-notices {
+  display: none;
 }
 
 .price-import-fields {
@@ -4656,13 +4673,36 @@ b {
 }
 
 .price-import-list {
+  align-content: start;
   display: grid;
+  flex: 1 1 auto;
   gap: 0.5rem;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.price-import-list[data-detail="true"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.price-import-list[data-detail="true"] .price-import-row {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.price-import-list[data-detail="true"] .price-import-row-body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
 }
 
 .price-import-row {
   border: 1px solid var(--ss-border);
   min-inline-size: 0;
+}
+
+.price-import-row[data-existing-product="true"] {
+  background: color-mix(in srgb, var(--ss-success) 8%, var(--ss-surface));
 }
 
 .price-import-row[data-included="false"] {
@@ -4815,7 +4855,7 @@ b {
     justify-self: start;
   }
 
-  .price-import-modal .ss-modal-content {
+  .ss-modal.price-import-modal[data-fullheight="true"] .ss-modal-content {
     padding: 0.8rem;
   }
 
@@ -4826,6 +4866,13 @@ b {
 
   .price-import-field--wide {
     grid-column: auto;
+  }
+  .price-import-editor[data-detail="true"] .price-import-row-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .price-import-editor[data-detail="true"] .price-import-field--wide {
+    grid-column: 1 / -1;
   }
 
   .price-import-summary {

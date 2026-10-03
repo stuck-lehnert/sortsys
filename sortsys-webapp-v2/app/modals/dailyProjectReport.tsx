@@ -9,7 +9,7 @@ import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
 import { formatAddress, formatDate, formatNumber, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdfBatch, type PdfTableSection } from "~/lib/pdf";
+import { renderStructuredPdfBatch, formatPdfNumber, type PdfTableSection } from "~/lib/pdf";
 import { dailyReportDayKey, SmallProjectTile, SmallUserTile } from "~/lib/tiles";
 import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
@@ -80,11 +80,6 @@ function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<stri
 
     index += 1;
   }
-}
-
-function formatWeeklyWorkHour(value: number) {
-  const numeric = Number(value ?? 0);
-  return numeric === 0 ? '-' : formatNumber(numeric);
 }
 
 function formatWeeklyPresence(value: number) {
@@ -824,11 +819,11 @@ export function showExportWeeklyDailyProjectReportsModal(
           });
           const enteredDayIndexes = Array.from(reportSummaryByDay.keys()).sort((left, right) => left - right);
 
-          const summaryRows: string[][] = [
+          const summaryRows: PdfTableSection['rows'] = [
             [uiText('Projekt'), project.title],
             ['Kalenderwoche', `KW ${weekNumber}`],
             [uiText('Zeitraum'), uiText(`${formatDate(weekStart, 'long')} bis ${formatDate(weekEnd, 'long')}`, `${formatDate(weekStart, 'long')} to ${formatDate(weekEnd, 'long')}`)],
-            ['Berichtstage', `${orderedWeekReports.length}`],
+            [uiText('Berichtstage', 'Reported days'), { value: `${orderedWeekReports.length}`, emphasis: hideHours ? 'primary' : 'secondary' }],
           ];
           if (project.address) {
             summaryRows.splice(1, 0, ['Anschrift', formatAddress(project.address)]);
@@ -838,7 +833,7 @@ export function showExportWeeklyDailyProjectReportsModal(
             return sum + row.values.reduce((acc, value) => acc + Number(value ?? 0), 0);
           }, 0);
           if (!hideHours) {
-            summaryRows.push(['Gesamtstunden', formatNumber(totalHours)]);
+            summaryRows.push([uiText('Gesamtstunden', 'Total hours'), { value: `${formatPdfNumber(totalHours)} h`, bold: true }]);
           }
 
           const sections: PdfTableSection[] = [
@@ -846,6 +841,7 @@ export function showExportWeeklyDailyProjectReportsModal(
               title: uiText("Zusammenfassung"),
               columns: [uiText('Kennzahl'), uiText('Wert')],
               rows: summaryRows,
+              presentation: 'summary',
               withHeader: false,
               align: ['left', 'left'],
               columnWidths: ['1fr', '2fr'],
@@ -860,16 +856,20 @@ export function showExportWeeklyDailyProjectReportsModal(
               ? ['left' as const, ...WEEKDAY_SHORT_NAMES.map(() => 'center' as const)]
               : ['left' as const, ...WEEKDAY_SHORT_NAMES.map(() => 'right' as const), 'right' as const];
             const workerColumnWidths = hideHours
-              ? ['2fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.68fr')]
-              : ['2fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.68fr'), '0.82fr'];
+              ? ['2.6fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.65fr')]
+              : ['2.6fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.65fr'), '0.9fr'];
 
             sections.push({
               title: hideHours ? uiText("Anwesenheit je Mitarbeiter und Tag") : uiText("Arbeitszeit je Mitarbeiter und Tag"),
               columns: workerColumns,
+              subtitle: hideHours
+                ? uiText("X bedeutet erfasste Anwesenheit; – bedeutet keine erfasste Arbeitszeit.", "X means recorded attendance; – means no recorded working time.")
+                : uiText("Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.", "All times in hours; – means no recorded working time."),
+              totalRows: hideHours ? undefined : [[uiText("Gesamt", "Total"), ...WEEKDAY_SHORT_NAMES.map((_, index) => formatPdfNumber(workerRows.reduce((sum, row) => sum + row.values[index], 0))), formatPdfNumber(totalHours)]],
               rows: workerRows.map((row) => {
                 const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
                 if (hideHours) return [row.name, ...row.values.map(value => formatWeeklyPresence(value))];
-                return [row.name, ...row.values.map(value => formatWeeklyWorkHour(value)), formatWeeklyWorkHour(total)];
+                return [row.name, ...row.values.map(value => value === 0 ? '-' : formatPdfNumber(value)), formatPdfNumber(total)];
               }),
               align: workerAlign,
               columnWidths: workerColumnWidths,
@@ -885,6 +885,7 @@ export function showExportWeeklyDailyProjectReportsModal(
           if (workDescriptionRows.length > 0) {
             sections.push({
               title: uiText("Beschreibung der Arbeiten"),
+              presentation: 'entries',
               columns: ['Tag', 'Inhalt'],
               rows: workDescriptionRows,
               withHeader: false,
@@ -910,8 +911,8 @@ export function showExportWeeklyDailyProjectReportsModal(
       if (format === 'pdf') {
         const documents = weeklyExports.map((weeklyExport) => {
           return {
-            title: `${project.title} — KW ${weeklyExport.weekNumber}`,
-            reportLabel: uiText("Bauwochenbericht"),
+            title: uiText(`Bauwochenbericht · KW ${weeklyExport.weekNumber}`, `Weekly site report · Week ${weeklyExport.weekNumber}`),
+            reportLabel: project.title,
             sections: weeklyExport.sections,
             emptyMessage: uiText("Keine Daten zum Bauwochenbericht verfügbar."),
           };

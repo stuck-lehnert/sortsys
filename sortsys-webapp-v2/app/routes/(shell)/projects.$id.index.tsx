@@ -111,8 +111,8 @@ export default function ProjectDetailPage() {
         ? await client.query('customers.get', { id: project.customerId }, { strategy: 'cache-first' })
         : [null, null] as const;
 
-      const projectRows: string[][] = [
-        [uiText('Projekt'), project.title],
+      const projectRows: PdfTableSection['rows'] = [
+        [uiText('Projekt'), { value: project.title, bold: true }],
         ['Anschrift', formatAddress(project.address) || '-'],
       ];
       if (project.orderReceivedAt) projectRows.push(['Auftrag erhalten am', formatDate(project.orderReceivedAt, 'long')]);
@@ -148,16 +148,18 @@ export default function ProjectDetailPage() {
         },
       ];
       const cardSections: PdfCardSection[] = [];
+      const trailingSections: PdfTableSection[] = [];
 
       const remarkRows = [...(projectRemarks ?? [])]
         .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
         .map((remark) => [formatDate(remark.createdAt, 'long'), remark.body]);
       if (remarkRows.length) {
-        sections.push({
+        trailingSections.push({
           title: uiText("Vermerke"),
           subtitle: uiText(`${remarkRows.length} ${remarkRows.length === 1 ? "Vermerk" : "Vermerke"} zum Projekt`, `${remarkRows.length} ${remarkRows.length === 1 ? "note" : "notes"} for the project`),
           columns: [uiText('Datum'), 'Vermerk'],
           rows: remarkRows,
+          presentation: 'entries',
           align: ['left', 'left'],
           columnWidths: ['0.8fr', '2.2fr'],
         });
@@ -185,10 +187,11 @@ export default function ProjectDetailPage() {
       }
 
       const pdfData = await renderStructuredPdf({
-        title: project.title,
-        reportLabel: uiText("Datenblatt"),
+        title: uiText("Projektdatenblatt", "Project data sheet"),
+        reportLabel: project.title,
         sections,
         cardSections,
+        trailingSections,
         emptyMessage: uiText("Keine Projektdaten verfügbar."),
       });
 

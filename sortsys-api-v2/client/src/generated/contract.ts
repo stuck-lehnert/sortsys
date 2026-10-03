@@ -28,7 +28,7 @@ export type ProposalDecision = "accept" | "decline" | "requestRevision";
 
 export type ProposalExecutionResult = { path: string, output: JsonValue, };
 
-export type ProviderName = "openai" | "anthropic" | "meta" | "deepseek" | "custom";
+export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "deepseek" | "custom";
 
 export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
 

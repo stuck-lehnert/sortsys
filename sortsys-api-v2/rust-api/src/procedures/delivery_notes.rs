@@ -2469,6 +2469,48 @@ async fn normalize_delivery_note_result(
     })
 }
 
+fn worksheet_discounted_unit_price(line: &RawScanLine, candidate: f64) -> Option<f64> {
+    let fields = line
+        .source_text
+        .rsplitn(5, '|')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    if fields.len() < 5 || normalized_unit(fields[2]) != normalized_unit(&line.unit) {
+        return None;
+    }
+
+    let parse_number = |text: &str| {
+        text.trim_end_matches('%')
+            .trim()
+            .replace(',', ".")
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+    };
+
+    let discounted = parse_number(fields[0])?;
+    let discount_percent = parse_number(fields[1])?;
+    let list_price = parse_number(fields[3])?;
+
+    if list_price <= 0.0
+        || discounted < 0.0
+        || !(0.0..100.0).contains(&discount_percent)
+        || discount_percent == 0.0
+    {
+        return None;
+    }
+
+    // Only trust the final column when the displayed percentage confirms it.
+    let expected = list_price * (1.0 - discount_percent / 100.0);
+    if (discounted - expected).abs() > 0.01
+        || (candidate - list_price).abs() > 0.01 && (candidate - discounted).abs() > 0.01
+    {
+        return None;
+    }
+
+    Some((discounted * 10_000.0).round() / 10_000.0)
+}
+
 async fn normalize_price_list_result(
     pool: &PgPool,
     raw: RawScanResult,
@@ -2496,6 +2538,8 @@ async fn normalize_price_list_result(
         Vec::new()
     };
 
+    let brand_styles = catalogue_brand_styles(&catalogue);
+
     for line in raw.lines {
         let Some(source_price) = line
             .price_per_unit
@@ -2515,6 +2559,9 @@ async fn normalize_price_list_result(
             warnings.push(warning);
             continue;
         };
+
+        let source_price =
+            worksheet_discounted_unit_price(&line, source_price).unwrap_or(source_price);
 
         if line.name.trim().is_empty() || line.unit.trim().is_empty() {
             let warning = if locale == "en" {
@@ -2599,12 +2646,15 @@ async fn normalize_price_list_result(
                 (line.unit.trim().to_owned(), HashMap::new(), 1.0)
             }
         };
+
+        let (product_name, brand) = proposed_product_name(&line, &brand_styles);
+
         rows.push(ScannedPriceRow {
             source_text: line.source_text,
             product_id: None,
             custom_id: None,
-            product_name: line.name.trim().to_owned(),
-            brand: clean_optional_text(line.brand),
+            product_name,
+            brand,
             description: clean_optional_text(line.description),
             base_unit,
             other_units,
@@ -2637,6 +2687,98 @@ fn normalize_match_text(value: &str) -> String {
         .flat_map(char::to_lowercase)
         .filter(|character| character.is_alphanumeric())
         .collect()
+}
+
+#[derive(Default)]
+struct BrandNameStyle {
+    spelling: String,
+    prefixed_names: usize,
+    unprefixed_names: usize,
+}
+
+fn catalogue_brand_styles(catalogue: &[ScanProduct]) -> HashMap<String, BrandNameStyle> {
+    let mut styles = HashMap::new();
+
+    for product in catalogue {
+        let Some(brand) = product
+            .brand
+            .as_deref()
+            .map(str::trim)
+            .filter(|brand| !brand.is_empty())
+        else {
+            continue;
+        };
+
+        let style = styles
+            .entry(normalize_match_text(brand))
+            .or_insert_with(|| BrandNameStyle {
+                spelling: brand.to_owned(),
+                ..Default::default()
+            });
+
+        if starts_with_brand(&product.name, brand) {
+            style.prefixed_names += 1;
+        } else {
+            style.unprefixed_names += 1;
+        }
+    }
+
+    styles
+}
+
+fn first_product_word(source: &str) -> Option<&str> {
+    let mut words = source.split_whitespace();
+    let first = words.next()?;
+    let first = if first.chars().all(|character| character.is_ascii_digit()) {
+        words.next()?
+    } else {
+        first
+    };
+
+    first
+        .split(|character: char| !character.is_alphanumeric())
+        .find(|part| !part.is_empty())
+}
+
+fn starts_with_brand(value: &str, brand: &str) -> bool {
+    first_product_word(value)
+        .is_some_and(|first| normalize_match_text(first) == normalize_match_text(brand))
+}
+
+fn proposed_product_name(
+    line: &RawScanLine,
+    styles: &HashMap<String, BrandNameStyle>,
+) -> (String, Option<String>) {
+    let name = line.name.trim().to_owned();
+    let brand = line
+        .brand
+        .as_deref()
+        .map(str::trim)
+        .filter(|brand| !brand.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            let source_brand = first_product_word(&line.source_text)?;
+            styles
+                .get(&normalize_match_text(source_brand))
+                .map(|style| style.spelling.clone())
+        });
+
+    let Some(brand) = brand else {
+        return (name, None);
+    };
+
+    let style = styles.get(&normalize_match_text(&brand));
+    let brand = style.map(|style| style.spelling.clone()).unwrap_or(brand);
+    let prefers_prefix = style.is_none_or(|style| style.prefixed_names > style.unprefixed_names);
+
+    if !prefers_prefix
+        || !starts_with_brand(&line.source_text, &brand)
+        || starts_with_brand(&name, &brand)
+    {
+        return (name, Some(brand));
+    }
+
+    (format!("{brand} {name}"), Some(brand))
 }
 
 fn find_unambiguous_product_match(
@@ -2949,9 +3091,11 @@ mod tests {
 
     use super::{
         DeliveryNoteOcrResult, MAX_SCAN_BYTES, ParseScanInput, RawScanLine, RawUnitConversion,
-        RecognizedScanDocument, ScanProduct, combine_ocr_documents, find_unambiguous_product_match,
-        parse_product_records, parse_raw_scan_result, parse_special_records, product_unit_factor,
-        proposed_unit_factors, scan_transcript_chunks, validate_scan_documents, validate_scan_file,
+        RecognizedScanDocument, ScanProduct, catalogue_brand_styles, combine_ocr_documents,
+        find_unambiguous_product_match, parse_product_records, parse_raw_scan_result,
+        parse_special_records, product_unit_factor, proposed_product_name, proposed_unit_factors,
+        scan_transcript_chunks, validate_scan_documents, validate_scan_file,
+        worksheet_discounted_unit_price,
     };
     use sqlx::types::Json;
 
@@ -3050,6 +3194,84 @@ mod tests {
         };
         assert!(find_unambiguous_product_match(&[other_brand], &line).is_none());
         assert!(find_unambiguous_product_match(&[perlfix.clone(), perlfix], &line).is_none());
+    }
+
+    #[test]
+    fn proposed_scan_names_follow_existing_brand_style() {
+        let maxit = ScanProduct {
+            id: 1,
+            custom_id: 1,
+            name: "Maxit IP 15 E".to_owned(),
+            brand: Some("Maxit".to_owned()),
+            base_unit: "kg".to_owned(),
+            other_units: Json(json!({ "Sack": 30 })),
+        };
+        let styles = catalogue_brand_styles(&[maxit]);
+
+        let mut line: RawScanLine = serde_json::from_value(json!({
+            "sourceText": "126600 MAXIT IP18 E A 30 KG (1 Pal = 42 Sack)_x000D_ KALKZEMENTPUTZ LEICHT | 8.1 | Sack | 10 | 7.2899999999999991",
+            "name": "IP 18 E",
+            "brand": "MAXIT",
+            "quantity": 1,
+            "unit": "Sack",
+            "confidence": 0.95
+        }))
+        .unwrap();
+
+        assert_eq!(
+            proposed_product_name(&line, &styles),
+            ("Maxit IP 18 E".to_owned(), Some("Maxit".to_owned()))
+        );
+
+        line.brand = None;
+        assert_eq!(
+            proposed_product_name(&line, &styles),
+            ("Maxit IP 18 E".to_owned(), Some("Maxit".to_owned()))
+        );
+
+        line.name = "Maxit IP 18 E".to_owned();
+        assert_eq!(proposed_product_name(&line, &styles).0, "Maxit IP 18 E");
+
+        let knauf = ScanProduct {
+            id: 2,
+            custom_id: 2,
+            name: "Perlfix".to_owned(),
+            brand: Some("Knauf".to_owned()),
+            base_unit: "kg".to_owned(),
+            other_units: Json(json!({ "Sack": 30 })),
+        };
+        let styles = catalogue_brand_styles(&[knauf]);
+        line.source_text = "KNAUF-SCHNELLSPACHTEL X30 30 KG".to_owned();
+        line.name = "Schnellspachtel X30".to_owned();
+        line.brand = Some("Knauf".to_owned());
+
+        assert_eq!(
+            proposed_product_name(&line, &styles),
+            ("Schnellspachtel X30".to_owned(), Some("Knauf".to_owned()))
+        );
+    }
+
+    #[test]
+    fn worksheet_discount_requires_a_matching_percentage_and_unit() {
+        let mut line: RawScanLine = serde_json::from_value(json!({
+            "sourceText": "126600 MAXIT IP18 E A 30 KG | 8.1 | Sack | 10 | 7.2899999999999991",
+            "name": "IP 18 E",
+            "quantity": 1,
+            "unit": "Sack",
+            "confidence": 0.95
+        }))
+        .unwrap();
+
+        assert_eq!(worksheet_discounted_unit_price(&line, 8.1), Some(7.29));
+        assert_eq!(worksheet_discounted_unit_price(&line, 7.29), Some(7.29));
+        assert_eq!(worksheet_discounted_unit_price(&line, 8.5), None);
+
+        line.unit = "Palette".to_owned();
+        assert_eq!(worksheet_discounted_unit_price(&line, 8.1), None);
+
+        line.unit = "Sack".to_owned();
+        line.source_text = "MAXIT IP18 E | 8.1 | Sack | 10 | 7.50".to_owned();
+        assert_eq!(worksheet_discounted_unit_price(&line, 8.1), None);
     }
 
     #[test]

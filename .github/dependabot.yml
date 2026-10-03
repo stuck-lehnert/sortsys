@@ -1,0 +1,80 @@
+version: 2
+
+updates:
+  # Production containers use npm; keep its lockfiles maintained alongside Bun.
+  - package-ecosystem: npm
+    directories:
+      - /sortsys-webapp-v2
+      - /sortsys-dwgviewer
+      - /sortsys-react-components
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: bun
+    directories:
+      - /sortsys-api-v2/client
+      - /sortsys-webapp-v2
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The API's root Cargo.lock covers the rust-api workspace member.
+  - package-ecosystem: cargo
+    directories:
+      - /sortsys-api-v2
+      - /sortsys-dwgviewer/lib
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: all
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /sortsys-v2-job_runner
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: all
+    open-pull-requests-limit: 10
+
+  # Includes Dockerfile.test, ARG-based images, and images used by shell scripts.
+  - package-ecosystem: docker
+    directories:
+      - /sortsys-api-v2
+      - /sortsys-api-v2/rust-api
+      - /sortsys-webapp-v2
+      - /sortsys-v2-job_runner
+      - /scripts
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  # Both compose.yaml and ghcr-compose.yaml live in the repository root.
+  # Locally built images and :latest tags have no version tag to update.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ["*"]

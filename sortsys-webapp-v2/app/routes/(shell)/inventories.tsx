@@ -187,17 +187,19 @@ export default function InventoryOverviewPage() {
         inventoryToolTitle(tool),
         inventoryLastResponsibleLabel(tool),
         inventoryStatusLabel(tool),
-        tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, 'long') : '—',
+        tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, 'short') : '—',
       ];
 
       const sections: PdfTableSection[] = [
         {
           title: uiText("Zusammenfassung"),
+          presentation: 'summary',
+          subtitle: uiText("Zuerst werden Werkzeuge ohne Inventur im Prüfzeitraum aufgeführt.", "Tools without an inventory check in the review period are listed first."),
           columns: [uiText('Kennzahl'), uiText('Wert')],
           rows: [
             [uiText('Zeitraum'), `${days} Tage`],
-            [uiText('Inventiert'), `${sortedInventoriedTools.length}`],
-            [uiText('Keine Inventur'), `${sortedMissingTools.length}`],
+            [uiText('Keine Inventur'), { value: `${sortedMissingTools.length}`, bold: true }],
+            [uiText('Inventiert'), { value: `${sortedInventoriedTools.length}`, emphasis: 'secondary' }],
           ],
           withHeader: false,
           align: ['left', 'right'],
@@ -205,29 +207,29 @@ export default function InventoryOverviewPage() {
         },
       ];
 
-      if (sortedInventoriedTools.length > 0) {
-        sections.push({
-          title: uiText(`Inventiert in den letzten ${days} Tagen`, `Inventoried in the last ${days} days`),
-          columns: [uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
-          rows: sortedInventoriedTools.map(toToolRow),
-          align: ['left', 'left', 'left', 'left', 'left'],
-          columnWidths: ['0.8fr', '2fr', '1.5fr', '0.8fr', '1fr'],
-        });
-      }
-
       if (sortedMissingTools.length > 0) {
         sections.push({
           title: uiText(`Keine Inventur in den letzten ${days} Tagen`, `No inventory in the last ${days} days`),
           columns: [uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
           rows: sortedMissingTools.map(toToolRow),
           align: ['left', 'left', 'left', 'left', 'left'],
-          columnWidths: ['0.8fr', '2fr', '1.5fr', '0.8fr', '1fr'],
+          columnWidths: ['0.8fr', '2.1fr', '1.55fr', '0.95fr', '1.15fr'],
+        });
+      }
+
+      if (sortedInventoriedTools.length > 0) {
+        sections.push({
+          title: uiText(`Inventiert in den letzten ${days} Tagen`, `Inventoried in the last ${days} days`),
+          columns: [uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
+          rows: sortedInventoriedTools.map(toToolRow),
+          align: ['left', 'left', 'left', 'left', 'left'],
+          columnWidths: ['0.8fr', '2.1fr', '1.55fr', '0.95fr', '1.15fr'],
         });
       }
 
       const pdfData = await renderStructuredPdf({
-        title: uiText(`Inventur (${days} Tage)`, `Inventory (${days} days)`),
-        reportLabel: uiText("Inventurübersicht"),
+        title: uiText("Inventurübersicht"),
+        reportLabel: uiText(`Prüfzeitraum: letzte ${days} Tage`, `Review period: last ${days} days`),
         sections,
         emptyMessage: uiText("Keine Inventurdaten verfügbar."),
       });

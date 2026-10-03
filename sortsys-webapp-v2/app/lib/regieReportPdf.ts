@@ -1,6 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import { formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
-import { type PdfTableSection, type StructuredPdfDocument } from "~/lib/pdf";
+import { buildPdfProductSection, formatPdfNumber, type PdfTableSection, type StructuredPdfDocument } from "~/lib/pdf";
 import { upmatchUnit } from "~/lib/utils";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
 import type { Product, RegieReport, User } from "~/type-helpers";
@@ -23,7 +23,7 @@ function productLabel(productsById: ProductLookup, productId: string) {
 
 function formatWeeklyWorkHour(value: number) {
   const numeric = Number(value ?? 0);
-  return numeric === 0 ? '-' : formatNumber(numeric);
+  return numeric === 0 ? '-' : formatPdfNumber(numeric);
 }
 
 function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
@@ -92,11 +92,12 @@ export function buildRegieReportPdfDocument(props: {
     const baseUnit = product?.baseUnit ?? "";
     const baseText = formatBaseQuantity(baseQuantity, baseUnit, unit);
 
-    return [
-      product ? productTitle(product) : "Unbekannt",
-      `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`,
-      baseText,
-    ];
+    return {
+      number: product ? `${product.customId}` : '-',
+      name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${record.productId})`, `Unknown product (${record.productId})`),
+      quantity: `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`,
+      baseQuantity: baseText,
+    };
   });
 
   const sortedSpecialRecords = [...report.specialRecords].sort((left, right) => {
@@ -108,11 +109,11 @@ export function buildRegieReportPdfDocument(props: {
     `${formatNumber(record.amount)} ${record.unit}`,
   ]);
 
-  const summaryRows: string[][] = [
+  const summaryRows: PdfTableSection['rows'] = [
     [uiText("Projekt"), projectTitle],
     ["Kalenderwoche", isoWeekLabel(weekStart)],
     [uiText("Zeitraum"), uiText(`${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`, `${formatDate(weekStart, "long")} to ${formatDate(weekEnd, "long")}`)],
-    ["Gesamtstunden", formatNumber(totalHours)],
+    [uiText("Gesamtstunden", "Total hours"), { value: `${formatPdfNumber(totalHours)} h`, bold: true }],
   ];
 
   const sections: PdfTableSection[] = [
@@ -120,6 +121,7 @@ export function buildRegieReportPdfDocument(props: {
       title: uiText("Zusammenfassung"),
       columns: [uiText("Kennzahl"), uiText("Wert")],
       rows: summaryRows,
+      presentation: 'summary',
       withHeader: false,
       align: ["left", "left"],
       columnWidths: ["1fr", "2fr"],
@@ -131,8 +133,10 @@ export function buildRegieReportPdfDocument(props: {
       title: uiText("Arbeitszeit je Mitarbeiter und Tag"),
       columns: ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES, "Gesamt"],
       rows: workHourRows,
+      subtitle: uiText("Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.", "All times in hours; – means no recorded working time."),
+      totalRows: [[uiText("Gesamt", "Total"), ...WEEKDAY_SHORT_NAMES.map((_, index) => formatWeeklyWorkHour(workerRows.reduce((sum, row) => sum + row.values[index], 0))), formatPdfNumber(totalHours)]],
       align: ["left", ...WEEKDAY_SHORT_NAMES.map(() => "right" as const), "right"],
-      columnWidths: ["2fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.68fr"), "0.82fr"],
+      columnWidths: ["2.6fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.65fr"), "0.9fr"],
     });
   }
 
@@ -146,13 +150,7 @@ export function buildRegieReportPdfDocument(props: {
   });
 
   if (productRows.length > 0) {
-    sections.push({
-      title: uiText("Produkte"),
-      columns: ["Bezeichnung", "Menge", "Basismenge"],
-      rows: productRows,
-      align: ["left", "right", "right"],
-      columnWidths: ["1.8fr", "1fr", "1fr"],
-    });
+    sections.push(buildPdfProductSection(productRows, { showPrices: false }));
   }
 
   if (specialRows.length > 0) {

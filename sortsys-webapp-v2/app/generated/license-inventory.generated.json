@@ -2894,16 +2894,16 @@
       {
         "ecosystem": "npm",
         "name": "brace-expansion",
-        "version": "1.1.18",
+        "version": "1.1.21",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/brace-expansion/v/1.1.18"
+        "source": "https://www.npmjs.com/package/brace-expansion/v/1.1.21"
       },
       {
         "ecosystem": "npm",
         "name": "brace-expansion",
-        "version": "2.1.4",
+        "version": "2.1.7",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/brace-expansion/v/2.1.4"
+        "source": "https://www.npmjs.com/package/brace-expansion/v/2.1.7"
       },
       {
         "ecosystem": "npm",
@@ -3251,9 +3251,9 @@
       {
         "ecosystem": "npm",
         "name": "dompurify",
-        "version": "3.4.14",
+        "version": "3.4.16",
         "license": "(MPL-2.0 OR Apache-2.0)",
-        "source": "https://www.npmjs.com/package/dompurify/v/3.4.14"
+        "source": "https://www.npmjs.com/package/dompurify/v/3.4.16"
       },
       {
         "ecosystem": "npm",
@@ -4210,9 +4210,9 @@
       {
         "ecosystem": "npm",
         "name": "morgan",
-        "version": "1.12.0",
+        "version": "1.12.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/morgan/v/1.12.0"
+        "source": "https://www.npmjs.com/package/morgan/v/1.12.1"
       },
       {
         "ecosystem": "npm",
@@ -4241,6 +4241,14 @@
         "version": "0.6.4",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/negotiator/v/0.6.4"
+      },
+      {
+        "ecosystem": "Font",
+        "name": "Nimbus Sans L",
+        "version": "1.05",
+        "license": "GPL-2.0 with document embedding exception",
+        "licenseUrl": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+        "source": "https://fontlibrary.org/en/font/nimbus-sans-l"
       },
       {
         "ecosystem": "npm",

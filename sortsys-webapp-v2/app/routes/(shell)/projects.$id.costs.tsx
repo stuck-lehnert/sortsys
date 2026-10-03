@@ -14,7 +14,8 @@ import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
 import { formatCurrency, formatDate, formatNumber, formatPercent, gainOrLossColor, productTitle, toolTitle, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdf, renderStructuredPdfBatch, type PdfTableSection } from "~/lib/pdf";
+import { renderStructuredPdf, buildPdfProductSection, formatPdfNumber, type PdfTableSection } from "~/lib/pdf";
+import { buildWeeklyProjectCostsPdfDocument } from "~/lib/projectCostsPdf";
 import { deliverBlob, endOfDay, startOfDay, type BlobTarget, upmatchUnit } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
 import { EXCEL_DATE_NUM_FMT } from "~/lib/xlsx";
@@ -173,19 +174,19 @@ export default function ProjectDetailCosts() {
         title: uiText("Gemeinkosten"),
         columns: ['Kostenart', 'Basis', 'Gemeinkosten'],
         rows: [
-          ['LKG', formatCurrencyOrDash(sourceCommonCosts.fgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.fgk.overheadCost)],
-          ['MGK', formatCurrencyOrDash(sourceCommonCosts.mgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.mgk.overheadCost)],
-          ['NUGK', formatCurrencyOrDash(sourceCommonCosts.ngk.baseCost), formatCurrencyOrDash(sourceCommonCosts.ngk.overheadCost)],
+          [uiText('Lohngemeinkosten', 'Labour overhead'), formatCurrencyOrDash(sourceCommonCosts.fgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.fgk.overheadCost)],
+          [uiText('Materialgemeinkosten', 'Material overhead'), formatCurrencyOrDash(sourceCommonCosts.mgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.mgk.overheadCost)],
+          [uiText('Nachunternehmergemeinkosten', 'Subcontractor overhead'), formatCurrencyOrDash(sourceCommonCosts.ngk.baseCost), formatCurrencyOrDash(sourceCommonCosts.ngk.overheadCost)],
         ],
         align: ['left', 'right', 'right'],
-        columnWidths: ['1.2fr', '1fr', '1fr'],
+        columnWidths: ['2fr', '1fr', '1fr'],
       });
 
       const buildFinancialEntrySection = (title: string, entries: ProjectFinancialEntry[]): PdfTableSection | null => {
         const rows = [...entries]
           .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
           .map((entry) => [
-            formatDate(entry.createdAt, 'long'),
+            formatDate(entry.createdAt, 'short'),
             formatCurrencyOrDash(entry.amount),
             entry.comment || '-',
           ]);
@@ -196,7 +197,7 @@ export default function ProjectDetailCosts() {
           columns: ['Erfasst am', 'Betrag', uiText('Kommentar')],
           rows,
           align: ['left', 'right', 'left'],
-          columnWidths: ['1fr', '0.8fr', '2fr'],
+          columnWidths: ['1.1fr', '1.1fr', '2.4fr'],
         };
       };
 
@@ -205,10 +206,10 @@ export default function ProjectDetailCosts() {
       ];
       if (offers.length > 0 || hasNumberData(offersTotal)) {
         const offersAmount = formatCurrencyOrDash(offersTotal);
-        const offersSummary = offers.length > 1
-          ? uiText(`${offersAmount} (${offers.length} Einträge)`, `${offersAmount} (${offers.length} entries)`)
-          : offersAmount;
-        summaryRows.push(['Angebotssummen', offersSummary]);
+        summaryRows.push(['Angebotssummen', {
+          value: offersAmount,
+          detail: offers.length > 1 ? uiText(`${offers.length} Einträge`, `${offers.length} entries`) : undefined,
+        }]);
       }
       if (invoices.length > 0 || hasNumberData(invoicesTotal)) {
         summaryRows.push(['Rechnungssummen', formatCurrencyOrDash(invoicesTotal)]);
@@ -217,7 +218,10 @@ export default function ProjectDetailCosts() {
         const balanceColor = gainOrLossColor(gainOrLoss);
         summaryRows.push([
           'Gewinn/Verlust',
-          { value: formatGainOrLossText(gainOrLoss, invoicesTotal), bold: true, color: balanceColor },
+          {
+            value: formatCurrency(gainOrLoss), bold: true, color: balanceColor,
+            detail: formatGainOrLossPercentage(gainOrLoss, invoicesTotal) ?? undefined,
+          },
         ]);
       }
       sections.push({
@@ -225,14 +229,15 @@ export default function ProjectDetailCosts() {
         subtitle: !hasInvoices ? MISSING_INVOICE_NOTICE : undefined,
         columns: [uiText('Kennzahl'), uiText('Wert')],
         rows: summaryRows,
+        presentation: 'metrics',
         withHeader: false,
         align: ['left', 'right'],
         columnWidths: ['2fr', '1fr'],
       });
 
-      const offerSection = buildFinancialEntrySection('Angebotssummen', offers);
+      const offerSection = buildFinancialEntrySection(uiText('Angebotssummen'), offers);
       if (offerSection) sections.push(offerSection);
-      const invoiceSection = buildFinancialEntrySection('Rechnungssummen', invoices);
+      const invoiceSection = buildFinancialEntrySection(uiText('Rechnungssummen'), invoices);
       if (invoiceSection) sections.push(invoiceSection);
 
       const costAreaRows: string[][] = [];
@@ -406,28 +411,27 @@ export default function ProjectDetailCosts() {
 
         if (weeklyEntries.length > 0) {
           sections.push({
-            title: uiText("Wochenweise Kosten"),
-            columns: ['Woche', 'Produkte', 'Sonderposten', 'Werkzeuge', uiText('Arbeitszeit'), uiText('NU-Arbeitszeit'), 'Gesamt'],
+            title: uiText('Einzelkosten je Woche', 'Direct costs per week'),
+            subtitle: uiText('Ohne Gemeinkosten. Material umfasst Produkte und Sonderposten, Personal umfasst Mitarbeiter und Nachunternehmer. Einzelpositionen folgen je Woche.', 'Excluding overhead. Materials include products and special items; personnel includes employees and subcontractors. Detailed positions follow for each week.'),
+            columns: [uiText('Woche', 'Week'), uiText('Material', 'Materials'), uiText('Personal', 'Personnel'), uiText('Werkzeuge'), uiText('Einzelkosten', 'Direct costs')],
             rows: weeklyEntries.map((entry) => [
               entry.weekLabel,
-              formatCurrencyOrDash(entry.products),
-              formatCurrencyOrDash(entry.specialRecordsCost),
+              formatCurrencyOrDash(entry.products + entry.specialRecordsCost),
+              formatCurrencyOrDash(entry.workHours + entry.subcontractorWorkHours),
               formatCurrencyOrDash(entry.toolTrackingsCost),
-              formatCurrencyOrDash(entry.workHours),
-              formatCurrencyOrDash(entry.subcontractorWorkHours),
               formatCurrencyOrDash(entry.products + entry.specialRecordsCost + entry.workHours + entry.subcontractorWorkHours + entry.toolTrackingsCost),
             ]),
-            align: ['left', 'right', 'right', 'right', 'right', 'right', 'right'],
-            columnWidths: ['1.2fr', '0.86fr', '0.86fr', '0.86fr', '0.86fr', '0.86fr', '0.86fr'],
+            align: ['left', 'right', 'right', 'right', 'right'],
+            columnWidths: ['1.1fr', '1.2fr', '1.2fr', '1.1fr', '1.3fr'],
           });
         }
 
-        const weeklyDocuments = weeklyEntries.map((entry) => {
+        const weeklyReports = weeklyEntries.map((entry) => {
           const weeklySections: PdfTableSection[] = [];
 
           const weeklyTotal = entry.products + entry.specialRecordsCost + entry.workHours + entry.subcontractorWorkHours + entry.toolTrackingsCost;
           const weeklySummaryRows: PdfTableSection['rows'] = [
-            ['Gesamtkosten', { value: formatCurrencyOrDash(weeklyTotal), bold: true }],
+            [uiText('Einzelkosten', 'Direct costs'), { value: formatCurrencyOrDash(weeklyTotal), bold: true }],
             ['Produkte', formatCurrencyOrDash(entry.products)],
             ['Sonderposten', formatCurrencyOrDash(entry.specialRecordsCost)],
             [uiText('Arbeitszeit'), formatCurrencyOrDash(entry.workHours)],
@@ -442,17 +446,18 @@ export default function ProjectDetailCosts() {
           }
 
           weeklySections.push({
-            title: uiText("Zusammenfassung"),
+            title: '',
             columns: [uiText('Kennzahl'), uiText('Wert')],
             rows: weeklySummaryRows,
+            presentation: 'metrics',
             withHeader: false,
             align: ['left', 'right'],
             columnWidths: ['2fr', '1fr'],
           });
 
-          const weeklyOfferSection = buildFinancialEntrySection('Angebotssummen', entry.offers);
+          const weeklyOfferSection = buildFinancialEntrySection(uiText('Angebotssummen'), entry.offers);
           if (weeklyOfferSection) weeklySections.push(weeklyOfferSection);
-          const weeklyInvoiceSection = buildFinancialEntrySection('Rechnungssummen', entry.invoices);
+          const weeklyInvoiceSection = buildFinancialEntrySection(uiText('Rechnungssummen'), entry.invoices);
           if (weeklyInvoiceSection) weeklySections.push(weeklyInvoiceSection);
 
           const weeklyCommonCostsOverhead = Number(entry.commonCosts?.overallOverhead ?? 0);
@@ -483,23 +488,18 @@ export default function ProjectDetailCosts() {
                 ? `${formatCurrency(total.totalCost / total.quantityBase)}${baseUnit ? `/${baseUnit}` : ''}`
                 : '-';
 
-              return [
-                product ? `${product.customId} ${productTitle(product)}` : productId,
-                formatProductAmount(amount, unit),
-                inBaseUnits,
-                avgUnitPrice,
-                formatCurrencyOrDash(total.totalCost),
-              ];
+              return {
+                number: product ? `${product.customId}` : '-',
+                name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${productId})`, `Unknown product (${productId})`),
+                quantity: formatProductAmount(amount, unit),
+                baseQuantity: inBaseUnits,
+                price: avgUnitPrice,
+                cost: formatCurrencyOrDash(total.totalCost),
+              };
             });
 
           if (weeklyProductRows.length > 0) {
-            weeklySections.push({
-              title: uiText("Produkte"),
-              columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
-              rows: weeklyProductRows,
-              align: ['left', 'right', 'right', 'right', 'right'],
-              columnWidths: ['1.95fr', '0.95fr', '1fr', '1fr', '0.9fr'],
-            });
+            weeklySections.push(buildPdfProductSection(weeklyProductRows));
           }
 
           const weeklySpecialRows = [...(entry.specialRecords ?? [])]
@@ -524,9 +524,9 @@ export default function ProjectDetailCosts() {
           const weeklyWorkHourRows = [...(entry.workHourEntries ?? [])]
             .sort((left, right) => left.day.getTime() - right.day.getTime())
             .map((workHourEntry) => [
-              formatDate(workHourEntry.day, 'long'),
+              formatDate(workHourEntry.day, 'short'),
               workHourEntry.userId ? (userNameMap.get(workHourEntry.userId) ?? workHourEntry.userId) : 'Unbekannt',
-              formatNumber(workHourEntry.hours),
+              formatPdfNumber(workHourEntry.hours),
               formatCurrencyOrDash(workHourEntry.totalCost),
             ]);
 
@@ -543,9 +543,9 @@ export default function ProjectDetailCosts() {
           const weeklySubcontractorWorkHourRows = [...(entry.subcontractorWorkHourEntries ?? [])]
             .sort((left, right) => left.day.getTime() - right.day.getTime())
             .map((workHourEntry) => [
-              formatDate(workHourEntry.day, 'long'),
+              formatDate(workHourEntry.day, 'short'),
               workHourEntry.userId ? (userNameMap.get(workHourEntry.userId) ?? workHourEntry.userId) : 'Unbekannt',
-              formatNumber(workHourEntry.hours),
+              formatPdfNumber(workHourEntry.hours),
               formatCurrencyOrDash(workHourEntry.totalCost),
             ]);
 
@@ -566,7 +566,7 @@ export default function ProjectDetailCosts() {
               return leftTime - rightTime;
             })
             .map((deliveryEntry) => [
-              deliveryEntry.effectiveTimestamp ? formatDate(deliveryEntry.effectiveTimestamp, 'long') : '-',
+              deliveryEntry.effectiveTimestamp ? formatDate(deliveryEntry.effectiveTimestamp, 'short') : '-',
               `#${deliveryEntry.autoId}`,
               formatCurrencyOrDash(deliveryEntry.totalCost),
             ]);
@@ -590,9 +590,9 @@ export default function ProjectDetailCosts() {
 
               return [
                 toolNameMap.get(toolTrackingEntry.toolId) ?? toolTrackingEntry.toolId,
-                formatDate(toolTrackingEntry.startedAt, 'long'),
-                toolTrackingEntry.endedAt ? formatDate(toolTrackingEntry.endedAt, 'long') : 'offen',
-                formatNumber(days),
+                formatDate(toolTrackingEntry.startedAt, 'short'),
+                toolTrackingEntry.endedAt ? formatDate(toolTrackingEntry.endedAt, 'short') : 'offen',
+                formatPdfNumber(days),
                 formatCurrencyOrDash(toolTrackingEntry.totalCost),
               ];
             });
@@ -608,24 +608,19 @@ export default function ProjectDetailCosts() {
           }
 
           return {
-            title: `${project.title} — ${entry.weekLabel}`,
-            reportLabel: uiText("Projektkostenbericht Wochenweise"),
+            label: entry.weekLabel,
+            start: entry.weekStart,
+            end: entry.weekEnd,
             sections: weeklySections,
             emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
           };
         });
 
-        const documents = [
-          {
-            title: project.title,
-            reportLabel: uiText("Projektkostenbericht Wochenweise"),
-            sections,
-            emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
-          },
-          ...weeklyDocuments,
-        ];
-
-        const pdfData = await renderStructuredPdfBatch({ documents });
+        const pdfData = await renderStructuredPdf(buildWeeklyProjectCostsPdfDocument({
+          projectTitle: project.title,
+          overviewSections: sections,
+          weeks: weeklyReports,
+        }));
 
         const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
         const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
@@ -656,22 +651,17 @@ export default function ProjectDetailCosts() {
         const avgUnitPrice = baseQuantity > 0 && hasNumberData(entry.totalCost)
           ? `${formatCurrency(Number(entry.totalCost ?? 0) / baseQuantity)}${baseUnit ? `/${baseUnit}` : ''}`
           : '-';
-        return [
-          product ? `${product.customId} ${productTitle(product)}` : entry.productId,
-          formatProductAmount(amount, unit),
-          inBaseUnits,
-          avgUnitPrice,
-          formatCurrencyOrDash(entry.totalCost),
-        ];
+        return {
+          number: product ? `${product.customId}` : '-',
+          name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${entry.productId})`, `Unknown product (${entry.productId})`),
+          quantity: formatProductAmount(amount, unit),
+          baseQuantity: inBaseUnits,
+          price: avgUnitPrice,
+          cost: formatCurrencyOrDash(entry.totalCost),
+        };
       });
       if (productRows.length > 0) {
-        sections.push({
-          title: uiText("Produkte"),
-          columns: ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
-          rows: productRows,
-          align: ['left', 'right', 'right', 'right', 'right'],
-          columnWidths: ['1.95fr', '0.95fr', '1fr', '1fr', '0.9fr'],
-        });
+        sections.push(buildPdfProductSection(productRows));
       }
 
       const sortedSpecialRecords = [...(costs.specialRecords ?? [])].sort((left, right) => {
@@ -704,9 +694,9 @@ export default function ProjectDetailCosts() {
 
         return [
           toolNameMap.get(entry.toolId) ?? entry.toolId,
-          formatDate(entry.startedAt, 'long'),
-          entry.endedAt ? formatDate(entry.endedAt, 'long') : 'offen',
-          formatNumber(days),
+          formatDate(entry.startedAt, 'short'),
+          entry.endedAt ? formatDate(entry.endedAt, 'short') : 'offen',
+          formatPdfNumber(days),
           formatCurrencyOrDash(entry.totalCost),
         ];
       });
@@ -714,9 +704,9 @@ export default function ProjectDetailCosts() {
       const sortedWorkHours = [...regularWorkHours].sort((left, right) => left.day.getTime() - right.day.getTime());
 
       const workHourRows = sortedWorkHours.map((entry) => [
-        formatDate(entry.day, 'long'),
+        formatDate(entry.day, 'short'),
         entry.userId ? (userNameMap.get(entry.userId) ?? entry.userId) : 'Unbekannt',
-        formatNumber(entry.hours),
+        formatPdfNumber(entry.hours),
         formatCurrencyOrDash(entry.totalCost),
       ]);
       if (workHourRows.length > 0) {
@@ -732,9 +722,9 @@ export default function ProjectDetailCosts() {
       const sortedSubcontractorWorkHours = [...subcontractorWorkHours].sort((left, right) => left.day.getTime() - right.day.getTime());
 
       const subcontractorWorkHourRows = sortedSubcontractorWorkHours.map((entry) => [
-        formatDate(entry.day, 'long'),
+        formatDate(entry.day, 'short'),
         entry.userId ? (userNameMap.get(entry.userId) ?? entry.userId) : 'Unbekannt',
-        formatNumber(entry.hours),
+        formatPdfNumber(entry.hours),
         formatCurrencyOrDash(entry.totalCost),
       ]);
       if (subcontractorWorkHourRows.length > 0) {
@@ -748,7 +738,7 @@ export default function ProjectDetailCosts() {
       }
 
       const deliveryRows = (costs.deliveryNotes ?? []).map((entry) => [
-        entry.effectiveTimestamp ? formatDate(entry.effectiveTimestamp, 'long') : '-',
+        entry.effectiveTimestamp ? formatDate(entry.effectiveTimestamp, 'short') : '-',
         `#${entry.autoId}`,
         formatCurrencyOrDash(entry.totalCost),
       ]);
@@ -773,8 +763,8 @@ export default function ProjectDetailCosts() {
       }
 
       const pdfData = await renderStructuredPdf({
-        title: project.title,
-        reportLabel: uiText("Projektkostenbericht"),
+        title: uiText("Projektkostenbericht"),
+        reportLabel: project.title,
         sections,
         emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
       });
