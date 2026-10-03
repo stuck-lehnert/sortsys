@@ -19,8 +19,8 @@ TEST_JOB_RUNNER_2_CONTAINER="${TEST_JOB_RUNNER_2_CONTAINER:-sortsys-test-api-job
 TEST_JOB_RUNNER_CONTAINERS=("$TEST_JOB_RUNNER_1_CONTAINER" "$TEST_JOB_RUNNER_2_CONTAINER")
 
 TEST_POSTGRES_IMAGE="${TEST_POSTGRES_IMAGE:-$(sortsys_container_image test-postgres)}"
-TEST_S3_IMAGE="${TEST_S3_IMAGE:-$(sortsys_container_image minio)}"
-TEST_S3_IMAGE_FALLBACK="${TEST_S3_IMAGE_FALLBACK:-$(sortsys_container_image minio-fallback)}"
+TEST_S3_IMAGE="${TEST_S3_IMAGE:-$(sortsys_s3_image)}"
+TEST_S3_IMAGE_FALLBACK="${TEST_S3_IMAGE_FALLBACK:-}"
 TEST_RUST_IMAGE="${TEST_RUST_IMAGE:-$(sortsys_container_image rust)}"
 TEST_API_TEST_IMAGE="${TEST_API_TEST_IMAGE:-localhost/sortsys-api-test:rust-1.88-pg17}"
 TEST_JOB_RUNNER_IMAGE="${TEST_JOB_RUNNER_IMAGE:-localhost/sortsys-job-runner-test:latest}"
@@ -249,6 +249,7 @@ ensure_network() {
 ensure_image() {
   local image="$1"
   local retries="${2:-5}"
+  local pull_output
 
   if image_exists "$image"; then
     return 0
@@ -256,9 +257,10 @@ ensure_image() {
 
   echo "Pulling image ${image}"
   for ((i = 1; i <= retries; i++)); do
-    if "$CONTAINER_RUNTIME" pull "$image" >/dev/null 2>&1; then
+    if pull_output="$("$CONTAINER_RUNTIME" pull "$image" 2>&1)"; then
       return 0
     fi
+    printf '%s\n' "$pull_output" >&2
 
     if [ "$i" -lt "$retries" ]; then
       echo "Pull failed (${i}/${retries}), retrying in 3s..."
@@ -362,11 +364,10 @@ start_infra() {
     exit 1
   fi
 
-  if ! ensure_image "$TEST_S3_IMAGE" 5; then
+  if ! sortsys_prepare_s3_image "$CONTAINER_RUNTIME" "$TEST_S3_IMAGE" "$TEST_GO_IMAGE"; then
     echo "Failed to prepare S3 image: ${TEST_S3_IMAGE}"
-    echo "Trying fallback image: ${TEST_S3_IMAGE_FALLBACK}"
-    if ! ensure_image "$TEST_S3_IMAGE_FALLBACK" 5; then
-      echo "Failed to prepare both primary and fallback S3 images"
+    if [ -z "$TEST_S3_IMAGE_FALLBACK" ] || \
+      ! sortsys_prepare_s3_image "$CONTAINER_RUNTIME" "$TEST_S3_IMAGE_FALLBACK" "$TEST_GO_IMAGE"; then
       exit 1
     fi
     TEST_S3_IMAGE="$TEST_S3_IMAGE_FALLBACK"
@@ -617,6 +618,9 @@ on_exit() {
     echo
     echo "scripts/test-api failed. Container logs:"
     for container_name in "${TEST_ALL_CONTAINERS[@]}"; do
+      if ! "$CONTAINER_RUNTIME" container inspect "$container_name" >/dev/null 2>&1; then
+        continue
+      fi
       echo "--- ${container_name} ---"
       "$CONTAINER_RUNTIME" logs "$container_name" || true
     done
