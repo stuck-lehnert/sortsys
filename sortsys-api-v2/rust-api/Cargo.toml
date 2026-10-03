@@ -8,7 +8,7 @@ license = "AGPL-3.0-only"
 [dependencies]
 aes-gcm = "0.10"
 axum = { version = "0.8", features = ["http1", "json", "tokio", "ws"] }
-base64 = "0.22"
+base64 = "0.23"
 bcrypt = "0.17"
 ciborium = "0.2"
 bytes = "1"
