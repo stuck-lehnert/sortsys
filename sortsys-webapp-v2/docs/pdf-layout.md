@@ -29,7 +29,7 @@ gutters, fine horizontal row separators and a stronger rule below the headers.
 Vertical borders and background fills are omitted. Regular tables use 6 pt of
 vertical cell padding; weekly matrices and lists with more than 20 positions use
 5 pt to keep long exports compact. The compact company header uses a
-logo scaled proportionally to at most 30 × 10 mm at the top right, sender details at the left and a thin
+logo scaled proportionally to at most 48 × 16 mm at the top right, sender details at the left and a thin
 separator below. Its height follows the actual sender/logo content; without a
 logo, the sender uses the full width and tighter spacing removes the unused logo
 area. It is used by project

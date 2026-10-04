@@ -454,7 +454,7 @@ function renderSection(section: PdfTableSection, group?: { title: string; anchor
   }
   if (section.subtitle && presentation !== 'metrics') lines.push(`    table.cell(colspan: ${section.columns.length}, stroke: none, align: left, inset: (x: 0pt, top: 0pt, bottom: 2mm))[#text(size: ${PDF_TYPOGRAPHY.label}pt, fill: rgb("#555555"))[${escapeTypstText(section.subtitle)}]],`);
   if (withHeader && !pairs) {
-    section.columns.forEach(column => lines.push(`    [#text(size: ${PDF_TYPOGRAPHY.table}pt, weight: "bold", fill: rgb("#414850"))[${escapeTypstText(column)}]],`));
+    section.columns.forEach((column, index) => lines.push(`    table.cell(align: ${align[index] ?? 'left'} + bottom)[#text(size: ${PDF_TYPOGRAPHY.table}pt, weight: "bold", fill: rgb("#414850"))[${escapeTypstText(column)}]],`));
   }
   lines.push(`    table.hline(stroke: ${pairs ? '0.4pt + rgb("#c5cbd1")' : '0.7pt + rgb("#68717b")'}),`);
   lines.push('  ),');

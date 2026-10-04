@@ -85,9 +85,9 @@ export function buildPdfLayoutPreamble(font = PDF_FONT_FAMILY, language = 'de') 
     '#show heading: set block(above: 5mm, below: 2.5mm)',
     '#set par(justify: false, leading: 0.45em, spacing: 4.23mm)',
     '#set table(inset: (x: 5pt, y: 4pt))',
-    '#let pdf-logo(path) = context {',
+    '#let pdf-logo(path, max-height: 16mm) = context {',
     '  let natural = measure(image(path))',
-    '  let scale = calc.min(30mm / natural.width, 10mm / natural.height)',
+    '  let scale = calc.min(48mm / natural.width, max-height / natural.height)',
     '  image(path, width: natural.width * scale, height: natural.height * scale)',
     '}',
     '#let pdf-fitted-line(value, width, height, size: 11pt, minimum: 8pt) = context {',
@@ -127,7 +127,7 @@ export function wrapPdfDocument(body: string, options: {
   const end = `pdf-document-${index}-end`;
   const footer = lineStack(layout.footer ?? [], 8);
   const logo = logoShadowPath
-    ? `#pdf-logo(${typstString(logoShadowPath)})`
+    ? `#pdf-logo(${typstString(logoShadowPath)}, max-height: ${letter ? Math.min(16, form.addressTop - 13) : 16}mm)`
     : '';
   const senderHeader = sender.length
     ? `#stack(dir: ttb, spacing: 1.3mm, block(text(size: 11pt, weight: "bold", ${typstString(sender[0])})), ${sender.slice(1).map(line => `block(text(size: 9pt, ${typstString(line)}))`).join(', ')})`
@@ -169,9 +169,10 @@ export function wrapPdfDocument(body: string, options: {
       '#context {',
       `  let sender = [${senderHeader}]`,
       `  assert(measure(sender, width: 85mm).height <= ${form.addressTop - 13}mm, message: "DIN 5008: sender header is too tall for this form.")`,
-      '  place(top + left, dy: -15mm, block(width: 85mm, sender))',
+      logo
+        ? `  place(top + left, dy: -15mm, block(width: 100%)[#grid(columns: (85mm, 1fr), gutter: 8mm, align: horizon, [#sender], [#align(right)[${logo}]])])`
+        : '  place(top + left, dy: -15mm, block(width: 85mm, sender))',
       '}',
-      `#place(top + right, dy: -15mm)[${logo}]`,
       `#place(top + left, dx: ${DIN_5008.addressLeft - DIN_5008.left}mm, dy: ${form.addressTop - DIN_5008.top}mm, block(width: ${DIN_5008.addressWidth}mm, height: ${DIN_5008.addressHeight}mm, inset: (left: ${DIN_5008.addressInset}mm))[`,
       '  #set par(leading: 0pt, spacing: 0pt)',
       `  #block(height: ${DIN_5008.annotationsHeight}mm)[`,
@@ -197,19 +198,19 @@ export function wrapPdfDocument(body: string, options: {
     }
   } else {
     if (sender.length || logo) {
-      lines.push(`#block(below: ${logo ? '5' : '3'}mm)[`, '#set par(spacing: 0pt)');
-      if (logo) lines.push('#grid(columns: (1fr, 32mm), gutter: 8mm, align: top,',
+      lines.push('#block(below: 3mm)[', '#set par(spacing: 0pt)');
+      if (logo) lines.push('#grid(columns: (1fr, 48mm), gutter: 8mm, align: horizon,',
         `[${senderHeader}],`, `[#align(right)[${logo}]],`, ')');
       else lines.push(senderHeader);
-      lines.push(`#v(${logo ? '3' : '2'}mm)`, '#line(length: 100%, stroke: 0.5pt + rgb("#888888"))', ']');
+      lines.push('#v(2mm)', '#line(length: 100%, stroke: 0.5pt + rgb("#888888"))', ']');
     }
     if (layout.information?.length) lines.push(`#block[${info}]`, '#v(4mm)');
   }
 
   lines.push(
-    `#block(breakable: false, sticky: true, below: ${letter ? '8.46' : '3'}mm)[#text(size: ${letter ? PDF_TYPOGRAPHY.letterSubject : PDF_TYPOGRAPHY.reportTitle}pt, weight: "bold", ${typstString(title)})]`,
+    `#block(breakable: false, sticky: true, below: ${letter ? '8.46' : '2.5'}mm)[#text(size: ${letter ? PDF_TYPOGRAPHY.letterSubject : PDF_TYPOGRAPHY.reportTitle}pt, weight: "bold", ${typstString(title)})]`,
     ...(!letter && reportLabel && reportLabel !== title ? [`#block(below: 2mm)[#text(size: 10pt, ${typstString(reportLabel)})]`] : []),
-    ...(!letter ? [`#block(below: 5mm)[#text(size: ${PDF_TYPOGRAPHY.metadata}pt, fill: rgb("#555555"))[${text(dateLabel)}: ${text(date)}]]`] : []),
+    ...(!letter ? [`#block(below: 3mm)[#text(size: ${PDF_TYPOGRAPHY.metadata}pt, fill: rgb("#555555"))[${text(dateLabel)}: ${text(date)}]]`] : []),
     body,
     `#metadata(none) <${end}>`,
     ']',

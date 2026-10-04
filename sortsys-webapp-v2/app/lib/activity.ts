@@ -1,5 +1,5 @@
 import type { QueryResult } from "@sortsys/v2-client";
-import { uiText } from "./i18n";
+import { currentLocaleTag, uiText } from "./i18n";
 
 export type ActivityItem = QueryResult<"personalization.activity.list">[number];
 
@@ -162,7 +162,7 @@ function changedFieldsLabel(item: ActivityItem) {
   return labels.slice(0, -1).join(", ") + uiText(" und ", " and ") + labels.at(-1);
 }
 
-export function activityTitle(item: ActivityItem) {
+export function activityResourceLabel(resourceType: ActivityItem["resourceType"]) {
   const labels: Record<ActivityItem["resourceType"], string> = {
     project: uiText("Projekt", "Project"),
     tool: uiText("Werkzeug", "Tool"),
@@ -176,8 +176,26 @@ export function activityTitle(item: ActivityItem) {
     dailyProjectReport: uiText("Bautagesbericht", "Daily project report"),
   };
 
-  if (item.title && item.title !== item.entityTable) return item.title;
-  return item.resourceTitle || labels[item.resourceType];
+  return labels[resourceType];
+}
+
+export function activityTitle(item: ActivityItem) {
+  const title = (item.title && item.title !== item.entityTable ? item.title : item.resourceTitle) || "";
+  // Historical audit snapshots contain German-generated document titles. Keep
+  // free-form names intact and localize only these known system formats.
+  const deliveryNumber = item.resourceType === "deliveryNote" ? title.match(/^Lieferschein (#\d+)$/) : null;
+  if (deliveryNumber) {
+    return `${activityResourceLabel(item.resourceType)} ${deliveryNumber[1]}`;
+  }
+  const day = item.resourceType === "dailyProjectReport" ? title.match(/^Bautagesbericht (\d{2})\.(\d{2})\.(\d{4})$/)
+    : item.resourceType === "regieReport" ? title.match(/^Regiebericht (\d{2})\.(\d{2})\.(\d{4})$/) : null;
+  if (day) {
+    const date = new Date(Date.UTC(Number(day[3]), Number(day[2]) - 1, Number(day[1])));
+    if (date.getUTCDate() === Number(day[1]) && date.getUTCMonth() + 1 === Number(day[2])) {
+      return `${activityResourceLabel(item.resourceType)} ${date.toLocaleDateString(currentLocaleTag(), { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" })}`;
+    }
+  }
+  return title || activityResourceLabel(item.resourceType);
 }
 
 export function activityActorLabel(item: ActivityItem) {

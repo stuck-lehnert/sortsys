@@ -6,7 +6,7 @@ export function SSButton(_props: ComponentProps<typeof Button> & {
 }) {
   const { loading, disabled, ...props } = _props;
 
-  return <Button {...props} disabled={disabled || loading} />;
+  return <Button {...props} loading={loading} disabled={disabled || loading} />;
 }
 
 export const MyButton = SSButton;

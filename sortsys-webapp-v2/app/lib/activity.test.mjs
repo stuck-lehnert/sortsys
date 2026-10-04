@@ -84,6 +84,19 @@ describe("activity wording", () => {
     expect(activityTitle({ ...event, title: "John Doe" })).toBe("John Doe");
   });
 
+  test("recognizes system document titles and preserves free-form titles", () => {
+    for (const [resourceType, title] of [
+      ["deliveryNote", "Lieferschein #422"],
+      ["dailyProjectReport", "Bautagesbericht 17.09.2026"],
+      ["regieReport", "Regiebericht 17.09.2026"],
+      ["dailyProjectReport", "Bautagesbericht 31.02.2026"],
+      ["project", "Bautagesbericht 17.09.2026"],
+      ["dailyProjectReport", "Meine Baustelle"],
+    ]) {
+      expect(activityTitle({ ...event, resourceType, title })).toBe(title);
+    }
+  });
+
   test("does not describe a permission change as user creation", () => {
     expect(activityActionLabel(event)).toBe("Berechtigung erteilt");
     expect(activityActionLabel({ ...event, action: "deleted" })).toBe("Berechtigung entzogen");
@@ -91,7 +104,7 @@ describe("activity wording", () => {
 
   test("identifies notes, leave and document changes", () => {
     expect(activityActionLabel({ ...event, entityTable: "resource_notes" })).toBe("Notiz hinzugefügt");
-    expect(activityActionLabel({ ...event, entityTable: "user_vacations" })).toBe("Urlaub hinzugefügt");
+    expect(activityActionLabel({ ...event, entityTable: "user_vacations" })).toBe("Abwesenheit hinzugefügt");
     expect(activityActionLabel({ ...event, entityTable: "project_files", action: "updated" })).toBe("Datei geändert");
     expect(activityTitle({ ...event, entityTable: "project_files", title: "Plan.pdf" })).toBe("Plan.pdf");
   });

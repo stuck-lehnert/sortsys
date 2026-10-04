@@ -20,6 +20,8 @@ DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
 DEV_GO_BUILD_CACHE_VOLUME="sortsys-dev-go-build-cache"
 DEV_GO_MODULE_CACHE_VOLUME="sortsys-dev-go-module-cache"
+DEV_WEBAPP_DEPENDENCIES_VOLUME="sortsys-dev-webapp-dependencies"
+DEV_DWGVIEWER_DEPENDENCIES_VOLUME="sortsys-dev-dwgviewer-dependencies"
 DEV_ONLYOFFICE_DATA_VOLUME="sortsys-dev-onlyoffice-9-3-1-data"
 DEV_ONLYOFFICE_STATE_VOLUME="sortsys-dev-onlyoffice-9-3-1-state"
 DEV_ONLYOFFICE_DATABASE_VOLUME="sortsys-dev-onlyoffice-9-3-1-database"
@@ -770,6 +772,8 @@ start_webapp_container() {
     -p "${DEV_WEBAPP_PORT}:${DEV_WEBAPP_PORT}" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
     -w /workspace/sortsys-webapp-v2 \
+    -v "${DEV_WEBAPP_DEPENDENCIES_VOLUME}:/workspace/sortsys-webapp-v2/node_modules" \
+    -v "${DEV_DWGVIEWER_DEPENDENCIES_VOLUME}:/workspace/sortsys-dwgviewer/node_modules" \
     -e CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}" \
     -e DEV_WEBAPP_PORT="$DEV_WEBAPP_PORT" \
     -e SORTSYS_REVISION="$DEV_REVISION" \

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/deployments";
 import { MyButton } from "~/components/MyButton";
 import { MyForm } from "~/components/MyForm";
-import { MyHeader } from "~/components/MyHeader";
 import { MyCallout } from "~/components/MyCallout";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -972,8 +971,6 @@ export default function DeploymentsPage() {
   const absenceCount = (vacations ?? []).filter(vacation => periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive)).length;
 
   return <div className="pep-page">
-    <MyHeader title={uiText("Einsatzplanung")} />
-
     <section className="pep-controls" aria-label={uiText("Planung steuern", "Planning controls")}>
       <div className="pep-period-nav">
         <MyButton
@@ -1113,14 +1110,14 @@ export default function DeploymentsPage() {
             { header: uiText("Notiz"), value: row => row.note, width: '2fr' },
           ]}
         />
+
+        {!planningLoading && <div className="pep-summary" aria-live="polite">
+          <span><strong>{rowEntities.length}</strong> {rowMode === 'project' ? uiText("Projekte", "projects") : uiText("Mitarbeitende", "employees")}</span>
+          <span><strong>{plannedUserCount}</strong> {uiText("eingeplant", "assigned")}</span>
+          {!!absenceCount && <span><strong>{absenceCount}</strong> {uiText("Abwesenheiten", "absences")}</span>}
+        </div>}
       </div>
     </section>
-
-    {!planningLoading && <div className="pep-summary" aria-live="polite">
-      <span><strong>{rowEntities.length}</strong> {rowMode === 'project' ? uiText("Projekte", "projects") : uiText("Mitarbeitende", "employees")}</span>
-      <span><strong>{plannedUserCount}</strong> {uiText("eingeplant", "assigned")}</span>
-      {!!absenceCount && <span><strong>{absenceCount}</strong> {uiText("Abwesenheiten", "absences")}</span>}
-    </div>}
 
     {!canViewAllDeployments && <p className="light">{uiText("Du siehst deine eigenen Einsätze.")}</p>}
 
@@ -1203,8 +1200,8 @@ export default function DeploymentsPage() {
               const dayOfWeek = day.toLocaleDateString(currentLocaleTag(), { weekday: 'short' });
               const isToday = isSameCalendarDay(day, today);
               return <th key={toDateInputValue(day)} className={isToday ? 'pep-is-today' : undefined}>
-                <div>{dayOfWeek}</div>
-                <div className="pep-week-date">{formatDate(day)}</div>
+                <span>{dayOfWeek}</span>
+                <span className="pep-week-date">{formatDate(day)}</span>
               </th>;
             })}
           </tr>

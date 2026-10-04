@@ -1,9 +1,9 @@
-import { currentLocaleTag, uiText } from "~/lib/i18n";
+import { currentLocaleTag, uiText, useI18n } from "~/lib/i18n";
 import type { Route } from "./+types/dashboard";
 import { Heading, Tile } from "@sortsys/react-components";
 import { MyHeader } from "~/components/MyHeader";
 import { MyButton } from "~/components/MyButton";
-import { activityActionLabel, activityActorLabel, activityTitle } from "~/lib/activity";
+import { activityActionLabel, activityActorLabel, activityResourceLabel, activityTitle } from "~/lib/activity";
 import type { QueryResult } from "@sortsys/v2-client";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -166,18 +166,17 @@ function formatTimestamp(value: Date) {
   });
 }
 
-const ACTIVITY_META: Record<ActivityItem['resourceType'], { label: string; icon: Icon; href: (item: ActivityItem) => string | null }> = {
-  project: { label: uiText("Projekt"), icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
-  tool: { label: uiText("Werkzeug"), icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
-  user: { label: uiText("Benutzer"), icon: Icons.User, href: item => `/users/${item.resourceId}` },
-  customer: { label: uiText("Kunde"), icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
-  contact: { label: uiText("Kontakt"), icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
-  product: { label: uiText("Produkt"), icon: Icons.Product, href: item => `/products/${item.resourceId}` },
-  productVendor: { label: uiText("Händler"), icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
-  deliveryNote: { label: uiText("Lieferschein"), icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
-  regieReport: { label: uiText("Regiebericht"), icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
+const ACTIVITY_META: Record<ActivityItem['resourceType'], { icon: Icon; href: (item: ActivityItem) => string | null }> = {
+  project: { icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
+  tool: { icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
+  user: { icon: Icons.User, href: item => `/users/${item.resourceId}` },
+  customer: { icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
+  contact: { icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
+  product: { icon: Icons.Product, href: item => `/products/${item.resourceId}` },
+  productVendor: { icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
+  deliveryNote: { icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
+  regieReport: { icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
   dailyProjectReport: {
-    label: uiText("Bautagesbericht"),
     icon: Icons.DailyReport,
     href: item => item.contextId && item.contextDate
       ? `/projects/${item.contextId}/dailyReports/${dailyReportDayKey(item.contextDate)}`
@@ -186,6 +185,7 @@ const ACTIVITY_META: Record<ActivityItem['resourceType'], { label: string; icon:
 };
 
 export default function DashboardPage() {
+  const { locale } = useI18n();
   const sessionInfo = useSessionInfo();
   const { visibleActions, runAction } = useUserActions();
   const pinnedVisitsStorageKey = useMemo(() => {
@@ -212,8 +212,8 @@ export default function DashboardPage() {
     return pickQuickActions(visibleActions, actionHistory);
   }, [visibleActions, actionHistory]);
 
-  const recentVisits = useMemo(() => uniqueRecentVisits(visitHistory), [visitHistory]);
-  const groupedActivity = useMemo(() => groupActivity(activity), [activity]);
+  const recentVisits = useMemo(() => uniqueRecentVisits(visitHistory), [visitHistory, locale]);
+  const groupedActivity = useMemo(() => groupActivity(activity), [activity, locale]);
 
   useEffect(() => {
     if (typeof window !== 'object') return;
@@ -411,7 +411,7 @@ export default function DashboardPage() {
                   <span className="dashboard-activity-description">{activityActorLabel(item)}</span>
                   {!!item.description && group.key === 'other' && <span className="dashboard-activity-description">{item.description}</span>}
                 </span>
-                <span className="dashboard-activity-kind">{meta.label}</span>
+                <span className="dashboard-activity-kind">{activityResourceLabel(item.resourceType)}</span>
                 <span className="dashboard-activity-action">{actionText}</span>
                 <time className="dashboard-activity-date" dateTime={item.occurredAt.toISOString()}>{formatTimestamp(item.occurredAt)}</time>
               </span>;

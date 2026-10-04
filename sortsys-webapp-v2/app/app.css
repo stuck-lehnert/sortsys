@@ -463,6 +463,7 @@ textarea {
 }
 
 .entity-activity-timeline {
+  scroll-margin-top: 6rem;
   border-left: 1px solid var(--ss-border-strong);
   display: flex;
   flex-direction: column;
@@ -507,9 +508,28 @@ textarea {
   margin-top: 0.15rem;
 }
 
-.entity-activity-more {
-  margin-top: 0.65rem;
-  padding-left: 1.15rem;
+.entity-activity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  margin-left: calc(2.56rem + 1px);
+  border-top: 1px solid var(--ss-border);
+  padding-top: 0.75rem;
+}
+
+.entity-activity-actions .ss-btn--ghost {
+  border-color: transparent;
+}
+
+.entity-activity-collapse .ss-btn__icon {
+  transform: rotate(180deg);
+}
+
+.entity-activity-error {
+  margin: 0.5rem 0 0 calc(2.56rem + 1px);
+  color: var(--ss-danger);
 }
 
 .daily-report-photo-grid {
@@ -3599,8 +3619,9 @@ b {
   background: color-mix(in srgb, var(--ss-surface) 70%, transparent);
   border: 1px solid var(--ss-border);
   display: grid;
-  gap: 0.6rem;
-  padding: 0.65rem;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.6rem;
+  padding: 0.45rem;
 }
 
 .pep-page {
@@ -3608,7 +3629,7 @@ b {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
   min-block-size: 0;
   min-inline-size: 0;
   overflow: clip;
@@ -3633,26 +3654,27 @@ b {
 }
 
 .pep-period-nav__label {
-  inline-size: 7.5rem;
+  inline-size: 6.5rem;
   text-align: center;
 }
 
 .pep-icon-button {
-  block-size: 2.1rem;
-  inline-size: 2.1rem;
-  min-inline-size: 2.1rem;
+  block-size: 1.8rem;
+  inline-size: 1.8rem;
+  min-inline-size: 1.8rem;
   padding: 0 !important;
 }
 
 .pep-date-input {
-  block-size: 2.1rem;
-  inline-size: 8.75rem;
-  min-inline-size: 8.75rem;
+  block-size: 1.8rem;
+  inline-size: 7.7rem;
+  min-inline-size: 7.7rem;
   padding-inline: 0.4rem;
 }
 
 .pep-view-controls {
-  justify-content: space-between;
+  justify-content: flex-end;
+  min-inline-size: 0;
 }
 
 .pep-segment {
@@ -3668,9 +3690,9 @@ b {
   color: var(--ss-text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.84rem;
-  min-block-size: 2.1rem;
-  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  min-block-size: 1.8rem;
+  padding: 0.25rem 0.5rem;
 }
 
 .pep-segment button:first-child {
@@ -3699,10 +3721,11 @@ b {
   align-items: center;
   border: 1px solid var(--ss-border);
   display: flex;
-  flex: 1 1 18rem;
+  flex: 1 1 11rem;
   gap: 0.4rem;
-  max-inline-size: 32rem;
-  min-block-size: 2.1rem;
+  max-inline-size: 22rem;
+  min-inline-size: 0;
+  min-block-size: 1.8rem;
   padding-inline: 0.55rem 0.25rem;
 }
 
@@ -3712,6 +3735,7 @@ b {
   color: var(--ss-text-primary);
   flex: 1;
   font: inherit;
+  font-size: 0.82rem;
   min-inline-size: 5rem;
   outline: 0;
 }
@@ -3728,14 +3752,16 @@ b {
 }
 
 .pep-actions {
+  grid-column: 1 / -1;
   border-top: 1px solid var(--ss-border);
-  padding-top: 0.6rem;
+  padding-top: 0.35rem;
 }
 
 .pep-summary {
   color: var(--ss-text-secondary);
   font-size: 0.82rem;
-  margin-block: 0.55rem;
+  margin: 0 0 0 auto;
+  gap: 0.35rem;
 }
 
 .pep-summary span + span {
@@ -3769,9 +3795,9 @@ b {
 .pep-day-row {
   display: grid;
   grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
-  gap: 0.75rem;
+  gap: 0.5rem;
   align-items: start;
-  padding: 0.75rem;
+  padding: 0.4rem;
   border-top: 1px solid var(--ss-border);
 }
 
@@ -3882,7 +3908,8 @@ b {
   display: grid;
   grid-template-columns: minmax(min-content, 1fr) auto;
   min-inline-size: min-content;
-  row-gap: 0.15rem;
+  row-gap: 0.1rem;
+  padding: 0.15rem 0.35rem;
 }
 
 .pep-week-cell .pep-entry__project {
@@ -3914,7 +3941,7 @@ b {
 }
 
 .pep-week-cell .pep-marker {
-  min-inline-size: min-content;
+  min-inline-size: 0;
 }
 
 .pep-week-cell .pep-marker > span:first-child {
@@ -3940,7 +3967,7 @@ b {
 }
 
 .pep-marker__detail {
-  color: var(--ss-text-secondary);
+  min-inline-size: 0;  color: var(--ss-text-secondary);
   font-size: 0.72rem;
   max-inline-size: 10rem;
   overflow: hidden;
@@ -3978,7 +4005,7 @@ b {
   border-top: 1px solid var(--ss-border);
   border-inline-start: 1px solid var(--ss-border);
   vertical-align: top;
-  padding: 0.35rem;
+  padding: 0.25rem;
   word-break: normal;
 }
 
@@ -3999,7 +4026,7 @@ b {
 }
 
 .pep-week-user-head {
-  max-inline-size: 17rem;
+  max-inline-size: 14rem;
   white-space: nowrap;
   z-index: 5 !important;
 }
@@ -4008,7 +4035,7 @@ b {
   background: var(--ss-nested-surface);
   font-size: 0.82rem;
   font-weight: 600;
-  max-inline-size: 17rem;
+  max-inline-size: 14rem;
   z-index: 2;
 }
 
@@ -4023,7 +4050,7 @@ b {
 .pep-week-user-content {
   line-height: 1.3;
   max-block-size: 2.65em;
-  max-inline-size: 17rem;
+  max-inline-size: 14rem;
   overflow: hidden;
   overflow-wrap: normal;
 }
@@ -4036,6 +4063,8 @@ b {
 }
 
 .pep-week-date {
+  display: inline-block;
+  margin-inline-start: 0.4rem;
   color: var(--ss-text-secondary);
   font-size: 0.76rem;
   font-weight: 500;
@@ -4051,8 +4080,21 @@ b {
 }
 
 .pep-week-cell-entries {
-  align-content: flex-start;
-  min-block-size: 2.7rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 0.2rem;
+  min-block-size: 2rem;
+}
+
+.pep-week-cell-entries > .pep-entry,
+.pep-week-cell-entries > .pep-marker {
+  grid-column: 1;
+}
+
+.pep-week-cell-entries > .pep-week-empty,
+.pep-week-cell-entries > .pep-week-empty-action {
+  grid-column: 1 / -1;
 }
 
 .pep-week-table tbody tr:hover .pep-week-cell,
@@ -4096,7 +4138,7 @@ b {
   gap: 0.25rem;
   inline-size: 100%;
   justify-content: center;
-  min-block-size: 2.7rem;
+  min-block-size: 2rem;
   opacity: 0.15;
   padding: 0.25rem;
 }
@@ -4108,6 +4150,9 @@ b {
 }
 
 .pep-week-add-action {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
   align-items: center;
   appearance: none;
   background: transparent;
@@ -4115,10 +4160,10 @@ b {
   color: var(--ss-accent-strong);
   cursor: pointer;
   display: flex;
-  inline-size: 100%;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
   justify-content: center;
-  min-block-size: 1.4rem;
-  opacity: 0.35;
+  opacity: 0.55;
   padding: 0;
 }
 
@@ -4137,6 +4182,7 @@ b {
 
 @media (max-width: 56rem) {
   .pep-controls {
+    grid-template-columns: minmax(0, 1fr);
     padding: 0.5rem;
   }
 

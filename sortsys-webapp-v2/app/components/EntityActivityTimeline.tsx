@@ -1,6 +1,6 @@
-import { currentLocaleTag, uiText } from "~/lib/i18n";
+import { currentLocaleTag, uiText, useI18n } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
-import { activityActionLabel, activityActorLabel, activityTitle } from "~/lib/activity";
+import { activityActionLabel, activityActorLabel, activityResourceLabel, activityTitle } from "~/lib/activity";
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
@@ -9,7 +9,7 @@ import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { Icons, type Icon } from "~/lib/icons";
 import { dailyReportDayKey } from "~/lib/tiles";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 type ActivityItem = QueryResult<'personalization.activity.list'>[number];
 type ActivityResourceType = ActivityItem['resourceType'];
@@ -29,18 +29,17 @@ const RESOURCE_TABLES: Partial<Record<ActivityResourceType, string>> = {
   dailyProjectReport: 'daily_project_reports',
 };
 
-const ACTIVITY_META: Record<ActivityResourceType, { label: string; icon: Icon; href: (item: ActivityItem) => string | null }> = {
-  project: { label: uiText("Projekt"), icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
-  tool: { label: uiText("Werkzeug"), icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
-  user: { label: uiText("Benutzer"), icon: Icons.User, href: item => `/users/${item.resourceId}` },
-  customer: { label: uiText("Kunde"), icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
-  contact: { label: uiText("Kontakt"), icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
-  product: { label: uiText("Produkt"), icon: Icons.Product, href: item => `/products/${item.resourceId}` },
-  productVendor: { label: uiText("Händler"), icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
-  deliveryNote: { label: uiText("Lieferschein"), icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
-  regieReport: { label: uiText("Regiebericht"), icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
+const ACTIVITY_META: Record<ActivityResourceType, { icon: Icon; href: (item: ActivityItem) => string | null }> = {
+  project: { icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
+  tool: { icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
+  user: { icon: Icons.User, href: item => `/users/${item.resourceId}` },
+  customer: { icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
+  contact: { icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
+  product: { icon: Icons.Product, href: item => `/products/${item.resourceId}` },
+  productVendor: { icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
+  deliveryNote: { icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
+  regieReport: { icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
   dailyProjectReport: {
-    label: uiText("Bautagesbericht"),
     icon: Icons.DailyReport,
     href: item => item.contextId && item.contextDate
       ? `/projects/${item.contextId}/dailyReports/${dailyReportDayKey(item.contextDate)}`
@@ -74,7 +73,7 @@ function ActivityTimelineRow({
   const isScopeResource = item.resourceType === scopeResourceType && item.resourceId === scopeResourceId;
   const isScopeOwnerTitle = isScopeResource && (
     item.entityTable === RESOURCE_TABLES[scopeResourceType]
-    || itemTitle === item.resourceTitle
+    || itemTitle === activityTitle({ ...item, title: item.entityTable })
     || itemTitle === item.contextTitle
   );
   const contextIsCurrentProject = scopeResourceType === 'project' && item.contextId === scopeResourceId;
@@ -93,7 +92,7 @@ function ActivityTimelineRow({
         </>}
       </div>
       <div className="entity-activity-meta">
-        {!isScopeResource && <>{meta.label} · </>}
+        {!isScopeResource && <>{activityResourceLabel(item.resourceType)} · </>}
         {formatTimestamp(item.occurredAt)}
         {' · '}{activityActorLabel(item)}
         {item.isImported && <> · {uiText('Übernommen', 'Imported')}</>}
@@ -115,11 +114,14 @@ export function EntityActivityTimeline({
   includeProjectContext?: boolean;
   limit?: number;
 }) {
+  useI18n();
   const [showAll, setShowAll] = useState(false);
   const [older, setOlder] = useState<ActivityItem[]>([]);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [historyComplete, setHistoryComplete] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const timelineId = useId();
+  const timelineRef = useRef<HTMLDivElement>(null);
   const historyKey = `${resourceType}:${resourceId}:${!!includeProjectContext}`;
   const currentHistoryKey = useRef(historyKey);
   currentHistoryKey.current = historyKey;
@@ -146,6 +148,12 @@ export function EntityActivityTimeline({
   const allItems = [...new Map([...(items ?? []), ...older].map(item => [item.id, item])).values()];
   const visibleItems = showAll ? allItems : allItems.slice(0, COLLAPSED_ACTIVITY_COUNT);
   const canLoadOlder = !historyComplete && (items?.length ?? 0) >= Math.min(limit, 50);
+
+  const toggleDetails = () => {
+    const scrollBack = showAll && (timelineRef.current?.getBoundingClientRect().top ?? 0) < 0;
+    setShowAll(value => !value);
+    if (scrollBack) requestAnimationFrame(() => timelineRef.current?.scrollIntoView({ block: 'start' }));
+  };
 
   const loadOlder = async () => {
     const cursor = allItems.at(-1)?.id;
@@ -176,7 +184,7 @@ export function EntityActivityTimeline({
     {!items?.length
         ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
       : <>
-        <div className="entity-activity-timeline">
+        <div id={timelineId} ref={timelineRef} className="entity-activity-timeline">
           {visibleItems.map(item => <ActivityTimelineRow
             key={item.id}
             item={item}
@@ -184,15 +192,18 @@ export function EntityActivityTimeline({
             scopeResourceType={resourceType}
           />)}
         </div>
-        {allItems.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-more">
-          <MyButton kind="ghost" size="sm" onClick={() => setShowAll(value => !value)}>
+        {allItems.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-actions">
+          {showAll && canLoadOlder && <MyButton kind="secondary" size="sm" renderIcon={Icons.Plus}
+            loading={loadingOlder} onClick={() => void loadOlder()}>
+            {uiText('Ältere Aktivitäten laden', 'Load older activities')}
+          </MyButton>}
+          <MyButton kind="ghost" size="sm" renderIcon={Icons.AccordionExpanded}
+            className={showAll ? 'entity-activity-collapse' : undefined}
+            aria-expanded={showAll} aria-controls={timelineId} onClick={toggleDetails}>
             {showAll ? uiText("Weniger anzeigen", "Show less") : uiText("Mehr anzeigen", "Show more")}
           </MyButton>
         </div>}
-        {showAll && canLoadOlder && <MyButton kind="ghost" size="sm" loading={loadingOlder} onClick={() => void loadOlder()}>
-          {uiText('Ältere Aktivitäten laden', 'Load older activities')}
-        </MyButton>}
-        {historyError && <div role="alert">{historyError}</div>}
+        {showAll && historyError && <div className="entity-activity-error" role="alert">{historyError}</div>}
       </>}
   </MyExpandable>;
 }

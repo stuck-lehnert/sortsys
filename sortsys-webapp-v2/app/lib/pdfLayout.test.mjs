@@ -294,6 +294,8 @@ test('keeps all document types and long position lists readable in the browser c
     const signaturePage = pages.find(page => page.includes('Position 90:'));
     expect(signaturePage).toContain('Datum und Unterschrift');
     expect(signaturePage).toContain('Auftraggeber');
+    // A larger company logo must not orphan a short report's signatures.
+    expect(pages.filter(page => page.includes('Regiebericht #45'))).toHaveLength(1);
     for (const page of pages.filter(page => /Position \d+:/.test(page))) {
       expect(page).toContain('Produkte');
       expect(page).toContain('Nr.');
@@ -303,6 +305,16 @@ test('keeps all document types and long position lists readable in the browser c
     // Number and description are separate cells on the same row, including
     // every position of a long report and the price-free regie report.
     for (const items of pageItems) {
+      // Wrapped headings share the last text baseline with single-line headings,
+      // including headers repeated on subsequent pages.
+      for (const priceUnit of items.filter(item => item.str === 'Basiseinheit')) {
+        for (const label of ['Nr.', 'Bezeichnung', 'Menge', 'Kosten']) {
+          const heading = items.filter(item => item.str === label)
+            .sort((a, b) => Math.abs(a.transform[5] - priceUnit.transform[5]) - Math.abs(b.transform[5] - priceUnit.transform[5]))[0];
+          expect(heading).toBeDefined();
+          expect(Math.abs(heading.transform[5] - priceUnit.transform[5])).toBeLessThan(0.1);
+        }
+      }
       for (const number of items.filter(item => /^(M-\d+|2147483647)$/.test(item.str))) {
         const name = items.find(item => item.transform[4] > number.transform[4]
           && Math.abs(item.transform[5] - number.transform[5]) < 1
@@ -378,11 +390,15 @@ test('keeps logos within the company header and collapses unused space without a
       }
       expect(images).toHaveLength(file ? 1 : 0);
       if (file) {
-        expect(images[0].width).toBeLessThanOrEqual(30.01);
-        expect(images[0].height).toBeLessThanOrEqual(10.01);
+        expect(images[0].width).toBeLessThanOrEqual(48.01);
+        expect(images[0].height).toBeLessThanOrEqual(16.01);
+        expect(Math.max(images[0].width / 48, images[0].height / 16)).toBeCloseTo(1, 2);
         expect(images[0].width / images[0].height).toBeCloseTo(aspect, 2);
         expect(images[0].right).toBeCloseTo(190, 1);
         expect(images[0].top).toBeCloseTo(25, 1);
+        // The text's ink should sit around the logo's vertical midpoint.
+        const senderCenter = senderY - sender.height * 25.4 / 72 / 2;
+        expect(Math.abs(senderCenter - images[0].top - images[0].height / 2)).toBeLessThan(1);
       }
     } finally {
       await task.destroy();
