@@ -119,6 +119,11 @@ export function gainOrLossColor(value: number): string {
   return value >= 0 ? Colors.green : Colors.red;
 }
 
+/** Customer-facing designation; never includes the internal product number. */
+export function regieProductTitle(product: Product): string {
+  return product.regieReportName?.trim() || productTitle(product);
+}
+
 export function productTitle(product: Product): string {
   if (!product.brand) return product.name;
   return `${product.brand} ${product.name}`;

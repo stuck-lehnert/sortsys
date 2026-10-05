@@ -176,8 +176,8 @@ export type QueryOutputs = {
   "ping": string;
   "products.brands.list": string[];
   "products.categories.list": string[];
-  "products.get": { id: string; customId: number; name: string; description: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; };
-  "products.list": { id: string; customId: number; name: string; description: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; }[];
+  "products.get": { id: string; customId: number; name: string; description: null | string; regieReportName: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; };
+  "products.list": { id: string; customId: number; name: string; description: null | string; regieReportName: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; }[];
   "products.priceRecords.list": { id: string; productId: string; vendorId: null | string; timestamp: Date; price: number; isRealPurchase: boolean; comment: null | string; }[];
   "products.suggestNextCustomId": number;
   "products.units.list": string[];
@@ -292,13 +292,13 @@ export type MutationInputs = {
   "products.categories.set": { id: string; categories: string[]; };
   "products.categories.tag": { id: string; category: string; };
   "products.categories.untag": { id: string; category: string; };
-  "products.create": { customId: number; name: string; baseUnit: string; brand?: undefined | null | string; description?: undefined | null | string; otherUnits?: undefined | Record<string, number>; };
+  "products.create": { customId: number; name: string; baseUnit: string; brand?: undefined | null | string; description?: undefined | null | string; regieReportName?: undefined | null | string; otherUnits?: undefined | Record<string, number>; };
   "products.delete": { id: string; };
   "products.priceImports.apply": { vendorId: Id, effectiveAt: Date, isRealPurchase: boolean, rows: Array<ApplyPriceImportRow>, };
   "products.priceRecords.create": { productId: string; pricePerBaseUnit: number; timestamp: Date; isRealPurchase: boolean; vendorId?: undefined | null | string; comment?: undefined | null | string; };
   "products.priceRecords.delete": { id: string; };
   "products.priceRecords.update": { id: string; data: { productId?: undefined | string; vendorId?: undefined | null | string; pricePerBaseUnit?: undefined | number; timestamp?: undefined | Date; isRealPurchase?: undefined | false | true; comment?: undefined | null | string; }; };
-  "products.update": { id: string; data: { customId?: undefined | number; name?: undefined | string; brand?: undefined | null | string; description?: undefined | null | string; baseUnit?: undefined | string; otherUnits?: undefined | Record<string, number>; }; };
+  "products.update": { id: string; data: { customId?: undefined | number; name?: undefined | string; brand?: undefined | null | string; description?: undefined | null | string; regieReportName?: undefined | null | string; baseUnit?: undefined | string; otherUnits?: undefined | Record<string, number>; }; };
   "products.vendors.create": { name: string; description?: undefined | null | string; };
   "products.vendors.delete": { id: string; };
   "products.vendors.update": { id: string; data: { name?: undefined | string; description?: undefined | null | string; }; };

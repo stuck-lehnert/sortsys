@@ -229,6 +229,7 @@ struct ProductRow {
     name: String,
     brand: Option<String>,
     description: Option<String>,
+    regie_report_name: Option<String>,
     base_unit: String,
     other_units: Json<Value>,
     categories: Vec<String>,
@@ -242,6 +243,7 @@ impl ProductRow {
             "name": self.name,
             "brand": self.brand,
             "description": self.description,
+            "regieReportName": self.regie_report_name,
             "baseUnit": self.base_unit,
             "otherUnits": self.other_units.0,
             "categories": self.categories,
@@ -256,6 +258,7 @@ const PRODUCT_SELECT: &str = r#"
         product.name,
         product.brand,
         product.description,
+        product.regie_report_name,
         product.base_unit,
         product.other_units,
         ARRAY_REMOVE(
@@ -358,9 +361,10 @@ async fn create_product(
             brand,
             description,
             base_unit,
-            other_units
+            other_units,
+            regie_report_name
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
     )
@@ -370,6 +374,7 @@ async fn create_product(
     .bind(product.description)
     .bind(product.base_unit)
     .bind(Json(product.other_units))
+    .bind(product.regie_report_name)
     .fetch_one(&pool)
     .await
     .map_err(internal)?;
@@ -402,7 +407,8 @@ async fn update_product(
             brand = $4,
             description = $5,
             base_unit = $6,
-            other_units = $7
+            other_units = $7,
+            regie_report_name = $8
         WHERE id = $1
         "#,
     )
@@ -413,6 +419,7 @@ async fn update_product(
     .bind(product.description)
     .bind(product.base_unit)
     .bind(Json(product.other_units))
+    .bind(product.regie_report_name)
     .execute(&pool)
     .await
     .map_err(internal)?;
@@ -438,6 +445,7 @@ struct ProductData {
     name: String,
     brand: Option<String>,
     description: Option<String>,
+    regie_report_name: Option<String>,
     base_unit: String,
     other_units: Value,
 }
@@ -448,6 +456,7 @@ impl ProductData {
         let name = required_text(input, "name", 255)?;
         let brand = nullable_text(input, "brand", 127)?;
         let description = nullable_text(input, "description", 511)?;
+        let regie_report_name = nullable_text(input, "regieReportName", 255)?;
         let base_unit = required_text(input, "baseUnit", 8)?;
         let other_units = input
             .get("otherUnits")
@@ -461,6 +470,7 @@ impl ProductData {
             name,
             brand,
             description,
+            regie_report_name,
             base_unit,
             other_units,
         })
@@ -487,6 +497,11 @@ impl ProductData {
         } else {
             current.description
         };
+        let regie_report_name = if changes.contains_key("regieReportName") {
+            nullable_text(changes, "regieReportName", 255)?
+        } else {
+            current.regie_report_name
+        };
         let base_unit = if changes.contains_key("baseUnit") {
             required_text(changes, "baseUnit", 10)?
         } else {
@@ -505,6 +520,7 @@ impl ProductData {
             name,
             brand,
             description,
+            regie_report_name,
             base_unit,
             other_units,
         })
@@ -517,6 +533,7 @@ struct ProductDataRow {
     name: String,
     brand: Option<String>,
     description: Option<String>,
+    regie_report_name: Option<String>,
     base_unit: String,
     other_units: Json<Value>,
 }
@@ -529,6 +546,7 @@ async fn load_product_data(pool: &PgPool, product_id: i64) -> RpcResult<ProductD
                 name,
                 brand,
                 description,
+                regie_report_name,
                 base_unit,
                 other_units
             FROM products
@@ -547,6 +565,7 @@ async fn load_product_data(pool: &PgPool, product_id: i64) -> RpcResult<ProductD
         name: row.name,
         brand: row.brand,
         description: row.description,
+        regie_report_name: row.regie_report_name,
         base_unit: row.base_unit,
         other_units: row.other_units.0,
     })
@@ -1428,7 +1447,52 @@ mod tests {
         let product = ProductData::for_create(input.as_object().unwrap()).unwrap();
 
         assert_eq!(product.name, "Schraube");
+        assert_eq!(product.regie_report_name, None);
         assert_eq!(product.other_units, json!({}));
+    }
+
+    #[test]
+    fn normalizes_preserves_and_clears_regie_report_names() {
+        let input = json!({
+            "customId": 7,
+            "name": "Internes Produkt",
+            "baseUnit": "Stk",
+            "regieReportName": "  Kundenbezeichnung  "
+        });
+        let product = ProductData::for_create(input.as_object().unwrap()).unwrap();
+        assert_eq!(product.regie_report_name.as_deref(), Some("Kundenbezeichnung"));
+
+        let changes = json!({ "name": "Geänderter interner Name" });
+        let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
+        assert_eq!(product.regie_report_name.as_deref(), Some("Kundenbezeichnung"));
+
+        let changes = json!({ "regieReportName": "  Neue Bezeichnung  " });
+        let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
+        assert_eq!(product.regie_report_name.as_deref(), Some("Neue Bezeichnung"));
+
+        let changes = json!({ "regieReportName": "  " });
+        let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
+        assert_eq!(product.regie_report_name, None);
+
+        let changes = json!({ "regieReportName": null });
+        let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
+        assert_eq!(product.regie_report_name, None);
+    }
+
+    #[test]
+    fn rejects_overlong_regie_report_names() {
+        let input = json!({
+            "customId": 7,
+            "name": "Produkt",
+            "baseUnit": "Stk",
+            "regieReportName": "a".repeat(256)
+        });
+        assert!(ProductData::for_create(input.as_object().unwrap()).is_err());
+
+        let input = json!({ "customId": 7, "name": "Produkt", "baseUnit": "Stk" });
+        let product = ProductData::for_create(input.as_object().unwrap()).unwrap();
+        let changes = json!({ "regieReportName": "a".repeat(256) });
+        assert!(ProductData::apply_changes(product, changes.as_object().unwrap()).is_err());
     }
 
     #[test]

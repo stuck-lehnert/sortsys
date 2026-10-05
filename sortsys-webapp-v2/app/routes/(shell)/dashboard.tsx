@@ -45,6 +45,7 @@ function visitLabel(visit: PinnedVisit) {
   const knownLabels: Record<string, string> = {
     '/dashboard': uiText('Dashboard'),
     '/projects': uiText('Projekte', 'Projects'),
+    '/regieReports': uiText('Regieberichte', 'Time-and-material reports'),
     '/projects/costs': uiText('Kostenübersicht', 'Cost overview'),
     '/deployments': uiText('Einsatzplanung', 'Resource planning'),
     '/vacations': uiText('Abwesenheiten', 'Absences'),

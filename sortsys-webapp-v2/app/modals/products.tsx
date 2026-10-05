@@ -52,6 +52,11 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
         <MyForm.Input
           name="description" labelText={uiText("Beschreibung")} />
 
+        <MyForm.Input
+          name="regieReportName" labelText={uiText("Bezeichnung für Regieberichte", "Designation for time-and-material reports")}
+          rules={[MyForm.Input.rules.max(255)]} />
+        <p className="light">{uiText("Optional. Ohne Angabe wird im Regiebericht die bisherige Bezeichnung verwendet.", "Optional. If empty, time-and-material reports use the existing designation.")}</p>
+
         <MyDivider />
 
         <MyForm.Input required
@@ -126,6 +131,7 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
         name: values.name,
         brand: values.brand,
         description: values.description,
+        regieReportName: values.regieReportName?.trim() || null,
         baseUnit: values.baseUnit,
         otherUnits,
       });
@@ -170,6 +176,11 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
 
         <MyForm.Input
           name="description" labelText={uiText("Beschreibung")} />
+
+        <MyForm.Input
+          name="regieReportName" labelText={uiText("Bezeichnung für Regieberichte", "Designation for time-and-material reports")}
+          rules={[MyForm.Input.rules.max(255)]} />
+        <p className="light">{uiText("Optional. Ohne Angabe wird im Regiebericht die bisherige Bezeichnung verwendet.", "Optional. If empty, time-and-material reports use the existing designation.")}</p>
 
         <MyDivider />
 
@@ -230,6 +241,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
             name: product.name,
             brand: product.brand ?? '',
             description: product.description ?? '',
+            regieReportName: product.regieReportName ?? '',
             baseUnit: product.baseUnit,
           });
 
@@ -269,6 +281,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
           name: values.name,
           brand: values.brand,
           description: values.description,
+          regieReportName: values.regieReportName?.trim() || null,
           baseUnit: values.baseUnit,
           otherUnits,
         },

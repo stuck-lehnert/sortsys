@@ -491,7 +491,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "products.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ customId: number; name: string; baseUnit: string; brand?: undefined | null | string; description?: undefined | null | string; otherUnits?: undefined | Record<string, number>; }",
+        input_ts: "{ customId: number; name: string; baseUnit: string; brand?: undefined | null | string; description?: undefined | null | string; regieReportName?: undefined | null | string; otherUnits?: undefined | Record<string, number>; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
@@ -504,13 +504,13 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "products.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; }",
-        output_ts: "{ id: string; customId: number; name: string; description: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; }",
+        output_ts: "{ id: string; customId: number; name: string; description: null | string; regieReportName: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; }",
     },
     RawContractSpec {
         path: "products.list",
         kind: ProcedureKind::Query,
         input_ts: "{ category?: undefined | null | string; search?: undefined | null | string; }",
-        output_ts: "{ id: string; customId: number; name: string; description: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; }[]",
+        output_ts: "{ id: string; customId: number; name: string; description: null | string; regieReportName: null | string; brand: null | string; baseUnit: string; otherUnits: Record<string, number>; categories: string[]; }[]",
     },
     RawContractSpec {
         path: "products.priceRecords.create",
@@ -551,7 +551,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "products.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; data: { customId?: undefined | number; name?: undefined | string; brand?: undefined | null | string; description?: undefined | null | string; baseUnit?: undefined | string; otherUnits?: undefined | Record<string, number>; }; }",
+        input_ts: "{ id: string; data: { customId?: undefined | number; name?: undefined | string; brand?: undefined | null | string; description?: undefined | null | string; regieReportName?: undefined | null | string; baseUnit?: undefined | string; otherUnits?: undefined | Record<string, number>; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {

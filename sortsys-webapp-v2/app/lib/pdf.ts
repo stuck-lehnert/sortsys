@@ -52,18 +52,19 @@ export type PdfProductRow = {
 };
 
 /** Keep identifiers separate from names and quantities together with conversions. */
-export function buildPdfProductSection(rows: PdfProductRow[], options: { showPrices?: boolean } = {}): PdfTableSection {
+export function buildPdfProductSection(rows: PdfProductRow[], options: { showPrices?: boolean; showNumbers?: boolean } = {}): PdfTableSection {
   const priced = options.showPrices ?? true;
+  const numbered = options.showNumbers ?? true;
   const numberWidth = Math.min(25, rows.reduce((width, row) => Math.max(width, row.number.length * 2.1), 15));
   const hasConversions = rows.some(row => row.baseQuantity && row.baseQuantity !== '-');
   const conversionHint = hasConversions ? uiText('Mengen in Klammern sind in Basiseinheiten umgerechnet.', 'Quantities in parentheses are converted to base units.') : '';
   return {
     title: uiText('Produkte'),
     subtitle: [priced ? uiText('Preis: durchschnittlich je Basiseinheit.', 'Price: average per base unit.') : '', conversionHint].filter(Boolean).join(' ') || undefined,
-    columns: [uiText('Nr.', 'No.'), uiText('Bezeichnung'), uiText('Menge'), ...(priced ? [uiText('Preis je Basiseinheit', 'Price per base unit'), uiText('Kosten')] : [])],
-    rows: rows.map(({ number, name, quantity, baseQuantity, price, cost }) => [number, name, baseQuantity && baseQuantity !== '-' ? `${quantity}\n(${baseQuantity})` : quantity, ...(priced ? [price ?? '-', cost ?? '-'] : [])]),
-    align: priced ? ['left', 'left', 'right', 'right', 'right'] : ['left', 'left', 'right'],
-    columnWidths: priced ? [`${numberWidth}mm`, '2.5fr', '1.1fr', '1.25fr', '1.15fr'] : [`${numberWidth}mm`, '3fr', '1fr'],
+    columns: [...(numbered ? [uiText('Nr.', 'No.')] : []), uiText('Bezeichnung'), uiText('Menge'), ...(priced ? [uiText('Preis je Basiseinheit', 'Price per base unit'), uiText('Kosten')] : [])],
+    rows: rows.map(({ number, name, quantity, baseQuantity, price, cost }) => [...(numbered ? [number] : []), name, baseQuantity && baseQuantity !== '-' ? `${quantity}\n(${baseQuantity})` : quantity, ...(priced ? [price ?? '-', cost ?? '-'] : [])]),
+    align: [...(numbered ? ['left' as const] : []), 'left', 'right', ...(priced ? ['right' as const, 'right' as const] : [])],
+    columnWidths: [...(numbered ? [`${numberWidth}mm`] : []), ...(priced ? ['2.5fr', '1.1fr', '1.25fr', '1.15fr'] : ['3fr', '1fr'])],
   };
 }
 
@@ -435,7 +436,7 @@ function renderSection(section: PdfTableSection, group?: { title: string; anchor
   }
 
   lines.push('#[');
-  lines.push(`#set text(size: ${pairs ? PDF_TYPOGRAPHY.body : section.columns.length >= 7 ? PDF_TYPOGRAPHY.denseTable : PDF_TYPOGRAPHY.table}pt, hyphenate: auto)`);
+  lines.push(`#set text(size: ${section.columns.length >= 7 ? PDF_TYPOGRAPHY.denseTable : PDF_TYPOGRAPHY.table}pt, hyphenate: auto)`);
   lines.push(`#set par(leading: ${compact ? '0.35' : '0.4'}em, spacing: 0pt)`);
   lines.push('#table(');
   lines.push(`  columns: (${columns.join(', ')},),`);
@@ -546,7 +547,7 @@ function renderSignatureFields(fields: PdfSignatureField[]) {
   if (!fields.length) return '';
 
   const lines: string[] = [];
-  lines.push('#block(breakable: false, above: 4.23mm)[');
+  lines.push('#block(breakable: false, above: 8.46mm)[');
   lines.push('#set par(leading: 0.3em, spacing: 0pt)');
   lines.push('#table(');
   lines.push(`  columns: (${fields.map(() => '1fr').join(', ')},),`);

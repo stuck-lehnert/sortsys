@@ -1,5 +1,5 @@
 import { uiText } from "~/lib/i18n";
-import { formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
+import { formatDate, formatNumber, regieProductTitle, userFullName } from "~/lib/format";
 import { buildPdfProductSection, formatPdfNumber, type PdfTableSection, type StructuredPdfDocument } from "~/lib/pdf";
 import { upmatchUnit } from "~/lib/utils";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
@@ -17,8 +17,8 @@ function userLabel(usersById: UserLookup, userId: string | null | undefined) {
 
 function productLabel(productsById: ProductLookup, productId: string) {
   const product = productsById.get(productId);
-  if (!product) return productId;
-  return `${product.customId} ${productTitle(product)}`;
+  if (!product) return uiText("Unbekanntes Produkt", "Unknown product");
+  return regieProductTitle(product);
 }
 
 function formatWeeklyWorkHour(value: number) {
@@ -64,18 +64,10 @@ export function buildRegieReportPdfDocument(props: {
   const workerRows = Array.from(hoursByUser.values())
     .sort((left, right) => left.name.localeCompare(right.name, "de", { sensitivity: "base" }));
 
-  const workHourRows = workerRows.map((row) => {
-    const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
-    return [
-      row.name,
-      ...row.values.map(value => formatWeeklyWorkHour(value)),
-      formatWeeklyWorkHour(total),
-    ];
-  });
-
-  const totalHours = workerRows.reduce((sum, row) => {
-    return sum + row.values.reduce((acc, value) => acc + Number(value ?? 0), 0);
-  }, 0);
+  const workHourRows = workerRows.map(row => [
+    row.name,
+    ...row.values.map(value => formatWeeklyWorkHour(value)),
+  ]);
 
   const sortedProducts = [...report.products].sort((left, right) => {
     const leftLabel = productLabel(productsById, left.productId);
@@ -93,8 +85,8 @@ export function buildRegieReportPdfDocument(props: {
     const baseText = formatBaseQuantity(baseQuantity, baseUnit, unit);
 
     return {
-      number: product ? `${product.customId}` : '-',
-      name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${record.productId})`, `Unknown product (${record.productId})`),
+      number: '',
+      name: product ? regieProductTitle(product) : uiText("Unbekanntes Produkt", "Unknown product"),
       quantity: `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`,
       baseQuantity: baseText,
     };
@@ -113,7 +105,6 @@ export function buildRegieReportPdfDocument(props: {
     [uiText("Projekt"), projectTitle],
     ["Kalenderwoche", isoWeekLabel(weekStart)],
     [uiText("Zeitraum"), uiText(`${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`, `${formatDate(weekStart, "long")} to ${formatDate(weekEnd, "long")}`)],
-    [uiText("Gesamtstunden", "Total hours"), { value: `${formatPdfNumber(totalHours)} h`, bold: true }],
   ];
 
   const sections: PdfTableSection[] = [
@@ -131,12 +122,11 @@ export function buildRegieReportPdfDocument(props: {
   if (workHourRows.length > 0) {
     sections.push({
       title: uiText("Arbeitszeit je Mitarbeiter und Tag"),
-      columns: ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES, "Gesamt"],
+      columns: ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES],
       rows: workHourRows,
       subtitle: uiText("Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.", "All times in hours; – means no recorded working time."),
-      totalRows: [[uiText("Gesamt", "Total"), ...WEEKDAY_SHORT_NAMES.map((_, index) => formatWeeklyWorkHour(workerRows.reduce((sum, row) => sum + row.values[index], 0))), formatPdfNumber(totalHours)]],
-      align: ["left", ...WEEKDAY_SHORT_NAMES.map(() => "right" as const), "right"],
-      columnWidths: ["2.6fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.65fr"), "0.9fr"],
+      align: ["left", ...WEEKDAY_SHORT_NAMES.map(() => "right" as const)],
+      columnWidths: ["2.6fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.65fr")],
     });
   }
 
@@ -150,7 +140,7 @@ export function buildRegieReportPdfDocument(props: {
   });
 
   if (productRows.length > 0) {
-    sections.push(buildPdfProductSection(productRows, { showPrices: false }));
+    sections.push(buildPdfProductSection(productRows, { showPrices: false, showNumbers: false }));
   }
 
   if (specialRows.length > 0) {

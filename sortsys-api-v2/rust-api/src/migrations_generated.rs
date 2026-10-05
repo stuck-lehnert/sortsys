@@ -193,4 +193,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "260922120000_user_absence_labels",
         include_str!("../migrations/260922120000_user_absence_labels.sql"),
     ),
+    (
+        "260923120000_product_regie_report_name",
+        include_str!("../migrations/260923120000_product_regie_report_name.sql"),
+    ),
 ];

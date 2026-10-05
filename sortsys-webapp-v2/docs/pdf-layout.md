@@ -19,20 +19,25 @@ is maintained locally and does not copy either package's calculation logic.
 ## Layouts
 
 The default `report` layout uses A4, a 25 mm left margin, a 20 mm right margin,
-11 pt body text, 10 pt tables and 9 pt weekly matrices. `PDF_TYPOGRAPHY` defines
+10 pt body text, 9 pt tables and 8 pt weekly matrices. `PDF_TYPOGRAPHY` defines
 the shared type scale: report titles 18 pt, letter subjects 14 pt, section headings
-12 pt, entry/contact headings 11 pt, table headers 10 pt, secondary hints and
-export metadata 9 pt. Summary values stay at 11 pt; primary financial results
-use 12 pt. Bold text distinguishes results without oversized numbers. Main text
+11 pt, entry/contact headings 10 pt, table headers 9 pt, secondary hints and
+export metadata 8 pt. Summary values stay at 9 pt; primary financial results
+use 10 pt. Bold text distinguishes results without oversized numbers. Main text
 is black; secondary labels and hints use dark gray. Tables use clear column
 gutters, fine horizontal row separators and a stronger rule below the headers.
 Vertical borders and background fills are omitted. Regular tables use 6 pt of
 vertical cell padding; weekly matrices and lists with more than 20 positions use
 5 pt to keep long exports compact. The compact company header uses a
-logo scaled proportionally to at most 48 × 16 mm at the top right, sender details at the left and a thin
-separator below. Its height follows the actual sender/logo content; without a
-logo, the sender uses the full width and tighter spacing removes the unused logo
-area. It is used by project
+logo scaled proportionally to at most 48 × 16 mm at the top right, beginning
+10 mm below the page edge (the same starting height as letter headers), postal
+sender details at the left and a thin
+separator below. The logo replaces the company name in both report and letter
+headers; without a logo, the company name is shown as text. Postal sender details
+and letter return addresses remain available in either case. Its height follows
+the actual sender/logo content; without a logo, the sender uses the full width
+and tighter spacing removes the unused logo area. The first-page header uses the top margin; continuation pages retain
+the regular 25 mm top margin. It is used by project
 reports, inventories and table exports. It does not reserve an address window.
 
 Use `kind: 'letter'` for correspondence, invoices and delivery notes. Form B is
@@ -95,7 +100,7 @@ starts on a new page and has its own `Seite x / y` numbering.
 
 `PdfTableSection.presentation` separates content from its visual representation:
 
-- `facts`: a two-column label/value table with 10 pt secondary labels and 11 pt values. Explicitly bold
+- `facts`: a two-column label/value table with 9 pt secondary labels and 9 pt values. Explicitly bold
   values mark the complete row as a result. This is the default
   for headerless two-column sections, including project metadata.
 - `summary`: a label/value table retaining the supplied row order. Values marked
@@ -103,7 +108,7 @@ starts on a new page and has its own `Seite x / y` numbering.
   retain the same size as the other rows. Use this for delivery costs, reported hours,
   attendance counts and inventory results.
 - `metrics`: a financial summary table with labels at the left and amounts aligned
-  at the right. Primary results use 12 pt, other amounts 11 pt.
+  at the right. Primary results use 10 pt, other amounts 9 pt.
   A styled value's `detail`
   keeps percentages and entry counts smaller, beneath the amount.
 - `text`: full-width body text; the default for headerless single-column sections.
@@ -120,14 +125,22 @@ together; records longer than a page can break with repeated name headers instea
 of overflowing. `trailingSections` places supporting notes after the contacts,
 so the project data sheet shows project information, contacts, then notes. Photos keep
 their aspect ratio inside a 55 mm high frame, with their caption attached.
-Signature fields stay together, follow the content and reserve 18 mm for writing.
+Signature fields stay together, follow the content with 8.46 mm of space above
+the signature block and reserve 18 mm for writing.
 Empty sections show an explicit message rather than an empty table header.
 
 `buildPdfProductSection` receives named product fields. Product numbers occupy
 a separate column headed `Nr.` to the left of the description, normally 15 mm
 wide and expanding to at most 25 mm for longer numbers; quantities
 and base-unit conversions share a column. The priced version explains average
-prices per base unit, and regie reports use the same builder without price columns.
+prices per base unit. Regie reports use the same builder with `showPrices: false`
+and `showNumbers: false`: internal product numbers never appear, including for
+unknown products. They use the optional product `regieReportName` (editable as
+“Bezeichnung für Regieberichte”) instead of the internal designation. Empty or
+missing values fall back to `productTitle`. This field participates in product
+full-text search. Individual and project-wide PDF/Excel regie exports share this
+naming rule. Regie reports show hours per employee and day without total-hours
+metadata, employee totals or a totals row.
 Hour counts
 use `formatPdfNumber`, which omits trailing zeros while retaining the original
 maximum of four decimal places. Amounts continue to use currency formatting.
@@ -135,10 +148,10 @@ Cost details and inventories use compact numeric dates to avoid narrow columns
 filled with wrapped month names. Weekly cost summaries distinguish direct costs
 from overhead and group materials/personnel. Weekly project cost exports form
 one continuous document: one company header/title, an overall summary and then
-chronological week groups with a 14 pt heading and a 9 pt date range. Groups flow
+chronological week groups with a 14 pt heading and an 8 pt date range. Groups flow
 without forced page breaks, retaining individual categories and positions.
 Each heading stays with its first cost rows. On subsequent pages, repeated table
-headers include the calendar week in 9 pt type. Page numbers cover the entire
+headers include the calendar week in 8 pt type. Page numbers cover the entire
 report. Independent documents exported as a batch still have separate page counts.
 The reusable `StructuredPdfDocument.groups` API supports the same structure for
 other grouped reports; `buildWeeklyProjectCostsPdfDocument` supplies the cost

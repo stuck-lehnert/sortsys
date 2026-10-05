@@ -2732,6 +2732,7 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
             json!({
                 "customId": 9101,
                 "name": "Integration mortar",
+                "regieReportName": "  Fassadenbeschichtung  ",
                 "baseUnit": "kg",
                 "brand": "Ferris",
                 "otherUnits": { "Sack": 25 },
@@ -2870,6 +2871,27 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
         .await;
     assert_eq!(updated_note["comment"], "Updated integration delivery");
 
+    let customer_named_product = rpc
+        .query(
+            "products.get",
+            json!({ "id": product["id"] }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(
+        customer_named_product["regieReportName"],
+        "Fassadenbeschichtung"
+    );
+    let customer_search = rpc
+        .query(
+            "products.list",
+            json!({ "search": "Fassadenbeschichtung" }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(customer_search.as_array().unwrap().len(), 1);
+    assert_eq!(customer_search[0]["id"], product["id"]);
+
     let listed_products = rpc
         .query(
             "products.list",
@@ -2922,6 +2944,62 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
         Some(&token),
     )
     .await;
+    let preserved_product = rpc
+        .query(
+            "products.get",
+            json!({ "id": product["id"] }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(
+        preserved_product["regieReportName"],
+        "Fassadenbeschichtung"
+    );
+    rpc.mutation(
+        "products.update",
+        json!({ "id": product["id"], "data": { "regieReportName": "Kundenmaterial" } }),
+        Some(&token),
+    )
+    .await;
+    let renamed_search = rpc
+        .query(
+            "products.list",
+            json!({ "search": "Kundenmaterial" }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(renamed_search[0]["id"], product["id"]);
+    let old_search = rpc
+        .query(
+            "products.list",
+            json!({ "search": "Fassadenbeschichtung" }),
+            Some(&token),
+        )
+        .await;
+    assert!(old_search.as_array().unwrap().is_empty());
+    rpc.mutation(
+        "products.update",
+        json!({ "id": product["id"], "data": { "regieReportName": null } }),
+        Some(&token),
+    )
+    .await;
+    let cleared_product = rpc
+        .query(
+            "products.get",
+            json!({ "id": product["id"] }),
+            Some(&token),
+        )
+        .await;
+    assert!(cleared_product["regieReportName"].is_null());
+    let cleared_search = rpc
+        .query(
+            "products.list",
+            json!({ "search": "Kundenmaterial" }),
+            Some(&token),
+        )
+        .await;
+    assert!(cleared_search.as_array().unwrap().is_empty());
+
     rpc.mutation(
         "products.categories.untag",
         json!({ "id": product["id"], "category": "Integration" }),

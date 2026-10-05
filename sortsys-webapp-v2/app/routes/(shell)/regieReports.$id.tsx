@@ -11,7 +11,7 @@ import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
 import { MyCallout } from "~/components/MyCallout";
 import { MyLink } from "~/components/MyLink";
-import { formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
+import { formatDate, formatNumber, regieProductTitle, userFullName } from "~/lib/format";
 import { MyDivider } from "~/components/MyDivider";
 import { useTitle } from "~/hooks/useTitle";
 import { useShortcut } from "~/hooks/useShortcut";
@@ -242,22 +242,19 @@ export default function RegieReportDetailPage() {
 
             const workHourRows = Array.from(hoursByUser.values())
               .sort((left, right) => left.name.localeCompare(right.name, 'de', { sensitivity: 'base' }))
-              .map(row => {
-                const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
-                return [row.name, ...row.values, total] as Array<string | number | Date | null>;
-              });
+              .map(row => [row.name, ...row.values] as Array<string | number | Date | null>);
             let workHoursTable: TableMeta | null = null;
             if (workHourRows.length) {
               addSectionTitle(uiText('Arbeitszeit je Mitarbeiter und Tag'));
               workHoursTable = addTable(
-                ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES, 'Gesamt'],
+                ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES],
                 workHourRows,
               );
             }
             if (workHoursTable) {
               for (let i = 0; i < workHoursTable.rowCount; i++) {
                 const row = workHoursTable.firstDataRow + i;
-                for (let col = 2; col <= 2 + WEEKDAY_SHORT_NAMES.length; col++) {
+                for (let col = 2; col <= 1 + WEEKDAY_SHORT_NAMES.length; col++) {
                   ws.getCell(row, col).numFmt = DECIMAL_ZERO_DASH_NUM_FMT;
                 }
               }
@@ -269,7 +266,7 @@ export default function RegieReportDetailPage() {
               const [amount, unit] = product ? upmatchUnit(product, baseQuantity) : [baseQuantity, ''];
               const baseUnit = product?.baseUnit ?? '';
               return [
-                product ? productTitle(product) : 'Unbekannt',
+                product ? regieProductTitle(product) : 'Unbekannt',
                 `${formatNumber(amount)}${unit ? ` ${unit}` : ''}`,
                 formatBaseQuantity(baseQuantity, baseUnit, unit),
               ] as Array<string | number | Date | null>;
@@ -405,7 +402,7 @@ export default function RegieReportDetailPage() {
             render: async row => {
               const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
               if (!product) return 'Unbekannt';
-              return <MyLink to={`/products/${product.id}`}>{productTitle(product)}</MyLink>;
+              return <MyLink to={`/products/${product.id}`}>{regieProductTitle(product)}</MyLink>;
             },
           },
           {

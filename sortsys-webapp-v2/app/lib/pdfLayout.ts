@@ -5,14 +5,14 @@ export const PDF_TYPOGRAPHY = {
   reportTitle: 18,
   letterSubject: 14,
   group: 14,
-  section: 12,
-  subheading: 11,
-  body: 11,
-  table: 10,
-  denseTable: 9,
-  label: 9,
-  metadata: 9,
-  metric: 12,
+  section: 11,
+  subheading: 10,
+  body: 10,
+  table: 9,
+  denseTable: 8,
+  label: 8,
+  metadata: 8,
+  metric: 10,
 } as const;
 
 /** Shared DIN 5008 geometry, independent of document content and browser APIs. */
@@ -21,6 +21,7 @@ export const DIN_5008 = {
   left: 25,
   right: 20,
   top: 25,
+  headerTop: 10,
   bottom: 25,
   addressLeft: 20,
   addressWidth: 85,
@@ -129,8 +130,10 @@ export function wrapPdfDocument(body: string, options: {
   const logo = logoShadowPath
     ? `#pdf-logo(${typstString(logoShadowPath)}, max-height: ${letter ? Math.min(16, form.addressTop - 13) : 16}mm)`
     : '';
-  const senderHeader = sender.length
-    ? `#stack(dir: ttb, spacing: 1.3mm, block(text(size: 11pt, weight: "bold", ${typstString(sender[0])})), ${sender.slice(1).map(line => `block(text(size: 9pt, ${typstString(line)}))`).join(', ')})`
+  // The logo replaces the company name, not the postal sender details.
+  const headerLines = logo ? sender.slice(1) : sender;
+  const senderHeader = headerLines.length
+    ? `#stack(dir: ttb, spacing: 1.3mm, ${headerLines.map((line, index) => `block(text(size: ${!logo && index === 0 ? PDF_TYPOGRAPHY.subheading : PDF_TYPOGRAPHY.label}pt, ${!logo && index === 0 ? 'weight: "bold", ' : ''}${typstString(line)}))`).join(', ')})`
     : '';
   const information = letter
     ? [...(layout.information ?? []), { label: dateLabel, value: date }]
@@ -198,7 +201,9 @@ export function wrapPdfDocument(body: string, options: {
     }
   } else {
     if (sender.length || logo) {
-      lines.push('#block(below: 3mm)[', '#set par(spacing: 0pt)');
+      // Use the top margin for the first-page company header, as in letters.
+      // Keep the normal page margin for continuation headers and body content.
+      lines.push(`#v(${DIN_5008.headerTop - DIN_5008.top}mm)`, '#block(below: 3mm)[', '#set par(spacing: 0pt)');
       if (logo) lines.push('#grid(columns: (1fr, 48mm), gutter: 8mm, align: horizon,',
         `[${senderHeader}],`, `[#align(right)[${logo}]],`, ')');
       else lines.push(senderHeader);

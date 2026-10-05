@@ -3,7 +3,7 @@ import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
-import { formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
+import { formatDate, formatNumber, productTitle, regieProductTitle, userFullName } from "~/lib/format";
 import { renderStructuredPdfBatch } from "~/lib/pdf";
 import { buildRegieReportPdfDocument } from "~/lib/regieReportPdf";
 import { deliverBlob, upmatchUnit } from "~/lib/utils";
@@ -516,23 +516,20 @@ export function showExportProjectRegieReportsModal(
 
         const workHoursRows = Array.from(hoursByUser.values())
           .sort((left, right) => left.name.localeCompare(right.name, 'de', { sensitivity: 'base' }))
-          .map(row => {
-            const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
-            return [row.name, ...row.values, total] as Array<string | number | Date | null>;
-          });
+          .map(row => [row.name, ...row.values] as Array<string | number | Date | null>);
         let workHoursTable: { firstDataRow: number; rowCount: number; } | null = null;
         if (workHoursRows.length) {
           addSectionTitle(uiText("Arbeitszeit je Mitarbeiter und Tag"));
           workHoursTable = addTable(
             `RegieWorkHours_${index + 1}`,
-            ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES, "Gesamt"],
+            ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES],
             workHoursRows,
           );
         }
         if (workHoursTable) {
           for (let i = 0; i < workHoursTable.rowCount; i++) {
             const row = workHoursTable.firstDataRow + i;
-            for (let col = 2; col <= 2 + WEEKDAY_SHORT_NAMES.length; col++) {
+            for (let col = 2; col <= 1 + WEEKDAY_SHORT_NAMES.length; col++) {
               ws.getCell(row, col).numFmt = DECIMAL_ZERO_DASH_NUM_FMT;
             }
           }
@@ -544,7 +541,7 @@ export function showExportProjectRegieReportsModal(
           const [amount, unit] = product ? upmatchUnit(product, baseQuantity) : [baseQuantity, ""];
           const baseUnit = product?.baseUnit ?? "";
           return [
-            product ? `${product.customId} ${productTitle(product)}` : "Unbekannt",
+            product ? regieProductTitle(product) : "Unbekannt",
             `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`,
             formatBaseQuantity(baseQuantity, baseUnit, unit),
           ] as Array<string | number | Date | null>;

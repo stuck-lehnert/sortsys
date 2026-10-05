@@ -47,6 +47,7 @@ export default Authenticated(function() {
   const { visibleActions, runAction, llmStatus } = useUserActions();
   const lastVisitKeyRef = useRef<string | null>(null);
   const canViewProjects = sessionInfo.canDo('view:projects');
+  const canViewRegieReports = sessionInfo.canDo('view:regieReports');
   const canSearchDocuments = sessionInfo.supportsProjectFiles();
   const canViewTools = sessionInfo.canDo('view:tools');
   const canViewUsers = sessionInfo.canDo('view:users');
@@ -95,6 +96,7 @@ export default Authenticated(function() {
       '/tools': 'tools.create',
       '/products': 'products.create',
       '/products/deliveryNotes': 'deliveryNotes.create',
+      '/regieReports': 'regieReports.create',
       '/products/vendors': 'productVendors.create',
       '/users': 'users.create',
       '/customers': 'customers.create',
@@ -198,8 +200,9 @@ export default Authenticated(function() {
 
         <SideNavDivider />
 
-        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded={isPathActive('/projects') || isPathActive('/documents') || isPathActive('/deployments') || isPathActive('/vacations')}>
+        <MySideNavMenu title={t("shell.projectWork")} renderIcon={Icons.Project} defaultExpanded={isPathActive('/projects') || isPathActive('/regieReports') || isPathActive('/documents') || isPathActive('/deployments') || isPathActive('/vacations')}>
           {canViewProjects && <MySideNavLink icon={Icons.Project} href="/projects" title={t("shell.projects")} />}
+          {canViewRegieReports && <MySideNavLink icon={Icons.RegieReport} href="/regieReports" title={uiText("Regieberichte", "Time-and-material reports")} />}
           {canSearchDocuments && <MySideNavLink icon={Icons.DocumentAdd} href="/documents" title={t("shell.documents")} />}
           {canViewDeployments && <MySideNavLink icon={Icons.DailyReport} href="/deployments" title={t("shell.deployments")} />}
           {canViewVacations && <MySideNavLink icon={Icons.User} href="/vacations" title={t("shell.vacations")} />}

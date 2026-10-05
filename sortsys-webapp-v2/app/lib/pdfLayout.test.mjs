@@ -49,6 +49,87 @@ describe('DIN document data', () => {
     expect(source).toContain('#text("\\" ] #panic(\\"injected\\")');
   });
 
+  test('uses either the logo or the company name in report and letter headers', () => {
+    for (const kind of ['report', 'letter']) {
+      const options = {
+        index: 0, title: 'Test', date: '', dateLabel: 'Datum', pageLabel: 'Seite',
+        layout: { kind, sender: { name: 'Absender GmbH', lines: ['Musterstraße 1'] } },
+      };
+      const withoutLogo = wrapPdfDocument('', options);
+      const withLogo = wrapPdfDocument('', { ...options, logoShadowPath: '/logo.png' });
+      expect(withoutLogo).toContain('weight: "bold", "Absender GmbH"');
+      expect(withoutLogo).not.toContain('#pdf-logo(');
+      expect(withLogo).toContain('#pdf-logo("/logo.png"');
+      expect(withLogo).not.toContain('weight: "bold", "Absender GmbH"');
+      expect(withLogo).toContain('"Musterstraße 1"');
+      if (kind === 'report') expect(withLogo).not.toContain('Absender GmbH');
+      else expect(withLogo).toContain('Absender GmbH · Musterstraße 1');
+    }
+  });
+
+  test('starts compact report headers 10 mm from the top without changing continuation margins', () => {
+    const options = { index: 0, title: 'Bericht', date: '', dateLabel: 'Datum', pageLabel: 'Seite' };
+    const source = wrapPdfDocument('', { ...options, logoShadowPath: '/logo.png' });
+    expect(source).toContain('top: 25mm');
+    expect(source).toContain('#v(-15mm)');
+    expect(source).toContain('if here().page() > query(<pdf-document-0-start>)');
+    const withoutHeader = wrapPdfDocument('', options);
+    expect(withoutHeader).not.toContain('#v(-15mm)');
+    const senderOnly = wrapPdfDocument('', { ...options, layout: { sender: { name: 'Firma', lines: [] } } });
+    expect(senderOnly).toContain('#v(-15mm)');
+    const letter = wrapPdfDocument('', { ...options, layout: { kind: 'letter', form: 'B' }, logoShadowPath: '/logo.png' });
+    expect(letter).not.toContain('#v(-15mm)');
+    expect(letter).toContain('dy: -15mm');
+    expect(letter).toContain('dy: 20mm');
+  });
+
+  test('uses compact content sizes in cost summaries and position tables', () => {
+    const source = buildPdfBatchDocument({ documents: [{
+      title: 'Kosten', exportedAt: date,
+      sections: [
+        { title: 'Summen', presentation: 'metrics', withHeader: false, columns: ['Art', 'Betrag'], rows: [['Kosten', { value: '123,45', bold: true }]] },
+        { title: 'Positionen', columns: ['Name', 'Betrag'], rows: [['Material', '123,45']] },
+      ],
+    }] }, null);
+    expect(source).toContain('size: 10pt, fill: black');
+    expect(source.match(/#set text\(size: 9pt, hyphenate: auto\)/g)).toHaveLength(2);
+    expect(source).toContain('text(size: 10pt, [*#text("123,45")*])');
+  });
+
+  test('regie reports omit hour totals and identifiers and use customer-facing product names', () => {
+    const productsById = new Map([
+      ['p1', { customId: 99999, name: 'Interner Name', brand: 'Interne Marke', regieReportName: '  Kundenbezeichnung  ', baseUnit: 'kg', otherUnits: {} }],
+      ['p2', { customId: 88888, name: 'Bisherige Bezeichnung', brand: null, regieReportName: ' ', baseUnit: 'Stk', otherUnits: {} }],
+    ]);
+    const document = buildRegieReportPdfDocument({
+      report: {
+        autoId: 1, day: date, summary: 'Arbeiten', specialRecords: [],
+        products: [{ productId: 'p1', quantity: 2 }, { productId: 'p2', quantity: 3 }, { productId: 'missing-internal-id', quantity: 1 }],
+        workHours: [{ userId: 'u1', day: date, hours: 2.5 }],
+      },
+      projectTitle: 'Projekt', productsById,
+      usersById: new Map([['u1', { firstName: 'Anna', lastName: 'Beispiel' }]]),
+    });
+    const hours = document.sections.find(section => section.title === 'Arbeitszeit je Mitarbeiter und Tag');
+    expect(hours.columns).toEqual(['Mitarbeiter', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']);
+    expect(hours.rows[0]).toHaveLength(8);
+    expect(hours.rows[0]).toContain('2,5');
+    expect(hours.totalRows).toBeUndefined();
+    const products = document.sections.find(section => section.title === 'Produkte');
+    expect(products.columns).toEqual(['Bezeichnung', 'Menge']);
+    expect(products.rows.map(row => row[0])).toContain('Kundenbezeichnung');
+    expect(products.rows.map(row => row[0])).toContain('Bisherige Bezeichnung');
+    const source = buildPdfBatchDocument({ documents: [document] }, null);
+    for (const hidden of ['Gesamt', '99999', '88888', 'Interner Name', 'Interne Marke', 'missing-internal-id']) {
+      expect(source).not.toContain(hidden);
+    }
+    expect(source).toContain('#block(breakable: false, above: 8.46mm)');
+    expect(source).toContain('#v(18mm)');
+    const ordinary = buildPdfProductSection([{ number: '12345', name: 'Intern', quantity: '1' }]);
+    expect(ordinary.columns[0]).toBe('Nr.');
+    expect(ordinary.rows[0][0]).toBe('12345');
+  });
+
   test('rejects address and annotation lines exceeding the window zones', () => {
     const options = { index: 0, title: 'Test', date: '', dateLabel: 'Datum', pageLabel: 'Seite' };
     expect(() => wrapPdfDocument('', { ...options, layout: {
@@ -228,8 +309,11 @@ test('keeps all document types and long position lists readable in the browser c
     expect(regiePages.join(' ')).toContain('Bauleiter');
     expect(regiePages.join(' ')).toContain('Bauherr');
     expect(regiePages.join(' ')).toContain('Datum und Unterschrift');
-    expect(regiePages.join(' ')).toContain('M-104');
-    expect(regiePages.join(' ')).toContain('Nr.');
+    expect(regiePages.join(' ')).toContain('Abdeckfolie für Fenster und Zugänge');
+    expect(regiePages.join(' ')).not.toContain('Schutzfolie für Fenster und Baustellenzugänge');
+    expect(regiePages.join(' ')).not.toContain('M-104');
+    expect(regiePages.join(' ')).not.toContain('Nr.');
+    expect(regiePages.join(' ')).not.toContain('Gesamt');
     // Check the visible hierarchy in the compiled PDF, independent of source styles.
     const costItems = pageItems.find(items => items.some(item => item.str === 'Malerbetrieb Beispiel GmbH'));
     const sizeOf = value => Math.max(...costItems.filter(item => item.str.includes(value)).map(item => Math.hypot(item.transform[0], item.transform[1])));
@@ -241,7 +325,8 @@ test('keeps all document types and long position lists readable in the browser c
     expect(titleSize).toBeGreaterThanOrEqual(sectionSize * 1.4);
     expect(sectionSize).toBeGreaterThanOrEqual(tableSize * 1.15);
     expect(metricSize).toBeGreaterThan(tableSize);
-    expect(metricSize).toBeLessThanOrEqual(12.1);
+    expect(metricSize).toBeLessThanOrEqual(10.1);
+    expect(tableSize).toBeCloseTo(9, 1);
     expect(labelSize).toBeLessThanOrEqual(metricSize);
     expect(allText).toContain('25,23 %');
     // Every export kind uses the same hierarchy, including letters, presence
@@ -269,8 +354,8 @@ test('keeps all document types and long position lists readable in the browser c
           const text = values.map(item => item.str).join(' ').replace(/\s+/g, ' ');
           expect(text, `${document.title}: ${label}`).toContain(`${value.value}`.replace(/\s+/g, ' '));
           for (const item of values) {
-            expect(Math.hypot(item.transform[0], item.transform[1])).toBeGreaterThanOrEqual(10);
-            expect(Math.hypot(item.transform[0], item.transform[1])).toBeLessThanOrEqual(12.1);
+            expect(Math.hypot(item.transform[0], item.transform[1])).toBeGreaterThanOrEqual(8.9);
+            expect(Math.hypot(item.transform[0], item.transform[1])).toBeLessThanOrEqual(10.1);
           }
         }
       }
@@ -303,7 +388,7 @@ test('keeps all document types and long position lists readable in the browser c
       expect(page).toContain('Basiseinheit');
     }
     // Number and description are separate cells on the same row, including
-    // every position of a long report and the price-free regie report.
+    // every position of a long delivery note; regie reports omit identifiers.
     for (const items of pageItems) {
       // Wrapped headings share the last text baseline with single-line headings,
       // including headers repeated on subsequent pages.
@@ -361,13 +446,14 @@ test('keeps logos within the company header and collapses unused space without a
       const title = items.find(item => item.str === document.title);
       const titleY = (page.view[3] - title.transform[5]) * 25.4 / 72;
       const sender = items.find(item => item.str === 'Beispiel GmbH');
-      const senderY = (page.view[3] - sender.transform[5]) * 25.4 / 72;
       if (!file) {
+        expect(sender).toBeDefined();
+        const senderY = (page.view[3] - sender.transform[5]) * 25.4 / 72;
         titleWithoutLogo = titleY;
         expect(titleY - senderY).toBeLessThan(12);
       } else {
+        expect(sender).toBeUndefined();
         expect(titleY - titleWithoutLogo).toBeGreaterThan(3);
-        expect(titleY - senderY).toBeLessThan(22);
       }
       const operators = await page.getOperatorList();
       const stack = [];
@@ -395,10 +481,7 @@ test('keeps logos within the company header and collapses unused space without a
         expect(Math.max(images[0].width / 48, images[0].height / 16)).toBeCloseTo(1, 2);
         expect(images[0].width / images[0].height).toBeCloseTo(aspect, 2);
         expect(images[0].right).toBeCloseTo(190, 1);
-        expect(images[0].top).toBeCloseTo(25, 1);
-        // The text's ink should sit around the logo's vertical midpoint.
-        const senderCenter = senderY - sender.height * 25.4 / 72 / 2;
-        expect(Math.abs(senderCenter - images[0].top - images[0].height / 2)).toBeLessThan(1);
+        expect(images[0].top).toBeCloseTo(10, 1);
       }
     } finally {
       await task.destroy();

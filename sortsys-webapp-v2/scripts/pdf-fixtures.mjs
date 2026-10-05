@@ -31,7 +31,7 @@ export function pdfFixtures({ buildPdfProductSection, buildRegieReportPdfDocumen
       { title: 'Beschreibung der Arbeiten', presentation: 'entries', columns: ['Tag', 'Inhalt'], rows: [['Montag, 28. September 2026', description], ['Dienstag, 29. September 2026', description]] },
     ],
   };
-  const regie = buildRegieReportPdfDocument({ projectTitle: project, productsById: new Map([['product-1', { id: 'product-1', customId: 'M-104', name: 'Schutzfolie für Fenster und Baustellenzugänge', baseUnit: 'm²', otherUnits: {} }]]), usersById: new Map(workerNames.map((name, index) => [`user-${index}`, { firstName: name, lastName: '' }])),
+  const regie = buildRegieReportPdfDocument({ projectTitle: project, productsById: new Map([['product-1', { id: 'product-1', customId: 'M-104', name: 'Schutzfolie für Fenster und Baustellenzugänge', regieReportName: 'Abdeckfolie für Fenster und Zugänge', baseUnit: 'm²', otherUnits: {} }]]), usersById: new Map(workerNames.map((name, index) => [`user-${index}`, { firstName: name, lastName: '' }])),
     report: { id: 'report', projectId: 'project', autoId: 45, day: date, createdAt: date, createdByUserId: 'user-0', summary: description, products: [{ id: 'record-1', reportId: 'report', productId: 'product-1', quantity: 20 }], specialRecords: [{ id: 'special', reportId: 'report', name: 'Vorbereitung und Absicherung der Zufahrt', amount: 1, unit: 'Pauschale', comment: null }],
       workHours: workerNames.flatMap((_, index) => Array.from({ length: 5 }, (_, day) => ({ id: `${index}-${day}`, reportId: 'report', userId: `user-${index}`, day: new Date(Date.UTC(2026, 8, 28 + day, 12)), hours: 8 }))),
     },

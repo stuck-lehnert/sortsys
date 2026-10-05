@@ -42,6 +42,7 @@ export default [
             route("regieReports", "routes/(shell)/projects.$id.regieReports.tsx"),
             route("dailyReports", "routes/(shell)/projects.$id.dailyReports.tsx"),
         ]),
+        route("regieReports", "routes/(shell)/regieReports.tsx"),
         route("regieReports/:id", "routes/(shell)/regieReports.$id.tsx"),
         route("projects/:id/dailyReports/:day", "routes/(shell)/projects.dailyReports.$day.tsx"),
 

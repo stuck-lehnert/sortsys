@@ -116,6 +116,7 @@ export default function ProductDetailPage() {
         <AttrList>
             <AttrList.Attr name={uiText("Nummer")} value={product.customId} />
             <AttrList.Attr name="Bezeichnung" value={product.name} />
+            {!!product.regieReportName && <AttrList.Attr name={uiText("Bezeichnung für Regieberichte", "Designation for time-and-material reports")} value={product.regieReportName} />}
             {!!product.brand && <AttrList.Attr name="Hersteller" value={product.brand} />}
             {!!product.description && <AttrList.Attr name={uiText("Beschreibung")} value={product.description} />}
             <AttrList.Attr name="Basiseinheit" value={product.baseUnit} />
