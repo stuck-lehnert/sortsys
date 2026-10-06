@@ -300,8 +300,10 @@ impl<'a> ObjectStringStream<'a> {
 
         let raw = self.cursor.read_raw_bytes(byte_length)?;
         let units = raw
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|bytes| u16::from_le_bytes(*bytes));
 
         let decoded = char::decode_utf16(units)
             .map(|result| result.unwrap_or('\u{fffd}'))

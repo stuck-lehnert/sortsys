@@ -29,10 +29,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Rust 1.88
+      - name: Set up Rust 1.99
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.99.0
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
 
@@ -43,9 +43,9 @@ jobs:
             /tmp/sortsys-api-v2-cargo-registry
             /tmp/sortsys-api-v2-rust-target
             sortsys-dwgviewer/lib/target
-          key: rust-${{ runner.os }}-${{ hashFiles('sortsys-api-v2/Cargo.lock', 'sortsys-dwgviewer/lib/Cargo.lock') }}
+          key: rust-1.99-${{ runner.os }}-${{ hashFiles('sortsys-api-v2/Cargo.lock', 'sortsys-dwgviewer/lib/Cargo.lock') }}
           restore-keys: |
-            rust-${{ runner.os }}-
+            rust-1.99-${{ runner.os }}-
 
       - name: Set up Go 1.27
         uses: actions/setup-go@v7
@@ -53,10 +53,10 @@ jobs:
           go-version: '1.27.x'
           cache-dependency-path: sortsys-v2-job_runner/go.sum
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 24 LTS
         uses: actions/setup-node@v7
         with:
-          node-version: '22.x'
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: sortsys-dwgviewer/package-lock.json
 

@@ -1,4 +1,4 @@
-ARG RUST_IMAGE=docker.io/library/rust:1.88-bookworm
+ARG RUST_IMAGE=docker.io/library/rust:1.99-bookworm
 
 FROM docker.io/library/postgres:17-bookworm AS postgres-client
 

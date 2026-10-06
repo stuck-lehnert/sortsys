@@ -69,6 +69,8 @@ updates:
     open-pull-requests-limit: 10
     # Keep image updates for each compiler/runtime together across Dockerfiles.
     groups:
+      node-runtime:
+        patterns: ["*node"]
       rust-toolchain:
         patterns: ["*rust"]
       go-toolchain:
@@ -77,11 +79,15 @@ updates:
         patterns: ["*bun"]
       postgres:
         patterns: ["*postgres"]
-    # This exact release has the documented Analytics.js regression.
-    # Other ONLYOFFICE releases remain eligible for review.
+    # Keep supported PostgreSQL 17 until the documented data migration is tested.
+    # Node 25 is non-LTS/EOL. ONLYOFFICE 9.4.0 has the known regression.
     ignore:
+      - dependency-name: "*postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "*node"
+        versions: ["25"]
       - dependency-name: onlyoffice/documentserver
-        versions: ["9.4.0.1"]
+        versions: ["9.4.0", "9.4.0.1"]
 
   # Both compose.yaml and ghcr-compose.yaml live in the repository root.
   # Locally built images and :latest tags have no version tag to update.
@@ -91,8 +97,10 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     ignore:
+      - dependency-name: "*postgres"
+        update-types: ["version-update:semver-major"]
       - dependency-name: onlyoffice/documentserver
-        versions: ["9.4.0.1"]
+        versions: ["9.4.0", "9.4.0.1"]
 
   - package-ecosystem: github-actions
     directory: /

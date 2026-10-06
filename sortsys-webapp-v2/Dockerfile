@@ -5,7 +5,7 @@ RUN bun install --frozen-lockfile \
   && bun run build
 
 
-FROM rust:1.88-alpine AS dwg-wasm-builder
+FROM rust:1.99-alpine AS dwg-wasm-builder
 RUN apk add --no-cache musl-dev
 WORKDIR /src
 COPY sortsys-dwgviewer/lib/ ./
@@ -14,7 +14,7 @@ RUN rustup target add wasm32-unknown-unknown \
   && mkdir -p /out \
   && cp target/wasm32-unknown-unknown/release/sortsys_dwg_parser.wasm /out/sortsys-dwg-rust.wasm
 
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 ENV NODE_OPTIONS=--max-old-space-size=4096
 ARG SORTSYS_REVISION=development
 ENV SORTSYS_REVISION=${SORTSYS_REVISION}
@@ -34,7 +34,7 @@ COPY sortsys-webapp-v2/ ./
 RUN npm run build
 
 
-FROM nginx:1.28-alpine
+FROM nginx:1.30.5-alpine
 COPY --from=builder /app/sortsys-webapp-v2/build/client/ /usr/share/nginx/html/
 COPY sortsys-webapp-v2/nginx.conf.template /etc/nginx/templates/default.conf.template
 

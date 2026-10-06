@@ -441,8 +441,8 @@ fn decrypt_data_page_header(data: &[u8], offset: usize) -> Vec<u8> {
     let mut output = data.to_vec();
     let mask = 0x4164_536b_u32 ^ offset as u32;
 
-    for chunk in output.chunks_exact_mut(4) {
-        let value = u32::from_le_bytes(chunk.try_into().expect("chunk length")) ^ mask;
+    for chunk in output.as_chunks_mut::<4>().0 {
+        let value = u32::from_le_bytes(*chunk) ^ mask;
         chunk.copy_from_slice(&value.to_le_bytes());
     }
 
@@ -465,5 +465,25 @@ fn section_kind_from_name(name: &str) -> SectionKind {
         "AcDb:Header" | "AcDb:AuxHeader" => SectionKind::Header,
         "AcDb:Template" => SectionKind::Template,
         _ => SectionKind::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decrypt_data_page_header;
+
+    #[test]
+    fn header_mask_preserves_partial_words_and_is_reversible() {
+        for length in 0_usize..12 {
+            let data: Vec<u8> = (0..length).map(|byte| byte as u8).collect();
+            let decoded = decrypt_data_page_header(&data, 0x20);
+            let remainder_start = length / 4 * 4;
+            assert_eq!(decoded.len(), data.len());
+            assert_eq!(&decoded[remainder_start..], &data[remainder_start..]);
+            if length >= 4 {
+                assert_ne!(&decoded[..4], &data[..4]);
+            }
+            assert_eq!(decrypt_data_page_header(&decoded, 0x20), data);
+        }
     }
 }
