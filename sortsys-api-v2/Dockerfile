@@ -1,6 +1,6 @@
 FROM postgres:17-bookworm AS postgres-client
 
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.99-bookworm AS builder
 
 WORKDIR /app
 

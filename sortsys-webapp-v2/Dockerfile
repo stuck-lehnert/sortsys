@@ -5,7 +5,7 @@ RUN bun install --frozen-lockfile \
   && bun run build
 
 
-FROM rust:1.88-alpine AS dwg-wasm-builder
+FROM rust:1.98-alpine AS dwg-wasm-builder
 RUN apk add --no-cache musl-dev
 WORKDIR /src
 COPY sortsys-dwgviewer/lib/ ./
