@@ -38,7 +38,7 @@
     "monaco-editor": "^0.57.0",
     "parse5": "8.0.1",
     "pdfjs-dist": "6.3.289",
-    "postal-mime": "3.0.0",
+    "postal-mime": "4.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-error-boundary": "^6.1.6",
