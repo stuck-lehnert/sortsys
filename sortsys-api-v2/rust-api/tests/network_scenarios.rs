@@ -2872,11 +2872,7 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
     assert_eq!(updated_note["comment"], "Updated integration delivery");
 
     let customer_named_product = rpc
-        .query(
-            "products.get",
-            json!({ "id": product["id"] }),
-            Some(&token),
-        )
+        .query("products.get", json!({ "id": product["id"] }), Some(&token))
         .await;
     assert_eq!(
         customer_named_product["regieReportName"],
@@ -2945,16 +2941,9 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
     )
     .await;
     let preserved_product = rpc
-        .query(
-            "products.get",
-            json!({ "id": product["id"] }),
-            Some(&token),
-        )
+        .query("products.get", json!({ "id": product["id"] }), Some(&token))
         .await;
-    assert_eq!(
-        preserved_product["regieReportName"],
-        "Fassadenbeschichtung"
-    );
+    assert_eq!(preserved_product["regieReportName"], "Fassadenbeschichtung");
     rpc.mutation(
         "products.update",
         json!({ "id": product["id"], "data": { "regieReportName": "Kundenmaterial" } }),
@@ -2984,11 +2973,7 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
     )
     .await;
     let cleared_product = rpc
-        .query(
-            "products.get",
-            json!({ "id": product["id"] }),
-            Some(&token),
-        )
+        .query("products.get", json!({ "id": product["id"] }), Some(&token))
         .await;
     assert!(cleared_product["regieReportName"].is_null());
     let cleared_search = rpc

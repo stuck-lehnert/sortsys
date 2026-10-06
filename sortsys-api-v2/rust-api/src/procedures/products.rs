@@ -1460,15 +1460,24 @@ mod tests {
             "regieReportName": "  Kundenbezeichnung  "
         });
         let product = ProductData::for_create(input.as_object().unwrap()).unwrap();
-        assert_eq!(product.regie_report_name.as_deref(), Some("Kundenbezeichnung"));
+        assert_eq!(
+            product.regie_report_name.as_deref(),
+            Some("Kundenbezeichnung")
+        );
 
         let changes = json!({ "name": "Geänderter interner Name" });
         let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
-        assert_eq!(product.regie_report_name.as_deref(), Some("Kundenbezeichnung"));
+        assert_eq!(
+            product.regie_report_name.as_deref(),
+            Some("Kundenbezeichnung")
+        );
 
         let changes = json!({ "regieReportName": "  Neue Bezeichnung  " });
         let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
-        assert_eq!(product.regie_report_name.as_deref(), Some("Neue Bezeichnung"));
+        assert_eq!(
+            product.regie_report_name.as_deref(),
+            Some("Neue Bezeichnung")
+        );
 
         let changes = json!({ "regieReportName": "  " });
         let product = ProductData::apply_changes(product, changes.as_object().unwrap()).unwrap();
