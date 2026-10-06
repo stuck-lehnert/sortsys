@@ -14,7 +14,7 @@ RUN rustup target add wasm32-unknown-unknown \
   && mkdir -p /out \
   && cp target/wasm32-unknown-unknown/release/sortsys_dwg_parser.wasm /out/sortsys-dwg-rust.wasm
 
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 ENV NODE_OPTIONS=--max-old-space-size=4096
 ARG SORTSYS_REVISION=development
 ENV SORTSYS_REVISION=${SORTSYS_REVISION}
