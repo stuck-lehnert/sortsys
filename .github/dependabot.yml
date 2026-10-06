@@ -11,6 +11,8 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      react-router:
+        patterns: ["react-router", "@react-router/*"]
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
@@ -23,6 +25,8 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      react-router:
+        patterns: ["react-router", "@react-router/*"]
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
@@ -38,6 +42,8 @@ updates:
       - dependency-type: all
     open-pull-requests-limit: 10
     groups:
+      rustcrypto:
+        patterns: ["aes-gcm", "hmac", "p256", "sha2"]
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
@@ -61,6 +67,21 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Keep image updates for each compiler/runtime together across Dockerfiles.
+    groups:
+      rust-toolchain:
+        patterns: ["*rust"]
+      go-toolchain:
+        patterns: ["*golang"]
+      bun-runtime:
+        patterns: ["*bun"]
+      postgres:
+        patterns: ["*postgres"]
+    # This exact release has the documented Analytics.js regression.
+    # Other ONLYOFFICE releases remain eligible for review.
+    ignore:
+      - dependency-name: onlyoffice/documentserver
+        versions: ["9.4.0.1"]
 
   # Both compose.yaml and ghcr-compose.yaml live in the repository root.
   # Locally built images and :latest tags have no version tag to update.
@@ -69,6 +90,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: onlyoffice/documentserver
+        versions: ["9.4.0.1"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -78,3 +102,5 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        # Compiler versions must not change inside an unrelated Actions group.
+        exclude-patterns: ["dtolnay/rust-toolchain"]

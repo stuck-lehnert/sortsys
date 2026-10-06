@@ -26,7 +26,7 @@ use flate2::read::GzDecoder;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use p256::{
     ecdsa::{Signature, SigningKey, signature::Signer},
-    elliptic_curve::rand_core::OsRng,
+    elliptic_curve::Generate,
 };
 use reqwest::{Client, Method};
 use serde_json::{Value, json};
@@ -7902,6 +7902,26 @@ impl std::fmt::Display for RpcFailure {
     }
 }
 
+#[test]
+fn passkey_fixture_retains_sec1_key_and_ecdsa_signature_compatibility() {
+    use p256::ecdsa::{VerifyingKey, signature::Verifier};
+
+    let fixture = PasskeyFixture::new();
+    let point = fixture.signing_key.verifying_key().to_sec1_point(false);
+    let key = VerifyingKey::from_sec1_bytes(point.as_bytes()).unwrap();
+    let message = b"passkey dependency compatibility";
+    let signature: Signature = fixture.signing_key.sign(message);
+    key.verify(message, &signature).unwrap();
+    assert!(key.verify(b"tampered", &signature).is_err());
+}
+
+#[test]
+fn retains_existing_bcrypt_test_admin_hash_compatibility() {
+    let hash = "$2y$04$xUemhNQXp2VbrgKfIppnS.5nj9ovs9zOMPZuo.5rg4cyQvIDn5c2.";
+    assert!(bcrypt::verify("test-admin-password", hash).unwrap());
+    assert!(!bcrypt::verify("incorrect-password", hash).unwrap());
+}
+
 struct PasskeyFixture {
     credential_id: String,
     credential_id_bytes: Vec<u8>,
@@ -7910,7 +7930,7 @@ struct PasskeyFixture {
 
 impl PasskeyFixture {
     fn new() -> Self {
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::generate();
         let mut credential_id_bytes = vec![0_u8; 32];
         getrandom::fill(&mut credential_id_bytes).unwrap();
         let credential_id = URL_SAFE_NO_PAD.encode(&credential_id_bytes);
@@ -7923,7 +7943,7 @@ impl PasskeyFixture {
     }
 
     fn registration_credential(&self, challenge: &str, origin: &str, rp_id: &str) -> Value {
-        let encoded_point = self.signing_key.verifying_key().to_encoded_point(false);
+        let encoded_point = self.signing_key.verifying_key().to_sec1_point(false);
         let cose_public_key = encode_cbor(&CborValue::Map(vec![
             (cbor_integer(1), cbor_integer(2)),
             (cbor_integer(3), cbor_integer(-7)),

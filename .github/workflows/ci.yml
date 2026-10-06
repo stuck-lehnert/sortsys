@@ -25,18 +25,19 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Rust 1.88
-        uses: dtolnay/rust-toolchain@1.88.0
+        uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.88.0
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
 
       - name: Cache Rust builds
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             /tmp/sortsys-api-v2-cargo-registry
@@ -46,14 +47,14 @@ jobs:
           restore-keys: |
             rust-${{ runner.os }}-
 
-      - name: Set up Go 1.25
+      - name: Set up Go 1.27
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.x'
+          go-version: '1.27.x'
           cache-dependency-path: sortsys-v2-job_runner/go.sum
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.x'
           cache: npm
@@ -62,7 +63,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - name: Run all checks
         env:
@@ -79,7 +80,7 @@ jobs:
 
     steps:
       - name: Check out tested revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

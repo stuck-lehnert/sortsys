@@ -225,8 +225,8 @@ export function ScriptEditor(props: {
 
       const [monaco, editorWorker, tsWorker, v2ClientTypes] = await Promise.all([
         import('monaco-editor'),
-        import('monaco-editor/esm/vs/editor/editor.worker?worker'),
-        import('monaco-editor/esm/vs/language/typescript/ts.worker?worker'),
+        import('monaco-editor/editor/editor.worker.js?worker'),
+        import('monaco-editor/languages/features/typescript/ts.worker.js?worker'),
         import('~/lib/scriptClientTypes.generated').then(module => module.SCRIPT_CLIENT_TYPES),
       ]);
       if (disposed || !containerRef.current) return;
@@ -238,7 +238,7 @@ export function ScriptEditor(props: {
         },
       };
 
-      const tsDefaults = (monaco.languages as any).typescript;
+      const tsDefaults = monaco.typescript;
       const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
       const theme = () => themeMedia.matches ? 'vs-dark' : 'vs';
       const scriptCompilerOptions = {
@@ -249,7 +249,7 @@ export function ScriptEditor(props: {
         target: tsDefaults.ScriptTarget.Latest,
         module: tsDefaults.ModuleKind.ESNext,
         moduleResolution: tsDefaults.ModuleResolutionKind.NodeJs,
-        moduleDetection: tsDefaults.ModuleDetectionKind?.Force ?? 3,
+        moduleDetection: 3, // TypeScript ModuleDetectionKind.Force
         noEmit: true,
         strict: false,
         noImplicitAny: false,

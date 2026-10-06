@@ -10,7 +10,7 @@ use std::{
 };
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -612,6 +612,18 @@ mod tests {
         assert!(public.starts_with("https://files.example.test/test-bucket/"));
         assert!(internal.contains("X-Amz-Signature="));
         assert!(internal.contains("file%20name.pdf"));
+    }
+
+    #[test]
+    fn retains_rfc4231_hmac_and_sha256_digest_outputs() {
+        assert_eq!(
+            hex::encode(super::hmac(&[0x0b; 20], b"Hi There")),
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+        );
+        assert_eq!(
+            super::sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]

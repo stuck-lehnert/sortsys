@@ -1714,7 +1714,7 @@ fn encrypt_secret(state: &AppState, plaintext: &str) -> RpcResult<String> {
     let mut nonce_bytes = [0_u8; 12];
     getrandom::fill(&mut nonce_bytes).map_err(internal)?;
     let ciphertext = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_bytes())
+        .encrypt(&Nonce::from(nonce_bytes), plaintext.as_bytes())
         .map_err(internal)?;
 
     Ok(format!(
@@ -1748,8 +1748,9 @@ fn decrypt_secret(state: &AppState, encoded: &str) -> RpcResult<String> {
 
     let key = encryption_key(state)?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(internal)?;
+    let nonce = Nonce::try_from(nonce.as_slice()).map_err(internal)?;
     let plaintext = cipher
-        .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
+        .decrypt(&nonce, ciphertext.as_ref())
         .map_err(|_| internal("could not decrypt the configured LLM API key"))?;
 
     String::from_utf8(plaintext).map_err(internal)
@@ -1853,6 +1854,27 @@ mod tests {
     };
     use chrono::{TimeZone, Utc};
     use serde_json::json;
+
+    #[test]
+    fn retains_aes256_gcm_ciphertext_and_tag_compatibility() {
+        use aes_gcm::{
+            Aes256Gcm, Nonce,
+            aead::{Aead, KeyInit},
+        };
+
+        // NIST AES-256-GCM vector: the persisted v1 format still contains
+        // a 12-byte nonce followed separately by ciphertext + 16-byte tag.
+        let cipher = Aes256Gcm::new_from_slice(&[0; 32]).unwrap();
+        let nonce = Nonce::from([0; 12]);
+        let expected =
+            hex::decode("cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919")
+                .unwrap();
+        assert_eq!(cipher.encrypt(&nonce, [0; 16].as_ref()).unwrap(), expected);
+        assert_eq!(cipher.decrypt(&nonce, expected.as_ref()).unwrap(), [0; 16]);
+        let mut tampered = expected;
+        tampered[31] ^= 1;
+        assert!(cipher.decrypt(&nonce, tampered.as_ref()).is_err());
+    }
 
     #[test]
     fn tenant_access_is_disabled_by_default() {
