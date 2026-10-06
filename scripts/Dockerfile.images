@@ -7,7 +7,7 @@ FROM docker.io/library/postgres:17-alpine AS kubernetes-postgres
 # MinIO is built from pinned source releases in Dockerfile.s3.
 # ONLYOFFICE 9.4.0 has a known Analytics.js tracking-protection regression.
 FROM docker.io/onlyoffice/documentserver:9.3.1.2 AS onlyoffice
-FROM docker.io/jgraph/drawio:31.7.0 AS drawio
+FROM docker.io/jgraph/drawio:32.0.1 AS drawio
 FROM docker.io/oven/bun:1.4.2 AS bun
 FROM docker.io/library/rust:1.99-bookworm AS rust
 FROM docker.io/library/node:24 AS node
