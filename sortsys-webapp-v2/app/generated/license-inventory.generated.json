@@ -977,14 +977,14 @@
       {
         "ecosystem": "Rust",
         "name": "lazy_static",
-        "version": "1.5.0",
+        "version": "1.5.1",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/rust-lang-nursery/lazy-static.rs"
       },
       {
         "ecosystem": "Rust",
         "name": "libc",
-        "version": "0.2.189",
+        "version": "0.2.190",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/rust-lang/libc"
       },
@@ -4533,9 +4533,9 @@
       {
         "ecosystem": "npm",
         "name": "postal-mime",
-        "version": "3.0.0",
+        "version": "4.0.2",
         "license": "MIT-0",
-        "source": "https://www.npmjs.com/package/postal-mime/v/3.0.0"
+        "source": "https://www.npmjs.com/package/postal-mime/v/4.0.2"
       },
       {
         "ecosystem": "Rust",

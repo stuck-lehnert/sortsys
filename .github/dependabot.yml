@@ -10,6 +10,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Declaration majors track .node-version; upgrade the runtime deliberately.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       react-router:
         patterns: ["react-router", "@react-router/*"]
@@ -24,6 +28,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Declaration majors track .node-version; upgrade the runtime deliberately.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       react-router:
         patterns: ["react-router", "@react-router/*"]
@@ -80,12 +88,16 @@ updates:
       postgres:
         patterns: ["*postgres"]
     # Keep supported PostgreSQL 17 until the documented data migration is tested.
-    # Node 25 is non-LTS/EOL. ONLYOFFICE 9.4.0 has the known regression.
+    # Node LTS-major migrations are explicit; do not drift off .node-version.
+    # Nginx 1.31 is mainline; keep stable patches/new stable lines eligible.
+    # ONLYOFFICE 9.4.0 has the known regression.
     ignore:
       - dependency-name: "*postgres"
         update-types: ["version-update:semver-major"]
       - dependency-name: "*node"
-        versions: ["25"]
+        update-types: ["version-update:semver-major"]
+      - dependency-name: nginx
+        versions: ["~> 1.31.0"]
       - dependency-name: onlyoffice/documentserver
         versions: ["9.4.0", "9.4.0.1"]
 

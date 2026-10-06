@@ -2,9 +2,9 @@
 
 ## Current policy
 
-- Node 24 LTS is selected in `.node-version`. CI reads that file; the image catalog, webapp builder and Node declaration packages must use the same major. Node 25 is an EOL non-LTS line. Node 26 should be considered as a separate coordinated LTS upgrade, not mixed with Node 25 or 24 declarations.
+- Node 24 LTS is selected in `.node-version`. CI reads that file; the image catalog, webapp builder and Node declaration packages must use the same major. Node 25 is an EOL non-LTS line. Node 26 should be considered as a separate coordinated LTS upgrade, not mixed with Node 25 or 24 declarations. Automatic major proposals for Node images and Node declaration packages are therefore ignored; supported Node-24 updates remain eligible.
 - Rust 1.99 is shared by CI, the API builder, the test-image fallback, the image catalog and the webapp's DWG/WASM builder. Updating only some of these creates an untested compiler split.
-- Nginx uses the stable release line, currently `1.30.5-alpine`, rather than independently switching to mainline 1.31.
+- Nginx uses the stable release line, currently `1.30.5-alpine`, rather than independently switching to mainline 1.31. Dependabot ignores the 1.31.x mainline using Docker/Bundler range `~> 1.31.0`; stable patch updates and the next stable release line remain eligible.
 - PostgreSQL stays on the supported 17 line. Major Docker/Compose proposals are ignored until a data migration is explicitly prepared. Minor/patch updates remain eligible. The existing PostgreSQL data mounts are unchanged.
 
 `node scripts/check-runtime-versions.mjs` and its Node test suite run at the start of `scripts/ci`. They reject image/CI/declaration drift, tag-only PostgreSQL major changes and an unverified Nginx mainline switch. Environment overrides such as `POSTGRES_IMAGE` still require operator review; checking repository defaults cannot validate a deployed override.

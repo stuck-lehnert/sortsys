@@ -43,7 +43,7 @@ services:
     stop_grace_period: 1m
 
   drawio:
-    image: ${DRAWIO_IMAGE:-jgraph/drawio:31.6.1}
+    image: ${DRAWIO_IMAGE:-jgraph/drawio:31.7.0}
     restart: unless-stopped
     environment:
       # The official image derives its Tomcat context path from this URL.
