@@ -10,7 +10,7 @@ FROM docker.io/onlyoffice/documentserver:9.3.1.2 AS onlyoffice
 FROM docker.io/jgraph/drawio:31.6.1 AS drawio
 FROM docker.io/oven/bun:1.4.2 AS bun
 FROM docker.io/library/rust:1.88-bookworm AS rust
-FROM docker.io/library/node:22 AS node
+FROM docker.io/library/node:25 AS node
 FROM docker.io/library/golang:1.27-bookworm AS go
 FROM docker.io/amazon/aws-cli:latest AS aws-cli
 FROM docker.io/library/python:3.12-alpine AS python
