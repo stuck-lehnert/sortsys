@@ -32,3 +32,12 @@ Before removing the Dependabot major-update ignore and changing the runtime chec
 7. **Only then change the policy.** Update all database runtime/test/client defaults, data mounts, Kubernetes generation, checks and documentation together. Remove the major ignore only once the migration is an accepted deployment step.
 
 This repository update deliberately performs none of those deployment or data operations.
+
+
+## Dependency-update boundaries
+
+New releases can create new Dependabot PRs even immediately after a push; closing today's backlog does not disable future updates. npm and Bun proposals overlap because both lock graphs are checked and used. Both must be updated before closing duplicated proposals.
+
+TypeScript major migrations are manual: client/webapp lint scripts use the JavaScript compiler API. The attempted TypeScript 7 client migration failed at `ts.ScriptTarget.Latest`, so the client/webapp retain their working TypeScript 5.9 API. The DWG viewer already uses TypeScript 7 for CLI-only checking. Major proposals are ignored, not routine compatible updates.
+
+PDF.js updates must change both exact package versions, both lock graphs and the checksum-verified official Mozilla viewer/worker ZIP together. Dependabot groups PDF.js library proposals across directories; the official ZIP remains an explicitly verified part of the upgrade. The Vite plugin rejects a split release or a floating DWG package range. Updating only the DWG package is not a complete upgrade.

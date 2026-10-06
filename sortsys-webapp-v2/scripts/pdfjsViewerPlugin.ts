@@ -6,6 +6,12 @@ import release from "../vendor/pdfjs/release.json";
 
 export const PDFJS_ASSET_PREFIX = `pdfjs/${release.version}/`;
 
+export function assertPdfjsVersions(viewer: string, webapp: string, dwgviewer: string) {
+  if (viewer !== webapp || viewer !== dwgviewer) {
+    throw new Error("Update PDF.js packages and official viewer/worker together using exact versions");
+  }
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
   mjs: "application/javascript; charset=utf-8",
@@ -64,9 +70,11 @@ export function pdfjsViewerPlugin(): Plugin {
         new URL("../node_modules/pdfjs-dist/package.json", import.meta.url), "utf8",
       )) as { version: string };
 
-      if (packageJson.version !== release.version) {
-        throw new Error("Update the official PDF.js viewer archive to match pdfjs-dist");
-      }
+
+      const dwgPackage = JSON.parse(await readFile(
+        new URL("../../sortsys-dwgviewer/package.json", import.meta.url), "utf8",
+      )) as { dependencies: { "pdfjs-dist": string } };
+      assertPdfjsVersions(release.version, packageJson.version, dwgPackage.dependencies["pdfjs-dist"]);
     },
 
     configureServer(server) {

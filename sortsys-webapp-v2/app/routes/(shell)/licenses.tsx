@@ -136,7 +136,7 @@ export default function LicensesPage() {
       entries: [{
         ecosystem: uiText("Diagrammeditor", "Diagram editor"),
         name: "diagrams.net (draw.io)",
-        version: "31.7.0",
+        version: "32.0.1",
         license: "Apache-2.0",
         licenseUrl: "https://github.com/jgraph/drawio/blob/dev/LICENSE",
         source: "https://github.com/jgraph/drawio",

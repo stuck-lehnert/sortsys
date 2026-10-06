@@ -14,7 +14,13 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # Compiler API-dependent lint scripts need a separate TS-major migration.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
+      # Cross-directory library updates still need the matching official ZIP.
+      pdfjs-distribution:
+        patterns: ["pdfjs-dist"]
       react-router:
         patterns: ["react-router", "@react-router/*"]
       minor-and-patch:
@@ -32,7 +38,13 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # Compiler API-dependent lint scripts need a separate TS-major migration.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
+      # Cross-directory library updates still need the matching official ZIP.
+      pdfjs-distribution:
+        patterns: ["pdfjs-dist"]
       react-router:
         patterns: ["react-router", "@react-router/*"]
       minor-and-patch:

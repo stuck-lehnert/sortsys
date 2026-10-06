@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
-import { loadPdfjsViewerAssets } from "./pdfjsViewerPlugin";
+import { assertPdfjsVersions, loadPdfjsViewerAssets } from "./pdfjsViewerPlugin";
 import release from "../vendor/pdfjs/release.json";
 
 const checksum = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -37,4 +37,14 @@ test("rejects traversal paths even when JSZip normalizes their names", async () 
   const zip = new JSZip().file("web/../../web/evil.mjs", "bad");
   const archive = await zip.generateAsync({ type: "uint8array" });
   await expect(loadPdfjsViewerAssets(archive, checksum(archive))).rejects.toThrow("Unsafe PDF.js viewer archive path");
+});
+
+
+test("keeps DWG PDF.js and the official web viewer on exactly the same release", () => {
+  expect(() => assertPdfjsVersions("6.4.299", "6.4.299", "6.4.299")).not.toThrow();
+  for (const versions of [
+    ["6.4.299", "6.5.0", "6.4.299"],
+    ["6.4.299", "6.4.299", "6.5.0"],
+    ["6.4.299", "6.4.299", "^6.4.299"],
+  ]) expect(() => assertPdfjsVersions(...versions)).toThrow("together using exact versions");
 });
