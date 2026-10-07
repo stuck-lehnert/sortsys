@@ -13,6 +13,7 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "bun run lint:client-casts && bun run lint:box-shadows && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
     "lint:i18n": "node ./scripts/check-i18n.mjs",
+    "test:security-deps": "node --test scripts/securityDependencies.test.mjs",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:regie-list": "bun test app/lib/regieReportList.test.mjs",
@@ -59,6 +60,8 @@
     "vite-tsconfig-paths": "^6.1.1"
   },
   "overrides": {
+    "proxy-addr": "2.0.8",
+    "compression": "1.8.2",
     "dompurify": "3.4.16",
     "qs": "6.16.0",
     "uuid": "11.1.1"

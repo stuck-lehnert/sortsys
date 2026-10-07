@@ -3160,9 +3160,9 @@
       {
         "ecosystem": "npm",
         "name": "compression",
-        "version": "1.8.1",
+        "version": "1.8.2",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/compression/v/1.8.1"
+        "source": "https://www.npmjs.com/package/compression/v/1.8.2"
       },
       {
         "ecosystem": "npm",
@@ -3366,6 +3366,13 @@
         "version": "2.0.3",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/dequal/v/2.0.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "destroy",
+        "version": "1.2.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/destroy/v/1.2.0"
       },
       {
         "ecosystem": "npm",
@@ -4449,9 +4456,9 @@
       {
         "ecosystem": "npm",
         "name": "postal-mime",
-        "version": "4.0.2",
+        "version": "4.0.4",
         "license": "MIT-0",
-        "source": "https://www.npmjs.com/package/postal-mime/v/4.0.2"
+        "source": "https://www.npmjs.com/package/postal-mime/v/4.0.4"
       },
       {
         "ecosystem": "Rust",
@@ -4484,9 +4491,9 @@
       {
         "ecosystem": "npm",
         "name": "proxy-addr",
-        "version": "2.0.7",
+        "version": "2.0.8",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/proxy-addr/v/2.0.7"
+        "source": "https://www.npmjs.com/package/proxy-addr/v/2.0.8"
       },
       {
         "ecosystem": "npm",
