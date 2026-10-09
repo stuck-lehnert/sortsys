@@ -54,3 +54,19 @@ export function cadViewportDocumentBounds(
     maxY: Math.max(topLeft.y, bottomRight.y),
   };
 }
+
+function normalizeMatrixValue(value: number) {
+  return Math.abs(value) < 0.0001 ? 0 : value;
+}
+
+export function viewportInteractionTransform(renderedViewport: Viewport, interactiveViewport: Viewport) {
+  const scale = interactiveViewport.scale / Math.max(renderedViewport.scale, 0.000001);
+  const translateX = interactiveViewport.offsetX - renderedViewport.offsetX * scale;
+  const translateY = interactiveViewport.offsetY - renderedViewport.offsetY * scale;
+  if (
+    Math.abs(scale - 1) < 0.0001
+    && Math.abs(translateX) < 0.0001
+    && Math.abs(translateY) < 0.0001
+  ) return "none";
+  return `matrix(${normalizeMatrixValue(scale)}, 0, 0, ${normalizeMatrixValue(scale)}, ${normalizeMatrixValue(translateX)}, ${normalizeMatrixValue(translateY)})`;
+}

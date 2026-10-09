@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import type { CadEntity } from "../src/types.ts";
 import { entityBounds, layoutBounds } from "../src/core/cadGeometry.ts";
 import {
@@ -15,19 +16,19 @@ import {
 
 describe("geometry helpers", () => {
   it("measures distances, polylines, and polygon areas", () => {
-    expect(distance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
-    expect(polylineLength([{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 6, y: 8 }])).toBe(10);
-    expect(polygonArea([{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }])).toBe(6);
+    assert.strictEqual(distance({ x: 0, y: 0 }, { x: 3, y: 4 }), 5);
+    assert.strictEqual(polylineLength([{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 6, y: 8 }]), 10);
+    assert.strictEqual(polygonArea([{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }]), 6);
   });
 
   it("computes finite bounds", () => {
-    expect(computeBounds([{ x: 3, y: -2 }, { x: -1, y: 9 }])).toEqual({
+    assert.deepStrictEqual(computeBounds([{ x: 3, y: -2 }, { x: -1, y: 9 }]), {
       minX: -1,
       minY: -2,
       maxX: 3,
       maxY: 9,
     });
-    expect(computeBounds([])).toBeNull();
+    assert.strictEqual(computeBounds([]), null);
   });
 
   it("caps arc bounds sampling for absurd angle spans", () => {
@@ -40,11 +41,11 @@ describe("geometry helpers", () => {
       endAngle: 1e299,
     });
 
-    expect(bounds).not.toBeNull();
-    expect(Math.abs(bounds!.minX)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds!.minY)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds!.maxX)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds!.maxY)).toBeLessThanOrEqual(1);
+    assert.notStrictEqual(bounds, null);
+    assert.ok((Math.abs(bounds!.minX)) <= (1));
+    assert.ok((Math.abs(bounds!.minY)) <= (1));
+    assert.ok((Math.abs(bounds!.maxX)) <= (1));
+    assert.ok((Math.abs(bounds!.maxY)) <= (1));
   });
 
   it("ignores sparse far outliers for automatic layout bounds", () => {
@@ -60,40 +61,40 @@ describe("geometry helpers", () => {
       position: { x: -67_000_000, y: 1 },
     });
 
-    expect(layoutBounds({
+    assert.deepStrictEqual(layoutBounds({
       id: "model",
       name: "Model",
       units: null,
       bounds: null,
       entities,
-    })).toEqual({ minX: 0, minY: 0, maxX: 199, maxY: 10 });
+    }), { minX: 0, minY: 0, maxX: 199, maxY: 10 });
   });
 
   it("keeps explicit layout bounds authoritative", () => {
     const bounds = { minX: -10, minY: -20, maxX: 30, maxY: 40 };
-    expect(layoutBounds({
+    assert.strictEqual(layoutBounds({
       id: "model",
       name: "Model",
       units: null,
       bounds,
       entities: [],
-    })).toBe(bounds);
+    }), bounds);
   });
 
   it("round-trips viewport transforms", () => {
     const viewport = { scale: 2, offsetX: 10, offsetY: -6 };
     const point = { x: 7, y: 11 };
-    expect(untransformPoint(transformPoint(point, viewport), viewport)).toEqual(point);
+    assert.deepStrictEqual(untransformPoint(transformPoint(point, viewport), viewport), point);
   });
 
   it("fits bounds with padding and zooms around a screen point", () => {
     const viewport = fitBounds({ minX: 0, minY: 0, maxX: 100, maxY: 50 }, 300, 200, 20);
-    expect(viewport.scale).toBeCloseTo(2.6);
+    assert.ok(Math.abs((viewport.scale) - (2.6)) < 0.005);
 
     const zoomed = zoomAt(viewport, { x: 150, y: 100 }, viewport.scale * 2);
     const before = untransformPoint({ x: 150, y: 100 }, viewport);
     const after = untransformPoint({ x: 150, y: 100 }, zoomed);
-    expect(after.x).toBeCloseTo(before.x);
-    expect(after.y).toBeCloseTo(before.y);
+    assert.ok(Math.abs((after.x) - (before.x)) < 0.005);
+    assert.ok(Math.abs((after.y) - (before.y)) < 0.005);
   });
 });

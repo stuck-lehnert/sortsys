@@ -2,7 +2,6 @@ import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig } from "vite";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { VitePWA } from 'vite-plugin-pwa';
 import { pdfjsViewerPlugin } from "./scripts/pdfjsViewerPlugin";
 
@@ -42,6 +41,7 @@ export default defineConfig({
     __SORTSYS_REVISION__: JSON.stringify(resolveBuildRevision()),
   },
   resolve: {
+    tsconfigPaths: true,
     dedupe: ['react', 'react-dom'],
     alias: [
       { find: /^iconv-lite$/, replacement: fileURLToPath(new URL('./app/lib/msgTextEncoding.ts', import.meta.url)) },
@@ -56,7 +56,7 @@ export default defineConfig({
     },
   },
   plugins: [
-    reactRouter(), tsconfigPaths(), pdfjsViewerPlugin(),
+    reactRouter(), pdfjsViewerPlugin(),
 
     VitePWA({
       registerType: 'autoUpdate',

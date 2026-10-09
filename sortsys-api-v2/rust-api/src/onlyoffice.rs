@@ -811,7 +811,7 @@ fn same_origin(left: &Url, right: &Url) -> bool {
 }
 
 fn document_key(tenant: &str, file_id: i64, version: i64) -> String {
-    let tenant_hash = hex::encode(Sha256::digest(tenant.as_bytes()));
+    let tenant_hash = crate::hex_encoding::encode(Sha256::digest(tenant.as_bytes()));
     format!(
         "sortsys-{}-{}-v{version}",
         &tenant_hash[..16],
@@ -847,7 +847,10 @@ fn office_format(file_name: &str) -> Option<OfficeFormat> {
 fn temporary_path() -> RpcResult<PathBuf> {
     let mut nonce = [0_u8; 16];
     getrandom::fill(&mut nonce).map_err(internal)?;
-    Ok(std::env::temp_dir().join(format!("sortsys-onlyoffice-{}", hex::encode(nonce))))
+    Ok(std::env::temp_dir().join(format!(
+        "sortsys-onlyoffice-{}",
+        crate::hex_encoding::encode(nonce)
+    )))
 }
 
 fn bad_request(message: impl Into<String>) -> RpcError {

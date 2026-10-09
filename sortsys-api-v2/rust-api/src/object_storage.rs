@@ -372,7 +372,7 @@ fn presign(
     let region_key = hmac(&date_key, config.region.as_bytes());
     let service_key = hmac(&region_key, b"s3");
     let signing_key = hmac(&service_key, b"aws4_request");
-    let signature = hex::encode(hmac(&signing_key, string_to_sign.as_bytes()));
+    let signature = crate::hex_encoding::encode(hmac(&signing_key, string_to_sign.as_bytes()));
 
     Ok(format!(
         "{scheme}://{authority}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
@@ -513,7 +513,7 @@ fn unique_nonce() -> String {
 }
 
 fn sha256_hex(value: &[u8]) -> String {
-    hex::encode(Sha256::digest(value))
+    crate::hex_encoding::encode(Sha256::digest(value))
 }
 
 fn hmac(key: &[u8], value: &[u8]) -> Vec<u8> {
@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn retains_rfc4231_hmac_and_sha256_digest_outputs() {
         assert_eq!(
-            hex::encode(super::hmac(&[0x0b; 20], b"Hi There")),
+            crate::hex_encoding::encode(super::hmac(&[0x0b; 20], b"Hi There")),
             "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
         );
         assert_eq!(

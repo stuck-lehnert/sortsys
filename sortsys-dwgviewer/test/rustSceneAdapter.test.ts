@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { sceneToCadDocument, type SceneDocument } from "../src/dwg/sceneAdapter.ts";
 
 describe("Rust DWG scene adapter", () => {
@@ -56,30 +57,33 @@ describe("Rust DWG scene adapter", () => {
 
     const document = sceneToCadDocument(scene);
 
-    expect(document.version).toBe("AC1032");
-    expect(document.units).toBe("mm");
-    expect(document.layers).toHaveLength(1);
-    expect(document.layouts[0]!.entities.map(entity => entity.type)).toEqual(["line", "polyline", "text", "hatch"]);
-    expect(document.layouts[0]!.entities[0]!.colorRole).toBe("foreground");
+    assert.strictEqual(document.version, "AC1032");
+    assert.strictEqual(document.units, "mm");
+    assert.strictEqual((document.layers).length, 1);
+    assert.deepStrictEqual(document.layouts[0]!.entities.map(entity => entity.type), ["line", "polyline", "text", "hatch"]);
+    assert.strictEqual(document.layouts[0]!.entities[0]!.colorRole, "foreground");
     const arcPolyline = document.layouts[0]!.entities[1];
-    expect(arcPolyline.type).toBe("polyline");
-    if (arcPolyline.type === "polyline") expect(arcPolyline.bulges).toHaveLength(1);
+    assert.strictEqual(arcPolyline.type, "polyline");
+    if (arcPolyline.type === "polyline") {
+      assert.ok(arcPolyline.bulges);
+      assert.strictEqual(arcPolyline.bulges.length, 1);
+    }
     const bounds = document.layouts[0]!.bounds!;
-    expect(bounds.minX).toBeCloseTo(0);
-    expect(bounds.minY).toBeCloseTo(0);
-    expect(bounds.maxX).toBeCloseTo(10);
-    expect(bounds.maxY).toBeCloseTo(5);
-    expect(document.warnings).toEqual(["Skipped unsupported DWG entities [INSERT] (2)"]);
+    assert.ok(Math.abs((bounds.minX) - (0)) < 0.005);
+    assert.ok(Math.abs((bounds.minY) - (0)) < 0.005);
+    assert.ok(Math.abs((bounds.maxX) - (10)) < 0.005);
+    assert.ok(Math.abs((bounds.maxY) - (5)) < 0.005);
+    assert.deepStrictEqual(document.warnings, ["Skipped unsupported DWG entities [INSERT] (2)"]);
   });
 
   it("rejects unknown scene schemas", () => {
-    expect(() => sceneToCadDocument({
+    assert.throws(() => sceneToCadDocument({
       schema: "unknown" as "sortsys-dwg-scene@1",
       meta: {},
       layers: [],
       pages: [],
       items: [],
       diagnostics: [],
-    })).toThrow(/Unsupported DWG scene schema/);
+    }), /Unsupported DWG scene schema/);
   });
 });

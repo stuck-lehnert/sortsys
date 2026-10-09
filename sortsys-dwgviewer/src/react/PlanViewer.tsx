@@ -20,7 +20,7 @@ import type {
 import { drawCadLayout } from "../core/cadRenderer.ts";
 import { collectSnapCandidates, layoutBounds, nearestSnapPoint } from "../core/cadGeometry.ts";
 import { createCadRenderModel } from "../core/cadRenderModel.ts";
-import { fitCadBounds, transformCadPoint, untransformCadPoint, zoomCadAt } from "../core/cadViewport.ts";
+import { fitCadBounds, transformCadPoint, untransformCadPoint, viewportInteractionTransform, zoomCadAt } from "../core/cadViewport.ts";
 import { createInitialViewport, distance, fitBounds, untransformPoint, zoomAt } from "../core/geometry.ts";
 import { createMeasurement } from "../core/measurement.ts";
 import { drawMeasurements } from "../core/measurementRenderer.ts";
@@ -143,21 +143,7 @@ function configureOverscanCanvas(
   return { cssWidth, cssHeight };
 }
 
-function normalizeMatrixValue(value: number) {
-  return Math.abs(value) < 0.0001 ? 0 : value;
-}
-
-export function viewportInteractionTransform(renderedViewport: Viewport, interactiveViewport: Viewport) {
-  const scale = interactiveViewport.scale / Math.max(renderedViewport.scale, 0.000001);
-  const translateX = interactiveViewport.offsetX - renderedViewport.offsetX * scale;
-  const translateY = interactiveViewport.offsetY - renderedViewport.offsetY * scale;
-  if (
-    Math.abs(scale - 1) < 0.0001
-    && Math.abs(translateX) < 0.0001
-    && Math.abs(translateY) < 0.0001
-  ) return "none";
-  return `matrix(${normalizeMatrixValue(scale)}, 0, 0, ${normalizeMatrixValue(scale)}, ${normalizeMatrixValue(translateX)}, ${normalizeMatrixValue(translateY)})`;
-}
+export { viewportInteractionTransform } from "../core/cadViewport.ts";
 
 function ToolButton(props: {
   active: boolean;

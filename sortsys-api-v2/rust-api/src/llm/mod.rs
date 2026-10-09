@@ -1866,9 +1866,11 @@ mod tests {
         // a 12-byte nonce followed separately by ciphertext + 16-byte tag.
         let cipher = Aes256Gcm::new_from_slice(&[0; 32]).unwrap();
         let nonce = Nonce::from([0; 12]);
-        let expected =
-            hex::decode("cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919")
-                .unwrap();
+        let expected = vec![
+            0xce, 0xa7, 0x40, 0x3d, 0x4d, 0x60, 0x6b, 0x6e, 0x07, 0x4e, 0xc5, 0xd3, 0xba, 0xf3,
+            0x9d, 0x18, 0xd0, 0xd1, 0xc8, 0xa7, 0x99, 0x99, 0x6b, 0xf0, 0x26, 0x5b, 0x98, 0xb5,
+            0xd4, 0x8a, 0xb9, 0x19,
+        ];
         assert_eq!(cipher.encrypt(&nonce, [0; 16].as_ref()).unwrap(), expected);
         assert_eq!(cipher.decrypt(&nonce, expected.as_ref()).unwrap(), [0; 16]);
         let mut tampered = expected;

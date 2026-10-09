@@ -399,7 +399,7 @@ fn random_runner_id() -> String {
     let mut random = [0_u8; 8];
     getrandom::fill(&mut random).expect("operating system random source must be available");
 
-    format!("runner-{}", hex::encode(random))
+    format!("runner-{}", crate::hex_encoding::encode(random))
 }
 
 #[derive(Debug)]

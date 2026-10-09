@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { drawCadLayout } from "../src/core/cadRenderer.ts";
 import type { CadLayout } from "../src/types.ts";
 
@@ -101,10 +102,8 @@ describe("CAD renderer", () => {
     drawCadLayout(ctx as unknown as CanvasRenderingContext2D, layout, { scale: 4, offsetX: 0, offsetY: 200 }, 400, 240);
 
     const hatchFills = ctx.fills.filter(fill => fill.style === "#494949");
-    expect(hatchFills).toEqual(expect.arrayContaining([
-      expect.objectContaining({ alpha: 0.18, rule: "evenodd" }),
-      expect.objectContaining({ alpha: 0.92, rule: "evenodd" }),
-    ]));
+    assert.ok(hatchFills.some(fill => fill.alpha === 0.18 && fill.rule === "evenodd"));
+    assert.ok(hatchFills.some(fill => fill.alpha === 0.92 && fill.rule === "evenodd"));
   });
 
   it("renders pale foreground path strokes visibly without darkening pale area fills", () => {
@@ -158,15 +157,10 @@ describe("CAD renderer", () => {
 
     drawCadLayout(ctx as unknown as CanvasRenderingContext2D, layout, { scale: 4, offsetX: 0, offsetY: 200 }, 400, 240);
 
-    expect(ctx.fills).toEqual(expect.arrayContaining([
-      expect.objectContaining({ alpha: 0.12, style: "#f4f4f4", rule: "evenodd" }),
-    ]));
+    assert.ok(ctx.fills.some(fill => fill.alpha === 0.12 && fill.style === "#f4f4f4" && fill.rule === "evenodd"));
     const blackFills = ctx.fills.filter(fill => fill.style === "#000000");
-    expect(blackFills).toEqual([
-      expect.objectContaining({ alpha: 0.92, rule: "evenodd" }),
-    ]);
-    expect(ctx.strokes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ alpha: 1, style: "#000000" }),
-    ]));
+    assert.strictEqual(blackFills.length, 1);
+    assert.partialDeepStrictEqual(blackFills[0], { alpha: 0.92, rule: "evenodd" });
+    assert.ok(ctx.strokes.some(stroke => stroke.alpha === 1 && stroke.style === "#000000"));
   });
 });

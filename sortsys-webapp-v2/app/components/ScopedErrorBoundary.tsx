@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ErrorBoundary } from "react-error-boundary";
+import { ErrorBoundary } from "~/components/primitives/ErrorBoundary";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { reportClientError } from "~/lib/client";

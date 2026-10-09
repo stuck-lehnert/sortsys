@@ -355,7 +355,7 @@ fn sibling_url(callback_url: &str, sibling: &str) -> RpcResult<String> {
 
 fn export_document_key(tenant: &str, object_key: &str) -> String {
     let digest = Sha256::digest(format!("{tenant}\0{object_key}").as_bytes());
-    format!("sortsys-export-{}", &hex::encode(digest)[..32])
+    format!("sortsys-export-{}", &crate::hex_encoding::encode(digest)[..32])
 }
 
 fn normalized_locale(locale: &str) -> &'static str {

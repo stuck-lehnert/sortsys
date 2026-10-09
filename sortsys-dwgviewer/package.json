@@ -15,7 +15,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "node --test test/*.test.ts",
     "build": "npm run typecheck",
     "build:wasm:rust": "bash ./scripts/build-rust-dwg-wasm",
     "test:wasm:rust": "npm run build:wasm:rust && node ./scripts/smoke-rust-dwg-wasm.mjs",
@@ -32,7 +32,6 @@
     "@types/node": "^24",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "typescript": "^7.0.2"
   }
 }

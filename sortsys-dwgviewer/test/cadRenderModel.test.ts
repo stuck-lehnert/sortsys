@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import type { CadLayout, Viewport } from "../src/types.ts";
 import {
   createCadRenderModel,
@@ -29,8 +30,8 @@ describe("CAD render model", () => {
       },
     });
 
-    expect(model.bounds).toBeNull();
-    expect(queryCadRenderEntities(model, { scale: 1, offsetX: 0, offsetY: 3000 }, 5000, 3000)).toEqual([]);
+    assert.strictEqual(model.bounds, null);
+    assert.deepStrictEqual(queryCadRenderEntities(model, { scale: 1, offsetX: 0, offsetY: 3000 }, 5000, 3000), []);
   });
 
   it("clamps render bucket queries to document bounds", () => {
@@ -62,8 +63,8 @@ describe("CAD render model", () => {
       3000,
     ).map(entry => entry.entity.id);
 
-    expect(visible).toEqual(["visible"]);
-    expect(bucketQueries).toBeLessThanOrEqual(5000);
+    assert.deepStrictEqual(visible, ["visible"]);
+    assert.ok((bucketQueries) <= (5000));
   });
 
   it("queries only entities intersecting the visible document bounds", () => {
@@ -86,7 +87,7 @@ describe("CAD render model", () => {
       50,
     ).map(entry => entry.entity.id);
 
-    expect(visible).toEqual(["visible", "crossing"]);
+    assert.deepStrictEqual(visible, ["visible", "crossing"]);
   });
 
   it("excludes hidden layers before rendering", () => {
@@ -108,11 +109,11 @@ describe("CAD render model", () => {
       { hiddenLayers: new Set(["B"]) },
     ).map(entry => entry.entity.id);
 
-    expect(visible).toEqual(["shown"]);
+    assert.deepStrictEqual(visible, ["shown"]);
   });
 
   it("computes viewport bounds with screen-space overscan", () => {
-    expect(viewportDocumentBounds({ scale: 2, offsetX: 10, offsetY: -6 }, 100, 80, 20)).toEqual({
+    assert.deepStrictEqual(viewportDocumentBounds({ scale: 2, offsetX: 10, offsetY: -6 }, 100, 80, 20), {
       minX: -15,
       minY: -53,
       maxX: 55,
@@ -138,13 +139,13 @@ describe("CAD render model", () => {
     const entries = Object.fromEntries(createCadRenderModel(layout).entities.map(entry => [entry.entity.id, entry]));
     const viewport: Viewport = { scale: 1, offsetX: 0, offsetY: 0 };
 
-    expect(shouldCullCadRenderEntity(entries["tiny-line"]!, viewport)).toBe(true);
-    expect(shouldCullCadRenderEntity(entries["long-line"]!, viewport)).toBe(false);
-    expect(shouldCullCadRenderEntity(entries["tiny-text"]!, viewport)).toBe(true);
-    expect(shouldCullCadRenderEntity(entries["early-text"]!, viewport)).toBe(false);
-    expect(shouldCullCadRenderEntity(entries["tiny-circle"]!, viewport)).toBe(true);
-    expect(shouldCullCadRenderEntity(entries["visible-circle"]!, viewport)).toBe(false);
-    expect(shouldCullCadRenderEntity(entries.point!, viewport)).toBe(false);
+    assert.strictEqual(shouldCullCadRenderEntity(entries["tiny-line"]!, viewport), true);
+    assert.strictEqual(shouldCullCadRenderEntity(entries["long-line"]!, viewport), false);
+    assert.strictEqual(shouldCullCadRenderEntity(entries["tiny-text"]!, viewport), true);
+    assert.strictEqual(shouldCullCadRenderEntity(entries["early-text"]!, viewport), false);
+    assert.strictEqual(shouldCullCadRenderEntity(entries["tiny-circle"]!, viewport), true);
+    assert.strictEqual(shouldCullCadRenderEntity(entries["visible-circle"]!, viewport), false);
+    assert.strictEqual(shouldCullCadRenderEntity(entries.point!, viewport), false);
   });
 
   it("simplifies dense polylines while preserving endpoints", () => {
@@ -155,9 +156,9 @@ describe("CAD render model", () => {
 
     const simplified = simplifyCadPoints(points, 0.05);
 
-    expect(simplified.length).toBeLessThan(points.length);
-    expect(simplified[0]).toEqual(points[0]);
-    expect(simplified[simplified.length - 1]).toEqual(points[points.length - 1]);
+    assert.ok((simplified.length) < (points.length));
+    assert.deepStrictEqual(simplified[0], points[0]);
+    assert.deepStrictEqual(simplified[simplified.length - 1], points[points.length - 1]);
   });
 
   it("does not simplify dense polylines at inspection zoom", () => {
@@ -166,6 +167,6 @@ describe("CAD render model", () => {
       y: Math.sin(index / 8) * 0.01,
     }));
 
-    expect(getSimplifiedCadPoints(points, { scale: 200, offsetX: 0, offsetY: 0 })).toBe(points);
+    assert.strictEqual(getSimplifiedCadPoints(points, { scale: 200, offsetX: 0, offsetY: 0 }), points);
   });
 });

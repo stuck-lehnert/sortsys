@@ -4539,13 +4539,6 @@
       },
       {
         "ecosystem": "npm",
-        "name": "react-error-boundary",
-        "version": "6.1.6",
-        "license": "MIT",
-        "source": "https://www.npmjs.com/package/react-error-boundary/v/6.1.6"
-      },
-      {
-        "ecosystem": "npm",
         "name": "react-is",
         "version": "16.13.1",
         "license": "MIT",

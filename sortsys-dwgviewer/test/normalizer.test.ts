@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { normalizeCadDocument } from "../src/dwg/normalizer.ts";
 
 
@@ -43,13 +44,13 @@ describe("DWG normalization", () => {
       ],
     });
 
-    expect(document.version).toBe("AC1032");
-    expect(document.units).toBe("mm");
-    expect(document.layers).toHaveLength(1);
-    expect(document.layouts).toHaveLength(1);
-    expect(document.layouts[0]!.entities.map(entity => entity.type)).toEqual(["line", "polyline", "point", "text"]);
-    expect(document.layouts[0]!.bounds).toEqual({ minX: 0, minY: 0, maxX: 40, maxY: 60 });
-    expect(document.warnings).toEqual([]);
+    assert.strictEqual(document.version, "AC1032");
+    assert.strictEqual(document.units, "mm");
+    assert.strictEqual((document.layers).length, 1);
+    assert.strictEqual((document.layouts).length, 1);
+    assert.deepStrictEqual(document.layouts[0]!.entities.map(entity => entity.type), ["line", "polyline", "point", "text"]);
+    assert.deepStrictEqual(document.layouts[0]!.bounds, { minX: 0, minY: 0, maxX: 40, maxY: 60 });
+    assert.deepStrictEqual(document.warnings, []);
   });
 
 
@@ -70,11 +71,11 @@ describe("DWG normalization", () => {
       ],
     });
 
-    expect(document.layers).toEqual([
+    assert.deepStrictEqual(document.layers, [
       { id: "L", name: "L", visible: true, color: "#00ff00" },
       { id: "G", name: "G", visible: true, color: "#0000ff" },
     ]);
-    expect(document.layouts[0]!.entities[0]!.layer).toBe("L");
+    assert.strictEqual(document.layouts[0]!.entities[0]!.layer, "L");
   });
 
   it("resolves BYLAYER color and lineweight onto entities", () => {
@@ -90,7 +91,7 @@ describe("DWG normalization", () => {
       }],
     });
 
-    expect(document.layouts[0]!.entities[0]).toMatchObject({
+    assert.partialDeepStrictEqual(document.layouts[0]!.entities[0], {
       color: "#445566",
       lineWeight: 0.35,
     });
@@ -109,13 +110,13 @@ describe("DWG normalization", () => {
       }],
     });
 
-    expect(document.layouts[0]!.entities[0]).toMatchObject({
+    assert.partialDeepStrictEqual(document.layouts[0]!.entities[0], {
       id: "solid-1",
       type: "hatch",
       solid: true,
     });
-    expect(document.layouts[0]!.bounds).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 6 });
-    expect(document.warnings).toEqual([]);
+    assert.deepStrictEqual(document.layouts[0]!.bounds, { minX: 0, minY: 0, maxX: 10, maxY: 6 });
+    assert.deepStrictEqual(document.warnings, []);
   });
 
   it("uses robust automatic bounds for large DWG layouts", () => {
@@ -133,12 +134,12 @@ describe("DWG normalization", () => {
 
     const document = normalizeCadDocument({ layouts: [{ id: "model", entities }] });
 
-    expect(document.layouts[0]!.bounds).toEqual({ minX: 0, minY: 0, maxX: 199, maxY: 10 });
+    assert.deepStrictEqual(document.layouts[0]!.bounds, { minX: 0, minY: 0, maxX: 199, maxY: 10 });
   });
 
   it("warns when no renderable entities are present", () => {
     const document = normalizeCadDocument({ layouts: [{ id: "model", entities: [{ type: "insert" }] }] });
-    expect(document.layouts[0]!.entities).toEqual([]);
-    expect(document.warnings).toContain("No renderable DWG entities were extracted.");
+    assert.deepStrictEqual(document.layouts[0]!.entities, []);
+    assert.ok((document.warnings).includes("No renderable DWG entities were extracted."));
   });
 });

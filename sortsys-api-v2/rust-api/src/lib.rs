@@ -8,6 +8,7 @@ mod contract_generated;
 pub mod database;
 pub mod drawio;
 pub mod error;
+mod hex_encoding;
 pub mod ids;
 pub mod job_queue;
 mod job_runner_media;
