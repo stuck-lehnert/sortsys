@@ -46,6 +46,7 @@ echo "Running webapp checks"
   bun run typecheck
   bun run test:i18n
   bun run test:attachments
+  bun run test:attachment-selection
   bun run test:security-deps
   bun run build
 )

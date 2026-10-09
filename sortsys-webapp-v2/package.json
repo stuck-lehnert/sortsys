@@ -18,6 +18,7 @@
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:regie-list": "bun test app/lib/regieReportList.test.mjs",
     "preview:pdf": "bun scripts/preview-pdfs.mjs",
+    "test:attachment-selection": "node --test scripts/attachmentSelection.test.mjs",
     "test:attachments": "bun test app/lib/attachmentPreviews.test.mjs app/lib/pdfViewer.test.mjs scripts/pdfjsViewerPlugin.test.mjs",
     "lint:llm-naming": "node ./scripts/check-llm-naming.mjs"
   },

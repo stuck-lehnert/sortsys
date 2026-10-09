@@ -1147,7 +1147,7 @@ export default function ProjectFilesPage() {
     }
   }
 
-  function showDeleteSelectedFilesConfirmModal(filesToDelete = selectedAttachments) {
+  function showDeleteSelectedFilesConfirmModal(filesToDelete: readonly ProjectFileEntry[]) {
     if (!filesToDelete.length) return;
 
     modals.showDefault({
@@ -1248,7 +1248,7 @@ export default function ProjectFilesPage() {
             renderIcon={Icons.Delete}
             disabled={!!batchBusyAction}
             loading={batchBusyAction === 'delete'}
-            onClick={showDeleteSelectedFilesConfirmModal}
+            onClick={() => showDeleteSelectedFilesConfirmModal(selectedAttachments)}
           >{uiText("Auswahl löschen")}</MyButton>
 
           <MyButton
