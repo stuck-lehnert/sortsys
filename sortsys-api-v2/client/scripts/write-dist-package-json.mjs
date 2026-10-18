@@ -17,9 +17,9 @@ const distPkg = {
   main: "./index.js",
   types: "./index.d.ts",
   exports: {
-    import: "./index.js",
-    types: "./index.d.ts",
-    default: "./index.js",
+    ".": { types: "./index.d.ts", import: "./index.js", default: "./index.js" },
+    "./rpc": { types: "./rpc.d.ts", import: "./rpc.js", default: "./rpc.js" },
+    "./contract": { types: "./generated/contract.d.ts" },
   },
   dependencies: pkg.dependencies ?? {},
   sortsysApiSourceHash: await hashApiContract(),

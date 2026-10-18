@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@sortsys/v2-client/contract": [
+        "../sortsys-api-v2/client/dist/generated/contract.d.ts"
+      ]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -13,6 +13,7 @@
         "@myriaddreamin/typst.ts": "0.7.0",
         "@react-router/node": "8.4.0",
         "@react-router/serve": "8.4.0",
+        "@sortsys/business-logic": "file:../sortsys-business-logic",
         "@sortsys/dwgviewer": "file:../sortsys-dwgviewer",
         "@sortsys/react-components": "file:../sortsys-react-components",
         "@sortsys/v2-client": "file:../sortsys-api-v2/client",
@@ -399,6 +400,8 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.60.0", "", { "os": "win32", "cpu": "x64" }, "sha512-RdcryEfzZr+lAr5kRm2ucN9aVlCCa2QNq4hXelZxb8GG0NJSazq44Z3PCCc8wISRuCVnGs0lQJVX5Vp6fKA+IA=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.0", "", { "os": "win32", "cpu": "x64" }, "sha512-PrsWNQ8BuE00O3Xsx3ALh2Df8fAj9+cvvX9AIA6o4KpATR98c9mud4XtDWVvsEuyia5U4tVSTKygawyJkjm60w=="],
+
+    "@sortsys/business-logic": ["@sortsys/business-logic@file:../sortsys-business-logic", { "peerDependencies": { "@sortsys/v2-client": "0.1.40" } }],
 
     "@sortsys/dwgviewer": ["@sortsys/dwgviewer@file:../sortsys-dwgviewer", { "dependencies": { "pdfjs-dist": "6.4.299" }, "devDependencies": { "@types/node": "^24", "@types/react": "^19.3.0", "@types/react-dom": "^19.3.0", "typescript": "^7.0.2" }, "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" } }],
 

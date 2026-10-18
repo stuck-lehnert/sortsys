@@ -1,0 +1,28 @@
+{
+  "name": "@sortsys/business-logic",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pdf": "./src/pdf/index.ts",
+    "./calendar": "./src/calendar.ts",
+    "./domain": "./src/domain.ts",
+    "./signatures": "./src/signatures.ts",
+    "./encoding": "./src/encoding.ts",
+    "./planning": "./src/planning.ts"
+  },
+  "files": [
+    "src",
+    "assets",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@sortsys/v2-client": "0.1.40"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

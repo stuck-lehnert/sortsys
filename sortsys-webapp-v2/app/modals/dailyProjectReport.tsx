@@ -1,3 +1,5 @@
+import { currentLocaleTag } from "~/lib/i18n";
+import { buildWeeklyReportExports } from "@sortsys/business-logic/pdf";
 import { uiText } from "~/lib/i18n";
 import { Fragment, useEffect, useState } from "react";
 import { MyButton } from "~/components/MyButton";
@@ -7,26 +9,39 @@ import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
-import { formatAddress, formatDate, formatNumber, userFullName } from "~/lib/format";
+import {
+  formatAddress,
+  formatDate,
+  formatNumber,
+  userFullName,
+} from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdfBatch, formatPdfNumber, type PdfTableSection } from "~/lib/pdf";
-import { dailyReportDayKey, SmallProjectTile, SmallUserTile } from "~/lib/tiles";
+import {
+  renderStructuredPdfBatch,
+  formatPdfNumber,
+  type PdfTableSection,
+} from "~/lib/pdf";
+import {
+  dailyReportDayKey,
+  SmallProjectTile,
+  SmallUserTile,
+} from "~/lib/tiles";
 import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
 import type { DailyProjectReport, Project, User } from "~/type-helpers";
 
 const WEEKDAY_NAMES = [
-  'Montag',
-  'Dienstag',
-  'Mittwoch',
-  'Donnerstag',
-  'Freitag',
-  'Samstag',
-  'Sonntag',
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+  "Sonntag",
 ] as const;
 
 const WEEKDAY_SHORT_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
-type WeeklyExportFormat = 'excel' | 'pdf';
+type WeeklyExportFormat = "excel" | "pdf";
 
 function startOfWeek(date: Date) {
   const result = new Date(date);
@@ -54,15 +69,24 @@ function isoWeekNumber(date: Date) {
   const firstDay = (firstThursday.getDay() + 6) % 7;
   firstThursday.setDate(firstThursday.getDate() + 3 - firstDay);
 
-  return 1 + Math.round((value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  return (
+    1 +
+    Math.round(
+      (value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    )
+  );
 }
 
 function sanitizeWorksheetName(value: string) {
-  const cleaned = value.replace(/[:\\/?*\[\]]/g, ' ').trim();
-  return (cleaned || 'Sheet').slice(0, 31);
+  const cleaned = value.replace(/[:\\/?*\[\]]/g, " ").trim();
+  return (cleaned || "Sheet").slice(0, 31);
 }
 
-function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<string>) {
+function addUniqueWorksheet(
+  workbook: any,
+  baseName: string,
+  usedNames: Set<string>,
+) {
   let candidate = sanitizeWorksheetName(baseName);
   if (!usedNames.has(candidate)) {
     usedNames.add(candidate);
@@ -72,7 +96,9 @@ function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<stri
   let index = 2;
   while (true) {
     const suffix = ` (${index})`;
-    const truncated = sanitizeWorksheetName(candidate.slice(0, Math.max(1, 31 - suffix.length)) + suffix);
+    const truncated = sanitizeWorksheetName(
+      candidate.slice(0, Math.max(1, 31 - suffix.length)) + suffix,
+    );
     if (!usedNames.has(truncated)) {
       usedNames.add(truncated);
       return workbook.addWorksheet(truncated);
@@ -83,14 +109,16 @@ function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<stri
 }
 
 function formatWeeklyPresence(value: number) {
-  return Number(value ?? 0) > 0 ? 'X' : '-';
+  return Number(value ?? 0) > 0 ? "X" : "-";
 }
 
 export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
   modals.showForm({
     content: ({ context }) => {
       const [workHourIds, setWorkHourIds] = useState<string[]>([]);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<
+        string | null
+      >(null);
       const createEntityAction = useCreateEntityAction(modals);
 
       useEffect(() => {
@@ -99,132 +127,190 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
         setAutoFocusFieldName(`workHour:${id}:user`);
       }, []);
 
-      return <>
-        <MyForm.MultiSelect
-          minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText={uiText("Projekt")}
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
-        <p className="light">{uiText("Wähle das Projekt, für das der Bautagesbericht erstellt wird.")}</p>
+      return (
+        <>
+          <MyForm.MultiSelect
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            name="project"
+            labelText={uiText("Projekt")}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle das Projekt, für das der Bautagesbericht erstellt wird.",
+            )}
+          </p>
 
-        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
+          <MyForm.Input
+            textArea
+            name="summary"
+            labelText={uiText("Beschreibung der Arbeiten")}
+          />
 
-        <MyForm.DateInput
-          required
-          name="day"
-          labelText={uiText("Tag")}
-          rules={[date => {
-            if (!date) return null;
-            const today = new Date();
-            today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
-            return null;
-          }]}
-        />
-        <p className="light">{uiText("Der Berichtstag darf nicht in der Zukunft liegen.")}</p>
+          <MyForm.DateInput
+            required
+            name="day"
+            labelText={uiText("Tag")}
+            rules={[
+              (date) => {
+                if (!date) return null;
+                const today = new Date();
+                today.setHours(23, 59, 59, 999);
+                if (date.getTime() > today.getTime())
+                  return uiText("Datum darf nicht in der Zukunft liegen");
+                return null;
+              },
+            ]}
+          />
+          <p className="light">
+            {uiText("Der Berichtstag darf nicht in der Zukunft liegen.")}
+          </p>
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Arbeitszeit")}</h4>
-        <p className="light">{uiText("Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.")}</p>
+          <h4>{uiText("Arbeitszeit")}</h4>
+          <p className="light">
+            {uiText(
+              "Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.",
+            )}
+          </p>
 
-        {workHourIds.map(id => {
-          return <Fragment key={id}>
-            <div className="flex flex-col gap-2">
-              <MyForm.MultiSelect
-                name={`workHour:${id}:user`}
-                labelText={uiText("Mitarbeiter")}
-                autoFocus={autoFocusFieldName === `workHour:${id}:user`}
-                minSelectedItems={1} maxSelectedItems={1}
-                getOptions={async ({ query }) => {
-                  const [data, err] = await client.query('users.list', { search: query });
-                  if (err) throw err;
-                  return data ?? [];
-                }}
-                renderItem={({ item }) => userFullName(item)}
-                renderTile={item => <SmallUserTile data={item} noLink />}
-                createAction={createEntityAction.user}
-              />
-
-              <div className="flex gap-2 items-end">
-                <div className="grow">
-                  <MyForm.Input
-                    required
-                    name={`workHour:${id}:hours`}
-                    labelText={uiText("Stunden")}
-                    type="number"
-                    rules={[
-                      MyForm.Input.rules.posnum,
-                      value => {
-                        if (!value.trim()) return null;
-                        const hours = parseFloatCustom(value);
-                        if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
-                        return null;
-                      },
-                    ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
-                      setWorkHourIds(ids => ids.filter(_id => _id !== id));
-                    }}><Icons.Delete /></MyButton>}
+          {workHourIds.map((id) => {
+            return (
+              <Fragment key={id}>
+                <div className="flex flex-col gap-2">
+                  <MyForm.MultiSelect
+                    name={`workHour:${id}:user`}
+                    labelText={uiText("Mitarbeiter")}
+                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    minSelectedItems={1}
+                    maxSelectedItems={1}
+                    getOptions={async ({ query }) => {
+                      const [data, err] = await client.query("users.list", {
+                        search: query,
+                      });
+                      if (err) throw err;
+                      return data ?? [];
+                    }}
+                    renderItem={({ item }) => userFullName(item)}
+                    renderTile={(item) => <SmallUserTile data={item} noLink />}
+                    createAction={createEntityAction.user}
                   />
+
+                  <div className="flex gap-2 items-end">
+                    <div className="grow">
+                      <MyForm.Input
+                        required
+                        name={`workHour:${id}:hours`}
+                        labelText={uiText("Stunden")}
+                        type="number"
+                        rules={[
+                          MyForm.Input.rules.posnum,
+                          (value) => {
+                            if (!value.trim()) return null;
+                            const hours = parseFloatCustom(value);
+                            if (isNaN(hours)) return null;
+                            if (hours < 0 || hours > 10)
+                              return uiText(
+                                "Stunden müssen zwischen 0 und 10 liegen",
+                                "Hours must be between 0 and 10",
+                              );
+                            return null;
+                          },
+                        ]}
+                        suffix={
+                          <MyButton
+                            kind="ghost"
+                            size="sm"
+                            className="ss-input-suffix-btn"
+                            title={uiText("Arbeitszeit entfernen")}
+                            aria-label={uiText("Arbeitszeit entfernen")}
+                            onClick={() => {
+                              setWorkHourIds((ids) =>
+                                ids.filter((_id) => _id !== id),
+                              );
+                            }}
+                          >
+                            <Icons.Delete />
+                          </MyButton>
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div style={{ height: '1rem' }} />
-          </Fragment>;
-        })}
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
 
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setWorkHourIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`workHour:${id}:user`);
-        }}>{uiText("Arbeitszeit")}</MyButton>
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setWorkHourIds((ids) => [...ids, id]);
+              setAutoFocusFieldName(`workHour:${id}:user`);
+            }}
+          >
+            {uiText("Arbeitszeit")}
+          </MyButton>
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Wetter")}</h4>
-        <p className="light">{uiText("Wetterangaben helfen bei der späteren Dokumentation.")}</p>
-
-        <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
-
-        <div className="flex gap-2">
-          <MyForm.Input
-            className="flex-1"
-            name="temperatureC"
-            labelText={uiText("Temperatur (°C)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
+          <h4>{uiText("Wetter")}</h4>
+          <p className="light">
+            {uiText("Wetterangaben helfen bei der späteren Dokumentation.")}
+          </p>
 
           <MyForm.Input
-            className="flex-1"
-            name="precipitationMm"
-            labelText={uiText("Niederschlag (mm)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
+            name="weatherSummary"
+            labelText={uiText("Wetterbeschreibung")}
           />
 
-          <MyForm.Input
-            className="flex-1"
-            name="windKph"
-            labelText={uiText("Wind (km/h)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
-        </div>
+          <div className="flex gap-2">
+            <MyForm.Input
+              className="flex-1"
+              name="temperatureC"
+              labelText={uiText("Temperatur (°C)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-        <NotifyLoaded onLoad={() => {
-          context.field('day')?.setValue(new Date());
-        }} />
-      </>;
+            <MyForm.Input
+              className="flex-1"
+              name="precipitationMm"
+              labelText={uiText("Niederschlag (mm)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
+
+            <MyForm.Input
+              className="flex-1"
+              name="windKph"
+              labelText={uiText("Wind (km/h)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
+          </div>
+
+          <NotifyLoaded
+            onLoad={() => {
+              context.field("day")?.setValue(new Date());
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
       const values = context.getValues();
@@ -240,17 +326,17 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
         userId?: string | null;
         hours: number;
         costPerHour: number | null;
-        contractType: User['contractType'];
+        contractType: User["contractType"];
       }[] = [];
 
       const workHourIds = new Set<string>();
-      Object.keys(values).forEach(key => {
-        if (!key.startsWith('workHour:')) return;
-        const [, id] = key.split(':');
+      Object.keys(values).forEach((key) => {
+        if (!key.startsWith("workHour:")) return;
+        const [, id] = key.split(":");
         workHourIds.add(id);
       });
 
-      workHourIds.forEach(id => {
+      workHourIds.forEach((id) => {
         const user = values[`workHour:${id}:user`]?.at(0) ?? null;
 
         const hours = parseFloatCustom(values[`workHour:${id}:hours`]);
@@ -260,18 +346,22 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
           userId: user?.id ?? null,
           hours,
           costPerHour: user?.costPerHour ?? null,
-          contractType: user?.contractType ?? 'external',
+          contractType: user?.contractType ?? "external",
         });
       });
 
-      const [data, err] = await client.mutate('projects.dailyReports.create', {
+      const [data, err] = await client.mutate("projects.dailyReports.create", {
         projectId,
         day,
-        summary: `${values.summary ?? ''}`.trim() || null,
+        summary: `${values.summary ?? ""}`.trim() || null,
         weather: {
           summary: values.weatherSummary,
-          temperatureC: values.temperatureC ? parseFloatCustom(values.temperatureC) : null,
-          precipitationMm: values.precipitationMm ? parseFloatCustom(values.precipitationMm) : null,
+          temperatureC: values.temperatureC
+            ? parseFloatCustom(values.temperatureC)
+            : null,
+          precipitationMm: values.precipitationMm
+            ? parseFloatCustom(values.precipitationMm)
+            : null,
           windKph: values.windKph ? parseFloatCustom(values.windKph) : null,
         },
         workHours,
@@ -280,7 +370,8 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
       if (err) throw err;
       if (!data) return;
 
-      if (pathname !== `/projects/${projectId}`) navigate(`/projects/${projectId}`);
+      if (pathname !== `/projects/${projectId}`)
+        navigate(`/projects/${projectId}`);
       hide();
     },
     modalProps: () => ({
@@ -290,30 +381,45 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
   });
 }
 
-export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterface) {
+export function showCreateWeeklyDailyProjectReportModal(
+  modals: MyModalsInterface,
+) {
   modals.showForm({
     content: ({ context }) => {
-      const [workHourIdsByDay, setWorkHourIdsByDay] = useState<Record<number, string[]>>(() => {
-        return Object.fromEntries(WEEKDAY_NAMES.map((_, dayIndex) => [dayIndex, []])) as Record<number, string[]>;
+      const [workHourIdsByDay, setWorkHourIdsByDay] = useState<
+        Record<number, string[]>
+      >(() => {
+        return Object.fromEntries(
+          WEEKDAY_NAMES.map((_, dayIndex) => [dayIndex, []]),
+        ) as Record<number, string[]>;
       });
-      const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>(() => {
-        return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex);
-      });
+      const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>(
+        () => {
+          return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex);
+        },
+      );
       const [pendingCopiedValues, setPendingCopiedValues] = useState<{
         id: string;
         values: Record<string, unknown>;
       } | null>(null);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<
+        string | null
+      >(null);
       const createEntityAction = useCreateEntityAction(modals);
 
       const selectedDaySet = new Set(selectedDayIndexes);
 
       function copyWorkHoursFromPreviousDay(dayIndex: number) {
-        if (dayIndex <= 0 || (workHourIdsByDay[dayIndex]?.length ?? 0) > 0) return;
+        if (dayIndex <= 0 || (workHourIdsByDay[dayIndex]?.length ?? 0) > 0)
+          return;
 
         const previousDayIndex = dayIndex - 1;
         const previousWorkHourIds = workHourIdsByDay[previousDayIndex] ?? [];
-        if (!selectedDaySet.has(previousDayIndex) || !previousWorkHourIds.length) return;
+        if (
+          !selectedDaySet.has(previousDayIndex) ||
+          !previousWorkHourIds.length
+        )
+          return;
 
         const currentValues = context.getValues();
         const copiedValues: Record<string, unknown> = {};
@@ -322,8 +428,10 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           const sourcePrefix = `day:${previousDayIndex}:workHour:${sourceId}`;
           const targetPrefix = `day:${dayIndex}:workHour:${targetId}`;
 
-          copiedValues[`${targetPrefix}:user`] = currentValues[`${sourcePrefix}:user`] ?? [];
-          copiedValues[`${targetPrefix}:hours`] = currentValues[`${sourcePrefix}:hours`] ?? null;
+          copiedValues[`${targetPrefix}:user`] =
+            currentValues[`${sourcePrefix}:user`] ?? [];
+          copiedValues[`${targetPrefix}:hours`] =
+            currentValues[`${sourcePrefix}:hours`] ?? null;
 
           return targetId;
         });
@@ -335,214 +443,291 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         setPendingCopiedValues({ id: generateId(), values: copiedValues });
       }
 
-      return <>
-        <MyForm.MultiSelect
-          minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText={uiText("Projekt")}
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
-        <p className="light">{uiText("Wähle das Projekt, für das der Bauwochenbericht erstellt wird.")}</p>
+      return (
+        <>
+          <MyForm.MultiSelect
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            name="project"
+            labelText={uiText("Projekt")}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle das Projekt, für das der Bauwochenbericht erstellt wird.",
+            )}
+          </p>
 
-        <MyForm.DateInput
-          required
-          name="week"
-          labelText={uiText("Woche (beliebiger Tag)")}
-          rules={[date => {
-            if (!date) return null;
-            const today = new Date();
-            today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
-            return null;
-          }]}
-        />
-        <p className="light">{uiText("Wähle einen beliebigen Tag der Zielwoche; es wird automatisch auf Montag bis Sonntag erweitert.")}</p>
+          <MyForm.DateInput
+            required
+            name="week"
+            labelText={uiText("Woche (beliebiger Tag)")}
+            rules={[
+              (date) => {
+                if (!date) return null;
+                const today = new Date();
+                today.setHours(23, 59, 59, 999);
+                if (date.getTime() > today.getTime())
+                  return uiText("Datum darf nicht in der Zukunft liegen");
+                return null;
+              },
+            ]}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle einen beliebigen Tag der Zielwoche; es wird automatisch auf Montag bis Sonntag erweitert.",
+            )}
+          </p>
 
-        <h4>{uiText("Einzutragende Tage")}</h4>
+          <h4>{uiText("Einzutragende Tage")}</h4>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {WEEKDAY_NAMES.map((weekday, dayIndex) => (
-            <MyForm.Checkbox
-              key={weekday}
-              name={`enabledDay:${dayIndex}`}
-              labelText={weekday}
-              onValueChange={(checked) => {
-                setSelectedDayIndexes((indexes) => {
-                  if (checked) {
-                    if (indexes.includes(dayIndex)) return indexes;
-                    return [...indexes, dayIndex].sort((left, right) => left - right);
-                  }
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {WEEKDAY_NAMES.map((weekday, dayIndex) => (
+              <MyForm.Checkbox
+                key={weekday}
+                name={`enabledDay:${dayIndex}`}
+                labelText={weekday}
+                onValueChange={(checked) => {
+                  setSelectedDayIndexes((indexes) => {
+                    if (checked) {
+                      if (indexes.includes(dayIndex)) return indexes;
+                      return [...indexes, dayIndex].sort(
+                        (left, right) => left - right,
+                      );
+                    }
 
-                  return indexes.filter((index) => index !== dayIndex);
-                });
-              }}
-            />
-          ))}
-        </div>
+                    return indexes.filter((index) => index !== dayIndex);
+                  });
+                }}
+              />
+            ))}
+          </div>
 
-        <p className="light">{uiText("Die Woche beginnt am Montag. Nur ausgewählte und ausgefüllte Tage werden erstellt.")}</p>
+          <p className="light">
+            {uiText(
+              "Die Woche beginnt am Montag. Nur ausgewählte und ausgefüllte Tage werden erstellt.",
+            )}
+          </p>
 
-        {!selectedDayIndexes.length && (
-          <p className="light">{uiText("Bitte mindestens einen Tag auswählen.")}</p>
-        )}
+          {!selectedDayIndexes.length && (
+            <p className="light">
+              {uiText("Bitte mindestens einen Tag auswählen.")}
+            </p>
+          )}
 
-        <MyDivider />
+          <MyDivider />
 
-        <h3 style={{ marginBottom: '0.25rem' }}>{uiText("Tagesberichte")}</h3>
+          <h3 style={{ marginBottom: "0.25rem" }}>{uiText("Tagesberichte")}</h3>
 
-        {WEEKDAY_NAMES.map((weekday, dayIndex) => {
-          if (!selectedDaySet.has(dayIndex)) return null;
+          {WEEKDAY_NAMES.map((weekday, dayIndex) => {
+            if (!selectedDaySet.has(dayIndex)) return null;
 
-          const workHourIds = workHourIdsByDay[dayIndex] ?? [];
-          const previousDayHasWorkHours = dayIndex > 0
-            && selectedDaySet.has(dayIndex - 1)
-            && (workHourIdsByDay[dayIndex - 1]?.length ?? 0) > 0;
-          const canCopyPreviousDay = workHourIds.length === 0 && previousDayHasWorkHours;
+            const workHourIds = workHourIdsByDay[dayIndex] ?? [];
+            const previousDayHasWorkHours =
+              dayIndex > 0 &&
+              selectedDaySet.has(dayIndex - 1) &&
+              (workHourIdsByDay[dayIndex - 1]?.length ?? 0) > 0;
+            const canCopyPreviousDay =
+              workHourIds.length === 0 && previousDayHasWorkHours;
 
-          return <Fragment key={weekday}>
-            <h4 style={{ marginBottom: '0.25rem' }}>{weekday}</h4>
+            return (
+              <Fragment key={weekday}>
+                <h4 style={{ marginBottom: "0.25rem" }}>{weekday}</h4>
 
-            <MyForm.Input
-              textArea
-              name={`day:${dayIndex}:summary`}
-              labelText={uiText("Beschreibung der Arbeiten")}
-            />
+                <MyForm.Input
+                  textArea
+                  name={`day:${dayIndex}:summary`}
+                  labelText={uiText("Beschreibung der Arbeiten")}
+                />
 
-            <div className="flex items-center justify-between gap-2">
-              <h6 style={{ marginBottom: 0 }}>{uiText("Arbeitszeit")}</h6>
-              {canCopyPreviousDay && <MyButton
-                kind="ghost"
-                size="sm"
-                onClick={() => copyWorkHoursFromPreviousDay(dayIndex)}
-              >
-                {uiText("Vom Vortag kopieren", "Copy previous day")}
-              </MyButton>}
-            </div>
-
-            {workHourIds.map(id => {
-              return <Fragment key={id}>
-                <div className="flex flex-col gap-2">
-                  <MyForm.MultiSelect
-                    name={`day:${dayIndex}:workHour:${id}:user`}
-                    labelText={uiText("Mitarbeiter")}
-                    autoFocus={autoFocusFieldName === `day:${dayIndex}:workHour:${id}:user`}
-                    minSelectedItems={1} maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                      const [data, err] = await client.query('users.list', { search: query });
-                      if (err) throw err;
-                      return data ?? [];
-                    }}
-                    renderItem={({ item }) => userFullName(item)}
-                    renderTile={item => <SmallUserTile data={item} noLink />}
-                    createAction={createEntityAction.user}
-                  />
-
-                  <div className="flex gap-2 items-end">
-                    <div className="grow">
-                      <MyForm.Input
-                        required
-                        name={`day:${dayIndex}:workHour:${id}:hours`}
-                        labelText={uiText("Stunden")}
-                        type="number"
-                        rules={[
-                          MyForm.Input.rules.posnum,
-                          value => {
-                            if (!value.trim()) return null;
-                            const hours = parseFloatCustom(value);
-                            if (isNaN(hours)) return null;
-                            if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
-                            return null;
-                          },
-                        ]}
-                        suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
-                          setWorkHourIdsByDay(map => ({
-                            ...map,
-                            [dayIndex]: (map[dayIndex] ?? []).filter(_id => _id !== id),
-                          }));
-                        }}><Icons.Delete /></MyButton>}
-                      />
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between gap-2">
+                  <h6 style={{ marginBottom: 0 }}>{uiText("Arbeitszeit")}</h6>
+                  {canCopyPreviousDay && (
+                    <MyButton
+                      kind="ghost"
+                      size="sm"
+                      onClick={() => copyWorkHoursFromPreviousDay(dayIndex)}
+                    >
+                      {uiText("Vom Vortag kopieren", "Copy previous day")}
+                    </MyButton>
+                  )}
                 </div>
 
-                <div style={{ height: '0.75rem' }} />
-              </Fragment>;
-            })}
+                {workHourIds.map((id) => {
+                  return (
+                    <Fragment key={id}>
+                      <div className="flex flex-col gap-2">
+                        <MyForm.MultiSelect
+                          name={`day:${dayIndex}:workHour:${id}:user`}
+                          labelText={uiText("Mitarbeiter")}
+                          autoFocus={
+                            autoFocusFieldName ===
+                            `day:${dayIndex}:workHour:${id}:user`
+                          }
+                          minSelectedItems={1}
+                          maxSelectedItems={1}
+                          getOptions={async ({ query }) => {
+                            const [data, err] = await client.query(
+                              "users.list",
+                              { search: query },
+                            );
+                            if (err) throw err;
+                            return data ?? [];
+                          }}
+                          renderItem={({ item }) => userFullName(item)}
+                          renderTile={(item) => (
+                            <SmallUserTile data={item} noLink />
+                          )}
+                          createAction={createEntityAction.user}
+                        />
 
-            <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-              const id = generateId();
-              setWorkHourIdsByDay(map => ({
-                ...map,
-                [dayIndex]: [...(map[dayIndex] ?? []), id],
-              }));
-              setAutoFocusFieldName(`day:${dayIndex}:workHour:${id}:user`);
-            }}>{uiText("Arbeitszeit")}</MyButton>
+                        <div className="flex gap-2 items-end">
+                          <div className="grow">
+                            <MyForm.Input
+                              required
+                              name={`day:${dayIndex}:workHour:${id}:hours`}
+                              labelText={uiText("Stunden")}
+                              type="number"
+                              rules={[
+                                MyForm.Input.rules.posnum,
+                                (value) => {
+                                  if (!value.trim()) return null;
+                                  const hours = parseFloatCustom(value);
+                                  if (isNaN(hours)) return null;
+                                  if (hours < 0 || hours > 10)
+                                    return uiText(
+                                      "Stunden müssen zwischen 0 und 10 liegen",
+                                      "Hours must be between 0 and 10",
+                                    );
+                                  return null;
+                                },
+                              ]}
+                              suffix={
+                                <MyButton
+                                  kind="ghost"
+                                  size="sm"
+                                  className="ss-input-suffix-btn"
+                                  title={uiText("Arbeitszeit entfernen")}
+                                  aria-label={uiText("Arbeitszeit entfernen")}
+                                  onClick={() => {
+                                    setWorkHourIdsByDay((map) => ({
+                                      ...map,
+                                      [dayIndex]: (map[dayIndex] ?? []).filter(
+                                        (_id) => _id !== id,
+                                      ),
+                                    }));
+                                  }}
+                                >
+                                  <Icons.Delete />
+                                </MyButton>
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
 
-            <div style={{ height: '0.75rem' }} />
+                      <div style={{ height: "0.75rem" }} />
+                    </Fragment>
+                  );
+                })}
 
-            <h6>{uiText("Wetter")}</h6>
+                <MyButton
+                  kind="secondary"
+                  renderIcon={Icons.Plus}
+                  onClick={() => {
+                    const id = generateId();
+                    setWorkHourIdsByDay((map) => ({
+                      ...map,
+                      [dayIndex]: [...(map[dayIndex] ?? []), id],
+                    }));
+                    setAutoFocusFieldName(
+                      `day:${dayIndex}:workHour:${id}:user`,
+                    );
+                  }}
+                >
+                  {uiText("Arbeitszeit")}
+                </MyButton>
 
-            <MyForm.Input
-              name={`day:${dayIndex}:weatherSummary`}
-              labelText={uiText("Wetterbeschreibung")}
+                <div style={{ height: "0.75rem" }} />
+
+                <h6>{uiText("Wetter")}</h6>
+
+                <MyForm.Input
+                  name={`day:${dayIndex}:weatherSummary`}
+                  labelText={uiText("Wetterbeschreibung")}
+                />
+
+                <div className="flex gap-2">
+                  <MyForm.Input
+                    className="flex-1"
+                    name={`day:${dayIndex}:temperatureC`}
+                    labelText={uiText("Temperatur (°C)")}
+                    type="number"
+                    rules={[MyForm.Input.rules.num]}
+                  />
+
+                  <MyForm.Input
+                    className="flex-1"
+                    name={`day:${dayIndex}:precipitationMm`}
+                    labelText={uiText("Niederschlag (mm)")}
+                    type="number"
+                    rules={[MyForm.Input.rules.num]}
+                  />
+
+                  <MyForm.Input
+                    className="flex-1"
+                    name={`day:${dayIndex}:windKph`}
+                    labelText={uiText("Wind (km/h)")}
+                    type="number"
+                    rules={[MyForm.Input.rules.num]}
+                  />
+                </div>
+
+                {dayIndex < WEEKDAY_NAMES.length - 1 && (
+                  <>
+                    <div style={{ height: "1.25rem" }} />
+                    <MyDivider />
+                    <div style={{ height: "1.25rem" }} />
+                  </>
+                )}
+              </Fragment>
+            );
+          })}
+
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues(
+                Object.fromEntries(
+                  WEEKDAY_NAMES.map((_, dayIndex) => [
+                    `enabledDay:${dayIndex}`,
+                    true,
+                  ]),
+                ) as Record<string, boolean>,
+              );
+              context.field("week")?.setValue(new Date());
+            }}
+          />
+
+          {!!pendingCopiedValues && (
+            <NotifyLoaded
+              key={pendingCopiedValues.id}
+              onLoad={() => {
+                context.setValues(pendingCopiedValues.values);
+                setPendingCopiedValues(null);
+              }}
             />
-
-            <div className="flex gap-2">
-              <MyForm.Input
-                className="flex-1"
-                name={`day:${dayIndex}:temperatureC`}
-                labelText={uiText("Temperatur (°C)")}
-                type="number"
-                rules={[MyForm.Input.rules.num]}
-              />
-
-              <MyForm.Input
-                className="flex-1"
-                name={`day:${dayIndex}:precipitationMm`}
-                labelText={uiText("Niederschlag (mm)")}
-                type="number"
-                rules={[MyForm.Input.rules.num]}
-              />
-
-              <MyForm.Input
-                className="flex-1"
-                name={`day:${dayIndex}:windKph`}
-                labelText={uiText("Wind (km/h)")}
-                type="number"
-                rules={[MyForm.Input.rules.num]}
-              />
-            </div>
-
-            {dayIndex < WEEKDAY_NAMES.length - 1 && <>
-              <div style={{ height: '1.25rem' }} />
-              <MyDivider />
-              <div style={{ height: '1.25rem' }} />
-            </>}
-          </Fragment>
-        })}
-
-        <NotifyLoaded onLoad={() => {
-          context.setValues(Object.fromEntries(WEEKDAY_NAMES.map((_, dayIndex) => [
-            `enabledDay:${dayIndex}`,
-            true,
-          ])) as Record<string, boolean>);
-          context.field('week')?.setValue(new Date());
-        }} />
-
-        {!!pendingCopiedValues && <NotifyLoaded
-          key={pendingCopiedValues.id}
-          onLoad={() => {
-            context.setValues(pendingCopiedValues.values);
-            setPendingCopiedValues(null);
-          }}
-        />}
-      </>;
+          )}
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
       const values = context.getValues();
@@ -550,9 +735,9 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
       const projectId = values.project[0]?.id;
       if (!projectId) return;
 
-      const selectedDayIndexes = WEEKDAY_NAMES
-        .map((_, dayIndex) => dayIndex)
-        .filter((dayIndex) => !!values[`enabledDay:${dayIndex}`]);
+      const selectedDayIndexes = WEEKDAY_NAMES.map(
+        (_, dayIndex) => dayIndex,
+      ).filter((dayIndex) => !!values[`enabledDay:${dayIndex}`]);
       if (!selectedDayIndexes.length) {
         throw new Error(uiText("Bitte mindestens einen Tag auswählen"));
       }
@@ -567,10 +752,16 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 
       const parseNumber = (fieldName: string, dayLabel: string) => {
         const raw = values[fieldName];
-        if (`${raw ?? ''}`.trim() === '') return null;
+        if (`${raw ?? ""}`.trim() === "") return null;
 
         const parsed = parseFloatCustom(raw);
-        if (isNaN(parsed)) throw new Error(uiText(`${dayLabel}: Ungültiger Zahlenwert`, `${dayLabel}: Invalid number`));
+        if (isNaN(parsed))
+          throw new Error(
+            uiText(
+              `${dayLabel}: Ungültiger Zahlenwert`,
+              `${dayLabel}: Invalid number`,
+            ),
+          );
         return parsed;
       };
 
@@ -588,7 +779,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           userId?: string | null;
           hours: number;
           costPerHour: number | null;
-          contractType: User['contractType'];
+          contractType: User["contractType"];
         }[];
       }[] = [];
 
@@ -597,16 +788,23 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 
         const dayLabel = WEEKDAY_NAMES[dayIndex];
 
-        const summary = `${values[`day:${dayIndex}:summary`] ?? ''}`.trim();
-        const weatherSummary = `${values[`day:${dayIndex}:weatherSummary`] ?? ''}`.trim();
-        const temperatureC = parseNumber(`day:${dayIndex}:temperatureC`, dayLabel);
-        const precipitationMm = parseNumber(`day:${dayIndex}:precipitationMm`, dayLabel);
+        const summary = `${values[`day:${dayIndex}:summary`] ?? ""}`.trim();
+        const weatherSummary =
+          `${values[`day:${dayIndex}:weatherSummary`] ?? ""}`.trim();
+        const temperatureC = parseNumber(
+          `day:${dayIndex}:temperatureC`,
+          dayLabel,
+        );
+        const precipitationMm = parseNumber(
+          `day:${dayIndex}:precipitationMm`,
+          dayLabel,
+        );
         const windKph = parseNumber(`day:${dayIndex}:windKph`, dayLabel);
 
         const workHourIds = new Set<string>();
-        Object.keys(values).forEach(key => {
+        Object.keys(values).forEach((key) => {
           if (!key.startsWith(`day:${dayIndex}:workHour:`)) return;
-          const [, , , id] = key.split(':');
+          const [, , , id] = key.split(":");
           if (!id) return;
           workHourIds.add(id);
         });
@@ -615,15 +813,23 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           userId?: string | null;
           hours: number;
           costPerHour: number | null;
-          contractType: User['contractType'];
+          contractType: User["contractType"];
         }[] = [];
-        workHourIds.forEach(id => {
-          const user = values[`day:${dayIndex}:workHour:${id}:user`]?.at(0) ?? null;
+        workHourIds.forEach((id) => {
+          const user =
+            values[`day:${dayIndex}:workHour:${id}:user`]?.at(0) ?? null;
           if (!user?.id) throw new Error(`${dayLabel}: Mitarbeiter fehlt`);
 
-          const hours = parseFloatCustom(values[`day:${dayIndex}:workHour:${id}:hours`]);
+          const hours = parseFloatCustom(
+            values[`day:${dayIndex}:workHour:${id}:hours`],
+          );
           if (isNaN(hours) || hours < 0 || hours > 10) {
-            throw new Error(uiText(`${dayLabel}: Stunden müssen zwischen 0 und 10 liegen`, `${dayLabel}: Hours must be between 0 and 10`));
+            throw new Error(
+              uiText(
+                `${dayLabel}: Stunden müssen zwischen 0 und 10 liegen`,
+                `${dayLabel}: Hours must be between 0 and 10`,
+              ),
+            );
           }
 
           workHours.push({
@@ -642,11 +848,22 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           windKph !== null ||
           !!workHours.length;
         if (!hasInput) continue;
-        if (!workHours.length) throw new Error(uiText(`${dayLabel}: Mindestens eine Arbeitszeit erforderlich`, `${dayLabel}: At least one time entry is required`));
+        if (!workHours.length)
+          throw new Error(
+            uiText(
+              `${dayLabel}: Mindestens eine Arbeitszeit erforderlich`,
+              `${dayLabel}: At least one time entry is required`,
+            ),
+          );
 
         const day = dayInWeek(weekStart, dayIndex);
         if (day.getTime() > today.getTime()) {
-          throw new Error(uiText(`${dayLabel}: Datum darf nicht in der Zukunft liegen`, `${dayLabel}: Date cannot be in the future`));
+          throw new Error(
+            uiText(
+              `${dayLabel}: Datum darf nicht in der Zukunft liegen`,
+              `${dayLabel}: Date cannot be in the future`,
+            ),
+          );
         }
 
         const hasWeather =
@@ -671,32 +888,48 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         });
       }
 
-      if (!records.length) throw new Error(uiText("Bitte mindestens einen Tagesbericht ausfüllen"));
+      if (!records.length)
+        throw new Error(
+          uiText("Bitte mindestens einen Tagesbericht ausfüllen"),
+        );
 
       const weekEnd = dayInWeek(weekStart, WEEKDAY_NAMES.length - 1);
-      const [existingReports, existingReportsErr] = await client.query('projects.dailyReports.list', {
-        projectId,
-        from: dailyReportDayKey(weekStart),
-        to: dailyReportDayKey(weekEnd),
-      });
+      const [existingReports, existingReportsErr] = await client.query(
+        "projects.dailyReports.list",
+        {
+          projectId,
+          from: dailyReportDayKey(weekStart),
+          to: dailyReportDayKey(weekEnd),
+        },
+      );
       if (existingReportsErr) throw existingReportsErr;
 
-      const existingDays = new Set((existingReports ?? []).map(report => dailyReportDayKey(report.day)));
+      const existingDays = new Set(
+        (existingReports ?? []).map((report) => dailyReportDayKey(report.day)),
+      );
       const duplicateDays = records
-        .filter(record => existingDays.has(record.day))
-        .map(record => record.dayLabel);
+        .filter((record) => existingDays.has(record.day))
+        .map((record) => record.dayLabel);
       if (duplicateDays.length) {
-        throw new Error(uiText(`Es existieren bereits Bautagesberichte für: ${duplicateDays.join(', ')}`, `Daily reports already exist for: ${duplicateDays.join(', ')}`));
+        throw new Error(
+          uiText(
+            `Es existieren bereits Bautagesberichte für: ${duplicateDays.join(", ")}`,
+            `Daily reports already exist for: ${duplicateDays.join(", ")}`,
+          ),
+        );
       }
 
       for (const record of records) {
-        const [data, err] = await client.mutate('projects.dailyReports.create', {
-          projectId,
-          day: record.day,
-          summary: record.summary,
-          weather: record.weather,
-          workHours: record.workHours,
-        });
+        const [data, err] = await client.mutate(
+          "projects.dailyReports.create",
+          {
+            projectId,
+            day: record.day,
+            summary: record.summary,
+            weather: record.weather,
+            workHours: record.workHours,
+          },
+        );
 
         if (err) throw err;
         if (!data) return;
@@ -716,219 +949,99 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 export function showExportWeeklyDailyProjectReportsModal(
   modals: MyModalsInterface,
   project: Project,
-  format: WeeklyExportFormat = 'excel',
+  format: WeeklyExportFormat = "excel",
 ) {
   modals.showForm({
-    content: () => <>
-      <p className="light">{uiText("Es werden alle vorhandenen Bauwochenberichte des Projekts exportiert, nach Kalenderwoche aufsteigend.")}</p>
-      <p className="light">{uiText("PDF: eine Datei mit Seitenumbruch nach jeder Woche. Excel: eine Arbeitsmappe mit einem Tabellenblatt je Woche.")}</p>
-      <MyForm.Checkbox name="hideHours" labelText={uiText("Stunden ausblenden")} />
-    </>,
+    content: () => (
+      <>
+        <p className="light">
+          {uiText(
+            "Es werden alle vorhandenen Bauwochenberichte des Projekts exportiert, nach Kalenderwoche aufsteigend.",
+          )}
+        </p>
+        <p className="light">
+          {uiText(
+            "PDF: eine Datei mit Seitenumbruch nach jeder Woche. Excel: eine Arbeitsmappe mit einem Tabellenblatt je Woche.",
+          )}
+        </p>
+        <MyForm.Checkbox
+          name="hideHours"
+          labelText={uiText("Stunden ausblenden")}
+        />
+      </>
+    ),
     onSubmit: async ({ hide, context }) => {
       const hideHours = !!context.getValues().hideHours;
-      const [reports, reportsErr] = await client.query('projects.dailyReports.list', {
-        projectId: project.id,
-        limit: 10000,
-        offset: 0,
-      });
+      const [reports, reportsErr] = await client.query(
+        "projects.dailyReports.list",
+        {
+          projectId: project.id,
+          limit: 10000,
+          offset: 0,
+        },
+      );
       if (reportsErr) throw reportsErr;
 
-      const reportList = (reports ?? [])
-        .slice()
-        .sort((left, right) => {
-          const dayDiff = new Date(left.day).getTime() - new Date(right.day).getTime();
-          if (dayDiff !== 0) return dayDiff;
-          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
-        });
-
-      if (!reportList.length) {
-        throw new Error(uiText("Für dieses Projekt sind keine Bautagesberichte vorhanden"));
-      }
-
-      const userIds = [...new Set(
-        reportList
-          .flatMap((report) => report.workHours)
-          .map((entry) => entry.userId)
-          .filter(Boolean),
-      )] as string[];
-      const userEntries = await Promise.all(userIds.map(async (userId) => {
-        const [user] = await client.query('users.get', { id: userId }, { strategy: 'cache-first' });
-        return [userId, user ?? null] as const;
-      }));
-      const usersById = new Map(userEntries);
-
-      const weeksByStart = new Map<string, { weekStart: Date; reports: DailyProjectReport[] }>();
-      reportList.forEach((report) => {
-        const day = new Date(report.day);
-        day.setHours(0, 0, 0, 0);
-        const weekStart = startOfWeek(day);
-        const key = dailyReportDayKey(weekStart);
-        const existing = weeksByStart.get(key) ?? { weekStart, reports: [] };
-        existing.reports.push(report);
-        weeksByStart.set(key, existing);
+      const reportList = (reports ?? []).slice().sort((left, right) => {
+        const dayDiff =
+          new Date(left.day).getTime() - new Date(right.day).getTime();
+        if (dayDiff !== 0) return dayDiff;
+        return (
+          new Date(left.createdAt).getTime() -
+          new Date(right.createdAt).getTime()
+        );
       });
 
-      const weeklyExports = Array.from(weeksByStart.values())
-        .sort((left, right) => left.weekStart.getTime() - right.weekStart.getTime())
-        .map(({ weekStart, reports: weekReports }) => {
-          const orderedWeekReports = weekReports
-            .slice()
-            .sort((left, right) => new Date(left.day).getTime() - new Date(right.day).getTime());
+      if (!reportList.length) {
+        throw new Error(
+          uiText("Für dieses Projekt sind keine Bautagesberichte vorhanden"),
+        );
+      }
 
-          const weekEnd = dayInWeek(weekStart, WEEKDAY_NAMES.length - 1);
-          const weekNumber = isoWeekNumber(weekStart);
+      const userIds = [
+        ...new Set(
+          reportList
+            .flatMap((report) => report.workHours)
+            .map((entry) => entry.userId)
+            .filter(Boolean),
+        ),
+      ] as string[];
+      const userEntries = await Promise.all(
+        userIds.map(async (userId) => {
+          const [user] = await client.query(
+            "users.get",
+            { id: userId },
+            { strategy: "cache-first" },
+          );
+          return [userId, user ?? null] as const;
+        }),
+      );
+      const usersById = new Map(userEntries);
 
-          const hoursByUser = new Map<string, { name: string; values: number[] }>();
-          orderedWeekReports.forEach((report) => {
-            const day = new Date(report.day);
-            day.setHours(0, 0, 0, 0);
+      const weeklyExports = buildWeeklyReportExports({
+        reports: reportList,
+        project,
+        usersById,
+        hideHours,
+        locale: currentLocaleTag(),
+      });
 
-            const dayIndex = Math.floor((day.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
-            if (dayIndex < 0 || dayIndex >= WEEKDAY_NAMES.length) return;
+      const safeTitle = project.title.replace(/[^\w\-]+/g, "-");
 
-            report.workHours.forEach((entry) => {
-              const key = entry.userId ?? '__unknown__';
-              const user = entry.userId ? usersById.get(entry.userId) : null;
-              const name = user ? userFullName(user) : 'Unbekannt';
-
-              const current = hoursByUser.get(key) ?? {
-                name,
-                values: Array.from({ length: WEEKDAY_NAMES.length }, () => 0),
-              };
-
-              current.values[dayIndex] += Number(entry.hours ?? 0);
-              hoursByUser.set(key, current);
-            });
-          });
-
-          const workerRows = Array.from(hoursByUser.values())
-            .sort((left, right) => left.name.localeCompare(right.name, 'de'));
-
-          const reportSummaryByDay = new Map<number, string[]>();
-          orderedWeekReports.forEach((report) => {
-            const day = new Date(report.day);
-            day.setHours(0, 0, 0, 0);
-
-            const dayIndex = Math.floor((day.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
-            if (dayIndex < 0 || dayIndex >= WEEKDAY_NAMES.length) return;
-
-            const summaries = reportSummaryByDay.get(dayIndex) ?? [];
-            const summary = `${report.summary ?? ''}`.trim();
-            if (summary) summaries.push(summary);
-            reportSummaryByDay.set(dayIndex, summaries);
-          });
-          const enteredDayIndexes = Array.from(reportSummaryByDay.keys()).sort((left, right) => left - right);
-
-          const summaryRows: PdfTableSection['rows'] = [
-            [uiText('Projekt'), project.title],
-            ['Kalenderwoche', `KW ${weekNumber}`],
-            [uiText('Zeitraum'), uiText(`${formatDate(weekStart, 'long')} bis ${formatDate(weekEnd, 'long')}`, `${formatDate(weekStart, 'long')} to ${formatDate(weekEnd, 'long')}`)],
-            [uiText('Berichtstage', 'Reported days'), { value: `${orderedWeekReports.length}`, emphasis: hideHours ? 'primary' : 'secondary' }],
-          ];
-          if (project.address) {
-            summaryRows.splice(1, 0, ['Anschrift', formatAddress(project.address)]);
-          }
-
-          const totalHours = workerRows.reduce((sum, row) => {
-            return sum + row.values.reduce((acc, value) => acc + Number(value ?? 0), 0);
-          }, 0);
-          if (!hideHours) {
-            summaryRows.push([uiText('Gesamtstunden', 'Total hours'), { value: `${formatPdfNumber(totalHours)} h`, bold: true }]);
-          }
-
-          const sections: PdfTableSection[] = [
-            {
-              title: uiText("Zusammenfassung"),
-              columns: [uiText('Kennzahl'), uiText('Wert')],
-              rows: summaryRows,
-              presentation: 'summary',
-              withHeader: false,
-              align: ['left', 'left'],
-              columnWidths: ['1fr', '2fr'],
-            },
-          ];
-
-          if (workerRows.length > 0) {
-            const workerColumns = hideHours
-              ? ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES]
-              : ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES, 'Gesamt'];
-            const workerAlign = hideHours
-              ? ['left' as const, ...WEEKDAY_SHORT_NAMES.map(() => 'center' as const)]
-              : ['left' as const, ...WEEKDAY_SHORT_NAMES.map(() => 'right' as const), 'right' as const];
-            const workerColumnWidths = hideHours
-              ? ['2.6fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.65fr')]
-              : ['2.6fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.65fr'), '0.9fr'];
-
-            sections.push({
-              title: hideHours ? uiText("Anwesenheit je Mitarbeiter und Tag") : uiText("Arbeitszeit je Mitarbeiter und Tag"),
-              columns: workerColumns,
-              subtitle: hideHours
-                ? uiText("X bedeutet erfasste Anwesenheit; – bedeutet keine erfasste Arbeitszeit.", "X means recorded attendance; – means no recorded working time.")
-                : uiText("Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.", "All times in hours; – means no recorded working time."),
-              totalRows: hideHours ? undefined : [[uiText("Gesamt", "Total"), ...WEEKDAY_SHORT_NAMES.map((_, index) => formatPdfNumber(workerRows.reduce((sum, row) => sum + row.values[index], 0))), formatPdfNumber(totalHours)]],
-              rows: workerRows.map((row) => {
-                const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
-                if (hideHours) return [row.name, ...row.values.map(value => formatWeeklyPresence(value))];
-                return [row.name, ...row.values.map(value => value === 0 ? '-' : formatPdfNumber(value)), formatPdfNumber(total)];
-              }),
-              align: workerAlign,
-              columnWidths: workerColumnWidths,
-            });
-          }
-
-          const workDescriptionRows = enteredDayIndexes.map((dayIndex) => {
-            const weekday = WEEKDAY_NAMES[dayIndex]!;
-            const dayDate = dayInWeek(weekStart, dayIndex);
-            const summaries = (reportSummaryByDay.get(dayIndex) ?? []).join(' / ').trim();
-            return [`${weekday}, ${formatDate(dayDate, 'long')}`, summaries || uiText('Keine Beschreibung')];
-          });
-          if (workDescriptionRows.length > 0) {
-            sections.push({
-              title: uiText("Beschreibung der Arbeiten"),
-              presentation: 'entries',
-              columns: ['Tag', 'Inhalt'],
-              rows: workDescriptionRows,
-              withHeader: false,
-              align: ['left', 'left'],
-              columnWidths: ['1.25fr', '2.75fr'],
-            });
-          }
-
-          return {
-            weekStart,
-            weekEnd,
-            weekNumber,
-            reports: orderedWeekReports,
-            workerRows,
-            reportSummaryByDay,
-            enteredDayIndexes,
-            sections,
-          };
-        });
-
-      const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
-
-      if (format === 'pdf') {
-        const documents = weeklyExports.map((weeklyExport) => {
-          return {
-            title: uiText(`Bauwochenbericht · KW ${weeklyExport.weekNumber}`, `Weekly site report · Week ${weeklyExport.weekNumber}`),
-            reportLabel: project.title,
-            sections: weeklyExport.sections,
-            emptyMessage: uiText("Keine Daten zum Bauwochenbericht verfügbar."),
-          };
-        });
+      if (format === "pdf") {
+        const documents = weeklyExports.map((entry) => entry.document);
 
         const pdfData = await renderStructuredPdfBatch({ documents });
-        const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
+        const blob = new Blob([pdfData] as any, { type: "application/pdf" });
         deliverBlob(blob, `Bauwochenberichte-${safeTitle}.pdf`);
         hide();
         return;
       }
 
-      const ExcelJS = await import('exceljs');
-      const DECIMAL_ZERO_DASH_NUM_FMT = '#,##0.00;-#,##0.00;-';
+      const ExcelJS = await import("exceljs");
+      const DECIMAL_ZERO_DASH_NUM_FMT = "#,##0.00;-#,##0.00;-";
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'exceljs';
+      wb.creator = "exceljs";
       wb.created = new Date();
 
       const usedWorksheetNames = new Set<string>();
@@ -939,13 +1052,15 @@ export function showExportWeeklyDailyProjectReportsModal(
 
         const headerLines = [
           uiText(`Projekt: ${project.title}`, `Project: ${project.title}`),
-          project.address ? `Anschrift: ${formatAddress(project.address)}` : null,
+          project.address
+            ? `Anschrift: ${formatAddress(project.address)}`
+            : null,
           `Kalenderwoche: KW ${weeklyExport.weekNumber}`,
           `Wochenbeginn: ${formatDate(weeklyExport.weekStart)}`,
           `Wochenende: ${formatDate(weeklyExport.weekEnd)}`,
         ].filter(Boolean) as string[];
 
-        ws.getCell(1, 1).value = 'Bauwochenbericht';
+        ws.getCell(1, 1).value = "Bauwochenbericht";
         ws.getCell(1, 1).font = { size: 18, bold: true };
         ws.mergeCells(1, 1, 1, 8);
 
@@ -957,7 +1072,9 @@ export function showExportWeeklyDailyProjectReportsModal(
         });
 
         let cursor = 3 + headerLines.length;
-        ws.getCell(cursor, 1).value = hideHours ? uiText('Anwesenheit je Mitarbeiter und Tag') : uiText('Arbeitszeit je Mitarbeiter und Tag');
+        ws.getCell(cursor, 1).value = hideHours
+          ? uiText("Anwesenheit je Mitarbeiter und Tag")
+          : uiText("Arbeitszeit je Mitarbeiter und Tag");
         ws.getCell(cursor, 1).font = { bold: true, size: 14 };
 
         cursor += 2;
@@ -965,24 +1082,38 @@ export function showExportWeeklyDailyProjectReportsModal(
         if (weeklyExport.workerRows.length) {
           const tableRows = weeklyExport.workerRows.map((row) => [
             row.name,
-            ...row.values.map((value) => hideHours ? formatWeeklyPresence(value) : value),
+            ...row.values.map((value) =>
+              hideHours ? formatWeeklyPresence(value) : value,
+            ),
           ]);
 
           ws.addTable({
-            name: `WeeklyDailyReports_${dailyReportDayKey(weeklyExport.weekStart).replace(/[^0-9]/g, '')}_${weekIndex + 1}`,
+            name: `WeeklyDailyReports_${dailyReportDayKey(weeklyExport.weekStart).replace(/[^0-9]/g, "")}_${weekIndex + 1}`,
             ref: ws.getCell(cursor, 1).address,
             headerRow: true,
             totalsRow: false,
-            style: { theme: 'TableStyleLight1', showRowStripes: true },
-            columns: [{ name: 'Mitarbeiter' }, ...WEEKDAY_SHORT_NAMES.map((day) => ({ name: day }))],
+            style: { theme: "TableStyleLight1", showRowStripes: true },
+            columns: [
+              { name: "Mitarbeiter" },
+              ...WEEKDAY_SHORT_NAMES.map((day) => ({ name: day })),
+            ],
             rows: tableRows,
           });
 
           if (!hideHours) {
-            for (let rowIndex = 0; rowIndex < weeklyExport.workerRows.length; rowIndex++) {
+            for (
+              let rowIndex = 0;
+              rowIndex < weeklyExport.workerRows.length;
+              rowIndex++
+            ) {
               const row = cursor + 1 + rowIndex;
-              for (let dayIndex = 0; dayIndex < WEEKDAY_SHORT_NAMES.length; dayIndex++) {
-                ws.getCell(row, 2 + dayIndex).numFmt = DECIMAL_ZERO_DASH_NUM_FMT;
+              for (
+                let dayIndex = 0;
+                dayIndex < WEEKDAY_SHORT_NAMES.length;
+                dayIndex++
+              ) {
+                ws.getCell(row, 2 + dayIndex).numFmt =
+                  DECIMAL_ZERO_DASH_NUM_FMT;
               }
             }
           }
@@ -992,7 +1123,7 @@ export function showExportWeeklyDailyProjectReportsModal(
           cursor += 1;
         }
 
-        ws.getCell(cursor, 1).value = uiText('Beschreibung der Arbeiten');
+        ws.getCell(cursor, 1).value = uiText("Beschreibung der Arbeiten");
         ws.getCell(cursor, 1).font = { bold: true, size: 14 };
 
         cursor += 2;
@@ -1005,13 +1136,19 @@ export function showExportWeeklyDailyProjectReportsModal(
 
           cursor += 1;
 
-          const summary = (weeklyExport.reportSummaryByDay.get(dayIndex) ?? []).join('\n\n').trim() || uiText('Keine Beschreibung');
-          const summaryHeight = Math.max(2, Math.ceil((summary.length / 90) * 3));
+          const summary =
+            (weeklyExport.reportSummaryByDay.get(dayIndex) ?? [])
+              .join("\n\n")
+              .trim() || uiText("Keine Beschreibung");
+          const summaryHeight = Math.max(
+            2,
+            Math.ceil((summary.length / 90) * 3),
+          );
           const summaryEndRow = cursor + summaryHeight - 1;
 
           ws.mergeCells(cursor, 1, summaryEndRow, 8);
           ws.getCell(cursor, 1).value = summary;
-          ws.getCell(cursor, 1).alignment = { wrapText: true, vertical: 'top' };
+          ws.getCell(cursor, 1).alignment = { wrapText: true, vertical: "top" };
 
           for (let row = cursor; row <= summaryEndRow; row++) {
             ws.getRow(row).height = 16;
@@ -1034,198 +1171,279 @@ export function showExportWeeklyDailyProjectReportsModal(
 
       const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
       const blob = new Blob([bytes] as any, {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
 
-      await openExcelExport(modals, blob, uiText(`Bauwochenberichte-${safeTitle}.xlsx`, `Weekly-construction-reports-${safeTitle}.xlsx`));
+      await openExcelExport(
+        modals,
+        blob,
+        uiText(
+          `Bauwochenberichte-${safeTitle}.xlsx`,
+          `Weekly-construction-reports-${safeTitle}.xlsx`,
+        ),
+      );
       hide();
     },
     modalProps: () => ({
       noFullscreen: true,
-      modalHeading: format === 'pdf'
-        ? uiText("Bauwochenberichte als PDF exportieren")
-        : uiText("Bauwochenberichte als Excel exportieren"),
+      modalHeading:
+        format === "pdf"
+          ? uiText("Bauwochenberichte als PDF exportieren")
+          : uiText("Bauwochenberichte als Excel exportieren"),
       modalLabel: project.title,
       primaryButtonText: uiText("Exportieren"),
     }),
   });
 }
 
-export function showModifyDailyProjectReportModal(modals: MyModalsInterface, report: DailyProjectReport) {
-  const initialWorkHourValues: Record<string, {
-    user: User | null;
-    userId: string | null;
-    hours: number;
-    costPerHour: number | null;
-    contractType: User['contractType'];
-  }> = {};
+export function showModifyDailyProjectReportModal(
+  modals: MyModalsInterface,
+  report: DailyProjectReport,
+) {
+  const initialWorkHourValues: Record<
+    string,
+    {
+      user: User | null;
+      userId: string | null;
+      hours: number;
+      costPerHour: number | null;
+      contractType: User["contractType"];
+    }
+  > = {};
 
   modals.showForm({
     content: ({ context }) => {
       const [workHourIds, setWorkHourIds] = useState<string[]>([]);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<
+        string | null
+      >(null);
       const createEntityAction = useCreateEntityAction(modals);
 
-      return <>
-        <MyForm.MultiSelect
-          minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText={uiText("Projekt")}
-          disabled
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          renderTileDisallowUndo
-        />
-        <p className="light">{uiText("Projekt ist bei bestehenden Berichten fix. Der Tag kann geändert werden.")}</p>
+      return (
+        <>
+          <MyForm.MultiSelect
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            name="project"
+            labelText={uiText("Projekt")}
+            disabled
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            renderTileDisallowUndo
+          />
+          <p className="light">
+            {uiText(
+              "Projekt ist bei bestehenden Berichten fix. Der Tag kann geändert werden.",
+            )}
+          </p>
 
-        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
+          <MyForm.Input
+            textArea
+            name="summary"
+            labelText={uiText("Beschreibung der Arbeiten")}
+          />
 
-        <MyForm.DateInput required name="day" labelText={uiText("Tag")} />
+          <MyForm.DateInput required name="day" labelText={uiText("Tag")} />
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Arbeitszeit")}</h4>
-        <p className="light">{uiText("Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.")}</p>
+          <h4>{uiText("Arbeitszeit")}</h4>
+          <p className="light">
+            {uiText(
+              "Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.",
+            )}
+          </p>
 
-        {workHourIds.map(id => {
-          return <Fragment key={id}>
-            <div className="flex flex-col gap-2">
-              <MyForm.MultiSelect
-                name={`workHour:${id}:user`}
-                labelText={uiText("Mitarbeiter")}
-                autoFocus={autoFocusFieldName === `workHour:${id}:user`}
-                minSelectedItems={1} maxSelectedItems={1}
-                getOptions={async ({ query }) => {
-                  const [data, err] = await client.query('users.list', { search: query });
-                  if (err) throw err;
-                  return data ?? [];
-                }}
-                renderItem={({ item }) => userFullName(item)}
-                renderTile={item => <SmallUserTile data={item} noLink />}
-                createAction={createEntityAction.user}
-              />
-
-              <div className="flex gap-2 items-end">
-                <div className="grow">
-                  <MyForm.Input
-                    required
-                    name={`workHour:${id}:hours`}
-                    labelText={uiText("Stunden")}
-                    type="number"
-                    rules={[
-                      MyForm.Input.rules.posnum,
-                      value => {
-                        if (!value.trim()) return null;
-                        const hours = parseFloatCustom(value);
-                        if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
-                        return null;
-                      },
-                    ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
-                      setWorkHourIds(ids => ids.filter(_id => _id !== id));
-                    }}><Icons.Delete /></MyButton>}
+          {workHourIds.map((id) => {
+            return (
+              <Fragment key={id}>
+                <div className="flex flex-col gap-2">
+                  <MyForm.MultiSelect
+                    name={`workHour:${id}:user`}
+                    labelText={uiText("Mitarbeiter")}
+                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    minSelectedItems={1}
+                    maxSelectedItems={1}
+                    getOptions={async ({ query }) => {
+                      const [data, err] = await client.query("users.list", {
+                        search: query,
+                      });
+                      if (err) throw err;
+                      return data ?? [];
+                    }}
+                    renderItem={({ item }) => userFullName(item)}
+                    renderTile={(item) => <SmallUserTile data={item} noLink />}
+                    createAction={createEntityAction.user}
                   />
+
+                  <div className="flex gap-2 items-end">
+                    <div className="grow">
+                      <MyForm.Input
+                        required
+                        name={`workHour:${id}:hours`}
+                        labelText={uiText("Stunden")}
+                        type="number"
+                        rules={[
+                          MyForm.Input.rules.posnum,
+                          (value) => {
+                            if (!value.trim()) return null;
+                            const hours = parseFloatCustom(value);
+                            if (isNaN(hours)) return null;
+                            if (hours < 0 || hours > 10)
+                              return uiText(
+                                "Stunden müssen zwischen 0 und 10 liegen",
+                                "Hours must be between 0 and 10",
+                              );
+                            return null;
+                          },
+                        ]}
+                        suffix={
+                          <MyButton
+                            kind="ghost"
+                            size="sm"
+                            className="ss-input-suffix-btn"
+                            title={uiText("Arbeitszeit entfernen")}
+                            aria-label={uiText("Arbeitszeit entfernen")}
+                            onClick={() => {
+                              setWorkHourIds((ids) =>
+                                ids.filter((_id) => _id !== id),
+                              );
+                            }}
+                          >
+                            <Icons.Delete />
+                          </MyButton>
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <NotifyLoaded onLoad={() => {
-              const initial = initialWorkHourValues[id];
-              if (!initial) return;
+                <NotifyLoaded
+                  onLoad={() => {
+                    const initial = initialWorkHourValues[id];
+                    if (!initial) return;
 
-              const values: Record<string, any> = {
-                [`workHour:${id}:hours`]: initial.hours,
-              };
-              if (initial.user) values[`workHour:${id}:user`] = [initial.user];
-              context.setValues(values);
-            }} />
+                    const values: Record<string, any> = {
+                      [`workHour:${id}:hours`]: initial.hours,
+                    };
+                    if (initial.user)
+                      values[`workHour:${id}:user`] = [initial.user];
+                    context.setValues(values);
+                  }}
+                />
 
-            <div style={{ height: '1rem' }} />
-          </Fragment>;
-        })}
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
 
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setWorkHourIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`workHour:${id}:user`);
-        }}>{uiText("Arbeitszeit")}</MyButton>
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setWorkHourIds((ids) => [...ids, id]);
+              setAutoFocusFieldName(`workHour:${id}:user`);
+            }}
+          >
+            {uiText("Arbeitszeit")}
+          </MyButton>
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Wetter")}</h4>
-        <p className="light">{uiText("Wetterangaben helfen bei der späteren Dokumentation.")}</p>
-
-        <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
-
-        <div className="flex gap-2">
-          <MyForm.Input
-            className="flex-1"
-            name="temperatureC"
-            labelText={uiText("Temperatur (°C)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
-
-          <MyForm.Input
-            className="flex-1"
-            name="precipitationMm"
-            labelText={uiText("Niederschlag (mm)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
+          <h4>{uiText("Wetter")}</h4>
+          <p className="light">
+            {uiText("Wetterangaben helfen bei der späteren Dokumentation.")}
+          </p>
 
           <MyForm.Input
-            className="flex-1"
-            name="windKph"
-            labelText={uiText("Wind (km/h)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
+            name="weatherSummary"
+            labelText={uiText("Wetterbeschreibung")}
           />
-        </div>
 
-        <NotifyLoaded onLoad={async () => {
-          context.setValues({
-            summary: report.summary ?? '',
-            day: report.day,
-            weatherSummary: report.weather?.summary ?? '',
-            temperatureC: report.weather?.temperatureC ?? '',
-            precipitationMm: report.weather?.precipitationMm ?? '',
-            windKph: report.weather?.windKph ?? '',
-          });
+          <div className="flex gap-2">
+            <MyForm.Input
+              className="flex-1"
+              name="temperatureC"
+              labelText={uiText("Temperatur (°C)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-          if (report.projectId) {
-            const [project] = await client.query('projects.get', { id: report.projectId }, { strategy: 'cache-first' });
-            if (project) context.setValues({ project: [project] });
-          }
+            <MyForm.Input
+              className="flex-1"
+              name="precipitationMm"
+              labelText={uiText("Niederschlag (mm)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-          const ids: string[] = [];
-          for (const record of report.workHours ?? []) {
-            const id = generateId();
-            ids.push(id);
+            <MyForm.Input
+              className="flex-1"
+              name="windKph"
+              labelText={uiText("Wind (km/h)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
+          </div>
 
-            let user: any | null = null;
-            if (record.userId) {
-              const [data] = await client.query('users.get', { id: record.userId }, { strategy: 'cache-first' });
-              user = data ?? null;
-            }
+          <NotifyLoaded
+            onLoad={async () => {
+              context.setValues({
+                summary: report.summary ?? "",
+                day: report.day,
+                weatherSummary: report.weather?.summary ?? "",
+                temperatureC: report.weather?.temperatureC ?? "",
+                precipitationMm: report.weather?.precipitationMm ?? "",
+                windKph: report.weather?.windKph ?? "",
+              });
 
-            initialWorkHourValues[id] = {
-              user,
-              userId: record.userId ?? null,
-              hours: record.hours,
-              costPerHour: record.costPerHour ?? null,
-              contractType: ((record as any).contractType ?? 'external') as User['contractType'],
-            };
-          }
+              if (report.projectId) {
+                const [project] = await client.query(
+                  "projects.get",
+                  { id: report.projectId },
+                  { strategy: "cache-first" },
+                );
+                if (project) context.setValues({ project: [project] });
+              }
 
-          setWorkHourIds(ids);
-        }} />
-      </>;
+              const ids: string[] = [];
+              for (const record of report.workHours ?? []) {
+                const id = generateId();
+                ids.push(id);
+
+                let user: any | null = null;
+                if (record.userId) {
+                  const [data] = await client.query(
+                    "users.get",
+                    { id: record.userId },
+                    { strategy: "cache-first" },
+                  );
+                  user = data ?? null;
+                }
+
+                initialWorkHourValues[id] = {
+                  user,
+                  userId: record.userId ?? null,
+                  hours: record.hours,
+                  costPerHour: record.costPerHour ?? null,
+                  contractType: ((record as any).contractType ??
+                    "external") as User["contractType"],
+                };
+              }
+
+              setWorkHourIds(ids);
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
       const values = context.getValues();
@@ -1237,17 +1455,17 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
         userId?: string | null;
         hours: number;
         costPerHour: number | null;
-        contractType: User['contractType'];
+        contractType: User["contractType"];
       }[] = [];
 
       const workHourIds = new Set<string>();
-      Object.keys(values).forEach(key => {
-        if (!key.startsWith('workHour:')) return;
-        const [, id] = key.split(':');
+      Object.keys(values).forEach((key) => {
+        if (!key.startsWith("workHour:")) return;
+        const [, id] = key.split(":");
         workHourIds.add(id);
       });
 
-      workHourIds.forEach(id => {
+      workHourIds.forEach((id) => {
         const user = values[`workHour:${id}:user`]?.at(0);
         const initial = initialWorkHourValues[id];
 
@@ -1257,12 +1475,14 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
         const initialUserId = initial?.userId ?? null;
         const currentUserId = user?.id ?? null;
         const userChanged = initialUserId !== currentUserId;
-        const costPerHour = initial && !userChanged
-          ? initial.costPerHour ?? null
-          : user?.costPerHour ?? null;
-        const contractType = initial && !userChanged
-          ? initial.contractType
-          : user?.contractType ?? 'external';
+        const costPerHour =
+          initial && !userChanged
+            ? (initial.costPerHour ?? null)
+            : (user?.costPerHour ?? null);
+        const contractType =
+          initial && !userChanged
+            ? initial.contractType
+            : (user?.contractType ?? "external");
 
         workHours.push({
           userId: user?.id ?? null,
@@ -1272,16 +1492,20 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
         });
       });
 
-      const [data, err] = await client.mutate('projects.dailyReports.update', {
+      const [data, err] = await client.mutate("projects.dailyReports.update", {
         projectId: report.projectId,
         day: dailyReportDayKey(report.day),
         data: {
           day: nextDayKey,
-          summary: `${values.summary ?? ''}`.trim() || null,
+          summary: `${values.summary ?? ""}`.trim() || null,
           weather: {
             summary: values.weatherSummary,
-            temperatureC: values.temperatureC ? parseFloatCustom(values.temperatureC) : null,
-            precipitationMm: values.precipitationMm ? parseFloatCustom(values.precipitationMm) : null,
+            temperatureC: values.temperatureC
+              ? parseFloatCustom(values.temperatureC)
+              : null,
+            precipitationMm: values.precipitationMm
+              ? parseFloatCustom(values.precipitationMm)
+              : null,
             windKph: values.windKph ? parseFloatCustom(values.windKph) : null,
           },
           workHours,
@@ -1293,7 +1517,8 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
 
       const oldDetailPath = `/projects/${report.projectId}/dailyReports/${oldDayKey}`;
       const nextDetailPath = `/projects/${report.projectId}/dailyReports/${nextDayKey}`;
-      if (oldDetailPath !== nextDetailPath && pathname === oldDetailPath) navigate(nextDetailPath);
+      if (oldDetailPath !== nextDetailPath && pathname === oldDetailPath)
+        navigate(nextDetailPath);
       hide();
     },
     modalProps: () => ({
@@ -1304,18 +1529,30 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
   });
 }
 
-export function showDeleteDailyProjectReportModal(modals: MyModalsInterface, report: DailyProjectReport) {
+export function showDeleteDailyProjectReportModal(
+  modals: MyModalsInterface,
+  report: DailyProjectReport,
+) {
   modals.showForm({
-    content: () => <>
-      <p className="light">{uiText("Alle mit diesem Bautagesbericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
-      </p>
-      <MyForm.Checkbox
-        required name="_understood"
-        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
-      />
-    </>,
+    content: () => (
+      <>
+        <p className="light">
+          {uiText(
+            "Alle mit diesem Bautagesbericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.",
+          )}{" "}
+          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+        </p>
+        <MyForm.Checkbox
+          required
+          name="_understood"
+          labelText={uiText(
+            "Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.",
+          )}
+        />
+      </>
+    ),
     onSubmit: async ({ hide, pathname, navigate }) => {
-      const [data, err] = await client.mutate('projects.dailyReports.delete', {
+      const [data, err] = await client.mutate("projects.dailyReports.delete", {
         projectId: report.projectId,
         day: dailyReportDayKey(report.day),
       });

@@ -56,3 +56,7 @@ See [the vendored release](vendor/pdfjs/README.md) for license and update detail
 ## License
 
 This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
+
+## Gemeinsame Business-Logik
+
+Webapp und mobile App verwenden das lokale Paket `@sortsys/business-logic` aus `../sortsys-business-logic`. Typst-Syntax, Dokumentvorlagen, Kalender-, Mengen-, Namens- und Signaturregeln werden dort gemeinsam gepflegt. Die App lädt den gepinnten WASM-Compiler und die gemeinsamen Schriftdateien als lokale Vite-Assets. API-Zugriffe, Browseroberfläche und PDF-Freigabe bleiben Webadapter. Paketgrenzen, Eingabeverträge und Paritätsprüfungen sind in `../sortsys-business-logic/README.md` beschrieben.

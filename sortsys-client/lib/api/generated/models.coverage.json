@@ -1,0 +1,3312 @@
+{
+  "contractSha256": "0692911e76150f9184145ee8fa04b71267d43c6098a5d7ad38da598051ddda27",
+  "objectShapes": 312,
+  "definitions": [
+    {
+      "name": "ActivityResourceType",
+      "kind": "enum"
+    },
+    {
+      "name": "ApplyPriceImportRow",
+      "kind": "object"
+    },
+    {
+      "name": "AssistantLocale",
+      "kind": "enum"
+    },
+    {
+      "name": "ChangeProposal",
+      "kind": "object"
+    },
+    {
+      "name": "ChatMessage",
+      "kind": "object"
+    },
+    {
+      "name": "ChatSummary",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNoteScanResult",
+      "kind": "object"
+    },
+    {
+      "name": "JsonValue",
+      "kind": "union"
+    },
+    {
+      "name": "LlmUseCase",
+      "kind": "enum"
+    },
+    {
+      "name": "ParseScanInput",
+      "kind": "object"
+    },
+    {
+      "name": "PriceListScanResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProposalDecision",
+      "kind": "enum"
+    },
+    {
+      "name": "ProposalExecutionResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProviderName",
+      "kind": "enum"
+    },
+    {
+      "name": "ScanDocumentType",
+      "kind": "enum"
+    },
+    {
+      "name": "ScanJobState",
+      "kind": "enum"
+    },
+    {
+      "name": "ScannedPriceRow",
+      "kind": "object"
+    },
+    {
+      "name": "ScannedProductRecord",
+      "kind": "object"
+    },
+    {
+      "name": "ScannedSpecialRecord",
+      "kind": "object"
+    },
+    {
+      "name": "SessionInfo",
+      "kind": "object"
+    },
+    {
+      "name": "Project",
+      "kind": "object"
+    },
+    {
+      "name": "Product",
+      "kind": "object"
+    },
+    {
+      "name": "Tool",
+      "kind": "object"
+    },
+    {
+      "name": "User",
+      "kind": "object"
+    },
+    {
+      "name": "Customer",
+      "kind": "object"
+    },
+    {
+      "name": "Contact",
+      "kind": "object"
+    },
+    {
+      "name": "ProductVendor",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNote",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReport",
+      "kind": "object"
+    },
+    {
+      "name": "Deployment",
+      "kind": "object"
+    },
+    {
+      "name": "ResourceActivity",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsDownloadUrlRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsDownloadUrlResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminErrorsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminErrorsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmProvidersListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmProvidersModelsRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmProvidersModelsResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmScanSettingsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmTenantsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmUsageResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmUseCasesListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AuthCheckResult",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ContactsCustomersListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ContactsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "CustomersContactsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesCostsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesGetRequest",
+      "kind": "union"
+    },
+    {
+      "name": "DeliveryNotesListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanStatusRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanStatusResult",
+      "kind": "object"
+    },
+    {
+      "name": "LlmChatsGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "LlmChatsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "LlmStatusResult",
+      "kind": "object"
+    },
+    {
+      "name": "OfficeExportsOfficeConfigRequest",
+      "kind": "object"
+    },
+    {
+      "name": "OfficeExportsOfficeConfigResult",
+      "kind": "object"
+    },
+    {
+      "name": "PersonalizationActionsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "PersonalizationActionsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "PersonalizationActivityListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "PersonalizationVisitsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsPriceRecordsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsPriceRecordsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsContactsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsContactsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsFilterOptionsResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsOverviewRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsOverviewResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDeploymentsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesDrawioConfigRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesDrawioConfigResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesSearchRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesSearchResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUnavailabilityListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUnavailabilityListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsCostsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "RemarksListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "RemarksListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsCostsGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsGlobalGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsGlobalGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantLogoGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantNameGetResult",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsInventoriesListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsInventoriesListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsInventoriesOverviewRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsInventoriesOverviewResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackingsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackingsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackingsTransfersListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackingsTransfersListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "UsersListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersRolesGetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersRolesGetResultItem",
+      "kind": "enum"
+    },
+    {
+      "name": "UsersSupervisorsGetDefaultResult",
+      "kind": "object"
+    },
+    {
+      "name": "UsersVacationsListRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersVacationsListResultItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsCreateNowRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsRestoreRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsRestoreResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesBackupsUploadRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesCreateResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesForkFromBackupRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesForkFromBackupResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsDeleteRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesRotateCredentialsRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesRotateCredentialsResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesUpdateRetentionRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesUpdateRetentionResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmProvidersUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmScanSettingsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmTenantsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLlmUseCasesUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLoginRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminLoginResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsCreateResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersCreateResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersResetPasswordRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersResetPasswordResult",
+      "kind": "object"
+    },
+    {
+      "name": "AdminUsersSetAdminRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AuthLoginRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginOptionsRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginOptionsResult",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterRequest",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterOptionsResult",
+      "kind": "object"
+    },
+    {
+      "name": "AuthSetPasswordRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ContactsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ContactsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "CustomersContactsAddRequest",
+      "kind": "object"
+    },
+    {
+      "name": "CustomersContactsSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "CustomersCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "CustomersUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanCompleteResult",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanCreateUploadRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanCreateUploadResult",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesScanStartRequest",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ErrorReportsReportRequest",
+      "kind": "object"
+    },
+    {
+      "name": "LlmChatsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "LlmMessagesSendRequest",
+      "kind": "object"
+    },
+    {
+      "name": "LlmProposalsReviewRequest",
+      "kind": "object"
+    },
+    {
+      "name": "OfficeExportsCreateUploadResult",
+      "kind": "object"
+    },
+    {
+      "name": "PersonalizationActionsAppendRequest",
+      "kind": "object"
+    },
+    {
+      "name": "PersonalizationVisitsAppendRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsCategoriesSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsCategoriesTagRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsPriceImportsApplyRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsPriceImportsApplyResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsPriceRecordsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsPriceRecordsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsVendorsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsVendorsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsContactsAddRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsContactsSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsEntriesCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsEntriesDeleteRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsEntriesUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsPhotosAddRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDeploymentsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDeploymentsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesCompleteUploadRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesCreateUploadRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesCreateUploadResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesDeleteRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesDrawioSaveRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesDrawioSaveResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersCreateResult",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersDeleteRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersMoveRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesFoldersRenameRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesMoveRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesRenameRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUnavailabilityCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUnavailabilityUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "RemarksCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "RemarksUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsCostsDeleteRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsCostsSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsCostsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsLanguageSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantLogoCompleteUploadRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantLogoCreateUploadRequest",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantLogoCreateUploadResult",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantNameSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsInventoriesCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackResult",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackingsTransfersAcceptRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsTrackingsTransfersRequestRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersRolesSetRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersUpdateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersVacationsCreateRequest",
+      "kind": "object"
+    },
+    {
+      "name": "UsersVacationsCreateResult",
+      "kind": "object"
+    },
+    {
+      "name": "UsersVacationsDenyRequest",
+      "kind": "object"
+    },
+    {
+      "name": "ApplyPriceImportRowOtherUnits",
+      "kind": "record"
+    },
+    {
+      "name": "ChangeProposalStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "ChatMessageRole",
+      "kind": "enum"
+    },
+    {
+      "name": "JsonValueVariant5",
+      "kind": "record"
+    },
+    {
+      "name": "SessionInfoUser",
+      "kind": "object"
+    },
+    {
+      "name": "SessionInfoSession",
+      "kind": "object"
+    },
+    {
+      "name": "SessionInfoTenant",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectAddress",
+      "kind": "object"
+    },
+    {
+      "name": "ToolStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "UserContractType",
+      "kind": "enum"
+    },
+    {
+      "name": "CustomerPhoneNumbersItem",
+      "kind": "object"
+    },
+    {
+      "name": "CustomerEmailAddressesItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNoteRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNoteSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportProductsItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportWorkHoursItem",
+      "kind": "object"
+    },
+    {
+      "name": "ResourceActivityAction",
+      "kind": "enum"
+    },
+    {
+      "name": "AdminDatabasesBackupsListResultItemKind",
+      "kind": "enum"
+    },
+    {
+      "name": "AdminDatabasesBackupsListResultItemState",
+      "kind": "enum"
+    },
+    {
+      "name": "AdminDatabasesHostsListResultItemConnectionDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsListResultItemBackupDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminErrorsListResultItemLevel",
+      "kind": "enum"
+    },
+    {
+      "name": "AdminErrorsListResultItemMetadata",
+      "kind": "record"
+    },
+    {
+      "name": "AdminTenantsGetResultConnectionDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResultContactDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResultOptions",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesCostsGetResultRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesCostsGetResultSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesGetRequestVariant2",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsFilterOptionsResultProjectLeadersItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultOffersItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultDeliveryNotesItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultProductsItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultWorkHoursItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultToolTrackingsItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultCommonCosts",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultTotalCosts",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsOverviewRequestStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "ProjectsDailyReportsGetResultWeather",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsGetResultWorkHoursItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsGetResultPhotosItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsFilesListResultItemKind",
+      "kind": "enum"
+    },
+    {
+      "name": "ProjectsFilesListResultItemStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "ProjectsFilesListResultItemThumbnailStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "RegieReportsCostsGetResultSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsCostsGetResultWorkHoursItem",
+      "kind": "object"
+    },
+    {
+      "name": "RemarksListRequestResourceType",
+      "kind": "enum"
+    },
+    {
+      "name": "SettingsCostsGetResultFgk",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsCostsGetResultHistoryItem",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsTenantLogoGetResultStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "ToolsListRequestStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "ToolsTrackingsTransfersListRequestStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "UsersVacationsListResultItemType",
+      "kind": "enum"
+    },
+    {
+      "name": "UsersVacationsListResultItemStatus",
+      "kind": "enum"
+    },
+    {
+      "name": "UsersVacationsListResultItemVacationUsageItem",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsCreateRequestConnectionDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsCreateRequestBackupDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesHostsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "AdminDatabasesUpdateRetentionRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsCreateRequestConnectionDetails",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginRequestCredential",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginOptionsResultOptions",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterRequestCredential",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterOptionsResultOptions",
+      "kind": "object"
+    },
+    {
+      "name": "ClientScriptsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "CustomersUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesCreateRequestRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesCreateRequestSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "DeliveryNotesUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "OfficeExportsCreateUploadResultUploadHeaders",
+      "kind": "record"
+    },
+    {
+      "name": "ProductsPriceRecordsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProductsVendorsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsContactsSetRequestContactsItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsEntriesCreateRequestType",
+      "kind": "enum"
+    },
+    {
+      "name": "ProjectsCostsEntriesUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsCreateRequestWorkHoursItem",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDailyReportsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsDeploymentsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUnavailabilityUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsCreateRequestProductsItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsCreateRequestSpecialRecordsItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsCreateRequestWorkHoursItem",
+      "kind": "object"
+    },
+    {
+      "name": "RegieReportsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "SettingsCostsDeleteRequestType",
+      "kind": "enum"
+    },
+    {
+      "name": "ToolsTrackRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "ToolsUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "UsersRolesSetRequestAssignments",
+      "kind": "object"
+    },
+    {
+      "name": "UsersUpdateRequestData",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResultConnectionDetailsObjectStorage",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResultContactDetailsAddress",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResultOptionsSso",
+      "kind": "object"
+    },
+    {
+      "name": "ProjectsCostsGetResultCommonCostsFgk",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsCreateRequestConnectionDetSchemaDae779de",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginRequestCredentialResponse",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysLoginOptionsResultOptionsASchema257eefa0",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterRequestCredentialResponse",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterOptionsResultOptionsUser",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterOptionsResultOptioSchemaE7bb8e77",
+      "kind": "object"
+    },
+    {
+      "name": "AuthPasskeysRegisterOptionsResultOptioSchema7eff83d4",
+      "kind": "object"
+    },
+    {
+      "name": "AdminTenantsGetResultOptionsSsoMsEntraId",
+      "kind": "object"
+    }
+  ],
+  "procedures": [
+    {
+      "name": "admin.databases.backups.downloadUrl",
+      "kind": "query",
+      "input": "AdminDatabasesBackupsDownloadUrlInput",
+      "output": "AdminDatabasesBackupsDownloadUrlOutput",
+      "inputType": "AdminDatabasesBackupsDownloadUrlRequest",
+      "outputType": "AdminDatabasesBackupsDownloadUrlResult"
+    },
+    {
+      "name": "admin.databases.backups.list",
+      "kind": "query",
+      "input": "AdminDatabasesBackupsListInput",
+      "output": "AdminDatabasesBackupsListOutput",
+      "inputType": "AdminDatabasesBackupsListRequest",
+      "outputType": "List<AdminDatabasesBackupsListResultItem>"
+    },
+    {
+      "name": "admin.databases.hosts.list",
+      "kind": "query",
+      "input": "AdminDatabasesHostsListInput",
+      "output": "AdminDatabasesHostsListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminDatabasesHostsListResultItem>"
+    },
+    {
+      "name": "admin.databases.list",
+      "kind": "query",
+      "input": "AdminDatabasesListInput",
+      "output": "AdminDatabasesListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminDatabasesListResultItem>"
+    },
+    {
+      "name": "admin.errors.list",
+      "kind": "query",
+      "input": "AdminErrorsListInput",
+      "output": "AdminErrorsListOutput",
+      "inputType": "RpcOptional<AdminErrorsListRequest>",
+      "outputType": "List<AdminErrorsListResultItem>"
+    },
+    {
+      "name": "admin.llm.providers.list",
+      "kind": "query",
+      "input": "AdminLlmProvidersListInput",
+      "output": "AdminLlmProvidersListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminLlmProvidersListResultItem>"
+    },
+    {
+      "name": "admin.llm.providers.models",
+      "kind": "query",
+      "input": "AdminLlmProvidersModelsInput",
+      "output": "AdminLlmProvidersModelsOutput",
+      "inputType": "AdminLlmProvidersModelsRequest",
+      "outputType": "List<AdminLlmProvidersModelsResultItem>"
+    },
+    {
+      "name": "admin.llm.scanSettings.get",
+      "kind": "query",
+      "input": "AdminLlmScanSettingsGetInput",
+      "output": "AdminLlmScanSettingsGetOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "AdminLlmScanSettingsGetResult?"
+    },
+    {
+      "name": "admin.llm.settings.get",
+      "kind": "query",
+      "input": "AdminLlmSettingsGetInput",
+      "output": "AdminLlmSettingsGetOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "AdminLlmScanSettingsGetResult?"
+    },
+    {
+      "name": "admin.llm.tenants.list",
+      "kind": "query",
+      "input": "AdminLlmTenantsListInput",
+      "output": "AdminLlmTenantsListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminLlmTenantsListResultItem>"
+    },
+    {
+      "name": "admin.llm.usage",
+      "kind": "query",
+      "input": "AdminLlmUsageInput",
+      "output": "AdminLlmUsageOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminLlmUsageResultItem>"
+    },
+    {
+      "name": "admin.llm.useCases.list",
+      "kind": "query",
+      "input": "AdminLlmUseCasesListInput",
+      "output": "AdminLlmUseCasesListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminLlmUseCasesListResultItem>"
+    },
+    {
+      "name": "admin.tenants.get",
+      "kind": "query",
+      "input": "AdminTenantsGetInput",
+      "output": "AdminTenantsGetOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AdminTenantsGetResult"
+    },
+    {
+      "name": "admin.tenants.list",
+      "kind": "query",
+      "input": "AdminTenantsListInput",
+      "output": "AdminTenantsListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminTenantsGetResult>"
+    },
+    {
+      "name": "admin.users.list",
+      "kind": "query",
+      "input": "AdminUsersListInput",
+      "output": "AdminUsersListOutput",
+      "inputType": "AdminUsersListRequest",
+      "outputType": "List<AdminUsersListResultItem>"
+    },
+    {
+      "name": "auth.check",
+      "kind": "query",
+      "input": "AuthCheckInput",
+      "output": "AuthCheckOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "auth.passkeys.list",
+      "kind": "query",
+      "input": "AuthPasskeysListInput",
+      "output": "AuthPasskeysListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AuthPasskeysListResultItem>"
+    },
+    {
+      "name": "auth.sessionInfo",
+      "kind": "query",
+      "input": "AuthSessionInfoInput",
+      "output": "AuthSessionInfoOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "SessionInfo"
+    },
+    {
+      "name": "clientScripts.get",
+      "kind": "query",
+      "input": "ClientScriptsGetInput",
+      "output": "ClientScriptsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "ClientScriptsGetResult?"
+    },
+    {
+      "name": "clientScripts.list",
+      "kind": "query",
+      "input": "ClientScriptsListInput",
+      "output": "ClientScriptsListOutput",
+      "inputType": "RpcOptional<ClientScriptsListRequest>",
+      "outputType": "List<ClientScriptsListResultItem>"
+    },
+    {
+      "name": "contacts.customers.list",
+      "kind": "query",
+      "input": "ContactsCustomersListInput",
+      "output": "ContactsCustomersListOutput",
+      "inputType": "ContactsCustomersListRequest",
+      "outputType": "List<Customer>"
+    },
+    {
+      "name": "contacts.get",
+      "kind": "query",
+      "input": "ContactsGetInput",
+      "output": "ContactsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "Contact"
+    },
+    {
+      "name": "contacts.list",
+      "kind": "query",
+      "input": "ContactsListInput",
+      "output": "ContactsListOutput",
+      "inputType": "ContactsListRequest",
+      "outputType": "List<Contact>"
+    },
+    {
+      "name": "contacts.projects.list",
+      "kind": "query",
+      "input": "ContactsProjectsListInput",
+      "output": "ContactsProjectsListOutput",
+      "inputType": "ContactsCustomersListRequest",
+      "outputType": "List<Project>"
+    },
+    {
+      "name": "customers.contacts.list",
+      "kind": "query",
+      "input": "CustomersContactsListInput",
+      "output": "CustomersContactsListOutput",
+      "inputType": "CustomersContactsListRequest",
+      "outputType": "List<Contact>"
+    },
+    {
+      "name": "customers.get",
+      "kind": "query",
+      "input": "CustomersGetInput",
+      "output": "CustomersGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "Customer"
+    },
+    {
+      "name": "customers.list",
+      "kind": "query",
+      "input": "CustomersListInput",
+      "output": "CustomersListOutput",
+      "inputType": "ContactsListRequest",
+      "outputType": "List<Customer>"
+    },
+    {
+      "name": "deliveryNotes.costs.get",
+      "kind": "query",
+      "input": "DeliveryNotesCostsGetInput",
+      "output": "DeliveryNotesCostsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "DeliveryNotesCostsGetResult"
+    },
+    {
+      "name": "deliveryNotes.get",
+      "kind": "query",
+      "input": "DeliveryNotesGetInput",
+      "output": "DeliveryNotesGetOutput",
+      "inputType": "DeliveryNotesGetRequest",
+      "outputType": "DeliveryNote"
+    },
+    {
+      "name": "deliveryNotes.list",
+      "kind": "query",
+      "input": "DeliveryNotesListInput",
+      "output": "DeliveryNotesListOutput",
+      "inputType": "DeliveryNotesListRequest",
+      "outputType": "List<DeliveryNote>"
+    },
+    {
+      "name": "deliveryNotes.scan.list",
+      "kind": "query",
+      "input": "DeliveryNotesScanListInput",
+      "output": "DeliveryNotesScanListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<DeliveryNotesScanListResultItem>"
+    },
+    {
+      "name": "deliveryNotes.scan.status",
+      "kind": "query",
+      "input": "DeliveryNotesScanStatusInput",
+      "output": "DeliveryNotesScanStatusOutput",
+      "inputType": "DeliveryNotesScanStatusRequest",
+      "outputType": "DeliveryNotesScanStatusResult"
+    },
+    {
+      "name": "llm.admin.usage",
+      "kind": "query",
+      "input": "LlmAdminUsageInput",
+      "output": "LlmAdminUsageOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<AdminLlmUsageResultItem>"
+    },
+    {
+      "name": "llm.chats.get",
+      "kind": "query",
+      "input": "LlmChatsGetInput",
+      "output": "LlmChatsGetOutput",
+      "inputType": "LlmChatsGetRequest",
+      "outputType": "LlmChatsGetResult"
+    },
+    {
+      "name": "llm.chats.list",
+      "kind": "query",
+      "input": "LlmChatsListInput",
+      "output": "LlmChatsListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<ChatSummary>"
+    },
+    {
+      "name": "llm.status",
+      "kind": "query",
+      "input": "LlmStatusInput",
+      "output": "LlmStatusOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "LlmStatusResult"
+    },
+    {
+      "name": "office.exports.officeConfig",
+      "kind": "query",
+      "input": "OfficeExportsOfficeConfigInput",
+      "output": "OfficeExportsOfficeConfigOutput",
+      "inputType": "OfficeExportsOfficeConfigRequest",
+      "outputType": "OfficeExportsOfficeConfigResult"
+    },
+    {
+      "name": "personalization.actions.list",
+      "kind": "query",
+      "input": "PersonalizationActionsListInput",
+      "output": "PersonalizationActionsListOutput",
+      "inputType": "RpcOptional<PersonalizationActionsListRequest>",
+      "outputType": "List<PersonalizationActionsListResultItem>"
+    },
+    {
+      "name": "personalization.activity.list",
+      "kind": "query",
+      "input": "PersonalizationActivityListInput",
+      "output": "PersonalizationActivityListOutput",
+      "inputType": "RpcOptional<PersonalizationActivityListRequest>",
+      "outputType": "List<ResourceActivity>"
+    },
+    {
+      "name": "personalization.visits.list",
+      "kind": "query",
+      "input": "PersonalizationVisitsListInput",
+      "output": "PersonalizationVisitsListOutput",
+      "inputType": "RpcOptional<PersonalizationActionsListRequest>",
+      "outputType": "List<PersonalizationVisitsListResultItem>"
+    },
+    {
+      "name": "ping",
+      "kind": "query",
+      "input": "PingInput",
+      "output": "PingOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "String"
+    },
+    {
+      "name": "products.brands.list",
+      "kind": "query",
+      "input": "ProductsBrandsListInput",
+      "output": "ProductsBrandsListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<String>"
+    },
+    {
+      "name": "products.categories.list",
+      "kind": "query",
+      "input": "ProductsCategoriesListInput",
+      "output": "ProductsCategoriesListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<String>"
+    },
+    {
+      "name": "products.get",
+      "kind": "query",
+      "input": "ProductsGetInput",
+      "output": "ProductsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "Product"
+    },
+    {
+      "name": "products.list",
+      "kind": "query",
+      "input": "ProductsListInput",
+      "output": "ProductsListOutput",
+      "inputType": "ProductsListRequest",
+      "outputType": "List<Product>"
+    },
+    {
+      "name": "products.priceRecords.list",
+      "kind": "query",
+      "input": "ProductsPriceRecordsListInput",
+      "output": "ProductsPriceRecordsListOutput",
+      "inputType": "ProductsPriceRecordsListRequest",
+      "outputType": "List<ProductsPriceRecordsListResultItem>"
+    },
+    {
+      "name": "products.suggestNextCustomId",
+      "kind": "query",
+      "input": "ProductsSuggestNextCustomIdInput",
+      "output": "ProductsSuggestNextCustomIdOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "num"
+    },
+    {
+      "name": "products.units.list",
+      "kind": "query",
+      "input": "ProductsUnitsListInput",
+      "output": "ProductsUnitsListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<String>"
+    },
+    {
+      "name": "products.vendors.get",
+      "kind": "query",
+      "input": "ProductsVendorsGetInput",
+      "output": "ProductsVendorsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "ProductVendor"
+    },
+    {
+      "name": "products.vendors.list",
+      "kind": "query",
+      "input": "ProductsVendorsListInput",
+      "output": "ProductsVendorsListOutput",
+      "inputType": "ContactsListRequest",
+      "outputType": "List<ProductVendor>"
+    },
+    {
+      "name": "projects.contacts.list",
+      "kind": "query",
+      "input": "ProjectsContactsListInput",
+      "output": "ProjectsContactsListOutput",
+      "inputType": "ProjectsContactsListRequest",
+      "outputType": "List<ProjectsContactsListResultItem>"
+    },
+    {
+      "name": "projects.costs.filterOptions",
+      "kind": "query",
+      "input": "ProjectsCostsFilterOptionsInput",
+      "output": "ProjectsCostsFilterOptionsOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "ProjectsCostsFilterOptionsResult"
+    },
+    {
+      "name": "projects.costs.get",
+      "kind": "query",
+      "input": "ProjectsCostsGetInput",
+      "output": "ProjectsCostsGetOutput",
+      "inputType": "ProjectsCostsGetRequest",
+      "outputType": "ProjectsCostsGetResult"
+    },
+    {
+      "name": "projects.costs.overview",
+      "kind": "query",
+      "input": "ProjectsCostsOverviewInput",
+      "output": "ProjectsCostsOverviewOutput",
+      "inputType": "RpcOptional<ProjectsCostsOverviewRequest>",
+      "outputType": "List<ProjectsCostsOverviewResultItem>"
+    },
+    {
+      "name": "projects.dailyReports.get",
+      "kind": "query",
+      "input": "ProjectsDailyReportsGetInput",
+      "output": "ProjectsDailyReportsGetOutput",
+      "inputType": "ProjectsDailyReportsGetRequest",
+      "outputType": "ProjectsDailyReportsGetResult"
+    },
+    {
+      "name": "projects.dailyReports.list",
+      "kind": "query",
+      "input": "ProjectsDailyReportsListInput",
+      "output": "ProjectsDailyReportsListOutput",
+      "inputType": "ProjectsDailyReportsListRequest",
+      "outputType": "List<ProjectsDailyReportsGetResult>"
+    },
+    {
+      "name": "projects.deployments.list",
+      "kind": "query",
+      "input": "ProjectsDeploymentsListInput",
+      "output": "ProjectsDeploymentsListOutput",
+      "inputType": "ProjectsDeploymentsListRequest",
+      "outputType": "List<Deployment>"
+    },
+    {
+      "name": "projects.files.drawioConfig",
+      "kind": "query",
+      "input": "ProjectsFilesDrawioConfigInput",
+      "output": "ProjectsFilesDrawioConfigOutput",
+      "inputType": "ProjectsFilesDrawioConfigRequest",
+      "outputType": "ProjectsFilesDrawioConfigResult"
+    },
+    {
+      "name": "projects.files.folders.list",
+      "kind": "query",
+      "input": "ProjectsFilesFoldersListInput",
+      "output": "ProjectsFilesFoldersListOutput",
+      "inputType": "ProjectsFilesFoldersListRequest",
+      "outputType": "List<ProjectsFilesFoldersListResultItem>"
+    },
+    {
+      "name": "projects.files.list",
+      "kind": "query",
+      "input": "ProjectsFilesListInput",
+      "output": "ProjectsFilesListOutput",
+      "inputType": "ProjectsContactsListRequest",
+      "outputType": "List<ProjectsFilesListResultItem>"
+    },
+    {
+      "name": "projects.files.officeConfig",
+      "kind": "query",
+      "input": "ProjectsFilesOfficeConfigInput",
+      "output": "ProjectsFilesOfficeConfigOutput",
+      "inputType": "ProjectsFilesDrawioConfigRequest",
+      "outputType": "OfficeExportsOfficeConfigResult"
+    },
+    {
+      "name": "projects.files.search",
+      "kind": "query",
+      "input": "ProjectsFilesSearchInput",
+      "output": "ProjectsFilesSearchOutput",
+      "inputType": "ProjectsFilesSearchRequest",
+      "outputType": "List<ProjectsFilesSearchResultItem>"
+    },
+    {
+      "name": "projects.get",
+      "kind": "query",
+      "input": "ProjectsGetInput",
+      "output": "ProjectsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "Project"
+    },
+    {
+      "name": "projects.list",
+      "kind": "query",
+      "input": "ProjectsListInput",
+      "output": "ProjectsListOutput",
+      "inputType": "ProjectsListRequest",
+      "outputType": "List<Project>"
+    },
+    {
+      "name": "projects.unavailability.list",
+      "kind": "query",
+      "input": "ProjectsUnavailabilityListInput",
+      "output": "ProjectsUnavailabilityListOutput",
+      "inputType": "ProjectsUnavailabilityListRequest",
+      "outputType": "List<ProjectsUnavailabilityListResultItem>"
+    },
+    {
+      "name": "regieReports.costs.get",
+      "kind": "query",
+      "input": "RegieReportsCostsGetInput",
+      "output": "RegieReportsCostsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "RegieReportsCostsGetResult"
+    },
+    {
+      "name": "regieReports.get",
+      "kind": "query",
+      "input": "RegieReportsGetInput",
+      "output": "RegieReportsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "RegieReport"
+    },
+    {
+      "name": "regieReports.list",
+      "kind": "query",
+      "input": "RegieReportsListInput",
+      "output": "RegieReportsListOutput",
+      "inputType": "RegieReportsListRequest",
+      "outputType": "List<RegieReport>"
+    },
+    {
+      "name": "remarks.list",
+      "kind": "query",
+      "input": "RemarksListInput",
+      "output": "RemarksListOutput",
+      "inputType": "RemarksListRequest",
+      "outputType": "List<RemarksListResultItem>"
+    },
+    {
+      "name": "settings.costs.get",
+      "kind": "query",
+      "input": "SettingsCostsGetInput",
+      "output": "SettingsCostsGetOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "SettingsCostsGetResult"
+    },
+    {
+      "name": "settings.global.get",
+      "kind": "query",
+      "input": "SettingsGlobalGetInput",
+      "output": "SettingsGlobalGetOutput",
+      "inputType": "SettingsGlobalGetRequest",
+      "outputType": "SettingsGlobalGetResult"
+    },
+    {
+      "name": "settings.publicGlobal.get",
+      "kind": "query",
+      "input": "SettingsPublicGlobalGetInput",
+      "output": "SettingsPublicGlobalGetOutput",
+      "inputType": "SettingsGlobalGetRequest",
+      "outputType": "SettingsGlobalGetResult"
+    },
+    {
+      "name": "settings.tenantLogo.get",
+      "kind": "query",
+      "input": "SettingsTenantLogoGetInput",
+      "output": "SettingsTenantLogoGetOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "SettingsTenantLogoGetResult"
+    },
+    {
+      "name": "settings.tenantName.get",
+      "kind": "query",
+      "input": "SettingsTenantNameGetInput",
+      "output": "SettingsTenantNameGetOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "SettingsTenantNameGetResult"
+    },
+    {
+      "name": "tools.brands",
+      "kind": "query",
+      "input": "ToolsBrandsInput",
+      "output": "ToolsBrandsOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<String>"
+    },
+    {
+      "name": "tools.categories",
+      "kind": "query",
+      "input": "ToolsCategoriesInput",
+      "output": "ToolsCategoriesOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<String>"
+    },
+    {
+      "name": "tools.get",
+      "kind": "query",
+      "input": "ToolsGetInput",
+      "output": "ToolsGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "Tool"
+    },
+    {
+      "name": "tools.inventories.list",
+      "kind": "query",
+      "input": "ToolsInventoriesListInput",
+      "output": "ToolsInventoriesListOutput",
+      "inputType": "ToolsInventoriesListRequest",
+      "outputType": "List<ToolsInventoriesListResultItem>"
+    },
+    {
+      "name": "tools.inventories.overview",
+      "kind": "query",
+      "input": "ToolsInventoriesOverviewInput",
+      "output": "ToolsInventoriesOverviewOutput",
+      "inputType": "ToolsInventoriesOverviewRequest",
+      "outputType": "List<ToolsInventoriesOverviewResultItem>"
+    },
+    {
+      "name": "tools.list",
+      "kind": "query",
+      "input": "ToolsListInput",
+      "output": "ToolsListOutput",
+      "inputType": "ToolsListRequest",
+      "outputType": "List<Tool>"
+    },
+    {
+      "name": "tools.suggestNextCustomId",
+      "kind": "query",
+      "input": "ToolsSuggestNextCustomIdInput",
+      "output": "ToolsSuggestNextCustomIdOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "num"
+    },
+    {
+      "name": "tools.trackings.list",
+      "kind": "query",
+      "input": "ToolsTrackingsListInput",
+      "output": "ToolsTrackingsListOutput",
+      "inputType": "ToolsTrackingsListRequest",
+      "outputType": "List<ToolsTrackingsListResultItem>"
+    },
+    {
+      "name": "tools.trackings.transfers.list",
+      "kind": "query",
+      "input": "ToolsTrackingsTransfersListInput",
+      "output": "ToolsTrackingsTransfersListOutput",
+      "inputType": "ToolsTrackingsTransfersListRequest",
+      "outputType": "List<ToolsTrackingsTransfersListResultItem>"
+    },
+    {
+      "name": "users.get",
+      "kind": "query",
+      "input": "UsersGetInput",
+      "output": "UsersGetOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "User"
+    },
+    {
+      "name": "users.list",
+      "kind": "query",
+      "input": "UsersListInput",
+      "output": "UsersListOutput",
+      "inputType": "UsersListRequest",
+      "outputType": "List<User>"
+    },
+    {
+      "name": "users.roles.get",
+      "kind": "query",
+      "input": "UsersRolesGetInput",
+      "output": "UsersRolesGetOutput",
+      "inputType": "UsersRolesGetRequest",
+      "outputType": "List<UsersRolesGetResultItem>"
+    },
+    {
+      "name": "users.roles.list",
+      "kind": "query",
+      "input": "UsersRolesListInput",
+      "output": "UsersRolesListOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "List<UsersRolesGetResultItem>"
+    },
+    {
+      "name": "users.supervisors.getDefault",
+      "kind": "query",
+      "input": "UsersSupervisorsGetDefaultInput",
+      "output": "UsersSupervisorsGetDefaultOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "UsersSupervisorsGetDefaultResult"
+    },
+    {
+      "name": "users.vacations.list",
+      "kind": "query",
+      "input": "UsersVacationsListInput",
+      "output": "UsersVacationsListOutput",
+      "inputType": "UsersVacationsListRequest",
+      "outputType": "List<UsersVacationsListResultItem>"
+    },
+    {
+      "name": "admin.databases.backups.createNow",
+      "kind": "mutation",
+      "input": "AdminDatabasesBackupsCreateNowInput",
+      "output": "AdminDatabasesBackupsCreateNowOutput",
+      "inputType": "AdminDatabasesBackupsCreateNowRequest",
+      "outputType": "AdminDatabasesBackupsListResultItem"
+    },
+    {
+      "name": "admin.databases.backups.restore",
+      "kind": "mutation",
+      "input": "AdminDatabasesBackupsRestoreInput",
+      "output": "AdminDatabasesBackupsRestoreOutput",
+      "inputType": "AdminDatabasesBackupsRestoreRequest",
+      "outputType": "AdminDatabasesBackupsRestoreResult"
+    },
+    {
+      "name": "admin.databases.backups.upload",
+      "kind": "mutation",
+      "input": "AdminDatabasesBackupsUploadInput",
+      "output": "AdminDatabasesBackupsUploadOutput",
+      "inputType": "AdminDatabasesBackupsUploadRequest",
+      "outputType": "AdminDatabasesBackupsListResultItem"
+    },
+    {
+      "name": "admin.databases.create",
+      "kind": "mutation",
+      "input": "AdminDatabasesCreateInput",
+      "output": "AdminDatabasesCreateOutput",
+      "inputType": "AdminDatabasesCreateRequest",
+      "outputType": "AdminDatabasesCreateResult"
+    },
+    {
+      "name": "admin.databases.forkFromBackup",
+      "kind": "mutation",
+      "input": "AdminDatabasesForkFromBackupInput",
+      "output": "AdminDatabasesForkFromBackupOutput",
+      "inputType": "AdminDatabasesForkFromBackupRequest",
+      "outputType": "AdminDatabasesForkFromBackupResult"
+    },
+    {
+      "name": "admin.databases.hosts.create",
+      "kind": "mutation",
+      "input": "AdminDatabasesHostsCreateInput",
+      "output": "AdminDatabasesHostsCreateOutput",
+      "inputType": "AdminDatabasesHostsCreateRequest",
+      "outputType": "AdminDatabasesHostsListResultItem"
+    },
+    {
+      "name": "admin.databases.hosts.delete",
+      "kind": "mutation",
+      "input": "AdminDatabasesHostsDeleteInput",
+      "output": "AdminDatabasesHostsDeleteOutput",
+      "inputType": "AdminDatabasesHostsDeleteRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.databases.hosts.update",
+      "kind": "mutation",
+      "input": "AdminDatabasesHostsUpdateInput",
+      "output": "AdminDatabasesHostsUpdateOutput",
+      "inputType": "AdminDatabasesHostsUpdateRequest",
+      "outputType": "AdminDatabasesHostsListResultItem"
+    },
+    {
+      "name": "admin.databases.rotateCredentials",
+      "kind": "mutation",
+      "input": "AdminDatabasesRotateCredentialsInput",
+      "output": "AdminDatabasesRotateCredentialsOutput",
+      "inputType": "AdminDatabasesRotateCredentialsRequest",
+      "outputType": "AdminDatabasesRotateCredentialsResult"
+    },
+    {
+      "name": "admin.databases.updateRetention",
+      "kind": "mutation",
+      "input": "AdminDatabasesUpdateRetentionInput",
+      "output": "AdminDatabasesUpdateRetentionOutput",
+      "inputType": "AdminDatabasesUpdateRetentionRequest",
+      "outputType": "AdminDatabasesUpdateRetentionResult"
+    },
+    {
+      "name": "admin.llm.providers.delete",
+      "kind": "mutation",
+      "input": "AdminLlmProvidersDeleteInput",
+      "output": "AdminLlmProvidersDeleteOutput",
+      "inputType": "AdminLlmProvidersModelsRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.llm.providers.update",
+      "kind": "mutation",
+      "input": "AdminLlmProvidersUpdateInput",
+      "output": "AdminLlmProvidersUpdateOutput",
+      "inputType": "AdminLlmProvidersUpdateRequest",
+      "outputType": "AdminLlmProvidersListResultItem"
+    },
+    {
+      "name": "admin.llm.scanSettings.update",
+      "kind": "mutation",
+      "input": "AdminLlmScanSettingsUpdateInput",
+      "output": "AdminLlmScanSettingsUpdateOutput",
+      "inputType": "AdminLlmScanSettingsUpdateRequest",
+      "outputType": "AdminLlmScanSettingsGetResult"
+    },
+    {
+      "name": "admin.llm.settings.update",
+      "kind": "mutation",
+      "input": "AdminLlmSettingsUpdateInput",
+      "output": "AdminLlmSettingsUpdateOutput",
+      "inputType": "AdminLlmScanSettingsUpdateRequest",
+      "outputType": "AdminLlmScanSettingsGetResult"
+    },
+    {
+      "name": "admin.llm.tenants.update",
+      "kind": "mutation",
+      "input": "AdminLlmTenantsUpdateInput",
+      "output": "AdminLlmTenantsUpdateOutput",
+      "inputType": "AdminLlmTenantsUpdateRequest",
+      "outputType": "AdminLlmTenantsListResultItem"
+    },
+    {
+      "name": "admin.llm.useCases.update",
+      "kind": "mutation",
+      "input": "AdminLlmUseCasesUpdateInput",
+      "output": "AdminLlmUseCasesUpdateOutput",
+      "inputType": "AdminLlmUseCasesUpdateRequest",
+      "outputType": "AdminLlmUseCasesListResultItem"
+    },
+    {
+      "name": "admin.login",
+      "kind": "mutation",
+      "input": "AdminLoginInput",
+      "output": "AdminLoginOutput",
+      "inputType": "AdminLoginRequest",
+      "outputType": "AdminLoginResult"
+    },
+    {
+      "name": "admin.tenants.activate",
+      "kind": "mutation",
+      "input": "AdminTenantsActivateInput",
+      "output": "AdminTenantsActivateOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.create",
+      "kind": "mutation",
+      "input": "AdminTenantsCreateInput",
+      "output": "AdminTenantsCreateOutput",
+      "inputType": "AdminTenantsCreateRequest",
+      "outputType": "AdminTenantsCreateResult"
+    },
+    {
+      "name": "admin.tenants.deactivate",
+      "kind": "mutation",
+      "input": "AdminTenantsDeactivateInput",
+      "output": "AdminTenantsDeactivateOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.delete",
+      "kind": "mutation",
+      "input": "AdminTenantsDeleteInput",
+      "output": "AdminTenantsDeleteOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.deleteForever",
+      "kind": "mutation",
+      "input": "AdminTenantsDeleteForeverInput",
+      "output": "AdminTenantsDeleteForeverOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.lock",
+      "kind": "mutation",
+      "input": "AdminTenantsLockInput",
+      "output": "AdminTenantsLockOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.undelete",
+      "kind": "mutation",
+      "input": "AdminTenantsUndeleteInput",
+      "output": "AdminTenantsUndeleteOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.unlock",
+      "kind": "mutation",
+      "input": "AdminTenantsUnlockInput",
+      "output": "AdminTenantsUnlockOutput",
+      "inputType": "AdminTenantsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.tenants.update",
+      "kind": "mutation",
+      "input": "AdminTenantsUpdateInput",
+      "output": "AdminTenantsUpdateOutput",
+      "inputType": "AdminTenantsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "admin.users.create",
+      "kind": "mutation",
+      "input": "AdminUsersCreateInput",
+      "output": "AdminUsersCreateOutput",
+      "inputType": "AdminUsersCreateRequest",
+      "outputType": "AdminUsersCreateResult"
+    },
+    {
+      "name": "admin.users.resetPassword",
+      "kind": "mutation",
+      "input": "AdminUsersResetPasswordInput",
+      "output": "AdminUsersResetPasswordOutput",
+      "inputType": "AdminUsersResetPasswordRequest",
+      "outputType": "AdminUsersResetPasswordResult"
+    },
+    {
+      "name": "admin.users.setAdmin",
+      "kind": "mutation",
+      "input": "AdminUsersSetAdminInput",
+      "output": "AdminUsersSetAdminOutput",
+      "inputType": "AdminUsersSetAdminRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "auth.login",
+      "kind": "mutation",
+      "input": "AuthLoginInput",
+      "output": "AuthLoginOutput",
+      "inputType": "AuthLoginRequest",
+      "outputType": "AdminLoginResult"
+    },
+    {
+      "name": "auth.logout",
+      "kind": "mutation",
+      "input": "AuthLogoutInput",
+      "output": "AuthLogoutOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "auth.passkeys.delete",
+      "kind": "mutation",
+      "input": "AuthPasskeysDeleteInput",
+      "output": "AuthPasskeysDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "auth.passkeys.login",
+      "kind": "mutation",
+      "input": "AuthPasskeysLoginInput",
+      "output": "AuthPasskeysLoginOutput",
+      "inputType": "AuthPasskeysLoginRequest",
+      "outputType": "AdminLoginResult"
+    },
+    {
+      "name": "auth.passkeys.loginOptions",
+      "kind": "mutation",
+      "input": "AuthPasskeysLoginOptionsInput",
+      "output": "AuthPasskeysLoginOptionsOutput",
+      "inputType": "RpcOptional<AuthPasskeysLoginOptionsRequest>",
+      "outputType": "AuthPasskeysLoginOptionsResult"
+    },
+    {
+      "name": "auth.passkeys.register",
+      "kind": "mutation",
+      "input": "AuthPasskeysRegisterInput",
+      "output": "AuthPasskeysRegisterOutput",
+      "inputType": "AuthPasskeysRegisterRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "auth.passkeys.registerOptions",
+      "kind": "mutation",
+      "input": "AuthPasskeysRegisterOptionsInput",
+      "output": "AuthPasskeysRegisterOptionsOutput",
+      "inputType": "RpcUndefined",
+      "outputType": "AuthPasskeysRegisterOptionsResult"
+    },
+    {
+      "name": "auth.setPassword",
+      "kind": "mutation",
+      "input": "AuthSetPasswordInput",
+      "output": "AuthSetPasswordOutput",
+      "inputType": "AuthSetPasswordRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "clientScripts.create",
+      "kind": "mutation",
+      "input": "ClientScriptsCreateInput",
+      "output": "ClientScriptsCreateOutput",
+      "inputType": "ClientScriptsCreateRequest",
+      "outputType": "ClientScriptsGetResult"
+    },
+    {
+      "name": "clientScripts.delete",
+      "kind": "mutation",
+      "input": "ClientScriptsDeleteInput",
+      "output": "ClientScriptsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "clientScripts.update",
+      "kind": "mutation",
+      "input": "ClientScriptsUpdateInput",
+      "output": "ClientScriptsUpdateOutput",
+      "inputType": "ClientScriptsUpdateRequest",
+      "outputType": "ClientScriptsGetResult?"
+    },
+    {
+      "name": "contacts.create",
+      "kind": "mutation",
+      "input": "ContactsCreateInput",
+      "output": "ContactsCreateOutput",
+      "inputType": "ContactsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "contacts.delete",
+      "kind": "mutation",
+      "input": "ContactsDeleteInput",
+      "output": "ContactsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "contacts.update",
+      "kind": "mutation",
+      "input": "ContactsUpdateInput",
+      "output": "ContactsUpdateOutput",
+      "inputType": "ContactsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "customers.contacts.add",
+      "kind": "mutation",
+      "input": "CustomersContactsAddInput",
+      "output": "CustomersContactsAddOutput",
+      "inputType": "CustomersContactsAddRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "customers.contacts.remove",
+      "kind": "mutation",
+      "input": "CustomersContactsRemoveInput",
+      "output": "CustomersContactsRemoveOutput",
+      "inputType": "CustomersContactsAddRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "customers.contacts.set",
+      "kind": "mutation",
+      "input": "CustomersContactsSetInput",
+      "output": "CustomersContactsSetOutput",
+      "inputType": "CustomersContactsSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "customers.create",
+      "kind": "mutation",
+      "input": "CustomersCreateInput",
+      "output": "CustomersCreateOutput",
+      "inputType": "CustomersCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "customers.delete",
+      "kind": "mutation",
+      "input": "CustomersDeleteInput",
+      "output": "CustomersDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "customers.update",
+      "kind": "mutation",
+      "input": "CustomersUpdateInput",
+      "output": "CustomersUpdateOutput",
+      "inputType": "CustomersUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "deliveryNotes.create",
+      "kind": "mutation",
+      "input": "DeliveryNotesCreateInput",
+      "output": "DeliveryNotesCreateOutput",
+      "inputType": "DeliveryNotesCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "deliveryNotes.delete",
+      "kind": "mutation",
+      "input": "DeliveryNotesDeleteInput",
+      "output": "DeliveryNotesDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "deliveryNotes.scan.complete",
+      "kind": "mutation",
+      "input": "DeliveryNotesScanCompleteInput",
+      "output": "DeliveryNotesScanCompleteOutput",
+      "inputType": "DeliveryNotesScanStatusRequest",
+      "outputType": "DeliveryNotesScanCompleteResult"
+    },
+    {
+      "name": "deliveryNotes.scan.createUpload",
+      "kind": "mutation",
+      "input": "DeliveryNotesScanCreateUploadInput",
+      "output": "DeliveryNotesScanCreateUploadOutput",
+      "inputType": "DeliveryNotesScanCreateUploadRequest",
+      "outputType": "DeliveryNotesScanCreateUploadResult"
+    },
+    {
+      "name": "deliveryNotes.scan.parse",
+      "kind": "mutation",
+      "input": "DeliveryNotesScanParseInput",
+      "output": "DeliveryNotesScanParseOutput",
+      "inputType": "ParseScanInput",
+      "outputType": "DeliveryNotesScanCompleteResult"
+    },
+    {
+      "name": "deliveryNotes.scan.start",
+      "kind": "mutation",
+      "input": "DeliveryNotesScanStartInput",
+      "output": "DeliveryNotesScanStartOutput",
+      "inputType": "DeliveryNotesScanStartRequest",
+      "outputType": "DeliveryNotesScanStatusRequest"
+    },
+    {
+      "name": "deliveryNotes.update",
+      "kind": "mutation",
+      "input": "DeliveryNotesUpdateInput",
+      "output": "DeliveryNotesUpdateOutput",
+      "inputType": "DeliveryNotesUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "errorReports.report",
+      "kind": "mutation",
+      "input": "ErrorReportsReportInput",
+      "output": "ErrorReportsReportOutput",
+      "inputType": "ErrorReportsReportRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "llm.chats.create",
+      "kind": "mutation",
+      "input": "LlmChatsCreateInput",
+      "output": "LlmChatsCreateOutput",
+      "inputType": "LlmChatsCreateRequest",
+      "outputType": "ChatSummary"
+    },
+    {
+      "name": "llm.chats.delete",
+      "kind": "mutation",
+      "input": "LlmChatsDeleteInput",
+      "output": "LlmChatsDeleteOutput",
+      "inputType": "LlmChatsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "llm.messages.send",
+      "kind": "mutation",
+      "input": "LlmMessagesSendInput",
+      "output": "LlmMessagesSendOutput",
+      "inputType": "LlmMessagesSendRequest",
+      "outputType": "LlmChatsGetResult"
+    },
+    {
+      "name": "llm.proposals.review",
+      "kind": "mutation",
+      "input": "LlmProposalsReviewInput",
+      "output": "LlmProposalsReviewOutput",
+      "inputType": "LlmProposalsReviewRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "office.exports.createUpload",
+      "kind": "mutation",
+      "input": "OfficeExportsCreateUploadInput",
+      "output": "OfficeExportsCreateUploadOutput",
+      "inputType": "DeliveryNotesScanCreateUploadRequest",
+      "outputType": "OfficeExportsCreateUploadResult"
+    },
+    {
+      "name": "personalization.actions.append",
+      "kind": "mutation",
+      "input": "PersonalizationActionsAppendInput",
+      "output": "PersonalizationActionsAppendOutput",
+      "inputType": "PersonalizationActionsAppendRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "personalization.visits.append",
+      "kind": "mutation",
+      "input": "PersonalizationVisitsAppendInput",
+      "output": "PersonalizationVisitsAppendOutput",
+      "inputType": "PersonalizationVisitsAppendRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.categories.set",
+      "kind": "mutation",
+      "input": "ProductsCategoriesSetInput",
+      "output": "ProductsCategoriesSetOutput",
+      "inputType": "ProductsCategoriesSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.categories.tag",
+      "kind": "mutation",
+      "input": "ProductsCategoriesTagInput",
+      "output": "ProductsCategoriesTagOutput",
+      "inputType": "ProductsCategoriesTagRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.categories.untag",
+      "kind": "mutation",
+      "input": "ProductsCategoriesUntagInput",
+      "output": "ProductsCategoriesUntagOutput",
+      "inputType": "ProductsCategoriesTagRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.create",
+      "kind": "mutation",
+      "input": "ProductsCreateInput",
+      "output": "ProductsCreateOutput",
+      "inputType": "ProductsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "products.delete",
+      "kind": "mutation",
+      "input": "ProductsDeleteInput",
+      "output": "ProductsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.priceImports.apply",
+      "kind": "mutation",
+      "input": "ProductsPriceImportsApplyInput",
+      "output": "ProductsPriceImportsApplyOutput",
+      "inputType": "ProductsPriceImportsApplyRequest",
+      "outputType": "ProductsPriceImportsApplyResult"
+    },
+    {
+      "name": "products.priceRecords.create",
+      "kind": "mutation",
+      "input": "ProductsPriceRecordsCreateInput",
+      "output": "ProductsPriceRecordsCreateOutput",
+      "inputType": "ProductsPriceRecordsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "products.priceRecords.delete",
+      "kind": "mutation",
+      "input": "ProductsPriceRecordsDeleteInput",
+      "output": "ProductsPriceRecordsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.priceRecords.update",
+      "kind": "mutation",
+      "input": "ProductsPriceRecordsUpdateInput",
+      "output": "ProductsPriceRecordsUpdateOutput",
+      "inputType": "ProductsPriceRecordsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.update",
+      "kind": "mutation",
+      "input": "ProductsUpdateInput",
+      "output": "ProductsUpdateOutput",
+      "inputType": "ProductsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.vendors.create",
+      "kind": "mutation",
+      "input": "ProductsVendorsCreateInput",
+      "output": "ProductsVendorsCreateOutput",
+      "inputType": "ProductsVendorsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "products.vendors.delete",
+      "kind": "mutation",
+      "input": "ProductsVendorsDeleteInput",
+      "output": "ProductsVendorsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "products.vendors.update",
+      "kind": "mutation",
+      "input": "ProductsVendorsUpdateInput",
+      "output": "ProductsVendorsUpdateOutput",
+      "inputType": "ProductsVendorsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.contacts.add",
+      "kind": "mutation",
+      "input": "ProjectsContactsAddInput",
+      "output": "ProjectsContactsAddOutput",
+      "inputType": "ProjectsContactsAddRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.contacts.remove",
+      "kind": "mutation",
+      "input": "ProjectsContactsRemoveInput",
+      "output": "ProjectsContactsRemoveOutput",
+      "inputType": "ProjectsContactsAddRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.contacts.set",
+      "kind": "mutation",
+      "input": "ProjectsContactsSetInput",
+      "output": "ProjectsContactsSetOutput",
+      "inputType": "ProjectsContactsSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.costs.entries.create",
+      "kind": "mutation",
+      "input": "ProjectsCostsEntriesCreateInput",
+      "output": "ProjectsCostsEntriesCreateOutput",
+      "inputType": "ProjectsCostsEntriesCreateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.costs.entries.delete",
+      "kind": "mutation",
+      "input": "ProjectsCostsEntriesDeleteInput",
+      "output": "ProjectsCostsEntriesDeleteOutput",
+      "inputType": "ProjectsCostsEntriesDeleteRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.costs.entries.update",
+      "kind": "mutation",
+      "input": "ProjectsCostsEntriesUpdateInput",
+      "output": "ProjectsCostsEntriesUpdateOutput",
+      "inputType": "ProjectsCostsEntriesUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.create",
+      "kind": "mutation",
+      "input": "ProjectsCreateInput",
+      "output": "ProjectsCreateOutput",
+      "inputType": "ProjectsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "projects.dailyReports.create",
+      "kind": "mutation",
+      "input": "ProjectsDailyReportsCreateInput",
+      "output": "ProjectsDailyReportsCreateOutput",
+      "inputType": "ProjectsDailyReportsCreateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.dailyReports.delete",
+      "kind": "mutation",
+      "input": "ProjectsDailyReportsDeleteInput",
+      "output": "ProjectsDailyReportsDeleteOutput",
+      "inputType": "ProjectsDailyReportsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.dailyReports.photos.add",
+      "kind": "mutation",
+      "input": "ProjectsDailyReportsPhotosAddInput",
+      "output": "ProjectsDailyReportsPhotosAddOutput",
+      "inputType": "ProjectsDailyReportsPhotosAddRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.dailyReports.photos.remove",
+      "kind": "mutation",
+      "input": "ProjectsDailyReportsPhotosRemoveInput",
+      "output": "ProjectsDailyReportsPhotosRemoveOutput",
+      "inputType": "ProjectsDailyReportsPhotosAddRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.dailyReports.update",
+      "kind": "mutation",
+      "input": "ProjectsDailyReportsUpdateInput",
+      "output": "ProjectsDailyReportsUpdateOutput",
+      "inputType": "ProjectsDailyReportsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.delete",
+      "kind": "mutation",
+      "input": "ProjectsDeleteInput",
+      "output": "ProjectsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.deployments.create",
+      "kind": "mutation",
+      "input": "ProjectsDeploymentsCreateInput",
+      "output": "ProjectsDeploymentsCreateOutput",
+      "inputType": "ProjectsDeploymentsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "projects.deployments.delete",
+      "kind": "mutation",
+      "input": "ProjectsDeploymentsDeleteInput",
+      "output": "ProjectsDeploymentsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.deployments.update",
+      "kind": "mutation",
+      "input": "ProjectsDeploymentsUpdateInput",
+      "output": "ProjectsDeploymentsUpdateOutput",
+      "inputType": "ProjectsDeploymentsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.completeUpload",
+      "kind": "mutation",
+      "input": "ProjectsFilesCompleteUploadInput",
+      "output": "ProjectsFilesCompleteUploadOutput",
+      "inputType": "ProjectsFilesCompleteUploadRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.createUpload",
+      "kind": "mutation",
+      "input": "ProjectsFilesCreateUploadInput",
+      "output": "ProjectsFilesCreateUploadOutput",
+      "inputType": "ProjectsFilesCreateUploadRequest",
+      "outputType": "ProjectsFilesCreateUploadResult"
+    },
+    {
+      "name": "projects.files.delete",
+      "kind": "mutation",
+      "input": "ProjectsFilesDeleteInput",
+      "output": "ProjectsFilesDeleteOutput",
+      "inputType": "ProjectsFilesDeleteRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.drawioSave",
+      "kind": "mutation",
+      "input": "ProjectsFilesDrawioSaveInput",
+      "output": "ProjectsFilesDrawioSaveOutput",
+      "inputType": "ProjectsFilesDrawioSaveRequest",
+      "outputType": "ProjectsFilesDrawioSaveResult"
+    },
+    {
+      "name": "projects.files.folders.create",
+      "kind": "mutation",
+      "input": "ProjectsFilesFoldersCreateInput",
+      "output": "ProjectsFilesFoldersCreateOutput",
+      "inputType": "ProjectsFilesFoldersCreateRequest",
+      "outputType": "ProjectsFilesFoldersCreateResult"
+    },
+    {
+      "name": "projects.files.folders.delete",
+      "kind": "mutation",
+      "input": "ProjectsFilesFoldersDeleteInput",
+      "output": "ProjectsFilesFoldersDeleteOutput",
+      "inputType": "ProjectsFilesFoldersDeleteRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.folders.move",
+      "kind": "mutation",
+      "input": "ProjectsFilesFoldersMoveInput",
+      "output": "ProjectsFilesFoldersMoveOutput",
+      "inputType": "ProjectsFilesFoldersMoveRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.folders.rename",
+      "kind": "mutation",
+      "input": "ProjectsFilesFoldersRenameInput",
+      "output": "ProjectsFilesFoldersRenameOutput",
+      "inputType": "ProjectsFilesFoldersRenameRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.move",
+      "kind": "mutation",
+      "input": "ProjectsFilesMoveInput",
+      "output": "ProjectsFilesMoveOutput",
+      "inputType": "ProjectsFilesMoveRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.files.rename",
+      "kind": "mutation",
+      "input": "ProjectsFilesRenameInput",
+      "output": "ProjectsFilesRenameOutput",
+      "inputType": "ProjectsFilesRenameRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.finish",
+      "kind": "mutation",
+      "input": "ProjectsFinishInput",
+      "output": "ProjectsFinishOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.resume",
+      "kind": "mutation",
+      "input": "ProjectsResumeInput",
+      "output": "ProjectsResumeOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.unavailability.create",
+      "kind": "mutation",
+      "input": "ProjectsUnavailabilityCreateInput",
+      "output": "ProjectsUnavailabilityCreateOutput",
+      "inputType": "ProjectsUnavailabilityCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "projects.unavailability.delete",
+      "kind": "mutation",
+      "input": "ProjectsUnavailabilityDeleteInput",
+      "output": "ProjectsUnavailabilityDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.unavailability.update",
+      "kind": "mutation",
+      "input": "ProjectsUnavailabilityUpdateInput",
+      "output": "ProjectsUnavailabilityUpdateOutput",
+      "inputType": "ProjectsUnavailabilityUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "projects.update",
+      "kind": "mutation",
+      "input": "ProjectsUpdateInput",
+      "output": "ProjectsUpdateOutput",
+      "inputType": "ProjectsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "regieReports.create",
+      "kind": "mutation",
+      "input": "RegieReportsCreateInput",
+      "output": "RegieReportsCreateOutput",
+      "inputType": "RegieReportsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "regieReports.delete",
+      "kind": "mutation",
+      "input": "RegieReportsDeleteInput",
+      "output": "RegieReportsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "regieReports.update",
+      "kind": "mutation",
+      "input": "RegieReportsUpdateInput",
+      "output": "RegieReportsUpdateOutput",
+      "inputType": "RegieReportsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "remarks.create",
+      "kind": "mutation",
+      "input": "RemarksCreateInput",
+      "output": "RemarksCreateOutput",
+      "inputType": "RemarksCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "remarks.delete",
+      "kind": "mutation",
+      "input": "RemarksDeleteInput",
+      "output": "RemarksDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "remarks.update",
+      "kind": "mutation",
+      "input": "RemarksUpdateInput",
+      "output": "RemarksUpdateOutput",
+      "inputType": "RemarksUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.costs.delete",
+      "kind": "mutation",
+      "input": "SettingsCostsDeleteInput",
+      "output": "SettingsCostsDeleteOutput",
+      "inputType": "SettingsCostsDeleteRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.costs.set",
+      "kind": "mutation",
+      "input": "SettingsCostsSetInput",
+      "output": "SettingsCostsSetOutput",
+      "inputType": "SettingsCostsSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.costs.update",
+      "kind": "mutation",
+      "input": "SettingsCostsUpdateInput",
+      "output": "SettingsCostsUpdateOutput",
+      "inputType": "SettingsCostsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.global.delete",
+      "kind": "mutation",
+      "input": "SettingsGlobalDeleteInput",
+      "output": "SettingsGlobalDeleteOutput",
+      "inputType": "SettingsGlobalGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.global.set",
+      "kind": "mutation",
+      "input": "SettingsGlobalSetInput",
+      "output": "SettingsGlobalSetOutput",
+      "inputType": "SettingsGlobalGetResult",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.language.set",
+      "kind": "mutation",
+      "input": "SettingsLanguageSetInput",
+      "output": "SettingsLanguageSetOutput",
+      "inputType": "SettingsLanguageSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.publicGlobal.delete",
+      "kind": "mutation",
+      "input": "SettingsPublicGlobalDeleteInput",
+      "output": "SettingsPublicGlobalDeleteOutput",
+      "inputType": "SettingsGlobalGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.publicGlobal.set",
+      "kind": "mutation",
+      "input": "SettingsPublicGlobalSetInput",
+      "output": "SettingsPublicGlobalSetOutput",
+      "inputType": "SettingsGlobalGetResult",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.tenantLogo.completeUpload",
+      "kind": "mutation",
+      "input": "SettingsTenantLogoCompleteUploadInput",
+      "output": "SettingsTenantLogoCompleteUploadOutput",
+      "inputType": "SettingsTenantLogoCompleteUploadRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "settings.tenantLogo.createUpload",
+      "kind": "mutation",
+      "input": "SettingsTenantLogoCreateUploadInput",
+      "output": "SettingsTenantLogoCreateUploadOutput",
+      "inputType": "SettingsTenantLogoCreateUploadRequest",
+      "outputType": "SettingsTenantLogoCreateUploadResult"
+    },
+    {
+      "name": "settings.tenantName.set",
+      "kind": "mutation",
+      "input": "SettingsTenantNameSetInput",
+      "output": "SettingsTenantNameSetOutput",
+      "inputType": "SettingsTenantNameSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.archive",
+      "kind": "mutation",
+      "input": "ToolsArchiveInput",
+      "output": "ToolsArchiveOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.create",
+      "kind": "mutation",
+      "input": "ToolsCreateInput",
+      "output": "ToolsCreateOutput",
+      "inputType": "ToolsCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "tools.delete",
+      "kind": "mutation",
+      "input": "ToolsDeleteInput",
+      "output": "ToolsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.inventories.create",
+      "kind": "mutation",
+      "input": "ToolsInventoriesCreateInput",
+      "output": "ToolsInventoriesCreateOutput",
+      "inputType": "ToolsInventoriesCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "tools.inventories.delete",
+      "kind": "mutation",
+      "input": "ToolsInventoriesDeleteInput",
+      "output": "ToolsInventoriesDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.track",
+      "kind": "mutation",
+      "input": "ToolsTrackInput",
+      "output": "ToolsTrackOutput",
+      "inputType": "ToolsTrackRequest",
+      "outputType": "ToolsTrackResult"
+    },
+    {
+      "name": "tools.trackings.transfers.accept",
+      "kind": "mutation",
+      "input": "ToolsTrackingsTransfersAcceptInput",
+      "output": "ToolsTrackingsTransfersAcceptOutput",
+      "inputType": "ToolsTrackingsTransfersAcceptRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.trackings.transfers.deny",
+      "kind": "mutation",
+      "input": "ToolsTrackingsTransfersDenyInput",
+      "output": "ToolsTrackingsTransfersDenyOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.trackings.transfers.request",
+      "kind": "mutation",
+      "input": "ToolsTrackingsTransfersRequestInput",
+      "output": "ToolsTrackingsTransfersRequestOutput",
+      "inputType": "ToolsTrackingsTransfersRequestRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "tools.unarchive",
+      "kind": "mutation",
+      "input": "ToolsUnarchiveInput",
+      "output": "ToolsUnarchiveOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.untrack",
+      "kind": "mutation",
+      "input": "ToolsUntrackInput",
+      "output": "ToolsUntrackOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "tools.update",
+      "kind": "mutation",
+      "input": "ToolsUpdateInput",
+      "output": "ToolsUpdateOutput",
+      "inputType": "ToolsUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.activate",
+      "kind": "mutation",
+      "input": "UsersActivateInput",
+      "output": "UsersActivateOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.archive",
+      "kind": "mutation",
+      "input": "UsersArchiveInput",
+      "output": "UsersArchiveOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.create",
+      "kind": "mutation",
+      "input": "UsersCreateInput",
+      "output": "UsersCreateOutput",
+      "inputType": "UsersCreateRequest",
+      "outputType": "ClientScriptsGetRequest"
+    },
+    {
+      "name": "users.deactivate",
+      "kind": "mutation",
+      "input": "UsersDeactivateInput",
+      "output": "UsersDeactivateOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.delete",
+      "kind": "mutation",
+      "input": "UsersDeleteInput",
+      "output": "UsersDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.roles.set",
+      "kind": "mutation",
+      "input": "UsersRolesSetInput",
+      "output": "UsersRolesSetOutput",
+      "inputType": "UsersRolesSetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.supervisors.setDefault",
+      "kind": "mutation",
+      "input": "UsersSupervisorsSetDefaultInput",
+      "output": "UsersSupervisorsSetDefaultOutput",
+      "inputType": "UsersSupervisorsGetDefaultResult",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.unarchive",
+      "kind": "mutation",
+      "input": "UsersUnarchiveInput",
+      "output": "UsersUnarchiveOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.update",
+      "kind": "mutation",
+      "input": "UsersUpdateInput",
+      "output": "UsersUpdateOutput",
+      "inputType": "UsersUpdateRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.vacations.approve",
+      "kind": "mutation",
+      "input": "UsersVacationsApproveInput",
+      "output": "UsersVacationsApproveOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.vacations.create",
+      "kind": "mutation",
+      "input": "UsersVacationsCreateInput",
+      "output": "UsersVacationsCreateOutput",
+      "inputType": "UsersVacationsCreateRequest",
+      "outputType": "UsersVacationsCreateResult"
+    },
+    {
+      "name": "users.vacations.delete",
+      "kind": "mutation",
+      "input": "UsersVacationsDeleteInput",
+      "output": "UsersVacationsDeleteOutput",
+      "inputType": "ClientScriptsGetRequest",
+      "outputType": "AuthCheckResult"
+    },
+    {
+      "name": "users.vacations.deny",
+      "kind": "mutation",
+      "input": "UsersVacationsDenyInput",
+      "output": "UsersVacationsDenyOutput",
+      "inputType": "UsersVacationsDenyRequest",
+      "outputType": "AuthCheckResult"
+    }
+  ]
+}

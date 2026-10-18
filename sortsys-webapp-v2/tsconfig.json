@@ -17,7 +17,15 @@
     "paths": {
       "~/*": ["./app/*"],
       "@sortsys/dwgviewer": ["../sortsys-dwgviewer/src/index.ts"],
-      "@sortsys/dwgviewer/styles.css": ["../sortsys-dwgviewer/src/styles.css"]
+      "@sortsys/dwgviewer/styles.css": ["../sortsys-dwgviewer/src/styles.css"],
+      "@sortsys/business-logic": ["../sortsys-business-logic/src/index.ts"],
+      "@sortsys/business-logic/pdf": [
+        "../sortsys-business-logic/src/pdf/index.ts"
+      ],
+      "@sortsys/business-logic/*": ["../sortsys-business-logic/src/*.ts"],
+      "@sortsys/v2-client/contract": [
+        "../sortsys-api-v2/client/dist/generated/contract.d.ts"
+      ]
     },
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,

@@ -15,7 +15,7 @@ assert.equal(parsed.error, undefined, "Bun lock must parse as JSON with trailing
 const bunLock = parsed.config;
 const fields = ["dependencies", "devDependencies", "peerDependencies"];
 
-for (const directory of ["sortsys-api-v2/client", "sortsys-dwgviewer", "sortsys-react-components"]) {
+for (const directory of ["sortsys-api-v2/client", "sortsys-dwgviewer", "sortsys-react-components", "sortsys-business-logic"]) {
   const manifest = readJson(`${directory}/package.json`);
   test(`${manifest.name}: npm local-package metadata matches the manifest`, () => {
     const metadata = npmLock.packages[`../${directory}`];

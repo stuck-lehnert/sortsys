@@ -1,0 +1,89 @@
+name: Native mobile compilation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Compile ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            runner: ubuntu-latest
+          - platform: ios
+            runner: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Build shared API client
+        working-directory: sortsys-api-v2/client
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Install and check mobile sources
+        working-directory: sortsys-mobile
+        run: |
+          npm ci --ignore-scripts
+          npm run typst:build
+          npm run check:typst
+          npm run format:check
+          npm run check:sdk
+          npm run licenses:check
+          npm run typecheck
+          npm test
+
+      - name: Generate native project
+        working-directory: sortsys-mobile
+        env:
+          EXPO_NO_TELEMETRY: '1'
+          CI: '1'
+        run: npx --no-install expo prebuild --platform ${{ matrix.platform }} --no-install
+
+      - name: Compile Android debug app
+        if: matrix.platform == 'android'
+        working-directory: sortsys-mobile/android
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          ./gradlew assembleDebug --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
+
+      - name: Install iOS pods
+        if: matrix.platform == 'ios'
+        working-directory: sortsys-mobile/ios
+        run: pod install
+
+      - name: Compile iOS simulator app without signing
+        if: matrix.platform == 'ios'
+        working-directory: sortsys-mobile
+        run: |
+          xcodebuild \
+            -workspace ios/sortsys.xcworkspace \
+            -scheme sortsys \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build

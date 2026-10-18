@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/google/fonts",
+  "revision": "bed55e0de5cfa8f5fb94f9a1f49409b5ec504469",
+  "files": {
+    "Ubuntu-Regular.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bed55e0de5cfa8f5fb94f9a1f49409b5ec504469/ufl/ubuntu/Ubuntu-Regular.ttf",
+      "sha256": "3128df86a31805618436d0ae5651ba4285d0c9de0a39057d025f64ee33bceb64"
+    },
+    "Ubuntu-Medium.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bed55e0de5cfa8f5fb94f9a1f49409b5ec504469/ufl/ubuntu/Ubuntu-Medium.ttf",
+      "sha256": "3cd952b8b52581e48a8fa95b31c8829c2baa41b635042a69587d57f98092961e"
+    },
+    "Ubuntu-Bold.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bed55e0de5cfa8f5fb94f9a1f49409b5ec504469/ufl/ubuntu/Ubuntu-Bold.ttf",
+      "sha256": "679b5c1e09cab3156bb8ef529735f9382bf31ca7ac737382ab959297f8d82ad4"
+    },
+    "UFL.txt": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bed55e0de5cfa8f5fb94f9a1f49409b5ec504469/ufl/ubuntu/UFL.txt",
+      "sha256": "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002"
+    },
+    "METADATA.pb": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bed55e0de5cfa8f5fb94f9a1f49409b5ec504469/ufl/ubuntu/METADATA.pb",
+      "sha256": "fe1e0f3e0663e6ed9752de75a73b8a436fbfd47e55b5b309b191e0d75f9a93eb"
+    }
+  }
+}

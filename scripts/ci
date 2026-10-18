@@ -38,6 +38,20 @@ echo "Running DWG viewer checks"
 )
 
 echo
+echo "Running native mobile app checks"
+(
+  cd sortsys-mobile
+  npm ci --ignore-scripts
+  npm run format:check
+  npm run check:sdk
+  npm run licenses:check
+  npm run typecheck
+  npm test
+  EXPO_NO_TELEMETRY=1 npm run export:android
+  EXPO_NO_TELEMETRY=1 npm run export:ios
+)
+
+echo
 echo "Running webapp checks"
 (
   cd sortsys-webapp-v2
