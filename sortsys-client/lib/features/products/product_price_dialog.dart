@@ -18,6 +18,8 @@ Future<models.ProductsPriceRecordsListResultItem?> showProductPriceDialog(
   required bool Function() isCurrent,
   required bool Function() canCreate,
   required Future<List<models.ProductVendor>> Function(String) loadVendors,
+  Future<models.ProductVendor?> Function(String)? createVendor,
+  bool Function()? canCreateVendor,
   Listenable? changes,
 }) {
   final colors = SsTheme.of(context);
@@ -32,6 +34,7 @@ Future<models.ProductsPriceRecordsListResultItem?> showProductPriceDialog(
         isCurrent: isCurrent,
         enabled: canCreate(),
         loadVendors: loadVendors,
+        createVendor: canCreateVendor?.call() == true ? createVendor : null,
         onSaved: (record) {
           if (!isCurrent()) {
             return;
@@ -72,6 +75,7 @@ class ProductPriceDialog extends StatefulWidget {
     required this.queryIdentity,
     required this.isCurrent,
     required this.loadVendors,
+    this.createVendor,
     required this.onSaved,
     required this.onCancel,
     this.enabled = true,
@@ -82,6 +86,7 @@ class ProductPriceDialog extends StatefulWidget {
   final Object queryIdentity;
   final bool Function() isCurrent;
   final Future<List<models.ProductVendor>> Function(String) loadVendors;
+  final Future<models.ProductVendor?> Function(String)? createVendor;
   final ValueChanged<models.ProductsPriceRecordsListResultItem> onSaved;
   final VoidCallback onCancel;
   final bool enabled;
@@ -405,6 +410,7 @@ class _ProductPriceDialogState extends State<ProductPriceDialog> {
                             values: _values,
                             queryIdentity: widget.queryIdentity,
                             loadVendors: widget.loadVendors,
+                            createVendor: widget.createVendor,
                             enabled: _ready,
                           ),
                         )

@@ -106,15 +106,16 @@ final class ProductPriceDraft {
     }
 
     final localDate = date!.toLocal();
+    final normalizedComment = comment.trim();
 
-    // The canonical form submits local start-of-day and the raw comment.
+    // The canonical form submits local start-of-day and trimmed nullable text.
     // Its vendor picker is not included in the mutation payload.
     return models.ProductsPriceRecordsCreateInput(
       productId: productId,
       pricePerBaseUnit: pricePerBaseUnit!,
       timestamp: DateTime(localDate.year, localDate.month, localDate.day),
       isRealPurchase: isRealPurchase,
-      comment: RpcOptional.value(comment),
+      comment: RpcOptional.value(normalizedComment.isEmpty ? null : normalizedComment),
     );
   }
 }

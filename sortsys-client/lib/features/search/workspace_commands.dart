@@ -9,7 +9,9 @@ import '../../api/generated/models.g.dart' as models;
 import '../../api/model.dart';
 import '../../state/session_controller.dart';
 import '../../ui/text.dart';
+import '../products/session_product_master_dialog.dart';
 import '../projects/project_editor.dart';
+import '../vendors/session_vendor_create_dialog.dart';
 import 'command_palette_controller.dart';
 
 List<PaletteCommand> workspaceCommands(BuildContext context) {
@@ -25,6 +27,30 @@ List<PaletteCommand> workspaceCommands(BuildContext context) {
       icon: 'building',
       group: PaletteGroup.create,
       role: 'manage:projects',
+    ),
+    PaletteCommand(
+      id: 'products.create',
+      label: text(context, 'Produkt erstellen', 'Create product'),
+      description: text(
+        context,
+        'Neues Material oder Produkt anlegen.',
+        'Create a new material or product.',
+      ),
+      group: PaletteGroup.create,
+      role: 'manage:products',
+      requiredRoles: const ['view:products'],
+    ),
+    PaletteCommand(
+      id: 'productVendors.create',
+      label: text(context, 'Händler erstellen', 'Create vendor'),
+      description: text(
+        context,
+        'Neuen Produkt-Händler anlegen.',
+        'Create a new product vendor.',
+      ),
+      group: PaletteGroup.create,
+      role: 'manage:productVendors',
+      requiredRoles: const ['view:productVendors'],
     ),
     PaletteCommand(
       id: 'deployments.open',
@@ -52,7 +78,9 @@ Future<void> runWorkspaceCommand(
   bool isCurrent() {
     return session.authenticated &&
         session.binding == binding &&
-        session.info?.can(command.role) == true;
+        command.isAllowed((role) {
+          return session.info?.can(role) == true;
+        });
   }
 
   if (!isCurrent()) {
@@ -70,6 +98,26 @@ Future<void> runWorkspaceCommand(
       }
 
       context.go('/projects/${Uri.encodeComponent(id)}');
+    case 'products.create':
+      final product = await showSessionProductMasterDialog(
+        context,
+        session,
+        isActive: isCurrent,
+      );
+
+      if (!context.mounted || product == null || !isCurrent()) {
+        return;
+      }
+
+      context.go('/products/${Uri.encodeComponent(product.id)}');
+    case 'productVendors.create':
+      final vendor = await showSessionVendorCreateDialog(context, session);
+
+      if (!context.mounted || vendor == null || !isCurrent()) {
+        return;
+      }
+
+      context.go('/products/vendors/${Uri.encodeComponent(vendor.id)}');
     case 'deployments.open':
       context.go('/deployments');
     default:

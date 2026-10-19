@@ -173,10 +173,18 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
       return;
     }
 
-    final role = entry.command?.role ?? entry.hit?.resource.role;
+    final command = entry.command;
 
-    if (role == null || !widget.repository.can(role)) {
-      return;
+    if (command != null) {
+      if (!command.isAllowed(widget.repository.can)) {
+        return;
+      }
+    } else {
+      final role = entry.hit?.resource.role;
+
+      if (role == null || !widget.repository.can(role)) {
+        return;
+      }
     }
 
     _close(entry);
@@ -571,6 +579,7 @@ class _PaletteRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = SsTheme.of(context);
     final hit = entry.hit;
+    final icon = entry.icon;
     var title = entry.title;
     var subtitle = entry.command?.description;
 
@@ -616,8 +625,10 @@ class _PaletteRow extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  SsIcon(entry.icon),
-                  const SizedBox(width: 10.4),
+                  if (icon != null) ...[
+                    SsIcon(icon),
+                    const SizedBox(width: 10.4),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

@@ -11,19 +11,25 @@ final class PaletteCommand {
     required this.id,
     required this.label,
     required this.description,
-    required this.icon,
+    this.icon,
     required this.group,
     required this.role,
     this.href,
+    this.requiredRoles = const [],
   });
 
   final String id;
   final String label;
   final String description;
-  final String icon;
+  final String? icon;
   final PaletteGroup group;
   final String role;
   final String? href;
+  final List<String> requiredRoles;
+
+  bool isAllowed(bool Function(String role) can) {
+    return can(role) && requiredRoles.every(can);
+  }
 
   bool matches(String query) {
     final haystack = '$label $description $id'.toLowerCase();
@@ -52,7 +58,7 @@ final class PaletteEntry {
 
   final String id;
   final String title;
-  final String icon;
+  final String? icon;
   final PaletteGroup group;
   final PaletteCommand? command;
   final SearchHit? hit;
@@ -112,7 +118,7 @@ class CommandPaletteController extends ChangeNotifier {
   List<PaletteEntry> get entries {
     final visible = commands
         .where((command) {
-          return repository.can(command.role);
+          return command.isAllowed(repository.can);
         })
         .toList(growable: false);
     final byId = {for (final command in visible) command.id: command};

@@ -130,13 +130,12 @@ final class ProductPriceWriteReceipt {
 
     final comment = input.comment.valueOrNull;
 
-    // Persist only the canonical form payload, including its vendor omission.
+    // Retain old untrimmed receipts while accepting canonical nullable text.
     if (input.productId.isEmpty ||
         !input.pricePerBaseUnit.isFinite ||
         !input.vendorId.isAbsent ||
-        input.comment.isAbsent ||
-        comment == null ||
-        utf8.encode(comment.trim()).length > 255) {
+        !input.comment.hasValue ||
+        (comment != null && utf8.encode(comment.trim()).length > 255)) {
       throw const FormatException('INVALID_PRODUCT_PRICE_RECEIPT_INPUT');
     }
   }

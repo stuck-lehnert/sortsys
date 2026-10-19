@@ -20,7 +20,7 @@ void main() {
       'pricePerBaseUnit': -5,
       'timestamp': DateTime(2024, 2, 3),
       'isRealPurchase': false,
-      'comment': '  invoice note  ',
+      'comment': 'invoice note',
     });
     expect(draft.createInput().toWire().containsKey('vendorId'), isFalse);
   });
@@ -40,7 +40,7 @@ void main() {
     expect(() => draft.units.add('new'), throwsUnsupportedError);
     expect(draft.createInput().pricePerBaseUnit, 0);
     expect(draft.createInput().isRealPurchase, isTrue);
-    expect(draft.createInput().toWire()['comment'], '');
+    expect(draft.createInput().toWire()['comment'], isNull);
 
     final base = ProductPriceDraft(
       product: _product({'kg': 999}), totalPrice: '10', amount: '2',
@@ -98,7 +98,7 @@ void main() {
     expect(zero.createInput, throwsStateError);
   });
 
-  test('price comments use trimmed UTF-8 limits but preserve raw wire content', () {
+  test('price comments use canonical trimmed text and UTF-8 limits', () {
     final accepted = '  ${List.filled(127, 'é').join()}  ';
     final rejected = List.filled(128, 'é').join();
     final valid = ProductPriceDraft(
@@ -110,7 +110,7 @@ void main() {
       date: DateTime(2024), comment: rejected,
     );
 
-    expect(valid.createInput().toWire()['comment'], accepted);
+    expect(valid.createInput().toWire()['comment'], accepted.trim());
     expect(invalid.validate()['comment'], ProductPriceDraftIssue.tooLong);
     expect(invalid.createInput, throwsStateError);
     expect(() => invalid.validate()['date'] = ProductPriceDraftIssue.required,
@@ -132,6 +132,23 @@ void main() {
     expect(overflow.validate()['price'], ProductPriceDraftIssue.finitePrice);
     expect(overflow.createInput, throwsStateError);
     expect(finite.createInput().pricePerBaseUnit, 0);
+  });
+
+  test('price form blank comments submit explicit null without vendor selection', () {
+    for (final comment in ['', '   ', '\t\n']) {
+      final draft = ProductPriceDraft(
+        product: _product({}),
+        totalPrice: '10',
+        amount: '2',
+        date: DateTime(2024),
+        comment: comment,
+      );
+      final input = draft.createInput();
+
+      expect(input.comment.hasValue, isTrue);
+      expect(input.toWire()['comment'], isNull);
+      expect(input.vendorId.isAbsent, isTrue);
+    }
   });
 }
 

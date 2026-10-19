@@ -252,14 +252,14 @@ class SsNavigationItem extends StatelessWidget {
   const SsNavigationItem({
     super.key,
     required this.label,
-    required this.icon,
+    this.icon,
     required this.selected,
     required this.onPressed,
     this.vertical = false,
   });
 
   final String label;
-  final String icon;
+  final String? icon;
   final bool selected;
   final VoidCallback onPressed;
   final bool vertical;
@@ -267,12 +267,15 @@ class SsNavigationItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = SsTheme.of(context);
+    final iconName = icon;
     final content = vertical
         ? Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SsIcon(icon),
-              const SizedBox(height: 3),
+              if (iconName != null) ...[
+                SsIcon(iconName),
+                const SizedBox(height: 3),
+              ],
               Text(
                 label,
                 maxLines: 2,
@@ -283,8 +286,10 @@ class SsNavigationItem extends StatelessWidget {
           )
         : Row(
             children: [
-              SsIcon(icon),
-              const SizedBox(width: 8.8),
+              if (iconName != null) ...[
+                SsIcon(iconName),
+                const SizedBox(width: 8.8),
+              ],
               Expanded(
                 child: Text(
                   label,

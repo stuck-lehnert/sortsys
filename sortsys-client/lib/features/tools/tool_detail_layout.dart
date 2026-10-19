@@ -5,6 +5,7 @@ import 'package:sortsys_ui/sortsys_ui.dart';
 
 import '../../api/generated/models.g.dart' as models;
 import '../../ui/text.dart';
+import 'tool_archive_notice.dart';
 
 String toolTitle(models.Tool tool) {
   final title = '${tool.brand} ${tool.category}';
@@ -70,6 +71,8 @@ class ToolDetailLayout extends StatelessWidget {
             title: title,
             subtitleWidget: SsTag(tone: tone, child: Text(status)),
           ),
+          if (tool.archivedSince != null)
+            ToolArchiveNotice(archivedSince: tool.archivedSince!),
           _divider(context),
           SsAttributeList(
             children: [

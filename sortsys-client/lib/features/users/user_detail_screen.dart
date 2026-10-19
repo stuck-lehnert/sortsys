@@ -7,6 +7,7 @@ import 'package:sortsys_ui/sortsys_ui.dart';
 import '../../state/session_controller.dart';
 import '../../ui/text.dart';
 import 'user_detail_layout.dart';
+import 'user_detail_notices.dart';
 import 'user_detail_reads.dart';
 
 class UserDetailScreen extends HookWidget {
@@ -103,6 +104,7 @@ class UserDetailScreen extends HookWidget {
     return UserDetailLayout(
       key: ValueKey((binding, id)),
       user: user,
+      notices: UserDetailNotices(user: user),
       supervisor: supervisorUser,
       onSupervisorPressed: supervisorUser == null
           ? null

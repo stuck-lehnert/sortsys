@@ -88,7 +88,7 @@ void main() {
         'pricePerBaseUnit': 5,
         'timestamp': DateTime(2024, 4, 1),
         'isRealPurchase': true,
-        'comment': '  invoice  ',
+        'comment': 'invoice',
       });
       await tester.tap(
         find.byKey(const ValueKey('product-price-vendor-clear')),

@@ -24,6 +24,12 @@ final class VendorDraft {
   final RpcOptional<String?> description;
   final String? vendorId;
 
+  String? get _normalizedDescription {
+    final value = description.valueOrNull?.trim();
+
+    return value == null || value.isEmpty ? null : value;
+  }
+
   Map<String, VendorDraftIssue> validate() {
     final issues = <String, VendorDraftIssue>{};
     final trimmedName = name.trim();
@@ -60,10 +66,10 @@ final class VendorDraft {
       throw const FormatException('VENDOR_CREATE_REQUIRES_NEW_DRAFT');
     }
 
-    // Validation follows backend trimming without changing canonical raw input.
+    // Match the actual SSForm text fields, not the legacy input assumptions.
     return models.ProductsVendorsCreateInput(
-      name: name,
-      description: description,
+      name: name.trim(),
+      description: RpcOptional.value(_normalizedDescription),
     );
   }
 
@@ -79,8 +85,8 @@ final class VendorDraft {
     return models.ProductsVendorsUpdateInput(
       id: id,
       data: models.ProductsVendorsUpdateRequestData(
-        name: RpcOptional.value(name),
-        description: description,
+        name: RpcOptional.value(name.trim()),
+        description: RpcOptional.value(_normalizedDescription),
       ),
     );
   }

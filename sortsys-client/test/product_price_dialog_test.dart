@@ -46,7 +46,7 @@ void main() {
     expect(fixture.writes, 1);
     expect(fixture.reads, 1);
     expect(fixture.submitted!.pricePerBaseUnit, 15);
-    expect(fixture.submitted!.comment.valueOrNull, ' invoice ');
+    expect(fixture.submitted!.comment.valueOrNull, 'invoice');
     expect(fixture.submitted!.vendorId.isAbsent, isTrue);
     expect(fixture.saved.single.id, 'price');
     expect(_button(tester, 'Save').onPressed, isNull);
@@ -189,14 +189,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+
+  testWidgets('price dialog saves whitespace comment as canonical null', (tester) async {
+    final fixture = _Fixture();
+    await _pump(tester, fixture);
+    await _fill(tester, commentText: '   ');
+    await tester.tap(find.text('Save'));
+    await _waitFor(tester, () {
+      return fixture.saved.isNotEmpty;
+    });
+
+    expect(fixture.writes, 1);
+    expect(fixture.reads, 1);
+    expect(fixture.submitted!.comment.hasValue, isTrue);
+    expect(fixture.submitted!.comment.valueOrNull, isNull);
+    expect(fixture.saved.single.comment, isNull);
+    expect(fixture.store.encoded, isNull);
+  });
 }
 
-Future<void> _fill(WidgetTester tester, {bool german = false}) async {
+Future<void> _fill(
+  WidgetTester tester, {
+  bool german = false,
+  String commentText = ' invoice ',
+}) async {
   final price = _input(german ? 'Gesamtpreis (EUR)' : 'Total price (EUR)');
   final amount = _input(german ? 'Menge' : 'Quantity');
   final comment = _input(german ? 'Kommentar' : 'Comment');
 
-  for (final entry in [(price, '30'), (amount, '2'), (comment, ' invoice ')]) {
+  for (final entry in [(price, '30'), (amount, '2'), (comment, commentText)]) {
     await tester.ensureVisible(entry.$1);
     await tester.enterText(entry.$1, entry.$2);
   }
@@ -382,7 +403,7 @@ final class _Fixture {
         timestamp: value.timestamp,
         price: value.pricePerBaseUnit,
         isRealPurchase: value.isRealPurchase,
-        comment: value.comment.valueOrNull!.trim(),
+        comment: value.comment.valueOrNull?.trim(),
       ),
     ] as O;
   }

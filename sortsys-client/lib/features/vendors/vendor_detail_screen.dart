@@ -7,6 +7,7 @@ import '../../api/generated/models.g.dart' as models;
 import '../../state/session_controller.dart';
 import '../../ui/query_view.dart';
 import '../entities/entity_presentation.dart';
+import 'vendor_edit_action.dart';
 
 models.ProductsVendorsGetInput vendorDetailInput(String id) {
   if (id.isEmpty) {
@@ -58,22 +59,35 @@ class VendorDetailScreen extends StatelessWidget {
         return vendor;
       },
       builder: (context, vendor, reload) {
-        return VendorDetailLayout(vendor: vendor);
+        return VendorDetailLayout(
+          vendor: vendor,
+          headerActions: VendorEditAction(
+            vendor: vendor,
+            onSaved: (updated) {
+              reload();
+            },
+          ),
+        );
       },
     );
   }
 }
 
 class VendorDetailLayout extends StatelessWidget {
-  const VendorDetailLayout({super.key, required this.vendor});
+  const VendorDetailLayout({
+    super.key,
+    required this.vendor,
+    this.headerActions,
+  });
 
   final models.ProductVendor vendor;
+  final Widget? headerActions;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: EdgeInsets.zero,
-      children: [SsPageHeader(title: vendor.name)],
+      children: [SsPageHeader(title: vendor.name, actions: headerActions)],
     );
   }
 }

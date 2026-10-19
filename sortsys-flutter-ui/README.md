@@ -21,9 +21,12 @@ Import `package:sortsys_ui/sortsys_ui.dart`.
 
 - `SsTheme`, `SsColors` and `SsIcon` provide shared tokens and asset rendering.
   The customer channel-removal control uses the Webapp's Carbon `TrashCan` icon.
-- `SsInfoCallout` provides the Webapp's informational colors, leading border,
-  padding and icon geometry. The active completed-project notice uses it with
-  the Carbon `TaskComplete` icon.
+- `SsInfoCallout` supports informational, warning and error variants. The error
+  variant uses the Webapp's danger-color mixes for its border, background,
+  text and optional icon while retaining the directional leading border.
+  Its tests cover both themes, LTR/RTL geometry and an actual optional asset.
+  The completed-project notice uses the Carbon `TaskComplete` icon; user
+  deactivation uses warning styling without a substitute Lock icon.
 - `SsTag` provides the Webapp's neutral, green, red, magenta and cyan color
   mixes and medium/small geometry. Tool details use it for canonical statuses.
 - `SsOperationalTag` provides the Webapp's default-blue color mixes, square
@@ -60,6 +63,15 @@ Import `package:sortsys_ui/sortsys_ui.dart`.
 - `SsSelectField<T>` and `SsChoiceBar<T>` provide typed choices.
 - `SsAutocompleteField<T>` and `SsMultiAutocompleteField<T>` provide typed
   asynchronous single and multiple selection.
+- `SsSuggestionField` supports both free text and actual suggestion selection.
+  Product unit lookups are connected to the active product-master dialog.
+  These control tests do not establish authenticated, rendered or native-device
+  acceptance.
+- `SsEntityPicker<T>` keeps existing-entity and create choices distinct. Only a
+  verified returned entity can become the selection. Cancellation, errors,
+  capability changes and stale results do not create synthetic IDs. The price
+  vendor picker connects nested vendor creation while retaining the price
+  form's values; the selected vendor remains absent from its mutation payload.
 
 The client supplies authorization, RPC calls and mappings to generated API
 models. Flutter's text-editing and select infrastructure remains in use.
@@ -147,10 +159,68 @@ font faces and two font notices/metadata files.
 `provenance.json` is retained as source-only metadata and is not declared as a
 runtime asset.
 
-## Validation checkpoint
+## Current validation status
 
-Verified intermediate validation passed 577 tests: 523 client tests and
-54 shared UI tests. Analyzer protocol validation received 292 expected file
+At the hierarchy-layout checkpoint, a fresh isolated run passed 60 focused
+functional tests: 58 client tests and two shared UI tests. Coverage includes
+price/product-master receipts, contact drafts and typed RPC access, contact
+receipts and write coordination, eight contact-dialog cases, supervisor
+graphs and scoped reads, five supervisor-layout cases and the shared error
+callout. These tests use fake RPC responses and, where needed, an in-memory
+journal; they do not establish authenticated production acceptance.
+
+The hierarchy layout has working direct-report and expand-all controls,
+encoded user links, cycle termination, loading/empty/partial-error states
+and scope-reset behavior. A 320px German/RTL case with doubled Ubuntu text
+passed using widget-local constraints. Session/route integration and
+Webapp-equivalent German name ordering remain pending.
+
+Five tests in `contact_form_fields_test.dart` remain unvalidated. The focused
+60-test run does not replace those cases or establish a full-suite gate.
+The latest full, unexcluded suites predate the contact additions: 616 client
+successes with one vendor-lock assertion failure, and 62 shared UI successes
+with one warning-callout test load error. Both failures remain unresolved.
+
+Fresh analyzer validation received all 362 expected reports: 358 Dart files
+and four configuration files. Version, subscriptions, roots, overlays,
+priority files and shutdown were acknowledged. Busy-to-idle was observed,
+with no missing or unexpected reports, no protocol errors, server exit zero
+and unchanged protected resolver/native metadata. Diagnostics remain: the
+warning-callout test calls the nonexistent `BoxBorder.resolve` method, and
+two contact test files have string-interpolation lints. This is not a clean
+analyzer gate. The unreachable contact-RPC null branch was removed, matching
+the generated non-null query contract; its warnings are resolved.
+
+Fresh JavaScript and WebAssembly release builds passed. Exactly 33
+Tabler/Ubuntu runtime files per target matched their sources; Carbon assets
+and provenance were outside the audit. All 444 maintained source, asset,
+test, manifest, documentation and protected-metadata fingerprints stayed
+unchanged during build validation. Release compilation does not verify
+inactive workflow integration, rendered appearance or native-device behavior.
+
+After that checkpoint, the canonical archive notice was added to the active
+tool-detail layout. It uses the already-loaded archive timestamp, local dates
+and informational styling, immediately after the header. No new RPC is used.
+The unavailable Carbon Archive icon is omitted.
+
+Four real-layout tests were added for an unarchived tool, bilingual/themed
+placement, local-date and future-timestamp semantics, and narrow German
+LTR/RTL rendering with doubled Ubuntu text. These four cases remain
+unvalidated. The 60-test, 362-report and release-build evidence above predates
+the archive-notice change and does not establish acceptance of the latest
+code.
+
+Webapp parity is incomplete. Customer create/edit actions remain inactive.
+The contact dialog is implemented but lacks production receipt storage and
+session/navigation integration. Other detail/CRUD workflows, the active
+supervisor hierarchy, import/export, authenticated acceptance, rendered
+comparison and native-device acceptance remain pending. No deployment or
+store release has been performed.
+
+## Historical intermediate checkpoint
+
+Verified intermediate validation passed 623 tests: 567 client tests and
+56 shared UI tests. Analyzer protocol validation received 311 expected file
 reports without diagnostics, acknowledged subscriptions, configuration
 overlays, roots, priority files and shutdown, observed busy-to-idle, and
 exited with code 0 without protocol errors. JavaScript and WebAssembly release
@@ -247,14 +317,45 @@ queries with a 250 ms delay, and preserves original option strings and order.
 Functional integration tests cover selection, custom-unit payloads,
 added-row focus, keyboard scrolling and selection, stale results, disposal,
 lookup failure and disabled fields at 320 px with enlarged Ubuntu text.
-This is form-field functionality, not an active product create/edit save
-workflow.
+These are unit-field interaction tests. The product-master dialog and
+create/edit entries are now connected; authenticated acceptance remains open.
 
 Automatic delivery-unit matching retains floating-point rounding for large
 finite ratios and falls back when quotient or quarter calculations overflow,
 matching the Webapp without bounded-integer conversion. Regression cases
 cover these behaviors. Full form, CRUD, import/export, live-update, rendered
 visual, native-device and live-session acceptance remains pending.
+
+Vendor editing is active from the detail header for users with
+`view:productVendors` and `manage:productVendors`; Ctrl+E opens the same dialog.
+The text-only action does not yet match the Webapp's icon dropdown. Create
+and edit dialogs use required Name and optional Description inputs,
+initial-query/edit prefill, immutable edit IDs, canonical trimmed/null
+payloads and trimmed UTF-8 limits of 127 bytes for names and 255 bytes for
+descriptions.
+
+Vendor writes persist prepared, dispatching and acknowledged receipts in
+scope-specific secure storage. Each save dispatches at most one mutation.
+An unacknowledged creation remains blocked; similar vendors never establish
+ownership. Updates check a fresh baseline before dispatch and recover by
+reading the known target without resubmission. Proven-unsent operations can
+be discarded. Verified results remain known successes if receipt cleanup
+fails.
+
+Functional tests cover actual inputs, canonical payloads, conflicts and
+no-op edits, storage failures, read-only recovery, stale ownership and
+permission changes, busy cancellation, German fields at 320 px with doubled
+Ubuntu text, and the detail-header/dialog route with verified closing.
+RPC/storage tests use fakes and an in-memory plugin mock. Vendor creation
+is active from the command palette and collapsed master-data sidebar for
+users with vendor visibility and `manage:productVendors`. It opens the
+scoped dialog and navigates only to the verified vendor ID. These vendor
+action rows currently omit the canonical Carbon icon; existing icon-backed
+rows retain their icons.
+
+Nested vendor creation is active from the price vendor picker. Vendor
+deletion, matching menu icons, live updates, live storage and authenticated
+production/native/visual acceptance remain pending.
 
 Product-price entry is active from the product-detail header for users with
 product and price-record visibility plus `manage:productPriceRecords`. The
@@ -266,9 +367,12 @@ The dialog uses the tested typed draft, controller-owned form fields and
 scoped vendor lookups. Functional tests exercise unit/vendor selection and
 removal, date input, the purchase checkbox, arithmetic and UTF-8 validation,
 and German fields at 320 px with enlarged Ubuntu text. Copied conversion
-baselines, signed comma prices, raw comments, local start-of-day timestamps
-and omission of the selected vendor from this form's mutation payload are
-preserved.
+baselines, signed comma prices, canonical trimmed/null comments, local
+start-of-day timestamps and omission of the selected vendor from this form's
+mutation payload are preserved. New price entries submit trimmed comment
+text or explicit null for blank input, matching the actual Webapp form
+runtime. Previously stored untrimmed receipts remain readable and recover
+only through their acknowledged ID.
 
 Each save persists prepared and dispatching receipts before one create
 request. Only a genuine server acknowledgement and exact-ID, product-scoped
@@ -303,8 +407,20 @@ whitespace, null-only channel fallback, exact contactId filters, grouped
 customer-card attributes and outer scrolling at 320px with doubled text.
 Contact-read regressions also cover permission revocation, changed sessions,
 assigned-project visibility and rejection of broader snapshots after a role
-change. Contact editing and deletion remain pending. Customer details include customer-scoped
-remarks/activity and collapsed contact/project sections. Customer form fields
+change.
+
+Contact create/edit has typed drafts, form fields, RPC access, strict
+receipts, write coordination and a dialog. Query text splits into first and
+remaining names. Payloads preserve all six owned fields, explicit nulls,
+optional addresses and ordered phone/email channels. Editing requires a
+fresh full baseline. Prepared, dispatching and acknowledged stages prevent
+uncertain writes from being replayed; create recovery needs the genuine
+acknowledged ID, while known-target updates can be verified with reads.
+The dialog is not connected to production session or navigation entries.
+Production receipt storage remains unimplemented.
+
+Customer details include customer-scoped remarks/activity and collapsed
+contact/project sections. Customer form fields
 and scoped write coordination have functional tests, but no production
 customer mutation action is exposed. Receipt persistence and the active
 create/edit workflow remain pending, alongside complete project details,

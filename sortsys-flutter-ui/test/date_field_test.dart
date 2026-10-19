@@ -154,7 +154,18 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byTooltip('Date'));
+      final calendar = find.byTooltip('Date');
+      final button = tester.widget<SsIconButton>(
+        find.ancestor(of: calendar, matching: find.byType(SsIconButton)),
+      );
+      final position = tester.getCenter(calendar);
+
+      expect(button.onPressed, isNull);
+      expect(tester.getRect(find.byType(SsDateField)).contains(position), isTrue);
+      expect(tester.getRect(find.byType(Scaffold)).contains(position), isTrue);
+
+      // Disabled fields ignore hit testing; exercise a real pointer at the control.
+      await tester.tapAt(position);
       await tester.pumpAndSettle();
 
       expect(changes, isEmpty);

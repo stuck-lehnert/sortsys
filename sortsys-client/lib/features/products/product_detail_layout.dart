@@ -98,6 +98,7 @@ class ProductDetailLayout extends StatelessWidget {
     super.key,
     required this.product,
     this.headerActions,
+    this.editAction,
     this.priceRecords = const [],
     this.priceError,
     this.onRetryPrices,
@@ -106,6 +107,7 @@ class ProductDetailLayout extends StatelessWidget {
 
   final models.Product product;
   final Widget? headerActions;
+  final Widget? editAction;
   final List<models.ProductsPriceRecordsListResultItem> priceRecords;
   final Object? priceError;
   final VoidCallback? onRetryPrices;
@@ -129,7 +131,19 @@ class ProductDetailLayout extends StatelessWidget {
     final content = ListView(
       padding: EdgeInsets.zero,
       children: [
-        SsPageHeader(title: title, actions: headerActions),
+        SsPageHeader(
+          title: title,
+          actions: editAction == null
+              ? headerActions
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ?headerActions,
+                    editAction!,
+                  ],
+                ),
+        ),
         if (product.categories.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),

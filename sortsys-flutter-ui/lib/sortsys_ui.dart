@@ -7,6 +7,7 @@ export 'src/disclosure.dart';
 export 'src/forms/autocomplete_field.dart';
 export 'src/forms/checkbox_field.dart';
 export 'src/forms/date_field.dart';
+export 'src/forms/entity_picker.dart';
 export 'src/forms/multi_autocomplete_field.dart';
 export 'src/forms/select_field.dart';
 export 'src/forms/suggestion_field.dart';

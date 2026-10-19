@@ -55,7 +55,7 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
         : (8.32 + width * 0.0105).clamp(14.4, 22.4);
     final commands = workspaceCommands(context)
         .where((command) {
-          return info.can(command.role);
+          return command.isAllowed(info.can);
         })
         .toList(growable: false);
     final entries = <_NavigationEntry>[
@@ -267,7 +267,9 @@ class _WorkspaceNavigation extends StatelessWidget {
           children: [
             for (final command in createCommands)
               SsNavigationItem(
-                label: text(context, 'Projekt', command.label),
+                label: command.id == 'productVendors.create'
+                    ? text(context, 'Händler', 'Vendor')
+                    : text(context, 'Projekt', command.label),
                 icon: command.icon,
                 selected: false,
                 onPressed: () {

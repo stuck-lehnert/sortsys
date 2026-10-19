@@ -7,7 +7,9 @@ import 'package:sortsys_ui/sortsys_ui.dart';
 
 import '../../state/session_controller.dart';
 import '../../ui/text.dart';
+import '../vendors/session_vendor_create_dialog.dart';
 import 'product_detail_layout.dart';
+import 'product_edit_action.dart';
 import 'product_read_repository.dart';
 import 'product_price_history.dart';
 import 'product_price_chart.dart';
@@ -158,6 +160,19 @@ class ProductDetailScreen extends HookWidget {
           isCurrent: formCurrent,
           canCreate: canRecordPrice,
           loadVendors: reads.vendors,
+          createVendor: (query) {
+            return showSessionVendorCreateDialog(
+              context,
+              session,
+              initialQuery: query,
+              isActive: formCurrent,
+            );
+          },
+          canCreateVendor: () {
+            return formCurrent() &&
+                session.info?.can('view:productVendors') == true &&
+                session.info?.can('manage:productVendors') == true;
+          },
           changes: session,
         );
 
@@ -176,6 +191,17 @@ class ProductDetailScreen extends HookWidget {
     return ProductDetailLayout(
       key: ValueKey((binding, id)),
       product: product,
+      editAction: session.info?.can('manage:products') == true
+          ? ProductEditAction(
+              product: product,
+              onSaved: (record) {
+                if (pageCurrent() && record.id == id) {
+                  revision.value++;
+                  priceRevision.value++;
+                }
+              },
+            )
+          : null,
       headerActions: canRecordPrice()
           ? SsButton(
               key: const ValueKey('product-record-price'),

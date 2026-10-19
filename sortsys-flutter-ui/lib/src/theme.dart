@@ -64,6 +64,12 @@ class SsColors {
     success: Color(0xff64c793),
   );
 
+  Color get warning {
+    return brightness == Brightness.dark
+        ? const Color(0xffe9b26e)
+        : const Color(0xffc87415);
+  }
+
   Color get backgroundAccent {
     return brightness == Brightness.dark
         ? const Color(0xff1a1a1a)

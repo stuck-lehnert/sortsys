@@ -19,6 +19,7 @@ class SsAutocompleteField<T extends Object> extends FormField<T> {
     this.focusNode,
     this.onChanged,
     this.clearOnSelect = false,
+    this.initialQuery = '',
     this.loadingText = 'Loading options',
     this.emptyText = 'No matches',
     this.failureText = 'Options could not be loaded.',
@@ -41,6 +42,7 @@ class SsAutocompleteField<T extends Object> extends FormField<T> {
   final FocusNode? focusNode;
   final ValueChanged<T?>? onChanged;
   final bool clearOnSelect;
+  final String initialQuery;
   final String loadingText;
   final String emptyText;
   final String failureText;
@@ -171,7 +173,7 @@ class _SsAutocompleteInputState<T extends Object>
 
     final initial = widget.selectedValue;
     _controller = TextEditingController(
-      text: initial == null ? '' : field.displayString(initial),
+      text: initial == null ? field.initialQuery : field.displayString(initial),
     );
   }
 

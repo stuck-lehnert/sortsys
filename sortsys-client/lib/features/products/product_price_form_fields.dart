@@ -4,6 +4,7 @@ import 'package:sortsys_ui/sortsys_ui.dart';
 import '../../api/generated/models.g.dart' as models;
 import '../../ui/text.dart';
 import 'product_price_draft.dart';
+import 'product_price_vendor_picker.dart';
 
 final class ProductPriceFormValues {
   ProductPriceFormValues(models.Product product, {DateTime? date})
@@ -69,12 +70,14 @@ class ProductPriceFormFields extends StatefulWidget {
     required this.values,
     required this.queryIdentity,
     required this.loadVendors,
+    this.createVendor,
     this.enabled = true,
   });
 
   final ProductPriceFormValues values;
   final Object queryIdentity;
   final Future<List<models.ProductVendor>> Function(String query) loadVendors;
+  final Future<models.ProductVendor?> Function(String query)? createVendor;
   final bool enabled;
 
   @override
@@ -230,6 +233,22 @@ class _ProductPriceFormFieldsState extends State<ProductPriceFormFields> {
             ],
           ),
         ),
+      );
+    }
+
+    final createVendor = widget.createVendor;
+
+    if (createVendor != null) {
+      return ProductPriceVendorPicker(
+        queryIdentity: (widget.queryIdentity, values),
+        loadVendors: widget.loadVendors,
+        createVendor: createVendor,
+        enabled: widget.enabled,
+        onSelected: (vendor) {
+          setState(() {
+            values.vendor = vendor;
+          });
+        },
       );
     }
 

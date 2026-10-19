@@ -99,7 +99,7 @@ void main() {
       _input(price: double.infinity),
       _input(vendor: const RpcOptional.value('vendor')),
       _input(comment: const RpcOptional.absent()),
-      _input(comment: const RpcOptional.value(null)),
+      _input(comment: const RpcOptional.undefined()),
       _input(comment: RpcOptional.value(List.filled(128, 'é').join())),
     ]) {
       expect(_receipt(input: input).encode, throwsFormatException);
@@ -135,6 +135,20 @@ void main() {
 
     expect(blank.confirms(_record(comment: null)), isTrue);
     expect(blank.confirms(_record(comment: '')), isFalse);
+  });
+
+  test('price receipt roundtrips and verifies canonical explicit null comment', () {
+    final receipt = _receipt(
+      input: _input(comment: const RpcOptional.value(null)),
+    ).started().confirmed(
+      const models.ProductsPriceRecordsCreateOutput(id: 'price'),
+    );
+    final decoded = ProductPriceWriteReceipt.decode(receipt.encode());
+
+    expect(decoded.input.comment.hasValue, isTrue);
+    expect(decoded.input.comment.valueOrNull, isNull);
+    expect(decoded.confirms(_record(comment: null)), isTrue);
+    expect(decoded.confirms(_record(comment: '')), isFalse);
   });
 }
 
