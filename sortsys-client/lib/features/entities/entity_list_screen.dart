@@ -10,8 +10,15 @@ import '../../state/session_controller.dart';
 import '../../ui/query_view.dart';
 import '../../ui/tabler_icon.dart';
 import '../../ui/text.dart';
+import '../contacts/contact_list_screen.dart';
+import '../delivery_notes/delivery_note_list_screen.dart';
+import '../products/product_list_screen.dart';
 import '../projects/project_filter.dart';
 import '../projects/project_status_filter.dart';
+import '../tools/tool_list_filter.dart';
+import '../tools/tool_list_screen.dart';
+import '../users/user_list_screen.dart';
+import '../vendors/vendor_list_screen.dart';
 import 'catalog.dart';
 import 'entity_presentation.dart';
 import 'entity_record.dart';
@@ -41,6 +48,34 @@ class EntityListScreen extends HookWidget {
     if (session.info?.can(spec.role) != true) {
       return const EntityAccessDenied();
     }
+
+    if (spec.key == 'vendors') {
+      return const VendorListScreen();
+    }
+
+    if (spec.key == 'tools') {
+      return const ToolListScreen();
+    }
+
+    if (spec.key == 'products') {
+      return const ProductListScreen();
+    }
+
+    if (spec.key == 'contacts') {
+      return const ContactListScreen();
+    }
+
+    if (spec.key == 'users') {
+      return const UserListScreen();
+    }
+
+    if (spec.key == 'delivery-notes') {
+      return const DeliveryNoteListScreen();
+    }
+
+    final toolFilter = spec.key == 'tools'
+        ? ToolListFilter.fromUri(GoRouterState.of(context).uri)
+        : const ToolListFilter();
 
     return Column(
       children: [
@@ -74,13 +109,21 @@ class EntityListScreen extends HookWidget {
         Expanded(
           child: QueryView(
             requestKey: spec.list,
-            identity: [search.value, projectStatus.value.finished],
+            identity: [
+              search.value,
+              projectStatus.value.finished,
+              if (spec.key == 'tools') ...[
+                toolFilter.input('').toWire(),
+                toolFilter.archivedOnly,
+              ],
+            ],
             load: (session) {
               return loadEntityList(
                 session,
                 spec.key,
                 search.value,
                 projectStatus: projectStatus.value,
+                toolFilter: toolFilter,
               );
             },
 

@@ -66,7 +66,10 @@ final class ProjectListState {
     int? pageSize,
     ProjectSortColumn? toggleColumn,
   }) {
-    final parameters = Map<String, String>.of(uri.queryParameters);
+    final parameters = {
+      for (final entry in uri.queryParametersAll.entries)
+        entry.key: List<String>.of(entry.value),
+    };
     final nextFinished = finished ?? this.finished;
     final nextPage = page ?? this.page;
     final nextSize = pageSize ?? this.pageSize;
@@ -92,22 +95,24 @@ final class ProjectListState {
     parameters.remove('sortProjects');
 
     if (nextFinished) {
-      parameters['finished'] = 'yes';
+      parameters['finished'] = ['yes'];
     }
 
     if (nextPage > 0) {
-      parameters['pageProjects'] = '$nextPage';
+      parameters['pageProjects'] = ['$nextPage'];
     }
 
     if (projectPageSizes.contains(nextSize) && nextSize != 25) {
-      parameters['pageSizeProjects'] = '$nextSize';
+      parameters['pageSizeProjects'] = ['$nextSize'];
     }
 
     if (column != null) {
-      parameters['sortProjects'] = jsonEncode([
-        column.index,
-        reverse ? 'DESC' : 'ASC',
-      ]);
+      parameters['sortProjects'] = [
+        jsonEncode([
+          column.index,
+          reverse ? 'DESC' : 'ASC',
+        ]),
+      ];
     }
 
     return uri.replace(queryParameters: parameters);

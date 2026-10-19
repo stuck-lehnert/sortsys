@@ -285,7 +285,7 @@ class CustomerListRows extends StatelessWidget {
               onStateChanged(state.apply(uri, page: page - 1));
             },
             onPageSize: (size) {
-              onStateChanged(state.apply(uri, pageSize: size));
+              onStateChanged(state.apply(uri, page: 0, pageSize: size));
             },
           ),
           const SizedBox(height: 8),

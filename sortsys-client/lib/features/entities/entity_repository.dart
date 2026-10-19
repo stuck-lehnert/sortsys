@@ -3,6 +3,7 @@ import '../../api/generated/models.g.dart' as api_models;
 import '../../api/model.dart';
 import '../../state/session_controller.dart';
 import '../projects/project_filter.dart';
+import '../tools/tool_list_filter.dart';
 import 'entity_record.dart';
 
 Future<List<EntityRecord>> loadEntityList(
@@ -10,6 +11,7 @@ Future<List<EntityRecord>> loadEntityList(
   String key,
   String search, {
   ProjectListStatus projectStatus = ProjectListStatus.active,
+  ToolListFilter toolFilter = const ToolListFilter(),
 }) async {
   final querySearch = search.isEmpty
       ? const RpcOptional<String>.absent()
@@ -26,7 +28,7 @@ Future<List<EntityRecord>> loadEntityList(
     ),
     'tools' => session.read(
       ApiQueries.toolsList,
-      api_models.ToolsListInput(search: querySearch),
+      toolFilter.input(search),
     ),
     'users' => session.read(
       ApiQueries.usersList,
@@ -56,8 +58,11 @@ Future<List<EntityRecord>> loadEntityList(
   };
 
   final resources = await response;
+  final visibleResources = key == 'tools'
+      ? toolFilter.visibleRows(resources.cast<api_models.Tool>())
+      : resources;
 
-  final records = resources
+  final records = visibleResources
       .map(EntityRecord.fromResource)
       .toList(growable: false);
 

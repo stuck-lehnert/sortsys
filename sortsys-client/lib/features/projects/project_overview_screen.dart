@@ -16,6 +16,7 @@ import 'project_editor.dart';
 import 'project_history.dart';
 import 'project_list_state.dart';
 import 'project_related_sections.dart';
+import 'project_tool_bookings.dart';
 
 class ProjectOverviewScreen extends HookWidget {
   const ProjectOverviewScreen({super.key, required this.id});
@@ -104,6 +105,8 @@ class ProjectOverviewScreen extends HookWidget {
                 ProjectActivity(projectId: project.id),
                 const SizedBox(height: 16),
                 ProjectContacts(projectId: project.id),
+                const SizedBox(height: 16),
+                ProjectToolBookings(projectId: project.id),
               ],
             ),
           ),
@@ -194,17 +197,15 @@ class ProjectOverviewLayout extends StatelessWidget {
             ),
             if (finishedAt != null) ...[
               const SizedBox(height: 8),
-              SsSurface(
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Text(
-                    text(
-                      context,
-                      'Projekt ist seit ${ssDateText(finishedAt.toLocal())} '
-                          'abgeschlossen.',
-                      'Project has been completed since '
-                          '${ssDateText(finishedAt.toLocal())}.',
-                    ),
+              SsInfoCallout(
+                icon: 'task-complete',
+                child: Text(
+                  text(
+                    context,
+                    'Projekt ist seit ${ssDateText(finishedAt.toLocal())} '
+                        'abgeschlossen.',
+                    'Project has been completed since '
+                        '${ssDateText(finishedAt.toLocal())}.',
                   ),
                 ),
               ),

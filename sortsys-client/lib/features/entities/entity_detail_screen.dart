@@ -6,6 +6,12 @@ import 'package:sortsys_ui/sortsys_ui.dart';
 import '../../state/session_controller.dart';
 import '../../ui/query_view.dart';
 import '../../ui/text.dart';
+import '../contacts/contact_detail_screen.dart';
+import '../delivery_notes/delivery_note_detail_screen.dart';
+import '../products/product_detail_screen.dart';
+import '../tools/tool_detail_screen.dart';
+import '../users/user_detail_screen.dart';
+import '../vendors/vendor_detail_screen.dart';
 import 'catalog.dart';
 import 'entity_presentation.dart';
 import 'entity_record.dart';
@@ -38,6 +44,30 @@ class EntityDetailScreen extends StatelessWidget {
     final session = context.watch<SessionController>();
     if (session.info?.can(spec.role) != true) {
       return const EntityAccessDenied();
+    }
+
+    if (spec.key == 'contacts') {
+      return ContactDetailScreen(id: id);
+    }
+
+    if (spec.key == 'tools') {
+      return ToolDetailScreen(id: id);
+    }
+
+    if (spec.key == 'vendors') {
+      return VendorDetailScreen(id: id);
+    }
+
+    if (spec.key == 'products') {
+      return ProductDetailScreen(id: id);
+    }
+
+    if (spec.key == 'users') {
+      return UserDetailScreen(id: id);
+    }
+
+    if (spec.key == 'delivery-notes') {
+      return DeliveryNoteDetailScreen(id: id);
     }
 
     return QueryView(

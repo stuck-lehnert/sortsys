@@ -20,6 +20,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/icons/tabler/
+    - assets/icons/carbon/
     - assets/fonts/ubuntu/UFL.txt
     - assets/fonts/ubuntu/METADATA.pb
   fonts:

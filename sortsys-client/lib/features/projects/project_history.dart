@@ -15,15 +15,17 @@ import '../../ui/text.dart';
 api_models.PersonalizationActivityListInput projectActivityInput(
   String projectId, {
   String? cursor,
+  api_models.ActivityResourceType resourceType =
+      api_models.ActivityResourceType.project,
 }) {
   return RpcOptional.value(
     api_models.PersonalizationActivityListRequest(
       limit: const RpcOptional.value(50),
-      resourceType: const RpcOptional.value(
-        api_models.ActivityResourceType.project,
-      ),
+      resourceType: RpcOptional.value(resourceType),
       resourceId: RpcOptional.value(projectId),
-      includeProjectContext: const RpcOptional.value(true),
+      includeProjectContext: RpcOptional.value(
+        resourceType == api_models.ActivityResourceType.project,
+      ),
       cursor: cursor == null
           ? const RpcOptional.absent()
           : RpcOptional.value(cursor),
@@ -32,14 +34,19 @@ api_models.PersonalizationActivityListInput projectActivityInput(
 }
 
 class ProjectRemarks extends StatelessWidget {
-  const ProjectRemarks({super.key, required this.projectId});
+  const ProjectRemarks({
+    super.key,
+    required this.projectId,
+    this.resourceType = api_models.RemarksListRequestResourceType.project,
+  });
 
   final String projectId;
+  final api_models.RemarksListRequestResourceType resourceType;
 
   @override
   Widget build(BuildContext context) {
     final input = api_models.RemarksListInput(
-      resourceType: api_models.RemarksListRequestResourceType.project,
+      resourceType: resourceType,
       resourceId: projectId,
     );
 
@@ -102,9 +109,14 @@ class ProjectRemarks extends StatelessWidget {
 }
 
 class ProjectActivity extends StatefulWidget {
-  const ProjectActivity({super.key, required this.projectId});
+  const ProjectActivity({
+    super.key,
+    required this.projectId,
+    this.resourceType = api_models.ActivityResourceType.project,
+  });
 
   final String projectId;
+  final api_models.ActivityResourceType resourceType;
 
   @override
   State<ProjectActivity> createState() {
@@ -128,7 +140,12 @@ class _ProjectActivityState extends State<ProjectActivity> {
     final session = context.read<SessionController>();
     final binding = session.binding;
     final projectId = widget.projectId;
-    final input = projectActivityInput(projectId, cursor: cursor);
+    final resourceType = widget.resourceType;
+    final input = projectActivityInput(
+      projectId,
+      cursor: cursor,
+      resourceType: resourceType,
+    );
 
     setState(() {
       _loading = true;
@@ -143,7 +160,8 @@ class _ProjectActivityState extends State<ProjectActivity> {
 
       if (!mounted ||
           session.binding != binding ||
-          widget.projectId != projectId) {
+          widget.projectId != projectId ||
+          widget.resourceType != resourceType) {
         return;
       }
 
@@ -155,7 +173,8 @@ class _ProjectActivityState extends State<ProjectActivity> {
     } catch (error) {
       if (mounted &&
           session.binding == binding &&
-          widget.projectId == projectId) {
+          widget.projectId == projectId &&
+          widget.resourceType == resourceType) {
         setState(() {
           _error = error;
         });
@@ -165,7 +184,8 @@ class _ProjectActivityState extends State<ProjectActivity> {
     } finally {
       if (mounted &&
           session.binding == binding &&
-          widget.projectId == projectId) {
+          widget.projectId == projectId &&
+          widget.resourceType == resourceType) {
         setState(() {
           _loading = false;
         });
@@ -178,7 +198,10 @@ class _ProjectActivityState extends State<ProjectActivity> {
 
   @override
   Widget build(BuildContext context) {
-    final input = projectActivityInput(widget.projectId);
+    final input = projectActivityInput(
+      widget.projectId,
+      resourceType: widget.resourceType,
+    );
 
     return QueryView<List<api_models.ResourceActivity>>(
       requestKey: ApiQueries.personalizationActivityList.path,

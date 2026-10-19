@@ -272,11 +272,35 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final name in ssIconNames) {
+      final directory = name == 'trash-can' || name == 'task-complete'
+          ? 'carbon'
+          : 'tabler';
       final svg = await rootBundle.loadString(
-        'packages/sortsys_ui/assets/icons/tabler/$name.svg',
+        'packages/sortsys_ui/assets/icons/$directory/$name.svg',
       );
       expect(svg, contains('<svg'));
+
+      if (name == 'trash-can') {
+        expect(svg, contains('viewBox="0 0 32 32"'));
+        expect(svg, contains('M12 12H14V24H12z'));
+        expect(svg, contains('M18 12H20V24H18z'));
+        expect(svg, contains('M12 2H20V4H12z'));
+        expect(svg, contains('Copyright IBM Corp. 2016, 2023'));
+      }
+
+      if (name == 'task-complete') {
+        expect(svg, contains('viewBox="0 0 32 32"'));
+        expect(svg, contains('M22 27.18 19.41 24.59'));
+        expect(svg, contains('M25,5H22V4a2.0058'));
+        expect(svg, contains('Copyright IBM Corp. 2016, 2023'));
+      }
     }
+
+    final carbonLicence = await rootBundle.loadString(
+      'packages/sortsys_ui/assets/icons/carbon/LICENSE',
+    );
+    expect(carbonLicence, contains('Apache License'));
+    expect(carbonLicence, contains('Version 2.0, January 2004'));
 
     final licence = await rootBundle.loadString(
       'packages/sortsys_ui/assets/fonts/ubuntu/UFL.txt',

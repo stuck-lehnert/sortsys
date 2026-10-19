@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/login_screen.dart';
+import '../features/customers/customer_detail_screen.dart';
 import '../features/customers/customer_list_screen.dart';
 import '../features/entities/catalog.dart';
 import '../features/entities/entity_screens.dart';
@@ -145,6 +146,10 @@ GoRoute _entityRoute(EntitySpec spec) {
 
             if (spec.key == 'projects') {
               return ProjectOverviewScreen(id: id);
+            }
+
+            if (spec.key == 'customers') {
+              return CustomerDetailScreen(id: id);
             }
 
             return EntityDetailScreen(spec, id);

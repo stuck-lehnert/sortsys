@@ -27,7 +27,9 @@ const ssIconNames = {
   'search',
   'settings',
   'sun',
+  'task-complete',
   'tools',
+  'trash-can',
   'truck-delivery',
   'users',
   'x',
@@ -50,11 +52,15 @@ class SsIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!ssIconNames.contains(name)) {
-      throw ArgumentError.value(name, 'name', 'Unknown Tabler icon');
+      throw ArgumentError.value(name, 'name', 'Unknown sortsys icon');
     }
 
+    final family = name == 'trash-can' || name == 'task-complete'
+        ? 'carbon'
+        : 'tabler';
+
     return SvgPicture.asset(
-      'assets/icons/tabler/$name.svg',
+      'assets/icons/$family/$name.svg',
       package: 'sortsys_ui',
       width: size,
       height: size,

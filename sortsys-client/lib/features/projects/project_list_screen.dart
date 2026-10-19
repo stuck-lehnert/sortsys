@@ -241,7 +241,7 @@ class ProjectListRows extends StatelessWidget {
           },
 
           onSize: (size) {
-            onStateChanged(state.apply(uri, pageSize: size));
+            onStateChanged(state.apply(uri, page: 0, pageSize: size));
           },
         ),
         const SizedBox(height: 8),

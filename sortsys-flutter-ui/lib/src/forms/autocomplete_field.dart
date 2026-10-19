@@ -16,6 +16,7 @@ class SsAutocompleteField<T extends Object> extends FormField<T> {
     required this.loadOptions,
     required this.displayString,
     this.queryIdentity,
+    this.focusNode,
     this.onChanged,
     this.clearOnSelect = false,
     this.loadingText = 'Loading options',
@@ -37,6 +38,7 @@ class SsAutocompleteField<T extends Object> extends FormField<T> {
   final FutureOr<List<T>> Function(String query) loadOptions;
   final String Function(T value) displayString;
   final Object? queryIdentity;
+  final FocusNode? focusNode;
   final ValueChanged<T?>? onChanged;
   final bool clearOnSelect;
   final String loadingText;
@@ -145,7 +147,7 @@ class _SsAutocompleteInput<T extends Object> extends StatefulWidget {
 
 class _SsAutocompleteInputState<T extends Object>
     extends State<_SsAutocompleteInput<T>> {
-  final _focusNode = FocusNode();
+  final _localFocusNode = FocusNode();
   final _measureKey = GlobalKey();
   late final TextEditingController _controller;
   int _requestEpoch = 0;
@@ -157,6 +159,10 @@ class _SsAutocompleteInputState<T extends Object>
 
   SsAutocompleteField<T> get field {
     return widget.field;
+  }
+
+  FocusNode get _focusNode {
+    return field.focusNode ?? _localFocusNode;
   }
 
   @override
@@ -199,7 +205,7 @@ class _SsAutocompleteInputState<T extends Object>
     _requestEpoch += 1;
     _cancelDebounce();
     _controller.dispose();
-    _focusNode.dispose();
+    _localFocusNode.dispose();
     super.dispose();
   }
 

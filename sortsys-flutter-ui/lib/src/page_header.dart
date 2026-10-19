@@ -7,11 +7,13 @@ class SsPageHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.subtitleWidget,
     this.actions,
   });
 
   final String title;
   final String? subtitle;
+  final Widget? subtitleWidget;
   final Widget? actions;
 
   @override
@@ -36,7 +38,10 @@ class SsPageHeader extends StatelessWidget {
                   letterSpacing: -0.015 * fontSize,
                 ),
               ),
-              if (subtitle != null && subtitle!.isNotEmpty) ...[
+              if (subtitleWidget != null) ...[
+                const SizedBox(height: 2.56),
+                subtitleWidget!,
+              ] else if (subtitle != null && subtitle!.isNotEmpty) ...[
                 const SizedBox(height: 2.56),
                 Text(
                   subtitle!,

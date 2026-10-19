@@ -92,6 +92,10 @@ void main() {
     _viewport(tester);
     await _pump(tester, project: _project(finished: true));
 
+    expect(find.byType(SsInfoCallout), findsOneWidget);
+    final icon = tester.widget<SsIcon>(find.byType(SsIcon));
+    expect(icon.name, 'task-complete');
+
     expect(
       find.text('Project has been completed since 12.10.2026.'),
       findsOneWidget,
