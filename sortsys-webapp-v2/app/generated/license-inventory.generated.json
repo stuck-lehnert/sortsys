@@ -2551,16 +2551,16 @@
       {
         "ecosystem": "npm",
         "name": "@carbon/icon-helpers",
-        "version": "10.83.0",
+        "version": "10.84.0",
         "license": "Apache-2.0",
-        "source": "https://www.npmjs.com/package/%40carbon%2Ficon-helpers/v/10.83.0"
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficon-helpers/v/10.84.0"
       },
       {
         "ecosystem": "npm",
         "name": "@carbon/icons-react",
-        "version": "11.89.0",
+        "version": "11.90.0",
         "license": "Apache-2.0",
-        "source": "https://www.npmjs.com/package/%40carbon%2Ficons-react/v/11.89.0"
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficons-react/v/11.90.0"
       },
       {
         "ecosystem": "npm",
@@ -2593,9 +2593,9 @@
       {
         "ecosystem": "npm",
         "name": "@ibm/telemetry-js",
-        "version": "1.11.0",
+        "version": "1.12.0",
         "license": "Apache-2.0",
-        "source": "https://www.npmjs.com/package/%40ibm%2Ftelemetry-js/v/1.11.0"
+        "source": "https://www.npmjs.com/package/%40ibm%2Ftelemetry-js/v/1.12.0"
       },
       {
         "ecosystem": "npm",
@@ -4456,9 +4456,9 @@
       {
         "ecosystem": "npm",
         "name": "postal-mime",
-        "version": "4.0.4",
+        "version": "4.0.5",
         "license": "MIT-0",
-        "source": "https://www.npmjs.com/package/postal-mime/v/4.0.4"
+        "source": "https://www.npmjs.com/package/postal-mime/v/4.0.5"
       },
       {
         "ecosystem": "Rust",
