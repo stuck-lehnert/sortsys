@@ -101,6 +101,13 @@ device-bound app Keychain accessibility. Navigation and detail reload use
 verified readbacks. Authenticated production and native-device acceptance
 remain pending.
 
+Contact details expose Edit and Delete in Webapp order with a shared busy
+state and the persistent Ctrl+E editor. Deletion requires view/delete roles,
+the irreversible confirmation and a genuine server acknowledgement. Its
+version-two journal shares the known-target edit key and in-process lock;
+uncertain dispatches are never replayed. Only the acknowledged contact ID
+on the same complete owned URI returns to the contact list.
+
 Tool lists use the Webapp's five columns: number, status, brand, category and
 model. Numeric and localized status sorting, stable lowercase string sorting
 and top pagination use the `Tools` URL keys. Page-size changes reset to the
@@ -574,7 +581,92 @@ block spacing in maintained generated models and descriptors.
 
 ## Current validation status
 
-### Active product-deletion checkpoint
+### Active contact-deletion checkpoint
+
+Fresh complete, unexcluded suites passed 1,004 client tests across 149 files
+and 72 shared UI tests across 18 files: 1,076 tests across 167 files. Both
+runners reported success and exited with code zero, without failures, errors,
+skips or stderr. Exact suite sets and selected source-declared literal names
+were checked. All 57 contact-delete foundation, adapter and dialog cases and
+11 contact-entry cases ran, including eight new menu, ownership and router
+cases. The 66 product-delete cases, 16 product-menu/router cases, ten customer
+entry cases and three master-entry cases also ran. The earlier seven product
+menu additions and actual final SessionController/GoRouter tests remain covered.
+
+Static validation received all 450 clean analysis-error notifications:
+446 Dart files and four YAML files. All 446 explicit Dart getErrors queries
+were clean. Status subscriptions, roots, all overlays, priority files,
+queries and shutdown were acknowledged. Busy-to-idle was observed; protocol
+errors and server stderr were empty, and the server exited with code zero.
+
+Thirty-six eligible files matched the Dart formatter with language version
+3.11 and an 80-column page width. The product detail screen's two historical
+formatter regions were audited privately and restored before tests. Manual
+review covered complete changed files, purpose grouping, braced callbacks,
+wrapping and ownership across awaited operations. Corrections separated test
+cases and strengthened duplicate-query ordering and decoded-route-ID checks.
+
+The full gate and each release used entirely new physical, writable,
+byte-identical client/UI siblings before offline Pub. Client resolution used
+enforce-lockfile. All 622 maintained file hashes and private original input
+bytes were checked before and after execution. Original private analysis
+options and the absent UI lockfile were restored. Seven protected maintained
+resolver/native configuration absences remained unchanged.
+
+Fresh JavaScript and WebAssembly release builds passed in separate new pairs,
+with no build stderr and code-zero exits:
+
+- JavaScript: 4,430,189 bytes,
+  SHA-256 `ab1d7c06b231114a73ed6076002b3e20bd877da154237c1522df1cde10564cd6`.
+- WebAssembly: 4,133,891 bytes,
+  SHA-256 `cae4145b9ef3272cc0ad8365e172e6cfacd3695da99f94e3b821f6ed7241c343`.
+
+Both bundles passed the fixed 33-file Tabler/Ubuntu and separate 19-file
+Carbon audits. All 16 added SVG hashes, viewBoxes and geometry counts and
+five pinned Ubuntu file hashes matched. The two provenance JSON files
+remained source-only and absent from the runtime bundles.
+
+Contact details expose Edit then Delete with genuine 16px Carbon icons.
+Unavailable actions are omitted. The persistent Ctrl+E editor retains its
+standalone API and Contact-valued save callback. Editing and deletion share
+one live busy flag. The page keeps its action state through delete-role loss
+while the same view owner survives. The real final SessionController, binding,
+current view, displayed contact ID and complete captured URI govern callbacks.
+
+The 640px danger dialog uses the existing contactName helper, the linked-data
+warning, bold irreversible text and the required checkbox. Its baseline
+freezes all nine generated Contact fields, including raw nullable names,
+absent versus explicit-null address values, ordered channels and timestamps.
+Tests cover confirmation, busy submit/cancel/back guards, lost acknowledgements,
+reopening, stale responses, held callbacks, mutable parent snapshots and
+320px doubled German RTL layout. Menu tests exercise both themes.
+
+Deletion and known-target editing share the actual JSON scope tuple
+[origin, tenant, user, contactId], the sortsys.contact_write.v1. key namespace
+and the existing contacts:$scope in-process lock. New-contact creation keeps
+its separate null-target scope. Strict version-one edit and version-two delete
+envelopes reject each other. Actual legacy edit and delete coordinators block
+pending incompatible journals before business requests. Storage tests use
+in-memory plugin mocks.
+
+Intent and dispatch are persisted and read back before one generated ID-only
+delete request. A genuine positive acknowledgement is required; absence and
+HTTP 404 do not establish success. Uncertain dispatches are never replayed.
+Exact-nonce proven-unsent discard and acknowledged cleanup remain view/target
+bound after delete-role loss. Cleanup faults retain the confirmed contact ID.
+Only the matching acknowledged ID on the same captured complete URI navigates
+to /contacts. Duplicate-query ordering, fragments, targets and ownership changes
+are checked. The actual unauthenticated final-session detail route rejects
+actions and Ctrl+E without changing its owned URI before navigation or disposal.
+
+Customer create/edit, nested contact creation and the earlier customer/product
+deletion workflows remain active. Other entity details and CRUD workflows,
+supervisor hierarchy and German ordering, delivery-note forms, import/export
+and live updates remain incomplete. Rendered browser comparison, authenticated
+service workflows and native-device secure-storage acceptance remain open.
+No deployment or store release has been performed.
+
+### Earlier active product-deletion checkpoint
 
 Fresh full, unexcluded suites passed 939 client tests across 144 files and
 72 shared UI tests across 18 files: 1,011 tests across 162 files. Both runners

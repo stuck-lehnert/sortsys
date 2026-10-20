@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../api/generated/api.g.dart';
@@ -8,6 +9,7 @@ import '../../ui/query_view.dart';
 import '../entities/entity_presentation.dart';
 import '../projects/project_history.dart';
 import 'contact_detail_layout.dart';
+import 'contact_detail_location.dart';
 import 'contact_edit_action.dart';
 import 'contact_related_sections.dart';
 
@@ -21,12 +23,12 @@ class ContactDetailScreen extends StatelessWidget {
     final session = context.watch<SessionController>();
     final binding = session.binding;
 
-    if (!session.authenticated ||
-        session.info?.can('view:contacts') != true) {
+    if (!session.authenticated || session.info?.can('view:contacts') != true) {
       return const EntityAccessDenied();
     }
 
     return QueryView<models.Contact>(
+      key: ValueKey((binding, id)),
       requestKey: ApiQueries.contactsGet.path,
       identity: id,
       load: (current) async {
@@ -53,35 +55,70 @@ class ContactDetailScreen extends StatelessWidget {
         return contact;
       },
       builder: (context, contact, reload) {
-        return ContactDetailLayout(
-          contact: contact,
-          editAction: session.info?.can('manage:contacts') == true
-              ? ContactEditAction(
+        return KeyedSubtree(
+          key: ValueKey((binding, id, contact.modifiedAt)),
+          child: Builder(
+            builder: (ownerContext) {
+              final router = GoRouter.of(ownerContext);
+              final ownedLocation = router.routeInformationProvider.value.uri;
+
+              bool pageCurrent() {
+                if (!ownerContext.mounted ||
+                    !session.authenticated ||
+                    session.binding != binding ||
+                    session.info?.can('view:contacts') != true) {
+                  return false;
+                }
+
+                final current = router.routeInformationProvider.value.uri;
+
+                return current == ownedLocation &&
+                    isContactDetailLocation(current, id);
+              }
+
+              return ContactDetailLayout(
+                contact: contact,
+                // Keep the dialog owner alive when only delete permission is lost.
+                editAction: ContactEditAction(
                   contact: contact,
+                  ownerContext: ownerContext,
+                  isActive: pageCurrent,
                   onSaved: (record) {
-                    if (context.mounted &&
-                        session.authenticated &&
-                        session.binding == binding &&
-                        session.info?.can('view:contacts') == true &&
-                        record.id == id) {
+                    if (pageCurrent() && record.id == id) {
                       reload();
                     }
                   },
-                )
-              : null,
-          child: KeyedSubtree(
-            key: ValueKey((binding, contact.id, contact.modifiedAt)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ProjectRemarks(
-                  projectId: contact.id,
-                  resourceType: models.RemarksListRequestResourceType.contact,
+                  onDeleted: (acknowledgedId) {
+                    if (!pageCurrent() || acknowledgedId != id) {
+                      return;
+                    }
+
+                    final destination = contactDeletedLocation(
+                      router.routeInformationProvider.value.uri,
+                      ownedLocation: ownedLocation,
+                      displayedId: id,
+                      acknowledgedId: acknowledgedId,
+                    );
+
+                    if (destination != null) {
+                      router.go(destination);
+                    }
+                  },
                 ),
-                const SizedBox(height: 16),
-                ContactRelatedSections(contactId: contact.id),
-              ],
-            ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ProjectRemarks(
+                      projectId: contact.id,
+                      resourceType:
+                          models.RemarksListRequestResourceType.contact,
+                    ),
+                    const SizedBox(height: 16),
+                    ContactRelatedSections(contactId: contact.id),
+                  ],
+                ),
+              );
+            },
           ),
         );
       },

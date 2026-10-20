@@ -142,28 +142,27 @@ void main() {
     },
   );
 
-  testWidgets(
-    'unreadable contact journal gates deletion until status reload',
-    (tester) async {
-      final fixture = _Fixture();
-      fixture.store.failRead = true;
-      addTearDown(fixture.dispose);
+  testWidgets('unreadable contact journal gates deletion until status reload', (
+    tester,
+  ) async {
+    final fixture = _Fixture();
+    fixture.store.failRead = true;
+    addTearDown(fixture.dispose);
 
-      await _open(tester, fixture);
+    await _open(tester, fixture);
 
-      expect(find.byType(SsCheckbox), findsNothing);
-      expect(_button(tester, 'Delete').onPressed, isNull);
-      expect(fixture.access.deletes, 0);
+    expect(find.byType(SsCheckbox), findsNothing);
+    expect(_button(tester, 'Delete').onPressed, isNull);
+    expect(fixture.access.deletes, 0);
 
-      fixture.store.failRead = false;
-      await tester.tap(find.text('Reload'));
-      await tester.pumpAndSettle();
+    fixture.store.failRead = false;
+    await tester.tap(find.text('Reload'));
+    await tester.pumpAndSettle();
 
-      expect(find.byType(SsCheckbox), findsOneWidget);
-      expect(_button(tester, 'Delete').onPressed, isNotNull);
-      expect(fixture.access.deletes, 0);
-    },
-  );
+    expect(find.byType(SsCheckbox), findsOneWidget);
+    expect(_button(tester, 'Delete').onPressed, isNotNull);
+    expect(fixture.access.deletes, 0);
+  });
 
   testWidgets(
     'proven unsent contact deletion can be discarded after role loss',
@@ -289,11 +288,17 @@ void main() {
     await tester.tap(find.byType(SsCheckbox));
     await tester.pump();
 
+    expect(find.text('Kontakt löschen'), findsOneWidget);
+    expect(
+      _linkedDataWarning(
+        'Alle mit diesem Kontakt in Verbindung stehenden Daten '
+        'werden damit ebenfalls gelöscht.',
+      ),
+      findsOneWidget,
+    );
     expect(tester.widget<SsCheckbox>(find.byType(SsCheckbox)).value, isTrue);
     expect(
-      MediaQuery.sizeOf(
-        tester.element(find.byType(ContactDeleteDialog)),
-      ).width,
+      MediaQuery.sizeOf(tester.element(find.byType(ContactDeleteDialog))).width,
       320,
     );
     expect(tester.takeException(), isNull);
@@ -416,8 +421,13 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final fixture = _Fixture(baseline: _contact(
-        salutation: 'Dr.', firstName: 'Ada', lastName: 'Lovelace'));
+      final fixture = _Fixture(
+        baseline: _contact(
+          salutation: 'Dr.',
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+        ),
+      );
       addTearDown(fixture.dispose);
 
       await _open(tester, fixture);
@@ -428,22 +438,25 @@ void main() {
       final widthConstraint = find.byWidgetPredicate((widget) {
         return widget is ConstrainedBox && widget.constraints.maxWidth == 640;
       });
-      final warningFinder = find.byWidgetPredicate((widget) {
-        return widget is Text && widget.textSpan?.toPlainText().startsWith(
-          'All data associated with this contact will also be deleted.') == true;
-      });
+      final warningFinder = _linkedDataWarning(
+        'All data associated with this contact will also be deleted.',
+      );
 
       expect(widthConstraint, findsOneWidget);
       expect(tester.getSize(widthConstraint).width, 640);
       expect(warningFinder, findsOneWidget);
 
       final warning = tester.widget<Text>(warningFinder);
-      final spans = (warning.textSpan! as TextSpan).children!.whereType<TextSpan>();
+      final spans = (warning.textSpan! as TextSpan).children!
+          .whereType<TextSpan>();
 
-      expect(spans.any((span) {
-        return span.text == 'This action cannot be undone.' &&
-          span.style?.fontWeight == FontWeight.w700;
-      }), isTrue);
+      expect(
+        spans.any((span) {
+          return span.text == 'This action cannot be undone.' &&
+              span.style?.fontWeight == FontWeight.w700;
+        }),
+        isTrue,
+      );
       expect(_button(tester, 'Delete').kind, SsButtonKind.danger);
       expect(find.byType(SsCheckbox), findsOneWidget);
       expect(fixture.access.deletes, 0);
@@ -465,7 +478,9 @@ void main() {
       await tester.pumpWidget(_direct(fixture, identity: 'same-owner'));
       await tester.pumpAndSettle();
 
-      final change = tester.widget<SsCheckbox>(find.byType(SsCheckbox)).onChanged!;
+      final change = tester
+          .widget<SsCheckbox>(find.byType(SsCheckbox))
+          .onChanged!;
       final submit = _button(tester, 'Delete').onPressed!;
       final scope = fixture.access.scope;
       fixture.access.contactId = 'other';
@@ -490,7 +505,18 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
 
+Finder _linkedDataWarning(String prefix) {
+  return find.byWidgetPredicate((widget) {
+    if (widget is! Text) {
+      return false;
+    }
+
+    final message = widget.textSpan?.toPlainText();
+
+    return message?.startsWith(prefix) == true;
+  });
 }
 
 SsButton _button(WidgetTester tester, String label) {
@@ -635,6 +661,7 @@ final class _Access implements ContactDeleteAccess {
 
   @override
   String contactId = 'contact';
+
   var contact = _contact();
   bool current = true;
   bool canDelete = true;
