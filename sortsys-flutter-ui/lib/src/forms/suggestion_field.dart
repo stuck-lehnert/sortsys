@@ -8,6 +8,9 @@ import '../button.dart';
 import '../surface.dart';
 import 'text_field.dart';
 
+typedef SsSuggestionMatcher =
+    Iterable<String> Function(List<String> options, String query);
+
 class SsSuggestionField extends StatefulWidget {
   const SsSuggestionField({
     super.key,
@@ -15,6 +18,8 @@ class SsSuggestionField extends StatefulWidget {
     required this.controller,
     required this.queryIdentity,
     required this.loadSuggestions,
+    this.matchSuggestions,
+    this.isCurrent,
     this.focusNode,
     this.enabled = true,
     this.validator,
@@ -26,6 +31,8 @@ class SsSuggestionField extends StatefulWidget {
   final TextEditingController controller;
   final Object queryIdentity;
   final Future<List<String>> Function() loadSuggestions;
+  final SsSuggestionMatcher? matchSuggestions;
+  final bool Function()? isCurrent;
   final FocusNode? focusNode;
   final bool enabled;
   final FormFieldValidator<String>? validator;
@@ -59,15 +66,20 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
 
     if (oldWidget.queryIdentity != widget.queryIdentity ||
         oldWidget.controller != widget.controller ||
-        oldWidget.enabled != widget.enabled) {
+        oldWidget.enabled != widget.enabled ||
+        oldWidget.matchSuggestions != widget.matchSuggestions) {
       _scope++;
       _cancelDebounce();
       _prepare();
     }
   }
 
+  bool get _current {
+    return mounted && widget.enabled && (widget.isCurrent?.call() ?? true);
+  }
+
   void _prepare() {
-    if (!widget.enabled) {
+    if (!_current) {
       _prepared = Future.value(const []);
 
       return;
@@ -100,10 +112,16 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
     final request = ++_request;
     final scope = _scope;
     final prepared = _prepared;
-    final query = value.text.trim().toLowerCase();
+    final matcher = widget.matchSuggestions;
+
+    // Custom matchers own normalization and must receive the raw query.
+    final query = matcher == null
+        ? value.text.trim().toLowerCase()
+        : value.text;
+
     _cancelDebounce();
 
-    if (!widget.enabled || query.isEmpty) {
+    if (!_current || query.isEmpty) {
       return const [];
     }
 
@@ -115,14 +133,18 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
       waiting.complete(true);
     });
 
-    if (!await waiting.future) {
+    if (!await waiting.future || !_current) {
       return const [];
     }
 
     final options = await prepared;
 
-    if (!mounted || scope != _scope || request != _request || !widget.enabled) {
+    if (!_current || scope != _scope || request != _request) {
       return const [];
+    }
+
+    if (matcher != null) {
+      return List<String>.unmodifiable(matcher(options, query));
     }
 
     return options
@@ -143,6 +165,7 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
   @override
   Widget build(BuildContext context) {
     final focus = widget.focusNode ?? _localFocus;
+    final scope = _scope;
 
     return RawAutocomplete<String>(
       key: ValueKey((_scope, focus)),
@@ -150,7 +173,7 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
       focusNode: focus,
       optionsBuilder: _options,
       onSelected: (option) {
-        if (widget.enabled) {
+        if (_current && scope == _scope) {
           widget.onChanged?.call(option);
         }
       },
@@ -161,12 +184,18 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
             label: widget.label,
             controller: controller,
             focusNode: focusNode,
-            enabled: widget.enabled,
+            enabled: _current,
             validator: widget.validator,
             onSaved: widget.onSaved,
-            onChanged: widget.onChanged,
+            onChanged: (value) {
+              if (_current && scope == _scope) {
+                widget.onChanged?.call(value);
+              }
+            },
             onSubmitted: (value) {
-              submit();
+              if (_current && scope == _scope) {
+                submit();
+              }
             },
           ),
         );
@@ -184,7 +213,13 @@ class _SsSuggestionFieldState extends State<SsSuggestionField> {
               child: SsSurface(
                 child: _SuggestionOptions(
                   options: options.toList(growable: false),
-                  onSelected: select,
+                  onSelected: (option) {
+                    if (!_current || scope != _scope) {
+                      return;
+                    }
+
+                    select(option);
+                  },
                 ),
               ),
             ),

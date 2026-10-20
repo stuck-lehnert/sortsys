@@ -10,6 +10,7 @@ const _carbonIconNames = {
   'delivery-note',
   'edit',
   'lock',
+  'magic',
   'overflow-menu-vertical',
   'price-record',
   'product',
@@ -90,5 +91,4 @@ class SsIcon extends StatelessWidget {
       excludeFromSemantics: semanticLabel == null,
     );
   }
-
 }

@@ -53,6 +53,14 @@
       "geometryElements": 1,
       "svgSha256": "13ecb03228fe375fbc471a0389fe44b5995e82b975f0f966e8bd7efe61621ce7"
     },
+    "magic": {
+      "component": "MagicWandFilled",
+      "module": "package/es/MagicWandFilled.js",
+      "moduleSha256": "fbf60c4442710d6b2fd006f474ad61a276268b9a6774af5a5322fbfc3670e4b5",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 4,
+      "svgSha256": "0b9123b9992ca4cabb910b0cdb51b56a8e5ddc82eafbc9460ba8b0624a7442cf"
+    },
     "overflow-menu-vertical": {
       "component": "OverflowMenuVertical",
       "module": "package/es/OverflowMenuVertical.js",

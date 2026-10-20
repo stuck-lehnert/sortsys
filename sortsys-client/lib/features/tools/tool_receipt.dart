@@ -4,6 +4,7 @@ import '../../api/contract.dart' show jsonMap;
 import '../../api/generated/models.g.dart' as models;
 import '../../api/model.dart';
 import '../../api/wire.dart';
+import 'tool_draft.dart' show isToolScalarText;
 import 'tool_write_inputs.dart';
 
 final class ToolWriteReceipt {
@@ -54,7 +55,7 @@ final class ToolWriteReceipt {
       throw StateError('INVALID_TOOL_RECEIPT_STAGE');
     }
 
-    if (result.id.isEmpty || !_isScalarText(result.id)) {
+    if (result.id.isEmpty || !isToolScalarText(result.id)) {
       throw const FormatException('INVALID_TOOL_CREATE_ACK');
     }
 
@@ -154,9 +155,9 @@ final class ToolWriteReceipt {
 
   void _validate() {
     if (scope.isEmpty ||
-        !_isScalarText(scope) ||
+        !isToolScalarText(scope) ||
         !RegExp(r'^[0-9a-f]{32}$').hasMatch(nonce) ||
-        createdAt.year < 100 ||
+        createdAt.toUtc().year < 100 ||
         (createInput == null) == (updateInput == null)) {
       throw const FormatException('INVALID_TOOL_RECEIPT');
     }
@@ -164,7 +165,7 @@ final class ToolWriteReceipt {
     if ((dispatching && acknowledged) ||
         (creation != null && updateAcknowledgement != null) ||
         creation?.id.isEmpty == true ||
-        (creation != null && !_isScalarText(creation!.id)) ||
+        (creation != null && !isToolScalarText(creation!.id)) ||
         updateAcknowledgement?.success == false) {
       throw const FormatException('INVALID_TOOL_RECEIPT_STAGE');
     }
@@ -242,11 +243,11 @@ models.Tool freezeToolWriteBaseline(models.Tool tool) {
   final data = tool.toWire();
 
   if (tool.id.isEmpty ||
-      tool.createdAt.year < 100 ||
-      tool.modifiedAt.year < 100 ||
-      (tool.archivedSince != null && tool.archivedSince!.year < 100) ||
+      tool.createdAt.toUtc().year < 100 ||
+      tool.modifiedAt.toUtc().year < 100 ||
+      (tool.archivedSince != null && tool.archivedSince!.toUtc().year < 100) ||
       data.values.whereType<String>().any((value) {
-        return !_isScalarText(value);
+        return !isToolScalarText(value);
       })) {
     throw const FormatException('INVALID_TOOL_WRITE_BASELINE');
   }
@@ -294,10 +295,6 @@ bool _matchesFields(
       tool.status == status;
 }
 
-bool _isScalarText(String value) {
-  return utf8.decode(utf8.encode(value)) == value;
-}
-
 bool _exactKeys(Map<String, Object?> value, Set<String> fields) {
   return value.length == fields.length && fields.every(value.containsKey);
 }
@@ -309,9 +306,9 @@ void _checkDateEnvelope(Map<String, Object?> envelope) {
 
   final data = jsonMap(envelope['json']);
   final dates = <String>{'createdAt'};
-  _checkCanonicalDate(data['createdAt']);
-
   final baseline = data['baseline'];
+
+  _checkCanonicalDate(data['createdAt']);
 
   if (baseline != null) {
     final original = jsonMap(baseline);

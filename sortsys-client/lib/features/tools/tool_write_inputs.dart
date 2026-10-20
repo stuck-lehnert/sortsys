@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import '../../api/generated/models.g.dart' as models;
 import '../../api/model.dart';
-import 'tool_draft.dart' show normalizeToolText;
+import 'tool_draft.dart' show isToolScalarText, normalizeToolText;
 
 void checkToolCreateInput(models.ToolsCreateInput input) {
   if (input.customId is! int ||
@@ -23,8 +23,10 @@ void checkToolCreateInput(models.ToolsCreateInput input) {
 
 void checkToolUpdateInput(models.ToolsUpdateInput input) {
   final data = input.data;
+  final scalarTarget = isToolScalarText(input.id);
 
   if (input.id.isEmpty ||
+      !scalarTarget ||
       !data.brand.hasValue ||
       !data.category.hasValue ||
       !data.status.hasValue) {
@@ -82,13 +84,13 @@ void _checkFields({
     throw const FormatException('INVALID_TOOL_WRITE_OPTIONAL');
   }
 
+  final labelValue = label.value;
+
   _checkText(brand, 127);
   _checkText(category, 127);
 
-  final model = label.value;
-
-  if (model != null) {
-    _checkText(model, 255);
+  if (labelValue != null) {
+    _checkText(labelValue, 255);
   }
 
   _checkCost(purchasePrice.value);
@@ -102,7 +104,7 @@ void _checkText(String value, int maximum) {
   if (value.isEmpty ||
       value != normalizeToolText(value) ||
       bytes.length > maximum ||
-      utf8.decode(bytes) != value) {
+      !isToolScalarText(value)) {
     throw const FormatException('INVALID_TOOL_WRITE_TEXT');
   }
 }

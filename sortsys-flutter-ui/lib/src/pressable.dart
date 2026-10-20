@@ -66,6 +66,17 @@ class _SsPressableState extends State<SsPressable> {
     activate();
   }
 
+  void _releasePress() {
+    // Cancellation may follow a rebuild that already cleared the press.
+    if (!mounted || !_pressed) {
+      return;
+    }
+
+    setState(() {
+      _pressed = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onPressed != null;
@@ -148,17 +159,14 @@ class _SsPressableState extends State<SsPressable> {
                   });
                 },
 
-          onTapUp: (_) {
-            setState(() {
-              _pressed = false;
-            });
-          },
+          // Omit release callbacks too: any tap handler exposes a tap action.
+          onTapUp: !enabled
+              ? null
+              : (_) {
+                  _releasePress();
+                },
 
-          onTapCancel: () {
-            setState(() {
-              _pressed = false;
-            });
-          },
+          onTapCancel: enabled ? _releasePress : null,
 
           child: ExcludeSemantics(
             excluding: widget.semanticLabel != null,

@@ -153,6 +153,10 @@ final class ToolDraft {
   }
 }
 
+bool isToolScalarText(String value) {
+  return _isScalarString(value);
+}
+
 String normalizeToolText(String value) {
   return _trim(value, _isRustWhitespace);
 }

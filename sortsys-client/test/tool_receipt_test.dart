@@ -137,6 +137,11 @@ void main() {
         started.confirmedCreate(const models.ToolsCreateOutput(id: 'tool'));
       }, throwsStateError);
       expect(() {
+        create.started().confirmedUpdate(
+          const models.ToolsUpdateOutput(success: true),
+        );
+      }, throwsStateError);
+      expect(() {
         create.started().confirmedCreate(
           const models.ToolsCreateOutput(id: ''),
         );
@@ -361,6 +366,7 @@ void main() {
       {'purchasePrice': -1},
       {'purchasePrice': double.infinity},
       {'status': null},
+      {'unexpected': true},
       {'label': List.filled(128, 'ä').join()},
     ]) {
       expect(() {
@@ -374,9 +380,12 @@ void main() {
       customId: '42',
       brand: '$nel$bom',
       category: 'Category',
+      label: bom,
     ).createInput();
+    final copied = copyToolCreateInput(normalized);
 
-    expect(copyToolCreateInput(normalized).brand, bom);
+    expect(copied.brand, bom);
+    expect(copied.label.value, bom);
   });
 
   test('tool typed updates require all six explicit owned fields', () {
@@ -404,21 +413,36 @@ void main() {
         ),
       );
     }, throwsFormatException);
+
+    for (final target in ['', String.fromCharCode(0xd800)]) {
+      final invalid = models.ToolsUpdateInput(id: target, data: update.data);
+
+      expect(() {
+        copyToolUpdateInput(invalid);
+      }, throwsFormatException);
+    }
   });
 
   test(
     'tool typed costs reject exact integer loss and retain finite doubles',
     () {
-      for (final value in [9007199254740993, 9223372036854775807]) {
-        expect(() {
-          copyToolCreateInput(_create({'purchasePrice': value}));
-        }, throwsFormatException);
-      }
+      for (final field in ['purchasePrice', 'usageCostPerDay']) {
+        for (final value in [9007199254740993, 9223372036854775807]) {
+          final input = _create({field: value});
 
-      for (final value in [0, 0.5, 5e-324, 1.7976931348623157e308]) {
-        final input = copyToolCreateInput(_create({'purchasePrice': value}));
+          expect(() {
+            copyToolCreateInput(input);
+          }, throwsFormatException);
+        }
 
-        expect(input.purchasePrice.value, value);
+        for (final value in [0, 0.5, 5e-324, 1.7976931348623157e308]) {
+          final input = copyToolCreateInput(_create({field: value}));
+          final cost = field == 'purchasePrice'
+              ? input.purchasePrice
+              : input.usageCostPerDay;
+
+          expect(cost.value, value);
+        }
       }
     },
   );
@@ -463,6 +487,20 @@ void main() {
         freezeToolWriteBaseline(_tool(change));
       }, throwsFormatException);
     }
+
+    final bom = String.fromCharCode(0xfeff);
+    final baseline = _tool({
+      'brand': '${bom}Brand',
+      'category': '${bom}Category',
+      'label': bom,
+      'createdByUserId': '${bom}actor',
+    });
+    final receipt = _editReceipt(baseline: baseline);
+    final decoded = ToolWriteReceipt.decode(receipt.encode());
+
+    expect(sameToolSnapshot(decoded.baseline!, baseline), isTrue);
+    expect(decoded.baseline!.brand, '${bom}Brand');
+    expect(decoded.baseline!.label, bom);
   });
 
   test(
