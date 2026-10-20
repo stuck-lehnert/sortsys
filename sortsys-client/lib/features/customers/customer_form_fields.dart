@@ -131,12 +131,16 @@ class CustomerFormFields extends StatefulWidget {
     required this.values,
     required this.queryIdentity,
     required this.loadContacts,
+    this.createContact,
+    this.canCreateContact,
     this.enabled = true,
   });
 
   final CustomerFormValues values;
   final Object queryIdentity;
   final Future<List<models.Contact>> Function(String query) loadContacts;
+  final Future<models.Contact?> Function(String query)? createContact;
+  final bool Function()? canCreateContact;
   final bool enabled;
 
   @override
@@ -343,6 +347,31 @@ class _CustomerFormFieldsState extends State<CustomerFormFields> {
             enabled: enabled,
             queryIdentity: widget.queryIdentity,
             loadOptions: widget.loadContacts,
+            onCreate: widget.enabled && (widget.canCreateContact?.call() ?? false)
+                ? widget.createContact
+                : null,
+            createLabel: (query) {
+              final label = text(context, 'Kontakt erstellen', 'Create contact');
+
+              return '$label: $query';
+            },
+            createFailureText: text(
+              context,
+              'Der Kontaktdialog konnte nicht abgeschlossen werden.',
+              'The contact dialog could not be completed.',
+            ),
+            loadingText: text(context, 'Wird geladen …', 'Loading …'),
+            emptyText: text(
+              context,
+              'Keine Einträge vorhanden.',
+              'No entries available.',
+            ),
+            failureText: text(
+              context,
+              'Einträge konnten nicht geladen werden.',
+              'Entries could not be loaded.',
+            ),
+            selectionRequiredText: text(context, 'Pflichtfeld', 'Required field'),
             displayString: (contact) {
               return [contact.salutation, contact.firstName, contact.lastName]
                   .whereType<String>()

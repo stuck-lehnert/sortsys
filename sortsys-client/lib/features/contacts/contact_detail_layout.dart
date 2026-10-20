@@ -28,10 +28,12 @@ class ContactDetailLayout extends StatelessWidget {
     super.key,
     required this.contact,
     required this.child,
+    this.editAction,
   });
 
   final models.Contact contact;
   final Widget child;
+  final Widget? editAction;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +44,7 @@ class ContactDetailLayout extends StatelessWidget {
     final content = ListView(
       padding: EdgeInsets.zero,
       children: [
-        SsPageHeader(title: title),
+        SsPageHeader(title: title, actions: editAction),
         SsAttributeList(
           children: [
             if (contact.salutation?.isNotEmpty == true)

@@ -1,0 +1,8 @@
+<!-- Copyright IBM Corp. 2016, 2023. Licensed under Apache-2.0; see LICENSE.
+     Converted from @carbon/icons-react 11.89.0 OverflowMenuVertical.
+     Original paths and viewBox are unchanged. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">
+  <circle cx="16" cy="8" r="2"/>
+  <circle cx="16" cy="16" r="2"/>
+  <circle cx="16" cy="24" r="2"/>
+</svg>

@@ -1,0 +1,137 @@
+{
+  "package": "@carbon/icons-react",
+  "version": "11.89.0",
+  "tarball": "https://registry.npmjs.org/@carbon/icons-react/-/icons-react-11.89.0.tgz",
+  "integrity": "sha512-2QMzmZje8wsp5Bdy8jgNtVdFxEZfz3V6wNY/zu6c1VU0Esqlex72m34lXKoR8fu9cdxvlYLLspkfzJGKH5ZGuw==",
+  "license": "Apache-2.0",
+  "icons": {
+    "archive": {
+      "component": "Box",
+      "module": "package/es/Box.js",
+      "moduleSha256": "c4c6259448d382f89923f22745ddf0b4a590eb480f3e388f45b4da00fcd0a324",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 2,
+      "svgSha256": "f2064e6a0f0556faeb104e07b7b6eeecd87a460a1bbaaf9b48b5bbad33860a65"
+    },
+    "contact": {
+      "component": "Identification",
+      "module": "package/es/Identification.js",
+      "moduleSha256": "a73bdb58606a77a803372d9b5e5a398b2d858aeaa6aa2f1b80dc197fbc22976c",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 5,
+      "svgSha256": "9c6ac8371627373c2f78bbcf2bd4abbf1fe6b0d508ba38b42ade4a943e566bb5"
+    },
+    "customer": {
+      "component": "OrderDetails",
+      "module": "package/es/OrderDetails.js",
+      "moduleSha256": "d1b84817c01070ea6faede342eb48388ababd77b4a03841410aab233a866a238",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 3,
+      "svgSha256": "eb1b14872520421fc70c83d10a7c4dab12d99c1d14672974d7e1b4e4294c5ece"
+    },
+    "delivery-note": {
+      "component": "DocumentMultiple_01",
+      "module": "package/es/DocumentMultiple_01.js",
+      "moduleSha256": "6428d980875182403cb36833a13fac18dfbda2398071721630ceb48c1bedcc4c",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 5,
+      "svgSha256": "26d7e37928025a8b3e88ad30165c6f2d69979e1c2f6ddf92badb2f7e01fde335"
+    },
+    "edit": {
+      "component": "Edit",
+      "module": "package/es/Edit.js",
+      "moduleSha256": "3d9eaf878e5419b43c854d44879575ad3a5ab07df5e988dc72a229353adbdd8e",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 2,
+      "svgSha256": "75796b3be1199b744839e32dbf3fea2960ef1b1277e7982aaf6dcecec36dc6f1"
+    },
+    "lock": {
+      "component": "Locked",
+      "module": "package/es/Locked.js",
+      "moduleSha256": "1a919720e245b96e0d857b71c04d29c10b1c2e0b8eafb0827fb4f196b082ee99",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 1,
+      "svgSha256": "13ecb03228fe375fbc471a0389fe44b5995e82b975f0f966e8bd7efe61621ce7"
+    },
+    "overflow-menu-vertical": {
+      "component": "OverflowMenuVertical",
+      "module": "package/es/OverflowMenuVertical.js",
+      "moduleSha256": "9efbe60670d8110fe9ed219e7c6c559ddf17e7e99f85ed7bb97be07e7f473adb",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 3,
+      "svgSha256": "3030f18bb6ac42fc402197d843775d66dff3c3f13d5a52d43c2d3edd6227e8f1"
+    },
+    "price-record": {
+      "component": "CurrencyEuro",
+      "module": "package/es/CurrencyEuro.js",
+      "moduleSha256": "afe935d27e5537f8dc6e4d115823e46b544a639d9b4cf340553369fd1a1ec3ea",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 1,
+      "svgSha256": "fedc0cb4d2d0e834227b2c2b5c52e6b9b76159d8d7956716f96c258d6ef19273"
+    },
+    "product": {
+      "component": "DataDefinition",
+      "module": "package/es/DataDefinition.js",
+      "moduleSha256": "a1d3012b38980128514e94d25952ff58ce665c85421601bddeb73d800ebeb790",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 3,
+      "svgSha256": "92f159687456679b13ef637c2aa7cbd20b0ce4080797f034353c28d1716f59df"
+    },
+    "project": {
+      "component": "Catalog",
+      "module": "package/es/Catalog.js",
+      "moduleSha256": "eb80b98e7b9b890a0a75f72baed1ba71dd25a8222c8c98277e976de9a56e347e",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 4,
+      "svgSha256": "3b6a123b0d07564b46ed41c8c2145cbe2fc96184e624f8cfb55d8e1424aafaf2"
+    },
+    "regie-report": {
+      "component": "Document",
+      "module": "package/es/Document.js",
+      "moduleSha256": "8e8c8f5d9996db3980b89b2efc2d9d6490c62626ef57ed0b6df3761ea180f802",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 3,
+      "svgSha256": "6d56c7b431dbfe0cb7ebffb22caa394bff7c0eb19aecb50c403b8f44fed13219"
+    },
+    "resume": {
+      "component": "ContinueFilled",
+      "module": "package/es/ContinueFilled.js",
+      "moduleSha256": "9ff8ccc9800f873a400d88dbdc0b628e1b32ac027bd0397ca27a9fc218ca6117",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 2,
+      "svgSha256": "9b0d2ef26c198a75c5319a2d814ef6d5e633485fb480bba20a542cf5f57c7dc3"
+    },
+    "tool": {
+      "component": "ToolKit",
+      "module": "package/es/ToolKit.js",
+      "moduleSha256": "1b7e1f0207f9e34713cdb6a04ef30b915551369e7d2a6880fd97bae36f2f4732",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 3,
+      "svgSha256": "ca196d8a087d612572ed83fcf3cbdae8f073ba2416c46dec6b8cfb67a5f9091d"
+    },
+    "user-16": {
+      "component": "User",
+      "module": "package/es/User.js",
+      "moduleSha256": "fb6a50208ae8b20aa8b6c188ca76462885ce7ac3d7e1314336cd677276c8a1f1",
+      "viewBox": "0 0 16 16",
+      "geometryElements": 2,
+      "svgSha256": "76a21541e3df4d4d44e625c244d73a2d23664159d508a22dd9e2757e88d89424"
+    },
+    "user": {
+      "component": "User",
+      "module": "package/es/User.js",
+      "moduleSha256": "fb6a50208ae8b20aa8b6c188ca76462885ce7ac3d7e1314336cd677276c8a1f1",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 2,
+      "svgSha256": "2dcbfdd4b09f22499b36920dc46fad07222f3942c4fe487ebc768eb7307a2d01"
+    },
+    "vendor": {
+      "component": "TagGroup",
+      "module": "package/es/TagGroup.js",
+      "moduleSha256": "e3e7f26b1038ccd063e5181bddfb301dc411ece8d624a1273d5b0fc1f1193b46",
+      "viewBox": "0 0 32 32",
+      "geometryElements": 3,
+      "svgSha256": "8d412d1d8dd8b087e514ce3f734ea5c426e1352930c6d616650a488cedf0df63"
+    }
+  }
+}

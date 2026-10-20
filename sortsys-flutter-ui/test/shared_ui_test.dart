@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sortsys_ui/sortsys_ui.dart';
 
@@ -272,12 +273,18 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final name in ssIconNames) {
-      final directory = name == 'trash-can' || name == 'task-complete'
-          ? 'carbon'
-          : 'tabler';
+      await tester.pumpWidget(host(SsIcon(name)));
+      await tester.pumpAndSettle();
+
+      final picture = tester.widget<SvgPicture>(find.byType(SvgPicture));
+      final loader = picture.bytesLoader as SvgAssetLoader;
+
+      expect(loader.packageName, 'sortsys_ui');
+
       final svg = await rootBundle.loadString(
-        'packages/sortsys_ui/assets/icons/$directory/$name.svg',
+        'packages/sortsys_ui/${loader.assetName}',
       );
+
       expect(svg, contains('<svg'));
 
       if (name == 'trash-can') {

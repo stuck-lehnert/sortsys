@@ -8,6 +8,7 @@ import '../features/entities/entity_screens.dart';
 import '../features/entities/product_area_shell.dart';
 import '../features/home/home_screen.dart';
 import '../features/planning/planning_screen.dart';
+import '../features/projects/project_detail_tabs.dart';
 import '../features/projects/project_list_screen.dart';
 import '../features/projects/project_overview_screen.dart';
 import '../state/session_controller.dart';
@@ -138,6 +139,16 @@ GoRoute _entityRoute(EntitySpec spec) {
     },
 
     routes: [
+      if (spec.key == 'projects')
+        GoRoute(
+          path: ':id/regieReports',
+          builder: (context, state) {
+            return ProjectOverviewScreen(
+              id: state.pathParameters['id']!,
+              tab: ProjectDetailTab.regieReports,
+            );
+          },
+        ),
       if (spec.get != null)
         GoRoute(
           path: ':id',

@@ -6,6 +6,7 @@ import '../button.dart';
 import '../surface.dart';
 import '../theme.dart';
 import 'autocomplete_field.dart';
+import 'entity_picker.dart';
 
 class SsMultiAutocompleteField<T extends Object> extends StatelessWidget {
   const SsMultiAutocompleteField({
@@ -15,6 +16,9 @@ class SsMultiAutocompleteField<T extends Object> extends StatelessWidget {
     required this.displayString,
     required this.optionKey,
     this.initialValue = const [],
+    this.onCreate,
+    this.createLabel,
+    this.createFailureText = 'The creation dialog could not be completed.',
     this.queryIdentity,
     this.onChanged,
     this.validator,
@@ -32,6 +36,9 @@ class SsMultiAutocompleteField<T extends Object> extends StatelessWidget {
   final String Function(T) displayString;
   final Object Function(T) optionKey;
   final List<T> initialValue;
+  final Future<T?> Function(String query)? onCreate;
+  final String Function(String query)? createLabel;
+  final String createFailureText;
   final Object? queryIdentity;
   final ValueChanged<List<T>>? onChanged;
   final FormFieldValidator<List<T>>? validator;
@@ -53,16 +60,44 @@ class SsMultiAutocompleteField<T extends Object> extends StatelessWidget {
       enabled: enabled,
       builder: (field) {
         final selected = field.value ?? <T>[];
-        final selectedKeys = selected.map(optionKey).toSet();
 
         void change(List<T> next) {
-          if (!enabled) {
+          if (!enabled || !field.mounted) {
             return;
           }
 
           final values = List<T>.unmodifiable(next);
           field.didChange(values);
           onChanged?.call(values);
+        }
+
+        Future<List<T>> loadAvailable(String query) async {
+          final options = await loadOptions(query);
+
+          if (!field.mounted) {
+            return [];
+          }
+
+          final seen = (field.value ?? <T>[]).map(optionKey).toSet();
+          final available = <T>[];
+
+          for (final option in options) {
+            if (seen.add(optionKey(option))) {
+              available.add(option);
+            }
+          }
+
+          return available;
+        }
+
+        void select(T option) {
+          final current = field.value ?? <T>[];
+
+          if (!current.any((existing) {
+            return optionKey(existing) == optionKey(option);
+          })) {
+            change([...current, option]);
+          }
         }
 
         return Column(
@@ -110,38 +145,48 @@ class SsMultiAutocompleteField<T extends Object> extends StatelessWidget {
               ),
               const SizedBox(height: 8),
             ],
-            SsAutocompleteField<T>(
-              label: label,
-              queryIdentity: queryIdentity,
-              displayString: displayString,
-              enabled: enabled,
-              clearOnSelect: true,
-              loadingText: loadingText,
-              emptyText: emptyText,
-              failureText: failureText,
-              selectionRequiredText: selectionRequiredText,
-              loadOptions: (query) async {
-                final options = await loadOptions(query);
+            if (createLabel != null)
+              SsEntityPicker<T>(
+                label: label,
+                queryIdentity: queryIdentity ?? field,
+                displayString: displayString,
+                enabled: enabled,
+                loadOptions: loadAvailable,
+                onSelected: select,
+                onCreate: onCreate,
+                createLabel: createLabel!,
+                canCreateQuery: (query) {
+                  final normalized = query.trim().toLowerCase();
 
-                final seen = {...selectedKeys};
-                final available = <T>[];
-
-                for (final option in options) {
-                  if (seen.add(optionKey(option))) {
-                    available.add(option);
+                  return !(field.value ?? <T>[]).any((option) {
+                    return displayString(option).trim().toLowerCase() ==
+                        normalized;
+                  });
+                },
+                loadingText: loadingText,
+                emptyText: emptyText,
+                failureText: failureText,
+                selectionRequiredText: selectionRequiredText,
+                createFailureText: createFailureText,
+              )
+            else
+              SsAutocompleteField<T>(
+                label: label,
+                queryIdentity: queryIdentity,
+                displayString: displayString,
+                enabled: enabled,
+                clearOnSelect: true,
+                loadingText: loadingText,
+                emptyText: emptyText,
+                failureText: failureText,
+                selectionRequiredText: selectionRequiredText,
+                loadOptions: loadAvailable,
+                onChanged: (option) {
+                  if (option != null) {
+                    select(option);
                   }
-                }
-
-                return available;
-              },
-
-              onChanged: (option) {
-                if (option != null &&
-                    !selectedKeys.contains(optionKey(option))) {
-                  change([...selected, option]);
-                }
-              },
-            ),
+                },
+              ),
             if (field.errorText != null)
               Text(
                 field.errorText!,

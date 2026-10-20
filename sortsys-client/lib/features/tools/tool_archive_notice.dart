@@ -15,6 +15,7 @@ class ToolArchiveNotice extends StatelessWidget {
     final date = DateFormat(pattern).format(archivedSince.toLocal());
 
     return SsInfoCallout(
+      icon: 'archive',
       child: Text(
         text(
           context,

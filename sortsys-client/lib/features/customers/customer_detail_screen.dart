@@ -11,6 +11,7 @@ import '../../ui/text.dart';
 import '../projects/project_history.dart';
 import '../projects/project_related_sections.dart';
 import 'customer_list_state.dart';
+import 'customer_edit_action.dart';
 import 'customer_related_sections.dart';
 
 class CustomerDetailScreen extends StatelessWidget {
@@ -21,21 +22,35 @@ class CustomerDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionController>();
+    final binding = session.binding;
 
-    if (session.info?.can('view:customers') != true) {
+    if (!session.authenticated ||
+        session.info?.can('view:customers') != true) {
       return Center(
         child: Text(text(context, 'Keine Berechtigung', 'No permission')),
       );
     }
 
     return QueryView<models.Customer>(
+      key: ValueKey((binding, id)),
       requestKey: ApiQueries.customersGet.path,
       identity: id,
       load: (current) async {
+        void checkScope() {
+          if (!current.authenticated ||
+              current.binding != binding ||
+              current.info?.can('view:customers') != true) {
+            throw StateError('CUSTOMER_DETAIL_SCOPE_CHANGED');
+          }
+        }
+
+        checkScope();
+
         final customer = await current.read(
           ApiQueries.customersGet,
           models.CustomersGetInput(id: id),
         );
+        checkScope();
 
         if (customer.id != id) {
           throw const FormatException('CUSTOMER_RESPONSE_ID_MISMATCH');
@@ -44,26 +59,49 @@ class CustomerDetailScreen extends StatelessWidget {
         return customer;
       },
       builder: (context, customer, reload) {
-        return CustomerDetailLayout(
-          customer: customer,
-          child: KeyedSubtree(
-            key: ValueKey((session.binding, id, customer.modifiedAt)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ProjectRemarks(
-                  projectId: id,
-                  resourceType: models.RemarksListRequestResourceType.customer,
+        return KeyedSubtree(
+          key: ValueKey((binding, id, customer.modifiedAt)),
+          child: Builder(
+            builder: (ownerContext) {
+              bool pageCurrent() {
+                return ownerContext.mounted &&
+                    session.authenticated &&
+                    session.binding == binding &&
+                    session.info?.can('view:customers') == true;
+              }
+
+              return CustomerDetailLayout(
+                customer: customer,
+                editAction: session.info?.can('manage:customers') == true
+                    ? CustomerEditAction(
+                        customer: customer,
+                        ownerContext: ownerContext,
+                        isActive: pageCurrent,
+                        onSaved: (confirmedId) {
+                          if (pageCurrent() && confirmedId == id) {
+                            reload();
+                          }
+                        },
+                      )
+                    : null,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ProjectRemarks(
+                      projectId: id,
+                      resourceType: models.RemarksListRequestResourceType.customer,
+                    ),
+                    const SizedBox(height: 16),
+                    ProjectActivity(
+                      projectId: id,
+                      resourceType: models.ActivityResourceType.customer,
+                    ),
+                    const SizedBox(height: 16),
+                    CustomerRelatedSections(customerId: id),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                ProjectActivity(
-                  projectId: id,
-                  resourceType: models.ActivityResourceType.customer,
-                ),
-                const SizedBox(height: 16),
-                CustomerRelatedSections(customerId: id),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -76,10 +114,12 @@ class CustomerDetailLayout extends StatelessWidget {
     super.key,
     required this.customer,
     required this.child,
+    this.editAction,
   });
 
   final models.Customer customer;
   final Widget child;
+  final Widget? editAction;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +128,7 @@ class CustomerDetailLayout extends StatelessWidget {
     final content = ListView(
       padding: EdgeInsets.zero,
       children: [
-        SsPageHeader(title: title),
+        SsPageHeader(title: title, actions: editAction),
         const _CustomerDivider(),
         SsAttributeList(
           children: [

@@ -41,7 +41,7 @@ void main() {
         expect(command.group, PaletteGroup.create);
         expect(command.role, 'manage:productVendors');
         expect(command.requiredRoles, ['view:productVendors']);
-        expect(command.icon, isNull);
+        expect(command.icon, 'vendor');
         expect(command.isAllowed({'manage:productVendors'}.contains), isFalse);
         expect(command.isAllowed({'view:productVendors'}.contains), isFalse);
         expect(command.isAllowed(_roles().contains), isTrue);
@@ -76,7 +76,7 @@ void main() {
   );
 
   testWidgets(
-    'text-only vendor command renders and activates through real palette keyboard route',
+    'vendor command renders its canonical icon and activates through real palette keyboard route',
     (tester) async {
       final command = await _command(tester, 'en');
       final changes = ChangeNotifier();
@@ -126,10 +126,13 @@ void main() {
       );
 
       expect(row, findsOneWidget);
-      expect(
+
+      final icon = tester.widget<SsIcon>(
         find.descendant(of: row, matching: find.byType(SsIcon)),
-        findsNothing,
       );
+
+      expect(icon.name, 'vendor');
+
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
 

@@ -35,13 +35,18 @@ final class CustomerEditorSeed {
 
 enum CustomerWriteStage { basePending, contactsPending }
 
-enum CustomerWriteFailure { outstanding, conflict, uncertain }
+enum CustomerWriteFailure { outstanding, conflict, uncertain, cleanup }
 
 final class CustomerWriteException implements Exception {
-  const CustomerWriteException(this.failure, {this.cause});
+  const CustomerWriteException(
+    this.failure, {
+    this.cause,
+    this.confirmedCustomerId,
+  });
 
   final CustomerWriteFailure failure;
   final Object? cause;
+  final String? confirmedCustomerId;
 }
 
 final class CustomerWriteReceipt {
@@ -347,12 +352,15 @@ final class CustomerWriteCoordinator {
           await _verifyContacts(receipt);
         }
 
-        access.checkCurrent();
-        await receipts.clear(access.scope);
-        access.checkCurrent();
+        await _clearConfirmed(id!);
 
-        return id!;
+        return id;
       } catch (error) {
+        if (error is CustomerWriteException &&
+            error.failure == CustomerWriteFailure.cleanup) {
+          rethrow;
+        }
+
         throw CustomerWriteException(
           CustomerWriteFailure.uncertain, cause: error,
         );
@@ -395,6 +403,22 @@ final class CustomerWriteCoordinator {
     }
   }
 
+  Future<void> _clearConfirmed(String id) async {
+    access.checkCurrent();
+
+    try {
+      await receipts.clear(access.scope);
+
+      access.checkCurrent();
+    } catch (error) {
+      throw CustomerWriteException(
+        CustomerWriteFailure.cleanup,
+        cause: error,
+        confirmedCustomerId: id,
+      );
+    }
+  }
+
   Future<String> recover(CustomerWriteReceipt reviewed) {
     access.checkCurrent();
 
@@ -415,12 +439,15 @@ final class CustomerWriteCoordinator {
           await _verifyContacts(current);
         }
 
-        access.checkCurrent();
-        await receipts.clear(access.scope);
-        access.checkCurrent();
+        await _clearConfirmed(current.customerId!);
 
         return current.customerId!;
       } catch (error) {
+        if (error is CustomerWriteException &&
+            error.failure == CustomerWriteFailure.cleanup) {
+          rethrow;
+        }
+
         throw CustomerWriteException(
           CustomerWriteFailure.uncertain, cause: error,
         );

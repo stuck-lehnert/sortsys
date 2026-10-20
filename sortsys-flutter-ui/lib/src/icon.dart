@@ -3,7 +3,28 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'theme.dart';
 
+const _carbonIconNames = {
+  'archive',
+  'contact',
+  'customer',
+  'delivery-note',
+  'edit',
+  'lock',
+  'overflow-menu-vertical',
+  'price-record',
+  'product',
+  'project',
+  'regie-report',
+  'resume',
+  'task-complete',
+  'tool',
+  'trash-can',
+  'user',
+  'vendor',
+};
+
 const ssIconNames = {
+  ..._carbonIconNames,
   'alert-triangle',
   'building',
   'calendar',
@@ -27,9 +48,7 @@ const ssIconNames = {
   'search',
   'settings',
   'sun',
-  'task-complete',
   'tools',
-  'trash-can',
   'truck-delivery',
   'users',
   'x',
@@ -55,12 +74,11 @@ class SsIcon extends StatelessWidget {
       throw ArgumentError.value(name, 'name', 'Unknown sortsys icon');
     }
 
-    final family = name == 'trash-can' || name == 'task-complete'
-        ? 'carbon'
-        : 'tabler';
+    final family = _carbonIconNames.contains(name) ? 'carbon' : 'tabler';
+    final assetName = name == 'user' && size == 16 ? 'user-16' : name;
 
     return SvgPicture.asset(
-      'assets/icons/$family/$name.svg',
+      'assets/icons/$family/$assetName.svg',
       package: 'sortsys_ui',
       width: size,
       height: size,

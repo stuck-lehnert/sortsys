@@ -144,6 +144,11 @@ class SsCheckboxField extends FormField<bool> {
                  value: state.value ?? false,
                  onChanged: field.enabled
                      ? (value) {
+                         if (!state.mounted ||
+                             !identical(state.widget, field)) {
+                           return;
+                         }
+
                          state.didChange(value);
                          field.onChanged?.call(value);
                        }

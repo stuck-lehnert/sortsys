@@ -7,8 +7,9 @@ import '../../state/session_controller.dart';
 import 'customer_write.dart';
 
 final class SessionCustomerAccess implements CustomerWriteAccess {
-  SessionCustomerAccess(this.session)
-    : _binding = session.binding,
+  SessionCustomerAccess(this.session, {bool Function()? isActive})
+    : _isActive = isActive,
+      _binding = session.binding,
       scope = jsonEncode([
         session.instance?.origin.toString(),
         session.tenant,
@@ -16,6 +17,7 @@ final class SessionCustomerAccess implements CustomerWriteAccess {
       ]);
 
   final SessionController session;
+  final bool Function()? _isActive;
   final String _binding;
 
   @override
@@ -28,11 +30,19 @@ final class SessionCustomerAccess implements CustomerWriteAccess {
 
   @override
   void checkCurrent() {
-    if (!session.authenticated ||
+    if (!(_isActive?.call() ?? true) ||
+        !session.authenticated ||
         session.binding != _binding ||
-        session.info?.can('manage:customers') != true ||
         session.info?.can('view:customers') != true) {
       throw StateError('CUSTOMER_WRITE_SCOPE_CHANGED');
+    }
+  }
+
+  void _checkManage() {
+    checkCurrent();
+
+    if (session.info?.can('manage:customers') != true) {
+      throw StateError('CUSTOMER_MANAGE_FORBIDDEN');
     }
   }
 
@@ -117,7 +127,7 @@ final class SessionCustomerAccess implements CustomerWriteAccess {
 
   @override
   Future<String> createCustomer(models.CustomersCreateInput input) async {
-    checkCurrent();
+    _checkManage();
 
     final result = await session.write(ApiMutations.customersCreate, input);
     checkCurrent();
@@ -131,7 +141,7 @@ final class SessionCustomerAccess implements CustomerWriteAccess {
 
   @override
   Future<void> updateCustomer(models.CustomersUpdateInput input) async {
-    checkCurrent();
+    _checkManage();
 
     final result = await session.write(ApiMutations.customersUpdate, input);
     checkCurrent();
@@ -143,7 +153,7 @@ final class SessionCustomerAccess implements CustomerWriteAccess {
 
   @override
   Future<void> setContacts(models.CustomersContactsSetInput input) async {
-    checkCurrent();
+    _checkManage();
 
     if (!canSelectContacts) {
       throw StateError('CUSTOMER_CONTACT_WRITE_FORBIDDEN');

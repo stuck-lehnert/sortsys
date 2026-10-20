@@ -9,6 +9,8 @@ import '../../api/generated/models.g.dart' as models;
 import '../../api/model.dart';
 import '../../state/session_controller.dart';
 import '../../ui/text.dart';
+import '../contacts/session_contact_dialog.dart';
+import '../customers/session_customer_dialog.dart';
 import '../products/session_product_master_dialog.dart';
 import '../projects/project_editor.dart';
 import '../vendors/session_vendor_create_dialog.dart';
@@ -24,9 +26,35 @@ List<PaletteCommand> workspaceCommands(BuildContext context) {
         'Neues Projekt im Projektstamm anlegen.',
         'Create a new project.',
       ),
-      icon: 'building',
+      icon: 'project',
       group: PaletteGroup.create,
       role: 'manage:projects',
+    ),
+    PaletteCommand(
+      id: 'customers.create',
+      label: text(context, 'Kunde erstellen', 'Create customer'),
+      description: text(
+        context,
+        'Neuen Kundenstamm anlegen.',
+        'Create a new customer.',
+      ),
+      icon: 'customer',
+      group: PaletteGroup.create,
+      role: 'manage:customers',
+      requiredRoles: const ['view:customers'],
+    ),
+    PaletteCommand(
+      id: 'contacts.create',
+      label: text(context, 'Kontakt erstellen', 'Create contact'),
+      description: text(
+        context,
+        'Neue Kontaktperson anlegen.',
+        'Create a new contact person.',
+      ),
+      icon: 'contact',
+      group: PaletteGroup.create,
+      role: 'manage:contacts',
+      requiredRoles: const ['view:contacts'],
     ),
     PaletteCommand(
       id: 'products.create',
@@ -36,6 +64,7 @@ List<PaletteCommand> workspaceCommands(BuildContext context) {
         'Neues Material oder Produkt anlegen.',
         'Create a new material or product.',
       ),
+      icon: 'product',
       group: PaletteGroup.create,
       role: 'manage:products',
       requiredRoles: const ['view:products'],
@@ -48,6 +77,7 @@ List<PaletteCommand> workspaceCommands(BuildContext context) {
         'Neuen Produkt-Händler anlegen.',
         'Create a new product vendor.',
       ),
+      icon: 'vendor',
       group: PaletteGroup.create,
       role: 'manage:productVendors',
       requiredRoles: const ['view:productVendors'],
@@ -98,6 +128,37 @@ Future<void> runWorkspaceCommand(
       }
 
       context.go('/projects/${Uri.encodeComponent(id)}');
+    case 'customers.create':
+      bool customerCurrent() {
+        return context.mounted &&
+            session.authenticated &&
+            session.binding == binding &&
+            session.info?.can('view:customers') == true;
+      }
+
+      final customerId = await showSessionCustomerDialog(
+        context,
+        session,
+        isActive: customerCurrent,
+      );
+
+      if (!context.mounted || customerId == null || !customerCurrent()) {
+        return;
+      }
+
+      context.go('/customers/${Uri.encodeComponent(customerId)}');
+    case 'contacts.create':
+      final contact = await showSessionContactDialog(
+        context,
+        session,
+        isActive: isCurrent,
+      );
+
+      if (!context.mounted || contact == null || !isCurrent()) {
+        return;
+      }
+
+      context.go('/contacts/${Uri.encodeComponent(contact.id)}');
     case 'products.create':
       final product = await showSessionProductMasterDialog(
         context,

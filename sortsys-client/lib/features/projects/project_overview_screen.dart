@@ -12,16 +12,23 @@ import '../../state/session_controller.dart';
 import '../../ui/query_view.dart';
 import '../../ui/text.dart';
 import '../entities/entity_presentation.dart';
+import 'project_detail_tabs.dart';
 import 'project_editor.dart';
 import 'project_history.dart';
 import 'project_list_state.dart';
 import 'project_related_sections.dart';
+import 'project_regie_reports.dart';
 import 'project_tool_bookings.dart';
 
 class ProjectOverviewScreen extends HookWidget {
-  const ProjectOverviewScreen({super.key, required this.id});
+  const ProjectOverviewScreen({
+    super.key,
+    required this.id,
+    this.tab = ProjectDetailTab.overview,
+  });
 
   final String id;
+  final ProjectDetailTab tab;
 
   @override
   Widget build(BuildContext context) {
@@ -30,18 +37,35 @@ class ProjectOverviewScreen extends HookWidget {
     final editorIdentity = (binding: binding, projectId: id);
     final editing = useState<({String binding, String projectId})?>(null);
 
-    if (session.info?.can('view:projects') != true) {
+    bool canRead() {
+      return context.mounted &&
+          session.authenticated &&
+          session.binding == binding &&
+          session.info?.can('view:projects') == true &&
+          (tab != ProjectDetailTab.regieReports ||
+              session.info?.can('view:regieReports') == true);
+    }
+
+    if (!canRead()) {
       return const EntityAccessDenied();
     }
 
     return QueryView<models.Project>(
       requestKey: ApiQueries.projectsGet.path,
-      identity: id,
+      identity: '${tab.name}:$id',
       load: (current) async {
+        if (!canRead() || !identical(current, session)) {
+          throw StateError('PROJECT_DETAIL_SCOPE_CHANGED');
+        }
+
         final project = await current.read(
           ApiQueries.projectsGet,
           models.ProjectsGetInput(id: id),
         );
+
+        if (!canRead()) {
+          throw StateError('PROJECT_DETAIL_SCOPE_CHANGED');
+        }
 
         if (project.id != id) {
           throw const FormatException('PROJECT_RESPONSE_ID_MISMATCH');
@@ -86,30 +110,41 @@ class ProjectOverviewScreen extends HookWidget {
         return ProjectOverviewLayout(
           project: project,
           editing: editing.value == editorIdentity,
+          tabs: ProjectDetailTabs(
+            id: project.id,
+            tab: tab,
+            canViewTools: session.info?.can('view:tools') == true,
+            canViewRegieReports: session.info?.can('view:regieReports') == true,
+          ),
           onEdit: session.info?.can('manage:projects') == true
               ? () {
                   unawaited(edit());
                 }
               : null,
-          child: KeyedSubtree(
-            key: ValueKey((binding, project.id, project.modifiedAt)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (hasAttributes) ...[
-                  ProjectAttributes(project: project),
-                  const _ProjectDivider(),
-                ],
-                ProjectRemarks(projectId: project.id),
-                const SizedBox(height: 16),
-                ProjectActivity(projectId: project.id),
-                const SizedBox(height: 16),
-                ProjectContacts(projectId: project.id),
-                const SizedBox(height: 16),
-                ProjectToolBookings(projectId: project.id),
-              ],
-            ),
-          ),
+          child: tab == ProjectDetailTab.regieReports
+              ? ProjectRegieReports(
+                  key: ValueKey((binding, project.id)),
+                  projectId: project.id,
+                )
+              : KeyedSubtree(
+                  key: ValueKey((binding, project.id, project.modifiedAt)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (hasAttributes) ...[
+                        ProjectAttributes(project: project),
+                        const _ProjectDivider(),
+                      ],
+                      ProjectRemarks(projectId: project.id),
+                      const SizedBox(height: 16),
+                      ProjectActivity(projectId: project.id),
+                      const SizedBox(height: 16),
+                      ProjectContacts(projectId: project.id),
+                      const SizedBox(height: 16),
+                      ProjectToolBookings(projectId: project.id),
+                    ],
+                  ),
+                ),
         );
       },
     );
@@ -121,12 +156,14 @@ class ProjectOverviewLayout extends StatelessWidget {
     super.key,
     required this.project,
     required this.child,
+    this.tabs,
     this.onEdit,
     this.editing = false,
   });
 
   final models.Project project;
   final Widget child;
+  final Widget? tabs;
   final VoidCallback? onEdit;
   final bool editing;
 
@@ -170,12 +207,13 @@ class ProjectOverviewLayout extends StatelessWidget {
                         menuChildren: [
                           MenuItemButton(
                             onPressed: edit,
+                            leadingIcon: const SsIcon('edit', size: 16),
                             child: Text(text(context, 'Bearbeiten', 'Edit')),
                           ),
                         ],
                         builder: (context, controller, anchor) {
                           return SsIconButton(
-                            icon: 'chevron-down',
+                            icon: 'overflow-menu-vertical',
                             label: text(
                               context,
                               'Projektaktionen',
@@ -209,6 +247,10 @@ class ProjectOverviewLayout extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
+            if (tabs != null) ...[
+              const SizedBox(height: 12),
+              tabs!,
             ],
             const SizedBox(height: 12),
             child,

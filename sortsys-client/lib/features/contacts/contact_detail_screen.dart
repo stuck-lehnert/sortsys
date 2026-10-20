@@ -8,6 +8,7 @@ import '../../ui/query_view.dart';
 import '../entities/entity_presentation.dart';
 import '../projects/project_history.dart';
 import 'contact_detail_layout.dart';
+import 'contact_edit_action.dart';
 import 'contact_related_sections.dart';
 
 class ContactDetailScreen extends StatelessWidget {
@@ -54,6 +55,20 @@ class ContactDetailScreen extends StatelessWidget {
       builder: (context, contact, reload) {
         return ContactDetailLayout(
           contact: contact,
+          editAction: session.info?.can('manage:contacts') == true
+              ? ContactEditAction(
+                  contact: contact,
+                  onSaved: (record) {
+                    if (context.mounted &&
+                        session.authenticated &&
+                        session.binding == binding &&
+                        session.info?.can('view:contacts') == true &&
+                        record.id == id) {
+                      reload();
+                    }
+                  },
+                )
+              : null,
           child: KeyedSubtree(
             key: ValueKey((binding, contact.id, contact.modifiedAt)),
             child: Column(

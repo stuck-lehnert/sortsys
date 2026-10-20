@@ -19,7 +19,7 @@ void main() {
 
   test('contact requires either name and applies exact UTF8 byte limit', () {
     final empty = ContactDraft(firstName: ' ', lastName: '\t');
-    final boundary = List.filled(63, 'ä').join() + 'x';
+    final boundary = '${List.filled(63, 'ä').join()}x';
     final oversized = List.filled(64, 'ä').join();
 
     expect(empty.validate(), {

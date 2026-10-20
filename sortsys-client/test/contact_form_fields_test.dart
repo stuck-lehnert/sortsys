@@ -46,7 +46,7 @@ void main() {
 
     expect(find.text('Maximum 127 UTF-8 bytes.'), findsOneWidget);
 
-    await _enter(tester, values.firstName, List.filled(63, 'ä').join() + 'x');
+    await _enter(tester, values.firstName, '${List.filled(63, 'ä').join()}x');
 
     expect(form.currentState!.validate(), isTrue);
     expect(tester.takeException(), isNull);

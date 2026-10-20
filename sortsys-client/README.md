@@ -31,20 +31,21 @@ address and channel attributes, customer-scoped remarks and activity, and
 initially collapsed linked contacts and projects. Related queries require
 their resource view permissions and reject stale scope responses. Related
 projects must match the requested customer. A combined loading-error message
-retains successful sections and offers a retry. Customer creation/editing fields and write
-coordination are tested groundwork; no customer mutation actions are exposed.
-The coordinator owns its loaded baseline, validates selected contact IDs,
-journals before each separate write and uses read-only known-ID recovery.
-Production receipt storage, the create/edit dialog and navigation entry points,
-detail actions, exports and live updates remain pending.
+retains successful sections and offers a retry. Customer creation and editing
+use the active scoped dialog, durable secure receipts and verified-ID
+navigation. The coordinator owns its loaded baseline, validates selected
+contact IDs and journals each separate write. Read-only recovery never
+repeats a mutation. The contact picker supports nested creation while
+preserving the customer draft and existing selections. Customer deletion,
+matching action menus, exports and live updates remain pending.
 
 The persistent header exposes global search, opened by its magnifier or
 Ctrl+K / Cmd+K. Search uses the permission-gated generated queries for projects,
 tools, users, products, customers, contacts, vendors and numeric delivery-note
 lookup. Results reject stale account responses. The command palette also
 supports command-only search and recent actions. The command palette
-currently exposes project creation, vendor creation, product creation and
-opening the existing planning screen.
+currently exposes project, customer, contact, vendor and product creation,
+and opening the existing planning screen.
 
 Users with `manage:projects` can create a project from the collapsed master-data
 sidebar group or the command palette; Ctrl+N also works on the project list.
@@ -71,9 +72,9 @@ viewport, a five-column desktop table and compact attribute cards below 1400px.
 Tool and user references are real links. Date sorting and 25/50/100-row pagination
 are local to the table; page-size changes reset to the first page. The server
 retains its own visibility filter and default 1000-row bound. Live refresh,
-booking/return/transfer actions, project tabs, contact editing, remaining actions
-and exports are still incomplete.
-Customer and contact details use dedicated read-only views. Contact details
+booking/return/transfer actions, project tabs, remaining actions and exports
+are still incomplete.
+Customer and contact details use dedicated views. Contact details
 include canonical name handling, nullable first-name fields, bilingual
 attributes and real map, email and phone links. Remarks are scoped to the
 contact. Related customers and projects start collapsed; queries check session
@@ -88,8 +89,12 @@ optional addresses and ordered phone/email channels. Editing requires a
 fresh full baseline. Prepared, dispatching and acknowledged stages prevent
 uncertain writes from being replayed; create recovery needs the genuine
 acknowledged ID, while known-target updates can be verified with reads.
-The dialog is not connected to production session or navigation entries.
-Production receipt storage remains unimplemented.
+Global `contacts.create` and detail-header/Ctrl+E editing use the existing
+session binding with view/manage guards and per-target one-open protection.
+A separate FlutterSecureStorage namespace persists receipts; iOS uses
+device-bound app Keychain accessibility. Navigation and detail reload use
+verified readbacks. Authenticated production and native-device acceptance
+remain pending.
 
 Tool lists use the Webapp's five columns: number, status, brand, category and
 model. Numeric and localized status sorting, stable lowercase string sorting
@@ -145,7 +150,7 @@ failures offer a retry.
 User details display deactivation and archive notices. Future deactivation
 uses a strict date comparison; English and German dates follow the Webapp.
 Deactivation uses the warning callout, and archive notices use informational
-styling. The unavailable Carbon Lock and Archive icons are omitted.
+styling. Both notices now use the canonical Carbon Locked and Box icons.
 Booked tools, mutation actions and live updates remain pending. Logged-in
 route/workflow and rendered visual acceptance remain open.
 
@@ -198,7 +203,7 @@ Product price history includes a 150px linear-area chart above the table when
 at least two records are available, with a 32px gap. Touch and pointer selection
 display localized dates and EUR prices per base unit. Chart data is reversed
 from a copy, without mutating the records. Rendered visual comparison,
-category editing, deletion and live updates remain pending.
+product deletion and live updates remain pending.
 
 Product creation is active from the command palette and collapsed
 master-data sidebar for users with both product visibility and product
@@ -309,19 +314,26 @@ Ubuntu text, and the detail-header/dialog route with verified closing.
 RPC/storage tests use fakes and an in-memory plugin mock. Vendor creation
 is active from the command palette and collapsed master-data sidebar for
 users with vendor visibility and `manage:productVendors`. It opens the
-scoped dialog and navigates only to the verified vendor ID. These vendor
-action rows currently omit the canonical Carbon icon; existing icon-backed
-rows retain their icons.
+scoped dialog and navigates only to the verified vendor ID. Vendor creation
+rows now use the canonical Carbon TagGroup icon.
 
-Nested vendor creation is active from the price vendor picker. Vendor
-deletion, matching menu icons, live updates, live storage and authenticated
-production/native/visual acceptance remain pending.
+Nested vendor creation is active from the price vendor picker. The vendor
+detail menu now uses the canonical Carbon icons. Edit requires vendor
+visibility and `manage:productVendors`; Delete requires vendor visibility and
+`delete:productVendors`. Deletion uses the Webapp's required confirmation
+checkbox and warning. A fresh full baseline must match before one dispatch.
+The scoped journal and lock are shared with create/edit operations in the
+same scope. Only a genuine acknowledgement establishes deletion; missing
+records and HTTP 404 do not. Navigation returns to the vendor list only if
+the acknowledged ID and current detail route match. Live updates, live
+storage and authenticated production/native/visual acceptance remain open.
 
-Product-price entry is active from the product-detail header for users with
-product and price-record visibility plus `manage:productPriceRecords`. The
-text-only ghost action opens the scoped dialog. It does not yet reproduce
-the Webapp's icon dropdown; the canonical Carbon menu and price icons remain
-pending.
+Product-price entry is active from the product-detail dropdown for users
+with product and price-record visibility plus `manage:productPriceRecords`.
+Record price, Edit categories and Edit appear in canonical order. Category
+editing requires product visibility and manage:products. The menu uses Carbon
+OverflowMenuVertical, CurrencyEuro and Edit. Unavailable actions are omitted.
+Product deletion remains inactive; the menu exposes only working entries.
 
 The dialog uses the tested typed draft, controller-owned form fields and
 scoped vendor lookups. Functional tests exercise unit/vendor selection and
@@ -363,14 +375,17 @@ Vendor details use the Webapp's header-only view, preserving the server-provided
 name without displaying generic descriptions or timestamps.
 Typed reads check authentication, vendor visibility, session binding and the
 returned identifier. The scoped edit dialog reloads this detail only after
-verified success. Vendor deletion and the matching icon menu remain pending.
-Other resource detail routes still use generic views.
+verified success. The canonical icon menu also opens the scoped deletion
+workflow described above. Some resource detail routes still use generic views.
 
-Project Regie-report cards, local ISO-week ranges, project-filtered querying and
-URL-backed top pagination have tested components. Their loading/error states,
-retry callback, permission-based tab visibility, encoded detail links and 320px
-layout also have functional coverage. These components are not connected to an
-active route; the project overview does not expose a report tab.
+Project Regie-report cards, local ISO-week ranges, project-filtered querying
+and URL-backed top pagination are connected to the active project report tab.
+The real router exposes /projects/:id/regieReports. Header editing and the
+completed-project notice are shared with the overview. Tab visibility follows
+the canonical tools/report permissions; project and report reads check current
+session scope. Loading/error states, retry, encoded links and narrow German
+RTL navigation have functional coverage. Report exports, live updates and
+authenticated acceptance remain pending.
 
 The existing Webapp is the design and workflow reference. Its shared control
 styles live in `sortsys-react-components`. The client uses the local
@@ -398,7 +413,7 @@ absent, undefined and null as distinct values. Date and bigint fields use Dart
 `DateTime` and `BigInt` values.
 
 Generated API coverage does not establish workflow coverage. Remaining project
-detail tabs/actions, contact editing, active customer creation/editing and actions,
+detail tabs/actions, customer deletion and matching action menus,
 other CRUD forms, costs and bookings, report workflows, file operations, imports,
 tool transfers, remaining planning actions, table sorting outside projects,
 customers, tools and vendors, chat/proposals, settings, administration and exports still need
@@ -552,61 +567,231 @@ block spacing in maintained generated models and descriptors.
 
 ## Current validation status
 
-At the hierarchy-layout checkpoint, a fresh isolated run passed 60 focused
-functional tests: 58 client tests and two shared UI tests. Coverage includes
-price/product-master receipts, contact drafts and typed RPC access, contact
-receipts and write coordination, eight contact-dialog cases, supervisor
-graphs and scoped reads, five supervisor-layout cases and the shared error
-callout. These tests use fake RPC responses and, where needed, an in-memory
-journal; they do not establish authenticated production acceptance.
+The active-category checkpoint passed both full, unexcluded suites:
+811 client tests across 133 files and 70 shared UI tests across 17 files,
+for 881 passing tests across 150 files. Every expected test file was
+reported. Both runners reported success and exited with code zero,
+with no failures, errors or skipped cases. Validation used entirely new
+physical, writable sibling copies before offline dependency resolution.
+Maintained sources stayed read-only. SHA-256 checks verified that all
+495 copied source, test, asset and web inputs matched the maintained
+files before and after execution. Original private metadata bytes and
+absences were restored after Pub, including the absent UI lockfile.
 
-The hierarchy layout has working direct-report and expand-all controls,
-encoded user links, cycle termination, loading/empty/partial-error states
-and scope-reset behavior. A 320px German/RTL case with doubled Ubuntu text
-passed using widget-local constraints. Session/route integration and
-Webapp-equivalent German name ordering remain pending.
+The preceding picker checkpoint passed 865 tests and received 406 clean
+reports, with 491 copied inputs and 505 maintained fingerprints unchanged.
+The Unicode-license registration checkpoint passed 859 tests and received
+404 clean reports, with 489 copied inputs and 503 maintained fingerprints
+unchanged.
 
-Five tests in `contact_form_fields_test.dart` remain unvalidated. The focused
-60-test run does not replace those cases or establish a full-suite gate.
-The latest full, unexcluded suites predate the contact additions: 616 client
-successes with one vendor-lock assertion failure, and 62 shared UI successes
-with one warning-callout test load error. Both failures remain unresolved.
+The preceding category-access checkpoint passed 858 tests and received
+402 clean reports, with 487 copied inputs and 501 maintained fingerprints
+unchanged. The coordinator checkpoint passed 844 tests and received
+397 clean reports, with 482 copied inputs and 496 maintained fingerprints
+unchanged. Category editing was not yet exposed at those checkpoints.
 
-Fresh analyzer validation received all 362 expected reports: 358 Dart files
-and four configuration files. Version, subscriptions, roots, overlays,
-priority files and shutdown were acknowledged. Busy-to-idle was observed,
-with no missing or unexpected reports, no protocol errors, server exit zero
-and unchanged protected resolver/native metadata. Diagnostics remain: the
-warning-callout test calls the nonexistent `BoxBorder.resolve` method, and
-two contact test files have string-interpolation lints. This is not a clean
-analyzer gate. The unreachable contact-RPC null branch was removed, matching
-the generated non-null query contract; its warnings are resolved.
+The category-receipt checkpoint passed 827 tests and received 394 clean
+reports, with 479 copied inputs and 493 maintained fingerprints unchanged.
+The matcher checkpoint passed 811 tests and received 391 clean reports,
+with 476 copied inputs and 490 maintained fingerprints unchanged.
 
-Fresh JavaScript and WebAssembly release builds passed. Exactly 33
-Tabler/Ubuntu runtime files per target matched their sources; Carbon assets
-and provenance were outside the audit. All 444 maintained source, asset,
-test, manifest, documentation and protected-metadata fingerprints stayed
-unchanged during build validation. Release compilation does not verify
-inactive workflow integration, rendered appearance or native-device behavior.
+The earlier category-draft checkpoint passed 802 tests and received 388 clean
+reports, with 473 copied inputs and 487 maintained fingerprints unchanged.
+The product-menu checkpoint passed 790 tests and received 386 clean reports,
+with 471 copied inputs and 485 maintained fingerprints unchanged.
 
-After that checkpoint, the canonical archive notice was added to the active
-tool-detail layout. It uses the already-loaded archive timestamp, local dates
-and informational styling, immediately after the header. No new RPC is used.
-The unavailable Carbon Archive icon is omitted.
+The full runs include the previously unvalidated seven tool/customer-detail
+cases and five contact-form cases. The warning-callout border assertion,
+vendor concurrency assertion and two interpolation lints are corrected.
+The shared fail-fast lock still reports PROJECT_WRITE_BUSY; its behavior
+has not changed. Earlier focused runs and the historical checkpoint below
+remain separate evidence.
 
-Four real-layout tests were added for an unarchived tool, bilingual/themed
-placement, local-date and future-timestamp semantics, and narrow German
-LTR/RTL rendering with doubled Ubuntu text. These four cases remain
-unvalidated. The 60-test, 362-report and release-build evidence above predates
-the archive-notice change and does not establish acceptance of the latest
-code.
+Customer creation is active through the canonical customers.create command.
+Detail-header editing and Ctrl+E open the same scoped customer dialog.
+The real SessionController supplies binding, owner and view/manage checks;
+one customer dialog can be open per session. Customer fields retain raw
+editing values, ordered channels and explicit nulls. Updates use a fresh
+baseline and send changed fields. Selected contact IDs are validated.
 
-Webapp parity is incomplete. Customer create/edit actions remain inactive.
-The contact dialog is implemented but lacks production receipt storage and
-session/navigation integration. Other detail/CRUD workflows, the active
-supervisor hierarchy, import/export, authenticated acceptance, rendered
-comparison and native-device acceptance remain pending. No deployment or
-store release has been performed.
+Customer receipts use a separate FlutterSecureStorage namespace with
+strict ten-field envelopes, canonical intent validation and targeted cleanup.
+iOS uses device-bound app Keychain accessibility. Customer and contact-link
+writes have separate durable stages. Recovery reads known IDs and never
+repeats a mutation or infers a create ID. Verified success retains its
+customer ID if receipt deletion fails, including failures after deletion.
+Navigation and detail reload use the verified ID.
+
+The customer contact picker supports nested contact creation for users with
+the required customer and contact permissions. It opens the existing contact
+dialog and appends only its verified returned record. Existing selections
+and raw customer fields survive the nested dialog. Cancellation restores the
+query, an already selected exact name suppresses creation, and revoked or
+stale results cannot become selections. Actual nested-dialog tests hold
+readback to verify that neither selection nor the customer write completes
+early. Typed fakes, memory receipts and secure-storage plugin mocks supply
+the test data; authenticated service and native persistence acceptance
+remain open.
+
+Global contacts.create and contact-detail header/Ctrl+E editing remain
+active. They use actual session permissions, per-target one-open protection,
+scoped secure receipts and verified records. Unacknowledged create dispatches
+remain blocked; known-target updates support read-only verification.
+
+Project details now expose the permission-filtered Overview and
+Time-and-material reports tabs. The canonical /projects/:id/regieReports
+route uses the real router and scoped project reads, retains the project
+header, editing and completed-project notice, and renders the existing
+project-filtered report cards and URL-backed top pagination. Encoded detail
+links, loading/error states and retry remain available. New tests cover the
+actual route with encoded IDs and repeated URI values, unauthenticated
+final-session rejection, and integrated German RTL tab navigation at 320 px
+with doubled Ubuntu text. The earlier report and overview regressions also
+pass. Report exports, live updates and authenticated acceptance remain open.
+
+Canonical Carbon icons are connected to project, customer, contact, product
+and vendor creation commands. The project, vendor and product action menus,
+user archive/deactivation notices and the tool archive notice also use them.
+The archive's SHA-512 integrity matched the maintained lockfile's 11.89.0 pin.
+Conversion preserved original geometry and viewBoxes, including the User
+component's distinct 16px branch and 32-unit fallback. The shared asset test
+renders all 44 registered icons; a separate test checks User asset selection,
+dimensions and semantics. Attribution and the original Apache-2.0 license
+are retained. Further action-menu integration remains pending.
+
+Fifteen new functional cases cover the actual vendor confirmation dialog,
+role-filtered icon menu, required checkbox, busy submit/close/back guards,
+full-baseline conflicts, unreadable journals, lost acknowledgements across
+reopening, stale replies and genuine-ID/current-route navigation. They also
+cover proven-unsent discard and acknowledged local cleanup after delete-role
+loss, cleanup faults before/after receipt removal, actual unauthenticated
+final-session rejection and 320px doubled-text German RTL layouts. Pending
+create/edit receipts block deletion. Unacknowledged deletion cannot be
+replayed or cleared as success. Caller/navigation errors remain outside the
+business-write catch. These tests use typed fakes and memory journals; they
+do not establish authenticated service or native storage acceptance.
+
+Eight product-menu and route cases check canonical price/category/edit
+order, genuine icons, actual callbacks, unavailable/empty actions and busy
+updates to already-open items. The busy test requires all three items to
+exist before checking their disabled callbacks. Cases also cover category-only
+menus at 320px doubled-text German RTL, decoded route IDs with retained query
+and fragment state, and the real unauthenticated final-session edit owner
+remaining mounted after menu closure. Its Ctrl+E handler stays outside the
+transient overlay. Price and category flows remain page-owned and mutually
+busy with master editing. Existing coordinators, receipts and role checks
+are unchanged. An optional builder preserves the standalone edit-action API.
+Presentation callbacks in these tests do not perform business mutations.
+
+Product categories have an immutable typed draft with exact raw wire
+values. Its 12 functional tests cover selection copies, ordering, case and
+duplicate preservation, clearing, target validation, Unicode whitespace,
+BOM preservation, UTF-8 boundaries and invalid surrogate pairs. Validation
+matches the backend's trimmed 127-byte limit without altering selections.
+
+The native-safe category matcher has nine functional tests. It uses pinned
+Unicode 17 data rather than native lowercase defaults, keeps ECMAScript query
+trimming separate from Rust value validation, and supports full default case
+conversion, including final sigma. An exhaustive fresh probe matched Node's
+Unicode 17 behavior for all 1,112,064 scalar values and 2,048 surrogate units,
+four sigma contexts per value, and all trim boundaries. No differences were
+found. This is default lowercase, not case folding or locale collation.
+
+The backend's Rust 1.99 pin also uses Unicode 17.0.0. Category input/readback
+helpers preserve raw submitted values and compute Rust trimming and
+first-spelling deduplication separately. Sixteen functional tests cover exact
+category multisets, known target IDs, immutable copies, the eight-field
+receipt codec, dates, nonce and stage validation, genuine acknowledgement
+values, payload ownership, UTF-8 size bounds and clearing. Readback ignores
+category order and does not claim ownership of unrelated product fields.
+
+The offline Unicode generator verifies pinned input hashes. Separate checks
+reproduced its output, evaluated all mappings and properties, retained the
+exact 1,995-byte Unicode License V3, and rejected corrupt or missing inputs
+without clobbering output. Python syntax and wrapping were checked manually;
+black, ruff, autopep8 and yapf were unavailable, so no Python formatter run is
+claimed. The full license is now registered once with Flutter at actual
+application startup. A functional test checks repeated registration, the
+Unicode package attribution, complete license paragraphs and indentation,
+and the original 1,995-byte UTF-8 text.
+
+Category write coordination has 17 functional tests. Prepared and
+dispatching receipts are persisted and read back before one mutation
+dispatch. A fresh category-owned baseline, scoped in-process lock and
+nonce checks guard conflicts and stale ownership. Genuine acknowledgement
+and known-ID readback confirm success; uncertain writes are not replayed.
+Read-only recovery and proven-unsent discard remain available after
+manage-role loss. Cleanup faults retain an already verified product.
+
+Typed RPC access and the real final-session binding have ten functional
+tests for exact descriptors, raw immutable payloads, current actor and
+permissions, response IDs, read snapshots and unauthenticated rejection.
+Four secure-storage tests cover all receipt stages, actor/product
+isolation, targeted cleanup, strict decoding and safe failed writes.
+They use the in-memory plugin mock, not native or operator storage.
+The app-specific namespace uses device-bound iOS accessibility.
+
+The category-owned picker has six functional cases. It retains raw query
+and selection spelling, shows the first 20 stable matches including selected
+options, toggles exact checkbox values and never turns unresolved text into
+a category. Chips are noninteractive. Tests cover outside-click geometry,
+keyboard activation, stale owners, disabled callbacks and 320px doubled-text
+German RTL in both themes. The pinned matcher preserves Webapp query rules
+without changing shared autocomplete behavior.
+
+Category editing is active through the actual product-detail menu for current
+users with product visibility and manage:products. Record price, Edit
+categories and Edit appear in canonical order; category editing uses the
+genuine Carbon Edit icon. The page owns the opening lifecycle, captures the
+live decoded product route and complete URI, and preserves final-session
+binding checks. Only a verified same-ID result on that captured current route
+triggers detail reload. Price, category and master actions disable each other
+while busy; the persistent master Ctrl+E owner remains outside the overlay.
+
+Thirteen dialog cases cover raw selections, clearing and no-op, single submit,
+busy cancel/back guards, journal and option failures, explicit retries,
+acknowledgement loss and read-only recovery without replay. They also cover
+proven-unsent discard with preserved draft/query after manage-role loss,
+cleanup faults before/after removal, frozen baselines, unowned server changes,
+owned conflicts, stale options/callbacks, invalid legacy categories, actual
+unauthenticated final-session rejection and narrow RTL layouts in both themes.
+The modal uses the real category coordinator and scoped secure receipt adapter.
+All 88 category cases and 23 menu/vendor-entry/vendor-dialog cases ran in the
+full suite. Domain fakes, memory receipts and plugin mocks are test fixtures,
+not authenticated service or native-device acceptance.
+
+The formatter check used the resolved package's Dart 3.11 language version.
+Thirty-four eligible files required no changes. The full ProductDetailScreen
+comparison differed only in two unchanged historical hunks; its new category
+integration blocks matched the formatter. Manual review covered purpose
+gaps, braced guards and wrapping. No new formatting-only project tests
+were added.
+
+Fresh static validation received all 410 expected reports: 406 Dart files
+and four configuration files. Status subscriptions, roots, overlays,
+priority files and shutdown were acknowledged. Busy-to-idle was observed.
+There were no diagnostics, missing or unexpected reports, protocol errors
+or server stderr. The server exited with code zero. Protected resolver and
+native metadata paths remained unchanged, including absent files.
+
+Fresh JavaScript and WebAssembly release builds passed with customer and
+contact workflows, nested contact creation, active project reports, vendor
+deletion, active product-category editing and Unicode license registration.
+Canonical icons are bundled. The fixed audit checked exactly 33
+Tabler/Ubuntu runtime files per target. A separate audit checked all
+19 Carbon files: 18 SVG variants and their license. Every audited file
+matched its source. All 16 added Carbon SVG provenance hashes and five
+Ubuntu provenance hashes matched. Both source-only provenance files were
+absent from the bundles. All 509 maintained source, asset, test, manifest,
+documentation and protected-metadata fingerprints stayed unchanged during
+build validation. Four tool inputs were checked separately and also
+remained unchanged.
+
+Webapp parity remains incomplete. Customer and product deletion, remaining
+action menus, other detail/CRUD workflows, the active supervisor hierarchy
+and its German name ordering, import/export, rendered comparison,
+authenticated acceptance and native-device acceptance remain pending.
+No deployment or store release has been performed.
 
 ## Historical intermediate checkpoint
 

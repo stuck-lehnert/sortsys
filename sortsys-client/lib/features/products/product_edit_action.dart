@@ -11,15 +11,24 @@ import '../../ui/text.dart';
 import 'product_master_receipt.dart';
 import 'session_product_master_dialog.dart';
 
+typedef ProductEditActionBuilder =
+    Widget Function(BuildContext context, VoidCallback? edit, bool busy);
+
 class ProductEditAction extends StatefulWidget {
   const ProductEditAction({
     super.key,
     required this.product,
     required this.onSaved,
+    this.builder,
+    this.enabled = true,
+    this.isActive,
   });
 
   final models.Product product;
   final ValueChanged<models.Product> onSaved;
+  final ProductEditActionBuilder? builder;
+  final bool enabled;
+  final bool Function()? isActive;
 
   @override
   State<ProductEditAction> createState() {
@@ -62,7 +71,11 @@ class _ProductEditActionState extends State<ProductEditAction> {
       return false;
     }
 
-    if (!mounted || _opening || ModalRoute.of(context)?.isCurrent != true) {
+    if (!mounted ||
+        _opening ||
+        !widget.enabled ||
+        widget.isActive?.call() == false ||
+        ModalRoute.of(context)?.isCurrent != true) {
       return false;
     }
 
@@ -79,6 +92,8 @@ class _ProductEditActionState extends State<ProductEditAction> {
     final session = context.read<SessionController>();
 
     if (_opening ||
+        !widget.enabled ||
+        widget.isActive?.call() == false ||
         !_allowed(session) ||
         ModalRoute.of(context)?.isCurrent != true) {
       return;
@@ -92,7 +107,8 @@ class _ProductEditActionState extends State<ProductEditAction> {
           session.authenticated &&
           session.binding == binding &&
           session.info?.can('view:products') == true &&
-          sameProductMasterSnapshot(widget.product, product);
+          sameProductMasterSnapshot(widget.product, product) &&
+          (widget.isActive?.call() ?? true);
     }
 
     models.Product? result;
@@ -124,18 +140,29 @@ class _ProductEditActionState extends State<ProductEditAction> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionController>();
+    VoidCallback? edit;
 
-    if (!_allowed(session)) {
+    if (_allowed(session)) {
+      edit = () {
+        unawaited(_edit());
+      };
+    }
+
+    final busy = _opening || !widget.enabled;
+    final builder = widget.builder;
+
+    if (builder != null) {
+      // Keep the keyboard/dialog owner outside a transient menu overlay.
+      return builder(context, edit, busy);
+    }
+
+    if (edit == null) {
       return const SizedBox.shrink();
     }
 
     return SsButton(
       kind: SsButtonKind.ghost,
-      onPressed: _opening
-          ? null
-          : () {
-              unawaited(_edit());
-            },
+      onPressed: busy ? null : edit,
       child: Text(text(context, 'Bearbeiten', 'Edit')),
     );
   }

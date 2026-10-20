@@ -285,10 +285,12 @@ void main() {
         baseline: baseline,
       ),
       throwsA(
-        isA<VendorWriteException>().having(
-          (error) => error.failure,
-          'failure',
-          VendorWriteFailure.outstanding,
+        isA<StateError>().having(
+          (error) {
+            return error.message;
+          },
+          'message',
+          'PROJECT_WRITE_BUSY',
         ),
       ),
     );

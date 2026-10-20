@@ -116,14 +116,16 @@ class CustomerRelatedContent extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    text(
-                      context,
-                      'Verknüpfte Daten konnten nicht geladen werden',
-                      'Related data could not be loaded',
+                  SsInfoCallout(
+                    kind: SsCalloutKind.error,
+                    child: Text(
+                      text(
+                        context,
+                        'Verknüpfte Daten konnten nicht geladen werden',
+                        'Related data could not be loaded',
+                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    style: SsTheme.of(context).body
-                        .copyWith(color: SsTheme.of(context).danger),
                   ),
                   if (onRetry != null) ...[
                     const SizedBox(height: 8),

@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:sortsys_ui/sortsys_ui.dart';
 
@@ -15,6 +16,32 @@ models.ProductsVendorsGetInput vendorDetailInput(String id) {
   }
 
   return models.ProductsVendorsGetInput(id: id);
+}
+
+bool isVendorDetailLocation(Uri current, String id) {
+  if (id.isEmpty) {
+    return false;
+  }
+
+  final segments = current.pathSegments;
+
+  return segments.length == 3 &&
+      segments[0] == 'products' &&
+      segments[1] == 'vendors' &&
+      segments[2] == id;
+}
+
+String? vendorDeletedLocation(
+  Uri current, {
+  required String displayedId,
+  required String acknowledgedId,
+}) {
+  if (acknowledgedId != displayedId ||
+      !isVendorDetailLocation(current, displayedId)) {
+    return null;
+  }
+
+  return '/products/vendors';
 }
 
 class VendorDetailScreen extends StatelessWidget {
@@ -63,8 +90,36 @@ class VendorDetailScreen extends StatelessWidget {
           vendor: vendor,
           headerActions: VendorEditAction(
             vendor: vendor,
+            isActive: () {
+              if (!context.mounted) {
+                return false;
+              }
+
+              return isVendorDetailLocation(
+                GoRouter.of(context).routeInformationProvider.value.uri,
+                vendor.id,
+              );
+            },
             onSaved: (updated) {
               reload();
+            },
+            onDeleted: (acknowledgedId) {
+              if (!context.mounted ||
+                  !session.authenticated ||
+                  session.binding != binding ||
+                  session.info?.can('view:productVendors') != true) {
+                return;
+              }
+
+              final destination = vendorDeletedLocation(
+                GoRouter.of(context).routeInformationProvider.value.uri,
+                displayedId: vendor.id,
+                acknowledgedId: acknowledgedId,
+              );
+
+              if (destination != null) {
+                context.go(destination);
+              }
             },
           ),
         );

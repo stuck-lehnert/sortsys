@@ -28,13 +28,13 @@ class UserDetailNotices extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    // Keep notices text-only until the matching lock/archive assets exist.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (deactivatedAt != null)
           SsInfoCallout(
             kind: SsCalloutKind.warning,
+            icon: 'lock',
             child: Text(
               deactivatedAt.isAfter(current)
                   ? text(
@@ -51,6 +51,7 @@ class UserDetailNotices extends StatelessWidget {
           ),
         if (archivedAt != null)
           SsInfoCallout(
+            icon: 'archive',
             child: Text(
               text(
                 context,

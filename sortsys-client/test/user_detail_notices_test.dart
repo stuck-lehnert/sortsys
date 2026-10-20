@@ -103,7 +103,12 @@ void main() {
           tester.getTopLeft(notices.at(1)).dy,
           tester.getBottomLeft(notices.at(0)).dy,
         );
-        expect(find.byType(SsIcon), findsNothing);
+        expect(
+          tester.widgetList<SsIcon>(find.byType(SsIcon)).map((icon) {
+            return icon.name;
+          }),
+          ['lock', 'archive'],
+        );
         expect(tester.takeException(), isNull);
       }
     },
@@ -138,7 +143,12 @@ void main() {
         await tester.drag(find.byType(ListView), const Offset(0, -450));
         await tester.pumpAndSettle();
 
-        expect(find.byType(SsIcon), findsNothing);
+        expect(
+          tester.widgetList<SsIcon>(find.byType(SsIcon)).map((icon) {
+            return icon.name;
+          }),
+          ['lock', 'archive'],
+        );
         expect(tester.takeException(), isNull);
       }
     },

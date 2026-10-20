@@ -56,12 +56,15 @@ void main() {
           findsOneWidget,
         );
         expect(callout.kind, SsCalloutKind.info);
-        expect(callout.icon, isNull);
+        expect(callout.icon, 'archive');
         expect(
           tester.getTopLeft(notice).dy,
           tester.getBottomLeft(find.byType(SsPageHeader)).dy,
         );
-        expect(find.byType(SsIcon), findsNothing);
+        expect(
+          tester.widget<SsIcon>(find.byType(SsIcon)).name,
+          'archive',
+        );
         expect(tester.takeException(), isNull);
       }
     }
@@ -110,7 +113,10 @@ void main() {
       );
       expect(tester.getTopLeft(notice).dx, greaterThanOrEqualTo(0));
       expect(tester.getBottomRight(notice).dx, lessThanOrEqualTo(320));
-      expect(find.byType(SsIcon), findsNothing);
+      expect(
+        tester.widget<SsIcon>(find.byType(SsIcon)).name,
+        'archive',
+      );
 
       await tester.drag(find.byType(ListView), const Offset(0, -300));
       await tester.pumpAndSettle();

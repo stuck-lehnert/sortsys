@@ -14,6 +14,7 @@ class SsEntityPicker<T extends Object> extends StatefulWidget {
     required this.onSelected,
     required this.createLabel,
     this.onCreate,
+    this.canCreateQuery,
     this.focusNode,
     this.enabled = true,
     this.loadingText = 'Loading options',
@@ -30,6 +31,7 @@ class SsEntityPicker<T extends Object> extends StatefulWidget {
   final ValueChanged<T> onSelected;
   final String Function(String query) createLabel;
   final Future<T?> Function(String query)? onCreate;
+  final bool Function(String query)? canCreateQuery;
   final FocusNode? focusNode;
   final bool enabled;
   final String loadingText;
@@ -98,7 +100,10 @@ class _SsEntityPickerState<T extends Object> extends State<SsEntityPicker<T>> {
       for (final option in options) _ExistingEntity<T>(option),
     ];
 
-    if (widget.onCreate != null && normalized.isNotEmpty && !exact) {
+    if (widget.onCreate != null &&
+        normalized.isNotEmpty &&
+        !exact &&
+        (widget.canCreateQuery?.call(query) ?? true)) {
       choices.add(_CreateEntity<T>(query.trim()));
     }
 
@@ -128,7 +133,10 @@ class _SsEntityPickerState<T extends Object> extends State<SsEntityPicker<T>> {
   Future<void> _create(String query) async {
     final create = widget.onCreate;
 
-    if (create == null || !widget.enabled || _creating) {
+    if (create == null ||
+        !widget.enabled ||
+        _creating ||
+        !(widget.canCreateQuery?.call(query) ?? true)) {
       return;
     }
 

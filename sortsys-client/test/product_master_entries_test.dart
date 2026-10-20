@@ -57,7 +57,7 @@ void main() {
 
       expect(command.label, 'Create product');
       expect(command.group, PaletteGroup.create);
-      expect(command.icon, isNull);
+      expect(command.icon, 'product');
     },
   );
 

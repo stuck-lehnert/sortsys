@@ -31,7 +31,7 @@ void main() {
       for (final direction in [TextDirection.ltr, TextDirection.rtl]) {
         await _pump(tester, direction: direction);
         final box = _box(tester);
-        final border = box.border!.resolve(direction);
+        final border = box.border! as BorderDirectional;
         final container = tester.widget<Container>(_container());
         final style = DefaultTextStyle.of(tester.element(find.text('Notice')))
             .style;
@@ -44,11 +44,11 @@ void main() {
           border.top.color,
           Color.lerp(SsColors.light.border, SsColors.light.accent, 0.4),
         );
+        expect(border.start.width, 4);
+        expect(border.end.width, 1);
         expect(
-          direction == TextDirection.ltr
-              ? border.left.width
-              : border.right.width,
-          4,
+          Directionality.of(tester.element(find.byType(SsInfoCallout))),
+          direction,
         );
         expect(
           container.padding,
