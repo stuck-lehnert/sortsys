@@ -2526,23 +2526,23 @@
       {
         "ecosystem": "Go",
         "name": "golang.org/x/image",
-        "version": "v0.46.0",
+        "version": "v0.47.0",
         "license": "BSD-3-Clause",
-        "source": "https://pkg.go.dev/golang.org/x/image@v0.46.0"
+        "source": "https://pkg.go.dev/golang.org/x/image@v0.47.0"
       },
       {
         "ecosystem": "Go",
         "name": "golang.org/x/sys",
-        "version": "v0.48.0",
+        "version": "v0.49.0",
         "license": "BSD-3-Clause",
-        "source": "https://pkg.go.dev/golang.org/x/sys@v0.48.0"
+        "source": "https://pkg.go.dev/golang.org/x/sys@v0.49.0"
       },
       {
         "ecosystem": "Go",
         "name": "golang.org/x/text",
-        "version": "v0.42.0",
+        "version": "v0.43.0",
         "license": "BSD-3-Clause",
-        "source": "https://pkg.go.dev/golang.org/x/text@v0.42.0"
+        "source": "https://pkg.go.dev/golang.org/x/text@v0.43.0"
       }
     ]
   },
