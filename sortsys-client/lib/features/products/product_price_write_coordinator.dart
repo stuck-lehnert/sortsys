@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../../api/generated/models.g.dart' as models;
 import '../projects/project_write_lock.dart';
+import 'product_master_receipt.dart';
 import 'product_price_draft.dart';
 import 'product_price_receipt.dart';
 
@@ -40,10 +41,12 @@ final class ProductPriceWriteCoordinator {
   const ProductPriceWriteCoordinator({
     required this.access,
     required this.receipts,
+    this.masterReceipts,
   });
 
   final ProductPriceWriteAccess access;
   final ProductPriceReceiptStore receipts;
+  final ProductMasterReceiptStore? masterReceipts;
 
   void _check(String scope) {
     access.checkCurrent();
@@ -53,10 +56,39 @@ final class ProductPriceWriteCoordinator {
     }
   }
 
-  Future<ProductPriceWriteReceipt?> outstanding() {
+  Future<ProductPriceWriteReceipt?> outstanding() async {
     final scope = access.scope;
 
-    return _outstanding(scope);
+    final receipt = await _outstanding(scope);
+
+    if (receipt == null) {
+      await _checkMasterJournal(scope);
+    }
+
+    return receipt;
+  }
+
+  Future<void> _checkMasterJournal(String scope) async {
+    final journal = masterReceipts;
+
+    if (journal == null) {
+      return;
+    }
+
+    _check(scope);
+
+    // The existing strict master reader rejects a pending v2 deletion envelope.
+    final receipt = await journal.read(scope);
+
+    _check(scope);
+
+    if (receipt != null) {
+      receipt.encode();
+
+      if (receipt.scope != scope) {
+        throw const FormatException('PRODUCT_PRICE_MASTER_OWNER_MISMATCH');
+      }
+    }
   }
 
   Future<ProductPriceWriteReceipt?> _outstanding(String scope) async {
@@ -101,6 +133,8 @@ final class ProductPriceWriteCoordinator {
         ProductPriceWriteFailure.outstanding,
       );
     }
+
+    await _checkMasterJournal(scope);
 
     access.checkCreate(input);
 

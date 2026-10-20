@@ -6,6 +6,7 @@ import 'product_categories_draft.dart';
 import 'product_categories_inputs.dart';
 import 'product_categories_receipt.dart';
 import 'product_categories_write_access.dart';
+import 'product_master_receipt.dart';
 
 enum ProductCategoriesWriteFailure { outstanding, conflict, uncertain, cleanup }
 
@@ -25,10 +26,12 @@ final class ProductCategoriesWriteCoordinator {
   const ProductCategoriesWriteCoordinator({
     required this.access,
     required this.receipts,
+    this.masterReceipts,
   });
 
   final ProductCategoriesWriteAccess access;
   final ProductCategoriesReceiptStore receipts;
+  final ProductMasterReceiptStore? masterReceipts;
 
   void _check(String scope, String productId) {
     access.checkCurrent();
@@ -41,8 +44,40 @@ final class ProductCategoriesWriteCoordinator {
     }
   }
 
-  Future<ProductCategoriesWriteReceipt?> outstanding() {
-    return _outstanding(access.scope, access.productId);
+  Future<ProductCategoriesWriteReceipt?> outstanding() async {
+    final scope = access.scope;
+    final productId = access.productId;
+
+    final receipt = await _outstanding(scope, productId);
+
+    if (receipt == null) {
+      await _checkMasterJournal(scope, productId);
+    }
+
+    return receipt;
+  }
+
+  Future<void> _checkMasterJournal(String scope, String productId) async {
+    final journal = masterReceipts;
+
+    if (journal == null) {
+      return;
+    }
+
+    _check(scope, productId);
+
+    // The existing strict master reader rejects a pending v2 deletion envelope.
+    final receipt = await journal.read(scope);
+
+    _check(scope, productId);
+
+    if (receipt != null) {
+      receipt.encode();
+
+      if (receipt.scope != scope) {
+        throw const FormatException('PRODUCT_CATEGORIES_MASTER_OWNER_MISMATCH');
+      }
+    }
   }
 
   Future<ProductCategoriesWriteReceipt?> _outstanding(
@@ -102,6 +137,8 @@ final class ProductCategoriesWriteCoordinator {
         ProductCategoriesWriteFailure.outstanding,
       );
     }
+
+    await _checkMasterJournal(scope, productId);
 
     access.checkSet(input);
 

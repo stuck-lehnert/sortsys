@@ -19,7 +19,10 @@ import 'product_price_chart.dart';
 import 'product_price_dialog.dart';
 import 'product_price_form_reads.dart';
 import 'product_price_write_coordinator.dart';
+import 'secure_product_master_receipts.dart';
 import 'secure_product_price_receipts.dart';
+import 'session_product_delete_dialog.dart'
+    show canDeleteProduct, showSessionProductDeleteDialog;
 import 'session_product_price_access.dart';
 import 'session_product_categories_dialog.dart';
 
@@ -38,6 +41,9 @@ class ProductDetailScreen extends HookWidget {
     final priceRevision = useState(0);
     final openingPrice = useState(false);
     final openingCategories = useState(false);
+    final openingDelete = useState(false);
+    final openingMaster = useRef<Object?>(null);
+
     owner.value = id;
 
     useEffect(() {
@@ -45,6 +51,12 @@ class ProductDetailScreen extends HookWidget {
         mounted.value = false;
       };
     }, const []);
+
+    useEffect(() {
+      openingMaster.value = null;
+
+      return null;
+    }, [binding, id]);
 
     final allowed = session.authenticated &&
         session.info?.can('view:products') == true;
@@ -113,11 +125,17 @@ class ProductDetailScreen extends HookWidget {
       return const Center(child: SsSpinner());
     }
 
+    final router = GoRouter.of(context);
+    final location = router.routeInformationProvider.value.uri;
+
     bool pageCurrent() {
       return mounted.value &&
           owner.value == id &&
           session.authenticated &&
-          session.binding == binding;
+          session.binding == binding &&
+          session.info?.can('view:products') == true &&
+          router.routeInformationProvider.value.uri == location &&
+          isProductDetailLocation(location, id);
     }
 
     bool canRecordPrice() {
@@ -130,6 +148,8 @@ class ProductDetailScreen extends HookWidget {
     Future<void> recordPrice() async {
       if (openingPrice.value ||
           openingCategories.value ||
+          openingDelete.value ||
+          openingMaster.value != null ||
           !canRecordPrice() ||
           ModalRoute.of(context)?.isCurrent != true) {
         return;
@@ -151,6 +171,7 @@ class ProductDetailScreen extends HookWidget {
         final coordinator = ProductPriceWriteCoordinator(
           access: access,
           receipts: SecureProductPriceReceipts(),
+          masterReceipts: SecureProductMasterReceipts(),
         );
         final reads = ProductPriceFormReads(
           productId: id,
@@ -205,13 +226,12 @@ class ProductDetailScreen extends HookWidget {
     Future<void> editCategories() async {
       if (openingCategories.value ||
           openingPrice.value ||
+          openingDelete.value ||
+          openingMaster.value != null ||
           !canEditCategories() ||
           ModalRoute.of(context)?.isCurrent != true) {
         return;
       }
-
-      final router = GoRouter.of(context);
-      final location = router.routeInformationProvider.value.uri;
 
       if (!isProductDetailLocation(location, id)) {
         return;
@@ -247,10 +267,85 @@ class ProductDetailScreen extends HookWidget {
       }
     }
 
+    bool canDelete() {
+      return pageCurrent() &&
+          canDeleteProduct((permission) {
+            return session.info?.can(permission) == true;
+          });
+    }
+
+    Future<void> deleteProduct() async {
+      if (openingDelete.value ||
+          openingPrice.value ||
+          openingCategories.value ||
+          openingMaster.value != null ||
+          !canDelete() ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+
+      var dialogActive = true;
+      openingDelete.value = true;
+
+      bool formCurrent() {
+        return dialogActive &&
+            pageCurrent() &&
+            session.info?.can('view:products') == true;
+      }
+
+      try {
+        final deletedId = await showSessionProductDeleteDialog(
+          context,
+          session,
+          product: product,
+          isActive: formCurrent,
+        );
+
+        if (deletedId == null || deletedId != id || !formCurrent()) {
+          return;
+        }
+
+        final destination = productDeletedLocation(
+          router.routeInformationProvider.value.uri,
+          ownedLocation: location,
+          displayedId: id,
+          acknowledgedId: deletedId,
+        );
+
+        if (destination != null) {
+          router.go(destination);
+        }
+      } finally {
+        dialogActive = false;
+
+        if (mounted.value) {
+          openingDelete.value = false;
+        }
+      }
+    }
+
+    final masterOwner = Object();
+
     return ProductEditAction(
       product: product,
-      enabled: !openingPrice.value && !openingCategories.value,
-      isActive: pageCurrent,
+      enabled:
+          !openingPrice.value &&
+          !openingCategories.value &&
+          !openingDelete.value,
+      isActive: () {
+        return pageCurrent() &&
+            !openingPrice.value &&
+            !openingCategories.value &&
+            !openingDelete.value;
+      },
+      onOpeningChanged: (value) {
+        if (value) {
+          openingMaster.value = masterOwner;
+        } else if (identical(openingMaster.value, masterOwner)) {
+          // A retired owner cannot release its replacement's gate.
+          openingMaster.value = null;
+        }
+      },
       onSaved: (record) {
         if (pageCurrent() && record.id == id) {
           revision.value++;
@@ -260,6 +355,7 @@ class ProductDetailScreen extends HookWidget {
       builder: (context, edit, busy) {
         VoidCallback? recordPriceAction;
         VoidCallback? editCategoriesAction;
+        VoidCallback? deleteAction;
 
         if (canRecordPrice()) {
           recordPriceAction = () {
@@ -273,17 +369,25 @@ class ProductDetailScreen extends HookWidget {
           };
         }
 
+        if (canDelete()) {
+          deleteAction = () {
+            unawaited(deleteProduct());
+          };
+        }
+
         return ProductDetailLayout(
           key: ValueKey((binding, id)),
           product: product,
           headerActions:
               edit != null ||
                   recordPriceAction != null ||
-                  editCategoriesAction != null
+                  editCategoriesAction != null ||
+                  deleteAction != null
               ? ProductDetailMenu(
                   onRecordPrice: recordPriceAction,
                   onEditCategories: editCategoriesAction,
                   onEdit: edit,
+                  onDelete: deleteAction,
                   busy: busy,
                 )
               : null,

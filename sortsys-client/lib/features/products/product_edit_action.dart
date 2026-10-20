@@ -22,6 +22,7 @@ class ProductEditAction extends StatefulWidget {
     this.builder,
     this.enabled = true,
     this.isActive,
+    this.onOpeningChanged,
   });
 
   final models.Product product;
@@ -29,6 +30,9 @@ class ProductEditAction extends StatefulWidget {
   final ProductEditActionBuilder? builder;
   final bool enabled;
   final bool Function()? isActive;
+
+  /// The captured lifecycle may release its sibling gate after disposal.
+  final ValueChanged<bool>? onOpeningChanged;
 
   @override
   State<ProductEditAction> createState() {
@@ -89,6 +93,10 @@ class _ProductEditActionState extends State<ProductEditAction> {
   }
 
   Future<void> _edit() async {
+    if (!mounted) {
+      return;
+    }
+
     final session = context.read<SessionController>();
 
     if (_opening ||
@@ -101,6 +109,8 @@ class _ProductEditActionState extends State<ProductEditAction> {
 
     final binding = session.binding;
     final product = widget.product;
+    final ownerCurrent = widget.isActive;
+    final openingChanged = widget.onOpeningChanged;
 
     bool current() {
       return mounted &&
@@ -108,7 +118,7 @@ class _ProductEditActionState extends State<ProductEditAction> {
           session.binding == binding &&
           session.info?.can('view:products') == true &&
           sameProductMasterSnapshot(widget.product, product) &&
-          (widget.isActive?.call() ?? true);
+          (ownerCurrent?.call() ?? true);
     }
 
     models.Product? result;
@@ -118,6 +128,9 @@ class _ProductEditActionState extends State<ProductEditAction> {
     });
 
     try {
+      // Sibling actions must see this gate before the next frame.
+      openingChanged?.call(true);
+
       result = await showSessionProductMasterDialog(
         context,
         session,
@@ -130,6 +143,9 @@ class _ProductEditActionState extends State<ProductEditAction> {
           _opening = false;
         });
       }
+
+      // Release the same sibling gate even if this owner was disposed.
+      openingChanged?.call(false);
     }
 
     if (result != null && current()) {

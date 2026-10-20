@@ -5,6 +5,7 @@ import '../../state/session_controller.dart';
 import 'product_categories_dialog.dart';
 import 'product_categories_write_coordinator.dart';
 import 'secure_product_categories_receipts.dart';
+import 'secure_product_master_receipts.dart';
 import 'session_product_categories_access.dart';
 
 final _openCategoryDialogs = Expando<Set<String>>('product-category-dialogs');
@@ -43,6 +44,7 @@ Future<models.Product?> showSessionProductCategoriesDialog(
   final coordinator = ProductCategoriesWriteCoordinator(
     access: access,
     receipts: SecureProductCategoriesReceipts(),
+    masterReceipts: SecureProductMasterReceipts(),
   );
   openTargets.add(target);
 

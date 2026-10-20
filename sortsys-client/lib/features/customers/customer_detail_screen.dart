@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:sortsys_ui/sortsys_ui.dart';
 
@@ -10,6 +11,7 @@ import '../../ui/query_view.dart';
 import '../../ui/text.dart';
 import '../projects/project_history.dart';
 import '../projects/project_related_sections.dart';
+import 'customer_detail_location.dart';
 import 'customer_list_state.dart';
 import 'customer_edit_action.dart';
 import 'customer_related_sections.dart';
@@ -63,16 +65,31 @@ class CustomerDetailScreen extends StatelessWidget {
           key: ValueKey((binding, id, customer.modifiedAt)),
           child: Builder(
             builder: (ownerContext) {
+              final location = GoRouter.of(
+                ownerContext,
+              ).routeInformationProvider.value.uri;
+
               bool pageCurrent() {
-                return ownerContext.mounted &&
-                    session.authenticated &&
-                    session.binding == binding &&
-                    session.info?.can('view:customers') == true;
+                if (!ownerContext.mounted ||
+                    !session.authenticated ||
+                    session.binding != binding ||
+                    session.info?.can('view:customers') != true) {
+                  return false;
+                }
+
+                final current = GoRouter.of(
+                  ownerContext,
+                ).routeInformationProvider.value.uri;
+
+                return current == location &&
+                    isCustomerDetailLocation(current, id);
               }
 
               return CustomerDetailLayout(
                 customer: customer,
-                editAction: session.info?.can('manage:customers') == true
+                editAction:
+                    session.info?.can('manage:customers') == true ||
+                        session.info?.can('delete:customers') == true
                     ? CustomerEditAction(
                         customer: customer,
                         ownerContext: ownerContext,
@@ -80,6 +97,24 @@ class CustomerDetailScreen extends StatelessWidget {
                         onSaved: (confirmedId) {
                           if (pageCurrent() && confirmedId == id) {
                             reload();
+                          }
+                        },
+                        onDeleted: (confirmedId) {
+                          if (!pageCurrent() || confirmedId != id) {
+                            return;
+                          }
+
+                          final destination = customerDeletedLocation(
+                            GoRouter.of(
+                              ownerContext,
+                            ).routeInformationProvider.value.uri,
+                            ownedLocation: location,
+                            displayedId: id,
+                            acknowledgedId: confirmedId,
+                          );
+
+                          if (destination != null) {
+                            ownerContext.go(destination);
                           }
                         },
                       )

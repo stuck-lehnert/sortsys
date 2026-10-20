@@ -36,8 +36,13 @@ use the active scoped dialog, durable secure receipts and verified-ID
 navigation. The coordinator owns its loaded baseline, validates selected
 contact IDs and journals each separate write. Read-only recovery never
 repeats a mutation. The contact picker supports nested creation while
-preserving the customer draft and existing selections. Customer deletion,
-matching action menus, exports and live updates remain pending.
+preserving the customer draft and existing selections.
+
+The customer action menu keeps the persistent Ctrl+E editor and opens the
+guarded deletion dialog. Deletion requires the irreversible confirmation
+and a genuine server acknowledgement. Its journal interlocks with
+create/edit, and uncertain dispatches are never replayed. Exports and live
+updates remain pending.
 
 The persistent header exposes global search, opened by its magnifier or
 Ctrl+K / Cmd+K. Search uses the permission-gated generated queries for projects,
@@ -202,8 +207,8 @@ before and after the request. Missing vendor identifiers are omitted.
 Product price history includes a 150px linear-area chart above the table when
 at least two records are available, with a 32px gap. Touch and pointer selection
 display localized dates and EUR prices per base unit. Chart data is reversed
-from a copy, without mutating the records. Rendered visual comparison,
-product deletion and live updates remain pending.
+from a copy, without mutating the records. Rendered visual comparison
+and live updates remain pending.
 
 Product creation is active from the command palette and collapsed
 master-data sidebar for users with both product visibility and product
@@ -330,13 +335,15 @@ storage and authenticated production/native/visual acceptance remain open.
 
 Product-price entry is active from the product-detail dropdown for users
 with product and price-record visibility plus `manage:productPriceRecords`.
-Record price, Edit categories and Edit appear in canonical order. Category
-editing requires product visibility and manage:products. The menu uses Carbon
-OverflowMenuVertical, CurrencyEuro and Edit. Unavailable actions are omitted.
-Product deletion remains inactive; the menu exposes only working entries.
+Record price, Edit categories, Edit and Delete appear in Webapp order.
+Category editing requires product visibility and manage:products; deletion
+requires product visibility and delete:products. The menu uses Carbon
+OverflowMenuVertical, CurrencyEuro, Edit and TrashCan. Unavailable actions
+are omitted. All four workflows share current-route and live busy guards;
+deletion uses the scoped acknowledged workflow described below.
 
-The dialog uses the tested typed draft, controller-owned form fields and
-scoped vendor lookups. Functional tests exercise unit/vendor selection and
+The price dialog uses the tested typed draft, controller-owned form fields
+and scoped vendor lookups. Functional tests exercise unit/vendor selection and
 removal, date input, the purchase checkbox, arithmetic and UTF-8 validation,
 and German fields at 320 px with enlarged Ubuntu text. Copied conversion
 baselines, signed comma prices, canonical trimmed/null comments, local
@@ -412,13 +419,13 @@ nullable constructor fields default to null. Contract-optional fields preserve
 absent, undefined and null as distinct values. Date and bigint fields use Dart
 `DateTime` and `BigInt` values.
 
-Generated API coverage does not establish workflow coverage. Remaining project
-detail tabs/actions, customer deletion and matching action menus,
-other CRUD forms, costs and bookings, report workflows, file operations, imports,
-tool transfers, remaining planning actions, table sorting outside projects,
-customers, tools and vendors, chat/proposals, settings, administration and exports still need
-implementation or Webapp parity. Typst rendering, OnlyOffice and draw.io are not integrated yet. Desktop
-platform runners are also pending.
+Generated API coverage does not establish workflow coverage. Remaining
+project detail tabs/actions, entity action menus, other CRUD forms, costs
+and bookings, report workflows, file operations, imports, tool transfers,
+remaining planning actions, table sorting outside projects, customers,
+tools and vendors, chat/proposals, settings, administration and exports
+still need implementation or Webapp parity. Typst rendering, OnlyOffice
+and draw.io are not integrated yet. Desktop platform runners are pending.
 
 ## Planning workflows
 
@@ -567,6 +574,160 @@ block spacing in maintained generated models and descriptors.
 
 ## Current validation status
 
+### Active product-deletion checkpoint
+
+Fresh full, unexcluded suites passed 939 client tests across 144 files and
+72 shared UI tests across 18 files: 1,011 tests across 162 files. Both runners
+reported success and exited with code zero, without failures, errors, skips
+or stderr. Exact suite sets and selected source-declared literal names were
+checked. The 66 product-delete foundation, adapter, interlock and dialog cases,
+16 menu/router cases, ten customer-entry cases and three master-entry cases
+all ran. This includes the seven new product-menu cases and the actual final
+SessionController/GoRouter unauthenticated route test.
+
+Static validation received all 437 clean analysis-error notifications:
+433 Dart files and four YAML files. All 433 explicit Dart getErrors queries
+were clean. Status subscriptions, roots, all overlays, priority files,
+queries and shutdown were acknowledged. Busy-to-idle was observed; protocol
+errors and server stderr were empty, and the server exited with code zero.
+
+Twenty eligible files matched the Dart 3.11, 80-column formatter. The product
+detail screen differed only in its two protected historical formatting
+regions; these were audited privately and restored before tests. Manual
+review covered complete changed files, purpose grouping, braced callbacks,
+wrapping and ownership across awaited operations. Concrete corrections
+preserved captured callbacks and checked shortcut rejection before navigation.
+
+Each validation and release used entirely new physical, writable,
+byte-identical client/UI siblings before offline Pub. Client resolution
+used enforce-lockfile. All 609 maintained file hashes and private original
+input bytes were checked before and after execution. Original private
+analysis options and the absent UI lockfile were restored. Seven protected
+maintained resolver/native configuration absences remained unchanged.
+
+Fresh JavaScript and WebAssembly release builds passed in separate new pairs,
+with no build stderr and code-zero exits:
+
+- JavaScript: 4,406,059 bytes,
+  SHA-256 `8e629b427e9641316d1cc54f3aae58f6ba891fb0ebbb235afee988dabee0e49a`.
+- WebAssembly: 4,120,736 bytes,
+  SHA-256 `dafb7f7372cf4a203e769911082e109f6917bfadce949587f3a99a840b5e90e3`.
+
+Both bundles passed the fixed 33-file Tabler/Ubuntu and separate 19-file
+Carbon audits. All 16 added SVG hashes, viewBoxes and geometry counts and
+five pinned Ubuntu file hashes matched. The two provenance JSON files
+remained source-only and absent from the runtime bundles.
+
+Product details expose Record price, Edit categories, Edit and Delete in
+Webapp order with the genuine Carbon icons. Unavailable actions are omitted.
+The persistent Ctrl+E master editor retains its standalone API. All four
+workflows share live busy gates; a captured master-owner token prevents a
+retired callback from clearing a replacement's gate. Current binding,
+visibility, decoded product ID and the complete captured URI remain required.
+
+Deletion uses the real final SessionController and requires product view and
+delete permissions. The 640px danger dialog retains the linked-data warning,
+including cost estimates, bold irreversible text and the required checkbox.
+Its baseline freezes all nine generated Product fields, including the raw
+unit map and ordered categories. Tests cover confirmation, busy submit/cancel/
+back guards, stale responses, held callbacks, mutable parent snapshots and
+320px doubled German RTL layout.
+
+The strict version-two deletion receipt shares the existing product-master
+journal key. Legacy master and deletion envelopes reject each other. Deletion
+acquires the existing master, price and category in-process locks in that
+order and refuses pending related journals. Active price/category construction
+also checks the master journal before a new write; existing own-receipt
+recovery remains unchanged. These are not cross-process locking guarantees.
+
+Intent and dispatch are persisted and read back before one delete request.
+A genuine acknowledgement is required; absence and HTTP 404 do not prove
+success. Uncertain dispatches are never replayed. Exact-nonce proven-unsent
+discard and acknowledged cleanup remain view/owner-bound after delete-role
+loss. Cleanup faults preserve a genuinely confirmed product ID. Only the
+matching acknowledged ID on the same captured complete URI navigates to
+/products. Query-order, fragment, target or ownership changes prevent that
+redirect. Platform-storage tests use in-memory mocks, not operator storage.
+
+Customer create/edit and active nested contact creation remain connected;
+the earlier customer-deletion and checkbox-lifecycle checks remain included.
+Other entity actions and detail/CRUD workflows, supervisor hierarchy and
+German ordering, delivery-note forms, import/export and live updates remain
+incomplete. Rendered browser comparison, authenticated service workflows and
+native-device secure-storage acceptance remain open. No deployment or store
+release has been performed.
+
+### Earlier active customer-deletion checkpoint
+
+Both full, unexcluded suites passed: 865 client tests across 138 files and
+72 shared UI tests across 18 files, for 937 tests across 156 files. Every
+expected file and source-declared literal case was reported. All 59 explicit
+customer-deletion, menu and checkbox-lifecycle cases ran, including the seven
+new customer-menu/navigation cases. Both runners reported success and exited
+with code zero, without failures, errors, skips or stderr.
+
+Fresh static validation received all 424 clean reports: 420 Dart files and
+four YAML files. Status subscriptions, roots, overlays, priority files and
+shutdown were acknowledged. Busy-to-idle was observed; diagnostics, protocol
+errors and server stderr were empty, and the server exited with code zero.
+New or changed functional regions across nine files matched the Dart 3.11
+formatter. Manual review checked purpose grouping, braced guards and wrapping;
+unrelated historical formatting remained unchanged.
+
+Each validation used entirely new physical, writable, byte-identical client
+and UI siblings before offline Pub. The 509 source, test, asset and web inputs,
+523 maintained fingerprints and four tool inputs were checked before and
+after execution. Maintained projects stayed read-only. Original private
+metadata bytes and absences were restored, including the absent UI lockfile.
+
+Fresh JavaScript and WebAssembly release builds passed in separate new pairs,
+with no build stderr and code-zero exits:
+
+- JavaScript: 4,379,095 bytes,
+  SHA-256 `155cc18b9e225a345d855a293eeb8724df7778e46db3b411e691c46b251c95db`.
+- WebAssembly: 4,077,316 bytes,
+  SHA-256 `440a4487ded5b971ad540f60aa3e45b109939ee78336002b878077be58655bad`.
+
+Each bundle passed the fixed 33-file Tabler/Ubuntu audit and the separate
+19-file Carbon audit. The 16 added SVG hashes, viewBoxes and geometry counts
+and all five pinned Ubuntu file hashes matched. Both provenance JSON files
+remained source-only and absent from the runtime bundles and manifests.
+
+Customer details now expose the canonical Edit/Delete menu. The persistent
+Ctrl+E editor and its standalone API remain available. Both actions share
+one live busy guard. Deletion uses the real final SessionController, current
+binding and view/delete permissions, the linked-data warning and required
+irreversible confirmation. The 640px danger dialog blocks submit, cancel and
+back while busy and freezes the complete customer baseline.
+
+A strict nine-field version-two deletion receipt shares the actor's existing
+customer journal key and in-process lock with create/edit. The envelopes
+reject each other, so pending writes block incompatible operations. Intent
+and dispatch are persisted and read back before one delete request. A genuine
+server acknowledgement is required; a missing record is not proof of deletion,
+and uncertain dispatches are never replayed. Proven-unsent discard and
+acknowledged local cleanup retain current view/owner checks after delete-role
+loss. Cleanup faults retain an already confirmed customer ID.
+
+Verified deletion navigates to /customers only from the same captured full
+URI, binding and customer ID. Changed query values, fragments, decoded paths
+or ownership cannot redirect a newer page. Shared checkbox fields now reject
+held callbacks after disposal or widget rebinding; regression tests also
+verify that the current callback still changes the field.
+
+These checks cover customer create/edit, active contact integration and the
+new menu cases. Remaining entity actions and detail/CRUD workflows, product
+deletion, supervisor hierarchy and German ordering, import/export and live
+updates remain incomplete. Rendered browser comparison, authenticated
+service workflows and native-device secure-storage acceptance remain open.
+No deployment or store release has been performed.
+
+The preceding customer-delete foundation checkpoint passed 915 tests across
+154 files and received 419 clean reports. Deletion was not yet connected to
+the UI at that checkpoint.
+
+### Earlier active-category checkpoint
+
 The active-category checkpoint passed both full, unexcluded suites:
 811 client tests across 133 files and 70 shared UI tests across 17 files,
 for 881 passing tests across 150 files. Every expected test file was
@@ -614,8 +775,9 @@ one customer dialog can be open per session. Customer fields retain raw
 editing values, ordered channels and explicit nulls. Updates use a fresh
 baseline and send changed fields. Selected contact IDs are validated.
 
-Customer receipts use a separate FlutterSecureStorage namespace with
-strict ten-field envelopes, canonical intent validation and targeted cleanup.
+Customer create/edit receipts use a separate FlutterSecureStorage namespace
+with strict ten-field envelopes, canonical intent validation and targeted
+cleanup.
 iOS uses device-bound app Keychain accessibility. Customer and contact-link
 writes have separate durable stages. Recovery reads known IDs and never
 repeats a mutation or infers a create ID. Verified success retains its
@@ -787,7 +949,7 @@ documentation and protected-metadata fingerprints stayed unchanged during
 build validation. Four tool inputs were checked separately and also
 remained unchanged.
 
-Webapp parity remains incomplete. Customer and product deletion, remaining
+Webapp parity remains incomplete. Product deletion, remaining
 action menus, other detail/CRUD workflows, the active supervisor hierarchy
 and its German name ordering, import/export, rendered comparison,
 authenticated acceptance and native-device acceptance remain pending.

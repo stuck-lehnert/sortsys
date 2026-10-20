@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:sortsys_client/api/generated/models.g.dart' as models;
 import 'package:sortsys_client/features/products/product_detail_layout.dart';
 import 'package:sortsys_client/features/products/product_detail_location.dart';
 import 'package:sortsys_client/features/products/product_detail_menu.dart';
+import 'package:sortsys_client/features/products/product_detail_screen.dart';
 import 'package:sortsys_client/features/products/product_edit_action.dart';
+import 'package:sortsys_client/features/products/session_product_delete_dialog.dart';
 import 'package:sortsys_client/state/session_controller.dart';
 import 'package:sortsys_ui/sortsys_ui.dart';
 
@@ -409,6 +412,421 @@ void main() {
       expect(isProductDetailLocation(Uri.parse('/products/%FF'), id), isFalse);
     },
   );
+
+  testWidgets(
+    'product deletion follows all canonical actions with genuine trash icon',
+    (tester) async {
+      final calls = <String>[];
+
+      await tester.pumpWidget(
+        _app(
+          child: ProductDetailMenu(
+            onRecordPrice: () {
+              calls.add('price');
+            },
+            onEditCategories: () {
+              calls.add('categories');
+            },
+            onEdit: () {
+              calls.add('edit');
+            },
+            onDelete: () {
+              calls.add('delete');
+            },
+          ),
+        ),
+      );
+      await tester.tap(_anchor());
+      await tester.pumpAndSettle();
+
+      final labels = ['Record price', 'Edit categories', 'Edit', 'Delete'];
+
+      expect(find.byType(MenuItemButton), findsNWidgets(4));
+
+      for (var index = 1; index < labels.length; index++) {
+        expect(
+          tester.getTopLeft(find.text(labels[index - 1])).dy,
+          lessThan(tester.getTopLeft(find.text(labels[index])).dy),
+        );
+      }
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('product-delete')),
+          matching: find.byWidgetPredicate((widget) {
+            return widget is SsIcon &&
+                widget.name == 'trash-can' &&
+                widget.size == 16;
+          }),
+        ),
+        findsOneWidget,
+      );
+
+      for (final label in labels) {
+        if (label != labels.first) {
+          await tester.tap(_anchor());
+          await tester.pumpAndSettle();
+        }
+
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+
+      expect(calls, ['price', 'categories', 'edit', 'delete']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'delete-only product menu omits unavailable actions and invokes callback',
+    (tester) async {
+      var deletes = 0;
+
+      await tester.pumpWidget(
+        _app(
+          child: ProductDetailMenu(
+            onDelete: () {
+              deletes++;
+            },
+          ),
+        ),
+      );
+      await tester.tap(_anchor());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MenuItemButton), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Record price'), findsNothing);
+      expect(find.text('Edit categories'), findsNothing);
+      expect(find.text('Edit'), findsNothing);
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(deletes, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'product deletion busy state disables all four already-open actions',
+    (tester) async {
+      final busy = ValueNotifier(false);
+      addTearDown(busy.dispose);
+
+      await tester.pumpWidget(
+        _app(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: busy,
+            builder: (context, value, child) {
+              return ProductDetailMenu(
+                busy: value,
+                onRecordPrice: _presentationAction,
+                onEditCategories: _presentationAction,
+                onEdit: _presentationAction,
+                onDelete: _presentationAction,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.tap(_anchor());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MenuItemButton), findsNWidgets(4));
+
+      busy.value = true;
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<SsIconButton>(_anchor()).onPressed, isNull);
+      expect(find.byType(MenuItemButton), findsNWidgets(4));
+
+      for (final item in tester.widgetList<MenuItemButton>(
+        find.byType(MenuItemButton),
+      )) {
+        expect(item.onPressed, isNull);
+      }
+
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'delete-only product menu supports320px doubled German RTL in both themes',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      var deletes = 0;
+
+      for (final colors in [SsColors.light, SsColors.dark]) {
+        await tester.pumpWidget(
+          _app(
+            german: true,
+            colors: colors,
+            child: SsPageHeader(
+              title: 'Produkt',
+              actions: ProductDetailMenu(
+                onDelete: () {
+                  deletes++;
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.tap(_anchor());
+        await tester.pumpAndSettle();
+
+        final item = tester.widget<MenuItemButton>(
+          find.byKey(const ValueKey('product-delete')),
+        );
+
+        expect(find.text('Löschen'), findsOneWidget);
+        expect(find.byType(MenuItemButton), findsOneWidget);
+        expect(item.style?.foregroundColor?.resolve({}), colors.text);
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.text('Löschen'));
+        await tester.pumpAndSettle();
+      }
+
+      expect(deletes, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test(
+    'product deletion requires view and delete permissions rather than manage',
+    () {
+      for (final roles in [
+        <String>{},
+        {'view:products'},
+        {'delete:products'},
+        {'manage:products'},
+        {'view:products', 'manage:products'},
+        {'view:products', 'delete:products'},
+        {'view:products', 'manage:products', 'delete:products'},
+      ]) {
+        expect(
+          canDeleteProduct(roles.contains),
+          roles.contains('view:products') && roles.contains('delete:products'),
+        );
+      }
+    },
+  );
+
+  test(
+    'product deletion navigation owns the complete URI and genuine target ID',
+    () {
+      const id = 'paint / ä?#';
+      final owned = Uri.parse(
+        '/products/${Uri.encodeComponent(id)}?a=1&a=2#details',
+      );
+
+      expect(
+        productDeletedLocation(
+          owned,
+          ownedLocation: owned,
+          displayedId: id,
+          acknowledgedId: id,
+        ),
+        '/products',
+      );
+
+      for (final current in [
+        owned.replace(query: 'a=2&a=1'),
+        owned.replace(fragment: 'prices'),
+        Uri.parse('/products/other?a=1&a=2#details'),
+        Uri.parse('/products/${Uri.encodeComponent(id)}/history'),
+        Uri.parse('/products/%FF'),
+        Uri.parse('/products/vendors/${Uri.encodeComponent(id)}'),
+        Uri.parse('/customers/${Uri.encodeComponent(id)}'),
+      ]) {
+        expect(
+          productDeletedLocation(
+            current,
+            ownedLocation: owned,
+            displayedId: id,
+            acknowledgedId: id,
+          ),
+          isNull,
+        );
+      }
+
+      expect(
+        productDeletedLocation(
+          owned,
+          ownedLocation: owned,
+          displayedId: id,
+          acknowledgedId: 'other',
+        ),
+        isNull,
+      );
+
+      for (final invalid in [
+        '/products/',
+        '/products/%FF',
+        '/customers/product',
+      ]) {
+        final uri = Uri.parse(invalid);
+        final displayedId = invalid == '/products/' ? '' : 'product';
+
+        expect(
+          productDeletedLocation(
+            uri,
+            ownedLocation: uri,
+            displayedId: displayedId,
+            acknowledgedId: displayedId,
+          ),
+          isNull,
+        );
+      }
+    },
+  );
+
+  testWidgets(
+    'master opening notification remains silent without real authorization',
+    (tester) async {
+      final session = SessionController();
+      final enabled = ValueNotifier(true);
+      final openings = <bool>[];
+      addTearDown(session.dispose);
+      addTearDown(enabled.dispose);
+      var busy = false;
+      VoidCallback? edit;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: session,
+          child: _app(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: enabled,
+              builder: (context, value, child) {
+                return ProductEditAction(
+                  product: _product(),
+                  enabled: value,
+                  onOpeningChanged: openings.add,
+                  onSaved: (record) {
+                    fail('Unauthenticated save is forbidden.');
+                  },
+                  builder: (context, onEdit, opening) {
+                    edit = onEdit;
+                    busy = opening;
+
+                    return const SizedBox();
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(edit, isNull);
+      expect(busy, isFalse);
+
+      enabled.value = false;
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+      expect(busy, isTrue);
+      expect(openings, isEmpty);
+      expect(find.byType(Dialog), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+
+      expect(openings, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'actual product route rejects writes for final unauthenticated session',
+    (tester) async {
+      final session = SessionController();
+      final router = GoRouter(
+        initialLocation: '/products/product?a=1&a=2#details',
+        routes: [
+          GoRoute(
+            path: '/products/:id',
+            builder: (context, state) {
+              return Scaffold(
+                body: ProductDetailScreen(id: state.pathParameters['id']!),
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(session.dispose);
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: session,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (context, child) {
+              return SsTheme(colors: SsColors.dark, child: child!);
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No permission'), findsOneWidget);
+      expect(find.byType(ProductDetailMenu), findsNothing);
+      expect(find.byType(ProductEditAction), findsNothing);
+      expect(
+        router.routeInformationProvider.value.uri.toString(),
+        '/products/product?a=1&a=2#details',
+      );
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsNothing);
+      expect(
+        router.routeInformationProvider.value.uri.toString(),
+        '/products/product?a=1&a=2#details',
+      );
+
+      router.go('/products/product?a=2&a=1#prices');
+      await tester.pumpAndSettle();
+
+      final location = router.routeInformationProvider.value.uri;
+
+      expect(location.queryParametersAll['a'], ['2', '1']);
+      expect(location.fragment, 'prices');
+      expect(find.text('No permission'), findsOneWidget);
+      expect(find.byType(ProductDetailMenu), findsNothing);
+      expect(find.byType(Dialog), findsNothing);
+
+      router.go('/products/other?tab=units#product');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<ProductDetailScreen>(find.byType(ProductDetailScreen)).id,
+        'other',
+      );
+      expect(find.text('No permission'), findsOneWidget);
+      expect(find.byType(ProductEditAction), findsNothing);
+      expect(find.byType(Dialog), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Finder _anchor() {
@@ -432,7 +850,7 @@ models.Product _product() {
   );
 }
 
-Widget _app({required Widget child, bool german = false}) {
+Widget _app({required Widget child, bool german = false, SsColors? colors}) {
   return MaterialApp(
     locale: Locale(german ? 'de' : 'en'),
     supportedLocales: const [Locale('en'), Locale('de')],
@@ -445,7 +863,7 @@ Widget _app({required Widget child, bool german = false}) {
         data: media.copyWith(textScaler: TextScaler.linear(german ? 2 : 1)),
         child: Directionality(
           textDirection: german ? TextDirection.rtl : TextDirection.ltr,
-          child: SsTheme(colors: SsColors.dark, child: content!),
+          child: SsTheme(colors: colors ?? SsColors.dark, child: content!),
         ),
       );
     },

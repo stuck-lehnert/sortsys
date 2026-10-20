@@ -9,12 +9,14 @@ class ProductDetailMenu extends StatelessWidget {
     this.onRecordPrice,
     this.onEditCategories,
     this.onEdit,
+    this.onDelete,
     this.busy = false,
   });
 
   final VoidCallback? onRecordPrice;
   final VoidCallback? onEditCategories;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final bool busy;
 
   Widget _caption(String label, double maxWidth) {
@@ -26,7 +28,10 @@ class ProductDetailMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (onRecordPrice == null && onEditCategories == null && onEdit == null) {
+    if (onRecordPrice == null &&
+        onEditCategories == null &&
+        onEdit == null &&
+        onDelete == null) {
       return const SizedBox.shrink();
     }
 
@@ -78,10 +83,19 @@ class ProductDetailMenu extends StatelessWidget {
           ),
         if (onEdit != null)
           MenuItemButton(
+            key: const ValueKey('product-edit'),
             onPressed: busy ? null : onEdit,
             style: itemStyle,
             leadingIcon: const SsIcon('edit', size: 16),
             child: _caption(text(context, 'Bearbeiten', 'Edit'), captionWidth),
+          ),
+        if (onDelete != null)
+          MenuItemButton(
+            key: const ValueKey('product-delete'),
+            onPressed: busy ? null : onDelete,
+            style: itemStyle,
+            leadingIcon: const SsIcon('trash-can', size: 16),
+            child: _caption(text(context, 'Löschen', 'Delete'), captionWidth),
           ),
       ],
       builder: (context, controller, child) {
