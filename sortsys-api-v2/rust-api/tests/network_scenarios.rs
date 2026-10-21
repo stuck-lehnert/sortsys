@@ -5331,16 +5331,6 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
 
     let requests = openai_requests.lock().await;
     assert_eq!(requests.len(), 8);
-    let schema_tool = requests[4]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "sortsys_get_schema")
-        .expect("the provider must receive the on-demand schema tool");
-    assert_eq!(
-        schema_tool["parameters"]["properties"]["path"]["type"],
-        "string"
-    );
 
     let schema = last_mcp_output(&requests[5]);
     assert_eq!(schema["path"], "projects.create");
@@ -6028,9 +6018,22 @@ async fn verify_automatic_database_backups(
     // Age only the automatic history so the recent manual snapshots cannot
     // accidentally satisfy automatic scheduling or hide a failed dump.
     age_automatic_backup_history(master, database_id).await;
-    sqlx::query("UPDATE __postgres_databases SET password = $2 WHERE id = $1")
+
+    // A nonexistent database fails even when PostgreSQL uses trust authentication.
+    let missing_database_name = format!("missing_backup_{}", unique_suffix());
+    let database_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)",
+    )
+    .bind(&missing_database_name)
+    .fetch_one(master)
+    .await
+    .unwrap();
+
+    assert!(!database_exists);
+
+    sqlx::query("UPDATE __postgres_databases SET name = $2 WHERE id = $1")
         .bind(database_id)
-        .bind("intentionally-invalid-backup-test-password")
+        .bind(&missing_database_name)
         .execute(master)
         .await
         .unwrap();
@@ -6043,10 +6046,10 @@ async fn verify_automatic_database_backups(
     )
     .await;
 
-    // Restore the fixture's real credential before making assertions.
-    sqlx::query("UPDATE __postgres_databases SET password = $2 WHERE id = $1")
+    // Restore the fixture's real database name before making assertions.
+    sqlx::query("UPDATE __postgres_databases SET name = $2 WHERE id = $1")
         .bind(database_id)
-        .bind(database["password"].as_str().unwrap())
+        .bind(database["name"].as_str().unwrap())
         .execute(master)
         .await
         .unwrap();
@@ -6063,13 +6066,12 @@ async fn verify_automatic_database_backups(
     .unwrap();
 
     assert_eq!(failed_record.1, "failed");
-    assert!(
-        failed_record
-            .2
-            .as_deref()
-            .unwrap()
-            .contains("pg_dump failed")
-    );
+
+    let failure_message = failed_record.2.as_deref().unwrap();
+
+    assert!(failure_message.contains("pg_dump failed"));
+    assert!(failure_message.contains(&missing_database_name));
+    assert!(failure_message.contains("does not exist"));
 
     let retried_too_soon = backup_scheduler::backup_database_if_due(
         &second_replica,
@@ -7429,6 +7431,19 @@ async fn mock_openai_response(
     } else {
         assert!(names.contains(&"sortsys_search"));
         assert!(names.contains(&"sortsys_propose_change"));
+
+        // Native providers discover tool schemas through MCP, not Responses tools.
+        let schema_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "sortsys_get_schema")
+            .expect("the provider must discover the on-demand schema tool through MCP");
+
+        assert_eq!(
+            schema_tool["inputSchema"]["properties"]["path"]["type"],
+            "string"
+        );
     }
 
     let mut mcp_output = Vec::new();
