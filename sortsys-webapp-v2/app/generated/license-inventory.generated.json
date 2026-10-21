@@ -67,7 +67,7 @@
       {
         "ecosystem": "Rust",
         "name": "async-compression",
-        "version": "0.4.50",
+        "version": "0.4.51",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Nullus157/async-compression"
       },
@@ -270,14 +270,14 @@
       {
         "ecosystem": "Rust",
         "name": "compression-codecs",
-        "version": "0.4.45",
+        "version": "0.4.46",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Nullus157/async-compression"
       },
       {
         "ecosystem": "Rust",
         "name": "compression-core",
-        "version": "0.4.33",
+        "version": "0.4.34",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Nullus157/async-compression"
       },
@@ -445,7 +445,7 @@
       {
         "ecosystem": "Rust",
         "name": "deranged",
-        "version": "0.5.8",
+        "version": "0.5.9",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/jhpratt/deranged"
       },
@@ -536,7 +536,7 @@
       {
         "ecosystem": "Rust",
         "name": "equivalent",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/indexmap-rs/equivalent"
       },
@@ -942,7 +942,7 @@
       {
         "ecosystem": "Rust",
         "name": "inout",
-        "version": "0.2.2",
+        "version": "0.2.5",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/RustCrypto/utils"
       },
@@ -984,7 +984,7 @@
       {
         "ecosystem": "Rust",
         "name": "libc",
-        "version": "0.2.190",
+        "version": "0.2.191",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/rust-lang/libc"
       },
@@ -1432,7 +1432,7 @@
       {
         "ecosystem": "Rust",
         "name": "redox_syscall",
-        "version": "0.9.4",
+        "version": "0.9.5",
         "license": "MIT",
         "source": "https://gitlab.redox-os.org/redox-os/kernel"
       },
@@ -1502,7 +1502,7 @@
       {
         "ecosystem": "Rust",
         "name": "rustls",
-        "version": "0.23.45",
+        "version": "0.23.46",
         "license": "Apache-2.0 OR ISC OR MIT",
         "source": "https://github.com/rustls/rustls"
       },
@@ -1873,7 +1873,7 @@
       {
         "ecosystem": "Rust",
         "name": "tokio",
-        "version": "1.53.2",
+        "version": "1.53.3",
         "license": "MIT",
         "source": "https://github.com/tokio-rs/tokio"
       },
@@ -2027,15 +2027,15 @@
       {
         "ecosystem": "Rust",
         "name": "unicode-ident",
-        "version": "1.0.26",
+        "version": "1.0.27",
         "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
         "source": "https://github.com/dtolnay/unicode-ident"
       },
       {
         "ecosystem": "Rust",
         "name": "unicode-normalization",
-        "version": "0.1.25",
-        "license": "MIT OR Apache-2.0",
+        "version": "0.1.26",
+        "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
         "source": "https://github.com/unicode-rs/unicode-normalization"
       },
       {
@@ -2489,21 +2489,21 @@
       {
         "ecosystem": "Rust",
         "name": "zstd",
-        "version": "0.14.0",
+        "version": "0.14.2",
         "license": "BSD-3-Clause",
         "source": "https://github.com/gyscos/zstd-rs"
       },
       {
         "ecosystem": "Rust",
         "name": "zstd-safe",
-        "version": "8.1.0",
+        "version": "8.2.0",
         "license": "BSD-3-Clause",
         "source": "https://github.com/gyscos/zstd-rs"
       },
       {
         "ecosystem": "Rust",
         "name": "zstd-sys",
-        "version": "2.1.1+zstd.1.5.7",
+        "version": "2.1.2+zstd.1.5.7",
         "license": "BSD-3-Clause",
         "source": "https://github.com/gyscos/zstd-rs"
       }
@@ -4946,7 +4946,7 @@
       {
         "ecosystem": "Rust",
         "name": "unicode-ident",
-        "version": "1.0.26",
+        "version": "1.0.27",
         "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
         "source": "https://github.com/dtolnay/unicode-ident"
       },
