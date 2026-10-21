@@ -147,13 +147,37 @@ h6 {
 }
 
 .ss-spinner {
+  position: relative;
   display: inline-block;
   inline-size: 1rem;
   block-size: 1rem;
   border-radius: 0;
   border: 2px solid color-mix(in srgb, var(--ss-accent) 35%, transparent);
-  border-top-color: var(--ss-accent);
-  animation: ss-spin 0.9s linear infinite;
+
+  -webkit-mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.ss-spinner::before {
+  content: "";
+  position: absolute;
+  inset: -100%;
+  pointer-events: none;
+
+  /* Rotate the color field behind the stationary square border mask. */
+  background: conic-gradient(
+    from -45deg,
+    var(--ss-accent) 0deg 90deg,
+    transparent 90deg 360deg
+  );
+
+  animation: ss-spinner-edge 0.9s linear infinite;
 }
 
 .ss-spinner--small {
@@ -161,7 +185,7 @@ h6 {
   block-size: 0.82rem;
 }
 
-@keyframes ss-spin {
+@keyframes ss-spinner-edge {
   to {
     transform: rotate(360deg);
   }
@@ -1664,7 +1688,10 @@ body.ss-theme-dark .ss-table-row:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ss-spinner,
+  .ss-spinner::before {
+    animation: none;
+  }
+
   .ss-btn,
   .ss-modal,
   .ss-side-nav,
