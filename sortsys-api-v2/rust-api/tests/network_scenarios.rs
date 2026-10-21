@@ -3816,6 +3816,31 @@ async fn settings_relationships_personalization_and_scripts_use_real_postgres() 
     )
     .await;
     rpc.mutation(
+        "settings.costs.set",
+        json!({
+            "type": "fgk",
+            "effectiveAt": "2026-10-21",
+            "relativeFactor": 1.6,
+            "constant": 0,
+        }),
+        Some(&token),
+    )
+    .await;
+
+    let costs_with_calendar_date = rpc
+        .query("settings.costs.get", Value::Null, Some(&token))
+        .await;
+    let calendar_entry = costs_with_calendar_date["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["type"] == "fgk" && entry["relativeFactor"] == 1.6)
+        .expect("date-only overhead entry was persisted");
+
+    assert_eq!(calendar_entry["effectiveAt"], "2026-10-21T00:00:00Z");
+    assert_eq!(calendar_entry["constant"], 0.0);
+
+    rpc.mutation(
         "settings.costs.update",
         json!({
             "productOverheadFactor": 1.4,
@@ -4202,6 +4227,27 @@ async fn settings_relationships_personalization_and_scripts_use_real_postgres() 
         Some(&token),
     )
     .await;
+    rpc.mutation(
+        "settings.costs.delete",
+        json!({
+            "type": "fgk",
+            "effectiveAt": "2026-10-21",
+        }),
+        Some(&token),
+    )
+    .await;
+
+    let costs_after_delete = rpc
+        .query("settings.costs.get", Value::Null, Some(&token))
+        .await;
+
+    assert!(
+        costs_after_delete["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["effectiveAt"] != "2026-10-21T00:00:00Z")
+    );
 }
 
 #[tokio::test]

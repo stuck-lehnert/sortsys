@@ -576,22 +576,53 @@ impl TryFrom<String> for CommonCostType {
     }
 }
 
+mod cost_effective_at {
+    use chrono::{DateTime, NaiveDate, Utc};
+    use serde::{Deserialize, Deserializer, de::Error};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+
+        if let Ok(day) = NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
+            // Cost calculations compare calendar days at midnight UTC.
+            return Ok(day
+                .and_hms_opt(0, 0, 0)
+                .expect("calendar day has midnight")
+                .and_utc());
+        }
+
+        // Preserve exact instants so existing history entries remain addressable.
+        value.parse().map_err(|_| {
+            D::Error::custom("effectiveAt must be a valid date (YYYY-MM-DD) or timestamp")
+        })
+    }
+}
+
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CostSetInput {
     #[serde(rename = "type")]
     cost_type: CommonCostType,
+    #[serde(with = "cost_effective_at")]
+    #[ts(as = "DateTime<Utc>")]
     effective_at: DateTime<Utc>,
     relative_factor: f64,
     constant: f64,
 }
+
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CostDeleteInput {
     #[serde(rename = "type")]
     cost_type: CommonCostType,
+    #[serde(with = "cost_effective_at")]
+    #[ts(as = "DateTime<Utc>")]
     effective_at: DateTime<Utc>,
 }
+
 #[derive(Debug, Default, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LegacyCostUpdateInput {
@@ -742,4 +773,149 @@ struct SettingRow {
 struct SettingOutput {
     key: String,
     name: Option<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use chrono::{DateTime, Utc};
+    use http_body_util::BodyExt;
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    use super::{CostDeleteInput, CostSetInput};
+    use crate::{
+        api::Success,
+        rpc::{ProcedureRegistry, http_router},
+    };
+
+    fn cost_payload(effective_at: Value) -> Value {
+        json!({
+            "type": "fgk",
+            "effectiveAt": effective_at,
+            "relativeFactor": 1.6,
+            "constant": 0,
+        })
+    }
+
+    #[test]
+    fn cost_set_accepts_the_reported_calendar_date_payload() {
+        let input: CostSetInput =
+            serde_json::from_value(cost_payload(json!("2026-10-21"))).unwrap();
+
+        assert_eq!(input.cost_type.as_str(), "fgk");
+        assert_eq!(input.effective_at.to_rfc3339(), "2026-10-21T00:00:00+00:00");
+        assert_eq!(input.relative_factor, 1.6);
+        assert_eq!(input.constant, 0.0);
+    }
+
+    #[test]
+    fn cost_dates_use_utc_midnight_for_every_type_and_season() {
+        for cost_type in ["fgk", "mgk", "ngk"] {
+            for date in ["2026-01-01", "2026-07-01", "2028-02-29"] {
+                let mut payload = cost_payload(json!(date));
+                payload["type"] = json!(cost_type);
+                let input: CostSetInput = serde_json::from_value(payload).unwrap();
+                let expected = format!("{date}T00:00:00+00:00");
+
+                assert_eq!(input.cost_type.as_str(), cost_type);
+                assert_eq!(input.effective_at.to_rfc3339(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn cost_set_and_delete_preserve_existing_timestamp_keys() {
+        for value in [
+            "2026-10-21",
+            "2026-10-21T00:00:00.000Z",
+            "2026-10-21T00:00:00+02:00",
+            "2026-10-21T23:45:12.123456-07:00",
+        ] {
+            let set_input: CostSetInput =
+                serde_json::from_value(cost_payload(json!(value))).unwrap();
+            let delete_input: CostDeleteInput = serde_json::from_value(json!({
+                "type": "fgk",
+                "effectiveAt": value,
+            }))
+            .unwrap();
+            let expected: DateTime<Utc> = if value == "2026-10-21" {
+                "2026-10-21T00:00:00Z".parse().unwrap()
+            } else {
+                value.parse().unwrap()
+            };
+
+            assert_eq!(set_input.effective_at, expected);
+            assert_eq!(delete_input.effective_at, expected);
+        }
+    }
+
+    #[test]
+    fn cost_dates_reject_invalid_values_for_set_and_delete() {
+        for value in [
+            json!(""),
+            json!("2026-02-29"),
+            json!("2026-13-01"),
+            json!("2026-10-21T"),
+            json!("2026-10-21T00:00:00"),
+            json!(null),
+            json!(17),
+            json!({}),
+        ] {
+            let set_result = serde_json::from_value::<CostSetInput>(cost_payload(value.clone()));
+            let delete_result = serde_json::from_value::<CostDeleteInput>(json!({
+                "type": "fgk",
+                "effectiveAt": value,
+            }));
+
+            assert!(set_result.is_err(), "set accepted invalid date {value}");
+            assert!(
+                delete_result.is_err(),
+                "delete accepted invalid date {value}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reported_batched_request_reaches_the_typed_cost_handler() {
+        let registry = ProcedureRegistry::builder()
+            .mutation(
+                "settings.costs.set",
+                |_context, input: CostSetInput| async move {
+                    assert_eq!(input.effective_at.to_rfc3339(), "2026-10-21T00:00:00+00:00");
+                    assert_eq!(input.relative_factor, 1.6);
+                    assert_eq!(input.constant, 0.0);
+
+                    Ok(Success { success: true })
+                },
+            )
+            .build();
+        let payload = json!({
+            "0": {
+                "json": cost_payload(json!("2026-10-21")),
+            },
+        });
+        let response = http_router(registry)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/settings.costs.set?batch=1")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let decoded: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(decoded[0]["result"]["data"]["json"]["success"], true);
+        assert!(decoded[0].get("error").is_none());
+    }
 }
