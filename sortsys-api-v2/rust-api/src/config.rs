@@ -14,6 +14,7 @@ pub struct Config {
     pub onlyoffice: Option<OnlyOfficeConfig>,
     pub drawio: Option<DrawioConfig>,
     pub production: bool,
+    pub automatic_backups_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -49,6 +50,8 @@ impl Config {
         let llm_mcp_url = optional("LLM_MCP_URL")
             .filter(|value| !value.is_empty())
             .map(Arc::from);
+        let automatic_backups_enabled =
+            parse_automatic_backups_enabled(optional("AUTO_BACKUPS_ENABLED").as_deref())?;
         let onlyoffice = onlyoffice_config()?;
         let drawio = drawio_config()?;
 
@@ -63,8 +66,19 @@ impl Config {
             onlyoffice,
             drawio,
             production,
+            automatic_backups_enabled,
         })
     }
+}
+
+fn parse_automatic_backups_enabled(value: Option<&str>) -> Result<bool, ConfigError> {
+    let Some(value) = value else {
+        return Ok(true);
+    };
+
+    value
+        .parse()
+        .map_err(|_| ConfigError::InvalidAutomaticBackupsEnabled)
 }
 
 fn onlyoffice_config() -> Result<Option<OnlyOfficeConfig>, ConfigError> {
@@ -154,6 +168,8 @@ fn optional(name: &str) -> Option<String> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    #[error("AUTO_BACKUPS_ENABLED must be true or false")]
+    InvalidAutomaticBackupsEnabled,
     #[error("missing environment variable or secret for {0}")]
     Missing(&'static str),
     #[error("invalid PORT value: {0:?}")]
@@ -166,7 +182,19 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, validate_absolute_http_url, validate_public_url};
+    use super::{
+        ConfigError, parse_automatic_backups_enabled, validate_absolute_http_url,
+        validate_public_url,
+    };
+
+    #[test]
+    fn automatic_backups_are_enabled_by_default_with_an_explicit_boolean_override() {
+        assert!(parse_automatic_backups_enabled(None).unwrap());
+        assert!(parse_automatic_backups_enabled(Some("true")).unwrap());
+        assert!(!parse_automatic_backups_enabled(Some("false")).unwrap());
+        assert!(parse_automatic_backups_enabled(Some("")).is_err());
+        assert!(parse_automatic_backups_enabled(Some("yes")).is_err());
+    }
 
     #[test]
     fn onlyoffice_server_urls_must_have_an_http_origin() {

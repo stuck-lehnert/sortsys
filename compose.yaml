@@ -70,6 +70,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      AUTO_BACKUPS_ENABLED: ${AUTO_BACKUPS_ENABLED:-true}
       PG_MASTER_DSN: postgresql://${POSTGRES_USER:-sortsys}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/${POSTGRES_DB:-sortsys}
       JWT_SECRET: ${SERVICE_BASE64_64_JWT}
       ADMIN_HASH: ${ADMIN_HASH:?Set ADMIN_HASH to a bcrypt hash for the global administrator}

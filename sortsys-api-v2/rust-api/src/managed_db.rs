@@ -6,6 +6,7 @@ use std::{
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
+    time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -14,7 +15,7 @@ use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{FromRow, PgPool, postgres::PgPoolOptions, types::Json};
+use sqlx::{Connection, FromRow, PgConnection, PgPool, postgres::PgPoolOptions, types::Json};
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 use ts_rs::TS;
@@ -342,18 +343,97 @@ pub async fn create_backup(state: &AppState, database_id: i64, kind: &str) -> Rp
         return Err(bad_request("invalid backup kind"));
     }
 
+    let Some(connection) = acquire_backup_lock(state, database_id).await? else {
+        return Err(conflict("a database backup is already running"));
+    };
+
+    let result = create_backup_locked(state, database_id, kind, None).await;
+    release_backup_lock(connection, database_id).await;
+
+    result
+}
+
+pub(crate) async fn acquire_backup_lock(
+    state: &AppState,
+    database_id: i64,
+) -> RpcResult<Option<PgConnection>> {
+    // A dedicated session avoids holding the master's single pooled connection
+    // while backup metadata queries need that pool. Disconnect releases the lock.
+    let mut connection = PgConnection::connect(&state.config.master_dsn)
+        .await
+        .map_err(internal)?;
+    let lock_name = format!("sortsys.database-backup:{database_id}");
+    let acquired =
+        sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_lock(hashtextextended($1::text, 0))")
+            .bind(lock_name)
+            .fetch_one(&mut connection)
+            .await
+            .map_err(internal)?;
+
+    if !acquired {
+        connection.close().await.map_err(internal)?;
+        return Ok(None);
+    }
+
+    Ok(Some(connection))
+}
+
+pub(crate) async fn release_backup_lock(connection: PgConnection, database_id: i64) {
+    if connection.close().await.is_err() {
+        tracing::warn!(
+            database_id,
+            "could not close database backup lock connection"
+        );
+    }
+}
+
+pub(crate) async fn create_backup_locked(
+    state: &AppState,
+    database_id: i64,
+    kind: &str,
+    timeout: Option<Duration>,
+) -> RpcResult<Backup> {
     let database = database(state, database_id).await?;
-    let storage = backup_storage(&database.host)?;
     let backup_id = insert_processing_backup(state, database_id, kind, None).await?;
+    let result = backup_with_timeout(perform_backup(state, &database, backup_id), timeout).await;
+
+    if let Err(error) = &result {
+        mark_backup_failed(state, backup_id, error.to_string()).await;
+    }
+
+    result
+}
+
+async fn backup_with_timeout<T>(
+    operation: impl std::future::Future<Output = RpcResult<T>>,
+    timeout: Option<Duration>,
+) -> RpcResult<T> {
+    let Some(timeout) = timeout else {
+        return operation.await;
+    };
+
+    tokio::time::timeout(timeout, operation)
+        .await
+        .map_err(|_| internal("database backup exceeded its execution time limit"))?
+}
+
+async fn perform_backup(
+    state: &AppState,
+    database: &ManagedDatabase,
+    backup_id: i64,
+) -> RpcResult<Backup> {
+    // Configuration and temporary-directory errors must also mark the attempt
+    // failed, rather than leaving an apparently running backup in the UI.
+    let storage = backup_storage(&database.host)?;
     let temp = TempDirectory::create("sortsys-db-backup").await?;
     let sql_path = temp.path.join("backup.sql");
     let gzip_path = temp.path.join("backup.sql.gz");
 
     let result = async {
-        dump_database(&database, &sql_path).await?;
+        dump_database(database, &sql_path).await?;
         gzip_file(&sql_path, &gzip_path).await?;
 
-        let object_key = backup_object_key(&database, Utc::now(), ".sql.gz");
+        let object_key = backup_object_key(database, Utc::now(), ".sql.gz");
         let size = tokio::fs::metadata(&gzip_path)
             .await
             .map_err(internal)?
@@ -361,17 +441,23 @@ pub async fn create_backup(state: &AppState, database_id: i64, kind: &str) -> Rp
         upload_file(&storage, &object_key, "application/gzip", &gzip_path).await?;
 
         mark_backup_uploaded(state, backup_id, &object_key, size).await?;
-        apply_retention(state, &database, &storage).await?;
+
+        if let Err(error) = apply_retention(state, database, &storage).await {
+            // A housekeeping failure must not hide an already uploaded snapshot
+            // or cause automatic scheduling to repeat a successful backup.
+            tracing::warn!(
+                database_id = %database.id,
+                error_code = ?error.code,
+                "backup uploaded, but retention cleanup failed"
+            );
+        }
 
         backup(state, backup_id).await
     }
     .await;
 
-    if let Err(error) = &result {
-        mark_backup_failed(state, backup_id, error.to_string()).await;
-    }
-
     temp.remove().await;
+
     result
 }
 
@@ -597,6 +683,7 @@ async fn dump_database(database: &ManagedDatabase, output: &Path) -> RpcResult<(
         .to_str()
         .ok_or_else(|| internal("backup path is not valid UTF-8"))?;
     let status = tokio::process::Command::new("pg_dump")
+        .kill_on_drop(true)
         .args([
             "--host",
             &database.host.connection_details.host,
@@ -857,14 +944,24 @@ async fn mark_backup_uploaded(
 ) -> RpcResult<()> {
     sqlx::query(
         r#"
-        UPDATE __postgres_database_backups
-        SET
-            state = 'uploaded',
-            object_key = $2,
-            size_bytes = $3,
-            error = NULL,
-            completed_at = NOW()
-        WHERE id = $1
+        WITH uploaded AS (
+            UPDATE __postgres_database_backups
+            SET
+                state = 'uploaded',
+                object_key = $2,
+                size_bytes = $3,
+                error = NULL,
+                completed_at = NOW()
+            WHERE id = $1
+            RETURNING database_id, kind, created_at
+        )
+        UPDATE __postgres_databases AS database
+        SET last_automatic_backup_at = GREATEST(
+            database.last_automatic_backup_at,
+            uploaded.created_at
+        )
+        FROM uploaded
+        WHERE database.id = uploaded.database_id AND uploaded.kind = 'auto'
         "#,
     )
     .bind(backup_id)
@@ -878,11 +975,13 @@ async fn mark_backup_uploaded(
 }
 
 async fn mark_backup_failed(state: &AppState, backup_id: i64, error: String) {
+    // A timeout can arrive after upload metadata commits. Keep that snapshot
+    // available instead of overwriting its completed state.
     let _ = sqlx::query(
         r#"
         UPDATE __postgres_database_backups
         SET state = 'failed', error = $2, completed_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND state = 'processing'
         "#,
     )
     .bind(backup_id)
@@ -1278,19 +1377,103 @@ impl TempDirectory {
         let suffix = procedures_password()?;
         let path = std::env::temp_dir().join(format!("{prefix}-{suffix}"));
 
-        tokio::fs::create_dir(&path).await.map_err(internal)?;
+        let mut directory = tokio::fs::DirBuilder::new();
+
+        #[cfg(unix)]
+        directory.mode(0o700);
+
+        directory.create(&path).await.map_err(internal)?;
 
         Ok(Self { path })
     }
 
     async fn remove(self) {
-        let _ = tokio::fs::remove_dir_all(self.path).await;
+        let _ = tokio::fs::remove_dir_all(&self.path).await;
+    }
+}
+
+impl Drop for TempDirectory {
+    fn drop(&mut self) {
+        // Cancellation must not leave a plaintext database dump on disk.
+        let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{backup_extension, decode_backup_payload, validate_identifier};
+    use std::time::Duration;
+
+    use super::{
+        TempDirectory, backup_extension, backup_with_timeout, decode_backup_payload, internal,
+        validate_identifier,
+    };
+    use crate::{error::ErrorCode, error::RpcResult};
+
+    #[tokio::test]
+    async fn automatic_backup_timeout_removes_plaintext_temporary_files() {
+        let temp = TempDirectory::create("sortsys-backup-timeout-test")
+            .await
+            .unwrap();
+        let path = temp.path.clone();
+        tokio::fs::write(path.join("backup.sql"), b"synthetic database contents")
+            .await
+            .unwrap();
+
+        let operation = async move {
+            let _temp = temp;
+
+            std::future::pending::<RpcResult<()>>().await
+        };
+        let result = backup_with_timeout(operation, Some(Duration::from_millis(1))).await;
+
+        assert_eq!(
+            result.as_ref().unwrap_err().code,
+            ErrorCode::InternalServerError
+        );
+        assert!(result.unwrap_err().message.contains("execution time limit"));
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn normal_backup_cleanup_removes_the_temporary_directory() {
+        let temp = TempDirectory::create("sortsys-backup-cleanup-test")
+            .await
+            .unwrap();
+        let path = temp.path.clone();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let permissions = tokio::fs::metadata(&path).await.unwrap().permissions();
+
+            assert_eq!(permissions.mode() & 0o777, 0o700);
+        }
+
+        tokio::fs::write(path.join("backup.sql.gz"), b"synthetic compressed contents")
+            .await
+            .unwrap();
+
+        temp.remove().await;
+
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn backup_execution_preserves_success_and_underlying_errors() {
+        let completed =
+            backup_with_timeout(std::future::ready(Ok(42)), Some(Duration::from_secs(1)))
+                .await
+                .unwrap();
+        let failed: RpcResult<()> = backup_with_timeout(
+            std::future::ready(Err(internal("synthetic dump failure"))),
+            None,
+        )
+        .await;
+
+        assert_eq!(completed, 42);
+        assert_eq!(failed.unwrap_err().message, "synthetic dump failure");
+    }
 
     #[test]
     fn validates_identifiers_and_uploaded_backup_formats() {

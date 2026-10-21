@@ -449,6 +449,7 @@ start_infra() {
 start_api_container() {
   local pg_master_dsn="postgres://postgres:${TEST_PG_PASSWORD}@${TEST_PG_CONTAINER}:5432/${TEST_MASTER_DATABASE_NAME}"
 
+  # Backup scenarios drive due sweeps explicitly to keep fixtures deterministic.
   echo "Starting API test container on port ${TEST_API_PORT}"
   "$CONTAINER_RUNTIME" create \
     --name "$TEST_API_CONTAINER" \
@@ -461,6 +462,7 @@ start_api_container() {
     -v "${TEST_CARGO_REGISTRY_DIR}:/usr/local/cargo/registry${runtime_mount_suffix}" \
     -w /sortsys-api-v2 \
     -e PORT="3000" \
+    -e AUTO_BACKUPS_ENABLED="false" \
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$TEST_JWT_SECRET" \
     -e LLM_ENCRYPTION_KEY="$TEST_LLM_ENCRYPTION_KEY" \

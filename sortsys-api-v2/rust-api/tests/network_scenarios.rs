@@ -31,7 +31,7 @@ use p256::{
 use reqwest::{Client, Method};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{Connection, PgConnection, PgPool, postgres::PgPoolOptions};
 use tokio::{
     net::TcpListener,
     sync::Mutex,
@@ -39,7 +39,7 @@ use tokio::{
 };
 use url::Url;
 
-use sortsys_api::{ids::Id, migrations, seed};
+use sortsys_api::{AppState, backup_scheduler, config::Config, ids::Id, migrations, seed};
 
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -5894,6 +5894,307 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     .await;
 }
 
+async fn age_automatic_backup_history(master: &PgPool, database_id: i64) {
+    sqlx::query(
+        r#"
+        UPDATE __postgres_database_backups
+        SET created_at = NOW() - INTERVAL '2 days'
+        WHERE database_id = $1 AND kind = 'auto'
+        "#,
+    )
+    .bind(database_id)
+    .execute(master)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        UPDATE __postgres_databases
+        SET last_automatic_backup_at = NOW() - INTERVAL '2 days'
+        WHERE id = $1
+        "#,
+    )
+    .bind(database_id)
+    .execute(master)
+    .await
+    .unwrap();
+}
+
+async fn verify_automatic_database_backups(
+    environment: &TestEnvironment,
+    rpc: &RpcClient,
+    admin_token: &str,
+    database: &Value,
+    host: &Value,
+    master: &PgPool,
+) {
+    let database_id = database["id"].as_str().unwrap().parse::<i64>().unwrap();
+    let host_id = host["id"].as_str().unwrap().parse::<i64>().unwrap();
+    let first_replica = AppState::connect(Config::from_env().unwrap())
+        .await
+        .unwrap();
+    let second_replica = AppState::connect(Config::from_env().unwrap())
+        .await
+        .unwrap();
+    let now = chrono::Utc::now();
+    let required_since = backup_scheduler::daily_backup_cutoff(now);
+
+    let (first, second) = tokio::join!(
+        backup_scheduler::backup_database_if_due(&first_replica, database_id, now, required_since),
+        backup_scheduler::backup_database_if_due(&second_replica, database_id, now, required_since),
+    );
+    let results = [first.unwrap(), second.unwrap()];
+    let uploaded: Vec<_> = results.iter().flatten().collect();
+
+    assert_eq!(
+        uploaded.len(),
+        1,
+        "concurrent replicas must create only one automatic backup"
+    );
+    assert_eq!(uploaded[0].kind, "auto");
+    assert_eq!(uploaded[0].state, "uploaded");
+
+    let download = rpc
+        .query(
+            "admin.databases.backups.downloadUrl",
+            json!({ "backupId": uploaded[0].id, "expiresInSec": 300 }),
+            Some(admin_token),
+        )
+        .await;
+    let response = Client::new()
+        .get(download["downloadUrl"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+
+    assert!(response.status().is_success());
+
+    let bytes = response.bytes().await.unwrap();
+    let mut sql = String::new();
+    GzDecoder::new(bytes.as_ref())
+        .read_to_string(&mut sql)
+        .unwrap();
+
+    assert!(sql.contains("backup_probe"));
+    assert!(sql.contains("baseline"));
+
+    // Retention can prune the backup row. Its successful daily-run marker
+    // must survive so a later sweep or the repeated DST hour cannot run again.
+    let last_success = sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
+        "SELECT last_automatic_backup_at FROM __postgres_databases WHERE id = $1",
+    )
+    .bind(database_id)
+    .fetch_one(master)
+    .await
+    .unwrap();
+
+    assert_eq!(last_success, Some(uploaded[0].created_at));
+
+    let uploaded_backup_id: i64 = uploaded[0].id.as_str().parse().unwrap();
+    sqlx::query("DELETE FROM __postgres_database_backups WHERE id = $1")
+        .bind(uploaded_backup_id)
+        .execute(master)
+        .await
+        .unwrap();
+    let after_retention = backup_scheduler::backup_database_if_due(
+        &second_replica,
+        database_id,
+        chrono::Utc::now(),
+        required_since,
+    )
+    .await
+    .unwrap();
+
+    assert!(after_retention.is_none());
+
+    // Manual and scheduled backups must share the same replica-wide lock.
+    let mut lock = PgConnection::connect(&environment.master_dsn)
+        .await
+        .unwrap();
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended($1::text, 0))")
+        .bind(format!("sortsys.database-backup:{database_id}"))
+        .execute(&mut lock)
+        .await
+        .unwrap();
+    rpc.expect_error(
+        "admin.databases.backups.createNow",
+        Method::POST,
+        json!({ "databaseId": database["id"], "kind": "manual" }),
+        Some(admin_token),
+        "CONFLICT",
+    )
+    .await;
+    lock.close().await.unwrap();
+
+    // Age only the automatic history so the recent manual snapshots cannot
+    // accidentally satisfy automatic scheduling or hide a failed dump.
+    age_automatic_backup_history(master, database_id).await;
+    sqlx::query("UPDATE __postgres_databases SET password = $2 WHERE id = $1")
+        .bind(database_id)
+        .bind("intentionally-invalid-backup-test-password")
+        .execute(master)
+        .await
+        .unwrap();
+
+    let failed = backup_scheduler::backup_database_if_due(
+        &first_replica,
+        database_id,
+        chrono::Utc::now(),
+        required_since,
+    )
+    .await;
+
+    // Restore the fixture's real credential before making assertions.
+    sqlx::query("UPDATE __postgres_databases SET password = $2 WHERE id = $1")
+        .bind(database_id)
+        .bind(database["password"].as_str().unwrap())
+        .execute(master)
+        .await
+        .unwrap();
+
+    assert!(failed.is_err());
+
+    let failed_record = sqlx::query_as::<_, (i64, String, Option<String>)>(
+        "SELECT id, state, error FROM __postgres_database_backups \
+         WHERE database_id = $1 AND kind = 'auto' ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    .bind(database_id)
+    .fetch_one(master)
+    .await
+    .unwrap();
+
+    assert_eq!(failed_record.1, "failed");
+    assert!(
+        failed_record
+            .2
+            .as_deref()
+            .unwrap()
+            .contains("pg_dump failed")
+    );
+
+    let retried_too_soon = backup_scheduler::backup_database_if_due(
+        &second_replica,
+        database_id,
+        chrono::Utc::now(),
+        required_since,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        retried_too_soon.is_none(),
+        "failed attempts must survive a replica change"
+    );
+
+    sqlx::query(
+        "UPDATE __postgres_database_backups SET created_at = NOW() - INTERVAL '2 days' \
+         WHERE id = $1",
+    )
+    .bind(failed_record.0)
+    .execute(master)
+    .await
+    .unwrap();
+    let interrupted_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO __postgres_database_backups (database_id, kind, state, created_at) \
+         VALUES ($1, 'auto', 'processing', NOW() - INTERVAL '1 hour') RETURNING id",
+    )
+    .bind(database_id)
+    .fetch_one(master)
+    .await
+    .unwrap();
+    let recovered = backup_scheduler::backup_database_if_due(
+        &second_replica,
+        database_id,
+        chrono::Utc::now(),
+        required_since,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let interrupted = sqlx::query_as::<_, (String, Option<String>, bool)>(
+        "SELECT state, error, completed_at IS NOT NULL FROM __postgres_database_backups \
+         WHERE id = $1",
+    )
+    .bind(interrupted_id)
+    .fetch_one(master)
+    .await
+    .unwrap();
+
+    assert_eq!(recovered.state, "uploaded");
+    assert_eq!(interrupted.0, "failed");
+    assert!(interrupted.1.as_deref().unwrap().contains("interrupted"));
+    assert!(interrupted.2);
+
+    age_automatic_backup_history(master, database_id).await;
+    sqlx::query(
+        "UPDATE __postgres_hosts SET backup_details = \
+         jsonb_set(backup_details, '{enabled}', 'false'::jsonb) WHERE id = $1",
+    )
+    .bind(host_id)
+    .execute(master)
+    .await
+    .unwrap();
+    let disabled = backup_scheduler::backup_database_if_due(
+        &first_replica,
+        database_id,
+        chrono::Utc::now(),
+        required_since,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE __postgres_hosts SET backup_details = \
+         jsonb_set(backup_details, '{enabled}', 'true'::jsonb) WHERE id = $1",
+    )
+    .bind(host_id)
+    .execute(master)
+    .await
+    .unwrap();
+
+    assert!(disabled.is_none());
+
+    let retention = sqlx::query_as::<_, (i32, i32, i32, i32)>(
+        "SELECT retention_daily, retention_weekly, retention_monthly, retention_yearly \
+         FROM __postgres_databases WHERE id = $1",
+    )
+    .bind(database_id)
+    .fetch_one(master)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE __postgres_databases SET retention_daily = 0, retention_weekly = 0, \
+         retention_monthly = 0, retention_yearly = 0 WHERE id = $1",
+    )
+    .bind(database_id)
+    .execute(master)
+    .await
+    .unwrap();
+    let no_retention = backup_scheduler::backup_database_if_due(
+        &first_replica,
+        database_id,
+        chrono::Utc::now(),
+        required_since,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE __postgres_databases SET retention_daily = $2, retention_weekly = $3, \
+         retention_monthly = $4, retention_yearly = $5 WHERE id = $1",
+    )
+    .bind(database_id)
+    .bind(retention.0)
+    .bind(retention.1)
+    .bind(retention.2)
+    .bind(retention.3)
+    .execute(master)
+    .await
+    .unwrap();
+
+    assert!(no_retention.is_none());
+
+    first_replica.tenants.close().await;
+    second_replica.tenants.close().await;
+}
+
 #[tokio::test]
 async fn managed_database_backups_restore_and_fork_use_real_postgres_and_s3() {
     let Some(environment) = TestEnvironment::from_env() else {
@@ -6239,6 +6540,9 @@ INSERT INTO uploaded_probe (value) VALUES ('uploaded backup');\n";
     .await
     .unwrap();
     assert_eq!(stored_backup_count, 2);
+
+    verify_automatic_database_backups(&environment, &rpc, &admin_token, &database, &host, &master)
+        .await;
 
     let rotated = rpc
         .mutation(

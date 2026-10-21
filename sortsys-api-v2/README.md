@@ -65,6 +65,7 @@ The API reads the following environment variables:
 | `ONLYOFFICE_CALLBACK_URL` | for document editing | public API callback URL reachable by Document Server |
 | `ONLYOFFICE_JWT_SECRET` | for document editing | shared JWT secret; must match Document Server |
 | `DRAWIO_PUBLIC_URL` | for diagram editing | browser-reachable diagrams.net URL; may be a same-origin path such as `/drawio` |
+| `AUTO_BACKUPS_ENABLED` | no | daily database backups; default `true` |
 | `PORT` | no | HTTP port, default `3000` |
 | `NODE_ENV` | no | set to `production` to enable production requirements |
 
@@ -74,6 +75,28 @@ Anthropic. Set `LLM_MCP_URL` to a public HTTPS URL such as
 remain stored, but cannot be assigned to these use cases.
 
 Each value can instead be mounted at `/run/secrets/SORTSYS_API_V2_<NAME>`.
+
+## Automatic database backups
+
+The API checks for due backups every minute and on startup. Managed databases
+on hosts with backups enabled run daily at 02:00 in `Europe/Berlin`. At least
+one retention count must be greater than zero. Existing host storage settings
+and retention rules apply.
+
+On the spring clock change, the missing 02:00 run takes place at 03:00. On the
+autumn clock change, the first occurrence of 02:00 is used. A successful run
+is recorded separately from retained backup files, so retention cleanup and
+restarts preserve duplicate protection. Database advisory locks coordinate
+API replicas and manual backup requests.
+
+Overdue backups are caught up after startup. Failed attempts are recorded and
+retried after 15 minutes. Automatic runs have a six-hour execution limit;
+failed databases do not stop subsequent databases from being processed.
+Temporary dump directories are owner-only and are removed on cancellation.
+
+Set `AUTO_BACKUPS_ENABLED=false` to disable the background schedule. Manual
+backups remain available. During shutdown, the API finishes its current
+backup and stops before starting another database.
 
 ## Entity activity visibility
 

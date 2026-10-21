@@ -15,6 +15,10 @@
     "lint:i18n": "node ./scripts/check-i18n.mjs",
     "test:security-deps": "node --test scripts/securityDependencies.test.mjs",
     "test:visit-labels": "bun test app/lib/visitLabels.test.mjs",
+    "test:activity":
+      "bun test app/lib/activity*.test.mjs app/components/ActivityReference.test.mjs",
+    "test:report-forms": "bun test app/lib/reportForm.test.mjs",
+    "test:chat-requests": "bun test app/lib/chatRequests.test.mjs",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:regie-list": "bun test app/lib/regieReportList.test.mjs",

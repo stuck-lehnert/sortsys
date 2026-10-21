@@ -4,7 +4,7 @@ import { activityActionLabel, activityActorLabel, activityResourceLabel, activit
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
-import { MyLink } from "~/components/MyLink";
+import { ActivityReference } from "~/components/ActivityReference";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { Icons, type Icon } from "~/lib/icons";
@@ -86,10 +86,11 @@ function ActivityTimelineRow({
     <div className="entity-activity-main">
       <div className="entity-activity-title">
         <span>{activityActionLabel(item)}</span>
-        {!isScopeOwnerTitle && <>
-          {': '}
-          {href ? <MyLink to={href}>{itemTitle}</MyLink> : itemTitle}
-        </>}
+        <ActivityReference
+          item={item}
+          resourceHref={href}
+          hideOwnerTitle={isScopeOwnerTitle}
+        />
       </div>
       <div className="entity-activity-meta">
         {!isScopeResource && <>{activityResourceLabel(item.resourceType)} · </>}

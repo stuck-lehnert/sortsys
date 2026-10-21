@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ChangeEvent,
   type KeyboardEvent,
 } from "react";
@@ -21,6 +22,7 @@ import {
 } from "~/components/ProposalEntityReference";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
+import { createChatRequests } from "~/lib/chatRequests";
 import { Icons } from "~/lib/icons";
 import {
   proposalFieldLabel,
@@ -53,6 +55,9 @@ type ProposalLink = {
 };
 
 type Translate = (key: TranslationKey) => string;
+
+const chatRequests = createChatRequests<ChatDetail>();
+client.listenAuthState(() => chatRequests.clear());
 
 const DATE_FIELDS = new Set([
   'day',
@@ -386,24 +391,81 @@ export default function LlmPage() {
   );
   const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [content, setContent] = useState('');
-  const [submittedMessage, setSubmittedMessage] = useState<{
-    content: string;
-    existingMessageIds: string[];
-  } | null>(null);
+  const request = useSyncExternalStore(
+    chatRequests.subscribe,
+    () => chatRequests.get(selectedId),
+    () => null,
+  );
+  const submittedMessage = request?.pending ? request.submission : null;
   const [revisionComments, setRevisionComments] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const sendingChatIdRef = useRef<string | null>(null);
+  const selectedIdRef = useRef(selectedId);
+  const detailChatIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+
+  selectedIdRef.current = selectedId;
 
   useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setPending(null);
+  }, [selectedId]);
+
+  useEffect(() => {
+    // Keep loaded history visible when a request starts in the current chat.
+    if (detailChatIdRef.current !== selectedId || !request?.pending) {
+      setDetail(request?.data ?? null);
+      detailChatIdRef.current = selectedId;
+    }
+
+    setError(request?.error ?? null);
+
     if (!selectedId) {
-      setDetail(null);
       return;
     }
-    if (selectedId === sendingChatIdRef.current) return;
-    void loadChat(selectedId);
-  }, [selectedId]);
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const currentChatId = selectedId;
+
+    async function refresh() {
+      const [data, err] = await client.query(
+        'llm.chats.get',
+        { chatId: currentChatId },
+        { strategy: 'network-only' },
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      if (err) {
+        setError(err.message);
+      } else {
+        setDetail(data);
+      }
+
+      // Recover persisted messages and proposals while the provider is working.
+      if (request?.pending) {
+        timer = setTimeout(() => void refresh(), 2000);
+      }
+    }
+
+    void refresh();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [selectedId, request]);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -433,7 +495,7 @@ export default function LlmPage() {
     && !submittedMessage.existingMessageIds.includes(message.id)
   ));
   const hasMessages = !!detail?.messages.length || !!submittedMessage;
-  const isSending = pending === 'send';
+  const isSending = pending === 'send' || !!request?.pending;
 
   async function loadChat(chatId: string) {
     const [data, err] = await client.query(
@@ -441,6 +503,10 @@ export default function LlmPage() {
       { chatId },
       { strategy: 'network-first' },
     );
+
+    if (!mountedRef.current || selectedIdRef.current !== chatId) {
+      return;
+    }
 
     if (err) {
       setError(err.message);
@@ -454,61 +520,74 @@ export default function LlmPage() {
     void navigate('/llm');
     setDetail(null);
     setContent('');
-    setSubmittedMessage(null);
     setError(null);
   }
 
   async function sendMessage(message = content) {
     const normalizedMessage = message.trim();
-    if (!normalizedMessage || isSending) return;
 
-    setPending('send');
-    setError(null);
-    setSubmittedMessage({
-      content: normalizedMessage,
-      existingMessageIds: detail?.messages.map(existingMessage => existingMessage.id) ?? [],
-    });
-    setContent('');
-
-    let chatId = selectedId;
-
-    if (!chatId) {
-      const [chat, createError] = await client.mutate('llm.chats.create', {});
-
-      if (createError) {
-        setPending(null);
-        setSubmittedMessage(null);
-        setContent(normalizedMessage);
-        setError(createError.message);
-        return;
-      }
-
-      chatId = chat.id;
-      void navigate(`/llm/${chat.id}`, { replace: true });
-      sendingChatIdRef.current = chatId;
-      await client.invalidate('llm.chats.list');
-    }
-
-    const [updated, sendError] = await client.mutate('llm.messages.send', {
-      chatId,
-      content: normalizedMessage,
-      locale,
-    });
-
-    setPending(null);
-    sendingChatIdRef.current = null;
-    setSubmittedMessage(null);
-
-    if (sendError) {
-      setError(sendError.message);
-      void navigate(`/llm/${chatId}`, { replace: true });
-      await loadChat(chatId);
+    if (!normalizedMessage || isSending) {
       return;
     }
 
-    void navigate(`/llm/${chatId}`, { replace: true });
-    setDetail(updated);
-    await client.invalidate('llm.chats.list');
+    setPending('send');
+    setError(null);
+    setContent('');
+
+    const submission = {
+      content: normalizedMessage,
+      existingMessageIds: detail?.messages.map(existingMessage => existingMessage.id) ?? [],
+    };
+    const isCurrentSession = chatRequests.sessionGuard();
+    const originChatId = selectedId;
+    let targetChatId = selectedId;
+
+    if (!targetChatId) {
+      const [chat, createError] = await client.mutate('llm.chats.create', {});
+
+      if (!isCurrentSession()) {
+        return;
+      }
+
+      if (createError) {
+        if (mountedRef.current && selectedIdRef.current === originChatId) {
+          setPending(null);
+          setContent(normalizedMessage);
+          setError(createError.message);
+        }
+
+        return;
+      }
+
+      targetChatId = chat.id;
+    }
+
+    const chatId = targetChatId;
+    void chatRequests.start(chatId, submission, async () => {
+      const [updated, sendError] = await client.mutate('llm.messages.send', {
+        chatId,
+        content: normalizedMessage,
+        locale,
+      });
+
+      void client.invalidate('llm.chats.list');
+
+      if (sendError) {
+        throw sendError;
+      }
+
+      return updated;
+    });
+
+    if (mountedRef.current && selectedIdRef.current === originChatId) {
+      setPending(null);
+
+      if (!originChatId) {
+        void navigate(`/llm/${chatId}`, { replace: true });
+      }
+    }
+
+    void client.invalidate('llm.chats.list');
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -560,16 +639,27 @@ export default function LlmPage() {
   }
 
   async function accept(proposal: Proposal) {
+    if (!selectedId || isSending || pending) {
+      return;
+    }
+
+    const chatId = selectedId;
+    const isCurrentSession = chatRequests.sessionGuard();
     const operations = proposal.operations as unknown as ProposedOperation[];
+    const executionResults: ProposalExecutionResult[] = [];
+
     setPending(proposal.id);
     setError(null);
-    const executionResults: ProposalExecutionResult[] = [];
 
     // Every operation uses the current user's client and therefore the current
     // bearer token and ordinary mutation permission checks.
     for (const operation of operations) {
       const executableInput = prepareProposalInput(operation.input) as Record<string, unknown>;
       const [output, operationError] = await client.mutateDynamic(operation.path, executableInput);
+
+      if (!isCurrentSession()) {
+        return;
+      }
 
       if (operationError) {
         setPending(null);
@@ -583,21 +673,39 @@ export default function LlmPage() {
       });
     }
 
-    const [, reviewError] = await client.mutate('llm.proposals.review', {
-      proposalId: proposal.id,
-      decision: 'accept',
-      comment: null,
-      executionResults,
-      continueConversation: true,
-    });
     setPending(null);
 
-    if (reviewError) {
-      setError(reviewError.message);
-      return;
-    }
+    await chatRequests.start(chatId, null, async () => {
+      const [, reviewError] = await client.mutate('llm.proposals.review', {
+        proposalId: proposal.id,
+        decision: 'accept',
+        comment: null,
+        executionResults,
+        continueConversation: true,
+      });
 
-    if (selectedId) await loadChat(selectedId);
+      if (reviewError) {
+        throw reviewError;
+      }
+
+      const [updated, loadError] = await client.query(
+        'llm.chats.get',
+        { chatId },
+        { strategy: 'network-only' },
+      );
+
+      if (loadError) {
+        throw loadError;
+      }
+
+      if (!updated) {
+        throw new Error(uiText('Chat nicht gefunden.', 'Chat not found.'));
+      }
+
+      void client.invalidate('llm.chats.list');
+
+      return updated;
+    });
   }
 
   function renderPendingProposal(proposal: Proposal) {
@@ -636,17 +744,27 @@ export default function LlmPage() {
       />
 
       <div className="assistant-proposal-actions">
-        <MyButton loading={pending === proposal.id} onClick={() => void accept(proposal)}>
+        <MyButton
+          loading={pending === proposal.id}
+          disabled={isSending || pending !== null}
+          onClick={() => void accept(proposal)}
+        >
           {t('proposal.accept')}
         </MyButton>
         <MyButton
           kind="secondary"
-          disabled={!revisionComments[proposal.id]?.trim()}
+          disabled={isSending || pending !== null || !revisionComments[proposal.id]?.trim()}
           onClick={() => void requestRevision(proposal)}
         >
           {t('proposal.revise')}
         </MyButton>
-        <MyButton kind="ghost" onClick={() => void decline(proposal)}>{t('proposal.decline')}</MyButton>
+        <MyButton
+          kind="ghost"
+          disabled={isSending || pending !== null}
+          onClick={() => void decline(proposal)}
+        >
+          {t('proposal.decline')}
+        </MyButton>
       </div>
     </article>;
   }
@@ -705,12 +823,9 @@ export default function LlmPage() {
 
             {detail?.messages.map(message => <Fragment key={message.id}>
               {(message.role === 'user' || message.content.trim()) && <article className={'assistant-message assistant-message--' + message.role}>
-              <span className="assistant-message-author">
-                {message.role === 'user' ? t('llm.you') : 'LLM'}
-              </span>
-              {message.role === 'user'
-                ? <p>{message.content}</p>
-                : <AssistantMarkdown content={message.content} />}
+                {message.role === 'user'
+                  ? <p>{message.content}</p>
+                  : <AssistantMarkdown content={message.content} />}
               </article>}
               {visibleProposals
                 .filter(proposal => proposal.assistantMessageId === message.id)
@@ -718,12 +833,10 @@ export default function LlmPage() {
             </Fragment>)}
 
             {!!submittedMessage && !submittedMessageIsPersisted && <article className="assistant-message assistant-message--user">
-              <span className="assistant-message-author">{t('llm.you')}</span>
               <p>{submittedMessage.content}</p>
             </article>}
 
             {isSending && <article className="assistant-message assistant-message--assistant assistant-message--thinking">
-              <span className="assistant-message-author">{uiText("LLM")}</span>
               <span className="assistant-thinking" role="status">
                 <span className="assistant-thinking-bars" aria-hidden="true">
                   <i />

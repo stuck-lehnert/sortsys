@@ -1,5 +1,5 @@
 import { uiText } from "~/lib/i18n";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
@@ -11,6 +11,7 @@ import { formatAddress, formatDate, formatNumber, userFullName } from "~/lib/for
 import { Icons } from "~/lib/icons";
 import { renderStructuredPdfBatch, formatPdfNumber, type PdfTableSection } from "~/lib/pdf";
 import { dailyReportDayKey, SmallProjectTile, SmallUserTile } from "~/lib/tiles";
+import { focusReportHours, isDefaultReportDay } from "~/lib/reportForm";
 import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
 import type { DailyProjectReport, Project, User } from "~/type-helpers";
@@ -91,16 +92,12 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
     content: ({ context }) => {
       const [workHourIds, setWorkHourIds] = useState<string[]>([]);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
-
-      useEffect(() => {
-        const id = generateId();
-        setWorkHourIds([id]);
-        setAutoFocusFieldName(`workHour:${id}:user`);
-      }, []);
 
       return <>
         <MyForm.MultiSelect
+          autoFocus
           minSelectedItems={1} maxSelectedItems={1}
           name="project" labelText={uiText("Projekt")}
           getOptions={async ({ query }) => {
@@ -142,6 +139,9 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
                 name={`workHour:${id}:user`}
                 labelText={uiText("Mitarbeiter")}
                 autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                onValueChange={selected => {
+                  focusReportHours(selected, () => hoursInputs.current[id]);
+                }}
                 minSelectedItems={1} maxSelectedItems={1}
                 getOptions={async ({ query }) => {
                   const [data, err] = await client.query('users.list', { search: query });
@@ -158,6 +158,9 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
                   <MyForm.Input
                     required
                     name={`workHour:${id}:hours`}
+                    ref={(input: HTMLInputElement | null) => {
+                      hoursInputs.current[id] = input;
+                    }}
                     labelText={uiText("Stunden")}
                     type="number"
                     rules={[
@@ -190,36 +193,36 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
 
         <MyDivider />
 
-        <h4>{uiText("Wetter")}</h4>
-        <p className="light">{uiText("Wetterangaben helfen bei der späteren Dokumentation.")}</p>
+        <details>
+          <summary>{uiText("Wetter")}</summary>
+          <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
 
-        <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
+          <div className="flex gap-2">
+            <MyForm.Input
+              className="flex-1"
+              name="temperatureC"
+              labelText={uiText("Temperatur (°C)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-        <div className="flex gap-2">
-          <MyForm.Input
-            className="flex-1"
-            name="temperatureC"
-            labelText={uiText("Temperatur (°C)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
+            <MyForm.Input
+              className="flex-1"
+              name="precipitationMm"
+              labelText={uiText("Niederschlag (mm)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-          <MyForm.Input
-            className="flex-1"
-            name="precipitationMm"
-            labelText={uiText("Niederschlag (mm)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
-
-          <MyForm.Input
-            className="flex-1"
-            name="windKph"
-            labelText={uiText("Wind (km/h)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
-        </div>
+            <MyForm.Input
+              className="flex-1"
+              name="windKph"
+              labelText={uiText("Wind (km/h)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
+          </div>
+        </details>
 
         <NotifyLoaded onLoad={() => {
           context.field('day')?.setValue(new Date());
@@ -297,13 +300,14 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         return Object.fromEntries(WEEKDAY_NAMES.map((_, dayIndex) => [dayIndex, []])) as Record<number, string[]>;
       });
       const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>(() => {
-        return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex);
+        return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex).filter(isDefaultReportDay);
       });
       const [pendingCopiedValues, setPendingCopiedValues] = useState<{
         id: string;
         values: Record<string, unknown>;
       } | null>(null);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
       const selectedDaySet = new Set(selectedDayIndexes);
@@ -432,6 +436,9 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
                     name={`day:${dayIndex}:workHour:${id}:user`}
                     labelText={uiText("Mitarbeiter")}
                     autoFocus={autoFocusFieldName === `day:${dayIndex}:workHour:${id}:user`}
+                    onValueChange={selected => {
+                      focusReportHours(selected, () => hoursInputs.current[id]);
+                    }}
                     minSelectedItems={1} maxSelectedItems={1}
                     getOptions={async ({ query }) => {
                       const [data, err] = await client.query('users.list', { search: query });
@@ -448,6 +455,9 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
                       <MyForm.Input
                         required
                         name={`day:${dayIndex}:workHour:${id}:hours`}
+                        ref={(input: HTMLInputElement | null) => {
+                          hoursInputs.current[id] = input;
+                        }}
                         labelText={uiText("Stunden")}
                         type="number"
                         rules={[
@@ -486,38 +496,39 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 
             <div style={{ height: '0.75rem' }} />
 
-            <h6>{uiText("Wetter")}</h6>
-
-            <MyForm.Input
-              name={`day:${dayIndex}:weatherSummary`}
-              labelText={uiText("Wetterbeschreibung")}
-            />
-
-            <div className="flex gap-2">
+            <details>
+              <summary>{uiText("Wetter")}</summary>
               <MyForm.Input
-                className="flex-1"
-                name={`day:${dayIndex}:temperatureC`}
-                labelText={uiText("Temperatur (°C)")}
-                type="number"
-                rules={[MyForm.Input.rules.num]}
+                name={`day:${dayIndex}:weatherSummary`}
+                labelText={uiText("Wetterbeschreibung")}
               />
 
-              <MyForm.Input
-                className="flex-1"
-                name={`day:${dayIndex}:precipitationMm`}
-                labelText={uiText("Niederschlag (mm)")}
-                type="number"
-                rules={[MyForm.Input.rules.num]}
-              />
+              <div className="flex gap-2">
+                <MyForm.Input
+                  className="flex-1"
+                  name={`day:${dayIndex}:temperatureC`}
+                  labelText={uiText("Temperatur (°C)")}
+                  type="number"
+                  rules={[MyForm.Input.rules.num]}
+                />
 
-              <MyForm.Input
-                className="flex-1"
-                name={`day:${dayIndex}:windKph`}
-                labelText={uiText("Wind (km/h)")}
-                type="number"
-                rules={[MyForm.Input.rules.num]}
-              />
-            </div>
+                <MyForm.Input
+                  className="flex-1"
+                  name={`day:${dayIndex}:precipitationMm`}
+                  labelText={uiText("Niederschlag (mm)")}
+                  type="number"
+                  rules={[MyForm.Input.rules.num]}
+                />
+
+                <MyForm.Input
+                  className="flex-1"
+                  name={`day:${dayIndex}:windKph`}
+                  labelText={uiText("Wind (km/h)")}
+                  type="number"
+                  rules={[MyForm.Input.rules.num]}
+                />
+              </div>
+            </details>
 
             {dayIndex < WEEKDAY_NAMES.length - 1 && <>
               <div style={{ height: '1.25rem' }} />
@@ -530,7 +541,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         <NotifyLoaded onLoad={() => {
           context.setValues(Object.fromEntries(WEEKDAY_NAMES.map((_, dayIndex) => [
             `enabledDay:${dayIndex}`,
-            true,
+            isDefaultReportDay(dayIndex),
           ])) as Record<string, boolean>);
           context.field('week')?.setValue(new Date());
         }} />
@@ -1064,6 +1075,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
     content: ({ context }) => {
       const [workHourIds, setWorkHourIds] = useState<string[]>([]);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
       return <>
@@ -1098,6 +1110,9 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                 name={`workHour:${id}:user`}
                 labelText={uiText("Mitarbeiter")}
                 autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                onValueChange={selected => {
+                  focusReportHours(selected, () => hoursInputs.current[id]);
+                }}
                 minSelectedItems={1} maxSelectedItems={1}
                 getOptions={async ({ query }) => {
                   const [data, err] = await client.query('users.list', { search: query });
@@ -1114,6 +1129,9 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                   <MyForm.Input
                     required
                     name={`workHour:${id}:hours`}
+                    ref={(input: HTMLInputElement | null) => {
+                      hoursInputs.current[id] = input;
+                    }}
                     labelText={uiText("Stunden")}
                     type="number"
                     rules={[
@@ -1157,36 +1175,36 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
 
         <MyDivider />
 
-        <h4>{uiText("Wetter")}</h4>
-        <p className="light">{uiText("Wetterangaben helfen bei der späteren Dokumentation.")}</p>
+        <details open={!!report.weather}>
+          <summary>{uiText("Wetter")}</summary>
+          <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
 
-        <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
+          <div className="flex gap-2">
+            <MyForm.Input
+              className="flex-1"
+              name="temperatureC"
+              labelText={uiText("Temperatur (°C)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-        <div className="flex gap-2">
-          <MyForm.Input
-            className="flex-1"
-            name="temperatureC"
-            labelText={uiText("Temperatur (°C)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
+            <MyForm.Input
+              className="flex-1"
+              name="precipitationMm"
+              labelText={uiText("Niederschlag (mm)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
 
-          <MyForm.Input
-            className="flex-1"
-            name="precipitationMm"
-            labelText={uiText("Niederschlag (mm)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
-
-          <MyForm.Input
-            className="flex-1"
-            name="windKph"
-            labelText={uiText("Wind (km/h)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
-        </div>
+            <MyForm.Input
+              className="flex-1"
+              name="windKph"
+              labelText={uiText("Wind (km/h)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
+          </div>
+        </details>
 
         <NotifyLoaded onLoad={async () => {
           context.setValues({

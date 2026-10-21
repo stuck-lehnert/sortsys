@@ -266,6 +266,11 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE (host_id, name), UNIQUE (host_id, username)
         );
+
+        -- Successful run history survives retention pruning of backup rows.
+        ALTER TABLE __postgres_databases
+          ADD COLUMN IF NOT EXISTS last_automatic_backup_at TIMESTAMPTZ;
+
         CREATE TABLE IF NOT EXISTS __postgres_database_backups (
           id BIGSERIAL PRIMARY KEY, database_id BIGINT NOT NULL REFERENCES __postgres_databases(id) ON DELETE CASCADE,
           kind VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK (kind IN ('manual', 'auto')),
