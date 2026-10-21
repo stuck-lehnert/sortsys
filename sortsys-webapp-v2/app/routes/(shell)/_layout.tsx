@@ -9,6 +9,7 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
+import { visitLabel } from "~/lib/visitLabels";
 import { Icons } from "~/lib/icons";
 import { uiText, useI18n } from "~/lib/i18n";
 import { nowrap } from "~/lib/primitives";
@@ -120,7 +121,11 @@ export default Authenticated(function() {
     lastVisitKeyRef.current = visitPath;
 
     const timeout = window.setTimeout(() => {
-      const title = document.title?.replace(/\s+[-|].*$/, '').trim() || visitPath;
+      const title = visitLabel({
+        path: visitPath,
+        title: document.title,
+      });
+
       void client.mutate('personalization.visits.append', {
         path: visitPath,
         title,

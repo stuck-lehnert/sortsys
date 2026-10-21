@@ -8,6 +8,7 @@ import type { QueryResult } from "@sortsys/v2-client";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
+import { visitLabel } from "~/lib/visitLabels";
 import { dailyReportDayKey } from "~/lib/tiles";
 import { useUserActions, type UserAction } from "~/lib/userActions";
 import { useEffect, useMemo, useState } from "react";
@@ -38,37 +39,6 @@ type PinnedVisit = Pick<VisitHistoryItem, 'path' | 'title' | 'visitedAt'>;
 
 function normalizeLlmPath(path: string) {
   return path.replace(/^\/assistant(?=\/|[?#]|$)/, '/llm');
-}
-
-function visitLabel(visit: PinnedVisit) {
-  const pathname = visit.path.split(/[?#]/, 1)[0];
-  const knownLabels: Record<string, string> = {
-    '/dashboard': uiText('Dashboard'),
-    '/projects': uiText('Projekte', 'Projects'),
-    '/regieReports': uiText('Regieberichte', 'Time-and-material reports'),
-    '/projects/costs': uiText('Kostenübersicht', 'Cost overview'),
-    '/deployments': uiText('Einsatzplanung', 'Resource planning'),
-    '/vacations': uiText('Abwesenheiten', 'Absences'),
-    '/tools': uiText('Werkzeuge', 'Tools'),
-    '/tools/trackings': uiText('Buchungshistorie', 'Booking history'),
-    '/inventories': uiText('Inventur', 'Inventory'),
-    '/products': uiText('Produkte', 'Products'),
-    '/import': uiText('Einlesen', 'Import'),
-    '/products/import': uiText('Einlesen', 'Import'),
-    '/products/deliveryNotes': uiText('Lieferscheine', 'Delivery notes'),
-    '/products/vendors': uiText('Händler', 'Vendors'),
-    '/customers': uiText('Kunden', 'Customers'),
-    '/contacts': uiText('Kontakte', 'Contacts'),
-    '/users': uiText('Benutzer', 'Users'),
-    '/settings': uiText('Einstellungen', 'Settings'),
-    '/docs': uiText('Hilfe & Begriffe', 'Help & terms'),
-    '/scripts': uiText('Client-Skripte', 'Client scripts'),
-    '/admin': uiText('Organisation', 'Organization'),
-  };
-
-  if (/^\/llm(?:[/?#]|$)/.test(visit.path)) return 'LLM';
-  if (knownLabels[pathname]) return knownLabels[pathname];
-  return visit.title || visit.path;
 }
 
 function pickQuickActions(actions: UserAction[], history: ActionHistoryItem[] | null | undefined) {

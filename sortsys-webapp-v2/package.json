@@ -14,6 +14,7 @@
     "typecheck": "bun run lint:client-casts && bun run lint:box-shadows && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
     "lint:i18n": "node ./scripts/check-i18n.mjs",
     "test:security-deps": "node --test scripts/securityDependencies.test.mjs",
+    "test:visit-labels": "bun test app/lib/visitLabels.test.mjs",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:regie-list": "bun test app/lib/regieReportList.test.mjs",

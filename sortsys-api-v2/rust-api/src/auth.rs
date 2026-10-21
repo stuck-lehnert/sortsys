@@ -23,6 +23,24 @@ const USER_TOKEN_TTL_SECONDS: usize = 30 * 24 * 60 * 60;
 const ADMIN_TOKEN_TTL_SECONDS: usize = 2 * 60 * 60;
 const MCP_TOKEN_TTL_SECONDS: usize = 10 * 60;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum McpScope {
+    Chat(i64),
+    DocumentImport,
+}
+
+impl McpScope {
+    fn from_claims(purpose: Option<&str>, chat_id: Option<i64>) -> RpcResult<Self> {
+        match (purpose, chat_id) {
+            (Some("llm-mcp"), Some(chat_id)) => Ok(Self::Chat(chat_id)),
+            (Some("llm-document-import-mcp"), None) => Ok(Self::DocumentImport),
+            _ => Err(unauthorized(
+                "Provided JWT token is not a valid MCP delegation",
+            )),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AuthService {
     tenants: TenantStore,
@@ -187,18 +205,16 @@ impl AuthService {
         self.authenticate_claims(claims).await
     }
 
-    pub async fn authenticate_mcp(&self, headers: &HeaderMap) -> RpcResult<(AuthResult, i64)> {
+    pub(crate) async fn authenticate_mcp(
+        &self,
+        headers: &HeaderMap,
+    ) -> RpcResult<(AuthResult, McpScope)> {
         let token = bearer(headers)?;
         let claims = self.decode(token)?;
-        if claims.purpose.as_deref() != Some("llm-mcp") {
-            return Err(unauthorized("Provided JWT token is not an MCP delegation"));
-        }
-        let chat_id = claims
-            .chat_id
-            .ok_or_else(|| unauthorized("MCP delegation has no chat context"))?;
+        let scope = McpScope::from_claims(claims.purpose.as_deref(), claims.chat_id)?;
         let auth = self.authenticate_claims(claims).await?;
 
-        Ok((auth, chat_id))
+        Ok((auth, scope))
     }
 
     async fn authenticate_claims(&self, claims: Claims) -> RpcResult<AuthResult> {
@@ -355,9 +371,13 @@ impl AuthService {
     pub(crate) fn issue_mcp_token(
         &self,
         auth: &AuthResult,
-        chat_id: i64,
+        scope: McpScope,
     ) -> jsonwebtoken::errors::Result<String> {
         let now = unix_time();
+        let (purpose, chat_id) = match scope {
+            McpScope::Chat(chat_id) => ("llm-mcp", Some(chat_id)),
+            McpScope::DocumentImport => ("llm-document-import-mcp", None),
+        };
 
         encode(
             &Header::new(Algorithm::HS512),
@@ -365,8 +385,8 @@ impl AuthService {
                 tenant: Some(auth.tenant.clone()),
                 session_id: Some(auth.session.id.clone()),
                 admin_for: None,
-                purpose: Some("llm-mcp".to_owned()),
-                chat_id: Some(chat_id),
+                purpose: Some(purpose.to_owned()),
+                chat_id,
                 iat: now,
                 exp: now + MCP_TOKEN_TTL_SECONDS,
             },
@@ -468,4 +488,31 @@ struct AuthRow {
     created_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
     roles: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::McpScope;
+
+    #[test]
+    fn mcp_delegations_are_purpose_and_context_bound() {
+        assert_eq!(
+            McpScope::from_claims(Some("llm-mcp"), Some(42)).unwrap(),
+            McpScope::Chat(42)
+        );
+        assert_eq!(
+            McpScope::from_claims(Some("llm-document-import-mcp"), None).unwrap(),
+            McpScope::DocumentImport,
+        );
+
+        for (purpose, chat_id) in [
+            (None, None),
+            (None, Some(42)),
+            (Some("llm-mcp"), None),
+            (Some("llm-document-import-mcp"), Some(42)),
+            (Some("other-purpose"), Some(42)),
+        ] {
+            assert!(McpScope::from_claims(purpose, chat_id).is_err());
+        }
+    }
 }

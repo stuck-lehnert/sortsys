@@ -59,7 +59,7 @@ The API reads the following environment variables:
 | `ADMIN_HASH` | yes | bcrypt password hash for the global administrator |
 | `JOB_RUNNER_TOKEN` | in production | shared secret for job-runner WebSocket connections |
 | `LLM_ENCRYPTION_KEY` | for LLM setup | secret used to encrypt provider API keys in the master database |
-| `LLM_MCP_URL` | no | public URL of the sortsys MCP endpoint; without it, providers use function tools |
+| `LLM_MCP_URL` | for LLM use | publicly reachable HTTPS MCP endpoint |
 | `ONLYOFFICE_PUBLIC_URL` | for document editing | browser-reachable Document Server origin |
 | `ONLYOFFICE_INTERNAL_URL` | no | Document Server origin used by the API; defaults to the public origin |
 | `ONLYOFFICE_CALLBACK_URL` | for document editing | public API callback URL reachable by Document Server |
@@ -67,6 +67,11 @@ The API reads the following environment variables:
 | `DRAWIO_PUBLIC_URL` | for diagram editing | browser-reachable diagrams.net URL; may be a same-origin path such as `/drawio` |
 | `PORT` | no | HTTP port, default `3000` |
 | `NODE_ENV` | no | set to `production` to enable production requirements |
+
+LLM chat and document import use the native MCP connectors from OpenAI or
+Anthropic. Set `LLM_MCP_URL` to a public HTTPS URL such as
+`https://sortsys.example/api/v2/internal/llm/mcp`. Other provider accounts can
+remain stored, but cannot be assigned to these use cases.
 
 Each value can instead be mounted at `/run/secrets/SORTSYS_API_V2_<NAME>`.
 

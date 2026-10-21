@@ -50,6 +50,7 @@ echo "Running webapp checks"
   bun run typecheck
   bun run test:local-package-locks
   bun run test:i18n
+  bun run test:visit-labels
   bun run test:attachments
   bun run test:attachment-selection
   bun run test:error-boundary

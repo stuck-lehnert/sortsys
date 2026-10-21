@@ -12,7 +12,8 @@ use aes_gcm::{
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, HeaderValue},
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
     routing::post,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -25,7 +26,7 @@ use sqlx::{PgPool, Row};
 
 use crate::{
     AppState,
-    auth::AuthResult,
+    auth::{AuthResult, McpScope},
     error::{ErrorCode, RpcError, RpcResult},
     ids::Id,
     rpc::{ProcedureKind, RequestContext},
@@ -299,8 +300,7 @@ async fn public_use_case_configuration(
     let provider: String = row.try_get("provider").map_err(internal)?;
 
     Ok(Some(PublicProviderConfiguration {
-        mcp_available: state.config.llm_mcp_url.is_some()
-            && matches!(provider.as_str(), "openai" | "anthropic"),
+        mcp_available: state.config.llm_mcp_url.is_some() && provider::supports_mcp(&provider),
         provider,
         model: row.try_get("model").map_err(internal)?,
         base_url: row.try_get("base_url").map_err(internal)?,
@@ -478,6 +478,12 @@ pub async fn save_use_case_configuration(
 ) -> RpcResult<()> {
     validate_use_case(use_case)?;
     validate_provider(provider)?;
+
+    if !provider::supports_mcp(provider) {
+        return Err(bad_request(
+            "Chat and document import require a native MCP connector: OpenAI or Anthropic",
+        ));
+    }
 
     let model = model.trim();
     if model.is_empty() || model.len() > 255 {
@@ -1771,28 +1777,170 @@ struct McpRequest {
     params: Value,
 }
 
+const MCP_PROTOCOL_VERSIONS: &[&str] = &["2025-03-26", "2025-06-18"];
+
+fn validate_mcp_headers(headers: &HeaderMap, configured_url: Option<&str>) -> RpcResult<()> {
+    if let Some(version) = headers.get("mcp-protocol-version") {
+        let version = version
+            .to_str()
+            .map_err(|_| bad_request("Invalid MCP protocol version"))?;
+
+        if !MCP_PROTOCOL_VERSIONS.contains(&version) {
+            return Err(bad_request("Unsupported MCP protocol version"));
+        }
+    }
+
+    if let Some(origin) = headers.get("origin") {
+        let supplied = origin
+            .to_str()
+            .ok()
+            .and_then(|value| reqwest::Url::parse(value).ok());
+        let expected = configured_url.and_then(|value| reqwest::Url::parse(value).ok());
+        let same_origin = supplied
+            .zip(expected)
+            .is_some_and(|(supplied, expected)| supplied.origin() == expected.origin());
+
+        if !same_origin {
+            return Err(RpcError::new(
+                ErrorCode::Forbidden,
+                "Invalid MCP request origin",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn mcp_tool_definitions(scope: McpScope) -> Vec<Value> {
+    match scope {
+        McpScope::Chat(_) => tool_definitions(),
+        McpScope::DocumentImport => vec![provider::scan_tool_definition()],
+    }
+}
+
+async fn execute_mcp_tool(
+    state: &AppState,
+    auth: &AuthResult,
+    scope: McpScope,
+    name: &str,
+    arguments: Value,
+) -> RpcResult<Value> {
+    match scope {
+        McpScope::Chat(chat_id) => execute_tool(state, auth, chat_id, name, arguments).await,
+        McpScope::DocumentImport if name == "sortsys_search_products" => {
+            provider::scan_product_search(state, auth, arguments).await
+        }
+        McpScope::DocumentImport => Err(RpcError::new(
+            ErrorCode::Forbidden,
+            "Document import MCP only permits product catalogue searches",
+        )),
+    }
+}
+
+fn mcp_tool_result(result: RpcResult<Value>) -> RpcResult<Value> {
+    match result {
+        Ok(output) => Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string(&output).map_err(internal)?
+            }],
+            "structuredContent": output
+        })),
+        Err(error)
+            if matches!(
+                error.code,
+                ErrorCode::BadRequest
+                    | ErrorCode::Forbidden
+                    | ErrorCode::NotFound
+                    | ErrorCode::Conflict
+                    | ErrorCode::UnprocessableContent
+            ) =>
+        {
+            Ok(json!({
+                "isError": true,
+                "content": [{
+                    "type": "text",
+                    "text": format!("{}: {}", error.code.name(), error.message)
+                }]
+            }))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 async fn handle_mcp(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(request): Json<McpRequest>,
-) -> Json<Value> {
+) -> Response {
     let id = request.id.clone().unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return Json(mcp_error(id, -32600, "Invalid JSON-RPC version"));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(mcp_error(id, -32600, "Invalid JSON-RPC version")),
+        )
+            .into_response();
+    }
+
+    let access = async {
+        validate_mcp_headers(&headers, state.config.llm_mcp_url.as_deref())?;
+        let (auth, scope) = state.auth.authenticate_mcp(&headers).await?;
+
+        match scope {
+            McpScope::Chat(_) => ensure_user_access(&state, &auth).await?,
+            McpScope::DocumentImport => ensure_scan_access(&state, &auth).await?,
+        };
+
+        Ok::<_, RpcError>((auth, scope))
+    }
+    .await;
+    let (auth, scope) = match access {
+        Ok(access) => access,
+        Err(error) => {
+            let status = match error.code {
+                ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+                ErrorCode::Forbidden => StatusCode::FORBIDDEN,
+                ErrorCode::BadRequest => StatusCode::BAD_REQUEST,
+                _ => StatusCode::OK,
+            };
+
+            return (status, Json(mcp_error(id, -32000, &error.message))).into_response();
+        }
+    };
+
+    // Streamable HTTP notifications have no JSON-RPC reply, including initialization.
+    if request.id.is_none() {
+        if request.method.starts_with("notifications/") {
+            return StatusCode::ACCEPTED.into_response();
+        }
+
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(mcp_error(id, -32600, "MCP requests must include an id")),
+        )
+            .into_response();
     }
 
     let result = async {
-        let (auth, chat_id) = state.auth.authenticate_mcp(&headers).await?;
-        ensure_user_access(&state, &auth).await?;
-
         match request.method.as_str() {
-            "initialize" => Ok(json!({
-                "protocolVersion": "2025-06-18",
-                "capabilities": { "tools": {} },
-                "serverInfo": { "name": "sortsys", "version": env!("CARGO_PKG_VERSION") }
-            })),
-            "tools/list" => Ok(json!({ "tools": tool_definitions() })),
+            "initialize" => {
+                let requested = request
+                    .params
+                    .get("protocolVersion")
+                    .and_then(Value::as_str);
+                let version = requested
+                    .filter(|version| MCP_PROTOCOL_VERSIONS.contains(version))
+                    .unwrap_or("2025-06-18");
+
+                Ok(json!({
+                    "protocolVersion": version,
+                    "capabilities": { "tools": {} },
+                    "serverInfo": { "name": "sortsys", "version": env!("CARGO_PKG_VERSION") }
+                }))
+            }
+            "ping" => Ok(json!({})),
+            "tools/list" => Ok(json!({ "tools": mcp_tool_definitions(scope) })),
             "tools/call" => {
                 let name = request
                     .params
@@ -1804,15 +1952,9 @@ async fn handle_mcp(
                     .get("arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
-                let output = execute_tool(&state, &auth, chat_id, name, arguments).await?;
+                let output = execute_mcp_tool(&state, &auth, scope, name, arguments).await;
 
-                Ok(json!({
-                    "content": [{
-                        "type": "text",
-                        "text": serde_json::to_string(&output).map_err(internal)?
-                    }],
-                    "structuredContent": output
-                }))
+                mcp_tool_result(output)
             }
             _ => Err(RpcError::new(ErrorCode::NotFound, "Unknown MCP method")),
         }
@@ -1820,8 +1962,8 @@ async fn handle_mcp(
     .await;
 
     match result {
-        Ok(result) => Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })),
-        Err(error) => Json(mcp_error(id, -32000, &error.message)),
+        Ok(result) => Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })).into_response(),
+        Err(error) => Json(mcp_error(id, -32000, &error.message)).into_response(),
     }
 }
 
@@ -1849,6 +1991,53 @@ mod tests {
     };
     use chrono::{TimeZone, Utc};
     use serde_json::json;
+
+    #[test]
+    fn mcp_validates_protocol_versions_and_request_origins() {
+        let mut headers = axum::http::HeaderMap::new();
+        let url = Some("https://sortsys.test/api/v2/internal/llm/mcp");
+
+        assert!(super::validate_mcp_headers(&headers, url).is_ok());
+        headers.insert("mcp-protocol-version", "2025-06-18".parse().unwrap());
+        headers.insert("origin", "https://sortsys.test".parse().unwrap());
+        assert!(super::validate_mcp_headers(&headers, url).is_ok());
+        headers.insert("origin", "https://attacker.invalid".parse().unwrap());
+        assert!(super::validate_mcp_headers(&headers, url).is_err());
+        headers.remove("origin");
+        headers.insert("mcp-protocol-version", "unknown".parse().unwrap());
+        assert!(super::validate_mcp_headers(&headers, url).is_err());
+    }
+
+    #[test]
+    fn document_import_mcp_advertises_only_product_search() {
+        let tools = super::mcp_tool_definitions(crate::auth::McpScope::DocumentImport);
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "sortsys_search_products");
+        assert!(super::mcp_tool_definitions(crate::auth::McpScope::Chat(42)).len() > 1);
+    }
+
+    #[test]
+    fn recoverable_mcp_tool_errors_remain_tool_results() {
+        let error = crate::error::RpcError::new(crate::error::ErrorCode::Forbidden, "Denied");
+        let result = super::mcp_tool_result(Err(error)).unwrap();
+
+        assert_eq!(result["isError"], true);
+        assert_eq!(result["content"][0]["type"], "text");
+        assert!(
+            result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Denied")
+        );
+
+        let error = crate::error::RpcError::new(
+            crate::error::ErrorCode::InternalServerError,
+            "Unavailable",
+        );
+
+        assert!(super::mcp_tool_result(Err(error)).is_err());
+    }
 
     #[test]
     fn retains_aes256_gcm_ciphertext_and_tag_compatibility() {

@@ -47,7 +47,7 @@ export default function PdfAttachmentViewer({ url, downloadUrl }: { url: string;
     };
 
     document.addEventListener("webviewerloaded", loaded);
-    target.src = `${import.meta.env.BASE_URL}pdfjs/${release.version}/web/viewer.html?file=#zoom=page-width`;
+    target.src = `${import.meta.env.BASE_URL}pdfjs/${release.version}/web/viewer.html?file=`;
 
     return () => {
       cancelled = true;

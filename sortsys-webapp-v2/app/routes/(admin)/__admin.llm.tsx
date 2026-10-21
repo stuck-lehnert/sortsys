@@ -274,7 +274,8 @@ function UseCaseDialog({
 }) {
   const notifications = useNotifications();
   const configuredProviders = PROVIDERS.filter(option => (
-    accounts.some(account => account.provider === option.id && account.hasApiKey)
+    (option.id === "openai" || option.id === "anthropic")
+    && accounts.some(account => account.provider === option.id && account.hasApiKey)
   ));
   const currentProvider = settings?.provider;
   const initialProvider = isSupportedProvider(currentProvider)

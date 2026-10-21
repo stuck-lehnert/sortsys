@@ -4639,12 +4639,35 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         Some(admin_token),
     )
     .await;
-    rpc.mutation(
+    rpc.expect_error(
         "admin.llm.useCases.update",
+        Method::POST,
         json!({
             "useCase": "documentImport",
             "provider": "meta",
             "model": "gpt-5.6-luna",
+        }),
+        Some(admin_token),
+        "BAD_REQUEST",
+    )
+    .await;
+
+    rpc.mutation(
+        "admin.llm.providers.update",
+        json!({
+            "provider": "anthropic",
+            "baseUrl": openai_base_url,
+            "apiKey": "anthropic-integration-fixture",
+        }),
+        Some(admin_token),
+    )
+    .await;
+    rpc.mutation(
+        "admin.llm.useCases.update",
+        json!({
+            "useCase": "documentImport",
+            "provider": "anthropic",
+            "model": "claude-integration-fixture",
         }),
         Some(admin_token),
     )
@@ -4674,8 +4697,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     }));
     assert!(use_cases.as_array().unwrap().iter().any(|settings| {
         settings["useCase"] == "documentImport"
-            && settings["provider"] == "meta"
-            && settings["model"] == "gpt-5.6-luna"
+            && settings["provider"] == "anthropic"
+            && settings["model"] == "claude-integration-fixture"
     }));
 
     let public_settings = rpc
@@ -4688,8 +4711,8 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         .query("admin.llm.scanSettings.get", Value::Null, Some(admin_token))
         .await;
     assert!(public_scan_settings.get("apiKey").is_none());
-    assert_eq!(public_scan_settings["model"], "gpt-5.6-luna");
-    assert_eq!(public_scan_settings["provider"], "meta");
+    assert_eq!(public_scan_settings["model"], "claude-integration-fixture");
+    assert_eq!(public_scan_settings["provider"], "anthropic");
 
     // The remaining scan scenarios use the OpenAI Responses mock. Switching
     // only this use case also verifies that the chat assignment stays intact.
@@ -4970,7 +4993,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     assert!(transcript.contains("handschriftlicher-lieferschein.png"));
     assert!(transcript.contains("lieferschein-seite-2.pdf"));
     assert!(transcript.contains("Original attached: true"));
-    let product_search_output = last_function_output(&scan_requests[1]);
+    let product_search_output = last_mcp_output(&scan_requests[1]);
     assert_eq!(product_search_output["records"][0]["baseUnit"], "kg");
     assert_eq!(
         product_search_output["records"][0]["otherUnits"]["Sack"],
@@ -5250,19 +5273,19 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .contains("Ressource project_costs")
     );
     assert!(requests[2]["tools"].as_array().unwrap().iter().any(|tool| {
-        tool["type"] == "function"
-            && tool["name"] == "sortsys_search"
-            && tool.get("function").is_none()
+        tool["type"] == "mcp"
+            && tool["server_label"] == "sortsys"
+            && tool.get("parameters").is_none()
     }));
 
     let tool_output = requests[3]["input"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| item["type"] == "function_call_output")
+        .find(|item| item["type"] == "mcp_tool_result")
         .and_then(|item| item["output"].as_str())
         .map(|output| serde_json::from_str::<Value>(output).unwrap())
-        .expect("the second Responses request must contain the project-cost tool result");
+        .expect("the second MCP model turn must contain the project-cost tool result");
     assert_eq!(tool_output["amountsAreNet"], true);
     assert_eq!(tool_output["scope"], "activeProjects");
     assert!(tool_output["projectCount"].as_u64().unwrap() > 0);
@@ -5319,7 +5342,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         "string"
     );
 
-    let schema = last_function_output(&requests[5]);
+    let schema = last_mcp_output(&requests[5]);
     assert_eq!(schema["path"], "projects.create");
     assert_eq!(schema["kind"], "mutation");
     assert_eq!(
@@ -5343,7 +5366,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .contains("name: string")
     );
 
-    let validation_error = last_function_output(&requests[6]);
+    let validation_error = last_mcp_output(&requests[6]);
     assert_eq!(validation_error["error"]["code"], "BAD_REQUEST");
     assert!(
         validation_error["error"]["message"]
@@ -5352,7 +5375,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .contains("input.address must be an object")
     );
 
-    let proposal_result = last_function_output(&requests[7]);
+    let proposal_result = last_mcp_output(&requests[7]);
     assert!(proposal_result["proposalId"].is_string());
     drop(requests);
 
@@ -5440,7 +5463,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
 
     let requests = openai_requests.lock().await;
     assert_eq!(requests.len(), 10);
-    let tracking_output = last_function_output(&requests[9]);
+    let tracking_output = last_mcp_output(&requests[9]);
     assert_eq!(
         tracking_output["records"][0]["responsible_first_name"],
         "Tobias"
@@ -5486,7 +5509,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
 
     let requests = openai_requests.lock().await;
     assert_eq!(requests.len(), 12);
-    let inventory_output = last_function_output(&requests[11]);
+    let inventory_output = last_mcp_output(&requests[11]);
     assert_eq!(inventory_output["days"], 30);
     assert_eq!(inventory_output["hadInventory"], true);
     assert_eq!(
@@ -5537,7 +5560,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     let requests = openai_requests.lock().await;
     assert_eq!(requests.len(), 16);
 
-    let catalog_output = last_function_output(&requests[13]);
+    let catalog_output = last_mcp_output(&requests[13]);
     assert!(
         catalog_output["procedures"]
             .as_array()
@@ -5546,11 +5569,11 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             .any(|procedure| procedure["path"] == "settings.costs.get")
     );
 
-    let common_cost_schema = last_function_output(&requests[14]);
+    let common_cost_schema = last_mcp_output(&requests[14]);
     assert_eq!(common_cost_schema["path"], "settings.costs.get");
     assert_eq!(common_cost_schema["kind"], "query");
 
-    let common_cost_output = last_function_output(&requests[15]);
+    let common_cost_output = last_mcp_output(&requests[15]);
     assert_eq!(common_cost_output["path"], "settings.costs.get");
     assert_eq!(common_cost_output["data"]["fgk"]["relativeFactor"], 0.15);
     assert_eq!(common_cost_output["data"]["fgk"]["constant"], 12.0);
@@ -5564,7 +5587,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     rpc.mutation(
         "admin.llm.settings.update",
         json!({
-            "provider": "custom",
+            "provider": "openai",
             "model": "integration-unavailable-model",
             "baseUrl": "http://127.0.0.1:9",
             "apiKey": "integration-secret-that-must-not-leak",
@@ -5710,7 +5733,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             && row["failedRequests"] == 0
     }));
     assert!(tenant_usage.as_array().unwrap().iter().any(|row| {
-        row["provider"] == "custom"
+        row["provider"] == "openai"
             && row["model"] == "integration-unavailable-model"
             && row["purpose"] == "chat"
             && row["failedRequests"] == 1
@@ -5775,7 +5798,7 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
 
     let requests = openai_requests.lock().await;
-    let fuzzy_product_output = last_function_output(requests.last().unwrap());
+    let fuzzy_product_output = last_mcp_output(requests.last().unwrap());
     assert_eq!(fuzzy_product_output["records"][0]["name"], "MIP-02F");
     assert_eq!(fuzzy_product_output["records"][0]["baseUnit"], "kg");
     drop(requests);
@@ -7036,9 +7059,157 @@ async fn mock_openai_models() -> Json<Value> {
 }
 
 async fn mock_openai_response(
-    State(requests): State<OpenAiRequestLog>,
-    Json(request): Json<Value>,
+    State(rounds): State<OpenAiRequestLog>,
+    Json(mut request): Json<Value>,
 ) -> Json<Value> {
+    let tool = request["tools"][0].clone();
+    assert_eq!(request["tools"].as_array().unwrap().len(), 1);
+    assert_eq!(tool["type"], "mcp");
+    assert_eq!(tool["require_approval"], "never");
+    assert!(tool.get("parameters").is_none());
+
+    let url = tool["server_url"].as_str().unwrap();
+    let token = tool["authorization"].as_str().unwrap();
+    let client = Client::new();
+    let initialize = mock_provider_mcp_request(
+        &client,
+        url,
+        token,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": { "name": "test-native-provider", "version": "1" },
+        }),
+    )
+    .await;
+    assert_eq!(initialize["result"]["protocolVersion"], "2025-06-18");
+
+    let initialized = client
+        .post(url)
+        .bearer_auth(token)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(initialized.status(), reqwest::StatusCode::ACCEPTED);
+    assert!(initialized.bytes().await.unwrap().is_empty());
+
+    let tools = mock_provider_mcp_request(&client, url, token, "tools/list", json!({})).await;
+    let names = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    if request.pointer("/text/format/name") == Some(&json!("document_scan")) {
+        assert_eq!(names, vec!["sortsys_search_products"]);
+        assert_eq!(tool["allowed_tools"], json!(["sortsys_search_products"]));
+
+        let forbidden = mock_provider_mcp_request(
+            &client,
+            url,
+            token,
+            "tools/call",
+            json!({
+                "name": "sortsys_query",
+                "arguments": { "path": "projects.list", "input": null },
+            }),
+        )
+        .await;
+        assert_eq!(forbidden["result"]["isError"], true);
+    } else {
+        assert!(names.contains(&"sortsys_search"));
+        assert!(names.contains(&"sortsys_propose_change"));
+    }
+
+    let mut mcp_output = Vec::new();
+
+    loop {
+        rounds.lock().await.push(request.clone());
+        let mut response = mock_openai_model_turn(&request);
+        let output = response["output"].as_array().unwrap();
+        let calls = output
+            .iter()
+            .filter(|item| item["type"] == "mcp_call")
+            .collect::<Vec<_>>();
+
+        if calls.is_empty() {
+            mcp_output.extend(output.iter().cloned());
+            response["output"] = json!(mcp_output);
+
+            return Json(response);
+        }
+
+        for call in calls {
+            let name = call["name"].as_str().unwrap();
+            let arguments: Value =
+                serde_json::from_str(call["arguments"].as_str().unwrap()).unwrap();
+            let reply = mock_provider_mcp_request(
+                &client,
+                url,
+                token,
+                "tools/call",
+                json!({
+                    "name": name,
+                    "arguments": arguments,
+                }),
+            )
+            .await;
+            assert!(reply.get("error").is_none(), "MCP protocol error: {reply}");
+
+            let result = &reply["result"];
+            let output = if result["isError"] == true {
+                let message = result["content"][0]["text"].as_str().unwrap();
+                let (code, message) = message.split_once(": ").unwrap();
+
+                json!({ "error": { "code": code, "message": message } })
+            } else {
+                result["structuredContent"].clone()
+            };
+            request["input"].as_array_mut().unwrap().push(json!({
+                "type": "mcp_tool_result",
+                "name": name,
+                "output": output.to_string(),
+            }));
+            mcp_output.push(json!({
+                "type": "mcp_call",
+                "name": name,
+                "arguments": call["arguments"],
+                "output": output.to_string(),
+                "error": null,
+            }));
+        }
+    }
+}
+
+async fn mock_provider_mcp_request(
+    client: &Client,
+    url: &str,
+    token: &str,
+    method: &str,
+    params: Value,
+) -> Value {
+    client
+        .post(url)
+        .bearer_auth(token)
+        .header("mcp-protocol-version", "2025-06-18")
+        .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+fn mock_openai_model_turn(request: &Value) -> Value {
     let input = request["input"].as_array().unwrap();
     let latest_user_content = input
         .iter()
@@ -7071,15 +7242,14 @@ async fn mock_openai_response(
     let last_tool_output = input
         .iter()
         .rev()
-        .find(|item| item["type"] == "function_call_output")
+        .find(|item| item["type"] == "mcp_tool_result")
         .and_then(|item| item["output"].as_str())
         .and_then(|output| serde_json::from_str::<Value>(output).ok());
-    requests.lock().await.push(request);
 
     let output = if is_scan_request {
         match last_tool_output {
             None => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_scan_products",
                 "call_id": "call_scan_products",
                 "name": "sortsys_search_products",
@@ -7211,14 +7381,14 @@ async fn mock_openai_response(
     } else if is_proposal_request {
         match last_tool_output {
             None => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_project_schema",
                 "call_id": "call_project_schema",
                 "name": "sortsys_get_schema",
                 "arguments": r#"{"path":"projects.create"}"#
             }]),
             Some(result) if result["path"] == "projects.create" => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_invalid_address_proposal",
                 "call_id": "call_invalid_address_proposal",
                 "name": "sortsys_propose_change",
@@ -7236,7 +7406,7 @@ async fn mock_openai_response(
                 })).unwrap()
             }]),
             Some(result) if result.get("error").is_some() => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_corrected_address_proposal",
                 "call_id": "call_corrected_address_proposal",
                 "name": "sortsys_propose_change",
@@ -7269,7 +7439,7 @@ async fn mock_openai_response(
     } else if is_tracking_request {
         match last_tool_output {
             None => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_tool_trackings",
                 "call_id": "call_tool_trackings",
                 "name": "sortsys_search",
@@ -7288,7 +7458,7 @@ async fn mock_openai_response(
     } else if is_inventory_request {
         match last_tool_output {
             None => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_tool_inventories",
                 "call_id": "call_tool_inventories",
                 "name": "sortsys_search",
@@ -7307,14 +7477,14 @@ async fn mock_openai_response(
     } else if is_common_costs_request {
         match last_tool_output {
             None => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_common_cost_catalog",
                 "call_id": "call_common_cost_catalog",
                 "name": "sortsys_find_procedures",
                 "arguments": r#"{"query":"Gemeinkosten","kind":"query"}"#
             }]),
             Some(result) if result.get("procedures").is_some() => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_common_cost_schema",
                 "call_id": "call_common_cost_schema",
                 "name": "sortsys_get_schema",
@@ -7325,7 +7495,7 @@ async fn mock_openai_response(
                     && result.get("inputSchema").is_some() =>
             {
                 json!([{
-                    "type": "function_call",
+                    "type": "mcp_call",
                     "id": "fc_common_cost_query",
                     "call_id": "call_common_cost_query",
                     "name": "sortsys_query",
@@ -7358,7 +7528,7 @@ async fn mock_openai_response(
     } else if is_fuzzy_product_request {
         match last_tool_output {
             None => json!([{
-                "type": "function_call",
+                "type": "mcp_call",
                 "id": "fc_fuzzy_product",
                 "call_id": "call_fuzzy_product",
                 "name": "sortsys_search",
@@ -7393,7 +7563,7 @@ async fn mock_openai_response(
         }])
     } else {
         json!([{
-            "type": "function_call",
+            "type": "mcp_call",
             "id": "fc_project_costs",
             "call_id": "call_project_costs",
             "name": "sortsys_search",
@@ -7401,7 +7571,7 @@ async fn mock_openai_response(
         }])
     };
 
-    Json(json!({
+    json!({
         "id": "resp_test",
         "object": "response",
         "model": "gpt-5.6-luna",
@@ -7411,19 +7581,19 @@ async fn mock_openai_response(
             "output_tokens": 20,
             "total_tokens": 120
         }
-    }))
+    })
 }
 
-fn last_function_output(request: &Value) -> Value {
+fn last_mcp_output(request: &Value) -> Value {
     request["input"]
         .as_array()
         .unwrap()
         .iter()
         .rev()
-        .find(|item| item["type"] == "function_call_output")
+        .find(|item| item["type"] == "mcp_tool_result")
         .and_then(|item| item["output"].as_str())
         .map(|output| serde_json::from_str(output).unwrap())
-        .expect("request must contain a function output")
+        .expect("MCP model turn must contain a tool result")
 }
 
 struct RpcClient {

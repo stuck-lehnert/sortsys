@@ -1,6 +1,11 @@
 export interface PdfViewerApplication {
   initializedPromise: Promise<void>;
-  open(options: { url: string; originalUrl: string; enableXfa: boolean; disableAutoFetch: boolean }): Promise<void>;
+  open(options: {
+    url: string;
+    originalUrl: string;
+    enableXfa: boolean;
+    disableAutoFetch: boolean;
+  }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -11,13 +16,18 @@ export interface PdfViewerWindow extends Window {
   };
 }
 
-export function configurePdfViewer(viewer: PdfViewerWindow, language: string): PdfViewerApplication {
+export function configurePdfViewer(
+  viewer: PdfViewerWindow,
+  language: string,
+): PdfViewerApplication {
   if (!viewer.PDFViewerApplication || !viewer.PDFViewerApplicationOptions) {
     throw new Error("PDF.js viewer is unavailable");
   }
 
   viewer.PDFViewerApplicationOptions.setAll({
     localeProperties: { lang: language },
+    // Fit both page dimensions initially; the viewer still owns manual zoom.
+    defaultZoomValue: "page-fit",
     // Saved generic-viewer preferences must not re-enable document scripts.
     disablePreferences: true,
     enableScripting: false,

@@ -464,6 +464,7 @@ start_api_container() {
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$TEST_JWT_SECRET" \
     -e LLM_ENCRYPTION_KEY="$TEST_LLM_ENCRYPTION_KEY" \
+    -e LLM_MCP_URL="http://127.0.0.1:3000/internal/llm/mcp" \
     -e ONLYOFFICE_PUBLIC_URL="http://${TEST_S3_CONTAINER}:9000" \
     -e ONLYOFFICE_INTERNAL_URL="http://${TEST_S3_CONTAINER}:9000" \
     -e ONLYOFFICE_CALLBACK_URL="http://127.0.0.1:3000/internal/onlyoffice/callback" \

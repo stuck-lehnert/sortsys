@@ -14,8 +14,8 @@ SERVICE_BASE64_64_ONLYOFFICE=replace-with-a-random-office-jwt-secret-at-least-32
 # bcrypt value as Literal so its dollar signs are not interpolated.
 ADMIN_HASH=replace-with-a-bcrypt-password-hash
 
-# Optional. Set this to the publicly reachable MCP endpoint when the selected
-# provider/model supports remote MCP, for example:
+# Required for LLM chat and document import with OpenAI or Anthropic.
+# Set this to the publicly reachable HTTPS MCP endpoint, for example:
 # https://sortsys.example/api/v2/internal/llm/mcp
 LLM_MCP_URL=
 

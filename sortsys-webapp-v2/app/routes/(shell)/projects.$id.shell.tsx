@@ -10,8 +10,10 @@ import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
+import { useTitle } from "~/hooks/useTitle";
 import { client } from "~/lib/client";
 import { formatAddress, formatDate } from "~/lib/format";
+import { visitLabel } from "~/lib/visitLabels";
 import { Icons } from "~/lib/icons";
 import { showExportWeeklyDailyProjectReportsModal } from "~/modals/dailyProjectReport";
 import { showExportProjectDeliveryNotesTimespanModal, showExportProjectRegieReportsModal } from "~/modals/projectExports";
@@ -31,6 +33,11 @@ export default function ProjectDetailShell() {
     const [project, err] = useClientStream(() => client.streamQuery('projects.get', { id: id! }), [id]);
     const [deliveryNotes] = useClientStream(() => client.streamQuery('deliveryNotes.list', { projectId: id! }), [id]);
     const [regieReports] = useClientStream(() => client.streamQuery('regieReports.list', { projectId: id! }), [id]);
+
+    useTitle(
+        () => project?.title || visitLabel({ path }),
+        [project?.title, path],
+    );
 
     useShortcut('Control+e', e => {
         if (!project || !sessionInfo.canDo('manage:projects')) return;
