@@ -23,7 +23,9 @@ You need Bash and either Docker or Podman. Start the complete development stack 
 ./scripts/dev
 ```
 
-The script starts PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, the Rust API, two job runners, and the web application. Both runners handle media and OCR work. The development tenant is recreated and seeded on each run.
+The script starts PostgreSQL, MinIO, Euro-Office Document Server, diagrams.net,
+the Rust API, two job runners, and the web application. Both runners handle media
+and OCR work. The development tenant is recreated and seeded on each run.
 
 | Service | Default address |
 | --- | --- |
@@ -31,7 +33,7 @@ The script starts PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, t
 | API | `http://127.0.0.1:3000` |
 | PostgreSQL | `127.0.0.1:32532` |
 | MinIO S3 API | `http://127.0.0.1:39100` |
-| ONLYOFFICE Document Server | `http://127.0.0.1:39180` |
+| Euro-Office Document Server | `http://127.0.0.1:39180` |
 | diagrams.net | `http://127.0.0.1:39181` |
 
 The seeded tenant is `test`. Its default users are `john.doe` and `frank.doe`; both use the development password `123456`, and `john.doe` is an administrator. These credentials are for local development only. Startup also installs the Sortsys company logo through the normal upload API and waits for its WebP conversion and download to succeed.
@@ -67,7 +69,33 @@ We recommend deploying [`compose.yaml`](compose.yaml) with [Coolify](https://git
 
 If you prefer prebuilt containers, deploy [`ghcr-compose.yaml`](ghcr-compose.yaml) in Coolify instead. It pulls the `:latest` API, job-runner, and webapp images from GitHub Container Registry. The `ADMIN_HASH` requirement and the other deployment settings still apply.
 
-The Compose stack includes an [ONLYOFFICE Document Server](https://github.com/ONLYOFFICE/DocumentServer) for Office documents and [diagrams.net](https://github.com/jgraph/drawio) for diagrams. Assign a public HTTPS domain only to `webapp`; the same domain serves the editors below `/office/` and `/drawio/`. The API signs ONLYOFFICE configurations, source downloads, and save callbacks with the generated `SERVICE_BASE64_64_ONLYOFFICE` secret. Do not change that secret while documents are open.
+The Compose stack includes [Euro-Office Document Server](https://github.com/Euro-Office/DocumentServer)
+for Office documents and [diagrams.net](https://github.com/jgraph/drawio) for diagrams.
+Assign a public HTTPS domain only to `webapp`; the same domain serves the editors below
+`/office/` and `/drawio/`.
+
+The document server's `JWT_SECRET` and the API's `ONLYOFFICE_JWT_SECRET` receive the same
+`SERVICE_BASE64_64_ONLYOFFICE` value. Coolify generates and persists it automatically.
+For local Compose, set it in `.compose-env` to a random secret of at least 32 characters.
+Keep it separate from `SERVICE_BASE64_64_JWT`, which signs API sessions. Do not rotate
+the document-server secret while documents are open. Local development generates a new
+secret on startup unless you export `DEV_ONLYOFFICE_JWT_SECRET` (at least 32 characters).
+
+The `onlyoffice` service name, `ONLYOFFICE_*` variables and API routes remain unchanged
+because Euro-Office uses the same DocsAPI protocol. `ONLYOFFICE_IMAGE` selects the image;
+the default is the official multi-architecture image pinned by digest. See the upstream
+[Docker installation guide](https://euro-office.github.io/documentation/installation/docker/)
+for resource requirements and persistent paths. The bundled example app is disabled.
+Private-network requests are enabled so the server can download documents and send save
+callbacks to the API; do not expose the document-server port directly.
+
+Euro-Office uses new `euro-office-*` volumes. Existing ONLYOFFICE volumes are not reused
+or deleted. Before switching an existing deployment, save and close all open documents,
+back up the old volumes, and remove any `ONLYOFFICE_IMAGE` override that still selects
+ONLYOFFICE. Tenant documents remain in the configured S3 storage; document-server caches
+and its internal database are not migrated. Retain the old image, configuration and
+volumes for rollback. Switching back requires restoring their original volume mappings;
+do not run `compose down --volumes` as an upgrade or rollback step.
 
 Object storage is not part of the production Compose stack. Configure an external S3-compatible service for tenant files and backups, or leave those features disabled.
 

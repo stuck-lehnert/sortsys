@@ -5,7 +5,10 @@ SERVICE_PASSWORD_64_POSTGRES=replace-with-a-long-random-postgres-password
 SERVICE_BASE64_64_JWT=replace-with-a-long-random-jwt-secret
 SERVICE_BASE64_64_JOBRUNNER=replace-with-a-long-random-job-runner-token
 SERVICE_BASE64_64_LLM=replace-with-a-long-random-llm-encryption-key
-SERVICE_BASE64_64_ONLYOFFICE=replace-with-a-long-random-onlyoffice-jwt-secret
+# Shared by Euro-Office JWT_SECRET and the API ONLYOFFICE_JWT_SECRET.
+# Keep the legacy name to preserve existing Coolify-generated secrets.
+# Euro-Office requires at least 32 characters.
+SERVICE_BASE64_64_ONLYOFFICE=replace-with-a-random-office-jwt-secret-at-least-32-chars
 
 # Required. Generate this as documented in README.md. In Coolify, mark the
 # bcrypt value as Literal so its dollar signs are not interpolated.
@@ -18,7 +21,7 @@ LLM_MCP_URL=
 
 # Optional overrides (the shown values are the Compose defaults).
 POSTGRES_IMAGE=postgres:17-alpine
-ONLYOFFICE_IMAGE=onlyoffice/documentserver:9.3.1.2
+ONLYOFFICE_IMAGE=ghcr.io/euro-office/documentserver:latest@sha256:b303064a69d0a4f81ba5945126c4c484fc08bf42436fc97bb85413429e27ba9e
 DRAWIO_IMAGE=jgraph/drawio:31.1.8
 POSTGRES_DB=sortsys
 POSTGRES_USER=sortsys

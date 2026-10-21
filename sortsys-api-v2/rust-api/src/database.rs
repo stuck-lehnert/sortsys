@@ -305,7 +305,7 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
             CHECK (provider IN ('openai', 'anthropic', 'meta', 'openrouter', 'deepseek', 'custom'));
         CREATE TABLE IF NOT EXISTS __llm_use_case_settings (
           use_case VARCHAR(32) PRIMARY KEY
-            CHECK (use_case IN ('chat', 'document_import', 'onlyoffice')),
+            CHECK (use_case IN ('chat', 'document_import')),
           provider VARCHAR(32) NOT NULL
             REFERENCES __llm_provider_accounts(provider) ON DELETE RESTRICT,
           model VARCHAR(255) NOT NULL,
@@ -313,9 +313,11 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         );
         ALTER TABLE __llm_use_case_settings
           DROP CONSTRAINT IF EXISTS __llm_use_case_settings_use_case_check;
+        -- Remove the retired model assignment, retaining all historical usage.
+        DELETE FROM __llm_use_case_settings WHERE use_case = 'onlyoffice';
         ALTER TABLE __llm_use_case_settings
           ADD CONSTRAINT __llm_use_case_settings_use_case_check
-            CHECK (use_case IN ('chat', 'document_import', 'onlyoffice'));
+            CHECK (use_case IN ('chat', 'document_import'));
         INSERT INTO __llm_provider_accounts (
           provider,
           base_url,

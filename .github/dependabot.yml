@@ -102,7 +102,6 @@ updates:
     # Keep supported PostgreSQL 17 until the documented data migration is tested.
     # Node LTS-major migrations are explicit; do not drift off .node-version.
     # Nginx 1.31 is mainline; keep stable patches/new stable lines eligible.
-    # ONLYOFFICE 9.4.0 has the known regression.
     ignore:
       - dependency-name: "*postgres"
         update-types: ["version-update:semver-major"]
@@ -110,8 +109,6 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: nginx
         versions: ["~> 1.31.0"]
-      - dependency-name: onlyoffice/documentserver
-        versions: ["9.4.0", "9.4.0.1"]
 
   # Both compose.yaml and ghcr-compose.yaml live in the repository root.
   # Locally built images and :latest tags have no version tag to update.
@@ -123,8 +120,6 @@ updates:
     ignore:
       - dependency-name: "*postgres"
         update-types: ["version-update:semver-major"]
-      - dependency-name: onlyoffice/documentserver
-        versions: ["9.4.0", "9.4.0.1"]
 
   - package-ecosystem: github-actions
     directory: /

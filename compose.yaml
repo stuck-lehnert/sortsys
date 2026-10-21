@@ -17,22 +17,24 @@ services:
     stop_grace_period: 1m
 
   onlyoffice:
-    # Version 9.4.0 is unusable with common tracking-protection lists because
-    # they block its required Analytics.js module.
-    image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:9.3.1.2}
+    # Keep the service and API variable names for DocsAPI compatibility.
+    image: ${ONLYOFFICE_IMAGE:-ghcr.io/euro-office/documentserver:latest@sha256:b303064a69d0a4f81ba5945126c4c484fc08bf42436fc97bb85413429e27ba9e}
     restart: unless-stopped
     environment:
       JWT_ENABLED: "true"
       JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
       JWT_HEADER: Authorization
       JWT_IN_BODY: "false"
+      # Source downloads and save callbacks use the internal API network.
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      EXAMPLE_ENABLED: "false"
     expose:
       - "80"
     volumes:
-      - onlyoffice-data:/var/www/onlyoffice/Data
-      - onlyoffice-state:/var/lib/onlyoffice
-      - onlyoffice-database:/var/lib/postgresql
-      - onlyoffice-logs:/var/log/onlyoffice
+      - euro-office-data:/var/www/euro-office/Data
+      - euro-office-state:/var/lib/euro-office/documentserver
+      - euro-office-database:/var/lib/postgresql
+      - euro-office-logs:/var/log/euro-office/documentserver
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/healthcheck"]
       interval: 15s
@@ -148,7 +150,7 @@ services:
 
 volumes:
   postgres-data:
-  onlyoffice-data:
-  onlyoffice-state:
-  onlyoffice-database:
-  onlyoffice-logs:
+  euro-office-data:
+  euro-office-state:
+  euro-office-database:
+  euro-office-logs:
