@@ -244,7 +244,6 @@ async fn configure_development_llm(
 
     llm::save_configuration(state, provider, &model, base_url, Some(api_key.trim())).await?;
     llm::save_scan_configuration(state, provider, &model, base_url, Some(api_key.trim())).await?;
-    llm::save_use_case_configuration(state, llm::ONLYOFFICE_USE_CASE, provider, &model).await?;
 
     sqlx::query(
         r#"

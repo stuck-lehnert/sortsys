@@ -57,16 +57,16 @@ function loadOnlyOfficeApi(apiUrl: string) {
 
       script.remove();
       reject(new Error(uiText(
-        "ONLYOFFICE wurde nicht initialisiert.",
-        "ONLYOFFICE did not initialize.",
+        "Euro-Office wurde nicht initialisiert.",
+        "Euro-Office did not initialize.",
       )));
     };
 
     const handleError = () => {
       script.remove();
       reject(new Error(uiText(
-        "ONLYOFFICE konnte nicht geladen werden.",
-        "ONLYOFFICE could not be loaded.",
+        "Euro-Office konnte nicht geladen werden.",
+        "Euro-Office could not be loaded.",
       )));
     };
 
@@ -132,8 +132,8 @@ export function OnlyOfficeEditor({
 
               const message = event.data?.errorDescription
                 ?? uiText(
-                  `ONLYOFFICE-Fehler ${event.data?.errorCode ?? "unbekannt"}`,
-                  `ONLYOFFICE error ${event.data?.errorCode ?? "unknown"}`,
+                  `Euro-Office-Fehler ${event.data?.errorCode ?? "unbekannt"}`,
+                  `Euro-Office error ${event.data?.errorCode ?? "unknown"}`,
                 );
 
               onError(message);

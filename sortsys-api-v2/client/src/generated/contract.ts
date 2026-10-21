@@ -18,7 +18,7 @@ export type Id = string;
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type LlmUseCase = "chat" | "documentImport" | "onlyoffice";
+export type LlmUseCase = "chat" | "documentImport";
 
 export type ParseScanInput = { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };
 
@@ -144,7 +144,7 @@ export type QueryOutputs = {
   "admin.llm.settings.get": { provider: string, model: string, baseUrl: string | null, hasApiKey: boolean, mcpAvailable: boolean, } | null;
   "admin.llm.tenants.list": Array<{ name: string, enabled: boolean, monthlyTokenQuota: bigint | null, }>;
   "admin.llm.usage": Array<{ tenant: string, provider: string, model: string, purpose: string, requestCount: bigint, inputTokens: bigint, outputTokens: bigint, totalTokens: bigint, failedRequests: bigint, }>;
-  "admin.llm.useCases.list": Array<{ useCase: "chat" | "documentImport" | "onlyoffice", provider: string | null, model: string | null, }>;
+  "admin.llm.useCases.list": Array<{ useCase: "chat" | "documentImport", provider: string | null, model: string | null, }>;
   "admin.tenants.get": { name: string; locked_at: null | Date; deleted_at: null | Date; deactivated_at: null | Date; connection_details: { postgresDSN?: undefined | null | string; postgresDatabaseId?: undefined | null | string; objectStorage?: undefined | null | { enabled: boolean; provider: "s3"; forcePathStyle: boolean; uploadUrlTtlSec: number; downloadUrlTtlSec: number; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; publicBaseUrl?: undefined | null | string; keyPrefix?: undefined | null | string; }; }; contact_details: { email: string; companyName?: undefined | null | string; address?: undefined | null | { city?: undefined | null | string; zip?: undefined | null | string; country?: undefined | null | string; streetAddress?: undefined | null | string; }; }; options: { sso: { "ms-entra-id": { enabled: boolean; importUserUsername: boolean; importUserName: boolean; importUserEmail: boolean; tenantId?: undefined | null | string; clientId?: undefined | null | string; objectId?: undefined | null | string; }; }; }; };
   "admin.tenants.list": { name: string; locked_at: null | Date; deleted_at: null | Date; deactivated_at: null | Date; connection_details: { postgresDSN?: undefined | null | string; postgresDatabaseId?: undefined | null | string; objectStorage?: undefined | null | { enabled: boolean; provider: "s3"; forcePathStyle: boolean; uploadUrlTtlSec: number; downloadUrlTtlSec: number; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; publicBaseUrl?: undefined | null | string; keyPrefix?: undefined | null | string; }; }; contact_details: { email: string; companyName?: undefined | null | string; address?: undefined | null | { city?: undefined | null | string; zip?: undefined | null | string; country?: undefined | null | string; streetAddress?: undefined | null | string; }; }; options: { sso: { "ms-entra-id": { enabled: boolean; importUserUsername: boolean; importUserName: boolean; importUserEmail: boolean; tenantId?: undefined | null | string; clientId?: undefined | null | string; objectId?: undefined | null | string; }; }; }; }[];
   "admin.users.list": { id: string; username: string; firstName: string; lastName: null | string; email: null | string; deactivatedAt: null | Date; archivedAt: null | Date; isAdmin: boolean; }[];
@@ -394,7 +394,7 @@ export type MutationOutputs = {
   "admin.llm.scanSettings.update": { provider: string, model: string, baseUrl: string | null, hasApiKey: boolean, mcpAvailable: boolean, };
   "admin.llm.settings.update": { provider: string, model: string, baseUrl: string | null, hasApiKey: boolean, mcpAvailable: boolean, };
   "admin.llm.tenants.update": { name: string, enabled: boolean, monthlyTokenQuota: bigint | null, };
-  "admin.llm.useCases.update": { useCase: "chat" | "documentImport" | "onlyoffice", provider: string | null, model: string | null, };
+  "admin.llm.useCases.update": { useCase: "chat" | "documentImport", provider: string | null, model: string | null, };
   "admin.login": { token: string; };
   "admin.tenants.activate": { success: true; };
   "admin.tenants.create": { adminPassword: string; };

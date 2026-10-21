@@ -11,6 +11,10 @@ node ./scripts/check-runtime-versions.mjs
 node --test ./scripts/check-runtime-versions.test.mjs
 
 echo
+echo "Checking office deployment and JWT configuration"
+bun test ./scripts/office-deployment.test.mjs
+
+echo
 echo "Running API integration and contract checks"
 ./scripts/test-api --rerun-each=1
 

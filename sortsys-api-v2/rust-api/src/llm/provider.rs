@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::{
@@ -126,122 +126,6 @@ pub struct Completion {
     pub content: String,
     pub usage: TokenUsage,
     pub transport: &'static str,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(super) struct OfficeMessage {
-    pub role: String,
-    pub content: String,
-}
-
-/// Adapt the editor's text-only conversation without sortsys tools or MCP.
-/// Never pass through browser-selected URLs, headers, models or output limits.
-pub(super) async fn office_completion(
-    configuration: &ProviderConfiguration,
-    messages: &[OfficeMessage],
-) -> RpcResult<Completion> {
-    let base = configuration
-        .base_url
-        .as_deref()
-        .unwrap_or_else(|| default_provider_base_url(&configuration.provider));
-    let (path, body) = match configuration.provider.as_str() {
-        "openai" => (
-            "v1/responses",
-            json!({
-                "model": configuration.model,
-                "input": messages,
-                "max_output_tokens": 8192,
-                "store": false
-            }),
-        ),
-        "anthropic" => {
-            let system = messages
-                .iter()
-                .filter(|message| message.role == "system")
-                .map(|message| message.content.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-            let turns = messages
-                .iter()
-                .filter(|message| message.role != "system")
-                .collect::<Vec<_>>();
-            (
-                "v1/messages",
-                json!({ "model": configuration.model, "system": system,
-                "messages": turns, "max_tokens": 8192 }),
-            )
-        }
-        _ => (
-            "v1/chat/completions",
-            json!({ "model": configuration.model,
-            "messages": messages, "max_tokens": 8192 }),
-        ),
-    };
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| office_provider_error())?;
-    let request = client
-        .post(endpoint(base, path))
-        .json(&body)
-        .timeout(Duration::from_secs(120));
-    let request = if configuration.provider == "anthropic" {
-        request
-            .header("x-api-key", &configuration.api_key)
-            .header("anthropic-version", "2023-06-01")
-    } else {
-        request.bearer_auth(&configuration.api_key)
-    };
-    let mut response = request.send().await.map_err(|_| office_provider_error())?;
-
-    if !response.status().is_success() {
-        // A provider might echo authentication headers in an error. Never
-        // expose its raw body, URL, or transport error through this gateway.
-        return Err(office_provider_error());
-    }
-
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| office_provider_error())?
-    {
-        if bytes.len() + chunk.len() > 2 * 1024 * 1024 {
-            return Err(office_provider_error());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| office_provider_error())?;
-    let (content, usage) = match configuration.provider.as_str() {
-        "openai" => (responses_text(&value), responses_usage(&value)),
-        "anthropic" => (anthropic_text(&value), anthropic_usage(&value)),
-        _ => (
-            value
-                .pointer("/choices/0/message/content")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            chat_completions_usage(&value),
-        ),
-    };
-
-    if content.trim().is_empty() {
-        return Err(office_provider_error());
-    }
-
-    Ok(Completion {
-        content: content.replace(&configuration.api_key, "[redacted]"),
-        usage,
-        transport: "onlyoffice",
-    })
-}
-
-fn office_provider_error() -> RpcError {
-    RpcError::new(
-        ErrorCode::PreconditionFailed,
-        "ONLYOFFICE LLM request failed",
-    )
 }
 
 pub async fn complete(

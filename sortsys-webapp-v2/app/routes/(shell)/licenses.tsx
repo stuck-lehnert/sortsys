@@ -120,14 +120,14 @@ export default function LicensesPage() {
     },
     {
       id: "onlyoffice",
-      title: uiText("ONLYOFFICE Docs", "ONLYOFFICE Docs"),
+      title: uiText("Euro-Office", "Euro-Office"),
       entries: [{
         ecosystem: uiText("Dokumentenserver", "Document server"),
-        name: "ONLYOFFICE Docs",
-        version: "9.3.1.2",
+        name: "Euro-Office",
+        version: "sha256:b303064a69d0",
         license: "AGPL-3.0-only",
-        licenseUrl: "https://github.com/ONLYOFFICE/DocumentServer/blob/master/LICENSE",
-        source: "https://github.com/ONLYOFFICE/DocumentServer",
+        licenseUrl: "https://github.com/Euro-Office/DocumentServer/blob/main/LICENSE",
+        source: "https://github.com/Euro-Office/DocumentServer",
       }],
     },
     {

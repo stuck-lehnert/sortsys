@@ -626,11 +626,6 @@ export default function GlobalAdminLlmPage() {
               title: uiText("Einlesen", "Document import"),
               description: uiText("Lieferscheine, Rechnungen und Preislisten", "Delivery notes, invoices, and price lists"),
             },
-            {
-              useCase: "onlyoffice",
-              title: uiText("ONLYOFFICE", "ONLYOFFICE"),
-              description: uiText("Texte in Dokumenten bearbeiten", "Edit document text"),
-            },
           ] satisfies Array<{ useCase: UseCaseName; title: string; description: string }>).map(item => {
             const settings = (useCases ?? []).find(entry => entry.useCase === item.useCase);
 
@@ -701,11 +696,17 @@ export default function GlobalAdminLlmPage() {
             { label: uiText("Mandant", "Tenant"), render: row => row.tenant, sortKey: row => row.tenant },
             {
               label: uiText("Zweck", "Purpose"),
-              render: row => row.purpose === "onlyoffice"
-                ? "ONLYOFFICE"
-                : row.purpose === "delivery_note_scan"
-                  ? uiText("Einlesen", "Document import")
-                  : uiText("Chat", "Chat"),
+              render: (row) => {
+                if (row.purpose === "delivery_note_scan") {
+                  return uiText("Einlesen", "Document import");
+                }
+
+                if (row.purpose === "chat") {
+                  return uiText("Chat", "Chat");
+                }
+
+                return row.purpose;
+              },
               sortKey: row => row.purpose,
             },
             {

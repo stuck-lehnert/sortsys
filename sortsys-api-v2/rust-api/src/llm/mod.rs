@@ -1,6 +1,5 @@
 //! LLM configuration, provider access, MCP transport, and safe data tools.
 
-pub mod office;
 mod provider;
 mod schema;
 
@@ -183,7 +182,6 @@ pub struct PublicProviderConfiguration {
 
 pub const CHAT_USE_CASE: &str = "chat";
 pub const DOCUMENT_IMPORT_USE_CASE: &str = "document_import";
-pub const ONLYOFFICE_USE_CASE: &str = "onlyoffice";
 
 pub fn mcp_router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -517,7 +515,7 @@ pub async fn public_use_case_configurations(
 ) -> RpcResult<Vec<(String, Option<PublicProviderConfiguration>)>> {
     let mut configurations = Vec::with_capacity(2);
 
-    for use_case in [CHAT_USE_CASE, DOCUMENT_IMPORT_USE_CASE, ONLYOFFICE_USE_CASE] {
+    for use_case in [CHAT_USE_CASE, DOCUMENT_IMPORT_USE_CASE] {
         configurations.push((
             use_case.to_owned(),
             public_use_case_configuration(state, use_case).await?,
@@ -1698,10 +1696,7 @@ fn validate_provider(provider: &str) -> RpcResult<()> {
 }
 
 fn validate_use_case(use_case: &str) -> RpcResult<()> {
-    if matches!(
-        use_case,
-        CHAT_USE_CASE | DOCUMENT_IMPORT_USE_CASE | ONLYOFFICE_USE_CASE
-    ) {
+    if matches!(use_case, CHAT_USE_CASE | DOCUMENT_IMPORT_USE_CASE) {
         Ok(())
     } else {
         Err(bad_request("unsupported LLM use case"))
@@ -1850,7 +1845,7 @@ fn internal(error: impl std::fmt::Display) -> RpcError {
 mod tests {
     use super::{
         find_procedures, get_procedure_schema, is_proposable_mutation, project_cost_summary,
-        runtime_system_prompt_at, system_prompt, tenant_llm_options,
+        runtime_system_prompt_at, system_prompt, tenant_llm_options, validate_use_case,
     };
     use chrono::{TimeZone, Utc};
     use serde_json::json;
@@ -1876,6 +1871,13 @@ mod tests {
         let mut tampered = expected;
         tampered[31] ^= 1;
         assert!(cipher.decrypt(&nonce, tampered.as_ref()).is_err());
+    }
+
+    #[test]
+    fn use_cases_accept_chat_and_document_import_but_reject_retired_office_ai() {
+        assert!(validate_use_case("chat").is_ok());
+        assert!(validate_use_case("document_import").is_ok());
+        assert!(validate_use_case("onlyoffice").is_err());
     }
 
     #[test]

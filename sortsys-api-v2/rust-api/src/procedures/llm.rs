@@ -822,7 +822,6 @@ async fn update_use_case(
 fn public_use_case_name(use_case: &str) -> &str {
     match use_case {
         llm::DOCUMENT_IMPORT_USE_CASE => "documentImport",
-        llm::ONLYOFFICE_USE_CASE => "onlyoffice",
         _ => "chat",
     }
 }
@@ -1302,7 +1301,6 @@ struct UpdateProviderAccountInput {
 enum LlmUseCase {
     Chat,
     DocumentImport,
-    Onlyoffice,
 }
 
 impl LlmUseCase {
@@ -1310,7 +1308,6 @@ impl LlmUseCase {
         match self {
             Self::Chat => llm::CHAT_USE_CASE,
             Self::DocumentImport => llm::DOCUMENT_IMPORT_USE_CASE,
-            Self::Onlyoffice => llm::ONLYOFFICE_USE_CASE,
         }
     }
 }
@@ -1511,7 +1508,7 @@ impl From<llm::AvailableProviderModel> for ProviderModelOption {
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct UseCaseSettings {
-    #[ts(type = "\"chat\" | \"documentImport\" | \"onlyoffice\"")]
+    #[ts(type = "\"chat\" | \"documentImport\"")]
     use_case: String,
     provider: Option<String>,
     model: Option<String>,
@@ -1582,7 +1579,14 @@ impl From<UsageRow> for UsageSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::chat_title;
+    use super::{LlmUseCase, chat_title};
+
+    #[test]
+    fn use_case_input_rejects_removed_office_llm_configuration() {
+        assert!(serde_json::from_str::<LlmUseCase>("\"chat\"").is_ok());
+        assert!(serde_json::from_str::<LlmUseCase>("\"documentImport\"").is_ok());
+        assert!(serde_json::from_str::<LlmUseCase>("\"onlyoffice\"").is_err());
+    }
 
     #[test]
     fn chat_titles_are_short_and_use_the_first_line() {

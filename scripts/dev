@@ -22,16 +22,15 @@ DEV_GO_BUILD_CACHE_VOLUME="sortsys-dev-go-build-cache"
 DEV_GO_MODULE_CACHE_VOLUME="sortsys-dev-go-module-cache"
 DEV_WEBAPP_DEPENDENCIES_VOLUME="sortsys-dev-webapp-dependencies"
 DEV_DWGVIEWER_DEPENDENCIES_VOLUME="sortsys-dev-dwgviewer-dependencies"
-DEV_ONLYOFFICE_DATA_VOLUME="sortsys-dev-onlyoffice-9-3-1-data"
-DEV_ONLYOFFICE_STATE_VOLUME="sortsys-dev-onlyoffice-9-3-1-state"
-DEV_ONLYOFFICE_DATABASE_VOLUME="sortsys-dev-onlyoffice-9-3-1-database"
-DEV_ONLYOFFICE_LOGS_VOLUME="sortsys-dev-onlyoffice-logs"
+DEV_ONLYOFFICE_DATA_VOLUME="sortsys-dev-euro-office-data"
+DEV_ONLYOFFICE_STATE_VOLUME="sortsys-dev-euro-office-state"
+DEV_ONLYOFFICE_DATABASE_VOLUME="sortsys-dev-euro-office-database"
+DEV_ONLYOFFICE_LOGS_VOLUME="sortsys-dev-euro-office-logs"
 
 DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-$(sortsys_container_image dev-postgres)}"
 DEV_S3_IMAGE="${DEV_S3_IMAGE:-$(sortsys_s3_image)}"
 DEV_S3_IMAGE_FALLBACK="${DEV_S3_IMAGE_FALLBACK:-}"
-# ONLYOFFICE 9.4.0 cannot load when common tracking-protection lists block
-# its required Analytics.js module. Remove this pin after the upstream fix ships.
+# Euro-Office implements the existing DocsAPI protocol and environment contract.
 DEV_ONLYOFFICE_IMAGE="${DEV_ONLYOFFICE_IMAGE:-$(sortsys_container_image onlyoffice)}"
 DEV_DRAWIO_IMAGE="${DEV_DRAWIO_IMAGE:-$(sortsys_container_image drawio)}"
 DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-$(sortsys_container_image bun)}"
@@ -60,7 +59,16 @@ DEV_PG_ADMIN_PASSWORD="${TEST_PG_PASSWORD:-dev-postgres}"
 DEV_JOB_RUNNER_TOKEN="${DEV_JOB_RUNNER_TOKEN:-dev-job-runner-token}"
 DEV_JWT_SECRET="${DEV_JWT_SECRET:-dev-jwt-secret}"
 DEV_LLM_ENCRYPTION_KEY="${DEV_LLM_ENCRYPTION_KEY:-dev-llm-encryption-key}"
-DEV_ONLYOFFICE_JWT_SECRET="${DEV_ONLYOFFICE_JWT_SECRET:-dev-onlyoffice-jwt-secret}"
+# Keep the document-server secret separate from the API session secret.
+DEV_ONLYOFFICE_JWT_SECRET="${DEV_ONLYOFFICE_JWT_SECRET:-$(
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+)}"
+
+if [ "${#DEV_ONLYOFFICE_JWT_SECRET}" -lt 32 ]; then
+  echo "DEV_ONLYOFFICE_JWT_SECRET must contain at least 32 characters" >&2
+  exit 1
+fi
+
 # Development global-admin password: 123456
 DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$A20B6GFXZPxMInilSMwRy.q3tixzPl9Bq0tgyrCvNAHUQI2BHqlPa}"
 
@@ -354,7 +362,7 @@ prepare_images() {
     "$DEV_NODE_IMAGE"
     "$DEV_GO_IMAGE"
   )
-  local labels=("PostgreSQL" "ONLYOFFICE" "diagrams.net" "Bun" "Rust" "Node.js" "Go")
+  local labels=("PostgreSQL" "Euro-Office" "diagrams.net" "Bun" "Rust" "Node.js" "Go")
   local pids=()
   local failed=0
 
@@ -459,7 +467,7 @@ start_s3() {
 }
 
 start_onlyoffice() {
-  echo "Starting development ONLYOFFICE on port ${DEV_ONLYOFFICE_PORT}"
+  echo "Starting development Euro-Office on port ${DEV_ONLYOFFICE_PORT}"
 
   ensure_network
 
@@ -477,16 +485,17 @@ start_onlyoffice() {
     -e JWT_HEADER="Authorization" \
     -e JWT_IN_BODY="false" \
     -e ALLOW_PRIVATE_IP_ADDRESS="true" \
-    -v "${DEV_ONLYOFFICE_DATA_VOLUME}:/var/www/onlyoffice/Data" \
-    -v "${DEV_ONLYOFFICE_STATE_VOLUME}:/var/lib/onlyoffice" \
+    -e EXAMPLE_ENABLED="false" \
+    -v "${DEV_ONLYOFFICE_DATA_VOLUME}:/var/www/euro-office/Data" \
+    -v "${DEV_ONLYOFFICE_STATE_VOLUME}:/var/lib/euro-office/documentserver" \
     -v "${DEV_ONLYOFFICE_DATABASE_VOLUME}:/var/lib/postgresql" \
-    -v "${DEV_ONLYOFFICE_LOGS_VOLUME}:/var/log/onlyoffice" \
+    -v "${DEV_ONLYOFFICE_LOGS_VOLUME}:/var/log/euro-office/documentserver" \
     "$DEV_ONLYOFFICE_IMAGE" >/dev/null
 
-  echo "Waiting for ONLYOFFICE readiness"
+  echo "Waiting for Euro-Office readiness"
   for ((i = 1; i <= 300; i++)); do
     if ! container_is_running "$DEV_ONLYOFFICE_CONTAINER"; then
-      echo "ONLYOFFICE container stopped unexpectedly"
+      echo "Euro-Office container stopped unexpectedly"
       "$CONTAINER_RUNTIME" logs "$DEV_ONLYOFFICE_CONTAINER" || true
       return 1
     fi
@@ -499,7 +508,7 @@ start_onlyoffice() {
     sleep 1
   done
 
-  echo "ONLYOFFICE did not become ready in time"
+  echo "Euro-Office did not become ready in time"
   "$CONTAINER_RUNTIME" logs "$DEV_ONLYOFFICE_CONTAINER" || true
   return 1
 }
@@ -919,7 +928,7 @@ if ! wait "$s3_pid"; then
   exit 1
 fi
 if ! wait "$onlyoffice_pid"; then
-  echo "ONLYOFFICE startup failed"
+  echo "Euro-Office startup failed"
   exit 1
 fi
 if ! wait "$drawio_pid"; then
@@ -952,7 +961,7 @@ echo "- Webapp:   http://127.0.0.1:${DEV_WEBAPP_PORT}"
 echo "- Postgres: 127.0.0.1:${DEV_PG_PORT}"
 echo "- MasterDB: ${DEV_MASTER_DATABASE_NAME}"
 echo "- S3:       http://127.0.0.1:${DEV_S3_PORT}"
-echo "- ONLYOFFICE: ${DEV_ONLYOFFICE_PUBLIC_URL}"
+echo "- Euro-Office: ${DEV_ONLYOFFICE_PUBLIC_URL}"
 echo "- diagrams.net: ${DEV_DRAWIO_PUBLIC_URL}"
 echo
 echo "Use '${CONTAINER_RUNTIME} logs -f <container>' to inspect logs."
