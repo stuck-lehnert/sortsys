@@ -32,7 +32,7 @@ Options:
   --dry-run                Print changes but do not modify DNS
   --no-delete-stale        Do not delete A/AAAA records under *.auto for missing servers
   --no-floating-ips        Only use Primary IPv4/IPv6, not assigned Floating IPs
-  --image IMAGE            Python container image; default: docker.io/library/python:3.14-alpine
+  --image IMAGE            Python container image; default: docker.io/library/python:3.15-alpine
   --engine podman|docker   Container engine; default: podman if present, otherwise docker
   --verbose                Print skipped names and unchanged records
   -h, --help               Show this help
