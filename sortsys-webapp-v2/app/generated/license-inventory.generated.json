@@ -1614,7 +1614,7 @@
       {
         "ecosystem": "Rust",
         "name": "sha2",
-        "version": "0.11.0",
+        "version": "0.11.1",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/RustCrypto/hashes"
       },
