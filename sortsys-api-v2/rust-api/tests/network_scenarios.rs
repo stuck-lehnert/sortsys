@@ -41,6 +41,11 @@ use url::Url;
 
 use sortsys_api::{AppState, backup_scheduler, config::Config, ids::Id, migrations, seed};
 
+#[path = "network_scenarios/documents.rs"]
+mod documents;
+#[path = "network_scenarios/openrouter.rs"]
+mod openrouter;
+
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[test]
@@ -6106,6 +6111,9 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     );
     drop(requests);
 
+    documents::verify(&rpc, &fixture, token, &openai_requests).await;
+    openrouter::verify(&rpc, &fixture, admin_token, token, scan_product_id).await;
+
     rpc.mutation(
         "llm.chats.delete",
         json!({ "chatId": chat_id }),
@@ -7795,7 +7803,13 @@ fn mock_openai_model_turn(request: &Value) -> Value {
         .and_then(|item| item["output"].as_str())
         .and_then(|output| serde_json::from_str::<Value>(output).ok());
 
-    let output = if is_scan_request {
+    let output = if latest_user_content == Some(documents::ACCESS_PROBE) {
+        json!([{
+            "type": "message",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": "MCP connector ready." }]
+        }])
+    } else if is_scan_request {
         match last_tool_output {
             None => json!([{
                 "type": "mcp_call",

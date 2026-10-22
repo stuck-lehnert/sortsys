@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CANDIDATE_SHA="${1:-}"
+TESTED_DEPLOY_SHA="${2:-}"
+
+if ! [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ && "$TESTED_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Usage: scripts/promote-predeploy <tested-candidate> <tested-deploy-base>" >&2
+  exit 1
+fi
+
+# Explicit refspecs avoid relying on cached or shallow remote-tracking refs.
+git fetch --no-tags origin \
+  refs/heads/predeploy:refs/remotes/origin/predeploy \
+  refs/heads/deploy:refs/remotes/origin/deploy
+
+SOURCE_SHA="$(git rev-parse --verify refs/remotes/origin/predeploy)"
+DEPLOY_SHA="$(git rev-parse --verify refs/remotes/origin/deploy)"
+
+if [ "$SOURCE_SHA" != "$CANDIDATE_SHA" ]; then
+  echo "predeploy advanced; refusing to promote a stale candidate." >&2
+  exit 1
+fi
+
+if [ "$DEPLOY_SHA" != "$TESTED_DEPLOY_SHA" ]; then
+  echo "deploy changed after the upgrade check; rerun CI against the new deploy revision." >&2
+  exit 1
+fi
+
+if ! git merge-base --is-ancestor "$TESTED_DEPLOY_SHA" "$CANDIDATE_SHA"; then
+  echo "predeploy must contain the current deploy history." >&2
+  exit 1
+fi
+
+# The ancestry check above forbids history rewrites. The exact lease adds a
+# compare-and-swap: even another valid fast-forward needs a fresh upgrade check.
+git push --force-with-lease="refs/heads/deploy:${TESTED_DEPLOY_SHA}" \
+  origin "${CANDIDATE_SHA}:refs/heads/deploy"

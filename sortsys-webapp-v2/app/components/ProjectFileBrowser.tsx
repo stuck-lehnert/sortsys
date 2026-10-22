@@ -348,26 +348,58 @@ export function ProjectFileBrowser(props: {
   }
 
   const folderMenuItems = (folder: ProjectFileBrowserFolder) => [
-    { label: uiText("Öffnen", "Open"), renderIcon: Icons.FolderOpen, onClick: () => openFolder(folder) },
-    { label: uiText("Umbenennen", "Rename"), renderIcon: Icons.Edit, onClick: () => onRenameFolder(folder) },
-    { label: uiText("Verschieben", "Move"), renderIcon: Icons.FolderMove, onClick: () => onChooseFolderDestination(folder) },
-    { label: uiText("Löschen", "Delete"), renderIcon: Icons.Delete, onClick: () => onDeleteFolder(folder) },
+    { label: uiText("Öffnen", "Open"), onClick: () => openFolder(folder) },
+    {
+      label: uiText("Umbenennen", "Rename"),
+      onClick: () => onRenameFolder(folder),
+    },
+    {
+      label: uiText("Verschieben", "Move"),
+      onClick: () => onChooseFolderDestination(folder),
+    },
+    { label: uiText("Löschen", "Delete"), onClick: () => onDeleteFolder(folder) },
   ];
 
   const fileMenuItems = (file: ProjectFileBrowserFile) => [
-    { label: uiText("Öffnen", "Open"), renderIcon: Icons.Search, onClick: () => onOpenFile(file) },
-    { label: uiText("Herunterladen", "Download"), renderIcon: Icons.Download, onClick: () => onDownloadFile(file) },
-    { label: uiText("Umbenennen", "Rename"), renderIcon: Icons.Edit, onClick: () => onRenameFile(file) },
-    { label: uiText("Verschieben", "Move"), renderIcon: Icons.FolderMove, onClick: () => onChooseFileDestination([file.id]) },
-    { label: uiText("Löschen", "Delete"), renderIcon: Icons.Delete, onClick: () => onDeleteFile(file) },
-  ];
-  const createFileMenuItems = [
-    { label: uiText("Word", "Word"), renderIcon: Icons.Word, onClick: () => onCreateFile("docx", currentFolderId) },
-    { label: uiText("PowerPoint", "PowerPoint"), renderIcon: Icons.Presentation, onClick: () => onCreateFile("pptx", currentFolderId) },
-    { label: uiText("Excel"), renderIcon: Icons.Excel, onClick: () => onCreateFile("xlsx", currentFolderId) },
-    { label: uiText("DrawIO", "DrawIO"), renderIcon: Icons.Diagram, onClick: () => onCreateFile("drawio", currentFolderId) },
+    { label: uiText("Öffnen", "Open"), onClick: () => onOpenFile(file) },
+    {
+      label: uiText("Herunterladen", "Download"),
+      onClick: () => onDownloadFile(file),
+    },
+    { label: uiText("Umbenennen", "Rename"), onClick: () => onRenameFile(file) },
+    {
+      label: uiText("Verschieben", "Move"),
+      onClick: () => onChooseFileDestination([file.id]),
+    },
+    { label: uiText("Löschen", "Delete"), onClick: () => onDeleteFile(file) },
   ];
 
+  const createFileMenuItems = [
+    {
+      label: uiText("Word", "Word"),
+      renderIcon: Icons.Word,
+      showIcon: true,
+      onClick: () => onCreateFile("docx", currentFolderId),
+    },
+    {
+      label: uiText("PowerPoint", "PowerPoint"),
+      renderIcon: Icons.Presentation,
+      showIcon: true,
+      onClick: () => onCreateFile("pptx", currentFolderId),
+    },
+    {
+      label: uiText("Excel"),
+      renderIcon: Icons.Excel,
+      showIcon: true,
+      onClick: () => onCreateFile("xlsx", currentFolderId),
+    },
+    {
+      label: uiText("DrawIO", "DrawIO"),
+      renderIcon: Icons.Diagram,
+      showIcon: true,
+      onClick: () => onCreateFile("drawio", currentFolderId),
+    },
+  ];
 
   return <section
     className={`project-file-browser${dropTargetId === currentFolderId ? " is-drop-target" : ""}`}
@@ -555,7 +587,6 @@ export function ProjectFileBrowser(props: {
             item.onClick();
           }}
         >
-          <item.renderIcon aria-hidden="true" />
           <span>{item.label}</span>
         </button>)}
       </div>,

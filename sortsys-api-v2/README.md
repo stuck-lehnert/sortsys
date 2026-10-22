@@ -31,6 +31,50 @@ The full integration environment uses real PostgreSQL and S3-compatible storage:
 ../scripts/test-api
 ```
 
+## Deploy upgrade guard
+
+The `Upgrade populated deploy databases` CI job runs on `predeploy` separately
+from the normal repository tests. Both jobs must succeed before automatic
+promotion to `deploy` and container publication.
+
+The guard pins the current `deploy` commit, archives its API source, and runs
+that version's development seed against disposable PostgreSQL and S3 services.
+It retains those services and their data while replacing the API with the
+candidate. The populated fixture includes users, customers, projects, products,
+reports, work hours, planning, financial entries, relations, and entity history.
+No production database or production credentials are used.
+
+Before candidate bootstrap, direct SQL captures the original tenant records and
+managed-database metadata. The candidate then applies the production master
+bootstrap and tenant migrations. The tests check original data preservation,
+registered migrations, and idempotence after reconnecting. The running candidate
+must expose the original records through the API, authenticate existing accounts,
+and support updates, creation, deletion, and audit history. The full existing API
+and client checks run afterward. Required upgrade phases fail if their tests are
+missing; an empty test selection cannot satisfy the guard.
+
+Additive schema changes and new rows are accepted. Existing persisted fields
+must remain unchanged, excluding derived search vectors. A migration that
+intentionally transforms existing data needs explicit, reviewed upgrade
+expectations in `rust-api/tests/upgrade_scenarios.rs`; do not remove preservation
+checks to accommodate it.
+
+Promotion checks the pinned deploy revision again and uses an atomic Git lease.
+If `deploy` changes, CI must run against that new baseline. Divergent history and
+superseded `predeploy` candidates are rejected. A missing `deploy` branch fails
+the guard rather than falling back to an empty database.
+
+To run locally with Docker or Podman, fetch `deploy` and pass its exact commit:
+
+```bash
+git fetch origin deploy
+./scripts/test-deploy-upgrade "$(git rev-parse origin/deploy)"
+```
+
+This workflow gates automatic promotion. Repository branch protection must also
+require the upgrade check if direct pushes to `deploy` are allowed by repository
+policy. Changes to GitHub branch protection are not applied by this script.
+
 ## Generated client contract
 
 Procedure names and input/output types are generated from the Rust registry:
@@ -69,12 +113,39 @@ The API reads the following environment variables:
 | `PORT` | no | HTTP port, default `3000` |
 | `NODE_ENV` | no | set to `production` to enable production requirements |
 
-LLM chat and document import use the native MCP connectors from OpenAI or
-Anthropic. Set `LLM_MCP_URL` to a public HTTPS URL such as
-`https://sortsys.example/api/v2/internal/llm/mcp`. Other provider accounts can
-remain stored, but cannot be assigned to these use cases.
+LLM chat and document import support OpenAI and Anthropic through their native
+MCP connectors, and OpenRouter through an application-side MCP bridge. The
+OpenRouter bridge discovers tools from MCP, presents their schemas as function
+tools to the model, and executes every invocation through authenticated MCP.
+It preserves the same chat permissions, proposal confirmation, and product-only
+document-import scope. OpenAI and Anthropic failures do not fall back to this
+bridge.
+
+Set `LLM_MCP_URL` to a public HTTPS URL such as
+`https://sortsys.example/api/v2/internal/llm/mcp`. The API must also be able to
+reach this endpoint when using OpenRouter. Select an OpenRouter model and
+endpoint that support tools; document import additionally requires structured
+outputs and support for any attached images. Unsupported parameters produce an
+error. Other provider accounts can remain stored, but cannot be assigned to
+these use cases.
 
 Each value can instead be mounted at `/run/secrets/SORTSYS_API_V2_<NAME>`.
+
+## MCP document access
+
+Chat exposes `sortsys_search_documents` and `sortsys_read_document` over MCP.
+Both use the signed-in user's tenant and current project-file permissions.
+Search reuses the Documents page's full-text index and returns excerpts and
+preview links. Reading returns bounded Unicode text pages; pass the returned
+revision with each subsequent offset to detect intervening edits. No storage
+credentials, object keys, or presigned download URLs are returned.
+
+Content access uses the existing extracted-text pipeline, currently PDF text and
+scanned-PDF OCR. Other files remain searchable by name. Pending, failed,
+unsupported, or stale extraction is reported without claiming the document is
+empty. These tools are available to chat; document-import MCP remains limited to
+product catalogue searches. Document text and excerpts are untrusted data, not
+instructions to the assistant.
 
 ## Automatic database backups
 

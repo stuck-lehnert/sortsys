@@ -1024,7 +1024,45 @@ async fn search(
 ) -> RpcResult<Vec<ProjectFileSearchResult>> {
     let (auth, pool) = authenticated_pool(state, context).await?;
 
-    queue_pending_pdf_extractions(state, &auth.tenant, &pool, input.project_id).await?;
+    search_in_pool(state, &auth, &pool, input, 0).await
+}
+
+pub(crate) async fn search_documents_for_user(
+    state: &AppState,
+    auth: &AuthResult,
+    query: String,
+    project_id: Option<Id>,
+    offset: i64,
+    limit: i64,
+) -> RpcResult<Vec<ProjectFileSearchResult>> {
+    let mut input = SearchProjectFilesInput {
+        query,
+        project_id,
+        limit,
+    };
+    input.normalize()?;
+
+    if offset < 0 {
+        return Err(bad_request("offset must not be negative"));
+    }
+
+    let pool = state
+        .tenants
+        .tenant_pool(&auth.tenant)
+        .await
+        .map_err(internal)?;
+
+    search_in_pool(state, auth, &pool, input, offset).await
+}
+
+async fn search_in_pool(
+    state: &AppState,
+    auth: &AuthResult,
+    pool: &PgPool,
+    input: SearchProjectFilesInput,
+    offset: i64,
+) -> RpcResult<Vec<ProjectFileSearchResult>> {
+    queue_pending_pdf_extractions(state, &auth.tenant, pool, input.project_id).await?;
 
     let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
     let can_view_all = auth.can_do("view:projects") || auth.can_do("manage:projects");
@@ -1071,7 +1109,7 @@ async fn search(
               )
           )
         ORDER BY rank DESC, file.modified_at DESC, file.id DESC
-        LIMIT $5
+        LIMIT $5 OFFSET $6
         "#,
     )
     .bind(&input.query)
@@ -1079,7 +1117,8 @@ async fn search(
     .bind(user_id)
     .bind(can_view_all)
     .bind(input.limit)
-    .fetch_all(&pool)
+    .bind(offset)
+    .fetch_all(pool)
     .await
     .map_err(internal)?;
 
@@ -1709,9 +1748,9 @@ struct ProjectFileRow {
 
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-struct ProjectFileSearchResult {
-    id: Id,
-    project_id: Id,
+pub(crate) struct ProjectFileSearchResult {
+    pub(crate) id: Id,
+    pub(crate) project_id: Id,
     project_title: String,
     file_name: String,
     mime_type: String,

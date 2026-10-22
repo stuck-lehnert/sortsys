@@ -981,8 +981,17 @@ export const Menu = forwardRef<HTMLUListElement, any>(function Menu(props, ref) 
   return createPortal(node, document.body);
 });
 
-export function MenuItem({ label, renderIcon: Icon, className, onClick, ...props }: any) {
+export function MenuItem({
+  label,
+  renderIcon: Icon,
+  showIcon = false,
+  className,
+  onClick,
+  ...props
+}: any) {
   const context = useContext(MenuContext);
+  const content = label ?? props.children;
+  const iconOnly = content == null;
 
   return (
     <li className={cx("ss-menu__item", className)}>
@@ -994,8 +1003,10 @@ export function MenuItem({ label, renderIcon: Icon, className, onClick, ...props
           context?.close();
         }}
       >
-        {!!Icon && <Icon size={14} className="ss-menu__icon" />}
-        <span>{label ?? props.children}</span>
+        {!!Icon && (showIcon || iconOnly) && (
+          <Icon size={14} className="ss-menu__icon" aria-hidden="true" />
+        )}
+        <span>{content}</span>
       </button>
     </li>
   );

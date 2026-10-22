@@ -10,6 +10,9 @@ echo "Checking coordinated runtime versions"
 node ./scripts/check-runtime-versions.mjs
 node --test ./scripts/check-runtime-versions.test.mjs
 
+echo "Checking deploy-upgrade promotion guards"
+node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs
+
 echo
 echo "Checking office deployment and JWT configuration"
 bun test ./scripts/office-deployment.test.mjs
@@ -55,6 +58,7 @@ echo "Running webapp checks"
   bun run test:report-forms
   bun run test:chat-requests
   bun run test:deployment-planning
+  bun run test:menus
   bun run test:attachments
   bun run test:attachment-selection
   bun run test:error-boundary

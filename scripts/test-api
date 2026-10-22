@@ -8,6 +8,20 @@ source "$SCRIPT_DIR/container-images.sh"
 API_DIR="$ROOT_DIR/sortsys-api-v2"
 JOB_RUNNER_DIR="$ROOT_DIR/sortsys-v2-job_runner"
 
+# An archived deploy checkout is optional; normal fresh-instance CI is unchanged.
+TEST_UPGRADE_FROM_DIR="${TEST_UPGRADE_FROM_DIR:-}"
+TEST_API_START_TIMEOUT="${TEST_API_START_TIMEOUT:-240}"
+TEST_UPGRADE_MANIFEST=""
+
+if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
+  if [ ! -f "$TEST_UPGRADE_FROM_DIR/sortsys-api-v2/rust-api/src/bin/seed_dev.rs" ]; then
+    echo "TEST_UPGRADE_FROM_DIR must contain the deploy workspace and its seed_dev binary" >&2
+    exit 1
+  fi
+
+  TEST_UPGRADE_MANIFEST="/tmp/sortsys-deploy-upgrade.json"
+fi
+
 TEST_RUN_SUFFIX="${TEST_RUN_SUFFIX:-$(date +%s)-$RANDOM}"
 
 TEST_NETWORK="${TEST_NETWORK:-sortsys-test-api-network-${TEST_RUN_SUFFIX}}"
@@ -27,6 +41,7 @@ TEST_JOB_RUNNER_IMAGE="${TEST_JOB_RUNNER_IMAGE:-localhost/sortsys-job-runner-tes
 TEST_GO_IMAGE="${TEST_GO_IMAGE:-$(sortsys_container_image go)}"
 TEST_BUN_IMAGE="${TEST_BUN_IMAGE:-$(sortsys_container_image bun)}"
 TEST_CARGO_TARGET_DIR="${TEST_CARGO_TARGET_DIR:-/tmp/sortsys-api-v2-rust-target}"
+TEST_BASELINE_CARGO_TARGET_DIR="${TEST_BASELINE_CARGO_TARGET_DIR:-${TEST_CARGO_TARGET_DIR}-deploy}"
 TEST_CARGO_REGISTRY_DIR="${TEST_CARGO_REGISTRY_DIR:-/tmp/sortsys-api-v2-cargo-registry}"
 
 TEST_API_PORT="${TEST_API_PORT:-}"
@@ -198,6 +213,10 @@ resolve_ports
 
 mkdir -p "$TEST_CARGO_TARGET_DIR" "$TEST_CARGO_REGISTRY_DIR"
 
+if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
+  mkdir -p "$TEST_BASELINE_CARGO_TARGET_DIR"
+fi
+
 echo "Using test run suffix: ${TEST_RUN_SUFFIX}"
 echo "Using container runtime: ${CONTAINER_RUNTIME}"
 echo "Using test network: ${TEST_NETWORK}"
@@ -316,6 +335,7 @@ wait_for_container_log() {
 
 copy_api_workspace_into_container() {
   local container_name="$1"
+  local source_root="${2:-$ROOT_DIR}"
 
   # Podman requires the destination of a streamed archive to exist already.
   # Include the workspace directory in the archive and extract it below `/`,
@@ -323,7 +343,7 @@ copy_api_workspace_into_container() {
   tar \
     --exclude=sortsys-api-v2/target \
     --exclude=sortsys-api-v2/client/node_modules \
-    -C "$ROOT_DIR" \
+    -C "$source_root" \
     -cf - \
     sortsys-api-v2 |
     "$CONTAINER_RUNTIME" cp - "${container_name}:/"
@@ -447,7 +467,35 @@ start_infra() {
 }
 
 start_api_container() {
+  local source_root="${1:-$ROOT_DIR}"
+  local phase="${2:-candidate}"
+  local cargo_target_dir="$TEST_CARGO_TARGET_DIR"
   local pg_master_dsn="postgres://postgres:${TEST_PG_PASSWORD}@${TEST_PG_CONTAINER}:5432/${TEST_MASTER_DATABASE_NAME}"
+  local ready_pattern='sortsys Rust API listening'
+  local startup_command='
+    set -eu
+    rustup component add rustfmt clippy
+
+    if [ -n "$TEST_UPGRADE_MANIFEST" ]; then
+      bash ./rust-api/tests/run-upgrade-phase capture_deploy_fixture
+      bash ./rust-api/tests/run-upgrade-phase migrate_deploy_fixture
+    fi
+
+    cargo run --locked --package sortsys-api --bin sortsys-api
+  '
+
+  if [ "$phase" = baseline ]; then
+    # Cargo fingerprints can reuse newer artifacts for older archived mtimes.
+    # Never let deploy seeding consume a binary built from candidate sources.
+    cargo_target_dir="$TEST_BASELINE_CARGO_TARGET_DIR"
+    ready_pattern='sortsys deploy upgrade fixture ready'
+    startup_command='
+      set -eu
+      cargo run --locked --package sortsys-api --bin seed_dev
+      echo "sortsys deploy upgrade fixture ready"
+      exec sleep infinity
+    '
+  fi
 
   # Backup scenarios drive due sweeps explicitly to keep fixtures deterministic.
   echo "Starting API test container on port ${TEST_API_PORT}"
@@ -458,11 +506,13 @@ start_api_container() {
     "${runtime_env_args[@]}" \
     --network "$TEST_NETWORK" \
     -p "${TEST_API_PORT}:3000" \
-    -v "${TEST_CARGO_TARGET_DIR}:/sortsys-api-v2/target${runtime_mount_suffix}" \
+    -v "${cargo_target_dir}:/sortsys-api-v2/target${runtime_mount_suffix}" \
     -v "${TEST_CARGO_REGISTRY_DIR}:/usr/local/cargo/registry${runtime_mount_suffix}" \
     -w /sortsys-api-v2 \
     -e PORT="3000" \
     -e AUTO_BACKUPS_ENABLED="false" \
+    -e TEST_UPGRADE_MANIFEST="$TEST_UPGRADE_MANIFEST" \
+    -e TEST_API_BASE_URL="http://127.0.0.1:3000" \
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$TEST_JWT_SECRET" \
     -e LLM_ENCRYPTION_KEY="$TEST_LLM_ENCRYPTION_KEY" \
@@ -490,12 +540,13 @@ start_api_container() {
     -e TEST_S3_SECRET_ACCESS_KEY="$TEST_S3_SECRET_ACCESS_KEY" \
     -e TEST_S3_FORCE_PATH_STYLE="true" \
     "$TEST_API_TEST_IMAGE" \
-    sh -c 'set -e; rustup component add rustfmt clippy; cargo run --locked --package sortsys-api --bin sortsys-api' >/dev/null
+    sh -c "$startup_command" >/dev/null
 
-  copy_api_workspace_into_container "$TEST_API_CONTAINER"
+  copy_api_workspace_into_container "$TEST_API_CONTAINER" "$source_root"
   "$CONTAINER_RUNTIME" start "$TEST_API_CONTAINER" >/dev/null
 
-  if ! wait_for_container_log "$TEST_API_CONTAINER" 'sortsys Rust API listening' "API" 240; then
+  if ! wait_for_container_log \
+    "$TEST_API_CONTAINER" "$ready_pattern" "API ($phase)" "$TEST_API_START_TIMEOUT"; then
     exit 1
   fi
 }
@@ -638,8 +689,22 @@ trap on_exit EXIT
 
 start_infra
 initialize_master_database
+
+if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
+  echo "Populating the instance using the deploy revision"
+  start_api_container "$TEST_UPGRADE_FROM_DIR" baseline
+  "$CONTAINER_RUNTIME" rm -f "$TEST_API_CONTAINER" >/dev/null
+fi
+
+# PostgreSQL and S3 remain intact when replacing the old API with the candidate.
 start_api_container
 check_test_connectivity
+
+if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
+  echo "Checking original deploy records and writes through the upgraded API"
+  api_exec bash ./rust-api/tests/run-upgrade-phase exercise_upgraded_deploy_fixture
+fi
+
 start_job_runner_containers
 run_api_tests "$@"
 

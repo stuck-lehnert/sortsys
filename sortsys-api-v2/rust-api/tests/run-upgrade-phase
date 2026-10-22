@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PHASE="${1:-}"
+
+case "$PHASE" in
+  capture_deploy_fixture|migrate_deploy_fixture|exercise_upgraded_deploy_fixture) ;;
+  *)
+    echo "Unknown deploy-upgrade test phase: $PHASE" >&2
+    exit 1
+    ;;
+esac
+
+LISTING="$(mktemp)"
+trap 'rm -f "$LISTING"' EXIT
+
+# libtest returns success for an empty filter. Require the exact ignored test
+# to exist before executing it, so a rename cannot silently disable the guard.
+cargo test --locked --test upgrade_scenarios "$PHASE" \
+  -- --ignored --exact --list > "$LISTING"
+
+if ! grep -Fxq "${PHASE}: test" "$LISTING"; then
+  echo "Required deploy-upgrade test is missing: $PHASE" >&2
+  exit 1
+fi
+
+cargo test --locked --test upgrade_scenarios "$PHASE" \
+  -- --ignored --exact --nocapture

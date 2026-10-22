@@ -1,4 +1,7 @@
-//! Provider-native MCP connectors for chat and document import.
+//! MCP transports for chat and document import.
+
+mod mcp;
+mod openrouter;
 
 use std::time::Duration;
 
@@ -164,6 +167,9 @@ pub async fn complete(
 
             (content, usage)
         }
+        "openrouter" => openrouter::complete(configuration, messages, &prompt, url, &token, scope)
+            .await
+            .map_err(ProviderError::into_rpc)?,
         _ => unreachable!("MCP provider was validated"),
     };
 
@@ -281,6 +287,7 @@ pub async fn parse_document_scan(
     match configuration.provider.as_str() {
         "openai" => openai_scan(configuration, &input, &prompt, url, &token).await,
         "anthropic" => anthropic_scan(configuration, &input, &prompt, url, &token).await,
+        "openrouter" => openrouter::scan(configuration, &input, &prompt, url, &token).await,
         _ => unreachable!("MCP provider was validated"),
     }
 }
@@ -597,14 +604,14 @@ fn scan_result_schema() -> Value {
 }
 
 pub(super) fn supports_mcp(provider: &str) -> bool {
-    matches!(provider, "openai" | "anthropic")
+    matches!(provider, "openai" | "anthropic" | "openrouter")
 }
 
 fn require_mcp_url<'a>(configured: Option<&'a str>, provider: &str) -> RpcResult<&'a str> {
     if !supports_mcp(provider) {
         return Err(RpcError::new(
             ErrorCode::PreconditionFailed,
-            "This provider has no native MCP connector; select OpenAI or Anthropic",
+            "This provider has no MCP transport; select OpenAI, Anthropic, or OpenRouter",
         ));
     }
 
@@ -1108,19 +1115,19 @@ mod tests {
     }
 
     #[test]
-    fn every_llm_use_case_requires_a_native_mcp_connector() {
-        for provider in ["openai", "anthropic"] {
+    fn every_llm_use_case_requires_a_supported_mcp_transport() {
+        for provider in ["openai", "anthropic", "openrouter"] {
             assert!(super::require_mcp_url(None, provider).is_err());
             assert!(super::require_mcp_url(Some("  "), provider).is_err());
             assert!(super::require_mcp_url(Some("https://sortsys.test/mcp"), provider).is_ok());
         }
 
-        for provider in ["meta", "openrouter", "deepseek", "custom", "unknown"] {
+        for provider in ["meta", "deepseek", "custom", "unknown"] {
             let error =
                 super::require_mcp_url(Some("https://sortsys.test/mcp"), provider).unwrap_err();
 
             assert_eq!(error.code, crate::error::ErrorCode::PreconditionFailed);
-            assert!(error.message.contains("native MCP connector"));
+            assert!(error.message.contains("MCP transport"));
         }
     }
 

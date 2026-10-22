@@ -70,10 +70,51 @@ jobs:
           CONTAINER_RUNTIME: docker
         run: ./scripts/ci
 
+  upgrade:
+    name: Upgrade populated deploy databases
+    if: github.ref == 'refs/heads/predeploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      deploy_sha: ${{ steps.deploy.outputs.sha }}
+
+    steps:
+      - name: Check out candidate revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Pin the current deploy revision
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/deploy:refs/remotes/origin/deploy
+          echo "sha=$(git rev-parse --verify refs/remotes/origin/deploy)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache upgrade builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            /tmp/sortsys-api-v2-cargo-registry
+            /tmp/sortsys-api-v2-rust-target
+            /tmp/sortsys-api-v2-rust-target-deploy
+          key: upgrade-rust-1.99-${{ runner.os }}-${{ hashFiles('sortsys-api-v2/Cargo.lock') }}
+          restore-keys: |
+            upgrade-rust-1.99-${{ runner.os }}-
+            rust-1.99-${{ runner.os }}-
+
+      - name: Migrate populated deploy instance and run candidate tests
+        env:
+          CONTAINER_RUNTIME: docker
+          DEPLOY_BASE_SHA: ${{ steps.deploy.outputs.sha }}
+        run: ./scripts/test-deploy-upgrade "$DEPLOY_BASE_SHA"
+
   promote:
     name: Promote predeploy to deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
-    needs: test
+    needs: [test, upgrade]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -84,22 +125,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fast-forward deploy
+      - name: Fast-forward deploy from the tested baseline
         shell: bash
-        run: |
-          set -euo pipefail
-
-          if git ls-remote --exit-code --heads origin deploy >/dev/null; then
-            git fetch --no-tags origin refs/heads/deploy:refs/remotes/origin/deploy
-
-            if ! git merge-base --is-ancestor origin/deploy "$GITHUB_SHA"; then
-              echo "predeploy must contain the current deploy history." >&2
-              echo "Revert unwanted releases on master instead of rewriting deployment history." >&2
-              exit 1
-            fi
-          fi
-
-          git push origin "$GITHUB_SHA:refs/heads/deploy"
+        env:
+          DEPLOY_BASE_SHA: ${{ needs.upgrade.outputs.deploy_sha }}
+        run: ./scripts/promote-predeploy "$GITHUB_SHA" "$DEPLOY_BASE_SHA"
 
   publish:
     name: Publish promoted containers
