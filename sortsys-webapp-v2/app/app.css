@@ -628,6 +628,14 @@ textarea {
   min-inline-size: 0;
 }
 
+.ss-data-table td.my-table-cell--wrap {
+  inline-size: 100%;
+  max-inline-size: 0;
+  overflow-wrap: anywhere;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+
 .my-table-state-cell {
   block-size: 7rem;
   padding: 0 !important;

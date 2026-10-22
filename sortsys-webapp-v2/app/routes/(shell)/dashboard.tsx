@@ -3,15 +3,24 @@ import type { Route } from "./+types/dashboard";
 import { Heading, Tile } from "@sortsys/react-components";
 import { MyHeader } from "~/components/MyHeader";
 import { MyButton } from "~/components/MyButton";
+import { MyCallout } from "~/components/MyCallout";
 import { activityActionLabel, activityActorLabel, activityResourceLabel, activityTitle } from "~/lib/activity";
 import type { QueryResult } from "@sortsys/v2-client";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
 import { visitLabel } from "~/lib/visitLabels";
+import { createActivityHistory } from "~/lib/activityHistory";
 import { dailyReportDayKey } from "~/lib/tiles";
 import { useUserActions, type UserAction } from "~/lib/userActions";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Link } from "react-router";
 import { Icons, type Icon } from "~/lib/icons";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -34,6 +43,9 @@ type VisitHistoryItem = {
 };
 
 type ActivityItem = QueryResult<'personalization.activity.list'>[number];
+
+const COLLAPSED_ACTIVITY_COUNT = 6;
+const ACTIVITY_PAGE_SIZE = 25;
 
 type PinnedVisit = Pick<VisitHistoryItem, 'path' | 'title' | 'visitedAt'>;
 
@@ -175,21 +187,73 @@ export default function DashboardPage() {
   const [visitHistory] = useClientStream<VisitHistoryItem[] | null, any>(() => {
     return client.streamQuery('personalization.visits.list', { limit: 30 });
   }, []);
-  const [activity] = useClientStream<ActivityItem[] | null, any>(() => {
-    return client.streamQuery('personalization.activity.list', { limit: 25, latestPerResource: true });
+  const [activity, activityError] = useClientStream<ActivityItem[] | null, any>(() => {
+    return client.streamQuery('personalization.activity.list', {
+      limit: ACTIVITY_PAGE_SIZE,
+      latestPerResource: true,
+    });
   }, []);
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const activityId = useId();
+  const activityRef = useRef<HTMLDivElement>(null);
+  const activityHistory = useMemo(
+    () => createActivityHistory(activity ?? [], ACTIVITY_PAGE_SIZE),
+    [activity, pinnedVisitsStorageKey],
+  );
+  const activityState = useSyncExternalStore(
+    activityHistory.subscribe,
+    activityHistory.getSnapshot,
+    activityHistory.getSnapshot,
+  );
 
   const quickActions = useMemo(() => {
     return pickQuickActions(visibleActions, actionHistory);
   }, [visibleActions, actionHistory]);
 
   const recentVisits = useMemo(() => uniqueRecentVisits(visitHistory), [visitHistory, locale]);
-  const groupedActivity = useMemo(() => groupActivity(activity), [activity, locale]);
+  const groupedActivity = useMemo(() => {
+    const visible = showAllActivity
+      ? activityState.items
+      : activityState.items.slice(0, COLLAPSED_ACTIVITY_COUNT);
+
+    return groupActivity(visible);
+  }, [activityState.items, showAllActivity, locale]);
 
   useEffect(() => {
     if (typeof window !== 'object') return;
     window.localStorage.setItem(pinnedVisitsStorageKey, JSON.stringify(pinnedVisits));
   }, [pinnedVisits, pinnedVisitsStorageKey]);
+
+  useEffect(() => {
+    setShowAllActivity(false);
+  }, [pinnedVisitsStorageKey]);
+
+  function toggleActivityDetails() {
+    const scrollBack = showAllActivity
+      && (activityRef.current?.getBoundingClientRect().top ?? 0) < 0;
+
+    setShowAllActivity(value => !value);
+
+    if (scrollBack) {
+      requestAnimationFrame(() => activityRef.current?.scrollIntoView({ block: 'start' }));
+    }
+  }
+
+  async function loadOlderActivity() {
+    await activityHistory.loadOlder(async cursor => {
+      const [page, error] = await client.query('personalization.activity.list', {
+        limit: ACTIVITY_PAGE_SIZE,
+        latestPerResource: true,
+        cursor,
+      });
+
+      if (error || !page) {
+        throw error ?? new Error('Activity page is missing');
+      }
+
+      return page;
+    });
+  }
 
   function isPinned(path: string) {
     return pinnedVisits.some(item => item.path === path);
@@ -362,7 +426,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {!!groupedActivity.length ? <div className="dashboard-activity-groups">
+      {activityError ? <MyCallout icon={Icons.Info} color="amber">
+        {uiText('Aktivitäten konnten nicht geladen werden.', 'Activities could not be loaded.')}
+      </MyCallout> : !!groupedActivity.length ? <div
+        id={activityId}
+        ref={activityRef}
+        className="dashboard-activity-groups"
+      >
         {groupedActivity.map(group => <section key={group.key} className="dashboard-activity-group">
           <div className="dashboard-activity-group-head">
             {group.href ? <Link to={group.href}>{group.label}</Link> : <span>{group.label}</span>}
@@ -398,6 +468,37 @@ export default function DashboardPage() {
       </div> : activity === null
         ? <div className="dashboard-activity-loading"><span className="my-table-state__spinner" aria-hidden="true" />{uiText('Aktivitäten werden geladen …', 'Loading activity …')}</div>
         : <p className="light">{uiText("Noch keine Aktivität sichtbar.", "No activity is visible yet.")}</p>}
+      {!activityError && activityState.items.length > COLLAPSED_ACTIVITY_COUNT && <div
+        className="entity-activity-actions"
+      >
+        {showAllActivity && !activityState.complete && <MyButton
+          kind="secondary"
+          size="sm"
+          renderIcon={Icons.Plus}
+          loading={activityState.loading}
+          onClick={() => void loadOlderActivity()}
+        >{uiText('Ältere Aktivitäten laden', 'Load older activities')}</MyButton>}
+        <MyButton
+          kind="ghost"
+          size="sm"
+          renderIcon={Icons.AccordionExpanded}
+          className={showAllActivity ? 'entity-activity-collapse' : undefined}
+          aria-expanded={showAllActivity}
+          aria-controls={activityId}
+          onClick={toggleActivityDetails}
+        >{showAllActivity
+            ? uiText('Weniger anzeigen', 'Show less')
+            : uiText('Mehr anzeigen', 'Show more')}</MyButton>
+      </div>}
+      {showAllActivity && activityState.error && <div
+        className="entity-activity-error"
+        role="alert"
+      >
+        {uiText(
+          'Ältere Aktivitäten konnten nicht geladen werden.',
+          'Older activities could not be loaded.',
+        )}
+      </div>}
     </Tile>
   </>;
 };

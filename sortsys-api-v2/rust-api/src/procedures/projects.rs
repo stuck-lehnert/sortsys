@@ -3,7 +3,7 @@
 //! Scheduling, contacts, files, reports, and costs live in focused sibling
 //! modules so this file remains easy to navigate.
 
-use std::sync::Arc;
+use std::{cmp::Reverse, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -142,7 +142,27 @@ async fn list(
     .await
     .map_err(internal)?;
 
-    Ok(rows.into_iter().map(Project::from).collect())
+    let mut projects: Vec<Project> = rows.into_iter().map(Project::from).collect();
+
+    if input.order_by == Some(ProjectListOrder::Activity) {
+        let activity = super::personalization::latest_project_activity(&pool, &auth).await?;
+
+        // Preserve title order for ties and for callers that omit orderBy.
+        projects.sort_by_key(|project| {
+            let latest_change = activity
+                .get(&project.id.0)
+                .copied()
+                .unwrap_or(project.created_at);
+
+            Reverse(
+                latest_change
+                    .max(project.modified_at)
+                    .max(project.created_at),
+            )
+        });
+    }
+
+    Ok(projects)
 }
 
 async fn get(state: &AppState, context: &RequestContext, id: Id) -> RpcResult<Project> {
@@ -386,6 +406,18 @@ struct ProjectListInput {
     #[serde(default)]
     #[ts(optional = nullable)]
     customer_id: Option<Id>,
+
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    order_by: Option<ProjectListOrder>,
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+enum ProjectListOrder {
+    Title,
+    Activity,
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -535,7 +567,25 @@ struct ProjectWritable {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProjectCreateInput, ProjectPatch};
+    use super::{ProjectCreateInput, ProjectListInput, ProjectListOrder, ProjectPatch};
+
+    #[test]
+    fn project_list_order_is_optional_and_rejects_unknown_values() {
+        let default: ProjectListInput = serde_json::from_value(serde_json::json!({})).unwrap();
+        let activity: ProjectListInput = serde_json::from_value(serde_json::json!({
+            "orderBy": "activity"
+        }))
+        .unwrap();
+
+        assert_eq!(default.order_by, None);
+        assert_eq!(activity.order_by, Some(ProjectListOrder::Activity));
+        assert!(
+            serde_json::from_value::<ProjectListInput>(serde_json::json!({
+                "orderBy": "unknown"
+            }))
+            .is_err()
+        );
+    }
 
     #[test]
     fn normalizes_project_titles_and_rejects_empty_updates() {

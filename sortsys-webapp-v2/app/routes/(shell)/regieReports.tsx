@@ -1,20 +1,16 @@
 import { useNavigate } from "react-router";
-import { MyButton } from "~/components/MyButton";
 import { MyHeader } from "~/components/MyHeader";
 import { MyLink } from "~/components/MyLink";
 import { MyTable } from "~/components/MyTable";
 import { TableExportActions } from "~/components/TableExportActions";
 import { useClientStream } from "~/hooks/useClientStream";
-import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
-import { Icons } from "~/lib/icons";
 import { uiText } from "~/lib/i18n";
 import { buildRegieReportListExportRows } from "~/lib/regieReportList";
 import { RegieReportTile } from "~/lib/tiles";
 import { isoWeekLabel, startOfIsoWeek } from "~/lib/week";
-import { showCreateRegieReportModal } from "~/modals/regieReports";
 
 export function meta() {
   return [{ title: uiText("Regieberichte", "Time-and-material reports") }];
@@ -22,7 +18,6 @@ export function meta() {
 
 export default function RegieReportsPage() {
   const navigate = useNavigate();
-  const modals = useMyModals();
   const sessionInfo = useSessionInfo();
   const [reports, reportsError] = useClientStream(() => client.streamQuery('regieReports.list', {}), []);
   const canViewProjects = sessionInfo.canDo('view:projects');
@@ -38,11 +33,6 @@ export default function RegieReportsPage() {
     <MyHeader
       title={uiText("Regieberichte", "Time-and-material reports")}
       actions={<div className="list-page-actions">
-        {sessionInfo.canDo('manage:regieReports') && <MyButton
-          kind="secondary"
-          renderIcon={Icons.Plus}
-          onClick={() => showCreateRegieReportModal(modals)}
-        >{uiText("Regiebericht erstellen", "Create time-and-material report")}</MyButton>}
         <TableExportActions
           title={uiText("Regieberichte", "Time-and-material reports")}
           fileName="Regieberichte"
@@ -94,6 +84,7 @@ export default function RegieReportsPage() {
           label: uiText("Beschreibung"),
           render: report => report.summary ?? '',
           sortKey: report => (report.summary ?? '').toLowerCase(),
+          wrap: true,
         },
       ]}
       renderSmallViewport={report => <RegieReportTile report={report} omit={canViewProjects ? [] : ['project']} />}

@@ -54,6 +54,7 @@ echo "Running webapp checks"
   bun run test:activity
   bun run test:report-forms
   bun run test:chat-requests
+  bun run test:deployment-planning
   bun run test:attachments
   bun run test:attachment-selection
   bun run test:error-boundary

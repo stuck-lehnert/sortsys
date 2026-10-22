@@ -56,6 +56,7 @@ export default function CustomersPage() {
           label: uiText("Name"),
           render: row => row.name,
           sortKey: row => row.name.toLowerCase(),
+          wrap: true,
         },
         {
           label: uiText("Anschrift"),

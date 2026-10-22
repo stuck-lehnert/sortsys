@@ -761,7 +761,12 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.list",
         kind: ProcedureKind::Query,
-        input_ts: "{ search?: undefined | null | string; finished?: undefined | null | false | true; customerId?: undefined | null | string; }",
+        input_ts: concat!(
+            "{ search?: undefined | null | string;",
+            " finished?: undefined | null | false | true;",
+            " customerId?: undefined | null | string;",
+            " orderBy?: undefined | null | \"title\" | \"activity\"; }",
+        ),
         output_ts: "{ id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; }[]",
     },
     RawContractSpec {

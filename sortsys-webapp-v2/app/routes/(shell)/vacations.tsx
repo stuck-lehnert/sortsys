@@ -60,6 +60,10 @@ export default function VacationsPage() {
   const sessionInfo = useSessionInfo();
   const canManageVacations = sessionInfo.canDo('manage:userVacations' as any);
   const canViewUsers = sessionInfo.canDo('view:users');
+  const createAbsenceLabel = canManageVacations
+    ? uiText('Abwesenheit eintragen', 'Add absence')
+    : uiText('Abwesenheit beantragen', 'Request absence');
+
   const [reloadCounter, setReloadCounter] = useState(0);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -237,9 +241,12 @@ export default function VacationsPage() {
             { header: uiText("Entschieden am"), value: row => row.decidedAt },
           ]}
         />
-        <MyButton renderIcon={Icons.Plus} onClick={showAbsenceForm}>
-          {canManageVacations ? uiText('Abwesenheit eintragen', 'Add absence') : uiText('Abwesenheit beantragen', 'Request absence')}
-        </MyButton>
+        <MyButton
+          renderIcon={Icons.Plus}
+          onClick={showAbsenceForm}
+          aria-label={createAbsenceLabel}
+          title={createAbsenceLabel}
+        />
       </>}
     />
 

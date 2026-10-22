@@ -12,6 +12,7 @@ export interface MyTableColumn<RowT extends object> {
   label: string;
   render: (row: RowT) => PromiseOr<ReactNode>;
   sortKey?: ((row: RowT) => string) | ((row: RowT) => number);
+  wrap?: boolean;
 }
 
 export function MyTable<RowT extends Record<string, any> & { id: string | number | bigint; }>(_props: {
@@ -276,7 +277,10 @@ export function MyTable<RowT extends Record<string, any> & { id: string | number
           tabIndex={onRowClick ? 0 : undefined}
           className={onRowClick ? 'my-table-row--interactive' : undefined}
         >
-          {cells.map((cell, i) => <TableCell key={i}>{cell}</TableCell>)}
+          {cells.map((cell, i) => <TableCell
+            key={i}
+            className={columns[i].wrap ? 'my-table-cell--wrap' : undefined}
+          >{cell}</TableCell>)}
         </TableRow>)}
       </TableBody>
     </Table>

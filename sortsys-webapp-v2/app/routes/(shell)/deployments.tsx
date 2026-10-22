@@ -20,6 +20,7 @@ import type { Project, ProjectDeployment, User } from "~/type-helpers";
 import { TableExportActions } from "~/components/TableExportActions";
 import type { MutateInput } from "@sortsys/v2-client";
 import { isoWeekInfo } from "~/lib/week";
+import { addRecentPlanningProjects } from "~/lib/deploymentPlanning";
 import { showCreateAbsenceModal } from "~/modals/absences";
 
 type ViewMode = 'day' | 'week';
@@ -140,7 +141,10 @@ export default function DeploymentsPage() {
     return range.endExclusive;
   }, [range.endExclusive, range.start, showWeekend, viewMode]);
 
-  const [projects, projectsError] = useClientStream(() => client.streamQuery('projects.list', {}), []);
+  const [projects, projectsError] = useClientStream(
+    () => client.streamQuery('projects.list', { orderBy: 'activity' }),
+    [],
+  );
   const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {
     includeArchived: canViewAllUsers ? true : undefined,
   }), [canViewAllUsers]);
@@ -421,6 +425,10 @@ export default function DeploymentsPage() {
         return (deploymentsByProjectId.get(row.id) ?? []).some(item => deploymentOverlapsWindow(item, range.start, visibleRangeEndExclusive))
           || (unavailabilityByProjectId.get(row.id) ?? []).some(period => periodOverlapsWindow(period, range.start, visibleRangeEndExclusive));
       });
+
+      if (rowMode === 'project') {
+        values = addRecentPlanningProjects(values, projects ?? []);
+      }
     }
 
     if (normalizedSearch) {

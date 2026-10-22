@@ -202,6 +202,58 @@ async fn entity_history_retains_every_change_actor_deletion_and_rollback() {
             .collect::<Vec<_>>()
     );
 
+    // Dashboard pages must deduplicate resources before applying the cursor.
+    let overview = rpc
+        .query(
+            "personalization.activity.list",
+            json!({"latestPerResource": true, "limit": 50}),
+            Some(token),
+        )
+        .await;
+    let overview = overview.as_array().unwrap();
+
+    assert!(!overview.is_empty() && overview.len() < 50);
+    assert_eq!(
+        overview
+            .iter()
+            .filter(|event| event["resourceId"] == project_id && event["resourceType"] == "project")
+            .count(),
+        1
+    );
+
+    let mut overview_cursor: Option<String> = None;
+    let mut overview_ids = Vec::new();
+
+    loop {
+        let page = rpc
+            .query(
+                "personalization.activity.list",
+                json!({
+                    "latestPerResource": true, "limit": 1, "cursor": overview_cursor,
+                }),
+                Some(token),
+            )
+            .await;
+        let Some(event) = page.as_array().unwrap().first() else {
+            break;
+        };
+
+        let id = event["id"].as_str().unwrap().to_owned();
+
+        overview_cursor = Some(id.clone());
+        overview_ids.push(id);
+
+        assert!(overview_ids.len() <= overview.len());
+    }
+
+    assert_eq!(
+        overview_ids,
+        overview
+            .iter()
+            .map(|event| event["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    );
+
     let other_id: i64 = sqlx::query_scalar("INSERT INTO users (username, first_name, password, deactivated_at) VALUES ('history.viewer', 'History Viewer', $1, NULL) RETURNING id")
         .bind(hash(&fixture.admin_password, 4).unwrap()).fetch_one(&fixture.tenant_pool).await.unwrap();
     let other_login = rpc.mutation("auth.login", json!({
@@ -3421,6 +3473,184 @@ async fn tool_tracking_transfers_and_inventories_use_real_postgres() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn project_list_activity_order_uses_visible_related_changes() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        eprintln!("skipping project activity order: live infrastructure is not configured");
+        return;
+    };
+
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url);
+    let login = rpc
+        .mutation(
+            "auth.login",
+            json!({
+                "tenant": fixture.tenant,
+                "username": fixture.admin_username,
+                "password": fixture.admin_password,
+            }),
+            None,
+        )
+        .await;
+    let token = login["token"].as_str().unwrap();
+    let mut projects = Vec::new();
+
+    for title in [
+        "Alpha Oldest Site",
+        "Zulu Planned Site",
+        "Hidden Project",
+        "Finished Project",
+    ] {
+        let created = rpc
+            .mutation("projects.create", json!({ "title": title }), Some(token))
+            .await;
+
+        projects.push(created["id"].as_str().unwrap().to_owned());
+    }
+
+    rpc.mutation("projects.finish", json!({ "id": projects[3] }), Some(token))
+        .await;
+
+    let member_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO users (username, first_name, password, deactivated_at) \
+         VALUES ('planning.member', 'Planning Member', $1, NULL) RETURNING id",
+    )
+    .bind(hash(&fixture.admin_password, 4).unwrap())
+    .fetch_one(&fixture.tenant_pool)
+    .await
+    .unwrap();
+
+    for project_id in &projects[..2] {
+        sqlx::query(
+            "INSERT INTO project_user_assignments (project_id, user_id, type) \
+             VALUES ($1, $2, 'member')",
+        )
+        .bind(Id::decode(project_id).unwrap().0)
+        .bind(member_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    }
+
+    let member_login = rpc
+        .mutation(
+            "auth.login",
+            json!({
+                "tenant": fixture.tenant,
+                "username": "planning.member",
+                "password": fixture.admin_password,
+            }),
+            None,
+        )
+        .await;
+    let member_token = member_login["token"].as_str().unwrap();
+    let member_before = rpc
+        .query(
+            "projects.list",
+            json!({ "orderBy": "activity" }),
+            Some(member_token),
+        )
+        .await;
+
+    assert_eq!(member_before[0]["id"], projects[1]);
+    assert_eq!(member_before[1]["id"], projects[0]);
+    assert_eq!(member_before.as_array().unwrap().len(), 2);
+
+    let before = rpc
+        .query("projects.get", json!({ "id": projects[0] }), Some(token))
+        .await;
+
+    // An older project becomes recent through a report, not a project edit.
+    rpc.mutation(
+        "projects.dailyReports.create",
+        json!({
+            "projectId": projects[0],
+            "day": "2020-01-01",
+            "summary": "Recent report on an older active project",
+            "workHours": [],
+        }),
+        Some(token),
+    )
+    .await;
+
+    let after = rpc
+        .query("projects.get", json!({ "id": projects[0] }), Some(token))
+        .await;
+    let recent = rpc
+        .query(
+            "projects.list",
+            json!({ "orderBy": "activity", "finished": false }),
+            Some(token),
+        )
+        .await;
+
+    assert_eq!(after["modifiedAt"], before["modifiedAt"]);
+    assert_eq!(recent[0]["id"], projects[0]);
+    assert_eq!(recent.as_array().unwrap().len(), 3);
+    assert!(
+        recent
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|project| project["finishedAt"].is_null())
+    );
+
+    // A member without report access must not be ranked by that hidden event.
+    let member_after = rpc
+        .query(
+            "projects.list",
+            json!({ "orderBy": "activity" }),
+            Some(member_token),
+        )
+        .await;
+
+    assert_eq!(member_after, member_before);
+
+    let default_order = rpc.query("projects.list", json!({}), Some(token)).await;
+    let title_order = rpc
+        .query("projects.list", json!({ "orderBy": "title" }), Some(token))
+        .await;
+    let titles = default_order
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|project| project["title"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(default_order, title_order);
+    assert_eq!(
+        titles,
+        [
+            "Alpha Oldest Site",
+            "Finished Project",
+            "Hidden Project",
+            "Zulu Planned Site"
+        ]
+    );
+
+    let searched = rpc
+        .query(
+            "projects.list",
+            json!({ "orderBy": "activity", "finished": false, "search": "Alpha" }),
+            Some(token),
+        )
+        .await;
+
+    assert_eq!(searched.as_array().unwrap().len(), 1);
+    assert_eq!(searched[0]["id"], projects[0]);
+
+    rpc.expect_error(
+        "projects.list",
+        Method::GET,
+        json!({ "orderBy": "unknown" }),
+        Some(token),
+        "BAD_REQUEST",
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn project_schedule_reports_and_financial_entries_use_real_postgres() {
     let Some(environment) = TestEnvironment::from_env() else {

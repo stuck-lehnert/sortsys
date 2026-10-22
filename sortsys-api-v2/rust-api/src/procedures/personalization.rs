@@ -1,6 +1,6 @@
 //! Recent activity, visit history, and quick-action history.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -231,21 +231,9 @@ async fn list_activity(
     input: ActivityListInput,
 ) -> RpcResult<Vec<Activity>> {
     let limit = input.limit.unwrap_or(25).clamp(1, 50);
-    let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
-    let resource_type = input
-        .resource_type
-        .as_ref()
-        .map(ActivityResourceType::as_str);
-    let resource_id = input.resource_id.map(|id| id.0);
-    let context_id = input.context_id.map(|id| id.0);
 
-    let supervised_users: Vec<i64> = super::vacations::supervised_user_ids(pool, user_id)
-        .await?
-        .into_iter()
-        .collect();
-
-    // Deduplicate only the dashboard overview, after applying visibility. Entity
-    // timelines and cursor pages retain every individual audit event.
+    // Dashboard pages deduplicate visible resources before applying the cursor.
+    // Entity timelines retain every individual audit event.
     let selection = if input.latest_per_resource.unwrap_or(false) {
         "SELECT * FROM (
             SELECT DISTINCT ON (resource_type, resource_id) * FROM visible
@@ -254,7 +242,62 @@ async fn list_activity(
     } else {
         "SELECT * FROM visible"
     };
-    let sql = format!("{ACTIVITY_SQL} {selection} ORDER BY occurred_at DESC, id DESC LIMIT $16");
+
+    select_activity(pool, auth, input, selection, Some(limit)).await
+}
+
+pub(super) async fn latest_project_activity(
+    pool: &PgPool,
+    auth: &AuthResult,
+) -> RpcResult<HashMap<i64, DateTime<Utc>>> {
+    // Related reports and files count only when their activity is visible to
+    // this reader. Group after the same permission checks as the timelines.
+    let selection = "SELECT * FROM (
+        SELECT DISTINCT ON (COALESCE(context_id, resource_id)) * FROM visible
+        WHERE resource_type = 'project' OR context_id IS NOT NULL
+        ORDER BY COALESCE(context_id, resource_id), occurred_at DESC, id DESC
+    ) AS latest";
+    let activity =
+        select_activity(pool, auth, ActivityListInput::default(), selection, None).await?;
+
+    Ok(activity
+        .into_iter()
+        .map(|item| {
+            let project_id = item.context_id.unwrap_or(item.resource_id);
+
+            (project_id.0, item.occurred_at)
+        })
+        .collect())
+}
+
+async fn select_activity(
+    pool: &PgPool,
+    auth: &AuthResult,
+    input: ActivityListInput,
+    selection: &str,
+    limit: Option<i64>,
+) -> RpcResult<Vec<Activity>> {
+    let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
+    let resource_type = input
+        .resource_type
+        .as_ref()
+        .map(ActivityResourceType::as_str);
+    let resource_id = input.resource_id.map(|id| id.0);
+    let context_id = input.context_id.map(|id| id.0);
+    let supervised_users: Vec<i64> = super::vacations::supervised_user_ids(pool, user_id)
+        .await?
+        .into_iter()
+        .collect();
+    let sql = format!(
+        r#"
+        {ACTIVITY_SQL}
+        {selection}
+        WHERE ($18::bigint IS NULL OR (occurred_at, id) < (
+            SELECT occurred_at, id FROM entity_changes WHERE id = $18
+        ))
+        ORDER BY occurred_at DESC, id DESC LIMIT $16
+        "#
+    );
 
     let rows = sqlx::query_as::<_, ActivityRow>(&sql)
         .bind(user_id)
@@ -391,9 +434,6 @@ const ACTIVITY_SQL: &str = r#"
       )
       AND ($14::bigint IS NULL OR (change.context_id = $14
           AND ($2 OR context_assignment.user_id IS NOT NULL)))
-      AND ($18::bigint IS NULL OR (change.occurred_at, change.id) < (
-          SELECT occurred_at, id FROM entity_changes WHERE id = $18
-      ))
     )
 "#;
 

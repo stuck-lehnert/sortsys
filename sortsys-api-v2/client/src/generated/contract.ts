@@ -104,7 +104,7 @@ export type QueryInputs = {
   "projects.files.officeConfig": { projectId: Id, fileId: Id, };
   "projects.files.search": { query: string, projectId?: Id | null, limit: bigint, };
   "projects.get": { id: string; };
-  "projects.list": { search?: undefined | null | string; finished?: undefined | null | false | true; customerId?: undefined | null | string; };
+  "projects.list": { search?: undefined | null | string; finished?: undefined | null | false | true; customerId?: undefined | null | string; orderBy?: undefined | null | "title" | "activity"; };
   "projects.unavailability.list": { from?: unknown; to?: unknown; projectId?: undefined | null | string; };
   "regieReports.costs.get": { id: string; };
   "regieReports.get": { id: string; };

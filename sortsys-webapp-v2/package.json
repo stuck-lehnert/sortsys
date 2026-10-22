@@ -19,6 +19,8 @@
       "bun test app/lib/activity*.test.mjs app/components/ActivityReference.test.mjs",
     "test:report-forms": "bun test app/lib/reportForm.test.mjs",
     "test:chat-requests": "bun test app/lib/chatRequests.test.mjs",
+    "test:deployment-planning": "bun test app/lib/deploymentPlanning.test.mjs",
+    "test:table": "bun test app/components/MyTable.test.mjs",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:regie-list": "bun test app/lib/regieReportList.test.mjs",
