@@ -92,3 +92,38 @@ test("both lock graphs contain only the patched security dependencies", () => {
     assert.equal(require(`${name}/package.json`).version, version);
   }
 });
+
+// GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr, GHSA-c6gr-qvv4-5v3f.
+test("DOMPurify stays patched in the override, both lock graphs and installed runtime", () => {
+  const patchedVersion = "3.4.17";
+  const manifest = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  const lock = JSON.parse(
+    readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"),
+  );
+  const bun = readFileSync(new URL("../bun.lock", import.meta.url), "utf8");
+
+  assert.equal(manifest.overrides.dompurify, patchedVersion);
+
+  const npmEntries = Object.entries(lock.packages).filter(([packagePath]) => {
+    return (
+      packagePath === "node_modules/dompurify" ||
+      packagePath.endsWith("/node_modules/dompurify")
+    );
+  });
+  assert.ok(npmEntries.length > 0, "the npm lock includes DOMPurify");
+
+  for (const [packagePath, dependency] of npmEntries) {
+    assert.equal(dependency.version, patchedVersion, packagePath);
+  }
+
+  const bunVersions = [...bun.matchAll(/\[\s*"dompurify@([^"]+)"/g)];
+  assert.ok(bunVersions.length > 0, "the Bun lock includes DOMPurify");
+
+  for (const [, version] of bunVersions) {
+    assert.equal(version, patchedVersion);
+  }
+
+  assert.equal(require("dompurify").version, patchedVersion);
+});
