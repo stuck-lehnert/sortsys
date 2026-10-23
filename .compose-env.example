@@ -17,6 +17,8 @@ ADMIN_HASH=replace-with-a-bcrypt-password-hash
 # Required for LLM chat and document import with OpenAI or Anthropic.
 # Set this to the publicly reachable HTTPS MCP endpoint, for example:
 # https://sortsys.example/api/v2/internal/llm/mcp
+# OpenRouter defaults to authenticated MCP on API loopback; no public URL is needed.
+# For a separate MCP address, set a URL reachable from the API.
 LLM_MCP_URL=
 
 # Optional overrides (the shown values are the Compose defaults).

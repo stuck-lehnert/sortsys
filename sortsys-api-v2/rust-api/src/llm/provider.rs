@@ -1,6 +1,7 @@
 //! MCP transports for chat and document import.
 
 mod mcp;
+mod mcp_endpoint;
 mod openrouter;
 
 use std::time::Duration;
@@ -138,7 +139,11 @@ pub async fn complete(
     turns: &[ChatTurn],
     locale: &str,
 ) -> RpcResult<Completion> {
-    let url = require_mcp_url(state.config.llm_mcp_url.as_deref(), &configuration.provider)?;
+    let url = require_mcp_url(
+        state.config.llm_mcp_url.as_deref(),
+        &configuration.provider,
+        state.config.port,
+    )?;
     let scope = McpScope::Chat(chat_id);
     let token = state.auth.issue_mcp_token(auth, scope).map_err(internal)?;
     let prompt = runtime_system_prompt(locale);
@@ -149,7 +154,7 @@ pub async fn complete(
 
     let (content, usage) = match configuration.provider.as_str() {
         "openai" => {
-            let body = openai_mcp_body(configuration, messages, &prompt, url, &token, scope);
+            let body = openai_mcp_body(configuration, messages, &prompt, &url, &token, scope);
             let value = openai_mcp_request(configuration, &body)
                 .await
                 .map_err(ProviderError::into_rpc)?;
@@ -158,7 +163,7 @@ pub async fn complete(
             (content, responses_usage(&value))
         }
         "anthropic" => {
-            let body = anthropic_mcp_body(configuration, messages, &prompt, url, &token, scope);
+            let body = anthropic_mcp_body(configuration, messages, &prompt, &url, &token, scope);
             let (value, usage) = anthropic_mcp_request(configuration, body)
                 .await
                 .map_err(ProviderError::into_rpc)?;
@@ -167,7 +172,7 @@ pub async fn complete(
 
             (content, usage)
         }
-        "openrouter" => openrouter::complete(configuration, messages, &prompt, url, &token, scope)
+        "openrouter" => openrouter::complete(configuration, messages, &prompt, &url, &token, scope)
             .await
             .map_err(ProviderError::into_rpc)?,
         _ => unreachable!("MCP provider was validated"),
@@ -277,7 +282,11 @@ pub async fn parse_document_scan(
     configuration: &ProviderConfiguration,
     input: DocumentScanInput,
 ) -> RpcResult<ScanCompletion> {
-    let url = require_mcp_url(state.config.llm_mcp_url.as_deref(), &configuration.provider)?;
+    let url = require_mcp_url(
+        state.config.llm_mcp_url.as_deref(),
+        &configuration.provider,
+        state.config.port,
+    )?;
     let token = state
         .auth
         .issue_mcp_token(auth, McpScope::DocumentImport)
@@ -285,9 +294,9 @@ pub async fn parse_document_scan(
     let prompt = scan_prompt(&auth.user.locale);
 
     match configuration.provider.as_str() {
-        "openai" => openai_scan(configuration, &input, &prompt, url, &token).await,
-        "anthropic" => anthropic_scan(configuration, &input, &prompt, url, &token).await,
-        "openrouter" => openrouter::scan(configuration, &input, &prompt, url, &token).await,
+        "openai" => openai_scan(configuration, &input, &prompt, &url, &token).await,
+        "anthropic" => anthropic_scan(configuration, &input, &prompt, &url, &token).await,
+        "openrouter" => openrouter::scan(configuration, &input, &prompt, &url, &token).await,
         _ => unreachable!("MCP provider was validated"),
     }
 }
@@ -604,25 +613,12 @@ fn scan_result_schema() -> Value {
 }
 
 pub(super) fn supports_mcp(provider: &str) -> bool {
-    matches!(provider, "openai" | "anthropic" | "openrouter")
+    mcp_endpoint::supports_mcp(provider)
 }
 
-fn require_mcp_url<'a>(configured: Option<&'a str>, provider: &str) -> RpcResult<&'a str> {
-    if !supports_mcp(provider) {
-        return Err(RpcError::new(
-            ErrorCode::PreconditionFailed,
-            "This provider has no MCP transport; select OpenAI, Anthropic, or OpenRouter",
-        ));
-    }
-
-    configured
-        .filter(|url| !url.trim().is_empty())
-        .ok_or_else(|| {
-            RpcError::new(
-                ErrorCode::PreconditionFailed,
-                "LLM_MCP_URL must point to the publicly reachable MCP endpoint",
-            )
-        })
+fn require_mcp_url(configured: Option<&str>, provider: &str, port: u16) -> RpcResult<String> {
+    mcp_endpoint::resolve(configured, provider, port)
+        .map_err(|message| RpcError::new(ErrorCode::PreconditionFailed, message))
 }
 
 fn openai_mcp_body(
@@ -1116,15 +1112,22 @@ mod tests {
 
     #[test]
     fn every_llm_use_case_requires_a_supported_mcp_transport() {
-        for provider in ["openai", "anthropic", "openrouter"] {
-            assert!(super::require_mcp_url(None, provider).is_err());
-            assert!(super::require_mcp_url(Some("  "), provider).is_err());
-            assert!(super::require_mcp_url(Some("https://sortsys.test/mcp"), provider).is_ok());
+        for provider in ["openai", "anthropic"] {
+            assert!(super::require_mcp_url(None, provider, 3000).is_err());
+            assert!(super::require_mcp_url(Some("  "), provider, 3000).is_err());
+            assert!(
+                super::require_mcp_url(Some("https://sortsys.test/mcp"), provider, 3000).is_ok()
+            );
         }
 
+        assert_eq!(
+            super::require_mcp_url(None, "openrouter", 3000).unwrap(),
+            "http://127.0.0.1:3000/internal/llm/mcp",
+        );
+
         for provider in ["meta", "deepseek", "custom", "unknown"] {
-            let error =
-                super::require_mcp_url(Some("https://sortsys.test/mcp"), provider).unwrap_err();
+            let error = super::require_mcp_url(Some("https://sortsys.test/mcp"), provider, 3000)
+                .unwrap_err();
 
             assert_eq!(error.code, crate::error::ErrorCode::PreconditionFailed);
             assert!(error.message.contains("MCP transport"));

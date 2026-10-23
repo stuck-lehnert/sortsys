@@ -95,8 +95,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      onlyoffice:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/ping"]
       interval: 10s
@@ -162,10 +160,6 @@ services:
       - "80"
     depends_on:
       api:
-        condition: service_healthy
-      onlyoffice:
-        condition: service_healthy
-      drawio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]

@@ -12,6 +12,8 @@ use sqlx::{PgPool, Row};
 
 use crate::{AppState, llm, managed_db};
 
+mod development_llm;
+
 pub type SeedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,61 +186,13 @@ async fn configure_development_llm(
     tenant_name: &str,
     tenant_pool: &PgPool,
 ) -> SeedResult<()> {
-    let provider = [
-        (
-            "openai",
-            "OPENAI_API_KEY",
-            "OPENAI_MODEL",
-            "gpt-6-luna",
-            None,
-        ),
-        (
-            "anthropic",
-            "ANTHROPIC_API_KEY",
-            "ANTHROPIC_MODEL",
-            "claude-haiku-4-5",
-            None,
-        ),
-        (
-            "meta",
-            "LLAMA_API_KEY",
-            "LLAMA_MODEL",
-            "Llama-4-Scout-17B-16E-Instruct-FP8",
-            None,
-        ),
-        (
-            "meta",
-            "META_API_KEY",
-            "META_MODEL",
-            "Llama-4-Scout-17B-16E-Instruct-FP8",
-            None,
-        ),
-        (
-            "deepseek",
-            "DEEPSEEK_API_KEY",
-            "DEEPSEEK_MODEL",
-            "deepseek-v4-flash",
-            Some("https://api.deepseek.com"),
-        ),
-    ]
-    .into_iter()
-    .find_map(
-        |(provider, key_name, model_name, default_model, base_url)| {
-            env::var(key_name)
-                .ok()
-                .filter(|value| value.trim().chars().next().is_some())
-                .map(|api_key| {
-                    let model = env::var(model_name)
-                        .ok()
-                        .filter(|value| value.trim().chars().next().is_some())
-                        .unwrap_or_else(|| default_model.to_owned());
-
-                    (provider, model, api_key, base_url)
-                })
-        },
-    );
-
-    let Some((provider, model, api_key, base_url)) = provider else {
+    let Some(development_llm::Configuration {
+        provider,
+        model,
+        api_key,
+        base_url,
+    }) = development_llm::select_configuration(|name| env::var(name).ok())
+    else {
         return Ok(());
     };
 

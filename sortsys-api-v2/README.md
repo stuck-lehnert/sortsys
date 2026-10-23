@@ -103,7 +103,7 @@ The API reads the following environment variables:
 | `ADMIN_HASH` | yes | bcrypt password hash for the global administrator |
 | `JOB_RUNNER_TOKEN` | in production | shared secret for job-runner WebSocket connections |
 | `LLM_ENCRYPTION_KEY` | for LLM setup | secret used to encrypt provider API keys in the master database |
-| `LLM_MCP_URL` | for LLM use | publicly reachable HTTPS MCP endpoint |
+| `LLM_MCP_URL` | for native MCP | provider-reachable URL; optional for OpenRouter |
 | `ONLYOFFICE_PUBLIC_URL` | for document editing | browser-reachable Document Server origin |
 | `ONLYOFFICE_INTERNAL_URL` | no | Document Server origin used by the API; defaults to the public origin |
 | `ONLYOFFICE_CALLBACK_URL` | for document editing | public API callback URL reachable by Document Server |
@@ -121,13 +121,19 @@ It preserves the same chat permissions, proposal confirmation, and product-only
 document-import scope. OpenAI and Anthropic failures do not fall back to this
 bridge.
 
-Set `LLM_MCP_URL` to a public HTTPS URL such as
-`https://sortsys.example/api/v2/internal/llm/mcp`. The API must also be able to
-reach this endpoint when using OpenRouter. Select an OpenRouter model and
-endpoint that support tools; document import additionally requires structured
-outputs and support for any attached images. Unsupported parameters produce an
-error. Other provider accounts can remain stored, but cannot be assigned to
-these use cases.
+OpenAI and Anthropic use remote native MCP connectors. Set `LLM_MCP_URL` to an
+HTTPS URL reachable by the selected provider, such as
+`https://sortsys.example/api/v2/internal/llm/mcp`.
+
+The OpenRouter bridge runs in the API and defaults to authenticated HTTP MCP at
+`http://127.0.0.1:<PORT>/internal/llm/mcp`. It needs no public inbound MCP
+endpoint. An explicit `LLM_MCP_URL` overrides this default and must be reachable
+from the API; private-network addresses are supported.
+
+Select an OpenRouter model and endpoint that support tools; document import
+additionally requires structured outputs and support for any attached images.
+Unsupported parameters produce an error. Other provider accounts can remain
+stored, but cannot be assigned to these use cases.
 
 Each value can instead be mounted at `/run/secrets/SORTSYS_API_V2_<NAME>`.
 

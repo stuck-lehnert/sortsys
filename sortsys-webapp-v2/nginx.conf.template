@@ -1,6 +1,14 @@
+resolver ${NGINX_LOCAL_RESOLVERS} valid=5s;
+resolver_timeout 2s;
+
 map $http_upgrade $connection_upgrade {
   default upgrade;
   '' close;
+}
+
+map $request_uri $onlyoffice_request_uri {
+  ~^/office(?<office_request_path>/.*)$ $office_request_path;
+  default $request_uri;
 }
 
 map $http_x_forwarded_proto $forwarded_proto {
@@ -49,7 +57,9 @@ server {
   }
 
   location /office/ {
-    proxy_pass ${ONLYOFFICE_UPSTREAM}/;
+    set $onlyoffice_upstream ${ONLYOFFICE_UPSTREAM};
+    proxy_pass $onlyoffice_upstream$onlyoffice_request_uri;
+    proxy_connect_timeout 2s;
     proxy_http_version 1.1;
     proxy_set_header X-Forwarded-Host $forwarded_host/office;
     proxy_set_header X-Forwarded-Proto $forwarded_proto;
@@ -73,7 +83,9 @@ server {
   location /drawio/ {
     # The official image serves its web application at /drawio. Preserve that
     # path instead of stripping it while proxying.
-    proxy_pass ${DRAWIO_UPSTREAM};
+    set $drawio_upstream ${DRAWIO_UPSTREAM};
+    proxy_pass $drawio_upstream$request_uri;
+    proxy_connect_timeout 2s;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Host $forwarded_host;

@@ -27,6 +27,13 @@ The script starts PostgreSQL, MinIO, Euro-Office Document Server, diagrams.net,
 the Rust API, two job runners, and the web application. Both runners handle media
 and OCR work. The development tenant is recreated and seeded on each run.
 
+The launcher reads LLM settings from the repository-root `.env` file.
+A non-empty `OPENROUTER_API_KEY` selects
+`deepseek/deepseek-v4.1-flash-1017` for chat and document import. Without an
+OpenRouter key, `OPENAI_API_KEY` selects `gpt-6-luna`. Set `OPENROUTER_MODEL` or
+`OPENAI_MODEL` to override the corresponding default. Exported variables override
+values in `.env`. The file is parsed as data, never sourced as shell code.
+
 | Service | Default address |
 | --- | --- |
 | Web application | `http://127.0.0.1:5173` |
@@ -107,6 +114,13 @@ these services. The job runner shares a dedicated network with the API and
 retains outbound access for S3. Third-party services keep their existing
 configuration. The webapp, API and editors retain their proxy and callback
 connections.
+
+Euro-Office and draw.io readiness do not gate API or webapp startup. Opening an
+Office document or diagram shows the loading cube while its editor is
+unavailable. The webapp retries startup and replaces the cube when the editor
+signals readiness. Ready editing sessions are never reloaded by this retry loop.
+Nginx resolves optional editor upstreams at request time and refreshes their DNS
+records, including after a container changes IP.
 
 Nginx has a read-only root filesystem. Its generated configuration, PID and
 buffered request bodies use a `noexec,nosuid,nodev` tmpfs at `/tmp`.

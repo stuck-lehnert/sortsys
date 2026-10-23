@@ -18,6 +18,10 @@ echo "Checking container hardening, office deployment and JWT configuration"
 bun test ./scripts/container-hardening.test.mjs ./scripts/office-deployment.test.mjs
 
 echo
+echo "Checking development LLM environment loading"
+bun test ./scripts/dev-llm.test.mjs
+
+echo
 echo "Running API integration and contract checks"
 ./scripts/test-api --rerun-each=1
 
@@ -59,6 +63,7 @@ echo "Running webapp checks"
   bun run test:chat-requests
   bun run test:deployment-planning
   bun run test:menus
+  bun run test:editors
   bun run test:attachments
   bun run test:attachment-selection
   bun run test:error-boundary

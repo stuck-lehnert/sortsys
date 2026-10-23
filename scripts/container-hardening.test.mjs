@@ -284,11 +284,12 @@ test("CI exports genuine worker tests separately and requires exact runtime sele
   assert.ok(harness.includes('-test.run "^TestOCRRuntime$"'));
 });
 
-test("nginx only renders upstream/body-size variables into its writable configuration", () => {
+test("nginx only renders proxy and resolver values into its writable configuration", () => {
   const dockerfile = read("sortsys-webapp-v2/Dockerfile");
   const config = read("sortsys-webapp-v2/nginx.conf");
 
   assert.match(dockerfile, /NGINX_ENVSUBST_OUTPUT_DIR=\/tmp/);
+  assert.match(dockerfile, /NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1/);
 
   const filterValue = dockerfile.match(/NGINX_ENVSUBST_FILTER=(\S+)/)?.[1];
 
@@ -301,6 +302,7 @@ test("nginx only renders upstream/body-size variables into its writable configur
     "ONLYOFFICE_UPSTREAM",
     "DRAWIO_UPSTREAM",
     "CLIENT_MAX_BODY_SIZE",
+    "NGINX_LOCAL_RESOLVERS",
   ]) {
     assert.equal(filter.test(name), true, name);
   }
@@ -311,6 +313,10 @@ test("nginx only renders upstream/body-size variables into its writable configur
     "uri",
     "JWT_SECRET",
     "API_UPSTREAM_SUFFIX",
+    "onlyoffice_request_path",
+    "onlyoffice_request_uri",
+    "onlyoffice_upstream",
+    "drawio_upstream",
   ]) {
     assert.equal(filter.test(name), false, name);
   }
@@ -384,3 +390,18 @@ test("the publishing workflow requests an SBOM and minimal provenance", () => {
   assert.equal(build.with.sbom, true);
   assert.equal(build.with.provenance, "mode=min");
 });
+
+for (const file of ["compose.yaml", "ghcr-compose.yaml"]) {
+  test(`${file}: optional editors do not gate the API or webapp startup`, () => {
+    const { services } = YAML.parse(read(file));
+
+    assert.deepEqual(services.api.depends_on, {
+      postgres: { condition: "service_healthy" },
+    });
+    assert.deepEqual(services.webapp.depends_on, {
+      api: { condition: "service_healthy" },
+    });
+    assert.ok(services.onlyoffice.healthcheck);
+    assert.ok(services.drawio.healthcheck);
+  });
+}

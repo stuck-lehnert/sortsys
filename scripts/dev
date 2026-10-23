@@ -144,8 +144,10 @@ prepare_llm_environment() {
       names[9] = "META_API_KEY"
       names[10] = "META_MODEL"
       names[11] = "LLM_MCP_URL"
+      names[12] = "OPENROUTER_API_KEY"
+      names[13] = "OPENROUTER_MODEL"
 
-      for (position = 1; position <= 11; position++) {
+      for (position = 1; position <= 13; position++) {
         allowed[names[position]] = 1
       }
     }
@@ -179,7 +181,7 @@ prepare_llm_environment() {
     }
 
     END {
-      for (position = 1; position <= 11; position++) {
+      for (position = 1; position <= 13; position++) {
         key = names[position]
 
         if (key in ENVIRON) {

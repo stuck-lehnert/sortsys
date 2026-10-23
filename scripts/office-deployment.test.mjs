@@ -53,8 +53,8 @@ for (const filename of ["compose.yaml", "ghcr-compose.yaml"]) {
       "http://api:3000/internal/onlyoffice/callback",
     );
     assert.equal(webapp.environment.ONLYOFFICE_UPSTREAM, "http://onlyoffice");
-    assert.equal(api.depends_on.onlyoffice.condition, "service_healthy");
-    assert.equal(webapp.depends_on.onlyoffice.condition, "service_healthy");
+    assert.equal("onlyoffice" in api.depends_on, false);
+    assert.equal("onlyoffice" in webapp.depends_on, false);
     assert.deepEqual(office.healthcheck.test, [
       "CMD",
       "curl",
