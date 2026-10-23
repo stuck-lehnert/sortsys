@@ -63,9 +63,17 @@ services:
     stop_grace_period: 30s
 
   api:
-    image: ghcr.io/stuck-lehnert/sortsys-api:latest
+    image: ${SORTSYS_API_IMAGE:-ghcr.io/stuck-lehnert/sortsys-api:latest}
     pull_policy: always
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+      - jobs
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -97,9 +105,16 @@ services:
     stop_grace_period: 30s
 
   job-runner:
-    image: ghcr.io/stuck-lehnert/sortsys-jobrunner:latest
+    image: ${SORTSYS_JOBRUNNER_IMAGE:-ghcr.io/stuck-lehnert/sortsys-jobrunner:latest}
     pull_policy: always
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - jobs
     environment:
       JOB_RUNNER_WS_URL: ws://api:3000/internal/job-runners/ws
       JOB_RUNNER_WS_IGNORE_PROXY: "true"
@@ -119,9 +134,19 @@ services:
     stop_grace_period: 30s
 
   webapp:
-    image: ghcr.io/stuck-lehnert/sortsys-webapp:latest
+    image: ${SORTSYS_WEBAPP_IMAGE:-ghcr.io/stuck-lehnert/sortsys-webapp:latest}
     pull_policy: always
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${WEBAPP_TMPFS_SIZE:-256m},mode=1777
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
     environment:
       SERVICE_URL_WEBAPP_80: /
       API_UPSTREAM: http://api:3000
@@ -143,6 +168,10 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+networks:
+  default:
+  jobs:
 
 volumes:
   postgres-data:

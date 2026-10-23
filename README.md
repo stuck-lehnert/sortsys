@@ -99,6 +99,68 @@ do not run `compose down --volumes` as an upgrade or rollback step.
 
 Object storage is not part of the production Compose stack. Configure an external S3-compatible service for tenant files and backups, or leave those features disabled.
 
+### Container security and image size
+
+The API, job runner and webapp run as non-root users. Both Compose variants drop
+all Linux capabilities, enable `no-new-privileges`, and use an init process for
+these services. The job runner shares a dedicated network with the API and
+retains outbound access for S3. Third-party services keep their existing
+configuration. The webapp, API and editors retain their proxy and callback
+connections.
+
+Nginx has a read-only root filesystem. Its generated configuration, PID and
+buffered request bodies use a `noexec,nosuid,nodev` tmpfs at `/tmp`.
+`WEBAPP_TMPFS_SIZE` defaults to `256m`; size it for `CLIENT_MAX_BODY_SIZE` and
+concurrent uploads. This memory counts toward container memory usage. The
+namespaced `net.ipv4.ip_unprivileged_port_start=0` setting preserves port 80 for
+Coolify while nginx runs without capabilities. Other deployment environments
+must support this sysctl or configure an unprivileged listener and matching
+proxy port.
+
+The API and runner keep disk-backed temporary space for database dumps, restores
+and OCR. Their root filesystems remain writable; replacing `/tmp` with a small
+RAM-backed filesystem can break large backups or PDFs. Monitor available disk
+space and configure CPU, memory, PID and log-rotation limits for the
+deployment's workload. PostgreSQL and the bundled editor images retain their
+upstream startup permissions and writable paths.
+
+Build contexts exclude local environment files, common credential files,
+dependencies and compiled artifacts. The repository-root webapp context also
+allowlists its input packages. The webapp uses the core-only nginx Alpine slim
+image; the optional XSLT, GeoIP, image-filter, njs and ACME modules are unused
+by this configuration. Production images use multi-stage builds. The API retains
+its existing thin LTO and debug-information stripping. It copies a single libpq
+shared library from its PostgreSQL build stage and installs that library's
+runtime dependencies explicitly. PostgreSQL 17 backup and restore tools remain
+available.
+
+The job runner uses an Alpine runtime with Poppler, ImageMagick, JPEG/WebP
+modules, fonts and German/English Tesseract models. Its stripped Go binary is
+statically linked; the Go build and development stages remain on Bookworm.
+Orientation/script-detection data is omitted because recognition uses the fixed
+`--psm 6` text-block mode. Image preprocessing still handles EXIF orientation.
+ImageMagick permits JPEG/WebP reads and PNG reads/writes. Its policy blocks
+other formats, external delegates, filters and indirect file reads. PDFs are
+rendered with Poppler.
+
+CI builds all three production images without publishing them, tests real
+build-context exclusions, and exercises the runtime privilege settings,
+PostgreSQL backup/restore tools and read-only nginx startup. A separately
+exported test binary exercises the worker's actual preprocessing and OCR code
+inside its production image, including German/English images, EXIF orientation,
+embedded PDF text and scanned multi-page PDFs. The test binary is excluded from
+the published image. These checks must pass alongside application and
+populated-upgrade tests before automatic predeploy promotion. Image sizes are
+written to the runtime-test logs. The publishing workflow requests an SBOM and
+minimal build provenance for each image. Keep base images and the host patched,
+and scan the resulting images for vulnerabilities before deployment.
+
+For reproducible deployments and rollbacks with `ghcr-compose.yaml`, set
+`SORTSYS_API_IMAGE`, `SORTSYS_JOBRUNNER_IMAGE` and `SORTSYS_WEBAPP_IMAGE` to the
+three images from the same tested revision, preferably by digest. Their defaults
+remain `:latest`. Back up persistent data before changing images; never delete
+volumes as an image-upgrade step.
+
 ## Community
 
 Participation in sortsys project spaces is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).

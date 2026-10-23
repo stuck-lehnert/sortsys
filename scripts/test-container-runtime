@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 {api|jobrunner|webapp} IMAGE" >&2
+  exit 2
+fi
+
+KIND="$1"
+IMAGE="$2"
+
+if [[ "$KIND" != api && "$KIND" != jobrunner && "$KIND" != webapp ]]; then
+  echo "Unknown runtime image kind: $KIND" >&2
+  exit 2
+fi
+
+JOBRUNNER_RUNTIME_TEST="${JOBRUNNER_RUNTIME_TEST:-}"
+
+if [[ "$KIND" == jobrunner ]]; then
+  if [[ ! -f "$JOBRUNNER_RUNTIME_TEST" || ! -x "$JOBRUNNER_RUNTIME_TEST" ]]; then
+    echo "JOBRUNNER_RUNTIME_TEST must name the exported OCR runtime test binary" >&2
+    exit 2
+  fi
+
+  JOBRUNNER_RUNTIME_TEST="$(realpath "$JOBRUNNER_RUNTIME_TEST")"
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is required to test production container runtimes" >&2
+  exit 1
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK_DIR="$(mktemp -d -t sortsys-container-runtime.XXXXXXXX)"
+SUFFIX="${WORK_DIR##*.}"
+NETWORK="sortsys-runtime-$SUFFIX"
+POSTGRES="sortsys-runtime-pg-$SUFFIX"
+WEBAPP="sortsys-runtime-web-$SUFFIX"
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+
+  if [[ $status -ne 0 ]]; then
+    docker logs "$POSTGRES" 2>/dev/null || true
+    docker logs "$WEBAPP" 2>/dev/null || true
+  fi
+
+  docker rm -fv "$WEBAPP" "$POSTGRES" >/dev/null 2>&1 || true
+  docker network rm "$NETWORK" >/dev/null 2>&1 || true
+  rm -rf -- "$WORK_DIR"
+
+  exit "$status"
+}
+
+trap cleanup EXIT
+
+runtime_args=(--rm --init --cap-drop ALL --security-opt no-new-privileges:true)
+
+docker run "${runtime_args[@]}" --network none --entrypoint sh "$IMAGE" -ec '
+  test "$(id -u)" -ne 0
+  grep -Eq "^CapEff:[[:space:]]+0+$" /proc/self/status
+  grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
+
+  for compiler in cargo rustc go node npm bun gcc cc; do
+    if command -v "$compiler" >/dev/null 2>&1; then
+      echo "Unexpected build tool in production image: $compiler" >&2
+      exit 1
+    fi
+  done
+'
+
+case "$KIND" in
+  api)
+    postgres_image="$(awk '
+      $1 == "FROM" && $NF == "test-postgres" {
+        print $2
+      }
+    ' "$ROOT_DIR/scripts/Dockerfile.images")"
+
+    test -n "$postgres_image"
+
+    docker network create --internal "$NETWORK" >/dev/null
+    docker run -d --name "$POSTGRES" --network "$NETWORK" \
+      -e POSTGRES_PASSWORD=container-test-only "$postgres_image" >/dev/null
+
+    ready=false
+
+    for ((attempt = 0; attempt < 60; attempt++)); do
+      if docker exec "$POSTGRES" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
+        ready=true
+        break
+      fi
+
+      sleep 1
+    done
+
+    if [[ "$ready" != true ]]; then
+      echo "Disposable PostgreSQL did not become ready" >&2
+      exit 1
+    fi
+
+    docker run "${runtime_args[@]}" --network "$NETWORK" \
+      -e PGHOST="$POSTGRES" -e PGUSER=postgres -e PGPASSWORD=container-test-only \
+      --entrypoint sh "$IMAGE" -ec '
+        test "$(find /usr/local/lib -type f -name "libpq.so.5.*" | wc -l)" -eq 1
+        pg_dump --version | grep -E "PostgreSQL\) 17\."
+        psql --version | grep -E "PostgreSQL\) 17\."
+
+        psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE container_probe"
+
+        export PGDATABASE=container_probe
+
+        psql -v ON_ERROR_STOP=1 -c "CREATE TABLE probe (value text NOT NULL)"
+        psql -v ON_ERROR_STOP=1 -c "INSERT INTO probe VALUES ('\''roundtrip'\'')"
+        pg_dump --no-owner --no-acl --file /tmp/probe.sql
+        psql -v ON_ERROR_STOP=1 -c "DROP TABLE probe"
+        psql -v ON_ERROR_STOP=1 --file /tmp/probe.sql
+
+        test "$(psql -Atc "SELECT value FROM probe")" = roundtrip
+      '
+    ;;
+  jobrunner)
+    docker run "${runtime_args[@]}" --network none \
+      --mount "type=bind,src=$JOBRUNNER_RUNTIME_TEST,dst=/fixtures/ocr-runtime.test,readonly" \
+      -e SORTSYS_TEST_OCR_TOOLS=1 --entrypoint sh "$IMAGE" -ec '
+        tests="$(/fixtures/ocr-runtime.test -test.list "^TestOCRRuntime$")"
+        test "$tests" = TestOCRRuntime
+
+        exec /fixtures/ocr-runtime.test -test.run "^TestOCRRuntime$" -test.v -test.timeout 2m
+      '
+    ;;
+  webapp)
+    docker run -d --name "$WEBAPP" --init --cap-drop ALL \
+      --security-opt no-new-privileges:true --network none --read-only \
+      --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
+      --sysctl net.ipv4.ip_unprivileged_port_start=0 \
+      -e API_UPSTREAM=http://127.0.0.1 -e ONLYOFFICE_UPSTREAM=http://127.0.0.1 \
+      -e DRAWIO_UPSTREAM=http://127.0.0.1 "$IMAGE" >/dev/null
+
+    ready=false
+
+    for ((attempt = 0; attempt < 60; attempt++)); do
+      if docker exec "$WEBAPP" wget -q --spider http://127.0.0.1/ 2>/dev/null; then
+        ready=true
+        break
+      fi
+
+      sleep 1
+    done
+
+    if [[ "$ready" != true ]]; then
+      echo "Read-only non-root nginx did not become ready on port 80" >&2
+      exit 1
+    fi
+
+    docker exec "$WEBAPP" sh -ec '
+      test "$(id -u)" -ne 0
+      grep -Eq "^CapEff:[[:space:]]+0+$" /proc/1/status
+      grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/1/status
+      test -s /tmp/default.conf
+      test -s /tmp/nginx.pid
+      nginx -t
+
+      wget -q --spider http://127.0.0.1/projects/container-smoke
+
+      if touch /etc/nginx/unexpected-write 2>/dev/null; then
+        echo "nginx root filesystem unexpectedly writable" >&2
+        exit 1
+      fi
+    '
+    ;;
+esac
+
+docker image inspect --format 'Runtime image size: {{.Size}} bytes' "$IMAGE"
+echo "$KIND: non-root privilege envelope and required runtime features passed"

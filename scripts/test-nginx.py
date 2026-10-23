@@ -39,6 +39,27 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def runtime_configuration(repo, root, mime_types):
+    config = (repo / "sortsys-webapp-v2/nginx.conf").read_text()
+
+    config = config.replace("/tmp/", f"{root}/")
+
+    if mime_types is None:
+        mime_types = root / "mime.types"
+
+        mime_types.write_text("types { text/html html; application/javascript js; }\n")
+
+    config = config.replace("/etc/nginx/mime.types", str(mime_types.resolve()))
+
+    if os.getuid() == 0:
+        # Native tests may run as root; use the current test identity for workers.
+        user = pwd.getpwuid(os.getuid()).pw_name
+        group = grp.getgrgid(os.getgid()).gr_name
+        config = f"user {user} {group};\n" + config
+
+    return config
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--nginx-command", required=True)
@@ -79,17 +100,25 @@ def main():
                 port = listener.getsockname()[1]
                 template = template.replace("listen 80 default_server;", f"listen 127.0.0.1:{port} default_server;")
                 template = template.replace("root /usr/share/nginx/html;", f"root {html};")
-                user = ""
-                if os.getuid() == 0:
-                    user = f"user {pwd.getpwuid(os.getuid()).pw_name} {grp.getgrgid(os.getgid()).gr_name};\n"
-                mime = f"include {args.mime_types.resolve()};" if args.mime_types else "types { text/html html; application/javascript js; }"
-                temporary_paths = "\n".join(f"{name}_temp_path {root / name};" for name in ["client_body", "proxy", "fastcgi", "uwsgi", "scgi"])
                 config = root / "nginx.conf"
-                config.write_text(user + f"pid {root / 'nginx.pid'};\nerror_log stderr;\n"
-                                  "events { worker_connections 64; }\nhttp {\naccess_log off;\n"
-                                  + mime + "\n" + temporary_paths + "\n" + template + "\n}\n")
+                (root / "default.conf").write_text(template)
+                config.write_text(runtime_configuration(repo, root, args.mime_types))
+
                 base = command + ["-p", str(root) + "/", "-c", str(config), "-e", str(root / "error.log")]
-                subprocess.run(base + ["-t"], check=True)
+                # The action harness uses socket-backed stdout/stderr. Give nginx
+                # regular owned log descriptors for its /dev/stdout and /dev/stderr.
+                syntax_log = root / "syntax.log"
+
+                with syntax_log.open("w") as log:
+                    config_check = subprocess.run(
+                        base + ["-t"], stdout=log, stderr=subprocess.STDOUT
+                    )
+
+                if config_check.returncode != 0:
+                    print(syntax_log.read_text())
+
+                config_check.check_returncode()
+
                 env = dict(os.environ, NGINX=str(listener.fileno()) + ";")
                 with (root / "process.log").open("w+") as log:
                     process = subprocess.Popen(base + ["-g", "daemon off; master_process off;"],
@@ -112,6 +141,8 @@ def main():
                         for path in ["/", "/projects/123", "/index.html"]:
                             status, headers, body = get(path)
                             assert status == 200 and b"sortsys smoke SPA" in body, path
+                            assert headers["Server"] == "nginx", headers["Server"]
+
                         assert "no-cache" in get("/index.html")[1]["Cache-Control"]
                         assert "no-store" in ",".join(get("/sw.js")[1].get_all("Cache-Control", []))
                         assert "immutable" in ",".join(get("/assets/app.js")[1].get_all("Cache-Control", []))

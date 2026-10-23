@@ -70,6 +70,8 @@ jobs:
           build-args: ${{ matrix.image == 'webapp' && format('SORTSYS_REVISION={0}', env.REVISION) || '' }}
           pull: true
           push: true
+          sbom: true
+          provenance: mode=min
           tags: |
             ghcr.io/stuck-lehnert/sortsys-${{ matrix.image }}:${{ steps.version.outputs.short_sha }}
             ghcr.io/stuck-lehnert/sortsys-${{ matrix.image }}:latest

@@ -293,10 +293,10 @@ test("unknown upgrade phase names are rejected before cargo runs", (t) => {
   assert.throws(() => readFileSync(f.calls));
 });
 
-test("the workflow requires both CI jobs and passes the checked baseline to promotion", () => {
+test("the workflow requires application, upgrade and container checks before promotion", () => {
   const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   const promote = workflow.split("  promote:\n")[1].split("  publish:\n")[0];
-  assert.match(promote, /needs: \[test, upgrade\]/);
+  assert.match(promote, /needs: \[test, upgrade, containers\]/);
   assert.match(promote, /needs\.upgrade\.outputs\.deploy_sha/);
   assert.match(promote, /promote-predeploy "\$GITHUB_SHA" "\$DEPLOY_BASE_SHA"/);
   assert.doesNotMatch(promote, /continue-on-error|git push/);

@@ -70,6 +70,73 @@ jobs:
           CONTAINER_RUNTIME: docker
         run: ./scripts/ci
 
+  containers:
+    name: Check ${{ matrix.image }} runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: ./sortsys-api-v2
+            dockerfile: ./sortsys-api-v2/Dockerfile
+          - image: jobrunner
+            context: ./sortsys-v2-job_runner
+            dockerfile: ./sortsys-v2-job_runner/Dockerfile
+          - image: webapp
+            context: .
+            dockerfile: ./sortsys-webapp-v2/Dockerfile
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Validate both Compose configurations
+        run: |
+          docker compose --env-file .compose-env.example -f compose.yaml config --quiet
+          docker compose --env-file .compose-env.example -f ghcr-compose.yaml config --quiet
+
+      - name: Verify build-context secret and artifact exclusions
+        if: matrix.image == 'api'
+        run: ./scripts/test-container-contexts
+
+      - name: Build the production runtime image without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          build-args: SORTSYS_REVISION=${{ github.sha }}
+          pull: true
+          push: false
+          load: true
+          tags: sortsys-container-test:${{ matrix.image }}
+          cache-from: type=gha,scope=check-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=check-${{ matrix.image }}
+
+      - name: Export worker runtime tests without shipping them in the image
+        if: matrix.image == 'jobrunner'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./sortsys-v2-job_runner
+          file: ./sortsys-v2-job_runner/Dockerfile
+          target: runtime-test-binary
+          pull: true
+          push: false
+          outputs: type=local,dest=${{ runner.temp }}/sortsys-jobrunner-tests
+          cache-from: type=gha,scope=check-jobrunner
+
+      - name: Exercise the hardened runtime and required tools
+        env:
+          JOBRUNNER_RUNTIME_TEST:
+            ${{ runner.temp }}/sortsys-jobrunner-tests/ocr-runtime.test
+        run: |
+          ./scripts/test-container-runtime '${{ matrix.image }}' \
+            'sortsys-container-test:${{ matrix.image }}'
+
   upgrade:
     name: Upgrade populated deploy databases
     if: github.ref == 'refs/heads/predeploy'
@@ -114,7 +181,7 @@ jobs:
   promote:
     name: Promote predeploy to deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
-    needs: [test, upgrade]
+    needs: [test, upgrade, containers]
     runs-on: ubuntu-latest
     permissions:
       contents: write

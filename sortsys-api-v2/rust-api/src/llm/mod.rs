@@ -250,6 +250,7 @@ async fn load_use_case_configuration(
 ) -> RpcResult<Option<ProviderConfiguration>> {
     validate_use_case(use_case)?;
 
+    // Match master bootstrap's table-lock order during replica startup.
     let row = sqlx::query(
         r#"
         SELECT
@@ -257,8 +258,8 @@ async fn load_use_case_configuration(
           settings.model,
           account.base_url,
           account.api_key_ciphertext
-        FROM __llm_use_case_settings AS settings
-        INNER JOIN __llm_provider_accounts AS account
+        FROM __llm_provider_accounts AS account
+        INNER JOIN __llm_use_case_settings AS settings
           ON account.provider = settings.provider
         WHERE settings.use_case = $1
         "#,
@@ -289,6 +290,7 @@ async fn public_use_case_configuration(
 ) -> RpcResult<Option<PublicProviderConfiguration>> {
     validate_use_case(use_case)?;
 
+    // Match master bootstrap's table-lock order during replica startup.
     let row = sqlx::query(
         r#"
         SELECT
@@ -296,8 +298,8 @@ async fn public_use_case_configuration(
           settings.model,
           account.base_url,
           account.api_key_ciphertext
-        FROM __llm_use_case_settings AS settings
-        INNER JOIN __llm_provider_accounts AS account
+        FROM __llm_provider_accounts AS account
+        INNER JOIN __llm_use_case_settings AS settings
           ON account.provider = settings.provider
         WHERE settings.use_case = $1
         "#,

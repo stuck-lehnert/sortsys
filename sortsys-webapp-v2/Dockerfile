@@ -34,13 +34,18 @@ COPY sortsys-webapp-v2/ ./
 RUN npm run build
 
 
-FROM nginx:1.30.6-alpine
+FROM nginx:1.30.6-alpine-slim
 COPY --from=builder /app/sortsys-webapp-v2/build/client/ /usr/share/nginx/html/
 COPY sortsys-webapp-v2/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY sortsys-webapp-v2/nginx.conf /etc/nginx/nginx.conf
+
+USER nginx
 
 ENV API_UPSTREAM=http://api:3000 \
     ONLYOFFICE_UPSTREAM=http://onlyoffice \
     DRAWIO_UPSTREAM=http://drawio:8080 \
-    CLIENT_MAX_BODY_SIZE=64m
+    CLIENT_MAX_BODY_SIZE=64m \
+    NGINX_ENVSUBST_OUTPUT_DIR=/tmp \
+    NGINX_ENVSUBST_FILTER=^(API_UPSTREAM|ONLYOFFICE_UPSTREAM|DRAWIO_UPSTREAM|CLIENT_MAX_BODY_SIZE)$
 
 EXPOSE 80

@@ -29,3 +29,10 @@ POSTGRES_DB=sortsys
 POSTGRES_USER=sortsys
 JOB_RUNNER_ID=sortsys-compose-1
 CLIENT_MAX_BODY_SIZE=64m
+# Writable memory for nginx configuration and buffered uploads; size for concurrency.
+WEBAPP_TMPFS_SIZE=256m
+
+# Prebuilt deployment overrides; pin all three to a tested revision or digest.
+# SORTSYS_API_IMAGE=ghcr.io/stuck-lehnert/sortsys-api:latest
+# SORTSYS_JOBRUNNER_IMAGE=ghcr.io/stuck-lehnert/sortsys-jobrunner:latest
+# SORTSYS_WEBAPP_IMAGE=ghcr.io/stuck-lehnert/sortsys-webapp:latest

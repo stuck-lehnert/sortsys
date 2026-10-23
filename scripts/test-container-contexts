@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK_DIR="$(mktemp -d -t sortsys-container-contexts.XXXXXXXX)"
+trap 'rm -rf -- "$WORK_DIR"' EXIT
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker with Buildx is required to verify build-context exclusions" >&2
+  exit 1
+fi
+
+ignore_files=(
+  .dockerignore
+  sortsys-api-v2/.dockerignore
+  sortsys-v2-job_runner/.dockerignore
+  sortsys-webapp-v2/.dockerignore
+)
+
+for index in "${!ignore_files[@]}"; do
+  context="$WORK_DIR/context-$index"
+  output="$WORK_DIR/output-$index"
+
+  mkdir -p "$context"
+  cp "$ROOT_DIR/${ignore_files[$index]}" "$context/.dockerignore"
+
+  # Synthetic canaries only: never copy the real checkout or local credentials.
+  canaries=(
+    .git/config
+    .env
+    .env.production
+    .compose-env
+    .compose-env.local
+    .npmrc
+    .ssh/id_ed25519
+    private.key
+    certificate.p12
+    certificate.pfx
+    node_modules/package/index.js
+    rust-api/target/release/app
+    sortsys-webapp-v2/.env.local
+    sortsys-webapp-v2/.compose-env
+    sortsys-webapp-v2/node_modules/package/index.js
+    sortsys-webapp-v2/build/client/index.html
+    sortsys-dwgviewer/lib/target/release/app.wasm
+    nested/dist/index.js
+    nested/build/output
+    nested/private.key
+    nested/debug.log
+  )
+
+  for canary in "${canaries[@]}"; do
+    mkdir -p "$(dirname "$context/$canary")"
+    printf 'private-test-canary\n' >"$context/$canary"
+  done
+
+  retained=(
+    Cargo.toml
+    Cargo.lock
+    rust-api/src/main.rs
+    rust-api/migrations/schema.sql
+    client/src/rpc.ts
+    client/package.json
+    client/bun.lock
+    sortsys-webapp-v2/package-lock.json
+    sortsys-webapp-v2/app/root.tsx
+    sortsys-webapp-v2/public/icon.svg
+    sortsys-webapp-v2/nginx.conf
+    sortsys-react-components/src/index.tsx
+    sortsys-dwgviewer/lib/Cargo.lock
+    go.mod
+    go.sum
+    cmd/job-runner/main.go
+  )
+
+  if [[ $index -eq 0 ]]; then
+    # The webapp root context also excludes unrelated repository packages.
+    canaries+=(README.unrelated scripts/unneeded sortsys-api-v2/rust-api/src/main.rs)
+    retained=(
+      sortsys-api-v2/client/src/rpc.ts
+      sortsys-api-v2/client/package.json
+      sortsys-api-v2/client/bun.lock
+      sortsys-webapp-v2/package-lock.json
+      sortsys-webapp-v2/app/root.tsx
+      sortsys-webapp-v2/public/icon.svg
+      sortsys-webapp-v2/nginx.conf
+      sortsys-react-components/src/index.tsx
+      sortsys-dwgviewer/lib/Cargo.lock
+    )
+
+    for canary in "${canaries[@]}"; do
+      mkdir -p "$(dirname "$context/$canary")"
+      printf 'private-test-canary\n' >"$context/$canary"
+    done
+  fi
+
+  for source in "${retained[@]}"; do
+    mkdir -p "$(dirname "$context/$source")"
+    printf 'required-build-source\n' >"$context/$source"
+  done
+
+  printf 'FROM scratch\nCOPY . /\n' >"$context/Dockerfile"
+
+  docker buildx build --network none --progress plain \
+    --output "type=local,dest=$output" "$context"
+
+  for canary in "${canaries[@]}"; do
+    if [[ -e "$output/$canary" ]]; then
+      echo "${ignore_files[$index]} leaked synthetic canary: $canary" >&2
+      exit 1
+    fi
+  done
+
+  for source in "${retained[@]}"; do
+    cmp "$context/$source" "$output/$source"
+  done
+
+  echo "${ignore_files[$index]}: private files excluded and build inputs retained"
+done

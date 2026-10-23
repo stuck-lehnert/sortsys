@@ -1,1 +1,25 @@
-.gitignore
+# Keep local credentials, dependencies and build artifacts out of every stage.
+**/.git
+**/.env
+**/.env.*
+**/.compose-env
+**/.compose-env.*
+**/.npmrc
+**/.ssh
+**/*.key
+**/*.p12
+**/*.pfx
+**/node_modules
+**/target
+**/build
+**/dist
+**/out
+**/.react-router
+**/.cache
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+**/*.log
+**/*.tsbuildinfo
+**/.DS_Store

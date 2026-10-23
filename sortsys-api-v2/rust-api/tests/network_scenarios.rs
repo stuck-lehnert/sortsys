@@ -7639,8 +7639,17 @@ async fn mock_openai_response(
         .send()
         .await
         .unwrap();
-    assert_eq!(initialized.status(), reqwest::StatusCode::ACCEPTED);
-    assert!(initialized.bytes().await.unwrap().is_empty());
+
+    let status = initialized.status();
+    let body = initialized.bytes().await.unwrap();
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::ACCEPTED,
+        "MCP initialization notification failed: {}",
+        String::from_utf8_lossy(&body),
+    );
+    assert!(body.is_empty());
 
     let tools = mock_provider_mcp_request(&client, url, token, "tools/list", json!({})).await;
     let names = tools["result"]["tools"]

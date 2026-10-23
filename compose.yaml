@@ -67,6 +67,14 @@ services:
       context: ./sortsys-api-v2
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+      - jobs
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -102,6 +110,13 @@ services:
       context: ./sortsys-v2-job_runner
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - jobs
     environment:
       JOB_RUNNER_WS_URL: ws://api:3000/internal/job-runners/ws
       JOB_RUNNER_WS_IGNORE_PROXY: "true"
@@ -127,6 +142,16 @@ services:
       args:
         SORTSYS_REVISION: ${SORTSYS_REVISION:-development}
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${WEBAPP_TMPFS_SIZE:-256m},mode=1777
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
     environment:
       SERVICE_URL_WEBAPP_80: /
       API_UPSTREAM: http://api:3000
@@ -148,6 +173,10 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+networks:
+  default:
+  jobs:
 
 volumes:
   postgres-data:

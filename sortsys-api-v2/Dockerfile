@@ -15,18 +15,19 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    libpq5 \
+    libgssapi-krb5-2 \
+    libldap-2.5-0 \
+    liblz4-1 \
     libreadline8 \
+    libssl3 \
+    libzstd1 \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home sortsys
 
 # Database backup/restore routes execute these tools directly.
-COPY --from=postgres-client /usr/lib/*-linux-gnu/libpq.so.5.18 /usr/local/lib/libpq.so.5
-RUN system_libpq="$(find /usr/lib -name libpq.so.5 -print -quit)" \
-    && test -n "${system_libpq}" \
-    && rm -f "${system_libpq}" \
-    && cp /usr/local/lib/libpq.so.5 "${system_libpq}" \
-    && ldconfig
+COPY --from=postgres-client /usr/lib/*-linux-gnu/libpq.so.5.* /usr/local/lib/
+RUN ldconfig
 COPY --from=postgres-client /usr/lib/postgresql/17/bin/pg_dump /usr/local/bin/pg_dump
 COPY --from=postgres-client /usr/lib/postgresql/17/bin/psql /usr/local/bin/psql
 

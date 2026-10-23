@@ -14,8 +14,8 @@ echo "Checking deploy-upgrade promotion guards"
 node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs
 
 echo
-echo "Checking office deployment and JWT configuration"
-bun test ./scripts/office-deployment.test.mjs
+echo "Checking container hardening, office deployment and JWT configuration"
+bun test ./scripts/container-hardening.test.mjs ./scripts/office-deployment.test.mjs
 
 echo
 echo "Running API integration and contract checks"
