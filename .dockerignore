@@ -1,6 +1,7 @@
 # The root context is used by the webapp's cross-package build.
 **
 !sortsys-api-v2/
+sortsys-api-v2/**
 !sortsys-api-v2/client/
 !sortsys-api-v2/client/**
 !sortsys-dwgviewer/

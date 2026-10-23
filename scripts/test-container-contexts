@@ -75,7 +75,16 @@ for index in "${!ignore_files[@]}"; do
 
   if [[ $index -eq 0 ]]; then
     # The webapp root context also excludes unrelated repository packages.
-    canaries+=(README.unrelated scripts/unneeded sortsys-api-v2/rust-api/src/main.rs)
+    canaries+=(
+      README.unrelated
+      scripts/unneeded
+      sortsys-api-v2/Dockerfile
+      sortsys-api-v2/Cargo.toml
+      sortsys-api-v2/Cargo.lock
+      sortsys-api-v2/rust-api/src/main.rs
+      sortsys-api-v2/rust-api/migrations/schema.sql
+      sortsys-api-v2/internal/config.json
+    )
     retained=(
       sortsys-api-v2/client/src/rpc.ts
       sortsys-api-v2/client/package.json
