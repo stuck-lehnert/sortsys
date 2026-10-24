@@ -408,6 +408,7 @@ test("publication reuses attested OCI images and retains direct deploy pushes", 
   const packaging = producer.jobs.build.steps.find((step) => {
     return step.uses === "docker/bake-action@v6";
   });
+  assert.equal(packaging.with.source, ".");
   assert.equal(
     packaging.with.allow,
     "fs.read=${{ env.CI_BUILD_DIR }}\nfs.write=${{ env.BUNDLES_DIR }}\n",

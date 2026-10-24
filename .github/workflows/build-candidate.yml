@@ -99,6 +99,7 @@ jobs:
       - name: Package the checked outputs without recompiling
         uses: docker/bake-action@v6
         with:
+          source: .
           files: ${{ runner.temp }}/candidate-bake.json
           allow: |
             fs.read=${{ env.CI_BUILD_DIR }}
