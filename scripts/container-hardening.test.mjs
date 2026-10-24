@@ -371,6 +371,20 @@ test("CI loads every checked runtime without rebuilding and gates promotion", ()
   );
 });
 
+test("prebuilt API tests use the loader's Docker image store", () => {
+  const workflow = YAML.parse(read(".github/workflows/ci.yml"));
+
+  assert.match(read("scripts/ci-artifacts.mjs"), /docker-daemon:/);
+
+  for (const name of ["test", "upgrade"]) {
+    const consumer = workflow.jobs[name].steps.find((step) => {
+      return step.env?.TEST_PREBUILT_REVISION === "${{ github.sha }}";
+    });
+
+    assert.equal(consumer?.env.CONTAINER_RUNTIME, "docker");
+  }
+});
+
 test("publication reuses attested OCI images and retains direct deploy pushes", () => {
   const workflow = YAML.parse(read(".github/workflows/ci.yml"));
   const publisher = YAML.parse(

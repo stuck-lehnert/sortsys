@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches-ignore: ["ci/validate-build-once-03723f86"]
+    branches-ignore: [ci/validate-build-once-03723f86]
   pull_request:
 
 permissions:
@@ -56,6 +56,7 @@ jobs:
 
       - name: Run all compiled API tests against a fresh instance
         env:
+          CONTAINER_RUNTIME: docker
           TEST_PREBUILT_REVISION: ${{ github.sha }}
           TEST_API_START_TIMEOUT: 300
         run: ./scripts/test-api --rerun-each=1
@@ -158,6 +159,7 @@ jobs:
             "$REVISION" runtime-jobrunner "$CI_BUILD_PLATFORM"
       - name: Migrate populated deploy instance and run candidate tests
         env:
+          CONTAINER_RUNTIME: docker
           DEPLOY_SHA: ${{ needs.deploy-build.outputs.deploy_sha }}
           TEST_PREBUILT_REVISION: ${{ github.sha }}
           TEST_BASELINE_BUILD_DIR: ${{ runner.temp }}/deploy-build
