@@ -4,6 +4,10 @@ FROM docker.io/library/postgres:17-bookworm AS postgres-client
 
 FROM ${RUST_IMAGE}
 
+RUN rustup component add rustfmt clippy \
+    && mkdir -p /sortsys-api-v2 \
+    && chmod 1777 /sortsys-api-v2
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libpq5 \

@@ -1,13 +1,14 @@
-name: Publish containers
+name: Publish checked containers
 
 on:
-  push:
-    branches:
-      - deploy
   workflow_call:
     inputs:
       revision:
-        description: Commit to build after a successful predeploy promotion
+        description: Exact candidate revision that passed the caller's checks
+        required: true
+        type: string
+      artifacts:
+        description: Immutable artifact IDs produced by this CI run
         required: true
         type: string
 
@@ -16,67 +17,50 @@ permissions:
   packages: write
 
 env:
-  REVISION: ${{ inputs.revision || github.sha }}
+  REVISION: ${{ inputs.revision }}
+  CI_BUILD_PLATFORM: linux/amd64
 
 jobs:
   publish:
-    name: Publish ${{ matrix.name }}
+    name: Publish checked ${{ matrix.image }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: API
-            image: api
-            context: ./sortsys-api-v2
-            dockerfile: ./sortsys-api-v2/Dockerfile
-          - name: job runner
-            image: jobrunner
-            context: ./sortsys-v2-job_runner
-            dockerfile: ./sortsys-v2-job_runner/Dockerfile
-          - name: webapp
-            image: webapp
-            context: .
-            dockerfile: ./sortsys-webapp-v2/Dockerfile
-
+        image: [api, jobrunner, webapp]
     steps:
-      - name: Check out deploy revision
-        uses: actions/checkout@v7
-
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ env.REVISION }}
-      - name: Set image tag
-        id: version
-        shell: bash
-        run: echo "short_sha=${REVISION:0:10}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
+          ref: ${{ inputs.revision }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ fromJSON(inputs.artifacts)[matrix.image] }}
+          path: ${{ runner.temp }}/checked-image
+      - name: Verify the artifact and current deploy ref
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          node ./scripts/ci-artifacts.mjs verify "$RUNNER_TEMP/checked-image" \
+            "$REVISION" "runtime-$IMAGE" "$CI_BUILD_PLATFORM"
+          git fetch --no-tags origin refs/heads/deploy:refs/remotes/origin/deploy
+          test "$(git rev-parse --verify refs/remotes/origin/deploy^{commit})" = "$REVISION"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish ${{ matrix.name }}
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          build-args: ${{ matrix.image == 'webapp' && format('SORTSYS_REVISION={0}', env.REVISION) || '' }}
-          pull: true
-          push: true
-          sbom: true
-          provenance: mode=min
-          tags: |
-            ghcr.io/stuck-lehnert/sortsys-${{ matrix.image }}:${{ steps.version.outputs.short_sha }}
-            ghcr.io/stuck-lehnert/sortsys-${{ matrix.image }}:latest
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ env.REVISION }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - name: Publish the verified OCI image without rebuilding
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          export REGISTRY_AUTH_FILE="$HOME/.docker/config.json"
+          node ./scripts/ci-artifacts.mjs publish "$RUNNER_TEMP/checked-image" \
+            "$REVISION" "runtime-$IMAGE" "$CI_BUILD_PLATFORM"

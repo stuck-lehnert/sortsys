@@ -35,4 +35,18 @@ Push the current `master` revision to `predeploy`:
 git push origin master:predeploy
 ```
 
-GitHub runs the complete test job once. If it succeeds, the promotion job fast-forwards `deploy`. The push to `deploy` then builds and publishes the API, job runner, and webapp containers to GHCR with both the ten-character commit tag and `latest`.
+GitHub builds the candidate applications once and packages their runtime images.
+The fresh-instance tests, populated-deploy upgrade tests, and runtime checks use
+those outputs. A separate job builds the original seeder from the pinned `deploy`
+revision; its cache and binaries remain separate from the candidate.
+
+After all checks pass, promotion fast-forwards `deploy` using the exact tested
+candidate and baseline refs. The same CI run then copies the checked API, job
+runner, and webapp OCI images to GHCR with the ten-character commit tag and
+`latest`. Image digests, SBOMs, and provenance are preserved; publishing does not
+recompile the applications.
+
+Direct pushes to `deploy` also build and test one candidate, then publish its
+checked images. Every consumer downloads immutable artifact IDs from its own CI
+run and verifies the revision, platform, file checksums, and image metadata before
+use. Local `./scripts/ci` and `./scripts/test-api` retain their source-build paths.

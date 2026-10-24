@@ -1,0 +1,162 @@
+name: Build candidate once
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+    outputs:
+      artifacts:
+        description: Immutable artifact IDs for this exact candidate build
+        value: ${{ jobs.build.outputs.artifacts }}
+
+permissions:
+  contents: read
+
+env:
+  SORTSYS_REVISION: ${{ inputs.revision }}
+  CI_BUILD_PLATFORM: linux/amd64
+  CI_BUILD_DIR: ${{ github.workspace }}/../sortsys-compiled
+  CI_CARGO_HOME: /tmp/sortsys-ci-cargo-home
+  CARGO_HOME: /tmp/sortsys-ci-cargo-home
+  CARGO_BUILD_JOBS: 2
+  BUNDLES_DIR: ${{ github.workspace }}/../sortsys-bundles
+
+jobs:
+  build:
+    name: Compile and check all candidate outputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      artifacts: ${{ steps.receipts.outputs.artifacts }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.revision }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+          components: clippy,rustfmt
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+          cache-dependency-path: sortsys-v2-job_runner/go.sum
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            /tmp/sortsys-ci-cargo-home
+            /tmp/sortsys-ci-api-target
+            sortsys-dwgviewer/lib/target
+          key: candidate-${{ runner.os }}-rust-1.99-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: candidate-${{ runner.os }}-rust-1.99-
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Verify build-context secret and artifact exclusions
+        run: ./scripts/test-container-contexts
+
+      - name: Validate Compose configurations
+        run: |
+          docker compose --env-file .compose-env.example -f compose.yaml config --quiet
+          docker compose --env-file .compose-env.example -f ghcr-compose.yaml config --quiet
+
+      - name: Prepare the cached API compiler SDK
+        uses: docker/build-push-action@v7
+        with:
+          context: ./sortsys-api-v2
+          file: ./sortsys-api-v2/rust-api/Dockerfile.test
+          load: true
+          tags: localhost/sortsys-ci-api-sdk:rust-1.99-pg17
+          cache-from: type=gha,scope=api-ci-sdk
+          cache-to: type=gha,mode=max,scope=api-ci-sdk
+
+      - name: Build applications and run all source checks once
+        run: ./scripts/ci
+
+      - name: Prepare OCI packaging inputs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          for group in runtime-api runtime-jobrunner runtime-webapp tests; do
+            mkdir -p "$BUNDLES_DIR/$group"
+          done
+          node ./scripts/ci-artifacts.mjs plan \
+            "$CI_BUILD_DIR" "$BUNDLES_DIR" "$SORTSYS_REVISION" "$CI_BUILD_PLATFORM" \
+            > "$RUNNER_TEMP/candidate-bake.json"
+
+      - name: Package the checked outputs without recompiling
+        uses: docker/bake-action@v6
+        with:
+          files: ${{ runner.temp }}/candidate-bake.json
+          allow: |
+            fs.read=${{ env.CI_BUILD_DIR }}
+            fs.write=${{ env.BUNDLES_DIR }}
+          pull: true
+
+      - name: Seal exact-revision image bundles
+        run: |
+          cp "$CI_BUILD_DIR/jobrunner-tests/ocr-runtime.test" \
+            "$BUNDLES_DIR/runtime-jobrunner/ocr-runtime.test"
+          for group in runtime-api runtime-jobrunner runtime-webapp tests; do
+            node ./scripts/ci-artifacts.mjs seal "$BUNDLES_DIR/$group" \
+              "$SORTSYS_REVISION" "$group" "$CI_BUILD_PLATFORM"
+          done
+
+      - uses: actions/upload-artifact@v7
+        id: api
+        with:
+          name: candidate-${{ inputs.revision }}-${{ github.run_attempt }}-api
+          path: ${{ env.BUNDLES_DIR }}/runtime-api
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        id: jobrunner
+        with:
+          name: candidate-${{ inputs.revision }}-${{ github.run_attempt }}-jobrunner
+          path: ${{ env.BUNDLES_DIR }}/runtime-jobrunner
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        id: webapp
+        with:
+          name: candidate-${{ inputs.revision }}-${{ github.run_attempt }}-webapp
+          path: ${{ env.BUNDLES_DIR }}/runtime-webapp
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        id: tests
+        with:
+          name: candidate-${{ inputs.revision }}-${{ github.run_attempt }}-tests
+          path: ${{ env.BUNDLES_DIR }}/tests
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Export immutable artifact IDs
+        id: receipts
+        env:
+          API: ${{ steps.api.outputs.artifact-id }}
+          JOBRUNNER: ${{ steps.jobrunner.outputs.artifact-id }}
+          WEBAPP: ${{ steps.webapp.outputs.artifact-id }}
+          TESTS: ${{ steps.tests.outputs.artifact-id }}
+        run: |
+          printf 'artifacts={"api":"%s","jobrunner":"%s","webapp":"%s","tests":"%s"}\n' \
+            "$API" "$JOBRUNNER" "$WEBAPP" "$TESTS" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,8 @@
+# The runtime comes from the same Bake target exported for production checks.
+FROM runtime
+
+WORKDIR /sortsys-api-v2
+COPY --from=test-artifacts /workspace/ ./
+COPY --chmod=0755 run-prebuilt-api-tests /usr/local/bin/sortsys-api-tests
+
+USER sortsys

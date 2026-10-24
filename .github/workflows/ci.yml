@@ -2,13 +2,8 @@ name: CI
 
 on:
   push:
-    branches:
-      - master
-      - predeploy
+    branches-ignore: ["ci/validate-build-once-03723f86"]
   pull_request:
-    branches:
-      - master
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,194 +12,234 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CI_BUILD_PLATFORM: linux/amd64
+
 jobs:
+  build:
+    name: Build candidate once
+    uses: ./.github/workflows/build-candidate.yml
+    with:
+      revision: ${{ github.sha }}
+
   test:
     name: Test repository
+    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    timeout-minutes: 30
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Rust 1.99
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.99.0
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
-
-      - name: Cache Rust builds
-        uses: actions/cache@v6
-        with:
-          path: |
-            /tmp/sortsys-api-v2-cargo-registry
-            /tmp/sortsys-api-v2-rust-target
-            sortsys-dwgviewer/lib/target
-          key: rust-1.99-${{ runner.os }}-${{ hashFiles('sortsys-api-v2/Cargo.lock', 'sortsys-dwgviewer/lib/Cargo.lock') }}
-          restore-keys: |
-            rust-1.99-${{ runner.os }}-
-
-      - name: Set up Go 1.27
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.27.x'
-          cache-dependency-path: sortsys-v2-job_runner/go.sum
-
-      - name: Set up Node.js 24 LTS
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: sortsys-dwgviewer/package-lock.json
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v8
         with:
-          bun-version: 1.4.3
+          merge-multiple: true
+          artifact-ids: ${{ fromJSON(needs.build.outputs.artifacts).tests }}
+          path: ${{ runner.temp }}/candidate-tests
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ fromJSON(needs.build.outputs.artifacts).jobrunner }}
+          path: ${{ runner.temp }}/candidate-jobrunner
 
-      - name: Run all checks
+      - name: Load the exact checked candidate images
         env:
-          CONTAINER_RUNTIME: docker
-        run: ./scripts/ci
+          REVISION: ${{ github.sha }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          node ./scripts/ci-artifacts.mjs load "$RUNNER_TEMP/candidate-tests" \
+            "$REVISION" tests "$CI_BUILD_PLATFORM"
+          node ./scripts/ci-artifacts.mjs load "$RUNNER_TEMP/candidate-jobrunner" \
+            "$REVISION" runtime-jobrunner "$CI_BUILD_PLATFORM"
 
-  containers:
-    name: Check ${{ matrix.image }} runtime image
+      - name: Run all compiled API tests against a fresh instance
+        env:
+          TEST_PREBUILT_REVISION: ${{ github.sha }}
+          TEST_API_START_TIMEOUT: 300
+        run: ./scripts/test-api --rerun-each=1
+
+  deploy-build:
+    name: Build pinned deploy seed once
+    if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: api
-            context: ./sortsys-api-v2
-            dockerfile: ./sortsys-api-v2/Dockerfile
-          - image: jobrunner
-            context: ./sortsys-v2-job_runner
-            dockerfile: ./sortsys-v2-job_runner/Dockerfile
-          - image: webapp
-            context: .
-            dockerfile: ./sortsys-webapp-v2/Dockerfile
-
+    timeout-minutes: 45
+    outputs:
+      deploy_sha: ${{ steps.deploy.outputs.sha }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Validate both Compose configurations
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Pin the current deploy revision
+        id: deploy
         run: |
-          docker compose --env-file .compose-env.example -f compose.yaml config --quiet
-          docker compose --env-file .compose-env.example -f ghcr-compose.yaml config --quiet
-
-      - name: Verify build-context secret and artifact exclusions
-        if: matrix.image == 'api'
-        run: ./scripts/test-container-contexts
-
-      - name: Build the production runtime image without publishing
+          git fetch --no-tags origin refs/heads/deploy:refs/remotes/origin/deploy
+          deploy_sha="$(git rev-parse --verify refs/remotes/origin/deploy^{commit})"
+          echo "sha=$deploy_sha" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/deploy-source" "$RUNNER_TEMP/deploy-build"
+          git archive "$deploy_sha" sortsys-api-v2 \
+            | tar -xf - -C "$RUNNER_TEMP/deploy-source"
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/cache@v5
+        with:
+          path: |
+            /tmp/sortsys-ci-cargo-home
+            /tmp/sortsys-ci-api-target-deploy/${{ steps.deploy.outputs.sha }}
+          key: deploy-${{ runner.os }}-rust-1.99-${{ steps.deploy.outputs.sha }}
+          restore-keys: deploy-${{ runner.os }}-rust-1.99-
+      - uses: docker/setup-buildx-action@v4
+      - name: Prepare the cached API compiler SDK
         uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          build-args: SORTSYS_REVISION=${{ github.sha }}
-          pull: true
-          push: false
+          context: ./sortsys-api-v2
+          file: ./sortsys-api-v2/rust-api/Dockerfile.test
           load: true
-          tags: sortsys-container-test:${{ matrix.image }}
-          cache-from: type=gha,scope=check-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=check-${{ matrix.image }}
-
-      - name: Export worker runtime tests without shipping them in the image
-        if: matrix.image == 'jobrunner'
-        uses: docker/build-push-action@v7
-        with:
-          context: ./sortsys-v2-job_runner
-          file: ./sortsys-v2-job_runner/Dockerfile
-          target: runtime-test-binary
-          pull: true
-          push: false
-          outputs: type=local,dest=${{ runner.temp }}/sortsys-jobrunner-tests
-          cache-from: type=gha,scope=check-jobrunner
-
-      - name: Exercise the hardened runtime and required tools
+          tags: localhost/sortsys-ci-api-sdk:rust-1.99-pg17
+          cache-from: type=gha,scope=api-ci-sdk
+          cache-to: type=gha,mode=max,scope=api-ci-sdk
+      - name: Compile only the original deploy seeder
         env:
-          JOBRUNNER_RUNTIME_TEST:
-            ${{ runner.temp }}/sortsys-jobrunner-tests/ocr-runtime.test
+          DEPLOY_SHA: ${{ steps.deploy.outputs.sha }}
         run: |
-          ./scripts/test-container-runtime '${{ matrix.image }}' \
-            'sortsys-container-test:${{ matrix.image }}'
+          bash ./scripts/build-api-artifacts deploy \
+            "$RUNNER_TEMP/deploy-source/sortsys-api-v2" \
+            "$RUNNER_TEMP/deploy-build" "$DEPLOY_SHA"
+          node ./scripts/ci-artifacts.mjs seal "$RUNNER_TEMP/deploy-build" \
+            "$DEPLOY_SHA" deploy "$CI_BUILD_PLATFORM"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: deploy-${{ steps.deploy.outputs.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/deploy-build
+          if-no-files-found: error
+          retention-days: 7
 
   upgrade:
     name: Upgrade populated deploy databases
-    if: github.ref == 'refs/heads/predeploy'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
+    needs: [build, deploy-build]
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    outputs:
-      deploy_sha: ${{ steps.deploy.outputs.sha }}
-
+    timeout-minutes: 30
     steps:
-      - name: Check out candidate revision
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Pin the current deploy revision
-        id: deploy
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin refs/heads/deploy:refs/remotes/origin/deploy
-          echo "sha=$(git rev-parse --verify refs/remotes/origin/deploy)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache upgrade builds
-        uses: actions/cache@v6
+      - uses: actions/setup-node@v6
         with:
-          path: |
-            /tmp/sortsys-api-v2-cargo-registry
-            /tmp/sortsys-api-v2-rust-target
-            /tmp/sortsys-api-v2-rust-target-deploy
-          key: upgrade-rust-1.99-${{ runner.os }}-${{ hashFiles('sortsys-api-v2/Cargo.lock') }}
-          restore-keys: |
-            upgrade-rust-1.99-${{ runner.os }}-
-            rust-1.99-${{ runner.os }}-
-
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ fromJSON(needs.build.outputs.artifacts).tests }}
+          path: ${{ runner.temp }}/candidate-tests
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ fromJSON(needs.build.outputs.artifacts).jobrunner }}
+          path: ${{ runner.temp }}/candidate-jobrunner
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ needs.deploy-build.outputs.artifact_id }}
+          path: ${{ runner.temp }}/deploy-build
+      - name: Load the same candidate images used by the fresh-instance tests
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          node ./scripts/ci-artifacts.mjs load "$RUNNER_TEMP/candidate-tests" \
+            "$REVISION" tests "$CI_BUILD_PLATFORM"
+          node ./scripts/ci-artifacts.mjs load "$RUNNER_TEMP/candidate-jobrunner" \
+            "$REVISION" runtime-jobrunner "$CI_BUILD_PLATFORM"
       - name: Migrate populated deploy instance and run candidate tests
         env:
-          CONTAINER_RUNTIME: docker
-          DEPLOY_BASE_SHA: ${{ steps.deploy.outputs.sha }}
-        run: ./scripts/test-deploy-upgrade "$DEPLOY_BASE_SHA"
+          DEPLOY_SHA: ${{ needs.deploy-build.outputs.deploy_sha }}
+          TEST_PREBUILT_REVISION: ${{ github.sha }}
+          TEST_BASELINE_BUILD_DIR: ${{ runner.temp }}/deploy-build
+          TEST_API_START_TIMEOUT: 300
+        run: ./scripts/test-deploy-upgrade "$DEPLOY_SHA" --rerun-each=1
+
+  containers:
+    name: Check ${{ matrix.image }} runtime image
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, jobrunner, webapp]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ fromJSON(needs.build.outputs.artifacts)[matrix.image] }}
+          path: ${{ runner.temp }}/runtime-image
+      - name: Load the already built production image
+        env:
+          REVISION: ${{ github.sha }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          node ./scripts/ci-artifacts.mjs load "$RUNNER_TEMP/runtime-image" \
+            "$REVISION" "runtime-$IMAGE" "$CI_BUILD_PLATFORM"
+      - name: Verify non-root, read-only and temporary-file compatibility
+        env:
+          REVISION: ${{ github.sha }}
+          IMAGE: ${{ matrix.image }}
+          JOBRUNNER_RUNTIME_TEST: ${{ runner.temp }}/runtime-image/ocr-runtime.test
+        run: |
+          ./scripts/test-container-runtime "$IMAGE" \
+            "localhost/sortsys-ci-$IMAGE:$REVISION"
 
   promote:
-    name: Promote predeploy to deploy
+    name: Promote tested predeploy to deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
-    needs: [test, upgrade, containers]
+    needs: [build, test, deploy-build, upgrade, containers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: Check out tested revision
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Fast-forward deploy from the tested baseline
-        shell: bash
+      - name: Validate tested refs and advance deploy
         env:
-          DEPLOY_BASE_SHA: ${{ needs.upgrade.outputs.deploy_sha }}
-        run: ./scripts/promote-predeploy "$GITHUB_SHA" "$DEPLOY_BASE_SHA"
+          TESTED_CANDIDATE_SHA: ${{ github.sha }}
+          TESTED_DEPLOY_SHA: ${{ needs.deploy-build.outputs.deploy_sha }}
+        run: ./scripts/promote-predeploy "$TESTED_CANDIDATE_SHA" "$TESTED_DEPLOY_SHA"
 
-  publish:
-    name: Publish promoted containers
-    if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
-    needs: promote
-    permissions:
-      contents: read
-      packages: write
+  publish-deploy:
+    name: Publish checked direct deploy push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/deploy'
+    needs: [build, test, containers]
     uses: ./.github/workflows/publish-containers.yml
     with:
       revision: ${{ github.sha }}
+      artifacts: ${{ needs.build.outputs.artifacts }}
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+
+  publish:
+    name: Publish checked promoted predeploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/predeploy'
+    needs: [build, test, upgrade, containers, promote]
+    uses: ./.github/workflows/publish-containers.yml
+    with:
+      revision: ${{ github.sha }}
+      artifacts: ${{ needs.build.outputs.artifacts }}
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
