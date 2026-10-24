@@ -63,6 +63,12 @@ Run the same complete repository check as GitHub Actions with:
 
 This also checks the Go job runner, Rust DWG parser, DWG viewer, WebAssembly build, and web application. The [CI branch flow](.github/BRANCHES.md) documents how `master`, `predeploy`, and `deploy` are used.
 
+In GitHub Actions, one candidate build supplies the API, job runner, DWG
+WebAssembly, client, and webapp outputs. Fresh-instance tests, populated-deploy
+upgrade tests, and runtime checks reuse that build. Publishing copies the checked
+OCI images, including their SBOM and provenance, without compiling again. The
+pinned `deploy` revision has a separate seeder build for the upgrade fixture.
+
 ## Deployment
 
 The `.compose-env` file contains every environment variable relevant to a deployment. Create it from the checked-in [`.compose-env.example`](.compose-env.example) template when running the stack yourself, then replace the placeholder values:

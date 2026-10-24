@@ -252,24 +252,18 @@ test("the worker's smaller runtime retains its required image, PDF and language 
 test("CI exports genuine worker tests separately and requires exact runtime selection", () => {
   const workflow = YAML.parse(read(".github/workflows/ci.yml"));
   const steps = workflow.jobs.containers.steps;
-  const exported = steps.find((step) => {
-    return step.with?.target === "runtime-test-binary";
-  });
   const runtime = steps.find((step) => {
     return step.run?.includes("test-container-runtime");
   });
+  const producer = read("scripts/ci");
   const harness = read("scripts/test-container-runtime");
   const dockerfile = read("sortsys-v2-job_runner/Dockerfile");
 
-  assert.equal(exported.if, "matrix.image == 'jobrunner'");
-  assert.equal(exported.with.push, false);
-  assert.equal(
-    exported.with.outputs,
-    "type=local,dest=${{ runner.temp }}/sortsys-jobrunner-tests",
-  );
+  assert.match(producer, /CGO_ENABLED=0 go test -mod=readonly -c/);
+  assert.match(producer, /jobrunner-tests\/ocr-runtime\.test/);
   assert.equal(
     runtime.env.JOBRUNNER_RUNTIME_TEST,
-    "${{ runner.temp }}/sortsys-jobrunner-tests/ocr-runtime.test",
+    "${{ runner.temp }}/runtime-image/ocr-runtime.test",
   );
   assert.match(dockerfile, /^FROM scratch AS runtime-test-binary$/m);
   assert.ok(
@@ -349,30 +343,26 @@ test("prebuilt image references can be pinned without changing production defaul
   }
 });
 
-test("CI checks every production image without publishing and gates promotion", () => {
+test("CI loads every checked runtime without rebuilding and gates promotion", () => {
   const workflow = YAML.parse(read(".github/workflows/ci.yml"));
   const job = workflow.jobs.containers;
-  const matrix = job.strategy.matrix.include;
-  const build = job.steps.find((step) => {
-    return step.uses?.startsWith("docker/build-push-action@");
-  });
-  const runtime = job.steps.find((step) => {
-    return step.run?.includes("test-container-runtime");
-  });
-
-  const images = matrix.map((entry) => {
-    return entry.image;
-  });
-
-  assert.deepEqual(images.sort(), ["api", "jobrunner", "webapp"]);
-  assert.equal(build.with.push, false);
-  assert.equal(build.with.load, true);
+  assert.deepEqual(job.strategy.matrix.image, ["api", "jobrunner", "webapp"]);
+  assert.equal(job.needs, "build");
+  assert.equal(
+    job.steps.some((step) => step.uses?.includes("build-push-action")),
+    false,
+  );
+  const runtime = job.steps.find((step) =>
+    step.run?.includes("test-container-runtime"),
+  );
   assert.ok(
     runtime.run.includes("\\\n"),
     "Shell continuation retains its newline",
   );
   assert.deepEqual(workflow.jobs.promote.needs, [
+    "build",
     "test",
+    "deploy-build",
     "upgrade",
     "containers",
   ]);
@@ -381,14 +371,90 @@ test("CI checks every production image without publishing and gates promotion", 
   );
 });
 
-test("the publishing workflow requests an SBOM and minimal provenance", () => {
-  const workflow = YAML.parse(read(".github/workflows/publish-containers.yml"));
-  const build = workflow.jobs.publish.steps.find((step) => {
-    return step.uses?.startsWith("docker/build-push-action@");
-  });
+test("prebuilt API tests use the loader's Docker image store", () => {
+  const workflow = YAML.parse(read(".github/workflows/ci.yml"));
 
-  assert.equal(build.with.sbom, true);
-  assert.equal(build.with.provenance, "mode=min");
+  assert.match(read("scripts/ci-artifacts.mjs"), /docker-daemon:/);
+
+  for (const name of ["test", "upgrade"]) {
+    const consumer = workflow.jobs[name].steps.find((step) => {
+      return step.env?.TEST_PREBUILT_REVISION === "${{ github.sha }}";
+    });
+
+    assert.equal(consumer?.env.CONTAINER_RUNTIME, "docker");
+  }
+});
+
+test("publication reuses attested OCI images and retains direct deploy pushes", () => {
+  const workflow = YAML.parse(read(".github/workflows/ci.yml"));
+  const publisher = YAML.parse(
+    read(".github/workflows/publish-containers.yml"),
+  );
+  const producer = YAML.parse(read(".github/workflows/build-candidate.yml"));
+  assert.ok(Object.hasOwn(workflow.on, "push"));
+  const direct = workflow.jobs["publish-deploy"];
+  assert.equal(
+    direct.if,
+    "github.event_name == 'push' && github.ref == 'refs/heads/deploy'",
+  );
+  assert.deepEqual(direct.needs, ["build", "test", "containers"]);
+  assert.deepEqual(Object.keys(publisher.on), ["workflow_call"]);
+  assert.equal(publisher.on.workflow_call.inputs.artifacts.required, true);
+  assert.equal(
+    publisher.jobs.publish.steps.some((step) => {
+      return (
+        step.uses?.includes("build-push-action") ||
+        step.run?.includes("docker build")
+      );
+    }),
+    false,
+  );
+  assert.ok(
+    publisher.jobs.publish.steps.some((step) => {
+      return step.run?.includes("ci-artifacts.mjs publish");
+    }),
+  );
+  assert.ok(
+    producer.jobs.build.steps.some(
+      (step) => step.uses === "docker/bake-action@v6",
+    ),
+  );
+  const packaging = producer.jobs.build.steps.find((step) => {
+    return step.uses === "docker/bake-action@v6";
+  });
+  assert.equal(packaging.with.source, ".");
+  assert.equal(producer.env.CI_BUILD_DIR, "${{ github.workspace }}-compiled");
+  assert.equal(producer.env.BUNDLES_DIR, "${{ github.workspace }}-bundles");
+  assert.equal(
+    packaging.with.allow,
+    "fs.read=${{ env.CI_BUILD_DIR }}\nfs.write=${{ env.BUNDLES_DIR }}\n",
+  );
+  const artifacts = read("scripts/ci-artifacts.mjs");
+  assert.match(artifacts, /type=sbom/);
+  assert.match(artifacts, /type=provenance,mode=min/);
+  assert.match(artifacts, /--preserve-digests/);
+
+  for (const name of ["test", "upgrade"]) {
+    const downloads = workflow.jobs[name].steps.filter((step) => {
+      return step.uses?.startsWith("actions/download-artifact@");
+    });
+    assert.ok(
+      downloads.some((step) => {
+        return (
+          step.with["artifact-ids"] ===
+          "${{ fromJSON(needs.build.outputs.artifacts).tests }}"
+        );
+      }),
+    );
+    assert.ok(
+      downloads.some((step) => {
+        return (
+          step.with["artifact-ids"] ===
+          "${{ fromJSON(needs.build.outputs.artifacts).jobrunner }}"
+        );
+      }),
+    );
+  }
 });
 
 for (const file of ["compose.yaml", "ghcr-compose.yaml"]) {

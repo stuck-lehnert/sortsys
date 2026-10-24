@@ -3,15 +3,30 @@ set -euo pipefail
 
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=4096}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
 cd "$ROOT_DIR"
+
+CI_BUILD_DIR="${CI_BUILD_DIR:-}"
+
+if [ -n "$CI_BUILD_DIR" ]; then
+  if ! [[ "${SORTSYS_REVISION:-}" =~ ^[0-9a-f]{40}$ ]] ||
+    [ "$SORTSYS_REVISION" != "$(git rev-parse HEAD)" ]; then
+    echo "CI builds require the exact checked-out SORTSYS_REVISION." >&2
+    exit 1
+  fi
+
+  git diff --exit-code HEAD --
+  mkdir -p "$CI_BUILD_DIR"
+  CI_BUILD_DIR="$(cd "$CI_BUILD_DIR" && pwd)"
+  export CI_BUILD_DIR
+fi
 
 echo "Checking coordinated runtime versions"
 node ./scripts/check-runtime-versions.mjs
 node --test ./scripts/check-runtime-versions.test.mjs
 
-echo "Checking deploy-upgrade promotion guards"
-node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs
+echo "Checking deploy-upgrade promotion guards and CI artifact reuse"
+node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs \
+  ./scripts/ci-artifacts.test.mjs ./scripts/prebuilt-api.test.mjs
 
 echo
 echo "Checking container hardening, office deployment and JWT configuration"
@@ -22,14 +37,39 @@ echo "Checking development LLM environment loading"
 bun test ./scripts/dev-llm.test.mjs
 
 echo
-echo "Running API integration and contract checks"
-./scripts/test-api --rerun-each=1
+
+if [ -n "$CI_BUILD_DIR" ]; then
+  echo "Building and checking the candidate API once"
+  bash ./scripts/build-api-artifacts candidate "$ROOT_DIR/sortsys-api-v2" \
+    "$CI_BUILD_DIR" "$SORTSYS_REVISION"
+
+  echo "Running client checks and building the client once"
+  (
+    cd sortsys-api-v2/client
+    bun install --frozen-lockfile
+    bun x tsc -p tsconfig.json --noEmit
+    bun test
+    bun run build
+  )
+else
+  echo "Running API integration and contract checks"
+  ./scripts/test-api --rerun-each=1
+fi
 
 echo
 echo "Running Go job-runner tests"
 (
   cd sortsys-v2-job_runner
-  go test ./...
+  go test -mod=readonly ./...
+
+  if [ -n "$CI_BUILD_DIR" ]; then
+    go vet -mod=readonly ./...
+    mkdir -p "$CI_BUILD_DIR/jobrunner-builder/out" "$CI_BUILD_DIR/jobrunner-tests"
+    CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags='-s -w' \
+      -o "$CI_BUILD_DIR/jobrunner-builder/out/job-runner" ./cmd/job-runner
+    CGO_ENABLED=0 go test -mod=readonly -c \
+      -o "$CI_BUILD_DIR/jobrunner-tests/ocr-runtime.test" ./internal/runner
+  fi
 )
 
 echo
@@ -49,7 +89,7 @@ echo "Running DWG viewer checks"
 )
 
 echo
-echo "Running webapp checks"
+echo "Running webapp checks and building the webapp once"
 (
   cd sortsys-webapp-v2
   bun install --frozen-lockfile
@@ -70,3 +110,12 @@ echo "Running webapp checks"
   bun run test:security-deps
   bun run build
 )
+
+if [ -n "$CI_BUILD_DIR" ]; then
+  frontend="$CI_BUILD_DIR/webapp-builder/app/sortsys-webapp-v2/build"
+  mkdir -p "$frontend"
+  cp -a sortsys-webapp-v2/build/client "$frontend/client"
+  git diff --exit-code HEAD --
+  node ./scripts/ci-artifacts.mjs seal "$CI_BUILD_DIR" "$SORTSYS_REVISION" \
+    compiled "${CI_BUILD_PLATFORM:-linux/amd64}"
+fi

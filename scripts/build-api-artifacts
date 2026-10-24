@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/container-images.sh"
+
+mode="${1:-}"
+api_source="${2:-}"
+output="${3:-}"
+revision="${4:-}"
+
+if ! [[ "$mode" =~ ^(candidate|deploy)$ && "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Usage: build-api-artifacts candidate|deploy <api-source> <output> <exact-revision>" >&2
+  exit 1
+fi
+
+if [ ! -f "$api_source/Cargo.lock" ]; then
+  echo "The selected API source must contain its locked workspace." >&2
+  exit 1
+fi
+
+mkdir -p "$output"
+api_source="$(cd "$api_source" && pwd)"
+output="$(cd "$output" && pwd)"
+cargo_home="${CI_CARGO_HOME:-/tmp/sortsys-ci-cargo-home}"
+target="${CI_API_TARGET:-/tmp/sortsys-ci-api-target}"
+
+if [ "$mode" = deploy ]; then
+  target="${CI_API_TARGET:-/tmp/sortsys-ci-api-target-deploy/$revision}"
+fi
+
+sdk="localhost/sortsys-ci-api-sdk:rust-1.99-pg17"
+mkdir -p "$cargo_home" "$target"
+
+if [ "$mode" = candidate ]; then
+  if [ "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$revision" ]; then
+    echo "Candidate artifacts must come from the checked-out revision." >&2
+    exit 1
+  fi
+
+  mkdir -p "$output/api-tests/workspace"
+  git -C "$ROOT_DIR" archive "$revision" sortsys-api-v2 |
+    tar -xf - --strip-components=1 -C "$output/api-tests/workspace"
+  api_source="$output/api-tests/workspace"
+fi
+
+if ! docker image inspect "$sdk" >/dev/null 2>&1; then
+  docker build --file "$ROOT_DIR/sortsys-api-v2/rust-api/Dockerfile.test" \
+    --build-arg "RUST_IMAGE=$(sortsys_container_image rust)" \
+    --tag "$sdk" "$ROOT_DIR/sortsys-api-v2"
+fi
+
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e CARGO_HOME=/cargo-home -e CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
+  -v "$cargo_home:/cargo-home" \
+  -v "$api_source:/input:ro" \
+  -v "$target:/sortsys-api-v2/target" \
+  -v "$output:/ci-output" \
+  -v "$ROOT_DIR/scripts/compile-api:/compile-api:ro" \
+  "$sdk" bash /compile-api "$mode"
+
+if [ "$mode" = candidate ]; then
+  node "$ROOT_DIR/scripts/ci-artifacts.mjs" collect-api \
+    "$target" "$output/cargo-tests.jsonl" "$output" "$revision"
+fi

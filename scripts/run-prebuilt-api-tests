@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+workspace="${SORTSYS_API_TEST_WORKSPACE:-/sortsys-api-v2}"
+revision="${TEST_PREBUILT_REVISION:-}"
+
+if ! [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "An exact candidate revision is required for compiled API tests." >&2
+  exit 1
+fi
+
+cd "$workspace"
+
+if [ "$(cat BUILD_REVISION)" != "$revision" ]; then
+  echo "The API test binaries do not match the requested candidate revision." >&2
+  exit 1
+fi
+
+names=()
+executables=()
+upgrade=""
+network=""
+
+while IFS=$'\t' read -r name executable extra; do
+  if ! [[ "$name" =~ ^[a-zA-Z0-9_-]+$ &&
+    "$executable" =~ ^target/release/deps/[a-zA-Z0-9_.-]+$ ]] ||
+    [ -n "$extra" ] || [ ! -f "$executable" ] ||
+    [ -L "$executable" ] || [ ! -x "$executable" ]; then
+    echo "Invalid or missing compiled API test: $name $executable" >&2
+    exit 1
+  fi
+
+  for previous in "${executables[@]}"; do
+    if [ "$previous" = "$executable" ]; then
+      echo "Duplicate compiled API test path: $executable" >&2
+      exit 1
+    fi
+  done
+
+  for previous in "${names[@]}"; do
+    if [ "$previous" = "$name" ]; then
+      echo "Duplicate compiled API test target: $name" >&2
+      exit 1
+    fi
+  done
+
+  names+=("$name")
+  executables+=("$executable")
+
+  if [ "$name" = upgrade_scenarios ]; then
+    upgrade="$executable"
+  elif [ "$name" = network_scenarios ]; then
+    network="$executable"
+  fi
+done <test-executables.tsv
+
+if [ -z "$upgrade" ] || [ -z "$network" ]; then
+  echo "The build must include the network and deploy-upgrade test targets." >&2
+  exit 1
+fi
+
+case "${1:-}" in
+  all)
+    log="$(mktemp)"
+    trap 'rm -f "$log"' EXIT
+
+    for executable in "${executables[@]}"; do
+      "./$executable" --nocapture |& tee -a "$log"
+    done
+
+    if grep -q 'skipping network scenario' "$log"; then
+      echo "Required network scenarios were skipped." >&2
+      exit 1
+    fi
+    ;;
+  phase)
+    phase="${2:-}"
+
+    case "$phase" in
+      capture_deploy_fixture | migrate_deploy_fixture | exercise_upgraded_deploy_fixture) ;;
+      *)
+        echo "Unknown deploy-upgrade test phase: $phase" >&2
+        exit 1
+        ;;
+    esac
+
+    listing="$(mktemp)"
+    trap 'rm -f "$listing"' EXIT
+    "./$upgrade" "$phase" --ignored --exact --list >"$listing"
+
+    if ! grep -Fxq "${phase}: test" "$listing"; then
+      echo "Required deploy-upgrade test is missing: $phase" >&2
+      exit 1
+    fi
+
+    "./$upgrade" "$phase" --ignored --exact --nocapture
+    ;;
+  *)
+    echo "Usage: sortsys-api-tests all|phase <exact-upgrade-phase>" >&2
+    exit 1
+    ;;
+esac

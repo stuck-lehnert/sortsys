@@ -12,6 +12,21 @@ JOB_RUNNER_DIR="$ROOT_DIR/sortsys-v2-job_runner"
 TEST_UPGRADE_FROM_DIR="${TEST_UPGRADE_FROM_DIR:-}"
 TEST_API_START_TIMEOUT="${TEST_API_START_TIMEOUT:-240}"
 TEST_UPGRADE_MANIFEST=""
+TEST_PREBUILT_REVISION="${TEST_PREBUILT_REVISION:-}"
+TEST_BASELINE_BUILD_DIR="${TEST_BASELINE_BUILD_DIR:-}"
+
+if [ -n "$TEST_PREBUILT_REVISION" ]; then
+  if ! [[ "$TEST_PREBUILT_REVISION" =~ ^[0-9a-f]{40}$ ]] ||
+    [ "$TEST_PREBUILT_REVISION" != "$(git -C "$ROOT_DIR" rev-parse HEAD)" ]; then
+    echo "Prebuilt API tests must match the exact candidate checkout." >&2
+    exit 1
+  fi
+
+  image_base="localhost/sortsys-ci"
+  TEST_API_TEST_IMAGE="${TEST_API_TEST_IMAGE:-${image_base}-api-tests:$TEST_PREBUILT_REVISION}"
+  TEST_JOB_RUNNER_IMAGE="${TEST_JOB_RUNNER_IMAGE:-${image_base}-jobrunner:$TEST_PREBUILT_REVISION}"
+  TEST_S3_IMAGE="${TEST_S3_IMAGE:-${image_base}-s3:$TEST_PREBUILT_REVISION}"
+fi
 
 if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
   if [ ! -f "$TEST_UPGRADE_FROM_DIR/sortsys-api-v2/rust-api/src/bin/seed_dev.rs" ]; then
@@ -20,6 +35,12 @@ if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
   fi
 
   TEST_UPGRADE_MANIFEST="/tmp/sortsys-deploy-upgrade.json"
+
+  if [ -n "$TEST_PREBUILT_REVISION" ]; then
+    node "$ROOT_DIR/scripts/ci-artifacts.mjs" verify "$TEST_BASELINE_BUILD_DIR" \
+      "${TEST_DEPLOY_REVISION:-}" deploy "${CI_BUILD_PLATFORM:-linux/amd64}"
+    chmod 0755 "$TEST_BASELINE_BUILD_DIR/seed_dev"
+  fi
 fi
 
 TEST_RUN_SUFFIX="${TEST_RUN_SUFFIX:-$(date +%s)-$RANDOM}"
@@ -211,10 +232,12 @@ resolve_ports() {
 
 resolve_ports
 
-mkdir -p "$TEST_CARGO_TARGET_DIR" "$TEST_CARGO_REGISTRY_DIR"
+if [ -z "$TEST_PREBUILT_REVISION" ]; then
+  mkdir -p "$TEST_CARGO_TARGET_DIR" "$TEST_CARGO_REGISTRY_DIR"
 
-if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
-  mkdir -p "$TEST_BASELINE_CARGO_TARGET_DIR"
+  if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
+    mkdir -p "$TEST_BASELINE_CARGO_TARGET_DIR"
+  fi
 fi
 
 echo "Using test run suffix: ${TEST_RUN_SUFFIX}"
@@ -374,7 +397,31 @@ initialize_master_database() {
     -c "CREATE DATABASE \"${TEST_MASTER_DATABASE_NAME}\";" >/dev/null
 }
 
+require_prebuilt_image() {
+  local image="$1"
+  local revision
+
+  if ! image_exists "$image"; then
+    echo "Required prebuilt image is missing: $image" >&2
+    exit 1
+  fi
+
+  revision="$("$CONTAINER_RUNTIME" image inspect --format \
+    '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
+
+  if [ "$revision" != "$TEST_PREBUILT_REVISION" ]; then
+    echo "Prebuilt image revision mismatch: $image" >&2
+    exit 1
+  fi
+}
+
 start_infra() {
+  if [ -n "$TEST_PREBUILT_REVISION" ]; then
+    require_prebuilt_image "$TEST_API_TEST_IMAGE"
+    require_prebuilt_image "$TEST_JOB_RUNNER_IMAGE"
+    require_prebuilt_image "$TEST_S3_IMAGE"
+  fi
+
   cleanup_containers
   cleanup_network
   ensure_network
@@ -393,23 +440,24 @@ start_infra() {
     TEST_S3_IMAGE="$TEST_S3_IMAGE_FALLBACK"
   fi
 
+  if [ -z "$TEST_PREBUILT_REVISION" ]; then
+    if ! ensure_image "$TEST_RUST_IMAGE" 5; then
+      echo "Failed to prepare rust image: ${TEST_RUST_IMAGE}"
+      exit 1
+    fi
 
-  if ! ensure_image "$TEST_RUST_IMAGE" 5; then
-    echo "Failed to prepare rust image: ${TEST_RUST_IMAGE}"
-    exit 1
-  fi
+    if ! ensure_image "$TEST_GO_IMAGE" 5; then
+      echo "Failed to prepare go image: ${TEST_GO_IMAGE}"
+      exit 1
+    fi
 
-  if ! ensure_image "$TEST_GO_IMAGE" 5; then
-    echo "Failed to prepare go image: ${TEST_GO_IMAGE}"
-    exit 1
-  fi
+    build_api_test_image
+    build_job_runner_test_image
 
-  build_api_test_image
-  build_job_runner_test_image
-
-  if ! ensure_image "$TEST_BUN_IMAGE" 5; then
-    echo "Failed to prepare bun image: ${TEST_BUN_IMAGE}"
-    exit 1
+    if ! ensure_image "$TEST_BUN_IMAGE" 5; then
+      echo "Failed to prepare bun image: ${TEST_BUN_IMAGE}"
+      exit 1
+    fi
   fi
 
   echo "Starting PostgreSQL test container on port ${TEST_PG_PORT}"
@@ -472,9 +520,9 @@ start_api_container() {
   local cargo_target_dir="$TEST_CARGO_TARGET_DIR"
   local pg_master_dsn="postgres://postgres:${TEST_PG_PASSWORD}@${TEST_PG_CONTAINER}:5432/${TEST_MASTER_DATABASE_NAME}"
   local ready_pattern='sortsys Rust API listening'
+  local mounts=()
   local startup_command='
     set -eu
-    rustup component add rustfmt clippy
 
     if [ -n "$TEST_UPGRADE_MANIFEST" ]; then
       bash ./rust-api/tests/run-upgrade-phase capture_deploy_fixture
@@ -497,6 +545,34 @@ start_api_container() {
     '
   fi
 
+  if [ -n "$TEST_PREBUILT_REVISION" ]; then
+    startup_command='
+      set -eu
+
+      if [ -n "$TEST_UPGRADE_MANIFEST" ]; then
+        sortsys-api-tests phase capture_deploy_fixture
+        sortsys-api-tests phase migrate_deploy_fixture
+      fi
+
+      exec /usr/local/bin/sortsys-api
+    '
+
+    if [ "$phase" = baseline ]; then
+      mounts=(-v "$TEST_BASELINE_BUILD_DIR/seed_dev:/opt/sortsys-deploy/seed_dev:ro")
+      startup_command='
+        set -eu
+        /opt/sortsys-deploy/seed_dev
+        echo "sortsys deploy upgrade fixture ready"
+        exec sleep infinity
+      '
+    fi
+  else
+    mounts=(
+      -v "${cargo_target_dir}:/sortsys-api-v2/target${runtime_mount_suffix}"
+      -v "${TEST_CARGO_REGISTRY_DIR}:/usr/local/cargo/registry${runtime_mount_suffix}"
+    )
+  fi
+
   # Backup scenarios drive due sweeps explicitly to keep fixtures deterministic.
   echo "Starting API test container on port ${TEST_API_PORT}"
   "$CONTAINER_RUNTIME" create \
@@ -506,9 +582,9 @@ start_api_container() {
     "${runtime_env_args[@]}" \
     --network "$TEST_NETWORK" \
     -p "${TEST_API_PORT}:3000" \
-    -v "${cargo_target_dir}:/sortsys-api-v2/target${runtime_mount_suffix}" \
-    -v "${TEST_CARGO_REGISTRY_DIR}:/usr/local/cargo/registry${runtime_mount_suffix}" \
+    "${mounts[@]}" \
     -w /sortsys-api-v2 \
+    -e TEST_PREBUILT_REVISION="$TEST_PREBUILT_REVISION" \
     -e PORT="3000" \
     -e AUTO_BACKUPS_ENABLED="false" \
     -e TEST_UPGRADE_MANIFEST="$TEST_UPGRADE_MANIFEST" \
@@ -542,7 +618,10 @@ start_api_container() {
     "$TEST_API_TEST_IMAGE" \
     sh -c "$startup_command" >/dev/null
 
-  copy_api_workspace_into_container "$TEST_API_CONTAINER" "$source_root"
+  if [ -z "$TEST_PREBUILT_REVISION" ]; then
+    copy_api_workspace_into_container "$TEST_API_CONTAINER" "$source_root"
+  fi
+
   "$CONTAINER_RUNTIME" start "$TEST_API_CONTAINER" >/dev/null
 
   if ! wait_for_container_log \
@@ -645,6 +724,12 @@ api_exec() {
 }
 
 run_api_tests() {
+  if [ -n "$TEST_PREBUILT_REVISION" ]; then
+    echo "Running the candidate's already compiled API tests"
+    api_exec sortsys-api-tests all
+    return
+  fi
+
   echo "Running Rust API checks"
   # The password is test-only and must match TEST_ADMIN_HASH so network tests
   # can exercise admin.login instead of forging an administrator JWT.
@@ -702,7 +787,11 @@ check_test_connectivity
 
 if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
   echo "Checking original deploy records and writes through the upgraded API"
-  api_exec bash ./rust-api/tests/run-upgrade-phase exercise_upgraded_deploy_fixture
+  if [ -n "$TEST_PREBUILT_REVISION" ]; then
+    api_exec sortsys-api-tests phase exercise_upgraded_deploy_fixture
+  else
+    api_exec bash ./rust-api/tests/run-upgrade-phase exercise_upgraded_deploy_fixture
+  fi
 fi
 
 start_job_runner_containers

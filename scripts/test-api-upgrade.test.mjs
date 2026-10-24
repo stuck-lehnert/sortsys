@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,7 +17,15 @@ import { test } from "node:test";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-function runHarness(t, { upgrade = true, failUpgrade = false } = {}) {
+function runHarness(
+  t,
+  {
+    upgrade = true,
+    failUpgrade = false,
+    prebuilt = false,
+    wrongImage = false,
+  } = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), "sortsys-api-harness-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
 
@@ -23,6 +33,29 @@ function runHarness(t, { upgrade = true, failUpgrade = false } = {}) {
   const baseline = join(directory, "deploy");
   const seedDirectory = join(baseline, "sortsys-api-v2/rust-api/src/bin");
   const eventsFile = join(directory, "events.jsonl");
+  const revision = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).stdout.trim();
+  const deployRevision = "b".repeat(40);
+  const build = join(directory, "baseline-build");
+  mkdirSync(build);
+  writeFileSync(join(build, "seed_dev"), "original compiled deploy seed");
+  writeFileSync(
+    join(build, "build.json"),
+    JSON.stringify({
+      schema: 1,
+      revision: deployRevision,
+      kind: "deploy",
+      platform: "linux/amd64",
+      files: {
+        seed_dev: createHash("sha256")
+          .update("original compiled deploy seed")
+          .digest("hex"),
+      },
+      images: {},
+    }),
+  );
   mkdirSync(bin);
   mkdirSync(seedDirectory, { recursive: true });
   writeFileSync(
@@ -50,6 +83,13 @@ if (args[0] === 'cp' && args[1] === '-') {
     '-xOf', '-', 'sortsys-api-v2/rust-api/src/bin/seed_dev.rs',
   ], { input: archive, encoding: 'utf8' });
   record(['copied-seed', seed]);
+}
+
+if (args[0] === 'image' && args[1] === 'inspect' && args.includes('--format')) {
+  const revision = process.env.WRONG_IMAGE === 'true'
+    ? 'wrong-revision'
+    : process.env.PREBUILT_REVISION;
+  console.log(revision);
 }
 
 if (args[0] === 'inspect') {
@@ -80,6 +120,11 @@ if (process.env.FAIL_UPGRADE === 'true' && args[0] === 'exec' &&
       PATH: `${bin}:${process.env.PATH}`,
       EVENTS: eventsFile,
       FAIL_UPGRADE: String(failUpgrade),
+      WRONG_IMAGE: String(wrongImage),
+      PREBUILT_REVISION: revision,
+      TEST_PREBUILT_REVISION: prebuilt ? revision : "",
+      TEST_DEPLOY_REVISION: deployRevision,
+      TEST_BASELINE_BUILD_DIR: build,
       CONTAINER_RUNTIME: "docker",
       TEST_RUN_SUFFIX: "orchestration-fixture",
       TEST_UPGRADE_FROM_DIR: upgrade ? baseline : "",
@@ -91,12 +136,11 @@ if (process.env.FAIL_UPGRADE === 'true' && args[0] === 'exec' &&
       TEST_S3_PORT: "23002",
     },
   });
-  const events = readFileSync(eventsFile, "utf8")
-    .trim()
-    .split("\n")
-    .map(JSON.parse);
+  const events = existsSync(eventsFile)
+    ? readFileSync(eventsFile, "utf8").trim().split("\n").map(JSON.parse)
+    : [];
 
-  return { result, events, candidateTarget, baselineTarget };
+  return { result, events, candidateTarget, baselineTarget, build, revision };
 }
 
 function apiCreations(events) {
@@ -199,5 +243,102 @@ test("fresh-instance CI keeps its existing checks without seeding a deploy basel
       (event) =>
         event.includes("generate_contract") && event.includes("--check"),
     ),
+  );
+});
+
+for (const upgrade of [false, true]) {
+  test(`prebuilt ${upgrade ? "upgrade" : "fresh"} tests reuse candidate outputs`, (t) => {
+    const { result, events, build, revision } = runHarness(t, {
+      prebuilt: true,
+      upgrade,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      events.some((event) => event[0] === "build"),
+      false,
+    );
+    assert.equal(
+      events.some((event) => event[0] === "cp"),
+      false,
+    );
+    assert.equal(
+      events.some((event) => event.includes("cargo")),
+      false,
+    );
+    const creations = apiCreations(events);
+    const candidate = creations.at(-1);
+    assert.match(candidate.at(-1), /exec \/usr\/local\/bin\/sortsys-api/);
+    assert.ok(candidate.includes(`localhost/sortsys-ci-api-tests:${revision}`));
+    assert.ok(
+      events.some(
+        (event) => event.includes("sortsys-api-tests") && event.includes("all"),
+      ),
+    );
+    assert.equal(
+      events.filter((event) =>
+        event.includes(
+          "JOB_RUNNER_WS_URL=" +
+            "ws://sortsys-test-api-api-orchestration-fixture:3000/internal/job-runners/ws",
+        ),
+      ).length,
+      2,
+    );
+
+    if (upgrade) {
+      assert.equal(creations.length, 2);
+      assert.ok(
+        creations[0].includes(
+          `${build}/seed_dev:/opt/sortsys-deploy/seed_dev:ro`,
+        ),
+      );
+      assert.match(creations[0].at(-1), /\/opt\/sortsys-deploy\/seed_dev/);
+      const command = candidate.at(-1);
+      assert.ok(
+        command.indexOf("capture_deploy_fixture") <
+          command.indexOf("migrate_deploy_fixture"),
+      );
+      assert.ok(
+        command.indexOf("migrate_deploy_fixture") <
+          command.indexOf("exec /usr/local"),
+      );
+      const exercise = events.findIndex((event) =>
+        event.includes("exercise_upgraded_deploy_fixture"),
+      );
+      const tests = events.findIndex(
+        (event) => event.includes("sortsys-api-tests") && event.includes("all"),
+      );
+      assert.ok(exercise > 0 && tests > exercise);
+    } else {
+      assert.equal(creations.length, 1);
+    }
+  });
+}
+
+test("prebuilt upgrade failure still prevents normal tests and workers", (t) => {
+  const { result, events } = runHarness(t, {
+    prebuilt: true,
+    failUpgrade: true,
+  });
+  assert.equal(result.status, 41);
+  assert.equal(
+    events.some((event) => event.includes("all")),
+    false,
+  );
+  assert.equal(
+    events.some((event) => event.includes("JOB_RUNNER_ID=test-runner-1")),
+    false,
+  );
+});
+
+test("foreign prebuilt image labels fail before creating infrastructure", (t) => {
+  const { result, events } = runHarness(t, {
+    prebuilt: true,
+    wrongImage: true,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Prebuilt image revision mismatch/);
+  assert.equal(
+    events.some((event) => event[0] === "create"),
+    false,
   );
 });
