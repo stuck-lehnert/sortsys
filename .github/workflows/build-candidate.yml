@@ -17,11 +17,11 @@ permissions:
 env:
   SORTSYS_REVISION: ${{ inputs.revision }}
   CI_BUILD_PLATFORM: linux/amd64
-  CI_BUILD_DIR: ${{ github.workspace }}/../sortsys-compiled
+  CI_BUILD_DIR: ${{ github.workspace }}-compiled
   CI_CARGO_HOME: /tmp/sortsys-ci-cargo-home
   CARGO_HOME: /tmp/sortsys-ci-cargo-home
   CARGO_BUILD_JOBS: 2
-  BUNDLES_DIR: ${{ github.workspace }}/../sortsys-bundles
+  BUNDLES_DIR: ${{ github.workspace }}-bundles
 
 jobs:
   build:
