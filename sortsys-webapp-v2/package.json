@@ -13,7 +13,8 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "bun run lint:client-casts && bun run lint:box-shadows && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
     "lint:i18n": "node ./scripts/check-i18n.mjs",
-    "test:security-deps": "node --test scripts/securityDependencies.test.mjs",
+    "test:security-deps":
+      "node --test scripts/securityDependencies.test.mjs scripts/securityAdvisories.test.mjs",
     "test:visit-labels": "bun test app/lib/visitLabels.test.mjs",
     "test:activity":
       "bun test app/lib/activity*.test.mjs app/components/ActivityReference.test.mjs",
@@ -74,7 +75,10 @@
     "proxy-addr": "2.0.8",
     "compression": "1.8.2",
     "dompurify": "3.4.17",
-    "qs": "6.16.0",
-    "uuid": "11.1.1"
+    "qs": "6.16.1",
+    "uuid": "11.1.1",
+    "body-parser": "2.4.0",
+    "fast-uri": "3.1.9",
+    "serialize-javascript": "7.1.3"
   }
 }

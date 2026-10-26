@@ -3013,9 +3013,9 @@
       {
         "ecosystem": "npm",
         "name": "body-parser",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/body-parser/v/2.3.0"
+        "source": "https://www.npmjs.com/package/body-parser/v/2.4.0"
       },
       {
         "ecosystem": "npm",
@@ -4498,9 +4498,9 @@
       {
         "ecosystem": "npm",
         "name": "qs",
-        "version": "6.16.0",
+        "version": "6.16.1",
         "license": "BSD-3-Clause",
-        "source": "https://www.npmjs.com/package/qs/v/6.16.0"
+        "source": "https://www.npmjs.com/package/qs/v/6.16.1"
       },
       {
         "ecosystem": "Rust",
