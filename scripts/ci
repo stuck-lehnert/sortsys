@@ -104,6 +104,7 @@ echo "Running webapp checks and building the webapp once"
   bun run test:deployment-planning
   bun run test:menus
   bun run test:editors
+  bun run test:chat-files
   bun run test:attachments
   bun run test:attachment-selection
   bun run test:error-boundary

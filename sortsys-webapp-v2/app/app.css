@@ -5240,3 +5240,34 @@ b {
     display: none;
   }
 }
+
+.chat-file-preview .ss-modal-content {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.chat-file-preview__toolbar {
+  border-block-end: 1px solid var(--ss-border);
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding: 0.5rem 1rem;
+}
+
+.chat-file-preview__body {
+  flex: 1;
+  min-block-size: 0;
+  position: relative;
+}
+
+.chat-file-preview__body > * {
+  block-size: 100%;
+  inline-size: 100%;
+}
+
+.chat-file-preview__body video {
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: contain;
+}

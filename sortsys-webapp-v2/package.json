@@ -19,6 +19,7 @@
       "bun test app/lib/activity*.test.mjs app/components/ActivityReference.test.mjs",
     "test:report-forms": "bun test app/lib/reportForm.test.mjs",
     "test:chat-requests": "bun test app/lib/chatRequests.test.mjs",
+    "test:chat-files": "bun test app/lib/chatFiles.test.mjs",
     "test:deployment-planning": "bun test app/lib/deploymentPlanning.test.mjs",
     "test:table": "bun test app/components/MyTable.test.mjs",
     "test:menus": "bun test app/components/Menu.test.mjs",

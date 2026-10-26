@@ -27,6 +27,12 @@ import {
 } from "~/lib/blankProjectFiles";
 import { client } from "~/lib/client";
 import { attachmentPreviewKind } from "~/lib/attachmentPreview";
+import {
+  isDrawioAttachment,
+  isDwgAttachment,
+  isOnlyOfficeAttachment,
+  isVideoAttachment,
+} from "~/lib/projectFilePreview";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { downloadBlob } from "~/lib/utils";
@@ -130,45 +136,6 @@ function ensureUniqueFileName(fileName: string, usedNames: Set<string>) {
   return fallback;
 }
 
-
-function isDwgAttachment(file: ProjectFileEntry) {
-  const fileName = file.fileName.toLowerCase();
-  const mimeType = file.mimeType.toLowerCase();
-  return fileName.endsWith(".dwg")
-    || mimeType === "application/acad"
-    || mimeType === "application/x-acad"
-    || mimeType === "application/autocad_dwg"
-    || mimeType === "image/vnd.dwg"
-    || mimeType.includes("dwg");
-}
-
-function isOnlyOfficeAttachment(file: ProjectFileEntry) {
-  const extension = file.fileName.toLowerCase().split(".").pop();
-
-  return !!extension && new Set([
-    "csv", "djvu", "doc", "docm", "docx", "dot", "dotm", "dotx", "dps",
-    "dpt", "epub", "et", "ett", "fb2", "fodp", "fods", "fodt", "hml",
-    "htm", "html", "hwp", "hwpx", "key", "md", "mht", "mhtml", "numbers",
-    "odg", "odp", "ods", "odt", "otp", "ots", "ott", "oxps", "pages",
-    "pot", "potm", "potx", "pps", "ppsm", "ppsx", "ppt", "pptm",
-    "pptx", "rtf", "stw", "sxc", "sxi", "sxw", "txt", "vsdm", "vsdx",
-    "vssm", "vssx", "vstm", "vstx", "wps", "wpt", "xls", "xlsb", "xlsm",
-    "xlsx", "xlt", "xltm", "xltx", "xps",
-  ]).has(extension);
-}
-
-function isDrawioAttachment(file: ProjectFileEntry) {
-  return file.fileName.toLocaleLowerCase().endsWith(".drawio");
-}
-
-function isVideoAttachment(file: ProjectFileEntry) {
-  if (file.mimeType.toLocaleLowerCase().startsWith("video/")) return true;
-
-  const extension = file.fileName.toLocaleLowerCase().split(".").pop();
-  return !!extension && new Set([
-    "3g2", "3gp", "avi", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "ogv", "ogg", "webm",
-  ]).has(extension);
-}
 
 export default function ProjectFilesPage() {
   const { project } = useOutletContext<{ project: Project }>();

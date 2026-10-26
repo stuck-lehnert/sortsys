@@ -1,10 +1,9 @@
 import type { MutateInput, QueryResult } from "@sortsys/v2-client";
 import { Heading, TextArea } from "@sortsys/react-components";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useNavigate, useParams } from "react-router";
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -13,6 +12,8 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from "react";
+import { AssistantMarkdown } from "~/components/AssistantMarkdown";
+import ProjectFilePreviewModal from "~/components/ProjectFilePreviewModal";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyLink } from "~/components/MyLink";
@@ -23,6 +24,7 @@ import {
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { createChatRequests } from "~/lib/chatRequests";
+import type { ProjectFileTarget } from "~/lib/projectFileLinks";
 import { Icons } from "~/lib/icons";
 import {
   proposalFieldLabel,
@@ -290,27 +292,6 @@ function executionLink(
   return route && id ? { href: `${route.prefix}/${id}`, label: t(route.label) } : null;
 }
 
-function AssistantMarkdown({ content }: { content: string }) {
-  return <div className="assistant-markdown">
-    <Markdown
-      remarkPlugins={[remarkGfm]}
-      skipHtml
-      disallowedElements={['img']}
-      components={{
-        a: ({ children, ...props }) => <a
-          {...props}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          {children}
-        </a>,
-      }}
-    >
-      {content}
-    </Markdown>
-  </div>;
-}
-
 function AcceptedProposal({ proposal }: { proposal: Proposal }) {
   const { locale, t } = useI18n();
   const operations = proposal.operations as unknown as ProposedOperation[];
@@ -391,6 +372,19 @@ export default function LlmPage() {
   );
   const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [content, setContent] = useState('');
+  const [previewTarget, setPreviewTarget] = useState<ProjectFileTarget | null>(null);
+  const closeFilePreview = useCallback(() => {
+    setPreviewTarget(null);
+  }, []);
+
+  useEffect(() => {
+    setPreviewTarget(null);
+  }, [selectedId]);
+
+  useEffect(() => {
+    return client.listenAuthState(closeFilePreview);
+  }, [closeFilePreview]);
+
   const request = useSyncExternalStore(
     chatRequests.subscribe,
     () => chatRequests.get(selectedId),
@@ -825,7 +819,10 @@ export default function LlmPage() {
               {(message.role === 'user' || message.content.trim()) && <article className={'assistant-message assistant-message--' + message.role}>
                 {message.role === 'user'
                   ? <p>{message.content}</p>
-                  : <AssistantMarkdown content={message.content} />}
+                  : <AssistantMarkdown
+                      content={message.content}
+                      onOpenFile={setPreviewTarget}
+                    />}
               </article>}
               {visibleProposals
                 .filter(proposal => proposal.assistantMessageId === message.id)
@@ -883,5 +880,13 @@ export default function LlmPage() {
         </form>
       </section>
     </div>
+
+    {previewTarget && (
+      <ProjectFilePreviewModal
+        key={`${previewTarget.projectId}:${previewTarget.fileId}`}
+        target={previewTarget}
+        onClose={closeFilePreview}
+      />
+    )}
   </>;
 }
