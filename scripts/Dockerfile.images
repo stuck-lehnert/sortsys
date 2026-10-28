@@ -6,7 +6,7 @@ FROM docker.io/library/postgres:17-bookworm AS test-postgres
 FROM docker.io/library/postgres:17-alpine AS kubernetes-postgres
 # MinIO is built from pinned source releases in Dockerfile.s3.
 # The alias preserves the existing DocsAPI integration configuration.
-FROM ghcr.io/euro-office/documentserver:latest@sha256:b303064a69d0a4f81ba5945126c4c484fc08bf42436fc97bb85413429e27ba9e AS onlyoffice
+FROM ghcr.io/euro-office/documentserver:latest@sha256:39c4cdad8c335d05ea5653926e1fc3a69da006d9c1729936b2b4193140cd2962 AS onlyoffice
 FROM docker.io/jgraph/drawio:32.4.1 AS drawio
 FROM docker.io/oven/bun:1.4.3 AS bun
 FROM docker.io/library/rust:1.99-bookworm AS rust
