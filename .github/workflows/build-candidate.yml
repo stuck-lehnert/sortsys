@@ -40,12 +40,12 @@ jobs:
           toolchain: 1.99.0
           components: clippy,rustfmt
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.27"
           cache-dependency-path: sortsys-v2-job_runner/go.sum
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
 
@@ -53,7 +53,7 @@ jobs:
         with:
           bun-version: 1.4.3
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             /tmp/sortsys-ci-cargo-home
@@ -97,7 +97,7 @@ jobs:
             > "$RUNNER_TEMP/candidate-bake.json"
 
       - name: Package the checked outputs without recompiling
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           source: .
           files: ${{ runner.temp }}/candidate-bake.json
