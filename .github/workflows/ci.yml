@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
       - uses: actions/download-artifact@v8
@@ -81,10 +81,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/deploy-source" "$RUNNER_TEMP/deploy-build"
           git archive "$deploy_sha" sortsys-api-v2 \
             | tar -xf - -C "$RUNNER_TEMP/deploy-source"
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             /tmp/sortsys-ci-cargo-home
@@ -128,7 +128,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
       - uses: actions/download-artifact@v8
@@ -176,7 +176,7 @@ jobs:
         image: [api, jobrunner, webapp]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
       - uses: actions/download-artifact@v8
