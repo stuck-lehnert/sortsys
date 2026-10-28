@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@kenjiuno/msgreader": "1.29.0",
-    "@carbon/icons-react": "^11.90.0",
+    "@carbon/icons-react": "^11.91.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource/ubuntu": "^5.3.0",
     "@myriaddreamin/typst-ts-web-compiler": "0.7.0",
@@ -53,7 +53,7 @@
     "monaco-editor": "^0.57.0",
     "parse5": "8.0.1",
     "pdfjs-dist": "6.4.299",
-    "postal-mime": "4.0.8",
+    "postal-mime": "4.1.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
@@ -68,7 +68,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "typescript": "^5.9.2",
-    "vite": "^8.3.4",
+    "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0"
   },
   "overrides": {
