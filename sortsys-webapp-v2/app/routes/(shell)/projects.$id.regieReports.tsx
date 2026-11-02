@@ -16,16 +16,19 @@ export default function ProjectRegieReportsPage() {
     [project.id],
   );
 
-  return <>
-    <MyTable
-      topPagination
-      persistentId="RegieReports"
-      rows={reports ?? []}
-      onRowClick={row => navigate(`/regieReports/${row.id}`)}
-      columns={[]}
-      pagination={{}}
-      viewportBreakpoint={10000000}
-      renderSmallViewport={report => <RegieReportTile report={report} omit={['project']} />}
-    />
-  </>;
+  return (
+    <>
+      <MyTable
+        persistentId="RegieReports"
+        rows={reports ?? []}
+        onRowClick={(row) => navigate(`/regieReports/${row.id}`)}
+        columns={[]}
+        loadMore={{}}
+        viewportBreakpoint={10000000}
+        renderSmallViewport={(report) => (
+          <RegieReportTile report={report} omit={["project"]} />
+        )}
+      />
+    </>
+  );
 }

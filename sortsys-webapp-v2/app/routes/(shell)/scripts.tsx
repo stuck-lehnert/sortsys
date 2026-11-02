@@ -1,6 +1,14 @@
+import { Button as UIAction } from "@sortsys/react-components";
 import { uiText } from "~/lib/i18n";
-import { Checkbox, Modal, TextArea, TextInput, Tile, useNotifications } from "@sortsys/react-components";
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import {
+  Checkbox,
+  Modal,
+  TextArea,
+  TextInput,
+  Tile,
+  useNotifications,
+} from "@sortsys/react-components";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Link } from "react-router";
 import { ScriptCodePreview, ScriptEditor } from "~/components/ScriptEditor";
 import { MyForm } from "~/components/MyForm";
@@ -12,7 +20,10 @@ import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
 import { Icons } from "~/lib/icons";
-import { ScriptConsole, useClientScriptRunner } from "~/lib/clientScriptRuntime";
+import {
+  ScriptConsole,
+  useClientScriptRunner,
+} from "~/lib/clientScriptRuntime";
 import { NotFound } from "./_404";
 
 type ClientScriptSummary = {
@@ -71,6 +82,7 @@ export default function ClientScriptsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const detailRequest = useRef(0);
 
   const isDraft = !selectedId;
   const isCodeDirty = useMemo(() => {
@@ -96,8 +108,6 @@ export default function ClientScriptsPage() {
       setScripts(rows);
       if (selectId !== undefined) {
         setSelectedId(selectId);
-      } else if (!selectedId && rows[0]) {
-        setSelectedId(rows[0].id);
       }
     } catch (err) {
       setError((err as Error)?.message || uiText('Client-Skripte konnten nicht geladen werden.'));
@@ -107,6 +117,9 @@ export default function ClientScriptsPage() {
   }
 
   async function loadScript(id: string | null) {
+    const request = ++detailRequest.current;
+    setLoadedScript(null);
+
     if (!id) {
       setLoadedScript(null);
       setName('');
@@ -119,8 +132,19 @@ export default function ClientScriptsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [data, err] = await client.query('clientScripts.get', { id }, { strategy: 'network-first' });
-      if (err) throw err;
+      const [data, err] = await client.query(
+        'clientScripts.get',
+        { id },
+        { strategy: 'network-first' },
+      );
+
+      if (request !== detailRequest.current) {
+        return;
+      }
+
+      if (err) {
+        throw err;
+      }
       if (!data) throw new Error(uiText("Skript nicht gefunden."));
 
       const script = data as ClientScriptDetail;
@@ -130,9 +154,13 @@ export default function ClientScriptsPage() {
       setEnabled(script.enabled);
       setCode(script.code);
     } catch (err) {
-      setError((err as Error)?.message || uiText('Client-Skript konnte nicht geladen werden.'));
+      if (request === detailRequest.current) {
+        setError((err as Error)?.message || uiText('Client-Skript konnte nicht geladen werden.'));
+      }
     } finally {
-      setIsLoading(false);
+      if (request === detailRequest.current) {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -144,13 +172,24 @@ export default function ClientScriptsPage() {
   useEffect(() => {
     if (!canView) return;
     void loadScript(selectedId);
+
+    return () => {
+      detailRequest.current += 1;
+    };
   }, [selectedId, canView]);
 
   function newScript() {
     setError(null);
 
     modals.showForm({
-      content: () => <MyForm.Input required name="name" labelText={uiText("Name")} autoFocus />,
+      content: () => (
+        <MyForm.Input
+          required
+          name="name"
+          labelText={uiText("Name")}
+          autoFocus
+        />
+      ),
       onSubmit: async ({ context, hide }) => {
         const trimmedName = `${context.getValues().name ?? ''}`.trim();
         if (!trimmedName) return;
@@ -280,17 +319,23 @@ export default function ClientScriptsPage() {
         hide();
       };
 
-      modals.show(({ visible, hide }) => <Modal
-        open={visible}
-        danger
-        modalHeading={uiText("Skript löschen")}
-        primaryButtonText={uiText("Löschen")}
-        secondaryButtonText={uiText("Abbrechen")}
-        onRequestClose={() => settle(false, hide)}
-        onRequestSubmit={() => settle(true, hide)}
-      >
-        <p className="light">{uiText("Das Skript ")}<b>{loadedScript.name}</b>{uiText(" wird endgültig gelöscht.")}</p>
-      </Modal>);
+      modals.show(({ visible, hide }) => (
+        <Modal
+          open={visible}
+          danger
+          modalHeading={uiText("Skript löschen")}
+          primaryButtonText={uiText("Löschen")}
+          secondaryButtonText={uiText("Abbrechen")}
+          onRequestClose={() => settle(false, hide)}
+          onRequestSubmit={() => settle(true, hide)}
+        >
+          <p className="light">
+            {uiText("Das Skript ")}
+            <b>{loadedScript.name}</b>
+            {uiText(" wird endgültig gelöscht.")}
+          </p>
+        </Modal>
+      ));
     });
     if (!confirmed) return;
 
@@ -310,6 +355,10 @@ export default function ClientScriptsPage() {
   }
 
   async function runCurrentScript() {
+    if (!selectedId || loadedScript?.id !== selectedId || isLoading) {
+      return;
+    }
+
     setError(null);
     try {
       const result = await runScript(code);
@@ -324,82 +373,242 @@ export default function ClientScriptsPage() {
 
   if (!canView) return <NotFound reason="pageNotFound" />;
 
-  if (editMode) {
+  if (editMode && selectedId && loadedScript?.id === selectedId) {
     const canRunCurrentScript = !isScriptRunning && !!code.trim() && (enabled || isDraft);
 
-    return <div className="script-edit-page">
-      <div className="script-edit-bar">
-        <MyButton kind="ghost" size="sm" renderIcon={Icons.Back} onClick={() => setEditMode(false)}>{uiText("Zurück")}</MyButton>
-        <div className="script-actions">
-          <MyButton kind="ghost" size="sm" renderIcon={Icons.Resume} disabled={!canRunCurrentScript} onClick={runCurrentScript}>{uiText("Ausführen")}</MyButton>
-          {canManage && <MyButton size="sm" renderIcon={Icons.Accept} loading={isSaving} disabled={!isCodeDirty || isLoading || !selectedId} onClick={saveCode}>{uiText("Speichern")}</MyButton>}
+    return (
+      <div
+        className={[
+          "script-edit-page flex h-[calc(100dvh-7rem)] min-h-0 min-w-0",
+          "flex-col gap-4 [&>.script-editor]:min-h-0",
+          "[&>.script-editor]:border-0",
+        ].join(" ")}
+      >
+        <div className="script-edit-bar flex flex-wrap items-center justify-between gap-3">
+          <MyButton
+            kind="ghost"
+            size="sm"
+            renderIcon={Icons.Back}
+            onClick={() => setEditMode(false)}
+          >
+            {uiText("Zurück")}
+          </MyButton>
+          <div className="script-actions flex shrink-0 flex-wrap items-center gap-2">
+            <MyButton
+              kind="ghost"
+              size="sm"
+              renderIcon={Icons.Resume}
+              disabled={!canRunCurrentScript}
+              onClick={runCurrentScript}
+            >
+              {uiText("Ausführen")}
+            </MyButton>
+            {canManage && (
+              <MyButton
+                size="sm"
+                renderIcon={Icons.Accept}
+                loading={isSaving}
+                disabled={!isCodeDirty || isLoading || !selectedId}
+                onClick={saveCode}
+              >
+                {uiText("Speichern")}
+              </MyButton>
+            )}
+          </div>
         </div>
+
+        {!!error && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
+        )}
+
+        <ScriptEditor
+          value={code}
+          onChange={setCode}
+          onRun={() => {
+            if (!canRunCurrentScript) return;
+            void runCurrentScript();
+          }}
+          readOnly={!canManage}
+        />
+        <ScriptConsole entries={scriptLogs} resizable defaultHeight={220} />
       </div>
-
-      {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
-
-      <ScriptEditor value={code} onChange={setCode} onRun={() => {
-        if (!canRunCurrentScript) return;
-        void runCurrentScript();
-      }} readOnly={!canManage} />
-      <ScriptConsole entries={scriptLogs} resizable defaultHeight={220} />
-    </div>;
+    );
   }
 
-  return <>
-    <MyHeader title={uiText("Client-Skripte")} />
+  return (
+    <>
+      <MyHeader title={uiText("Client-Skripte")} />
 
-    <div className="script-page">
-      <Tile className="script-list-tile">
-        <div className="script-toolbar">
-          <h3>{uiText("Skripte")}</h3>
-          {canManage && <MyButton size="sm" renderIcon={Icons.Plus} onClick={newScript}>{uiText("Neu")}</MyButton>}
-        </div>
+      <div className="script-page grid min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <Tile className="script-list-tile min-w-0 lg:max-h-[calc(100dvh-9rem)] lg:overflow-y-auto">
+          <div className="script-toolbar flex flex-wrap items-center gap-3">
+            <h3 className="text-xl leading-snug font-semibold">
+              {uiText("Skripte")}
+            </h3>
+            {canManage && (
+              <MyButton size="sm" renderIcon={Icons.Plus} onClick={newScript}>
+                {uiText("Neu")}
+              </MyButton>
+            )}
+          </div>
 
-        <div className="script-list">
-          {scripts.map(script => <button
-            key={script.id}
-            type="button"
-            className="script-list-item"
-            data-active={(selectedId === script.id).toString()}
-            onClick={() => setSelectedId(script.id)}
-          >
-            <b>{script.name}</b>
-            <span>{script.enabled ? 'Aktiv' : 'Deaktiviert'}</span>
-          </button>)}
+          <div className="script-list divide-y divide-separator">
+            {scripts.map((script) => (
+              <UIAction
+                kind="ghost"
+                key={script.id}
+                type="button"
+                className={[
+                  "script-list-item h-auto min-h-14 w-full flex-col items-start",
+                  "gap-1 whitespace-normal py-3 text-left",
+                  "data-[active=true]:bg-accent-soft data-[active=true]:text-accent",
+                  "[&_span]:text-xs [&_span]:font-normal [&_span]:text-muted",
+                ].join(" ")}
+                data-active={(selectedId === script.id).toString()}
+                onClick={() => setSelectedId(script.id)}
+              >
+                <b>{script.name}</b>
+                <span>
+                  {script.enabled
+                    ? uiText("Aktiv", "Active")
+                    : uiText("Deaktiviert", "Inactive")}
+                </span>
+              </UIAction>
+            ))}
 
-          {!scripts.length && <p className="light">{uiText("Noch keine Skripte.")}</p>}
-        </div>
-      </Tile>
+            {!scripts.length && (
+              <p className="light">{uiText("Noch keine Skripte.")}</p>
+            )}
+          </div>
+        </Tile>
 
-      <Tile className="script-editor-tile">
-        <div className="script-toolbar">
-          <div>
-            <div className="script-title-row">
-              <h3>{isDraft ? 'Neues Skript' : loadedScript?.name ?? 'Skript'}</h3>
-              <Link className="script-doc-link" to="/docs/client-skripte">{uiText("Dokumentation")}</Link>
+        {!!error && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
+        )}
+
+        {selectedId && loadedScript?.id === selectedId && (
+        <Tile
+          className={[
+            "script-editor-tile flex min-h-0 flex-1 flex-col gap-3",
+            "lg:h-[calc(100dvh-9rem)]",
+          ].join(" ")}
+        >
+          <div className="script-toolbar flex flex-wrap items-center gap-3">
+            <div>
+              <div className="script-title-row flex min-w-0 items-center gap-2">
+                <h3 className="text-xl leading-snug font-semibold">
+                  {isDraft
+                    ? uiText("Neues Skript", "New script")
+                    : (loadedScript?.name ?? uiText("Skript", "Script"))}
+                </h3>
+                <Link
+                  className={[
+                    "script-doc-link inline-flex min-h-11 items-center gap-2 text-sm",
+                    "text-accent",
+                  ].join(" ")}
+                  to="/docs/client-skripte"
+                >
+                  {uiText("Dokumentation")}
+                </Link>
+              </div>
+            </div>
+
+            <div className="script-actions flex shrink-0 flex-wrap items-center gap-2">
+              <MyButton
+                kind="ghost"
+                size="sm"
+                renderIcon={Icons.Resume}
+                disabled={
+                  isScriptRunning || !code.trim() || (!enabled && !isDraft)
+                }
+                onClick={runCurrentScript}
+              >
+                {uiText("Ausführen")}
+              </MyButton>
+              {canManage && !isDraft && (
+                <MyButton
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={Icons.Accept}
+                  loading={isSaving}
+                  disabled={!isMetadataDirty || isLoading}
+                  onClick={saveMetadata}
+                >
+                  {uiText("Speichern")}
+                </MyButton>
+              )}
+              {canManage && (
+                <MyButton
+                  size="sm"
+                  renderIcon={Icons.Edit}
+                  disabled={isLoading || !loadedScript}
+                  onClick={() => setEditMode(true)}
+                >
+                  {uiText("Bearbeiten")}
+                </MyButton>
+              )}
+              {canDelete && !isDraft && (
+                <MyButton
+                  kind="danger--tertiary"
+                  size="sm"
+                  renderIcon={Icons.Delete}
+                  loading={isSaving}
+                  onClick={deleteScript}
+                >
+                  {uiText("Löschen")}
+                </MyButton>
+              )}
             </div>
           </div>
 
-          <div className="script-actions">
-            <MyButton kind="ghost" size="sm" renderIcon={Icons.Resume} disabled={isScriptRunning || !code.trim() || (!enabled && !isDraft)} onClick={runCurrentScript}>{uiText("Ausführen")}</MyButton>
-            {canManage && !isDraft && <MyButton kind="secondary" size="sm" renderIcon={Icons.Accept} loading={isSaving} disabled={!isMetadataDirty || isLoading} onClick={saveMetadata}>{uiText("Speichern")}</MyButton>}
-            {canManage && <MyButton size="sm" renderIcon={Icons.Edit} disabled={isLoading || !loadedScript} onClick={() => setEditMode(true)}>{uiText("Bearbeiten")}</MyButton>}
-            {canDelete && !isDraft && <MyButton kind="danger--tertiary" size="sm" renderIcon={Icons.Delete} loading={isSaving} onClick={deleteScript}>{uiText("Löschen")}</MyButton>}
+          {!!error && (
+            <MyCallout icon={Icons.Deny} color="red">
+              {error}
+            </MyCallout>
+          )}
+
+          <div className="script-meta-grid grid items-end gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+            <TextInput
+              id="script-name"
+              labelText={uiText("Name")}
+              value={name}
+              disabled={!canManage}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                setName(e.currentTarget.value)
+              }
+            />
+            <div className="flex items-center py-2">
+            <Checkbox
+              id="script-enabled"
+              labelText={uiText("Aktiv")}
+              checked={enabled}
+              disabled={!canManage}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                setEnabled(e.currentTarget.checked)
+              }
+            />
+            </div>
+            <TextArea
+              id="script-description"
+              className="script-description-field min-w-0 w-full md:col-span-2"
+              labelText={uiText("Beschreibung")}
+              value={description}
+              disabled={!canManage}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                setDescription(e.currentTarget.value)
+              }
+            />
           </div>
-        </div>
 
-        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
-
-        <div className="script-meta-grid">
-          <TextInput id="script-name" labelText={uiText("Name")} value={name} disabled={!canManage} onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.currentTarget.value)} />
-          <Checkbox id="script-enabled" labelText={uiText("Aktiv")} checked={enabled} disabled={!canManage} onChange={(e: ChangeEvent<HTMLInputElement>) => setEnabled(e.currentTarget.checked)} />
-          <TextArea id="script-description" className="script-description-field" labelText={uiText("Beschreibung")} value={description} disabled={!canManage} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setDescription(e.currentTarget.value)} />
-        </div>
-
-        <ScriptCodePreview value={code} />
-        <ScriptConsole entries={scriptLogs} />
-      </Tile>
-    </div>
-  </>;
+          <ScriptCodePreview value={code} />
+          <ScriptConsole entries={scriptLogs} />
+        </Tile>
+        )}
+      </div>
+    </>
+  );
 }

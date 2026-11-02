@@ -68,7 +68,7 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
 
         {otherUnitIds.map(id => <div key={id} className="flex gap-2 items-end">
           <div className="grow flex gap-2">
-            <div className="basis-1/2 flex-1">
+            <div className="min-w-0 basis-1/2 flex-1">
               <MyForm.Input
                 required
                 name={`unit:${id}:name`} labelText={uiText("Einheit")}
@@ -83,7 +83,7 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
               />
             </div>
 
-            <div className="basis-1/2 flex-1">
+            <div className="min-w-0 basis-1/2 flex-1">
               <MyForm.Input
                 required
                 name={`unit:${id}:value`} labelText={uiText("Basismenge")}
@@ -193,7 +193,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
 
         {otherUnitIds.map(id => <div key={id} className="flex gap-2 items-end">
           <div className="grow flex gap-2">
-            <div className="basis-1/2 flex-1">
+            <div className="min-w-0 basis-1/2 flex-1">
               <MyForm.Input
                 required
                 name={`unit:${id}:name`} labelText={uiText("Einheit")}
@@ -208,7 +208,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
               />
             </div>
 
-            <div className="basis-1/2 flex-1">
+            <div className="min-w-0 basis-1/2 flex-1">
               <MyForm.Input
                 required
                 name={`unit:${id}:value`} labelText={uiText("Basismenge")}
@@ -390,7 +390,7 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
       />
       
       <div className="grow flex gap-2">
-        <div className="basis-1/2 flex-1">
+        <div className="min-w-0 basis-1/2 flex-1">
           <MyForm.Input
             required
             type="number"
@@ -399,7 +399,7 @@ export function showCreateProductPriceRecordModal(modals: MyModalsInterface, pro
           />
         </div>
 
-        <div className="basis-1/2 flex-1">
+        <div className="min-w-0 basis-1/2 flex-1">
           <MyForm.Select
             name="unit" labelText={uiText("Einheit")}
             getOptions={() => {

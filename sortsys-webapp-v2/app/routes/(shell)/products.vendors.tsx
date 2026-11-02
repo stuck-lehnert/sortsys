@@ -17,46 +17,63 @@ export default function ProductVendorsPage() {
 
   const [vendors, vendorsError] = useClientStream(() => client.streamQuery('products.vendors.list', {}), []);
 
-  return <>
-    <MyHeader
-      title={uiText("Händler")}
-      actions={<div className="list-page-actions">
-      <TableExportActions
+  return (
+    <>
+      <MyHeader
         title={uiText("Händler")}
-        fileName="Haendler"
-        rows={vendors ?? []}
-        disabled={!vendors}
-        columns={[
-          { header: uiText("Name"), value: vendor => vendor.name, width: '2fr' },
-          { header: uiText("Beschreibung"), value: vendor => vendor.description, width: '2fr' },
-          { header: uiText("Erstellt am"), value: vendor => vendor.createdAt },
-          { header: uiText("Geändert am"), value: vendor => vendor.modifiedAt },
-        ]}
+        actions={
+          <div className="list-page-actions">
+            <TableExportActions
+              title={uiText("Händler")}
+              fileName="Haendler"
+              rows={vendors ?? []}
+              disabled={!vendors}
+              columns={[
+                {
+                  header: uiText("Name"),
+                  value: (vendor) => vendor.name,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Beschreibung"),
+                  value: (vendor) => vendor.description,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Erstellt am"),
+                  value: (vendor) => vendor.createdAt,
+                },
+                {
+                  header: uiText("Geändert am"),
+                  value: (vendor) => vendor.modifiedAt,
+                },
+              ]}
+            />
+          </div>
+        }
       />
-      </div>}
-    />
 
-    <MyTable
-      topPagination
-      className=""
-      rows={vendors ?? []}
-      loading={!vendors}
-      error={vendorsError}
-      columns={[
-        {
-          label: uiText("Name"),
-          render: row => row.name,
-          sortKey: row => row.name.toLowerCase(),
-        },
-        {
-          label: uiText("Beschreibung"),
-          render: row => row.description,
-          sortKey: row => row.description?.toLowerCase() ?? '',
-        },
-      ]}
-      pagination={{}}
-      onRowClick={row => navigate(`/products/vendors/${row.id}`)}
-      renderSmallViewport={row => <SmallProductVendorTile data={row} />}
-    />
-  </>;
+      <MyTable
+        className=""
+        rows={vendors ?? []}
+        loading={!vendors}
+        error={vendorsError}
+        columns={[
+          {
+            label: uiText("Name"),
+            render: (row) => row.name,
+            sortKey: (row) => row.name.toLowerCase(),
+          },
+          {
+            label: uiText("Beschreibung"),
+            render: (row) => row.description,
+            sortKey: (row) => row.description?.toLowerCase() ?? "",
+          },
+        ]}
+        loadMore={{}}
+        onRowClick={(row) => navigate(`/products/vendors/${row.id}`)}
+        renderSmallViewport={(row) => <SmallProductVendorTile data={row} />}
+      />
+    </>
+  );
 }

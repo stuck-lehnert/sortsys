@@ -28,63 +28,88 @@ export default function ProjectsPage() {
     finished: finishedOnly,
   }), [finishedOnly]);
 
-  return <>
-    <MyHeader
-      title={uiText("Projekte")}
-      actions={<div className="list-page-actions">
-      {!finishedOnly ? (
-        <OperationalTag
-          renderIcon={Icons.Resume}
-          text={uiText("Aktiv")}
-          onClick={() => setFinishedOnly(true)}
-        />
-      ) : (
-        <OperationalTag
-          renderIcon={Icons.Finish}
-          text={uiText("Abgeschlossen")}
-          onClick={() => setFinishedOnly(false)}
-        />
-      )}
-
-      <TableExportActions
+  return (
+    <>
+      <MyHeader
         title={uiText("Projekte")}
-        fileName={finishedOnly ? 'Abgeschlossene-Projekte' : 'Projekte'}
-        rows={projects ?? []}
-        disabled={!projects}
-        columns={[
-          { header: uiText("Titel"), value: project => project.title, width: '2fr' },
-          { header: uiText("Anschrift"), value: project => formatAddress(project.address), width: '2fr' },
-          { header: uiText("Status"), value: project => project.finishedAt ? 'Abgeschlossen' : 'Aktiv' },
-          { header: uiText("Abgeschlossen am"), value: project => project.finishedAt },
-          { header: uiText("Erstellt am"), value: project => project.createdAt },
-        ]}
+        actions={
+          <div className="list-page-actions">
+            {!finishedOnly ? (
+              <OperationalTag
+                renderIcon={Icons.Resume}
+                text={uiText("Aktiv")}
+                onClick={() => setFinishedOnly(true)}
+              />
+            ) : (
+              <OperationalTag
+                renderIcon={Icons.Finish}
+                text={uiText("Abgeschlossen")}
+                onClick={() => setFinishedOnly(false)}
+              />
+            )}
+
+            <TableExportActions
+              title={uiText("Projekte")}
+              fileName={finishedOnly ? "Abgeschlossene-Projekte" : "Projekte"}
+              rows={projects ?? []}
+              disabled={!projects}
+              columns={[
+                {
+                  header: uiText("Titel"),
+                  value: (project) => project.title,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Anschrift"),
+                  value: (project) => formatAddress(project.address),
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Status"),
+                  value: (project) =>
+                    project.finishedAt ? "Abgeschlossen" : "Aktiv",
+                },
+                {
+                  header: uiText("Abgeschlossen am"),
+                  value: (project) => project.finishedAt,
+                },
+                {
+                  header: uiText("Erstellt am"),
+                  value: (project) => project.createdAt,
+                },
+              ]}
+            />
+          </div>
+        }
       />
 
-      </div>}
-    />
-
-    <MyTable
-      topPagination
-      className=""
-      persistentId="Projects"
-      rows={projects ?? []}
-      loading={!projects}
-      error={projectsError}
-      onRowClick={row => navigate(`/projects/${row.id}`)}
-      columns={[
-        {
-          label: uiText("Titel"),
-          render: row => row.title,
-          sortKey: row => row.title.toLowerCase(),
-        },
-        {
-          label: uiText("Anschrift"),
-          render: row => !!row.address && <MyLink to={addressUrl(row.address)} target="_blank">{formatAddress(row.address)}</MyLink>,
-          sortKey: row => formatAddress(row.address).toLowerCase(),
-        },
-      ]}
-      pagination={{}}
-      renderSmallViewport={row => <SmallProjectTile data={row} />}
-    />
-  </>;
+      <MyTable
+        className=""
+        persistentId="Projects"
+        rows={projects ?? []}
+        loading={!projects}
+        error={projectsError}
+        onRowClick={(row) => navigate(`/projects/${row.id}`)}
+        columns={[
+          {
+            label: uiText("Titel"),
+            render: (row) => row.title,
+            sortKey: (row) => row.title.toLowerCase(),
+          },
+          {
+            label: uiText("Anschrift"),
+            render: (row) =>
+              !!row.address && (
+                <MyLink to={addressUrl(row.address)} target="_blank">
+                  {formatAddress(row.address)}
+                </MyLink>
+              ),
+            sortKey: (row) => formatAddress(row.address).toLowerCase(),
+          },
+        ]}
+        loadMore={{}}
+        renderSmallViewport={(row) => <SmallProjectTile data={row} />}
+      />
+    </>
+  );
 }

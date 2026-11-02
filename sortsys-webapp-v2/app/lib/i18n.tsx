@@ -1,3 +1,4 @@
+import { I18nProvider as HeroI18nProvider } from "@heroui/react";
 import { EN_UI_TEXT } from "./uiText.en";
 
 import {
@@ -70,8 +71,12 @@ const de = {
   'shell.help': 'Hilfe & Begriffe',
   'shell.logout': 'Abmelden',
   'llm.chats': 'Chats',
+  'llm.previousChats': 'Alte Chats',
   'llm.newChat': 'Neuer Chat',
   'llm.noChats': 'Noch keine Chats',
+  'llm.searchChats': 'Chats durchsuchen',
+  'llm.noMatchingChats': 'Keine passenden Chats.',
+  'llm.reloadChats': 'Chats erneut laden',
   'llm.welcome': 'Wobei kann ich helfen?',
   'llm.you': 'Du',
   'llm.responding': 'Antwort wird erstellt',
@@ -151,8 +156,12 @@ const en: Record<keyof typeof de, string> = {
   'shell.help': 'Help & terms',
   'shell.logout': 'Log out',
   'llm.chats': 'Chats',
+  'llm.previousChats': 'Previous chats',
   'llm.newChat': 'New chat',
   'llm.noChats': 'No chats yet',
+  'llm.searchChats': 'Search chats',
+  'llm.noMatchingChats': 'No matching chats.',
+  'llm.reloadChats': 'Reload chats',
   'llm.welcome': 'How can I help?',
   'llm.you': 'You',
   'llm.responding': 'Preparing a response',
@@ -244,7 +253,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   renderedLocale = locale;
 
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+  return (
+    <I18nContext.Provider value={value}>
+      <HeroI18nProvider locale={value.localeTag}>{children}</HeroI18nProvider>
+    </I18nContext.Provider>
+  );
 }
 
 export function useI18n(): I18nContextValue {

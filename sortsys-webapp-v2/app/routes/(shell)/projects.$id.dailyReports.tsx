@@ -16,37 +16,42 @@ export default function ProjectDailyReportsPage() {
     [project.id],
   );
 
-  return <>
-    <MyTable
-      topPagination
-      persistentId="DailyProjectReports"
-      rows={reports ?? []}
-      loading={!reports}
-      error={reportsError}
-      onRowClick={row => {
-        const day = dailyReportDayKey(row.day);
-        navigate(`/projects/${project.id}/dailyReports/${day}`);
-      }}
-      columns={[
-        {
-          label: uiText("Tag"),
-          render: row => formatDate(row.day),
-          sortKey: row => row.day.getTime(),
-        },
-        {
-          label: uiText("Beschreibung"),
-          render: row => row.summary ?? '',
-          sortKey: row => row.summary?.toLowerCase() ?? '',
-        },
-        {
-          label: uiText("Arbeitszeit"),
-          render: row => uiText(`${row.workHours.length} Einträge`, `${row.workHours.length} entries`),
-          sortKey: row => row.workHours.length,
-        },
-      ]}
-      pagination={{}}
-      viewportBreakpoint={10000000}
-      renderSmallViewport={row => <DailyProjectReportTile report={row} />}
-    />
-  </>;
+  return (
+    <>
+      <MyTable
+        persistentId="DailyProjectReports"
+        rows={reports ?? []}
+        loading={!reports}
+        error={reportsError}
+        onRowClick={(row) => {
+          const day = dailyReportDayKey(row.day);
+          navigate(`/projects/${project.id}/dailyReports/${day}`);
+        }}
+        columns={[
+          {
+            label: uiText("Tag"),
+            render: (row) => formatDate(row.day),
+            sortKey: (row) => row.day.getTime(),
+          },
+          {
+            label: uiText("Beschreibung"),
+            render: (row) => row.summary ?? "",
+            sortKey: (row) => row.summary?.toLowerCase() ?? "",
+          },
+          {
+            label: uiText("Arbeitszeit"),
+            render: (row) =>
+              uiText(
+                `${row.workHours.length} Einträge`,
+                `${row.workHours.length} entries`,
+              ),
+            sortKey: (row) => row.workHours.length,
+          },
+        ]}
+        loadMore={{}}
+        viewportBreakpoint={10000000}
+        renderSmallViewport={(row) => <DailyProjectReportTile report={row} />}
+      />
+    </>
+  );
 }

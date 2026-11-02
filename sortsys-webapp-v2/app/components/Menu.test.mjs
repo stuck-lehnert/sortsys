@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, test } from "bun:test";
 import { parseFragment } from "parse5";
+import { Menu as CollectionMenu } from "@heroui/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -23,7 +24,7 @@ const bundle = await Bun.build({
       name: "menu-test-react-peers",
       setup(build) {
         build.onResolve(
-          { filter: /^(react|react-dom)(\/.*)?$/ },
+          { filter: /^(react|react-dom|@heroui\/react)(\/.*)?$/ },
           ({ path }) => ({
             path: Bun.resolveSync(path, import.meta.dir),
             external: true,
@@ -44,9 +45,23 @@ function FixtureIcon(props) {
   return createElement("svg", { ...props, "data-fixture-icon": "true" });
 }
 
-function render(component, props, children) {
+function renderCollection(children) {
   return parseFragment(
-    renderToStaticMarkup(createElement(component, props, children)),
+    renderToStaticMarkup(
+      createElement(CollectionMenu, { "aria-label": "Actions" }, children),
+    ),
+  );
+}
+
+function render(component, props, children) {
+  return renderCollection(
+    createElement(component, { id: "fixture-command", ...props }, children),
+  );
+}
+
+function menuItems(root) {
+  return elements(root, "div").filter((element) =>
+    ["menuitem", "menuitemcheckbox"].includes(attribute(element, "role")),
   );
 }
 
@@ -81,8 +96,8 @@ test("text-labelled menu commands omit decorative icons by default in both langu
     const root = render(MenuItem, { label, renderIcon: FixtureIcon });
 
     assert.equal(elements(root, "svg").length, 0);
-    assert.equal(textContent(elements(root, "button")[0]), label);
-    assert.equal(elements(root, "span").length, 1);
+    assert.equal(textContent(menuItems(root)[0]), label);
+    assert.equal(menuItems(root).length, 1);
   }
 });
 
@@ -94,18 +109,15 @@ test("explicit identity icons remain available without leaking the opt-in to the
     className: "file-format-action",
   });
   const icon = elements(root, "svg")[0];
-  const button = elements(root, "button")[0];
+  const item = menuItems(root)[0];
 
   assert.equal(elements(root, "svg").length, 1);
   assert.equal(attribute(icon, "aria-hidden"), "true");
-  assert.equal(attribute(icon, "class"), "ss-menu__icon");
-  assert.equal(attribute(button, "showicon"), undefined);
-  assert.equal(attribute(button, "rendericon"), undefined);
-  assert.equal(textContent(button), "Excel");
-  assert.match(
-    attribute(elements(root, "li")[0], "class"),
-    /file-format-action/,
-  );
+  assert.match(attribute(icon, "class"), /ss-menu__icon/);
+  assert.equal(attribute(item, "showicon"), undefined);
+  assert.equal(attribute(item, "rendericon"), undefined);
+  assert.equal(textContent(item), "Excel");
+  assert.match(attribute(item, "class"), /file-format-action/);
 });
 
 test("icon-only entries retain their visible control and accessible name", () => {
@@ -115,57 +127,69 @@ test("icon-only entries retain their visible control and accessible name", () =>
   });
 
   assert.equal(elements(root, "svg").length, 1);
-  assert.equal(
-    attribute(elements(root, "button")[0], "aria-label"),
-    "More actions",
-  );
+  assert.equal(attribute(menuItems(root)[0], "aria-label"), "More actions");
 });
 
 test("child labels remain readable when the label prop is omitted", () => {
   const root = render(MenuItem, { renderIcon: FixtureIcon }, "Download");
 
   assert.equal(elements(root, "svg").length, 0);
-  assert.equal(textContent(elements(root, "button")[0]), "Download");
+  assert.equal(textContent(menuItems(root)[0]), "Download");
 });
 
-test("disabled commands and native button attributes are preserved", () => {
-  const root = render(MenuItem, {
-    label: "Delete",
-    disabled: true,
-    renderIcon: FixtureIcon,
-    title: "Unavailable",
-    "data-action": "delete",
-  });
-  const button = elements(root, "button")[0];
+test(
+  "disabled commands preserve their accessible state, tooltip and native data attributes",
+  () => {
+    const root = render(MenuItem, {
+      label: "Delete",
+      disabled: true,
+      renderIcon: FixtureIcon,
+      title: "Unavailable",
+      "data-action": "delete",
+    });
+    const item = menuItems(root)[0];
 
-  assert.equal(attribute(button, "disabled"), "");
-  assert.equal(attribute(button, "type"), "button");
-  assert.equal(attribute(button, "title"), "Unavailable");
-  assert.equal(attribute(button, "data-action"), "delete");
-  assert.equal(elements(root, "svg").length, 0);
-});
+    assert.equal(attribute(item, "role"), "menuitem");
+    assert.equal(attribute(item, "aria-disabled"), "true");
+    assert.equal(attribute(item, "data-disabled"), "true");
+    assert.equal(
+      attribute(
+        elements(item, "span").find((span) => textContent(span) === "Delete"),
+        "title",
+      ),
+      "Unavailable",
+    );
+    assert.equal(attribute(item, "data-action"), "delete");
+    assert.equal(elements(root, "svg").length, 0);
+  },
+);
 
 test("selection indicators stay visible independently of decorative command icons", () => {
-  for (const [props, marker] of [
-    [{ selected: true }, "x"],
-    [{ selected: false }, ""],
-    [{ defaultSelected: true }, "x"],
-    [{ defaultSelected: false }, ""],
+  for (const [props, selected] of [
+    [{ selected: true }, true],
+    [{ selected: false }, false],
+    [{ defaultSelected: true }, true],
+    [{ defaultSelected: false }, false],
   ]) {
     const root = render(MenuItemSelectable, {
       label: "Show weekend",
       ...props,
     });
-    const spans = elements(root, "span");
+    const item = menuItems(root)[0];
+    const indicator = elements(item, "span").find(
+      (span) => attribute(span, "data-slot") === "menu-item-indicator",
+    );
 
-    assert.equal(attribute(spans[0], "class"), "ss-menu__select-indicator");
-    assert.equal(textContent(spans[0]), marker);
-    assert.equal(textContent(spans[1]), "Show weekend");
+    assert.equal(attribute(item, "role"), "menuitemcheckbox");
+    assert.equal(attribute(item, "aria-checked"), String(selected));
+    assert.equal(attribute(indicator, "aria-hidden"), "true");
+    assert.equal(attribute(indicator, "data-visible") === "true", selected);
+    assert.equal(textContent(item), "Show weekend");
   }
 });
 
 test("mixed menus render plain commands and only explicitly meaningful icons", () => {
-  const root = render(Menu, { open: true, x: 300, y: 20, onClose() {} }, [
+  const root = renderCollection([
     createElement(MenuItem, {
       key: "rename",
       label: "Rename",
@@ -184,11 +208,37 @@ test("mixed menus render plain commands and only explicitly meaningful icons", (
     }),
   ]);
 
-  assert.equal(elements(root, "button").length, 3);
-  assert.equal(elements(root, "svg").length, 1);
-  assert.deepEqual(elements(root, "button").map(textContent), [
-    "Rename",
-    "Excel",
-    "xShow weekend",
-  ]);
+  const items = menuItems(root);
+  assert.equal(items.length, 3);
+  assert.equal(
+    elements(root, "svg").filter(
+      (icon) => attribute(icon, "data-fixture-icon") === "true",
+    ).length,
+    1,
+  );
+  assert.deepEqual(items.map(textContent), ["Rename", "Excel", "Show weekend"]);
+  assert.equal(attribute(items[2], "aria-checked"), "true");
+});
+
+test("coordinate menu keeps its anchor and leaves portal content to the browser", () => {
+  const root = parseFragment(
+    renderToStaticMarkup(
+      createElement(
+        Menu,
+        {
+          open: true,
+          x: 300,
+          y: 20,
+          onClose() {},
+        },
+        createElement(MenuItem, { label: "Rename" }),
+      ),
+    ),
+  );
+  const anchor = elements(root, "span")[0];
+
+  assert.match(attribute(anchor, "style"), /left:300px/);
+  assert.match(attribute(anchor, "style"), /top:20px/);
+  assert.equal(attribute(anchor, "aria-hidden"), "true");
+  assert.equal(menuItems(root).length, 0);
 });

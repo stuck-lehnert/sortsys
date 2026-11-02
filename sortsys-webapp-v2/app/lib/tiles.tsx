@@ -12,24 +12,51 @@ import { type DeliveryNote, type Contact, type Customer, type Product, type Prod
 import { Icons, type Icon } from "./icons";
 import type { ComponentProps, ReactNode } from "react";
 
-export function SmallTile({ icon: Icon, title, href, subtitle, onLinkClick }: {
-  icon?: Icon; title: ReactNode; href?: string; subtitle?: ReactNode; onLinkClick?: () => void
+export function SmallTile({
+  icon: Icon,
+  title,
+  href,
+  subtitle,
+  onLinkClick,
+}: {
+  icon?: Icon;
+  title: ReactNode;
+  href?: string;
+  subtitle?: ReactNode;
+  onLinkClick?: () => void;
 }) {
-  return <Tile className="w-full max-w-full">
-    <div className="w-full max-w-full flex gap-2 items-center">
-      {!!Icon && <Icon size={20} className="shrink-0" />}
+  return (
+    <Tile className="w-full max-w-full">
+      <div className="w-full max-w-full flex gap-2 items-center">
+        {!!Icon && <Icon size={20} className="shrink-0" />}
 
-      <div className="grow max-w-full overflow-hidden">
-        {!!href ? <Heading level={5} noMargin>
-          <MyLink className={nowrap({ class: 'max-w-full' })} to={href} onClick={onLinkClick}>{title}</MyLink>
-        </Heading> : <Heading level={5} noMargin className={nowrap({ class: 'max-w-full' })}>
-          <span>{title}</span>
-        </Heading>}
+        <div className="grow max-w-full overflow-hidden">
+          {!!href ? (
+            <Heading level={5} noMargin>
+              <MyLink
+                className={nowrap({ class: "max-w-full" })}
+                to={href}
+                onClick={onLinkClick}
+              >
+                {title}
+              </MyLink>
+            </Heading>
+          ) : (
+            <p
+              className={nowrap({
+                class:
+                  "m-0 max-w-full text-base font-semibold tracking-tight text-foreground",
+              })}
+            >
+              {title}
+            </p>
+          )}
 
-        {!!subtitle && subtitle}
+          {!!subtitle && subtitle}
+        </div>
       </div>
-    </div>
-  </Tile>
+    </Tile>
+  );
 }
 
 function createSmallTile<T>(build: (data: T) => ComponentProps<typeof SmallTile>) {

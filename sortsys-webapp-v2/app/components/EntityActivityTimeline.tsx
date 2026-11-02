@@ -1,6 +1,11 @@
 import { currentLocaleTag, uiText, useI18n } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
-import { activityActionLabel, activityActorLabel, activityResourceLabel, activityTitle } from "~/lib/activity";
+import {
+  activityActionLabel,
+  activityActorLabel,
+  activityResourceLabel,
+  activityTitle,
+} from "~/lib/activity";
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
@@ -81,27 +86,62 @@ function ActivityTimelineRow({
   const descriptionIsRepeated = !!description && [itemTitle, item.resourceTitle, item.contextTitle]
     .some(label => label?.trim() === description);
 
-  return <div className="entity-activity-row">
-    <div className="entity-activity-dot"><Icon size={16} /></div>
-    <div className="entity-activity-main">
-      <div className="entity-activity-title">
-        <span>{activityActionLabel(item)}</span>
-        <ActivityReference
-          item={item}
-          resourceHref={href}
-          hideOwnerTitle={isScopeOwnerTitle}
-        />
+  return (
+    <div role="listitem" className="entity-activity-row flex gap-3 py-3">
+      <div
+        aria-hidden="true"
+        className={[
+          "entity-activity-dot flex size-8 shrink-0 items-center",
+          "justify-center rounded-full bg-default text-muted",
+        ].join(" ")}
+      >
+        <Icon size={16} />
       </div>
-      <div className="entity-activity-meta">
-        {!isScopeResource && <>{activityResourceLabel(item.resourceType)} · </>}
-        {formatTimestamp(item.occurredAt)}
-        {' · '}{activityActorLabel(item)}
-        {item.isImported && <> · {uiText('Übernommen', 'Imported')}</>}
-        {!!item.contextTitle && !contextIsCurrentProject && <>{uiText(" · Projekt ")}{item.contextTitle}</>}
+      <div className="entity-activity-main min-w-0 flex-1 space-y-1">
+        <div
+          className={[
+            "entity-activity-title flex flex-wrap items-baseline gap-x-1",
+            "text-sm font-medium",
+          ].join(" ")}
+        >
+          <span>{activityActionLabel(item)}</span>
+          <ActivityReference
+            item={item}
+            resourceHref={href}
+            hideOwnerTitle={isScopeOwnerTitle}
+          />
+        </div>
+        <div
+          className={[
+            "entity-activity-meta text-xs leading-relaxed text-muted",
+          ].join(" ")}
+        >
+          {!isScopeResource && (
+            <>{activityResourceLabel(item.resourceType)} · </>
+          )}
+          {formatTimestamp(item.occurredAt)}
+          {" · "}
+          {activityActorLabel(item)}
+          {item.isImported && <> · {uiText("Übernommen", "Imported")}</>}
+          {!!item.contextTitle && !contextIsCurrentProject && (
+            <>
+              {uiText(" · Projekt ")}
+              {item.contextTitle}
+            </>
+          )}
+        </div>
+        {!!description && !descriptionIsRepeated && (
+          <div
+            className={[
+              "entity-activity-description break-words text-sm text-muted",
+            ].join(" ")}
+          >
+            {description}
+          </div>
+        )}
       </div>
-      {!!description && !descriptionIsRepeated && <div className="entity-activity-description">{description}</div>}
     </div>
-  </div>;
+  );
 }
 
 export function EntityActivityTimeline({
@@ -142,8 +182,11 @@ export function EntityActivityTimeline({
   }, [resourceType, resourceId, includeProjectContext]);
 
   if (err) {
-    return <MyCallout icon={Icons.Info} color="amber">{uiText("Aktivität konnte nicht geladen werden:")} {err.message}
-    </MyCallout>;
+    return (
+      <MyCallout icon={Icons.Info} color="amber">
+        {uiText("Aktivität konnte nicht geladen werden:")} {err.message}
+      </MyCallout>
+    );
   }
 
   const allItems = [...new Map([...(items ?? []), ...older].map(item => [item.id, item])).values()];
@@ -181,30 +224,82 @@ export function EntityActivityTimeline({
     }
   };
 
-  return <MyExpandable title={uiText(`Aktivität (${allItems.length})`, `Activity (${allItems.length})`)} initiallyExpanded>
-    {!items?.length
-        ? <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
-      : <>
-        <div id={timelineId} ref={timelineRef} className="entity-activity-timeline">
-          {visibleItems.map(item => <ActivityTimelineRow
-            key={item.id}
-            item={item}
-            scopeResourceId={resourceId}
-            scopeResourceType={resourceType}
-          />)}
-        </div>
-        {allItems.length > COLLAPSED_ACTIVITY_COUNT && <div className="entity-activity-actions">
-          {showAll && canLoadOlder && <MyButton kind="secondary" size="sm" renderIcon={Icons.Plus}
-            loading={loadingOlder} onClick={() => void loadOlder()}>
-            {uiText('Ältere Aktivitäten laden', 'Load older activities')}
-          </MyButton>}
-          <MyButton kind="ghost" size="sm" renderIcon={Icons.AccordionExpanded}
-            className={showAll ? 'entity-activity-collapse' : undefined}
-            aria-expanded={showAll} aria-controls={timelineId} onClick={toggleDetails}>
-            {showAll ? uiText("Weniger anzeigen", "Show less") : uiText("Mehr anzeigen", "Show more")}
-          </MyButton>
-        </div>}
-        {showAll && historyError && <div className="entity-activity-error" role="alert">{historyError}</div>}
-      </>}
-  </MyExpandable>;
+  return (
+    <MyExpandable
+      title={uiText(
+        `Aktivität (${allItems.length})`,
+        `Activity (${allItems.length})`,
+      )}
+      initiallyExpanded
+    >
+      {!items?.length ? (
+        <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
+      ) : (
+        <>
+          <div
+            id={timelineId}
+            ref={timelineRef}
+            role="list"
+            className={[
+              "entity-activity-timeline scroll-mt-24 divide-y divide-separator",
+            ].join(" ")}
+          >
+            {visibleItems.map((item) => (
+              <ActivityTimelineRow
+                key={item.id}
+                item={item}
+                scopeResourceId={resourceId}
+                scopeResourceType={resourceType}
+              />
+            ))}
+          </div>
+          {allItems.length > COLLAPSED_ACTIVITY_COUNT && (
+            <div
+              className={[
+                "entity-activity-actions flex flex-wrap items-center gap-2",
+                "border-t border-separator pt-3",
+              ].join(" ")}
+            >
+              {showAll && canLoadOlder && (
+                <MyButton
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={Icons.Plus}
+                  loading={loadingOlder}
+                  onClick={() => void loadOlder()}
+                >
+                  {uiText("Ältere Aktivitäten laden", "Load older activities")}
+                </MyButton>
+              )}
+              <MyButton
+                kind="ghost"
+                size="sm"
+                renderIcon={Icons.AccordionExpanded}
+                className={
+                  showAll
+                    ? "entity-activity-collapse [&_svg]:rotate-180"
+                    : undefined
+                }
+                aria-expanded={showAll}
+                aria-controls={timelineId}
+                onClick={toggleDetails}
+              >
+                {showAll
+                  ? uiText("Weniger anzeigen", "Show less")
+                  : uiText("Mehr anzeigen", "Show more")}
+              </MyButton>
+            </div>
+          )}
+          {showAll && historyError && (
+            <div
+              className="entity-activity-error text-sm text-danger"
+              role="alert"
+            >
+              {historyError}
+            </div>
+          )}
+        </>
+      )}
+    </MyExpandable>
+  );
 }

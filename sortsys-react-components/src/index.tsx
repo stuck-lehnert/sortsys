@@ -1,3 +1,45 @@
+export {
+  Content,
+  SkipToContent,
+  Header,
+  HeaderGlobalBar,
+  HeaderGlobalAction,
+  HeaderMenuButton,
+  HeaderName,
+  SideNav,
+  SideNavItems,
+  SideNavDivider,
+  SideNavLink,
+  SideNavItem,
+  SideNavMenu,
+  SideNavMenuItem,
+} from "./hero-shell.js";
+export type { FilterableMultiSelectProps } from "./control-types.js";
+export { LoadMore } from "./hero-load-more.js";
+export { Menu, MenuItem, MenuItemSelectable } from "./hero-menu.js";
+import { Card } from "@heroui/react";
+import { Button, TextInput } from "./hero-controls.js";
+export {
+  Button,
+  Form,
+  TextInput,
+  PasswordInput,
+  TextArea,
+  Checkbox,
+  Select,
+  SelectItem,
+  ComboBox,
+  FilterableMultiSelect,
+  MultiSelect,
+  Tabs,
+  TabList,
+  Tab,
+  Tag,
+  OperationalTag,
+  Callout,
+  InlineNotification,
+  Modal,
+} from "./hero-controls.js";
 import React, {
   Children,
   cloneElement,
@@ -23,7 +65,10 @@ function cx(...tokens: Array<string | false | null | undefined>) {
   return tokens.filter(Boolean).join(" ");
 }
 
-function withClassName<T extends Record<string, any>>(props: T, className: string) {
+function withClassName<T extends Record<string, any>>(
+  props: T,
+  className: string,
+) {
   return {
     ...props,
     className: cx(className, props.className),
@@ -35,8 +80,14 @@ function mapTagType(type?: string) {
   return type.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
 }
 
-function asDateInputValue(value: Date | string | null | undefined) {
-  if (!value) return "";
+function asDateInputValue(value: Date | Date[] | string | null | undefined) {
+  if (Array.isArray(value)) {
+    value = value[0];
+  }
+
+  if (!value) {
+    return "";
+  }
 
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -51,13 +102,21 @@ function asOptionText(item: any) {
   if (item == null) return "";
   if (typeof item === "string" || typeof item === "number") return `${item}`;
 
-  const candidate = item.label ?? item.name ?? item.title ?? item.text ?? item.value ?? item.id;
+  const candidate =
+    item.label ?? item.name ?? item.title ?? item.text ?? item.value ?? item.id;
   if (candidate == null) return "";
-  if (typeof candidate === "string" || typeof candidate === "number") return `${candidate}`;
+  if (typeof candidate === "string" || typeof candidate === "number")
+    return `${candidate}`;
   return "";
 }
 
-function CloseIcon({ size = 14, className }: { size?: number; className?: string }) {
+function CloseIcon({
+  size = 14,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     <svg
       className={className}
@@ -67,12 +126,23 @@ function CloseIcon({ size = 14, className }: { size?: number; className?: string
       aria-hidden="true"
       focusable="false"
     >
-      <path d="M3 3L13 13M13 3L3 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M3 3L13 13M13 3L3 13"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
-function MenuIcon({ size = 16, className }: { size?: number; className?: string }) {
+function MenuIcon({
+  size = 16,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     <svg
       className={className}
@@ -82,7 +152,12 @@ function MenuIcon({ size = 16, className }: { size?: number; className?: string 
       aria-hidden="true"
       focusable="false"
     >
-      <path d="M2.2 4.2H13.8M2.2 8H13.8M2.2 11.8H13.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M2.2 4.2H13.8M2.2 8H13.8M2.2 11.8H13.8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -109,549 +184,98 @@ export interface OperationalTagBaseProps {
 export function Loading({
   active = true,
   withOverlay = false,
+  small = false,
   description,
   className,
   ...props
 }: any) {
-  if (!active) return null;
+  if (!active) {
+    return null;
+  }
 
   const node = (
-    <div {...props} className={cx("ss-loading", className)} role="status" aria-live="polite">
-      <span className="ss-spinner" />
+    <div
+      {...props}
+      className={cx("ss-loading", className)}
+      role="status"
+      aria-live="polite"
+    >
+      <span className={cx("ss-spinner", small && "ss-spinner--small")} />
       {!!description && <span className="ss-loading__text">{description}</span>}
     </div>
   );
 
-  if (!withOverlay) return node;
+  if (!withOverlay) {
+    return node;
+  }
 
   return <div className="ss-loading-overlay">{node}</div>;
 }
 
 export function InlineLoading({ description, className, ...props }: any) {
   return (
-    <div {...props} className={cx("ss-inline-loading", className)} role="status" aria-live="polite">
+    <div
+      {...props}
+      className={cx("ss-inline-loading", className)}
+      role="status"
+      aria-live="polite"
+    >
       <span className="ss-spinner ss-spinner--small" />
       <span>{description || "Lädt..."}</span>
     </div>
   );
 }
 
-export function Heading({ level = 2, as, noMargin = false, className, children, ...props }: any) {
+export function Heading({
+  level = 2,
+  as,
+  noMargin = false,
+  className,
+  children,
+  ...props
+}: any) {
   const normalizedLevel = Math.min(6, Math.max(1, Number(level) || 2));
   const As = as || `h${normalizedLevel}`;
+  const sizes = [
+    "text-3xl sm:text-4xl",
+    "text-2xl",
+    "text-xl",
+    "text-lg",
+    "text-base",
+    "text-sm",
+  ];
 
   return (
     <As
       {...props}
-      className={cx("ss-heading", `ss-heading--h${normalizedLevel}`, noMargin && "ss-heading--nomargin", className)}
-    >
-      {children}
-    </As>
-  );
-}
-
-export const Button = forwardRef<HTMLButtonElement, any>(function Button(props, ref) {
-  const {
-    kind = "primary",
-    size = "md",
-    renderIcon: Icon,
-    loading,
-    disabled,
-    children,
-    className,
-    ...rest
-  } = props;
-
-  const visibleChildren = Children
-    .toArray(children)
-    .filter((child) => child !== null && child !== false && child !== "");
-  const hasTextChild = visibleChildren.some((child) => {
-    if (typeof child === "number") return true;
-    if (typeof child === "string") return child.trim().length > 0;
-    return false;
-  });
-  const iconOnly = !hasTextChild && (!!Icon || !!visibleChildren.length);
-
-  return (
-    <button
-      ref={ref}
-      {...rest}
-      type={rest.type || "button"}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
       className={cx(
-        "ss-btn",
-        `ss-btn--${mapTagType(kind)}`,
-        `ss-btn--${mapTagType(size)}`,
-        iconOnly && "ss-btn--icon-only",
-        loading && "is-loading",
+        "font-semibold tracking-tight text-foreground",
+        sizes[normalizedLevel - 1],
+        !noMargin && "mb-3 mt-6",
         className,
       )}
     >
-      {!!loading && <span className="ss-spinner ss-spinner--small" aria-hidden="true" />}
-      {!loading && !!Icon && <Icon size={16} className="ss-btn__icon" />}
-      {!!visibleChildren.length && (
-        iconOnly
-          ? <span className="ss-btn__icon-only-child">{children}</span>
-          : <span className="ss-btn__text">{children}</span>
-      )}
-    </button>
-  );
-});
-
-export function Tile({ className, ...props }: any) {
-  return <div {...props} className={cx("ss-tile", className)} />;
-}
-
-export function Content({ className, ...props }: any) {
-  return <main {...props} id={props.id || "main-content"} className={cx("ss-content", className)} />;
-}
-
-export function SkipToContent({ href = "#main-content", children = "Zum Inhalt", className, ...props }: any) {
-  return (
-    <a {...props} href={href} className={cx("ss-skip-to-content", className)}>
       {children}
-    </a>
-  );
-}
-
-export function Header({ className, ...props }: any) {
-  return <header {...props} className={cx("ss-header", className)} />;
-}
-
-export function HeaderGlobalBar({ className, ...props }: any) {
-  return <div {...props} className={cx("ss-header-global-bar", className)} />;
-}
-
-export function HeaderGlobalAction({ className, children, ...props }: any) {
-  return (
-    <button {...props} type={props.type || "button"} className={cx("ss-header-global-action", "ss-icon-button", className)}>
-      {children}
-    </button>
-  );
-}
-
-export function HeaderMenuButton({ className, isActive, children, ...props }: any) {
-  return (
-    <button
-      {...props}
-      type={props.type || "button"}
-      className={cx("ss-header__menu-toggle", "ss-header-menu-button", "ss-icon-button", isActive && "is-active", className)}
-    >
-      {children || <MenuIcon className="ss-header-menu-button__icon" />}
-    </button>
-  );
-}
-
-export function HeaderName({ as: As = "a", prefix, className, children, ...props }: any) {
-  return (
-    <As {...props} className={cx("ss-header-name", className)}>
-      {!!prefix && <span className="ss-header-name__prefix">{prefix}</span>}
-      <span className="ss-header-name__text">{children}</span>
     </As>
   );
 }
 
-export function SideNav({ expanded = false, onOverlayClick, className, children, ...props }: any) {
+export function Tile({ className, ...props }: any) {
   return (
-    <>
-      <div
-        className={cx("ss-side-nav-overlay", expanded && "is-visible")}
-        onClick={onOverlayClick}
-        aria-hidden="true"
-      />
-      <aside
-        {...props}
-        className={cx(
-          "ss-side-nav",
-          "ss-side-nav--ux",
-          expanded && "ss-side-nav--expanded",
-          className,
-        )}
-      >
-        {children}
-      </aside>
-    </>
-  );
-}
-
-export function SideNavItems({ className, ...props }: any) {
-  return <nav {...props} className={cx("ss-side-nav-items", className)} />;
-}
-
-export function SideNavDivider({ className, ...props }: any) {
-  return <hr {...props} className={cx("ss-side-nav-divider", className)} />;
-}
-
-export const SideNavLink = forwardRef<any, any>(function SideNavLink(props, ref) {
-  const {
-    as: As,
-    className,
-    renderIcon: Icon,
-    children,
-    isActive,
-    ...rest
-  } = props;
-
-  const linkProps = withClassName(rest, "ss-side-nav__link");
-  const childNode = (
-    <>
-      {!!Icon && <Icon size={16} className="ss-side-nav__icon" />}
-      <span className="ss-side-nav__label">{children}</span>
-    </>
-  );
-
-  const control = As
-    ? <As ref={ref} {...linkProps}>{childNode}</As>
-    : <button ref={ref} type={rest.type || "button"} {...linkProps}>{childNode}</button>;
-
-  return (
-    <div className={cx("ss-side-nav__item", "ss-side-nav__item--icon", isActive && "is-active", className)}>
-      {control}
-    </div>
-  );
-});
-
-export const SideNavItem = SideNavLink;
-
-export function SideNavMenu({ title, renderIcon: Icon, children, className, defaultExpanded = false, ...props }: any) {
-  const [open, setOpen] = useState(!!defaultExpanded);
-  const itemsId = useId();
-
-  useEffect(() => {
-    if (defaultExpanded) setOpen(true);
-  }, [defaultExpanded]);
-
-  return (
-    <div {...props} className={cx("ss-side-nav-menu", className)}>
-      <button
-        type="button"
-        className="ss-side-nav-menu__trigger"
-        aria-controls={itemsId}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {!!Icon && <Icon size={16} className="ss-side-nav__icon" />}
-        <span>{title}</span>
-        <span className="ss-side-nav-menu__caret" aria-hidden="true">{open ? "-" : "+"}</span>
-      </button>
-
-      {open && <div id={itemsId} className="ss-side-nav-menu__items">{children}</div>}
-    </div>
-  );
-}
-
-export function SideNavMenuItem(props: any) {
-  return <SideNavLink {...props} className={cx("ss-side-nav-menu-item", props.className)} />;
-}
-
-export function Tag({ type = "neutral", size = "md", children, className, ...props }: any) {
-  return (
-    <span
+    <Card
       {...props}
-      className={cx("ss-tag", `ss-tag--${mapTagType(type)}`, `ss-tag--${mapTagType(size)}`, className)}
-    >
-      {children}
-    </span>
-  );
-}
-
-export function OperationalTag({
-  renderIcon: Icon,
-  text,
-  type = "blue",
-  className,
-  onClick,
-  ...props
-}: any) {
-  const Comp = onClick ? "button" : "span";
-
-  return (
-    <Comp
-      {...props}
-      {...(onClick ? { type: "button", onClick } : {})}
-      className={cx("ss-operational-tag", `ss-operational-tag--${mapTagType(type)}`, className)}
-    >
-      {!!Icon && <Icon size={14} className="ss-operational-tag__icon" />}
-      <span>{text}</span>
-    </Comp>
-  );
-}
-
-type TabsContextValue = {
-  selectedIndex: number;
-  setSelectedIndex: (value: number) => void;
-};
-
-const TabsContext = createContext<TabsContextValue | null>(null);
-
-export function Tabs({ selectedIndex, onChange, className, children, ...props }: any) {
-  const controlled = typeof selectedIndex === "number";
-  const [internalIndex, setInternalIndex] = useState(controlled ? selectedIndex : 0);
-
-  useEffect(() => {
-    if (!controlled) return;
-    setInternalIndex(selectedIndex);
-  }, [controlled, selectedIndex]);
-
-  const setSelectedIndex = (next: number) => {
-    if (!controlled) {
-      setInternalIndex(next);
-    }
-    onChange?.({ selectedIndex: next });
-  };
-
-  return (
-    <TabsContext.Provider value={{ selectedIndex: internalIndex, setSelectedIndex }}>
-      <div {...props} className={cx("ss-tabs", className)}>
-        {children}
-      </div>
-    </TabsContext.Provider>
-  );
-}
-
-export function TabList({ children, className, ...props }: any) {
-  return (
-    <div {...props} role="tablist" className={cx("ss-tab-list", className)}>
-      {Children.map(children, (child, index) => {
-        if (!isValidElement(child)) return child;
-        return cloneElement(child, { __tabIndex: index });
-      })}
-    </div>
-  );
-}
-
-export function Tab({ __tabIndex, children, className, ...props }: any) {
-  const context = useContext(TabsContext);
-  const selected = context?.selectedIndex === __tabIndex;
-
-  return (
-    <button
-      {...props}
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      className={cx("ss-tab", selected && "is-active", className)}
-      onClick={(event) => {
-        props.onClick?.(event);
-        context?.setSelectedIndex?.(__tabIndex || 0);
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-export const Form = forwardRef<HTMLFormElement, any>(function Form({ className, ...props }, ref) {
-  return <form ref={ref} {...props} className={cx("ss-form", className)} />;
-});
-
-export const TextInput = forwardRef<HTMLInputElement, any>(function TextInput(props, ref) {
-  const {
-    labelText,
-    helperText,
-    invalid,
-    invalidText,
-    suffix,
-    className,
-    id,
-    type = "text",
-    ...rest
-  } = props;
-
-  return (
-    <div className={cx("ss-field", className)}>
-      {!!labelText && <label className="ss-label" htmlFor={id}>{labelText}</label>}
-
-      <div className={cx("ss-field__input-row", !!suffix && "has-suffix")}>
-        <input ref={ref} id={id} {...rest} type={type} className={cx("ss-input", invalid && "is-invalid", rest.inputClassName)} />
-        {!!suffix && <div className="ss-field__suffix">{suffix}</div>}
-      </div>
-
-      {!!helperText && <div className="ss-field__hint">{helperText}</div>}
-      {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
-    </div>
-  );
-});
-
-export const PasswordInput = forwardRef<HTMLInputElement, any>(function PasswordInput(props, ref) {
-  return <TextInput ref={ref} {...props} type="password" />;
-});
-
-export const TextArea = forwardRef<HTMLTextAreaElement, any>(function TextArea(props, ref) {
-  const {
-    labelText,
-    helperText,
-    invalid,
-    invalidText,
-    className,
-    id,
-    rows = 4,
-    ...rest
-  } = props;
-
-  return (
-    <div className={cx("ss-field", className)}>
-      {!!labelText && <label className="ss-label" htmlFor={id}>{labelText}</label>}
-      <textarea ref={ref} id={id} rows={rows} {...rest} className={cx("ss-input ss-textarea", invalid && "is-invalid", rest.inputClassName)} />
-      {!!helperText && <div className="ss-field__hint">{helperText}</div>}
-      {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
-    </div>
-  );
-});
-
-export const Checkbox = forwardRef<HTMLInputElement, any>(function Checkbox(props, ref) {
-  const {
-    labelText,
-    invalid,
-    invalidText,
-    className,
-    id,
-    children,
-    ...rest
-  } = props;
-
-  return (
-    <div className={cx("ss-checkbox", className)}>
-      <label htmlFor={id} className="ss-checkbox__label">
-        <input ref={ref} id={id} {...rest} type="checkbox" className="ss-checkbox__input" />
-        <span className="ss-checkbox__text">{labelText || children}</span>
-      </label>
-      {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
-    </div>
-  );
-});
-
-export const Select = forwardRef<HTMLSelectElement, any>(function Select(props, ref) {
-  const {
-    labelText,
-    helperText,
-    invalid,
-    invalidText,
-    suffix,
-    className,
-    id,
-    children,
-    ...rest
-  } = props;
-
-  return (
-    <div className={cx("ss-field", className)}>
-      {!!labelText && <label className="ss-label" htmlFor={id}>{labelText}</label>}
-
-      <div className={cx("ss-field__input-row", !!suffix && "has-suffix")}>
-        <select ref={ref} id={id} {...rest} className={cx("ss-input ss-select", invalid && "is-invalid")}>
-          {children}
-        </select>
-
-        {!!suffix && <div className="ss-field__suffix">{suffix}</div>}
-      </div>
-
-      {!!helperText && <div className="ss-field__hint">{helperText}</div>}
-      {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
-    </div>
-  );
-});
-
-export function SelectItem({ text, children, ...props }: any) {
-  return <option {...props}>{text ?? children}</option>;
-}
-
-export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(props, ref) {
-  const {
-    titleText,
-    helperText,
-    items = [],
-    itemToString = (item: any) => asOptionText(item),
-    itemToElement,
-    onInputChange,
-    value,
-    className,
-    id,
-    invalid,
-    invalidText,
-    disabled,
-    ...rest
-  } = props;
-
-  const [open, setOpen] = useState(false);
-  const [internalValue, setInternalValue] = useState(`${value ?? ""}`);
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setInternalValue(`${value ?? ""}`);
-  }, [value]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const listener = (event: MouseEvent) => {
-      if (!wrapperRef.current) return;
-      if (wrapperRef.current.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-
-    window.addEventListener("mousedown", listener);
-    return () => window.removeEventListener("mousedown", listener);
-  }, [open]);
-
-  return (
-    <div ref={wrapperRef} className={cx("ss-field ss-combobox", className)}>
-      {!!titleText && <label className="ss-label" htmlFor={id}>{titleText}</label>}
-
-      <input
-        ref={ref}
-        {...rest}
-        id={id}
-        value={internalValue}
-        disabled={disabled}
-        className={cx("ss-input", invalid && "is-invalid")}
-        onFocus={(event) => {
-          setOpen(true);
-          rest.onFocus?.(event);
-        }}
-        onChange={(event) => {
-          const next = event.target.value;
-          setInternalValue(next);
-          onInputChange?.(next);
-          rest.onChange?.(event);
-          setOpen(true);
-        }}
-      />
-
-      {open && !!items.length && (
-        <ul className="ss-combobox__list" role="listbox">
-          {items.map((item: any, index: number) => {
-            const key = item?.id ?? `${itemToString(item)}-${index}`;
-            return (
-              <li key={key} className="ss-combobox__item" role="option">
-                <button
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    const next = itemToString(item);
-                    setInternalValue(next);
-                    onInputChange?.(next);
-                    setOpen(false);
-                  }}
-                >
-                  {itemToElement ? itemToElement(item) : itemToString(item)}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      className={cx(
+        "ss-tile min-w-0 border border-separator shadow-none",
+        className,
       )}
-
-      {!!helperText && <div className="ss-field__hint">{helperText}</div>}
-      {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
-    </div>
+    />
   );
-});
+}
 
 type MultiSelectContextValue = {
   value: string;
   onValueChange: (next: string) => void;
+  disabled?: boolean;
   invalid?: boolean;
   invalidText?: string;
 };
@@ -666,6 +290,10 @@ export function DatePicker({
   className,
   children,
   disabled,
+  datePickerType: _datePickerType,
+  dateFormat: _dateFormat,
+  allowInput: _allowInput,
+  locale: _locale,
   ...props
 }: any) {
   const inputValue = asDateInputValue(value);
@@ -674,6 +302,7 @@ export function DatePicker({
     <DatePickerContext.Provider
       value={{
         value: inputValue,
+        disabled,
         invalid,
         invalidText,
         onValueChange: (next) => {
@@ -686,7 +315,11 @@ export function DatePicker({
         },
       }}
     >
-      <div {...props} className={cx("ss-date-picker", className)} data-disabled={disabled ? "true" : "false"}>
+      <div
+        {...props}
+        className={cx("ss-date-picker min-w-0 w-full", className)}
+        data-disabled={disabled ? "true" : "false"}
+      >
         {children}
       </div>
     </DatePickerContext.Provider>
@@ -694,644 +327,27 @@ export function DatePicker({
 }
 
 export function DatePickerInput({
-  id,
-  labelText,
   invalid,
   invalidText,
-  suffix,
-  className,
   disabled,
   onChange,
   ...props
 }: any) {
   const context = useContext(DatePickerContext);
-  const mergedInvalid = !!(invalid || context?.invalid);
 
   return (
-    <div className={cx("ss-field", className)}>
-      {!!labelText && <label className="ss-label" htmlFor={id}>{labelText}</label>}
-
-      <div className={cx("ss-field__input-row", !!suffix && "has-suffix")}>
-        <input
-          id={id}
-          {...props}
-          type="date"
-          disabled={disabled}
-          className={cx("ss-input", mergedInvalid && "is-invalid")}
-          value={context?.value ?? ""}
-          onChange={(event) => {
-            context?.onValueChange(event.target.value);
-            onChange?.(event);
-          }}
-        />
-
-        {!!suffix && <div className="ss-field__suffix">{suffix}</div>}
-      </div>
-
-      {mergedInvalid && <div className="ss-field__error">{invalidText || context?.invalidText}</div>}
-    </div>
-  );
-}
-
-export const FilterableMultiSelect = forwardRef<HTMLDivElement, any>(function FilterableMultiSelect(props, ref) {
-  const {
-    titleText,
-    items = [],
-    selectedItems = [],
-    onChange,
-    onInputValueChange,
-    itemToElement,
-    itemToString = (item: any) => asOptionText(item),
-    createActionLabel,
-    onCreateAction,
-    invalid,
-    invalidText,
-    disabled,
-    autoFocus,
-    className,
-  } = props;
-
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const localRef = useRef<HTMLDivElement | null>(null);
-  const createActionHandledRef = useRef(false);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const listener = (event: MouseEvent) => {
-      if (!localRef.current) return;
-      if (localRef.current.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-
-    window.addEventListener("mousedown", listener);
-    return () => window.removeEventListener("mousedown", listener);
-  }, [open]);
-
-  const isSameItem = (left: any, right: any) => {
-    if (left === right) return true;
-
-    const leftId = left?.id;
-    const rightId = right?.id;
-    if (leftId != null || rightId != null) {
-      return leftId === rightId;
-    }
-
-    return itemToString(left) === itemToString(right);
-  };
-
-  const attachRef = (node: HTMLDivElement | null) => {
-    localRef.current = node;
-    if (typeof ref === "function") {
-      ref(node);
-    } else if (ref) {
-      (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
-    }
-  };
-
-  const runCreateAction = () => {
-    if (createActionHandledRef.current) return;
-    createActionHandledRef.current = true;
-    window.setTimeout(() => {
-      createActionHandledRef.current = false;
-    }, 0);
-
-    setOpen(false);
-    onCreateAction?.(query);
-  };
-
-  return (
-    <div ref={attachRef} className={cx("ss-field ss-multi-select", className)}>
-      {!!titleText && <label className="ss-label">{titleText}</label>}
-
-      <div className="ss-multi-select__control">
-        <input
-          type="text"
-          value={query}
-          autoFocus={autoFocus}
-          disabled={disabled}
-          className={cx("ss-input", invalid && "is-invalid")}
-          onFocus={() => setOpen(true)}
-          onChange={(event) => {
-            const next = event.target.value;
-            setQuery(next);
-            onInputValueChange?.(next);
-          }}
-        />
-
-        {open && (!!items.length || !!onCreateAction) && (
-          <ul className="ss-multi-select__list" role="listbox">
-            {items.map((item: any, index: number) => {
-              const key = `${item?.id ?? itemToString(item)}-${index}`;
-              const selected = selectedItems.some((entry: any) => isSameItem(entry, item));
-
-              return (
-                <li key={key} className={cx("ss-multi-select__item", selected && "is-selected")}
-                >
-                  <button
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      let next: any[];
-                      if (selected) {
-                        next = selectedItems.filter((entry: any) => !isSameItem(entry, item));
-                      } else {
-                        next = [...selectedItems, item];
-                      }
-
-                      onChange?.({ selectedItems: next });
-                    }}
-                  >
-                    <span className={cx("ss-multi-select__check", selected && "is-checked")} aria-hidden="true">{selected ? "✓" : ""}</span>
-                    <span className="ss-multi-select__item-content">{itemToElement ? itemToElement(item) : itemToString(item)}</span>
-                  </button>
-                </li>
-              );
-            })}
-
-            {!!onCreateAction && (
-              <li className="ss-multi-select__create-action">
-                <button
-                  type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    runCreateAction();
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    runCreateAction();
-                  }}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (event.detail === 0) runCreateAction();
-                  }}
-                >
-                  {typeof createActionLabel === "function" ? createActionLabel({ query }) : createActionLabel}
-                </button>
-              </li>
-            )}
-          </ul>
-        )}
-      </div>
-
-      {!!selectedItems.length && (
-        <div className="ss-multi-select__chips">
-          {selectedItems.map((item: any, index: number) => (
-            <span className="ss-multi-select__chip" key={`${item?.id ?? index}-${index}`}>
-              {itemToString(item)}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {!!invalid && !!invalidText && <div className="ss-field__error">{invalidText}</div>}
-    </div>
-  );
-});
-
-export const MultiSelect = FilterableMultiSelect;
-
-type MenuContextValue = {
-  close: () => void;
-};
-
-const MenuContext = createContext<MenuContextValue | null>(null);
-
-export const Menu = forwardRef<HTMLUListElement, any>(function Menu(props, ref) {
-  const {
-    open,
-    onClose,
-    x = 0,
-    y = 0,
-    className,
-    children,
-    containerRef,
-  } = props;
-
-  const localRef = useRef<HTMLUListElement | null>(null);
-
-  const attachRef = (node: HTMLUListElement | null) => {
-    localRef.current = node;
-
-    if (typeof ref === "function") {
-      ref(node);
-    } else if (ref) {
-      (ref as React.MutableRefObject<HTMLUListElement | null>).current = node;
-    }
-  };
-
-  useEffect(() => {
-    if (!open) return;
-
-    const keyListener = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose?.();
-      }
-    };
-
-    const clickListener = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-
-      if (localRef.current && localRef.current.contains(target)) return;
-      if (containerRef?.current && containerRef.current.contains(target)) return;
-
-      onClose?.();
-    };
-
-    window.addEventListener("keydown", keyListener);
-    window.addEventListener("mousedown", clickListener);
-    return () => {
-      window.removeEventListener("keydown", keyListener);
-      window.removeEventListener("mousedown", clickListener);
-    };
-  }, [open, onClose, containerRef]);
-
-  if (!open) return null;
-
-  let menuX = x;
-  let menuY = y;
-
-  if (ensureDomAvailable()) {
-    const menuWidth = localRef.current?.offsetWidth ?? 220;
-    const menuHeight = localRef.current?.offsetHeight ?? 240;
-    const margin = 8;
-
-    menuX = Math.min(Math.max(x, menuWidth + margin), window.innerWidth - margin);
-    menuY = Math.min(Math.max(y, margin), Math.max(margin, window.innerHeight - menuHeight - margin));
-  }
-
-  const node = (
-    <MenuContext.Provider value={{ close: () => onClose?.() }}>
-      <ul
-        ref={attachRef}
-        className={cx("ss-menu", className)}
-        style={{ top: menuY, left: menuX, transform: "translateX(-100%)" }}
-      >
-        {children}
-      </ul>
-    </MenuContext.Provider>
-  );
-
-  if (!ensureDomAvailable()) return node;
-  return createPortal(node, document.body);
-});
-
-export function MenuItem({
-  label,
-  renderIcon: Icon,
-  showIcon = false,
-  className,
-  onClick,
-  ...props
-}: any) {
-  const context = useContext(MenuContext);
-  const content = label ?? props.children;
-  const iconOnly = content == null;
-
-  return (
-    <li className={cx("ss-menu__item", className)}>
-      <button
-        {...props}
-        type="button"
-        onClick={(event) => {
-          onClick?.(event);
-          context?.close();
-        }}
-      >
-        {!!Icon && (showIcon || iconOnly) && (
-          <Icon size={14} className="ss-menu__icon" aria-hidden="true" />
-        )}
-        <span>{content}</span>
-      </button>
-    </li>
-  );
-}
-
-export function MenuItemSelectable({
-  selected,
-  defaultSelected,
-  onClick,
-  className,
-  ...props
-}: any) {
-  const context = useContext(MenuContext);
-  const [_selected, setSelected] = useState(!!(selected ?? defaultSelected));
-
-  useEffect(() => {
-    if (typeof selected === "boolean") {
-      setSelected(selected);
-    }
-  }, [selected]);
-
-  return (
-    <li className={cx("ss-menu__item", className)}>
-      <button
-        {...props}
-        type="button"
-        onClick={(event) => {
-          if (typeof selected !== "boolean") {
-            setSelected((value) => !value);
-          }
-          onClick?.(event);
-          context?.close();
-        }}
-      >
-        <span className="ss-menu__select-indicator">{_selected ? "x" : ""}</span>
-        <span>{props.label ?? props.children}</span>
-      </button>
-    </li>
-  );
-}
-
-let modalScrollLockCount = 0;
-let bodyOverflowBeforeModal = "";
-
-function lockBodyScroll() {
-  if (!ensureDomAvailable()) return;
-
-  if (modalScrollLockCount === 0) {
-    bodyOverflowBeforeModal = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-  }
-  modalScrollLockCount += 1;
-}
-
-function unlockBodyScroll() {
-  if (!ensureDomAvailable() || modalScrollLockCount === 0) return;
-
-  modalScrollLockCount -= 1;
-  if (modalScrollLockCount === 0) {
-    document.body.style.overflow = bodyOverflowBeforeModal;
-    bodyOverflowBeforeModal = "";
-  }
-}
-
-function isEnterSubmittableControl(target: EventTarget | null) {
-  if (target instanceof HTMLSelectElement) return true;
-  if (!(target instanceof HTMLInputElement)) return false;
-
-  // These controls use Enter for their own interaction or do not represent a
-  // single-line value that a user would naturally confirm with Enter.
-  return ![
-    "button",
-    "checkbox",
-    "color",
-    "file",
-    "radio",
-    "range",
-    "reset",
-    "submit",
-  ].includes(target.type);
-}
-
-export function Modal({
-  open,
-  onRequestClose,
-  onRequestSubmit,
-  modalHeading,
-  modalLabel,
-  primaryButtonText = "Speichern",
-  secondaryButtonText = "Abbrechen",
-  primaryButtonDisabled,
-  primaryButtonLoading,
-  secondaryButtonDisabled,
-  closeButtonLabel,
-  shouldSubmitOnEnter = true,
-  passiveModal,
-  danger,
-  children,
-  className,
-  ...props
-}: any) {
-  const hasPrimaryAction = typeof onRequestSubmit === "function";
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const headingId = useId();
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
-  const modalRuntimeRef = useRef({
-    hasPrimaryAction,
-    onRequestClose,
-    onRequestSubmit,
-    primaryButtonDisabled,
-    primaryButtonLoading,
-    shouldSubmitOnEnter,
-  });
-  modalRuntimeRef.current = {
-    hasPrimaryAction,
-    onRequestClose,
-    onRequestSubmit,
-    primaryButtonDisabled,
-    primaryButtonLoading,
-    shouldSubmitOnEnter,
-  };
-
-  useEffect(() => {
-    if (!open || !ensureDomAvailable()) return;
-
-    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    lockBodyScroll();
-
-    const focusFrame = requestAnimationFrame(() => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const initialFocus = container.querySelector<HTMLElement>("[autofocus]")
-        ?? container.querySelector<HTMLElement>(
-          ".ss-modal-content input:not([disabled]), .ss-modal-content textarea:not([disabled]), .ss-modal-content select:not([disabled]), .ss-modal-content button:not([disabled]), .ss-modal-content a[href], .ss-modal-content [tabindex]:not([tabindex='-1'])",
-        )
-        ?? container.querySelector<HTMLElement>(
-          "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
-        );
-
-      (initialFocus ?? container).focus({ preventScroll: true });
-    });
-
-    const listener = (event: KeyboardEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const visibleDialogs = [...document.querySelectorAll<HTMLElement>(".ss-modal-container")];
-      if (visibleDialogs.at(-1) !== container) return;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        modalRuntimeRef.current.onRequestClose?.();
-        return;
-      }
-
-      if (event.key === "Tab") {
-        const focusable = [...container.querySelectorAll<HTMLElement>(
-          "a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
-        )].filter(element => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
-
-        if (!focusable.length) {
-          event.preventDefault();
-          container.focus();
-          return;
-        }
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-
-      const runtime = modalRuntimeRef.current;
-      if (
-        event.key !== "Enter"
-        || event.defaultPrevented
-        || event.isComposing
-        || event.repeat
-        || !runtime.hasPrimaryAction
-        || !runtime.shouldSubmitOnEnter
-        || runtime.primaryButtonDisabled
-        || runtime.primaryButtonLoading
-      ) return;
-
-      const target = event.target;
-      if (!isEnterSubmittableControl(target)) return;
-
-      // Enter selects an autocomplete result while its option list is open.
-      // Submitting the surrounding dialog at the same time would skip that
-      // selection and persist the previous value.
-      const openComboBox = target.closest(".ss-combobox")?.querySelector("[role='listbox']");
-      if (openComboBox) return;
-
-      event.preventDefault();
-      runtime.onRequestSubmit?.();
-    };
-
-    window.addEventListener("keydown", listener);
-    return () => {
-      cancelAnimationFrame(focusFrame);
-      window.removeEventListener("keydown", listener);
-      unlockBodyScroll();
-
-      const previouslyFocused = previouslyFocusedRef.current;
-      if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true });
-    };
-  }, [open]);
-
-  if (!open) return null;
-
-  const node = (
-    <div
+    <TextInput
       {...props}
-      className={cx("ss-modal", "is-visible", className)}
-      onMouseDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        onRequestClose?.();
+      type="date"
+      disabled={disabled || context?.disabled}
+      invalid={Boolean(invalid || context?.invalid)}
+      invalidText={invalidText || context?.invalidText}
+      value={context?.value ?? ""}
+      onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+        context?.onValueChange(event.target.value);
+        onChange?.(event);
       }}
-    >
-      <div
-        ref={containerRef}
-        className="ss-modal-container"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={modalHeading ? headingId : undefined}
-        aria-label={!modalHeading ? modalLabel || "Dialog" : undefined}
-        tabIndex={-1}
-      >
-        <header className="ss-modal-header">
-          <div className="ss-modal-header__text">
-            {!!modalLabel && <div className="ss-modal-label">{modalLabel}</div>}
-            {!!modalHeading && <h3 id={headingId} className="ss-modal-heading">{modalHeading}</h3>}
-          </div>
-
-          <button
-            type="button"
-            className="ss-modal-close"
-            aria-label={closeButtonLabel || "Schließen"}
-            onClick={() => onRequestClose?.()}
-          >
-            <CloseIcon className="ss-modal-close__icon" />
-          </button>
-        </header>
-
-        <div className="ss-modal-content">{children}</div>
-
-        {!passiveModal && (
-          <footer className="ss-modal-footer">
-            <Button
-              kind="secondary"
-              disabled={secondaryButtonDisabled}
-              onClick={() => onRequestClose?.()}
-            >
-              {secondaryButtonText}
-            </Button>
-
-            {hasPrimaryAction && (
-              <Button
-                kind={danger ? "danger" : "primary"}
-                disabled={primaryButtonDisabled || primaryButtonLoading}
-                loading={primaryButtonLoading}
-                onClick={() => onRequestSubmit?.()}
-              >
-                {primaryButtonText}
-              </Button>
-            )}
-          </footer>
-        )}
-      </div>
-    </div>
-  );
-
-  if (!ensureDomAvailable()) return node;
-  return createPortal(node, document.body);
-}
-
-export function Callout({ kind = "info", title, subtitle, className, renderIcon: Icon, children, ...props }: any) {
-
-  return (
-    <div
-      {...props}
-      className={cx("ss-inline-notification", `ss-inline-notification--${mapTagType(kind)}`, className)}
-    >
-      {!!Icon && (
-        <span className="ss-inline-notification__icon" aria-hidden="true">
-          <Icon size={15} />
-        </span>
-      )}
-
-      <div className="ss-inline-notification__body">
-        {!!title && <strong>{title}</strong>}
-        {!!subtitle && <div>{subtitle}</div>}
-        {children}
-      </div>
-    </div>
-  );
-}
-
-export function InlineNotification({ kind = "info", title, subtitle, className, renderIcon: Icon, children, ...props }: any) {
-
-  return (
-    <div
-      {...props}
-      className={cx("ss-inline-notification", `ss-inline-notification--${mapTagType(kind)}`, className)}
-    >
-      {!!Icon && (
-        <span className="ss-inline-notification__icon" aria-hidden="true">
-          <Icon size={15} />
-        </span>
-      )}
-
-      <div className="ss-inline-notification__body">
-        {!!title && <strong>{title}</strong>}
-        {!!subtitle && <div>{subtitle}</div>}
-        {children}
-      </div>
-    </div>
+    />
   );
 }
 
@@ -1344,7 +360,12 @@ export function TableContainer({ className, children, ...props }: any) {
 }
 
 export function Table({ className, isSortable, ...props }: any) {
-  return <table {...props} className={cx("ss-data-table", isSortable && "is-sortable", className)} />;
+  return (
+    <table
+      {...props}
+      className={cx("ss-data-table", isSortable && "is-sortable", className)}
+    />
+  );
 }
 
 export function TableHead({ className, ...props }: any) {
@@ -1371,16 +392,18 @@ export function TableHeader({
   sortDirection = "NONE",
   ...props
 }: any) {
-  const sortIndicator = sortDirection === "ASC"
-    ? "↑"
-    : sortDirection === "DESC"
-      ? "↓"
-      : "";
+  const sortIndicator =
+    sortDirection === "ASC" ? "↑" : sortDirection === "DESC" ? "↓" : "";
 
   return (
     <th
       {...props}
-      className={cx("ss-table-header", isSortable && "is-sortable", isSortHeader && "is-sorted", className)}
+      className={cx(
+        "ss-table-header",
+        isSortable && "is-sortable",
+        isSortHeader && "is-sorted",
+        className,
+      )}
     >
       <span>{children}</span>
       {!!isSortable && !!sortIndicator && (
@@ -1401,70 +424,4 @@ export function TableHeader({
 
 export function DataTable({ children }: any) {
   return children ?? null;
-}
-
-export function Pagination({
-  totalItems = 0,
-  page = 1,
-  pageSize = 25,
-  pageSizes = [25, 50, 100],
-  onChange,
-  backwardText = "Zurück",
-  forwardText = "Weiter",
-  itemsPerPageText = "Elemente pro Seite",
-  itemRangeText,
-  pageRangeText,
-  className,
-  ...props
-}: any) {
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const safePage = Math.min(Math.max(page, 1), totalPages);
-  const from = totalItems ? (safePage - 1) * pageSize + 1 : 0;
-  const to = Math.min(totalItems, safePage * pageSize);
-
-  const setPage = (nextPage: number) => {
-    const bounded = Math.min(Math.max(nextPage, 1), totalPages);
-    onChange?.({ page: bounded, pageSize });
-  };
-
-  return (
-    <div {...props} className={cx("ss-pagination", "ss-pagination--md", className)}>
-      <div className="ss-pagination__summary">
-        {typeof itemRangeText === "function"
-          ? itemRangeText(from, to, totalItems)
-          : `${from}-${to} / ${totalItems}`}
-      </div>
-
-      <div className="ss-pagination__controls">
-        <label className="ss-pagination__sizes">
-          <span>{itemsPerPageText}</span>
-          <select
-            value={pageSize}
-            onChange={(event) => {
-              const nextSize = Number(event.target.value);
-              onChange?.({ page: 1, pageSize: nextSize });
-            }}
-          >
-            {pageSizes.map((size: number) => (
-              <option key={size} value={size}>{size}</option>
-            ))}
-          </select>
-        </label>
-
-        <button type="button" onClick={() => setPage(safePage - 1)} disabled={safePage <= 1}>
-          {backwardText}
-        </button>
-
-        <span>
-          {typeof pageRangeText === "function"
-            ? pageRangeText(safePage, totalPages)
-            : `${safePage} / ${totalPages}`}
-        </span>
-
-        <button type="button" onClick={() => setPage(safePage + 1)} disabled={safePage >= totalPages}>
-          {forwardText}
-        </button>
-      </div>
-    </div>
-  );
 }

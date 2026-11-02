@@ -1,3 +1,5 @@
+import { Accordion, Input as UIInput } from "@heroui/react";
+import { MyHeader } from "~/components/MyHeader";
 import { Tile } from "@sortsys/react-components";
 import { useDeferredValue, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -8,7 +10,6 @@ import {
   BUILD_REVISION_URL,
   SORTSYS_LICENSE,
 } from "~/lib/buildInfo";
-import { Icons } from "~/lib/icons";
 import { uiText, useI18n } from "~/lib/i18n";
 
 type LicenseEntry = {
@@ -44,6 +45,7 @@ function ComponentLicenseList({
   component: ComponentLicenses;
   query: string;
 }) {
+  const [expandedKeys, setExpandedKeys] = useState<Set<string | number>>(new Set());
   const entries = useMemo(() => {
     if (!query) return component.entries;
 
@@ -56,34 +58,73 @@ function ComponentLicenseList({
         .some(value => value.toLocaleLowerCase().includes(query)));
   }, [component.entries, query]);
 
-  return <details className="license-component" open={query ? true : undefined}>
-    <summary>
-      <Icons.AccordionClosed className="license-component-chevron" aria-hidden="true" />
-      <span className="license-component-title">{component.title}</span>
-      <span className="license-component-count">{packageCount(entries.length)}</span>
-    </summary>
+  return (
+    <Accordion
+      expandedKeys={query ? [component.id] : expandedKeys}
+      onExpandedChange={(keys) => setExpandedKeys(new Set(keys))}
+    >
+      <Accordion.Item id={component.id}>
+        <Accordion.Heading level={2}>
+          <Accordion.Trigger className="min-h-11 text-base font-medium">
+            <span className="min-w-0 flex-1 text-left">{component.title}</span>
+            <span className="text-xs font-normal text-muted">
+              {packageCount(entries.length)}
+            </span>
+            <Accordion.Indicator />
+          </Accordion.Trigger>
+        </Accordion.Heading>
+        <Accordion.Panel>
+          <Accordion.Body className="min-w-0 px-0">
+            <div className="divide-y divide-separator" role="list">
+              {entries.map((entry) => (
+                <div
+                  className={[
+                    "grid min-w-0 gap-2 py-3 text-sm",
+                    "sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,2fr)]",
+                  ].join(" ")}
+                  key={`${entry.ecosystem}:${entry.name}:${entry.version}`}
+                  role="listitem"
+                >
+                  <div
+                    className={[
+                      "flex min-w-0 flex-col gap-1 [&_a]:break-words [&_a]:text-accent",
+                      "[&_span]:text-xs [&_span]:text-muted",
+                    ].join(" ")}
+                  >
+                    <a href={entry.source} target="_blank" rel="noreferrer">
+                      {entry.name}
+                    </a>
+                    <span>{entry.ecosystem}</span>
+                  </div>
+                  <code>{entry.version}</code>
+                  {entry.licenseUrl ? (
+                    <a href={entry.licenseUrl} target="_blank" rel="noreferrer">
+                      {entry.license}
+                    </a>
+                  ) : (
+                    <span>
+                      {entry.license === "UNKNOWN"
+                        ? uiText("Unbekannt", "Unknown")
+                        : entry.license}
+                    </span>
+                  )}
+                </div>
+              ))}
 
-    <div className="license-list" role="list">
-      {entries.map(entry => <div
-        className="license-entry"
-        key={`${entry.ecosystem}:${entry.name}:${entry.version}`}
-        role="listitem"
-      >
-        <div className="license-package">
-          <a href={entry.source} target="_blank" rel="noreferrer">{entry.name}</a>
-          <span>{entry.ecosystem}</span>
-        </div>
-        <code>{entry.version}</code>
-        {entry.licenseUrl
-          ? <a href={entry.licenseUrl} target="_blank" rel="noreferrer">{entry.license}</a>
-          : <span>{entry.license === "UNKNOWN" ? uiText("Unbekannt", "Unknown") : entry.license}</span>}
-      </div>)}
-
-      {!entries.length && <p className="light license-empty">
-        {uiText("Keine passenden Pakete gefunden.", "No matching packages found.")}
-      </p>}
-    </div>
-  </details>;
+              {!entries.length && (
+                <p className="py-4 text-sm text-muted">
+                  {uiText(
+                    "Keine passenden Pakete gefunden.",
+                    "No matching packages found.",
+                  )}
+                </p>
+              )}
+            </div>
+          </Accordion.Body>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  );
 }
 
 export default function LicensesPage() {
@@ -144,58 +185,77 @@ export default function LicensesPage() {
     },
   ];
 
-  return <div className="docs-page license-page">
-    <header className="ss-page-header">
-      <div className="ss-page-header__main">
-        <h1 className="ss-page-header__title docs-article-title">
-          {uiText("Lizenzen", "Licenses")}
-        </h1>
-        <p className="light docs-page-lead">
-          {uiText(
-            "Verwendete Open-Source-Pakete und die zugehörigen Lizenzangaben.",
-            "Open-source packages used by sortsys and their license information.",
-          )}
-        </p>
-      </div>
-      <div className="ss-page-header__actions">
-        <Link to="/docs">{uiText("Hilfe & Begriffe", "Help & terms")}</Link>
-      </div>
-    </header>
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-6">
+      <MyHeader
+        title={uiText("Lizenzen", "Licenses")}
+        subtitle={uiText(
+          "Verwendete Open-Source-Pakete und die zugehörigen Lizenzangaben.",
+          "Open-source packages used by sortsys and their license information.",
+        )}
+      >
+        <Link className="text-accent hover:underline" to="/docs">
+          {uiText("Hilfe & Begriffe", "Help & terms")}
+        </Link>
+      </MyHeader>
 
-    <Tile className="license-build">
-      <div>
-        <span className="license-build-label">{uiText("Revision", "Revision")}</span>
-        {BUILD_REVISION_URL
-          ? <a href={BUILD_REVISION_URL} target="_blank" rel="noreferrer">
+      <Tile className="flex flex-wrap gap-x-8 gap-y-4">
+        <div>
+          <span className="block text-xs font-medium text-muted">
+            {uiText("Revision", "Revision")}
+          </span>
+          {BUILD_REVISION_URL ? (
+            <a href={BUILD_REVISION_URL} target="_blank" rel="noreferrer">
               <code>{BUILD_REVISION_SHORT}</code>
             </a>
-          : <code>{BUILD_REVISION_SHORT}</code>}
-      </div>
-      <div>
-        <span className="license-build-label">{uiText("sortsys-Lizenz", "sortsys license")}</span>
-        <a
-          href="https://github.com/stuck-lehnert/sortsys/blob/master/LICENSE"
-          target="_blank"
-          rel="noreferrer"
-        >{SORTSYS_LICENSE}</a>
-      </div>
-    </Tile>
+          ) : (
+            <code>{BUILD_REVISION_SHORT}</code>
+          )}
+        </div>
+        <div>
+          <span className="block text-xs font-medium text-muted">
+            {uiText("sortsys-Lizenz", "sortsys license")}
+          </span>
+          <a
+            href="https://github.com/stuck-lehnert/sortsys/blob/master/LICENSE"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {SORTSYS_LICENSE}
+          </a>
+        </div>
+      </Tile>
 
-    <label className="docs-search-tile license-search" htmlFor="license-search">
-      <span className="docs-search-label">{uiText("Pakete suchen", "Search packages")}</span>
-      <input
-        id="license-search"
-        className="docs-search-input"
-        type="search"
-        value={search}
-        onChange={event => setSearch(event.currentTarget.value)}
-        placeholder={uiText("Name, Version oder Lizenz", "Name, version or license")}
-      />
-    </label>
+      <label className="flex max-w-xl flex-col gap-2" htmlFor="license-search">
+        <span className="text-sm font-medium">
+          {uiText("Pakete suchen", "Search packages")}
+        </span>
+        <UIInput
+          variant="secondary"
+          id="license-search"
+          className="w-full"
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          placeholder={uiText(
+            "Name, Version oder Lizenz",
+            "Name, version or license",
+          )}
+        />
+      </label>
 
-    <section className="license-area" aria-label={uiText("Komponenten", "Components")}>
-      {components.map(component =>
-        <ComponentLicenseList key={component.id} component={component} query={query} />)}
-    </section>
-  </div>;
+      <section
+        className="space-y-3"
+        aria-label={uiText("Komponenten", "Components")}
+      >
+        {components.map((component) => (
+          <ComponentLicenseList
+            key={component.id}
+            component={component}
+            query={query}
+          />
+        ))}
+      </section>
+    </div>
+  );
 }

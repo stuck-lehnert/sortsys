@@ -11,9 +11,16 @@ import { contactName, customerName, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import type { Contact, Project } from "~/type-helpers";
 import { FormAddress, processFormAddress } from "./_utils";
-import { SmallContactTile, SmallCustomerTile, SmallUserTile } from "~/lib/tiles";
+import {
+  SmallContactTile,
+  SmallCustomerTile,
+  SmallUserTile,
+} from "~/lib/tiles";
 import { generateId, parseFloatCustom } from "~/lib/utils";
-import { projectContactsEqual, type ProjectContactSelection } from "~/lib/projectContacts";
+import {
+  projectContactsEqual,
+  type ProjectContactSelection,
+} from "~/lib/projectContacts";
 
 type ProjectContactFormContact = Contact & { label?: string | null };
 
@@ -52,74 +59,119 @@ function ProjectContactsFormFields({ context, modals, projectId, onLoaded }: {
   const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
   const initialValues = useRef<Record<string, { contact: ProjectContactFormContact; label: string | null }>>({}).current;
 
-  return <>
-    <h4>{uiText("Ansprechpartner")}</h4>
-    <p className="light">{uiText("Mehrere Ansprechpartner können hinterlegt werden.")}</p>
+  return (
+    <>
+      <h4 className="text-lg leading-snug font-semibold">
+        {uiText("Ansprechpartner")}
+      </h4>
+      <p className="light">
+        {uiText("Mehrere Ansprechpartner können hinterlegt werden.")}
+      </p>
 
-    {rowIds.map(id => <Fragment key={id}>
-      <div className="flex gap-2 items-end">
-        <div className="grow flex flex-col gap-2">
-          <MyForm.MultiSelect
-            labelText={uiText("Kontakt")}
-            name={`projectContact:${id}:contact`}
-            autoFocus={autoFocusFieldName === `projectContact:${id}:contact`}
-            minSelectedItems={1}
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const [data, err] = await client.query('contacts.list', { search: query });
-              if (err) throw err;
-              return data ?? [];
+      {rowIds.map((id) => (
+        <Fragment key={id}>
+          <div className="flex gap-2 items-end">
+            <div className="grow flex flex-col gap-2">
+              <MyForm.MultiSelect
+                labelText={uiText("Kontakt")}
+                name={`projectContact:${id}:contact`}
+                autoFocus={
+                  autoFocusFieldName === `projectContact:${id}:contact`
+                }
+                minSelectedItems={1}
+                maxSelectedItems={1}
+                getOptions={async ({ query }) => {
+                  const [data, err] = await client.query("contacts.list", {
+                    search: query,
+                  });
+                  if (err) throw err;
+                  return data ?? [];
+                }}
+                renderItem={({ item }) => contactName(item)}
+                renderTile={(item) => <SmallContactTile data={item} noLink />}
+                createAction={createEntityAction.contact}
+              />
+
+              <MyForm.Input
+                name={`projectContact:${id}:label`}
+                labelText={uiText("Rolle")}
+                suffix={
+                  <MyButton
+                    kind="ghost"
+                    size="sm"
+                    className="ss-input-suffix-btn"
+                    title={uiText("Ansprechpartner entfernen")}
+                    aria-label={uiText("Ansprechpartner entfernen")}
+                    onClick={() => {
+                      setRowIds((ids) => ids.filter((_id) => _id !== id));
+                    }}
+                  >
+                    <Icons.Delete />
+                  </MyButton>
+                }
+              />
+            </div>
+          </div>
+
+          <NotifyLoaded
+            onLoad={() => {
+              const initial = initialValues[id];
+              if (!initial) return;
+
+              context.setValues({
+                [`projectContact:${id}:contact`]: [initial.contact],
+                [`projectContact:${id}:label`]: initial.label ?? "",
+              });
+              // Publish the baseline only after all existing row fields are initialized.
+              if (id === rowIds.at(-1)) {
+                onLoaded?.(
+                  Object.values(initialValues).map(({ contact, label }) => ({
+                    ...contact,
+                    label,
+                  })),
+                );
+              }
             }}
-            renderItem={({ item }) => contactName(item)}
-            renderTile={item => <SmallContactTile data={item} noLink />}
-            createAction={createEntityAction.contact}
           />
 
-          <MyForm.Input
-            name={`projectContact:${id}:label`}
-            labelText={uiText("Rolle")}
-            suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Ansprechpartner entfernen")} aria-label={uiText("Ansprechpartner entfernen")} onClick={() => {
-              setRowIds(ids => ids.filter(_id => _id !== id));
-            }}><Icons.Delete /></MyButton>}
-          />
-        </div>
-      </div>
+          <div style={{ height: "1rem" }} />
+        </Fragment>
+      ))}
 
-      <NotifyLoaded onLoad={() => {
-        const initial = initialValues[id];
-        if (!initial) return;
+      <MyButton
+        kind="secondary"
+        renderIcon={Icons.Plus}
+        onClick={() => {
+          const id = generateId();
+          setRowIds((ids) => [...ids, id]);
+          setAutoFocusFieldName(`projectContact:${id}:contact`);
+        }}
+      >
+        {uiText("Ansprechpartner")}
+      </MyButton>
 
-        context.setValues({
-          [`projectContact:${id}:contact`]: [initial.contact],
-          [`projectContact:${id}:label`]: initial.label ?? '',
-        });
-        // Publish the baseline only after all existing row fields are initialized.
-        if (id === rowIds.at(-1)) {
-          onLoaded?.(Object.values(initialValues).map(({ contact, label }) => ({ ...contact, label })));
-        }
-      }} />
+      {!!projectId && (
+        <NotifyLoaded
+          onLoad={async () => {
+            const [contacts] = await client.query("projects.contacts.list", {
+              projectId,
+            });
+            if (!contacts) return;
+            if (!contacts.length) onLoaded?.([]);
 
-      <div style={{ height: '1rem' }} />
-    </Fragment>)}
-
-    <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-      const id = generateId();
-      setRowIds(ids => [...ids, id]);
-      setAutoFocusFieldName(`projectContact:${id}:contact`);
-    }}>{uiText("Ansprechpartner")}</MyButton>
-
-    {!!projectId && <NotifyLoaded onLoad={async () => {
-      const [contacts] = await client.query('projects.contacts.list', { projectId });
-      if (!contacts) return;
-      if (!contacts.length) onLoaded?.([]);
-
-      const ids = contacts.map(() => generateId());
-      contacts.forEach((contact, index) => {
-        initialValues[ids[index]!] = { contact, label: contact.label ?? null };
-      });
-      setRowIds(ids);
-    }} />}
-  </>;
+            const ids = contacts.map(() => generateId());
+            contacts.forEach((contact, index) => {
+              initialValues[ids[index]!] = {
+                contact,
+                label: contact.label ?? null,
+              };
+            });
+            setRowIds(ids);
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 export function showCreateProjectModal(modals: MyModalsInterface, options: CreateProjectModalOptions = {}) {
@@ -127,55 +179,77 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
     content: ({ context }) => {
       const createEntityAction = useCreateEntityAction(modals);
 
-      return <>
-      <MyForm.Input required name="title" labelText={uiText("Titel")} />
-      {!!options.initialQuery && <NotifyLoaded onLoad={() => context.field('title')?.setValue(options.initialQuery)} />}
-      <p className="light">{uiText("Verwende einen klaren Projektnamen, damit das Projekt in Listen schnell gefunden wird.")}</p>
+      return (
+        <>
+          <MyForm.Input required name="title" labelText={uiText("Titel")} />
+          {!!options.initialQuery && (
+            <NotifyLoaded
+              onLoad={() =>
+                context.field("title")?.setValue(options.initialQuery)
+              }
+            />
+          )}
+          <p className="light">
+            {uiText(
+              "Verwende einen klaren Projektnamen, damit das Projekt in Listen schnell gefunden wird.",
+            )}
+          </p>
 
-      <MyForm.DateInput
-        name="orderReceivedAt"
-        labelText={uiText("Auftrag erhalten am")}
-      />
-      <p className="light">{uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}</p>
+          <MyForm.DateInput
+            name="orderReceivedAt"
+            labelText={uiText("Auftrag erhalten am")}
+          />
+          <p className="light">
+            {uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}
+          </p>
 
-      <MyDivider />
+          <MyDivider />
 
-      <FormAddress />
+          <FormAddress />
 
-      <MyDivider />
+          <MyDivider />
 
-      <MyForm.MultiSelect
-        labelText={uiText("Kunde")}
-        name="customer"
-        maxSelectedItems={1}
-        getOptions={async ({ query }) => {
-          const [data, err] = await client.query('customers.list', { search: query });
-          if (err) throw err;
-          return data ?? [];
-        }}
-        renderItem={({ item }) => customerName(item)}
-        renderTile={item => <SmallCustomerTile data={item} noLink />}
-        createAction={createEntityAction.customer}
-      />
-      <p className="light">{uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}</p>
+          <MyForm.MultiSelect
+            labelText={uiText("Kunde")}
+            name="customer"
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("customers.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => customerName(item)}
+            renderTile={(item) => <SmallCustomerTile data={item} noLink />}
+            createAction={createEntityAction.customer}
+          />
+          <p className="light">
+            {uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}
+          </p>
 
-      <MyForm.MultiSelect
-        labelText={uiText("Verantwortlicher Projektleiter")}
-        name="responsibleProjectLeader"
-        maxSelectedItems={1}
-        getOptions={async ({ query }) => {
-          const [data, err] = await client.query('users.list', { search: query });
-          if (err) throw err;
-          return data ?? [];
-        }}
-        renderItem={({ item }) => userFullName(item)}
-        renderTile={item => <SmallUserTile data={item} noLink />}
-        createAction={createEntityAction.user}
-      />
-      <p className="light">{uiText("Wer verantwortet das Projekt übergreifend?")}</p>
+          <MyForm.MultiSelect
+            labelText={uiText("Verantwortlicher Projektleiter")}
+            name="responsibleProjectLeader"
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("users.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => userFullName(item)}
+            renderTile={(item) => <SmallUserTile data={item} noLink />}
+            createAction={createEntityAction.user}
+          />
+          <p className="light">
+            {uiText("Wer verantwortet das Projekt übergreifend?")}
+          </p>
 
-      <ProjectContactsFormFields context={context} modals={modals} />
-    </>;
+          <ProjectContactsFormFields context={context} modals={modals} />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate }) => {
       const values = context.getValues();
@@ -224,71 +298,107 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
     content: ({ context }) => {
       const createEntityAction = useCreateEntityAction(modals);
 
-      return <>
-      <MyForm.Input required name="title" labelText={uiText("Titel")} />
-      <p className="light">{uiText("Änderungen am Titel wirken sich direkt auf Suche, Listen und Exporte aus.")}</p>
+      return (
+        <>
+          <MyForm.Input required name="title" labelText={uiText("Titel")} />
+          <p className="light">
+            {uiText(
+              "Änderungen am Titel wirken sich direkt auf Suche, Listen und Exporte aus.",
+            )}
+          </p>
 
-      <MyForm.DateInput
-        name="orderReceivedAt"
-        labelText={uiText("Auftrag erhalten am")}
-      />
-      <p className="light">{uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}</p>
+          <MyForm.DateInput
+            name="orderReceivedAt"
+            labelText={uiText("Auftrag erhalten am")}
+          />
+          <p className="light">
+            {uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}
+          </p>
 
-      <MyDivider />
+          <MyDivider />
 
-      <FormAddress initialChecked={!!project.address}>
-        <NotifyLoaded onLoad={() => context.setValues(project.address ?? {})} />
-      </FormAddress>
+          <FormAddress initialChecked={!!project.address}>
+            <NotifyLoaded
+              onLoad={() => context.setValues(project.address ?? {})}
+            />
+          </FormAddress>
 
-      <MyDivider />
+          <MyDivider />
 
-      <MyForm.MultiSelect
-        labelText={uiText("Kunde")}
-        name="customer"
-        maxSelectedItems={1}
-        getOptions={async ({ query }) => {
-          const [data, err] = await client.query('customers.list', { search: query });
-          if (err) throw err;
-          return data ?? [];
-        }}
-        renderItem={({ item }) => customerName(item)}
-        renderTile={item => <SmallCustomerTile data={item} noLink />}
-        createAction={createEntityAction.customer}
-      />
-      <p className="light">{uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}</p>
+          <MyForm.MultiSelect
+            labelText={uiText("Kunde")}
+            name="customer"
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("customers.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => customerName(item)}
+            renderTile={(item) => <SmallCustomerTile data={item} noLink />}
+            createAction={createEntityAction.customer}
+          />
+          <p className="light">
+            {uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}
+          </p>
 
-      <MyForm.MultiSelect
-        labelText={uiText("Verantwortlicher Projektleiter")}
-        name="responsibleProjectLeader"
-        maxSelectedItems={1}
-        getOptions={async ({ query }) => {
-          const [data, err] = await client.query('users.list', { search: query });
-          if (err) throw err;
-          return data ?? [];
-        }}
-        renderItem={({ item }) => userFullName(item)}
-        renderTile={item => <SmallUserTile data={item} noLink />}
-        createAction={createEntityAction.user}
-      />
-      <p className="light">{uiText("Wer verantwortet das Projekt übergreifend?")}</p>
+          <MyForm.MultiSelect
+            labelText={uiText("Verantwortlicher Projektleiter")}
+            name="responsibleProjectLeader"
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("users.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => userFullName(item)}
+            renderTile={(item) => <SmallUserTile data={item} noLink />}
+            createAction={createEntityAction.user}
+          />
+          <p className="light">
+            {uiText("Wer verantwortet das Projekt übergreifend?")}
+          </p>
 
-      <ProjectContactsFormFields context={context} modals={modals} projectId={project.id} onLoaded={contacts => {
-        initialProjectContacts = contacts.map(contact => ({ contactId: contact.id, label: contact.label }));
-      }} />
+          <ProjectContactsFormFields
+            context={context}
+            modals={modals}
+            projectId={project.id}
+            onLoaded={(contacts) => {
+              initialProjectContacts = contacts.map((contact) => ({
+                contactId: contact.id,
+                label: contact.label,
+              }));
+            }}
+          />
 
-      <NotifyLoaded onLoad={() => {
-        context.setValues(project);
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues(project);
 
-        if (project.customerId) client.query('customers.get', { id: project.customerId }).then(([data]) => {
-          if (data) context.setValues({ customer: [data] });
-        });
+              if (project.customerId)
+                client
+                  .query("customers.get", { id: project.customerId })
+                  .then(([data]) => {
+                    if (data) context.setValues({ customer: [data] });
+                  });
 
-        if (project.responsibleProjectLeaderUserId) client.query('users.get', { id: project.responsibleProjectLeaderUserId }).then(([data]) => {
-          if (data) context.setValues({ responsibleProjectLeader: [data] });
-        });
-
-      }} />
-    </>;
+              if (project.responsibleProjectLeaderUserId)
+                client
+                  .query("users.get", {
+                    id: project.responsibleProjectLeaderUserId,
+                  })
+                  .then(([data]) => {
+                    if (data)
+                      context.setValues({ responsibleProjectLeader: [data] });
+                  });
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate }) => {
       const values = context.getValues();
@@ -336,14 +446,23 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
 
 export function showDeleteProjectModal(modals: MyModalsInterface, project: Project) {
   modals.showForm({
-    content: () => <>
-      <p className="light">{uiText("Alle mit diesem Projekt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
-      </p>
-      <MyForm.Checkbox
-        required name="_understood"
-        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
-      />
-    </>,
+    content: () => (
+      <>
+        <p className="light">
+          {uiText(
+            "Alle mit diesem Projekt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.",
+          )}{" "}
+          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+        </p>
+        <MyForm.Checkbox
+          required
+          name="_understood"
+          labelText={uiText(
+            "Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.",
+          )}
+        />
+      </>
+    ),
     onSubmit: async ({ hide, pathname, navigate }) => {
       const [data, err] = await client.mutate('projects.delete', { id: project.id });
       if (err) throw err;
@@ -364,28 +483,36 @@ export function showDeleteProjectModal(modals: MyModalsInterface, project: Proje
 
 export function showCreateProjectInterruptionModal(modals: MyModalsInterface, project: Project) {
   modals.showForm({
-    content: ({ context }) => <>
-      <div className="flex gap-2">
-        <div className="basis-1/2 flex-1">
-          <MyForm.DateInput required name="from" labelText={uiText("Von")} />
+    content: ({ context }) => (
+      <>
+        <div className="flex gap-2">
+          <div className="min-w-0 basis-1/2 flex-1">
+            <MyForm.DateInput required name="from" labelText={uiText("Von")} />
+          </div>
+          <div className="min-w-0 basis-1/2 flex-1">
+            <MyForm.DateInput required name="to" labelText={uiText("Bis")} />
+          </div>
         </div>
-        <div className="basis-1/2 flex-1">
-          <MyForm.DateInput required name="to" labelText={uiText("Bis")} />
-        </div>
-      </div>
 
-      <MyForm.Input required name="reason" labelText={uiText("Grund")} />
-      <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
-      <p className="light">{uiText("Unterbrechungen erscheinen in der Einsatzplanung und markieren betroffene Einsätze.")}</p>
+        <MyForm.Input required name="reason" labelText={uiText("Grund")} />
+        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
+        <p className="light">
+          {uiText(
+            "Unterbrechungen erscheinen in der Einsatzplanung und markieren betroffene Einsätze.",
+          )}
+        </p>
 
-      <NotifyLoaded onLoad={() => {
-        const today = startOfDay(new Date());
-        context.setValues({
-          from: today,
-          to: today,
-        });
-      }} />
-    </>,
+        <NotifyLoaded
+          onLoad={() => {
+            const today = startOfDay(new Date());
+            context.setValues({
+              from: today,
+              to: today,
+            });
+          }}
+        />
+      </>
+    ),
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
       const from = parseDateValue(values.from);
@@ -468,21 +595,23 @@ function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project
   const config = financialEntryConfig[type];
 
   modals.showForm({
-    content: () => <>
-      <MyForm.Input
-        required
-        name="amount"
-        labelText={config.label}
-        rules={[MyForm.Input.rules.posnum]}
-      />
-      <p className="light">{uiText("Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.")}</p>
+    content: () => (
+      <>
+        <MyForm.Input
+          required
+          name="amount"
+          labelText={config.label}
+          rules={[MyForm.Input.rules.posnum]}
+        />
+        <p className="light">
+          {uiText(
+            "Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.",
+          )}
+        </p>
 
-      <MyForm.Input
-        textArea
-        name="comment"
-        labelText={uiText("Kommentar")}
-      />
-    </>,
+        <MyForm.Input textArea name="comment" labelText={uiText("Kommentar")} />
+      </>
+    ),
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
       const amount = parseFloatCustom(values.amount);
@@ -527,28 +656,32 @@ export function showModifyProjectFinancialEntryModal(
   const config = financialEntryConfig[entry.type];
 
   modals.showForm({
-    content: ({ context }) => <>
-      <MyForm.Input
-        required
-        name="amount"
-        labelText={config.label}
-        rules={[MyForm.Input.rules.posnum]}
-      />
-      <p className="light">{uiText("Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.")}</p>
+    content: ({ context }) => (
+      <>
+        <MyForm.Input
+          required
+          name="amount"
+          labelText={config.label}
+          rules={[MyForm.Input.rules.posnum]}
+        />
+        <p className="light">
+          {uiText(
+            "Betrag als Nettowert in EUR eintragen, z.B. laut Angebot oder Rechnung.",
+          )}
+        </p>
 
-      <MyForm.Input
-        textArea
-        name="comment"
-        labelText={uiText("Kommentar")}
-      />
+        <MyForm.Input textArea name="comment" labelText={uiText("Kommentar")} />
 
-      <NotifyLoaded onLoad={() => {
-        context.setValues({
-          amount: `${entry.amount}`,
-          comment: entry.comment ?? '',
-        });
-      }} />
-    </>,
+        <NotifyLoaded
+          onLoad={() => {
+            context.setValues({
+              amount: `${entry.amount}`,
+              comment: entry.comment ?? "",
+            });
+          }}
+        />
+      </>
+    ),
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
       const amount = parseFloatCustom(values.amount);
@@ -587,11 +720,24 @@ export function showDeleteProjectFinancialEntryModal(
   const config = financialEntryConfig[entry.type];
 
   modals.showDefault({
-    content: () => <>
-      <p>{uiText("Soll die")} <b>{config.deleteNoun}</b> {uiText("über")} <b>{entry.amount.toFixed(2)} {uiText("EUR")}</b> {uiText("wirklich gelöscht werden?")} <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
-      </p>
-      {!!entry.comment && <p className="light">{uiText("Kommentar: ")}{entry.comment}</p>}
-    </>,
+    content: () => (
+      <>
+        <p>
+          {uiText("Soll die")} <b>{config.deleteNoun}</b> {uiText("über")}{" "}
+          <b>
+            {entry.amount.toFixed(2)} {uiText("EUR")}
+          </b>{" "}
+          {uiText("wirklich gelöscht werden?")}{" "}
+          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+        </p>
+        {!!entry.comment && (
+          <p className="light">
+            {uiText("Kommentar: ")}
+            {entry.comment}
+          </p>
+        )}
+      </>
+    ),
     modalProps: () => ({
       danger: true,
       noFullscreen: true,

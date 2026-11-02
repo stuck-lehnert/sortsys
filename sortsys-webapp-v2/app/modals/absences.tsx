@@ -63,10 +63,10 @@ export function showCreateAbsenceModal(
       />}
 
       <div className="flex gap-2">
-        <div className="basis-1/2 flex-1">
+        <div className="min-w-0 basis-1/2 flex-1">
           <MyForm.Input required name="from" labelText={uiText("Von")} type="date" />
         </div>
-        <div className="basis-1/2 flex-1">
+        <div className="min-w-0 basis-1/2 flex-1">
           <MyForm.Input required name="to" labelText={uiText("Bis")} type="date" />
         </div>
       </div>

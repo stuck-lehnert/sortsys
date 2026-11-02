@@ -93,20 +93,28 @@ export default function InventoryOverviewPage() {
 
   function showDaysFilterModal() {
     modals.showForm({
-      content: ({ context }) => <>
-        <MyForm.Input
-          required
-          name="days"
-          labelText={uiText("Zeitraum in Tagen")}
-          type="number"
-          rules={[MyForm.Input.rules.posnum]}
-        />
-        <p className="light">{uiText("Es wird geprüft, ob innerhalb dieses Zeitraums eine Inventur erfasst wurde.")}</p>
+      content: ({ context }) => (
+        <>
+          <MyForm.Input
+            required
+            name="days"
+            labelText={uiText("Zeitraum in Tagen")}
+            type="number"
+            rules={[MyForm.Input.rules.posnum]}
+          />
+          <p className="light">
+            {uiText(
+              "Es wird geprüft, ob innerhalb dieses Zeitraums eine Inventur erfasst wurde.",
+            )}
+          </p>
 
-        <NotifyLoaded onLoad={() => {
-          context.setValues({ days });
-        }} />
-      </>,
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues({ days });
+            }}
+          />
+        </>
+      ),
       onSubmit: ({ context, hide }) => {
         const values = context.getValues();
         const nextDays = positiveWholeDays(values.days) ?? DEFAULT_INVENTORY_DAYS;
@@ -258,7 +266,9 @@ export default function InventoryOverviewPage() {
     },
     {
       label: uiText("Werkzeug"),
-      render: (row: any) => <MyLink to={`/tools/${row.id}`}>{inventoryToolTitle(row)}</MyLink>,
+      render: (row: any) => (
+        <MyLink to={`/tools/${row.id}`}>{inventoryToolTitle(row)}</MyLink>
+      ),
       sortKey: (row: any) => inventoryToolTitle(row).toLowerCase(),
     },
     {
@@ -266,7 +276,9 @@ export default function InventoryOverviewPage() {
       render: (row: any) => {
         const label = inventoryLastResponsibleLabel(row);
         if (!row.lastResponsibleUserId) return label;
-        return <MyLink to={`/users/${row.lastResponsibleUserId}`}>{label}</MyLink>;
+        return (
+          <MyLink to={`/users/${row.lastResponsibleUserId}`}>{label}</MyLink>
+        );
       },
       sortKey: (row: any) => inventoryLastResponsibleLabel(row).toLowerCase(),
     },
@@ -282,63 +294,113 @@ export default function InventoryOverviewPage() {
     },
   ] as const;
 
-  return <>
-    <MyHeader
-      title={uiText("Inventur")}
-      subtitle={uiText("Werkzeuge mit und ohne Inventur im gewählten Zeitraum")}
-      actions={<div className="list-page-actions">
-        <OperationalTag
-          renderIcon={Icons.Filter}
-          text={uiText(`Zeitraum: ${days} Tage`, `Period: ${days} days`)}
-          onClick={showDaysFilterModal}
+  return (
+    <>
+      <MyHeader
+        title={uiText("Inventur")}
+        subtitle={uiText(
+          "Werkzeuge mit und ohne Inventur im gewählten Zeitraum",
+        )}
+        actions={
+          <div className="list-page-actions">
+            <OperationalTag
+              renderIcon={Icons.Filter}
+              text={uiText(`Zeitraum: ${days} Tage`, `Period: ${days} days`)}
+              onClick={showDaysFilterModal}
+            />
+            <MyButton
+              kind="ghost"
+              size="sm"
+              renderIcon={Icons.Download}
+              loading={isPdfExporting}
+              onClick={() => exportInventoryOverviewToPdf()}
+            >
+              {uiText("PDF")}
+            </MyButton>
+            <MyButton
+              kind="ghost"
+              size="sm"
+              renderIcon={Icons.Excel}
+              onClick={exportInventoryOverviewToExcel}
+            >
+              {uiText("Excel")}
+            </MyButton>
+          </div>
+        }
+      />
+
+      {!!pdfExportErr && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
+        </MyCallout>
+      )}
+
+      <MyExpandable
+        title={uiText(
+          `Inventiert in den letzten ${days} Tagen (${inventoriedTools?.length ?? 0})`,
+          `Inventoried in the last ${days} days (${inventoriedTools?.length ?? 0})`,
+        )}
+        initiallyExpanded
+      >
+        <MyTable
+          persistentId="InventoriesRecent"
+          rows={inventoriedTools ?? []}
+          onRowClick={(row) => navigate(`/tools/${row.id}`)}
+          loading={!inventoriedTools}
+          error={inventoriedToolsError}
+          columns={columns as any}
+          loadMore={{}}
+          renderSmallViewport={(row) => (
+            <SmallTile
+              icon={Icons.Tool}
+              title={`${row.customId} ${inventoryToolTitle(row)}`}
+              subtitle={
+                row.lastInventoryAt
+                  ? uiText(
+                      `Letzte Inventur: ${formatDate(row.lastInventoryAt)}`,
+                      `Last inventory: ${formatDate(row.lastInventoryAt)}`,
+                    )
+                  : undefined
+              }
+              href={`/tools/${row.id}`}
+            />
+          )}
         />
-        <MyButton kind="ghost" size="sm" renderIcon={Icons.Download} loading={isPdfExporting} onClick={() => exportInventoryOverviewToPdf()}>{uiText("PDF")}</MyButton>
-        <MyButton kind="ghost" size="sm" renderIcon={Icons.Excel} onClick={exportInventoryOverviewToExcel}>{uiText("Excel")}</MyButton>
-      </div>}
-    />
+      </MyExpandable>
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
-    </MyCallout>}
-
-
-    <MyExpandable title={uiText(`Inventiert in den letzten ${days} Tagen (${inventoriedTools?.length ?? 0})`, `Inventoried in the last ${days} days (${inventoriedTools?.length ?? 0})`)} initiallyExpanded>
-      <MyTable
-        topPagination
-        persistentId="InventoriesRecent"
-        rows={inventoriedTools ?? []}
-        onRowClick={row => navigate(`/tools/${row.id}`)}
-        loading={!inventoriedTools}
-        error={inventoriedToolsError}
-        columns={columns as any}
-        pagination={{}}
-        renderSmallViewport={row => <SmallTile
-          icon={Icons.Tool}
-          title={`${row.customId} ${inventoryToolTitle(row)}`}
-          subtitle={row.lastInventoryAt ? uiText(`Letzte Inventur: ${formatDate(row.lastInventoryAt)}`, `Last inventory: ${formatDate(row.lastInventoryAt)}`) : undefined}
-          href={`/tools/${row.id}`}
-        />}
-      />
-    </MyExpandable>
-
-    <MyExpandable title={uiText(`Keine Inventur in den letzten ${days} Tagen (${missingTools?.length ?? 0})`, `No inventory in the last ${days} days (${missingTools?.length ?? 0})`)}>
-      <MyTable
-        topPagination
-        persistentId="InventoriesMissing"
-        rows={missingTools ?? []}
-        onRowClick={row => navigate(`/tools/${row.id}`)}
-        loading={!missingTools}
-        error={missingToolsError}
-        columns={columns as any}
-        pagination={{}}
-        renderSmallViewport={row => <SmallTile
-          icon={Icons.Tool}
-          title={`${row.customId} ${inventoryToolTitle(row)}`}
-          subtitle={row.lastInventoryAt ? uiText(`Letzte Inventur: ${formatDate(row.lastInventoryAt)}`, `Last inventory: ${formatDate(row.lastInventoryAt)}`) : uiText('Noch nie inventiert')}
-          href={`/tools/${row.id}`}
-        />}
-      />
-    </MyExpandable>
-  </>;
+      <MyExpandable
+        title={uiText(
+          `Keine Inventur in den letzten ${days} Tagen (${missingTools?.length ?? 0})`,
+          `No inventory in the last ${days} days (${missingTools?.length ?? 0})`,
+        )}
+      >
+        <MyTable
+          persistentId="InventoriesMissing"
+          rows={missingTools ?? []}
+          onRowClick={(row) => navigate(`/tools/${row.id}`)}
+          loading={!missingTools}
+          error={missingToolsError}
+          columns={columns as any}
+          loadMore={{}}
+          renderSmallViewport={(row) => (
+            <SmallTile
+              icon={Icons.Tool}
+              title={`${row.customId} ${inventoryToolTitle(row)}`}
+              subtitle={
+                row.lastInventoryAt
+                  ? uiText(
+                      `Letzte Inventur: ${formatDate(row.lastInventoryAt)}`,
+                      `Last inventory: ${formatDate(row.lastInventoryAt)}`,
+                    )
+                  : uiText("Noch nie inventiert")
+              }
+              href={`/tools/${row.id}`}
+            />
+          )}
+        />
+      </MyExpandable>
+    </>
+  );
 }
 
 function inventoryToolTitle(tool: { brand: string; category: string; label: string | null; }) {

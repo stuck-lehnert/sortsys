@@ -43,52 +43,62 @@ export default function ProductsPage() {
 
   function showFilterModal() {
     modals.showForm({
-      content: ({ context }) => <>
-        <MyForm.MultiSelect
-          name="brand"
-          labelText={uiText("Hersteller")}
-          maxSelectedItems={1}
-          prepare={async () => {
-            const [data, err] = await client.query('products.brands.list', undefined);
-            if (err) throw err;
-            return data ?? [];
-          }}
-          getOptions={({ query, init }) => {
-            const normalized = query.toLowerCase();
-            return init
-              .filter((item) => item.toLowerCase().includes(normalized))
-              .map(item => ({ id: item }));
-          }}
-          renderItem={({ item }) => item.id}
-          renderTile={item => <SmallTile title={item.id} />}
-        />
+      content: ({ context }) => (
+        <>
+          <MyForm.MultiSelect
+            name="brand"
+            labelText={uiText("Hersteller")}
+            maxSelectedItems={1}
+            prepare={async () => {
+              const [data, err] = await client.query(
+                "products.brands.list",
+                undefined,
+              );
+              if (err) throw err;
+              return data ?? [];
+            }}
+            getOptions={({ query, init }) => {
+              const normalized = query.toLowerCase();
+              return init
+                .filter((item) => item.toLowerCase().includes(normalized))
+                .map((item) => ({ id: item }));
+            }}
+            renderItem={({ item }) => item.id}
+            renderTile={(item) => <SmallTile title={item.id} />}
+          />
 
-        <MyForm.MultiSelect
-          name="category"
-          labelText={uiText("Kategorie")}
-          maxSelectedItems={1}
-          prepare={async () => {
-            const [data, err] = await client.query('products.categories.list', undefined);
-            if (err) throw err;
-            return data ?? [];
-          }}
-          getOptions={({ query, init }) => {
-            const normalized = query.toLowerCase();
-            return init
-              .filter((item) => item.toLowerCase().includes(normalized))
-              .map(item => ({ id: item }));
-          }}
-          renderItem={({ item }) => item.id}
-          renderTile={item => <SmallTile title={item.id} />}
-        />
+          <MyForm.MultiSelect
+            name="category"
+            labelText={uiText("Kategorie")}
+            maxSelectedItems={1}
+            prepare={async () => {
+              const [data, err] = await client.query(
+                "products.categories.list",
+                undefined,
+              );
+              if (err) throw err;
+              return data ?? [];
+            }}
+            getOptions={({ query, init }) => {
+              const normalized = query.toLowerCase();
+              return init
+                .filter((item) => item.toLowerCase().includes(normalized))
+                .map((item) => ({ id: item }));
+            }}
+            renderItem={({ item }) => item.id}
+            renderTile={(item) => <SmallTile title={item.id} />}
+          />
 
-        <NotifyLoaded onLoad={() => {
-          context.setValues({
-            brand: brand ? [{ id: brand }] : [],
-            category: category ? [{ id: category }] : [],
-          });
-        }} />
-      </>,
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues({
+                brand: brand ? [{ id: brand }] : [],
+                category: category ? [{ id: category }] : [],
+              });
+            }}
+          />
+        </>
+      ),
       onSubmit: ({ context, hide }) => {
         const values = context.getValues();
         setBrand(values.brand?.at(0)?.id ?? null);
@@ -125,75 +135,114 @@ export default function ProductsPage() {
     });
   }
 
-  return <>
-    <MyHeader
-      title={uiText("Produkte")}
-      actions={<div className="list-page-actions">
-      {!hasFilter ? <>
-        <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
-      </> : <>
-        <OperationalTag renderIcon={Icons.FilterEdit} text={uiText("Filter ändern")} onClick={showFilterModal} />
-        <OperationalTag renderIcon={Icons.FilterRemove} text={uiText("Filter aus")} onClick={() => {
-          setBrand(null);
-          setCategory(null);
-        }} />
-      </>}
-
-      <TableExportActions
+  return (
+    <>
+      <MyHeader
         title={uiText("Produkte")}
-        fileName="Produkte"
-        rows={loadProductExportRows}
-        disabled={!products}
-        columns={[
-          { header: uiText("Nummer"), pdfHeader: uiText('Nr.', 'No.'), value: product => product.customId, align: 'right' },
-          { header: uiText("Bezeichnung"), value: product => product.name, width: '2fr' },
-          { header: uiText("Hersteller"), value: product => product.brand },
-          { header: uiText("Kategorie"), value: product => product.categories?.join(', '), width: '1.5fr' },
-          { header: uiText("Basiseinheit"), value: product => product.baseUnit },
-          {
-            header: uiText("Aktueller Preis"),
-            value: product => product.latestPrice,
-            format: value => value == null ? '' : formatCurrency(Number(value)),
-            excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
-            align: 'right',
-          },
-        ]}
-      />
-      </div>}
-    />
+        actions={
+          <div className="list-page-actions">
+            {!hasFilter ? (
+              <>
+                <OperationalTag
+                  renderIcon={Icons.Filter}
+                  text={uiText("Filter")}
+                  onClick={showFilterModal}
+                />
+              </>
+            ) : (
+              <>
+                <OperationalTag
+                  renderIcon={Icons.FilterEdit}
+                  text={uiText("Filter ändern")}
+                  onClick={showFilterModal}
+                />
+                <OperationalTag
+                  renderIcon={Icons.FilterRemove}
+                  text={uiText("Filter aus")}
+                  onClick={() => {
+                    setBrand(null);
+                    setCategory(null);
+                  }}
+                />
+              </>
+            )}
 
-    <MyTable
-      topPagination
-      className=""
-      persistentId="Products"
-      rows={filteredProducts ?? []}
-      loading={!products}
-      error={productsError}
-      onRowClick={row => navigate(`/products/${row.id}`)}
-      columns={[
-        {
-          label: uiText("Nummer"),
-          render: row => row.customId.toString(),
-          sortKey: row => row.customId,
-        },
-        {
-          label: uiText("Bezeichnung"),
-          render: row => row.name,
-          sortKey: row => row.name.toLowerCase(),
-        },
-        {
-          label: uiText("Hersteller"),
-          render: row => row.brand,
-          sortKey: row => row.brand?.toLowerCase() ?? '',
-        },
-        // {
-        //   label: 'Beschreibung',
-        //   render: row => row.description,
-        //   sortKey: row => row.description?.toLowerCase() ?? '',
-        // },
-      ]}
-      pagination={{}}
-      renderSmallViewport={product => <SmallProductTile data={product} />}
-    />
-  </>;
+            <TableExportActions
+              title={uiText("Produkte")}
+              fileName="Produkte"
+              rows={loadProductExportRows}
+              disabled={!products}
+              columns={[
+                {
+                  header: uiText("Nummer"),
+                  pdfHeader: uiText("Nr.", "No."),
+                  value: (product) => product.customId,
+                  align: "right",
+                },
+                {
+                  header: uiText("Bezeichnung"),
+                  value: (product) => product.name,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Hersteller"),
+                  value: (product) => product.brand,
+                },
+                {
+                  header: uiText("Kategorie"),
+                  value: (product) => product.categories?.join(", "),
+                  width: "1.5fr",
+                },
+                {
+                  header: uiText("Basiseinheit"),
+                  value: (product) => product.baseUnit,
+                },
+                {
+                  header: uiText("Aktueller Preis"),
+                  value: (product) => product.latestPrice,
+                  format: (value) =>
+                    value == null ? "" : formatCurrency(Number(value)),
+                  excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
+                  align: "right",
+                },
+              ]}
+            />
+          </div>
+        }
+      />
+
+      <MyTable
+        className=""
+        persistentId="Products"
+        rows={filteredProducts ?? []}
+        loading={!products}
+        error={productsError}
+        onRowClick={(row) => navigate(`/products/${row.id}`)}
+        columns={[
+          {
+            label: uiText("Nummer"),
+            render: (row) => row.customId.toString(),
+            sortKey: (row) => row.customId,
+          },
+          {
+            label: uiText("Bezeichnung"),
+            render: (row) => row.name,
+            sortKey: (row) => row.name.toLowerCase(),
+          },
+          {
+            label: uiText("Hersteller"),
+            render: (row) => row.brand,
+            sortKey: (row) => row.brand?.toLowerCase() ?? "",
+          },
+          // {
+          //   label: 'Beschreibung',
+          //   render: row => row.description,
+          //   sortKey: row => row.description?.toLowerCase() ?? '',
+          // },
+        ]}
+        loadMore={{}}
+        renderSmallViewport={(product) => <SmallProductTile data={product} />}
+      />
+    </>
+  );
 }

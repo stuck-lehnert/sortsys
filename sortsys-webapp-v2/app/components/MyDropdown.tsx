@@ -1,72 +1,73 @@
+import { Dropdown } from "@heroui/react";
+import {
+  Button,
+  MenuItem,
+  MenuItemSelectable,
+} from "@sortsys/react-components";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { uiText } from "~/lib/i18n";
-import { Button, Menu, MenuItem, MenuItemSelectable } from "@sortsys/react-components";
-import type { ComponentProps, ReactNode } from "react";
-import React, { useRef, useState } from "react";
-import { useRefState } from "~/hooks/useRefState";
 import { Icons } from "~/lib/icons";
 
-type _MenuItemProps =
-    & (Omit<ComponentProps<typeof MenuItem>, 'key' | 'defaultSelected' | 'hidden'> & {})
-    | (Omit<ComponentProps<typeof MenuItemSelectable>, 'key' | 'defaultSelected' | 'hidden'> & {
-        selectable: true;
-    });
+type MenuAction =
+  | Omit<ComponentProps<typeof MenuItem>, "key" | "defaultSelected" | "hidden">
+  | (Omit<
+      ComponentProps<typeof MenuItemSelectable>,
+      "key" | "defaultSelected" | "hidden"
+    > & { selectable: true });
 
-type MenuItemProps = _MenuItemProps & {
-    hideIf?: boolean;
-};
+type MenuItemProps = MenuAction & { hideIf?: boolean };
 
-export function MyDropdown(_props: {
-    icon?: React.ComponentType;
-    label?: ReactNode;
-    ariaLabel?: string;
-    items: MenuItemProps[];
-    menuClassName?: string;
-    size?: "sm" | "md";
+export function MyDropdown({
+  icon: Icon = Icons.DropdownMenu,
+  label,
+  ariaLabel,
+  items,
+  menuClassName,
+  size = "md",
+}: {
+  icon?: React.ComponentType;
+  label?: ReactNode;
+  ariaLabel?: string;
+  items: MenuItemProps[];
+  menuClassName?: string;
+  size?: "sm" | "md";
 }) {
-    let { icon: Icon, label, ariaLabel, items, menuClassName, size = "md" } = _props;
+  const [open, setOpen] = useState(false);
+  const actions = items
+    .map((item, index) => ({ ...item, index }))
+    .filter(({ hideIf }) => !hideIf);
 
-    Icon ??= Icons.DropdownMenu;
+  if (!actions.length) {
+    return null;
+  }
 
-    const triggerRef = useRef<HTMLDivElement | null>(null);
-    const menuRef = useRef<HTMLUListElement | null>(null);
+  const accessibleLabel = ariaLabel ?? (
+    typeof label === "string" ? label : uiText("Aktionen", "Actions")
+  );
 
-    const [open, setOpen] = useState(false);
-    const [menuPosition, setMenuPosition] = useRefState({ x: 0, y: 0 });
+  return (
+    <Dropdown isOpen={open} onOpenChange={setOpen}>
+      <Button
+        type="button"
+        kind="ghost"
+        size={size}
+        renderIcon={Icon}
+        aria-label={accessibleLabel}
+      >
+        {label}
+      </Button>
+      <Dropdown.Popover placement="bottom end">
+        <Dropdown.Menu aria-label={accessibleLabel} className={menuClassName}>
+          {actions.map(({ hideIf: _hidden, index, ...action }) => {
+            if ("selectable" in action && action.selectable) {
+              const { selectable: _selectable, ...props } = action;
+              return <MenuItemSelectable key={index} {...props} />;
+            }
 
-    const filteredActions = items.map((item, i) => ({ ...item, index: i })).filter(({ hideIf }) => !hideIf);
-
-    if (!filteredActions.length) return;
-
-    return <>
-        <div ref={triggerRef}>
-            <Button kind="ghost" size={size} renderIcon={Icon} aria-label={ariaLabel} onClick={() => {
-                if (triggerRef.current) {
-                    const rect = triggerRef.current.getBoundingClientRect();
-                    setMenuPosition({ x: rect.right, y: rect.bottom });
-                }
-
-                setOpen((value) => !value);
-            }} >
-                {label}
-            </Button>
-        </div>
-
-        <Menu label={uiText("Dropdown")}
-            className={menuClassName}
-            ref={menuRef}
-            open={open}
-            onClose={() => setOpen(false)}
-            containerRef={triggerRef}
-            {...menuPosition()}
-        >
-            {filteredActions.map(({ hideIf, index, ...action }) => {
-                if ('selectable' in action && action.selectable) {
-                    const { selectable, ...props } = action;
-                    return <MenuItemSelectable key={index} {...props}   />
-                }
-
-                return <MenuItem key={index} {...(action as any)} />
-            })}
-        </Menu>
-    </>;
+            return <MenuItem key={index} {...action} />;
+          })}
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
+  );
 }

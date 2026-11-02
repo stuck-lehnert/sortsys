@@ -100,56 +100,125 @@ export default function UserSupervisorsPage() {
     const nextPath = new Set(path);
     nextPath.add(user.id);
 
-    return <div key={user.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-      <div style={{ width: 18, borderTop: path.size ? '1px solid var(--ss-border)' : undefined, marginTop: 22 }} />
-      <div style={{ flex: 1, minWidth: 220 }}>
-        <SmallUserTile data={user} />
-        {isCycle && <div className="light" style={{ marginTop: 6 }}>{uiText("Zyklus erkannt")}</div>}
-        {!isCycle && !!children.length && <MyButton
-          kind="ghost"
-          size="sm"
-          renderIcon={isExpanded ? Icons.AccordionExpanded : Icons.AccordionClosed}
-          onClick={() => toggleExpanded(user.id)}
-        >{isExpanded ? uiText('Untergebene ausblenden', 'Hide direct reports') : uiText(`Untergebene anzeigen (${children.length})`, `Show direct reports (${children.length})`)}</MyButton>}
-        {!isCycle && isExpanded && !!children.length && <div style={{ marginTop: 10, marginLeft: 18, display: 'grid', gap: 10 }}>
-          {children.map(child => renderNode(child, nextPath))}
-        </div>}
+    return (
+      <div
+        key={user.id}
+        style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+      >
+        <div
+          style={{
+            width: 18,
+            borderTop: path.size ? "1px solid var(--ss-border)" : undefined,
+            marginTop: 22,
+          }}
+        />
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <SmallUserTile data={user} />
+          {isCycle && (
+            <div className="light" style={{ marginTop: 6 }}>
+              {uiText("Zyklus erkannt")}
+            </div>
+          )}
+          {!isCycle && !!children.length && (
+            <MyButton
+              kind="ghost"
+              size="sm"
+              renderIcon={
+                isExpanded ? Icons.AccordionExpanded : Icons.AccordionClosed
+              }
+              onClick={() => toggleExpanded(user.id)}
+            >
+              {isExpanded
+                ? uiText("Untergebene ausblenden", "Hide direct reports")
+                : uiText(
+                    `Untergebene anzeigen (${children.length})`,
+                    `Show direct reports (${children.length})`,
+                  )}
+            </MyButton>
+          )}
+          {!isCycle && isExpanded && !!children.length && (
+            <div
+              style={{
+                marginTop: 10,
+                marginLeft: 18,
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              {children.map((child) => renderNode(child, nextPath))}
+            </div>
+          )}
+        </div>
       </div>
-    </div>;
+    );
   };
 
-  return <>
-    <MyHeader
-      title={uiText("Vorgesetzte")}
-      actions={<MyButton kind="ghost" size="sm" disabled={!graph.expandableUserIds.length} onClick={toggleAll}>
-        {allExpanded ? uiText("Alle zuklappen", "Collapse all") : uiText("Alle aufklappen", "Expand all")}
-      </MyButton>}
-    />
+  return (
+    <>
+      <MyHeader
+        title={uiText("Vorgesetzte")}
+        actions={
+          <MyButton
+            kind="ghost"
+            size="sm"
+            disabled={!graph.expandableUserIds.length}
+            onClick={toggleAll}
+          >
+            {allExpanded
+              ? uiText("Alle zuklappen", "Collapse all")
+              : uiText("Alle aufklappen", "Expand all")}
+          </MyButton>
+        }
+      />
 
-    {!!defaultSupervisorUser && <p className="light">
-      {uiText(`Standard-Vorgesetzter: ${userFullName(defaultSupervisorUser)}`, `Default supervisor: ${userFullName(defaultSupervisorUser)}`)}
-    </p>}
+      {!!defaultSupervisorUser && (
+        <p className="light">
+          {uiText(
+            `Standard-Vorgesetzter: ${userFullName(defaultSupervisorUser)}`,
+            `Default supervisor: ${userFullName(defaultSupervisorUser)}`,
+          )}
+        </p>
+      )}
 
-    {!!(usersError || defaultSupervisorError) && <MyCallout
-      kind="error"
-      title={uiText("Vorgesetztenstruktur konnte nicht vollständig geladen werden", "The supervisor hierarchy could not be loaded completely")}
-    />}
+      {!!(usersError || defaultSupervisorError) && (
+        <MyCallout
+          kind="error"
+          title={uiText(
+            "Vorgesetztenstruktur konnte nicht vollständig geladen werden",
+            "The supervisor hierarchy could not be loaded completely",
+          )}
+        />
+      )}
 
-    {!users ? <Tile><InlineLoading description={uiText("Vorgesetztenstruktur wird geladen …", "Loading supervisor hierarchy …")} /></Tile> : !graph.allUsers.length ? (
-      <Tile>{uiText("Keine Benutzer vorhanden.")}</Tile>
-    ) : (
-      <div style={{ display: 'grid', gap: 16 }}>
-        {graph.roots.map(root => <Tile key={root.id}>
-          {renderNode(root, new Set())}
-        </Tile>)}
+      {!users ? (
+        <Tile>
+          <InlineLoading
+            description={uiText(
+              "Vorgesetztenstruktur wird geladen …",
+              "Loading supervisor hierarchy …",
+            )}
+          />
+        </Tile>
+      ) : !graph.allUsers.length ? (
+        <Tile>{uiText("Keine Benutzer vorhanden.")}</Tile>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {graph.roots.map((root) => (
+            <Tile key={root.id}>{renderNode(root, new Set())}</Tile>
+          ))}
 
-        {!!graph.cycleRoots.length && <Tile>
-          <h4>{uiText("Zyklen oder verwaiste Einträge")}</h4>
-          <div style={{ display: 'grid', gap: 10 }}>
-            {graph.cycleRoots.map(user => renderNode(user, new Set()))}
-          </div>
-        </Tile>}
-      </div>
-    )}
-  </>;
+          {!!graph.cycleRoots.length && (
+            <Tile>
+              <h4 className="text-lg leading-snug font-semibold">
+                {uiText("Zyklen oder verwaiste Einträge")}
+              </h4>
+              <div style={{ display: "grid", gap: 10 }}>
+                {graph.cycleRoots.map((user) => renderNode(user, new Set()))}
+              </div>
+            </Tile>
+          )}
+        </div>
+      )}
+    </>
+  );
 }

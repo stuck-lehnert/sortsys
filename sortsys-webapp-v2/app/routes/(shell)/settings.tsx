@@ -32,8 +32,11 @@ export default function PasswordSettingsPage() {
   }
 
   return (
-    <Tile className="settings-section">
-      <MyForm className="settings-form" onSubmit={changePassword}>
+    <Tile className="settings-section space-y-4">
+      <MyForm
+        className={["settings-form", "max-w-2xl space-y-4"].join(" ")}
+        onSubmit={changePassword}
+      >
         <MyForm.Input
           required
           name="password"

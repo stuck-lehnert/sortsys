@@ -13,8 +13,12 @@ export interface MyFormField<T = any> {
 
 export interface MyPublicFormContext {
   loading: () => boolean;
-  process: (action: (context: MyPublicFormContext) => PromiseOr<void>) => Promise<void>;
+  process: (
+    action: (context: MyPublicFormContext) => PromiseOr<void>,
+  ) => Promise<void>;
   field<T = any>(name: string): MyFormField<T> | null;
+  fieldCount: () => number;
+  subscribeFields: (listener: () => void) => () => void;
   setValues: (values: Record<string, any>) => void;
   getValues: () => Record<string, any>;
   validate: () => Promise<void>;
@@ -22,7 +26,8 @@ export interface MyPublicFormContext {
   submit: () => void;
 }
 
-export interface MyFormProps extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
+export interface MyFormProps
+  extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
   formRef?: React.RefObject<MyPublicFormContext>;
   onSubmit?: (context: MyPublicFormContext) => PromiseOr<void>;
   notifyLoaded?: (context: MyPublicFormContext) => PromiseOr<void>;
@@ -30,12 +35,19 @@ export interface MyFormProps extends Omit<React.FormHTMLAttributes<HTMLFormEleme
 
 export interface MySuggestions<ItemT = any, PrepT = any> {
   prepare?: () => PromiseOr<PrepT>;
-  getItems: (props: { query: string; init: Awaited<PrepT> }) => PromiseOr<ItemT[]>;
-  renderItem?: (props: { item: ItemT; init: Awaited<PrepT> }) => React.ReactNode;
+  getItems: (props: {
+    query: string;
+    init: Awaited<PrepT>;
+  }) => PromiseOr<ItemT[]>;
+  renderItem?: (props: {
+    item: ItemT;
+    init: Awaited<PrepT>;
+  }) => React.ReactNode;
   stringify: (props: { item: ItemT; init: Awaited<PrepT> }) => string;
 }
 
-export interface MyInputProps<ItemT = any, PrepT = any> extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+export interface MyInputProps<ItemT = any, PrepT = any>
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   id?: string;
   labelText: string;
   suffix?: React.ReactNode;
@@ -49,7 +61,8 @@ export interface MyInputProps<ItemT = any, PrepT = any> extends Omit<React.Input
   suggestions?: MySuggestions<ItemT, PrepT>;
 }
 
-export interface MyCheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+export interface MyCheckboxProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   rules?: MyRule<boolean>[];
   required?: boolean;
   invalid?: boolean;
@@ -62,7 +75,11 @@ export type MySelectItemLike = {
   [key: string]: any;
 };
 
-export interface MySelectProps<T extends MySelectItemLike = MySelectItemLike> extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "onChange" | "children"> {
+export interface MySelectProps<T extends MySelectItemLike = MySelectItemLike>
+  extends Omit<
+    React.SelectHTMLAttributes<HTMLSelectElement>,
+    "onChange" | "children"
+  > {
   labelText: string;
   getOptions: () => PromiseOr<T[]>;
   getOptionsDeps?: any[];
@@ -83,7 +100,10 @@ export type MyMultiSelectItemLike = {
   [key: string]: any;
 };
 
-export interface MyMultiSelectProps<T extends MyMultiSelectItemLike = MyMultiSelectItemLike, PrepT = any> extends React.HTMLAttributes<HTMLDivElement> {
+export interface MyMultiSelectProps<
+  T extends MyMultiSelectItemLike = MyMultiSelectItemLike,
+  PrepT = any,
+> extends React.HTMLAttributes<HTMLDivElement> {
   name?: string;
   labelText: string;
   renderTile?: (item: T) => React.ReactNode;
@@ -97,7 +117,10 @@ export interface MyMultiSelectProps<T extends MyMultiSelectItemLike = MyMultiSel
   stringifyItem?: (props: { item: T; init: PrepT }) => string;
   createAction?: {
     label?: React.ReactNode | ((props: { query: string }) => React.ReactNode);
-    onCreate: (props: { query: string; select: (item: T) => void }) => PromiseOr<void>;
+    onCreate: (props: {
+      query: string;
+      select: (item: T) => void;
+    }) => PromiseOr<void>;
   };
   onValueChange?: (value: T[]) => void;
   invalid?: boolean;
@@ -162,7 +185,9 @@ export type MySelectComponent = React.ComponentType<MySelectProps<any>> & {
   rules: MySelectRules;
 };
 
-export type MyMultiSelectComponent = React.ComponentType<MyMultiSelectProps<any, any>> & {
+export type MyMultiSelectComponent = React.ComponentType<
+  MyMultiSelectProps<any, any>
+> & {
   rules: MyMultiSelectRules;
 };
 
@@ -170,12 +195,14 @@ export type MyDateInputComponent = React.ComponentType<MyDateInputProps> & {
   rules: MyDateInputRules;
 };
 
-export type MySubmitButtonComponent = (props: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  loading?: boolean;
-  kind?: string;
-  size?: string;
-  renderIcon?: React.ComponentType<any>;
-}) => React.ReactElement | null;
+export type MySubmitButtonComponent = (
+  props: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    loading?: boolean;
+    kind?: string;
+    size?: string;
+    renderIcon?: React.ComponentType<any>;
+  },
+) => React.ReactElement | null;
 
 export type MyFormType = ((props: MyFormProps) => React.ReactElement | null) & {
   useContextRef: () => React.MutableRefObject<MyPublicFormContext>;
@@ -192,3 +219,5 @@ export type SSPublicFormContext = MyPublicFormContext;
 export type SSFormType = MyFormType;
 export const SSForm: SSFormType;
 export const MyForm: MyFormType;
+
+export declare function useFormFieldCount(): number;

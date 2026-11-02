@@ -29,66 +29,105 @@ export default function RegieReportsPage() {
     return project?.title ?? uiText("Unbekannt", "Unknown");
   }
 
-  return <>
-    <MyHeader
-      title={uiText("Regieberichte", "Time-and-material reports")}
-      actions={<div className="list-page-actions">
-        <TableExportActions
-          title={uiText("Regieberichte", "Time-and-material reports")}
-          fileName="Regieberichte"
-          rows={() => buildRegieReportListExportRows(reports ?? [], loadProjectTitle)}
-          disabled={!reports || !!reportsError}
-          columns={[
-            { header: uiText("Nummer"), value: report => report.autoId, align: 'right' },
-            { header: uiText("Projekt"), value: report => report.projectTitle, width: '2fr' },
-            { header: uiText("Kalenderwoche", "Calendar week"), value: report => isoWeekLabel(new Date(report.day)) },
-            { header: uiText("Wochenbeginn", "Week start"), value: report => startOfIsoWeek(new Date(report.day)) },
-            { header: uiText("Erfasst am"), value: report => report.createdAt },
-            { header: uiText("Beschreibung"), value: report => report.summary, width: '2fr' },
-          ]}
-        />
-      </div>}
-    />
+  return (
+    <>
+      <MyHeader
+        title={uiText("Regieberichte", "Time-and-material reports")}
+        actions={
+          <div className="list-page-actions">
+            <TableExportActions
+              title={uiText("Regieberichte", "Time-and-material reports")}
+              fileName="Regieberichte"
+              rows={() =>
+                buildRegieReportListExportRows(reports ?? [], loadProjectTitle)
+              }
+              disabled={!reports || !!reportsError}
+              columns={[
+                {
+                  header: uiText("Nummer"),
+                  value: (report) => report.autoId,
+                  align: "right",
+                },
+                {
+                  header: uiText("Projekt"),
+                  value: (report) => report.projectTitle,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Kalenderwoche", "Calendar week"),
+                  value: (report) => isoWeekLabel(new Date(report.day)),
+                },
+                {
+                  header: uiText("Wochenbeginn", "Week start"),
+                  value: (report) => startOfIsoWeek(new Date(report.day)),
+                },
+                {
+                  header: uiText("Erfasst am"),
+                  value: (report) => report.createdAt,
+                },
+                {
+                  header: uiText("Beschreibung"),
+                  value: (report) => report.summary,
+                  width: "2fr",
+                },
+              ]}
+            />
+          </div>
+        }
+      />
 
-    <MyTable
-      topPagination
-      persistentId="AllRegieReports"
-      rows={reports ?? []}
-      loading={!reports && !reportsError}
-      error={reportsError}
-      onRowClick={report => navigate(`/regieReports/${report.id}`)}
-      columns={[
-        {
-          label: uiText("Nummer"),
-          render: report => <MyLink to={`/regieReports/${report.id}`}>#{report.autoId}</MyLink>,
-          sortKey: report => report.autoId,
-        },
-        {
-          label: uiText("Projekt"),
-          render: async report => {
-            const title = await loadProjectTitle(report.projectId);
-            return canViewProjects ? <MyLink to={`/projects/${report.projectId}`}>{title}</MyLink> : title;
+      <MyTable
+        persistentId="AllRegieReports"
+        rows={reports ?? []}
+        loading={!reports && !reportsError}
+        error={reportsError}
+        onRowClick={(report) => navigate(`/regieReports/${report.id}`)}
+        columns={[
+          {
+            label: uiText("Nummer"),
+            render: (report) => (
+              <MyLink to={`/regieReports/${report.id}`}>
+                #{report.autoId}
+              </MyLink>
+            ),
+            sortKey: (report) => report.autoId,
           },
-        },
-        {
-          label: uiText("Kalenderwoche", "Calendar week"),
-          render: report => isoWeekLabel(new Date(report.day)),
-          sortKey: report => new Date(report.day).getTime(),
-        },
-        {
-          label: uiText("Erfasst am"),
-          render: report => formatDate(report.createdAt),
-          sortKey: report => new Date(report.createdAt).getTime(),
-        },
-        {
-          label: uiText("Beschreibung"),
-          render: report => report.summary ?? '',
-          sortKey: report => (report.summary ?? '').toLowerCase(),
-          wrap: true,
-        },
-      ]}
-      renderSmallViewport={report => <RegieReportTile report={report} omit={canViewProjects ? [] : ['project']} />}
-      pagination={{}}
-    />
-  </>;
+          {
+            label: uiText("Projekt"),
+            render: async (report) => {
+              const title = await loadProjectTitle(report.projectId);
+              return canViewProjects ? (
+                <MyLink to={`/projects/${report.projectId}`}>{title}</MyLink>
+              ) : (
+                title
+              );
+            },
+          },
+          {
+            label: uiText("Kalenderwoche", "Calendar week"),
+            render: (report) => isoWeekLabel(new Date(report.day)),
+            sortKey: (report) => new Date(report.day).getTime(),
+          },
+          {
+            label: uiText("Erfasst am"),
+            render: (report) => formatDate(report.createdAt),
+            sortKey: (report) => new Date(report.createdAt).getTime(),
+          },
+          {
+            label: uiText("Beschreibung"),
+            render: (report) => report.summary ?? "",
+            sortKey: (report) => (report.summary ?? "").toLowerCase(),
+            wrap: true,
+          },
+        ]}
+        renderSmallViewport={(report) => (
+          <RegieReportTile
+            report={report}
+            omit={canViewProjects ? [] : ["project"]}
+          />
+        )}
+        loadMore={{}}
+      />
+    </>
+  );
 }

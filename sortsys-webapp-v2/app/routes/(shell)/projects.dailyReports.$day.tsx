@@ -19,10 +19,18 @@ import { MyTable } from "~/components/MyTable";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyDropdown } from "~/components/MyDropdown";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdf, formatPdfNumber, type PdfImageSection, type PdfTableSection } from "~/lib/pdf";
+import {
+  renderStructuredPdf,
+  formatPdfNumber,
+  type PdfImageSection,
+  type PdfTableSection,
+} from "~/lib/pdf";
 import { deliverBlob, type BlobTarget } from "~/lib/utils";
-import { showDeleteDailyProjectReportModal, showModifyDailyProjectReportModal } from "~/modals/dailyProjectReport";
-import { of } from 'rxjs';
+import {
+  showDeleteDailyProjectReportModal,
+  showModifyDailyProjectReportModal,
+} from "~/modals/dailyProjectReport";
+import { of } from "rxjs";
 
 export default function DailyProjectReportDetailPage() {
   const { id, day } = useParams();
@@ -270,137 +278,260 @@ export default function DailyProjectReportDetailPage() {
     }
   }
 
-  if (err) return <NotFound reason="resourceNotFound" />
+  if (err) return <NotFound reason="resourceNotFound" />;
   if (!report) return;
 
   const hasWeather = !!report.weather && !!Object.values(report.weather).find(v => !!v);
   const photos = report.photos ?? [];
   const canManagePhotos = sessionInfo.supportsProjectFiles() && sessionInfo.canDo('manage:dailyProjectReports');
 
-  return <>
-    <input
-      ref={photoInputRef}
-      type="file"
-      accept="image/*"
-      multiple
-      style={{ display: 'none' }}
-      onChange={event => uploadDailyReportPhotos(event.target.files)}
-    />
-
-    <MyHeader
-      title={uiText(`Bautagesbericht`)}
-      actions={<MyDropdown items={[
-        {
-          label: isPdfExporting ? uiText("PDF wird erstellt...") : uiText("PDF"),
-          renderIcon: Icons.Download,
-          hideIf: !sessionInfo.canDo('view:dailyProjectReports'),
-          disabled: isPdfExporting,
-          onClick: () => exportDailyReportToPdf(),
-        },
-        {
-          label: isPhotoUploading ? uiText("Fotos werden hochgeladen...") : uiText("Fotos hinzufügen"),
-          renderIcon: Icons.Create,
-          hideIf: !canManagePhotos,
-          disabled: isPhotoUploading,
-          onClick: () => photoInputRef.current?.click(),
-        },
-        {
-          label: uiText("Bearbeiten"),
-          renderIcon: Icons.Edit,
-          hideIf: !sessionInfo.canDo('manage:dailyProjectReports'),
-          onClick: () => showModifyDailyProjectReportModal(modals, report),
-        },
-        {
-          label: uiText("Löschen"),
-          renderIcon: Icons.Delete,
-          hideIf: !sessionInfo.canDo('delete:dailyProjectReports'),
-          onClick: () => showDeleteDailyProjectReportModal(modals, report),
-        },
-      ]} />}
-    />
-
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
-    </MyCallout>}
-
-    {!!photoErr && <MyCallout icon={Icons.Deny} color="red">{uiText("Foto-Aktion fehlgeschlagen:")} {photoErr}
-    </MyCallout>}
-
-    <AttrList>
-      <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
-        const [project] = await client.query('projects.get', { id: report.projectId }, { strategy: 'cache-first' });
-        if (!project) return 'Unbekannt';
-        return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
-      }} />} />
-
-      <AttrList.Attr name="Tag" value={formatDate(report.day)} />
-      {!!report.summary && <AttrList.Attr name={uiText("Beschreibung der Arbeiten")} value={report.summary} />}
-      <AttrList.Attr name={uiText("Erstellt am")} value={formatDate(report.createdAt)} />
-      {!!report.createdByUserId && <AttrList.Attr name={uiText("Erstellt von")} value={<Awaited promise={async () => {
-        const [user] = await client.query('users.get', { id: report.createdByUserId! }, { strategy: 'cache-first' });
-        if (!user) return 'Unbekannt';
-        return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>
-      }} />} />}
-    </AttrList>
-
-    <MyDivider />
-
-    {!!report.workHours.length && <MyExpandable title={uiText("Arbeitszeit")}>
-      <MyTable
-        className="th-25rem"
-        rows={report.workHours}
-        columns={[
-          {
-            label: uiText("Mitarbeiter"),
-            render: async row => {
-              if (!row.userId) return 'Unbekannt';
-              const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
-              if (!user) return 'Unbekannt';
-              return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
-            },
-          },
-          {
-            label: uiText("Stunden"),
-            render: row => formatNumber(row.hours),
-            sortKey: row => row.hours,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
+  return (
+    <>
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(event) => uploadDailyReportPhotos(event.target.files)}
       />
-    </MyExpandable>}
 
-    {!!report.weather && hasWeather && <MyExpandable title={uiText("Wetter")} initiallyExpanded>
-      <AttrList>
-        {!!report.weather.summary && <AttrList.Attr name={uiText("Beschreibung")} value={report.weather.summary} />}
-        {typeof report.weather.temperatureC === 'number' && <AttrList.Attr name="Temperatur" value={`${formatNumber(report.weather.temperatureC)} °C`} />}
-        {typeof report.weather.precipitationMm === 'number' && <AttrList.Attr name="Niederschlag" value={`${formatNumber(report.weather.precipitationMm)} mm`} />}
-        {typeof report.weather.windKph === 'number' && <AttrList.Attr name="Wind" value={`${formatNumber(report.weather.windKph)} km/h`} />}
-      </AttrList>
-    </MyExpandable>}
-
-    {!!photos.length && <MyExpandable title={uiText(`Fotos (${photos.length})`, `Photos (${photos.length})`)} initiallyExpanded>
-      <div className="daily-report-photo-grid">
-        {photos.map(photo => {
-          const imageUrl = photo.previewUrl || photo.thumbnailUrl || photo.downloadUrl || null;
-          return <div key={photo.id} className="daily-report-photo-card">
-            {imageUrl
-              ? <a href={photo.downloadUrl || imageUrl} target="_blank" rel="noreferrer">
-                <img src={imageUrl} alt={photo.fileName} />
-              </a>
-              : <div className="daily-report-photo-placeholder">{uiText("Keine Vorschau")}</div>}
-            <div className="daily-report-photo-meta">
-              <div className="daily-report-photo-title">{photo.fileName}</div>
-              <div className="light">{formatDate(photo.createdAt)}</div>
-              {canManagePhotos && <MyDropdown items={[{
-                label: removingPhotoId === photo.id ? uiText("Wird entfernt...") : uiText("Aus Bericht entfernen"),
+      <MyHeader
+        title={uiText(`Bautagesbericht`)}
+        actions={
+          <MyDropdown
+            items={[
+              {
+                label: isPdfExporting
+                  ? uiText("PDF wird erstellt...")
+                  : uiText("PDF"),
+                renderIcon: Icons.Download,
+                hideIf: !sessionInfo.canDo("view:dailyProjectReports"),
+                disabled: isPdfExporting,
+                onClick: () => exportDailyReportToPdf(),
+              },
+              {
+                label: isPhotoUploading
+                  ? uiText("Fotos werden hochgeladen...")
+                  : uiText("Fotos hinzufügen"),
+                renderIcon: Icons.Create,
+                hideIf: !canManagePhotos,
+                disabled: isPhotoUploading,
+                onClick: () => photoInputRef.current?.click(),
+              },
+              {
+                label: uiText("Bearbeiten"),
+                renderIcon: Icons.Edit,
+                hideIf: !sessionInfo.canDo("manage:dailyProjectReports"),
+                onClick: () =>
+                  showModifyDailyProjectReportModal(modals, report),
+              },
+              {
+                label: uiText("Löschen"),
                 renderIcon: Icons.Delete,
-                disabled: !!removingPhotoId,
-                onClick: () => removeDailyReportPhoto(photo.id),
-              }]} />}
-            </div>
-          </div>;
-        })}
-      </div>
-    </MyExpandable>}
-  </>;
+                hideIf: !sessionInfo.canDo("delete:dailyProjectReports"),
+                onClick: () =>
+                  showDeleteDailyProjectReportModal(modals, report),
+              },
+            ]}
+          />
+        }
+      />
+
+      {!!pdfExportErr && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
+        </MyCallout>
+      )}
+
+      {!!photoErr && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("Foto-Aktion fehlgeschlagen:")} {photoErr}
+        </MyCallout>
+      )}
+
+      <AttrList>
+        <AttrList.Attr
+          name={uiText("Projekt")}
+          value={
+            <Awaited
+              promise={async () => {
+                const [project] = await client.query(
+                  "projects.get",
+                  { id: report.projectId },
+                  { strategy: "cache-first" },
+                );
+                if (!project) return "Unbekannt";
+                return (
+                  <MyLink to={`/projects/${project.id}`}>
+                    {project.title}
+                  </MyLink>
+                );
+              }}
+            />
+          }
+        />
+
+        <AttrList.Attr name="Tag" value={formatDate(report.day)} />
+        {!!report.summary && (
+          <AttrList.Attr
+            name={uiText("Beschreibung der Arbeiten")}
+            value={report.summary}
+          />
+        )}
+        <AttrList.Attr
+          name={uiText("Erstellt am")}
+          value={formatDate(report.createdAt)}
+        />
+        {!!report.createdByUserId && (
+          <AttrList.Attr
+            name={uiText("Erstellt von")}
+            value={
+              <Awaited
+                promise={async () => {
+                  const [user] = await client.query(
+                    "users.get",
+                    { id: report.createdByUserId! },
+                    { strategy: "cache-first" },
+                  );
+                  if (!user) return "Unbekannt";
+                  return (
+                    <MyLink to={`/users/${user.id}`}>
+                      {userFullName(user)}
+                    </MyLink>
+                  );
+                }}
+              />
+            }
+          />
+        )}
+      </AttrList>
+
+      <MyDivider />
+
+      {!!report.workHours.length && (
+        <MyExpandable title={uiText("Arbeitszeit")}>
+          <MyTable
+            className="th-25rem"
+            rows={report.workHours}
+            columns={[
+              {
+                label: uiText("Mitarbeiter"),
+                render: async (row) => {
+                  if (!row.userId) return "Unbekannt";
+                  const [user] = await client.query(
+                    "users.get",
+                    { id: row.userId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!user) return "Unbekannt";
+                  return (
+                    <MyLink to={`/users/${user.id}`}>
+                      {userFullName(user)}
+                    </MyLink>
+                  );
+                },
+              },
+              {
+                label: uiText("Stunden"),
+                render: (row) => formatNumber(row.hours),
+                sortKey: (row) => row.hours,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
+
+      {!!report.weather && hasWeather && (
+        <MyExpandable title={uiText("Wetter")} initiallyExpanded>
+          <AttrList>
+            {!!report.weather.summary && (
+              <AttrList.Attr
+                name={uiText("Beschreibung")}
+                value={report.weather.summary}
+              />
+            )}
+            {typeof report.weather.temperatureC === "number" && (
+              <AttrList.Attr
+                name="Temperatur"
+                value={`${formatNumber(report.weather.temperatureC)} °C`}
+              />
+            )}
+            {typeof report.weather.precipitationMm === "number" && (
+              <AttrList.Attr
+                name="Niederschlag"
+                value={`${formatNumber(report.weather.precipitationMm)} mm`}
+              />
+            )}
+            {typeof report.weather.windKph === "number" && (
+              <AttrList.Attr
+                name="Wind"
+                value={`${formatNumber(report.weather.windKph)} km/h`}
+              />
+            )}
+          </AttrList>
+        </MyExpandable>
+      )}
+
+      {!!photos.length && (
+        <MyExpandable
+          title={uiText(
+            `Fotos (${photos.length})`,
+            `Photos (${photos.length})`,
+          )}
+          initiallyExpanded
+        >
+          <div className="daily-report-photo-grid">
+            {photos.map((photo) => {
+              const imageUrl =
+                photo.previewUrl ||
+                photo.thumbnailUrl ||
+                photo.downloadUrl ||
+                null;
+              return (
+                <div key={photo.id} className="daily-report-photo-card">
+                  {imageUrl ? (
+                    <a
+                      href={photo.downloadUrl || imageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <img src={imageUrl} alt={photo.fileName} />
+                    </a>
+                  ) : (
+                    <div className="daily-report-photo-placeholder">
+                      {uiText("Keine Vorschau")}
+                    </div>
+                  )}
+                  <div className="daily-report-photo-meta">
+                    <div className="daily-report-photo-title">
+                      {photo.fileName}
+                    </div>
+                    <div className="light">{formatDate(photo.createdAt)}</div>
+                    {canManagePhotos && (
+                      <MyDropdown
+                        items={[
+                          {
+                            label:
+                              removingPhotoId === photo.id
+                                ? uiText("Wird entfernt...")
+                                : uiText("Aus Bericht entfernen"),
+                            renderIcon: Icons.Delete,
+                            disabled: !!removingPhotoId,
+                            onClick: () => removeDailyReportPhoto(photo.id),
+                          },
+                        ]}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </MyExpandable>
+      )}
+    </>
+  );
 }

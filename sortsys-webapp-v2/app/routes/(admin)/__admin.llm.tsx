@@ -1,5 +1,15 @@
 import type { MutateInput, QueryResult } from "@sortsys/v2-client";
-import { Heading, Modal, Tile, useNotifications } from "@sortsys/react-components";
+import {
+  Checkbox,
+  Form,
+  Heading,
+  Modal,
+  Select,
+  SelectItem,
+  TextInput,
+  Tile,
+  useNotifications,
+} from "@sortsys/react-components";
 import { useMemo, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -108,9 +118,11 @@ function ProviderAccountDialog({
   return (
     <Modal
       open={visible}
-      modalHeading={account
-        ? uiText("Provider bearbeiten", "Edit provider")
-        : uiText("Provider hinzufügen", "Add provider")}
+      modalHeading={
+        account
+          ? uiText("Provider bearbeiten", "Edit provider")
+          : uiText("Provider hinzufügen", "Add provider")
+      }
       primaryButtonText={uiText("Speichern", "Save")}
       primaryButtonDisabled={saving || (!account && !apiKey.trim())}
       primaryButtonLoading={saving}
@@ -119,69 +131,77 @@ function ProviderAccountDialog({
       onRequestClose={hide}
       onRequestSubmit={() => formRef.current?.requestSubmit()}
     >
-      <form
+      <Form
         ref={formRef}
         className="space-y-3"
-        onSubmit={event => {
+        onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           void saveAccount();
         }}
       >
         {account ? (
           <div>
-            <span className="ss-label">{uiText("Provider", "Provider")}</span>
+            <span className="block text-sm text-muted">
+              {uiText("Provider", "Provider")}
+            </span>
             <strong>{providerLabel(provider)}</strong>
           </div>
         ) : (
-          <label>
-            <span className="ss-label">{uiText("Provider", "Provider")}</span>
-            <select
-              className="ss-input"
-              value={provider}
-              onChange={event => {
-                const value = event.currentTarget.value;
-                if (isSupportedProvider(value)) setProvider(value);
-              }}
-            >
-              {availableProviders.map(option => (
-                <option key={option.id} value={option.id}>{providerLabel(option.id)}</option>
-              ))}
-            </select>
-          </label>
+          <Select
+            labelText={uiText("Provider", "Provider")}
+            value={provider}
+            onChange={(event: { currentTarget: { value: string } }) => {
+              const value = event.currentTarget.value;
+              if (isSupportedProvider(value)) setProvider(value);
+            }}
+          >
+            {availableProviders.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {providerLabel(option.id)}
+              </SelectItem>
+            ))}
+          </Select>
         )}
 
-        <label>
-          <span className="ss-label">{uiText("API-Endpunkt (optional)", "API endpoint (optional)")}</span>
-          <input
-            className="ss-input"
-            type="url"
-            placeholder={selectedProvider?.endpoint}
-            value={baseUrl}
-            onChange={event => setBaseUrl(event.currentTarget.value)}
-          />
-        </label>
+        <TextInput
+          labelText={uiText(
+            "API-Endpunkt (optional)",
+            "API endpoint (optional)",
+          )}
+          type="url"
+          placeholder={selectedProvider?.endpoint}
+          value={baseUrl}
+          onChange={(event: { currentTarget: { value: string } }) =>
+            setBaseUrl(event.currentTarget.value)
+          }
+        />
 
-        <label>
-          <span className="ss-label">{uiText("API-Schlüssel", "API key")}</span>
-          <input
-            className="ss-input"
-            type="password"
-            autoComplete="new-password"
-            required={!account}
-            value={apiKey}
-            onChange={event => setApiKey(event.currentTarget.value)}
-          />
-        </label>
+        <TextInput
+          labelText={uiText("API-Schlüssel", "API key")}
+          type="password"
+          autoComplete="new-password"
+          required={!account}
+          value={apiKey}
+          onChange={(event: { currentTarget: { value: string } }) =>
+            setApiKey(event.currentTarget.value)
+          }
+        />
 
         {account?.hasApiKey && (
-          <p className="light">{uiText(
-            "Leer lassen, um den bisherigen Schlüssel zu behalten.",
-            "Leave empty to keep the current key.",
-          )}</p>
+          <p className="light">
+            {uiText(
+              "Leer lassen, um den bisherigen Schlüssel zu behalten.",
+              "Leave empty to keep the current key.",
+            )}
+          </p>
         )}
-        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+        {!!error && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
+        )}
         <button type="submit" hidden />
-      </form>
+      </Form>
     </Modal>
   );
 }
@@ -208,36 +228,48 @@ function ModelSelect({
 
   return (
     <div>
-      <label>
-        <span className="ss-label">{uiText("Modell", "Model")}</span>
-        <select
-          className="ss-input"
-          value={value}
-          disabled={!models || !!modelsError}
-          onChange={event => onChange(event.currentTarget.value)}
-        >
-          <option value="">
-            {modelsError
-              ? uiText("Modelle konnten nicht geladen werden", "Models could not be loaded")
-              : models
-                ? uiText("Modell auswählen", "Select model")
-                : uiText("Modelle werden geladen …", "Loading models …")}
-          </option>
-          {!!value && !selectedModelIsAvailable && <option value={value}>{value}</option>}
-          {(models ?? []).map(model => (
-            <option key={model.id} value={model.id}>{model.name}</option>
-          ))}
-        </select>
-      </label>
+      <Select
+        labelText={uiText("Modell", "Model")}
+        value={value}
+        disabled={!models || !!modelsError}
+        onChange={(event: { currentTarget: { value: string } }) =>
+          onChange(event.currentTarget.value)
+        }
+      >
+        <SelectItem value="">
+          {modelsError
+            ? uiText(
+                "Modelle konnten nicht geladen werden",
+                "Models could not be loaded",
+              )
+            : models
+              ? uiText("Modell auswählen", "Select model")
+              : uiText("Modelle werden geladen …", "Loading models …")}
+        </SelectItem>
+        {!!value && !selectedModelIsAvailable && (
+          <SelectItem value={value}>{value}</SelectItem>
+        )}
+        {(models ?? []).map((model) => (
+          <SelectItem key={model.id} value={model.id}>
+            {model.name}
+          </SelectItem>
+        ))}
+      </Select>
       {!!modelsError && (
         <span className="light block mt-1">
-          {uiText("Modelle konnten nicht geladen werden: ", "Models could not be loaded: ")}
+          {uiText(
+            "Modelle konnten nicht geladen werden: ",
+            "Models could not be loaded: ",
+          )}
           {modelsError.message}
         </span>
       )}
       {models?.length === 0 && (
         <span className="light block mt-1">
-          {uiText("Der Provider hat keine Modelle zurückgegeben.", "The provider returned no models.")}
+          {uiText(
+            "Der Provider hat keine Modelle zurückgegeben.",
+            "The provider returned no models.",
+          )}
         </span>
       )}
       {(!!modelsError || models?.length === 0) && (
@@ -247,7 +279,7 @@ function ModelSelect({
           kind="secondary"
           onClick={async () => {
             await adminClient.invalidate("admin.llm.providers.models");
-            setReload(previous => previous + 1);
+            setReload((previous) => previous + 1);
           }}
         >
           {uiText("Erneut laden", "Retry")}
@@ -328,40 +360,47 @@ function UseCaseDialog({
       onRequestClose={hide}
       onRequestSubmit={() => void saveUseCase()}
     >
-      <form
+      <Form
         className="space-y-3"
-        onSubmit={event => {
+        onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           void saveUseCase();
         }}
       >
-        <label>
-          <span className="ss-label">{uiText("Provider", "Provider")}</span>
-          <select
-            className="ss-input"
-            value={provider}
-            disabled={configuredProviders.length === 0}
-            onChange={event => {
-              const nextProvider = event.currentTarget.value;
-              if (!isSupportedProvider(nextProvider)) return;
+        <Select
+          labelText={uiText("Provider", "Provider")}
+          value={provider}
+          disabled={configuredProviders.length === 0}
+          onChange={(event: { currentTarget: { value: string } }) => {
+            const nextProvider = event.currentTarget.value;
+            if (!isSupportedProvider(nextProvider)) return;
 
-              setProvider(nextProvider);
-              setModel("");
-            }}
-          >
-            {configuredProviders.length === 0 && (
-              <option value="">{uiText("Zuerst Provider hinzufügen", "Add a provider first")}</option>
-            )}
-            {configuredProviders.map(option => (
-              <option key={option.id} value={option.id}>{providerLabel(option.id)}</option>
-            ))}
-          </select>
-        </label>
+            setProvider(nextProvider);
+            setModel("");
+          }}
+        >
+          {configuredProviders.length === 0 && (
+            <SelectItem value="">
+              {uiText("Zuerst Provider hinzufügen", "Add a provider first")}
+            </SelectItem>
+          )}
+          {configuredProviders.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {providerLabel(option.id)}
+            </SelectItem>
+          ))}
+        </Select>
 
-        {!!provider && <ModelSelect provider={provider} value={model} onChange={setModel} />}
-        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+        {!!provider && (
+          <ModelSelect provider={provider} value={model} onChange={setModel} />
+        )}
+        {!!error && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
+        )}
         <button type="submit" hidden />
-      </form>
+      </Form>
     </Modal>
   );
 }
@@ -425,38 +464,43 @@ function TenantDialog({
       onRequestClose={hide}
       onRequestSubmit={() => void saveTenant()}
     >
-      <form
+      <Form
         className="space-y-3"
-        onSubmit={event => {
+        onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           void saveTenant();
         }}
       >
-        <label className="flex gap-2 items-center">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={event => setEnabled(event.currentTarget.checked)}
-          />
-          {uiText("LLM für diesen Mandanten aktivieren", "Enable LLM for this tenant")}
-        </label>
+        <Checkbox
+          checked={enabled}
+          labelText={uiText(
+            "LLM für diesen Mandanten aktivieren",
+            "Enable LLM for this tenant",
+          )}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+            setEnabled(event.currentTarget.checked);
+          }}
+        />
 
-        <label>
-          <span className="ss-label">{uiText("Monatliche Tokenquote", "Monthly token quota")}</span>
-          <input
-            className="ss-input"
-            type="number"
-            min={1}
-            step={1}
-            placeholder={uiText("Unbegrenzt", "Unlimited")}
-            value={quota}
-            onChange={event => setQuota(event.currentTarget.value)}
-          />
-        </label>
+        <TextInput
+          labelText={uiText("Monatliche Tokenquote", "Monthly token quota")}
+          type="number"
+          min={1}
+          step={1}
+          placeholder={uiText("Unbegrenzt", "Unlimited")}
+          value={quota}
+          onChange={(event: { currentTarget: { value: string } }) =>
+            setQuota(event.currentTarget.value)
+          }
+        />
 
-        {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+        {!!error && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
+        )}
         <button type="submit" hidden />
-      </form>
+      </Form>
     </Modal>
   );
 }
@@ -515,7 +559,9 @@ export default function GlobalAdminLlmPage() {
         useCase={useCase}
         title={title}
         accounts={accounts ?? []}
-        settings={(useCases ?? []).find(settings => settings.useCase === useCase)}
+        settings={(useCases ?? []).find(
+          (settings) => settings.useCase === useCase,
+        )}
       />
     ));
   }
@@ -532,10 +578,12 @@ export default function GlobalAdminLlmPage() {
 
     modals.showDefault({
       content: () => (
-        <p>{uiText(
-          `${providerLabel(account.provider)}-Zugang entfernen?`,
-          `Remove the ${providerLabel(account.provider)} account?`,
-        )}</p>
+        <p>
+          {uiText(
+            `${providerLabel(account.provider)}-Zugang entfernen?`,
+            `Remove the ${providerLabel(account.provider)} account?`,
+          )}
+        </p>
       ),
       modalProps: () => ({
         modalHeading: uiText("Provider entfernen", "Remove provider"),
@@ -559,11 +607,17 @@ export default function GlobalAdminLlmPage() {
 
   return (
     <>
-      {!!loadError && <MyCallout icon={Icons.Deny} color="red">{loadError.message}</MyCallout>}
+      {!!loadError && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {loadError.message}
+        </MyCallout>
+      )}
 
       <Tile className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Heading level={3} noMargin>{uiText("Provider-Zugänge", "Provider accounts")}</Heading>
+          <Heading level={3} noMargin>
+            {uiText("Provider-Zugänge", "Provider accounts")}
+          </Heading>
           <MyButton
             size="sm"
             onClick={() => showProviderDialog()}
@@ -574,34 +628,51 @@ export default function GlobalAdminLlmPage() {
         </div>
 
         {configuredAccounts.length === 0 ? (
-          <p className="light">{uiText(
-            "Noch kein Provider eingerichtet.",
-            "No provider configured yet.",
-          )}</p>
+          <p className="light">
+            {uiText(
+              "Noch kein Provider eingerichtet.",
+              "No provider configured yet.",
+            )}
+          </p>
         ) : (
           <div>
-            {configuredAccounts.map(account => (
+            {configuredAccounts.map((account) => (
               <div
                 key={account.provider}
-                className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ss-border)] py-2"
+                className={[
+                  "flex flex-wrap items-center justify-between gap-2 border-t",
+                  "border-[var(--ss-border)] py-2",
+                ].join(" ")}
               >
                 <div className="min-w-0">
                   <strong>{providerLabel(account.provider)}</strong>
                   <div className="light truncate">
-                    {account.baseUrl || PROVIDERS.find(option => option.id === account.provider)?.endpoint}
+                    {account.baseUrl ||
+                      PROVIDERS.find((option) => option.id === account.provider)
+                        ?.endpoint}
                   </div>
-                  {(useCases ?? []).some(settings => settings.provider === account.provider) && (
-                    <div className="light">{uiText("In Verwendung", "In use")}</div>
+                  {(useCases ?? []).some(
+                    (settings) => settings.provider === account.provider,
+                  ) && (
+                    <div className="light">
+                      {uiText("In Verwendung", "In use")}
+                    </div>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <MyButton kind="secondary" size="sm" onClick={() => showProviderDialog(account)}>
+                  <MyButton
+                    kind="secondary"
+                    size="sm"
+                    onClick={() => showProviderDialog(account)}
+                  >
                     {uiText("Bearbeiten", "Edit")}
                   </MyButton>
                   <MyButton
                     kind="secondary"
                     size="sm"
-                    disabled={(useCases ?? []).some(settings => settings.provider === account.provider)}
+                    disabled={(useCases ?? []).some(
+                      (settings) => settings.provider === account.provider,
+                    )}
                     onClick={() => showRemoveProvider(account)}
                   >
                     {uiText("Entfernen", "Remove")}
@@ -614,26 +685,45 @@ export default function GlobalAdminLlmPage() {
       </Tile>
 
       <Tile className="space-y-3">
-        <Heading level={3} noMargin>{uiText("Modelle nach Anwendungsfall", "Models by use case")}</Heading>
+        <Heading level={3} noMargin>
+          {uiText("Modelle nach Anwendungsfall", "Models by use case")}
+        </Heading>
         <div>
-          {([
-            {
-              useCase: "chat",
-              title: uiText("Chat", "Chat"),
-              description: uiText("Antworten und Aktionen im LLM-Chat", "Answers and actions in LLM chat"),
-            },
-            {
-              useCase: "documentImport",
-              title: uiText("Einlesen", "Document import"),
-              description: uiText("Lieferscheine, Rechnungen und Preislisten", "Delivery notes, invoices, and price lists"),
-            },
-          ] satisfies Array<{ useCase: UseCaseName; title: string; description: string }>).map(item => {
-            const settings = (useCases ?? []).find(entry => entry.useCase === item.useCase);
+          {(
+            [
+              {
+                useCase: "chat",
+                title: uiText("Chat", "Chat"),
+                description: uiText(
+                  "Antworten und Aktionen im LLM-Chat",
+                  "Answers and actions in LLM chat",
+                ),
+              },
+              {
+                useCase: "documentImport",
+                title: uiText("Einlesen", "Document import"),
+                description: uiText(
+                  "Lieferscheine, Rechnungen und Preislisten",
+                  "Delivery notes, invoices, and price lists",
+                ),
+              },
+            ] satisfies Array<{
+              useCase: UseCaseName;
+              title: string;
+              description: string;
+            }>
+          ).map((item) => {
+            const settings = (useCases ?? []).find(
+              (entry) => entry.useCase === item.useCase,
+            );
 
             return (
               <div
                 key={item.useCase}
-                className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ss-border)] py-2"
+                className={[
+                  "flex flex-wrap items-center justify-between gap-2 border-t",
+                  "border-[var(--ss-border)] py-2",
+                ].join(" ")}
               >
                 <div className="min-w-0">
                   <strong>{item.title}</strong>
@@ -659,12 +749,17 @@ export default function GlobalAdminLlmPage() {
       </Tile>
 
       <Tile className="space-y-2">
-        <Heading level={3} noMargin>{uiText("Mandanten", "Tenants")}</Heading>
+        <Heading level={3} noMargin>
+          {uiText("Mandanten", "Tenants")}
+        </Heading>
         <div>
-          {(tenants ?? []).map(tenant => (
+          {(tenants ?? []).map((tenant) => (
             <div
               key={tenant.name}
-              className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ss-border)] py-2"
+              className={[
+                "flex flex-wrap items-center justify-between gap-2 border-t",
+                "border-[var(--ss-border)] py-2",
+              ].join(" ")}
             >
               <div>
                 <strong>{tenant.name}</strong>
@@ -676,12 +771,16 @@ export default function GlobalAdminLlmPage() {
                   {tenant.monthlyTokenQuota == null
                     ? uiText("Ohne Tokenlimit", "No token limit")
                     : uiText(
-                      `${formatTokens(tenant.monthlyTokenQuota)} Token pro Monat`,
-                      `${formatTokens(tenant.monthlyTokenQuota)} tokens per month`,
-                    )}
+                        `${formatTokens(tenant.monthlyTokenQuota)} Token pro Monat`,
+                        `${formatTokens(tenant.monthlyTokenQuota)} tokens per month`,
+                      )}
                 </div>
               </div>
-              <MyButton kind="secondary" size="sm" onClick={() => showTenantDialog(tenant)}>
+              <MyButton
+                kind="secondary"
+                size="sm"
+                onClick={() => showTenantDialog(tenant)}
+              >
                 {uiText("Bearbeiten", "Edit")}
               </MyButton>
             </div>
@@ -690,11 +789,17 @@ export default function GlobalAdminLlmPage() {
       </Tile>
 
       <Tile className="space-y-2">
-        <Heading level={3} noMargin>{uiText("Verbrauch im laufenden Monat", "Usage this month")}</Heading>
+        <Heading level={3} noMargin>
+          {uiText("Verbrauch im laufenden Monat", "Usage this month")}
+        </Heading>
         <MyTable
           rows={usageRows}
           columns={[
-            { label: uiText("Mandant", "Tenant"), render: row => row.tenant, sortKey: row => row.tenant },
+            {
+              label: uiText("Mandant", "Tenant"),
+              render: (row) => row.tenant,
+              sortKey: (row) => row.tenant,
+            },
             {
               label: uiText("Zweck", "Purpose"),
               render: (row) => {
@@ -708,20 +813,40 @@ export default function GlobalAdminLlmPage() {
 
                 return row.purpose;
               },
-              sortKey: row => row.purpose,
+              sortKey: (row) => row.purpose,
             },
             {
               label: uiText("Provider / Modell", "Provider / model"),
-              render: row => `${providerLabel(row.provider)} / ${row.model}`,
-              sortKey: row => `${row.provider} ${row.model}`,
+              render: (row) => `${providerLabel(row.provider)} / ${row.model}`,
+              sortKey: (row) => `${row.provider} ${row.model}`,
             },
-            { label: uiText("Anfragen", "Requests"), render: row => formatTokens(row.requestCount), sortKey: row => Number(row.requestCount) },
-            { label: uiText("Eingabe", "Input"), render: row => formatTokens(row.inputTokens), sortKey: row => Number(row.inputTokens) },
-            { label: uiText("Ausgabe", "Output"), render: row => formatTokens(row.outputTokens), sortKey: row => Number(row.outputTokens) },
-            { label: uiText("Gesamt", "Total"), render: row => formatTokens(row.totalTokens), sortKey: row => Number(row.totalTokens) },
-            { label: uiText("Fehler", "Errors"), render: row => formatTokens(row.failedRequests), sortKey: row => Number(row.failedRequests) },
+            {
+              label: uiText("Anfragen", "Requests"),
+              render: (row) => formatTokens(row.requestCount),
+              sortKey: (row) => Number(row.requestCount),
+            },
+            {
+              label: uiText("Eingabe", "Input"),
+              render: (row) => formatTokens(row.inputTokens),
+              sortKey: (row) => Number(row.inputTokens),
+            },
+            {
+              label: uiText("Ausgabe", "Output"),
+              render: (row) => formatTokens(row.outputTokens),
+              sortKey: (row) => Number(row.outputTokens),
+            },
+            {
+              label: uiText("Gesamt", "Total"),
+              render: (row) => formatTokens(row.totalTokens),
+              sortKey: (row) => Number(row.totalTokens),
+            },
+            {
+              label: uiText("Fehler", "Errors"),
+              render: (row) => formatTokens(row.failedRequests),
+              sortKey: (row) => Number(row.failedRequests),
+            },
           ]}
-          pagination={{ pageSizes: [25, 50] }}
+          loadMore={{ batchSize: 25 }}
           autoConvertSmallViewport
         />
       </Tile>

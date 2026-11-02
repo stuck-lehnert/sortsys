@@ -6,7 +6,6 @@ import { client } from "~/lib/client";
 import { Fragment, useEffect, useId, useMemo, type ReactNode } from "react";
 import { SmallContactTile, SmallCustomerTile, SmallDeliveryNoteTile, SmallProductTile, SmallProductVendorTile, SmallProjectTile, SmallToolTile, SmallUserTile } from "~/lib/tiles";
 import { Tile } from "@sortsys/react-components";
-import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { MyExpandable } from "~/components/MyExpandable";
 
 
@@ -160,7 +159,6 @@ export function showGlobalSearchModal(modals: MyModalsInterface) {
       return <div className="h-full max-h-full flex flex-col gap-2 items-stretch my-container" style={{ padding: 0 }}>
         <div className="shrink-0">
           <MyForm.Input id={inputId} labelText={uiText("Suchen")} onValueChange={q => setQuery(q, q !== query())} />
-          <NotifyLoaded onLoad={() => document.getElementById(inputId)?.focus()} />
         </div>
         <div className="relative grow overflow-hidden">
           {!!results.length && <Tile className={`h-full max-h-full space-y-2 overflow-y-auto`} style={{

@@ -12,11 +12,31 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
-import { formatCurrency, formatDate, formatNumber, formatPercent, gainOrLossColor, productTitle, toolTitle, userFullName } from "~/lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatNumber,
+  formatPercent,
+  gainOrLossColor,
+  productTitle,
+  toolTitle,
+  userFullName,
+} from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdf, buildPdfProductSection, formatPdfNumber, type PdfTableSection } from "~/lib/pdf";
+import {
+  renderStructuredPdf,
+  buildPdfProductSection,
+  formatPdfNumber,
+  type PdfTableSection,
+} from "~/lib/pdf";
 import { buildWeeklyProjectCostsPdfDocument } from "~/lib/projectCostsPdf";
-import { deliverBlob, endOfDay, startOfDay, type BlobTarget, upmatchUnit } from "~/lib/utils";
+import {
+  deliverBlob,
+  endOfDay,
+  startOfDay,
+  type BlobTarget,
+  upmatchUnit,
+} from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
 import { EXCEL_DATE_NUM_FMT } from "~/lib/xlsx";
 import {
@@ -81,7 +101,11 @@ function formatGainOrLossText(value: number, invoicesTotal: number) {
 }
 
 function GainOrLossText({ value, invoicesTotal }: { value: number; invoicesTotal: number }) {
-  return <span style={{ color: gainOrLossColor(value), fontWeight: 700 }}>{formatGainOrLossText(value, invoicesTotal)}</span>;
+  return (
+    <span style={{ color: gainOrLossColor(value), fontWeight: 700 }}>
+      {formatGainOrLossText(value, invoicesTotal)}
+    </span>
+  );
 }
 
 function formatProductAmount(amount: number, unit: string) {
@@ -806,70 +830,87 @@ export default function ProjectDetailCosts() {
     if (canManageProjectFinancialEntries) {
       columns.push({
         label: uiText("Aktionen"),
-        render: (row: ProjectFinancialEntry) => <div className="flex items-center gap-1">
-          <MyButton
-            size="sm"
-            kind="ghost"
-            aria-label={uiText("Bearbeiten")}
-            title={uiText("Bearbeiten")}
-            onClick={() => showModifyProjectFinancialEntryModal(modals, project, row)}
-          ><Icons.Edit /></MyButton>
+        render: (row: ProjectFinancialEntry) => (
+          <div className="flex items-center gap-1">
+            <MyButton
+              size="sm"
+              kind="ghost"
+              aria-label={uiText("Bearbeiten")}
+              title={uiText("Bearbeiten")}
+              onClick={() =>
+                showModifyProjectFinancialEntryModal(modals, project, row)
+              }
+            >
+              <Icons.Edit />
+            </MyButton>
 
-          <MyButton
-            size="sm"
-            kind="danger--tertiary"
-            aria-label={uiText("Löschen")}
-            title={uiText("Löschen")}
-            onClick={() => showDeleteProjectFinancialEntryModal(modals, project, row)}
-          ><Icons.Delete /></MyButton>
-        </div>,
+            <MyButton
+              size="sm"
+              kind="danger--tertiary"
+              aria-label={uiText("Löschen")}
+              title={uiText("Löschen")}
+              onClick={() =>
+                showDeleteProjectFinancialEntryModal(modals, project, row)
+              }
+            >
+              <Icons.Delete />
+            </MyButton>
+          </div>
+        ),
       });
     }
 
-    return <MyExpandable title={`${title} (${formatCurrency(total)})`}>
-      <MyTable
-        className="th-20rem"
-        rows={entries}
-        columns={columns}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>;
+    return (
+      <MyExpandable title={`${title} (${formatCurrency(total)})`}>
+        <MyTable
+          className="th-20rem"
+          rows={entries}
+          columns={columns}
+          loadMore={{}}
+          autoConvertSmallViewport
+        />
+      </MyExpandable>
+    );
   };
 
-  return <>
-    <div className="flex justify-end gap-2">
-      <MyButton
-        kind="ghost"
-        size="sm"
-        renderIcon={Icons.Download}
-        loading={isPdfExporting}
-        onClick={() => exportCostsToPdf('overall')}
-      >{uiText("PDF")}</MyButton>
+  return (
+    <>
+      <div className="flex justify-end gap-2">
+        <MyButton
+          kind="ghost"
+          size="sm"
+          renderIcon={Icons.Download}
+          loading={isPdfExporting}
+          onClick={() => exportCostsToPdf("overall")}
+        >
+          {uiText("PDF")}
+        </MyButton>
 
-      <MyButton
-        kind="ghost"
-        size="sm"
-        renderIcon={Icons.Download}
-        loading={isPdfExporting}
-        onClick={() => exportCostsToPdf('weekly')}
-      >{uiText("PDF (wochenweise)")}</MyButton>
+        <MyButton
+          kind="ghost"
+          size="sm"
+          renderIcon={Icons.Download}
+          loading={isPdfExporting}
+          onClick={() => exportCostsToPdf("weekly")}
+        >
+          {uiText("PDF (wochenweise)")}
+        </MyButton>
 
-      <MyButton
-        kind="ghost"
-        size="sm"
-        renderIcon={Icons.Excel}
-        onClick={async () => {
+        <MyButton
+          kind="ghost"
+          size="sm"
+          renderIcon={Icons.Excel}
+          onClick={async () => {
             if (!costs) return;
 
-            const ExcelJS = await import('exceljs');
+            const ExcelJS = await import("exceljs");
 
-            const CURRENCY_NUM_FMT = '#,##0.00 [$€-407]';
-            const DECIMAL_NUM_FMT = '#,##0.00';
-            const PERCENT_NUM_FMT = '0.00%';
+            const CURRENCY_NUM_FMT = "#,##0.00 [$€-407]";
+            const DECIMAL_NUM_FMT = "#,##0.00";
+            const PERCENT_NUM_FMT = "0.00%";
 
             const toColumnName = (column: number) => {
-              let name = '';
+              let name = "";
               let current = column;
               while (current > 0) {
                 const remainder = (current - 1) % 26;
@@ -879,7 +920,8 @@ export default function ProjectDetailCosts() {
               return name;
             };
 
-            const cellRef = (row: number, column: number) => `${toColumnName(column)}${row}`;
+            const cellRef = (row: number, column: number) =>
+              `${toColumnName(column)}${row}`;
 
             type TableMeta = {
               rowCount: number;
@@ -888,39 +930,68 @@ export default function ProjectDetailCosts() {
             };
 
             const sumFormula = (table: TableMeta | null, column: number) => {
-              if (!table || table.rowCount === 0) return '0';
+              if (!table || table.rowCount === 0) return "0";
               return `SUM(${cellRef(table.firstDataRow, column)}:${cellRef(table.lastDataRow, column)})`;
             };
 
-            const toNumber = (value: number | null | undefined) => (value == null ? null : Number(value));
+            const toNumber = (value: number | null | undefined) =>
+              value == null ? null : Number(value);
 
-            const productIds = [...new Set(costs.products.map(record => record.productId))];
-            const productEntries = await Promise.all(productIds.map(async productId => {
-              const [product] = await client.query('products.get', { id: productId }, { strategy: 'cache-first' });
-              return [productId, product ?? null] as const;
-            }));
+            const productIds = [
+              ...new Set(costs.products.map((record) => record.productId)),
+            ];
+            const productEntries = await Promise.all(
+              productIds.map(async (productId) => {
+                const [product] = await client.query(
+                  "products.get",
+                  { id: productId },
+                  { strategy: "cache-first" },
+                );
+                return [productId, product ?? null] as const;
+              }),
+            );
             const productMap = new Map(productEntries);
 
-            const toolIds = [...new Set(costs.toolTrackings.map(record => record.toolId))];
-            const toolEntries = await Promise.all(toolIds.map(async toolId => {
-              const [tool] = await client.query('tools.get', { id: toolId }, { strategy: 'cache-first' });
-              return [toolId, tool ?? null] as const;
-            }));
+            const toolIds = [
+              ...new Set(costs.toolTrackings.map((record) => record.toolId)),
+            ];
+            const toolEntries = await Promise.all(
+              toolIds.map(async (toolId) => {
+                const [tool] = await client.query(
+                  "tools.get",
+                  { id: toolId },
+                  { strategy: "cache-first" },
+                );
+                return [toolId, tool ?? null] as const;
+              }),
+            );
             const toolMap = new Map(toolEntries);
 
-            const userIds = [...new Set([...regularWorkHours, ...subcontractorWorkHours].map(record => record.userId).filter(Boolean))] as string[];
-            const userEntries = await Promise.all(userIds.map(async userId => {
-              const [user] = await client.query('users.get', { id: userId }, { strategy: 'cache-first' });
-              return [userId, user ?? null] as const;
-            }));
+            const userIds = [
+              ...new Set(
+                [...regularWorkHours, ...subcontractorWorkHours]
+                  .map((record) => record.userId)
+                  .filter(Boolean),
+              ),
+            ] as string[];
+            const userEntries = await Promise.all(
+              userIds.map(async (userId) => {
+                const [user] = await client.query(
+                  "users.get",
+                  { id: userId },
+                  { strategy: "cache-first" },
+                );
+                return [userId, user ?? null] as const;
+              }),
+            );
             const userMap = new Map(userEntries);
 
             const wb = new ExcelJS.Workbook();
             wb.creator = "exceljs";
             wb.created = new Date();
 
-            const ws = wb.addWorksheet('Projektkosten');
-            ws.getCell(1, 1).value = 'Projektkosten';
+            const ws = wb.addWorksheet("Projektkosten");
+            ws.getCell(1, 1).value = "Projektkosten";
             ws.getCell(1, 1).font = { size: 18, bold: true };
             ws.getCell(2, 1).value = project.title;
             ws.getCell(2, 1).font = { size: 12, italic: true };
@@ -952,7 +1023,7 @@ export default function ProjectDetailCosts() {
                 headerRow: true,
                 totalsRow: false,
                 style: { theme: "TableStyleLight1", showRowStripes: true },
-                columns: columns.map(name => ({ name })),
+                columns: columns.map((name) => ({ name })),
                 rows,
               });
 
@@ -966,50 +1037,67 @@ export default function ProjectDetailCosts() {
               };
             };
 
-            addSectionTitle('Gesamtkosten');
+            addSectionTitle("Gesamtkosten");
             const totalsTable = addTable(
-              ['Bereich', uiText('Kosten'), 'LKG', 'MGK', 'NUGK', 'Gesamt'],
+              ["Bereich", uiText("Kosten"), "LKG", "MGK", "NUGK", "Gesamt"],
               [
-                ['Produkte', 0, 0, 0, 0, 0],
-                ['Sonderposten', 0, 0, 0, 0, 0],
-                ['Lieferscheine', 0, 0, 0, 0, 0],
-                ['Werkzeuge', 0, 0, 0, 0, 0],
-                [uiText('Arbeitszeit'), 0, 0, 0, 0, 0],
-                [uiText('Nachunternehmer-Arbeitszeit'), 0, 0, 0, 0, 0],
-                ['Gesamt', 0, 0, 0, 0, 0],
+                ["Produkte", 0, 0, 0, 0, 0],
+                ["Sonderposten", 0, 0, 0, 0, 0],
+                ["Lieferscheine", 0, 0, 0, 0, 0],
+                ["Werkzeuge", 0, 0, 0, 0, 0],
+                [uiText("Arbeitszeit"), 0, 0, 0, 0, 0],
+                [uiText("Nachunternehmer-Arbeitszeit"), 0, 0, 0, 0, 0],
+                ["Gesamt", 0, 0, 0, 0, 0],
               ],
             );
 
-            const sortedProductsForExport = [...costs.products].sort((left, right) => {
-              const leftProduct = productMap.get(left.productId);
-              const rightProduct = productMap.get(right.productId);
+            const sortedProductsForExport = [...costs.products].sort(
+              (left, right) => {
+                const leftProduct = productMap.get(left.productId);
+                const rightProduct = productMap.get(right.productId);
 
-              const leftNumber = `${leftProduct?.customId ?? ''}`.toLowerCase();
-              const rightNumber = `${rightProduct?.customId ?? ''}`.toLowerCase();
-              const numberDiff = leftNumber.localeCompare(rightNumber, 'de');
-              if (numberDiff !== 0) return numberDiff;
+                const leftNumber =
+                  `${leftProduct?.customId ?? ""}`.toLowerCase();
+                const rightNumber =
+                  `${rightProduct?.customId ?? ""}`.toLowerCase();
+                const numberDiff = leftNumber.localeCompare(rightNumber, "de");
+                if (numberDiff !== 0) return numberDiff;
 
-              const leftDate = left.priceRecord?.timestamp ? new Date(left.priceRecord.timestamp).getTime() : 0;
-              const rightDate = right.priceRecord?.timestamp ? new Date(right.priceRecord.timestamp).getTime() : 0;
-              if (leftDate !== rightDate) return leftDate - rightDate;
+                const leftDate = left.priceRecord?.timestamp
+                  ? new Date(left.priceRecord.timestamp).getTime()
+                  : 0;
+                const rightDate = right.priceRecord?.timestamp
+                  ? new Date(right.priceRecord.timestamp).getTime()
+                  : 0;
+                if (leftDate !== rightDate) return leftDate - rightDate;
 
-              const leftTitle = `${leftProduct ? productTitle(leftProduct) : ''}`.toLowerCase();
-              const rightTitle = `${rightProduct ? productTitle(rightProduct) : ''}`.toLowerCase();
-              return leftTitle.localeCompare(rightTitle, 'de');
-            });
+                const leftTitle =
+                  `${leftProduct ? productTitle(leftProduct) : ""}`.toLowerCase();
+                const rightTitle =
+                  `${rightProduct ? productTitle(rightProduct) : ""}`.toLowerCase();
+                return leftTitle.localeCompare(rightTitle, "de");
+              },
+            );
 
-            const productRows = sortedProductsForExport.map(record => {
+            const productRows = sortedProductsForExport.map((record) => {
               const product = productMap.get(record.productId);
               const baseQuantity = Number(record.quantity ?? 0);
-              const [amount, unit] = product ? upmatchUnit(product, baseQuantity) : [baseQuantity, ''];
+              const [amount, unit] = product
+                ? upmatchUnit(product, baseQuantity)
+                : [baseQuantity, ""];
               const totalCost = toNumber(record.totalCost);
-              const baseUnit = product?.baseUnit ?? '';
+              const baseUnit = product?.baseUnit ?? "";
               const baseText = formatBaseQuantity(baseQuantity, baseUnit, unit);
-              const avgUnitPrice = baseQuantity > 0 && totalCost != null && hasNumberData(totalCost)
-                ? totalCost / baseQuantity
-                : null;
+              const avgUnitPrice =
+                baseQuantity > 0 &&
+                totalCost != null &&
+                hasNumberData(totalCost)
+                  ? totalCost / baseQuantity
+                  : null;
               return [
-                product ? `${product.customId} ${productTitle(product)}` : 'Unbekannt',
+                product
+                  ? `${product.customId} ${productTitle(product)}`
+                  : "Unbekannt",
                 formatProductAmount(amount, unit),
                 baseText,
                 avgUnitPrice,
@@ -1018,9 +1106,15 @@ export default function ProjectDetailCosts() {
             });
             let productsTable: TableMeta | null = null;
             if (productRows.length) {
-              addSectionTitle('Produkte');
+              addSectionTitle("Produkte");
               productsTable = addTable(
-                ['Bezeichnung', 'Menge', 'Basismenge', 'mittlerer EP', uiText('Kosten')],
+                [
+                  "Bezeichnung",
+                  "Menge",
+                  "Basismenge",
+                  "mittlerer EP",
+                  uiText("Kosten"),
+                ],
                 productRows,
               );
             }
@@ -1033,19 +1127,29 @@ export default function ProjectDetailCosts() {
               }
             }
 
-            const specialRows = costs.specialRecords.map(record => [
-              record.name,
-              Number(record.amount ?? 0),
-              record.unit,
-              toNumber(record.pricePerUnit),
-              toNumber(record.totalCost),
-              `#${record.noteAutoId}`,
-            ] as Array<string | number | Date | null>);
+            const specialRows = costs.specialRecords.map(
+              (record) =>
+                [
+                  record.name,
+                  Number(record.amount ?? 0),
+                  record.unit,
+                  toNumber(record.pricePerUnit),
+                  toNumber(record.totalCost),
+                  `#${record.noteAutoId}`,
+                ] as Array<string | number | Date | null>,
+            );
             let specialTable: TableMeta | null = null;
             if (specialRows.length) {
-              addSectionTitle('Sonderposten');
+              addSectionTitle("Sonderposten");
               specialTable = addTable(
-                ['Bezeichnung', 'Menge', 'Einheit', 'pro Einheit', 'Gesamt', uiText('Lieferschein')],
+                [
+                  "Bezeichnung",
+                  "Menge",
+                  "Einheit",
+                  "pro Einheit",
+                  "Gesamt",
+                  uiText("Lieferschein"),
+                ],
                 specialRows,
               );
             }
@@ -1057,23 +1161,29 @@ export default function ProjectDetailCosts() {
                 ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
 
                 const totalCell = ws.getCell(row, 5);
-                totalCell.value = { formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 2)}*${cellRef(row, 4)})` };
+                totalCell.value = {
+                  formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 2)}*${cellRef(row, 4)})`,
+                };
                 totalCell.numFmt = CURRENCY_NUM_FMT;
               }
             }
 
-            const sortedToolTrackingsForExport = [...costs.toolTrackings]
-              .sort((left, right) => left.startedAt.getTime() - right.startedAt.getTime());
+            const sortedToolTrackingsForExport = [...costs.toolTrackings].sort(
+              (left, right) =>
+                left.startedAt.getTime() - right.startedAt.getTime(),
+            );
 
-            const toolRows = sortedToolTrackingsForExport.map(record => {
+            const toolRows = sortedToolTrackingsForExport.map((record) => {
               const tool = toolMap.get(record.toolId);
 
               let start = startOfDay(record.startedAt);
               let end = endOfDay(record.endedAt || new Date());
-              const days = Math.ceil((end.getTime() - start.getTime()) / (24 * 3600 * 1000));
+              const days = Math.ceil(
+                (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
+              );
 
               return [
-                tool ? `${tool.customId} ${toolTitle(tool)}` : 'Unbekannt',
+                tool ? `${tool.customId} ${toolTitle(tool)}` : "Unbekannt",
                 start,
                 record.endedAt ? startOfDay(record.endedAt) : null,
                 Number(days),
@@ -1083,9 +1193,16 @@ export default function ProjectDetailCosts() {
             });
             let toolsTable: TableMeta | null = null;
             if (toolRows.length) {
-              addSectionTitle('Werkzeuge');
+              addSectionTitle("Werkzeuge");
               toolsTable = addTable(
-                [uiText('Werkzeug'), uiText('Von'), uiText('Bis'), 'Tage', 'pro Tag', 'Gesamt'],
+                [
+                  uiText("Werkzeug"),
+                  uiText("Von"),
+                  uiText("Bis"),
+                  "Tage",
+                  "pro Tag",
+                  "Gesamt",
+                ],
                 toolRows,
               );
             }
@@ -1099,48 +1216,71 @@ export default function ProjectDetailCosts() {
                 ws.getCell(row, 4).value = {
                   formula: `IF(${cellRef(row, 2)}="",0,MAX(IF(${cellRef(row, 3)}="",TODAY(),${cellRef(row, 3)})-${cellRef(row, 2)}+1,0))`,
                 };
-                ws.getCell(row, 4).numFmt = '0';
+                ws.getCell(row, 4).numFmt = "0";
 
                 ws.getCell(row, 5).numFmt = CURRENCY_NUM_FMT;
 
                 const totalCell = ws.getCell(row, 6);
-                totalCell.value = { formula: `IF(${cellRef(row, 5)}="",0,${cellRef(row, 4)}*${cellRef(row, 5)})` };
+                totalCell.value = {
+                  formula: `IF(${cellRef(row, 5)}="",0,${cellRef(row, 4)}*${cellRef(row, 5)})`,
+                };
                 totalCell.numFmt = CURRENCY_NUM_FMT;
               }
             }
 
-            const sortWorkHoursForExport = (records: typeof regularWorkHours) => [...records].sort((left, right) => {
-              const leftUser = left.userId ? userMap.get(left.userId) : null;
-              const rightUser = right.userId ? userMap.get(right.userId) : null;
+            const sortWorkHoursForExport = (records: typeof regularWorkHours) =>
+              [...records].sort((left, right) => {
+                const leftUser = left.userId ? userMap.get(left.userId) : null;
+                const rightUser = right.userId
+                  ? userMap.get(right.userId)
+                  : null;
 
-              const leftLastName = `${leftUser?.lastName ?? ''}`.toLowerCase();
-              const rightLastName = `${rightUser?.lastName ?? ''}`.toLowerCase();
-              const lastNameDiff = leftLastName.localeCompare(rightLastName, 'de');
-              if (lastNameDiff !== 0) return lastNameDiff;
+                const leftLastName =
+                  `${leftUser?.lastName ?? ""}`.toLowerCase();
+                const rightLastName =
+                  `${rightUser?.lastName ?? ""}`.toLowerCase();
+                const lastNameDiff = leftLastName.localeCompare(
+                  rightLastName,
+                  "de",
+                );
+                if (lastNameDiff !== 0) return lastNameDiff;
 
-              const leftFirstName = `${leftUser?.firstName ?? ''}`.toLowerCase();
-              const rightFirstName = `${rightUser?.firstName ?? ''}`.toLowerCase();
-              const firstNameDiff = leftFirstName.localeCompare(rightFirstName, 'de');
-              if (firstNameDiff !== 0) return firstNameDiff;
+                const leftFirstName =
+                  `${leftUser?.firstName ?? ""}`.toLowerCase();
+                const rightFirstName =
+                  `${rightUser?.firstName ?? ""}`.toLowerCase();
+                const firstNameDiff = leftFirstName.localeCompare(
+                  rightFirstName,
+                  "de",
+                );
+                if (firstNameDiff !== 0) return firstNameDiff;
 
-              return left.day.getTime() - right.day.getTime();
-            });
+                return left.day.getTime() - right.day.getTime();
+              });
 
-            const workHourRows = sortWorkHoursForExport(regularWorkHours).map(record => {
-              const user = record.userId ? userMap.get(record.userId) : null;
-              return [
-                user ? userFullName(user) : 'Unbekannt',
-                record.day ? startOfDay(record.day) : null,
-                Number(record.hours ?? 0),
-                toNumber(record.costPerHour),
-                toNumber(record.totalCost),
-              ] as Array<string | number | Date | null>;
-            });
+            const workHourRows = sortWorkHoursForExport(regularWorkHours).map(
+              (record) => {
+                const user = record.userId ? userMap.get(record.userId) : null;
+                return [
+                  user ? userFullName(user) : "Unbekannt",
+                  record.day ? startOfDay(record.day) : null,
+                  Number(record.hours ?? 0),
+                  toNumber(record.costPerHour),
+                  toNumber(record.totalCost),
+                ] as Array<string | number | Date | null>;
+              },
+            );
             let workHoursTable: TableMeta | null = null;
             if (workHourRows.length) {
-              addSectionTitle(uiText('Arbeitszeit'));
+              addSectionTitle(uiText("Arbeitszeit"));
               workHoursTable = addTable(
-                ['Mitarbeiter', 'Tag', uiText('Stunden'), 'pro Stunde', uiText('Kosten')],
+                [
+                  "Mitarbeiter",
+                  "Tag",
+                  uiText("Stunden"),
+                  "pro Stunde",
+                  uiText("Kosten"),
+                ],
                 workHourRows,
               );
             }
@@ -1153,15 +1293,19 @@ export default function ProjectDetailCosts() {
                 ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
 
                 const totalCell = ws.getCell(row, 5);
-                totalCell.value = { formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})` };
+                totalCell.value = {
+                  formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})`,
+                };
                 totalCell.numFmt = CURRENCY_NUM_FMT;
               }
             }
 
-            const subcontractorWorkHourRows = sortWorkHoursForExport(subcontractorWorkHours).map(record => {
+            const subcontractorWorkHourRows = sortWorkHoursForExport(
+              subcontractorWorkHours,
+            ).map((record) => {
               const user = record.userId ? userMap.get(record.userId) : null;
               return [
-                user ? userFullName(user) : 'Unbekannt',
+                user ? userFullName(user) : "Unbekannt",
                 record.day ? startOfDay(record.day) : null,
                 Number(record.hours ?? 0),
                 toNumber(record.costPerHour),
@@ -1170,9 +1314,15 @@ export default function ProjectDetailCosts() {
             });
             let subcontractorWorkHoursTable: TableMeta | null = null;
             if (subcontractorWorkHourRows.length) {
-              addSectionTitle(uiText('Nachunternehmer-Arbeitszeit'));
+              addSectionTitle(uiText("Nachunternehmer-Arbeitszeit"));
               subcontractorWorkHoursTable = addTable(
-                ['Mitarbeiter', 'Tag', uiText('Stunden'), 'pro Stunde', uiText('Kosten')],
+                [
+                  "Mitarbeiter",
+                  "Tag",
+                  uiText("Stunden"),
+                  "pro Stunde",
+                  uiText("Kosten"),
+                ],
                 subcontractorWorkHourRows,
               );
             }
@@ -1185,26 +1335,31 @@ export default function ProjectDetailCosts() {
                 ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
 
                 const totalCell = ws.getCell(row, 5);
-                totalCell.value = { formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})` };
+                totalCell.value = {
+                  formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})`,
+                };
                 totalCell.numFmt = CURRENCY_NUM_FMT;
               }
             }
 
-            const deliveryNoteRows = costs.deliveryNotes.map(record => [
-              `#${record.autoId}`,
-              toNumber(record.totalCost),
-            ] as Array<string | number | Date | null>);
+            const deliveryNoteRows = costs.deliveryNotes.map(
+              (record) =>
+                [`#${record.autoId}`, toNumber(record.totalCost)] as Array<
+                  string | number | Date | null
+                >,
+            );
             let deliveryNotesTable: TableMeta | null = null;
             if (deliveryNoteRows.length) {
-              addSectionTitle('Lieferscheine');
+              addSectionTitle("Lieferscheine");
               deliveryNotesTable = addTable(
-                [uiText('Lieferschein'), uiText('Kosten')],
+                [uiText("Lieferschein"), uiText("Kosten")],
                 deliveryNoteRows,
               );
             }
             if (deliveryNotesTable) {
               for (let i = 0; i < deliveryNotesTable.rowCount; i++) {
-                ws.getCell(deliveryNotesTable.firstDataRow + i, 2).numFmt = CURRENCY_NUM_FMT;
+                ws.getCell(deliveryNotesTable.firstDataRow + i, 2).numFmt =
+                  CURRENCY_NUM_FMT;
               }
             }
 
@@ -1219,54 +1374,78 @@ export default function ProjectDetailCosts() {
               const subcontractorWorkHoursRow = totalsStart + 5;
               const totalRow = totalsStart + 6;
 
-              const fgkOverheadLiteral = Number(commonCosts.fgk.overheadCost ?? 0);
-              const mgkOverheadLiteral = Number(commonCosts.mgk.overheadCost ?? 0);
-              const ngkOverheadLiteral = Number(commonCosts.ngk.overheadCost ?? 0);
+              const fgkOverheadLiteral = Number(
+                commonCosts.fgk.overheadCost ?? 0,
+              );
+              const mgkOverheadLiteral = Number(
+                commonCosts.mgk.overheadCost ?? 0,
+              );
+              const ngkOverheadLiteral = Number(
+                commonCosts.ngk.overheadCost ?? 0,
+              );
 
-              ws.getCell(productsRow, 2).value = { formula: sumFormula(productsTable, 5) };
-              ws.getCell(productsRow, 3).value = { formula: '0' };
-              ws.getCell(productsRow, 4).value = { formula: '0' };
-              ws.getCell(productsRow, 5).value = { formula: '0' };
+              ws.getCell(productsRow, 2).value = {
+                formula: sumFormula(productsTable, 5),
+              };
+              ws.getCell(productsRow, 3).value = { formula: "0" };
+              ws.getCell(productsRow, 4).value = { formula: "0" };
+              ws.getCell(productsRow, 5).value = { formula: "0" };
               ws.getCell(productsRow, 6).value = {
                 formula: `${cellRef(productsRow, 2)}+${cellRef(productsRow, 3)}+${cellRef(productsRow, 4)}+${cellRef(productsRow, 5)}`,
               };
 
-              ws.getCell(specialRow, 2).value = { formula: sumFormula(specialTable, 5) };
-              ws.getCell(specialRow, 3).value = { formula: '0' };
-              ws.getCell(specialRow, 4).value = { formula: '0' };
-              ws.getCell(specialRow, 5).value = { formula: '0' };
+              ws.getCell(specialRow, 2).value = {
+                formula: sumFormula(specialTable, 5),
+              };
+              ws.getCell(specialRow, 3).value = { formula: "0" };
+              ws.getCell(specialRow, 4).value = { formula: "0" };
+              ws.getCell(specialRow, 5).value = { formula: "0" };
               ws.getCell(specialRow, 6).value = {
                 formula: `${cellRef(specialRow, 2)}+${cellRef(specialRow, 3)}+${cellRef(specialRow, 4)}+${cellRef(specialRow, 5)}`,
               };
 
-              ws.getCell(deliveryRow, 2).value = { formula: sumFormula(deliveryNotesTable, 2) };
-              ws.getCell(deliveryRow, 3).value = { formula: '0' };
-              ws.getCell(deliveryRow, 4).value = { formula: `${mgkOverheadLiteral}` };
-              ws.getCell(deliveryRow, 5).value = { formula: '0' };
+              ws.getCell(deliveryRow, 2).value = {
+                formula: sumFormula(deliveryNotesTable, 2),
+              };
+              ws.getCell(deliveryRow, 3).value = { formula: "0" };
+              ws.getCell(deliveryRow, 4).value = {
+                formula: `${mgkOverheadLiteral}`,
+              };
+              ws.getCell(deliveryRow, 5).value = { formula: "0" };
               ws.getCell(deliveryRow, 6).value = {
                 formula: `${cellRef(deliveryRow, 2)}+${cellRef(deliveryRow, 3)}+${cellRef(deliveryRow, 4)}+${cellRef(deliveryRow, 5)}`,
               };
 
-              ws.getCell(toolsRow, 2).value = { formula: sumFormula(toolsTable, 6) };
-              ws.getCell(toolsRow, 3).value = { formula: '0' };
-              ws.getCell(toolsRow, 4).value = { formula: '0' };
-              ws.getCell(toolsRow, 5).value = { formula: '0' };
+              ws.getCell(toolsRow, 2).value = {
+                formula: sumFormula(toolsTable, 6),
+              };
+              ws.getCell(toolsRow, 3).value = { formula: "0" };
+              ws.getCell(toolsRow, 4).value = { formula: "0" };
+              ws.getCell(toolsRow, 5).value = { formula: "0" };
               ws.getCell(toolsRow, 6).value = {
                 formula: `${cellRef(toolsRow, 2)}+${cellRef(toolsRow, 3)}+${cellRef(toolsRow, 4)}+${cellRef(toolsRow, 5)}`,
               };
 
-              ws.getCell(workHoursRow, 2).value = { formula: sumFormula(workHoursTable, 5) };
-              ws.getCell(workHoursRow, 3).value = { formula: `${fgkOverheadLiteral}` };
-              ws.getCell(workHoursRow, 4).value = { formula: '0' };
-              ws.getCell(workHoursRow, 5).value = { formula: '0' };
+              ws.getCell(workHoursRow, 2).value = {
+                formula: sumFormula(workHoursTable, 5),
+              };
+              ws.getCell(workHoursRow, 3).value = {
+                formula: `${fgkOverheadLiteral}`,
+              };
+              ws.getCell(workHoursRow, 4).value = { formula: "0" };
+              ws.getCell(workHoursRow, 5).value = { formula: "0" };
               ws.getCell(workHoursRow, 6).value = {
                 formula: `${cellRef(workHoursRow, 2)}+${cellRef(workHoursRow, 3)}+${cellRef(workHoursRow, 4)}+${cellRef(workHoursRow, 5)}`,
               };
 
-              ws.getCell(subcontractorWorkHoursRow, 2).value = { formula: sumFormula(subcontractorWorkHoursTable, 5) };
-              ws.getCell(subcontractorWorkHoursRow, 3).value = { formula: '0' };
-              ws.getCell(subcontractorWorkHoursRow, 4).value = { formula: '0' };
-              ws.getCell(subcontractorWorkHoursRow, 5).value = { formula: `${ngkOverheadLiteral}` };
+              ws.getCell(subcontractorWorkHoursRow, 2).value = {
+                formula: sumFormula(subcontractorWorkHoursTable, 5),
+              };
+              ws.getCell(subcontractorWorkHoursRow, 3).value = { formula: "0" };
+              ws.getCell(subcontractorWorkHoursRow, 4).value = { formula: "0" };
+              ws.getCell(subcontractorWorkHoursRow, 5).value = {
+                formula: `${ngkOverheadLiteral}`,
+              };
               ws.getCell(subcontractorWorkHoursRow, 6).value = {
                 formula: `${cellRef(subcontractorWorkHoursRow, 2)}+${cellRef(subcontractorWorkHoursRow, 3)}+${cellRef(subcontractorWorkHoursRow, 4)}+${cellRef(subcontractorWorkHoursRow, 5)}`,
               };
@@ -1305,14 +1484,23 @@ export default function ProjectDetailCosts() {
             }
 
             if (hasInvoices) {
-              addSectionTitle('Deckung');
-              const diff = Number(invoicesTotal ?? 0) - Number(costs.totalCosts.overall ?? 0);
-              const balanceRows: Array<Array<string | number | Date | null>> = [[
-                'Gewinn/Verlust',
-                diff,
-                hasNumberData(invoicesTotal) ? diff / Math.abs(invoicesTotal) : null,
-              ]];
-              const balanceTable = addTable(['Bereich', 'Betrag (absolut)', 'Relativ'], balanceRows);
+              addSectionTitle("Deckung");
+              const diff =
+                Number(invoicesTotal ?? 0) -
+                Number(costs.totalCosts.overall ?? 0);
+              const balanceRows: Array<Array<string | number | Date | null>> = [
+                [
+                  "Gewinn/Verlust",
+                  diff,
+                  hasNumberData(invoicesTotal)
+                    ? diff / Math.abs(invoicesTotal)
+                    : null,
+                ],
+              ];
+              const balanceTable = addTable(
+                ["Bereich", "Betrag (absolut)", "Relativ"],
+                balanceRows,
+              );
               if (balanceTable) {
                 for (let i = 0; i < balanceTable.rowCount; i++) {
                   const row = balanceTable.firstDataRow + i;
@@ -1324,12 +1512,18 @@ export default function ProjectDetailCosts() {
                 }
               }
             } else {
-              addSectionTitle('Hinweis');
+              addSectionTitle("Hinweis");
               const row = cursor;
               ws.mergeCells(row, 1, row, 6);
               ws.getCell(row, 1).value = MISSING_INVOICE_NOTICE;
-              ws.getCell(row, 1).font = { color: { argb: 'FF6B7280' }, italic: true };
-              ws.getCell(row, 1).alignment = { wrapText: true, vertical: 'top' };
+              ws.getCell(row, 1).font = {
+                color: { argb: "FF6B7280" },
+                italic: true,
+              };
+              ws.getCell(row, 1).alignment = {
+                wrapText: true,
+                vertical: "top",
+              };
               cursor += 2;
             }
 
@@ -1342,293 +1536,437 @@ export default function ProjectDetailCosts() {
               { width: 14 },
             ];
 
-            const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
+            const bytes =
+              (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
             const blob = new Blob([bytes] as any, {
               type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
-            const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
-            await openExcelExport(modals, blob, uiText(`Projektkosten-${safeTitle}.xlsx`, `Project-costs-${safeTitle}.xlsx`));
-        }}
-      >{uiText("Excel")}</MyButton>
-    </div>
+            const safeTitle = project.title.replace(/[^\w\-]+/g, "-");
+            await openExcelExport(
+              modals,
+              blob,
+              uiText(
+                `Projektkosten-${safeTitle}.xlsx`,
+                `Project-costs-${safeTitle}.xlsx`,
+              ),
+            );
+          }}
+        >
+          {uiText("Excel")}
+        </MyButton>
+      </div>
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
-    </MyCallout>}
+      {!!pdfExportErr && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
+        </MyCallout>
+      )}
 
-    <AttrList>
-      <AttrList.Attr name="Gesamtkosten" value={formatCurrency(costs.totalCosts.overall)} />
-      <AttrList.Attr
-        name="Angebotssummen"
-        value={formatCurrency(offersTotal)}
-        third={uiText(`${offers.length} ${offers.length === 1 ? 'Eintrag' : 'Einträge'}`, `${offers.length} ${offers.length === 1 ? 'entry' : 'entries'}`)}
-      />
-      <AttrList.Attr
-        name="Rechnungssummen"
-        value={formatCurrency(invoicesTotal)}
-        third={uiText(`${invoices.length} ${invoices.length === 1 ? 'Eintrag' : 'Einträge'}`, `${invoices.length} ${invoices.length === 1 ? 'entry' : 'entries'}`)}
-      />
-      {hasInvoices && <AttrList.Attr
-        name="Gewinn/Verlust"
-        value={<GainOrLossText value={gainOrLoss} invoicesTotal={invoicesTotal} />}
-      />}
-      {!hasInvoices && <AttrList.Attr
-        name="Hinweis"
-        value={MISSING_INVOICE_NOTICE}
-      />}
-    </AttrList>
-
-    {hasCommonCosts && <MyExpandable title={`Gemeinkosten (${formatCurrency(commonCostsOverhead)})`}>
       <AttrList>
         <AttrList.Attr
-          name="LKG"
-          value={formatCurrency(commonCosts.fgk.overheadCost)}
-          third={`Basis: ${formatCurrency(commonCosts.fgk.baseCost)}`}
+          name="Gesamtkosten"
+          value={formatCurrency(costs.totalCosts.overall)}
         />
         <AttrList.Attr
-          name="MGK"
-          value={formatCurrency(commonCosts.mgk.overheadCost)}
-          third={`Basis: ${formatCurrency(commonCosts.mgk.baseCost)}`}
+          name="Angebotssummen"
+          value={formatCurrency(offersTotal)}
+          third={uiText(
+            `${offers.length} ${offers.length === 1 ? "Eintrag" : "Einträge"}`,
+            `${offers.length} ${offers.length === 1 ? "entry" : "entries"}`,
+          )}
         />
         <AttrList.Attr
-          name="NUGK"
-          value={formatCurrency(commonCosts.ngk.overheadCost)}
-          third={`Basis: ${formatCurrency(commonCosts.ngk.baseCost)}`}
+          name="Rechnungssummen"
+          value={formatCurrency(invoicesTotal)}
+          third={uiText(
+            `${invoices.length} ${invoices.length === 1 ? "Eintrag" : "Einträge"}`,
+            `${invoices.length} ${invoices.length === 1 ? "entry" : "entries"}`,
+          )}
         />
+        {hasInvoices && (
+          <AttrList.Attr
+            name="Gewinn/Verlust"
+            value={
+              <GainOrLossText
+                value={gainOrLoss}
+                invoicesTotal={invoicesTotal}
+              />
+            }
+          />
+        )}
+        {!hasInvoices && (
+          <AttrList.Attr name="Hinweis" value={MISSING_INVOICE_NOTICE} />
+        )}
       </AttrList>
-    </MyExpandable>}
 
-    {!!costs.products?.length && <MyExpandable title={`Produkte (${formatCurrency(costs.totalCosts.products)})`}>
-      <MyTable
-        className="th-25rem"
-        rows={costs.products.map(p => ({ ...p, id: p.productId }))}
-        columns={[
-          {
-            label: uiText("Bezeichnung"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              if (!product) return 'Unbekannt';
-              return <MyLink to={`/products/${product.id}`}>{productTitle(product)}</MyLink>;
-            },
-          },
-          {
-            label: uiText("Menge"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              if (!product) return `${formatNumber(row.quantity)} ???`;
-              const [amount, unit] = upmatchUnit(product, row.quantity);
-              return formatProductAmount(amount, unit);
-            },
-          },
-          {
-            label: uiText("Basismenge"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              if (!product) return formatNumber(row.quantity);
-              const [, unit] = upmatchUnit(product, row.quantity);
-              return formatBaseQuantity(Number(row.quantity ?? 0), product.baseUnit ?? '', unit);
-            },
-          },
-          {
-            label: uiText("mittlerer EP"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              const quantity = Number(row.quantity ?? 0);
-              if (!product || quantity <= 0 || !hasNumberData(row.totalCost)) return '-';
-              return `${formatCurrency(Number(row.totalCost ?? 0) / quantity)}/${product.baseUnit}`;
-            },
-          },
-          {
-            label: uiText("Kosten"),
-            render: row => !!row.totalCost && formatCurrency(row.totalCost),
-            sortKey: row => row.totalCost,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+      <div className="project-cost-sections grid gap-3">
+      {hasCommonCosts && (
+        <MyExpandable
+          title={`Gemeinkosten (${formatCurrency(commonCostsOverhead)})`}
+        >
+          <AttrList>
+            <AttrList.Attr
+              name="LKG"
+              value={formatCurrency(commonCosts.fgk.overheadCost)}
+              third={`Basis: ${formatCurrency(commonCosts.fgk.baseCost)}`}
+            />
+            <AttrList.Attr
+              name="MGK"
+              value={formatCurrency(commonCosts.mgk.overheadCost)}
+              third={`Basis: ${formatCurrency(commonCosts.mgk.baseCost)}`}
+            />
+            <AttrList.Attr
+              name="NUGK"
+              value={formatCurrency(commonCosts.ngk.overheadCost)}
+              third={`Basis: ${formatCurrency(commonCosts.ngk.baseCost)}`}
+            />
+          </AttrList>
+        </MyExpandable>
+      )}
 
-    {!!costs.specialRecords?.length && <MyExpandable title={`Sonderposten (${formatCurrency(costs.totalCosts.specialRecords)})`}>
-      <MyTable
-        className="th-25rem"
-        rows={costs.specialRecords}
-        columns={[
-          {
-            label: uiText("Bezeichnung"),
-            render: row => row.name,
-            sortKey: row => row.name.toLowerCase(),
-          },
-          {
-            label: uiText("Menge"),
-            render: row => `${formatNumber(row.amount)} ${row.unit}`,
-          },
-          {
-            label: uiText("Preis pro Einheit"),
-            render: row => !!row.pricePerUnit && formatCurrency(row.pricePerUnit),
-            sortKey: row => row.pricePerUnit ?? 0,
-          },
-          {
-            label: uiText("Kosten"),
-            render: row => !!row.totalCost && formatCurrency(row.totalCost),
-            sortKey: row => row.totalCost,
-          },
-          {
-            label: uiText("Lieferschein"),
-            render: row => <MyLink to={`/products/deliveryNotes/${row.noteId}`}>{`#${row.noteAutoId}`}</MyLink>,
-            sortKey: row => row.noteAutoId,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+      {!!costs.products?.length && (
+        <MyExpandable
+          title={`Produkte (${formatCurrency(costs.totalCosts.products)})`}
+        >
+          <MyTable
+            className="th-25rem"
+            rows={costs.products.map((p) => ({ ...p, id: p.productId }))}
+            columns={[
+              {
+                label: uiText("Bezeichnung"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!product) return "Unbekannt";
+                  return (
+                    <MyLink to={`/products/${product.id}`}>
+                      {productTitle(product)}
+                    </MyLink>
+                  );
+                },
+              },
+              {
+                label: uiText("Menge"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!product) return `${formatNumber(row.quantity)} ???`;
+                  const [amount, unit] = upmatchUnit(product, row.quantity);
+                  return formatProductAmount(amount, unit);
+                },
+              },
+              {
+                label: uiText("Basismenge"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!product) return formatNumber(row.quantity);
+                  const [, unit] = upmatchUnit(product, row.quantity);
+                  return formatBaseQuantity(
+                    Number(row.quantity ?? 0),
+                    product.baseUnit ?? "",
+                    unit,
+                  );
+                },
+              },
+              {
+                label: uiText("mittlerer EP"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  const quantity = Number(row.quantity ?? 0);
+                  if (
+                    !product ||
+                    quantity <= 0 ||
+                    !hasNumberData(row.totalCost)
+                  )
+                    return "-";
+                  return `${formatCurrency(Number(row.totalCost ?? 0) / quantity)}/${product.baseUnit}`;
+                },
+              },
+              {
+                label: uiText("Kosten"),
+                render: (row) =>
+                  !!row.totalCost && formatCurrency(row.totalCost),
+                sortKey: (row) => row.totalCost,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
 
-    {!!costs.toolTrackings?.length && <MyExpandable title={`Werkzeuge (${formatCurrency(costs.totalCosts.toolTrackings)})`}>
-      <MyTable
-        className="th-25rem"
-        rows={costs.toolTrackings}
-        columns={[
-          {
-            label: uiText("Werkzeug"),
-            render: async row => {
-              const [tool] = await client.query('tools.get', { id: row.toolId }, { strategy: 'cache-first' });
-              if (!tool) return 'Unbekannt';
-              return <MyLink to={`/tools/${tool.id}`}>{tool.customId} {toolTitle(tool)}</MyLink>;
-            },
-          },
-          {
-            label: uiText("Von"),
-            render: row => formatDate(row.startedAt),
-            sortKey: row => row.startedAt.getTime(),
-          },
-          {
-            label: uiText("Bis"),
-            render: row => row.endedAt ? formatDate(row.endedAt) : 'offen',
-            sortKey: row => (row.endedAt?.getTime() ?? Number.MAX_SAFE_INTEGER),
-          },
-          {
-            label: uiText("Tage"),
-            render: row => {
-              let start = startOfDay(row.startedAt);
-              let end = endOfDay(row.endedAt || new Date());
-              const days = Math.ceil((end.getTime() - start.getTime()) / (24 * 3600 * 1000));
-              return days.toString();
-            },
-            sortKey: row => {
-              let start = startOfDay(row.startedAt);
-              let end = endOfDay(row.endedAt || new Date());
-              return Math.ceil((end.getTime() - start.getTime()) / (24 * 3600 * 1000));
-            },
-          },
-          // {
-          //   label: 'Kosten pro Tag',
-          //   render: row => formatCurrency(row.toolUsageCostPerDay!),
-          //   sortKey: row => row.toolUsageCostPerDay!,
-          // },
-          {
-            label: uiText("Kosten"),
-            render: row => !!row.totalCost && formatCurrency(row.totalCost),
-            sortKey: row => row.totalCost,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+      {!!costs.specialRecords?.length && (
+        <MyExpandable
+          title={`Sonderposten (${formatCurrency(costs.totalCosts.specialRecords)})`}
+        >
+          <MyTable
+            className="th-25rem"
+            rows={costs.specialRecords}
+            columns={[
+              {
+                label: uiText("Bezeichnung"),
+                render: (row) => row.name,
+                sortKey: (row) => row.name.toLowerCase(),
+              },
+              {
+                label: uiText("Menge"),
+                render: (row) => `${formatNumber(row.amount)} ${row.unit}`,
+              },
+              {
+                label: uiText("Preis pro Einheit"),
+                render: (row) =>
+                  !!row.pricePerUnit && formatCurrency(row.pricePerUnit),
+                sortKey: (row) => row.pricePerUnit ?? 0,
+              },
+              {
+                label: uiText("Kosten"),
+                render: (row) =>
+                  !!row.totalCost && formatCurrency(row.totalCost),
+                sortKey: (row) => row.totalCost,
+              },
+              {
+                label: uiText("Lieferschein"),
+                render: (row) => (
+                  <MyLink
+                    to={`/products/deliveryNotes/${row.noteId}`}
+                  >{`#${row.noteAutoId}`}</MyLink>
+                ),
+                sortKey: (row) => row.noteAutoId,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
 
-    {!!regularWorkHours.length && <MyExpandable title={uiText(`Arbeitszeit (${formatCurrency(workHoursTotal)})`, `Working time (${formatCurrency(workHoursTotal)})`)}>
-      <MyTable
-        className="th-25rem"
-        rows={regularWorkHours}
-        columns={[
-          {
-            label: uiText("Benutzer"),
-            render: async row => {
-              if (!row.userId) return 'Unbekannt';
-              const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
-              if (!user) return 'Unbekannt';
-              return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
-            },
-          },
-          {
-            label: uiText("Tag"),
-            render: row => formatDate(row.day),
-            sortKey: row => row.day.getTime(),
-          },
-          {
-            label: uiText("Stunden"),
-            render: row => formatNumber(row.hours),
-            sortKey: row => row.hours,
-          },
-          {
-            label: uiText("Kosten"),
-            render: row => !!row.totalCost && formatCurrency(row.totalCost),
-            sortKey: row => row.totalCost,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+      {!!costs.toolTrackings?.length && (
+        <MyExpandable
+          title={`Werkzeuge (${formatCurrency(costs.totalCosts.toolTrackings)})`}
+        >
+          <MyTable
+            className="th-25rem"
+            rows={costs.toolTrackings}
+            columns={[
+              {
+                label: uiText("Werkzeug"),
+                render: async (row) => {
+                  const [tool] = await client.query(
+                    "tools.get",
+                    { id: row.toolId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!tool) return "Unbekannt";
+                  return (
+                    <MyLink to={`/tools/${tool.id}`}>
+                      {tool.customId} {toolTitle(tool)}
+                    </MyLink>
+                  );
+                },
+              },
+              {
+                label: uiText("Von"),
+                render: (row) => formatDate(row.startedAt),
+                sortKey: (row) => row.startedAt.getTime(),
+              },
+              {
+                label: uiText("Bis"),
+                render: (row) =>
+                  row.endedAt ? formatDate(row.endedAt) : "offen",
+                sortKey: (row) =>
+                  row.endedAt?.getTime() ?? Number.MAX_SAFE_INTEGER,
+              },
+              {
+                label: uiText("Tage"),
+                render: (row) => {
+                  let start = startOfDay(row.startedAt);
+                  let end = endOfDay(row.endedAt || new Date());
+                  const days = Math.ceil(
+                    (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
+                  );
+                  return days.toString();
+                },
+                sortKey: (row) => {
+                  let start = startOfDay(row.startedAt);
+                  let end = endOfDay(row.endedAt || new Date());
+                  return Math.ceil(
+                    (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
+                  );
+                },
+              },
+              // {
+              //   label: 'Kosten pro Tag',
+              //   render: row => formatCurrency(row.toolUsageCostPerDay!),
+              //   sortKey: row => row.toolUsageCostPerDay!,
+              // },
+              {
+                label: uiText("Kosten"),
+                render: (row) =>
+                  !!row.totalCost && formatCurrency(row.totalCost),
+                sortKey: (row) => row.totalCost,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
 
-    {!!subcontractorWorkHours.length && <MyExpandable title={uiText(`Nachunternehmer-Arbeitszeit (${formatCurrency(subcontractorWorkHoursTotal)})`, `Subcontractor work (${formatCurrency(subcontractorWorkHoursTotal)})`)}>
-      <MyTable
-        className="th-25rem"
-        rows={subcontractorWorkHours}
-        columns={[
-          {
-            label: uiText("Benutzer"),
-            render: async row => {
-              if (!row.userId) return 'Unbekannt';
-              const [user] = await client.query('users.get', { id: row.userId }, { strategy: 'cache-first' });
-              if (!user) return 'Unbekannt';
-              return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>;
-            },
-          },
-          {
-            label: uiText("Tag"),
-            render: row => formatDate(row.day),
-            sortKey: row => row.day.getTime(),
-          },
-          {
-            label: uiText("Stunden"),
-            render: row => formatNumber(row.hours),
-            sortKey: row => row.hours,
-          },
-          {
-            label: uiText("Kosten"),
-            render: row => !!row.totalCost && formatCurrency(row.totalCost),
-            sortKey: row => row.totalCost,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+      {!!regularWorkHours.length && (
+        <MyExpandable
+          title={uiText(
+            `Arbeitszeit (${formatCurrency(workHoursTotal)})`,
+            `Working time (${formatCurrency(workHoursTotal)})`,
+          )}
+        >
+          <MyTable
+            className="th-25rem"
+            rows={regularWorkHours}
+            columns={[
+              {
+                label: uiText("Benutzer"),
+                render: async (row) => {
+                  if (!row.userId) return "Unbekannt";
+                  const [user] = await client.query(
+                    "users.get",
+                    { id: row.userId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!user) return "Unbekannt";
+                  return (
+                    <MyLink to={`/users/${user.id}`}>
+                      {userFullName(user)}
+                    </MyLink>
+                  );
+                },
+              },
+              {
+                label: uiText("Tag"),
+                render: (row) => formatDate(row.day),
+                sortKey: (row) => row.day.getTime(),
+              },
+              {
+                label: uiText("Stunden"),
+                render: (row) => formatNumber(row.hours),
+                sortKey: (row) => row.hours,
+              },
+              {
+                label: uiText("Kosten"),
+                render: (row) =>
+                  !!row.totalCost && formatCurrency(row.totalCost),
+                sortKey: (row) => row.totalCost,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
 
-    {!!costs.deliveryNotes?.length && <MyExpandable title={`Lieferscheine`}>
-      <MyTable
-        className="th-25rem"
-        rows={costs.deliveryNotes.map(e => ({ ...e, id: e.noteId }))}
-        columns={[
-          {
-            label: uiText("Produkt"),
-            render: row => <MyLink to={`/products/deliveryNotes/${row.id}`}>{uiText(`Lieferschein #${row.autoId}`, `Delivery note #${row.autoId}`)}</MyLink>,
-          },
-          {
-            label: uiText("Kosten"),
-            render: row => !!row.totalCost && formatCurrency(row.totalCost),
-            sortKey: row => row.totalCost,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+      {!!subcontractorWorkHours.length && (
+        <MyExpandable
+          title={uiText(
+            `Nachunternehmer-Arbeitszeit (${formatCurrency(subcontractorWorkHoursTotal)})`,
+            `Subcontractor work (${formatCurrency(subcontractorWorkHoursTotal)})`,
+          )}
+        >
+          <MyTable
+            className="th-25rem"
+            rows={subcontractorWorkHours}
+            columns={[
+              {
+                label: uiText("Benutzer"),
+                render: async (row) => {
+                  if (!row.userId) return "Unbekannt";
+                  const [user] = await client.query(
+                    "users.get",
+                    { id: row.userId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!user) return "Unbekannt";
+                  return (
+                    <MyLink to={`/users/${user.id}`}>
+                      {userFullName(user)}
+                    </MyLink>
+                  );
+                },
+              },
+              {
+                label: uiText("Tag"),
+                render: (row) => formatDate(row.day),
+                sortKey: (row) => row.day.getTime(),
+              },
+              {
+                label: uiText("Stunden"),
+                render: (row) => formatNumber(row.hours),
+                sortKey: (row) => row.hours,
+              },
+              {
+                label: uiText("Kosten"),
+                render: (row) =>
+                  !!row.totalCost && formatCurrency(row.totalCost),
+                sortKey: (row) => row.totalCost,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
 
-    {hasFinancialEntries && <div style={{ height: '1.5rem' }} />}
+      {!!costs.deliveryNotes?.length && (
+        <MyExpandable title={`Lieferscheine`}>
+          <MyTable
+            className="th-25rem"
+            rows={costs.deliveryNotes.map((e) => ({ ...e, id: e.noteId }))}
+            columns={[
+              {
+                label: uiText("Produkt"),
+                render: (row) => (
+                  <MyLink to={`/products/deliveryNotes/${row.id}`}>
+                    {uiText(
+                      `Lieferschein #${row.autoId}`,
+                      `Delivery note #${row.autoId}`,
+                    )}
+                  </MyLink>
+                ),
+              },
+              {
+                label: uiText("Kosten"),
+                render: (row) =>
+                  !!row.totalCost && formatCurrency(row.totalCost),
+                sortKey: (row) => row.totalCost,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
 
-    {!!offers.length && renderFinancialEntriesExpandable('Angebotssummen', offersTotal, offers)}
-    {!!invoices.length && renderFinancialEntriesExpandable('Rechnungssummen', invoicesTotal, invoices)}
-  </>;
+      {!!offers.length &&
+        renderFinancialEntriesExpandable("Angebotssummen", offersTotal, offers)}
+      {!!invoices.length &&
+        renderFinancialEntriesExpandable(
+          "Rechnungssummen",
+          invoicesTotal,
+          invoices,
+        )}
+      </div>
+    </>
+  );
 }

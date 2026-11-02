@@ -16,7 +16,7 @@ export default function SettingsShell() {
   const selectedIndex = Math.max(0, tabs.findIndex(tab => tab.path === path));
 
   return (
-    <div className="settings-page">
+    <div className="settings-page mx-auto w-full max-w-4xl space-y-6">
       <MyHeader title={t("settings.title")} />
 
       <Tabs
@@ -29,7 +29,9 @@ export default function SettingsShell() {
         }}
       >
         <TabList>
-          {tabs.map(tab => <Tab key={tab.path}>{tab.label}</Tab>)}
+          {tabs.map((tab) => (
+            <Tab key={tab.path}>{tab.label}</Tab>
+          ))}
         </TabList>
       </Tabs>
 

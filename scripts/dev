@@ -13,19 +13,23 @@ DEV_NETWORK="sortsys-dev-network"
 DEV_PG_CONTAINER="sortsys-dev-postgres"
 DEV_S3_CONTAINER="sortsys-dev-s3"
 DEV_ONLYOFFICE_CONTAINER="sortsys-dev-onlyoffice"
+DEV_ONLYOFFICE_INIT_CONTAINER="sortsys-dev-onlyoffice-init"
 DEV_DRAWIO_CONTAINER="sortsys-dev-drawio"
 DEV_API_CONTAINER="sortsys-dev-api"
 DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
 DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
-DEV_GO_BUILD_CACHE_VOLUME="sortsys-dev-go-build-cache"
-DEV_GO_MODULE_CACHE_VOLUME="sortsys-dev-go-module-cache"
-DEV_WEBAPP_DEPENDENCIES_VOLUME="sortsys-dev-webapp-dependencies"
-DEV_DWGVIEWER_DEPENDENCIES_VOLUME="sortsys-dev-dwgviewer-dependencies"
-DEV_ONLYOFFICE_DATA_VOLUME="sortsys-dev-euro-office-data"
-DEV_ONLYOFFICE_STATE_VOLUME="sortsys-dev-euro-office-state"
-DEV_ONLYOFFICE_DATABASE_VOLUME="sortsys-dev-euro-office-database"
-DEV_ONLYOFFICE_LOGS_VOLUME="sortsys-dev-euro-office-logs"
+DEV_DATA_DIR="$ROOT_DIR/.dev-data"
+DEV_POSTGRES_DATA_DIR="$DEV_DATA_DIR/postgres"
+DEV_S3_DATA_DIR="$DEV_DATA_DIR/s3"
+DEV_GO_BUILD_CACHE_DIR="$DEV_DATA_DIR/go-build"
+DEV_GO_MODULE_CACHE_DIR="$DEV_DATA_DIR/go-modules"
+DEV_WEBAPP_DEPS_DIR="$DEV_DATA_DIR/webapp-dependencies"
+DEV_DWG_DEPS_DIR="$DEV_DATA_DIR/dwgviewer-dependencies"
+DEV_ONLYOFFICE_DATA_DIR="$DEV_DATA_DIR/euro-office/data"
+DEV_ONLYOFFICE_STATE_DIR="$DEV_DATA_DIR/euro-office/state"
+DEV_ONLYOFFICE_DATABASE_DIR="$DEV_DATA_DIR/euro-office/database"
+DEV_ONLYOFFICE_LOGS_DIR="$DEV_DATA_DIR/euro-office/logs"
 
 DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-$(sortsys_container_image dev-postgres)}"
 DEV_S3_IMAGE="${DEV_S3_IMAGE:-$(sortsys_s3_image)}"
@@ -78,21 +82,26 @@ DEV_TEST_DATABASE_NAME="${DEV_TEST_DATABASE_NAME:-live_sortsys_api_test}"
 DEV_TEST_DATABASE_USER="${DEV_TEST_DATABASE_USER:-live_sortsys_api_test_app}"
 DEV_LIVE_POSTGRES_HOST_NAME="${DEV_LIVE_POSTGRES_HOST_NAME:-dev-local-postgres}"
 
+DEV_OPTIONAL_EDITOR_CONTAINERS=(
+  "$DEV_ONLYOFFICE_CONTAINER"
+  "$DEV_DRAWIO_CONTAINER"
+)
+
 DEV_SERVICE_CONTAINERS=(
   "$DEV_PG_CONTAINER"
   "$DEV_S3_CONTAINER"
-  "$DEV_ONLYOFFICE_CONTAINER"
-  "$DEV_DRAWIO_CONTAINER"
   "$DEV_API_CONTAINER"
   "$DEV_WEBAPP_CONTAINER"
   "${DEV_JOB_RUNNER_CONTAINERS[0]}"
   "${DEV_JOB_RUNNER_CONTAINERS[1]}"
 )
 
-# Cleanup also covers short-lived helper containers. Only service containers
-# belong in DEV_SERVICE_CONTAINERS because the monitor expects them to persist.
+# Optional editors and short-lived helpers are cleaned up with the core stack.
+# Only required services can stop the stack when they fail.
 DEV_ALL_CONTAINERS=(
   "${DEV_SERVICE_CONTAINERS[@]}"
+  "${DEV_OPTIONAL_EDITOR_CONTAINERS[@]}"
+  "$DEV_ONLYOFFICE_INIT_CONTAINER"
   "$DEV_CLIENT_BUILD_CONTAINER"
 )
 
@@ -111,7 +120,8 @@ if [ ! -d "$SERVER_DIR" ] || [ ! -d "$CLIENT_DIR" ] || [ ! -d "$JOB_RUNNER_DIR" 
 fi
 
 runtime_pull_args=()
-runtime_mount_suffix=""
+# The initializer and services share these binds on SELinux-enabled hosts.
+runtime_mount_suffix=":z"
 runtime_user_args=()
 runtime_env_args=(-e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm)
 runtime_llm_env_args=()
@@ -119,7 +129,6 @@ DEV_LLM_ENV_CONTENT=""
 
 if [ "$CONTAINER_RUNTIME" = "podman" ]; then
   runtime_pull_args=(--pull=never)
-  runtime_mount_suffix=":z"
 fi
 
 prepare_llm_environment() {
@@ -226,6 +235,22 @@ container_is_running() {
   [ "$running" = "true" ]
 }
 
+prepare_development_directories() {
+  # Services initialize ownership inside their own bind-mounted data folders.
+  # Do not recursively chmod/chown existing database files on the host.
+  mkdir -p \
+    "$DEV_POSTGRES_DATA_DIR" \
+    "$DEV_S3_DATA_DIR" \
+    "$DEV_GO_BUILD_CACHE_DIR" \
+    "$DEV_GO_MODULE_CACHE_DIR" \
+    "$DEV_WEBAPP_DEPS_DIR" \
+    "$DEV_DWG_DEPS_DIR" \
+    "$DEV_ONLYOFFICE_DATA_DIR" \
+    "$DEV_ONLYOFFICE_STATE_DIR" \
+    "$DEV_ONLYOFFICE_DATABASE_DIR" \
+    "$DEV_ONLYOFFICE_LOGS_DIR"
+}
+
 cleanup_containers() {
   local pids=()
 
@@ -270,25 +295,109 @@ ensure_network() {
 ensure_image() {
   local image="$1"
   local retries="${2:-5}"
-  local pull_output
+  local attempt
+  local line
 
   if image_exists "$image"; then
+    echo "Using cached image ${image}"
     return 0
   fi
 
-  echo "Pulling image ${image}"
-  for ((i = 1; i <= retries; i++)); do
-    if pull_output="$("$CONTAINER_RUNTIME" pull "$image" 2>&1)"; then
+  for ((attempt = 1; attempt <= retries; attempt++)); do
+    echo "Pulling image ${image} (attempt ${attempt}/${retries})"
+
+    # Prefix live output so concurrent pulls remain attributable to their image.
+    # pipefail preserves a failed pull even when the output reader succeeds.
+    if "$CONTAINER_RUNTIME" pull "$image" 2>&1 |
+      while IFS= read -r line || [ -n "$line" ]; do
+        printf '[%s] %s\n' "$image" "$line"
+      done; then
+      echo "Image ready: ${image}"
       return 0
     fi
-    printf '%s\n' "$pull_output" >&2
 
-    if [ "$i" -lt "$retries" ]; then
-      echo "Pull failed (${i}/${retries}), retrying in 3s..."
+    if [ "$attempt" -lt "$retries" ]; then
+      echo "Pull failed for ${image} (${attempt}/${retries}), retrying in 3s..." >&2
       sleep 3
     fi
   done
 
+  return 1
+}
+
+wait_for_startup_step() {
+  local pid="$1"
+  local label="$2"
+
+  echo "Waiting for ${label}"
+
+  if ! wait "$pid"; then
+    echo "${label} startup failed" >&2
+    return 1
+  fi
+
+  echo "${label} is ready"
+}
+
+start_optional_editor() {
+  local label="$1"
+  local starter="$2"
+
+  if "$starter"; then
+    echo "${label} is ready"
+  else
+    echo "${label} is unavailable; the API and webapp can continue running." >&2
+  fi
+}
+
+wait_for_editor_ready() {
+  local container_name="$1"
+  local url="$2"
+  local label="$3"
+  local timeout_sec="$4"
+  local deadline=$((SECONDS + timeout_sec))
+  local next_report=$((SECONDS + 10))
+  local probe_timeout
+
+  echo "Waiting for ${label}; editor startup does not block the API or webapp"
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if ! container_is_running "$container_name"; then
+      echo "${label} container stopped during startup" >&2
+      "$CONTAINER_RUNTIME" inspect --format \
+        'Exit code={{.State.ExitCode}}; OOM killed={{.State.OOMKilled}}; error={{.State.Error}}' \
+        "$container_name" >&2 || true
+      "$CONTAINER_RUNTIME" logs --tail 50 "$container_name" || true
+      return 1
+    fi
+
+    probe_timeout=$((deadline - SECONDS))
+
+    if [ "$probe_timeout" -gt 3 ]; then
+      probe_timeout=3
+    fi
+
+    if [ "$probe_timeout" -le 0 ]; then
+      break
+    fi
+
+    if "$CONTAINER_RUNTIME" exec "$container_name" \
+      curl --fail --silent --connect-timeout 2 --max-time "$probe_timeout" \
+        "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if [ "$SECONDS" -ge "$next_report" ]; then
+      echo "${label} is still starting; inspect logs with:"
+      echo "  ${CONTAINER_RUNTIME} logs -f ${container_name}"
+      next_report=$((SECONDS + 10))
+    fi
+
+    sleep 1
+  done
+
+  echo "${label} did not become ready within ${timeout_sec}s" >&2
+  "$CONTAINER_RUNTIME" logs --tail 50 "$container_name" || true
   return 1
 }
 
@@ -297,12 +406,25 @@ wait_for_tcp_port() {
   local port="$2"
   local label="$3"
   local timeout_sec="${4:-120}"
+  local container_name="${5:-}"
+  local i
+
+  echo "Waiting for ${label} on ${host}:${port} (up to ${timeout_sec}s)"
 
   for ((i = 1; i <= timeout_sec; i++)); do
+    if [ -n "$container_name" ] && ! container_is_running "$container_name"; then
+      echo "${label} container stopped during startup" >&2
+      return 1
+    fi
+
     if (exec 3<>"/dev/tcp/${host}/${port}") >/dev/null 2>&1; then
       exec 3>&-
       exec 3<&-
       return 0
+    fi
+
+    if ((i % 10 == 0)); then
+      echo "${label} is still starting (${i}s)"
     fi
 
     sleep 1
@@ -314,17 +436,27 @@ wait_for_tcp_port() {
 
 wait_for_api_ready() {
   local attempt
+
   echo "Waiting for API startup after compilation and development seeding"
+  echo "Inspect compiler and seed progress: ${CONTAINER_RUNTIME} logs -f ${DEV_API_CONTAINER}"
+
   for ((attempt = 1; attempt <= 600; attempt++)); do
     if ! container_is_running "$DEV_API_CONTAINER"; then
       echo "API container stopped during startup" >&2
       return 1
     fi
-    if "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" 2>&1 | grep -F 'sortsys Rust API listening' >/dev/null; then
+    if "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" 2>&1 |
+      grep -F 'sortsys Rust API listening' >/dev/null; then
       return 0
     fi
+
+    if ((attempt % 10 == 0)); then
+      echo "API compilation, seeding or startup is still running (${attempt}s)"
+    fi
+
     sleep 1
   done
+
   echo "API did not finish startup in time" >&2
   return 1
 }
@@ -367,6 +499,10 @@ prepare_images() {
   local labels=("PostgreSQL" "Euro-Office" "diagrams.net" "Bun" "Rust" "Node.js" "Go")
   local pids=()
   local failed=0
+  local image
+  local index
+
+  echo "Preparing development images: pulls and the MinIO build run in parallel"
 
   for image in "${images[@]}"; do
     ensure_image "$image" 5 &
@@ -377,13 +513,14 @@ prepare_images() {
   local s3_pid="$!"
 
   for index in "${!pids[@]}"; do
-    if ! wait "${pids[$index]}"; then
-      echo "Failed to prepare ${labels[$index]} image: ${images[$index]}"
+    if ! wait_for_startup_step "${pids[$index]}" \
+      "${labels[$index]} image (${images[$index]})"; then
+      echo "Failed to prepare ${labels[$index]} image: ${images[$index]}" >&2
       failed=1
     fi
   done
 
-  if ! wait "$s3_pid"; then
+  if ! wait_for_startup_step "$s3_pid" "S3 image (${DEV_S3_IMAGE})"; then
     echo "Failed to prepare S3 image: ${DEV_S3_IMAGE}"
     if [ -n "$DEV_S3_IMAGE_FALLBACK" ] && \
       sortsys_prepare_s3_image "$CONTAINER_RUNTIME" "$DEV_S3_IMAGE_FALLBACK" "$DEV_GO_IMAGE"; then
@@ -391,6 +528,10 @@ prepare_images() {
     else
       failed=1
     fi
+  fi
+
+  if [ "$failed" -eq 0 ]; then
+    echo "All development images are ready"
   fi
 
   return "$failed"
@@ -408,6 +549,7 @@ start_postgres() {
     -p "${DEV_PG_PORT}:5432" \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
     -e PG_HOST_AUTH_METHOD=trust \
+    -v "${DEV_POSTGRES_DATA_DIR}:/var/lib/postgresql/data${runtime_mount_suffix}" \
     "$DEV_POSTGRES_IMAGE" >/dev/null
 
   echo "Waiting for PostgreSQL readiness"
@@ -442,10 +584,10 @@ start_s3() {
     -p "${DEV_S3_PORT}:9000" \
     -e MINIO_ROOT_USER="$DEV_S3_ACCESS_KEY_ID" \
     -e MINIO_ROOT_PASSWORD="$DEV_S3_SECRET_ACCESS_KEY" \
+    -v "${DEV_S3_DATA_DIR}:/data${runtime_mount_suffix}" \
     "$DEV_S3_IMAGE" server /data --address :9000 >/dev/null
 
-  echo "Waiting for S3 port readiness"
-  if ! wait_for_tcp_port "127.0.0.1" "$DEV_S3_PORT" "S3" 120; then
+  if ! wait_for_tcp_port "127.0.0.1" "$DEV_S3_PORT" "S3" 120 "$DEV_S3_CONTAINER"; then
     "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
     return 1
   fi
@@ -468,19 +610,48 @@ start_s3() {
   return 1
 }
 
+prepare_onlyoffice_storage() {
+  local helper_mount_options="ro"
+
+  if [ -n "$runtime_mount_suffix" ]; then
+    helper_mount_options+=",${runtime_mount_suffix#:}"
+  fi
+
+  echo "Initializing local Euro-Office storage from the pinned image"
+
+  "$CONTAINER_RUNTIME" run --rm \
+    --name "$DEV_ONLYOFFICE_INIT_CONTAINER" \
+    "${runtime_pull_args[@]}" \
+    --network none \
+    --entrypoint bash \
+    -v "${SCRIPT_DIR}/dev-office-init:/sortsys-dev-office-init:${helper_mount_options}" \
+    -v "${DEV_ONLYOFFICE_DATA_DIR}:/sortsys-dev-office/data${runtime_mount_suffix}" \
+    -v "${DEV_ONLYOFFICE_STATE_DIR}:/sortsys-dev-office/state${runtime_mount_suffix}" \
+    -v "${DEV_ONLYOFFICE_DATABASE_DIR}:/sortsys-dev-office/database${runtime_mount_suffix}" \
+    -v "${DEV_ONLYOFFICE_LOGS_DIR}:/sortsys-dev-office/logs${runtime_mount_suffix}" \
+    "$DEV_ONLYOFFICE_IMAGE" /sortsys-dev-office-init
+}
+
 start_onlyoffice() {
+  local startup_mount_options="ro"
+
+  if [ -n "$runtime_mount_suffix" ]; then
+    startup_mount_options+=",${runtime_mount_suffix#:}"
+  fi
+
   echo "Starting development Euro-Office on port ${DEV_ONLYOFFICE_PORT}"
 
-  ensure_network
+  ensure_network || return 1
+  prepare_onlyoffice_storage || return 1
 
-  # Document Server must fetch signed document and callback URLs from the API
-  # over the isolated development network.
-  "$CONTAINER_RUNTIME" run -d \
-    --rm \
+  # Keep a stopped editor until normal cleanup so startup diagnostics survive.
+  # Document Server fetches API document/callback URLs on the isolated network.
+  if ! "$CONTAINER_RUNTIME" run -d \
     --name "$DEV_ONLYOFFICE_CONTAINER" \
     "${runtime_pull_args[@]}" \
     --network "$DEV_NETWORK" \
     --shm-size=2g \
+    --entrypoint sh \
     -p "${DEV_ONLYOFFICE_PORT}:80" \
     -e JWT_ENABLED="true" \
     -e JWT_SECRET="$DEV_ONLYOFFICE_JWT_SECRET" \
@@ -488,39 +659,25 @@ start_onlyoffice() {
     -e JWT_IN_BODY="false" \
     -e ALLOW_PRIVATE_IP_ADDRESS="true" \
     -e EXAMPLE_ENABLED="false" \
-    -v "${DEV_ONLYOFFICE_DATA_VOLUME}:/var/www/euro-office/Data" \
-    -v "${DEV_ONLYOFFICE_STATE_VOLUME}:/var/lib/euro-office/documentserver" \
-    -v "${DEV_ONLYOFFICE_DATABASE_VOLUME}:/var/lib/postgresql" \
-    -v "${DEV_ONLYOFFICE_LOGS_VOLUME}:/var/log/euro-office/documentserver" \
-    "$DEV_ONLYOFFICE_IMAGE" >/dev/null
+    -v "${SCRIPT_DIR}/dev-office-start:/sortsys-dev-office-start:${startup_mount_options}" \
+    -v "${DEV_ONLYOFFICE_DATA_DIR}:/var/www/euro-office/Data${runtime_mount_suffix}" \
+    -v "${DEV_ONLYOFFICE_STATE_DIR}:/var/lib/euro-office/documentserver${runtime_mount_suffix}" \
+    -v "${DEV_ONLYOFFICE_DATABASE_DIR}:/var/lib/postgresql${runtime_mount_suffix}" \
+    -v "${DEV_ONLYOFFICE_LOGS_DIR}:/var/log/euro-office/documentserver${runtime_mount_suffix}" \
+    "$DEV_ONLYOFFICE_IMAGE" /sortsys-dev-office-start >/dev/null; then
+    return 1
+  fi
 
-  echo "Waiting for Euro-Office readiness"
-  for ((i = 1; i <= 300; i++)); do
-    if ! container_is_running "$DEV_ONLYOFFICE_CONTAINER"; then
-      echo "Euro-Office container stopped unexpectedly"
-      "$CONTAINER_RUNTIME" logs "$DEV_ONLYOFFICE_CONTAINER" || true
-      return 1
-    fi
-
-    if "$CONTAINER_RUNTIME" exec "$DEV_ONLYOFFICE_CONTAINER" \
-      curl --fail --silent http://127.0.0.1/healthcheck >/dev/null 2>&1; then
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "Euro-Office did not become ready in time"
-  "$CONTAINER_RUNTIME" logs "$DEV_ONLYOFFICE_CONTAINER" || true
-  return 1
+  wait_for_editor_ready "$DEV_ONLYOFFICE_CONTAINER" \
+    http://127.0.0.1/healthcheck "Euro-Office" 300
 }
 
 start_drawio() {
   echo "Starting development diagrams.net on port ${DEV_DRAWIO_PORT}"
 
-  ensure_network
+  ensure_network || return 1
 
-  "$CONTAINER_RUNTIME" run -d \
+  if ! "$CONTAINER_RUNTIME" run -d \
     --rm \
     --name "$DEV_DRAWIO_CONTAINER" \
     "${runtime_pull_args[@]}" \
@@ -528,27 +685,12 @@ start_drawio() {
     -p "${DEV_DRAWIO_PORT}:8080" \
     -e DRAWIO_SERVER_URL="/" \
     -e DRAWIO_BASE_URL="" \
-    "$DEV_DRAWIO_IMAGE" >/dev/null
+    "$DEV_DRAWIO_IMAGE" >/dev/null; then
+    return 1
+  fi
 
-  echo "Waiting for diagrams.net readiness"
-  for ((i = 1; i <= 180; i++)); do
-    if ! container_is_running "$DEV_DRAWIO_CONTAINER"; then
-      echo "diagrams.net container stopped unexpectedly"
-      "$CONTAINER_RUNTIME" logs "$DEV_DRAWIO_CONTAINER" || true
-      return 1
-    fi
-
-    if "$CONTAINER_RUNTIME" exec "$DEV_DRAWIO_CONTAINER" \
-      curl --fail --silent http://127.0.0.1:8080/ >/dev/null 2>&1; then
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "diagrams.net did not become ready in time"
-  "$CONTAINER_RUNTIME" logs "$DEV_DRAWIO_CONTAINER" || true
-  return 1
+  wait_for_editor_ready "$DEV_DRAWIO_CONTAINER" \
+    http://127.0.0.1:8080/ "diagrams.net" 180
 }
 
 ensure_local_api_client_package() {
@@ -684,8 +826,8 @@ start_job_runner_containers() {
       "${runtime_env_args[@]}" \
       --network "$DEV_NETWORK" \
       -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
-      -v "${DEV_GO_BUILD_CACHE_VOLUME}:/tmp/go-build" \
-      -v "${DEV_GO_MODULE_CACHE_VOLUME}:/tmp/go" \
+      -v "${DEV_GO_BUILD_CACHE_DIR}:/tmp/go-build${runtime_mount_suffix}" \
+      -v "${DEV_GO_MODULE_CACHE_DIR}:/tmp/go${runtime_mount_suffix}" \
       -w /workspace/sortsys-v2-job_runner \
       -e JOB_RUNNER_WS_URL="ws://${DEV_API_CONTAINER}:${DEV_API_PORT}/internal/job-runners/ws" \
       -e JOB_RUNNER_WS_IGNORE_PROXY="true" \
@@ -783,8 +925,8 @@ start_webapp_container() {
     -p "${DEV_WEBAPP_PORT}:${DEV_WEBAPP_PORT}" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
     -w /workspace/sortsys-webapp-v2 \
-    -v "${DEV_WEBAPP_DEPENDENCIES_VOLUME}:/workspace/sortsys-webapp-v2/node_modules" \
-    -v "${DEV_DWGVIEWER_DEPENDENCIES_VOLUME}:/workspace/sortsys-dwgviewer/node_modules" \
+    -v "${DEV_WEBAPP_DEPS_DIR}:/workspace/sortsys-webapp-v2/node_modules${runtime_mount_suffix}" \
+    -v "${DEV_DWG_DEPS_DIR}:/workspace/sortsys-dwgviewer/node_modules${runtime_mount_suffix}" \
     -e CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}" \
     -e DEV_WEBAPP_PORT="$DEV_WEBAPP_PORT" \
     -e SORTSYS_REVISION="$DEV_REVISION" \
@@ -842,19 +984,35 @@ start_webapp_container() {
       exec npm run dev -- --host 0.0.0.0 --port "$DEV_WEBAPP_PORT"
     ' >/dev/null
 
-  if ! wait_for_tcp_port "127.0.0.1" "$DEV_WEBAPP_PORT" "Webapp" 240; then
+  if ! wait_for_tcp_port "127.0.0.1" "$DEV_WEBAPP_PORT" "Webapp" 240 "$DEV_WEBAPP_CONTAINER"; then
     "$CONTAINER_RUNTIME" logs "$DEV_WEBAPP_CONTAINER" || true
     return 1
   fi
 }
 
 monitor_containers() {
+  local optional_missing=()
+  local index
+  local container_name
+
   while true; do
     for container_name in "${DEV_SERVICE_CONTAINERS[@]}"; do
       if ! container_is_running "$container_name"; then
         echo "Container stopped unexpectedly: ${container_name}"
         "$CONTAINER_RUNTIME" logs "$container_name" || true
         return 1
+      fi
+    done
+
+    for index in "${!DEV_OPTIONAL_EDITOR_CONTAINERS[@]}"; do
+      container_name="${DEV_OPTIONAL_EDITOR_CONTAINERS[$index]}"
+
+      if container_is_running "$container_name"; then
+        optional_missing[$index]=false
+      elif [ "${optional_missing[$index]:-false}" != "true" ]; then
+        echo "Optional editor ${container_name} is unavailable; the core stack is running." >&2
+        echo "Inspect logs: ${CONTAINER_RUNTIME} logs --tail 50 ${container_name}" >&2
+        optional_missing[$index]=true
       fi
     done
 
@@ -898,6 +1056,7 @@ if [ "$DEV_API_PORT" != "3000" ]; then
 fi
 
 cleanup_containers
+prepare_development_directories
 ensure_network
 prepare_images
 
@@ -905,10 +1064,8 @@ start_postgres &
 postgres_pid="$!"
 start_s3 &
 s3_pid="$!"
-start_onlyoffice &
-onlyoffice_pid="$!"
-start_drawio &
-drawio_pid="$!"
+start_optional_editor "Euro-Office" start_onlyoffice &
+start_optional_editor "diagrams.net" start_drawio &
 build_api_development_image &
 api_image_pid="$!"
 build_job_runner_development_image &
@@ -919,40 +1076,17 @@ job_runner_image_pid="$!"
 ) &
 webapp_pid="$!"
 
-if ! wait "$postgres_pid"; then
-  echo "PostgreSQL startup failed"
-  exit 1
-fi
+wait_for_startup_step "$postgres_pid" "PostgreSQL"
 initialize_master_database
 
-if ! wait "$s3_pid"; then
-  echo "S3 startup failed"
-  exit 1
-fi
-if ! wait "$onlyoffice_pid"; then
-  echo "Euro-Office startup failed"
-  exit 1
-fi
-if ! wait "$drawio_pid"; then
-  echo "diagrams.net startup failed"
-  exit 1
-fi
-if ! wait "$api_image_pid"; then
-  echo "API development image build failed"
-  exit 1
-fi
-if ! wait "$job_runner_image_pid"; then
-  echo "Job runner development image build failed"
-  exit 1
-fi
+wait_for_startup_step "$s3_pid" "S3"
+wait_for_startup_step "$api_image_pid" "API development image build"
+wait_for_startup_step "$job_runner_image_pid" "Job runner development image build"
 
 start_api_container
 start_job_runner_containers
 
-if ! wait "$webapp_pid"; then
-  echo "Webapp startup failed"
-  exit 1
-fi
+wait_for_startup_step "$webapp_pid" "Webapp"
 
 initialize_development_logo
 

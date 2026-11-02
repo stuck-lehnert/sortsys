@@ -1,10 +1,17 @@
+import { Autocomplete, Label, ListBox, SearchField } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { NotifyLoaded } from "~/components/NotifyLoaded";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
-import { contactName, customerName, formatDate, productTitle, toolTitle, userFullName } from "~/lib/format";
+import {
+  contactName,
+  customerName,
+  formatDate,
+  productTitle,
+  toolTitle,
+  userFullName,
+} from "~/lib/format";
 import { Icons, type Icon } from "~/lib/icons";
 import { dailyReportDayKey } from "~/lib/tiles";
 import { useUserActions, type UserAction } from "~/lib/userActions";
@@ -158,43 +165,10 @@ function useEntitySearchEntries(query: string, close: () => void) {
   return { entries, searching };
 }
 
-function PaletteRow({ entry, active, onHover, optionId }: { entry: PaletteEntry; active: boolean; onHover: () => void; optionId: string }) {
-  const Icon = entry.icon;
-  return <button
-    id={optionId}
-    type="button"
-    role="option"
-    aria-selected={active}
-    className={`command-palette-row${active ? ' is-active' : ''}`}
-    onMouseEnter={onHover}
-    onClick={() => void entry.run()}
-  >
-    <Icon size={20} className="shrink-0" />
-    <span className="command-palette-row-main">
-      <span className="command-palette-row-title">{entry.title}</span>
-      {!!entry.subtitle && <span className="command-palette-row-subtitle">{entry.subtitle}</span>}
-    </span>
-    <span className="command-palette-row-group">{entry.group}</span>
-  </button>;
-}
-
-function groupEntries(entries: PaletteEntry[]) {
-  const groups = new Map<string, PaletteEntry[]>();
-  for (const entry of entries) {
-    const list = groups.get(entry.group) ?? [];
-    list.push(entry);
-    groups.set(entry.group, list);
-  }
-  return [...groups.entries()];
-}
-
 export function showCommandPaletteModal(modals: MyModalsInterface) {
   modals.showDefault({
     content: ({ hide, replace }) => {
-      const inputId = useId();
-      const resultsId = useId();
       const [query, setQuery] = useState('');
-      const [activeIndex, setActiveIndex] = useState(0);
       const [recentActionIds, setRecentActionIds] = useState<string[]>([]);
       const { visibleActions, runAction } = useUserActions(modals);
       const commandQuery = normalizeSearch(query.startsWith('>') ? query.slice(1) : query);
@@ -260,69 +234,84 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
         ];
       }, [commandOnly, commandQuery, entityEntries, recentActionIds, replace, runAction, visibleActions]);
 
-      useEffect(() => {
-        setActiveIndex(0);
-      }, [query, entries.length]);
-
-      function runActive() {
-        const entry = entries[activeIndex];
-        if (entry) void entry.run();
-      }
-
-      return <div className="command-palette">
-        <label className="command-palette-label" htmlFor={inputId}>{uiText("Befehl oder Suche", "Command or search")}</label>
-        <div className="command-palette-input-wrap">
-          <Icons.Search size={20} />
-          <input
-            id={inputId}
-            className="command-palette-input"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-controls={resultsId}
-            aria-activedescendant={entries[activeIndex] ? `${resultsId}-${activeIndex}` : undefined}
-            value={query}
-            placeholder={uiText("Tippe > für Befehle, sonst Suche", "Type > for commands, otherwise search")}
-            onChange={event => setQuery(event.target.value)}
-            onKeyDown={event => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                setActiveIndex(index => entries.length ? (index + 1) % entries.length : 0);
-              } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                setActiveIndex(index => entries.length ? (index - 1 + entries.length) % entries.length : 0);
-              } else if (event.key === 'Enter') {
-                event.preventDefault();
-                runActive();
-              }
-            }}
-          />
-          <kbd>{uiText("Ctrl K")}</kbd>
-        </div>
-        <NotifyLoaded onLoad={() => document.getElementById(inputId)?.focus()} />
-
-        <div id={resultsId} className="command-palette-results" role="listbox" aria-busy={searching}>
-          {groupEntries(entries).map(([group, groupRows]) => <section key={group} className="command-palette-group">
-            <div className="command-palette-group-title">{group}</div>
-            {groupRows.map(entry => {
-              const index = entries.indexOf(entry);
-              return <PaletteRow
-                key={entry.id}
-                entry={entry}
-                active={index === activeIndex}
-                optionId={`${resultsId}-${index}`}
-                onHover={() => setActiveIndex(index)}
-              />;
-            })}
-          </section>)}
-          {!entries.length && <div className="command-palette-empty" role="status">
-            {searching ? uiText('Suche läuft …', 'Searching …') : uiText("Keine Treffer.", "No results.")}
-          </div>}
-        </div>
-      </div>;
+      return (
+        <Autocomplete.Filter
+          inputValue={query}
+          onInputChange={setQuery}
+          filter={() => true}
+        >
+          <div className="flex min-h-0 w-full flex-col gap-4">
+            <SearchField className="w-full" variant="secondary">
+              <Label>{uiText("Befehl oder Suche", "Command or search")}</Label>
+              <SearchField.Group>
+                <SearchField.SearchIcon />
+                <SearchField.Input
+                  autoFocus
+                  placeholder={uiText(
+                    "Tippe > für Befehle, sonst Suche",
+                    "Type > for commands, otherwise search",
+                  )}
+                />
+              </SearchField.Group>
+            </SearchField>
+            <ListBox
+              aria-label={uiText(
+                "Befehle und Suchergebnisse",
+                "Commands and search results",
+              )}
+              aria-busy={searching}
+              items={entries}
+              selectionMode="none"
+              className="min-h-0 w-full flex-1 max-h-[60dvh] overflow-y-auto"
+              onAction={(key) => {
+                const entry = entries.find((candidate) => candidate.id === key);
+                if (entry) {
+                  void entry.run();
+                }
+              }}
+              renderEmptyState={() => (
+                <p role="status" className="p-6 text-center text-sm text-muted">
+                  {searching
+                    ? uiText("Suche läuft …", "Searching …")
+                    : uiText("Keine Treffer.", "No results.")}
+                </p>
+              )}
+            >
+              {(entry) => (
+                <ListBox.Item
+                  id={entry.id}
+                  textValue={entry.title}
+                  className="gap-3 py-3"
+                >
+                  <entry.icon
+                    size={20}
+                    className="shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">
+                      {entry.title}
+                    </span>
+                    {entry.subtitle && (
+                      <span className="block text-xs text-muted">
+                        {entry.subtitle}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-right text-xs text-muted">
+                    {entry.group}
+                  </span>
+                </ListBox.Item>
+              )}
+            </ListBox>
+          </div>
+        </Autocomplete.Filter>
+      );
     },
     modalProps: ({ hide }) => ({
       modalHeading: uiText("Befehlspalette"),
       className: 'command-palette-modal',
+      placement: 'top',
       primaryButtonDisabled: true,
       secondaryButtonText: uiText("Schließen"),
       onSecondarySubmit: hide,

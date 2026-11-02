@@ -96,6 +96,13 @@ fn scan_body(
         prompt,
     );
     request["max_tokens"] = json!(SCAN_MAX_OUTPUT_TOKENS);
+
+    if input.originals.iter().any(|original| original.mime_type == "application/pdf") {
+        request["plugins"] = json!([
+            { "id": "file-parser", "pdf": { "engine": "native" } }
+        ]);
+    }
+
     request["response_format"] = json!({
         "type": "json_schema",
         "json_schema": {

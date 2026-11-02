@@ -1894,12 +1894,7 @@ async fn analyze_stored_scan(
     let mut originals = Vec::new();
 
     for document in &documents {
-        let requires_fallback = document.ocr.method != "xlsx"
-            && (document.error.is_some()
-                || document.ocr.confidence < OCR_FALLBACK_CONFIDENCE
-                || document.ocr.text.trim().len() < 40);
-
-        if requires_fallback {
+        if has_visual_original(&document.source) {
             originals.push(llm::ScanOriginal {
                 bytes: download_scan(storage, &document.source).await?,
                 mime_type: document.source.mime_type.clone(),
@@ -2069,7 +2064,11 @@ async fn analyze_stored_scan(
         };
 
         result.warnings_mut().push(warning);
-    } else if !originals.is_empty() {
+    } else if documents.iter().any(|document| {
+        has_visual_original(&document.source)
+            && (document.ocr.confidence < OCR_FALLBACK_CONFIDENCE
+                || document.ocr.text.trim().len() < 40)
+    }) {
         let warning = if locale == "en" {
             "Local text recognition was uncertain, so the original was analyzed as well."
         } else {
@@ -2080,6 +2079,13 @@ async fn analyze_stored_scan(
     }
 
     Ok(result)
+}
+
+fn has_visual_original(source: &ParseScanInput) -> bool {
+    matches!(
+        source.mime_type.as_str(),
+        "application/pdf" | "image/jpeg" | "image/png" | "image/webp"
+    )
 }
 
 fn combine_ocr_documents(documents: &[RecognizedScanDocument]) -> DeliveryNoteOcrResult {
@@ -3092,6 +3098,7 @@ mod tests {
     use super::{
         DeliveryNoteOcrResult, MAX_SCAN_BYTES, ParseScanInput, RawScanLine, RawUnitConversion,
         RecognizedScanDocument, ScanProduct, catalogue_brand_styles, combine_ocr_documents,
+        has_visual_original,
         find_unambiguous_product_match, parse_product_records, parse_raw_scan_result,
         parse_special_records, product_unit_factor, proposed_product_name, proposed_unit_factors,
         scan_transcript_chunks, validate_scan_documents, validate_scan_file,
@@ -3328,6 +3335,27 @@ mod tests {
         assert!(validate_scan_file("scan.svg", "image/svg+xml", 1024).is_err());
         assert!(validate_scan_file("scan.png", "image/png", 0).is_err());
         assert!(validate_scan_file("scan.png", "image/png", MAX_SCAN_BYTES + 1).is_err());
+    }
+
+    #[test]
+    fn visual_originals_are_selected_by_format_independently_of_ocr_quality() {
+        let mut source = ParseScanInput {
+            object_key: "scans/synthetic".to_owned(),
+            file_name: "synthetic".to_owned(),
+            mime_type: String::new(),
+            size_bytes: 1024,
+        };
+
+        for mime_type in ["application/pdf", "image/jpeg", "image/png", "image/webp"] {
+            source.mime_type = mime_type.to_owned();
+            assert!(has_visual_original(&source));
+        }
+
+        source.mime_type =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_owned();
+        assert!(!has_visual_original(&source));
+        source.mime_type = "application/octet-stream".to_owned();
+        assert!(!has_visual_original(&source));
     }
 
     #[test]

@@ -1,0 +1,44 @@
+#!/bin/sh
+set -eu
+
+image_root="${1:-/}"
+
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+postgres_directory="${image_root%/}/var/lib/postgresql"
+
+# Some VirtioFS binds report the current caller as the owner. Debian's root-run
+# pg_ctlcluster then rejects the cluster even though postgres sees its own UID.
+if [ "$(id -u)" = 0 ] && [ -d "$postgres_directory" ] &&
+  [ "$(stat -c '%u' -- "$postgres_directory")" = 0 ]; then
+  postgres_uid="$(id -u postgres)"
+
+  if ! postgres_owner="$(runuser -u postgres -- stat -c '%u' -- "$postgres_directory")"; then
+    echo "Cannot inspect Euro-Office PostgreSQL storage as postgres" >&2
+    exit 1
+  fi
+
+  if [ "$postgres_uid" != 0 ] && [ "$postgres_owner" = "$postgres_uid" ]; then
+    echo "Starting bundled PostgreSQL as postgres for caller-mapped bind ownership"
+
+    service() {
+      if [ "$#" -eq 2 ] && [ "$1" = postgresql ] && [ "$2" = start ]; then
+        # Remove the one-shot handler before runuser and later service calls.
+        unset -f service
+        runuser -u postgres -- service "$@"
+        return
+      fi
+
+      command service "$@"
+    }
+
+    # Keep the original POSIX interpreter and its normal errexit behavior.
+    set +u
+    . "${image_root%/}/entrypoint.sh"
+    exit
+  fi
+fi
+
+exec "${image_root%/}/entrypoint.sh" "$@"

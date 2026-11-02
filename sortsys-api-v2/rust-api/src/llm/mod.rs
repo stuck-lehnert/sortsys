@@ -183,6 +183,7 @@ pub struct PublicProviderAccount {
 pub struct AvailableProviderModel {
     pub id: String,
     pub name: String,
+    pub supports_image_input: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -508,8 +509,12 @@ pub async fn save_use_case_configuration(
         ));
     }
 
-    if load_provider_account(state, provider).await?.is_none() {
-        return Err(bad_request("Provider credentials have not been configured"));
+    let account = load_provider_account(state, provider)
+        .await?
+        .ok_or_else(|| bad_request("Provider credentials have not been configured"))?;
+
+    if use_case == DOCUMENT_IMPORT_USE_CASE {
+        provider::require_image_input_model(&account, model).await?;
     }
 
     sqlx::query(

@@ -76,7 +76,7 @@ export function ContactChannelsFormFields({ phoneNumbers = [], emailAddresses = 
   return <>
     {fields.map(([kind, id]) => <div key={id} className="w-full flex gap-2 items-end">
       <div className="grow flex gap-2">
-        <div className="basis-1/2 flex-1">
+        <div className="min-w-0 basis-1/2 flex-1">
           <MyForm.Input
             name={`${kind}:${id}:name`}
             labelText={uiText("Bezeichnung")}
@@ -84,7 +84,7 @@ export function ContactChannelsFormFields({ phoneNumbers = [], emailAddresses = 
           />
         </div>
 
-        <div className="basis-1/2 flex-1">
+        <div className="min-w-0 basis-1/2 flex-1">
           <MyForm.Input
             required
             name={`${kind}:${id}:value`} labelText={kind === 'email' ? 'E-Mail' : 'Telefon'}

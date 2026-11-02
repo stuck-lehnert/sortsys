@@ -55,82 +55,102 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
 
       const history = settings?.history ?? [];
 
-      return <>
-        <p className="light">{uiText("Die Gemeinkosten werden historisch gespeichert und gelten immer ab dem gewählten Stichtag um 00:00 Uhr. Ein neuer Eintrag überschreibt keine alten Werte, sondern ergänzt die Historie für spätere Buchungen. Die Berechnung erfolgt je betroffener Kostenposition nach der Formel")}<b>{uiText("originale Kosten * relativer Faktor + Konstante")}</b>{uiText(". So kannst du Änderungen transparent zu einem bestimmten Datum wirksam machen.")}</p>
+      return (
+        <>
+          <p className="light">
+            {uiText(
+              "Die Gemeinkosten werden historisch gespeichert und gelten immer ab dem gewählten Stichtag um 00:00 Uhr. Ein neuer Eintrag überschreibt keine alten Werte, sondern ergänzt die Historie für spätere Buchungen. Die Berechnung erfolgt je betroffener Kostenposition nach der Formel",
+            )}
+            <b>{uiText("originale Kosten * relativer Faktor + Konstante")}</b>
+            {uiText(
+              ". So kannst du Änderungen transparent zu einem bestimmten Datum wirksam machen.",
+            )}
+          </p>
 
-        <MyForm.DateInput
-          required
-          name="effectiveAt"
-          labelText={uiText("Gültig ab")}
-        />
+          <MyForm.DateInput
+            required
+            name="effectiveAt"
+            labelText={uiText("Gültig ab")}
+          />
 
-        <MyDivider />
+          <MyDivider />
 
-        {COMMON_COST_TYPES.map(type => {
-          const key = type;
+          {COMMON_COST_TYPES.map((type) => {
+            const key = type;
 
-          return <div key={type}>
-            <h4>{commonCostLabel(type)}</h4>
-            <p className="light">{commonCostDescription(type)}</p>
+            return (
+              <div key={type}>
+                <h4 className="text-lg leading-snug font-semibold">
+                  {commonCostLabel(type)}
+                </h4>
+                <p className="light">{commonCostDescription(type)}</p>
 
-            <MyForm.Input
-              required
-              name={`${key}RelativeFactor`}
-              labelText={uiText("Relativer Faktor in % (z.B. 20)")}
-              type="number"
-              rules={[MyForm.Input.rules.posnum]}
-            />
+                <MyForm.Input
+                  required
+                  name={`${key}RelativeFactor`}
+                  labelText={uiText("Relativer Faktor in % (z.B. 20)")}
+                  type="number"
+                  rules={[MyForm.Input.rules.posnum]}
+                />
 
-            <MyForm.Input
-              required
-              name={`${key}Constant`}
-              labelText={uiText("Konstante (EUR)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
+                <MyForm.Input
+                  required
+                  name={`${key}Constant`}
+                  labelText={uiText("Konstante (EUR)")}
+                  type="number"
+                  rules={[MyForm.Input.rules.num]}
+                />
 
-            {type !== 'ngk' && <MyDivider />}
-          </div>;
-        })}
+                {type !== "ngk" && <MyDivider />}
+              </div>
+            );
+          })}
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Historie")}</h4>
-        <MyTable
-          rows={history.map((entry, index) => ({
-            ...entry,
-            id: entry.id ?? `${entry.type}-${entry.effectiveAt?.toString() ?? ''}-${index}`,
-          }))}
-          columns={[
-            {
-              label: uiText("Typ"),
-              render: row => commonCostLabel(row.type),
-              sortKey: row => commonCostLabel(row.type),
-            },
-            {
-              label: uiText("Gültig ab"),
-              render: row => formatDate(row.effectiveAt),
-              sortKey: row => row.effectiveAt?.getTime() ?? 0,
-            },
-            {
-              label: uiText("Relativer Faktor"),
-              render: row => `${formatNumber(row.relativeFactor * 100)} %`,
-              sortKey: row => row.relativeFactor,
-            },
-            {
-              label: uiText("Konstante"),
-              render: row => formatCurrency(row.constant),
-              sortKey: row => row.constant,
-            },
-          ]}
-          pagination={{}}
-          autoConvertSmallViewport
-        />
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Historie")}
+          </h4>
+          <MyTable
+            rows={history.map((entry, index) => ({
+              ...entry,
+              id:
+                entry.id ??
+                `${entry.type}-${entry.effectiveAt?.toString() ?? ""}-${index}`,
+            }))}
+            columns={[
+              {
+                label: uiText("Typ"),
+                render: (row) => commonCostLabel(row.type),
+                sortKey: (row) => commonCostLabel(row.type),
+              },
+              {
+                label: uiText("Gültig ab"),
+                render: (row) => formatDate(row.effectiveAt),
+                sortKey: (row) => row.effectiveAt?.getTime() ?? 0,
+              },
+              {
+                label: uiText("Relativer Faktor"),
+                render: (row) => `${formatNumber(row.relativeFactor * 100)} %`,
+                sortKey: (row) => row.relativeFactor,
+              },
+              {
+                label: uiText("Konstante"),
+                render: (row) => formatCurrency(row.constant),
+                sortKey: (row) => row.constant,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
 
-        <NotifyLoaded onLoad={() => {
-          context.field('effectiveAt')?.setValue(new Date());
-        }} />
-      </>;
+          <NotifyLoaded
+            onLoad={() => {
+              context.field("effectiveAt")?.setValue(new Date());
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();

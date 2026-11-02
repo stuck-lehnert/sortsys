@@ -10,7 +10,13 @@ import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
 import { MyCallout } from "~/components/MyCallout";
 import { MyLink } from "~/components/MyLink";
-import { formatCurrency, formatDate, formatNumber, productTitle, userFullName } from "~/lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatNumber,
+  productTitle,
+  userFullName,
+} from "~/lib/format";
 import { MyDivider } from "~/components/MyDivider";
 import { useTitle } from "~/hooks/useTitle";
 import { MyTable } from "~/components/MyTable";
@@ -19,8 +25,15 @@ import { useShortcut } from "~/hooks/useShortcut";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyDropdown } from "~/components/MyDropdown";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdf, buildPdfProductSection, type PdfTableSection } from "~/lib/pdf";
-import { showDeleteDeliveryNoteModal, showModifyDeliveryNoteModal } from "~/modals/deliveryNotes";
+import {
+  renderStructuredPdf,
+  buildPdfProductSection,
+  type PdfTableSection,
+} from "~/lib/pdf";
+import {
+  showDeleteDeliveryNoteModal,
+  showModifyDeliveryNoteModal,
+} from "~/modals/deliveryNotes";
 import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
 
@@ -219,7 +232,7 @@ export default function DeliveryNoteDetailPage() {
     void exportDeliveryNoteToPdf('open');
   });
 
-  if (err) return <NotFound reason="resourceNotFound" />
+  if (err) return <NotFound reason="resourceNotFound" />;
   if (!note) return;
 
   async function exportDeliveryNoteToExcel() {
@@ -392,158 +405,257 @@ export default function DeliveryNoteDetailPage() {
     await openExcelExport(modals, blob, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
   }
 
-  return <>
-    <MyHeader
-      title={uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`)}
-      actions={<MyDropdown items={[
-        {
-          label: isPdfExporting ? uiText("PDF wird erstellt...") : uiText("PDF"),
-          renderIcon: Icons.Download,
-          hideIf: !sessionInfo.canDo('view:deliveryNotes'),
-          disabled: isPdfExporting,
-          onClick: () => exportDeliveryNoteToPdf(),
-        },
-        {
-          label: uiText("Excel"),
-          renderIcon: Icons.Excel,
-          hideIf: !sessionInfo.canDo('view:deliveryNotes'),
-          onClick: exportDeliveryNoteToExcel,
-        },
-        {
-          label: uiText("Bearbeiten"),
-          renderIcon: Icons.Edit,
-          hideIf: !sessionInfo.canDo('manage:deliveryNotes'),
-          onClick: () => showModifyDeliveryNoteModal(modals, note),
-        },
-        {
-          label: uiText("Löschen"),
-          renderIcon: Icons.Delete,
-          hideIf: !sessionInfo.canDo('delete:deliveryNotes'),
-          onClick: () => showDeleteDeliveryNoteModal(modals, note),
-        },
-      ]} />}
-    />
+  return (
+    <>
+      <MyHeader
+        title={uiText(
+          `Lieferschein #${note.autoId}`,
+          `Delivery note #${note.autoId}`,
+        )}
+        actions={
+          <MyDropdown
+            items={[
+              {
+                label: isPdfExporting
+                  ? uiText("PDF wird erstellt...")
+                  : uiText("PDF"),
+                renderIcon: Icons.Download,
+                hideIf: !sessionInfo.canDo("view:deliveryNotes"),
+                disabled: isPdfExporting,
+                onClick: () => exportDeliveryNoteToPdf(),
+              },
+              {
+                label: uiText("Excel"),
+                renderIcon: Icons.Excel,
+                hideIf: !sessionInfo.canDo("view:deliveryNotes"),
+                onClick: exportDeliveryNoteToExcel,
+              },
+              {
+                label: uiText("Bearbeiten"),
+                renderIcon: Icons.Edit,
+                hideIf: !sessionInfo.canDo("manage:deliveryNotes"),
+                onClick: () => showModifyDeliveryNoteModal(modals, note),
+              },
+              {
+                label: uiText("Löschen"),
+                renderIcon: Icons.Delete,
+                hideIf: !sessionInfo.canDo("delete:deliveryNotes"),
+                onClick: () => showDeleteDeliveryNoteModal(modals, note),
+              },
+            ]}
+          />
+        }
+      />
 
-    {!!pdfExportErr && <MyCallout icon={Icons.Deny} color="red">{uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
-    </MyCallout>}
+      {!!pdfExportErr && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("PDF-Export fehlgeschlagen:")} {pdfExportErr}
+        </MyCallout>
+      )}
 
-    <AttrList>
-      <AttrList.Attr name={uiText("Projekt")} value={<Awaited promise={async () => {
-        const [project] = await client.query('projects.get', { id: note.projectId }, { strategy: 'cache-first' });
-        if (!project) return 'Unbekannt';
-        return <MyLink to={`/projects/${project.id}`}>{project.title}</MyLink>;
-      }} />} />
-
-      {!!note.comment && <AttrList.Attr name={uiText("Kommentar")} value={note.comment} />}
-      <AttrList.Attr name={uiText("Erstellt am")} value={formatDate(note.createdAt)} />
-      {!!note.createdByUserId && <AttrList.Attr name={uiText("Erstellt von")} value={<Awaited promise={async () => {
-        const [user] = await client.query('users.get', { id: note.createdByUserId! }, { strategy: 'cache-first' });
-        if (!user) return 'Unbekannt';
-        return <MyLink to={`/users/${user.id}`}>{userFullName(user)}</MyLink>
-      }} />} />}
-
-      {!!costs && <AttrList.Attr name={uiText("Kosten")} value={formatCurrency(costs.totalCost)} />}
-    </AttrList>
-
-    <MyDivider />
-
-    {!!note.records.length && <MyExpandable title={uiText("Produkte")} initiallyExpanded>
-      <MyTable
-        className="th-25rem"
-        persistentId="Products"
-        rows={tableRecords ?? []}
-        columns={[
-          {
-            label: uiText("Bezeichnung"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              if (!product) return 'Unbekannt';
-              return <MyLink to={`/products/${product.id}`}>{productTitle(product)}</MyLink>;
-            },
-          },
-          {
-            label: uiText("Menge"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              if (!product) return `${formatNumber(row.quantity)} ???`;
-              const [amount, unit] = quantityInUnit(product, row.quantity, (row as any).unit);
-              return formatProductAmount(amount, unit);
-            },
-          },
-          {
-            label: uiText("Basismenge"),
-            render: async row => {
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              if (!product) return formatNumber(row.quantity);
-              const [, unit] = quantityInUnit(product, row.quantity, (row as any).unit);
-              return formatBaseQuantity(Number(row.quantity ?? 0), product.baseUnit ?? '', unit);
-            },
-          },
-          {
-            label: uiText("mittlerer EP"),
-            render: async row => {
-              const recordCost = deliveryRecordCost(row.costs, row.id);
-              const baseQuantity = Number(row.quantity ?? 0);
-              if (!baseQuantity || typeof recordCost !== 'number') return '-';
-
-              const [product] = await client.query('products.get', { id: row.productId }, { strategy: 'cache-first' });
-              return `${formatCurrency(recordCost / baseQuantity)}${product?.baseUnit ? `/${product.baseUnit}` : ''}`;
-            },
-            sortKey: row => {
-              const recordCost = deliveryRecordCost(row.costs, row.id);
-              const baseQuantity = Number(row.quantity ?? 0);
-              if (!baseQuantity || typeof recordCost !== 'number') return 0;
-              return recordCost / baseQuantity;
-            },
-          },
-          {
-            label: uiText("Kosten"),
-            render: row => {
-              const recordCost = deliveryRecordCost(row.costs, row.id);
-              if (typeof recordCost !== 'number') return '';
-              return formatCurrency(recordCost);
-            },
-            sortKey: row => {
-              const recordCost = deliveryRecordCost(row.costs, row.id);
-              return typeof recordCost === 'number' ? recordCost : 0;
-            },
+      <AttrList>
+        <AttrList.Attr
+          name={uiText("Projekt")}
+          value={
+            <Awaited
+              promise={async () => {
+                const [project] = await client.query(
+                  "projects.get",
+                  { id: note.projectId },
+                  { strategy: "cache-first" },
+                );
+                if (!project) return "Unbekannt";
+                return (
+                  <MyLink to={`/projects/${project.id}`}>
+                    {project.title}
+                  </MyLink>
+                );
+              }}
+            />
           }
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+        />
 
-    {!!note.specialRecords?.length && <MyExpandable title={uiText("Sonderposten")} initiallyExpanded>
-      <MyTable
-        className="th-25rem"
-        rows={note.specialRecords}
-        columns={[
-          {
-            label: uiText("Bezeichnung"),
-            render: row => row.name,
-            sortKey: row => row.name,
-          },
-          {
-            label: uiText("Menge"),
-            render: row => `${formatNumber(row.amount)} ${row.unit}`,
-            sortKey: row => row.amount,
-          },
-          {
-            label: uiText("Preis pro Einheit"),
-            render: row => row.pricePerUnit != null ? formatCurrency(row.pricePerUnit) : '',
-            sortKey: row => row.pricePerUnit ?? 0,
-          },
-          {
-            label: uiText("Gesamt"),
-            render: row => row.pricePerUnit != null ? formatCurrency(row.amount * row.pricePerUnit) : '',
-            sortKey: row => row.pricePerUnit != null ? row.amount * row.pricePerUnit : 0,
-          },
-        ]}
-        pagination={{}}
-        autoConvertSmallViewport
-      />
-    </MyExpandable>}
+        {!!note.comment && (
+          <AttrList.Attr name={uiText("Kommentar")} value={note.comment} />
+        )}
+        <AttrList.Attr
+          name={uiText("Erstellt am")}
+          value={formatDate(note.createdAt)}
+        />
+        {!!note.createdByUserId && (
+          <AttrList.Attr
+            name={uiText("Erstellt von")}
+            value={
+              <Awaited
+                promise={async () => {
+                  const [user] = await client.query(
+                    "users.get",
+                    { id: note.createdByUserId! },
+                    { strategy: "cache-first" },
+                  );
+                  if (!user) return "Unbekannt";
+                  return (
+                    <MyLink to={`/users/${user.id}`}>
+                      {userFullName(user)}
+                    </MyLink>
+                  );
+                }}
+              />
+            }
+          />
+        )}
 
-  </>;
+        {!!costs && (
+          <AttrList.Attr
+            name={uiText("Kosten")}
+            value={formatCurrency(costs.totalCost)}
+          />
+        )}
+      </AttrList>
+
+      <MyDivider />
+
+      {!!note.records.length && (
+        <MyExpandable title={uiText("Produkte")} initiallyExpanded>
+          <MyTable
+            className="th-25rem"
+            persistentId="Products"
+            rows={tableRecords ?? []}
+            columns={[
+              {
+                label: uiText("Bezeichnung"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!product) return "Unbekannt";
+                  return (
+                    <MyLink to={`/products/${product.id}`}>
+                      {productTitle(product)}
+                    </MyLink>
+                  );
+                },
+              },
+              {
+                label: uiText("Menge"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!product) return `${formatNumber(row.quantity)} ???`;
+                  const [amount, unit] = quantityInUnit(
+                    product,
+                    row.quantity,
+                    (row as any).unit,
+                  );
+                  return formatProductAmount(amount, unit);
+                },
+              },
+              {
+                label: uiText("Basismenge"),
+                render: async (row) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  if (!product) return formatNumber(row.quantity);
+                  const [, unit] = quantityInUnit(
+                    product,
+                    row.quantity,
+                    (row as any).unit,
+                  );
+                  return formatBaseQuantity(
+                    Number(row.quantity ?? 0),
+                    product.baseUnit ?? "",
+                    unit,
+                  );
+                },
+              },
+              {
+                label: uiText("mittlerer EP"),
+                render: async (row) => {
+                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  const baseQuantity = Number(row.quantity ?? 0);
+                  if (!baseQuantity || typeof recordCost !== "number")
+                    return "-";
+
+                  const [product] = await client.query(
+                    "products.get",
+                    { id: row.productId },
+                    { strategy: "cache-first" },
+                  );
+                  return `${formatCurrency(recordCost / baseQuantity)}${product?.baseUnit ? `/${product.baseUnit}` : ""}`;
+                },
+                sortKey: (row) => {
+                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  const baseQuantity = Number(row.quantity ?? 0);
+                  if (!baseQuantity || typeof recordCost !== "number") return 0;
+                  return recordCost / baseQuantity;
+                },
+              },
+              {
+                label: uiText("Kosten"),
+                render: (row) => {
+                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  if (typeof recordCost !== "number") return "";
+                  return formatCurrency(recordCost);
+                },
+                sortKey: (row) => {
+                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  return typeof recordCost === "number" ? recordCost : 0;
+                },
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
+
+      {!!note.specialRecords?.length && (
+        <MyExpandable title={uiText("Sonderposten")} initiallyExpanded>
+          <MyTable
+            className="th-25rem"
+            rows={note.specialRecords}
+            columns={[
+              {
+                label: uiText("Bezeichnung"),
+                render: (row) => row.name,
+                sortKey: (row) => row.name,
+              },
+              {
+                label: uiText("Menge"),
+                render: (row) => `${formatNumber(row.amount)} ${row.unit}`,
+                sortKey: (row) => row.amount,
+              },
+              {
+                label: uiText("Preis pro Einheit"),
+                render: (row) =>
+                  row.pricePerUnit != null
+                    ? formatCurrency(row.pricePerUnit)
+                    : "",
+                sortKey: (row) => row.pricePerUnit ?? 0,
+              },
+              {
+                label: uiText("Gesamt"),
+                render: (row) =>
+                  row.pricePerUnit != null
+                    ? formatCurrency(row.amount * row.pricePerUnit)
+                    : "",
+                sortKey: (row) =>
+                  row.pricePerUnit != null ? row.amount * row.pricePerUnit : 0,
+              },
+            ]}
+            loadMore={{}}
+            autoConvertSmallViewport
+          />
+        </MyExpandable>
+      )}
+    </>
+  );
 }

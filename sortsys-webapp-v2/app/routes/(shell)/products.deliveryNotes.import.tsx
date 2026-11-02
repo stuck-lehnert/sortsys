@@ -1,3 +1,4 @@
+import { Button as UIAction } from "@sortsys/react-components";
 import type { MutateResult, QueryResult } from "@sortsys/v2-client";
 import { Heading, Tile } from "@sortsys/react-components";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -358,137 +359,172 @@ export default function ImportDeliveryNotePage() {
     }
   }
 
-  return <>
-    <MyHeader title={uiText("Einlesen", "Import")} />
+  return (
+    <>
+      <MyHeader title={uiText("Einlesen", "Import")} />
 
-    {!!error && <MyCallout
-      kind="error"
-      title={uiText("Scan fehlgeschlagen", "Scan failed")}
-      subtitle={error}
-    />}
+      {!!error && (
+        <MyCallout
+          kind="error"
+          title={uiText("Scan fehlgeschlagen", "Scan failed")}
+          subtitle={error}
+        />
+      )}
 
-    <Tile className="delivery-scan-upload">
-      <input
-        ref={fileInputRef}
-        className="hidden"
-        type="file"
-        multiple
-        accept="application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,image/jpeg,image/png,image/webp"
-        onChange={event => selectFiles(Array.from(event.currentTarget.files ?? []))}
-      />
-      <input
-        ref={cameraInputRef}
-        className="hidden"
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        capture="environment"
-        onChange={event => selectFiles(Array.from(event.currentTarget.files ?? []))}
-      />
+      <Tile className="delivery-scan-upload">
+        <input
+          ref={fileInputRef}
+          className="hidden"
+          type="file"
+          multiple
+          accept="application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,image/jpeg,image/png,image/webp"
+          onChange={(event) =>
+            selectFiles(Array.from(event.currentTarget.files ?? []))
+          }
+        />
+        <input
+          ref={cameraInputRef}
+          className="hidden"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          onChange={(event) =>
+            selectFiles(Array.from(event.currentTarget.files ?? []))
+          }
+        />
 
-      <div
-        className={"delivery-scan-picker" + (files.length ? " is-selected" : "")}
-        onDragOver={event => event.preventDefault()}
-        onDrop={event => {
-          event.preventDefault();
-          selectFiles(Array.from(event.dataTransfer.files ?? []));
-        }}
-      >
-        <div className="delivery-scan-picker-copy">
-          <Heading level={3} noMargin>
-            {files.length === 0
-              ? uiText("Dokumente auswählen", "Choose documents")
-              : files.length === 1
-                ? uiText("Ein Dokument ausgewählt", "One document selected")
-                : uiText(
-                    `${files.length} Dokumente ausgewählt`,
-                    `${files.length} documents selected`,
-                  )}
-          </Heading>
-          {files.length
-            ? <ul className="delivery-scan-selected-files">
-                {files.map(file => <li key={fileKey(file)}>
-                  <span title={file.name}>{file.name} · {formatFileSize(file.size)}</span>
-                  <button
-                    type="button"
-                    disabled={isUploading}
-                    aria-label={uiText(
-                      `${file.name} entfernen`,
-                      `Remove ${file.name}`,
+        <div
+          className={
+            "delivery-scan-picker" + (files.length ? " is-selected" : "")
+          }
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            selectFiles(Array.from(event.dataTransfer.files ?? []));
+          }}
+        >
+          <div className="delivery-scan-picker-copy">
+            <Heading level={3} noMargin>
+              {files.length === 0
+                ? uiText("Dokumente auswählen", "Choose documents")
+                : files.length === 1
+                  ? uiText("Ein Dokument ausgewählt", "One document selected")
+                  : uiText(
+                      `${files.length} Dokumente ausgewählt`,
+                      `${files.length} documents selected`,
                     )}
-                    onClick={() => setFiles(current => current.filter(item => fileKey(item) !== fileKey(file)))}
-                  >
-                    <Icons.Deny aria-hidden="true" />
-                  </button>
-                </li>)}
+            </Heading>
+            {files.length ? (
+              <ul className="delivery-scan-selected-files">
+                {files.map((file) => (
+                  <li key={fileKey(file)}>
+                    <span title={file.name}>
+                      {file.name} · {formatFileSize(file.size)}
+                    </span>
+                    <UIAction
+                      kind="ghost"
+                      type="button"
+                      disabled={isUploading}
+                      aria-label={uiText(
+                        `${file.name} entfernen`,
+                        `Remove ${file.name}`,
+                      )}
+                      onClick={() =>
+                        setFiles((current) =>
+                          current.filter(
+                            (item) => fileKey(item) !== fileKey(file),
+                          ),
+                        )
+                      }
+                    >
+                      <Icons.Deny aria-hidden="true" />
+                    </UIAction>
+                  </li>
+                ))}
               </ul>
-            : <p className="light">
+            ) : (
+              <p className="light">
                 {uiText(
                   "PDFs, Excel-Dateien und Bilder können kombiniert werden.",
                   "PDFs, Excel files, and images can be combined.",
                 )}
-              </p>}
+              </p>
+            )}
+          </div>
+
+          <div className="delivery-scan-picker-actions">
+            <MyButton
+              kind={files.length ? "ghost" : "secondary"}
+              renderIcon={Icons.Upload}
+              disabled={isUploading}
+              onClick={() => openFilePicker(fileInputRef.current)}
+            >
+              {files.length
+                ? uiText("Dateien hinzufügen", "Add files")
+                : uiText("Dateien auswählen", "Choose files")}
+            </MyButton>
+            <MyButton
+              kind={files.length ? "ghost" : "secondary"}
+              renderIcon={Icons.Camera}
+              disabled={isUploading}
+              onClick={() => openFilePicker(cameraInputRef.current)}
+            >
+              {uiText("Foto aufnehmen", "Take photo")}
+            </MyButton>
+          </div>
         </div>
 
-        <div className="delivery-scan-picker-actions">
-          <MyButton
-            kind={files.length ? "ghost" : "secondary"}
-            renderIcon={Icons.Upload}
-            disabled={isUploading}
-            onClick={() => openFilePicker(fileInputRef.current)}
-          >
-            {files.length
-              ? uiText("Dateien hinzufügen", "Add files")
-              : uiText("Dateien auswählen", "Choose files")}
-          </MyButton>
-          <MyButton
-            kind={files.length ? "ghost" : "secondary"}
-            renderIcon={Icons.Camera}
-            disabled={isUploading}
-            onClick={() => openFilePicker(cameraInputRef.current)}
-          >
-            {uiText("Foto aufnehmen", "Take photo")}
-          </MyButton>
-        </div>
-      </div>
+        {!!files.length && (
+          <div className="delivery-scan-start">
+            {isUploading && (
+              <span className="light">
+                {phase === "uploading"
+                  ? uiText("Dateien werden hochgeladen …", "Uploading files …")
+                  : uiText("Scan wird gestartet …", "Starting scan …")}
+              </span>
+            )}
+            <MyButton
+              renderIcon={Icons.DeliveryNote}
+              loading={isUploading}
+              onClick={() => void parseFiles()}
+            >
+              {uiText("Einlesen", "Scan")}
+            </MyButton>
+          </div>
+        )}
+      </Tile>
 
-      {!!files.length && <div className="delivery-scan-start">
-        {isUploading && <span className="light">
-          {phase === "uploading"
-            ? uiText("Dateien werden hochgeladen …", "Uploading files …")
-            : uiText("Scan wird gestartet …", "Starting scan …")}
-        </span>}
-        <MyButton
-          renderIcon={Icons.DeliveryNote}
-          loading={isUploading}
-          onClick={() => void parseFiles()}
-        >
-          {uiText("Einlesen", "Scan")}
-        </MyButton>
-      </div>}
-    </Tile>
+      <section className="delivery-scan-history" aria-live="polite">
+        <Heading level={3} noMargin>
+          {uiText("Letzte Scans", "Recent scans")}
+        </Heading>
 
-    <section className="delivery-scan-history" aria-live="polite">
-      <Heading level={3} noMargin>
-        {uiText("Letzte Scans", "Recent scans")}
-      </Heading>
+        {!!historyError && (
+          <MyCallout
+            kind="error"
+            title={uiText("Verlauf nicht verfügbar", "History unavailable")}
+            subtitle={historyError}
+          />
+        )}
 
-      {!!historyError && <MyCallout
-        kind="error"
-        title={uiText("Verlauf nicht verfügbar", "History unavailable")}
-        subtitle={historyError}
-      />}
+        {history === null ? (
+          <p className="light">{uiText("Wird geladen …", "Loading …")}</p>
+        ) : history.length === 0 ? (
+          <p className="delivery-scan-history-empty light">
+            {uiText(
+              "Noch keine Dokumente eingelesen.",
+              "No documents imported yet.",
+            )}
+          </p>
+        ) : (
+          <div className="delivery-scan-history-list">
+            {history.map((scan) => {
+              const canOpen =
+                scan.state === "completed" || scan.state === "failed";
 
-      {history === null
-        ? <p className="light">{uiText("Wird geladen …", "Loading …")}</p>
-        : history.length === 0
-          ? <p className="delivery-scan-history-empty light">
-              {uiText("Noch keine Dokumente eingelesen.", "No documents imported yet.")}
-            </p>
-          : <div className="delivery-scan-history-list">
-              {history.map(scan => {
-                const canOpen = scan.state === "completed" || scan.state === "failed";
-
-                return <button
+              return (
+                <UIAction
+                  kind="ghost"
                   key={scan.id}
                   type="button"
                   className="delivery-scan-history-row"
@@ -496,12 +532,17 @@ export default function ImportDeliveryNotePage() {
                   aria-disabled={!canOpen}
                   onClick={() => void openScan(scan)}
                 >
-                  <span className="delivery-scan-history-icon" aria-hidden="true">
-                    {scan.state === "completed"
-                      ? <Icons.Accept />
-                      : scan.state === "failed"
-                        ? <Icons.Deny />
-                        : <Icons.DeliveryNote />}
+                  <span
+                    className="delivery-scan-history-icon"
+                    aria-hidden="true"
+                  >
+                    {scan.state === "completed" ? (
+                      <Icons.Accept />
+                    ) : scan.state === "failed" ? (
+                      <Icons.Deny />
+                    ) : (
+                      <Icons.DeliveryNote />
+                    )}
                   </span>
                   <span className="delivery-scan-history-file">
                     <strong title={scan.fileNames.join("\n")}>
@@ -512,9 +553,9 @@ export default function ImportDeliveryNotePage() {
                           )
                         : scan.fileName}
                     </strong>
-                    {!!scanDocumentLabel(scan.documentType) && <span>
-                      {scanDocumentLabel(scan.documentType)}
-                    </span>}
+                    {!!scanDocumentLabel(scan.documentType) && (
+                      <span>{scanDocumentLabel(scan.documentType)}</span>
+                    )}
                     <time dateTime={scan.createdAt.toISOString()}>
                       {scan.createdAt.toLocaleString(localeTag, {
                         dateStyle: "medium",
@@ -527,12 +568,17 @@ export default function ImportDeliveryNotePage() {
                       ? uiText("Wird geöffnet …", "Opening …")
                       : scanStateLabel(scan.state)}
                   </span>
-                  {scan.state === "completed" && <Icons.AccordionClosed aria-hidden="true" />}
-                </button>;
-              })}
-            </div>}
-    </section>
-  </>;
+                  {scan.state === "completed" && (
+                    <Icons.AccordionClosed aria-hidden="true" />
+                  )}
+                </UIAction>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </>
+  );
 }
 
 function fileKey(file: File) {

@@ -1,10 +1,15 @@
+import { Card } from "@heroui/react";
+import { Loading } from "@sortsys/react-components";
+import { Button as UIAction } from "@sortsys/react-components";
+import { TextArea as UITextArea } from "@heroui/react";
 import type { MutateInput, QueryResult } from "@sortsys/v2-client";
-import { Heading, TextArea } from "@sortsys/react-components";
+import { Heading, Modal, TextArea } from "@sortsys/react-components";
 import { useNavigate, useParams } from "react-router";
 import {
   Fragment,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -24,6 +29,7 @@ import {
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { createChatRequests } from "~/lib/chatRequests";
+import { prepareProposalInput } from "~/lib/llmProposalInput";
 import type { ProjectFileTarget } from "~/lib/projectFileLinks";
 import { Icons } from "~/lib/icons";
 import {
@@ -75,27 +81,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function prepareProposalInput(value: unknown, field = ''): unknown {
-  if (field === 'effectiveAt' && typeof value === 'string' && value.toLowerCase() === 'now') {
-    return new Date().toISOString();
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(entry => prepareProposalInput(entry));
-  }
-
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.entries(value).map(([nestedField, nestedValue]) => [
-        nestedField,
-        prepareProposalInput(nestedValue, nestedField),
-      ]),
-    );
-  }
-
-  return value;
-}
-
 function formatProposalValue(
   locale: Locale,
   localeTag: string,
@@ -105,6 +90,13 @@ function formatProposalValue(
 ): string | null {
   if (value === null || value === undefined) return t('common.notSet');
   if (typeof value === 'boolean') return value ? t('common.yes') : t('common.no');
+
+  if (value instanceof Date) {
+    return new Intl.DateTimeFormat(localeTag, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(value);
+  }
 
   if (typeof value === 'number') {
     if (field === 'relativeFactor') {
@@ -170,33 +162,39 @@ function ProposalValue({
   }
 
   if (typeof value === 'string' && (field === 'id' || field.endsWith('Id'))) {
-    return <span>{t('proposal.existingEntry')}</span>;
+    return <span>{t("proposal.existingEntry")}</span>;
   }
 
   const formatted = formatProposalValue(locale, localeTag, t, field, value);
   if (formatted !== null) return <span>{formatted}</span>;
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return <span>{t('common.none')}</span>;
+    if (value.length === 0) return <span>{t("common.none")}</span>;
 
-    return <ol className="assistant-proposal-value-list">
-      {value.map((entry, index) => <li key={index}>
-        <ProposalValue
-          field={field}
-          operationPath={operationPath}
-          rootInput={rootInput}
-          value={entry}
-        />
-      </li>)}
-    </ol>;
+    return (
+      <ol className="assistant-proposal-value-list list-disc space-y-2 pl-4 text-sm">
+        {value.map((entry, index) => (
+          <li key={index}>
+            <ProposalValue
+              field={field}
+              operationPath={operationPath}
+              rootInput={rootInput}
+              value={entry}
+            />
+          </li>
+        ))}
+      </ol>
+    );
   }
 
-  if (isRecord(value)) return <ProposalFields
-    input={value}
-    nested
-    operationPath={operationPath}
-    rootInput={rootInput}
-  />;
+  if (isRecord(value)) return (
+      <ProposalFields
+        input={value}
+        nested
+        operationPath={operationPath}
+        rootInput={rootInput}
+      />
+    );
 
   return <span>{String(value)}</span>;
 }
@@ -214,19 +212,33 @@ function ProposalFields({
 }) {
   const { locale } = useI18n();
 
-  return <dl className={'assistant-proposal-fields' + (nested ? ' is-nested' : '')}>
-    {Object.entries(input).map(([field, value]) => <div key={field}>
-      <dt>{proposalFieldLabel(locale, field)}</dt>
-      <dd>
-        <ProposalValue
-          field={field}
-          operationPath={operationPath}
-          rootInput={rootInput}
-          value={value}
-        />
-      </dd>
-    </div>)}
-  </dl>;
+  return (
+    <dl
+      className={[
+        "assistant-proposal-fields min-w-0 text-sm",
+        "[&>div]:grid [&>div]:gap-x-4 [&>div]:gap-y-1 [&>div]:py-2",
+        "sm:[&>div]:grid-cols-[minmax(8rem,0.4fr)_minmax(0,1fr)]",
+        "[&>div+div]:border-t [&>div+div]:border-separator",
+        "[&_dt]:text-xs [&_dt]:font-medium [&_dt]:text-muted",
+        "[&_dd]:min-w-0 [&_dd]:break-words",
+        nested ? "is-nested" : "rounded-lg bg-surface px-3",
+      ].join(" ")}
+    >
+      {Object.entries(input).map(([field, value]) => (
+        <div key={field}>
+          <dt>{proposalFieldLabel(locale, field)}</dt>
+          <dd>
+            <ProposalValue
+              field={field}
+              operationPath={operationPath}
+              rootInput={rootInput}
+              value={value}
+            />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function executionLink(
@@ -295,70 +307,129 @@ function executionLink(
 function AcceptedProposal({ proposal }: { proposal: Proposal }) {
   const { locale, t } = useI18n();
   const operations = proposal.operations as unknown as ProposedOperation[];
-  const executionResults = (proposal.executionResults ?? []) as unknown as ProposalExecutionResult[];
+  const executionResults = (proposal.executionResults ??
+    []) as unknown as ProposalExecutionResult[];
   const links = operations
-    .map((operation, index) => executionLink(operation, executionResults[index], t))
+    .map((operation, index) =>
+      executionLink(operation, executionResults[index], t),
+    )
     .filter((link): link is ProposalLink => link !== null);
 
-  return <article className="assistant-proposal is-accepted">
-    <Heading level={4} noMargin>{proposal.title}</Heading>
-    <p>{proposal.summary}</p>
+  return (
+    <Card
+      variant="secondary"
+      role="article"
+      className="assistant-proposal min-w-0 gap-4 is-accepted"
+    >
+      <Heading level={4} noMargin>
+        {proposal.title}
+      </Heading>
+      <p>{proposal.summary}</p>
 
-    <ol>
-      {operations.map((operation, index) => <li
-        key={operation.path + '-' + index}
-        className="assistant-proposal-operation"
+      <ol>
+        {operations.map((operation, index) => (
+          <li
+            key={operation.path + "-" + index}
+            className={[
+              "assistant-proposal-operation flex flex-col gap-2 rounded-lg",
+              "bg-surface p-3 text-sm",
+            ].join(" ")}
+          >
+            <strong>
+              {proposalOperationLabel(locale, operation.path) ??
+                t("proposal.change")}
+            </strong>
+            <span>{operation.description}</span>
+
+            <div className="assistant-proposal-input min-w-0 space-y-2">
+              <span className="assistant-proposal-input-label block text-xs font-medium text-muted">
+                {t("proposal.appliedData")}
+              </span>
+              <ProposalFields
+                input={operation.input}
+                operationPath={operation.path}
+              />
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <div
+        className={[
+          "assistant-proposal-complete flex items-start gap-2 text-success",
+          "[&_div]:flex [&_div]:flex-col [&_div]:gap-2",
+        ].join(" ")}
       >
-        <strong>{proposalOperationLabel(locale, operation.path) ?? t('proposal.change')}</strong>
-        <span>{operation.description}</span>
-
-        <div className="assistant-proposal-input">
-          <span className="assistant-proposal-input-label">{t('proposal.appliedData')}</span>
-          <ProposalFields input={operation.input} operationPath={operation.path} />
+        <Icons.Accept size={20} aria-hidden="true" />
+        <div>
+          <strong className="text-foreground">{t("proposal.accepted")}</strong>
+          {links.map((link, index) => (
+            <MyLink
+              key={link.href + index}
+              to={link.href}
+              style={{
+                color:
+                  "color-mix(in oklab, var(--accent) 35%, var(--foreground))",
+              }}
+            >
+              {link.label}
+            </MyLink>
+          ))}
         </div>
-      </li>)}
-    </ol>
-
-    <div className="assistant-proposal-complete">
-      <Icons.Accept size={20} />
-      <div>
-        <strong>{t('proposal.accepted')}</strong>
-        {links.map((link, index) => <MyLink key={link.href + index} to={link.href}>
-          {link.label}
-        </MyLink>)}
       </div>
-    </div>
-  </article>;
+    </Card>
+  );
 }
 
 function DeclinedProposal({ proposal }: { proposal: Proposal }) {
   const { locale, t } = useI18n();
   const operations = proposal.operations as unknown as ProposedOperation[];
 
-  return <article className="assistant-proposal is-declined">
-    <Heading level={4} noMargin>{proposal.title}</Heading>
-    <p>{proposal.summary}</p>
+  return (
+    <Card
+      variant="secondary"
+      role="article"
+      className="assistant-proposal min-w-0 gap-4 is-declined"
+    >
+      <Heading level={4} noMargin>
+        {proposal.title}
+      </Heading>
+      <p>{proposal.summary}</p>
 
-    <ol>
-      {operations.map((operation, index) => <li
-        key={operation.path + '-' + index}
-        className="assistant-proposal-operation"
-      >
-        <strong>{proposalOperationLabel(locale, operation.path) ?? t('proposal.change')}</strong>
-        <span>{operation.description}</span>
+      <ol>
+        {operations.map((operation, index) => (
+          <li
+            key={operation.path + "-" + index}
+            className={[
+              "assistant-proposal-operation flex flex-col gap-2 rounded-lg",
+              "bg-surface p-3 text-sm",
+            ].join(" ")}
+          >
+            <strong>
+              {proposalOperationLabel(locale, operation.path) ??
+                t("proposal.change")}
+            </strong>
+            <span>{operation.description}</span>
 
-        <div className="assistant-proposal-input">
-          <span className="assistant-proposal-input-label">{t('proposal.proposedData')}</span>
-          <ProposalFields input={operation.input} operationPath={operation.path} />
-        </div>
-      </li>)}
-    </ol>
+            <div className="assistant-proposal-input min-w-0 space-y-2">
+              <span className="assistant-proposal-input-label block text-xs font-medium text-muted">
+                {t("proposal.proposedData")}
+              </span>
+              <ProposalFields
+                input={operation.input}
+                operationPath={operation.path}
+              />
+            </div>
+          </li>
+        ))}
+      </ol>
 
-    <div className="assistant-proposal-declined">
-      <Icons.Deny size={20} />
-      <strong>{t('proposal.declined')}</strong>
-    </div>
-  </article>;
+      <div className="assistant-proposal-declined flex items-center gap-2 text-muted">
+        <Icons.Deny size={20} aria-hidden="true" />
+        <strong>{t("proposal.declined")}</strong>
+      </div>
+    </Card>
+  );
 }
 
 export default function LlmPage() {
@@ -372,6 +443,7 @@ export default function LlmPage() {
   );
   const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [content, setContent] = useState('');
+  const [isStartingNewChat, setIsStartingNewChat] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<ProjectFileTarget | null>(null);
   const closeFilePreview = useCallback(() => {
     setPreviewTarget(null);
@@ -391,7 +463,15 @@ export default function LlmPage() {
     () => null,
   );
   const submittedMessage = request?.pending ? request.submission : null;
-  const [revisionComments, setRevisionComments] = useState<Record<string, string>>({});
+  const [revisionComments, setRevisionComments] = useState<
+    Record<string, string>
+  >({});
+  const acceptLabelId = useId();
+  const revisionBusyRef = useRef<string | null>(null);
+  const [revisionProposalId, setRevisionProposalId] = useState<string | null>(
+    null,
+  );
+  const [revisionError, setRevisionError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -411,7 +491,26 @@ export default function LlmPage() {
 
   useEffect(() => {
     setPending(null);
+    revisionBusyRef.current = null;
+    setRevisionProposalId(null);
+    setRevisionError(null);
+    setRevisionComments({});
+
+    if (!selectedId) {
+      setIsStartingNewChat(false);
+    }
   }, [selectedId]);
+
+  useEffect(
+    () =>
+      client.listenAuthState(() => {
+        revisionBusyRef.current = null;
+        setRevisionProposalId(null);
+        setRevisionError(null);
+        setRevisionComments({});
+      }),
+    [],
+  );
 
   useEffect(() => {
     // Keep loaded history visible when a request starts in the current chat.
@@ -479,6 +578,10 @@ export default function LlmPage() {
     )) ?? [],
     [detail],
   );
+  const revisionProposal = visibleProposals.find(
+    (proposal) =>
+      proposal.id === revisionProposalId && proposal.status === "pending",
+  );
   const unattachedProposals = useMemo(
     () => visibleProposals.filter(proposal => proposal.assistantMessageId === null),
     [visibleProposals],
@@ -492,10 +595,13 @@ export default function LlmPage() {
   const isSending = pending === 'send' || !!request?.pending;
 
   async function loadChat(chatId: string) {
+    // A fast review can finish while the initial query is still deduplicated.
+    await client.invalidate("llm.chats.get");
+
     const [data, err] = await client.query(
-      'llm.chats.get',
+      "llm.chats.get",
       { chatId },
-      { strategy: 'network-first' },
+      { strategy: "network-first" },
     );
 
     if (!mountedRef.current || selectedIdRef.current !== chatId) {
@@ -511,6 +617,8 @@ export default function LlmPage() {
   }
 
   function beginNewChat() {
+    // Keep the composer inactive until the new-chat route commits.
+    setIsStartingNewChat(true);
     void navigate('/llm');
     setDetail(null);
     setContent('');
@@ -520,7 +628,7 @@ export default function LlmPage() {
   async function sendMessage(message = content) {
     const normalizedMessage = message.trim();
 
-    if (!normalizedMessage || isSending) {
+    if (!normalizedMessage || isSending || isStartingNewChat) {
       return;
     }
 
@@ -610,26 +718,67 @@ export default function LlmPage() {
 
   async function requestRevision(proposal: Proposal) {
     const comment = revisionComments[proposal.id]?.trim();
-    if (!comment) return;
-
-    setPending(proposal.id);
-    const [, reviewError] = await client.mutate('llm.proposals.review', {
-      proposalId: proposal.id,
-      decision: 'requestRevision',
-      comment,
-    });
-
-    if (reviewError) {
-      setPending(null);
-      setError(reviewError.message);
+    if (
+      !comment ||
+      !selectedId ||
+      isSending ||
+      pending !== null ||
+      revisionBusyRef.current !== null
+    ) {
       return;
     }
 
-    await sendMessage(uiText(
-      'Überarbeite den Vorschlag „' + proposal.title + '“. Kommentar: ' + comment,
-      'Revise the proposal “' + proposal.title + '”. Comment: ' + comment,
-    ));
-    setRevisionComments(previous => ({ ...previous, [proposal.id]: '' }));
+    revisionBusyRef.current = proposal.id;
+
+    const chatId = selectedId;
+    const isCurrentSession = chatRequests.sessionGuard();
+
+    setPending(proposal.id);
+    setRevisionError(null);
+
+    const [, reviewError] = await client.mutate("llm.proposals.review", {
+      proposalId: proposal.id,
+      decision: "requestRevision",
+      comment,
+    });
+
+    if (
+      !isCurrentSession() ||
+      !mountedRef.current ||
+      selectedIdRef.current !== chatId
+    ) {
+      return;
+    }
+
+    revisionBusyRef.current = null;
+
+    if (reviewError) {
+      setPending(null);
+      setRevisionError(reviewError.message);
+      return;
+    }
+
+    setRevisionProposalId(null);
+    setRevisionComments((previous) => ({ ...previous, [proposal.id]: "" }));
+
+    await sendMessage(
+      uiText(
+        "Überarbeite den Vorschlag „" +
+          proposal.title +
+          "“. Kommentar: " +
+          comment,
+        "Revise the proposal “" + proposal.title + "”. Comment: " + comment,
+      ),
+    );
+  }
+
+  function closeRevision() {
+    if (pending !== null || revisionBusyRef.current !== null) {
+      return;
+    }
+
+    setRevisionProposalId(null);
+    setRevisionError(null);
   }
 
   async function accept(proposal: Proposal) {
@@ -641,15 +790,33 @@ export default function LlmPage() {
     const isCurrentSession = chatRequests.sessionGuard();
     const operations = proposal.operations as unknown as ProposedOperation[];
     const executionResults: ProposalExecutionResult[] = [];
+    let executableInputs: Record<string, unknown>[];
+
+    try {
+      executableInputs = operations.map(
+        (operation) =>
+          prepareProposalInput(operation.input) as Record<string, unknown>,
+      );
+    } catch {
+      setError(
+        uiText(
+          "Der Vorschlag enthält ein ungültiges Datum.",
+          "The proposal contains an invalid date.",
+        ),
+      );
+      return;
+    }
 
     setPending(proposal.id);
     setError(null);
 
     // Every operation uses the current user's client and therefore the current
     // bearer token and ordinary mutation permission checks.
-    for (const operation of operations) {
-      const executableInput = prepareProposalInput(operation.input) as Record<string, unknown>;
-      const [output, operationError] = await client.mutateDynamic(operation.path, executableInput);
+    for (const [index, operation] of operations.entries()) {
+      const [output, operationError] = await client.mutateDynamic(
+        operation.path,
+        executableInputs[index],
+      );
 
       if (!isCurrentSession()) {
         return;
@@ -657,22 +824,22 @@ export default function LlmPage() {
 
       if (operationError) {
         setPending(null);
-        setError(operation.description + ': ' + operationError.message);
+        setError(operation.description + ": " + operationError.message);
         return;
       }
 
       executionResults.push({
         path: operation.path,
-        output: output as ProposalExecutionResult['output'],
+        output: output as ProposalExecutionResult["output"],
       });
     }
 
     setPending(null);
 
     await chatRequests.start(chatId, null, async () => {
-      const [, reviewError] = await client.mutate('llm.proposals.review', {
+      const [, reviewError] = await client.mutate("llm.proposals.review", {
         proposalId: proposal.id,
-        decision: 'accept',
+        decision: "accept",
         comment: null,
         executionResults,
         continueConversation: true,
@@ -682,10 +849,12 @@ export default function LlmPage() {
         throw reviewError;
       }
 
+      await client.invalidate("llm.chats.get");
+
       const [updated, loadError] = await client.query(
-        'llm.chats.get',
+        "llm.chats.get",
         { chatId },
-        { strategy: 'network-only' },
+        { strategy: "network-only" },
       );
 
       if (loadError) {
@@ -693,10 +862,10 @@ export default function LlmPage() {
       }
 
       if (!updated) {
-        throw new Error(uiText('Chat nicht gefunden.', 'Chat not found.'));
+        throw new Error(uiText("Chat nicht gefunden.", "Chat not found."));
       }
 
-      void client.invalidate('llm.chats.list');
+      void client.invalidate("llm.chats.list");
 
       return updated;
     });
@@ -705,62 +874,77 @@ export default function LlmPage() {
   function renderPendingProposal(proposal: Proposal) {
     const operations = proposal.operations as unknown as ProposedOperation[];
 
-    return <article key={proposal.id} className="assistant-proposal">
-      <Heading level={4} noMargin>{proposal.title}</Heading>
-      <p>{proposal.summary}</p>
+    return (
+      <Card
+        variant="secondary"
+        role="article"
+        key={proposal.id}
+        className="assistant-proposal min-w-0 gap-4"
+      >
+        <Heading level={4} noMargin>
+          {proposal.title}
+        </Heading>
+        <p>{proposal.summary}</p>
 
-      <ol>
-        {operations.map((operation, index) => (
-          <li key={operation.path + '-' + index} className="assistant-proposal-operation">
-            <strong>{proposalOperationLabel(locale, operation.path) ?? t('proposal.change')}</strong>
-            <span>{operation.description}</span>
+        <ol>
+          {operations.map((operation, index) => (
+            <li
+              key={operation.path + "-" + index}
+              className={[
+                "assistant-proposal-operation flex flex-col gap-2 rounded-lg",
+                "bg-surface p-3 text-sm",
+              ].join(" ")}
+            >
+              <strong>
+                {proposalOperationLabel(locale, operation.path) ??
+                  t("proposal.change")}
+              </strong>
+              <span>{operation.description}</span>
 
-            <div className="assistant-proposal-input">
-              <span className="assistant-proposal-input-label">{t('proposal.plannedData')}</span>
-              <ProposalFields input={operation.input} operationPath={operation.path} />
-            </div>
-          </li>
-        ))}
-      </ol>
+              <div className="assistant-proposal-input min-w-0 space-y-2">
+                <span className="assistant-proposal-input-label block text-xs font-medium text-muted">
+                  {t("proposal.plannedData")}
+                </span>
+                <ProposalFields
+                  input={operation.input}
+                  operationPath={operation.path}
+                />
+              </div>
+            </li>
+          ))}
+        </ol>
 
-      <TextArea
-        id={'revision-' + proposal.id}
-        labelText={t('proposal.revision')}
-        rows={2}
-        value={revisionComments[proposal.id] ?? ''}
-        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-          const value = event.currentTarget.value;
-          setRevisionComments(previous => ({
-            ...previous,
-            [proposal.id]: value,
-          }));
-        }}
-      />
-
-      <div className="assistant-proposal-actions">
-        <MyButton
-          loading={pending === proposal.id}
-          disabled={isSending || pending !== null}
-          onClick={() => void accept(proposal)}
-        >
-          {t('proposal.accept')}
-        </MyButton>
-        <MyButton
-          kind="secondary"
-          disabled={isSending || pending !== null || !revisionComments[proposal.id]?.trim()}
-          onClick={() => void requestRevision(proposal)}
-        >
-          {t('proposal.revise')}
-        </MyButton>
-        <MyButton
-          kind="ghost"
-          disabled={isSending || pending !== null}
-          onClick={() => void decline(proposal)}
-        >
-          {t('proposal.decline')}
-        </MyButton>
-      </div>
-    </article>;
+        <div className="assistant-proposal-actions flex flex-wrap gap-2">
+          <MyButton
+            className="bg-success text-success-foreground hover:bg-success/90"
+            aria-labelledby={acceptLabelId}
+            loading={pending === proposal.id}
+            disabled={isSending || pending !== null}
+            onClick={() => void accept(proposal)}
+          >
+            {t("proposal.accept")}
+          </MyButton>
+          <MyButton
+            kind="secondary"
+            disabled={isSending || pending !== null}
+            onClick={() => {
+              setRevisionError(null);
+              setRevisionProposalId(proposal.id);
+            }}
+          >
+            {t("proposal.revise")}
+          </MyButton>
+          <MyButton
+            kind="danger"
+            className="bg-red-700 text-white hover:bg-red-800"
+            disabled={isSending || pending !== null}
+            onClick={() => void decline(proposal)}
+          >
+            {t("proposal.decline")}
+          </MyButton>
+        </div>
+      </Card>
+    );
   }
 
   function renderProposal(proposal: Proposal) {
@@ -776,117 +960,268 @@ export default function LlmPage() {
 
   if (status && !status.available) {
     const reason = !status.hasRole
-      ? t('llm.missingRole')
+      ? t("llm.missingRole")
       : !status.tenantEnabled
-        ? t('llm.tenantDisabled')
-        : t('llm.providerMissing');
+        ? t("llm.tenantDisabled")
+        : t("llm.providerMissing");
 
-    return <MyCallout icon={Icons.Info} color="blue">{reason}</MyCallout>;
+    return (
+      <MyCallout icon={Icons.Info} color="blue">
+        {reason}
+      </MyCallout>
+    );
   }
 
-  return <>
-    {!!statusErr && <MyCallout icon={Icons.Deny} color="red">{statusErr.message}</MyCallout>}
-    {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
-
-    <div className="assistant-shell">
-      <section className={'assistant-chat' + (!hasMessages ? ' is-empty' : '')}>
-        <div className="assistant-chat-toolbar">
+  return (
+    <>
+      <section
+        aria-label={t("llm.chats")}
+        className="llm-page mx-auto flex h-[calc(100dvh-7rem)] min-h-0 w-full flex-col gap-3"
+      >
+        <header className="flex min-h-10 shrink-0 items-center justify-end gap-2">
+          {!!selectedId && (
+            <h1 className="sr-only">
+              {detail?.chat.title ?? t("llm.newChat")}
+            </h1>
+          )}
           <MyButton
             kind="ghost"
             size="sm"
             renderIcon={Icons.Chat}
-            onClick={() => void navigate('/llm/chats')}
+            onClick={() => void navigate("/llm/chats")}
           >
-            {t('llm.chats')}
+            {t("llm.previousChats")}
           </MyButton>
-          {!!selectedId && <MyButton
-            kind="ghost"
-            size="sm"
-            renderIcon={Icons.Create}
-            disabled={isSending}
-            onClick={beginNewChat}
-          >
-            {t('llm.newChat')}
-          </MyButton>}
-        </div>
-        <div ref={transcriptRef} className="assistant-transcript" aria-live="polite">
-          <div className="assistant-messages">
-            {!hasMessages && <div className="assistant-welcome">
-              <Heading level={2} noMargin>{t('llm.welcome')}</Heading>
-            </div>}
+          {!!selectedId && (
+            <MyButton
+              kind="ghost"
+              size="sm"
+              renderIcon={Icons.Create}
+              disabled={isSending || isStartingNewChat}
+              onClick={beginNewChat}
+            >
+              {t("llm.newChat")}
+            </MyButton>
+          )}
+        </header>
 
-            {detail?.messages.map(message => <Fragment key={message.id}>
-              {(message.role === 'user' || message.content.trim()) && <article className={'assistant-message assistant-message--' + message.role}>
-                {message.role === 'user'
-                  ? <p>{message.content}</p>
-                  : <AssistantMarkdown
-                      content={message.content}
-                      onOpenFile={setPreviewTarget}
-                    />}
-              </article>}
-              {visibleProposals
-                .filter(proposal => proposal.assistantMessageId === message.id)
-                .map(renderProposal)}
-            </Fragment>)}
+        {!!statusErr && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {statusErr.message}
+          </MyCallout>
+        )}
+        {!!error && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
+        )}
 
-            {!!submittedMessage && !submittedMessageIsPersisted && <article className="assistant-message assistant-message--user">
-              <p>{submittedMessage.content}</p>
-            </article>}
+        <div
+          ref={transcriptRef}
+          role="log"
+          aria-label={t("llm.chats")}
+          aria-live="polite"
+          aria-relevant="additions text"
+          tabIndex={0}
+          className={[
+            "min-h-0 flex-1 overflow-y-auto rounded-lg",
+            "[scrollbar-gutter:stable] focus-visible:outline-2",
+            "focus-visible:outline-offset-2 focus-visible:outline-focus",
+          ].join(" ")}
+        >
+          <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 p-1 sm:p-3">
+            {!status && !statusErr ? (
+              <div className="flex flex-1 items-center justify-center">
+                <Loading active description={t("common.loading")} />
+              </div>
+            ) : !hasMessages ? (
+              <div
+                className={[
+                  "flex flex-1 flex-col items-center justify-center",
+                  "gap-4 p-4 text-center",
+                ].join(" ")}
+              >
+                <Icons.Magic
+                  size={32}
+                  className="text-accent"
+                  aria-hidden="true"
+                />
+                <Heading level={selectedId ? 2 : 1} noMargin>
+                  {t("llm.welcome")}
+                </Heading>
+              </div>
+            ) : null}
 
-            {isSending && <article className="assistant-message assistant-message--assistant assistant-message--thinking">
-              <span className="assistant-thinking" role="status">
-                <span className="assistant-thinking-bars" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="assistant-thinking-label">{t('llm.responding')}</span>
-              </span>
-            </article>}
+            {detail?.messages.map((message) => (
+              <Fragment key={message.id}>
+                {(message.role === "user" || message.content.trim()) && (
+                  <article
+                    className={
+                      message.role === "user"
+                        ? "ml-auto min-w-0 max-w-[90%]"
+                        : "min-w-0 w-full"
+                    }
+                  >
+                    {message.role === "user" ? (
+                      <Card
+                        variant="secondary"
+                        className={[
+                          "gap-0 whitespace-pre-wrap break-words px-4 py-3",
+                          "text-sm leading-relaxed",
+                        ].join(" ")}
+                      >
+                        {message.content}
+                      </Card>
+                    ) : (
+                      <AssistantMarkdown
+                        content={message.content}
+                        onOpenFile={setPreviewTarget}
+                      />
+                    )}
+                  </article>
+                )}
+                {visibleProposals
+                  .filter(
+                    (proposal) => proposal.assistantMessageId === message.id,
+                  )
+                  .map(renderProposal)}
+              </Fragment>
+            ))}
+
+            {!!submittedMessage && !submittedMessageIsPersisted && (
+              <article className="ml-auto min-w-0 max-w-[90%]">
+                <Card
+                  variant="secondary"
+                  className={[
+                    "gap-0 whitespace-pre-wrap break-words px-4 py-3",
+                    "text-sm leading-relaxed",
+                  ].join(" ")}
+                >
+                  {submittedMessage.content}
+                </Card>
+              </article>
+            )}
+
+            {isSending && (
+              <Loading active small description={t("llm.responding")} />
+            )}
 
             {unattachedProposals.map(renderProposal)}
           </div>
         </div>
 
         <form
-          className="assistant-composer"
-          onSubmit={event => {
+          className="mx-auto w-full max-w-3xl shrink-0 space-y-2"
+          onSubmit={(event) => {
             event.preventDefault();
             void sendMessage();
           }}
         >
-          <div className="assistant-composer-box">
-            <textarea
+          <div className="flex items-end gap-2">
+            <UITextArea
               autoFocus
-              aria-label={t('llm.message')}
-              rows={1}
+              variant="secondary"
+              className="max-h-48 min-h-14 min-w-0 flex-1 resize-none"
+              aria-label={t("llm.message")}
+              placeholder={t("llm.placeholder")}
               value={content}
-              placeholder={t('llm.placeholder')}
-              disabled={isSending}
-              onChange={event => setContent(event.currentTarget.value)}
+              disabled={isSending || isStartingNewChat || !status?.available}
+              rows={2}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+                setContent(event.currentTarget.value);
+              }}
               onKeyDown={handleComposerKeyDown}
             />
-            <button
+            <UIAction
               type="submit"
-              className="assistant-send"
-              disabled={!content.trim() || isSending}
-              aria-label={t('llm.send')}
+              className="shrink-0 rounded-full"
+              aria-label={t("llm.send")}
+              title={t("llm.send")}
+              disabled={
+                isSending ||
+                isStartingNewChat ||
+                !status?.available ||
+                !content.trim()
+              }
             >
-              <Icons.Magic size={20} />
-            </button>
+              <Icons.Magic size={18} aria-hidden="true" />
+              <span className="sr-only sm:not-sr-only">{t("llm.send")}</span>
+            </UIAction>
           </div>
-          <span className="assistant-composer-hint">{t('llm.composerHint')}</span>
+          <p className="px-1 text-xs leading-relaxed text-muted">
+            {t("llm.composerHint")}
+          </p>
         </form>
       </section>
-    </div>
 
-    {previewTarget && (
-      <ProjectFilePreviewModal
-        key={`${previewTarget.projectId}:${previewTarget.fileId}`}
-        target={previewTarget}
-        onClose={closeFilePreview}
-      />
-    )}
-  </>;
+      {/* Pending announcements keep their name after the proposal is replaced. */}
+      <span id={acceptLabelId} className="sr-only">
+        {t("proposal.accept")}
+      </span>
+
+      <Modal
+        open={Boolean(revisionProposal)}
+        modalHeading={t("proposal.revise")}
+        primaryButtonText={t("proposal.revise")}
+        secondaryButtonText={uiText("Abbrechen", "Cancel")}
+        closeButtonLabel={uiText("Schließen", "Close")}
+        primaryButtonDisabled={
+          !revisionProposal ||
+          !revisionComments[revisionProposal.id]?.trim() ||
+          isSending ||
+          pending !== null
+        }
+        secondaryButtonDisabled={pending !== null}
+        onRequestClose={closeRevision}
+        onRequestSubmit={() => {
+          if (revisionProposal) {
+            void requestRevision(revisionProposal);
+          }
+        }}
+      >
+        {revisionProposal && (
+          <div className="space-y-3">
+            <p className="text-sm font-medium">{revisionProposal.title}</p>
+            <TextArea
+              id={"revision-" + revisionProposal.id}
+              labelText={t("proposal.revision")}
+              rows={3}
+              disabled={pending !== null}
+              value={revisionComments[revisionProposal.id] ?? ""}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+                const value = event.currentTarget.value;
+                setRevisionComments((previous) => ({
+                  ...previous,
+                  [revisionProposal.id]: value,
+                }));
+              }}
+            />
+            {pending === revisionProposal.id && (
+              <Loading
+                active
+                small
+                description={uiText(
+                  "Überarbeitung wird angefordert.",
+                  "Requesting revision.",
+                )}
+              />
+            )}
+            {revisionError && (
+              <MyCallout icon={Icons.Deny} color="red">
+                {revisionError}
+              </MyCallout>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {previewTarget && (
+        <ProjectFilePreviewModal
+          key={`${previewTarget.projectId}:${previewTarget.fileId}`}
+          target={previewTarget}
+          onClose={closeFilePreview}
+        />
+      )}
+    </>
+  );
 }

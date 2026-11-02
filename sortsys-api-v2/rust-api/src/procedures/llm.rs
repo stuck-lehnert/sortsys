@@ -1494,6 +1494,7 @@ impl From<llm::PublicProviderAccount> for ProviderAccountSettings {
 struct ProviderModelOption {
     id: String,
     name: String,
+    supports_image_input: bool,
 }
 
 impl From<llm::AvailableProviderModel> for ProviderModelOption {
@@ -1501,6 +1502,7 @@ impl From<llm::AvailableProviderModel> for ProviderModelOption {
         Self {
             id: value.id,
             name: value.name,
+            supports_image_input: value.supports_image_input,
         }
     }
 }

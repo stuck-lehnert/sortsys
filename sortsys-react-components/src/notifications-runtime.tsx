@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
@@ -9,10 +9,14 @@ import React, {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import { Button, Toast } from "@heroui/react";
 
 export type NotificationKind = "info" | "success" | "warning" | "danger";
-export type NotificationDismissReason = "action" | "close" | "programmatic" | "timeout";
+export type NotificationDismissReason =
+  | "action"
+  | "close"
+  | "programmatic"
+  | "timeout";
 
 export type NotificationIcon = ComponentType<{
   size?: number;
@@ -39,7 +43,8 @@ export interface NotificationOptions {
   onDismiss?: (reason: NotificationDismissReason) => void;
 }
 
-export interface NotificationUpdate extends Partial<Omit<NotificationOptions, "id">> {}
+export interface NotificationUpdate
+  extends Partial<Omit<NotificationOptions, "id">> {}
 
 export interface NotificationApi {
   push: (notification: NotificationOptions) => string;
@@ -60,12 +65,21 @@ export interface NotificationProviderProps {
   regionLabel?: string;
 }
 
-type StoredNotification = Omit<NotificationOptions, "id" | "kind" | "duration"> & {
+type NotificationValue = Omit<
+  NotificationOptions,
+  "id" | "kind" | "duration"
+> & {
   id: string;
   kind: NotificationKind;
   duration: number | null;
   revision: number;
-  state: "visible" | "leaving";
+};
+
+type ActiveNotification = {
+  key: string;
+  value: NotificationValue;
+  reason?: NotificationDismissReason;
+  closing: boolean;
 };
 
 const DEFAULT_DURATIONS: Record<NotificationKind, number | null> = {
@@ -76,7 +90,6 @@ const DEFAULT_DURATIONS: Record<NotificationKind, number | null> = {
 };
 
 const NotificationContext = createContext<NotificationApi | null>(null);
-
 let fallbackNotificationId = 0;
 
 function createNotificationId() {
@@ -89,161 +102,48 @@ function createNotificationId() {
 }
 
 function normalizeKind(kind: NotificationOptions["kind"]): NotificationKind {
-  if (kind === "success" || kind === "warning" || kind === "danger") return kind;
+  if (kind === "success" || kind === "warning" || kind === "danger") {
+    return kind;
+  }
+
   return "info";
 }
 
-function normalizeDuration(duration: number | null | undefined, fallback: number | null) {
-  if (duration === null || duration === 0) return null;
-  if (duration === undefined) return fallback;
-  if (!Number.isFinite(duration) || duration < 0) return fallback;
+function normalizeDuration(
+  duration: number | null | undefined,
+  fallback: number | null,
+) {
+  if (duration === null || duration === 0) {
+    return null;
+  }
+
+  if (duration === undefined || !Number.isFinite(duration) || duration < 0) {
+    return fallback;
+  }
+
   return duration;
 }
 
-function NotificationSymbol({ kind }: { kind: NotificationKind }) {
-  if (kind === "success") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10.3 3.6 3.6L16 5.8" /></svg>;
-  }
-
-  if (kind === "warning") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 18 17H2L10 2.5Z" /><path d="M10 7v4.5M10 14.2v.2" /></svg>;
-  }
-
-  if (kind === "danger") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" /><path d="M10 5.8v5.5M10 14.2v.2" /></svg>;
-  }
-
-  return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" /><path d="M10 9v5M10 5.8v.2" /></svg>;
-}
-
-function NotificationCloseIcon() {
-  return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3 13 13M13 3 3 13" /></svg>;
-}
-
-function NotificationToast({
+function UnpausedTimeout({
   notification,
-  closeLabel,
   onDismiss,
 }: {
-  notification: StoredNotification;
-  closeLabel: string;
+  notification: NotificationValue;
   onDismiss: (id: string, reason: NotificationDismissReason) => void;
 }) {
-  const timeoutRef = useRef<number | null>(null);
-  const startedAtRef = useRef(0);
-  const remainingRef = useRef(notification.duration ?? 0);
-  const [paused, setPaused] = useState(false);
-
-  const clearTimer = useCallback(() => {
-    if (timeoutRef.current === null) return;
-
-    window.clearTimeout(timeoutRef.current);
-    timeoutRef.current = null;
-  }, []);
-
-  const startTimer = useCallback(() => {
-    if (notification.duration === null || remainingRef.current <= 0) return;
-
-    clearTimer();
-    startedAtRef.current = Date.now();
-    timeoutRef.current = window.setTimeout(() => {
-      timeoutRef.current = null;
-      onDismiss(notification.id, "timeout");
-    }, remainingRef.current);
-  }, [clearTimer, notification.duration, notification.id, onDismiss]);
+  const { id, duration, revision, pauseOnHover } = notification;
 
   useEffect(() => {
-    remainingRef.current = notification.duration ?? 0;
-    setPaused(false);
+    if (pauseOnHover !== false || duration === null) {
+      return;
+    }
 
-    if (notification.duration !== null) startTimer();
-    return clearTimer;
-  }, [clearTimer, notification.duration, notification.revision, startTimer]);
+    // An explicit opt-out keeps running even while the toast region is paused.
+    const timer = window.setTimeout(() => onDismiss(id, "timeout"), duration);
+    return () => window.clearTimeout(timer);
+  }, [id, duration, revision, pauseOnHover, onDismiss]);
 
-  const pauseTimer = () => {
-    if (notification.duration === null || timeoutRef.current === null) return;
-
-    remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startedAtRef.current));
-    clearTimer();
-    setPaused(true);
-  };
-
-  const resumeTimer = () => {
-    if (notification.duration === null || !paused) return;
-
-    setPaused(false);
-    startTimer();
-  };
-
-  const Icon = notification.renderIcon;
-  const role = notification.kind === "danger" ? "alert" : "status";
-
-  return (
-    <section
-      className={`ss-notification ss-notification--${notification.kind}`}
-      data-state={notification.state}
-      data-paused={paused || undefined}
-      role={role}
-      aria-live={role === "alert" ? "assertive" : "polite"}
-      aria-atomic="true"
-      onMouseEnter={notification.pauseOnHover === false ? undefined : pauseTimer}
-      onMouseLeave={notification.pauseOnHover === false ? undefined : resumeTimer}
-      onFocusCapture={notification.pauseOnHover === false ? undefined : pauseTimer}
-      onBlurCapture={(event) => {
-        if (notification.pauseOnHover === false) return;
-        if (event.currentTarget.contains(event.relatedTarget)) return;
-        resumeTimer();
-      }}
-    >
-      <div className="ss-notification__accent" aria-hidden="true" />
-
-      <span className="ss-notification__icon" aria-hidden="true">
-        {Icon ? <Icon size={19} /> : <NotificationSymbol kind={notification.kind} />}
-      </span>
-
-      <div className="ss-notification__body">
-        {!!notification.title && <div className="ss-notification__title">{notification.title}</div>}
-        {!!notification.content && <div className="ss-notification__content">{notification.content}</div>}
-
-        {!!notification.actions?.length && (
-          <div className="ss-notification__actions">
-            {notification.actions.map((action, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => {
-                  action.onClick();
-                  if (action.closeOnClick !== false) onDismiss(notification.id, "action");
-                }}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {notification.closable !== false && (
-        <button
-          type="button"
-          className="ss-notification__close"
-          aria-label={closeLabel}
-          onClick={() => onDismiss(notification.id, "close")}
-        >
-          <NotificationCloseIcon />
-        </button>
-      )}
-
-      {notification.duration !== null && (
-        <span
-          key={notification.revision}
-          className="ss-notification__timer"
-          aria-hidden="true"
-          style={{ animationDuration: `${notification.duration}ms` }}
-        />
-      )}
-    </section>
-  );
+  return null;
 }
 
 export function NotificationProvider({
@@ -253,160 +153,233 @@ export function NotificationProvider({
   closeLabel = "Close notification",
   regionLabel = "Notifications",
 }: NotificationProviderProps) {
-  const durations = useMemo(() => ({
-    ...DEFAULT_DURATIONS,
-    ...defaultDurations,
-  }), [defaultDurations]);
-  const [notifications, setNotifications] = useState<StoredNotification[]>([]);
-  const notificationsRef = useRef<StoredNotification[]>([]);
-  const dismissTimersRef = useRef(new Map<string, number>());
-  const dismissCallbacksRef = useRef(new Map<string, NotificationOptions["onDismiss"]>());
+  const durations = useMemo(
+    () => ({
+      ...DEFAULT_DURATIONS,
+      ...defaultDurations,
+    }),
+    [defaultDurations],
+  );
+  const [queue] = useState(
+    () =>
+      new Toast.Queue<NotificationValue>({
+        maxVisibleToasts: Math.max(1, maxVisible),
+        exitDuration: 180,
+      }),
+  );
+  const activeRef = useRef(new Map<string, ActiveNotification>());
 
-  notificationsRef.current = notifications;
-
-  const finishDismissal = useCallback((id: string, reason: NotificationDismissReason) => {
-    setNotifications(current => current.filter(notification => notification.id !== id));
-
-    const callback = dismissCallbacksRef.current.get(id);
-    dismissCallbacksRef.current.delete(id);
-    dismissTimersRef.current.delete(id);
-    callback?.(reason);
-  }, []);
-
-  const dismissWithReason = useCallback((id: string, reason: NotificationDismissReason) => {
-    const found = notificationsRef.current.some(notification => (
-      notification.id === id && notification.state !== "leaving"
-    ));
-
-    if (!found || dismissTimersRef.current.has(id)) return;
-
-    setNotifications(current => current.map(notification => {
-      if (notification.id !== id || notification.state === "leaving") return notification;
-
-      return { ...notification, state: "leaving" };
-    }));
-
-    const timer = window.setTimeout(() => finishDismissal(id, reason), 180);
-    dismissTimersRef.current.set(id, timer);
-  }, [finishDismissal]);
-
-  const push = useCallback((options: NotificationOptions) => {
-    const id = options.id || createNotificationId();
-    const kind = normalizeKind(options.kind);
-
-    const pendingDismissal = dismissTimersRef.current.get(id);
-    if (pendingDismissal !== undefined) {
-      window.clearTimeout(pendingDismissal);
-      dismissTimersRef.current.delete(id);
+  const finishDismissal = useCallback((id: string, key: string) => {
+    const active = activeRef.current.get(id);
+    if (!active || active.key !== key) {
+      return;
     }
 
-    dismissCallbacksRef.current.set(id, options.onDismiss);
-    setNotifications(current => {
-      const existing = current.find(notification => notification.id === id);
-      const next: StoredNotification = {
+    activeRef.current.delete(id);
+    active.value.onDismiss?.(active.reason ?? "timeout");
+  }, []);
+
+  const dismissWithReason = useCallback(
+    (id: string, reason: NotificationDismissReason) => {
+      const active = activeRef.current.get(id);
+      if (!active || active.closing) {
+        return;
+      }
+
+      active.reason = reason;
+      active.closing = true;
+      queue.close(active.key);
+    },
+    [queue],
+  );
+
+  const store = useCallback(
+    (value: NotificationValue) => {
+      const previous = activeRef.current.get(value.id);
+      const timeout = value.pauseOnHover === false ? 0 : (value.duration ?? 0);
+      if (previous) {
+        previous.value = value;
+        previous.reason = undefined;
+        previous.closing = false;
+        if (
+          queue.update(previous.key, value, {
+            timeout,
+            onClose: () => finishDismissal(value.id, previous.key),
+          })
+        ) {
+          return value.id;
+        }
+      }
+
+      const key = queue.add(value, {
+        timeout,
+        onClose: () => finishDismissal(value.id, key),
+      });
+      activeRef.current.set(value.id, { key, value, closing: false });
+      return value.id;
+    },
+    [queue, finishDismissal],
+  );
+
+  const push = useCallback(
+    (options: NotificationOptions) => {
+      const id = options.id || createNotificationId();
+      const kind = normalizeKind(options.kind);
+      return store({
         ...options,
         id,
         kind,
         duration: normalizeDuration(options.duration, durations[kind]),
-        revision: (existing?.revision ?? 0) + 1,
-        state: "visible",
-      };
+        revision: (activeRef.current.get(id)?.value.revision ?? 0) + 1,
+      });
+    },
+    [durations, store],
+  );
 
-      if (!existing) return [...current, next];
-      return current.map(notification => notification.id === id ? next : notification);
-    });
-
-    return id;
-  }, [durations]);
-
-  const update = useCallback((id: string, patch: NotificationUpdate) => {
-    const pendingDismissal = dismissTimersRef.current.get(id);
-    if (pendingDismissal !== undefined) {
-      window.clearTimeout(pendingDismissal);
-      dismissTimersRef.current.delete(id);
-    }
-
-    setNotifications(current => current.map(notification => {
-      if (notification.id !== id) return notification;
-
-      const kind = normalizeKind(patch.kind ?? notification.kind);
-      const duration = Object.hasOwn(patch, "duration")
-        ? normalizeDuration(patch.duration, durations[kind])
-        : notification.duration;
-
-      if (Object.hasOwn(patch, "onDismiss")) {
-        dismissCallbacksRef.current.set(id, patch.onDismiss);
+  const update = useCallback(
+    (id: string, patch: NotificationUpdate) => {
+      const previous = activeRef.current.get(id)?.value;
+      if (!previous) {
+        return;
       }
 
-      return {
-        ...notification,
+      const kind = normalizeKind(patch.kind ?? previous.kind);
+      store({
+        ...previous,
         ...patch,
         id,
         kind,
-        duration,
-        revision: notification.revision + 1,
-        state: "visible",
-      };
-    }));
-  }, [durations]);
+        duration: Object.hasOwn(patch, "duration")
+          ? normalizeDuration(patch.duration, durations[kind])
+          : previous.duration,
+        revision: previous.revision + 1,
+      });
+    },
+    [durations, store],
+  );
 
-  const dismiss = useCallback((id: string) => {
-    dismissWithReason(id, "programmatic");
-  }, [dismissWithReason]);
+  const dismiss = useCallback(
+    (id: string) => {
+      dismissWithReason(id, "programmatic");
+    },
+    [dismissWithReason],
+  );
 
   const clear = useCallback(() => {
-    for (const notification of notificationsRef.current) {
-      dismissWithReason(notification.id, "programmatic");
+    for (const id of activeRef.current.keys()) {
+      dismissWithReason(id, "programmatic");
     }
   }, [dismissWithReason]);
 
-  useEffect(() => () => {
-    for (const timer of dismissTimersRef.current.values()) window.clearTimeout(timer);
-    dismissTimersRef.current.clear();
-    dismissCallbacksRef.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      activeRef.current.clear();
+      queue.destroy();
+    },
+    [queue],
+  );
 
-  const api = useMemo<NotificationApi>(() => ({
-    push,
-    info: notification => push({ ...notification, kind: "info" }),
-    success: notification => push({ ...notification, kind: "success" }),
-    warning: notification => push({ ...notification, kind: "warning" }),
-    danger: notification => push({ ...notification, kind: "danger" }),
-    update,
-    dismiss,
-    clear,
-  }), [clear, dismiss, push, update]);
-
-  const visibleNotifications = notifications
-    .slice(-Math.max(1, maxVisible))
-    .reverse();
-  const notificationRegion = visibleNotifications.length > 0 && typeof document === "object"
-    ? createPortal(
-      <div className="ss-notification-region" aria-label={regionLabel}>
-        {visibleNotifications.map(notification => (
-          <NotificationToast
-            key={notification.id}
-            notification={notification}
-            closeLabel={closeLabel}
-            onDismiss={dismissWithReason}
-          />
-        ))}
-      </div>,
-      document.body,
-    )
-    : null;
+  const api = useMemo<NotificationApi>(
+    () => ({
+      push,
+      info: (notification) => push({ ...notification, kind: "info" }),
+      success: (notification) => push({ ...notification, kind: "success" }),
+      warning: (notification) => push({ ...notification, kind: "warning" }),
+      danger: (notification) => push({ ...notification, kind: "danger" }),
+      update,
+      dismiss,
+      clear,
+    }),
+    [push, update, dismiss, clear],
+  );
 
   return (
     <NotificationContext.Provider value={api}>
       {children}
-      {notificationRegion}
+      <Toast.Provider
+        queue={queue}
+        placement="bottom end"
+        maxVisibleToasts={Math.max(1, maxVisible)}
+        aria-label={regionLabel}
+        width="min(28rem, calc(100vw - 2rem))"
+      >
+        {({ toast }) => {
+          const notification = toast.content;
+          const Icon = notification.renderIcon;
+          const variant =
+            notification.kind === "info" ? "accent" : notification.kind;
+
+          return (
+            <Toast toast={toast} variant={variant}>
+              <UnpausedTimeout
+                notification={notification}
+                onDismiss={dismissWithReason}
+              />
+              <Toast.Indicator>{Icon && <Icon size={19} />}</Toast.Indicator>
+              <Toast.Content>
+                <Toast.Title>
+                  {notification.title ?? notification.content}
+                </Toast.Title>
+                {notification.title && notification.content && (
+                  <Toast.Description>{notification.content}</Toast.Description>
+                )}
+                {Boolean(notification.actions?.length) && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {notification.actions?.map((action, index) => (
+                      <Button
+                        key={index}
+                        size="sm"
+                        variant="secondary"
+                        onPress={() => {
+                          action.onClick();
+                          if (action.closeOnClick !== false) {
+                            dismissWithReason(notification.id, "action");
+                          }
+                        }}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </Toast.Content>
+              {notification.closable !== false && (
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="ghost"
+                  aria-label={closeLabel}
+                  onPress={() => dismissWithReason(notification.id, "close")}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="m4 4 8 8M12 4l-8 8"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    />
+                  </svg>
+                </Button>
+              )}
+            </Toast>
+          );
+        }}
+      </Toast.Provider>
     </NotificationContext.Provider>
   );
 }
 
 export function useNotifications(): NotificationApi {
   const notifications = useContext(NotificationContext);
-  if (!notifications) throw new Error("useNotifications must be used inside NotificationProvider");
+  if (!notifications) {
+    throw new Error(
+      "useNotifications must be used inside NotificationProvider",
+    );
+  }
 
   return notifications;
 }

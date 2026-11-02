@@ -339,6 +339,7 @@ export default function ProjectFilePreviewModal({
           (entry) => entry.id === target.fileId && entry.status === "uploaded",
         )
       : undefined;
+  const kind = file ? projectFilePreviewKind(file) : null;
   const downloadUrl = file?.downloadAttachmentUrl || file?.downloadUrl;
   const unavailable = !supported || (!!files && !file);
 
@@ -355,6 +356,7 @@ export default function ProjectFilePreviewModal({
       modalLabel={file?.fileName}
       closeButtonLabel={uiText("Schließen", "Close")}
       onRequestClose={closePreview}
+      edgeToEdge={kind === "office" || kind === "drawio" || kind === "pdf"}
       data-fullheight="true"
       data-fullwidth="true"
       className="project-files-office-modal chat-file-preview"

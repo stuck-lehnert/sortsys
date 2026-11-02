@@ -1,6 +1,8 @@
+import { Button as UIAction, Tile } from "@sortsys/react-components";
+import { Input as UIInput } from "@heroui/react";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { InlineLoading, OperationalTag } from "@sortsys/react-components";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/deployments";
 import { MyButton } from "~/components/MyButton";
 import { MyForm } from "~/components/MyForm";
@@ -98,6 +100,7 @@ export default function DeploymentsPage() {
   const modals = useMyModals();
   const sessionInfo = useSessionInfo();
   const createEntityAction = useCreateEntityAction(modals);
+  const planningSearchId = useId();
 
   const canViewAllDeployments = sessionInfo.canDo('view:projectDeployments');
   const canManageDeployments = sessionInfo.canDo('manage:projectDeployments');
@@ -563,112 +566,174 @@ export default function DeploymentsPage() {
     const defaultTo = deployment?.to ?? setTime(baseDay, 16, 0);
 
     modals.showForm({
-      content: ({ context, hide }) => <>
-        <MyForm.MultiSelect
-          name="user"
-          labelText={deployment ? uiText("Mitarbeiter", "Employee") : uiText("Mitarbeitende", "Employees")}
-          minSelectedItems={1}
-          maxSelectedItems={deployment ? 1 : undefined}
-          getOptions={async ({ query }) => {
-            const needle = query.trim().toLowerCase();
-            return (users ?? []).filter(user => {
-              if (!needle) return true;
-              return userFullName(user).toLowerCase().includes(needle);
-            });
-          }}
-          renderItem={({ item }) => userFullName(item)}
-          renderTile={item => <SmallUserTile data={item} noLink />}
-          createAction={createEntityAction.user}
-        />
+      content: ({ context, hide }) => (
+        <>
+          <MyForm.MultiSelect
+            name="user"
+            labelText={
+              deployment
+                ? uiText("Mitarbeiter", "Employee")
+                : uiText("Mitarbeitende", "Employees")
+            }
+            minSelectedItems={1}
+            maxSelectedItems={deployment ? 1 : undefined}
+            getOptions={async ({ query }) => {
+              const needle = query.trim().toLowerCase();
+              return (users ?? []).filter((user) => {
+                if (!needle) return true;
+                return userFullName(user).toLowerCase().includes(needle);
+              });
+            }}
+            renderItem={({ item }) => userFullName(item)}
+            renderTile={(item) => <SmallUserTile data={item} noLink />}
+            createAction={createEntityAction.user}
+          />
 
-        <MyForm.MultiSelect
-          name="project"
-          labelText={uiText("Projekt")}
-          minSelectedItems={1}
-          maxSelectedItems={1}
-          getOptions={async ({ query }) => {
-            const needle = query.trim().toLowerCase();
-            return (projects ?? []).filter(project => {
-              if (!needle) return true;
-              return project.title.toLowerCase().includes(needle);
-            });
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
+          <MyForm.MultiSelect
+            name="project"
+            labelText={uiText("Projekt")}
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const needle = query.trim().toLowerCase();
+              return (projects ?? []).filter((project) => {
+                if (!needle) return true;
+                return project.title.toLowerCase().includes(needle);
+              });
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
 
-        <div className="flex gap-2">
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="fromDate" labelText={uiText("Von (Datum)")} type="date" />
+          <div className="flex gap-2">
+            <div className="min-w-0 basis-1/2 flex-1">
+              <MyForm.Input
+                required
+                name="fromDate"
+                labelText={uiText("Von (Datum)")}
+                type="date"
+              />
+            </div>
+            <div className="min-w-0 basis-1/2 flex-1">
+              <MyForm.Input
+                required
+                name="fromTime"
+                labelText={uiText("Von (Uhrzeit)")}
+                type="time"
+              />
+            </div>
           </div>
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="fromTime" labelText={uiText("Von (Uhrzeit)")} type="time" />
+
+          <div className="flex gap-2">
+            <div className="min-w-0 basis-1/2 flex-1">
+              <MyForm.Input
+                required
+                name="toDate"
+                labelText={uiText("Bis (Datum)")}
+                type="date"
+              />
+            </div>
+            <div className="min-w-0 basis-1/2 flex-1">
+              <MyForm.Input
+                required
+                name="toTime"
+                labelText={uiText("Bis (Uhrzeit)")}
+                type="time"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="flex gap-2">
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="toDate" labelText={uiText("Bis (Datum)")} type="date" />
-          </div>
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="toTime" labelText={uiText("Bis (Uhrzeit)")} type="time" />
-          </div>
-        </div>
+          <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
+          <p className="light">
+            {uiText(
+              "Zusatzinfo zum Einsatz, z. B. Materialfahrt oder Baustellenwechsel.",
+            )}
+          </p>
 
-        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
-        <p className="light">{uiText("Zusatzinfo zum Einsatz, z. B. Materialfahrt oder Baustellenwechsel.")}</p>
+          {!!deployment && canDeleteDeployments && (
+            <MyButton
+              kind="ghost"
+              type="button"
+              renderIcon={Icons.Delete}
+              onClick={async () => {
+                const [result, err] = await client.mutate(
+                  "projects.deployments.delete",
+                  { id: deployment.deployment.id },
+                );
+                if (err) throw err;
+                if (!result) return;
+                setDeployments((previous) =>
+                  previous.filter(
+                    (item) => item.id !== deployment.deployment.id,
+                  ),
+                );
+                setDeploymentsReloadCounter((value) => value + 1);
+                hide();
+              }}
+            >
+              {uiText("Einsatz löschen")}
+            </MyButton>
+          )}
 
-        {!!deployment && canDeleteDeployments && <MyButton
-          kind="ghost"
-          type="button"
-          renderIcon={Icons.Delete}
-          onClick={async () => {
-            const [result, err] = await client.mutate('projects.deployments.delete', { id: deployment.deployment.id });
-            if (err) throw err;
-            if (!result) return;
-            setDeployments(previous => previous.filter(item => item.id !== deployment.deployment.id));
-            setDeploymentsReloadCounter(value => value + 1);
-            hide();
-          }}
-        >{uiText("Einsatz löschen")}</MyButton>}
+          <NotifyLoaded
+            onLoad={() => {
+              const selectedUserId =
+                deployment?.deployment.userId ?? options.preset?.userId ?? null;
+              const selectedProjectId =
+                deployment?.deployment.projectId ??
+                options.preset?.projectId ??
+                null;
 
-        <NotifyLoaded onLoad={() => {
-          const selectedUserId = deployment?.deployment.userId ?? options.preset?.userId ?? null;
-          const selectedProjectId = deployment?.deployment.projectId ?? options.preset?.projectId ?? null;
+              const selectedUser = selectedUserId
+                ? ((users ?? []).find((user) => user.id === selectedUserId) ??
+                  null)
+                : null;
+              const selectedProject = selectedProjectId
+                ? ((projects ?? []).find(
+                    (project) => project.id === selectedProjectId,
+                  ) ?? null)
+                : null;
 
-          const selectedUser = selectedUserId
-            ? (users ?? []).find(user => user.id === selectedUserId) ?? null
-            : null;
-          const selectedProject = selectedProjectId
-            ? (projects ?? []).find(project => project.id === selectedProjectId) ?? null
-            : null;
+              context.setValues({
+                fromDate: toDateInputValue(defaultFrom),
+                fromTime: toTimeInputValue(defaultFrom),
+                toDate: toDateInputValue(defaultTo),
+                toTime: toTimeInputValue(defaultTo),
+                note: deployment?.deployment.note ?? "",
+                user: selectedUser ? [selectedUser] : [],
+                project: selectedProject ? [selectedProject] : [],
+              });
 
-          context.setValues({
-            fromDate: toDateInputValue(defaultFrom),
-            fromTime: toTimeInputValue(defaultFrom),
-            toDate: toDateInputValue(defaultTo),
-            toTime: toTimeInputValue(defaultTo),
-            note: deployment?.deployment.note ?? '',
-            user: selectedUser ? [selectedUser] : [],
-            project: selectedProject ? [selectedProject] : [],
-          });
+              if (selectedUserId && !selectedUser) {
+                client
+                  .query(
+                    "users.get",
+                    { id: selectedUserId },
+                    { strategy: "cache-first" },
+                  )
+                  .then(([data]) => {
+                    if (!data) return;
+                    context.setValues({ user: [data] });
+                  });
+              }
 
-          if (selectedUserId && !selectedUser) {
-            client.query('users.get', { id: selectedUserId }, { strategy: 'cache-first' }).then(([data]) => {
-              if (!data) return;
-              context.setValues({ user: [data] });
-            });
-          }
-
-          if (selectedProjectId && !selectedProject) {
-            client.query('projects.get', { id: selectedProjectId }, { strategy: 'cache-first' }).then(([data]) => {
-              if (!data) return;
-              context.setValues({ project: [data] });
-            });
-          }
-        }} />
-      </>,
+              if (selectedProjectId && !selectedProject) {
+                client
+                  .query(
+                    "projects.get",
+                    { id: selectedProjectId },
+                    { strategy: "cache-first" },
+                  )
+                  .then(([data]) => {
+                    if (!data) return;
+                    context.setValues({ project: [data] });
+                  });
+              }
+            }}
+          />
+        </>
+      ),
       onSubmit: async ({ context, hide }) => {
         const values = context.getValues();
 
@@ -733,71 +798,101 @@ export default function DeploymentsPage() {
     const defaultTo = period?.to ?? baseDay;
 
     modals.showForm({
-      content: ({ context, hide }) => <>
-        <MyForm.MultiSelect
-          name="project"
-          labelText={uiText("Projekt")}
-          minSelectedItems={1}
-          maxSelectedItems={1}
-          getOptions={async ({ query }) => {
-            const needle = query.trim().toLowerCase();
-            return (projects ?? []).filter(project => {
-              if (!needle) return true;
-              return project.title.toLowerCase().includes(needle);
-            });
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
+      content: ({ context, hide }) => (
+        <>
+          <MyForm.MultiSelect
+            name="project"
+            labelText={uiText("Projekt")}
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const needle = query.trim().toLowerCase();
+              return (projects ?? []).filter((project) => {
+                if (!needle) return true;
+                return project.title.toLowerCase().includes(needle);
+              });
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
 
-        <div className="flex gap-2">
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="from" labelText={uiText("Von")} type="date" />
+          <div className="flex gap-2">
+            <div className="min-w-0 basis-1/2 flex-1">
+              <MyForm.Input
+                required
+                name="from"
+                labelText={uiText("Von")}
+                type="date"
+              />
+            </div>
+            <div className="min-w-0 basis-1/2 flex-1">
+              <MyForm.Input
+                required
+                name="to"
+                labelText={uiText("Bis")}
+                type="date"
+              />
+            </div>
           </div>
-          <div className="basis-1/2 flex-1">
-            <MyForm.Input required name="to" labelText={uiText("Bis")} type="date" />
-          </div>
-        </div>
 
-        <MyForm.Input required name="reason" labelText={uiText("Grund")} />
-        <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
+          <MyForm.Input required name="reason" labelText={uiText("Grund")} />
+          <MyForm.Input textArea name="note" labelText={uiText("Kommentar")} />
 
-        {!!period && canDeleteDeployments && <MyButton
-          kind="ghost"
-          type="button"
-          renderIcon={Icons.Delete}
-          onClick={async () => {
-            const [result, err] = await client.mutate('projects.unavailability.delete', { id: period.id });
-            if (err) throw err;
-            if (!result) return;
-            setUnavailabilityReloadCounter(value => value + 1);
-            hide();
-          }}
-        >{uiText("Sperre löschen")}</MyButton>}
+          {!!period && canDeleteDeployments && (
+            <MyButton
+              kind="ghost"
+              type="button"
+              renderIcon={Icons.Delete}
+              onClick={async () => {
+                const [result, err] = await client.mutate(
+                  "projects.unavailability.delete",
+                  { id: period.id },
+                );
+                if (err) throw err;
+                if (!result) return;
+                setUnavailabilityReloadCounter((value) => value + 1);
+                hide();
+              }}
+            >
+              {uiText("Sperre löschen")}
+            </MyButton>
+          )}
 
-        <NotifyLoaded onLoad={() => {
-          const selectedProjectId = period?.projectId ?? options.preset?.projectId ?? null;
-          const selectedProject = selectedProjectId
-            ? (projects ?? []).find(project => project.id === selectedProjectId) ?? null
-            : null;
+          <NotifyLoaded
+            onLoad={() => {
+              const selectedProjectId =
+                period?.projectId ?? options.preset?.projectId ?? null;
+              const selectedProject = selectedProjectId
+                ? ((projects ?? []).find(
+                    (project) => project.id === selectedProjectId,
+                  ) ?? null)
+                : null;
 
-          context.setValues({
-            from: toDateInputValue(defaultFrom),
-            to: toDateInputValue(defaultTo),
-            reason: period?.reason ?? '',
-            note: period?.note ?? '',
-            project: selectedProject ? [selectedProject] : [],
-          });
+              context.setValues({
+                from: toDateInputValue(defaultFrom),
+                to: toDateInputValue(defaultTo),
+                reason: period?.reason ?? "",
+                note: period?.note ?? "",
+                project: selectedProject ? [selectedProject] : [],
+              });
 
-          if (selectedProjectId && !selectedProject) {
-            client.query('projects.get', { id: selectedProjectId }, { strategy: 'cache-first' }).then(([data]) => {
-              if (!data) return;
-              context.setValues({ project: [data] });
-            });
-          }
-        }} />
-      </>,
+              if (selectedProjectId && !selectedProject) {
+                client
+                  .query(
+                    "projects.get",
+                    { id: selectedProjectId },
+                    { strategy: "cache-first" },
+                  )
+                  .then(([data]) => {
+                    if (!data) return;
+                    context.setValues({ project: [data] });
+                  });
+              }
+            }}
+          />
+        </>
+      ),
       onSubmit: async ({ context, hide }) => {
         const values = context.getValues();
         const project = values.project?.at(0) as Project | undefined;
@@ -877,9 +972,11 @@ export default function DeploymentsPage() {
       vacation.note ? uiText(`Kommentar: ${vacation.note}`, `Comment: ${vacation.note}`) : null,
     ].filter(Boolean).join('\n');
 
-    return <span key={key} className="pep-marker pep-marker--vacation" title={title}>
-      {absenceStatusLabel(vacation)}
-    </span>;
+    return (
+      <span key={key} className="pep-marker pep-marker--vacation" title={title}>
+        {absenceStatusLabel(vacation)}
+      </span>
+    );
   }
 
   function renderUnavailabilityMarker(period: ProjectUnavailabilityPeriod, key: string) {
@@ -891,21 +988,32 @@ export default function DeploymentsPage() {
       period.note ? uiText(`Kommentar: ${period.note}`, `Comment: ${period.note}`) : null,
     ].filter(Boolean).join('\n');
     const content = <>
-      <span>{uiText("Gesperrt")}</span>
-      <span className="pep-marker__detail">{period.reason}</span>
-    </>;
+        <span>{uiText("Gesperrt")}</span>
+        <span className="pep-marker__detail">{period.reason}</span>
+      </>;
 
     if (canManageDeployments) {
-      return <button
-        key={key}
-        type="button"
-        className="pep-marker pep-marker--project pep-marker--clickable"
-        title={title}
-        onClick={() => showProjectUnavailabilityForm({ mode: 'edit', period })}
-      >{content}</button>;
+      return (
+        <UIAction
+          kind="ghost"
+          key={key}
+          type="button"
+          className="pep-marker pep-marker--project pep-marker--clickable"
+          title={title}
+          onClick={() =>
+            showProjectUnavailabilityForm({ mode: "edit", period })
+          }
+        >
+          {content}
+        </UIAction>
+      );
     }
 
-    return <span key={key} className="pep-marker pep-marker--project" title={title}>{content}</span>;
+    return (
+      <span key={key} className="pep-marker pep-marker--project" title={title}>
+        {content}
+      </span>
+    );
   }
 
   function renderDeploymentEntry(props: {
@@ -935,27 +1043,45 @@ export default function DeploymentsPage() {
     };
 
     if (canManageDeployments) {
-      return <button
+      return (
+        <UIAction
+          kind="ghost"
+          key={key}
+          type="button"
+          className={`pep-entry pep-entry--clickable${warningLabels.length ? " pep-entry--warning" : ""}`}
+          style={style}
+          title={title}
+          onClick={() => showDeploymentForm({ mode: "edit", deployment: item })}
+        >
+          <span className="pep-entry__project">{primaryLabel}</span>
+          <span className="pep-entry__time">{segmentTimeLabel}</span>
+          {!!warningLabels.length && (
+            <span className="pep-entry__warning">!</span>
+          )}
+          {!!item.deployment.note && (
+            <span className="pep-entry__note">{item.deployment.note}</span>
+          )}
+        </UIAction>
+      );
+    }
+
+    return (
+      <div
         key={key}
-        type="button"
-        className={`pep-entry pep-entry--clickable${warningLabels.length ? ' pep-entry--warning' : ''}`}
+        className={`pep-entry${warningLabels.length ? " pep-entry--warning" : ""}`}
         style={style}
         title={title}
-        onClick={() => showDeploymentForm({ mode: 'edit', deployment: item })}
       >
         <span className="pep-entry__project">{primaryLabel}</span>
         <span className="pep-entry__time">{segmentTimeLabel}</span>
-        {!!warningLabels.length && <span className="pep-entry__warning">!</span>}
-        {!!item.deployment.note && <span className="pep-entry__note">{item.deployment.note}</span>}
-      </button>;
-    }
-
-    return <div key={key} className={`pep-entry${warningLabels.length ? ' pep-entry--warning' : ''}`} style={style} title={title}>
-      <span className="pep-entry__project">{primaryLabel}</span>
-      <span className="pep-entry__time">{segmentTimeLabel}</span>
-      {!!warningLabels.length && <span className="pep-entry__warning">!</span>}
-      {!!item.deployment.note && <span className="pep-entry__note">{item.deployment.note}</span>}
-    </div>;
+        {!!warningLabels.length && (
+          <span className="pep-entry__warning">!</span>
+        )}
+        {!!item.deployment.note && (
+          <span className="pep-entry__note">{item.deployment.note}</span>
+        )}
+      </div>
+    );
   }
 
   useShortcut('Control+n', e => {
@@ -978,356 +1104,697 @@ export default function DeploymentsPage() {
     .map(item => item.deployment.userId)).size;
   const absenceCount = (vacations ?? []).filter(vacation => periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive)).length;
 
-  return <div className="pep-page">
-    <section className="pep-controls" aria-label={uiText("Planung steuern", "Planning controls")}>
-      <div className="pep-period-nav">
-        <MyButton
-          className="pep-icon-button"
-          size="sm"
-          kind="ghost"
-          title={viewMode === 'week' ? uiText("Vorherige Woche", "Previous week") : uiText("Vorheriger Tag", "Previous day")}
-          aria-label={viewMode === 'week' ? uiText("Vorherige Woche", "Previous week") : uiText("Vorheriger Tag", "Previous day")}
-          onClick={() => shiftFocus('prev')}
-        ><Icons.Previous size={18} /></MyButton>
-
-        <div className="pep-period-nav__label" aria-live="polite">
-          <strong>{periodLabel}</strong>
-        </div>
-
-        <MyButton
-          className="pep-icon-button"
-          size="sm"
-          kind="ghost"
-          title={viewMode === 'week' ? uiText("Nächste Woche", "Next week") : uiText("Nächster Tag", "Next day")}
-          aria-label={viewMode === 'week' ? uiText("Nächste Woche", "Next week") : uiText("Nächster Tag", "Next day")}
-          onClick={() => shiftFocus('next')}
-        ><Icons.Next size={18} /></MyButton>
-
-        <input
-          className="ss-input pep-date-input"
-          aria-label={uiText("Datum auswählen", "Select date")}
-          type="date"
-          value={toDateInputValue(focusDay)}
-          onChange={event => {
-            const value = event.currentTarget.value;
-            if (!value) {
-              setDayRaw(null);
-              return;
+  return (
+    <div className="pep-page">
+      <h1 className="sr-only">{uiText("Einsatzplanung")}</h1>
+      <Tile
+        className="pep-controls"
+        aria-label={uiText("Planung steuern", "Planning controls")}
+      >
+        <div className="pep-period-nav">
+          <MyButton
+            className="pep-icon-button"
+            size="sm"
+            kind="ghost"
+            title={
+              viewMode === "week"
+                ? uiText("Vorherige Woche", "Previous week")
+                : uiText("Vorheriger Tag", "Previous day")
             }
+            aria-label={
+              viewMode === "week"
+                ? uiText("Vorherige Woche", "Previous week")
+                : uiText("Vorheriger Tag", "Previous day")
+            }
+            onClick={() => shiftFocus("prev")}
+          >
+            <Icons.Previous size={18} />
+          </MyButton>
 
-            const parsed = parseDateInputValue(value);
-            if (!parsed) return;
-            setDayRaw(toDateInputValue(parsed));
-          }}
-        />
+          <div className="pep-period-nav__label" aria-live="polite">
+            <strong>{periodLabel}</strong>
+          </div>
 
-        <MyButton size="sm" kind="ghost" onClick={() => setDayRaw(toDateInputValue(today))}>
-          {uiText("Heute", "Today")}
-        </MyButton>
-      </div>
+          <MyButton
+            className="pep-icon-button"
+            size="sm"
+            kind="ghost"
+            title={
+              viewMode === "week"
+                ? uiText("Nächste Woche", "Next week")
+                : uiText("Nächster Tag", "Next day")
+            }
+            aria-label={
+              viewMode === "week"
+                ? uiText("Nächste Woche", "Next week")
+                : uiText("Nächster Tag", "Next day")
+            }
+            onClick={() => shiftFocus("next")}
+          >
+            <Icons.Next size={18} />
+          </MyButton>
 
-      <div className="pep-view-controls">
-        <div className="pep-segment" role="group" aria-label={uiText("Zeitraum", "Period")}>
-          <button
-            type="button"
-            className={viewMode === 'week' ? 'is-active' : undefined}
-            aria-pressed={viewMode === 'week'}
-            onClick={() => setViewRaw('week')}
-          >{uiText("Woche", "Week")}</button>
-          <button
-            type="button"
-            className={viewMode === 'day' ? 'is-active' : undefined}
-            aria-pressed={viewMode === 'day'}
-            onClick={() => setViewRaw('day')}
-          >{uiText("Tag", "Day")}</button>
-        </div>
+          <UIInput
+            variant="secondary"
+            className="ss-input pep-date-input"
+            aria-label={uiText("Datum auswählen", "Select date")}
+            type="date"
+            value={toDateInputValue(focusDay)}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (!value) {
+                setDayRaw(null);
+                return;
+              }
 
-        <div className="pep-segment" role="group" aria-label={uiText("Zeilen", "Rows")}>
-          <button
-            type="button"
-            className={rowMode === 'project' ? 'is-active' : undefined}
-            aria-pressed={rowMode === 'project'}
-            onClick={() => setRowMode('project')}
-          >{uiText("Projekte", "Projects")}</button>
-          <button
-            type="button"
-            className={rowMode === 'user' ? 'is-active' : undefined}
-            aria-pressed={rowMode === 'user'}
-            onClick={() => setRowMode('user')}
-          >{uiText("Mitarbeitende", "Employees")}</button>
-        </div>
-
-        <label className="pep-search">
-          <Icons.Search size={17} aria-hidden="true" />
-          <span className="sr-only">{uiText("Planung durchsuchen", "Search planning")}</span>
-          <input
-            type="search"
-            value={searchRaw ?? ''}
-            placeholder={rowMode === 'project'
-              ? uiText("Projekt oder Mitarbeiter suchen", "Search project or employee")
-              : uiText("Mitarbeiter oder Projekt suchen", "Search employee or project")}
-            onChange={event => setSearchRaw(event.currentTarget.value || null)}
+              const parsed = parseDateInputValue(value);
+              if (!parsed) return;
+              setDayRaw(toDateInputValue(parsed));
+            }}
           />
-          {!!searchRaw && <button
-            type="button"
-            title={uiText("Suche löschen", "Clear search")}
-            aria-label={uiText("Suche löschen", "Clear search")}
-            onClick={() => setSearchRaw(null)}
-          ><Icons.Close size={16} /></button>}
-        </label>
-      </div>
 
-      <div className="pep-actions">
-        {canManageDeployments && <MyButton
-          size="sm"
-          kind="primary"
-          renderIcon={Icons.Plus}
-          onClick={() => showDeploymentForm({ mode: 'create', preset: { day: focusDay } })}
-        >{uiText("Einsatz hinzufügen")}</MyButton>}
+          <MyButton
+            size="sm"
+            kind="ghost"
+            onClick={() => setDayRaw(toDateInputValue(today))}
+          >
+            {uiText("Heute", "Today")}
+          </MyButton>
+        </div>
 
-        <MyButton
-          size="sm"
-          kind="secondary"
-          renderIcon={Icons.User}
-          onClick={showAbsenceForm}
-        >{canManageVacations ? uiText("Abwesenheit eintragen", "Add absence") : uiText("Abwesenheit beantragen", "Request absence")}</MyButton>
-
-        <OperationalTag
-          renderIcon={showEmptyRows ? Icons.FilterEdit : Icons.Filter}
-          text={showEmptyRows ? uiText('Alle Zeilen', 'All rows') : uiText('Nur belegte', 'Assigned only')}
-          onClick={() => setShowEmptyRows(!showEmptyRows)}
-        />
-
-        {viewMode === 'week' && <OperationalTag
-          renderIcon={showWeekend ? Icons.FilterEdit : Icons.Filter}
-          text={showWeekend ? uiText('Mit Wochenende', 'With weekend') : uiText('Mo–Fr', 'Mon–Fri')}
-          onClick={() => setShowWeekend(!showWeekend)}
-        />}
-
-        <TableExportActions
-          title={uiText("Einsatzplanung")}
-          fileName={`Einsatzplanung-${toDateInputValue(range.start)}`}
-          rows={exportRows}
-          disabled={!projects || !users}
-          columns={[
-            { header: uiText("Art"), value: row => row.kind },
-            { header: uiText("Projekt"), value: row => row.project, width: '2fr' },
-            { header: uiText("Benutzer"), value: row => row.user, width: '2fr' },
-            { header: uiText("Von"), value: row => row.from },
-            { header: uiText("Bis"), value: row => row.to },
-            { header: uiText("Notiz"), value: row => row.note, width: '2fr' },
-          ]}
-        />
-
-        {!planningLoading && <div className="pep-summary" aria-live="polite">
-          <span><strong>{rowEntities.length}</strong> {rowMode === 'project' ? uiText("Projekte", "projects") : uiText("Mitarbeitende", "employees")}</span>
-          <span><strong>{plannedUserCount}</strong> {uiText("eingeplant", "assigned")}</span>
-          {!!absenceCount && <span><strong>{absenceCount}</strong> {uiText("Abwesenheiten", "absences")}</span>}
-        </div>}
-      </div>
-    </section>
-
-    {!canViewAllDeployments && <p className="light">{uiText("Du siehst deine eigenen Einsätze.")}</p>}
-
-    {!!planningError && <MyCallout
-      kind="error"
-      title={uiText("Einsatzplanung konnte nicht vollständig geladen werden", "Resource planning could not be loaded completely")}
-      subtitle={planningError instanceof Error ? planningError.message : String(planningError)}
-    />}
-
-    {planningLoading && <div className="pep-loading"><InlineLoading description={uiText("Einsatzplanung wird geladen …", "Loading resource planning …")} /></div>}
-
-    {!planningLoading && viewMode === 'day' && <div className="pep-board">
-      {!rowEntities.length && <div className="pep-empty-row light">{uiText("Keine Einsätze im gewählten Zeitraum.")}</div>}
-
-      {rowEntities.map(row => {
-        const rowDeployments = deploymentsForRow(row.id);
-        const rowVacations = rowMode === 'user'
-          ? (vacationsByUserId.get(row.id) ?? []).filter(vacation => periodOverlapsWindow(vacation, range.start, range.endExclusive))
-          : [];
-        const rowUnavailability = rowMode === 'project'
-          ? (unavailabilityByProjectId.get(row.id) ?? []).filter(period => periodOverlapsWindow(period, range.start, range.endExclusive))
-          : [];
-        const segments = rowDeployments.flatMap(item => {
-          const segment = clipSegment(item.from, item.to, range.start, range.endExclusive);
-          if (!segment) return [] as { item: PlannedDeployment; start: Date; end: Date }[];
-          return [{ item, start: segment.start, end: segment.end }];
-        });
-
-        return <div key={row.id} className="pep-day-row">
-          <div className="pep-day-user">
-            <span>{row.label}</span>
-            {canManageDeployments && <MyButton
-              type="button"
+        <div className="pep-view-controls">
+          <div
+            className="pep-segment"
+            role="group"
+            aria-label={uiText("Zeitraum", "Period")}
+          >
+            <UIAction
+              kind={viewMode === "week" ? "primary" : "ghost"}
               size="sm"
-              kind="ghost"
-              className="pep-add-btn"
-              title={uiText("Einsatz hinzufügen")}
-              aria-label={uiText("Einsatz hinzufügen")}
-              onClick={() => showDeploymentForm({
-                mode: 'create',
-                preset: {
-                  userId: rowMode === 'user' ? row.id : undefined,
-                  projectId: rowMode === 'project' ? row.id : undefined,
-                  day: focusDay,
-                },
-              })}
+              type="button"
+              className="rounded-full"
+              aria-pressed={viewMode === "week"}
+              onClick={() => setViewRaw("week")}
             >
-              <Icons.Plus size={16} />
-            </MyButton>}
+              {uiText("Woche", "Week")}
+            </UIAction>
+            <UIAction
+              kind={viewMode === "day" ? "primary" : "ghost"}
+              size="sm"
+              type="button"
+              className="rounded-full"
+              aria-pressed={viewMode === "day"}
+              onClick={() => setViewRaw("day")}
+            >
+              {uiText("Tag", "Day")}
+            </UIAction>
           </div>
 
-          <div className="pep-day-entries">
-            {!segments.length && !rowVacations.length && !rowUnavailability.length && <span className="light">{uiText("Kein Einsatz")}</span>}
-            {rowVacations.map(vacation => renderVacationMarker(vacation, `vacation:${vacation.id}`))}
-            {rowUnavailability.map(period => renderUnavailabilityMarker(period, `project-stop:${period.id}`))}
-            {segments.map((segment, index) => renderDeploymentEntry({
-              key: `${segment.item.deployment.id}:${index}`,
-              item: segment.item,
-              segmentStart: segment.start,
-              segmentEnd: segment.end,
-              segmentWindowStart: range.start,
-              segmentWindowEnd: range.endExclusive,
-            }))}
+          <div
+            className="pep-segment"
+            role="group"
+            aria-label={uiText("Zeilen", "Rows")}
+          >
+            <UIAction
+              kind={rowMode === "project" ? "primary" : "ghost"}
+              size="sm"
+              type="button"
+              className="rounded-full"
+              aria-pressed={rowMode === "project"}
+              onClick={() => setRowMode("project")}
+            >
+              {uiText("Projekte", "Projects")}
+            </UIAction>
+            <UIAction
+              kind={rowMode === "user" ? "primary" : "ghost"}
+              size="sm"
+              type="button"
+              className="rounded-full"
+              aria-pressed={rowMode === "user"}
+              onClick={() => setRowMode("user")}
+            >
+              {uiText("Mitarbeitende", "Employees")}
+            </UIAction>
           </div>
-        </div>;
-      })}
-    </div>}
 
-    {!planningLoading && viewMode === 'week' && <div className="pep-week-wrap">
-      <table className="pep-week-table">
-        <colgroup>
-          <col className="pep-week-entity-column" />
-          {weekDays.map(day => <col key={toDateInputValue(day)} className="pep-week-day-column" />)}
-        </colgroup>
+          <div className="pep-search">
+            <label className="sr-only" htmlFor={planningSearchId}>
+              {uiText("Planung durchsuchen", "Search planning")}
+            </label>
+            <Icons.Search size={17} aria-hidden="true" />
+            <UIInput
+              variant="secondary"
+              id={planningSearchId}
+              className="w-full min-w-0 pl-9 pr-10"
+              type="search"
+              value={searchRaw ?? ""}
+              placeholder={
+                rowMode === "project"
+                  ? uiText(
+                      "Projekt oder Mitarbeiter suchen",
+                      "Search project or employee",
+                    )
+                  : uiText(
+                      "Mitarbeiter oder Projekt suchen",
+                      "Search employee or project",
+                    )
+              }
+              onChange={(event) =>
+                setSearchRaw(event.currentTarget.value || null)
+              }
+            />
+            {!!searchRaw && (
+              <UIAction
+                kind="ghost"
+                size="sm"
+                className={[
+                  "absolute right-1 top-1/2 size-8 min-h-8 min-w-8",
+                  "-translate-y-1/2 p-0",
+                ].join(" ")}
+                type="button"
+                title={uiText("Suche löschen", "Clear search")}
+                aria-label={uiText("Suche löschen", "Clear search")}
+                onClick={() => setSearchRaw(null)}
+              >
+                <Icons.Close size={16} />
+              </UIAction>
+            )}
+          </div>
+        </div>
 
-        <thead>
-          <tr>
-            <th className="pep-week-user-head">{rowHeading}</th>
-            {weekDays.map(day => {
-              const dayOfWeek = day.toLocaleDateString(currentLocaleTag(), { weekday: 'short' });
-              const isToday = isSameCalendarDay(day, today);
-              return <th key={toDateInputValue(day)} className={isToday ? 'pep-is-today' : undefined}>
-                <span>{dayOfWeek}</span>
-                <span className="pep-week-date">{formatDate(day)}</span>
-              </th>;
-            })}
-          </tr>
-        </thead>
+        <div className="pep-actions">
+          {canManageDeployments && (
+            <MyButton
+              size="sm"
+              kind="primary"
+              renderIcon={Icons.Plus}
+              onClick={() =>
+                showDeploymentForm({
+                  mode: "create",
+                  preset: { day: focusDay },
+                })
+              }
+            >
+              {uiText("Einsatz hinzufügen")}
+            </MyButton>
+          )}
 
-        <tbody>
-          {!rowEntities.length && <tr>
-            <td colSpan={weekDays.length + 1} className="pep-empty-row light">
-              {normalizedSearch ? uiText("Keine passenden Einträge.", "No matching entries.") : uiText("Keine Einsätze im gewählten Zeitraum.")}
-            </td>
-          </tr>}
+          <MyButton
+            size="sm"
+            kind="secondary"
+            renderIcon={Icons.User}
+            onClick={showAbsenceForm}
+          >
+            {canManageVacations
+              ? uiText("Abwesenheit eintragen", "Add absence")
+              : uiText("Abwesenheit beantragen", "Request absence")}
+          </MyButton>
 
-          {rowEntities.map(row => {
+          <OperationalTag
+            renderIcon={showEmptyRows ? Icons.FilterEdit : Icons.Filter}
+            text={
+              showEmptyRows
+                ? uiText("Alle Zeilen", "All rows")
+                : uiText("Nur belegte", "Assigned only")
+            }
+            aria-pressed={showEmptyRows}
+            onClick={() => setShowEmptyRows(!showEmptyRows)}
+          />
+
+          {viewMode === "week" && (
+            <OperationalTag
+              renderIcon={showWeekend ? Icons.FilterEdit : Icons.Filter}
+              text={
+                showWeekend
+                  ? uiText("Mit Wochenende", "With weekend")
+                  : uiText("Mo–Fr", "Mon–Fri")
+              }
+              aria-pressed={showWeekend}
+              onClick={() => setShowWeekend(!showWeekend)}
+            />
+          )}
+
+          <TableExportActions
+            title={uiText("Einsatzplanung")}
+            fileName={`Einsatzplanung-${toDateInputValue(range.start)}`}
+            rows={exportRows}
+            disabled={!projects || !users}
+            columns={[
+              { header: uiText("Art"), value: (row) => row.kind },
+              {
+                header: uiText("Projekt"),
+                value: (row) => row.project,
+                width: "2fr",
+              },
+              {
+                header: uiText("Benutzer"),
+                value: (row) => row.user,
+                width: "2fr",
+              },
+              { header: uiText("Von"), value: (row) => row.from },
+              { header: uiText("Bis"), value: (row) => row.to },
+              {
+                header: uiText("Notiz"),
+                value: (row) => row.note,
+                width: "2fr",
+              },
+            ]}
+          />
+
+          {!planningLoading && (
+            <div className="pep-summary" aria-live="polite">
+              <span>
+                <strong>{rowEntities.length}</strong>{" "}
+                {rowMode === "project"
+                  ? uiText("Projekte", "projects")
+                  : uiText("Mitarbeitende", "employees")}
+              </span>
+              <span>
+                <strong>{plannedUserCount}</strong>{" "}
+                {uiText("eingeplant", "assigned")}
+              </span>
+              {!!absenceCount && (
+                <span>
+                  <strong>{absenceCount}</strong>{" "}
+                  {uiText("Abwesenheiten", "absences")}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </Tile>
+
+      {!canViewAllDeployments && (
+        <p className="light">{uiText("Du siehst deine eigenen Einsätze.")}</p>
+      )}
+
+      {!!planningError && (
+        <MyCallout
+          kind="error"
+          title={uiText(
+            "Einsatzplanung konnte nicht vollständig geladen werden",
+            "Resource planning could not be loaded completely",
+          )}
+          subtitle={
+            planningError instanceof Error
+              ? planningError.message
+              : String(planningError)
+          }
+        />
+      )}
+
+      {planningLoading && (
+        <div className="pep-loading">
+          <InlineLoading
+            description={uiText(
+              "Einsatzplanung wird geladen …",
+              "Loading resource planning …",
+            )}
+          />
+        </div>
+      )}
+
+      {!planningLoading && viewMode === "day" && (
+        <div
+          className="pep-board"
+          role="region"
+          aria-label={uiText("Einsatzplanung")}
+          tabIndex={0}
+        >
+          {!rowEntities.length && (
+            <div className="pep-empty-row light">
+              {uiText("Keine Einsätze im gewählten Zeitraum.")}
+            </div>
+          )}
+
+          {rowEntities.map((row) => {
             const rowDeployments = deploymentsForRow(row.id);
+            const rowVacations =
+              rowMode === "user"
+                ? (vacationsByUserId.get(row.id) ?? []).filter((vacation) =>
+                    periodOverlapsWindow(
+                      vacation,
+                      range.start,
+                      range.endExclusive,
+                    ),
+                  )
+                : [];
+            const rowUnavailability =
+              rowMode === "project"
+                ? (unavailabilityByProjectId.get(row.id) ?? []).filter(
+                    (period) =>
+                      periodOverlapsWindow(
+                        period,
+                        range.start,
+                        range.endExclusive,
+                      ),
+                  )
+                : [];
+            const segments = rowDeployments.flatMap((item) => {
+              const segment = clipSegment(
+                item.from,
+                item.to,
+                range.start,
+                range.endExclusive,
+              );
+              if (!segment)
+                return [] as {
+                  item: PlannedDeployment;
+                  start: Date;
+                  end: Date;
+                }[];
+              return [{ item, start: segment.start, end: segment.end }];
+            });
 
-            return <tr key={row.id}>
-              <td className="pep-week-user-cell">
-                <div className="pep-week-user-content">
-                  <span title={row.label}>{row.label}</span>
+            return (
+              <div key={row.id} className="pep-day-row">
+                <div className="pep-day-user">
+                  <span>{row.label}</span>
+                  {canManageDeployments && (
+                    <MyButton
+                      type="button"
+                      size="sm"
+                      kind="ghost"
+                      className="pep-add-btn"
+                      title={uiText("Einsatz hinzufügen")}
+                      aria-label={uiText("Einsatz hinzufügen")}
+                      onClick={() =>
+                        showDeploymentForm({
+                          mode: "create",
+                          preset: {
+                            userId: rowMode === "user" ? row.id : undefined,
+                            projectId:
+                              rowMode === "project" ? row.id : undefined,
+                            day: focusDay,
+                          },
+                        })
+                      }
+                    >
+                      <Icons.Plus size={16} />
+                    </MyButton>
+                  )}
                 </div>
-              </td>
 
-              {weekDays.map(day => {
-                const dayStart = startOfDay(day);
-                const dayEnd = addDays(dayStart, 1);
-                const cellVacations = rowMode === 'user'
-                  ? (vacationsByUserId.get(row.id) ?? []).filter(vacation => periodOverlapsWindow(vacation, dayStart, dayEnd))
-                  : [];
-                const cellUnavailability = rowMode === 'project'
-                  ? (unavailabilityByProjectId.get(row.id) ?? []).filter(period => periodOverlapsWindow(period, dayStart, dayEnd))
-                  : [];
-                const segments = rowDeployments.flatMap(item => {
-                  const segment = clipSegment(item.from, item.to, dayStart, dayEnd);
-                  if (!segment) return [] as { item: PlannedDeployment; start: Date; end: Date }[];
-                  return [{ item, start: segment.start, end: segment.end }];
-                });
-
-                const isEmpty = !segments.length && !cellVacations.length && !cellUnavailability.length;
-                const preset = {
-                  userId: rowMode === 'user' ? row.id : undefined,
-                  projectId: rowMode === 'project' ? row.id : undefined,
-                  day: dayStart,
-                };
-
-                return <td
-                  key={`${row.id}:${toDateInputValue(day)}`}
-                  className={`pep-week-cell${isSameCalendarDay(day, today) ? ' pep-is-today' : ''}`}
-                >
-                  <div className="pep-week-cell-entries">
-                    {isEmpty && (canManageDeployments
-                      ? <button
-                        type="button"
-                        className="pep-week-empty-action"
-                        title={uiText("Einsatz einplanen", "Assign deployment")}
-                        aria-label={uiText("Einsatz einplanen", "Assign deployment")}
-                        onClick={() => showDeploymentForm({ mode: 'create', preset })}
-                      ><Icons.Plus size={15} /> <span className="sr-only">{uiText("Einsatz einplanen", "Assign deployment")}</span></button>
-                      : <span className="pep-week-empty">–</span>)}
-                    {cellVacations.map(vacation => renderVacationMarker(vacation, `vacation:${vacation.id}:${toDateInputValue(day)}`))}
-                    {cellUnavailability.map(period => renderUnavailabilityMarker(period, `project-stop:${period.id}:${toDateInputValue(day)}`))}
-
-                    {segments.map((segment, index) => renderDeploymentEntry({
-                      key: `${segment.item.deployment.id}:${toDateInputValue(day)}:${index}`,
+                <div className="pep-day-entries">
+                  {!segments.length &&
+                    !rowVacations.length &&
+                    !rowUnavailability.length && (
+                      <span className="light">{uiText("Kein Einsatz")}</span>
+                    )}
+                  {rowVacations.map((vacation) =>
+                    renderVacationMarker(vacation, `vacation:${vacation.id}`),
+                  )}
+                  {rowUnavailability.map((period) =>
+                    renderUnavailabilityMarker(
+                      period,
+                      `project-stop:${period.id}`,
+                    ),
+                  )}
+                  {segments.map((segment, index) =>
+                    renderDeploymentEntry({
+                      key: `${segment.item.deployment.id}:${index}`,
                       item: segment.item,
                       segmentStart: segment.start,
                       segmentEnd: segment.end,
-                      segmentWindowStart: dayStart,
-                      segmentWindowEnd: dayEnd,
-                    }))}
-
-                    {!isEmpty && canManageDeployments && <button
-                      type="button"
-                      className="pep-week-add-action"
-                      title={uiText("Weiteren Einsatz einplanen", "Add another assignment")}
-                      aria-label={uiText("Weiteren Einsatz einplanen", "Add another assignment")}
-                      onClick={() => showDeploymentForm({ mode: 'create', preset })}
-                    ><Icons.Plus size={14} /></button>}
-                  </div>
-                </td>;
-              })}
-            </tr>;
-          })}
-
-          {rowMode === 'project' && absenceRows.length > 0 && <>
-            <tr>
-              <td colSpan={weekDays.length + 1} className="pep-week-section-heading">
-                {uiText('Abwesenheiten', 'Absences')}
-              </td>
-            </tr>
-
-            {absenceRows.map(row => <tr key={`absence:${row.id}`} className="pep-week-absence-row">
-              <td className="pep-week-user-cell">
-                <div className="pep-week-user-content">
-                  <span title={row.label}>{row.label}</span>
+                      segmentWindowStart: range.start,
+                      segmentWindowEnd: range.endExclusive,
+                    }),
+                  )}
                 </div>
-              </td>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-              {weekDays.map(day => {
-                const dayStart = startOfDay(day);
-                const dayEnd = addDays(dayStart, 1);
-                const cellVacations = row.vacations.filter(vacation => periodOverlapsWindow(vacation, dayStart, dayEnd));
+      {!planningLoading && viewMode === "week" && (
+        <div
+          className="pep-week-wrap"
+          role="region"
+          aria-label={uiText("Einsatzplanung")}
+          tabIndex={0}
+        >
+          <table className="pep-week-table">
+            <caption className="sr-only">
+              {uiText("Einsatzplanung")} {periodLabel}
+            </caption>
+            <colgroup>
+              <col className="pep-week-entity-column" />
+              {weekDays.map((day) => (
+                <col
+                  key={toDateInputValue(day)}
+                  className="pep-week-day-column"
+                />
+              ))}
+            </colgroup>
 
-                return <td
-                  key={`absence:${row.id}:${toDateInputValue(day)}`}
-                  className={`pep-week-cell${isSameCalendarDay(day, today) ? ' pep-is-today' : ''}`}
-                >
-                  <div className="pep-week-cell-entries">
-                    {!cellVacations.length && <span className="pep-week-empty">–</span>}
-                    {cellVacations.map(vacation => renderVacationMarker(vacation, `absence:${vacation.id}:${toDateInputValue(day)}`))}
-                  </div>
-                </td>;
+            <thead>
+              <tr>
+                <th className="pep-week-user-head">{rowHeading}</th>
+                {weekDays.map((day) => {
+                  const dayOfWeek = day.toLocaleDateString(currentLocaleTag(), {
+                    weekday: "short",
+                  });
+                  const isToday = isSameCalendarDay(day, today);
+                  return (
+                    <th
+                      key={toDateInputValue(day)}
+                      className={isToday ? "pep-is-today" : undefined}
+                    >
+                      <span>{dayOfWeek}</span>
+                      <span className="pep-week-date">{formatDate(day)}</span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+
+            <tbody>
+              {!rowEntities.length && (
+                <tr>
+                  <td
+                    colSpan={weekDays.length + 1}
+                    className="pep-empty-row light"
+                  >
+                    {normalizedSearch
+                      ? uiText(
+                          "Keine passenden Einträge.",
+                          "No matching entries.",
+                        )
+                      : uiText("Keine Einsätze im gewählten Zeitraum.")}
+                  </td>
+                </tr>
+              )}
+
+              {rowEntities.map((row) => {
+                const rowDeployments = deploymentsForRow(row.id);
+
+                return (
+                  <tr key={row.id}>
+                    <td className="pep-week-user-cell">
+                      <div className="pep-week-user-content">
+                        <span title={row.label}>{row.label}</span>
+                      </div>
+                    </td>
+
+                    {weekDays.map((day) => {
+                      const dayStart = startOfDay(day);
+                      const dayEnd = addDays(dayStart, 1);
+                      const cellVacations =
+                        rowMode === "user"
+                          ? (vacationsByUserId.get(row.id) ?? []).filter(
+                              (vacation) =>
+                                periodOverlapsWindow(
+                                  vacation,
+                                  dayStart,
+                                  dayEnd,
+                                ),
+                            )
+                          : [];
+                      const cellUnavailability =
+                        rowMode === "project"
+                          ? (
+                              unavailabilityByProjectId.get(row.id) ?? []
+                            ).filter((period) =>
+                              periodOverlapsWindow(period, dayStart, dayEnd),
+                            )
+                          : [];
+                      const segments = rowDeployments.flatMap((item) => {
+                        const segment = clipSegment(
+                          item.from,
+                          item.to,
+                          dayStart,
+                          dayEnd,
+                        );
+                        if (!segment)
+                          return [] as {
+                            item: PlannedDeployment;
+                            start: Date;
+                            end: Date;
+                          }[];
+                        return [
+                          { item, start: segment.start, end: segment.end },
+                        ];
+                      });
+
+                      const isEmpty =
+                        !segments.length &&
+                        !cellVacations.length &&
+                        !cellUnavailability.length;
+                      const preset = {
+                        userId: rowMode === "user" ? row.id : undefined,
+                        projectId: rowMode === "project" ? row.id : undefined,
+                        day: dayStart,
+                      };
+
+                      return (
+                        <td
+                          key={`${row.id}:${toDateInputValue(day)}`}
+                          className={`pep-week-cell${isSameCalendarDay(day, today) ? " pep-is-today" : ""}`}
+                        >
+                          <div className="pep-week-cell-entries">
+                            {isEmpty &&
+                              (canManageDeployments ? (
+                                <UIAction
+                                  kind="ghost"
+                                  type="button"
+                                  className="pep-week-empty-action"
+                                  title={uiText(
+                                    "Einsatz einplanen",
+                                    "Assign deployment",
+                                  )}
+                                  aria-label={uiText(
+                                    "Einsatz einplanen",
+                                    "Assign deployment",
+                                  )}
+                                  onClick={() =>
+                                    showDeploymentForm({
+                                      mode: "create",
+                                      preset,
+                                    })
+                                  }
+                                >
+                                  <Icons.Plus size={15} />
+                                  <span className="sr-only">
+                                    {uiText(
+                                      "Einsatz einplanen",
+                                      "Assign deployment",
+                                    )}
+                                  </span>
+                                </UIAction>
+                              ) : (
+                                <span className="pep-week-empty">–</span>
+                              ))}
+                            {cellVacations.map((vacation) =>
+                              renderVacationMarker(
+                                vacation,
+                                `vacation:${vacation.id}:${toDateInputValue(day)}`,
+                              ),
+                            )}
+                            {cellUnavailability.map((period) =>
+                              renderUnavailabilityMarker(
+                                period,
+                                `project-stop:${period.id}:${toDateInputValue(day)}`,
+                              ),
+                            )}
+
+                            {segments.map((segment, index) =>
+                              renderDeploymentEntry({
+                                key: `${segment.item.deployment.id}:${toDateInputValue(day)}:${index}`,
+                                item: segment.item,
+                                segmentStart: segment.start,
+                                segmentEnd: segment.end,
+                                segmentWindowStart: dayStart,
+                                segmentWindowEnd: dayEnd,
+                              }),
+                            )}
+
+                            {!isEmpty && canManageDeployments && (
+                              <UIAction
+                                kind="ghost"
+                                type="button"
+                                className="pep-week-add-action"
+                                title={uiText(
+                                  "Weiteren Einsatz einplanen",
+                                  "Add another assignment",
+                                )}
+                                aria-label={uiText(
+                                  "Weiteren Einsatz einplanen",
+                                  "Add another assignment",
+                                )}
+                                onClick={() =>
+                                  showDeploymentForm({ mode: "create", preset })
+                                }
+                              >
+                                <Icons.Plus size={14} />
+                              </UIAction>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
               })}
-            </tr>)}
-          </>}
-        </tbody>
-      </table>
-    </div>}
-  </div>;
+
+              {rowMode === "project" && absenceRows.length > 0 && (
+                <>
+                  <tr>
+                    <td
+                      colSpan={weekDays.length + 1}
+                      className="pep-week-section-heading"
+                    >
+                      {uiText("Abwesenheiten", "Absences")}
+                    </td>
+                  </tr>
+
+                  {absenceRows.map((row) => (
+                    <tr
+                      key={`absence:${row.id}`}
+                      className="pep-week-absence-row"
+                    >
+                      <td className="pep-week-user-cell">
+                        <div className="pep-week-user-content">
+                          <span title={row.label}>{row.label}</span>
+                        </div>
+                      </td>
+
+                      {weekDays.map((day) => {
+                        const dayStart = startOfDay(day);
+                        const dayEnd = addDays(dayStart, 1);
+                        const cellVacations = row.vacations.filter((vacation) =>
+                          periodOverlapsWindow(vacation, dayStart, dayEnd),
+                        );
+
+                        return (
+                          <td
+                            key={`absence:${row.id}:${toDateInputValue(day)}`}
+                            className={`pep-week-cell${isSameCalendarDay(day, today) ? " pep-is-today" : ""}`}
+                          >
+                            <div className="pep-week-cell-entries">
+                              {!cellVacations.length && (
+                                <span className="pep-week-empty">–</span>
+                              )}
+                              {cellVacations.map((vacation) =>
+                                renderVacationMarker(
+                                  vacation,
+                                  `absence:${vacation.id}:${toDateInputValue(day)}`,
+                                ),
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function colorForProject(projectId: string) {

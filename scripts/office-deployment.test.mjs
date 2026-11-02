@@ -92,7 +92,7 @@ test("development uses Euro-Office paths and the same secret for both services",
 
   for (const mount of mounts) {
     const [, target] = mount.split(":");
-    assert.ok(development.includes(`:${target}"`));
+    assert.ok(development.includes(`:${target}\${runtime_mount_suffix}"`));
   }
 
   assert.doesNotMatch(development, /\/var\/(?:www|lib|log)\/onlyoffice/);

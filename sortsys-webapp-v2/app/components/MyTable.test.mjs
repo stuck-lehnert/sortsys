@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, test } from "bun:test";
 import { parseFragment } from "parse5";
+import { I18nProvider } from "@heroui/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -21,7 +22,7 @@ const bundle = await Bun.build({
       name: "table-test-react-peers",
       setup(build) {
         build.onResolve(
-          { filter: /^(react|react-dom)(\/.*)?$/ },
+          { filter: /^(react|react-dom|@heroui\/react)(\/.*)?$/ },
           ({ path }) => ({
             path: Bun.resolveSync(path, import.meta.dir),
             external: true,
@@ -71,7 +72,13 @@ function textContent(node) {
 }
 
 function renderTable(props) {
-  const markup = renderToStaticMarkup(createElement(MyTable, props));
+  const markup = renderToStaticMarkup(
+    createElement(
+      I18nProvider,
+      { locale: "de-DE" },
+      createElement(MyTable, props),
+    ),
+  );
 
   return parseFragment(markup);
 }
@@ -181,9 +188,12 @@ test("retains links, sortable headers and interactive rows in a wrapped column",
   const link = elements(table, "a")[0];
 
   assert.equal(attribute(header, "aria-sort"), "none");
-  assert.equal(attribute(header, "tabindex"), "0");
-  assert.equal(hasClass(row, "my-table-row--interactive"), true);
-  assert.equal(attribute(row, "tabindex"), "0");
+  assert.equal(attribute(header, "role"), "columnheader");
+  assert.equal(attribute(header, "data-allows-sorting"), "true");
+  assert.equal(attribute(header, "tabindex"), "-1");
+  assert.equal(attribute(row, "role"), "row");
+  assert.equal(attribute(row, "data-react-aria-pressable"), "true");
+  assert.equal(attribute(row, "tabindex"), "-1");
   assert.equal(attribute(link, "href"), "/customers/customer");
   assert.equal(textContent(link), longCustomerName);
 });
@@ -205,7 +215,46 @@ for (const state of [
 
     assert.equal(cells.length, 1);
     assert.equal(attribute(cells[0], "colspan"), "3");
-    assert.equal(hasClass(cells[0], "my-table-state-cell"), true);
+    assert.equal(attribute(cells[0], "data-column-index"), undefined);
     assert.equal(hasClass(cells[0], "my-table-cell--wrap"), false);
+    assert.doesNotMatch(
+      attribute(cells[0], "style") ?? "",
+      /(?:min-|max-)?width\s*:/,
+    );
   });
 }
+
+test("load-more tables render the first batch without page navigation", () => {
+  const table = renderTable({
+    loadMore: { batchSize: 2 },
+    columns: textColumns(false),
+    rows: Array.from({ length: 5 }, (_, index) => ({
+      id: index,
+      number: index,
+      text: `Entry ${index}`,
+      date: "2026-10-28",
+    })),
+  });
+
+  assert.equal(elements(table, "td").length, 6);
+  assert.equal(elements(table, "select").length, 0);
+  assert.equal(elements(table, "nav").length, 0);
+  assert.match(textContent(table), /Mehr anzeigen/);
+  assert.match(textContent(table), /2 von 5 Einträgen/);
+  assert.doesNotMatch(textContent(table), /Entry 2/);
+});
+
+test("unbatched tables still render the complete supplied data", () => {
+  const table = renderTable({
+    columns: textColumns(false),
+    rows: Array.from({ length: 30 }, (_, index) => ({
+      id: index,
+      number: index,
+      text: `Complete entry ${index}`,
+      date: "2026-10-28",
+    })),
+  });
+
+  assert.equal(elements(table, "td").length, 90);
+  assert.doesNotMatch(textContent(table), /Mehr anzeigen/);
+});

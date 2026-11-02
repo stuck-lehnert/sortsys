@@ -1,4 +1,5 @@
 import {
+  Callout,
   Checkbox,
   ComboBox,
   DatePicker,
@@ -16,13 +17,16 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentProps,
   type RefObject,
   type ReactNode,
 } from "react";
 import { SSButton } from "./my-button.js";
+import { useAsyncOptions } from "./async-options.js";
 
 type PromiseOr<T> = Promise<T> | T;
 
@@ -41,6 +45,8 @@ interface MyFormContext {
   process: (action: (context: MyFormContext) => PromiseOr<void>) => Promise<void>;
 
   field<T = any>(name: string): MyFormField<T> | null;
+  fieldCount: () => number;
+  subscribeFields: (listener: () => void) => () => void;
 
   setValues: (values: Record<string, any>) => void;
   getValues: () => Record<string, any>;
@@ -158,7 +164,12 @@ function CloseIcon({ size = 14, className }: { size?: number; className?: string
       aria-hidden="true"
       focusable="false"
     >
-      <path d="M3 3L13 13M13 3L3 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M3 3L13 13M13 3L3 13"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -179,16 +190,30 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
   const { children, formRef, onSubmit, notifyLoaded, ...props } = _props;
 
   const fieldsRef = useRef<Record<string, MyFormField>>({});
+  const fieldListenersRef = useRef(new Set<() => void>());
   const formElementRef = useRef<HTMLFormElement | null>(null);
   const [loading, process] = useLoading();
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const submissionErrorRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (submissionError) {
+      submissionErrorRef.current?.focus();
+    }
+  }, [submissionError]);
 
   const formContext: MyFormContext = {
     loading,
     process: (action) => process(() => action(formContext)),
 
     field: (name) => fieldsRef.current[name] ?? null,
+    fieldCount: () => Object.keys(fieldsRef.current).length,
+    subscribeFields: (listener) => {
+      fieldListenersRef.current.add(listener);
+      return () => {
+        fieldListenersRef.current.delete(listener);
+      };
+    },
 
     setValues: (values) => {
       Object.entries(values).forEach(([name, value]) => fieldsRef.current[name]?.setValue(value));
@@ -211,16 +236,30 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
           await onSubmit?.(formContext);
         } catch (error) {
           setSubmissionError(formErrorMessage(error));
-          requestAnimationFrame(() => submissionErrorRef.current?.focus());
         }
       });
     },
 
     setField: (name, field) => {
+      const existed = Object.hasOwn(fieldsRef.current, name);
       fieldsRef.current[name] = field;
+
+      if (!existed) {
+        for (const listener of fieldListenersRef.current) {
+          listener();
+        }
+      }
     },
     delField: (name) => {
+      if (!Object.hasOwn(fieldsRef.current, name)) {
+        return;
+      }
+
       delete fieldsRef.current[name];
+
+      for (const listener of fieldListenersRef.current) {
+        listener();
+      }
     },
   };
 
@@ -232,11 +271,13 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
     <Form
       {...props}
       ref={formElementRef}
-      style={{
-        ...props.style,
-        marginInline: "auto",
-      }}
-      className={`ss-smart-form ${props.className ?? ""}`}
+      validationBehavior="aria"
+      className={[
+        "ss-smart-form mx-auto flex w-full max-w-lg flex-col items-stretch gap-4",
+        props.className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onKeyDown={(event: any) => {
         props.onKeyDown?.(event);
         if (event.defaultPrevented) return;
@@ -250,10 +291,16 @@ const MyForm: any = function forwardRef(_props: Omit<ComponentProps<typeof Form>
       }}
     >
       <MyFormContext.Provider value={formContext}>
-        {!!submissionError && <div ref={submissionErrorRef} className="ss-form-submit-error" role="alert" tabIndex={-1}>
-          <span className="ss-form-submit-error__mark" aria-hidden="true">!</span>
-          <span>{submissionError}</span>
-        </div>}
+        {!!submissionError && (
+          <Callout
+            ref={submissionErrorRef}
+            className="ss-form-submit-error focus-visible:outline-2 focus-visible:outline-focus"
+            kind="error"
+            tabIndex={-1}
+          >
+            {submissionError}
+          </Callout>
+        )}
 
         {children}
       </MyFormContext.Provider>
@@ -356,52 +403,15 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
     return () => context.delField(name);
   }, [props.name]);
 
-  const preparedRef = useRef({
-    finished: false,
-    data: null as any,
-    version: 0,
-  });
-
-  const [suggItems, setSuggItems] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!suggestions) {
-      preparedRef.current.finished = true;
-      preparedRef.current.data = null;
-      setSuggItems([]);
-      return;
-    }
-
-    preparedRef.current.finished = false;
-    preparedRef.current.data = null;
-    preparedRef.current.version += 1;
-    const version = preparedRef.current.version;
-
-    (async () => suggestions.prepare?.())()
-      .then((data) => {
-        if (preparedRef.current.version !== version) return;
-        preparedRef.current.data = data;
-      })
-      .finally(() => {
-        if (preparedRef.current.version !== version) return;
-        preparedRef.current.finished = true;
-      });
-  }, [suggestions]);
-
   const query = value().trim().toLowerCase();
-  useEffect(() => {
-    setSuggItems([]);
-    if (!suggestions || !query || !preparedRef.current.finished) return;
-
-    const timeout = setTimeout(async () => {
-      const items = await suggestions.getItems({ query, init: preparedRef.current.data });
-      setSuggItems(items);
-    }, 250);
-
-    return () => clearTimeout(timeout);
-  }, [query, suggestions]);
-
-  const suggInit = preparedRef.current.data;
+  const suggestionsState = useAsyncOptions({
+    query,
+    enabled: Boolean(suggestions),
+    prepare: suggestions?.prepare,
+    load: suggestions?.getItems,
+  });
+  const suggItems = suggestionsState.items;
+  const suggInit = suggestionsState.initialization;
 
   const InputComponent = textArea ? TextArea : TextInput;
 
@@ -437,11 +447,15 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
           disabled={props.disabled || context?.loading() || loading()}
           autoComplete={props.autoComplete ?? "off"}
           items={suggItems}
+          loading={suggestionsState.loading}
+          loadError={suggestionsState.failed}
           onInputChange={(newValue: any) => {
             setValue(newValue, value() !== newValue);
             onValueChange?.(newValue);
           }}
-          itemToString={(item: any) => (item ? suggestions.stringify({ init: suggInit, item }) : "")}
+          itemToString={(item: any) =>
+            item ? suggestions.stringify({ init: suggInit, item }) : ""
+          }
           itemToElement={(item: any) => {
             if (suggestions.renderItem) {
               return suggestions.renderItem({ init: suggInit, item });
@@ -675,35 +689,16 @@ const MyMultiSelect = function(_props: any) {
     labelText += " *";
   }
 
-  const [options, setOptions] = useState<any[]>([]);
   const [value, setValue] = useRefState<any[]>([]);
   const [error, setError] = useRefState<string | null>(null);
   const [query, setQuery] = useRefState("");
 
-  const preparedRef = useRef({
-    finished: false,
-    data: null as any,
-    version: 0,
-  });
-
-  useEffect(() => {
-    preparedRef.current.finished = false;
-    preparedRef.current.data = null;
-    preparedRef.current.version += 1;
-    const version = preparedRef.current.version;
-
-    (async () => prepare?.())()
-      .then((data) => {
-        if (preparedRef.current.version !== version) return;
-        preparedRef.current.data = data;
-      })
-      .finally(() => {
-        if (preparedRef.current.version !== version) return;
-        preparedRef.current.finished = true;
-      });
-  }, [prepare]);
-
   const normalizedQuery = query().trim().toLowerCase();
+  const optionsState = useAsyncOptions({
+    query: normalizedQuery,
+    prepare,
+    load: getOptions,
+  });
 
   const isSelectableAutocompleteItem = (item: any) => {
     if (!item || typeof item !== "object") return true;
@@ -724,23 +719,9 @@ const MyMultiSelect = function(_props: any) {
     return true;
   };
 
-  useEffect(() => {
-    setOptions(!normalizedQuery ? value() : []);
-    if (!normalizedQuery || !preparedRef.current.finished) return;
-
-    const timeout = setTimeout(async () => {
-      const items = await getOptions({ query: normalizedQuery, init: preparedRef.current.data });
-      setOptions((items ?? []).filter(isSelectableAutocompleteItem).slice(0, 20));
-    }, 250);
-
-    return () => clearTimeout(timeout);
-  }, [normalizedQuery]);
-
-  useEffect(() => {
-    if (!normalizedQuery) {
-      setOptions(value());
-    }
-  }, [value()]);
+  const options = normalizedQuery
+    ? optionsState.items.filter(isSelectableAutocompleteItem).slice(0, 20)
+    : value();
 
   const field: MyFormField = {
     getValue: () => value(),
@@ -774,7 +755,7 @@ const MyMultiSelect = function(_props: any) {
     return () => context.delField(name);
   }, [_name]);
 
-  const init = preparedRef.current.data;
+  const init = optionsState.initialization;
 
   const stringifyItem = (item: any) => {
     if (item == null) return "";
@@ -814,7 +795,6 @@ const MyMultiSelect = function(_props: any) {
     setValue(next, true);
     onValueChange?.(next);
     setQuery("", query() !== "");
-    setOptions(next);
   };
 
   if (maxSelectedItems === 1 && value().length && renderTile) {
@@ -823,7 +803,9 @@ const MyMultiSelect = function(_props: any) {
         <span className="ss-label">{labelText}</span>
 
         <div className="ss-single-select-preview">
-          <div className="ss-single-select-preview__item">{renderTile(value()[0])}</div>
+          <div className="ss-single-select-preview__item">
+            {renderTile(value()[0])}
+          </div>
 
           {!renderTileDisallowUndo && (
             <SSButton
@@ -850,10 +832,11 @@ const MyMultiSelect = function(_props: any) {
       titleText={labelText}
       selectedItems={value()}
       onInputValueChange={(newValue: any) => {
-        const normalized = (typeof newValue === "string"
-          ? newValue
-          : (newValue?.inputValue ?? "")
-        ).trim().toLowerCase();
+        const normalized = (
+          typeof newValue === "string" ? newValue : (newValue?.inputValue ?? "")
+        )
+          .trim()
+          .toLowerCase();
 
         setQuery(normalized, normalized !== query());
       }}
@@ -863,17 +846,25 @@ const MyMultiSelect = function(_props: any) {
         onValueChange?.(next);
       }}
       items={options}
-      createActionLabel={visibleCreateAction
-        ? (typeof visibleCreateAction.label === "function"
-          ? ({ query: rawQuery }: any) => visibleCreateAction.label({ query: `${rawQuery ?? ""}`.trim() })
-          : visibleCreateAction.label ?? `Neu erstellen: ${query()}`)
-        : undefined}
-      onCreateAction={visibleCreateAction
-        ? (rawQuery: string) => visibleCreateAction.onCreate({
-          query: `${rawQuery ?? ""}`.trim(),
-          select: selectCreatedItem,
-        })
-        : undefined}
+      loading={optionsState.loading}
+      loadError={optionsState.failed}
+      createActionLabel={
+        visibleCreateAction
+          ? typeof visibleCreateAction.label === "function"
+            ? ({ query: rawQuery }: any) =>
+                visibleCreateAction.label({ query: `${rawQuery ?? ""}`.trim() })
+            : (visibleCreateAction.label ?? `Neu erstellen: ${query()}`)
+          : undefined
+      }
+      onCreateAction={
+        visibleCreateAction
+          ? (rawQuery: string) =>
+              visibleCreateAction.onCreate({
+                query: `${rawQuery ?? ""}`.trim(),
+                select: selectCreatedItem,
+              })
+          : undefined
+      }
       disabled={props.disabled || context.loading()}
       invalid={props.invalid || !!error()}
       invalidText={props.invalidText || error()}
@@ -882,7 +873,9 @@ const MyMultiSelect = function(_props: any) {
       sortItems={(items: any) => items as any}
       filterItems={(items: any) => items as any}
       clearSelectionText={props.clearSelectionText || "Auswahl zurücksetzen"}
-      clearSelectionDescription={props.clearSelectionDescription || "Auswahl zurücksetzen"}
+      clearSelectionDescription={
+        props.clearSelectionDescription || "Auswahl zurücksetzen"
+      }
       selectionFeedback={props.selectionFeedback ?? "top-after-reopen"}
     />
   );
@@ -919,7 +912,11 @@ function SingleDatePickerField({
       datePickerType="single"
       value={value ?? undefined}
       onChange={(date: any) => {
-        const next = Array.isArray(date) ? (date.length ? date[0] : null) : (date ?? null);
+        const next = Array.isArray(date)
+          ? date.length
+            ? date[0]
+            : null
+          : (date ?? null);
         onValueChange?.(next);
       }}
       dateFormat="d.m.Y"
@@ -1013,19 +1010,22 @@ const MyDateInput = function(_props: any) {
       invalid={props.invalid || !!error()}
       invalidText={props.invalidText || error()}
       allowInput={props.allowInput ?? false}
-      suffix={suffix ?? (!required ? (
-        <SSButton
-          kind="ghost"
-          size="sm"
-          className="ss-date-input-clear"
-          title="Datum leeren"
-          aria-label="Datum leeren"
-          disabled={disabled}
-          onClick={() => setValue(null, value() !== null)}
-        >
-          <CloseIcon size={11} />
-        </SSButton>
-      ) : null)}
+      suffix={
+        suffix ??
+        (!required ? (
+          <SSButton
+            kind="ghost"
+            size="sm"
+            className="ss-date-input-clear"
+            title="Datum leeren"
+            aria-label="Datum leeren"
+            disabled={disabled}
+            onClick={() => setValue(null, value() !== null)}
+          >
+            <CloseIcon size={11} />
+          </SSButton>
+        ) : null)
+      }
       onValueChange={(next: Date | null) => {
         setValue(next, true);
         props.onValueChange?.(next);
@@ -1044,6 +1044,12 @@ MyForm.Select = MySelect;
 MyForm.MultiSelect = MyMultiSelect;
 MyForm.DateInput = MyDateInput;
 MyForm.SubmitButton = MySubmitButton;
+
+export function useFormFieldCount() {
+  const context = useContext(MyFormContext);
+
+  return useSyncExternalStore(context.subscribeFields, context.fieldCount, () => 0);
+}
 
 export const SSForm = MyForm;
 export type SSPublicFormContext = MyPublicFormContext;

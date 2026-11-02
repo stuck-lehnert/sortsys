@@ -46,66 +46,76 @@ export default function ToolsPage() {
 
     function showFilterModal() {
         modals.showForm({
-            content: ({ context }) => <>
-                <MyForm.Select
-                    name="status" labelText={uiText("Status")}
-                    getOptions={() => [
-                        { id: 'none', label: uiText("Nicht ausgewählt") },
-                        { id: 'available', label: uiText("Verfügbar") },
-                        { id: 'unavailable', label: uiText("Gebucht") },
-                        { id: 'lost', label: uiText("Abhanden") },
-                        { id: 'broken', label: uiText("Defekt") },
-                    ]}
-                    buildOption={option => ({
-                        text: option.label,
-                        value: option.id,
-                    })}
-                />
+            content: ({ context }) => (
+        <>
+          <MyForm.Select
+            name="status"
+            labelText={uiText("Status")}
+            getOptions={() => [
+              { id: "none", label: uiText("Nicht ausgewählt") },
+              { id: "available", label: uiText("Verfügbar") },
+              { id: "unavailable", label: uiText("Gebucht") },
+              { id: "lost", label: uiText("Abhanden") },
+              { id: "broken", label: uiText("Defekt") },
+            ]}
+            buildOption={(option) => ({
+              text: option.label,
+              value: option.id,
+            })}
+          />
 
-                <MyForm.MultiSelect
-                    name="brand" labelText={uiText("Marke")}
-                    maxSelectedItems={1}
-                    prepare={async () => {
-                        const [data, err] = await client.query('tools.brands', undefined);
-                        if (err) throw err;
-                        return data ?? [];
-                    }}
-                    getOptions={({ query, init }) => {
-                        const normalized = query.toLowerCase();
-                        return init
-                            .filter((item) => item.toLowerCase().includes(normalized))
-                            .map(item => ({ id: item }));
-                    }}
-                    renderItem={({ item }) => item.id}
-                    renderTile={item => <SmallTile title={item.id} />}
-                />
+          <MyForm.MultiSelect
+            name="brand"
+            labelText={uiText("Marke")}
+            maxSelectedItems={1}
+            prepare={async () => {
+              const [data, err] = await client.query("tools.brands", undefined);
+              if (err) throw err;
+              return data ?? [];
+            }}
+            getOptions={({ query, init }) => {
+              const normalized = query.toLowerCase();
+              return init
+                .filter((item) => item.toLowerCase().includes(normalized))
+                .map((item) => ({ id: item }));
+            }}
+            renderItem={({ item }) => item.id}
+            renderTile={(item) => <SmallTile title={item.id} />}
+          />
 
-                <MyForm.MultiSelect
-                    name="category" labelText={uiText("Kategorie")}
-                    maxSelectedItems={1}
-                    prepare={async () => {
-                        const [data, err] = await client.query('tools.categories', undefined);
-                        if (err) throw err;
-                        return data ?? [];
-                    }}
-                    getOptions={({ query, init }) => {
-                        const normalized = query.toLowerCase();
-                        return init
-                            .filter((item) => item.toLowerCase().includes(normalized))
-                            .map(item => ({ id: item }));
-                    }}
-                    renderItem={({ item }) => item.id}
-                    renderTile={item => <SmallTile title={item.id} />}
-                />
+          <MyForm.MultiSelect
+            name="category"
+            labelText={uiText("Kategorie")}
+            maxSelectedItems={1}
+            prepare={async () => {
+              const [data, err] = await client.query(
+                "tools.categories",
+                undefined,
+              );
+              if (err) throw err;
+              return data ?? [];
+            }}
+            getOptions={({ query, init }) => {
+              const normalized = query.toLowerCase();
+              return init
+                .filter((item) => item.toLowerCase().includes(normalized))
+                .map((item) => ({ id: item }));
+            }}
+            renderItem={({ item }) => item.id}
+            renderTile={(item) => <SmallTile title={item.id} />}
+          />
 
-                <NotifyLoaded onLoad={() => {
-                    context.setValues({
-                        status: status ?? 'none',
-                        brand: brand ? [{ id: brand }] : [],
-                        category: category ? [{ id: category }] : [],
-                    });
-                }} />
-            </>,
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues({
+                status: status ?? "none",
+                brand: brand ? [{ id: brand }] : [],
+                category: category ? [{ id: category }] : [],
+              });
+            }}
+          />
+        </>
+      ),
             onSubmit: ({ context, hide }) => {
                 const values = context.getValues();
 
@@ -126,83 +136,125 @@ export default function ToolsPage() {
 
     const hasFilter = !!(status || brand || category);
 
-    return <>
-        <MyHeader
-            title={uiText("Werkzeuge")}
-            actions={<div className="list-page-actions">
+    return (
+    <>
+      <MyHeader
+        title={uiText("Werkzeuge")}
+        actions={
+          <div className="list-page-actions">
             {!archivedOnly ? (
-                <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht archiviert", "Not archived")} onClick={() => setArchivedOnly(true)} />
+              <OperationalTag
+                renderIcon={Icons.Archive}
+                text={uiText("Nicht archiviert", "Not archived")}
+                onClick={() => setArchivedOnly(true)}
+              />
             ) : (
-                <OperationalTag renderIcon={Icons.Archive} text={uiText("Archiviert")} onClick={() => setArchivedOnly(false)} />
+              <OperationalTag
+                renderIcon={Icons.Archive}
+                text={uiText("Archiviert")}
+                onClick={() => setArchivedOnly(false)}
+              />
             )}
 
-            {!hasFilter ? <>
-                <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
-            </> : <>
-                <OperationalTag renderIcon={Icons.FilterEdit} text={uiText("Filter ändern")} onClick={showFilterModal} />
-                <OperationalTag renderIcon={Icons.FilterRemove} text={uiText("Filter aus")} onClick={() => {
+            {!hasFilter ? (
+              <>
+                <OperationalTag
+                  renderIcon={Icons.Filter}
+                  text={uiText("Filter")}
+                  onClick={showFilterModal}
+                />
+              </>
+            ) : (
+              <>
+                <OperationalTag
+                  renderIcon={Icons.FilterEdit}
+                  text={uiText("Filter ändern")}
+                  onClick={showFilterModal}
+                />
+                <OperationalTag
+                  renderIcon={Icons.FilterRemove}
+                  text={uiText("Filter aus")}
+                  onClick={() => {
                     setStatus(null);
                     setBrand(null);
                     setCategory(null);
-                }} />
-            </>}
+                  }}
+                />
+              </>
+            )}
 
             <TableExportActions
-                title={uiText("Werkzeuge")}
-                fileName={archivedOnly ? 'Archivierte-Werkzeuge' : 'Werkzeuge'}
-                rows={filteredData ?? []}
-                disabled={!data}
-                columns={[
-                    { header: uiText("Nummer"), value: tool => tool.customId, align: 'right' },
-                    { header: uiText("Status"), value: tool => toolStatus(tool) },
-                    { header: uiText("Marke"), value: tool => tool.brand },
-                    { header: uiText("Kategorie"), value: tool => tool.category },
-                    { header: uiText("Modell"), value: tool => tool.label, width: '2fr' },
-                    { header: uiText("Archiviert am"), value: tool => tool.archivedSince },
-                ]}
+              title={uiText("Werkzeuge")}
+              fileName={archivedOnly ? "Archivierte-Werkzeuge" : "Werkzeuge"}
+              rows={filteredData ?? []}
+              disabled={!data}
+              columns={[
+                {
+                  header: uiText("Nummer"),
+                  value: (tool) => tool.customId,
+                  align: "right",
+                },
+                { header: uiText("Status"), value: (tool) => toolStatus(tool) },
+                { header: uiText("Marke"), value: (tool) => tool.brand },
+                { header: uiText("Kategorie"), value: (tool) => tool.category },
+                {
+                  header: uiText("Modell"),
+                  value: (tool) => tool.label,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Archiviert am"),
+                  value: (tool) => tool.archivedSince,
+                },
+              ]}
             />
-            </div>}
-        />
+          </div>
+        }
+      />
 
-        <MyTable 
-            topPagination
-            className=""
-            persistentId="Tools"
-            rows={filteredData ?? []}
-            loading={!data}
-            error={err}
-            onRowClick={row => navigate(`/tools/${row.id}`)}
-            columns={[
-                {
-                    label: uiText("Nummer"),
-                    render: row => row.customId.toString(),
-                    sortKey: row => row.customId,
-                },
-                {
-                    label: uiText("Status"),
-                    render: row => <div>
-                        <Tag type={toolStatusTagType(row)}>{toolStatus(row)}</Tag>
-                    </div>,
-                    sortKey: row => toolStatus(row).toLowerCase(),
-                },
-                {
-                    label: uiText("Marke"),
-                    render: row => row.brand,
-                    sortKey: row => row.brand.toLowerCase(),
-                },
-                {
-                    label: uiText("Kategorie"),
-                    render: row => row.category,
-                    sortKey: row => row.category.toLowerCase(),
-                },
-                {
-                    label: uiText("Modell"),
-                    render: row => row.label,
-                    sortKey: row => row.label?.toLowerCase() ?? '',
-                },
-            ]}
-            pagination={{}}
-            renderSmallViewport={tool => <SmallToolTile key={tool.id} data={tool} noIcon />}
-        />
-    </>;
+      <MyTable
+        className=""
+        persistentId="Tools"
+        rows={filteredData ?? []}
+        loading={!data}
+        error={err}
+        onRowClick={(row) => navigate(`/tools/${row.id}`)}
+        columns={[
+          {
+            label: uiText("Nummer"),
+            render: (row) => row.customId.toString(),
+            sortKey: (row) => row.customId,
+          },
+          {
+            label: uiText("Status"),
+            render: (row) => (
+              <div>
+                <Tag type={toolStatusTagType(row)}>{toolStatus(row)}</Tag>
+              </div>
+            ),
+            sortKey: (row) => toolStatus(row).toLowerCase(),
+          },
+          {
+            label: uiText("Marke"),
+            render: (row) => row.brand,
+            sortKey: (row) => row.brand.toLowerCase(),
+          },
+          {
+            label: uiText("Kategorie"),
+            render: (row) => row.category,
+            sortKey: (row) => row.category.toLowerCase(),
+          },
+          {
+            label: uiText("Modell"),
+            render: (row) => row.label,
+            sortKey: (row) => row.label?.toLowerCase() ?? "",
+          },
+        ]}
+        loadMore={{}}
+        renderSmallViewport={(tool) => (
+          <SmallToolTile key={tool.id} data={tool} noIcon />
+        )}
+      />
+    </>
+  );
 }

@@ -57,8 +57,11 @@ export const SelectItem: React.ComponentType<any>;
 export const ComboBox: React.ForwardRefExoticComponent<any>;
 export const DatePicker: React.ComponentType<any>;
 export const DatePickerInput: React.ComponentType<any>;
-export const FilterableMultiSelect: React.ForwardRefExoticComponent<any>;
-export const MultiSelect: React.ForwardRefExoticComponent<any>;
+export type { FilterableMultiSelectProps } from "./control-types";
+export function FilterableMultiSelect<T = unknown>(
+  props: import("./control-types").FilterableMultiSelectProps<T>,
+): React.JSX.Element;
+export const MultiSelect: typeof FilterableMultiSelect;
 
 export const Menu: React.ForwardRefExoticComponent<any>;
 export const MenuItem: React.ComponentType<any>;
@@ -76,4 +79,4 @@ export const TableRow: React.ComponentType<any>;
 export const TableCell: React.ComponentType<any>;
 export const TableHeader: React.ComponentType<any>;
 export const DataTable: React.ComponentType<any>;
-export const Pagination: React.ComponentType<any>;
+export { LoadMore, type LoadMoreProps } from "./hero-load-more.js";

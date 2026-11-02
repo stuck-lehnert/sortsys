@@ -2,3 +2,5 @@ testdata/
 .compose-env
 .DS_Store
 .env
+.dev-data/
+sortsys-react-components/node_modules/

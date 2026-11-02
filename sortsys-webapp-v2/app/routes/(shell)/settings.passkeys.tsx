@@ -50,7 +50,9 @@ export default function PasskeySettingsPage() {
             name="label"
             labelText={uiText("Name")}
           />
-          <NotifyLoaded onLoad={() => context.setValues({ label: uiText("Passkey") })} />
+          <NotifyLoaded
+            onLoad={() => context.setValues({ label: uiText("Passkey") })}
+          />
         </>
       ),
       modalProps: () => ({
@@ -96,7 +98,12 @@ export default function PasskeySettingsPage() {
 
     modals.showDefault({
       content: () => (
-        <p>{uiText(`Passkey „${passkey.label}“ wirklich entfernen?`, `Remove passkey “${passkey.label}”?`)}</p>
+        <p>
+          {uiText(
+            `Passkey „${passkey.label}“ wirklich entfernen?`,
+            `Remove passkey “${passkey.label}”?`,
+          )}
+        </p>
       ),
       modalProps: () => ({
         danger: true,
@@ -122,32 +129,59 @@ export default function PasskeySettingsPage() {
   }
 
   return (
-    <Tile className="settings-section">
-      <div className="settings-section-actions">
+    <Tile className="settings-section space-y-4">
+      <div className="settings-section-actions flex flex-wrap gap-2">
         <MyButton
           renderIcon={Icons.Plus}
           disabled={!passkeySupported}
           onClick={showAddPasskeyModal}
-        >{uiText("Hinzufügen")}</MyButton>
+        >
+          {uiText("Hinzufügen")}
+        </MyButton>
       </div>
 
       {!passkeySupported && (
-        <MyCallout icon={Icons.Deny} color="red">{uiText("Passkeys werden von diesem Browser nicht unterstützt.")}</MyCallout>
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("Passkeys werden von diesem Browser nicht unterstützt.")}
+        </MyCallout>
       )}
-      {!!error && <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>}
+      {!!error && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {error}
+        </MyCallout>
+      )}
       {!!passkeysErr && (
-        <MyCallout icon={Icons.Deny} color="red">{uiText("Passkeys konnten nicht geladen werden.")}</MyCallout>
+        <MyCallout icon={Icons.Deny} color="red">
+          {uiText("Passkeys konnten nicht geladen werden.")}
+        </MyCallout>
       )}
-      <div className="settings-passkey-list">
-        {(passkeys ?? []).map(passkey => (
-          <div key={passkey.id} className="settings-passkey-row">
-            <div className="settings-passkey-details">
+      <div className="settings-passkey-list divide-y divide-separator">
+        {(passkeys ?? []).map((passkey) => (
+          <div
+            key={passkey.id}
+            className={[
+              "settings-passkey-row flex flex-wrap items-center justify-between",
+              "gap-3 py-3",
+            ].join(" ")}
+          >
+            <div
+              className={[
+                "settings-passkey-details min-w-0 flex-1 space-y-1 text-sm",
+                "[&_small]:block [&_small]:text-muted",
+              ].join(" ")}
+            >
               <strong>{passkey.label}</strong>
-              <span className="light text-sm">{uiText(`Erstellt am ${formatDate(passkey.createdAt, "long")}`, `Created on ${formatDate(passkey.createdAt, "long")}`)}
-                {passkey.lastUsedAt ? uiText(
-                  ` · Zuletzt genutzt ${formatDate(passkey.lastUsedAt, "long")}`,
-                  ` · Last used ${formatDate(passkey.lastUsedAt, "long")}`,
-                ) : ""}
+              <span className="light text-sm">
+                {uiText(
+                  `Erstellt am ${formatDate(passkey.createdAt, "long")}`,
+                  `Created on ${formatDate(passkey.createdAt, "long")}`,
+                )}
+                {passkey.lastUsedAt
+                  ? uiText(
+                      ` · Zuletzt genutzt ${formatDate(passkey.lastUsedAt, "long")}`,
+                      ` · Last used ${formatDate(passkey.lastUsedAt, "long")}`,
+                    )
+                  : ""}
               </span>
             </div>
 
@@ -156,12 +190,16 @@ export default function PasskeySettingsPage() {
               size="sm"
               renderIcon={Icons.Delete}
               onClick={() => showDeletePasskeyModal(passkey)}
-            >{uiText("Entfernen")}</MyButton>
+            >
+              {uiText("Entfernen")}
+            </MyButton>
           </div>
         ))}
 
         {passkeys && passkeys.length === 0 && (
-          <p className="settings-empty">{uiText("Keine Passkeys vorhanden.")}</p>
+          <p className="settings-empty text-sm text-muted">
+            {uiText("Keine Passkeys vorhanden.")}
+          </p>
         )}
       </div>
     </Tile>

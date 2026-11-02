@@ -7,10 +7,23 @@ import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
-import { formatAddress, formatDate, formatNumber, userFullName } from "~/lib/format";
+import {
+  formatAddress,
+  formatDate,
+  formatNumber,
+  userFullName,
+} from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { renderStructuredPdfBatch, formatPdfNumber, type PdfTableSection } from "~/lib/pdf";
-import { dailyReportDayKey, SmallProjectTile, SmallUserTile } from "~/lib/tiles";
+import {
+  renderStructuredPdfBatch,
+  formatPdfNumber,
+  type PdfTableSection,
+} from "~/lib/pdf";
+import {
+  dailyReportDayKey,
+  SmallProjectTile,
+  SmallUserTile,
+} from "~/lib/tiles";
 import { focusReportHours, isDefaultReportDay } from "~/lib/reportForm";
 import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
@@ -95,139 +108,197 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
       const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
-      return <>
-        <MyForm.MultiSelect
-          autoFocus
-          minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText={uiText("Projekt")}
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
-        <p className="light">{uiText("Wähle das Projekt, für das der Bautagesbericht erstellt wird.")}</p>
+      return (
+        <>
+          <MyForm.MultiSelect
+            autoFocus
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            name="project"
+            labelText={uiText("Projekt")}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle das Projekt, für das der Bautagesbericht erstellt wird.",
+            )}
+          </p>
 
-        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
+          <MyForm.Input
+            textArea
+            name="summary"
+            labelText={uiText("Beschreibung der Arbeiten")}
+          />
 
-        <MyForm.DateInput
-          required
-          name="day"
-          labelText={uiText("Tag")}
-          rules={[date => {
-            if (!date) return null;
-            const today = new Date();
-            today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
-            return null;
-          }]}
-        />
-        <p className="light">{uiText("Der Berichtstag darf nicht in der Zukunft liegen.")}</p>
+          <MyForm.DateInput
+            required
+            name="day"
+            labelText={uiText("Tag")}
+            rules={[
+              (date) => {
+                if (!date) return null;
+                const today = new Date();
+                today.setHours(23, 59, 59, 999);
+                if (date.getTime() > today.getTime())
+                  return uiText("Datum darf nicht in der Zukunft liegen");
+                return null;
+              },
+            ]}
+          />
+          <p className="light">
+            {uiText("Der Berichtstag darf nicht in der Zukunft liegen.")}
+          </p>
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Arbeitszeit")}</h4>
-        <p className="light">{uiText("Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.")}</p>
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Arbeitszeit")}
+          </h4>
+          <p className="light">
+            {uiText(
+              "Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.",
+            )}
+          </p>
 
-        {workHourIds.map(id => {
-          return <Fragment key={id}>
-            <div className="flex flex-col gap-2">
-              <MyForm.MultiSelect
-                name={`workHour:${id}:user`}
-                labelText={uiText("Mitarbeiter")}
-                autoFocus={autoFocusFieldName === `workHour:${id}:user`}
-                onValueChange={selected => {
-                  focusReportHours(selected, () => hoursInputs.current[id]);
-                }}
-                minSelectedItems={1} maxSelectedItems={1}
-                getOptions={async ({ query }) => {
-                  const [data, err] = await client.query('users.list', { search: query });
-                  if (err) throw err;
-                  return data ?? [];
-                }}
-                renderItem={({ item }) => userFullName(item)}
-                renderTile={item => <SmallUserTile data={item} noLink />}
-                createAction={createEntityAction.user}
+          {workHourIds.map((id) => {
+            return (
+              <Fragment key={id}>
+                <div className="flex flex-col gap-2">
+                  <MyForm.MultiSelect
+                    name={`workHour:${id}:user`}
+                    labelText={uiText("Mitarbeiter")}
+                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    onValueChange={(selected) => {
+                      focusReportHours(selected, () => hoursInputs.current[id]);
+                    }}
+                    minSelectedItems={1}
+                    maxSelectedItems={1}
+                    getOptions={async ({ query }) => {
+                      const [data, err] = await client.query("users.list", {
+                        search: query,
+                      });
+                      if (err) throw err;
+                      return data ?? [];
+                    }}
+                    renderItem={({ item }) => userFullName(item)}
+                    renderTile={(item) => <SmallUserTile data={item} noLink />}
+                    createAction={createEntityAction.user}
+                  />
+
+                  <div className="flex gap-2 items-end">
+                    <div className="grow">
+                      <MyForm.Input
+                        required
+                        name={`workHour:${id}:hours`}
+                        ref={(input: HTMLInputElement | null) => {
+                          hoursInputs.current[id] = input;
+                        }}
+                        labelText={uiText("Stunden")}
+                        type="number"
+                        rules={[
+                          MyForm.Input.rules.posnum,
+                          (value) => {
+                            if (!value.trim()) return null;
+                            const hours = parseFloatCustom(value);
+                            if (isNaN(hours)) return null;
+                            if (hours < 0 || hours > 10)
+                              return uiText(
+                                "Stunden müssen zwischen 0 und 10 liegen",
+                                "Hours must be between 0 and 10",
+                              );
+                            return null;
+                          },
+                        ]}
+                        suffix={
+                          <MyButton
+                            kind="ghost"
+                            size="sm"
+                            className="ss-input-suffix-btn"
+                            title={uiText("Arbeitszeit entfernen")}
+                            aria-label={uiText("Arbeitszeit entfernen")}
+                            onClick={() => {
+                              setWorkHourIds((ids) =>
+                                ids.filter((_id) => _id !== id),
+                              );
+                            }}
+                          >
+                            <Icons.Delete />
+                          </MyButton>
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
+
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setWorkHourIds((ids) => [...ids, id]);
+              setAutoFocusFieldName(`workHour:${id}:user`);
+            }}
+          >
+            {uiText("Arbeitszeit")}
+          </MyButton>
+
+          <MyDivider />
+
+          <details>
+            <summary>{uiText("Wetter")}</summary>
+            <MyForm.Input
+              name="weatherSummary"
+              labelText={uiText("Wetterbeschreibung")}
+            />
+
+            <div className="flex gap-2">
+              <MyForm.Input
+                className="flex-1"
+                name="temperatureC"
+                labelText={uiText("Temperatur (°C)")}
+                type="number"
+                rules={[MyForm.Input.rules.num]}
               />
 
-              <div className="flex gap-2 items-end">
-                <div className="grow">
-                  <MyForm.Input
-                    required
-                    name={`workHour:${id}:hours`}
-                    ref={(input: HTMLInputElement | null) => {
-                      hoursInputs.current[id] = input;
-                    }}
-                    labelText={uiText("Stunden")}
-                    type="number"
-                    rules={[
-                      MyForm.Input.rules.posnum,
-                      value => {
-                        if (!value.trim()) return null;
-                        const hours = parseFloatCustom(value);
-                        if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
-                        return null;
-                      },
-                    ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
-                      setWorkHourIds(ids => ids.filter(_id => _id !== id));
-                    }}><Icons.Delete /></MyButton>}
-                  />
-                </div>
-              </div>
+              <MyForm.Input
+                className="flex-1"
+                name="precipitationMm"
+                labelText={uiText("Niederschlag (mm)")}
+                type="number"
+                rules={[MyForm.Input.rules.num]}
+              />
+
+              <MyForm.Input
+                className="flex-1"
+                name="windKph"
+                labelText={uiText("Wind (km/h)")}
+                type="number"
+                rules={[MyForm.Input.rules.num]}
+              />
             </div>
+          </details>
 
-            <div style={{ height: '1rem' }} />
-          </Fragment>;
-        })}
-
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setWorkHourIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`workHour:${id}:user`);
-        }}>{uiText("Arbeitszeit")}</MyButton>
-
-        <MyDivider />
-
-        <details>
-          <summary>{uiText("Wetter")}</summary>
-          <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
-
-          <div className="flex gap-2">
-            <MyForm.Input
-              className="flex-1"
-              name="temperatureC"
-              labelText={uiText("Temperatur (°C)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
-
-            <MyForm.Input
-              className="flex-1"
-              name="precipitationMm"
-              labelText={uiText("Niederschlag (mm)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
-
-            <MyForm.Input
-              className="flex-1"
-              name="windKph"
-              labelText={uiText("Wind (km/h)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
-          </div>
-        </details>
-
-        <NotifyLoaded onLoad={() => {
-          context.field('day')?.setValue(new Date());
-        }} />
-      </>;
+          <NotifyLoaded
+            onLoad={() => {
+              context.field("day")?.setValue(new Date());
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
       const values = context.getValues();
@@ -287,6 +358,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
       hide();
     },
     modalProps: () => ({
+      useFullscreen: true,
       modalHeading: uiText("Bautagesbericht erstellen"),
       primaryButtonText: uiText("Erstellen"),
     }),
@@ -339,221 +411,318 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         setPendingCopiedValues({ id: generateId(), values: copiedValues });
       }
 
-      return <>
-        <MyForm.MultiSelect
-          minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText={uiText("Projekt")}
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
-        <p className="light">{uiText("Wähle das Projekt, für das der Bauwochenbericht erstellt wird.")}</p>
+      return (
+        <>
+          <MyForm.MultiSelect
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            name="project"
+            labelText={uiText("Projekt")}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle das Projekt, für das der Bauwochenbericht erstellt wird.",
+            )}
+          </p>
 
-        <MyForm.DateInput
-          required
-          name="week"
-          labelText={uiText("Woche (beliebiger Tag)")}
-          rules={[date => {
-            if (!date) return null;
-            const today = new Date();
-            today.setHours(23, 59, 59, 999);
-            if (date.getTime() > today.getTime()) return uiText('Datum darf nicht in der Zukunft liegen');
-            return null;
-          }]}
-        />
-        <p className="light">{uiText("Wähle einen beliebigen Tag der Zielwoche; es wird automatisch auf Montag bis Sonntag erweitert.")}</p>
+          <MyForm.DateInput
+            required
+            name="week"
+            labelText={uiText("Woche (beliebiger Tag)")}
+            rules={[
+              (date) => {
+                if (!date) return null;
+                const today = new Date();
+                today.setHours(23, 59, 59, 999);
+                if (date.getTime() > today.getTime())
+                  return uiText("Datum darf nicht in der Zukunft liegen");
+                return null;
+              },
+            ]}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle einen beliebigen Tag der Zielwoche; es wird automatisch auf Montag bis Sonntag erweitert.",
+            )}
+          </p>
 
-        <h4>{uiText("Einzutragende Tage")}</h4>
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Einzutragende Tage")}
+          </h4>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {WEEKDAY_NAMES.map((weekday, dayIndex) => (
-            <MyForm.Checkbox
-              key={weekday}
-              name={`enabledDay:${dayIndex}`}
-              labelText={weekday}
-              onValueChange={(checked) => {
-                setSelectedDayIndexes((indexes) => {
-                  if (checked) {
-                    if (indexes.includes(dayIndex)) return indexes;
-                    return [...indexes, dayIndex].sort((left, right) => left - right);
-                  }
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {WEEKDAY_NAMES.map((weekday, dayIndex) => (
+              <MyForm.Checkbox
+                key={weekday}
+                name={`enabledDay:${dayIndex}`}
+                labelText={weekday}
+                onValueChange={(checked) => {
+                  setSelectedDayIndexes((indexes) => {
+                    if (checked) {
+                      if (indexes.includes(dayIndex)) return indexes;
+                      return [...indexes, dayIndex].sort(
+                        (left, right) => left - right,
+                      );
+                    }
 
-                  return indexes.filter((index) => index !== dayIndex);
-                });
-              }}
-            />
-          ))}
-        </div>
+                    return indexes.filter((index) => index !== dayIndex);
+                  });
+                }}
+              />
+            ))}
+          </div>
 
-        <p className="light">{uiText("Die Woche beginnt am Montag. Nur ausgewählte und ausgefüllte Tage werden erstellt.")}</p>
+          <p className="light">
+            {uiText(
+              "Die Woche beginnt am Montag. Nur ausgewählte und ausgefüllte Tage werden erstellt.",
+            )}
+          </p>
 
-        {!selectedDayIndexes.length && (
-          <p className="light">{uiText("Bitte mindestens einen Tag auswählen.")}</p>
-        )}
+          {!selectedDayIndexes.length && (
+            <p className="light">
+              {uiText("Bitte mindestens einen Tag auswählen.")}
+            </p>
+          )}
 
-        <MyDivider />
+          <MyDivider />
 
-        <h3 style={{ marginBottom: '0.25rem' }}>{uiText("Tagesberichte")}</h3>
+          <h3
+            className="text-xl leading-snug font-semibold"
+            style={{ marginBottom: "0.25rem" }}
+          >
+            {uiText("Tagesberichte")}
+          </h3>
 
-        {WEEKDAY_NAMES.map((weekday, dayIndex) => {
-          if (!selectedDaySet.has(dayIndex)) return null;
+          {WEEKDAY_NAMES.map((weekday, dayIndex) => {
+            if (!selectedDaySet.has(dayIndex)) return null;
 
-          const workHourIds = workHourIdsByDay[dayIndex] ?? [];
-          const previousDayHasWorkHours = dayIndex > 0
-            && selectedDaySet.has(dayIndex - 1)
-            && (workHourIdsByDay[dayIndex - 1]?.length ?? 0) > 0;
-          const canCopyPreviousDay = workHourIds.length === 0 && previousDayHasWorkHours;
+            const workHourIds = workHourIdsByDay[dayIndex] ?? [];
+            const previousDayHasWorkHours =
+              dayIndex > 0 &&
+              selectedDaySet.has(dayIndex - 1) &&
+              (workHourIdsByDay[dayIndex - 1]?.length ?? 0) > 0;
+            const canCopyPreviousDay =
+              workHourIds.length === 0 && previousDayHasWorkHours;
 
-          return <Fragment key={weekday}>
-            <h4 style={{ marginBottom: '0.25rem' }}>{weekday}</h4>
+            return (
+              <Fragment key={weekday}>
+                <h4
+                  className="text-lg leading-snug font-semibold"
+                  style={{ marginBottom: "0.25rem" }}
+                >
+                  {weekday}
+                </h4>
 
-            <MyForm.Input
-              textArea
-              name={`day:${dayIndex}:summary`}
-              labelText={uiText("Beschreibung der Arbeiten")}
-            />
+                <MyForm.Input
+                  textArea
+                  name={`day:${dayIndex}:summary`}
+                  labelText={uiText("Beschreibung der Arbeiten")}
+                />
 
-            <div className="flex items-center justify-between gap-2">
-              <h6 style={{ marginBottom: 0 }}>{uiText("Arbeitszeit")}</h6>
-              {canCopyPreviousDay && <MyButton
-                kind="ghost"
-                size="sm"
-                onClick={() => copyWorkHoursFromPreviousDay(dayIndex)}
-              >
-                {uiText("Vom Vortag kopieren", "Copy previous day")}
-              </MyButton>}
-            </div>
-
-            {workHourIds.map(id => {
-              return <Fragment key={id}>
-                <div className="flex flex-col gap-2">
-                  <MyForm.MultiSelect
-                    name={`day:${dayIndex}:workHour:${id}:user`}
-                    labelText={uiText("Mitarbeiter")}
-                    autoFocus={autoFocusFieldName === `day:${dayIndex}:workHour:${id}:user`}
-                    onValueChange={selected => {
-                      focusReportHours(selected, () => hoursInputs.current[id]);
-                    }}
-                    minSelectedItems={1} maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                      const [data, err] = await client.query('users.list', { search: query });
-                      if (err) throw err;
-                      return data ?? [];
-                    }}
-                    renderItem={({ item }) => userFullName(item)}
-                    renderTile={item => <SmallUserTile data={item} noLink />}
-                    createAction={createEntityAction.user}
-                  />
-
-                  <div className="flex gap-2 items-end">
-                    <div className="grow">
-                      <MyForm.Input
-                        required
-                        name={`day:${dayIndex}:workHour:${id}:hours`}
-                        ref={(input: HTMLInputElement | null) => {
-                          hoursInputs.current[id] = input;
-                        }}
-                        labelText={uiText("Stunden")}
-                        type="number"
-                        rules={[
-                          MyForm.Input.rules.posnum,
-                          value => {
-                            if (!value.trim()) return null;
-                            const hours = parseFloatCustom(value);
-                            if (isNaN(hours)) return null;
-                            if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
-                            return null;
-                          },
-                        ]}
-                        suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
-                          setWorkHourIdsByDay(map => ({
-                            ...map,
-                            [dayIndex]: (map[dayIndex] ?? []).filter(_id => _id !== id),
-                          }));
-                        }}><Icons.Delete /></MyButton>}
-                      />
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between gap-2">
+                  <h6
+                    className="text-sm leading-snug font-semibold"
+                    style={{ marginBottom: 0 }}
+                  >
+                    {uiText("Arbeitszeit")}
+                  </h6>
+                  {canCopyPreviousDay && (
+                    <MyButton
+                      kind="ghost"
+                      size="sm"
+                      onClick={() => copyWorkHoursFromPreviousDay(dayIndex)}
+                    >
+                      {uiText("Vom Vortag kopieren", "Copy previous day")}
+                    </MyButton>
+                  )}
                 </div>
 
-                <div style={{ height: '0.75rem' }} />
-              </Fragment>;
-            })}
+                {workHourIds.map((id) => {
+                  return (
+                    <Fragment key={id}>
+                      <div className="flex flex-col gap-2">
+                        <MyForm.MultiSelect
+                          name={`day:${dayIndex}:workHour:${id}:user`}
+                          labelText={uiText("Mitarbeiter")}
+                          autoFocus={
+                            autoFocusFieldName ===
+                            `day:${dayIndex}:workHour:${id}:user`
+                          }
+                          onValueChange={(selected) => {
+                            focusReportHours(
+                              selected,
+                              () => hoursInputs.current[id],
+                            );
+                          }}
+                          minSelectedItems={1}
+                          maxSelectedItems={1}
+                          getOptions={async ({ query }) => {
+                            const [data, err] = await client.query(
+                              "users.list",
+                              { search: query },
+                            );
+                            if (err) throw err;
+                            return data ?? [];
+                          }}
+                          renderItem={({ item }) => userFullName(item)}
+                          renderTile={(item) => (
+                            <SmallUserTile data={item} noLink />
+                          )}
+                          createAction={createEntityAction.user}
+                        />
 
-            <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-              const id = generateId();
-              setWorkHourIdsByDay(map => ({
-                ...map,
-                [dayIndex]: [...(map[dayIndex] ?? []), id],
-              }));
-              setAutoFocusFieldName(`day:${dayIndex}:workHour:${id}:user`);
-            }}>{uiText("Arbeitszeit")}</MyButton>
+                        <div className="flex gap-2 items-end">
+                          <div className="grow">
+                            <MyForm.Input
+                              required
+                              name={`day:${dayIndex}:workHour:${id}:hours`}
+                              ref={(input: HTMLInputElement | null) => {
+                                hoursInputs.current[id] = input;
+                              }}
+                              labelText={uiText("Stunden")}
+                              type="number"
+                              rules={[
+                                MyForm.Input.rules.posnum,
+                                (value) => {
+                                  if (!value.trim()) return null;
+                                  const hours = parseFloatCustom(value);
+                                  if (isNaN(hours)) return null;
+                                  if (hours < 0 || hours > 10)
+                                    return uiText(
+                                      "Stunden müssen zwischen 0 und 10 liegen",
+                                      "Hours must be between 0 and 10",
+                                    );
+                                  return null;
+                                },
+                              ]}
+                              suffix={
+                                <MyButton
+                                  kind="ghost"
+                                  size="sm"
+                                  className="ss-input-suffix-btn"
+                                  title={uiText("Arbeitszeit entfernen")}
+                                  aria-label={uiText("Arbeitszeit entfernen")}
+                                  onClick={() => {
+                                    setWorkHourIdsByDay((map) => ({
+                                      ...map,
+                                      [dayIndex]: (map[dayIndex] ?? []).filter(
+                                        (_id) => _id !== id,
+                                      ),
+                                    }));
+                                  }}
+                                >
+                                  <Icons.Delete />
+                                </MyButton>
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
 
-            <div style={{ height: '0.75rem' }} />
+                      <div style={{ height: "0.75rem" }} />
+                    </Fragment>
+                  );
+                })}
 
-            <details>
-              <summary>{uiText("Wetter")}</summary>
-              <MyForm.Input
-                name={`day:${dayIndex}:weatherSummary`}
-                labelText={uiText("Wetterbeschreibung")}
-              />
+                <MyButton
+                  kind="secondary"
+                  renderIcon={Icons.Plus}
+                  onClick={() => {
+                    const id = generateId();
+                    setWorkHourIdsByDay((map) => ({
+                      ...map,
+                      [dayIndex]: [...(map[dayIndex] ?? []), id],
+                    }));
+                    setAutoFocusFieldName(
+                      `day:${dayIndex}:workHour:${id}:user`,
+                    );
+                  }}
+                >
+                  {uiText("Arbeitszeit")}
+                </MyButton>
 
-              <div className="flex gap-2">
-                <MyForm.Input
-                  className="flex-1"
-                  name={`day:${dayIndex}:temperatureC`}
-                  labelText={uiText("Temperatur (°C)")}
-                  type="number"
-                  rules={[MyForm.Input.rules.num]}
-                />
+                <div style={{ height: "0.75rem" }} />
 
-                <MyForm.Input
-                  className="flex-1"
-                  name={`day:${dayIndex}:precipitationMm`}
-                  labelText={uiText("Niederschlag (mm)")}
-                  type="number"
-                  rules={[MyForm.Input.rules.num]}
-                />
+                <details>
+                  <summary>{uiText("Wetter")}</summary>
+                  <MyForm.Input
+                    name={`day:${dayIndex}:weatherSummary`}
+                    labelText={uiText("Wetterbeschreibung")}
+                  />
 
-                <MyForm.Input
-                  className="flex-1"
-                  name={`day:${dayIndex}:windKph`}
-                  labelText={uiText("Wind (km/h)")}
-                  type="number"
-                  rules={[MyForm.Input.rules.num]}
-                />
-              </div>
-            </details>
+                  <div className="flex gap-2">
+                    <MyForm.Input
+                      className="flex-1"
+                      name={`day:${dayIndex}:temperatureC`}
+                      labelText={uiText("Temperatur (°C)")}
+                      type="number"
+                      rules={[MyForm.Input.rules.num]}
+                    />
 
-            {dayIndex < WEEKDAY_NAMES.length - 1 && <>
-              <div style={{ height: '1.25rem' }} />
-              <MyDivider />
-              <div style={{ height: '1.25rem' }} />
-            </>}
-          </Fragment>
-        })}
+                    <MyForm.Input
+                      className="flex-1"
+                      name={`day:${dayIndex}:precipitationMm`}
+                      labelText={uiText("Niederschlag (mm)")}
+                      type="number"
+                      rules={[MyForm.Input.rules.num]}
+                    />
 
-        <NotifyLoaded onLoad={() => {
-          context.setValues(Object.fromEntries(WEEKDAY_NAMES.map((_, dayIndex) => [
-            `enabledDay:${dayIndex}`,
-            isDefaultReportDay(dayIndex),
-          ])) as Record<string, boolean>);
-          context.field('week')?.setValue(new Date());
-        }} />
+                    <MyForm.Input
+                      className="flex-1"
+                      name={`day:${dayIndex}:windKph`}
+                      labelText={uiText("Wind (km/h)")}
+                      type="number"
+                      rules={[MyForm.Input.rules.num]}
+                    />
+                  </div>
+                </details>
 
-        {!!pendingCopiedValues && <NotifyLoaded
-          key={pendingCopiedValues.id}
-          onLoad={() => {
-            context.setValues(pendingCopiedValues.values);
-            setPendingCopiedValues(null);
-          }}
-        />}
-      </>;
+                {dayIndex < WEEKDAY_NAMES.length - 1 && (
+                  <>
+                    <div style={{ height: "1.25rem" }} />
+                    <MyDivider />
+                    <div style={{ height: "1.25rem" }} />
+                  </>
+                )}
+              </Fragment>
+            );
+          })}
+
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues(
+                Object.fromEntries(
+                  WEEKDAY_NAMES.map((_, dayIndex) => [
+                    `enabledDay:${dayIndex}`,
+                    isDefaultReportDay(dayIndex),
+                  ]),
+                ) as Record<string, boolean>,
+              );
+              context.field("week")?.setValue(new Date());
+            }}
+          />
+
+          {!!pendingCopiedValues && (
+            <NotifyLoaded
+              key={pendingCopiedValues.id}
+              onLoad={() => {
+                context.setValues(pendingCopiedValues.values);
+                setPendingCopiedValues(null);
+              }}
+            />
+          )}
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
       const values = context.getValues();
@@ -718,6 +887,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
       hide();
     },
     modalProps: () => ({
+      useFullscreen: true,
       modalHeading: uiText("Bauwochenbericht erstellen"),
       primaryButtonText: uiText("Erstellen"),
     }),
@@ -730,11 +900,24 @@ export function showExportWeeklyDailyProjectReportsModal(
   format: WeeklyExportFormat = 'excel',
 ) {
   modals.showForm({
-    content: () => <>
-      <p className="light">{uiText("Es werden alle vorhandenen Bauwochenberichte des Projekts exportiert, nach Kalenderwoche aufsteigend.")}</p>
-      <p className="light">{uiText("PDF: eine Datei mit Seitenumbruch nach jeder Woche. Excel: eine Arbeitsmappe mit einem Tabellenblatt je Woche.")}</p>
-      <MyForm.Checkbox name="hideHours" labelText={uiText("Stunden ausblenden")} />
-    </>,
+    content: () => (
+      <>
+        <p className="light">
+          {uiText(
+            "Es werden alle vorhandenen Bauwochenberichte des Projekts exportiert, nach Kalenderwoche aufsteigend.",
+          )}
+        </p>
+        <p className="light">
+          {uiText(
+            "PDF: eine Datei mit Seitenumbruch nach jeder Woche. Excel: eine Arbeitsmappe mit einem Tabellenblatt je Woche.",
+          )}
+        </p>
+        <MyForm.Checkbox
+          name="hideHours"
+          labelText={uiText("Stunden ausblenden")}
+        />
+      </>
+    ),
     onSubmit: async ({ hide, context }) => {
       const hideHours = !!context.getValues().hideHours;
       const [reports, reportsErr] = await client.query('projects.dailyReports.list', {
@@ -1078,172 +1261,237 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
       const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
-      return <>
-        <MyForm.MultiSelect
-          minSelectedItems={1} maxSelectedItems={1}
-          name="project" labelText={uiText("Projekt")}
-          disabled
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          renderTileDisallowUndo
-        />
-        <p className="light">{uiText("Projekt ist bei bestehenden Berichten fix. Der Tag kann geändert werden.")}</p>
+      return (
+        <>
+          <MyForm.MultiSelect
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            name="project"
+            labelText={uiText("Projekt")}
+            disabled
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            renderTileDisallowUndo
+          />
+          <p className="light">
+            {uiText(
+              "Projekt ist bei bestehenden Berichten fix. Der Tag kann geändert werden.",
+            )}
+          </p>
 
-        <MyForm.Input textArea name="summary" labelText={uiText("Beschreibung der Arbeiten")} />
+          <MyForm.Input
+            textArea
+            name="summary"
+            labelText={uiText("Beschreibung der Arbeiten")}
+          />
 
-        <MyForm.DateInput required name="day" labelText={uiText("Tag")} />
+          <MyForm.DateInput required name="day" labelText={uiText("Tag")} />
 
-        <MyDivider />
+          <MyDivider />
 
-        <h4>{uiText("Arbeitszeit")}</h4>
-        <p className="light">{uiText("Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.")}</p>
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Arbeitszeit")}
+          </h4>
+          <p className="light">
+            {uiText(
+              "Pro Eintrag einen Mitarbeiter und die geleisteten Stunden erfassen.",
+            )}
+          </p>
 
-        {workHourIds.map(id => {
-          return <Fragment key={id}>
-            <div className="flex flex-col gap-2">
-              <MyForm.MultiSelect
-                name={`workHour:${id}:user`}
-                labelText={uiText("Mitarbeiter")}
-                autoFocus={autoFocusFieldName === `workHour:${id}:user`}
-                onValueChange={selected => {
-                  focusReportHours(selected, () => hoursInputs.current[id]);
-                }}
-                minSelectedItems={1} maxSelectedItems={1}
-                getOptions={async ({ query }) => {
-                  const [data, err] = await client.query('users.list', { search: query });
-                  if (err) throw err;
-                  return data ?? [];
-                }}
-                renderItem={({ item }) => userFullName(item)}
-                renderTile={item => <SmallUserTile data={item} noLink />}
-                createAction={createEntityAction.user}
+          {workHourIds.map((id) => {
+            return (
+              <Fragment key={id}>
+                <div className="flex flex-col gap-2">
+                  <MyForm.MultiSelect
+                    name={`workHour:${id}:user`}
+                    labelText={uiText("Mitarbeiter")}
+                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    onValueChange={(selected) => {
+                      focusReportHours(selected, () => hoursInputs.current[id]);
+                    }}
+                    minSelectedItems={1}
+                    maxSelectedItems={1}
+                    getOptions={async ({ query }) => {
+                      const [data, err] = await client.query("users.list", {
+                        search: query,
+                      });
+                      if (err) throw err;
+                      return data ?? [];
+                    }}
+                    renderItem={({ item }) => userFullName(item)}
+                    renderTile={(item) => <SmallUserTile data={item} noLink />}
+                    createAction={createEntityAction.user}
+                  />
+
+                  <div className="flex gap-2 items-end">
+                    <div className="grow">
+                      <MyForm.Input
+                        required
+                        name={`workHour:${id}:hours`}
+                        ref={(input: HTMLInputElement | null) => {
+                          hoursInputs.current[id] = input;
+                        }}
+                        labelText={uiText("Stunden")}
+                        type="number"
+                        rules={[
+                          MyForm.Input.rules.posnum,
+                          (value) => {
+                            if (!value.trim()) return null;
+                            const hours = parseFloatCustom(value);
+                            if (isNaN(hours)) return null;
+                            if (hours < 0 || hours > 10)
+                              return uiText(
+                                "Stunden müssen zwischen 0 und 10 liegen",
+                                "Hours must be between 0 and 10",
+                              );
+                            return null;
+                          },
+                        ]}
+                        suffix={
+                          <MyButton
+                            kind="ghost"
+                            size="sm"
+                            className="ss-input-suffix-btn"
+                            title={uiText("Arbeitszeit entfernen")}
+                            aria-label={uiText("Arbeitszeit entfernen")}
+                            onClick={() => {
+                              setWorkHourIds((ids) =>
+                                ids.filter((_id) => _id !== id),
+                              );
+                            }}
+                          >
+                            <Icons.Delete />
+                          </MyButton>
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <NotifyLoaded
+                  onLoad={() => {
+                    const initial = initialWorkHourValues[id];
+                    if (!initial) return;
+
+                    const values: Record<string, any> = {
+                      [`workHour:${id}:hours`]: initial.hours,
+                    };
+                    if (initial.user)
+                      values[`workHour:${id}:user`] = [initial.user];
+                    context.setValues(values);
+                  }}
+                />
+
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
+
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setWorkHourIds((ids) => [...ids, id]);
+              setAutoFocusFieldName(`workHour:${id}:user`);
+            }}
+          >
+            {uiText("Arbeitszeit")}
+          </MyButton>
+
+          <MyDivider />
+
+          <details open={!!report.weather}>
+            <summary>{uiText("Wetter")}</summary>
+            <MyForm.Input
+              name="weatherSummary"
+              labelText={uiText("Wetterbeschreibung")}
+            />
+
+            <div className="flex gap-2">
+              <MyForm.Input
+                className="flex-1"
+                name="temperatureC"
+                labelText={uiText("Temperatur (°C)")}
+                type="number"
+                rules={[MyForm.Input.rules.num]}
               />
 
-              <div className="flex gap-2 items-end">
-                <div className="grow">
-                  <MyForm.Input
-                    required
-                    name={`workHour:${id}:hours`}
-                    ref={(input: HTMLInputElement | null) => {
-                      hoursInputs.current[id] = input;
-                    }}
-                    labelText={uiText("Stunden")}
-                    type="number"
-                    rules={[
-                      MyForm.Input.rules.posnum,
-                      value => {
-                        if (!value.trim()) return null;
-                        const hours = parseFloatCustom(value);
-                        if (isNaN(hours)) return null;
-                        if (hours < 0 || hours > 10) return uiText('Stunden müssen zwischen 0 und 10 liegen', 'Hours must be between 0 and 10');
-                        return null;
-                      },
-                    ]}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Arbeitszeit entfernen")} aria-label={uiText("Arbeitszeit entfernen")} onClick={() => {
-                      setWorkHourIds(ids => ids.filter(_id => _id !== id));
-                    }}><Icons.Delete /></MyButton>}
-                  />
-                </div>
-              </div>
+              <MyForm.Input
+                className="flex-1"
+                name="precipitationMm"
+                labelText={uiText("Niederschlag (mm)")}
+                type="number"
+                rules={[MyForm.Input.rules.num]}
+              />
+
+              <MyForm.Input
+                className="flex-1"
+                name="windKph"
+                labelText={uiText("Wind (km/h)")}
+                type="number"
+                rules={[MyForm.Input.rules.num]}
+              />
             </div>
+          </details>
 
-            <NotifyLoaded onLoad={() => {
-              const initial = initialWorkHourValues[id];
-              if (!initial) return;
+          <NotifyLoaded
+            onLoad={async () => {
+              context.setValues({
+                summary: report.summary ?? "",
+                day: report.day,
+                weatherSummary: report.weather?.summary ?? "",
+                temperatureC: report.weather?.temperatureC ?? "",
+                precipitationMm: report.weather?.precipitationMm ?? "",
+                windKph: report.weather?.windKph ?? "",
+              });
 
-              const values: Record<string, any> = {
-                [`workHour:${id}:hours`]: initial.hours,
-              };
-              if (initial.user) values[`workHour:${id}:user`] = [initial.user];
-              context.setValues(values);
-            }} />
+              if (report.projectId) {
+                const [project] = await client.query(
+                  "projects.get",
+                  { id: report.projectId },
+                  { strategy: "cache-first" },
+                );
+                if (project) context.setValues({ project: [project] });
+              }
 
-            <div style={{ height: '1rem' }} />
-          </Fragment>;
-        })}
+              const ids: string[] = [];
+              for (const record of report.workHours ?? []) {
+                const id = generateId();
+                ids.push(id);
 
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setWorkHourIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`workHour:${id}:user`);
-        }}>{uiText("Arbeitszeit")}</MyButton>
+                let user: any | null = null;
+                if (record.userId) {
+                  const [data] = await client.query(
+                    "users.get",
+                    { id: record.userId },
+                    { strategy: "cache-first" },
+                  );
+                  user = data ?? null;
+                }
 
-        <MyDivider />
+                initialWorkHourValues[id] = {
+                  user,
+                  userId: record.userId ?? null,
+                  hours: record.hours,
+                  costPerHour: record.costPerHour ?? null,
+                  contractType: ((record as any).contractType ??
+                    "external") as User["contractType"],
+                };
+              }
 
-        <details open={!!report.weather}>
-          <summary>{uiText("Wetter")}</summary>
-          <MyForm.Input name="weatherSummary" labelText={uiText("Wetterbeschreibung")} />
-
-          <div className="flex gap-2">
-            <MyForm.Input
-              className="flex-1"
-              name="temperatureC"
-              labelText={uiText("Temperatur (°C)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
-
-            <MyForm.Input
-              className="flex-1"
-              name="precipitationMm"
-              labelText={uiText("Niederschlag (mm)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
-
-            <MyForm.Input
-              className="flex-1"
-              name="windKph"
-              labelText={uiText("Wind (km/h)")}
-              type="number"
-              rules={[MyForm.Input.rules.num]}
-            />
-          </div>
-        </details>
-
-        <NotifyLoaded onLoad={async () => {
-          context.setValues({
-            summary: report.summary ?? '',
-            day: report.day,
-            weatherSummary: report.weather?.summary ?? '',
-            temperatureC: report.weather?.temperatureC ?? '',
-            precipitationMm: report.weather?.precipitationMm ?? '',
-            windKph: report.weather?.windKph ?? '',
-          });
-
-          if (report.projectId) {
-            const [project] = await client.query('projects.get', { id: report.projectId }, { strategy: 'cache-first' });
-            if (project) context.setValues({ project: [project] });
-          }
-
-          const ids: string[] = [];
-          for (const record of report.workHours ?? []) {
-            const id = generateId();
-            ids.push(id);
-
-            let user: any | null = null;
-            if (record.userId) {
-              const [data] = await client.query('users.get', { id: record.userId }, { strategy: 'cache-first' });
-              user = data ?? null;
-            }
-
-            initialWorkHourValues[id] = {
-              user,
-              userId: record.userId ?? null,
-              hours: record.hours,
-              costPerHour: record.costPerHour ?? null,
-              contractType: ((record as any).contractType ?? 'external') as User['contractType'],
-            };
-          }
-
-          setWorkHourIds(ids);
-        }} />
-      </>;
+              setWorkHourIds(ids);
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate, pathname }) => {
       const values = context.getValues();
@@ -1315,6 +1563,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
       hide();
     },
     modalProps: () => ({
+      useFullscreen: true,
       modalHeading: uiText("Bautagesbericht bearbeiten"),
       modalLabel: formatDate(report.day),
       primaryButtonText: uiText("Speichern"),
@@ -1324,14 +1573,23 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
 
 export function showDeleteDailyProjectReportModal(modals: MyModalsInterface, report: DailyProjectReport) {
   modals.showForm({
-    content: () => <>
-      <p className="light">{uiText("Alle mit diesem Bautagesbericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
-      </p>
-      <MyForm.Checkbox
-        required name="_understood"
-        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
-      />
-    </>,
+    content: () => (
+      <>
+        <p className="light">
+          {uiText(
+            "Alle mit diesem Bautagesbericht in Verbindung stehenden Daten werden damit ebenfalls gelöscht.",
+          )}{" "}
+          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+        </p>
+        <MyForm.Checkbox
+          required
+          name="_understood"
+          labelText={uiText(
+            "Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.",
+          )}
+        />
+      </>
+    ),
     onSubmit: async ({ hide, pathname, navigate }) => {
       const [data, err] = await client.mutate('projects.dailyReports.delete', {
         projectId: report.projectId,

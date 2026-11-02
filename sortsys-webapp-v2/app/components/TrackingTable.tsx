@@ -3,7 +3,7 @@ import { useSessionInfo } from "~/hooks/useSessionInfo";
 import type { ToolTracking } from "~/type-helpers";
 import { MyTable, type MyTableColumn } from "./MyTable";
 import { client } from "~/lib/client";
-import { MyLink } from './MyLink';
+import { MyLink } from "./MyLink";
 import { formatDate, toolTitle, userFullNameComma } from "~/lib/format";
 import { TrackingTile } from "~/lib/tiles";
 
@@ -11,7 +11,6 @@ export function TrackingTable(props: {
     trackings: ToolTracking[];
     omit?: ("tool" | "project" | "author" | "responsible" | "timestamps")[];
     className?: string;
-    topPagination?: boolean;
     loading?: boolean;
     error?: unknown;
 }) {
@@ -25,7 +24,11 @@ export function TrackingTable(props: {
             render: async (tracking) => {
                 const [tool] = await client.query('tools.get', { id: tracking.toolId }, { strategy: 'cache-first' });
                 if (!tool) return 'Unbekannt';
-                return <MyLink to={`/tools/${tool.id}`}>{tool.customId} {toolTitle(tool)}</MyLink>;
+                return (
+          <MyLink to={`/tools/${tool.id}`}>
+            {tool.customId} {toolTitle(tool)}
+          </MyLink>
+        );
             },
         });
     }
@@ -51,7 +54,9 @@ export function TrackingTable(props: {
 
                 const [user] = await client.query('users.get', { id: tracking.responsibleUserId }, { strategy: 'cache-first' });
                 if (!user) return 'Unbekannt';
-                return <MyLink to={`/users/${user.id}`}>{userFullNameComma(user)}</MyLink>;
+                return (
+          <MyLink to={`/users/${user.id}`}>{userFullNameComma(user)}</MyLink>
+        );
             },
         });
     }
@@ -64,7 +69,9 @@ export function TrackingTable(props: {
 
                 const [user] = await client.query('users.get', { id: tracking.startedByUserId }, { strategy: 'cache-first' });
                 if (!user) return 'Unbekannt';
-                return <MyLink to={`/users/${user.id}`}>{userFullNameComma(user)}</MyLink>;
+                return (
+          <MyLink to={`/users/${user.id}`}>{userFullNameComma(user)}</MyLink>
+        );
             },
         });
     }
@@ -83,15 +90,18 @@ export function TrackingTable(props: {
         });
     }
 
-    return <MyTable
-        loading={props.loading}
-        error={props.error}
-        rows={props.trackings}
-        columns={columns}
-        pagination={{}}
-        className={props.className ?? 'th-20rem'}
-        topPagination={props.topPagination}
-        renderSmallViewport={tracking => <TrackingTile tracking={tracking} omit={props.omit} />}
-        viewportBreakpoint={1400}
-    />;
+    return (
+    <MyTable
+      loading={props.loading}
+      error={props.error}
+      rows={props.trackings}
+      columns={columns}
+      loadMore={{}}
+      className={props.className ?? "th-20rem"}
+      renderSmallViewport={(tracking) => (
+        <TrackingTile tracking={tracking} omit={props.omit} />
+      )}
+      viewportBreakpoint={1400}
+    />
+  );
 }

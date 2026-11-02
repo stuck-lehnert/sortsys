@@ -33,8 +33,13 @@ echo "Checking container hardening, office deployment and JWT configuration"
 bun test ./scripts/container-hardening.test.mjs ./scripts/office-deployment.test.mjs
 
 echo
-echo "Checking development LLM environment loading"
-bun test ./scripts/dev-llm.test.mjs
+echo "Checking development startup, storage and LLM environment loading"
+node --test \
+  ./scripts/dev-startup.test.mjs \
+  ./scripts/dev-images.test.mjs \
+  ./scripts/dev-office-init.test.mjs \
+  ./scripts/dev-office-start.test.mjs
+bun test ./scripts/dev-storage.test.mjs ./scripts/dev-llm.test.mjs
 
 echo
 
@@ -89,6 +94,14 @@ echo "Running DWG viewer checks"
 )
 
 echo
+echo "Checking the shared component implementation"
+(
+  cd sortsys-react-components
+  bun install --frozen-lockfile
+  bun run typecheck
+)
+
+echo
 echo "Running webapp checks and building the webapp once"
 (
   cd sortsys-webapp-v2
@@ -102,6 +115,7 @@ echo "Running webapp checks and building the webapp once"
   bun run test:report-forms
   bun run test:chat-requests
   bun run test:deployment-planning
+  bun run test:table
   bun run test:menus
   bun run test:editors
   bun run test:chat-files
@@ -109,7 +123,17 @@ echo "Running webapp checks and building the webapp once"
   bun run test:attachment-selection
   bun run test:error-boundary
   bun run test:security-deps
+  bun run test:pdf
+  bun run test:regie-list
   bun run build
+
+  if [ "${CI:-}" = "true" ]; then
+    bunx playwright install --with-deps chromium
+  else
+    bunx playwright install chromium
+  fi
+
+  SORTSYS_UI_ASSETS="$PWD/build/client" bun run test:ui
 )
 
 if [ -n "$CI_BUILD_DIR" ]; then

@@ -102,7 +102,15 @@ export default function VacationsPage() {
 
   function showDenyModal(vacation: VacationRow) {
     modals.showForm({
-      content: () => <MyForm.Input required autoFocus textArea name="reason" labelText={uiText("Ablehnungsgrund")} />,
+      content: () => (
+        <MyForm.Input
+          required
+          autoFocus
+          textArea
+          name="reason"
+          labelText={uiText("Ablehnungsgrund")}
+        />
+      ),
       onSubmit: async ({ context, hide }) => {
         const reason = `${context.getValues().reason ?? ''}`.trim();
         if (!reason) throw new Error(uiText("Ablehnungsgrund fehlt."));
@@ -144,39 +152,65 @@ export default function VacationsPage() {
     );
 
     modals.showDefault({
-      content: () => <div className="flex flex-col gap-3">
-        <p>{uiText(
-          `${absenceLabel(vacation)} für ${user ? userFullName(user) : 'den Benutzer'} vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} freigeben?`,
-          `Approve ${absenceLabel(vacation).toLowerCase()} for ${user ? userFullName(user) : 'the user'} from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
-        )}</p>
+      content: () => (
+        <div className="flex flex-col gap-3">
+          <p>
+            {uiText(
+              `${absenceLabel(vacation)} für ${user ? userFullName(user) : "den Benutzer"} vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} freigeben?`,
+              `Approve ${absenceLabel(vacation).toLowerCase()} for ${user ? userFullName(user) : "the user"} from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
+            )}
+          </p>
 
-        {vacation.type === 'vacation' && missingAllowance && <MyCallout
-          kind="warning"
-          title={uiText("Kein Urlaubsanspruch hinterlegt", "No leave allowance recorded")}
-          subtitle={uiText("Die Freigabe ist trotzdem möglich.", "The request can still be approved.")}
-        />}
-
-        {!!exceededAllowance && <MyCallout
-          kind="warning"
-          title={uiText("Urlaubsanspruch wird überschritten", "Leave allowance will be exceeded")}
-          subtitle={uiText(
-            `${Math.abs(exceededAllowance.remainingAfterApproval ?? 0)} Arbeitstage über dem Anspruch für ${exceededAllowance.year}.`,
-            `${Math.abs(exceededAllowance.remainingAfterApproval ?? 0)} working days over the allowance for ${exceededAllowance.year}.`,
+          {vacation.type === "vacation" && missingAllowance && (
+            <MyCallout
+              kind="warning"
+              title={uiText(
+                "Kein Urlaubsanspruch hinterlegt",
+                "No leave allowance recorded",
+              )}
+              subtitle={uiText(
+                "Die Freigabe ist trotzdem möglich.",
+                "The request can still be approved.",
+              )}
+            />
           )}
-        />}
 
-        {vacation.type === 'vacation' && vacation.vacationUsage.map(usage => <div key={usage.year}>
-          <strong>{usage.year}</strong>
-          <div>{uiText(
-            `${usage.approvedDays} bereits freigegeben · ${usage.requestedDays} beantragt`,
-            `${usage.approvedDays} already approved · ${usage.requestedDays} requested`,
-          )}</div>
-          {usage.allowanceDays !== null && <div>{uiText(
-            `${usage.remainingAfterApproval} von ${usage.allowanceDays} Arbeitstagen verbleiben`,
-            `${usage.remainingAfterApproval} of ${usage.allowanceDays} working days remaining`,
-          )}</div>}
-        </div>)}
-      </div>,
+          {!!exceededAllowance && (
+            <MyCallout
+              kind="warning"
+              title={uiText(
+                "Urlaubsanspruch wird überschritten",
+                "Leave allowance will be exceeded",
+              )}
+              subtitle={uiText(
+                `${Math.abs(exceededAllowance.remainingAfterApproval ?? 0)} Arbeitstage über dem Anspruch für ${exceededAllowance.year}.`,
+                `${Math.abs(exceededAllowance.remainingAfterApproval ?? 0)} working days over the allowance for ${exceededAllowance.year}.`,
+              )}
+            />
+          )}
+
+          {vacation.type === "vacation" &&
+            vacation.vacationUsage.map((usage) => (
+              <div key={usage.year}>
+                <strong>{usage.year}</strong>
+                <div>
+                  {uiText(
+                    `${usage.approvedDays} bereits freigegeben · ${usage.requestedDays} beantragt`,
+                    `${usage.approvedDays} already approved · ${usage.requestedDays} requested`,
+                  )}
+                </div>
+                {usage.allowanceDays !== null && (
+                  <div>
+                    {uiText(
+                      `${usage.remainingAfterApproval} von ${usage.allowanceDays} Arbeitstagen verbleiben`,
+                      `${usage.remainingAfterApproval} of ${usage.allowanceDays} working days remaining`,
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
+      ),
       onPrimaryAction: async ({ hide }) => {
         const ok = await runVacationAction(`approve:${vacation.id}`, async () => {
           const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
@@ -197,12 +231,18 @@ export default function VacationsPage() {
 
   function showDeleteVacationModal(vacation: VacationRow) {
     modals.showDefault({
-      content: () => <p>
-        {uiText(
-          `${absenceLabel(vacation)} vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} löschen?`,
-          `Delete ${absenceLabel(vacation).toLowerCase()} from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
-        )} {uiText("Diese Aktion kann nicht rückgängig gemacht werden.", "This action cannot be undone.")}
-      </p>,
+      content: () => (
+        <p>
+          {uiText(
+            `${absenceLabel(vacation)} vom ${formatDate(vacation.from)} bis ${formatDate(vacation.to)} löschen?`,
+            `Delete ${absenceLabel(vacation).toLowerCase()} from ${formatDate(vacation.from)} to ${formatDate(vacation.to)}?`,
+          )}{" "}
+          {uiText(
+            "Diese Aktion kann nicht rückgängig gemacht werden.",
+            "This action cannot be undone.",
+          )}
+        </p>
+      ),
       onPrimaryAction: async ({ hide }) => {
         const ok = await runVacationAction(`delete:${vacation.id}`, async () => {
           const [result, deleteErr] = await client.mutate('users.vacations.delete', { id: vacation.id });
@@ -221,95 +261,180 @@ export default function VacationsPage() {
     });
   }
 
-  return <>
-    <MyHeader
-      title={uiText("Abwesenheiten", "Absences")}
-      actions={<>
-        <TableExportActions
-          title={uiText("Abwesenheiten", "Absences")}
-          fileName={uiText("Abwesenheiten", "Absences")}
-          rows={rows}
-          disabled={!vacations}
-          columns={[
-            { header: uiText("Benutzer"), value: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : uiText('Unbekannter Benutzer'), width: '2fr' },
-            { header: uiText("Typ", "Type"), value: row => absenceTypeLabel(row.type) },
-            { header: uiText("Bezeichnung", "Label"), value: row => row.label ?? '' },
-            { header: uiText("Von"), value: row => row.from },
-            { header: uiText("Bis"), value: row => row.to },
-            { header: uiText("Status"), value: row => vacationStatusLabel(row.status) },
-            { header: uiText("Kommentar"), value: row => row.status === 'denied' ? row.denialReason ?? '' : row.note ?? '', width: '2fr' },
-            { header: uiText("Entschieden am"), value: row => row.decidedAt },
-          ]}
+  return (
+    <>
+      <MyHeader
+        title={uiText("Abwesenheiten", "Absences")}
+        actions={
+          <>
+            <TableExportActions
+              title={uiText("Abwesenheiten", "Absences")}
+              fileName={uiText("Abwesenheiten", "Absences")}
+              rows={rows}
+              disabled={!vacations}
+              columns={[
+                {
+                  header: uiText("Benutzer"),
+                  value: (row) =>
+                    userMap.get(row.userId)
+                      ? userFullName(userMap.get(row.userId)!)
+                      : uiText("Unbekannter Benutzer"),
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Typ", "Type"),
+                  value: (row) => absenceTypeLabel(row.type),
+                },
+                {
+                  header: uiText("Bezeichnung", "Label"),
+                  value: (row) => row.label ?? "",
+                },
+                { header: uiText("Von"), value: (row) => row.from },
+                { header: uiText("Bis"), value: (row) => row.to },
+                {
+                  header: uiText("Status"),
+                  value: (row) => vacationStatusLabel(row.status),
+                },
+                {
+                  header: uiText("Kommentar"),
+                  value: (row) =>
+                    row.status === "denied"
+                      ? (row.denialReason ?? "")
+                      : (row.note ?? ""),
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Entschieden am"),
+                  value: (row) => row.decidedAt,
+                },
+              ]}
+            />
+            <MyButton
+              renderIcon={Icons.Plus}
+              onClick={showAbsenceForm}
+              aria-label={createAbsenceLabel}
+              title={createAbsenceLabel}
+            />
+          </>
+        }
+      />
+
+      {!!usersError && (
+        <MyCallout
+          kind="error"
+          title={uiText(
+            "Benutzerdaten konnten nicht geladen werden",
+            "User data could not be loaded",
+          )}
         />
-        <MyButton
-          renderIcon={Icons.Plus}
-          onClick={showAbsenceForm}
-          aria-label={createAbsenceLabel}
-          title={createAbsenceLabel}
+      )}
+
+      {!!actionError && (
+        <MyCallout
+          kind="error"
+          title={uiText("Aktion fehlgeschlagen", "Action failed")}
+          subtitle={actionError}
         />
-      </>}
-    />
+      )}
 
-    {!!usersError && <MyCallout kind="error" title={uiText("Benutzerdaten konnten nicht geladen werden", "User data could not be loaded")} />}
-
-    {!!actionError && <MyCallout kind="error" title={uiText("Aktion fehlgeschlagen", "Action failed")} subtitle={actionError} />}
-
-    <MyTable
-      topPagination
-      persistentId="Vacations"
-      rows={rows}
-      loading={!vacations}
-      error={err}
-      columns={[
-        {
-          label: uiText("Benutzer"),
-          render: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!) : uiText('Unbekannter Benutzer'),
-          sortKey: row => userMap.get(row.userId) ? userFullName(userMap.get(row.userId)!).toLowerCase() : '',
-        },
-        {
-          label: uiText("Typ", "Type"),
-          render: row => absenceTypeLabel(row.type),
-          sortKey: row => row.type,
-        },
-        {
-          label: uiText("Bezeichnung", "Label"),
-          render: row => row.label ?? '–',
-          sortKey: row => row.label?.toLowerCase() ?? '',
-        },
-        {
-          label: uiText("Von"),
-          render: row => formatDate(row.from),
-          sortKey: row => row.from.getTime(),
-        },
-        {
-          label: uiText("Bis"),
-          render: row => formatDate(row.to),
-          sortKey: row => row.to.getTime(),
-        },
-        {
-          label: uiText("Status"),
-          render: row => vacationStatusLabel(row.status),
-          sortKey: row => row.status,
-        },
-        {
-          label: uiText("Kommentar"),
-          render: row => row.status === 'denied' ? row.denialReason ?? '' : row.note ?? '',
-          sortKey: row => (row.note ?? row.denialReason ?? '').toLowerCase(),
-        },
-        {
-          label: uiText("Aktionen"),
-          render: row => <div className="flex gap-1 flex-wrap">
-            {row.canApprove && <MyButton size="sm" kind="ghost" renderIcon={Icons.Accept} loading={pendingAction === `approve:${row.id}`} disabled={!!pendingAction} onClick={() => showApproveModal(row)}>{uiText("Freigeben")}</MyButton>}
-            {row.canDeny && <MyButton size="sm" kind="ghost" renderIcon={Icons.Deny} onClick={() => showDenyModal(row)}>{uiText("Ablehnen")}</MyButton>}
-            {row.canDelete && <MyButton size="sm" kind="ghost" renderIcon={Icons.Delete} disabled={!!pendingAction} onClick={() => showDeleteVacationModal(row)}>{uiText("Löschen")}</MyButton>}
-          </div>,
-          sortKey: () => '',
-        },
-      ]}
-      pagination={{}}
-      autoConvertSmallViewport
-    />
-  </>;
+      <MyTable
+        persistentId="Vacations"
+        rows={rows}
+        loading={!vacations}
+        error={err}
+        columns={[
+          {
+            label: uiText("Benutzer"),
+            render: (row) =>
+              userMap.get(row.userId)
+                ? userFullName(userMap.get(row.userId)!)
+                : uiText("Unbekannter Benutzer"),
+            sortKey: (row) =>
+              userMap.get(row.userId)
+                ? userFullName(userMap.get(row.userId)!).toLowerCase()
+                : "",
+          },
+          {
+            label: uiText("Typ", "Type"),
+            render: (row) => absenceTypeLabel(row.type),
+            sortKey: (row) => row.type,
+          },
+          {
+            label: uiText("Bezeichnung", "Label"),
+            render: (row) => row.label ?? "–",
+            sortKey: (row) => row.label?.toLowerCase() ?? "",
+          },
+          {
+            label: uiText("Von"),
+            render: (row) => formatDate(row.from),
+            sortKey: (row) => row.from.getTime(),
+          },
+          {
+            label: uiText("Bis"),
+            render: (row) => formatDate(row.to),
+            sortKey: (row) => row.to.getTime(),
+          },
+          {
+            label: uiText("Status"),
+            render: (row) => vacationStatusLabel(row.status),
+            sortKey: (row) => row.status,
+          },
+          {
+            label: uiText("Kommentar"),
+            render: (row) =>
+              row.status === "denied"
+                ? (row.denialReason ?? "")
+                : (row.note ?? ""),
+            sortKey: (row) =>
+              (row.note ?? row.denialReason ?? "").toLowerCase(),
+          },
+          {
+            label: uiText("Aktionen"),
+            render: (row) => (
+              <div className="flex gap-1 flex-wrap">
+                {row.canApprove && (
+                  <MyButton
+                    size="sm"
+                    kind="ghost"
+                    renderIcon={Icons.Accept}
+                    loading={pendingAction === `approve:${row.id}`}
+                    disabled={!!pendingAction}
+                    onClick={() => showApproveModal(row)}
+                  >
+                    {uiText("Freigeben")}
+                  </MyButton>
+                )}
+                {row.canDeny && (
+                  <MyButton
+                    size="sm"
+                    kind="ghost"
+                    renderIcon={Icons.Deny}
+                    onClick={() => showDenyModal(row)}
+                  >
+                    {uiText("Ablehnen")}
+                  </MyButton>
+                )}
+                {row.canDelete && (
+                  <MyButton
+                    size="sm"
+                    kind="ghost"
+                    renderIcon={Icons.Delete}
+                    disabled={!!pendingAction}
+                    onClick={() => showDeleteVacationModal(row)}
+                  >
+                    {uiText("Löschen")}
+                  </MyButton>
+                )}
+              </div>
+            ),
+            sortKey: () => "",
+          },
+        ]}
+        loadMore={{}}
+        autoConvertSmallViewport
+      />
+    </>
+  );
 }
 
 function absenceTypeLabel(type: AbsenceType) {

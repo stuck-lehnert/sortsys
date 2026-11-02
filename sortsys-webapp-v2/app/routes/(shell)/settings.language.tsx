@@ -1,7 +1,7 @@
-import { Tile, useNotifications } from '@sortsys/react-components';
-import { MyForm, type MyPublicFormContext } from '~/components/MyForm';
-import { client } from '~/lib/client';
-import { uiText, useI18n } from '~/lib/i18n';
+import { Tile, useNotifications } from "@sortsys/react-components";
+import { MyForm, type MyPublicFormContext } from "~/components/MyForm";
+import { client } from "~/lib/client";
+import { uiText, useI18n } from "~/lib/i18n";
 
 export function meta() {
   return [{ title: uiText("Sprache | Einstellungen", "Language | Settings") }];
@@ -25,22 +25,24 @@ export default function LanguageSettingsPage() {
     });
   }
 
-  return <Tile className="settings-section">
-    <MyForm
-      className="settings-form"
-      notifyLoaded={context => context.setValues({ locale })}
-      onSubmit={saveLanguage}
-    >
-      <MyForm.Select
-        name="locale"
-        labelText={t('language.label')}
-        getOptions={() => [
-          { id: 'de', label: t('language.de') },
-          { id: 'en', label: t('language.en') },
-        ]}
-        buildOption={option => ({ value: option.id, text: option.label })}
-      />
-      <MyForm.SubmitButton>{t('common.save')}</MyForm.SubmitButton>
-    </MyForm>
-  </Tile>;
+  return (
+    <Tile className="settings-section space-y-4">
+      <MyForm
+        className={["settings-form", "max-w-2xl space-y-4"].join(" ")}
+        notifyLoaded={(context) => context.setValues({ locale })}
+        onSubmit={saveLanguage}
+      >
+        <MyForm.Select
+          name="locale"
+          labelText={t("language.label")}
+          getOptions={() => [
+            { id: "de", label: t("language.de") },
+            { id: "en", label: t("language.en") },
+          ]}
+          buildOption={(option) => ({ value: option.id, text: option.label })}
+        />
+        <MyForm.SubmitButton>{t("common.save")}</MyForm.SubmitButton>
+      </MyForm>
+    </Tile>
+  );
 }

@@ -13,17 +13,16 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "bun run lint:client-casts && bun run lint:box-shadows && bun run lint:i18n && bun run lint:llm-naming && node ./scripts/check-v2-client-types.mjs && react-router typegen && tsc",
     "lint:i18n": "node ./scripts/check-i18n.mjs",
-    "test:security-deps":
-      "node --test scripts/securityDependencies.test.mjs scripts/securityAdvisories.test.mjs",
+    "test:security-deps": "node --test scripts/securityDependencies.test.mjs scripts/securityAdvisories.test.mjs",
     "test:visit-labels": "bun test app/lib/visitLabels.test.mjs",
-    "test:activity":
-      "bun test app/lib/activity*.test.mjs app/components/ActivityReference.test.mjs",
+    "test:activity": "bun test app/lib/activity*.test.mjs app/components/ActivityReference.test.mjs",
     "test:report-forms": "bun test app/lib/reportForm.test.mjs",
-    "test:chat-requests": "bun test app/lib/chatRequests.test.mjs",
+    "test:chat-requests": "bun test app/lib/chatRequests.test.mjs app/lib/llmProposalInput.test.mjs",
     "test:chat-files": "bun test app/lib/chatFiles.test.mjs",
     "test:deployment-planning": "bun test app/lib/deploymentPlanning.test.mjs",
     "test:table": "bun test app/components/MyTable.test.mjs",
     "test:menus": "bun test app/components/Menu.test.mjs",
+    "test:ui": "bun scripts/ui/build-fixtures.mjs && node --test --test-concurrency=1 scripts/ui/*.browser.mjs",
     "test:editors": "bun test app/lib/editorStartup.test.mjs",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
@@ -36,10 +35,12 @@
     "test:local-package-locks": "node --test scripts/localPackageLocks.test.mjs"
   },
   "dependencies": {
-    "@kenjiuno/msgreader": "1.29.0",
     "@carbon/icons-react": "^11.90.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource/ubuntu": "^5.3.0",
+    "@heroui/react": "3.2.6",
+    "@heroui/styles": "3.2.6",
+    "@kenjiuno/msgreader": "1.29.0",
     "@myriaddreamin/typst-ts-web-compiler": "0.7.0",
     "@myriaddreamin/typst.ts": "0.7.0",
     "@react-router/node": "8.4.0",
@@ -63,10 +64,14 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@react-router/dev": "8.4.0",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "^24",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "playwright": "1.64.1",
+    "tailwindcss": "4.3.3",
     "typescript": "^5.9.2",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0"

@@ -1,5 +1,4 @@
 import { uiText } from "~/lib/i18n";
-import { Tag } from "@sortsys/react-components";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
@@ -7,7 +6,7 @@ import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
-import { toolStatus, toolStatusTagType, toolTitle, userFullName } from "~/lib/format";
+import { toolTitle, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProjectTile, SmallUserTile } from "~/lib/tiles";
 import { parseFloatCustom } from "~/lib/utils";
@@ -302,10 +301,7 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
 
           return data;
         }}
-        renderItem={({ item }) => <div className="flex w-full justify-between items-center gap-2">
-          <span>{item.customId} {toolTitle(item)}</span>
-          <Tag type={toolStatusTagType(item)} size="sm">{toolStatus(item)}</Tag>
-        </div>}
+        renderItem={({ item }) => `${item.customId} ${toolTitle(item)}`}
         stringifyItem={({ item }) => toolSelectionChipLabel(item)}
         createAction={createEntityAction.tool}
       />

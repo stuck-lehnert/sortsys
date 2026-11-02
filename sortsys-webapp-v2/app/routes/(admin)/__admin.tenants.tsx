@@ -1,6 +1,12 @@
 import { uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
-import { InlineLoading, Modal, OperationalTag, Tile, useNotifications } from "@sortsys/react-components";
+import {
+  InlineLoading,
+  Modal,
+  OperationalTag,
+  Tile,
+  useNotifications,
+} from "@sortsys/react-components";
 import { from } from "rxjs";
 import { useEffect, useMemo, useState } from "react";
 import { MyButton } from "~/components/MyButton";
@@ -80,11 +86,18 @@ function getStateBadges(tenant: TenantSummary) {
 function TenantStateTags({ tenant }: { tenant: TenantSummary }) {
   const badges = getStateBadges(tenant);
 
-  return <div className="flex flex-wrap gap-1">
-    {badges.map((badge) => (
-      <OperationalTag key={`${badge.text}-${badge.type}`} type={badge.type} renderIcon={badge.icon} text={badge.text} />
-    ))}
-  </div>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {badges.map((badge) => (
+        <OperationalTag
+          key={`${badge.text}-${badge.type}`}
+          type={badge.type}
+          renderIcon={badge.icon}
+          text={badge.text}
+        />
+      ))}
+    </div>
+  );
 }
 
 function adminUserName(user: TenantAdminUser) {
@@ -100,9 +113,18 @@ function AdminUserStateTags({ user }: { user: TenantAdminUser }) {
   if (user.deactivatedAt) tags.push({ text: uiText("Deaktiviert"), type: "red", icon: Icons.Disable });
   if (user.archivedAt) tags.push({ text: uiText("Archiviert"), type: "purple", icon: Icons.Archive });
 
-  return <div className="flex flex-wrap gap-1">
-    {tags.map(tag => <OperationalTag key={tag.text} type={tag.type} renderIcon={tag.icon} text={tag.text} />)}
-  </div>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tags.map((tag) => (
+        <OperationalTag
+          key={tag.text}
+          type={tag.type}
+          renderIcon={tag.icon}
+          text={tag.text}
+        />
+      ))}
+    </div>
+  );
 }
 
 export function meta() {
@@ -219,39 +241,47 @@ export default function GlobalAdminTenantsPage() {
 
   function showCreateTenantModal() {
     modals.showForm({
-      content: () => <>
-        <MyForm.Input
-          required
-          name="name"
-          labelText={uiText("Mandantenname")}
-          helperText={uiText("Kleinbuchstaben, Ziffern, Punkt/Bindestrich/Unterstrich")}
-          rules={[MyForm.Input.rules.pattern(/^[a-z0-9_]+([\.\-][a-z0-9_]+)*$/)]}
-        />
+      content: () => (
+        <>
+          <MyForm.Input
+            required
+            name="name"
+            labelText={uiText("Mandantenname")}
+            helperText={uiText(
+              "Kleinbuchstaben, Ziffern, Punkt/Bindestrich/Unterstrich",
+            )}
+            rules={[
+              MyForm.Input.rules.pattern(/^[a-z0-9_]+([\.\-][a-z0-9_]+)*$/),
+            ]}
+          />
 
-        <MyForm.Input
-          required
-          name="email"
-          labelText={uiText("Kontakt-E-Mail")}
-          rules={[MyForm.Input.rules.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)]}
-        />
+          <MyForm.Input
+            required
+            name="email"
+            labelText={uiText("Kontakt-E-Mail")}
+            rules={[MyForm.Input.rules.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)]}
+          />
 
-        <MyForm.Input name="companyName" labelText={uiText("Firmenname")} />
+          <MyForm.Input name="companyName" labelText={uiText("Firmenname")} />
 
-        <MyForm.MultiSelect
-          name="postgresDatabase"
-          labelText={uiText("Datenbank")}
-          minSelectedItems={0}
-          maxSelectedItems={1}
-          prepare={() => databaseOptions}
-          getOptions={({ query, init }) => {
-            const q = query.trim().toLowerCase();
-            if (!q) return init;
-            return init.filter((option) => option.label.toLowerCase().includes(q));
-          }}
-          renderItem={({ item }) => item.label}
-          renderTile={(item) => item.label}
-        />
-      </>,
+          <MyForm.MultiSelect
+            name="postgresDatabase"
+            labelText={uiText("Datenbank")}
+            minSelectedItems={0}
+            maxSelectedItems={1}
+            prepare={() => databaseOptions}
+            getOptions={({ query, init }) => {
+              const q = query.trim().toLowerCase();
+              if (!q) return init;
+              return init.filter((option) =>
+                option.label.toLowerCase().includes(q),
+              );
+            }}
+            renderItem={({ item }) => item.label}
+            renderTile={(item) => item.label}
+          />
+        </>
+      ),
       onSubmit: async ({ context, hide }) => {
         setPendingAction("createTenant");
 
@@ -307,99 +337,172 @@ export default function GlobalAdminTenantsPage() {
     const selectedDatabase = databaseOptions.find((option) => option.id === tenant.connection_details.postgresDatabaseId) ?? null;
 
     modals.showForm({
-      content: ({ context }) => <>
-        <h4>{uiText("Kontakt")}</h4>
-        <MyForm.Input
-          required
-          name="email"
-          labelText={uiText("Kontakt-E-Mail")}
-          rules={[MyForm.Input.rules.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)]}
-        />
-        <MyForm.Input name="companyName" labelText={uiText("Firmenname")} />
-        <MyForm.Input name="streetAddress" labelText={uiText("Strasse und Hausnummer")} />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <MyForm.Input name="zip" labelText={uiText("PLZ")} />
-          <MyForm.Input name="city" labelText={uiText("Stadt")} />
-          <MyForm.Input name="country" labelText={uiText("Land")} />
-        </div>
+      content: ({ context }) => (
+        <>
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Kontakt")}
+          </h4>
+          <MyForm.Input
+            required
+            name="email"
+            labelText={uiText("Kontakt-E-Mail")}
+            rules={[MyForm.Input.rules.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)]}
+          />
+          <MyForm.Input name="companyName" labelText={uiText("Firmenname")} />
+          <MyForm.Input
+            name="streetAddress"
+            labelText={uiText("Strasse und Hausnummer")}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <MyForm.Input name="zip" labelText={uiText("PLZ")} />
+            <MyForm.Input name="city" labelText={uiText("Stadt")} />
+            <MyForm.Input name="country" labelText={uiText("Land")} />
+          </div>
 
-        <h4>{uiText("Verbindung")}</h4>
-        <MyForm.MultiSelect
-          name="postgresDatabase"
-          labelText={uiText("Datenbank")}
-          minSelectedItems={0}
-          maxSelectedItems={1}
-          prepare={() => databaseOptions}
-          getOptions={({ query, init }) => {
-            const q = query.trim().toLowerCase();
-            if (!q) return init;
-            return init.filter((option) => option.label.toLowerCase().includes(q));
-          }}
-          renderItem={({ item }) => item.label}
-          renderTile={(item) => item.label}
-        />
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Verbindung")}
+          </h4>
+          <MyForm.MultiSelect
+            name="postgresDatabase"
+            labelText={uiText("Datenbank")}
+            minSelectedItems={0}
+            maxSelectedItems={1}
+            prepare={() => databaseOptions}
+            getOptions={({ query, init }) => {
+              const q = query.trim().toLowerCase();
+              if (!q) return init;
+              return init.filter((option) =>
+                option.label.toLowerCase().includes(q),
+              );
+            }}
+            renderItem={({ item }) => item.label}
+            renderTile={(item) => item.label}
+          />
 
-        <h4>{uiText("Objektspeicher (S3 kompatibel)")}</h4>
-        <MyForm.Checkbox name="storageEnabled" labelText={uiText("Objektspeicher aktivieren")} />
-        <MyForm.Input name="storageBucket" labelText={uiText("Bucket")} helperText={uiText("Name des Buckets für Projektdateien")} />
-        <MyForm.Input name="storageRegion" labelText={uiText("Region")} helperText={uiText("z. B. eu-central-1 oder us-east-1")} />
-        <MyForm.Input name="storageEndpoint" labelText={uiText("Custom Endpoint")} helperText={uiText("z. B. https://s3.example.com")} />
-        <MyForm.Checkbox name="storageForcePathStyle" labelText={uiText("Path-Style URLs erzwingen")} />
-        <MyForm.Input name="storageAccessKeyId" labelText={uiText("Access Key ID")} />
-        <MyForm.Input name="storageSecretAccessKey" labelText={uiText("Secret Access Key")} type="password" />
-        <MyForm.Input name="storageSessionToken" labelText={uiText("Session Token")} />
-        <MyForm.Input name="storagePublicBaseUrl" labelText={uiText("Public Base URL")} helperText={uiText("CDN/Public Hostname")} />
-        <MyForm.Input name="storageKeyPrefix" labelText={uiText("Key Prefix")} helperText={uiText("z. B. tenants/staging")} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <MyForm.Input name="storageUploadUrlTtlSec" labelText={uiText("Upload URL TTL (Sekunden)")} rules={[MyForm.Input.rules.posint]} />
-          <MyForm.Input name="storageDownloadUrlTtlSec" labelText={uiText("Download URL TTL (Sekunden)")} rules={[MyForm.Input.rules.posint]} />
-        </div>
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Objektspeicher (S3 kompatibel)")}
+          </h4>
+          <MyForm.Checkbox
+            name="storageEnabled"
+            labelText={uiText("Objektspeicher aktivieren")}
+          />
+          <MyForm.Input
+            name="storageBucket"
+            labelText={uiText("Bucket")}
+            helperText={uiText("Name des Buckets für Projektdateien")}
+          />
+          <MyForm.Input
+            name="storageRegion"
+            labelText={uiText("Region")}
+            helperText={uiText("z. B. eu-central-1 oder us-east-1")}
+          />
+          <MyForm.Input
+            name="storageEndpoint"
+            labelText={uiText("Custom Endpoint")}
+            helperText={uiText("z. B. https://s3.example.com")}
+          />
+          <MyForm.Checkbox
+            name="storageForcePathStyle"
+            labelText={uiText("Path-Style URLs erzwingen")}
+          />
+          <MyForm.Input
+            name="storageAccessKeyId"
+            labelText={uiText("Access Key ID")}
+          />
+          <MyForm.Input
+            name="storageSecretAccessKey"
+            labelText={uiText("Secret Access Key")}
+            type="password"
+          />
+          <MyForm.Input
+            name="storageSessionToken"
+            labelText={uiText("Session Token")}
+          />
+          <MyForm.Input
+            name="storagePublicBaseUrl"
+            labelText={uiText("Public Base URL")}
+            helperText={uiText("CDN/Public Hostname")}
+          />
+          <MyForm.Input
+            name="storageKeyPrefix"
+            labelText={uiText("Key Prefix")}
+            helperText={uiText("z. B. tenants/staging")}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <MyForm.Input
+              name="storageUploadUrlTtlSec"
+              labelText={uiText("Upload URL TTL (Sekunden)")}
+              rules={[MyForm.Input.rules.posint]}
+            />
+            <MyForm.Input
+              name="storageDownloadUrlTtlSec"
+              labelText={uiText("Download URL TTL (Sekunden)")}
+              rules={[MyForm.Input.rules.posint]}
+            />
+          </div>
 
-        <h4>{uiText("SSO (Microsoft Entra ID)")}</h4>
-        <MyForm.Checkbox name="ssoEnabled" labelText={uiText("SSO aktivieren")} />
-        <MyForm.Input name="ssoTenantId" labelText={uiText("Tenant ID")} />
-        <MyForm.Input name="ssoClientId" labelText={uiText("Client ID")} />
-        <MyForm.Input name="ssoObjectId" labelText={uiText("Object ID")} />
-        <div className="flex flex-wrap gap-3">
-          <MyForm.Checkbox name="importUserUsername" labelText={uiText("Username importieren")} />
-          <MyForm.Checkbox name="importUserName" labelText={uiText("Namen importieren")} />
-          <MyForm.Checkbox name="importUserEmail" labelText={uiText("E-Mail importieren")} />
-        </div>
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("SSO (Microsoft Entra ID)")}
+          </h4>
+          <MyForm.Checkbox
+            name="ssoEnabled"
+            labelText={uiText("SSO aktivieren")}
+          />
+          <MyForm.Input name="ssoTenantId" labelText={uiText("Tenant ID")} />
+          <MyForm.Input name="ssoClientId" labelText={uiText("Client ID")} />
+          <MyForm.Input name="ssoObjectId" labelText={uiText("Object ID")} />
+          <div className="flex flex-wrap gap-3">
+            <MyForm.Checkbox
+              name="importUserUsername"
+              labelText={uiText("Username importieren")}
+            />
+            <MyForm.Checkbox
+              name="importUserName"
+              labelText={uiText("Namen importieren")}
+            />
+            <MyForm.Checkbox
+              name="importUserEmail"
+              labelText={uiText("E-Mail importieren")}
+            />
+          </div>
 
-        <NotifyLoaded onLoad={() => {
-          context.setValues({
-            email: tenant.contact_details.email ?? "",
-            companyName: tenant.contact_details.companyName ?? "",
-            streetAddress: address?.streetAddress ?? "",
-            city: address?.city ?? "",
-            zip: address?.zip ?? "",
-            country: address?.country ?? "",
+          <NotifyLoaded
+            onLoad={() => {
+              context.setValues({
+                email: tenant.contact_details.email ?? "",
+                companyName: tenant.contact_details.companyName ?? "",
+                streetAddress: address?.streetAddress ?? "",
+                city: address?.city ?? "",
+                zip: address?.zip ?? "",
+                country: address?.country ?? "",
 
-            postgresDatabase: selectedDatabase ? [selectedDatabase] : [],
+                postgresDatabase: selectedDatabase ? [selectedDatabase] : [],
 
-            ssoEnabled: !!sso?.enabled,
-            ssoTenantId: sso?.tenantId ?? "",
-            ssoClientId: sso?.clientId ?? "",
-            ssoObjectId: sso?.objectId ?? "",
-            importUserUsername: !!sso?.importUserUsername,
-            importUserName: !!sso?.importUserName,
-            importUserEmail: !!sso?.importUserEmail,
+                ssoEnabled: !!sso?.enabled,
+                ssoTenantId: sso?.tenantId ?? "",
+                ssoClientId: sso?.clientId ?? "",
+                ssoObjectId: sso?.objectId ?? "",
+                importUserUsername: !!sso?.importUserUsername,
+                importUserName: !!sso?.importUserName,
+                importUserEmail: !!sso?.importUserEmail,
 
-            storageEnabled: !!storage?.enabled,
-            storageBucket: storage?.bucket ?? "",
-            storageRegion: storage?.region ?? "",
-            storageEndpoint: storage?.endpoint ?? "",
-            storageForcePathStyle: !!storage?.forcePathStyle,
-            storageAccessKeyId: storage?.accessKeyId ?? "",
-            storageSecretAccessKey: storage?.secretAccessKey ?? "",
-            storageSessionToken: storage?.sessionToken ?? "",
-            storagePublicBaseUrl: storage?.publicBaseUrl ?? "",
-            storageKeyPrefix: storage?.keyPrefix ?? "",
-            storageUploadUrlTtlSec: `${storage?.uploadUrlTtlSec ?? 900}`,
-            storageDownloadUrlTtlSec: `${storage?.downloadUrlTtlSec ?? 1800}`,
-          });
-        }} />
-      </>,
+                storageEnabled: !!storage?.enabled,
+                storageBucket: storage?.bucket ?? "",
+                storageRegion: storage?.region ?? "",
+                storageEndpoint: storage?.endpoint ?? "",
+                storageForcePathStyle: !!storage?.forcePathStyle,
+                storageAccessKeyId: storage?.accessKeyId ?? "",
+                storageSecretAccessKey: storage?.secretAccessKey ?? "",
+                storageSessionToken: storage?.sessionToken ?? "",
+                storagePublicBaseUrl: storage?.publicBaseUrl ?? "",
+                storageKeyPrefix: storage?.keyPrefix ?? "",
+                storageUploadUrlTtlSec: `${storage?.uploadUrlTtlSec ?? 900}`,
+                storageDownloadUrlTtlSec: `${storage?.downloadUrlTtlSec ?? 1800}`,
+              });
+            }}
+          />
+        </>
+      ),
       onSubmit: async ({ context, hide }) => {
         const values = context.getValues();
 
@@ -487,24 +590,37 @@ export default function GlobalAdminTenantsPage() {
 
   function showCreateAdminUserModal(tenant: TenantSummary) {
     modals.showForm({
-      content: () => <>
-        <MyCallout icon={Icons.Info} color="blue">{uiText("Der Benutzer wird im Mandanten")}<b>{tenant.name}</b>{uiText(" erstellt und erhält automatisch die Rolle ")}<b>{uiText(":admin")}</b>.
-        </MyCallout>
+      content: () => (
+        <>
+          <MyCallout icon={Icons.Info} color="blue">
+            {uiText("Der Benutzer wird im Mandanten")}
+            <b>{tenant.name}</b>
+            {uiText(" erstellt und erhält automatisch die Rolle ")}
+            <b>{uiText(":admin")}</b>.
+          </MyCallout>
 
-        <MyForm.Input required name="username" labelText={uiText("Anmeldename")}
-          rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]} />
+          <MyForm.Input
+            required
+            name="username"
+            labelText={uiText("Anmeldename")}
+            rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]}
+          />
 
-        <MyDivider />
+          <MyDivider />
 
-        <MyForm.Input required name="firstName" labelText={uiText("Vorname")} />
-        <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
+          <MyForm.Input
+            required
+            name="firstName"
+            labelText={uiText("Vorname")}
+          />
+          <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
 
-        <MyDivider />
+          <MyDivider />
 
-        <MyForm.Input name="email" labelText={uiText("E-Mail")} />
-        <MyForm.Input name="phone" labelText={uiText("Telefon")} />
-
-      </>,
+          <MyForm.Input name="email" labelText={uiText("E-Mail")} />
+          <MyForm.Input name="phone" labelText={uiText("Telefon")} />
+        </>
+      ),
       onSubmit: async ({ context, hide }) => {
         setPendingAction("createAdminUser");
 
@@ -579,19 +695,44 @@ export default function GlobalAdminTenantsPage() {
 
   function showSetAdminRoleModal(tenant: TenantSummary, user: TenantAdminUser, admin: boolean) {
     modals.showForm({
-      content: () => <>
-        <MyCallout icon={admin ? Icons.Role : Icons.Deny} color={admin ? "blue" : "amber"}>
-          {admin
-            ? <>{uiText("Benutzer ")}<b>{adminUserName(user)}</b>{uiText(" erhält im Mandanten ")}<b>{tenant.name}</b>{uiText(" die Rolle ")}<b>{uiText(":admin")}</b>.</>
-            : <>{uiText("Benutzer ")}<b>{adminUserName(user)}</b>{uiText(" verliert im Mandanten ")}<b>{tenant.name}</b>{uiText(" die Rolle ")}<b>{uiText(":admin")}</b>.</>}
-        </MyCallout>
+      content: () => (
+        <>
+          <MyCallout
+            icon={admin ? Icons.Role : Icons.Deny}
+            color={admin ? "blue" : "amber"}
+          >
+            {admin ? (
+              <>
+                {uiText("Benutzer ")}
+                <b>{adminUserName(user)}</b>
+                {uiText(" erhält im Mandanten ")}
+                <b>{tenant.name}</b>
+                {uiText(" die Rolle ")}
+                <b>{uiText(":admin")}</b>.
+              </>
+            ) : (
+              <>
+                {uiText("Benutzer ")}
+                <b>{adminUserName(user)}</b>
+                {uiText(" verliert im Mandanten ")}
+                <b>{tenant.name}</b>
+                {uiText(" die Rolle ")}
+                <b>{uiText(":admin")}</b>.
+              </>
+            )}
+          </MyCallout>
 
-        {!admin && <MyForm.Checkbox
-          required
-          name="_confirm"
-          labelText={uiText("Ich habe verstanden, dass dieser Benutzer danach keinen global administrierbaren Mandantenzugang mehr hat.")}
-        />}
-      </>,
+          {!admin && (
+            <MyForm.Checkbox
+              required
+              name="_confirm"
+              labelText={uiText(
+                "Ich habe verstanden, dass dieser Benutzer danach keinen global administrierbaren Mandantenzugang mehr hat.",
+              )}
+            />
+          )}
+        </>
+      ),
       onSubmit: async ({ hide }) => {
         const ok = await setTenantUserAdmin(tenant, user, admin);
         if (ok) hide();
@@ -608,9 +749,17 @@ export default function GlobalAdminTenantsPage() {
 
   function showResetAdminUserPasswordModal(tenant: TenantSummary, user: TenantAdminUser) {
     modals.showForm({
-      content: () => <>
-        <MyCallout icon={Icons.SetPassword} color="amber">{uiText("Für")}<b>{adminUserName(user)}</b>{uiText("wird ein neues Passwort erzeugt. Es wird nur einmal angezeigt.")}</MyCallout>
-      </>,
+      content: () => (
+        <>
+          <MyCallout icon={Icons.SetPassword} color="amber">
+            {uiText("Für")}
+            <b>{adminUserName(user)}</b>
+            {uiText(
+              "wird ein neues Passwort erzeugt. Es wird nur einmal angezeigt.",
+            )}
+          </MyCallout>
+        </>
+      ),
       onSubmit: async ({ hide }) => {
         setPendingAction(`resetAdminPassword:${user.id}`);
 
@@ -663,327 +812,482 @@ export default function GlobalAdminTenantsPage() {
     : null;
 
   function renderAdminAccessPanel(tenant: TenantSummary) {
-    return <Tile className="space-y-1">
-      <MyHeader
-        title={uiText("Admin-Zugriff")}
-        actions={<MyButton
-          size="sm"
-          kind="secondary"
-          renderIcon={Icons.User}
-          loading={pendingAction === "createAdminUser"}
-          onClick={() => showCreateAdminUserModal(tenant)}
-        >{uiText("Admin-Benutzer")}</MyButton>}
-      />
-      {!!tenantUsersErr && (
-        <MyCallout icon={Icons.Deny} color="red">{uiText("Benutzer konnten nicht geladen werden:")} {`${(tenantUsersErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
-        </MyCallout>
-      )}
+    return (
+      <Tile className="space-y-1">
+        <MyHeader
+          title={uiText("Admin-Zugriff")}
+          actions={
+            <MyButton
+              size="sm"
+              kind="secondary"
+              renderIcon={Icons.User}
+              loading={pendingAction === "createAdminUser"}
+              onClick={() => showCreateAdminUserModal(tenant)}
+            >
+              {uiText("Admin-Benutzer")}
+            </MyButton>
+          }
+        />
+        {!!tenantUsersErr && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {uiText("Benutzer konnten nicht geladen werden:")}{" "}
+            {`${(tenantUsersErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+          </MyCallout>
+        )}
 
-      {!tenantUsers && !tenantUsersErr && <InlineLoading description={uiText("Benutzer werden geladen...")} />}
+        {!tenantUsers && !tenantUsersErr && (
+          <InlineLoading description={uiText("Benutzer werden geladen...")} />
+        )}
 
-      {!!tenantUsers && <MyTable
-        rows={tenantUserRows}
-        persistentId={`GlobalAdminTenantUsers:${tenant.name}`}
-        topPagination
-        pagination={{ pageSizes: [10, 25, 50] }}
-        columns={[
-          {
-            label: uiText("Benutzer"),
-            render: row => <b>{adminUserName(row)}</b>,
-            sortKey: row => adminUserName(row).toLowerCase(),
-          },
-          {
-            label: uiText("Anmeldename"),
-            render: row => row.username,
-            sortKey: row => row.username.toLowerCase(),
-          },
-          {
-            label: uiText("E-Mail"),
-            render: row => row.email ?? "-",
-            sortKey: row => row.email?.toLowerCase() ?? "",
-          },
-          {
-            label: uiText("Status"),
-            render: row => <AdminUserStateTags user={row} />,
-            sortKey: row => `${row.isAdmin ? "0" : "1"}:${row.deactivatedAt ? "1" : "0"}:${row.archivedAt ? "1" : "0"}`,
-          },
-          {
-            label: uiText("Aktionen"),
-            render: row => <div className="flex flex-wrap gap-1">
-              <MyButton
-                size="sm"
-                kind="ghost"
-                renderIcon={Icons.SetPassword}
-                disabled={!row.isAdmin}
-                loading={pendingAction === `resetAdminPassword:${row.id}`}
-                onClick={() => showResetAdminUserPasswordModal(tenant, row)}
-              >{uiText("Passwort")}</MyButton>
+        {!!tenantUsers && (
+          <MyTable
+            rows={tenantUserRows}
+            persistentId={`GlobalAdminTenantUsers:${tenant.name}`}
+            loadMore={{ batchSize: 10 }}
+            columns={[
+              {
+                label: uiText("Benutzer"),
+                render: (row) => <b>{adminUserName(row)}</b>,
+                sortKey: (row) => adminUserName(row).toLowerCase(),
+              },
+              {
+                label: uiText("Anmeldename"),
+                render: (row) => row.username,
+                sortKey: (row) => row.username.toLowerCase(),
+              },
+              {
+                label: uiText("E-Mail"),
+                render: (row) => row.email ?? "-",
+                sortKey: (row) => row.email?.toLowerCase() ?? "",
+              },
+              {
+                label: uiText("Status"),
+                render: (row) => <AdminUserStateTags user={row} />,
+                sortKey: (row) =>
+                  `${row.isAdmin ? "0" : "1"}:${row.deactivatedAt ? "1" : "0"}:${row.archivedAt ? "1" : "0"}`,
+              },
+              {
+                label: uiText("Aktionen"),
+                render: (row) => (
+                  <div className="flex flex-wrap gap-1">
+                    <MyButton
+                      size="sm"
+                      kind="ghost"
+                      renderIcon={Icons.SetPassword}
+                      disabled={!row.isAdmin}
+                      loading={pendingAction === `resetAdminPassword:${row.id}`}
+                      onClick={() =>
+                        showResetAdminUserPasswordModal(tenant, row)
+                      }
+                    >
+                      {uiText("Passwort")}
+                    </MyButton>
 
-              <MyButton
-                size="sm"
-                kind={row.isAdmin ? "danger--tertiary" : "secondary"}
-                renderIcon={row.isAdmin ? Icons.Deny : Icons.Role}
-                loading={pendingAction === `setAdmin:${row.id}`}
-                onClick={() => showSetAdminRoleModal(tenant, row, !row.isAdmin)}
-              >{row.isAdmin ? uiText("Admin entfernen") : uiText("Zum Admin")}</MyButton>
-            </div>,
-          },
-        ]}
-      />}
-    </Tile>;
+                    <MyButton
+                      size="sm"
+                      kind={row.isAdmin ? "danger--tertiary" : "secondary"}
+                      renderIcon={row.isAdmin ? Icons.Deny : Icons.Role}
+                      loading={pendingAction === `setAdmin:${row.id}`}
+                      onClick={() =>
+                        showSetAdminRoleModal(tenant, row, !row.isAdmin)
+                      }
+                    >
+                      {row.isAdmin
+                        ? uiText("Admin entfernen")
+                        : uiText("Zum Admin")}
+                    </MyButton>
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
+      </Tile>
+    );
   }
 
-  return <>
-    <div className="global-admin-actions">
-      <MyButton renderIcon={Icons.Plus} onClick={showCreateTenantModal}>{uiText("Hinzufügen")}</MyButton>
-    </div>
+  return (
+    <>
+      <div className="global-admin-actions">
+        <MyButton renderIcon={Icons.Plus} onClick={showCreateTenantModal}>
+          {uiText("Hinzufügen")}
+        </MyButton>
+      </div>
 
-    {!!pendingAction && (
-      <InlineLoading description={uiText("Aktion wird ausgeführt...")} />
-    )}
+      {!!pendingAction && (
+        <InlineLoading description={uiText("Aktion wird ausgeführt...")} />
+      )}
 
-    <div className="space-y-3">
-      <Tile className="space-y-2">
-        {!!tenantsErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten konnten nicht geladen werden:")} {`${(tenantsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
-          </MyCallout>
-        )}
+      <div className="space-y-3">
+        <Tile className="space-y-2">
+          {!!tenantsErr && (
+            <MyCallout icon={Icons.Deny} color="red">
+              {uiText("Mandanten konnten nicht geladen werden:")}{" "}
+              {`${(tenantsErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+            </MyCallout>
+          )}
 
-        <MyTable
-          rows={tenantRows}
-          persistentId="GlobalAdminTenants"
-          topPagination
-          pagination={{ pageSizes: [10, 25, 50] }}
-          onRowClick={(row) => {
-            setSelectedTenantName(row.name);
-          }}
-          columns={[
-            {
-              label: uiText("Name"),
-              render: (row) => <b>{row.name}</b>,
-              sortKey: (row) => row.name.toLowerCase(),
-            },
-            {
-              label: uiText("Firma"),
-              render: (row) => row.contact_details.companyName ?? "",
-              sortKey: (row) => row.contact_details.companyName?.toLowerCase() ?? "",
-            },
-            {
-              label: uiText("Kontakt"),
-              render: (row) => row.contact_details.email,
-              sortKey: (row) => row.contact_details.email.toLowerCase(),
-            },
-            {
-              label: uiText("Status"),
-              render: (row) => <TenantStateTags tenant={row} />,
-              sortKey: (row) => {
-                if (row.locked_at) return 0;
-                if (row.deleted_at) return 1;
-                if (row.deactivated_at) return 2;
-                return 3;
+          <MyTable
+            rows={tenantRows}
+            persistentId="GlobalAdminTenants"
+            loadMore={{ batchSize: 10 }}
+            onRowClick={(row) => {
+              setSelectedTenantName(row.name);
+            }}
+            columns={[
+              {
+                label: uiText("Name"),
+                render: (row) => <b>{row.name}</b>,
+                sortKey: (row) => row.name.toLowerCase(),
               },
-            },
-          ]}
-        />
-      </Tile>
+              {
+                label: uiText("Firma"),
+                render: (row) => row.contact_details.companyName ?? "",
+                sortKey: (row) =>
+                  row.contact_details.companyName?.toLowerCase() ?? "",
+              },
+              {
+                label: uiText("Kontakt"),
+                render: (row) => row.contact_details.email,
+                sortKey: (row) => row.contact_details.email.toLowerCase(),
+              },
+              {
+                label: uiText("Status"),
+                render: (row) => <TenantStateTags tenant={row} />,
+                sortKey: (row) => {
+                  if (row.locked_at) return 0;
+                  if (row.deleted_at) return 1;
+                  if (row.deactivated_at) return 2;
+                  return 3;
+                },
+              },
+            ]}
+          />
+        </Tile>
 
-      <Tile className={selectedTenantName ? "space-y-2" : "hidden"}>
-        <MyHeader
-          title={selectedTenantName ?? ""}
-          actions={selectedTenant ? (
+        <Tile className={selectedTenantName ? "space-y-2" : "hidden"}>
+          <MyHeader
+            title={selectedTenantName ?? ""}
+            actions={
+              selectedTenant ? (
+                <>
+                  <MyButton
+                    size="sm"
+                    kind="secondary"
+                    renderIcon={Icons.Edit}
+                    onClick={() => showEditTenantModal(selectedTenant)}
+                  >
+                    {uiText("Bearbeiten")}
+                  </MyButton>
+
+                  <MyButton
+                    size="sm"
+                    kind="secondary"
+                    renderIcon={Icons.User}
+                    onClick={() => {
+                      setAdminAccessTenantName(selectedTenant.name);
+                    }}
+                  >
+                    {uiText("Admin-Zugriff")}
+                  </MyButton>
+
+                  {selectedTenant.deactivated_at ? (
+                    <MyButton
+                      size="sm"
+                      renderIcon={Icons.Accept}
+                      loading={pendingAction === "activate"}
+                      onClick={() => {
+                        void runTenantAction(
+                          "activate",
+                          () =>
+                            adminClient.mutate("admin.tenants.activate", {
+                              name: selectedTenant.name,
+                            }),
+                          uiText(
+                            `Mandant ${selectedTenant.name} aktiviert.`,
+                            `Tenant ${selectedTenant.name} aktiviert.`,
+                          ),
+                        );
+                      }}
+                    >
+                      {uiText("Aktivieren")}
+                    </MyButton>
+                  ) : (
+                    <MyButton
+                      size="sm"
+                      kind="secondary"
+                      renderIcon={Icons.Disable}
+                      loading={pendingAction === "deactivate"}
+                      onClick={() => {
+                        void runTenantAction(
+                          "deactivate",
+                          () =>
+                            adminClient.mutate("admin.tenants.deactivate", {
+                              name: selectedTenant.name,
+                            }),
+                          uiText(
+                            `Mandant ${selectedTenant.name} deaktiviert.`,
+                            `Tenant ${selectedTenant.name} deaktiviert.`,
+                          ),
+                        );
+                      }}
+                    >
+                      {uiText("Deaktivieren")}
+                    </MyButton>
+                  )}
+
+                  {selectedTenant.locked_at ? (
+                    <MyButton
+                      size="sm"
+                      renderIcon={Icons.Unlock}
+                      loading={pendingAction === "unlock"}
+                      onClick={() => {
+                        void runTenantAction(
+                          "unlock",
+                          () =>
+                            adminClient.mutate("admin.tenants.unlock", {
+                              name: selectedTenant.name,
+                            }),
+                          uiText(
+                            `Mandant ${selectedTenant.name} entsperrt.`,
+                            `Tenant ${selectedTenant.name} entsperrt.`,
+                          ),
+                        );
+                      }}
+                    >
+                      {uiText("Entsperren")}
+                    </MyButton>
+                  ) : (
+                    <MyButton
+                      size="sm"
+                      kind="danger--tertiary"
+                      renderIcon={Icons.Lock}
+                      loading={pendingAction === "lock"}
+                      onClick={() => {
+                        void runTenantAction(
+                          "lock",
+                          () =>
+                            adminClient.mutate("admin.tenants.lock", {
+                              name: selectedTenant.name,
+                            }),
+                          uiText(
+                            `Mandant ${selectedTenant.name} gesperrt.`,
+                            `Tenant ${selectedTenant.name} locked.`,
+                          ),
+                        );
+                      }}
+                    >
+                      {uiText("Sperren")}
+                    </MyButton>
+                  )}
+
+                  {selectedTenant.deleted_at ? (
+                    <>
+                      <MyButton
+                        size="sm"
+                        renderIcon={Icons.Resume}
+                        loading={pendingAction === "undelete"}
+                        onClick={() => {
+                          void runTenantAction(
+                            "undelete",
+                            () =>
+                              adminClient.mutate("admin.tenants.undelete", {
+                                name: selectedTenant.name,
+                              }),
+                            uiText(
+                              `Mandant ${selectedTenant.name} wiederhergestellt.`,
+                              `Tenant ${selectedTenant.name} wiederhergestellt.`,
+                            ),
+                          );
+                        }}
+                      >
+                        {uiText("Wiederherstellen")}
+                      </MyButton>
+
+                      <MyButton
+                        size="sm"
+                        kind="danger"
+                        renderIcon={Icons.Delete}
+                        loading={pendingAction === "deleteForever"}
+                        onClick={() => {
+                          void runTenantAction(
+                            "deleteForever",
+                            () =>
+                              adminClient.mutate(
+                                "admin.tenants.deleteForever",
+                                { name: selectedTenant.name },
+                              ),
+                            uiText(
+                              `Mandant ${selectedTenant.name} endgültig gelöscht.`,
+                              `Tenant ${selectedTenant.name} permanently deleted.`,
+                            ),
+                          );
+                        }}
+                      >
+                        {uiText("Endgültig löschen")}
+                      </MyButton>
+                    </>
+                  ) : (
+                    <MyButton
+                      size="sm"
+                      kind="danger--tertiary"
+                      renderIcon={Icons.Delete}
+                      loading={pendingAction === "delete"}
+                      onClick={() => {
+                        void runTenantAction(
+                          "delete",
+                          () =>
+                            adminClient.mutate("admin.tenants.delete", {
+                              name: selectedTenant.name,
+                            }),
+                          uiText(
+                            `Mandant ${selectedTenant.name} gelöscht.`,
+                            `Tenant ${selectedTenant.name} deleted.`,
+                          ),
+                        );
+                      }}
+                    >
+                      {uiText("Löschen")}
+                    </MyButton>
+                  )}
+                </>
+              ) : null
+            }
+          />
+
+          {!!selectedTenantErr && (
+            <MyCallout icon={Icons.Deny} color="red">
+              {uiText("Mandanten-Details konnten nicht geladen werden:")}{" "}
+              {`${(selectedTenantErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
+            </MyCallout>
+          )}
+
+          {!!selectedTenant && (
             <>
-              <MyButton
-                size="sm"
-                kind="secondary"
-                renderIcon={Icons.Edit}
-                onClick={() => showEditTenantModal(selectedTenant)}
-              >{uiText("Bearbeiten")}</MyButton>
-
-              <MyButton
-                size="sm"
-                kind="secondary"
-                renderIcon={Icons.User}
-                onClick={() => {
-                  setAdminAccessTenantName(selectedTenant.name);
-                }}
-              >{uiText("Admin-Zugriff")}</MyButton>
-
-              {selectedTenant.deactivated_at
-                ? <MyButton
-                  size="sm"
-                  renderIcon={Icons.Accept}
-                  loading={pendingAction === "activate"}
-                  onClick={() => {
-                    void runTenantAction(
-                      "activate",
-                      () => adminClient.mutate("admin.tenants.activate", { name: selectedTenant.name }),
-                      uiText(`Mandant ${selectedTenant.name} aktiviert.`, `Tenant ${selectedTenant.name} aktiviert.`),
-                    );
-                  }}
-                >{uiText("Aktivieren")}</MyButton>
-                : <MyButton
-                  size="sm"
-                  kind="secondary"
-                  renderIcon={Icons.Disable}
-                  loading={pendingAction === "deactivate"}
-                  onClick={() => {
-                    void runTenantAction(
-                      "deactivate",
-                      () => adminClient.mutate("admin.tenants.deactivate", { name: selectedTenant.name }),
-                      uiText(`Mandant ${selectedTenant.name} deaktiviert.`, `Tenant ${selectedTenant.name} deaktiviert.`),
-                    );
-                  }}
-                >{uiText("Deaktivieren")}</MyButton>
-              }
-
-              {selectedTenant.locked_at
-                ? <MyButton
-                  size="sm"
-                  renderIcon={Icons.Unlock}
-                  loading={pendingAction === "unlock"}
-                  onClick={() => {
-                    void runTenantAction(
-                      "unlock",
-                      () => adminClient.mutate("admin.tenants.unlock", { name: selectedTenant.name }),
-                      uiText(`Mandant ${selectedTenant.name} entsperrt.`, `Tenant ${selectedTenant.name} entsperrt.`),
-                    );
-                  }}
-                >{uiText("Entsperren")}</MyButton>
-                : <MyButton
-                  size="sm"
-                  kind="danger--tertiary"
-                  renderIcon={Icons.Lock}
-                  loading={pendingAction === "lock"}
-                  onClick={() => {
-                    void runTenantAction(
-                      "lock",
-                      () => adminClient.mutate("admin.tenants.lock", { name: selectedTenant.name }),
-                      uiText(`Mandant ${selectedTenant.name} gesperrt.`, `Tenant ${selectedTenant.name} locked.`),
-                    );
-                  }}
-                >{uiText("Sperren")}</MyButton>
-              }
-
-              {selectedTenant.deleted_at
-                ? <>
-                  <MyButton
-                    size="sm"
-                    renderIcon={Icons.Resume}
-                    loading={pendingAction === "undelete"}
-                    onClick={() => {
-                      void runTenantAction(
-                        "undelete",
-                        () => adminClient.mutate("admin.tenants.undelete", { name: selectedTenant.name }),
-                        uiText(`Mandant ${selectedTenant.name} wiederhergestellt.`, `Tenant ${selectedTenant.name} wiederhergestellt.`),
-                      );
-                    }}
-                  >{uiText("Wiederherstellen")}</MyButton>
-
-                  <MyButton
-                    size="sm"
-                    kind="danger"
-                    renderIcon={Icons.Delete}
-                    loading={pendingAction === "deleteForever"}
-                    onClick={() => {
-                      void runTenantAction(
-                        "deleteForever",
-                        () => adminClient.mutate("admin.tenants.deleteForever", { name: selectedTenant.name }),
-                        uiText(`Mandant ${selectedTenant.name} endgültig gelöscht.`, `Tenant ${selectedTenant.name} permanently deleted.`),
-                      );
-                    }}
-                  >{uiText("Endgültig löschen")}</MyButton>
-                </>
-                : <MyButton
-                  size="sm"
-                  kind="danger--tertiary"
-                  renderIcon={Icons.Delete}
-                  loading={pendingAction === "delete"}
-                  onClick={() => {
-                    void runTenantAction(
-                      "delete",
-                      () => adminClient.mutate("admin.tenants.delete", { name: selectedTenant.name }),
-                      uiText(`Mandant ${selectedTenant.name} gelöscht.`, `Tenant ${selectedTenant.name} deleted.`),
-                    );
-                  }}
-                >{uiText("Löschen")}</MyButton>
-              }
-            </>
-          ) : null}
-        />
-
-        {!!selectedTenantErr && (
-          <MyCallout icon={Icons.Deny} color="red">{uiText("Mandanten-Details konnten nicht geladen werden:")} {`${(selectedTenantErr as any)?.message ?? uiText("Unbekannter Fehler")}`}
-          </MyCallout>
-        )}
-
-        {!!selectedTenant && (
-          <>
-            <div className="flex flex-wrap gap-1">
-              <TenantStateTags tenant={selectedTenant} />
-              {!!selectedTenant.locked_at && <OperationalTag type="red" text={`Seit ${formatDate(selectedTenant.locked_at)}`} />}
-              {!!selectedTenant.deactivated_at && <OperationalTag type="cool-gray" text={`Seit ${formatDate(selectedTenant.deactivated_at)}`} />}
-              {!!selectedTenant.deleted_at && <OperationalTag type="purple" text={`Seit ${formatDate(selectedTenant.deleted_at)}`} />}
-            </div>
-
-            <AttrList>
-              <AttrList.Attr name="E-Mail" value={selectedTenant.contact_details.email} />
-              <AttrList.Attr name="Firma" value={selectedTenant.contact_details.companyName ?? "-"} />
-              <AttrList.Attr name="Adresse" value={getAddressLabel(selectedTenant)} />
-              <AttrList.Attr name={uiText("Datenbank")} value={selectedTenantDatabaseLabel} />
-              <AttrList.Attr name="Mandant" value={selectedTenant.name} />
-              <AttrList.Attr
-                name="Objektspeicher"
-                value={selectedTenantStorage?.enabled ? "Aktiv" : "Inaktiv"}
-              />
-              {!!selectedTenantStorage?.enabled && (
-                <>
-                  <AttrList.Attr name="Bucket" value={selectedTenantStorage.bucket ?? "-"} />
-                  <AttrList.Attr name="Region" value={selectedTenantStorage.region ?? "-"} />
-                  <AttrList.Attr name="Endpoint" value={selectedTenantStorage.endpoint ?? "-"} />
-                  <AttrList.Attr name="Public Base URL" value={selectedTenantStorage.publicBaseUrl ?? "-"} />
-                  <AttrList.Attr name="Key Prefix" value={selectedTenantStorage.keyPrefix ?? "-"} />
-                </>
-              )}
-              <AttrList.Attr
-                name="SSO (Entra ID)"
-                value={selectedTenantSso?.enabled ? "Aktiv" : "Inaktiv"}
-              />
-              {!!selectedTenantSso?.enabled && (
-                <>
-                  <AttrList.Attr name="Tenant ID" value={selectedTenantSso.tenantId ?? "-"} />
-                  <AttrList.Attr name="Client ID" value={selectedTenantSso.clientId ?? "-"} />
-                  <AttrList.Attr name="Object ID" value={selectedTenantSso.objectId ?? "-"} />
-                  <AttrList.Attr
-                    name="Import"
-                    value={[
-                      selectedTenantSso.importUserUsername ? "Username" : null,
-                      selectedTenantSso.importUserName ? "Name" : null,
-                      selectedTenantSso.importUserEmail ? "E-Mail" : null,
-                    ].filter(Boolean).join(", ") || "-"}
+              <div className="flex flex-wrap gap-1">
+                <TenantStateTags tenant={selectedTenant} />
+                {!!selectedTenant.locked_at && (
+                  <OperationalTag
+                    type="red"
+                    text={`Seit ${formatDate(selectedTenant.locked_at)}`}
                   />
-                </>
-              )}
-            </AttrList>
-          </>
-        )}
-      </Tile>
-    </div>
+                )}
+                {!!selectedTenant.deactivated_at && (
+                  <OperationalTag
+                    type="cool-gray"
+                    text={`Seit ${formatDate(selectedTenant.deactivated_at)}`}
+                  />
+                )}
+                {!!selectedTenant.deleted_at && (
+                  <OperationalTag
+                    type="purple"
+                    text={`Seit ${formatDate(selectedTenant.deleted_at)}`}
+                  />
+                )}
+              </div>
 
-    {!!adminAccessTenant && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={uiText("Admin-Zugriff")}
-        modalLabel={adminAccessTenant.name}
-        closeButtonLabel={uiText("Schließen")}
-        onRequestClose={() => setAdminAccessTenantName(null)}
-        data-fullheight="true"
-        data-fullwidth="true"
-      >
-        <div className="space-y-2">
-          {renderAdminAccessPanel(adminAccessTenant)}
-        </div>
-      </Modal>
-    )}
-  </>;
+              <AttrList>
+                <AttrList.Attr
+                  name="E-Mail"
+                  value={selectedTenant.contact_details.email}
+                />
+                <AttrList.Attr
+                  name="Firma"
+                  value={selectedTenant.contact_details.companyName ?? "-"}
+                />
+                <AttrList.Attr
+                  name="Adresse"
+                  value={getAddressLabel(selectedTenant)}
+                />
+                <AttrList.Attr
+                  name={uiText("Datenbank")}
+                  value={selectedTenantDatabaseLabel}
+                />
+                <AttrList.Attr name="Mandant" value={selectedTenant.name} />
+                <AttrList.Attr
+                  name="Objektspeicher"
+                  value={selectedTenantStorage?.enabled ? "Aktiv" : "Inaktiv"}
+                />
+                {!!selectedTenantStorage?.enabled && (
+                  <>
+                    <AttrList.Attr
+                      name="Bucket"
+                      value={selectedTenantStorage.bucket ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Region"
+                      value={selectedTenantStorage.region ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Endpoint"
+                      value={selectedTenantStorage.endpoint ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Public Base URL"
+                      value={selectedTenantStorage.publicBaseUrl ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Key Prefix"
+                      value={selectedTenantStorage.keyPrefix ?? "-"}
+                    />
+                  </>
+                )}
+                <AttrList.Attr
+                  name="SSO (Entra ID)"
+                  value={selectedTenantSso?.enabled ? "Aktiv" : "Inaktiv"}
+                />
+                {!!selectedTenantSso?.enabled && (
+                  <>
+                    <AttrList.Attr
+                      name="Tenant ID"
+                      value={selectedTenantSso.tenantId ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Client ID"
+                      value={selectedTenantSso.clientId ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Object ID"
+                      value={selectedTenantSso.objectId ?? "-"}
+                    />
+                    <AttrList.Attr
+                      name="Import"
+                      value={
+                        [
+                          selectedTenantSso.importUserUsername
+                            ? "Username"
+                            : null,
+                          selectedTenantSso.importUserName ? "Name" : null,
+                          selectedTenantSso.importUserEmail ? "E-Mail" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(", ") || "-"
+                      }
+                    />
+                  </>
+                )}
+              </AttrList>
+            </>
+          )}
+        </Tile>
+      </div>
+
+      {!!adminAccessTenant && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={uiText("Admin-Zugriff")}
+          modalLabel={adminAccessTenant.name}
+          closeButtonLabel={uiText("Schließen")}
+          onRequestClose={() => setAdminAccessTenantName(null)}
+          data-fullheight="true"
+          data-fullwidth="true"
+        >
+          <div className="space-y-2">
+            {renderAdminAccessPanel(adminAccessTenant)}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }

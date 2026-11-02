@@ -1,0 +1,79 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+@source "../../sortsys-react-components/src";
+
+@theme {
+  --font-sans: "Ubuntu", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", monospace;
+}
+
+/* Domain views share HeroUI tokens; component appearance belongs to HeroUI. */
+:root {
+  --background: #ffffff;
+  --accent: #005fcc;
+  --accent-foreground: #ffffff;
+  --muted: #5c5c66;
+  --border-width-field: 1px;
+  --field-border: #858591;
+  --field-border-hover: #5c5c66;
+  --field-border-focus: var(--accent);
+  --ss-font-sans: var(--font-sans);
+  --ss-font-mono: var(--font-mono);
+  --ss-bg: var(--background);
+  --ss-bg-accent: var(--surface-secondary);
+  --ss-surface: var(--surface);
+  --ss-surface-elevated: var(--overlay);
+  --ss-surface-muted: var(--surface-secondary);
+  --ss-border: var(--border);
+  --ss-border-strong: var(--separator);
+  --ss-text-primary: var(--foreground);
+  --ss-text-secondary: var(--muted);
+  --ss-text-inverse: var(--accent-foreground);
+  --ss-accent: var(--accent);
+  --ss-accent-strong: var(--accent);
+  --ss-accent-contrast: var(--accent-foreground);
+  --ss-focus-ring: var(--focus);
+  --ss-focus-ring-strong: var(--focus);
+  --ss-success: var(--success);
+  --ss-danger: var(--danger);
+  --ss-warning: var(--warning);
+  --ss-radius-xs: var(--radius-xs);
+  --ss-radius-sm: var(--radius-sm);
+  --ss-radius-md: var(--radius-md);
+  --ss-radius-lg: var(--radius-lg);
+  --ss-content-gutter: clamp(1rem, 2.5vw, 2rem);
+}
+
+html {
+  color-scheme: light;
+  background: var(--background);
+}
+
+html[data-theme="dark"] {
+  --background: #141416;
+  --accent: #8cb4ff;
+  --accent-foreground: #101828;
+  --muted: #b2b2bc;
+  --field-border: #81818d;
+  --field-border-hover: #b2b2bc;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans);
+}
+
+/* Keep text links recognizable in content, navigation and embedded dialogs. */
+a[href]:not([data-slot="button"]) {
+  color: var(--accent);
+}
+
+@media (hover: hover) {
+  a[href]:not([data-slot="button"]):hover {
+    opacity: 0.7;
+  }
+}

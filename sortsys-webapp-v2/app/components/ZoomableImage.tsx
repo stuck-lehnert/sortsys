@@ -1,3 +1,4 @@
+import { Button as UIAction } from "@sortsys/react-components";
 import { Icons } from "~/lib/icons";
 import { uiText } from "~/lib/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -210,80 +211,93 @@ export function ZoomableImage(props: {
       : null;
   };
 
-  return <div
-    ref={stageRef}
-    className={`project-files-media-stage${transform.scale > 1 ? " is-zoomed" : ""}`}
-    onPointerDown={beginGesture}
-    onPointerMove={continueGesture}
-    onPointerUp={endGesture}
-    onPointerCancel={endGesture}
-    onDoubleClick={(event) => {
-      if ((event.target as HTMLElement).closest("button")) return;
-      if (transformRef.current.scale > 1) reset();
-      else zoomAt(2.5, { x: event.clientX, y: event.clientY });
-    }}
-  >
-    <img
-      ref={imageRef}
-      src={props.src}
-      alt={props.alt}
-      draggable={false}
-      onLoad={() => setTransform(transformRef.current)}
-      style={{
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+  return (
+    <div
+      ref={stageRef}
+      className={`project-files-media-stage${transform.scale > 1 ? " is-zoomed" : ""}`}
+      onPointerDown={beginGesture}
+      onPointerMove={continueGesture}
+      onPointerUp={endGesture}
+      onPointerCancel={endGesture}
+      onDoubleClick={(event) => {
+        if ((event.target as HTMLElement).closest("button")) return;
+        if (transformRef.current.scale > 1) reset();
+        else zoomAt(2.5, { x: event.clientX, y: event.clientY });
       }}
-    />
+    >
+      <img
+        ref={imageRef}
+        src={props.src}
+        alt={props.alt}
+        draggable={false}
+        onLoad={() => setTransform(transformRef.current)}
+        style={{
+          transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+        }}
+      />
 
-    {props.hasMultipleImages && <>
-      <button
-        type="button"
-        className="project-files-media-navigation is-previous"
-        aria-label={uiText("Vorheriges Bild", "Previous image")}
-        title={uiText("Vorheriges Bild", "Previous image")}
-        onClick={props.onPrevious}
-      >
-        <Icons.Previous />
-      </button>
-      <button
-        type="button"
-        className="project-files-media-navigation is-next"
-        aria-label={uiText("Nächstes Bild", "Next image")}
-        title={uiText("Nächstes Bild", "Next image")}
-        onClick={props.onNext}
-      >
-        <Icons.Next />
-      </button>
-    </>}
+      {props.hasMultipleImages && (
+        <>
+          <UIAction
+            kind="ghost"
+            type="button"
+            className="project-files-media-navigation is-previous"
+            aria-label={uiText("Vorheriges Bild", "Previous image")}
+            title={uiText("Vorheriges Bild", "Previous image")}
+            onClick={props.onPrevious}
+          >
+            <Icons.Previous />
+          </UIAction>
+          <UIAction
+            kind="ghost"
+            type="button"
+            className="project-files-media-navigation is-next"
+            aria-label={uiText("Nächstes Bild", "Next image")}
+            title={uiText("Nächstes Bild", "Next image")}
+            onClick={props.onNext}
+          >
+            <Icons.Next />
+          </UIAction>
+        </>
+      )}
 
-    <div className="project-files-media-zoom" role="group" aria-label={uiText("Bildzoom", "Image zoom")}>
-      <button
-        type="button"
-        aria-label={uiText("Verkleinern", "Zoom out")}
-        title={uiText("Verkleinern", "Zoom out")}
-        disabled={transform.scale <= MIN_SCALE}
-        onClick={() => zoomAt(transformRef.current.scale / ZOOM_STEP)}
+      <div
+        className="project-files-media-zoom"
+        role="group"
+        aria-label={uiText("Bildzoom", "Image zoom")}
       >
-        <Icons.ZoomOut />
-      </button>
-      <button
-        type="button"
-        className="project-files-media-zoom__value"
-        aria-label={uiText("Zoom zurücksetzen", "Reset zoom")}
-        title={uiText("Zoom zurücksetzen", "Reset zoom")}
-        disabled={transform.scale === 1}
-        onClick={reset}
-      >
-        {Math.round(transform.scale * 100)}%
-      </button>
-      <button
-        type="button"
-        aria-label={uiText("Vergrößern", "Zoom in")}
-        title={uiText("Vergrößern", "Zoom in")}
-        disabled={transform.scale >= MAX_SCALE}
-        onClick={() => zoomAt(transformRef.current.scale * ZOOM_STEP)}
-      >
-        <Icons.ZoomIn />
-      </button>
+        <UIAction
+          kind="ghost"
+          type="button"
+          aria-label={uiText("Verkleinern", "Zoom out")}
+          title={uiText("Verkleinern", "Zoom out")}
+          disabled={transform.scale <= MIN_SCALE}
+          onClick={() => zoomAt(transformRef.current.scale / ZOOM_STEP)}
+        >
+          <Icons.ZoomOut />
+        </UIAction>
+        <UIAction
+          kind="ghost"
+          type="button"
+          className="project-files-media-zoom__value"
+          aria-label={uiText("Zoom zurücksetzen", "Reset zoom")}
+          title={uiText("Zoom zurücksetzen", "Reset zoom")}
+          disabled={transform.scale === 1}
+          onClick={reset}
+        >
+          {Math.round(transform.scale * 100)}%
+        </UIAction>
+        <UIAction
+          kind="ghost"
+          type="button"
+          aria-label={uiText("Vergrößern", "Zoom in")}
+          title={uiText("Vergrößern", "Zoom in")}
+          disabled={transform.scale >= MAX_SCALE}
+          onClick={() => zoomAt(transformRef.current.scale * ZOOM_STEP)}
+        >
+          <Icons.ZoomIn />
+        </UIAction>
+      </div>
     </div>
-  </div>;
+  );
 }

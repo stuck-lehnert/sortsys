@@ -1,31 +1,54 @@
-import type { HTMLAttributes, ReactNode } from "react";
-import React from "react";
+import { Card } from "@heroui/react";
+import {
+  Children,
+  isValidElement,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
 
-const AttrList = function(_props: {
-    children?: ReactNode;
-} & Omit<HTMLAttributes<HTMLDListElement>, 'children'>) {
-    const { children, ...props } = _props;
+function AttrList({
+  children,
+  className,
+  ...props
+}: { children?: ReactNode } & Omit<HTMLAttributes<HTMLDListElement>, "children">) {
+  if (!Children.toArray(children).some(isValidElement)) {
+    return null;
+  }
 
-    const _children = React.Children.toArray(children).filter(React.isValidElement);
-    if (!_children.length) return;
-
-    return <dl {...props} className={`attr-list ${props.className ?? ''}`}>
-        {children}
+  return (
+    <dl
+      {...props}
+      className={[
+        "" +
+          [
+            "grid min-w-0 gap-3",
+            "[grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr))]",
+          ].join(" ") +
+          "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
     </dl>
+  );
 }
 
-AttrList.Attr = function ({ name, value, third }: {
-    name: ReactNode;
-    value: ReactNode;
-    third?: ReactNode;
+AttrList.Attr = function Attribute({ name, value, third }: {
+  name: ReactNode;
+  value: ReactNode;
+  third?: ReactNode;
 }) {
-    return <div className={`attr-list__row ${third ? 'attr-list__row--third' : ''}`}>
-        <dt className="attr-list__label">{name}</dt>
-        <dd className="attr-list__values">
-            <span className="attr-list__value">{value}</span>
-            {!!third && <span className="attr-list__value">{third}</span>}
-        </dd>
-    </div>;
-}
+  return (
+    <Card variant="secondary" className="min-w-0 gap-0.5 p-3">
+      <dt className="text-sm leading-5 text-muted">{name}</dt>
+      <dd className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-sm font-medium">
+        <span className="min-w-0 break-words">{value}</span>
+        {!!third && <span className="min-w-0 break-words">{third}</span>}
+      </dd>
+    </Card>
+  );
+};
 
 export { AttrList };

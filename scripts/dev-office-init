@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run inside the pinned editor image, with its data binds mounted separately.
+# Unlike named volumes, empty bind mounts do not inherit the image's contents.
+image_root="${1:-/}"
+data_root="${2:-/sortsys-dev-office}"
+
+initialize_directory() {
+  local source="$1"
+  local destination="$2"
+  local preserve_existing="${3:-false}"
+  local directory
+  local target
+
+  if [ ! -d "$source" ] || [ -L "$destination" ] || [ ! -d "$destination" ]; then
+    echo "Cannot initialize Euro-Office directory: ${destination}" >&2
+    return 1
+  fi
+
+  if [ -z "$(find "$destination" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    # Keep the bind's runtime-assigned labels instead of the image's context.
+    cp -a --no-preserve=context,xattr -- "$source/." "$destination/"
+    return 0
+  fi
+
+  # An existing database must never be merged with the image's bundled cluster.
+  if [ "$preserve_existing" = true ]; then
+    return 0
+  fi
+
+  # A failed first boot can leave partial log/state trees. Restore only directory
+  # structure and metadata from the image; keep all existing files untouched.
+  while IFS= read -r -d '' directory; do
+    target="${destination}${directory#"$source"}"
+
+    if [ -L "$target" ] || { [ -e "$target" ] && [ ! -d "$target" ]; }; then
+      echo "Expected a Euro-Office directory: ${target}" >&2
+      return 1
+    fi
+
+    mkdir -p -- "$target"
+    chown --reference="$directory" -- "$target"
+    chmod --reference="$directory" -- "$target"
+  done < <(find "$source" -type d -print0)
+}
+
+initialize_directory "${image_root%/}/var/www/euro-office/Data" "$data_root/data"
+initialize_directory "${image_root%/}/var/lib/euro-office/documentserver" "$data_root/state"
+initialize_directory "${image_root%/}/var/lib/postgresql" "$data_root/database" true
+initialize_directory "${image_root%/}/var/log/euro-office/documentserver" "$data_root/logs"

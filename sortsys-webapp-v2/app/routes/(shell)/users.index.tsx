@@ -29,70 +29,95 @@ export default function UsersPage() {
     ? (users ?? []).filter(user => !!user.archivedAt)
     : (users ?? []);
 
-  return <>
-    <MyHeader
-      title={uiText("Benutzer")}
-      actions={<div className="list-page-actions">
-      {!archivedOnly ? (
-        <OperationalTag renderIcon={Icons.Archive} text={uiText("Nicht archiviert", "Not archived")} onClick={() => setArchivedOnly(true)} />
-      ) : (
-        <OperationalTag renderIcon={Icons.Archive} text={uiText("Archiviert")} onClick={() => setArchivedOnly(false)} />
-      )}
-
-      <TableExportActions
+  return (
+    <>
+      <MyHeader
         title={uiText("Benutzer")}
-        fileName={archivedOnly ? uiText('Archivierte-Benutzer') : uiText('Benutzer')}
-        rows={visibleUsers}
-        disabled={!users}
-        columns={[
-          { header: uiText("Vorname"), value: user => user.firstName },
-          { header: uiText("Nachname"), value: user => user.lastName },
-          { header: uiText("Vertrag"), value: user => userContractName(user) },
-          { header: uiText("E-Mail"), value: user => user.email, width: '2fr' },
-          { header: uiText("Telefon"), value: user => user.phone },
-          { header: uiText("Deaktiviert am"), value: user => user.deactivatedAt },
-        ]}
+        actions={
+          <div className="list-page-actions">
+            {!archivedOnly ? (
+              <OperationalTag
+                renderIcon={Icons.Archive}
+                text={uiText("Nicht archiviert", "Not archived")}
+                onClick={() => setArchivedOnly(true)}
+              />
+            ) : (
+              <OperationalTag
+                renderIcon={Icons.Archive}
+                text={uiText("Archiviert")}
+                onClick={() => setArchivedOnly(false)}
+              />
+            )}
+
+            <TableExportActions
+              title={uiText("Benutzer")}
+              fileName={
+                archivedOnly
+                  ? uiText("Archivierte-Benutzer")
+                  : uiText("Benutzer")
+              }
+              rows={visibleUsers}
+              disabled={!users}
+              columns={[
+                { header: uiText("Vorname"), value: (user) => user.firstName },
+                { header: uiText("Nachname"), value: (user) => user.lastName },
+                {
+                  header: uiText("Vertrag"),
+                  value: (user) => userContractName(user),
+                },
+                {
+                  header: uiText("E-Mail"),
+                  value: (user) => user.email,
+                  width: "2fr",
+                },
+                { header: uiText("Telefon"), value: (user) => user.phone },
+                {
+                  header: uiText("Deaktiviert am"),
+                  value: (user) => user.deactivatedAt,
+                },
+              ]}
+            />
+          </div>
+        }
       />
-      </div>}
-    />
-    
-    <MyTable
-      topPagination
-      className=""
-      persistentId="Users"
-      rows={visibleUsers}
-      loading={!users}
-      error={usersError}
-      onRowClick={row => navigate(`/users/${row.id}`)}
-      columns={[
-        {
-          label: uiText("Vorname"),
-          render: row => row.firstName,
-          sortKey: row => row.firstName.toLowerCase(),
-        },
-        {
-          label: uiText("Nachname"),
-          render: row => row.lastName,
-          sortKey: row => row.lastName?.toLowerCase() ?? '',
-        },
-        // {
-        //   label: 'E-Mail',
-        //   render: row => row.email,
-        //   sortKey: row => row.email?.toLowerCase() ?? '',
-        // },
-        // {
-        //   label: 'Telefon',
-        //   render: row => row.phone,
-        //   sortKey: row => row.phone?.toLowerCase() ?? '',
-        // },
-        {
-          label: uiText("Vertrag"),
-          render: row => userContractName(row),
-          sortKey: row => userContractName(row).toLowerCase(),
-        },
-      ]}
-      pagination={{}}
-      renderSmallViewport={user => <SmallUserTile data={user} />}
-    />
-  </>;
+
+      <MyTable
+        className=""
+        persistentId="Users"
+        rows={visibleUsers}
+        loading={!users}
+        error={usersError}
+        onRowClick={(row) => navigate(`/users/${row.id}`)}
+        columns={[
+          {
+            label: uiText("Vorname"),
+            render: (row) => row.firstName,
+            sortKey: (row) => row.firstName.toLowerCase(),
+          },
+          {
+            label: uiText("Nachname"),
+            render: (row) => row.lastName,
+            sortKey: (row) => row.lastName?.toLowerCase() ?? "",
+          },
+          // {
+          //   label: 'E-Mail',
+          //   render: row => row.email,
+          //   sortKey: row => row.email?.toLowerCase() ?? '',
+          // },
+          // {
+          //   label: 'Telefon',
+          //   render: row => row.phone,
+          //   sortKey: row => row.phone?.toLowerCase() ?? '',
+          // },
+          {
+            label: uiText("Vertrag"),
+            render: (row) => userContractName(row),
+            sortKey: (row) => userContractName(row).toLowerCase(),
+          },
+        ]}
+        loadMore={{}}
+        renderSmallViewport={(user) => <SmallUserTile data={user} />}
+      />
+    </>
+  );
 }

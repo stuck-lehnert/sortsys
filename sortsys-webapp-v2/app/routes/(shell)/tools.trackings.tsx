@@ -38,79 +38,115 @@ export default function ToolTrackingsPage() {
 
     function showFilterModal() {
         modals.showForm({
-            content: ({ context }) => <>
-                <MyForm.MultiSelect
-                    name="project"
-                    labelText={uiText("Projekt")}
-                    maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                        const [data, err] = await client.query('projects.list', { search: query });
-                        if (err) throw err;
-                        return data ?? [];
-                    }}
-                    renderItem={({ item }) => item.title}
-                    renderTile={item => <SmallProjectTile data={item} noLink />}
-                />
+            content: ({ context }) => (
+        <>
+          <MyForm.MultiSelect
+            name="project"
+            labelText={uiText("Projekt")}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+          />
 
-                <MyForm.MultiSelect
-                    name="author"
-                    labelText={uiText("Herausgeber")}
-                    maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                        const [data, err] = await client.query('users.list', { search: query });
-                        if (err) throw err;
-                        return data ?? [];
-                    }}
-                    renderItem={({ item }) => userFullName(item)}
-                    renderTile={item => <SmallUserTile data={item} noLink />}
-                />
+          <MyForm.MultiSelect
+            name="author"
+            labelText={uiText("Herausgeber")}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("users.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => userFullName(item)}
+            renderTile={(item) => <SmallUserTile data={item} noLink />}
+          />
 
-                <MyForm.MultiSelect
-                    name="responsible"
-                    labelText={uiText("Verantwortlicher")}
-                    maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                        const [data, err] = await client.query('users.list', { search: query });
-                        if (err) throw err;
-                        return data ?? [];
-                    }}
-                    renderItem={({ item }) => userFullName(item)}
-                    renderTile={item => <SmallUserTile data={item} noLink />}
-                />
+          <MyForm.MultiSelect
+            name="responsible"
+            labelText={uiText("Verantwortlicher")}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("users.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => userFullName(item)}
+            renderTile={(item) => <SmallUserTile data={item} noLink />}
+          />
 
-                <MyForm.MultiSelect
-                    name="tool"
-                    labelText={uiText("Werkzeug")}
-                    maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                        const [data, err] = await client.query('tools.list', { search: query });
-                        if (err) throw err;
-                        return data ?? [];
-                    }}
-                    renderItem={({ item }) => `${item.customId} ${toolTitle(item)}`}
-                    renderTile={item => <SmallToolTile data={item} noLink />}
-                />
+          <MyForm.MultiSelect
+            name="tool"
+            labelText={uiText("Werkzeug")}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("tools.list", {
+                search: query,
+              });
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => `${item.customId} ${toolTitle(item)}`}
+            renderTile={(item) => <SmallToolTile data={item} noLink />}
+          />
 
-                <NotifyLoaded onLoad={() => {
-                    const loadSelection = async () => {
-                        const [project, author, responsible, tool] = await Promise.all([
-                            projectId ? client.query('projects.get', { id: projectId }, { strategy: 'cache-first' }) : Promise.resolve([null, null] as const),
-                            authorId ? client.query('users.get', { id: authorId }, { strategy: 'cache-first' }) : Promise.resolve([null, null] as const),
-                            responsibleId ? client.query('users.get', { id: responsibleId }, { strategy: 'cache-first' }) : Promise.resolve([null, null] as const),
-                            toolId ? client.query('tools.get', { id: toolId }, { strategy: 'cache-first' }) : Promise.resolve([null, null] as const),
-                        ]);
+          <NotifyLoaded
+            onLoad={() => {
+              const loadSelection = async () => {
+                const [project, author, responsible, tool] = await Promise.all([
+                  projectId
+                    ? client.query(
+                        "projects.get",
+                        { id: projectId },
+                        { strategy: "cache-first" },
+                      )
+                    : Promise.resolve([null, null] as const),
+                  authorId
+                    ? client.query(
+                        "users.get",
+                        { id: authorId },
+                        { strategy: "cache-first" },
+                      )
+                    : Promise.resolve([null, null] as const),
+                  responsibleId
+                    ? client.query(
+                        "users.get",
+                        { id: responsibleId },
+                        { strategy: "cache-first" },
+                      )
+                    : Promise.resolve([null, null] as const),
+                  toolId
+                    ? client.query(
+                        "tools.get",
+                        { id: toolId },
+                        { strategy: "cache-first" },
+                      )
+                    : Promise.resolve([null, null] as const),
+                ]);
 
-                        context.setValues({
-                            project: project[0] ? [project[0]] : [],
-                            author: author[0] ? [author[0]] : [],
-                            responsible: responsible[0] ? [responsible[0]] : [],
-                            tool: tool[0] ? [tool[0]] : [],
-                        });
-                    };
+                context.setValues({
+                  project: project[0] ? [project[0]] : [],
+                  author: author[0] ? [author[0]] : [],
+                  responsible: responsible[0] ? [responsible[0]] : [],
+                  tool: tool[0] ? [tool[0]] : [],
+                });
+              };
 
-                    void loadSelection();
-                }} />
-            </>,
+              void loadSelection();
+            }}
+          />
+        </>
+      ),
             onSubmit: ({ context, hide }) => {
                 const values = context.getValues();
 
@@ -157,47 +193,84 @@ export default function ToolTrackingsPage() {
         });
     }
 
-    return <>
-        <MyHeader
-            title={uiText("Buchungshistorie")}
-            actions={<div className="list-page-actions">
+    return (
+    <>
+      <MyHeader
+        title={uiText("Buchungshistorie")}
+        actions={
+          <div className="list-page-actions">
             {!hasFilter ? (
-                <OperationalTag renderIcon={Icons.Filter} text={uiText("Filter")} onClick={showFilterModal} />
+              <OperationalTag
+                renderIcon={Icons.Filter}
+                text={uiText("Filter")}
+                onClick={showFilterModal}
+              />
             ) : (
-                <>
-                    <OperationalTag renderIcon={Icons.FilterEdit} text={uiText("Filter ändern")} onClick={showFilterModal} />
-                    <OperationalTag renderIcon={Icons.FilterRemove} text={uiText("Filter aus")} onClick={() => {
-                        setProjectId(null);
-                        setAuthorId(null);
-                        setResponsibleId(null);
-                        setToolId(null);
-                    }} />
-                </>
+              <>
+                <OperationalTag
+                  renderIcon={Icons.FilterEdit}
+                  text={uiText("Filter ändern")}
+                  onClick={showFilterModal}
+                />
+                <OperationalTag
+                  renderIcon={Icons.FilterRemove}
+                  text={uiText("Filter aus")}
+                  onClick={() => {
+                    setProjectId(null);
+                    setAuthorId(null);
+                    setResponsibleId(null);
+                    setToolId(null);
+                  }}
+                />
+              </>
             )}
 
             <TableExportActions
-                title={uiText("Buchungshistorie")}
-                fileName="Buchungshistorie"
-                rows={loadTrackingExportRows}
-                disabled={!trackings}
-                columns={[
-                    { header: uiText("Werkzeug"), value: tracking => tracking.toolLabel, width: '2fr' },
-                    { header: uiText("Projekt"), value: tracking => tracking.projectLabel, width: '2fr' },
-                    { header: uiText("Verantwortlicher"), value: tracking => tracking.responsibleLabel, width: '1.5fr' },
-                    { header: uiText("Herausgeber"), value: tracking => tracking.authorLabel, width: '1.5fr' },
-                    { header: uiText("Von"), value: tracking => tracking.startedAt },
-                    { header: uiText("Bis"), value: tracking => tracking.endedAt ?? 'offen' },
-                ]}
+              title={uiText("Buchungshistorie")}
+              fileName="Buchungshistorie"
+              rows={loadTrackingExportRows}
+              disabled={!trackings}
+              columns={[
+                {
+                  header: uiText("Werkzeug"),
+                  value: (tracking) => tracking.toolLabel,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Projekt"),
+                  value: (tracking) => tracking.projectLabel,
+                  width: "2fr",
+                },
+                {
+                  header: uiText("Verantwortlicher"),
+                  value: (tracking) => tracking.responsibleLabel,
+                  width: "1.5fr",
+                },
+                {
+                  header: uiText("Herausgeber"),
+                  value: (tracking) => tracking.authorLabel,
+                  width: "1.5fr",
+                },
+                {
+                  header: uiText("Von"),
+                  value: (tracking) => tracking.startedAt,
+                },
+                {
+                  header: uiText("Bis"),
+                  value: (tracking) => tracking.endedAt ?? "offen",
+                },
+              ]}
             />
-            </div>}
-        />
+          </div>
+        }
+      />
 
-        <TrackingTable
-            trackings={trackings ?? []}
-            loading={!trackings}
-            error={trackingsError}
-            className=""
-            topPagination
-        />
-    </>;
+      <TrackingTable
+        trackings={trackings ?? []}
+        loading={!trackings}
+        error={trackingsError}
+        className=""
+      />
+    </>
+  );
 }

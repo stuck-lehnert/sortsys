@@ -1,3 +1,6 @@
+import { Loading, Select, SelectItem } from "@sortsys/react-components";
+import { Button as UIAction } from "@sortsys/react-components";
+import { Input as UIInput } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
 import { Modal, useNotifications } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
@@ -37,7 +40,15 @@ import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { downloadBlob } from "~/lib/utils";
 import type { Project } from "~/type-helpers";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const PdfAttachmentViewer = lazy(() => import("~/components/PdfAttachmentViewer"));
 const EmailAttachmentViewer = lazy(() => import("~/components/EmailAttachmentViewer"));
@@ -136,7 +147,6 @@ function ensureUniqueFileName(fileName: string, usedNames: Set<string>) {
   return fallback;
 }
 
-
 export default function ProjectFilesPage() {
   const { project } = useOutletContext<{ project: Project }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -222,7 +232,6 @@ export default function ProjectFilesPage() {
     openBrowserFile(file);
   }, [attachments, searchParams]);
 
-
   const selectedAttachmentIdSet = useMemo(() => {
     return new Set(selectedAttachmentIds);
   }, [selectedAttachmentIds]);
@@ -261,7 +270,6 @@ export default function ProjectFilesPage() {
     if (!activeDrawioFileId) return null;
     return attachments.find(file => file.id === activeDrawioFileId) ?? null;
   }, [activeDrawioFileId, attachments]);
-
 
   const documentFiles = useMemo(() => {
     return attachments.filter(entry => entry.kind !== 'image' || isDwgAttachment(entry));
@@ -316,7 +324,6 @@ export default function ProjectFilesPage() {
     setActiveDrawioFileId(null);
     setDrawioSession(null);
   }, [activeDrawioFileId, attachments]);
-
 
   const imageCardUrl = (file: ProjectFileEntry) => file.previewUrl || file.thumbnailUrl || file.downloadUrl || null;
   const attachmentDownloadUrl = (file: ProjectFileEntry) => file.downloadAttachmentUrl || file.downloadUrl || null;
@@ -458,7 +465,6 @@ export default function ProjectFilesPage() {
 
     return result.version;
   }, [activeDrawioFileId, project.id]);
-
 
   const toggleAttachmentSelection = (fileId: string) => {
     setSelectedAttachmentIds((previous) => {
@@ -717,19 +723,26 @@ export default function ProjectFilesPage() {
     const destinations = folders.slice().sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
 
     modals.showDefault({
-      content: () => <label className="project-file-dialog-field">
-        <span>{uiText("Zielordner", "Destination folder")}</span>
-        <select
-          className="ss-input"
+      content: () => (
+        <Select
+          labelText={uiText("Zielordner", "Destination folder")}
+          className="w-full"
           defaultValue={destinationRef.current}
-          onChange={(event) => {
+          onChange={(event: {
+            target: { value: string };
+            currentTarget: { value: string };
+          }) => {
             destinationRef.current = event.currentTarget.value;
           }}
         >
-          <option value="">{uiText("Anhänge", "Attachments")}</option>
-          {destinations.map(folder => <option key={folder.id} value={folder.id}>{folderPath(folder)}</option>)}
-        </select>
-      </label>,
+          <SelectItem value="">{uiText("Anhänge", "Attachments")}</SelectItem>
+          {destinations.map((folder) => (
+            <SelectItem key={folder.id} value={folder.id}>
+              {folderPath(folder)}
+            </SelectItem>
+          ))}
+        </Select>
+      ),
       modalProps: () => ({
         noFullscreen: true,
         modalHeading: fileIds.length === 1
@@ -772,21 +785,26 @@ export default function ProjectFilesPage() {
       .sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
 
     modals.showDefault({
-      content: () => <label className="project-file-dialog-field">
-        <span>{uiText("Zielordner", "Destination folder")}</span>
-        <select
-          className="ss-input"
+      content: () => (
+        <Select
+          labelText={uiText("Zielordner", "Destination folder")}
+          className="w-full"
           defaultValue={destinationRef.current}
-          onChange={(event) => {
+          onChange={(event: {
+            target: { value: string };
+            currentTarget: { value: string };
+          }) => {
             destinationRef.current = event.currentTarget.value;
           }}
         >
-          <option value="">{uiText("Anhänge", "Attachments")}</option>
-          {destinations.map(destination => <option key={destination.id} value={destination.id}>
-            {folderPath(destination)}
-          </option>)}
-        </select>
-      </label>,
+          <SelectItem value="">{uiText("Anhänge", "Attachments")}</SelectItem>
+          {destinations.map((destination) => (
+            <SelectItem key={destination.id} value={destination.id}>
+              {folderPath(destination)}
+            </SelectItem>
+          ))}
+        </Select>
+      ),
       modalProps: () => ({
         noFullscreen: true,
         modalHeading: uiText("Ordner verschieben", "Move folder"),
@@ -813,22 +831,29 @@ export default function ProjectFilesPage() {
     const nameRef = { current: `${defaultBaseName[type]}${definition.extension}` };
 
     modals.showDefault({
-      content: () => <label className="project-file-dialog-field">
-        <span>{uiText("Dateiname", "File name")}</span>
-        <input
-          className="ss-input"
-          autoFocus
-          defaultValue={nameRef.current}
-          maxLength={255}
-          onFocus={(event) => {
-            const extensionStart = event.currentTarget.value.length - definition.extension.length;
-            event.currentTarget.setSelectionRange(0, Math.max(0, extensionStart));
-          }}
-          onChange={(event) => {
-            nameRef.current = event.currentTarget.value;
-          }}
-        />
-      </label>,
+      content: () => (
+        <label className="project-file-dialog-field">
+          <span>{uiText("Dateiname", "File name")}</span>
+          <UIInput
+            variant="secondary"
+            className="ss-input"
+            autoFocus
+            defaultValue={nameRef.current}
+            maxLength={255}
+            onFocus={(event) => {
+              const extensionStart =
+                event.currentTarget.value.length - definition.extension.length;
+              event.currentTarget.setSelectionRange(
+                0,
+                Math.max(0, extensionStart),
+              );
+            }}
+            onChange={(event) => {
+              nameRef.current = event.currentTarget.value;
+            }}
+          />
+        </label>
+      ),
       modalProps: () => ({
         noFullscreen: true,
         modalHeading: uiText("Neue Datei", "New file"),
@@ -867,17 +892,20 @@ export default function ProjectFilesPage() {
     const nameRef = { current: "" };
 
     modals.showDefault({
-      content: () => <label className="project-file-dialog-field">
-        <span>{uiText("Ordnername", "Folder name")}</span>
-        <input
-          className="ss-input"
-          autoFocus
-          maxLength={255}
-          onChange={(event) => {
-            nameRef.current = event.currentTarget.value;
-          }}
-        />
-      </label>,
+      content: () => (
+        <label className="project-file-dialog-field">
+          <span>{uiText("Ordnername", "Folder name")}</span>
+          <UIInput
+            variant="secondary"
+            className="ss-input"
+            autoFocus
+            maxLength={255}
+            onChange={(event) => {
+              nameRef.current = event.currentTarget.value;
+            }}
+          />
+        </label>
+      ),
       modalProps: () => ({
         noFullscreen: true,
         modalHeading: uiText("Neuer Ordner", "New folder"),
@@ -906,18 +934,21 @@ export default function ProjectFilesPage() {
     const nameRef = { current: folder.name };
 
     modals.showDefault({
-      content: () => <label className="project-file-dialog-field">
-        <span>{uiText("Ordnername", "Folder name")}</span>
-        <input
-          className="ss-input"
-          autoFocus
-          defaultValue={folder.name}
-          maxLength={255}
-          onChange={(event) => {
-            nameRef.current = event.currentTarget.value;
-          }}
-        />
-      </label>,
+      content: () => (
+        <label className="project-file-dialog-field">
+          <span>{uiText("Ordnername", "Folder name")}</span>
+          <UIInput
+            variant="secondary"
+            className="ss-input"
+            autoFocus
+            defaultValue={folder.name}
+            maxLength={255}
+            onChange={(event) => {
+              nameRef.current = event.currentTarget.value;
+            }}
+          />
+        </label>
+      ),
       modalProps: () => ({
         noFullscreen: true,
         modalHeading: uiText("Ordner umbenennen", "Rename folder"),
@@ -946,18 +977,21 @@ export default function ProjectFilesPage() {
     const nameRef = { current: file.fileName };
 
     modals.showDefault({
-      content: () => <label className="project-file-dialog-field">
-        <span>{uiText("Dateiname", "File name")}</span>
-        <input
-          className="ss-input"
-          autoFocus
-          defaultValue={file.fileName}
-          maxLength={255}
-          onChange={(event) => {
-            nameRef.current = event.currentTarget.value;
-          }}
-        />
-      </label>,
+      content: () => (
+        <label className="project-file-dialog-field">
+          <span>{uiText("Dateiname", "File name")}</span>
+          <UIInput
+            variant="secondary"
+            className="ss-input"
+            autoFocus
+            defaultValue={file.fileName}
+            maxLength={255}
+            onChange={(event) => {
+              nameRef.current = event.currentTarget.value;
+            }}
+          />
+        </label>
+      ),
       modalProps: () => ({
         noFullscreen: true,
         modalHeading: uiText("Datei umbenennen", "Rename file"),
@@ -998,10 +1032,14 @@ export default function ProjectFilesPage() {
     }
 
     modals.showDefault({
-      content: () => <p>{uiText(
-        `Soll der Ordner „${folder.name}“ gelöscht werden?`,
-        `Delete the folder “${folder.name}”?`,
-      )}</p>,
+      content: () => (
+        <p>
+          {uiText(
+            `Soll der Ordner „${folder.name}“ gelöscht werden?`,
+            `Delete the folder “${folder.name}”?`,
+          )}
+        </p>
+      ),
       modalProps: () => ({
         danger: true,
         noFullscreen: true,
@@ -1118,17 +1156,27 @@ export default function ProjectFilesPage() {
     if (!filesToDelete.length) return;
 
     modals.showDefault({
-      content: () => <>
-        <p>
-          {filesToDelete.length === 1
-            ? uiText("Soll die ausgewählte Datei wirklich gelöscht werden?", "Delete the selected file?")
-            : uiText(
-              `Sollen ${filesToDelete.length} ausgewählte Dateien wirklich gelöscht werden?`,
-              `Delete ${filesToDelete.length} selected files?`,
-            )}{" "}
-          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.", "This action cannot be undone.")}</b>
-        </p>
-      </>,
+      content: () => (
+        <>
+          <p>
+            {filesToDelete.length === 1
+              ? uiText(
+                  "Soll die ausgewählte Datei wirklich gelöscht werden?",
+                  "Delete the selected file?",
+                )
+              : uiText(
+                  `Sollen ${filesToDelete.length} ausgewählte Dateien wirklich gelöscht werden?`,
+                  `Delete ${filesToDelete.length} selected files?`,
+                )}{" "}
+            <b>
+              {uiText(
+                "Diese Aktion kann nicht rückgängig gemacht werden.",
+                "This action cannot be undone.",
+              )}
+            </b>
+          </p>
+        </>
+      ),
       modalProps: () => ({
         danger: true,
         noFullscreen: true,
@@ -1176,488 +1224,640 @@ export default function ProjectFilesPage() {
   }
 
   if (!supportsProjectFiles) {
-    return <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge sind für dieses Mandanten-Setup nicht aktiviert.")}</MyCallout>;
+    return (
+      <MyCallout icon={Icons.Info} color="amber">
+        {uiText("Anhänge sind für dieses Mandanten-Setup nicht aktiviert.")}
+      </MyCallout>
+    );
   }
 
-  return <>
-    <input
-      ref={fileInputRef}
-      type="file"
-      multiple
-      style={{ display: 'none' }}
-      onChange={(event) => uploadSelectedFiles(event.target.files, uploadDestinationRef.current)}
-    />
+  if (
+    (projectFiles == null && !projectFilesErr) ||
+    (projectFolders == null && !projectFoldersErr)
+  ) {
+    return (
+      <Loading
+        description={uiText("Anhänge werden geladen.", "Loading attachments.")}
+      />
+    );
+  }
 
-    <div className="project-files-toolbar mb-2">
-      <div className="project-files-toolbar-left">
-        {!!selectedAttachmentIds.length && <>
-          <MyButton
-            size="sm"
-            kind="ghost"
-            renderIcon={Icons.Download}
-            disabled={!!batchBusyAction}
-            loading={batchBusyAction === 'download'}
-            onClick={downloadSelectedAsZip}
-          >{uiText("Auswahl ZIP")}</MyButton>
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        style={{ display: "none" }}
+        onChange={(event) =>
+          uploadSelectedFiles(event.target.files, uploadDestinationRef.current)
+        }
+      />
 
-          {!!selectedDocumentIds.length && <MyButton
-            size="sm"
-            kind="ghost"
-            renderIcon={Icons.FolderMove}
-            disabled={!!batchBusyAction}
-            loading={batchBusyAction === 'move'}
-            onClick={() => showMoveFilesModal(selectedDocumentIds)}
-          >{uiText("Auswahl verschieben", "Move selection")}</MyButton>}
+      <div className="project-files-toolbar mb-2">
+        <div className="project-files-toolbar-left">
+          {!!selectedAttachmentIds.length && (
+            <>
+              <MyButton
+                size="sm"
+                kind="ghost"
+                renderIcon={Icons.Download}
+                disabled={!!batchBusyAction}
+                loading={batchBusyAction === "download"}
+                onClick={downloadSelectedAsZip}
+              >
+                {uiText("Auswahl ZIP")}
+              </MyButton>
 
-          <MyButton
-            size="sm"
-            kind="danger--tertiary"
-            renderIcon={Icons.Delete}
-            disabled={!!batchBusyAction}
-            loading={batchBusyAction === 'delete'}
-            onClick={() => showDeleteSelectedFilesConfirmModal(selectedAttachments)}
-          >{uiText("Auswahl löschen")}</MyButton>
+              {!!selectedDocumentIds.length && (
+                <MyButton
+                  size="sm"
+                  kind="ghost"
+                  renderIcon={Icons.FolderMove}
+                  disabled={!!batchBusyAction}
+                  loading={batchBusyAction === "move"}
+                  onClick={() => showMoveFilesModal(selectedDocumentIds)}
+                >
+                  {uiText("Auswahl verschieben", "Move selection")}
+                </MyButton>
+              )}
 
-          <MyButton
-            size="sm"
-            kind="ghost"
-            renderIcon={Icons.Reset}
-            disabled={!!batchBusyAction}
-            onClick={clearAttachmentSelection}
-          >{uiText("Auswahl aufheben")}</MyButton>
-        </>}
+              <MyButton
+                size="sm"
+                kind="danger--tertiary"
+                renderIcon={Icons.Delete}
+                disabled={!!batchBusyAction}
+                loading={batchBusyAction === "delete"}
+                onClick={() =>
+                  showDeleteSelectedFilesConfirmModal(selectedAttachments)
+                }
+              >
+                {uiText("Auswahl löschen")}
+              </MyButton>
 
-        {isUploading && <span>{uiText("Upload läuft...")}</span>}
+              <MyButton
+                size="sm"
+                kind="ghost"
+                renderIcon={Icons.Reset}
+                disabled={!!batchBusyAction}
+                onClick={clearAttachmentSelection}
+              >
+                {uiText("Auswahl aufheben")}
+              </MyButton>
+            </>
+          )}
+
+          {isUploading && <span>{uiText("Upload läuft...")}</span>}
+        </div>
+
+        {!!attachments.length && (
+          <div className="project-files-toolbar-right">
+            <MyDropdown
+              icon={Icons.FilterEdit}
+              items={selectionMenuItems}
+              menuClassName="project-files-selection-menu"
+            />
+          </div>
+        )}
       </div>
 
-      {!!attachments.length && <div className="project-files-toolbar-right">
-        <MyDropdown icon={Icons.FilterEdit} items={selectionMenuItems} menuClassName="project-files-selection-menu" />
-      </div>}
-    </div>
+      {!!(projectFilesErr || projectFoldersErr) && (
+        <MyCallout icon={Icons.Info} color="amber">
+          {uiText("Anhänge konnten nicht geladen werden:")}{" "}
+          {`${(projectFilesErr ?? (projectFoldersErr as Error | null))?.message ?? uiText("Unbekannter Fehler")}`}
+        </MyCallout>
+      )}
 
-    {!!(projectFilesErr || projectFoldersErr) && (
-      <MyCallout icon={Icons.Info} color="amber">{uiText("Anhänge konnten nicht geladen werden:")} {`${(projectFilesErr ?? projectFoldersErr as Error | null)?.message ?? uiText('Unbekannter Fehler')}`}
-      </MyCallout>
-    )}
-
-    {!attachments.length && !folders.length && (
-      <div className="light">{uiText("Noch keine Projektanhänge vorhanden.")}</div>
-    )}
-
-    {!!imageFiles.length && <MyExpandable title={`Bilder (${imageFiles.length})`} initiallyExpanded>
-      <div
-        style={{
-          display: 'grid',
-          gap: '0.1rem',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(11.2rem, 1fr))',
-        }}
-      >
-        {imageFiles.map((image, imageIndex) => (
+      {!!imageFiles.length && (
+        <MyExpandable
+          title={uiText(
+            `Bilder (${imageFiles.length})`,
+            `Images (${imageFiles.length})`,
+          )}
+          initiallyExpanded
+        >
           <div
-            key={image.id}
-            className={`project-files-image-tile-wrap${selectedAttachmentIdSet.has(image.id) ? ' is-selected' : ''}`}
+            className={[
+              "grid grid-cols-[repeat(auto-fill,minmax(min(100%,10rem),1fr))] gap-2",
+            ].join(" ")}
           >
-            <button
-              type="button"
-              title={image.fileName}
-              onClick={() => openImageOrToggleSelection(image.id, imageIndex)}
-              className="project-files-image-tile"
-              style={{
-                border: 'none',
-                padding: 0,
-                background: '#f4f4f4',
-                cursor: 'pointer',
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                overflow: 'hidden',
-              }}
-            >
-              {imageCardUrl(image)
-                ? <img
-                  src={imageCardUrl(image) ?? undefined}
-                  alt={image.fileName}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    display: 'block',
-                  }}
+            {imageFiles.map((image, imageIndex) => (
+              <div
+                key={image.id}
+                className={`project-files-image-tile-wrap${selectedAttachmentIdSet.has(image.id) ? " is-selected" : ""}`}
+              >
+                <UIAction
+                  kind="ghost"
+                  type="button"
+                  title={image.fileName}
+                  onClick={() =>
+                    openImageOrToggleSelection(image.id, imageIndex)
+                  }
+                  className="project-files-image-tile"
+                >
+                  {imageCardUrl(image) ? (
+                    <img
+                      src={imageCardUrl(image) ?? undefined}
+                      alt={image.fileName}
+                      className="block size-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex size-full items-center justify-center p-2 text-center">
+                      <span className="text-xs text-muted">
+                        {imageCardFallback(image)}
+                      </span>
+                    </div>
+                  )}
+                </UIAction>
+
+                <MyButton
+                  size="sm"
+                  kind={
+                    selectedAttachmentIdSet.has(image.id)
+                      ? "primary"
+                      : "secondary"
+                  }
+                  className="size-11 min-h-11 min-w-11 rounded-full p-0"
+                  renderIcon={
+                    selectedAttachmentIdSet.has(image.id)
+                      ? Icons.Accept
+                      : Icons.Plus
+                  }
+                  data-image-select-toggle="true"
+                  aria-pressed={selectedAttachmentIdSet.has(image.id)}
+                  title={
+                    selectedAttachmentIdSet.has(image.id)
+                      ? uiText("Aus Auswahl entfernen", "Remove from selection")
+                      : uiText("Zur Auswahl hinzufügen", "Add to selection")
+                  }
+                  aria-label={
+                    selectedAttachmentIdSet.has(image.id)
+                      ? uiText(
+                          `${image.fileName} aus der Auswahl entfernen`,
+                          `Remove ${image.fileName} from selection`,
+                        )
+                      : uiText(
+                          `${image.fileName} zur Auswahl hinzufügen`,
+                          `Add ${image.fileName} to selection`,
+                        )
+                  }
+                  onClick={() => toggleAttachmentSelection(image.id)}
                 />
-                : <div style={{
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 6,
-                  textAlign: 'center',
-                }}>
-                  <span className="light" style={{ fontSize: '.75rem' }}>{imageCardFallback(image)}</span>
+              </div>
+            ))}
+          </div>
+        </MyExpandable>
+      )}
+
+      <section className="project-files-documents">
+        <h3 className="text-xl leading-snug font-semibold">
+          {uiText(
+            `Dateien (${documentFiles.length})`,
+            `Files (${documentFiles.length})`,
+          )}
+        </h3>
+
+        <ProjectFileBrowser
+          files={documentFiles}
+          folders={folders}
+          selectedFileIds={selectedAttachmentIdSet}
+          busy={isUploading || !!batchBusyAction}
+          onToggleFile={toggleAttachmentSelection}
+          onOpenFile={openBrowserFile}
+          onDownloadFile={downloadBrowserFile}
+          onRenameFile={showRenameFileModal}
+          onDeleteFile={(file) => {
+            const attachment = attachments.find(
+              (candidate) => candidate.id === file.id,
+            );
+            if (attachment) showDeleteSelectedFilesConfirmModal([attachment]);
+          }}
+          onMoveFiles={(fileIds, folderId) => {
+            void moveFiles(fileIds, folderId).catch(notifyOrganizationError);
+          }}
+          onChooseFileDestination={showMoveFilesModal}
+          onCreateFolder={showCreateFolderModal}
+          onCreateFile={showCreateFileModal}
+          onRenameFolder={showRenameFolderModal}
+          onMoveFolder={(folder, parentFolderId) => {
+            void moveFolder(folder, parentFolderId).catch(
+              notifyOrganizationError,
+            );
+          }}
+          onChooseFolderDestination={showMoveFolderModal}
+          onDeleteFolder={showDeleteFolderModal}
+          onUploadFiles={(files, folderId) => {
+            void uploadSelectedFiles(files, folderId);
+          }}
+          onChooseUpload={chooseFilesForUpload}
+        />
+      </section>
+
+      {!!activeDrawioFile && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={
+            drawioSession?.canEdit
+              ? uiText("Diagramm bearbeiten", "Edit diagram")
+              : uiText("Diagramm ansehen", "View diagram")
+          }
+          modalLabel={activeDrawioFile.fileName}
+          closeButtonLabel={uiText("Schließen", "Close")}
+          onRequestClose={closeDrawioEditor}
+          edgeToEdge
+          data-fullheight="true"
+          data-fullwidth="true"
+          className="project-files-drawio-modal"
+        >
+          {drawioLoading && (
+            <div className="project-files-office-status">
+              {uiText("Diagramm wird geöffnet …", "Opening diagram …")}
+            </div>
+          )}
+
+          {!!drawioError && (
+            <div className="project-files-office-status">
+              <MyCallout icon={Icons.Deny} color="red">
+                {drawioError}
+              </MyCallout>
+            </div>
+          )}
+
+          {!!drawioSession && (
+            <DrawioEditor
+              editorUrl={drawioSession.editorUrl}
+              fileName={drawioSession.fileName}
+              xml={drawioSession.xml}
+              version={drawioSession.version}
+              canEdit={drawioSession.canEdit}
+              onSave={saveDrawio}
+              onClose={closeDrawioEditor}
+              onError={setDrawioError}
+            />
+          )}
+        </Modal>
+      )}
+
+      {!!activePreviewFile && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={
+            attachmentPreviewKind(activePreviewFile) === "pdf"
+              ? uiText("PDF ansehen", "View PDF")
+              : uiText("E-Mail ansehen", "View email")
+          }
+          modalLabel={activePreviewFile.fileName}
+          closeButtonLabel={uiText("Schließen", "Close")}
+          onRequestClose={closeAttachmentPreview}
+          edgeToEdge={attachmentPreviewKind(activePreviewFile) === "pdf"}
+          data-fullheight="true"
+          data-fullwidth="true"
+          className="project-files-office-modal"
+        >
+          <ScopedErrorBoundary
+            scope="project-attachment-preview"
+            resetKey={activePreviewFile.id}
+          >
+            <Suspense
+              fallback={
+                <div className="project-files-office-status" role="status">
+                  {uiText("Vorschau wird geladen …", "Loading preview …")}
                 </div>
               }
-            </button>
-
-            <MyButton
-              size="sm"
-              kind="ghost"
-              data-image-select-toggle="true"
-              title={selectedAttachmentIdSet.has(image.id) ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
-              aria-label={selectedAttachmentIdSet.has(image.id) ? uiText('Aus Auswahl entfernen', 'Remove from selection') : uiText('Zur Auswahl hinzufügen', 'Add to selection')}
-              style={{
-                inlineSize: '1.55rem',
-                blockSize: '1.55rem',
-                minInlineSize: '1.55rem',
-                minBlockSize: '1.55rem',
-                padding: 0,
-              }}
-              onClick={() => toggleAttachmentSelection(image.id)}
             >
-              {selectedAttachmentIdSet.has(image.id) ? <Icons.Accept /> : null}
-            </MyButton>
-          </div>
-        ))}
-      </div>
-    </MyExpandable>}
-
-    <section className="project-files-documents">
-      <h3>{uiText(`Dateien (${documentFiles.length})`, `Files (${documentFiles.length})`)}</h3>
-
-      <ProjectFileBrowser
-        files={documentFiles}
-        folders={folders}
-        selectedFileIds={selectedAttachmentIdSet}
-        busy={isUploading || !!batchBusyAction}
-        onToggleFile={toggleAttachmentSelection}
-        onOpenFile={openBrowserFile}
-        onDownloadFile={downloadBrowserFile}
-        onRenameFile={showRenameFileModal}
-        onDeleteFile={(file) => {
-          const attachment = attachments.find(candidate => candidate.id === file.id);
-          if (attachment) showDeleteSelectedFilesConfirmModal([attachment]);
-        }}
-        onMoveFiles={(fileIds, folderId) => {
-          void moveFiles(fileIds, folderId).catch(notifyOrganizationError);
-        }}
-        onChooseFileDestination={showMoveFilesModal}
-        onCreateFolder={showCreateFolderModal}
-        onCreateFile={showCreateFileModal}
-        onRenameFolder={showRenameFolderModal}
-        onMoveFolder={(folder, parentFolderId) => {
-          void moveFolder(folder, parentFolderId).catch(notifyOrganizationError);
-        }}
-        onChooseFolderDestination={showMoveFolderModal}
-        onDeleteFolder={showDeleteFolderModal}
-        onUploadFiles={(files, folderId) => {
-          void uploadSelectedFiles(files, folderId);
-        }}
-        onChooseUpload={chooseFilesForUpload}
-      />
-    </section>
-
-
-    {!!activeDrawioFile && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={drawioSession?.canEdit
-          ? uiText("Diagramm bearbeiten", "Edit diagram")
-          : uiText("Diagramm ansehen", "View diagram")}
-        modalLabel={activeDrawioFile.fileName}
-        closeButtonLabel={uiText("Schließen", "Close")}
-        onRequestClose={closeDrawioEditor}
-        data-fullheight="true"
-        data-fullwidth="true"
-        className="project-files-drawio-modal"
-      >
-        {drawioLoading && (
-          <div className="project-files-office-status">
-            {uiText("Diagramm wird geöffnet …", "Opening diagram …")}
-          </div>
-        )}
-
-        {!!drawioError && (
-          <div className="project-files-office-status">
-            <MyCallout icon={Icons.Deny} color="red">{drawioError}</MyCallout>
-          </div>
-        )}
-
-        {!!drawioSession && (
-          <DrawioEditor
-            editorUrl={drawioSession.editorUrl}
-            fileName={drawioSession.fileName}
-            xml={drawioSession.xml}
-            version={drawioSession.version}
-            canEdit={drawioSession.canEdit}
-            onSave={saveDrawio}
-            onClose={closeDrawioEditor}
-            onError={setDrawioError}
-          />
-        )}
-      </Modal>
-    )}
-
-    {!!activePreviewFile && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={attachmentPreviewKind(activePreviewFile) === "pdf"
-          ? uiText("PDF ansehen", "View PDF")
-          : uiText("E-Mail ansehen", "View email")}
-        modalLabel={activePreviewFile.fileName}
-        closeButtonLabel={uiText("Schließen", "Close")}
-        onRequestClose={closeAttachmentPreview}
-        data-fullheight="true"
-        data-fullwidth="true"
-        className="project-files-office-modal"
-      >
-        <ScopedErrorBoundary scope="project-attachment-preview" resetKey={activePreviewFile.id}>
-          <Suspense fallback={<div className="project-files-office-status" role="status">
-            {uiText("Vorschau wird geladen …", "Loading preview …")}
-          </div>}>
-            {activePreviewFile.downloadUrl || activePreviewFile.downloadAttachmentUrl
-              ? attachmentPreviewKind(activePreviewFile) === "pdf"
-                ? <PdfAttachmentViewer
+              {activePreviewFile.downloadUrl ||
+              activePreviewFile.downloadAttachmentUrl ? (
+                attachmentPreviewKind(activePreviewFile) === "pdf" ? (
+                  <PdfAttachmentViewer
                     key={activePreviewFile.id}
-                    url={(activePreviewFile.downloadUrl || activePreviewFile.downloadAttachmentUrl)!}
+                    url={
+                      (activePreviewFile.downloadUrl ||
+                        activePreviewFile.downloadAttachmentUrl)!
+                    }
                     downloadUrl={attachmentDownloadUrl(activePreviewFile)!}
                   />
-                : <EmailAttachmentViewer
+                ) : (
+                  <EmailAttachmentViewer
                     key={activePreviewFile.id}
-                    url={(activePreviewFile.downloadUrl || activePreviewFile.downloadAttachmentUrl)!}
+                    url={
+                      (activePreviewFile.downloadUrl ||
+                        activePreviewFile.downloadAttachmentUrl)!
+                    }
                     downloadUrl={attachmentDownloadUrl(activePreviewFile)!}
-                    format={attachmentPreviewKind(activePreviewFile) === "msg" ? "msg" : "eml"}
+                    format={
+                      attachmentPreviewKind(activePreviewFile) === "msg"
+                        ? "msg"
+                        : "eml"
+                    }
                   />
-              : <div className="project-files-office-status">
+                )
+              ) : (
+                <div className="project-files-office-status">
                   <MyCallout color="amber" icon={Icons.Info}>
-                    {uiText("Für diese Datei ist kein Download-Link verfügbar.", "No download link is available for this file.")}
+                    {uiText(
+                      "Für diese Datei ist kein Download-Link verfügbar.",
+                      "No download link is available for this file.",
+                    )}
                   </MyCallout>
-                </div>}
-          </Suspense>
-        </ScopedErrorBoundary>
-      </Modal>
-    )}
+                </div>
+              )}
+            </Suspense>
+          </ScopedErrorBoundary>
+        </Modal>
+      )}
 
-    {!!activeOfficeFile && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={officeSession?.canEdit
-          ? uiText("Dokument bearbeiten", "Edit document")
-          : uiText("Dokument ansehen", "View document")}
-        modalLabel={activeOfficeFile.fileName}
-        closeButtonLabel={uiText("Schließen", "Close")}
-        onRequestClose={closeOfficeEditor}
-        data-fullheight="true"
-        data-fullwidth="true"
-        className="project-files-office-modal"
-      >
-        {officeLoading && (
-          <div className="project-files-office-status">
-            {uiText("Dokument wird geöffnet …", "Opening document …")}
-          </div>
-        )}
+      {!!activeOfficeFile && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={
+            officeSession?.canEdit
+              ? uiText("Dokument bearbeiten", "Edit document")
+              : uiText("Dokument ansehen", "View document")
+          }
+          modalLabel={activeOfficeFile.fileName}
+          closeButtonLabel={uiText("Schließen", "Close")}
+          onRequestClose={closeOfficeEditor}
+          edgeToEdge
+          data-fullheight="true"
+          data-fullwidth="true"
+          className="project-files-office-modal"
+        >
+          {officeLoading && (
+            <div className="project-files-office-status">
+              {uiText("Dokument wird geöffnet …", "Opening document …")}
+            </div>
+          )}
 
-        {!!officeError && (
-          <div className="project-files-office-status">
-            <MyCallout icon={Icons.Deny} color="red">{officeError}</MyCallout>
-          </div>
-        )}
+          {!!officeError && (
+            <div className="project-files-office-status">
+              <MyCallout icon={Icons.Deny} color="red">
+                {officeError}
+              </MyCallout>
+            </div>
+          )}
 
-        {!!officeSession && (
-          <OnlyOfficeEditor
-            apiUrl={officeSession.apiUrl}
-            config={officeSession.config}
-            onError={setOfficeError}
-            onRequestClose={closeOfficeEditor}
-          />
-        )}
-      </Modal>
-    )}
+          {!!officeSession && (
+            <OnlyOfficeEditor
+              apiUrl={officeSession.apiUrl}
+              config={officeSession.config}
+              onError={setOfficeError}
+              onRequestClose={closeOfficeEditor}
+            />
+          )}
+        </Modal>
+      )}
 
-
-    {!!activeDwgFile && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={uiText("DWG Viewer")}
-        modalLabel={project.title}
-        closeButtonLabel={uiText("Schließen")}
-        onRequestClose={closeDwgViewer}
-        data-fullheight="true"
-        data-fullwidth="true"
-        className="project-files-dwg-modal"
-      >
-        <div className="project-files-dwg-viewer">
-          <div className="project-files-dwg-header">
-            <div>
-              <div style={{ fontWeight: 600 }}>{activeDwgFile.fileName}</div>
-              <div className="light" style={{ fontSize: ".9rem" }}>
-                {formatBytes(activeDwgFile.sizeBytes)} · {formatDate(activeDwgFile.createdAt)}
+      {!!activeDwgFile && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={uiText("DWG Viewer")}
+          modalLabel={project.title}
+          closeButtonLabel={uiText("Schließen")}
+          onRequestClose={closeDwgViewer}
+          data-fullheight="true"
+          data-fullwidth="true"
+          className="project-files-dwg-modal"
+        >
+          <div className="project-files-dwg-viewer">
+            <div className="project-files-dwg-header">
+              <div>
+                <div style={{ fontWeight: 600 }}>{activeDwgFile.fileName}</div>
+                <div className="light" style={{ fontSize: ".9rem" }}>
+                  {formatBytes(activeDwgFile.sizeBytes)} ·{" "}
+                  {formatDate(activeDwgFile.createdAt)}
+                </div>
               </div>
-            </div>
 
-            <MyDropdown
-              items={[
-                {
-                  label: uiText("Original öffnen"),
-                  renderIcon: Icons.Search,
-                  hideIf: !activeDwgFile.downloadUrl,
-                  onClick: () => {
-                    if (!activeDwgFile.downloadUrl) return;
-                    window.open(activeDwgFile.downloadUrl, "_blank", "noopener,noreferrer");
+              <MyDropdown
+                items={[
+                  {
+                    label: uiText("Original öffnen"),
+                    renderIcon: Icons.Search,
+                    hideIf: !activeDwgFile.downloadUrl,
+                    onClick: () => {
+                      if (!activeDwgFile.downloadUrl) return;
+                      window.open(
+                        activeDwgFile.downloadUrl,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    },
                   },
-                },
-                {
-                  label: uiText("Herunterladen"),
-                  renderIcon: Icons.Download,
-                  hideIf: !activeDwgFile.downloadAttachmentUrl && !activeDwgFile.downloadUrl,
-                  onClick: () => {
-                    const attachmentUrl = activeDwgFile.downloadAttachmentUrl || activeDwgFile.downloadUrl;
-                    if (!attachmentUrl) return;
-                    window.open(attachmentUrl, "_blank", "noopener,noreferrer");
+                  {
+                    label: uiText("Herunterladen"),
+                    renderIcon: Icons.Download,
+                    hideIf:
+                      !activeDwgFile.downloadAttachmentUrl &&
+                      !activeDwgFile.downloadUrl,
+                    onClick: () => {
+                      const attachmentUrl =
+                        activeDwgFile.downloadAttachmentUrl ||
+                        activeDwgFile.downloadUrl;
+                      if (!attachmentUrl) return;
+                      window.open(
+                        attachmentUrl,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    },
                   },
-                },
-              ]}
-            />
-          </div>
-
-          <div className="project-files-dwg-canvas">
-            {activeDwgDocument
-              ? <PlanViewer
-                document={activeDwgDocument}
-                defaultUnit="m"
+                ]}
               />
-              : <MyCallout icon={Icons.Info} color="amber">{uiText("Für diese DWG-Datei ist aktuell kein Download-Link verfügbar.")}</MyCallout>
-            }
-          </div>
-        </div>
-      </Modal>
-    )}
-
-    {!!activeVideo && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={uiText("Video", "Video")}
-        modalLabel={activeVideo.fileName}
-        closeButtonLabel={uiText("Schließen", "Close")}
-        onRequestClose={closeVideoViewer}
-        data-fullheight="true"
-        data-fullwidth="true"
-        className="project-files-video-modal"
-      >
-        <div className="project-files-media-viewer">
-          <div className="project-files-media-header">
-            <div className="project-files-media-details">
-              <strong>{activeVideo.fileName}</strong>
-              <span>{formatBytes(activeVideo.sizeBytes)} · {formatDate(activeVideo.createdAt)}</span>
             </div>
 
-            <MyDropdown
-              items={[
-                {
-                  label: uiText("Original öffnen", "Open original"),
-                  renderIcon: Icons.Search,
-                  hideIf: !activeVideo.downloadUrl,
-                  onClick: () => {
-                    if (!activeVideo.downloadUrl) return;
-                    window.open(activeVideo.downloadUrl, "_blank", "noopener,noreferrer");
-                  },
-                },
-                {
-                  label: uiText("Herunterladen", "Download"),
-                  renderIcon: Icons.Download,
-                  hideIf: !activeVideo.downloadAttachmentUrl && !activeVideo.downloadUrl,
-                  onClick: () => {
-                    const url = activeVideo.downloadAttachmentUrl || activeVideo.downloadUrl;
-                    if (url) window.open(url, "_blank", "noopener,noreferrer");
-                  },
-                },
-              ]}
-            />
+            <div className="project-files-dwg-canvas">
+              {activeDwgDocument ? (
+                <PlanViewer document={activeDwgDocument} defaultUnit="m" />
+              ) : (
+                <MyCallout icon={Icons.Info} color="amber">
+                  {uiText(
+                    "Für diese DWG-Datei ist aktuell kein Download-Link verfügbar.",
+                  )}
+                </MyCallout>
+              )}
+            </div>
           </div>
+        </Modal>
+      )}
 
-          <div className="project-files-video-stage">
-            {videoError
-              ? <MyCallout icon={Icons.Deny} color="red">{videoError}</MyCallout>
-              : <video
-                key={activeVideo.id}
-                controls
-                playsInline
-                preload="metadata"
-                aria-label={activeVideo.fileName}
-                onError={() => setVideoError(uiText(
-                  "Das Video kann in diesem Browser nicht wiedergegeben werden.",
-                  "This video cannot be played in this browser.",
-                ))}
-              >
-                <source
-                  src={activeVideo.downloadUrl || activeVideo.downloadAttachmentUrl || undefined}
-                  type={activeVideo.mimeType.toLocaleLowerCase().startsWith("video/") ? activeVideo.mimeType : undefined}
-                />
-              </video>}
-          </div>
-        </div>
-      </Modal>
-    )}
+      {!!activeVideo && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={uiText("Video", "Video")}
+          modalLabel={activeVideo.fileName}
+          closeButtonLabel={uiText("Schließen", "Close")}
+          onRequestClose={closeVideoViewer}
+          data-fullheight="true"
+          data-fullwidth="true"
+          className="project-files-video-modal"
+        >
+          <div className="project-files-media-viewer">
+            <div className="project-files-media-header">
+              <div className="project-files-media-details">
+                <strong>{activeVideo.fileName}</strong>
+                <span>
+                  {formatBytes(activeVideo.sizeBytes)} ·{" "}
+                  {formatDate(activeVideo.createdAt)}
+                </span>
+              </div>
 
-    {!!activeImage && (
-      <Modal
-        open
-        passiveModal
-        modalHeading={uiText("Bilder")}
-        modalLabel={project.title}
-        closeButtonLabel={uiText("Schließen")}
-        onRequestClose={closeImageViewer}
-        data-fullheight="true"
-        data-fullwidth="true"
-        className="project-files-image-modal"
-      >
-        <div className="project-files-media-viewer">
-          <div className="project-files-media-header">
-            <div className="project-files-media-details">
-              <strong>{activeImage.fileName}</strong>
-              <span>{uiText("Bild", "Image")} {(activeImageIndex ?? 0) + 1} {uiText("von", "of")} {imageFiles.length} · {formatBytes(activeImage.sizeBytes)} · {formatDate(activeImage.createdAt)}</span>
+              <MyDropdown
+                items={[
+                  {
+                    label: uiText("Original öffnen", "Open original"),
+                    renderIcon: Icons.Search,
+                    hideIf: !activeVideo.downloadUrl,
+                    onClick: () => {
+                      if (!activeVideo.downloadUrl) return;
+                      window.open(
+                        activeVideo.downloadUrl,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    },
+                  },
+                  {
+                    label: uiText("Herunterladen", "Download"),
+                    renderIcon: Icons.Download,
+                    hideIf:
+                      !activeVideo.downloadAttachmentUrl &&
+                      !activeVideo.downloadUrl,
+                    onClick: () => {
+                      const url =
+                        activeVideo.downloadAttachmentUrl ||
+                        activeVideo.downloadUrl;
+                      if (url)
+                        window.open(url, "_blank", "noopener,noreferrer");
+                    },
+                  },
+                ]}
+              />
             </div>
 
-            <MyDropdown
-              items={[
-                {
-                  label: uiText("Original öffnen", "Open original"),
-                  renderIcon: Icons.Search,
-                  hideIf: !activeImage.downloadUrl,
-                  onClick: () => {
-                    if (!activeImage.downloadUrl) return;
-                    window.open(activeImage.downloadUrl, "_blank", "noopener,noreferrer");
-                  },
-                },
-                {
-                  label: uiText("Herunterladen", "Download"),
-                  renderIcon: Icons.Download,
-                  hideIf: !activeImage.downloadAttachmentUrl && !activeImage.downloadUrl,
-                  onClick: () => {
-                    const url = activeImage.downloadAttachmentUrl || activeImage.downloadUrl;
-                    if (url) window.open(url, "_blank", "noopener,noreferrer");
-                  },
-                },
-              ]}
-            />
+            <div className="project-files-video-stage">
+              {videoError ? (
+                <MyCallout icon={Icons.Deny} color="red">
+                  {videoError}
+                </MyCallout>
+              ) : (
+                <video
+                  key={activeVideo.id}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  aria-label={activeVideo.fileName}
+                  onError={() =>
+                    setVideoError(
+                      uiText(
+                        "Das Video kann in diesem Browser nicht wiedergegeben werden.",
+                        "This video cannot be played in this browser.",
+                      ),
+                    )
+                  }
+                >
+                  <source
+                    src={
+                      activeVideo.downloadUrl ||
+                      activeVideo.downloadAttachmentUrl ||
+                      undefined
+                    }
+                    type={
+                      activeVideo.mimeType
+                        .toLocaleLowerCase()
+                        .startsWith("video/")
+                        ? activeVideo.mimeType
+                        : undefined
+                    }
+                  />
+                </video>
+              )}
+            </div>
           </div>
+        </Modal>
+      )}
 
-          {activeImage.downloadUrl
-            ? <ZoomableImage
+      {!!activeImage && (
+        <Modal
+          open
+          passiveModal
+          modalHeading={uiText("Bilder")}
+          modalLabel={project.title}
+          closeButtonLabel={uiText("Schließen")}
+          onRequestClose={closeImageViewer}
+          data-fullheight="true"
+          data-fullwidth="true"
+          className="project-files-image-modal"
+        >
+          <div className="project-files-media-viewer">
+            <div className="project-files-media-header">
+              <div className="project-files-media-details">
+                <strong>{activeImage.fileName}</strong>
+                <span>
+                  {uiText("Bild", "Image")} {(activeImageIndex ?? 0) + 1}{" "}
+                  {uiText("von", "of")} {imageFiles.length} ·{" "}
+                  {formatBytes(activeImage.sizeBytes)} ·{" "}
+                  {formatDate(activeImage.createdAt)}
+                </span>
+              </div>
+
+              <MyDropdown
+                items={[
+                  {
+                    label: uiText("Original öffnen", "Open original"),
+                    renderIcon: Icons.Search,
+                    hideIf: !activeImage.downloadUrl,
+                    onClick: () => {
+                      if (!activeImage.downloadUrl) return;
+                      window.open(
+                        activeImage.downloadUrl,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    },
+                  },
+                  {
+                    label: uiText("Herunterladen", "Download"),
+                    renderIcon: Icons.Download,
+                    hideIf:
+                      !activeImage.downloadAttachmentUrl &&
+                      !activeImage.downloadUrl,
+                    onClick: () => {
+                      const url =
+                        activeImage.downloadAttachmentUrl ||
+                        activeImage.downloadUrl;
+                      if (url)
+                        window.open(url, "_blank", "noopener,noreferrer");
+                    },
+                  },
+                ]}
+              />
+            </div>
+
+            {activeImage.downloadUrl ? (
+              <ZoomableImage
                 src={activeImage.downloadUrl}
                 alt={activeImage.fileName}
                 hasMultipleImages={imageFiles.length > 1}
                 onPrevious={showPreviousImage}
                 onNext={showNextImage}
               />
-            : <div className="project-files-media-unavailable">
-              <MyCallout icon={Icons.Info} color="amber">{uiText("Für dieses Bild konnte keine Vorschau geladen werden.")}</MyCallout>
-            </div>}
-        </div>
-      </Modal>
-    )}
-  </>;
+            ) : (
+              <div className="project-files-media-unavailable">
+                <MyCallout icon={Icons.Info} color="amber">
+                  {uiText(
+                    "Für dieses Bild konnte keine Vorschau geladen werden.",
+                  )}
+                </MyCallout>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }

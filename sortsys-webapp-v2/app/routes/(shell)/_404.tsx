@@ -9,12 +9,16 @@ export function NotFound(props: {
         'resourceNotFound': uiText('Die angeforderte Ressource konnte nicht aufgelöst werden.', 'The requested resource could not be resolved.'),
     }[props.reason];
 
-    return <div style={{ padding: '2rem' }}>
-        <h1><b>404</b></h1>
-        <p>{text}</p>
+    return (
+    <div style={{ padding: "2rem" }}>
+      <h1 className="text-3xl leading-snug font-semibold">
+        <b>404</b>
+      </h1>
+      <p>{text}</p>
     </div>
+  );
 }
 
 export default function () {
-    return <NotFound reason="pageNotFound" />
+    return <NotFound reason="pageNotFound" />;
 }

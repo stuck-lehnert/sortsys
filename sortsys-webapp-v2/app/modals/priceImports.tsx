@@ -1,7 +1,21 @@
+import { Button as UIAction } from "@sortsys/react-components";
 import type { MutateResult, QueryResult } from "@sortsys/v2-client";
-import { Checkbox, ComboBox, TextArea, TextInput } from "@sortsys/react-components";
+import {
+  Checkbox,
+  ComboBox,
+  LoadMore,
+  TextArea,
+  TextInput,
+} from "@sortsys/react-components";
 import { Icons } from "~/lib/icons";
-import { type ChangeEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { MyButton } from "~/components/MyButton";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
@@ -162,33 +176,37 @@ function AutocompleteSelect<T>({
     };
   }, [autoSelectExact, query, selectedId, selectedLabel]);
 
-  return <ComboBox
-    id={inputId}
-    className={className}
-    titleText={label}
-    helperText={helperText}
-    placeholder={placeholder}
-    value={query}
-    items={options}
-    disabled={disabled}
-    invalid={!!error}
-    invalidText={error}
-    itemToString={(option: AutocompleteOption<T>) => option.label}
-    itemToElement={(option: AutocompleteOption<T>) => <>
-      <span>{option.label}</span>
-      {!!option.detail && <small>{option.detail}</small>}
-    </>}
-    onInputChange={(next: string) => {
-      setQuery(next);
+  return (
+    <ComboBox
+      id={inputId}
+      className={className}
+      titleText={label}
+      helperText={helperText}
+      placeholder={placeholder}
+      value={query}
+      items={options}
+      disabled={disabled}
+      invalid={!!error}
+      invalidText={error}
+      itemToString={(option: AutocompleteOption<T>) => option.label}
+      itemToElement={(option: AutocompleteOption<T>) => (
+        <>
+          <span>{option.label}</span>
+          {!!option.detail && <small>{option.detail}</small>}
+        </>
+      )}
+      onInputChange={(next: string) => {
+        setQuery(next);
 
-      const exact = options.find(option => option.label === next);
-      if (exact) {
-        onSelectRef.current(exact.value);
-      } else if (selectedId && next !== selectedLabel) {
-        onSelectRef.current(null);
-      }
-    }}
-  />;
+        const exact = options.find((option) => option.label === next);
+        if (exact) {
+          onSelectRef.current(exact.value);
+        } else if (selectedId && next !== selectedLabel) {
+          onSelectRef.current(null);
+        }
+      }}
+    />
+  );
 }
 
 function defaultEffectiveDate(value: string | null) {
@@ -246,10 +264,9 @@ function PriceImportEditor({
   controller: PriceImportController;
 }) {
   const formId = useId();
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(10);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const expandedRowTrigger = useRef<HTMLButtonElement | null>(null);
   const [warningsOpen, setWarningsOpen] = useState(false);
   const [state, setState] = useState<PriceImportState>(() => ({
     vendorId: "",
@@ -267,42 +284,14 @@ function PriceImportEditor({
 
   controller.current = state;
 
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-
-    // A collapsed row has a stable height; show only the rows that fit.
-    const measure = () => {
-      const heading = list.querySelector<HTMLElement>(".price-import-row-head");
-      if (!heading || list.clientHeight <= 0) return;
-
-      const gap = parseFloat(window.getComputedStyle(list).rowGap) || 0;
-      const rowHeight = heading.getBoundingClientRect().height + 2;
-      const capacity = Math.max(1, Math.floor((list.clientHeight + gap) / (rowHeight + gap)));
-
-      setPageSize(current => current === capacity ? current : capacity);
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, []);
-
   const selectedCount = state.rows.filter(row => row.included).length;
   const newProductCount = state.rows.filter(row => row.included && !row.productId).length;
-  const pageCount = Math.max(1, Math.ceil(state.rows.length / pageSize));
   const visibleRows = useMemo(() => state.rows
-    .slice(page * pageSize, (page + 1) * pageSize)
-    .map((row, index) => ({ row, index, absoluteIndex: page * pageSize + index }))
+    .slice(0, visibleCount)
+    .map((row, index) => ({ row, index, absoluteIndex: index }))
     .filter(item => expandedRow === null || item.absoluteIndex === expandedRow),
-  [expandedRow, page, pageSize, state.rows]);
+  [expandedRow, visibleCount, state.rows]);
 
-  useEffect(() => {
-    setPage(current => expandedRow === null
-      ? Math.min(current, pageCount - 1)
-      : Math.floor(expandedRow / pageSize));
-  }, [expandedRow, pageCount, pageSize]);
   const warningsByRow = useMemo(
     () => result.rows.map(row => row.sourceText
       ? result.warnings.filter(warning => warning.includes(row.sourceText))
@@ -314,8 +303,7 @@ function PriceImportEditor({
     return result.warnings.filter(warning => !assigned.has(warning));
   }, [result.warnings, warningsByRow]);
 
-  function updateRow(indexOnPage: number, changes: Partial<EditablePriceRow>) {
-    const index = page * pageSize + indexOnPage;
+  function updateRow(index: number, changes: Partial<EditablePriceRow>) {
     setState(current => ({
       ...current,
       rows: current.rows.map((row, rowIndex) => rowIndex === index
@@ -324,15 +312,14 @@ function PriceImportEditor({
     }));
   }
 
-  function selectProduct(indexOnPage: number, product: Product | null) {
-    const index = page * pageSize + indexOnPage;
+  function selectProduct(index: number, product: Product | null) {
     const row = state.rows[index];
     if (!row) return;
 
     if (!product) {
       const original = result.rows[index];
       if (original) {
-        updateRow(indexOnPage, {
+        updateRow(index, {
           ...original,
           conversionsText: formatConversions(original.otherUnits),
           conversionWarning: null,
@@ -347,7 +334,7 @@ function PriceImportEditor({
       ? row.pricePerBaseUnit * oldFactor / newFactor
       : row.pricePerBaseUnit;
 
-    updateRow(indexOnPage, {
+    updateRow(index, {
       productId: product.id,
       customId: product.customId,
       productName: product.name,
@@ -364,280 +351,370 @@ function PriceImportEditor({
     });
   }
 
-  return <div className="price-import-editor" data-detail={expandedRow !== null}>
-    <div className="price-import-fields">
-      <AutocompleteSelect
-        label={uiText("Händler", "Vendor")}
-        helperText={!state.vendorId ? uiText(
-          "Händler aus der Trefferliste auswählen.",
-          "Select a vendor from the results.",
-        ) : undefined}
-        placeholder={uiText("Händler suchen", "Search vendors")}
-        selectedId={state.vendorId || null}
-        selectedLabel={state.vendorName}
-        initialQuery={result.supplier ?? ""}
-        autoSelectExact
-        loadOptions={loadVendorOptions}
-        onSelect={vendor => setState(current => ({
-          ...current,
-          vendorId: vendor?.id ?? "",
-          vendorName: vendor?.name ?? "",
-        }))}
-      />
+  return (
+    <div className="price-import-editor" data-detail={expandedRow !== null}>
+      <div className="price-import-fields">
+        <AutocompleteSelect
+          label={uiText("Händler", "Vendor")}
+          helperText={
+            !state.vendorId
+              ? uiText(
+                  "Händler aus der Trefferliste auswählen.",
+                  "Select a vendor from the results.",
+                )
+              : undefined
+          }
+          placeholder={uiText("Händler suchen", "Search vendors")}
+          selectedId={state.vendorId || null}
+          selectedLabel={state.vendorName}
+          initialQuery={result.supplier ?? ""}
+          autoSelectExact
+          loadOptions={loadVendorOptions}
+          onSelect={(vendor) =>
+            setState((current) => ({
+              ...current,
+              vendorId: vendor?.id ?? "",
+              vendorName: vendor?.name ?? "",
+            }))
+          }
+        />
 
-      <TextInput
-        id={`${formId}-effective-date`}
-        labelText={uiText("Preisstand", "Effective date")}
-        required
-        type="date"
-        value={state.effectiveDate}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          const effectiveDate = event.currentTarget.value;
-          setState(current => ({ ...current, effectiveDate }));
-        }}
-      />
-    </div>
-
-    <Checkbox
-      id={`${formId}-real-purchase`}
-      className="price-import-checkbox"
-      labelText={uiText("Tatsächlicher Einkauf", "Actual purchase")}
-      checked={state.isRealPurchase}
-      onChange={(event: ChangeEvent<HTMLInputElement>) => {
-        const checked = event.currentTarget.checked;
-        setState(current => ({ ...current, isRealPurchase: checked }));
-      }}
-    />
-
-    <div className="price-import-summary">
-      <div>
-        <strong>{uiText(
-          `${selectedCount} von ${state.rows.length} Preisen ausgewählt`,
-          `${selectedCount} of ${state.rows.length} prices selected`,
-        )}</strong>
-        <span>{uiText(
-          `${newProductCount} neue Produkte`,
-          `${newProductCount} new products`,
-        )}</span>
+        <TextInput
+          id={`${formId}-effective-date`}
+          labelText={uiText("Preisstand", "Effective date")}
+          required
+          type="date"
+          value={state.effectiveDate}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const effectiveDate = event.currentTarget.value;
+            setState((current) => ({ ...current, effectiveDate }));
+          }}
+        />
       </div>
-      {expandedRow === null && <Checkbox
-        id={`${formId}-select-page`}
-        className="price-import-select-page"
-        labelText={uiText("Alle auf dieser Seite", "All on this page")}
-        checked={visibleRows.every(({ row }) => row.included)}
+
+      <Checkbox
+        id={`${formId}-real-purchase`}
+        className="price-import-checkbox"
+        labelText={uiText("Tatsächlicher Einkauf", "Actual purchase")}
+        checked={state.isRealPurchase}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          const included = event.currentTarget.checked;
-          setState(current => ({
-            ...current,
-            rows: current.rows.map((row, index) =>
-              index >= page * pageSize && index < (page + 1) * pageSize
-                ? { ...row, included }
-                : row),
-          }));
+          const checked = event.currentTarget.checked;
+          setState((current) => ({ ...current, isRealPurchase: checked }));
         }}
-      />}
-    </div>
+      />
 
-    {!!generalWarnings.length && <details
-      className="price-import-notices"
-      onToggle={event => setWarningsOpen(event.currentTarget.open)}
-    >
-      <summary>{uiText(
-        `${generalWarnings.length} Hinweise zum Scan`,
-        `${generalWarnings.length} scan notes`,
-      )}</summary>
-      {warningsOpen && <ul>{generalWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
-    </details>}
+      <div className="price-import-summary">
+        <div>
+          <strong>
+            {uiText(
+              `${selectedCount} von ${state.rows.length} Preisen ausgewählt`,
+              `${selectedCount} of ${state.rows.length} prices selected`,
+            )}
+          </strong>
+          <span>
+            {uiText(
+              `${newProductCount} neue Produkte`,
+              `${newProductCount} new products`,
+            )}
+          </span>
+        </div>
+        {expandedRow === null && (
+          <Checkbox
+            id={`${formId}-select-visible`}
+            className="price-import-select-page"
+            labelText={uiText("Alle angezeigten Zeilen", "All shown rows")}
+            checked={visibleRows.every(({ row }) => row.included)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              const included = event.currentTarget.checked;
+              setState((current) => ({
+                ...current,
+                rows: current.rows.map((row, index) =>
+                  index < visibleCount ? { ...row, included } : row,
+                ),
+              }));
+            }}
+          />
+        )}
+      </div>
 
-    <div className="price-import-list" data-detail={expandedRow !== null} ref={listRef}>
-      {visibleRows.map(({ row, index, absoluteIndex }) => {
-        const expanded = expandedRow === absoluteIndex;
-        const rowWarnings = warningsByRow[absoluteIndex] ?? [];
-
-        return <article
-          className="price-import-row"
-          data-included={row.included}
-          data-needs-review={rowWarnings.length > 0}
-          data-existing-product={!!row.productId}
-          data-expanded={expanded}
-          key={absoluteIndex}
+      {!!generalWarnings.length && (
+        <details
+          className="price-import-notices"
+          onToggle={(event) => setWarningsOpen(event.currentTarget.open)}
         >
-          <div className="price-import-row-head">
-            <Checkbox
-              id={`${formId}-row-${absoluteIndex}-included`}
-              className="price-import-row-checkbox"
-              checked={row.included}
-              aria-label={uiText(
-                `Preis ${absoluteIndex + 1} übernehmen`,
-                `Include price ${absoluteIndex + 1}`,
-              )}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                updateRow(index, { included: event.currentTarget.checked })}
-            />
-            <button
-              type="button"
-              className="price-import-row-toggle"
-              aria-expanded={expanded}
-              aria-label={uiText(
-                `Details für ${row.productName} ${expanded ? "schließen" : "öffnen"}`,
-                `${expanded ? "Close" : "Open"} details for ${row.productName}`,
-              )}
-              onClick={() => setExpandedRow(current => current === absoluteIndex ? null : absoluteIndex)}
+          <summary>
+            {uiText(
+              `${generalWarnings.length} Hinweise zum Scan`,
+              `${generalWarnings.length} scan notes`,
+            )}
+          </summary>
+          {warningsOpen && (
+            <ul>
+              {generalWarnings.map((warning, index) => (
+                <li key={index}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </details>
+      )}
+
+      <div
+        className="price-import-list"
+        data-detail={expandedRow !== null}
+        id={`${formId}-rows`}
+      >
+        {visibleRows.map(({ row, index, absoluteIndex }) => {
+          const expanded = expandedRow === absoluteIndex;
+          const rowWarnings = warningsByRow[absoluteIndex] ?? [];
+
+          return (
+            <article
+              className="price-import-row"
+              data-included={row.included}
+              data-needs-review={rowWarnings.length > 0}
+              data-existing-product={!!row.productId}
+              data-expanded={expanded}
+              key={absoluteIndex}
             >
-              <span className="price-import-row-identification">
-                <strong>{row.productName || row.sourceText}</strong>
-                <small>
-                  {row.productId
-                    ? uiText("Vorhandenes Produkt", "Existing product")
-                    : uiText("Neues Produkt", "New product")}
-                  {row.brand ? ` · ${row.brand}` : ""}
-                  {rowWarnings.length > 0 ? ` · ${uiText("Prüfen", "Review")}` : ""}
-                </small>
-              </span>
-              <span className="price-import-row-price">
-                <strong>{formatPrice(row.pricePerBaseUnit)}</strong>
-                <small>/ {row.baseUnit}</small>
-              </span>
-              {expanded ? <Icons.AccordionExpanded /> : <Icons.AccordionClosed />}
-            </button>
-          </div>
-
-          {expanded && <div className="price-import-row-body">
-            <div className="price-import-source">
-              <span>{uiText("Originalzeile", "Source line")}</span>
-              <p>{row.sourceText}</p>
-            </div>
-
-            {rowWarnings.length > 0 && <ul className="price-import-row-notices">
-              {rowWarnings.map((warning, warningIndex) =>
-                <li key={warningIndex}>{warningWithoutSource(warning, row.sourceText)}</li>)}
-            </ul>}
-
-            <div className="price-import-row-fields">
-              <AutocompleteSelect
-                className="price-import-field--wide"
-                label={uiText("Produktzuordnung", "Product match")}
-                helperText={!row.productId ? uiText(
-                  "Ohne Zuordnung wird ein neues Produkt angelegt.",
-                  "Without a match, a new product will be created.",
-                ) : undefined}
-                placeholder={uiText("Vorhandenes Produkt suchen", "Search existing products")}
-                selectedId={row.productId}
-                selectedLabel={row.productId
-                  ? `${row.customId} · ${row.productName}`
-                  : ""}
-                initialQuery={row.productId ? "" : row.productName}
-                disabled={!row.included}
-                loadOptions={loadProductOptions}
-                onSelect={product => selectProduct(index, product)}
-              />
-
-              {!row.productId && <>
-                <TextInput
-                  id={`${formId}-row-${absoluteIndex}-name`}
-                  labelText={uiText("Bezeichnung", "Name")}
-                  value={row.productName}
-                  disabled={!row.included}
+              <div className="price-import-row-head">
+                <Checkbox
+                  id={`${formId}-row-${absoluteIndex}-included`}
+                  className="price-import-row-checkbox"
+                  checked={row.included}
+                  aria-label={uiText(
+                    `Preis ${absoluteIndex + 1} übernehmen`,
+                    `Include price ${absoluteIndex + 1}`,
+                  )}
                   onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    updateRow(index, { productName: event.currentTarget.value })}
+                    updateRow(index, { included: event.currentTarget.checked })
+                  }
                 />
-                <TextInput
-                  id={`${formId}-row-${absoluteIndex}-brand`}
-                  labelText={uiText("Hersteller", "Manufacturer")}
-                  value={row.brand ?? ""}
-                  disabled={!row.included}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    updateRow(index, { brand: event.currentTarget.value || null })}
-                />
-                <TextInput
-                  id={`${formId}-row-${absoluteIndex}-description`}
-                  className="price-import-field--wide"
-                  labelText={uiText("Beschreibung", "Description")}
-                  value={row.description ?? ""}
-                  disabled={!row.included}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    updateRow(index, { description: event.currentTarget.value || null })}
-                />
-                <TextInput
-                  id={`${formId}-row-${absoluteIndex}-base-unit`}
-                  labelText={uiText("Basiseinheit", "Base unit")}
-                  value={row.baseUnit}
-                  disabled={!row.included}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    updateRow(index, { baseUnit: event.currentTarget.value })}
-                />
-                <TextArea
-                  id={`${formId}-row-${absoluteIndex}-other-units`}
-                  labelText={uiText(`Weitere Einheiten in ${row.baseUnit}`, `Other units in ${row.baseUnit}`)}
-                  rows={2}
-                  value={row.conversionsText}
-                  placeholder={uiText("Sack = 30", "Bag = 30")}
-                  disabled={!row.included}
-                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                    updateRow(index, { conversionsText: event.currentTarget.value })}
-                />
-              </>}
+                <UIAction
+                  ref={expanded ? expandedRowTrigger : undefined}
+                  kind="ghost"
+                  type="button"
+                  className="price-import-row-toggle"
+                  aria-expanded={expanded}
+                  aria-label={uiText(
+                    `Details für ${row.productName} ${expanded ? "schließen" : "öffnen"}`,
+                    `${expanded ? "Close" : "Open"} details for ${row.productName}`,
+                  )}
+                  onClick={() =>
+                    setExpandedRow((current) =>
+                      current === absoluteIndex ? null : absoluteIndex,
+                    )
+                  }
+                >
+                  <span className="price-import-row-identification">
+                    <strong>{row.productName || row.sourceText}</strong>
+                    <small>
+                      {row.productId
+                        ? uiText("Vorhandenes Produkt", "Existing product")
+                        : uiText("Neues Produkt", "New product")}
+                      {row.brand ? ` · ${row.brand}` : ""}
+                      {rowWarnings.length > 0
+                        ? ` · ${uiText("Prüfen", "Review")}`
+                        : ""}
+                    </small>
+                  </span>
+                  <span className="price-import-row-price">
+                    <strong>{formatPrice(row.pricePerBaseUnit)}</strong>
+                    <small>/ {row.baseUnit}</small>
+                  </span>
+                  {expanded ? (
+                    <Icons.AccordionExpanded />
+                  ) : (
+                    <Icons.AccordionClosed />
+                  )}
+                </UIAction>
+              </div>
 
-              <TextInput
-                id={`${formId}-row-${absoluteIndex}-net-price`}
-                labelText={uiText(`Nettopreis je ${row.baseUnit}`, `Net price per ${row.baseUnit}`)}
-                type="number"
-                min="0"
-                step="any"
-                value={row.pricePerBaseUnit}
-                disabled={!row.included}
-                invalid={!!row.conversionWarning}
-                invalidText={row.conversionWarning}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => updateRow(index, {
-                  pricePerBaseUnit: event.currentTarget.valueAsNumber,
-                  conversionWarning: null,
-                })}
-              />
-              <TextInput
-                id={`${formId}-row-${absoluteIndex}-comment`}
-                labelText={uiText("Kommentar", "Comment")}
-                value={row.comment ?? ""}
-                disabled={!row.included}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  updateRow(index, { comment: event.currentTarget.value || null })}
-              />
-            </div>
-          </div>}
-        </article>;
-      })}
+              {expanded && (
+                <div className="price-import-row-body">
+                  <div className="price-import-source">
+                    <span>{uiText("Originalzeile", "Source line")}</span>
+                    <p>{row.sourceText}</p>
+                  </div>
+
+                  {rowWarnings.length > 0 && (
+                    <ul className="price-import-row-notices">
+                      {rowWarnings.map((warning, warningIndex) => (
+                        <li key={warningIndex}>
+                          {warningWithoutSource(warning, row.sourceText)}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="price-import-row-fields">
+                    <AutocompleteSelect
+                      className="price-import-field--wide"
+                      label={uiText("Produktzuordnung", "Product match")}
+                      helperText={
+                        !row.productId
+                          ? uiText(
+                              "Ohne Zuordnung wird ein neues Produkt angelegt.",
+                              "Without a match, a new product will be created.",
+                            )
+                          : undefined
+                      }
+                      placeholder={uiText(
+                        "Vorhandenes Produkt suchen",
+                        "Search existing products",
+                      )}
+                      selectedId={row.productId}
+                      selectedLabel={
+                        row.productId
+                          ? `${row.customId} · ${row.productName}`
+                          : ""
+                      }
+                      initialQuery={row.productId ? "" : row.productName}
+                      disabled={!row.included}
+                      loadOptions={loadProductOptions}
+                      onSelect={(product) => selectProduct(index, product)}
+                    />
+
+                    {!row.productId && (
+                      <>
+                        <TextInput
+                          id={`${formId}-row-${absoluteIndex}-name`}
+                          labelText={uiText("Bezeichnung", "Name")}
+                          value={row.productName}
+                          disabled={!row.included}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            updateRow(index, {
+                              productName: event.currentTarget.value,
+                            })
+                          }
+                        />
+                        <TextInput
+                          id={`${formId}-row-${absoluteIndex}-brand`}
+                          labelText={uiText("Hersteller", "Manufacturer")}
+                          value={row.brand ?? ""}
+                          disabled={!row.included}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            updateRow(index, {
+                              brand: event.currentTarget.value || null,
+                            })
+                          }
+                        />
+                        <TextInput
+                          id={`${formId}-row-${absoluteIndex}-description`}
+                          className="price-import-field--wide"
+                          labelText={uiText("Beschreibung", "Description")}
+                          value={row.description ?? ""}
+                          disabled={!row.included}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            updateRow(index, {
+                              description: event.currentTarget.value || null,
+                            })
+                          }
+                        />
+                        <TextInput
+                          id={`${formId}-row-${absoluteIndex}-base-unit`}
+                          labelText={uiText("Basiseinheit", "Base unit")}
+                          value={row.baseUnit}
+                          disabled={!row.included}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            updateRow(index, {
+                              baseUnit: event.currentTarget.value,
+                            })
+                          }
+                        />
+                        <TextArea
+                          id={`${formId}-row-${absoluteIndex}-other-units`}
+                          labelText={uiText(
+                            `Weitere Einheiten in ${row.baseUnit}`,
+                            `Other units in ${row.baseUnit}`,
+                          )}
+                          rows={2}
+                          value={row.conversionsText}
+                          placeholder={uiText("Sack = 30", "Bag = 30")}
+                          disabled={!row.included}
+                          onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                            updateRow(index, {
+                              conversionsText: event.currentTarget.value,
+                            })
+                          }
+                        />
+                      </>
+                    )}
+
+                    <TextInput
+                      id={`${formId}-row-${absoluteIndex}-net-price`}
+                      labelText={uiText(
+                        `Nettopreis je ${row.baseUnit}`,
+                        `Net price per ${row.baseUnit}`,
+                      )}
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={row.pricePerBaseUnit}
+                      disabled={!row.included}
+                      invalid={!!row.conversionWarning}
+                      invalidText={row.conversionWarning}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        updateRow(index, {
+                          pricePerBaseUnit: event.currentTarget.valueAsNumber,
+                          conversionWarning: null,
+                        })
+                      }
+                    />
+                    <TextInput
+                      id={`${formId}-row-${absoluteIndex}-comment`}
+                      labelText={uiText("Kommentar", "Comment")}
+                      value={row.comment ?? ""}
+                      disabled={!row.included}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        updateRow(index, {
+                          comment: event.currentTarget.value || null,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+
+      {expandedRow !== null ? (
+        <div className="price-import-pagination">
+          <span>
+            {uiText(
+              `Position ${expandedRow + 1} von ${state.rows.length}`,
+              `Item ${expandedRow + 1} of ${state.rows.length}`,
+            )}
+          </span>
+          <MyButton
+            kind="secondary"
+            size="sm"
+            onClick={() => {
+              // The row trigger survives this view change; the Back button is removed.
+              expandedRowTrigger.current?.focus();
+              setExpandedRow(null);
+            }}
+          >
+            {uiText("Zur Übersicht", "Back to list")}
+          </MyButton>
+        </div>
+      ) : (
+        state.rows.length > 10 && (
+          <LoadMore
+            controls={`${formId}-rows`}
+            visibleItems={Math.min(visibleCount, state.rows.length)}
+            totalItems={state.rows.length}
+            onLoadMore={() => {
+              setVisibleCount((current) =>
+                Math.min(state.rows.length, current + 10),
+              );
+            }}
+          />
+        )
+      )}
     </div>
-
-    {expandedRow !== null ? <div className="price-import-pagination">
-      <span>{uiText(
-        `Position ${expandedRow + 1} von ${state.rows.length}`,
-        `Item ${expandedRow + 1} of ${state.rows.length}`,
-      )}</span>
-      <MyButton kind="secondary" size="sm" onClick={() => setExpandedRow(null)}>
-        {uiText("Zur Übersicht", "Back to list")}
-      </MyButton>
-    </div> : pageCount > 1 && <div className="price-import-pagination">
-      <MyButton
-        kind="secondary"
-        size="sm"
-        disabled={page === 0}
-        onClick={() => setPage(current => Math.max(0, current - 1))}
-      >
-        {uiText("Zurück", "Previous")}
-      </MyButton>
-      <span>{uiText(
-        `Seite ${page + 1} von ${pageCount}`,
-        `Page ${page + 1} of ${pageCount}`,
-      )}</span>
-      <MyButton
-        kind="secondary"
-        size="sm"
-        disabled={page + 1 >= pageCount}
-        onClick={() => setPage(current => Math.min(pageCount - 1, current + 1))}
-      >
-        {uiText("Weiter", "Next")}
-      </MyButton>
-    </div>}
-  </div>;
+  );
 }
 
 export function showPriceImportModal(
@@ -648,11 +725,13 @@ export function showPriceImportModal(
   const controller: PriceImportController = { current: null };
 
   modals.showDefault({
-    content: () => <PriceImportEditor
-      result={result}
-      documentType={documentType}
-      controller={controller}
-    />,
+    content: () => (
+      <PriceImportEditor
+        result={result}
+        documentType={documentType}
+        controller={controller}
+      />
+    ),
     modalProps: () => ({
       modalHeading: documentType === "invoice"
         ? uiText("Preise aus Rechnung übernehmen", "Import invoice prices")

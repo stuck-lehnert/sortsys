@@ -35,17 +35,20 @@ function ExportOfficeModal({
     <Modal
       open={visible}
       passiveModal
-      modalHeading={uiText("Excel-Export", "Excel export")}
-      modalLabel={fileName}
+      modalHeading={fileName}
+      modalLabel={uiText("Excel-Export", "Excel export")}
       closeButtonLabel={uiText("Schließen", "Close")}
       onRequestClose={close}
+      edgeToEdge
       data-fullheight="true"
       data-fullwidth="true"
       className="project-files-office-modal"
     >
       {!!error && (
         <div className="project-files-office-status">
-          <MyCallout icon={Icons.Deny} color="red">{error}</MyCallout>
+          <MyCallout icon={Icons.Deny} color="red">
+            {error}
+          </MyCallout>
         </div>
       )}
 
@@ -67,7 +70,11 @@ function showExportError(modals: MyModalsInterface, error: unknown) {
     : uiText("Der Excel-Export ist fehlgeschlagen.", "The Excel export failed.");
 
   modals.showDefault({
-    content: () => <MyCallout icon={Icons.Deny} color="red">{message}</MyCallout>,
+    content: () => (
+      <MyCallout icon={Icons.Deny} color="red">
+        {message}
+      </MyCallout>
+    ),
     modalProps: () => ({
       passiveModal: true,
       modalHeading: uiText("Excel-Export fehlgeschlagen", "Excel export failed"),

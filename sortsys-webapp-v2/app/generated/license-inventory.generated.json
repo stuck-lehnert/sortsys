@@ -2550,6 +2550,34 @@
     "webapp": [
       {
         "ecosystem": "npm",
+        "name": "@adobe/react-spectrum",
+        "version": "3.47.7",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40adobe%2Freact-spectrum/v/3.47.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@adobe/react-spectrum-ui",
+        "version": "1.2.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40adobe%2Freact-spectrum-ui/v/1.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@adobe/react-spectrum-workflow",
+        "version": "2.3.5",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40adobe%2Freact-spectrum-workflow/v/2.3.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@babel/runtime",
+        "version": "7.29.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40babel%2Fruntime/v/7.29.7"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@carbon/icon-helpers",
         "version": "10.84.0",
         "license": "Apache-2.0",
@@ -2592,10 +2620,45 @@
       },
       {
         "ecosystem": "npm",
+        "name": "@heroui/react",
+        "version": "3.2.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40heroui%2Freact/v/3.2.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@heroui/styles",
+        "version": "3.2.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40heroui%2Fstyles/v/3.2.6"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@ibm/telemetry-js",
         "version": "1.12.0",
         "license": "Apache-2.0",
         "source": "https://www.npmjs.com/package/%40ibm%2Ftelemetry-js/v/1.12.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@internationalized/date",
+        "version": "3.12.4",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40internationalized%2Fdate/v/3.12.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@internationalized/number",
+        "version": "3.6.9",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40internationalized%2Fnumber/v/3.6.9"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@internationalized/string",
+        "version": "3.2.10",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40internationalized%2Fstring/v/3.2.10"
       },
       {
         "ecosystem": "npm",
@@ -2711,6 +2774,90 @@
       },
       {
         "ecosystem": "npm",
+        "name": "@radix-ui/primitive",
+        "version": "1.1.7",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Fprimitive/v/1.1.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-avatar",
+        "version": "1.2.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-avatar/v/1.2.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-compose-refs",
+        "version": "1.1.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-compose-refs/v/1.1.5"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-context",
+        "version": "1.2.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-context/v/1.2.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-primitive",
+        "version": "2.1.10",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-primitive/v/2.1.10"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-slot",
+        "version": "1.3.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-slot/v/1.3.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-use-callback-ref",
+        "version": "1.1.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-use-callback-ref/v/1.1.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-use-is-hydrated",
+        "version": "0.1.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-use-is-hydrated/v/0.1.3"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-use-layout-effect",
+        "version": "1.1.4",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-use-layout-effect/v/1.1.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-aria/color",
+        "version": "3.2.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-aria%2Fcolor/v/3.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-aria/ssr",
+        "version": "3.10.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-aria%2Fssr/v/3.10.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-aria/utils",
+        "version": "3.34.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-aria%2Futils/v/3.34.1"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@react-router/express",
         "version": "8.4.0",
         "license": "MIT",
@@ -2729,6 +2876,55 @@
         "version": "8.4.0",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/%40react-router%2Fserve/v/8.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-spectrum/color",
+        "version": "3.2.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-spectrum%2Fcolor/v/3.2.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-spectrum/provider",
+        "version": "3.11.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-spectrum%2Fprovider/v/3.11.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-stately/color",
+        "version": "3.10.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-stately%2Fcolor/v/3.10.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-stately/utils",
+        "version": "3.12.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-stately%2Futils/v/3.12.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-types/color",
+        "version": "3.2.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-types%2Fcolor/v/3.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-types/shared",
+        "version": "3.36.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-types%2Fshared/v/3.36.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@react-types/shared",
+        "version": "3.37.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40react-types%2Fshared/v/3.37.0"
       },
       {
         "ecosystem": "npm",
@@ -2753,6 +2949,20 @@
       },
       {
         "ecosystem": "npm",
+        "name": "@spectrum-icons/ui",
+        "version": "3.7.2",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40spectrum-icons%2Fui/v/3.7.2"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@spectrum-icons/workflow",
+        "version": "4.3.2",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40spectrum-icons%2Fworkflow/v/4.3.2"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@standard-schema/spec",
         "version": "1.1.0",
         "license": "MIT",
@@ -2764,6 +2974,13 @@
         "version": "0.3.0",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/%40standard-schema%2Futils/v/0.3.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@swc/helpers",
+        "version": "0.5.23",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40swc%2Fhelpers/v/0.5.23"
       },
       {
         "ecosystem": "npm",
@@ -2886,6 +3103,13 @@
       },
       {
         "ecosystem": "npm",
+        "name": "@types/react-dom",
+        "version": "19.2.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40types%2Freact-dom/v/19.2.5"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@types/trusted-types",
         "version": "2.0.7",
         "license": "MIT",
@@ -2946,6 +3170,13 @@
         "version": "3.0.4",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/archiver-utils/v/3.0.4"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "aria-hidden",
+        "version": "1.2.6",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/aria-hidden/v/1.2.6"
       },
       {
         "ecosystem": "npm",
@@ -3128,6 +3359,13 @@
         "version": "2.0.1",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/character-reference-invalid/v/2.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "client-only",
+        "version": "0.0.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/client-only/v/0.0.1"
       },
       {
         "ecosystem": "npm",
@@ -3380,6 +3618,13 @@
         "version": "1.1.0",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/devlop/v/1.1.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "dom-helpers",
+        "version": "5.2.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/dom-helpers/v/5.2.1"
       },
       {
         "ecosystem": "npm",
@@ -3709,6 +3954,13 @@
         "version": "0.2.7",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/inline-style-parser/v/0.2.7"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "input-otp",
+        "version": "1.5.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/input-otp/v/1.5.0"
       },
       {
         "ecosystem": "npm",
@@ -4539,6 +4791,20 @@
       },
       {
         "ecosystem": "npm",
+        "name": "react-aria",
+        "version": "3.53.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/react-aria/v/3.53.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-aria-components",
+        "version": "1.22.1",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/react-aria-components/v/1.22.1"
+      },
+      {
+        "ecosystem": "npm",
         "name": "react-dom",
         "version": "19.3.0",
         "license": "MIT",
@@ -4585,6 +4851,20 @@
         "version": "8.4.0",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/react-router/v/8.4.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-stately",
+        "version": "3.51.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/react-stately/v/3.51.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "react-transition-group",
+        "version": "4.4.5",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/react-transition-group/v/4.4.5"
       },
       {
         "ecosystem": "npm",
@@ -4875,6 +5155,20 @@
       },
       {
         "ecosystem": "npm",
+        "name": "tailwind-variants",
+        "version": "3.3.1",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/tailwind-variants/v/3.3.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "tailwindcss",
+        "version": "4.3.3",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/tailwindcss/v/4.3.3"
+      },
+      {
+        "ecosystem": "npm",
         "name": "tar-stream",
         "version": "2.2.0",
         "license": "MIT",
@@ -4928,6 +5222,13 @@
         "version": "2.8.1",
         "license": "0BSD",
         "source": "https://www.npmjs.com/package/tslib/v/2.8.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "tw-animate-css",
+        "version": "1.4.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/tw-animate-css/v/1.4.0"
       },
       {
         "ecosystem": "npm",

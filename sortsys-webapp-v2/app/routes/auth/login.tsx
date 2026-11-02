@@ -1,7 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Unauthenticated } from "~/components/Authenticated";
 import type { Route } from "./+types/login";
-import { Heading } from "@sortsys/react-components";
+import { AuthLayout } from "~/components/AuthLayout";
 import { MyForm } from "~/components/MyForm";
 import { client } from "~/lib/client";
 import { useState } from "react";
@@ -44,25 +44,57 @@ export default Unauthenticated(function () {
         }
     }
 
-    return <MyForm className="my-container" onSubmit={async (context) => {
-        const values = context.getValues();
+    return (
+    <AuthLayout title={uiText("Anmelden")}>
+      <MyForm
+        className="max-w-none"
+        onSubmit={async (context) => {
+          const values = context.getValues();
 
-        const [username, tenant] = values.username.split('@');
-        const password = values.password;
+          const [username, tenant] = values.username.split("@");
+          const password = values.password;
 
-        if (typeof window === 'object') {
-            window.localStorage.setItem('sortsys.tenant', tenant);
-        }
+          if (typeof window === "object") {
+            window.localStorage.setItem("sortsys.tenant", tenant);
+          }
 
-        await client.login({ username, tenant, password });
-    }}>
-        <Heading>{uiText("Anmelden")}</Heading>
-        <MyForm.Input name="username" labelText={uiText("Nutzername")} autoComplete="username" required rules={[
-            MyForm.Input.rules.pattern(/^[a-zA-Z0-9_\-\.]+\@[a-zA-Z0-9_\-\.]+$/),
-        ]} />
-        <MyForm.Input name="password" labelText={uiText("Passwort")} autoComplete="current-password" type="password" required />
+          await client.login({ username, tenant, password });
+        }}
+      >
+        <MyForm.Input
+          name="username"
+          labelText={uiText("Nutzername")}
+          autoComplete="username"
+          required
+          rules={[
+            MyForm.Input.rules.pattern(
+              /^[a-zA-Z0-9_\-\.]+\@[a-zA-Z0-9_\-\.]+$/,
+            ),
+          ]}
+        />
+        <MyForm.Input
+          name="password"
+          labelText={uiText("Passwort")}
+          autoComplete="current-password"
+          type="password"
+          required
+        />
         <MyForm.SubmitButton>{uiText("Anmelden")}</MyForm.SubmitButton>
-        <MyButton type="button" kind="secondary" renderIcon={Icons.Lock} loading={passkeyLoading} onClick={passkeyLogin}>{uiText("Mit Passkey anmelden")}</MyButton>
-        {!!passkeyErr && <MyCallout icon={Icons.Deny} color="red">{passkeyErr}</MyCallout>}
-    </MyForm>;
+        <MyButton
+          type="button"
+          kind="secondary"
+          renderIcon={Icons.Lock}
+          loading={passkeyLoading}
+          onClick={passkeyLogin}
+        >
+          {uiText("Mit Passkey anmelden")}
+        </MyButton>
+        {!!passkeyErr && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {passkeyErr}
+          </MyCallout>
+        )}
+      </MyForm>
+    </AuthLayout>
+  );
 });

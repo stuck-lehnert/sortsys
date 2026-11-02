@@ -27,6 +27,24 @@ The script starts PostgreSQL, MinIO, Euro-Office Document Server, diagrams.net,
 the Rust API, two job runners, and the web application. Both runners handle media
 and OCR work. The development tenant is recreated and seeded on each run.
 
+After preparing the images, the launcher starts the API and webapp without waiting
+for Euro-Office or diagrams.net to become ready. Opening an editor while its service
+starts shows the loading cube. A failed editor readiness check is reported and
+leaves the core stack running. Image-pull output includes the image name, and
+preparation messages identify the image the launcher is waiting for. Later startup
+messages include commands for inspecting container logs.
+
+Service data and dependency caches are bind-mounted from the gitignored
+`.dev-data/` directory. Stopping the stack preserves these folders; startup still
+recreates the development tenant. Existing Docker or Podman volumes are left
+untouched and are no longer used by this launcher. Empty Euro-Office folders
+inherit their initial contents and permissions from the pinned image. Existing
+editor databases are preserved. On bind mounts that report ownership relative to
+the caller, the launcher starts Euro-Office's bundled PostgreSQL as its own service
+account. Docker and Podman binds use shared SELinux labels (`:z`); initialization
+keeps those labels. A stopped Euro-Office container remains available for
+`docker logs` or `podman logs` until the stack is stopped or restarted.
+
 The launcher reads LLM settings from the repository-root `.env` file.
 A non-empty `OPENROUTER_API_KEY` selects
 `deepseek/deepseek-v4.1-flash-1017` for chat and document import. Without an
@@ -68,6 +86,28 @@ WebAssembly, client, and webapp outputs. Fresh-instance tests, populated-deploy
 upgrade tests, and runtime checks reuse that build. Publishing copies the checked
 OCI images, including their SBOM and provenance, without compiling again. The
 pinned `deploy` revision has a separate seeder build for the upgrade fixture.
+
+### Frontend UI checks
+
+The webapp uses HeroUI through the shared component package. Follow the
+[UX/UI guardrails](UX_UI_GUARDRAILS.md) when changing layouts, controls or interface
+content.
+
+`./scripts/ci` installs Chromium and runs the UI browser suite against the
+production stylesheet from the webapp build. For frontend-only iterations after
+the client and DWG WebAssembly have been built:
+
+```bash
+cd sortsys-webapp-v2
+bun run typecheck
+bun run build
+bun run test:ui
+```
+
+The browser fixtures render actual components and routes with synthetic HTTP
+responses. They check German and English layouts, keyboard interaction,
+accessibility, form sizing and document dialogs. Set `SORTSYS_UI_ASSETS` to an
+existing client build directory to reuse its production stylesheet.
 
 ## Deployment
 

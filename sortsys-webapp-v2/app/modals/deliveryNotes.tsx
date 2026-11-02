@@ -77,205 +77,140 @@ export function showCreateDeliveryNoteModal(
       const createEntityAction = useCreateEntityAction(modals);
       const forceUpdate = useForceUpdate();
 
-      return <>
-        {prefill?.warnings?.map((warning, index) =>
-          <MyCallout
-            key={index}
-            kind="warning"
-            title={uiText("Bitte prüfen", "Please review")}
-            subtitle={warning}
-          />
-        )}
-
-        <MyForm.MultiSelect
-          name="project"
-          labelText={uiText("Projekt")}
-          minSelectedItems={1}
-          maxSelectedItems={1}
-          getOptions={async ({ query }) => {
-            const [data, error] = await client.query("projects.list", { search: query });
-            if (error) throw error;
-
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
-        <p className="light">{uiText("Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.")}</p>
-
-        <MyForm.DateInput
-          required
-          name="deliveryDate"
-          labelText={uiText("Lieferdatum", "Delivery date")}
-        />
-
-        <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
-        <p className="light">{uiText("Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.")}</p>
-
-        <MyDivider />
-
-        <h4>{uiText("Produkte")}</h4>
-        <p className="light">{uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}</p>
-
-        {recordIds.map(id => {
-          const prefix = "record:" + id + ":";
-          const currentProduct = () =>
-            (context.field(prefix + "product")?.getValue()?.[0] ?? null) as Product | null;
-
-          return <Fragment key={id}>
-            <MyForm.MultiSelect
-              name={prefix + "product"}
-              labelText={uiText("Produkt")}
-              autoFocus={autoFocusFieldName === prefix + "product"}
-              minSelectedItems={1}
-              maxSelectedItems={1}
-              getOptions={async ({ query }) => {
-                const [data, error] = await client.query("products.list", { search: query });
-                if (error) throw error;
-
-                return data ?? [];
-              }}
-              renderItem={({ item }) => item.customId + " " + productTitle(item)}
-              renderTile={item => <SmallProductTile data={item} noLink />}
-              createAction={createEntityAction.product}
-              onValueChange={forceUpdate}
+      return (
+        <>
+          {prefill?.warnings?.map((warning, index) => (
+            <MyCallout
+              key={index}
+              kind="warning"
+              title={uiText("Bitte prüfen", "Please review")}
+              subtitle={warning}
             />
+          ))}
 
-            <div className="flex gap-2 items-end">
-              <div className="grow flex gap-2">
-                <div className="basis-1/2 flex-1">
-                  <MyForm.Input
-                    required
-                    name={prefix + "amount"}
-                    labelText={uiText("Anzahl")}
-                    type="number"
-                    rules={[MyForm.Input.rules.num]}
-                  />
-                </div>
-
-                <div className="basis-1/2 flex-1">
-                  <MyForm.Select
-                    name={prefix + "unit"}
-                    labelText={uiText("Einheit")}
-                    getOptions={() => {
-                      const product = currentProduct();
-                      if (!product) return [];
-
-                      return [product.baseUnit, ...Object.keys(product.otherUnits)].map(unit => ({ id: unit }));
-                    }}
-                    getOptionsDeps={[currentProduct()?.id]}
-                    buildOption={({ id: unit }) => ({ text: unit, value: unit })}
-                    suffix={
-                      <MyButton
-                        kind="ghost"
-                        size="sm"
-                        className="ss-input-suffix-btn"
-                        title={uiText("Eintrag entfernen")}
-                        aria-label={uiText("Eintrag entfernen")}
-                        onClick={() => setRecordIds(ids => ids.filter(currentId => currentId !== id))}
-                      >
-                        <Icons.Delete />
-                      </MyButton>
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <MyForm.Input
-              name={prefix + "comment"}
-              labelText={uiText("Positionskommentar", "Line comment")}
-            />
-
-            <NotifyLoaded onLoad={() => {
-              const initial = initialRecordValues[id];
-              if (!initial) return;
-
-              context.setValues({
-                [prefix + "product"]: [initial.product],
-                [prefix + "amount"]: initial.amount,
-                [prefix + "comment"]: initial.comment ?? "",
+          <MyForm.MultiSelect
+            name="project"
+            labelText={uiText("Projekt")}
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, error] = await client.query("projects.list", {
+                search: query,
               });
-              window.setTimeout(() => {
-                context.setValues({ [prefix + "unit"]: initial.unit });
-              }, 0);
-            }} />
+              if (error) throw error;
 
-            <div style={{ height: "1rem" }} />
-          </Fragment>;
-        })}
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.",
+            )}
+          </p>
 
-        <MyButton
-          kind="secondary"
-          renderIcon={Icons.Plus}
-          onClick={() => {
-            const id = generateId();
-            setRecordIds(ids => [...ids, id]);
-            setAutoFocusFieldName("record:" + id + ":product");
-          }}
-        >
-          {uiText("Eintrag")}
-        </MyButton>
+          <MyForm.DateInput
+            required
+            name="deliveryDate"
+            labelText={uiText("Lieferdatum", "Delivery date")}
+          />
 
-        <MyDivider />
+          <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+          <p className="light">
+            {uiText(
+              "Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.",
+            )}
+          </p>
 
-        <h4>{uiText("Sonderposten")}</h4>
-        <p className="light">
-          {uiText("Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.")}
-        </p>
+          <MyDivider />
 
-        {specialRecordIds.map(id => {
-          const prefix = "specialRecord:" + id + ":";
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Produkte")}
+          </h4>
+          <p className="light">
+            {uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}
+          </p>
 
-          return <Fragment key={id}>
-            <div className="flex gap-2 items-end">
-              <div className="grow flex flex-col gap-2">
-                <MyForm.Input
-                  required
-                  name={prefix + "name"}
-                  labelText={uiText("Bezeichnung")}
-                  autoFocus={autoFocusFieldName === prefix + "name"}
+          {recordIds.map((id) => {
+            const prefix = "record:" + id + ":";
+            const currentProduct = () =>
+              (context.field(prefix + "product")?.getValue()?.[0] ??
+                null) as Product | null;
+
+            return (
+              <Fragment key={id}>
+                <MyForm.MultiSelect
+                  name={prefix + "product"}
+                  labelText={uiText("Produkt")}
+                  autoFocus={autoFocusFieldName === prefix + "product"}
+                  minSelectedItems={1}
+                  maxSelectedItems={1}
+                  getOptions={async ({ query }) => {
+                    const [data, error] = await client.query("products.list", {
+                      search: query,
+                    });
+                    if (error) throw error;
+
+                    return data ?? [];
+                  }}
+                  renderItem={({ item }) =>
+                    item.customId + " " + productTitle(item)
+                  }
+                  renderTile={(item) => <SmallProductTile data={item} noLink />}
+                  createAction={createEntityAction.product}
+                  onValueChange={forceUpdate}
                 />
 
-                <div className="flex gap-2">
-                  <div className="basis-1/3 flex-1">
-                    <MyForm.Input
-                      required
-                      name={prefix + "amount"}
-                      labelText={uiText("Menge")}
-                      type="number"
-                      rules={[MyForm.Input.rules.num]}
-                    />
-                  </div>
+                <div className="flex gap-2 items-end">
+                  <div className="grow flex gap-2">
+                    <div className="min-w-0 basis-1/2 flex-1">
+                      <MyForm.Input
+                        required
+                        name={prefix + "amount"}
+                        labelText={uiText("Anzahl")}
+                        type="number"
+                        rules={[MyForm.Input.rules.num]}
+                      />
+                    </div>
 
-                  <div className="basis-1/3 flex-1">
-                    <MyForm.Input
-                      required
-                      name={prefix + "unit"}
-                      labelText={uiText("Einheit")}
-                    />
-                  </div>
+                    <div className="min-w-0 basis-1/2 flex-1">
+                      <MyForm.Select
+                        name={prefix + "unit"}
+                        labelText={uiText("Einheit")}
+                        getOptions={() => {
+                          const product = currentProduct();
+                          if (!product) return [];
 
-                  <div className="basis-1/3 flex-1">
-                    <MyForm.Input
-                      name={prefix + "pricePerUnit"}
-                      labelText={uiText("Preis pro Einheit")}
-                      type="number"
-                      rules={[MyForm.Input.rules.num]}
-                      suffix={
-                        <MyButton
-                          kind="ghost"
-                          size="sm"
-                          className="ss-input-suffix-btn"
-                          title={uiText("Sonderposten entfernen")}
-                          aria-label={uiText("Sonderposten entfernen")}
-                          onClick={() => setSpecialRecordIds(ids => ids.filter(currentId => currentId !== id))}
-                        >
-                          <Icons.Delete />
-                        </MyButton>
-                      }
-                    />
+                          return [
+                            product.baseUnit,
+                            ...Object.keys(product.otherUnits),
+                          ].map((unit) => ({ id: unit }));
+                        }}
+                        getOptionsDeps={[currentProduct()?.id]}
+                        buildOption={({ id: unit }) => ({
+                          text: unit,
+                          value: unit,
+                        })}
+                        suffix={
+                          <MyButton
+                            kind="ghost"
+                            size="sm"
+                            className="ss-input-suffix-btn"
+                            title={uiText("Eintrag entfernen")}
+                            aria-label={uiText("Eintrag entfernen")}
+                            onClick={() =>
+                              setRecordIds((ids) =>
+                                ids.filter((currentId) => currentId !== id),
+                              )
+                            }
+                          >
+                            <Icons.Delete />
+                          </MyButton>
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -283,49 +218,163 @@ export function showCreateDeliveryNoteModal(
                   name={prefix + "comment"}
                   labelText={uiText("Positionskommentar", "Line comment")}
                 />
-              </div>
-            </div>
 
-            <NotifyLoaded onLoad={() => {
-              const initial = initialSpecialRecordValues[id];
-              if (!initial) return;
+                <NotifyLoaded
+                  onLoad={() => {
+                    const initial = initialRecordValues[id];
+                    if (!initial) return;
 
+                    context.setValues({
+                      [prefix + "product"]: [initial.product],
+                      [prefix + "amount"]: initial.amount,
+                      [prefix + "comment"]: initial.comment ?? "",
+                    });
+                    window.setTimeout(() => {
+                      context.setValues({ [prefix + "unit"]: initial.unit });
+                    }, 0);
+                  }}
+                />
+
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
+
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setRecordIds((ids) => [...ids, id]);
+              setAutoFocusFieldName("record:" + id + ":product");
+            }}
+          >
+            {uiText("Eintrag")}
+          </MyButton>
+
+          <MyDivider />
+
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Sonderposten")}
+          </h4>
+          <p className="light">
+            {uiText(
+              "Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.",
+            )}
+          </p>
+
+          {specialRecordIds.map((id) => {
+            const prefix = "specialRecord:" + id + ":";
+
+            return (
+              <Fragment key={id}>
+                <div className="flex gap-2 items-end">
+                  <div className="grow flex flex-col gap-2">
+                    <MyForm.Input
+                      required
+                      name={prefix + "name"}
+                      labelText={uiText("Bezeichnung")}
+                      autoFocus={autoFocusFieldName === prefix + "name"}
+                    />
+
+                    <div className="flex gap-2">
+                      <div className="min-w-0 basis-1/3 flex-1">
+                        <MyForm.Input
+                          required
+                          name={prefix + "amount"}
+                          labelText={uiText("Menge")}
+                          type="number"
+                          rules={[MyForm.Input.rules.num]}
+                        />
+                      </div>
+
+                      <div className="min-w-0 basis-1/3 flex-1">
+                        <MyForm.Input
+                          required
+                          name={prefix + "unit"}
+                          labelText={uiText("Einheit")}
+                        />
+                      </div>
+
+                      <div className="min-w-0 basis-1/3 flex-1">
+                        <MyForm.Input
+                          name={prefix + "pricePerUnit"}
+                          labelText={uiText("Preis pro Einheit")}
+                          type="number"
+                          rules={[MyForm.Input.rules.num]}
+                          suffix={
+                            <MyButton
+                              kind="ghost"
+                              size="sm"
+                              className="ss-input-suffix-btn"
+                              title={uiText("Sonderposten entfernen")}
+                              aria-label={uiText("Sonderposten entfernen")}
+                              onClick={() =>
+                                setSpecialRecordIds((ids) =>
+                                  ids.filter((currentId) => currentId !== id),
+                                )
+                              }
+                            >
+                              <Icons.Delete />
+                            </MyButton>
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <MyForm.Input
+                      name={prefix + "comment"}
+                      labelText={uiText("Positionskommentar", "Line comment")}
+                    />
+                  </div>
+                </div>
+
+                <NotifyLoaded
+                  onLoad={() => {
+                    const initial = initialSpecialRecordValues[id];
+                    if (!initial) return;
+
+                    context.setValues({
+                      [prefix + "name"]: initial.name,
+                      [prefix + "unit"]: initial.unit,
+                      [prefix + "amount"]: initial.amount,
+                      [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
+                      [prefix + "comment"]: initial.comment ?? "",
+                    });
+                  }}
+                />
+
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
+
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setSpecialRecordIds((ids) => [...ids, id]);
+              setAutoFocusFieldName("specialRecord:" + id + ":name");
+            }}
+          >
+            {uiText("Sonderposten")}
+          </MyButton>
+
+          <NotifyLoaded
+            onLoad={() => {
               context.setValues({
-                [prefix + "name"]: initial.name,
-                [prefix + "unit"]: initial.unit,
-                [prefix + "amount"]: initial.amount,
-                [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
-                [prefix + "comment"]: initial.comment ?? "",
+                comment: prefill?.comment ?? "",
+                deliveryDate: prefill?.deliveryDate ?? new Date(),
               });
-            }} />
 
-            <div style={{ height: "1rem" }} />
-          </Fragment>;
-        })}
-
-        <MyButton
-          kind="secondary"
-          renderIcon={Icons.Plus}
-          onClick={() => {
-            const id = generateId();
-            setSpecialRecordIds(ids => [...ids, id]);
-            setAutoFocusFieldName("specialRecord:" + id + ":name");
-          }}
-        >
-          {uiText("Sonderposten")}
-        </MyButton>
-
-        <NotifyLoaded onLoad={() => {
-          context.setValues({
-            comment: prefill?.comment ?? "",
-            deliveryDate: prefill?.deliveryDate ?? new Date(),
-          });
-
-          if (prefill?.project) {
-            context.setValues({ project: [prefill.project] });
-          }
-        }} />
-      </>;
+              if (prefill?.project) {
+                context.setValues({ project: [prefill.project] });
+              }
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide, navigate }) => {
       const values = context.getValues();
@@ -424,6 +473,7 @@ export function showCreateDeliveryNoteModal(
       hide();
     },
     modalProps: () => ({
+      useFullscreen: true,
       modalHeading: uiText("Lieferschein schreiben"),
       primaryButtonText: uiText("Speichern"),
     }),
@@ -452,219 +502,321 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
 
       const forceUpdate = useForceUpdate();
 
-      return <>
-        <MyForm.MultiSelect name="project" labelText={uiText("Projekt")}
-          minSelectedItems={1} maxSelectedItems={1}
-          getOptions={async ({ query }) => {
-            const [data, err] = await client.query('projects.list', { search: query });
-            if (err) throw err;
-            return data ?? [];
-          }}
-          renderItem={({ item }) => item.title}
-          renderTile={item => <SmallProjectTile data={item} noLink />}
-          createAction={createEntityAction.project}
-        />
-        <p className="light">{uiText("Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.")}</p>
-
-        <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
-        <p className="light">{uiText("Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.")}</p>
-
-        <MyDivider />
-
-        <h4>{uiText("Produkte")}</h4>
-        <p className="light">{uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}</p>
-
-        {recordIds.map(id => {
-          const currentProduct = () => {
-            return (context?.field(`record:${id}:product`)?.getValue()?.[0] ?? null) as Product | null;
-          };
-
-          return <Fragment key={id}>
-            <MyForm.MultiSelect
-              name={`record:${id}:product`}
-              labelText={uiText("Produkt")}
-              autoFocus={autoFocusFieldName === `record:${id}:product`}
-              minSelectedItems={1} maxSelectedItems={1}
-              getOptions={async ({ query }) => {
-                const [data, err] = await client.query('products.list', { search: query });
-                if (err) throw err;
-                return data ?? [];
-              }}
-              renderItem={({ item }) => `${item.customId} ${productTitle(item)}`}
-              renderTile={item => <SmallProductTile data={item} noLink />}
-              createAction={createEntityAction.product}
-              onValueChange={forceUpdate}
-            />
-
-            <div key={id} className="flex gap-2 items-end">
-              <div className="grow flex gap-2">
-                <div className="basis-1/2 flex-1">
-                  <MyForm.Input
-                    required
-                    name={`record:${id}:amount`} labelText={uiText("Anzahl")}
-                    type="number"
-                    rules={[MyForm.Input.rules.num]}
-                  />
-                </div>
-
-                <div className="basis-1/2 flex-1">
-                  <MyForm.Select
-                    name={`record:${id}:unit`}
-                    labelText={uiText("Einheit")}
-                    getOptions={() => {
-                      const _product = currentProduct();
-                      if (!_product) return [];
-                      return [_product.baseUnit, ...Object.keys(_product.otherUnits)].map(e => ({ id: e }));
-                    }}
-                    getOptionsDeps={[currentProduct()?.id]}
-                    buildOption={({ id }) => ({ text: id, value: id })}
-                    suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Eintrag entfernen")} aria-label={uiText("Eintrag entfernen")} onClick={() => {
-                      setRecordIds(ids => ids.filter(_id => _id !== id));
-                    }}><Icons.Delete /></MyButton>}
-                  />
-                </div>
-              </div>
-
-            </div>
-
-            <NotifyLoaded onLoad={() => {
-              const initial = initialRecordValues[id];
-              if (!initial) return;
-
-              const values: Record<string, any> = {
-                [`record:${id}:amount`]: initial.amount,
-              };
-
-              if (initial.product) values[`record:${id}:product`] = [initial.product];
-
-              context.setValues(values);
-              if (initial.unit) {
-                window.setTimeout(() => context.setValues({ [`record:${id}:unit`]: initial.unit }), 0);
-              }
-            }} />
-
-            <div style={{ height: '1rem' }} />
-          </Fragment>;
-        })}
-
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setRecordIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`record:${id}:product`);
-        }}>{uiText("Eintrag")}</MyButton>
-
-        <MyDivider />
-
-        <h4>{uiText("Sonderposten")}</h4>
-        <p className="light">{uiText("Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.")}</p>
-
-        {specialRecordIds.map(id => {
-          return <Fragment key={id}>
-            <div className="flex gap-2 items-end">
-              <div className="grow flex flex-col gap-2">
-                <div>
-                  <MyForm.Input
-                    required
-                    name={`specialRecord:${id}:name`}
-                    labelText={uiText("Bezeichnung")}
-                    autoFocus={autoFocusFieldName === `specialRecord:${id}:name`}
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <div className="basis-1/3 flex-1">
-                    <MyForm.Input
-                      required
-                      name={`specialRecord:${id}:amount`}
-                      labelText={uiText("Menge")}
-                      type="number"
-                      rules={[MyForm.Input.rules.num]}
-                    />
-                  </div>
-
-                  <div className="basis-1/3 flex-1">
-                    <MyForm.Input
-                      required
-                      name={`specialRecord:${id}:unit`}
-                      labelText={uiText("Einheit")}
-                    />
-                  </div>
-
-                  <div className="basis-1/3 flex-1">
-                    <MyForm.Input
-                      name={`specialRecord:${id}:pricePerUnit`}
-                      labelText={uiText("Preis pro Einheit")}
-                      type="number"
-                      rules={[MyForm.Input.rules.num]}
-                      suffix={<MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={() => {
-                        setSpecialRecordIds(ids => ids.filter(_id => _id !== id));
-                      }}><Icons.Delete /></MyButton>}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <NotifyLoaded onLoad={() => {
-              const initial = initialSpecialRecordValues[id];
-              if (!initial) return;
-
-              context.setValues({
-                [`specialRecord:${id}:name`]: initial.name,
-                [`specialRecord:${id}:unit`]: initial.unit,
-                [`specialRecord:${id}:amount`]: initial.amount,
-                [`specialRecord:${id}:pricePerUnit`]: initial.pricePerUnit ?? '',
+      return (
+        <>
+          <MyForm.MultiSelect
+            name="project"
+            labelText={uiText("Projekt")}
+            minSelectedItems={1}
+            maxSelectedItems={1}
+            getOptions={async ({ query }) => {
+              const [data, err] = await client.query("projects.list", {
+                search: query,
               });
-            }} />
+              if (err) throw err;
+              return data ?? [];
+            }}
+            renderItem={({ item }) => item.title}
+            renderTile={(item) => <SmallProjectTile data={item} noLink />}
+            createAction={createEntityAction.project}
+          />
+          <p className="light">
+            {uiText(
+              "Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.",
+            )}
+          </p>
 
-            <div style={{ height: '1rem' }} />
-          </Fragment>;
-        })}
+          <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+          <p className="light">
+            {uiText(
+              "Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.",
+            )}
+          </p>
 
-        <MyButton kind="secondary" renderIcon={Icons.Plus} onClick={() => {
-          const id = generateId();
-          setSpecialRecordIds(ids => [...ids, id]);
-          setAutoFocusFieldName(`specialRecord:${id}:name`);
-        }}>{uiText("Sonderposten")}</MyButton>
+          <MyDivider />
 
-        <NotifyLoaded onLoad={async () => {
-          context.setValues({ comment: note.comment ?? '' });
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Produkte")}
+          </h4>
+          <p className="light">
+            {uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}
+          </p>
 
-          if (note.projectId) {
-            const [project] = await client.query('projects.get', { id: note.projectId }, { strategy: 'cache-first' });
-            if (project) context.setValues({ project: [project] });
-          }
-
-          const recordIdList: string[] = [];
-          for (const record of note.records) {
-            const id = record.id ?? generateId();
-            recordIdList.push(id);
-
-            const [product] = await client.query('products.get', { id: record.productId }, { strategy: 'cache-first' });
-            const [amount, unit] = product ? quantityInUnit(product, record.quantity, record.unit) : [record.quantity, null];
-            initialRecordValues[id] = {
-              product: product ?? null,
-              amount,
-              unit,
+          {recordIds.map((id) => {
+            const currentProduct = () => {
+              return (context?.field(`record:${id}:product`)?.getValue()?.[0] ??
+                null) as Product | null;
             };
-          }
 
-          const specialRecordIdList: string[] = [];
-          note.specialRecords?.forEach(record => {
-            const id = generateId();
-            specialRecordIdList.push(id);
-            initialSpecialRecordValues[id] = {
-              name: record.name,
-              unit: record.unit,
-              amount: record.amount,
-              pricePerUnit: record.pricePerUnit ?? null,
-            };
-          });
+            return (
+              <Fragment key={id}>
+                <MyForm.MultiSelect
+                  name={`record:${id}:product`}
+                  labelText={uiText("Produkt")}
+                  autoFocus={autoFocusFieldName === `record:${id}:product`}
+                  minSelectedItems={1}
+                  maxSelectedItems={1}
+                  getOptions={async ({ query }) => {
+                    const [data, err] = await client.query("products.list", {
+                      search: query,
+                    });
+                    if (err) throw err;
+                    return data ?? [];
+                  }}
+                  renderItem={({ item }) =>
+                    `${item.customId} ${productTitle(item)}`
+                  }
+                  renderTile={(item) => <SmallProductTile data={item} noLink />}
+                  createAction={createEntityAction.product}
+                  onValueChange={forceUpdate}
+                />
 
-          setRecordIds(recordIdList.length ? recordIdList : []);
-          setSpecialRecordIds(specialRecordIdList);
-        }} />
-      </>;
+                <div key={id} className="flex gap-2 items-end">
+                  <div className="grow flex gap-2">
+                    <div className="min-w-0 basis-1/2 flex-1">
+                      <MyForm.Input
+                        required
+                        name={`record:${id}:amount`}
+                        labelText={uiText("Anzahl")}
+                        type="number"
+                        rules={[MyForm.Input.rules.num]}
+                      />
+                    </div>
+
+                    <div className="min-w-0 basis-1/2 flex-1">
+                      <MyForm.Select
+                        name={`record:${id}:unit`}
+                        labelText={uiText("Einheit")}
+                        getOptions={() => {
+                          const _product = currentProduct();
+                          if (!_product) return [];
+                          return [
+                            _product.baseUnit,
+                            ...Object.keys(_product.otherUnits),
+                          ].map((e) => ({ id: e }));
+                        }}
+                        getOptionsDeps={[currentProduct()?.id]}
+                        buildOption={({ id }) => ({ text: id, value: id })}
+                        suffix={
+                          <MyButton
+                            kind="ghost"
+                            size="sm"
+                            className="ss-input-suffix-btn"
+                            title={uiText("Eintrag entfernen")}
+                            aria-label={uiText("Eintrag entfernen")}
+                            onClick={() => {
+                              setRecordIds((ids) =>
+                                ids.filter((_id) => _id !== id),
+                              );
+                            }}
+                          >
+                            <Icons.Delete />
+                          </MyButton>
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <NotifyLoaded
+                  onLoad={() => {
+                    const initial = initialRecordValues[id];
+                    if (!initial) return;
+
+                    const values: Record<string, any> = {
+                      [`record:${id}:amount`]: initial.amount,
+                    };
+
+                    if (initial.product)
+                      values[`record:${id}:product`] = [initial.product];
+
+                    context.setValues(values);
+                    if (initial.unit) {
+                      window.setTimeout(
+                        () =>
+                          context.setValues({
+                            [`record:${id}:unit`]: initial.unit,
+                          }),
+                        0,
+                      );
+                    }
+                  }}
+                />
+
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
+
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setRecordIds((ids) => [...ids, id]);
+              setAutoFocusFieldName(`record:${id}:product`);
+            }}
+          >
+            {uiText("Eintrag")}
+          </MyButton>
+
+          <MyDivider />
+
+          <h4 className="text-lg leading-snug font-semibold">
+            {uiText("Sonderposten")}
+          </h4>
+          <p className="light">
+            {uiText(
+              "Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.",
+            )}
+          </p>
+
+          {specialRecordIds.map((id) => {
+            return (
+              <Fragment key={id}>
+                <div className="flex gap-2 items-end">
+                  <div className="grow flex flex-col gap-2">
+                    <div>
+                      <MyForm.Input
+                        required
+                        name={`specialRecord:${id}:name`}
+                        labelText={uiText("Bezeichnung")}
+                        autoFocus={
+                          autoFocusFieldName === `specialRecord:${id}:name`
+                        }
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <div className="min-w-0 basis-1/3 flex-1">
+                        <MyForm.Input
+                          required
+                          name={`specialRecord:${id}:amount`}
+                          labelText={uiText("Menge")}
+                          type="number"
+                          rules={[MyForm.Input.rules.num]}
+                        />
+                      </div>
+
+                      <div className="min-w-0 basis-1/3 flex-1">
+                        <MyForm.Input
+                          required
+                          name={`specialRecord:${id}:unit`}
+                          labelText={uiText("Einheit")}
+                        />
+                      </div>
+
+                      <div className="min-w-0 basis-1/3 flex-1">
+                        <MyForm.Input
+                          name={`specialRecord:${id}:pricePerUnit`}
+                          labelText={uiText("Preis pro Einheit")}
+                          type="number"
+                          rules={[MyForm.Input.rules.num]}
+                          suffix={
+                            <MyButton
+                              kind="ghost"
+                              size="sm"
+                              className="ss-input-suffix-btn"
+                              title={uiText("Sonderposten entfernen")}
+                              aria-label={uiText("Sonderposten entfernen")}
+                              onClick={() => {
+                                setSpecialRecordIds((ids) =>
+                                  ids.filter((_id) => _id !== id),
+                                );
+                              }}
+                            >
+                              <Icons.Delete />
+                            </MyButton>
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <NotifyLoaded
+                  onLoad={() => {
+                    const initial = initialSpecialRecordValues[id];
+                    if (!initial) return;
+
+                    context.setValues({
+                      [`specialRecord:${id}:name`]: initial.name,
+                      [`specialRecord:${id}:unit`]: initial.unit,
+                      [`specialRecord:${id}:amount`]: initial.amount,
+                      [`specialRecord:${id}:pricePerUnit`]:
+                        initial.pricePerUnit ?? "",
+                    });
+                  }}
+                />
+
+                <div style={{ height: "1rem" }} />
+              </Fragment>
+            );
+          })}
+
+          <MyButton
+            kind="secondary"
+            renderIcon={Icons.Plus}
+            onClick={() => {
+              const id = generateId();
+              setSpecialRecordIds((ids) => [...ids, id]);
+              setAutoFocusFieldName(`specialRecord:${id}:name`);
+            }}
+          >
+            {uiText("Sonderposten")}
+          </MyButton>
+
+          <NotifyLoaded
+            onLoad={async () => {
+              context.setValues({ comment: note.comment ?? "" });
+
+              if (note.projectId) {
+                const [project] = await client.query(
+                  "projects.get",
+                  { id: note.projectId },
+                  { strategy: "cache-first" },
+                );
+                if (project) context.setValues({ project: [project] });
+              }
+
+              const recordIdList: string[] = [];
+              for (const record of note.records) {
+                const id = record.id ?? generateId();
+                recordIdList.push(id);
+
+                const [product] = await client.query(
+                  "products.get",
+                  { id: record.productId },
+                  { strategy: "cache-first" },
+                );
+                const [amount, unit] = product
+                  ? quantityInUnit(product, record.quantity, record.unit)
+                  : [record.quantity, null];
+                initialRecordValues[id] = {
+                  product: product ?? null,
+                  amount,
+                  unit,
+                };
+              }
+
+              const specialRecordIdList: string[] = [];
+              note.specialRecords?.forEach((record) => {
+                const id = generateId();
+                specialRecordIdList.push(id);
+                initialSpecialRecordValues[id] = {
+                  name: record.name,
+                  unit: record.unit,
+                  amount: record.amount,
+                  pricePerUnit: record.pricePerUnit ?? null,
+                };
+              });
+
+              setRecordIds(recordIdList.length ? recordIdList : []);
+              setSpecialRecordIds(specialRecordIdList);
+            }}
+          />
+        </>
+      );
     },
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
@@ -762,6 +914,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
       hide();
     },
     modalProps: () => ({
+      useFullscreen: true,
       modalHeading: uiText("Lieferschein bearbeiten"),
       modalLabel: `#${note.autoId}`,
       primaryButtonText: uiText("Speichern"),
@@ -771,14 +924,23 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
 
 export function showDeleteDeliveryNoteModal(modals: MyModalsInterface, note: DeliveryNote) {
   modals.showForm({
-    content: () => <>
-      <p className="light">{uiText("Alle mit diesem Lieferschein in Verbindung stehenden Daten werden damit ebenfalls gelöscht.")}{" "}<b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
-      </p>
-      <MyForm.Checkbox
-        required name="_understood"
-        labelText={uiText("Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.")}
-      />
-    </>,
+    content: () => (
+      <>
+        <p className="light">
+          {uiText(
+            "Alle mit diesem Lieferschein in Verbindung stehenden Daten werden damit ebenfalls gelöscht.",
+          )}{" "}
+          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
+        </p>
+        <MyForm.Checkbox
+          required
+          name="_understood"
+          labelText={uiText(
+            "Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.",
+          )}
+        />
+      </>
+    ),
     onSubmit: async ({ hide, pathname, navigate }) => {
       const [data, err] = await client.mutate('deliveryNotes.delete', { id: note.id });
       if (err) throw err;

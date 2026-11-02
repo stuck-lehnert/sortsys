@@ -1,10 +1,20 @@
+import { Checkbox, Tile } from "@sortsys/react-components";
+import { Button as UIAction } from "@sortsys/react-components";
+import { Input as UIInput } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
 import { Icons } from "~/lib/icons";
 import { formatDate } from "~/lib/format";
 import { MyButton } from "~/components/MyButton";
 import { MyDropdown } from "~/components/MyDropdown";
 import type { NewProjectFileType } from "~/lib/blankProjectFiles";
-import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 
 export type ProjectFileBrowserFolder = {
@@ -106,9 +116,18 @@ function ProjectFileTypeIcon({ file }: { file: ProjectFileBrowserFile }) {
   const fileType = fileTypeIcon(file);
   const FileIcon = fileType?.icon;
 
-  return <span className="project-file-browser__file-icon" data-file-type={fileType?.kind}>
-    {FileIcon ? <FileIcon aria-hidden="true" /> : extensionLabel(file.fileName)}
-  </span>;
+  return (
+    <span
+      className="project-file-browser__file-icon"
+      data-file-type={fileType?.kind}
+    >
+      {FileIcon ? (
+        <FileIcon aria-hidden="true" />
+      ) : (
+        extensionLabel(file.fileName)
+      )}
+    </span>
+  );
 }
 
 function readInternalDrag(event: DragEvent): InternalDragPayload | null {
@@ -148,7 +167,10 @@ export function ProjectFileBrowser(props: {
   onChooseFileDestination: (fileIds: string[]) => void;
   onCreateFolder: (parentFolderId: string | null) => void;
   onRenameFolder: (folder: ProjectFileBrowserFolder) => void;
-  onMoveFolder: (folder: ProjectFileBrowserFolder, parentFolderId: string | null) => void;
+  onMoveFolder: (
+    folder: ProjectFileBrowserFolder,
+    parentFolderId: string | null,
+  ) => void;
   onChooseFolderDestination: (folder: ProjectFileBrowserFolder) => void;
   onDeleteFolder: (folder: ProjectFileBrowserFolder) => void;
   onCreateFile: (type: NewProjectFileType, folderId: string | null) => void;
@@ -376,6 +398,13 @@ export function ProjectFileBrowser(props: {
 
   const createFileMenuItems = [
     {
+      label: uiText("Ordner", "Folder"),
+      renderIcon: Icons.Folder,
+      showIcon: true,
+      disabled: busy,
+      onClick: () => onCreateFolder(currentFolderId),
+    },
+    {
       label: uiText("Word", "Word"),
       renderIcon: Icons.Word,
       showIcon: true,
@@ -401,196 +430,289 @@ export function ProjectFileBrowser(props: {
     },
   ];
 
-  return <section
-    className={`project-file-browser${dropTargetId === currentFolderId ? " is-drop-target" : ""}`}
-    aria-label={uiText("Dateiablage", "File storage")}
-    onDragOver={(event) => allowDrop(event, currentFolderId)}
-    onDragLeave={(event) => {
-      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-      setDropTargetId(undefined);
-    }}
-    onDrop={(event) => dropInto(event, currentFolderId)}
-  >
-    <div className="project-file-browser__navigation">
-      <nav className="project-file-browser__breadcrumbs" aria-label={uiText("Ordnerpfad", "Folder path")}>
-        <button
-          type="button"
-          className="project-file-browser__breadcrumb"
-          onClick={() => {
-            setCurrentFolderId(null);
-            setSearch("");
-          }}
-          onDragOver={(event) => allowDrop(event, null)}
-          onDrop={(event) => dropInto(event, null)}
-        >
-          {uiText("Anhänge", "Attachments")}
-        </button>
+  return (
+    <Tile
+      className={[
+        "project-file-browser min-w-0 gap-0 overflow-hidden p-0",
+        dropTargetId === currentFolderId ? "is-drop-target" : "",
+      ].join(" ")}
+      role="region"
+      aria-label={uiText("Dateiablage", "File storage")}
+      onDragOver={(event: DragEvent<HTMLDivElement>) => {
+        allowDrop(event, currentFolderId);
+      }}
+      onDragLeave={(event: DragEvent<HTMLDivElement>) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          return;
+        }
 
-        {breadcrumbs.map(folder => <span key={folder.id} className="project-file-browser__breadcrumb-part">
-          <Icons.AccordionClosed aria-hidden="true" />
-          <button
+        setDropTargetId(undefined);
+      }}
+      onDrop={(event: DragEvent<HTMLDivElement>) => {
+        dropInto(event, currentFolderId);
+      }}
+    >
+      <div className="project-file-browser__navigation">
+        <nav
+          className="project-file-browser__breadcrumbs"
+          aria-label={uiText("Ordnerpfad", "Folder path")}
+        >
+          <UIAction
+            kind="ghost"
             type="button"
             className="project-file-browser__breadcrumb"
-            onClick={() => setCurrentFolderId(folder.id)}
-            onDragOver={(event) => allowDrop(event, folder.id)}
-            onDrop={(event) => dropInto(event, folder.id)}
+            onClick={() => {
+              setCurrentFolderId(null);
+              setSearch("");
+            }}
+            onDragOver={(event: React.DragEvent<HTMLButtonElement>) =>
+              allowDrop(event, null)
+            }
+            onDrop={(event: React.DragEvent<HTMLButtonElement>) =>
+              dropInto(event, null)
+            }
           >
-            {folder.name}
-          </button>
-        </span>)}
-      </nav>
+            {uiText("Anhänge", "Attachments")}
+          </UIAction>
 
-      <div className="project-file-browser__tools">
-        <label className="project-file-browser__search">
-          <Icons.Search aria-hidden="true" />
-          <span className="sr-only">{uiText("Anhänge durchsuchen", "Search attachments")}</span>
-          <input
-            type="search"
-            value={search}
-            placeholder={uiText("In Anhängen suchen", "Search attachments")}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-          />
-        </label>
+          {breadcrumbs.map((folder) => (
+            <span
+              key={folder.id}
+              className="project-file-browser__breadcrumb-part"
+            >
+              <Icons.AccordionClosed aria-hidden="true" />
+              <UIAction
+                kind="ghost"
+                type="button"
+                className="project-file-browser__breadcrumb"
+                onClick={() => setCurrentFolderId(folder.id)}
+                onDragOver={(event: React.DragEvent<HTMLButtonElement>) =>
+                  allowDrop(event, folder.id)
+                }
+                onDrop={(event: React.DragEvent<HTMLButtonElement>) =>
+                  dropInto(event, folder.id)
+                }
+              >
+                {folder.name}
+              </UIAction>
+            </span>
+          ))}
+        </nav>
 
-        <MyDropdown
-          icon={Icons.Plus}
-          size="sm"
-          label={uiText("Neu", "New")}
-          ariaLabel={uiText("Neue Datei erstellen", "Create new file")}
-          items={createFileMenuItems}
-          menuClassName="project-file-browser__new-menu"
-        />
+        <div className="project-file-browser__tools">
+          <label className="project-file-browser__search">
+            <Icons.Search aria-hidden="true" />
+            <span className="sr-only">
+              {uiText("Anhänge durchsuchen", "Search attachments")}
+            </span>
+            <UIInput
+              variant="secondary"
+              type="search"
+              value={search}
+              placeholder={uiText("In Anhängen suchen", "Search attachments")}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+            />
+          </label>
 
-        <MyButton
-          size="sm"
-          kind="ghost"
-          renderIcon={Icons.Upload}
-          disabled={busy}
-          onClick={() => onChooseUpload(currentFolderId)}
-        >
-          {uiText("Dateien hochladen", "Upload files")}
-        </MyButton>
-
-        <MyButton
-          size="sm"
-          kind="ghost"
-          renderIcon={Icons.FolderAdd}
-          disabled={busy}
-          onClick={() => onCreateFolder(currentFolderId)}
-        >
-          {uiText("Neuer Ordner", "New folder")}
-        </MyButton>
-      </div>
-    </div>
-
-    <div className="project-file-browser__list" role="list" aria-label={uiText("Dateien und Ordner", "Files and folders")}>
-      <div className="project-file-browser__header" aria-hidden="true">
-        <span aria-hidden="true" />
-        <span>{uiText("Name", "Name")}</span>
-        <span>{uiText("Geändert", "Modified")}</span>
-        <span>{uiText("Größe", "Size")}</span>
-        <span aria-hidden="true" />
-      </div>
-
-      {visibleFolders.map(folder => <div
-        key={folder.id}
-        className={`project-file-browser__row is-folder${dropTargetId === folder.id ? " is-drop-target" : ""}`}
-        role="listitem"
-        tabIndex={0}
-        draggable={!busy}
-        onDragStart={(event) => startFolderDrag(event, folder)}
-        onDragOver={(event) => allowDrop(event, folder.id)}
-        onDragLeave={() => setDropTargetId(undefined)}
-        onDrop={(event) => dropInto(event, folder.id)}
-        onContextMenu={(event) => showContextMenu(event, { kind: "folder", folder })}
-        onKeyDown={(event) => showKeyboardContextMenu(event, { kind: "folder", folder })}
-      >
-        <span className="project-file-browser__select-spacer" aria-hidden="true" />
-        <button type="button" className="project-file-browser__name" onClick={() => openFolder(folder)}>
-          <span className="project-file-browser__file-icon is-folder"><Icons.Folder aria-hidden="true" /></span>
-          <span className="project-file-browser__name-copy">
-            <strong>{folder.name}</strong>
-            {normalizedSearch && <small>{locationLabel(folder.parentFolderId)}</small>}
-          </span>
-        </button>
-        <span className="project-file-browser__date">{formatDate(folder.modifiedAt)}</span>
-        <span className="project-file-browser__size">–</span>
-        <MyDropdown items={folderMenuItems(folder)} />
-      </div>)}
-
-      {visibleFiles.map(file => <div
-        key={file.id}
-        className={`project-file-browser__row is-file${selectedFileIds.has(file.id) ? " is-selected" : ""}`}
-        role="listitem"
-        tabIndex={0}
-        draggable={!busy}
-        onDragStart={(event) => startFileDrag(event, file)}
-        onContextMenu={(event) => showContextMenu(event, { kind: "file", file })}
-        onKeyDown={(event) => showKeyboardContextMenu(event, { kind: "file", file })}
-      >
-        <label className="project-file-browser__select">
-          <span className="sr-only">{uiText("Datei auswählen", "Select file")}: {file.fileName}</span>
-          <input
-            type="checkbox"
-            checked={selectedFileIds.has(file.id)}
-            onChange={() => onToggleFile(file.id)}
-          />
-        </label>
-        <button type="button" className="project-file-browser__name" onClick={() => onOpenFile(file)}>
-          <ProjectFileTypeIcon file={file} />
-          <span className="project-file-browser__name-copy">
-            <strong>{file.fileName}</strong>
-            {normalizedSearch && <small>{locationLabel(file.folderId)}</small>}
-            {(file.textExtractionStatus === "pending"
-              || file.textExtractionStatus === "queued"
-              || file.textExtractionStatus === "processing") && <small>{uiText("Text wird erkannt …", "Recognizing text…")}</small>}
-            {file.textExtractionStatus === "failed" && (
-              <small className="is-failed">
-                {uiText("Texterkennung fehlgeschlagen", "Text recognition failed")}
-              </small>
+          <MyDropdown
+            icon={Icons.Plus}
+            size="sm"
+            label={uiText("Neu", "New")}
+            ariaLabel={uiText(
+              "Datei oder Ordner erstellen",
+              "Create file or folder",
             )}
-          </span>
-        </button>
-        <span className="project-file-browser__date">{formatDate(file.modifiedAt)}</span>
-        <span className="project-file-browser__size">{formatBytes(file.sizeBytes)}</span>
-        <MyDropdown items={fileMenuItems(file)} />
-      </div>)}
+            items={createFileMenuItems}
+            menuClassName="project-file-browser__new-menu"
+          />
 
-      {!visibleFolders.length && !visibleFiles.length && <div className="project-file-browser__empty">
-        {normalizedSearch
-          ? uiText("Keine passenden Anhänge gefunden.", "No matching attachments found.")
-          : uiText("Dieser Ordner ist leer. Dateien können hier abgelegt oder hochgeladen werden.", "This folder is empty. Drop or upload files here.")}
-      </div>}
-    </div>
+          <MyButton
+            size="sm"
+            kind="secondary"
+            renderIcon={Icons.Upload}
+            disabled={busy}
+            onClick={() => onChooseUpload(currentFolderId)}
+          >
+            {uiText("Dateien hochladen", "Upload files")}
+          </MyButton>
+        </div>
+      </div>
 
-    <p className="project-file-browser__drop-hint">
-      {uiText("Dateien hierher ziehen oder über „Dateien hochladen“ auswählen.", "Drop files here or choose Upload files.")}
-    </p>
-
-    {!!contextMenu && createPortal(
       <div
-        className="project-file-browser__context-menu"
-        role="menu"
-        aria-label={uiText("Aktionen", "Actions")}
-        style={{ left: contextMenu.x, top: contextMenu.y }}
-        onClick={(event) => event.stopPropagation()}
+        className="project-file-browser__list"
+        hidden={!visibleFolders.length && !visibleFiles.length}
+        role="list"
+        aria-label={uiText("Dateien und Ordner", "Files and folders")}
       >
-        {(contextMenu.target.kind === "folder"
-          ? folderMenuItems(contextMenu.target.folder)
-          : fileMenuItems(contextMenu.target.file)
-        ).map((item) => <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            setContextMenu(null);
-            item.onClick();
-          }}
-        >
-          <span>{item.label}</span>
-        </button>)}
-      </div>,
-      document.body,
-    )}
-  </section>;
+        <div className="project-file-browser__header" aria-hidden="true">
+          <span aria-hidden="true" />
+          <span>{uiText("Name", "Name")}</span>
+          <span>{uiText("Geändert", "Modified")}</span>
+          <span>{uiText("Größe", "Size")}</span>
+          <span aria-hidden="true" />
+        </div>
+
+        {visibleFolders.map((folder) => (
+          <div
+            key={folder.id}
+            className={`project-file-browser__row is-folder${dropTargetId === folder.id ? " is-drop-target" : ""}`}
+            role="listitem"
+            tabIndex={0}
+            draggable={!busy}
+            onDragStart={(event) => startFolderDrag(event, folder)}
+            onDragOver={(event) => allowDrop(event, folder.id)}
+            onDragLeave={() => setDropTargetId(undefined)}
+            onDrop={(event) => dropInto(event, folder.id)}
+            onContextMenu={(event) =>
+              showContextMenu(event, { kind: "folder", folder })
+            }
+            onKeyDown={(event) =>
+              showKeyboardContextMenu(event, { kind: "folder", folder })
+            }
+          >
+            <span
+              className="project-file-browser__select-spacer"
+              aria-hidden="true"
+            />
+            <UIAction
+              kind="ghost"
+              type="button"
+              className="project-file-browser__name"
+              onClick={() => openFolder(folder)}
+            >
+              <span className="project-file-browser__file-icon is-folder">
+                <Icons.Folder aria-hidden="true" />
+              </span>
+              <span className="project-file-browser__name-copy">
+                <strong>{folder.name}</strong>
+                {normalizedSearch && (
+                  <small>{locationLabel(folder.parentFolderId)}</small>
+                )}
+              </span>
+            </UIAction>
+            <span className="project-file-browser__date">
+              {formatDate(folder.modifiedAt)}
+            </span>
+            <span className="project-file-browser__size">–</span>
+            <MyDropdown items={folderMenuItems(folder)} />
+          </div>
+        ))}
+
+        {visibleFiles.map((file) => (
+          <div
+            key={file.id}
+            className={`project-file-browser__row is-file${selectedFileIds.has(file.id) ? " is-selected" : ""}`}
+            role="listitem"
+            tabIndex={0}
+            draggable={!busy}
+            onDragStart={(event) => startFileDrag(event, file)}
+            onContextMenu={(event) =>
+              showContextMenu(event, { kind: "file", file })
+            }
+            onKeyDown={(event) =>
+              showKeyboardContextMenu(event, { kind: "file", file })
+            }
+          >
+            <Checkbox
+              className="flex min-h-11 min-w-11 items-center justify-center"
+              labelText={
+                <span className="sr-only">
+                  {uiText("Datei auswählen", "Select file")}: {file.fileName}
+                </span>
+              }
+              checked={selectedFileIds.has(file.id)}
+              onChange={() => onToggleFile(file.id)}
+            />
+            <UIAction
+              kind="ghost"
+              type="button"
+              className="project-file-browser__name"
+              onClick={() => onOpenFile(file)}
+            >
+              <ProjectFileTypeIcon file={file} />
+              <span className="project-file-browser__name-copy">
+                <strong>{file.fileName}</strong>
+                {normalizedSearch && (
+                  <small>{locationLabel(file.folderId)}</small>
+                )}
+                {(file.textExtractionStatus === "pending" ||
+                  file.textExtractionStatus === "queued" ||
+                  file.textExtractionStatus === "processing") && (
+                  <small>
+                    {uiText("Text wird erkannt …", "Recognizing text…")}
+                  </small>
+                )}
+                {file.textExtractionStatus === "failed" && (
+                  <small className="is-failed">
+                    {uiText(
+                      "Texterkennung fehlgeschlagen",
+                      "Text recognition failed",
+                    )}
+                  </small>
+                )}
+              </span>
+            </UIAction>
+            <span className="project-file-browser__date">
+              {formatDate(file.modifiedAt)}
+            </span>
+            <span className="project-file-browser__size">
+              {formatBytes(file.sizeBytes)}
+            </span>
+            <MyDropdown items={fileMenuItems(file)} />
+          </div>
+        ))}
+      </div>
+
+      {!visibleFolders.length && !visibleFiles.length && (
+        <div className="project-file-browser__empty" role="status">
+          {normalizedSearch
+            ? uiText(
+                "Keine passenden Anhänge gefunden.",
+                "No matching attachments found.",
+              )
+            : uiText(
+                "Dieser Ordner ist leer. Dateien können hier abgelegt oder hochgeladen werden.",
+                "This folder is empty. Drop or upload files here.",
+              )}
+        </div>
+      )}
+
+      <p className="project-file-browser__drop-hint">
+        {uiText(
+          "Dateien hierher ziehen oder über „Dateien hochladen“ auswählen.",
+          "Drop files here or choose Upload files.",
+        )}
+      </p>
+
+      {!!contextMenu &&
+        createPortal(
+          <div
+            className="project-file-browser__context-menu"
+            role="menu"
+            aria-label={uiText("Aktionen", "Actions")}
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {(contextMenu.target.kind === "folder"
+              ? folderMenuItems(contextMenu.target.folder)
+              : fileMenuItems(contextMenu.target.file)
+            ).map((item) => (
+              <UIAction
+                kind="ghost"
+                key={item.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setContextMenu(null);
+                  item.onClick();
+                }}
+              >
+                <span>{item.label}</span>
+              </UIAction>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </Tile>
+  );
 }
