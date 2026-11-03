@@ -139,7 +139,7 @@ export type QueryOutputs = {
   "admin.databases.list": { id: string; hostId: string; hostName: string; name: string; username: string; retentionDaily: number; retentionWeekly: number; retentionMonthly: number; retentionYearly: number; createdAt: Date; updatedAt: Date; }[];
   "admin.errors.list": { tenant: string; id: string; level: "error" | "warning"; source: string; message: string; stack: null | string; path: null | string; componentStack: null | string; metadata: null | Record<string, unknown>; userAgent: null | string; createdByUserId: null | string; username: null | string; createdAt: Date; }[];
   "admin.llm.providers.list": Array<{ provider: string, baseUrl: string | null, hasApiKey: boolean, }>;
-  "admin.llm.providers.models": Array<{ id: string, name: string, }>;
+  "admin.llm.providers.models": Array<{ id: string, name: string, supportsImageInput: boolean, }>;
   "admin.llm.scanSettings.get": { provider: string, model: string, baseUrl: string | null, hasApiKey: boolean, mcpAvailable: boolean, } | null;
   "admin.llm.settings.get": { provider: string, model: string, baseUrl: string | null, hasApiKey: boolean, mcpAvailable: boolean, } | null;
   "admin.llm.tenants.list": Array<{ name: string, enabled: boolean, monthlyTokenQuota: bigint | null, }>;

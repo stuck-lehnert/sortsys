@@ -3098,10 +3098,9 @@ mod tests {
     use super::{
         DeliveryNoteOcrResult, MAX_SCAN_BYTES, ParseScanInput, RawScanLine, RawUnitConversion,
         RecognizedScanDocument, ScanProduct, catalogue_brand_styles, combine_ocr_documents,
-        has_visual_original,
-        find_unambiguous_product_match, parse_product_records, parse_raw_scan_result,
-        parse_special_records, product_unit_factor, proposed_product_name, proposed_unit_factors,
-        scan_transcript_chunks, validate_scan_documents, validate_scan_file,
+        find_unambiguous_product_match, has_visual_original, parse_product_records,
+        parse_raw_scan_result, parse_special_records, product_unit_factor, proposed_product_name,
+        proposed_unit_factors, scan_transcript_chunks, validate_scan_documents, validate_scan_file,
         worksheet_discounted_unit_price,
     };
     use sqlx::types::Json;

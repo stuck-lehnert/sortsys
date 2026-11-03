@@ -97,7 +97,11 @@ fn scan_body(
     );
     request["max_tokens"] = json!(SCAN_MAX_OUTPUT_TOKENS);
 
-    if input.originals.iter().any(|original| original.mime_type == "application/pdf") {
+    if input
+        .originals
+        .iter()
+        .any(|original| original.mime_type == "application/pdf")
+    {
         request["plugins"] = json!([
             { "id": "file-parser", "pdf": { "engine": "native" } }
         ]);

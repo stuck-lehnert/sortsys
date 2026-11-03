@@ -1,5 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import { useEffect, useRef } from "react";
+import { useTheme } from "~/hooks/useTheme";
 
 let scriptTypeLibsLoaded = false;
 let scriptImportCompletionsLoaded = false;
@@ -431,21 +432,32 @@ export function ScriptEditor(props: {
 
 export function ScriptCodePreview(props: { value: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     let disposed = false;
 
     async function render() {
-      if (!containerRef.current || typeof window !== 'object') return;
-      const monaco = await import('monaco-editor');
-      if (disposed || !containerRef.current) return;
+      if (!containerRef.current || typeof window !== "object") {
+        return;
+      }
 
-      const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
-      const theme = () => themeMedia.matches ? 'vs-dark' : 'vs';
-      monaco.editor.setTheme(theme());
+      const monaco = await import("monaco-editor");
 
-      const html = await monaco.editor.colorize(props.value || ' ', 'javascript', {});
-      if (!disposed && containerRef.current) containerRef.current.innerHTML = html;
+      if (disposed || !containerRef.current) {
+        return;
+      }
+
+      monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
+      const html = await monaco.editor.colorize(
+        props.value || " ",
+        "javascript",
+        {},
+      );
+
+      if (!disposed && containerRef.current) {
+        containerRef.current.innerHTML = html;
+      }
     }
 
     void render();
@@ -453,9 +465,11 @@ export function ScriptCodePreview(props: { value: string }) {
     return () => {
       disposed = true;
     };
-  }, [props.value]);
+  }, [props.value, theme]);
 
-  return <div className="script-code-preview" aria-label={uiText("Skriptvorschau")}>
-    <div ref={containerRef} className="script-code-preview-content" />
-  </div>;
+  return (
+    <div className="script-code-preview" aria-label={uiText("Skriptvorschau")}>
+      <div ref={containerRef} className="script-code-preview-content" />
+    </div>
+  );
 }

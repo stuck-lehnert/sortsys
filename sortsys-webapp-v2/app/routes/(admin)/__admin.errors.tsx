@@ -10,16 +10,26 @@ import { adminClient } from "~/lib/adminClient";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 
-type ErrorReport = QueryResult<'admin.errors.list'>[number];
+type ErrorReport = QueryResult<"admin.errors.list">[number];
 
 function formatTimestamp(value: Date) {
-  return `${formatDate(value)} ${value.toLocaleTimeString(currentLocaleTag(), { hour: '2-digit', minute: '2-digit' })}`;
+  const time = value.toLocaleTimeString(currentLocaleTag(), {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `${formatDate(value)} ${time}`;
 }
 
 export default function GlobalAdminErrorsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reports, err] = useClientStream(
-    () => adminClient.streamQuery('admin.errors.list', { limit: 200 }, { strategy: 'network-first' }),
+    () =>
+      adminClient.streamQuery(
+        "admin.errors.list",
+        { limit: 200 },
+        { strategy: "network-first" },
+      ),
     [],
   );
 
@@ -88,33 +98,33 @@ export default function GlobalAdminErrorsPage() {
           closeButtonLabel={uiText("Schließen", "Close")}
           onRequestClose={() => setSelectedId(null)}
         >
-          <div className="space-y-3">
-          <div className="light">
-            {selected.tenant} · {selected.source} ·{" "}
-            {formatTimestamp(selected.createdAt)}
-            {!!selected.path && <> · {selected.path}</>}
-          </div>
-          {!!selected.stack && (
-            <pre className="overflow-x-auto">
-              <code>{selected.stack}</code>
-            </pre>
-          )}
-          {!!selected.componentStack && (
-            <pre className="overflow-x-auto">
-              <code>{selected.componentStack}</code>
-            </pre>
-          )}
-          {!!selected.metadata && (
-            <pre className="overflow-x-auto">
-              <code>{JSON.stringify(selected.metadata, null, 2)}</code>
-            </pre>
-          )}
-          {!!selected.userAgent && (
-            <div className="light">
-              {uiText("User-Agent: ")}
-              {selected.userAgent}
+          <div className="min-w-0 space-y-3">
+            <div className="light break-words">
+              {selected.tenant} · {selected.source} ·{" "}
+              {formatTimestamp(selected.createdAt)}
+              {!!selected.path && <> · {selected.path}</>}
             </div>
-          )}
+            {!!selected.stack && (
+              <pre className="overflow-x-auto" tabIndex={0}>
+                <code>{selected.stack}</code>
+              </pre>
+            )}
+            {!!selected.componentStack && (
+              <pre className="overflow-x-auto" tabIndex={0}>
+                <code>{selected.componentStack}</code>
+              </pre>
+            )}
+            {!!selected.metadata && (
+              <pre className="overflow-x-auto" tabIndex={0}>
+                <code>{JSON.stringify(selected.metadata, null, 2)}</code>
+              </pre>
+            )}
+            {!!selected.userAgent && (
+              <div className="light break-words">
+                {uiText("User-Agent: ")}
+                {selected.userAgent}
+              </div>
+            )}
           </div>
         </Modal>
       )}

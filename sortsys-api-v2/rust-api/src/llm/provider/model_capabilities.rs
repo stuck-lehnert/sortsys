@@ -58,12 +58,23 @@ mod tests {
 
     #[test]
     fn documented_openai_ids_are_exact_and_only_apply_to_the_native_provider() {
-        for id in ["gpt-6-luna", "gpt-6-astra", "gpt-4.1", "gpt-4.1-2025-04-14", "gpt-4o"] {
+        for id in [
+            "gpt-6-luna",
+            "gpt-6-astra",
+            "gpt-4.1",
+            "gpt-4.1-2025-04-14",
+            "gpt-4o",
+        ] {
             assert!(supports_image_input("openai", &json!({"id": id})));
             assert!(!supports_image_input("compatible", &json!({"id": id})));
         }
 
-        for id in ["gpt-6-luna-audio", "gpt-4.1-made-up", "gpt-3.5-turbo", "o3-mini"] {
+        for id in [
+            "gpt-6-luna-audio",
+            "gpt-4.1-made-up",
+            "gpt-3.5-turbo",
+            "o3-mini",
+        ] {
             assert!(!supports_image_input("openai", &json!({"id": id})));
         }
     }

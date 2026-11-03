@@ -5,6 +5,10 @@ import { Outlet, Route, Routes, useLocation } from "react-router";
 import { SessionInfoProvider } from "../../app/hooks/useSessionInfo";
 import { MyModalsProvider, useMyModals } from "../../app/hooks/useMyModals";
 import { client } from "../../app/lib/client";
+import { adminClient } from "../../app/lib/adminClient";
+import GlobalAdminErrorsPage from "../../app/routes/(admin)/__admin.errors";
+import GlobalAdminLlmPage from "../../app/routes/(admin)/__admin.llm";
+import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
 import { showSetUserPasswordModal } from "../../app/modals/users";
 import { showCreateDailyProjectReportModal } from "../../app/modals/dailyProjectReport";
@@ -55,6 +59,7 @@ if (
 ) {
   // Only synthetic, intercepted HTTP requests use this opaque fixture session.
   client.setToken("sortsys-ui-synthetic-session");
+  adminClient.setToken("sortsys-ui-synthetic-admin-session");
 }
 
 function FormEntrypoints() {
@@ -142,11 +147,11 @@ function ApplicationFrame({ children }) {
 export function ApplicationFixture() {
   return (
     <SessionInfoProvider>
-      <MyModalsProvider>
-        <NotificationProvider
-          closeLabel="Close notification"
-          regionLabel="Notifications"
-        >
+      <NotificationProvider
+        closeLabel="Close notification"
+        regionLabel="Notifications"
+      >
+        <MyModalsProvider>
           <ApplicationFrame>
             <Routes>
               <Route path="/customers/:id" element={<CustomerPage />} />
@@ -161,10 +166,16 @@ export function ApplicationFixture() {
               <Route path="/llm/chats" element={<LlmChatsPage />} />
               <Route path="/llm/:chatId" element={<LlmPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route
+                path="/__admin/errors"
+                element={<GlobalAdminErrorsPage />}
+              />
+              <Route path="/__admin/llm" element={<GlobalAdminLlmPage />} />
+              <Route path="/scripts" element={<ClientScriptsPage />} />
             </Routes>
           </ApplicationFrame>
-        </NotificationProvider>
-      </MyModalsProvider>
+        </MyModalsProvider>
+      </NotificationProvider>
     </SessionInfoProvider>
   );
 }

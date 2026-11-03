@@ -32,6 +32,48 @@ const otherContact = {
   lastName: "Schneider",
 };
 
+const importModelOptions = [
+  { id: "text-only", name: "Text only", supportsImageInput: false },
+  { id: "vision-model", name: "Verified vision", supportsImageInput: true },
+  { id: "unknown-model", name: "Unverified model" },
+];
+
+function seedAdminModels(provider = "openrouter") {
+  api.respond(
+    "admin.llm.providers.list",
+    ["openrouter", "openai"].map((name) => ({
+      provider: name,
+      baseUrl: null,
+      hasApiKey: true,
+    })),
+  );
+  api.respond(
+    "admin.llm.useCases.list",
+    ["chat", "documentImport"].map((useCase) => ({
+      useCase,
+      provider,
+      model: "text-only",
+    })),
+  );
+  api.respond("admin.llm.tenants.list", []);
+  api.respond("admin.llm.usage", []);
+  api.respond("admin.llm.providers.models", importModelOptions);
+  api.respond("admin.llm.useCases.update", true);
+}
+
+async function openModelDialog(title) {
+  const heading = page.getByText(title, { exact: true });
+  await heading.waitFor();
+  await heading
+    .locator("..")
+    .locator("..")
+    .getByRole("button", { name: /^(Ändern|Change)$/ })
+    .click();
+  const dialog = page.getByRole("dialog", { name: title, exact: true });
+  await dialog.waitFor();
+  return dialog;
+}
+
 function createWorkflowApi() {
   let locale = "en";
   let roles = [":admin"];
@@ -472,6 +514,7 @@ async function openApplication(path, locale = "en", theme = "light") {
   }
 
   api.setLocale(locale);
+  await page.emulateMedia({ colorScheme: theme });
   await page.goto(`${server.origin}/controls?${query}`);
   await page.waitForFunction(
     (language) => document.documentElement.lang === language,
@@ -2538,4 +2581,268 @@ test("proposal mutation failure keeps review pending and allows retry", async ()
     api.requests.filter(({ path }) => path === "llm.proposals.review").length,
     1,
   );
+});
+
+for (const { locale, theme, width } of [
+  { locale: "de", theme: "light", width: 1400 },
+  { locale: "en", theme: "dark", width: 390 },
+]) {
+  test(`admin error details open only in a modal in ${locale}`, async () => {
+    const report = {
+      id: "synthetic-error",
+      tenant: "Fixture Tenant",
+      source: "webapp",
+      message: "Synthetic error summary",
+      createdAt: new Date("2026-10-27T08:00:00Z"),
+      username: "fixture.user",
+      createdByUserId: null,
+      path: `/projects/${"long-path-".repeat(30)}`,
+      stack: `Synthetic trace ${"x".repeat(200)}`,
+      componentStack: "Synthetic component trace",
+      metadata: { fixture: true },
+      userAgent: "Synthetic browser agent",
+    };
+    api.respond("admin.errors.list", [report]);
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/__admin/errors", locale, theme);
+    const message = page.getByRole("button", { name: report.message });
+    await message.waitFor();
+    assert.equal(await page.getByRole("dialog").count(), 0);
+    assert.equal(
+      await page.getByText(report.stack, { exact: true }).count(),
+      0,
+    );
+
+    if (width > 1000) {
+      const row = message.locator("xpath=ancestor::tr");
+      assert.equal(
+        await row.evaluate((node) => getComputedStyle(node).cursor),
+        "pointer",
+      );
+    }
+
+    await message.click();
+    const dialog = page.getByRole("dialog", { name: report.message });
+    await dialog.getByText(report.stack, { exact: true }).waitFor();
+    await dialog.getByText(report.componentStack, { exact: true }).waitFor();
+    const trace = dialog.locator("pre").filter({ hasText: report.stack });
+    await trace.focus();
+    assert.equal(
+      await trace.evaluate((node) => node === document.activeElement),
+      true,
+    );
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() => document.activeElement.scrollLeft > 0);
+    await checkPageLayout(`admin-error-modal-${locale}`);
+    await dialog.getByRole("button", { name: /^(Schließen|Close)$/ }).click();
+    await dialog.waitFor({ state: "hidden" });
+    assert.equal(
+      await page.getByText(report.stack, { exact: true }).count(),
+      0,
+    );
+  });
+
+  test(`admin import selects verified vision models only in ${locale}`, async () => {
+    seedAdminModels();
+    api.hold("admin.llm.providers.models");
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/__admin/llm", locale, theme);
+    const title = locale === "de" ? "Einlesen" : "Document import";
+    const dialog = await openModelDialog(title);
+    const save = dialog.getByRole("button", { name: /^(Speichern|Save)$/ });
+    assert.equal(await save.isDisabled(), true);
+    api.release("admin.llm.providers.models");
+    await dialog.getByText(/gespeicherte Modell|saved model/).waitFor();
+    const model = dialog.getByRole("button", { name: /\b(Modell|Model)\b/ });
+    await model.click();
+    await page
+      .getByRole("option", { name: "Verified vision", exact: true })
+      .waitFor();
+    assert.equal(
+      await page.getByRole("option", { name: "Text only" }).count(),
+      0,
+    );
+    assert.equal(
+      await page.getByRole("option", { name: "Unverified model" }).count(),
+      0,
+    );
+    await page.waitForFunction(
+      () => !document.querySelector("[data-entering]"),
+    );
+    await checkPageLayout(`admin-import-options-${locale}`);
+    await page
+      .getByRole("option", { name: "Verified vision", exact: true })
+      .click();
+    await page.getByRole("listbox").waitFor({ state: "hidden" });
+    await checkPageLayout(`admin-import-model-${locale}`);
+    await save.click();
+    await dialog.waitFor({ state: "hidden" });
+    assert.deepEqual(
+      api.requests
+        .filter(({ path }) => path === "admin.llm.useCases.update")
+        .map(({ input }) => input),
+      [
+        {
+          useCase: "documentImport",
+          provider: "openrouter",
+          model: "vision-model",
+        },
+      ],
+    );
+  });
+
+  test(`client scripts show an editor only after selection in ${locale}`, async () => {
+    const script = {
+      id: "synthetic-script",
+      name: "Fixture script",
+      description: "Synthetic preview only",
+      enabled: true,
+      code: "const fixturePreview = true;",
+      createdAt: new Date("2026-10-27T08:00:00Z"),
+      modifiedAt: new Date("2026-10-27T08:00:00Z"),
+    };
+    api.respond("clientScripts.list", [script]);
+    api.respond("clientScripts.get", script);
+    api.hold("clientScripts.get");
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/scripts", locale, theme);
+    const item = page.getByRole("button", { name: /Fixture script/ });
+    await item.waitFor();
+    assert.equal(await page.locator(".script-editor-tile").count(), 0);
+    assert.equal(
+      api.requests.some(({ path }) => path === "clientScripts.get"),
+      false,
+    );
+    await item.click();
+    assert.equal(await page.locator(".script-code-preview").count(), 0);
+    api.release("clientScripts.get");
+    const editor = page.locator(".script-editor-tile");
+    await editor.getByRole("textbox", { name: "Name", exact: true }).waitFor();
+    await editor
+      .locator(".script-code-preview-content")
+      .getByText(script.code)
+      .waitFor();
+    const checkbox = editor.getByRole("checkbox", { name: /^(Aktiv|Active)$/ });
+    assert.equal(await checkbox.isChecked(), true);
+    const alignment = await checkbox.evaluate((node) => {
+      const label = node.closest("label").getBoundingClientRect();
+      const field = document
+        .querySelector("#script-name")
+        .getBoundingClientRect();
+      return {
+        label: label.y + label.height / 2,
+        field: field.y + field.height / 2,
+      };
+    });
+
+    if (width > 1000) {
+      assert.ok(Math.abs(alignment.label - alignment.field) <= 5);
+    }
+
+    await checkPageLayout(`client-script-selected-${locale}`);
+    const token = editor
+      .locator(".script-code-preview-content")
+      .getByText("const", { exact: true });
+    const initialColor = await token.evaluate(
+      (node) => getComputedStyle(node).color,
+    );
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    await page.emulateMedia({ colorScheme: nextTheme });
+    await page.evaluate((next) => {
+      document.documentElement.classList.toggle("dark", next === "dark");
+      document.documentElement.dataset.theme = next;
+      document.body.dataset.ssTheme = next;
+    }, nextTheme);
+    await page.waitForFunction((previous) => {
+      const keyword = [
+        ...document.querySelectorAll(".script-code-preview-content span"),
+      ].find((node) => node.textContent === "const");
+
+      return keyword && getComputedStyle(keyword).color !== previous;
+    }, initialColor);
+    await page.evaluate(async () => {
+      const transitions = document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !== Infinity,
+        );
+      await Promise.all(
+        transitions.map((animation) =>
+          animation.finished.catch(() => undefined),
+        ),
+      );
+    });
+    await checkPageLayout(`client-script-switched-${locale}`);
+    assert.equal(
+      api.requests.some(({ path }) => path === "clientScripts.update"),
+      false,
+    );
+  });
+}
+
+for (const state of ["empty", "error"]) {
+  test(`admin import cannot save with ${state} model metadata`, async () => {
+    seedAdminModels();
+
+    if (state === "error") {
+      api.fail(
+        "admin.llm.providers.models",
+        "Synthetic model catalogue failure",
+      );
+    } else {
+      api.respond(
+        "admin.llm.providers.models",
+        importModelOptions.filter((model) => model.supportsImageInput !== true),
+      );
+    }
+
+    await openApplication("/__admin/llm");
+    const dialog = await openModelDialog("Document import");
+    const save = dialog.getByRole("button", { name: "Save", exact: true });
+    await dialog.getByRole("button", { name: "Retry", exact: true }).waitFor();
+    assert.equal(await save.isDisabled(), true);
+    assert.equal(
+      await dialog.getByRole("button", { name: /\bModel\b/ }).isDisabled(),
+      true,
+    );
+    assert.equal(
+      api.requests.some(({ path }) => path === "admin.llm.useCases.update"),
+      false,
+    );
+
+    api.recover("admin.llm.providers.models");
+    api.respond("admin.llm.providers.models", importModelOptions);
+    await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+    const model = dialog.getByRole("button", { name: /\bModel\b/ });
+    await model.click();
+    await page
+      .getByRole("option", { name: "Verified vision", exact: true })
+      .click();
+    assert.equal(await save.isEnabled(), true);
+  });
+}
+
+test("admin chat still offers text models", async () => {
+  seedAdminModels();
+  await openApplication("/__admin/llm");
+  const dialog = await openModelDialog("Chat");
+  await dialog.getByRole("button", { name: /\bModel\b/ }).click();
+  await page.getByRole("option", { name: "Text only", exact: true }).waitFor();
+  await page
+    .getByRole("option", { name: "Verified vision", exact: true })
+    .waitFor();
+});
+
+test("client scripts do not render a draft editor for an empty listing", async () => {
+  api.respond("clientScripts.list", []);
+  await openApplication("/scripts");
+  await page.getByText("No scripts yet.", { exact: true }).waitFor();
+  assert.equal(await page.locator(".script-editor-tile").count(), 0);
+  assert.equal(await page.locator(".script-code-preview").count(), 0);
+  assert.equal(
+    api.requests.some(({ path }) => path === "clientScripts.get"),
+    false,
+  );
+  await checkPageLayout("client-scripts-empty");
 });

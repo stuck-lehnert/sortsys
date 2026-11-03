@@ -10,7 +10,7 @@ import {
   Tile,
   useNotifications,
 } from "@sortsys/react-components";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
@@ -206,32 +206,72 @@ function ProviderAccountDialog({
   );
 }
 
+type ModelValidation = {
+  provider: SupportedProvider;
+  model: string;
+  valid: boolean;
+};
+
 function ModelSelect({
   provider,
   value,
+  requiresImageInput,
   onChange,
+  onValidationChange,
 }: {
   provider: SupportedProvider;
   value: string;
+  requiresImageInput: boolean;
   onChange: (model: string) => void;
+  onValidationChange: (validation: ModelValidation) => void;
 }) {
   const [reload, setReload] = useState(0);
   const [models, modelsError] = useClientStream(
-    () => adminClient.streamQuery(
-      "admin.llm.providers.models",
-      { provider },
-      { strategy: "network-only" },
-    ),
+    () =>
+      adminClient.streamQuery(
+        "admin.llm.providers.models",
+        { provider },
+        { strategy: "network-only" },
+      ),
     [provider, reload],
   );
-  const selectedModelIsAvailable = models?.some(model => model.id === value) ?? false;
+  const availableModels = useMemo(
+    () =>
+      (models ?? []).filter(
+        (model) =>
+          !requiresImageInput ||
+          ("supportsImageInput" in model && model.supportsImageInput === true),
+      ),
+    [models, requiresImageInput],
+  );
+  const selectedModelIsAvailable = availableModels.some(
+    (model) => model.id === value,
+  );
+
+  useEffect(() => {
+    onValidationChange({
+      provider,
+      model: value,
+      valid: !modelsError && selectedModelIsAvailable,
+    });
+  }, [
+    provider,
+    value,
+    modelsError,
+    selectedModelIsAvailable,
+    onValidationChange,
+  ]);
 
   return (
     <div>
       <Select
         labelText={uiText("Modell", "Model")}
-        value={value}
-        disabled={!models || !!modelsError}
+        value={requiresImageInput && !selectedModelIsAvailable ? "" : value}
+        disabled={
+          !models ||
+          !!modelsError ||
+          (requiresImageInput && availableModels.length === 0)
+        }
         onChange={(event: { currentTarget: { value: string } }) =>
           onChange(event.currentTarget.value)
         }
@@ -246,10 +286,10 @@ function ModelSelect({
               ? uiText("Modell auswählen", "Select model")
               : uiText("Modelle werden geladen …", "Loading models …")}
         </SelectItem>
-        {!!value && !selectedModelIsAvailable && (
+        {!requiresImageInput && !!value && !selectedModelIsAvailable && (
           <SelectItem value={value}>{value}</SelectItem>
         )}
-        {(models ?? []).map((model) => (
+        {availableModels.map((model) => (
           <SelectItem key={model.id} value={model.id}>
             {model.name}
           </SelectItem>
@@ -264,15 +304,33 @@ function ModelSelect({
           {modelsError.message}
         </span>
       )}
-      {models?.length === 0 && (
+      {!!models && !modelsError && availableModels.length === 0 && (
         <span className="light block mt-1">
-          {uiText(
-            "Der Provider hat keine Modelle zurückgegeben.",
-            "The provider returned no models.",
-          )}
+          {requiresImageInput
+            ? uiText(
+                "Keine Modelle mit bestätigter Unterstützung für Bildeingaben verfügbar.",
+                "No models with verified image input support are available.",
+              )
+            : uiText(
+                "Der Provider hat keine Modelle zurückgegeben.",
+                "The provider returned no models.",
+              )}
         </span>
       )}
-      {(!!modelsError || models?.length === 0) && (
+      {requiresImageInput &&
+        !!models &&
+        !modelsError &&
+        !!value &&
+        !selectedModelIsAvailable && (
+          <MyCallout icon={Icons.Deny} color="red">
+            {uiText(
+              "Das gespeicherte Modell ist für Bildeingaben nicht verfügbar. " +
+                "Wähle ein anderes Modell.",
+              "The saved model is unavailable for image input. Choose another model.",
+            )}
+          </MyCallout>
+        )}
+      {(!!modelsError || (!!models && availableModels.length === 0)) && (
         <MyButton
           type="button"
           size="sm"
@@ -305,33 +363,52 @@ function UseCaseDialog({
   settings?: UseCaseSettings;
 }) {
   const notifications = useNotifications();
-  const configuredProviders = PROVIDERS.filter(option => (
-    (option.id === "openai" || option.id === "anthropic")
-    && accounts.some(account => account.provider === option.id && account.hasApiKey)
-  ));
-  const currentProvider = settings?.provider;
-  const initialProvider = isSupportedProvider(currentProvider)
-    && configuredProviders.some(option => option.id === currentProvider)
-    ? currentProvider
-    : configuredProviders[0]?.id ?? "";
-  const [provider, setProvider] = useState<SupportedProvider | "">(initialProvider);
-  const [model, setModel] = useState(
-    initialProvider === settings?.provider ? settings?.model ?? "" : "",
+  const configuredProviders = PROVIDERS.filter(
+    (option) =>
+      option.id !== "meta" &&
+      accounts.some(
+        (account) => account.provider === option.id && account.hasApiKey,
+      ),
   );
+  const currentProvider = settings?.provider;
+  const initialProvider =
+    isSupportedProvider(currentProvider) &&
+    configuredProviders.some((option) => option.id === currentProvider)
+      ? currentProvider
+      : (configuredProviders[0]?.id ?? "");
+  const [provider, setProvider] = useState<SupportedProvider | "">(
+    initialProvider,
+  );
+  const [model, setModel] = useState(
+    initialProvider === settings?.provider ? (settings?.model ?? "") : "",
+  );
+  const [modelValidation, setModelValidation] =
+    useState<ModelValidation | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requiresImageInput = useCase === "documentImport";
+  const modelIsValid =
+    !requiresImageInput ||
+    (modelValidation?.provider === provider &&
+      modelValidation.model === model &&
+      modelValidation.valid);
 
   async function saveUseCase() {
-    if (!provider || !model || saving) return;
+    if (!provider || !model || !modelIsValid || saving) {
+      return;
+    }
 
     setSaving(true);
     setError(null);
 
-    const [, saveError] = await adminClient.mutate("admin.llm.useCases.update", {
-      useCase,
-      provider,
-      model,
-    });
+    const [, saveError] = await adminClient.mutate(
+      "admin.llm.useCases.update",
+      {
+        useCase,
+        provider,
+        model,
+      },
+    );
 
     setSaving(false);
 
@@ -353,7 +430,7 @@ function UseCaseDialog({
       open={visible}
       modalHeading={title}
       primaryButtonText={uiText("Speichern", "Save")}
-      primaryButtonDisabled={saving || !provider || !model}
+      primaryButtonDisabled={saving || !provider || !model || !modelIsValid}
       primaryButtonLoading={saving}
       secondaryButtonText={uiText("Abbrechen", "Cancel")}
       closeButtonLabel={uiText("Schließen", "Close")}
@@ -373,7 +450,10 @@ function UseCaseDialog({
           disabled={configuredProviders.length === 0}
           onChange={(event: { currentTarget: { value: string } }) => {
             const nextProvider = event.currentTarget.value;
-            if (!isSupportedProvider(nextProvider)) return;
+
+            if (!isSupportedProvider(nextProvider)) {
+              return;
+            }
 
             setProvider(nextProvider);
             setModel("");
@@ -392,7 +472,14 @@ function UseCaseDialog({
         </Select>
 
         {!!provider && (
-          <ModelSelect provider={provider} value={model} onChange={setModel} />
+          <ModelSelect
+            key={provider}
+            provider={provider}
+            value={model}
+            requiresImageInput={requiresImageInput}
+            onChange={setModel}
+            onValidationChange={setModelValidation}
+          />
         )}
         {!!error && (
           <MyCallout icon={Icons.Deny} color="red">

@@ -70,8 +70,7 @@ pub(super) async fn available_models(
     let native_provider = if account.provider == "openai"
         && account.base_url.as_deref().is_some_and(|base_url| {
             base_url.trim_end_matches('/') != default_provider_base_url("openai")
-        })
-    {
+        }) {
         "compatible"
     } else {
         account.provider.as_str()
@@ -86,7 +85,10 @@ pub(super) async fn require_image_input_model(
 ) -> RpcResult<()> {
     let models = available_models(account).await?;
 
-    if !models.iter().any(|option| option.id == model && option.supports_image_input) {
+    if !models
+        .iter()
+        .any(|option| option.id == model && option.supports_image_input)
+    {
         return Err(RpcError::new(
             ErrorCode::PreconditionFailed,
             "Document import requires an available model with verified image input support",

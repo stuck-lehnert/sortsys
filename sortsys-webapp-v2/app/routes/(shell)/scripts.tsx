@@ -121,7 +121,6 @@ export default function ClientScriptsPage() {
     setLoadedScript(null);
 
     if (!id) {
-      setLoadedScript(null);
       setName('');
       setDescription('');
       setEnabled(true);
@@ -145,7 +144,10 @@ export default function ClientScriptsPage() {
       if (err) {
         throw err;
       }
-      if (!data) throw new Error(uiText("Skript nicht gefunden."));
+
+      if (!data) {
+        throw new Error(uiText("Skript nicht gefunden."));
+      }
 
       const script = data as ClientScriptDetail;
       setLoadedScript(script);
@@ -441,6 +443,12 @@ export default function ClientScriptsPage() {
     <>
       <MyHeader title={uiText("Client-Skripte")} />
 
+      {!!error && (
+        <MyCallout icon={Icons.Deny} color="red">
+          {error}
+        </MyCallout>
+      )}
+
       <div className="script-page grid min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <Tile className="script-list-tile min-w-0 lg:max-h-[calc(100dvh-9rem)] lg:overflow-y-auto">
           <div className="script-toolbar flex flex-wrap items-center gap-3">
@@ -484,129 +492,122 @@ export default function ClientScriptsPage() {
           </div>
         </Tile>
 
-        {!!error && (
-          <MyCallout icon={Icons.Deny} color="red">
-            {error}
-          </MyCallout>
-        )}
-
         {selectedId && loadedScript?.id === selectedId && (
-        <Tile
-          className={[
-            "script-editor-tile flex min-h-0 flex-1 flex-col gap-3",
-            "lg:h-[calc(100dvh-9rem)]",
-          ].join(" ")}
-        >
-          <div className="script-toolbar flex flex-wrap items-center gap-3">
-            <div>
-              <div className="script-title-row flex min-w-0 items-center gap-2">
-                <h3 className="text-xl leading-snug font-semibold">
-                  {isDraft
-                    ? uiText("Neues Skript", "New script")
-                    : (loadedScript?.name ?? uiText("Skript", "Script"))}
-                </h3>
-                <Link
-                  className={[
-                    "script-doc-link inline-flex min-h-11 items-center gap-2 text-sm",
-                    "text-accent",
-                  ].join(" ")}
-                  to="/docs/client-skripte"
+          <Tile
+            className={[
+              "script-editor-tile flex min-h-0 flex-1 flex-col gap-3",
+              "lg:h-[calc(100dvh-9rem)]",
+            ].join(" ")}
+          >
+            <div className="script-toolbar flex flex-wrap items-center gap-3">
+              <div>
+                <div className="script-title-row flex min-w-0 items-center gap-2">
+                  <h3 className="text-xl leading-snug font-semibold">
+                    {isDraft
+                      ? uiText("Neues Skript", "New script")
+                      : (loadedScript?.name ?? uiText("Skript", "Script"))}
+                  </h3>
+                  <Link
+                    className={[
+                      "script-doc-link inline-flex min-h-11 items-center gap-2 text-sm",
+                      "text-accent",
+                    ].join(" ")}
+                    to="/docs/client-skripte"
+                  >
+                    {uiText("Dokumentation")}
+                  </Link>
+                </div>
+              </div>
+
+              <div className="script-actions flex shrink-0 flex-wrap items-center gap-2">
+                <MyButton
+                  kind="ghost"
+                  size="sm"
+                  renderIcon={Icons.Resume}
+                  disabled={
+                    isScriptRunning || !code.trim() || (!enabled && !isDraft)
+                  }
+                  onClick={runCurrentScript}
                 >
-                  {uiText("Dokumentation")}
-                </Link>
+                  {uiText("Ausführen")}
+                </MyButton>
+                {canManage && !isDraft && (
+                  <MyButton
+                    kind="secondary"
+                    size="sm"
+                    renderIcon={Icons.Accept}
+                    loading={isSaving}
+                    disabled={!isMetadataDirty || isLoading}
+                    onClick={saveMetadata}
+                  >
+                    {uiText("Speichern")}
+                  </MyButton>
+                )}
+                {canManage && (
+                  <MyButton
+                    size="sm"
+                    renderIcon={Icons.Edit}
+                    disabled={isLoading || !loadedScript}
+                    onClick={() => setEditMode(true)}
+                  >
+                    {uiText("Bearbeiten")}
+                  </MyButton>
+                )}
+                {canDelete && !isDraft && (
+                  <MyButton
+                    kind="danger--tertiary"
+                    size="sm"
+                    renderIcon={Icons.Delete}
+                    loading={isSaving}
+                    onClick={deleteScript}
+                  >
+                    {uiText("Löschen")}
+                  </MyButton>
+                )}
               </div>
             </div>
 
-            <div className="script-actions flex shrink-0 flex-wrap items-center gap-2">
-              <MyButton
-                kind="ghost"
-                size="sm"
-                renderIcon={Icons.Resume}
-                disabled={
-                  isScriptRunning || !code.trim() || (!enabled && !isDraft)
+            <div
+              className={[
+                "script-meta-grid grid items-end gap-3",
+                "md:grid-cols-[minmax(0,1fr)_auto]",
+              ].join(" ")}
+            >
+              <TextInput
+                id="script-name"
+                labelText={uiText("Name")}
+                value={name}
+                disabled={!canManage}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setName(e.currentTarget.value)
                 }
-                onClick={runCurrentScript}
-              >
-                {uiText("Ausführen")}
-              </MyButton>
-              {canManage && !isDraft && (
-                <MyButton
-                  kind="secondary"
-                  size="sm"
-                  renderIcon={Icons.Accept}
-                  loading={isSaving}
-                  disabled={!isMetadataDirty || isLoading}
-                  onClick={saveMetadata}
-                >
-                  {uiText("Speichern")}
-                </MyButton>
-              )}
-              {canManage && (
-                <MyButton
-                  size="sm"
-                  renderIcon={Icons.Edit}
-                  disabled={isLoading || !loadedScript}
-                  onClick={() => setEditMode(true)}
-                >
-                  {uiText("Bearbeiten")}
-                </MyButton>
-              )}
-              {canDelete && !isDraft && (
-                <MyButton
-                  kind="danger--tertiary"
-                  size="sm"
-                  renderIcon={Icons.Delete}
-                  loading={isSaving}
-                  onClick={deleteScript}
-                >
-                  {uiText("Löschen")}
-                </MyButton>
-              )}
+              />
+              <div className="flex min-h-11 items-center">
+                <Checkbox
+                  id="script-enabled"
+                  labelText={uiText("Aktiv")}
+                  checked={enabled}
+                  disabled={!canManage}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setEnabled(e.currentTarget.checked)
+                  }
+                />
+              </div>
+              <TextArea
+                id="script-description"
+                className="script-description-field min-w-0 w-full md:col-span-2"
+                labelText={uiText("Beschreibung")}
+                value={description}
+                disabled={!canManage}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                  setDescription(e.currentTarget.value)
+                }
+              />
             </div>
-          </div>
 
-          {!!error && (
-            <MyCallout icon={Icons.Deny} color="red">
-              {error}
-            </MyCallout>
-          )}
-
-          <div className="script-meta-grid grid items-end gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-            <TextInput
-              id="script-name"
-              labelText={uiText("Name")}
-              value={name}
-              disabled={!canManage}
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                setName(e.currentTarget.value)
-              }
-            />
-            <div className="flex items-center py-2">
-            <Checkbox
-              id="script-enabled"
-              labelText={uiText("Aktiv")}
-              checked={enabled}
-              disabled={!canManage}
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                setEnabled(e.currentTarget.checked)
-              }
-            />
-            </div>
-            <TextArea
-              id="script-description"
-              className="script-description-field min-w-0 w-full md:col-span-2"
-              labelText={uiText("Beschreibung")}
-              value={description}
-              disabled={!canManage}
-              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
-                setDescription(e.currentTarget.value)
-              }
-            />
-          </div>
-
-          <ScriptCodePreview value={code} />
-          <ScriptConsole entries={scriptLogs} />
-        </Tile>
+            <ScriptCodePreview value={code} />
+            <ScriptConsole entries={scriptLogs} />
+          </Tile>
         )}
       </div>
     </>
