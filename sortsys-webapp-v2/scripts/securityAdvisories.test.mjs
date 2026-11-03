@@ -19,6 +19,9 @@ const patched = {
   "body-parser": "2.4.0",
   "fast-uri": "3.1.9",
   "serialize-javascript": "7.1.3",
+  minimatch: "11.0.2",
+  glob: "14.0.3",
+  unzipper: "0.12.5",
   qs: "6.16.1",
 };
 
