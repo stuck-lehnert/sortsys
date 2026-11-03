@@ -14,6 +14,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::State,
+    http::HeaderMap,
     routing::{get, post},
 };
 use base64::{
@@ -4852,8 +4853,18 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
             Some(admin_token),
         )
         .await;
-    assert_eq!(models[0]["id"], "gpt-5.6-luna");
-    assert_eq!(models[0]["name"], "GPT-5.6 Luna");
+    assert_eq!(
+        models,
+        json!([{
+            "id": "gpt-5.6-luna",
+            "name": "GPT-5.6 Luna",
+            "supportsImageInput": true,
+        }, {
+            "id": "text-only-fixture",
+            "name": "Text-only fixture",
+            "supportsImageInput": false,
+        }])
+    );
 
     let meta_models = rpc
         .query(
@@ -4887,6 +4898,21 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
     )
     .await;
 
+    for model in ["text-only-fixture", "unavailable-fixture"] {
+        rpc.expect_error(
+            "admin.llm.useCases.update",
+            Method::POST,
+            json!({
+                "useCase": "documentImport",
+                "provider": "openai",
+                "model": model,
+            }),
+            Some(admin_token),
+            "PRECONDITION_FAILED",
+        )
+        .await;
+    }
+
     rpc.mutation(
         "admin.llm.providers.update",
         json!({
@@ -4897,6 +4923,21 @@ async fn llm_configuration_access_chats_proposals_and_usage_use_real_postgres() 
         Some(admin_token),
     )
     .await;
+    let anthropic_models = rpc
+        .query(
+            "admin.llm.providers.models",
+            json!({ "provider": "anthropic" }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(
+        anthropic_models,
+        json!([{
+            "id": "claude-integration-fixture",
+            "name": "Claude integration fixture",
+            "supportsImageInput": true,
+        }])
+    );
     rpc.mutation(
         "admin.llm.useCases.update",
         json!({
@@ -7581,7 +7622,7 @@ async fn start_openai_responses_mock() -> (String, OpenAiRequestLog) {
     let address = listener.local_addr().unwrap();
     let app = Router::new()
         .route("/v1/responses", post(mock_openai_response))
-        .route("/v1/models", get(mock_openai_models))
+        .route("/v1/models", get(mock_provider_models))
         .with_state(std::sync::Arc::clone(&requests));
 
     tokio::spawn(async move {
@@ -7591,13 +7632,30 @@ async fn start_openai_responses_mock() -> (String, OpenAiRequestLog) {
     (format!("http://{address}"), requests)
 }
 
-async fn mock_openai_models() -> Json<Value> {
+async fn mock_provider_models(headers: HeaderMap) -> Json<Value> {
+    if headers.contains_key("x-api-key") {
+        return Json(json!({
+            "data": [{
+                "id": "claude-integration-fixture",
+                "type": "model",
+                "display_name": "Claude integration fixture",
+                "capabilities": { "image_input": { "supported": true } },
+            }]
+        }));
+    }
+
     Json(json!({
         "object": "list",
         "data": [{
             "id": "gpt-5.6-luna",
             "object": "model",
-            "display_name": "GPT-5.6 Luna"
+            "display_name": "GPT-5.6 Luna",
+            "input_modalities": ["text", "image"],
+        }, {
+            "id": "text-only-fixture",
+            "object": "model",
+            "display_name": "Text-only fixture",
+            "input_modalities": ["text"],
         }]
     }))
 }

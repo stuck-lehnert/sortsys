@@ -23,6 +23,22 @@ pub(super) async fn verify(
     )
     .await;
 
+    let models = rpc
+        .query(
+            "admin.llm.providers.models",
+            json!({ "provider": "openrouter" }),
+            Some(admin_token),
+        )
+        .await;
+    assert_eq!(
+        models,
+        json!([{
+            "id": MODEL,
+            "name": "OpenRouter integration fixture",
+            "supportsImageInput": true,
+        }])
+    );
+
     for use_case in ["chat", "documentImport"] {
         rpc.mutation(
             "admin.llm.useCases.update",
@@ -257,6 +273,7 @@ impl MockProvider {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let router = Router::new()
+            .route("/v1/models", get(models))
             .route("/v1/chat/completions", post(model_turn))
             .with_state(requests.clone());
         let server = tokio::spawn(async move {
@@ -275,6 +292,18 @@ impl Drop for MockProvider {
     fn drop(&mut self) {
         self.server.abort();
     }
+}
+
+async fn models(headers: HeaderMap) -> Json<Value> {
+    assert_eq!(headers["authorization"], format!("Bearer {API_KEY}"));
+
+    Json(json!({
+        "data": [{
+            "id": MODEL,
+            "name": "OpenRouter integration fixture",
+            "architecture": { "input_modalities": ["text", "image"] },
+        }]
+    }))
 }
 
 async fn model_turn(
