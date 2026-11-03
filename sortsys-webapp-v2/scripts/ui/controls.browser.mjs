@@ -8,6 +8,7 @@ import {
   createFixtureServer,
   fixtureDirectory,
   readState,
+  waitForFocus,
   waitForState,
 } from "./browser-support.mjs";
 
@@ -369,18 +370,10 @@ test(
 
     await page.keyboard.press("Escape");
     await nested.waitFor({ state: "hidden" });
-    assert.equal(
-      await nestedTrigger.evaluate(
-        (element) => document.activeElement === element,
-      ),
-      true,
-    );
+    await waitForFocus(page, nestedTrigger);
     await page.keyboard.press("Escape");
     await parent.waitFor({ state: "hidden" });
-    assert.equal(
-      await trigger.evaluate((element) => document.activeElement === element),
-      true,
-    );
+    await waitForFocus(page, trigger);
   },
 );
 

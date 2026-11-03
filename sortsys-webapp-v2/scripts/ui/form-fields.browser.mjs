@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import AxeBuilder from "@axe-core/playwright";
 import { chromium } from "playwright";
-import { createFixtureServer } from "./browser-support.mjs";
+import { createFixtureServer, waitForFocus } from "./browser-support.mjs";
 
 let browser;
 let server;
@@ -186,7 +186,7 @@ test("dialog fields wait for deliberate Tab or click and retain keyboard dismiss
   );
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "hidden" });
-  await assertActive(trigger);
+  await waitForFocus(page, trigger);
 
   await trigger.click();
   await dialog.waitFor();
@@ -195,7 +195,7 @@ test("dialog fields wait for deliberate Tab or click and retain keyboard dismiss
   await assertActive(close);
   await page.keyboard.press("Enter");
   await dialog.waitFor({ state: "hidden" });
-  await assertActive(trigger);
+  await waitForFocus(page, trigger);
 });
 
 test("asynchronous dialog fields do not steal focus and page autofocus still works", async () => {

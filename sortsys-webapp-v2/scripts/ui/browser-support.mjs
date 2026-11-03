@@ -91,6 +91,20 @@ export async function createFixtureServer() {
   };
 }
 
+export async function waitForFocus(page, locator) {
+  const element = await locator.elementHandle();
+
+  try {
+    // React Aria restores focus on a frame after the exiting dialog unmounts.
+    await page.waitForFunction(
+      (element) => element === document.activeElement,
+      element,
+    );
+  } finally {
+    await element?.dispose();
+  }
+}
+
 export async function readState(page, label) {
   return JSON.parse(
     await page.getByLabel(label, { exact: true }).textContent(),
