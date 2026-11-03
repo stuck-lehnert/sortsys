@@ -90,292 +90,369 @@ async function assertNoPageOverflow() {
   assert.ok(sizes.content <= sizes.viewport + 1, JSON.stringify(sizes));
 }
 
-test(
-  "actual fields preserve checkbox, empty-select, Unicode and date-array contracts",
-  async () => {
-    await openFixture();
-    await page.getByText("Enabled", { exact: true }).click();
-    await waitForState(page, "Field values", (value) => value.enabled === true);
+test("actual fields preserve checkbox, empty-select, Unicode and date-array contracts", async () => {
+  await openFixture();
+  await page.getByText("Enabled", { exact: true }).click();
+  await waitForState(page, "Field values", (value) => value.enabled === true);
 
-    const provider = page.getByRole("button", { name: /Provider/ });
-    await provider.click();
-    assert.equal(
-      await page
-        .getByRole("option", { name: "Disabled provider" })
-        .getAttribute("aria-disabled"),
-      "true",
-    );
-    await page.getByRole("option", { name: "Beta", exact: true }).click();
-    await waitForState(page, "Field values", (value) => value.choice === "beta");
-    await provider.click();
+  const provider = page.getByRole("button", { name: /Provider/ });
+  await provider.click();
+  assert.equal(
     await page
-      .getByRole("option", { name: "Choose provider", exact: true })
-      .click();
-    await waitForState(page, "Field values", (value) => value.choice === "");
+      .getByRole("option", { name: "Disabled provider" })
+      .getAttribute("aria-disabled"),
+    "true",
+  );
+  await page.getByRole("option", { name: "Beta", exact: true }).click();
+  await waitForState(page, "Field values", (value) => value.choice === "beta");
+  await provider.click();
+  await page
+    .getByRole("option", { name: "Choose provider", exact: true })
+    .click();
+  await waitForState(page, "Field values", (value) => value.choice === "");
 
-    const single = page.getByRole("combobox", { name: "Single selection" });
-    await single.fill("Müll");
-    await page.getByRole("option", { name: "Müller", exact: true }).click();
-    await waitForState(
-      page,
-      "Field values",
-      (value) => value.single === "mueller",
-    );
+  const single = page.getByRole("combobox", { name: "Single selection" });
+  await single.fill("Müll");
+  await page.getByRole("option", { name: "Müller", exact: true }).click();
+  await waitForState(
+    page,
+    "Field values",
+    (value) => value.single === "mueller",
+  );
 
-    const date = page.getByLabel("Date", { exact: true });
-    await date.fill("2026-10-17");
-    await waitForState(
-      page,
-      "Field values",
-      (value) => value.dates?.length === 1,
-    );
-    assert.equal(await date.inputValue(), "2026-10-17");
-    await date.fill("");
-    await waitForState(page, "Field values", (value) => value.dates === null);
-  },
-);
+  const date = page.getByLabel("Date", { exact: true });
+  await date.fill("2026-10-17");
+  await waitForState(
+    page,
+    "Field values",
+    (value) => value.dates?.length === 1,
+  );
+  assert.equal(await date.inputValue(), "2026-10-17");
+  await date.fill("");
+  await waitForState(page, "Field values", (value) => value.dates === null);
+});
 
-test(
-  "multiselect filters, supports keyboard choice, creates once and clears controlled values",
-  async () => {
-    await openFixture();
-    const multiple = page.getByRole("combobox", { name: "Multiple selection" });
-    await multiple.fill("Bet");
-    await page.getByRole("option", { name: "Beta", exact: true }).waitFor();
-    assert.equal(
-      await page.getByRole("option", { name: "Alpha", exact: true }).count(),
-      0,
-    );
-    await multiple.press("ArrowDown");
-    await multiple.press("Enter");
-    await waitForState(
-      page,
-      "Field values",
-      (value) => value.multiple.join() === "beta",
-    );
+test("multiselect filters, supports keyboard choice, creates once and clears controlled values", async () => {
+  await openFixture();
+  const multiple = page.getByRole("combobox", { name: "Multiple selection" });
+  await multiple.fill("Bet");
+  await page.getByRole("option", { name: "Beta", exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole("option", { name: "Alpha", exact: true }).count(),
+    0,
+  );
+  await multiple.press("ArrowDown");
+  await multiple.press("Enter");
+  await waitForState(
+    page,
+    "Field values",
+    (value) => value.multiple.join() === "beta",
+  );
 
-    await multiple.fill("New contact");
+  await multiple.fill("New contact");
+  await page
+    .getByRole("option", { name: "Create New contact", exact: true })
+    .click();
+  await waitForState(
+    page,
+    "Field values",
+    (value) =>
+      value.multiple.filter((id) => id === "created-New contact").length === 1,
+  );
+  await multiple.press("Escape");
+  await page.waitForFunction(() => {
+    const input = document.querySelector(
+      'input[role="combobox"][aria-expanded="true"]',
+    );
+    return !input;
+  });
+  await page
+    .getByRole("button", { name: "Clear selection", exact: true })
+    .click();
+  await waitForState(
+    page,
+    "Field values",
+    (value) => value.multiple.length === 0,
+  );
+});
+
+test("forms focus invalid fields, prevent duplicate submissions and retain values after errors", async () => {
+  await openFixture();
+  const save = page.getByRole("button", { name: "Save form", exact: true });
+  const name = page.getByRole("textbox", { name: "Name *", exact: true });
+  await save.click();
+  assert.equal(
+    await name.evaluate((input) => document.activeElement === input),
+    true,
+  );
+  assert.equal((await readState(page, "Submission state")).submissions, 0);
+
+  await name.fill("Retained name");
+  await save.evaluate((button) => {
+    button.click();
+    button.click();
+  });
+  await waitForState(
+    page,
+    "Submission state",
+    (value) => value.values?.name === "Retained name",
+  );
+  assert.equal((await readState(page, "Submission state")).submissions, 1);
+
+  await page.getByRole("button", { name: "Fail saving", exact: true }).click();
+  await save.click();
+  const error = page
+    .getByRole("alert")
+    .filter({ hasText: "Synthetic save failed. Please retry." });
+  await error.waitFor();
+  assert.equal(
+    await error.evaluate((element) => document.activeElement === element),
+    true,
+  );
+  assert.equal(await name.inputValue(), "Retained name");
+  await page.getByRole("button", { name: "Allow saving", exact: true }).click();
+  await save.click();
+  await waitForState(
+    page,
+    "Submission state",
+    (value) => value.submissions === 3,
+  );
+});
+
+test("dropdowns handle keyboard focus, permissions, selected states and deliberate icons", async () => {
+  await openFixture();
+  const trigger = page.getByRole("button", {
+    name: "File actions",
+    exact: true,
+  });
+  await trigger.focus();
+  await trigger.press("ArrowDown");
+  const menu = page.getByRole("menu", { name: "File actions", exact: true });
+  await menu.waitFor();
+  assert.equal(await trigger.getAttribute("aria-expanded"), "true");
+  assert.equal(
+    await menu.getByText("Hidden action", { exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await menu
+      .getByRole("menuitem", { name: "Disabled action" })
+      .getAttribute("aria-disabled"),
+    "true",
+  );
+  assert.equal(
+    await menu
+      .getByRole("menuitem", { name: "Rename", exact: true })
+      .locator("[data-fixture-icon]")
+      .count(),
+    0,
+  );
+  assert.equal(
+    await menu
+      .getByRole("menuitem", { name: "Excel", exact: true })
+      .locator("[data-fixture-icon]")
+      .count(),
+    1,
+  );
+
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("role") === "menuitem",
+  );
+  await page.keyboard.press("d");
+  await page.waitForFunction(
+    () => document.activeElement?.textContent.trim() === "Delete",
+  );
+  assert.equal(
     await page
-      .getByRole("option", { name: "Create New contact", exact: true })
-      .click();
-    await waitForState(
-      page,
-      "Field values",
-      (value) =>
-        value.multiple.filter((id) => id === "created-New contact").length === 1,
-    );
-    await multiple.press("Escape");
-    await page.waitForFunction(() => {
-      const input = document.querySelector(
-        'input[role="combobox"][aria-expanded="true"]',
-      );
-      return !input;
-    });
+      .getByRole("menuitem", { name: "Delete", exact: true })
+      .evaluate((element) => document.activeElement === element),
+    true,
+  );
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("aria-label") === "File actions",
+  );
+  assert.equal(
+    await trigger.evaluate((element) => document.activeElement === element),
+    true,
+  );
+
+  await trigger.click();
+  const selected = page.getByRole("menuitemcheckbox", {
+    name: "Show archived",
+    exact: true,
+  });
+  assert.equal(await selected.getAttribute("aria-checked"), "true");
+  await selected.click();
+  await waitForState(page, "Menu state", (value) => value.selected === false);
+  await trigger.click();
+  assert.equal(
     await page
-      .getByRole("button", { name: "Clear selection", exact: true })
-      .click();
-    await waitForState(
-      page,
-      "Field values",
-      (value) => value.multiple.length === 0,
-    );
-  },
-);
+      .getByRole("menuitemcheckbox", { name: "Show archived", exact: true })
+      .getAttribute("aria-checked"),
+    "false",
+  );
+});
 
-test(
-  "forms focus invalid fields, prevent duplicate submissions and retain values after errors",
-  async () => {
-    await openFixture();
-    const save = page.getByRole("button", { name: "Save form", exact: true });
-    const name = page.getByRole("textbox", { name: "Name *", exact: true });
-    await save.click();
+test("nested dialogs trap and restore focus and submit only the topmost non-composing form", async () => {
+  await openFixture();
+  const trigger = page.getByRole("button", {
+    name: "Open dialog",
+    exact: true,
+  });
+  await trigger.click();
+  const parent = page.getByRole("dialog", {
+    name: "Parent dialog",
+    exact: true,
+  });
+  await parent.waitFor();
+  const parentText = parent.getByLabel("Parent text", { exact: true });
+  await parentText.press("Enter");
+  assert.equal(
+    await page.getByLabel("Dialog confirmations").textContent(),
+    "1",
+  );
+
+  const nestedTrigger = parent.getByRole("button", {
+    name: "Open nested dialog",
+    exact: true,
+  });
+  await nestedTrigger.focus();
+  await nestedTrigger.press("Enter");
+  const nested = page.getByRole("dialog", {
+    name: "Nested dialog",
+    exact: true,
+  });
+  await nested.waitFor();
+  assert.equal(
+    await page.getByLabel("Dialog confirmations").textContent(),
+    "1",
+  );
+  const nestedText = nested.getByLabel("Nested text", { exact: true });
+  await nestedText.press("Enter");
+  assert.equal(
+    await page.getByLabel("Dialog confirmations").textContent(),
+    "11",
+  );
+  await nestedText.dispatchEvent("keydown", {
+    key: "Enter",
+    isComposing: true,
+  });
+  await nestedText.dispatchEvent("keydown", { key: "Enter", repeat: true });
+  assert.equal(
+    await page.getByLabel("Dialog confirmations").textContent(),
+    "11",
+  );
+
+  for (let index = 0; index < 8; index += 1) {
+    await page.keyboard.press("Tab");
     assert.equal(
-      await name.evaluate((input) => document.activeElement === input),
+      await nested.evaluate((dialog) =>
+        dialog.contains(document.activeElement),
+      ),
       true,
     );
-    assert.equal((await readState(page, "Submission state")).submissions, 0);
+  }
 
-    await name.fill("Retained name");
-    await save.evaluate((button) => {
-      button.click();
-      button.click();
-    });
-    await waitForState(
-      page,
-      "Submission state",
-      (value) => value.values?.name === "Retained name",
-    );
-    assert.equal((await readState(page, "Submission state")).submissions, 1);
+  await page.keyboard.press("Escape");
+  await nested.waitFor({ state: "hidden" });
+  await waitForFocus(page, nestedTrigger);
+  await page.keyboard.press("Escape");
+  await parent.waitFor({ state: "hidden" });
+  await waitForFocus(page, trigger);
+});
 
-    await page.getByRole("button", { name: "Fail saving", exact: true }).click();
-    await save.click();
-    const error = page
-      .getByRole("alert")
-      .filter({ hasText: "Synthetic save failed. Please retry." });
-    await error.waitFor();
-    assert.equal(
-      await error.evaluate((element) => document.activeElement === element),
-      true,
-    );
-    assert.equal(await name.inputValue(), "Retained name");
-    await page.getByRole("button", { name: "Allow saving", exact: true }).click();
-    await save.click();
-    await waitForState(
-      page,
-      "Submission state",
-      (value) => value.submissions === 3,
-    );
-  },
-);
+test("nested dialogs recover a focus attempt blocked by inert teardown", async () => {
+  await openFixture();
+  await page.getByRole("button", { name: "Open dialog", exact: true }).click();
+  const parent = page.getByRole("dialog", {
+    name: "Parent dialog",
+    exact: true,
+  });
+  const trigger = parent.getByRole("button", {
+    name: "Open nested dialog",
+    exact: true,
+  });
+  const opener = await trigger.elementHandle();
+  await trigger.click();
+  const nested = page.getByRole("dialog", {
+    name: "Nested dialog",
+    exact: true,
+  });
+  await nested.getByLabel("Nested text", { exact: true }).focus();
 
-test(
-  "dropdowns handle keyboard focus, permissions, selected states and deliberate icons",
-  async () => {
-    await openFixture();
-    const trigger = page.getByRole("button", {
-      name: "File actions",
-      exact: true,
-    });
-    await trigger.focus();
-    await trigger.press("ArrowDown");
-    const menu = page.getByRole("menu", { name: "File actions", exact: true });
-    await menu.waitFor();
-    assert.equal(await trigger.getAttribute("aria-expanded"), "true");
-    assert.equal(
-      await menu.getByText("Hidden action", { exact: true }).count(),
-      0,
-    );
-    assert.equal(
-      await menu
-        .getByRole("menuitem", { name: "Disabled action" })
-        .getAttribute("aria-disabled"),
-      "true",
-    );
-    assert.equal(
-      await menu
-        .getByRole("menuitem", { name: "Rename", exact: true })
-        .locator("[data-fixture-icon]")
-        .count(),
-      0,
-    );
-    assert.equal(
-      await menu
-        .getByRole("menuitem", { name: "Excel", exact: true })
-        .locator("[data-fixture-icon]")
-        .count(),
-      1,
-    );
+  await opener.evaluate((opener) => {
+    const focus = opener.focus;
 
-    await page.waitForFunction(
-      () => document.activeElement?.getAttribute("role") === "menuitem",
-    );
-    await page.keyboard.press("d");
-    await page.waitForFunction(
-      () => document.activeElement?.textContent.trim() === "Delete",
-    );
-    assert.equal(
-      await page
-        .getByRole("menuitem", { name: "Delete", exact: true })
-        .evaluate((element) => document.activeElement === element),
-      true,
-    );
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(
-      () => document.activeElement?.getAttribute("aria-label") === "File actions",
-    );
-    assert.equal(
-      await trigger.evaluate((element) => document.activeElement === element),
-      true,
-    );
+    // Exercise the browser's real inert rejection independently of frame timing.
+    opener.focus = function (...argumentsList) {
+      opener.focus = focus;
+      const wasInert = opener.inert;
+      opener.inert = true;
 
-    await trigger.click();
-    const selected = page.getByRole("menuitemcheckbox", {
-      name: "Show archived",
-      exact: true,
-    });
-    assert.equal(await selected.getAttribute("aria-checked"), "true");
-    await selected.click();
-    await waitForState(page, "Menu state", (value) => value.selected === false);
-    await trigger.click();
-    assert.equal(
-      await page
-        .getByRole("menuitemcheckbox", { name: "Show archived", exact: true })
-        .getAttribute("aria-checked"),
-      "false",
-    );
-  },
-);
+      try {
+        focus.apply(opener, argumentsList);
+        window.inertBlockedRestoration =
+          document.activeElement === document.body;
+      } finally {
+        opener.inert = wasInert;
+      }
+    };
+  });
+  await opener.dispose();
 
-test(
-  "nested dialogs trap and restore focus and submit only the topmost non-composing form",
-  async () => {
-    await openFixture();
-    const trigger = page.getByRole("button", {
-      name: "Open dialog",
-      exact: true,
-    });
-    await trigger.click();
-    const parent = page.getByRole("dialog", {
-      name: "Parent dialog",
-      exact: true,
-    });
-    await parent.waitFor();
-    const parentText = parent.getByLabel("Parent text", { exact: true });
-    await parentText.press("Enter");
-    assert.equal(
-      await page.getByLabel("Dialog confirmations").textContent(),
-      "1",
-    );
+  await page.keyboard.press("Escape");
+  await nested.waitFor({ state: "hidden" });
+  await waitForFocus(page, trigger);
+  assert.equal(await page.evaluate(() => window.inertBlockedRestoration), true);
+  assert.equal(await parent.isVisible(), true);
+});
 
-    const nestedTrigger = parent.getByRole("button", {
-      name: "Open nested dialog",
-      exact: true,
-    });
-    await nestedTrigger.focus();
-    await nestedTrigger.press("Enter");
-    const nested = page.getByRole("dialog", {
-      name: "Nested dialog",
-      exact: true,
-    });
-    await nested.waitFor();
-    assert.equal(
-      await page.getByLabel("Dialog confirmations").textContent(),
-      "1",
-    );
-    const nestedText = nested.getByLabel("Nested text", { exact: true });
-    await nestedText.press("Enter");
-    assert.equal(
-      await page.getByLabel("Dialog confirmations").textContent(),
-      "11",
-    );
-    await nestedText.dispatchEvent("keydown", {
-      key: "Enter",
-      isComposing: true,
-    });
-    await nestedText.dispatchEvent("keydown", { key: "Enter", repeat: true });
-    assert.equal(
-      await page.getByLabel("Dialog confirmations").textContent(),
-      "11",
-    );
+test("dialog teardown preserves a deliberate subsequent focus change", async () => {
+  await openFixture();
+  await page.getByRole("button", { name: "Open dialog", exact: true }).click();
+  const parent = page.getByRole("dialog", {
+    name: "Parent dialog",
+    exact: true,
+  });
+  const trigger = parent.getByRole("button", {
+    name: "Open nested dialog",
+    exact: true,
+  });
+  const parentText = parent.getByLabel("Parent text", { exact: true });
+  const opener = await trigger.elementHandle();
+  await trigger.click();
+  const nested = page.getByRole("dialog", {
+    name: "Nested dialog",
+    exact: true,
+  });
+  await nested.getByLabel("Nested text", { exact: true }).focus();
 
-    for (let index = 0; index < 8; index += 1) {
-      await page.keyboard.press("Tab");
-      assert.equal(
-        await nested.evaluate((dialog) =>
-          dialog.contains(document.activeElement),
-        ),
-        true,
-      );
-    }
+  await opener.evaluate((opener) => {
+    opener.addEventListener(
+      "focus",
+      () => {
+        opener.closest("[role='dialog']").querySelector("input").focus();
+      },
+      { once: true },
+    );
+  });
+  await opener.dispose();
 
-    await page.keyboard.press("Escape");
-    await nested.waitFor({ state: "hidden" });
-    await waitForFocus(page, nestedTrigger);
-    await page.keyboard.press("Escape");
-    await parent.waitFor({ state: "hidden" });
-    await waitForFocus(page, trigger);
-  },
-);
+  await page.keyboard.press("Escape");
+  await nested.waitFor({ state: "hidden" });
+  await waitForFocus(page, parentText);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }),
+  );
+  assert.equal(
+    await parentText.evaluate((input) => document.activeElement === input),
+    true,
+  );
+});
 
 test("full-size document dialogs retain a usable editor viewport", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -431,49 +508,46 @@ test("tables preserve three-state sorting, row actions and asynchronous states",
     .waitFor();
 });
 
-test(
-  "toast actions, updates, programmatic dismissal and unmount have stable lifecycles",
-  async () => {
-    await openFixture();
-    await page
-      .getByRole("button", { name: "Add persistent", exact: true })
-      .click();
-    await page.getByText("Notification 1", { exact: true }).waitFor();
-    await page
-      .getByRole("button", { name: "Update latest", exact: true })
-      .click();
-    await page.getByText("Updated notification", { exact: true }).waitFor();
-    await page
-      .getByRole("button", { name: "Dismiss latest", exact: true })
-      .click();
-    await waitForState(
-      page,
-      "Notification state",
-      (value) => value.dismissals.length === 1,
-    );
-    assert.equal(
-      (await readState(page, "Notification state")).dismissals[0].reason,
-      "programmatic",
-    );
+test("toast actions, updates, programmatic dismissal and unmount have stable lifecycles", async () => {
+  await openFixture();
+  await page
+    .getByRole("button", { name: "Add persistent", exact: true })
+    .click();
+  await page.getByText("Notification 1", { exact: true }).waitFor();
+  await page
+    .getByRole("button", { name: "Update latest", exact: true })
+    .click();
+  await page.getByText("Updated notification", { exact: true }).waitFor();
+  await page
+    .getByRole("button", { name: "Dismiss latest", exact: true })
+    .click();
+  await waitForState(
+    page,
+    "Notification state",
+    (value) => value.dismissals.length === 1,
+  );
+  assert.equal(
+    (await readState(page, "Notification state")).dismissals[0].reason,
+    "programmatic",
+  );
 
-    await page.getByRole("button", { name: "Add action", exact: true }).click();
-    await page.getByRole("button", { name: "Apply action", exact: true }).click();
-    await waitForState(
-      page,
-      "Notification state",
-      (value) => value.dismissals.length === 2,
-    );
-    const state = await readState(page, "Notification state");
-    assert.equal(state.actionCount, 1);
-    assert.equal(state.dismissals[1].reason, "action");
+  await page.getByRole("button", { name: "Add action", exact: true }).click();
+  await page.getByRole("button", { name: "Apply action", exact: true }).click();
+  await waitForState(
+    page,
+    "Notification state",
+    (value) => value.dismissals.length === 2,
+  );
+  const state = await readState(page, "Notification state");
+  assert.equal(state.actionCount, 1);
+  assert.equal(state.dismissals[1].reason, "action");
 
-    await page.getByRole("button", { name: "Add timed", exact: true }).click();
-    await page.getByText("Notification 3", { exact: true }).waitFor();
-    await page.evaluate(() => window.__uiUnmount());
-    await page.waitForTimeout(1700);
-    assert.equal((await page.evaluate(() => window.__uiEvents)).length, 2);
-  },
-);
+  await page.getByRole("button", { name: "Add timed", exact: true }).click();
+  await page.getByText("Notification 3", { exact: true }).waitFor();
+  await page.evaluate(() => window.__uiUnmount());
+  await page.waitForTimeout(1700);
+  assert.equal((await page.evaluate(() => window.__uiEvents)).length, 2);
+});
 
 test("toast timeout pauses on hover unless explicitly disabled", async () => {
   await openFixture();
@@ -585,54 +659,48 @@ for (const locale of ["de", "en"]) {
       ["desktop", 1400, 1000],
       ["mobile", 390, 844],
     ]) {
-      test(
-        `${locale} ${theme} ${layout}: real production CSS, reflow and WCAG checks`,
-        async () => {
-          await page.setViewportSize({ width, height });
-          await openFixture({ locale, theme });
-          await assertNoPageOverflow();
-          const results = await new AxeBuilder({ page })
-            .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-            .analyze();
-          assert.deepEqual(results.violations, []);
-          await page.screenshot({
-            path: join(
-              fixtureDirectory,
-              "screenshots",
-              `${locale}-${theme}-${layout}.png`,
-            ),
-            fullPage: true,
-          });
-        },
-      );
+      test(`${locale} ${theme} ${layout}: real production CSS, reflow and WCAG checks`, async () => {
+        await page.setViewportSize({ width, height });
+        await openFixture({ locale, theme });
+        await assertNoPageOverflow();
+        const results = await new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+          .analyze();
+        assert.deepEqual(results.violations, []);
+        await page.screenshot({
+          path: join(
+            fixtureDirectory,
+            "screenshots",
+            `${locale}-${theme}-${layout}.png`,
+          ),
+          fullPage: true,
+        });
+      });
     }
   }
 }
 
-test(
-  "200% text sizing reflows and reduced motion disables the product loading animation",
-  async () => {
-    await openFixture();
-    await page.evaluate(() => {
-      document.documentElement.style.fontSize = "200%";
-    });
-    await assertNoPageOverflow();
-    await page.emulateMedia({ reducedMotion: "reduce" });
+test("200% text sizing reflows and reduced motion disables the product loading animation", async () => {
+  await openFixture();
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await assertNoPageOverflow();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page
+    .getByRole("region", { name: "Data table", exact: true })
+    .getByRole("button", { name: "loading", exact: true })
+    .click();
+  await page.locator(".ss-spinner").waitFor();
+  assert.equal(
     await page
-      .getByRole("region", { name: "Data table", exact: true })
-      .getByRole("button", { name: "loading", exact: true })
-      .click();
-    await page.locator(".ss-spinner").waitFor();
-    assert.equal(
-      await page
-        .locator(".ss-spinner")
-        .evaluate(
-          (spinner) => getComputedStyle(spinner, "::before").animationName,
-        ),
-      "none",
-    );
-  },
-);
+      .locator(".ss-spinner")
+      .evaluate(
+        (spinner) => getComputedStyle(spinner, "::before").animationName,
+      ),
+    "none",
+  );
+});
 
 test("only opted-in document editors are edge-to-edge with a compact context header", async () => {
   for (const viewport of [
@@ -778,40 +846,37 @@ test("expandables preserve uncontrolled form values while collapsed", async () =
   assert.equal(await trigger.getAttribute("aria-expanded"), "true");
 });
 
-test(
-  "white modal surfaces have distinct secondary fields and create options are emphasized",
-  async () => {
-    await openFixture();
-    await page.getByRole("button", { name: "Open dialog", exact: true }).click();
-    const field = page.getByRole("textbox", { name: "Parent text", exact: true });
-    const colors = await field.evaluate((element) => {
-      const dialog = element.closest('[data-slot="modal-dialog"]');
-      return {
-        field: getComputedStyle(element).backgroundColor,
-        surface: getComputedStyle(dialog).backgroundColor,
-      };
-    });
-    assert.notEqual(colors.field, "rgba(0, 0, 0, 0)", JSON.stringify(colors));
-    assert.notEqual(colors.field, colors.surface, JSON.stringify(colors));
-    await page.keyboard.press("Escape");
-    await page
-      .getByRole("combobox", { name: "Multiple selection", exact: true })
-      .fill("New item");
-    const create = page.getByRole("option", {
-      name: "Create New item",
-      exact: true,
-    });
-    await create.waitFor();
-    const style = await create.evaluate((element) => ({
-      weight: Number(getComputedStyle(element).fontWeight),
-      background: getComputedStyle(element).backgroundColor,
-      icon: Boolean(element.querySelector('svg[aria-hidden="true"]')),
-    }));
-    assert.ok(style.weight >= 500, JSON.stringify(style));
-    assert.notEqual(style.background, "rgba(0, 0, 0, 0)", JSON.stringify(style));
-    assert.equal(style.icon, true);
-  },
-);
+test("white modal surfaces have distinct secondary fields and create options are emphasized", async () => {
+  await openFixture();
+  await page.getByRole("button", { name: "Open dialog", exact: true }).click();
+  const field = page.getByRole("textbox", { name: "Parent text", exact: true });
+  const colors = await field.evaluate((element) => {
+    const dialog = element.closest('[data-slot="modal-dialog"]');
+    return {
+      field: getComputedStyle(element).backgroundColor,
+      surface: getComputedStyle(dialog).backgroundColor,
+    };
+  });
+  assert.notEqual(colors.field, "rgba(0, 0, 0, 0)", JSON.stringify(colors));
+  assert.notEqual(colors.field, colors.surface, JSON.stringify(colors));
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("combobox", { name: "Multiple selection", exact: true })
+    .fill("New item");
+  const create = page.getByRole("option", {
+    name: "Create New item",
+    exact: true,
+  });
+  await create.waitFor();
+  const style = await create.evaluate((element) => ({
+    weight: Number(getComputedStyle(element).fontWeight),
+    background: getComputedStyle(element).backgroundColor,
+    icon: Boolean(element.querySelector('svg[aria-hidden="true"]')),
+  }));
+  assert.ok(style.weight >= 500, JSON.stringify(style));
+  assert.notEqual(style.background, "rgba(0, 0, 0, 0)", JSON.stringify(style));
+  assert.equal(style.icon, true);
+});
 
 test("table headers remain compact without uppercase labels", async () => {
   await openFixture();
@@ -829,58 +894,55 @@ test("table headers remain compact without uppercase labels", async () => {
   }
 });
 
-test(
-  "mobile navigation is a full-height left drawer with compact pill links and a white main area",
-  async () => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await openFixture({ screen: "shell" });
-    assert.equal(
-      await page
-        .locator("main")
-        .evaluate((element) => getComputedStyle(element).backgroundColor),
-      "rgb(255, 255, 255)",
-    );
+test("mobile navigation is a full-height left drawer with compact pill links and a white main area", async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openFixture({ screen: "shell" });
+  assert.equal(
     await page
-      .getByRole("button", { name: "Main navigation", exact: true })
-      .click();
-    const drawer = page.getByRole("dialog", {
-      name: "Main navigation",
-      exact: true,
+      .locator("main")
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+    "rgb(255, 255, 255)",
+  );
+  await page
+    .getByRole("button", { name: "Main navigation", exact: true })
+    .click();
+  const drawer = page.getByRole("dialog", {
+    name: "Main navigation",
+    exact: true,
+  });
+  await drawer.waitFor();
+  await page.waitForFunction(() => {
+    const dialog = document.querySelector('[data-slot="drawer-dialog"]');
+    const bounds = dialog?.getBoundingClientRect();
+    return (
+      bounds &&
+      Math.abs(bounds.x) < 1 &&
+      Math.abs(bounds.y) < 1 &&
+      bounds.height >= innerHeight - 1
+    );
+  });
+  const bounds = await drawer.boundingBox();
+  assert.ok(bounds.width <= 342, JSON.stringify(bounds));
+  for (const item of [
+    drawer.getByRole("link", { name: "Home", exact: true }),
+    drawer.getByRole("button", { name: "Projects", exact: true }),
+  ]) {
+    const geometry = await item.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        height: element.getBoundingClientRect().height,
+        radius: parseFloat(style.borderRadius),
+        padding: parseFloat(style.paddingTop),
+      };
     });
-    await drawer.waitFor();
-    await page.waitForFunction(() => {
-      const dialog = document.querySelector('[data-slot="drawer-dialog"]');
-      const bounds = dialog?.getBoundingClientRect();
-      return (
-        bounds &&
-        Math.abs(bounds.x) < 1 &&
-        Math.abs(bounds.y) < 1 &&
-        bounds.height >= innerHeight - 1
-      );
-    });
-    const bounds = await drawer.boundingBox();
-    assert.ok(bounds.width <= 342, JSON.stringify(bounds));
-    for (const item of [
-      drawer.getByRole("link", { name: "Home", exact: true }),
-      drawer.getByRole("button", { name: "Projects", exact: true }),
-    ]) {
-      const geometry = await item.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-          height: element.getBoundingClientRect().height,
-          radius: parseFloat(style.borderRadius),
-          padding: parseFloat(style.paddingTop),
-        };
-      });
-      assert.ok(
-        geometry.height >= 44 && geometry.height <= 48,
-        JSON.stringify(geometry),
-      );
-      assert.ok(geometry.radius >= geometry.height / 2, JSON.stringify(geometry));
-      assert.ok(geometry.padding <= 8, JSON.stringify(geometry));
-    }
-  },
-);
+    assert.ok(
+      geometry.height >= 44 && geometry.height <= 48,
+      JSON.stringify(geometry),
+    );
+    assert.ok(geometry.radius >= geometry.height / 2, JSON.stringify(geometry));
+    assert.ok(geometry.padding <= 8, JSON.stringify(geometry));
+  }
+});
 
 async function settleDialog(dialog) {
   await dialog.evaluate(async (element) => {
@@ -896,83 +958,80 @@ async function settleDialog(dialog) {
   });
 }
 
-test(
-  "actual form provider keeps fewer than four fields compact and enlarges larger forms",
-  async () => {
-    for (const viewport of [
-      { width: 1400, height: 1000 },
-      { width: 390, height: 844 },
-    ]) {
-      await page.setViewportSize(viewport);
-      await openFixture();
+test("actual form provider keeps fewer than four fields compact and enlarges larger forms", async () => {
+  for (const viewport of [
+    { width: 1400, height: 1000 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await openFixture();
 
-      for (const count of [2, 3, 4]) {
-        await page
-          .getByRole("button", { name: `Open ${count}-field form`, exact: true })
-          .click();
-        const dialog = page.getByRole("dialog", {
-          name: `${count}-field form`,
-          exact: true,
-        });
-        await dialog.waitFor();
-        await page.waitForFunction(
-          ({ count }) => {
-            const backdrop = [...document.querySelectorAll(".ss-modal")].at(-1);
-            return Boolean(backdrop?.dataset.fullheight) === count >= 4;
-          },
-          { count },
-        );
-        await settleDialog(dialog);
-        const bounds = await dialog.boundingBox();
-        assert.ok(bounds.x > 0 && bounds.y > 0, JSON.stringify(bounds));
-        assert.ok(bounds.width < viewport.width, JSON.stringify(bounds));
-        assert.ok(
-          count >= 4
-            ? bounds.height >= viewport.height - 80
-            : bounds.height < viewport.height - 100,
-          JSON.stringify(bounds),
-        );
-        assert.equal(await dialog.locator("input").count(), count);
-        await page.keyboard.press("Escape");
-        await dialog.waitFor({ state: "hidden" });
-      }
-
+    for (const count of [2, 3, 4]) {
       await page
-        .getByRole("button", { name: "Open 3-field form", exact: true })
+        .getByRole("button", { name: `Open ${count}-field form`, exact: true })
         .click();
       const dialog = page.getByRole("dialog", {
-        name: "3-field form",
+        name: `${count}-field form`,
         exact: true,
       });
-      await dialog
-        .getByRole("textbox", { name: "Field 1", exact: true })
-        .fill("Preserved value");
-      await dialog
-        .getByRole("button", { name: "Add extra field", exact: true })
-        .click();
+      await dialog.waitFor();
       await page.waitForFunction(
-        () =>
-          [...document.querySelectorAll(".ss-modal")].at(-1)?.dataset
-            .fullheight === "true",
+        ({ count }) => {
+          const backdrop = [...document.querySelectorAll(".ss-modal")].at(-1);
+          return Boolean(backdrop?.dataset.fullheight) === count >= 4;
+        },
+        { count },
       );
-      assert.equal(
-        await dialog
-          .getByRole("textbox", { name: "Field 1", exact: true })
-          .inputValue(),
-        "Preserved value",
+      await settleDialog(dialog);
+      const bounds = await dialog.boundingBox();
+      assert.ok(bounds.x > 0 && bounds.y > 0, JSON.stringify(bounds));
+      assert.ok(bounds.width < viewport.width, JSON.stringify(bounds));
+      assert.ok(
+        count >= 4
+          ? bounds.height >= viewport.height - 80
+          : bounds.height < viewport.height - 100,
+        JSON.stringify(bounds),
       );
-      await dialog
-        .getByRole("button", { name: "Remove extra field", exact: true })
-        .click();
-      await page.waitForFunction(
-        () =>
-          ![...document.querySelectorAll(".ss-modal")].at(-1)?.dataset.fullheight,
-      );
+      assert.equal(await dialog.locator("input").count(), count);
       await page.keyboard.press("Escape");
       await dialog.waitFor({ state: "hidden" });
     }
-  },
-);
+
+    await page
+      .getByRole("button", { name: "Open 3-field form", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "3-field form",
+      exact: true,
+    });
+    await dialog
+      .getByRole("textbox", { name: "Field 1", exact: true })
+      .fill("Preserved value");
+    await dialog
+      .getByRole("button", { name: "Add extra field", exact: true })
+      .click();
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll(".ss-modal")].at(-1)?.dataset
+          .fullheight === "true",
+    );
+    assert.equal(
+      await dialog
+        .getByRole("textbox", { name: "Field 1", exact: true })
+        .inputValue(),
+      "Preserved value",
+    );
+    await dialog
+      .getByRole("button", { name: "Remove extra field", exact: true })
+      .click();
+    await page.waitForFunction(
+      () =>
+        ![...document.querySelectorAll(".ss-modal")].at(-1)?.dataset.fullheight,
+    );
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "hidden" });
+  }
+});
 
 test("compact attributes and expandable affordances remain visible", async () => {
   await openFixture();
@@ -1068,132 +1127,126 @@ test("actual async single suggestions show pending status and appear while typin
   assert.equal(await root.getByRole("status").count(), 0);
 });
 
-test(
-  "preselected async multiselect uses unique removable chips and separate action slots",
-  async () => {
-    for (const viewport of [
-      { width: 1400, height: 1000 },
-      { width: 390, height: 844 },
-    ]) {
-      await page.setViewportSize(viewport);
-      await openFixture();
-      const region = page.getByRole("region", {
-        name: "Async autocomplete",
-        exact: true,
-      });
-      const input = region.getByRole("combobox", {
-        name: "Async people",
-        exact: true,
-      });
-      const remove = region.getByRole("button", {
-        name: "Remove Existing contact",
-        exact: true,
-      });
-      await remove.waitFor();
-      assert.equal(await remove.count(), 1);
-      const chip = remove.locator("..");
-      const style = await chip.evaluate((element) => ({
-        radius: parseFloat(getComputedStyle(element).borderRadius),
-        height: element.getBoundingClientRect().height,
-      }));
-      assert.ok(style.radius >= style.height / 2, JSON.stringify(style));
-
-      // Focus a visible field, as a pointer user does after scrolling on mobile.
-      await input.scrollIntoViewIfNeeded();
-      await input.click();
-      await input.fill("alpha");
-      const root = region.locator(".ss-multi-select");
-      const pending = root.locator('[role="status"]');
-      await pending.waitFor();
-      await page.getByRole("listbox").waitFor();
-      assert.equal(await input.getAttribute("aria-expanded"), "true");
-      const clear = root.locator('button[aria-label="Clear async selection"]');
-      assert.equal(await clear.innerText(), "");
-      const clearBounds = await clear.boundingBox();
-      const arrowBounds = await root.locator(".combo-box__trigger").boundingBox();
-      const loadingBounds = await pending.boundingBox();
-      assert.ok(
-        loadingBounds.x + loadingBounds.width <= clearBounds.x + 1,
-        JSON.stringify({ loadingBounds, clearBounds }),
-      );
-      assert.ok(
-        clearBounds.x + clearBounds.width <= arrowBounds.x + 1,
-        JSON.stringify({ clearBounds, arrowBounds }),
-      );
-      const result = page.getByRole("option", {
-        name: "Alpha contact",
-        exact: true,
-      });
-      await result.waitFor();
-      assert.equal(await result.count(), 1);
-      await result.click();
-      await input.press("Escape");
-      await region
-        .getByRole("button", { name: "Remove Alpha contact", exact: true })
-        .waitFor();
-      await remove.click();
-      assert.equal(await remove.count(), 0);
-      await clear.click();
-      assert.equal(await region.locator("[data-slot='tag']").count(), 0);
-      assert.equal(await input.inputValue(), "");
-      await assertNoPageOverflow();
-    }
-  },
-);
-
-test(
-  "async suggestions reject stale results and keep Escape dismissal while a request finishes",
-  async () => {
+test("preselected async multiselect uses unique removable chips and separate action slots", async () => {
+  for (const viewport of [
+    { width: 1400, height: 1000 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
     await openFixture();
-    const input = page.getByRole("combobox", {
-      name: "Async single",
+    const region = page.getByRole("region", {
+      name: "Async autocomplete",
       exact: true,
     });
-    await input.fill("slow");
-    await page.waitForFunction(() =>
-      window.__sortsysAutocompleteRequests?.some(
-        (request) => request.query === "slow" && !request.finished,
-      ),
+    const input = region.getByRole("combobox", {
+      name: "Async people",
+      exact: true,
+    });
+    const remove = region.getByRole("button", {
+      name: "Remove Existing contact",
+      exact: true,
+    });
+    await remove.waitFor();
+    assert.equal(await remove.count(), 1);
+    const chip = remove.locator("..");
+    const style = await chip.evaluate((element) => ({
+      radius: parseFloat(getComputedStyle(element).borderRadius),
+      height: element.getBoundingClientRect().height,
+    }));
+    assert.ok(style.radius >= style.height / 2, JSON.stringify(style));
+
+    // Focus a visible field, as a pointer user does after scrolling on mobile.
+    await input.scrollIntoViewIfNeeded();
+    await input.click();
+    await input.fill("alpha");
+    const root = region.locator(".ss-multi-select");
+    const pending = root.locator('[role="status"]');
+    await pending.waitFor();
+    await page.getByRole("listbox").waitFor();
+    assert.equal(await input.getAttribute("aria-expanded"), "true");
+    const clear = root.locator('button[aria-label="Clear async selection"]');
+    assert.equal(await clear.innerText(), "");
+    const clearBounds = await clear.boundingBox();
+    const arrowBounds = await root.locator(".combo-box__trigger").boundingBox();
+    const loadingBounds = await pending.boundingBox();
+    assert.ok(
+      loadingBounds.x + loadingBounds.width <= clearBounds.x + 1,
+      JSON.stringify({ loadingBounds, clearBounds }),
     );
-    await input.fill("fresh");
+    assert.ok(
+      clearBounds.x + clearBounds.width <= arrowBounds.x + 1,
+      JSON.stringify({ clearBounds, arrowBounds }),
+    );
+    const result = page.getByRole("option", {
+      name: "Alpha contact",
+      exact: true,
+    });
+    await result.waitFor();
+    assert.equal(await result.count(), 1);
+    await result.click();
+    await input.press("Escape");
+    await region
+      .getByRole("button", { name: "Remove Alpha contact", exact: true })
+      .waitFor();
+    await remove.click();
+    assert.equal(await remove.count(), 0);
+    await clear.click();
+    assert.equal(await region.locator("[data-slot='tag']").count(), 0);
+    assert.equal(await input.inputValue(), "");
+    await assertNoPageOverflow();
+  }
+});
+
+test("async suggestions reject stale results and keep Escape dismissal while a request finishes", async () => {
+  await openFixture();
+  const input = page.getByRole("combobox", {
+    name: "Async single",
+    exact: true,
+  });
+  await input.fill("slow");
+  await page.waitForFunction(() =>
+    window.__sortsysAutocompleteRequests?.some(
+      (request) => request.query === "slow" && !request.finished,
+    ),
+  );
+  await input.fill("fresh");
+  await page
+    .getByRole("option", { name: "Fresh result", exact: true })
+    .waitFor();
+  await page.waitForFunction(() =>
+    window.__sortsysAutocompleteRequests?.some(
+      (request) => request.query === "slow" && request.finished,
+    ),
+  );
+  assert.equal(
+    await page
+      .getByRole("option", { name: "Slow stale result", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
     await page
       .getByRole("option", { name: "Fresh result", exact: true })
-      .waitFor();
-    await page.waitForFunction(() =>
-      window.__sortsysAutocompleteRequests?.some(
-        (request) => request.query === "slow" && request.finished,
-      ),
-    );
-    assert.equal(
-      await page
-        .getByRole("option", { name: "Slow stale result", exact: true })
-        .count(),
-      0,
-    );
-    assert.equal(
-      await page
-        .getByRole("option", { name: "Fresh result", exact: true })
-        .count(),
-      1,
-    );
+      .count(),
+    1,
+  );
 
-    await input.fill("alpha");
-    await page.waitForFunction(() =>
-      window.__sortsysAutocompleteRequests?.some(
-        (request) => request.query === "alpha" && !request.finished,
-      ),
-    );
-    await input.press("Escape");
-    assert.equal(await input.getAttribute("aria-expanded"), "false");
-    await page.waitForFunction(() =>
-      window.__sortsysAutocompleteRequests?.some(
-        (request) => request.query === "alpha" && request.finished,
-      ),
-    );
-    assert.equal(await input.getAttribute("aria-expanded"), "false");
-    assert.equal(await page.getByRole("listbox").count(), 0);
-  },
-);
+  await input.fill("alpha");
+  await page.waitForFunction(() =>
+    window.__sortsysAutocompleteRequests?.some(
+      (request) => request.query === "alpha" && !request.finished,
+    ),
+  );
+  await input.press("Escape");
+  assert.equal(await input.getAttribute("aria-expanded"), "false");
+  await page.waitForFunction(() =>
+    window.__sortsysAutocompleteRequests?.some(
+      (request) => request.query === "alpha" && request.finished,
+    ),
+  );
+  assert.equal(await input.getAttribute("aria-expanded"), "false");
+  assert.equal(await page.getByRole("listbox").count(), 0);
+});
 
 for (const [layout, viewport] of [
   ["desktop", { width: 1400, height: 1000 }],

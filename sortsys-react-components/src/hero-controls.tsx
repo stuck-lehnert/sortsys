@@ -6,6 +6,7 @@ import React, {
   forwardRef,
   isValidElement,
   useContext,
+  useEffect,
   useId,
   useRef,
   useState,
@@ -979,6 +980,36 @@ export function Callout({
 
 export const InlineNotification = Callout;
 
+function ModalFocusRestoration() {
+  const [returnFocusTo] = useState(() =>
+    typeof document === "undefined" ? null : document.activeElement,
+  );
+
+  useEffect(() => {
+    if (!(returnFocusTo instanceof HTMLElement)) {
+      return;
+    }
+
+    const ownerDocument = returnFocusTo.ownerDocument;
+
+    return () => {
+      // Wait for the overlay's passive cleanup to release inert. React Aria's
+      // restore frame can run before that cleanup and silently lose focus.
+      queueMicrotask(() => {
+        if (
+          ownerDocument.activeElement === ownerDocument.body &&
+          returnFocusTo.isConnected &&
+          !returnFocusTo.closest("[inert]")
+        ) {
+          returnFocusTo.focus({ preventScroll: true });
+        }
+      });
+    };
+  }, [returnFocusTo]);
+
+  return null;
+}
+
 export function Modal({
   open,
   onRequestClose,
@@ -1045,6 +1076,7 @@ export function Modal({
             aria-labelledby={modalHeading ? headingId : undefined}
             aria-label={!modalHeading ? modalLabel || "Dialog" : undefined}
           >
+            <ModalFocusRestoration />
             <div
               className="contents"
               onKeyDown={(event) => {
