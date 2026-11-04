@@ -356,12 +356,12 @@ export default function ProjectFilePreviewModal({
       modalLabel={file?.fileName}
       closeButtonLabel={uiText("Schließen", "Close")}
       onRequestClose={closePreview}
-      edgeToEdge={kind === "office" || kind === "drawio" || kind === "pdf"}
+      edgeToEdge
       data-fullheight="true"
       data-fullwidth="true"
       className="project-files-office-modal chat-file-preview"
     >
-      {downloadUrl && (
+      {downloadUrl && kind !== "pdf" && kind !== "eml" && kind !== "msg" && (
         <div className="chat-file-preview__toolbar">
           <a
             href={downloadUrl}

@@ -1039,6 +1039,17 @@ export function Modal({
   const isFullWidth = fullWidth === true || fullWidth === "true";
   const isFullScreen = Boolean(edgeToEdge) && isFullHeight && isFullWidth;
   const hasPrimaryAction = typeof onRequestSubmit === "function";
+  const closeTrigger = (
+    <HeroModal.CloseTrigger
+      aria-label={closeButtonLabel}
+      className={
+        isFullScreen
+          ? "static order-3 m-0 min-h-0 min-w-0 self-center justify-self-end " +
+            "rounded-full p-0 outline-offset-[-2px]"
+          : undefined
+      }
+    />
+  );
 
   return (
     <DialogFieldsContext.Provider value={true}>
@@ -1143,7 +1154,7 @@ export function Modal({
                   isFullScreen &&
                     "relative grid h-11 shrink-0 " +
                       "grid-cols-[minmax(0,1fr)_minmax(0,3fr)_minmax(0,1fr)] " +
-                      "items-center gap-2 px-3 py-0 pr-3",
+                      "items-center gap-2 px-1 py-0",
                 )}
               >
                 {(modalLabel || isFullScreen) && (
@@ -1174,6 +1185,7 @@ export function Modal({
                     {modalHeading}
                   </HeroModal.Heading>
                 )}
+                {isFullScreen && closeTrigger}
               </HeroModal.Header>
               <HeroModal.Body
                 className={classes(
@@ -1206,15 +1218,7 @@ export function Modal({
                   )}
                 </HeroModal.Footer>
               )}
-              <HeroModal.CloseTrigger
-                aria-label={closeButtonLabel}
-                className={
-                  isFullScreen
-                    ? "absolute right-1 top-1.5 m-0 min-h-0 min-w-0 " +
-                      "rounded-full p-0 outline-offset-[-2px]"
-                    : undefined
-                }
-              />
+              {!isFullScreen && closeTrigger}
             </div>
           </HeroModal.Dialog>
         </HeroModal.Container>

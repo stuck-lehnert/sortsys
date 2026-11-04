@@ -107,6 +107,15 @@ await viteBuild({
       },
     },
   ],
+  worker: {
+    rollupOptions: {
+      output: {
+        entryFileNames: "bundle/[name]-[hash].js",
+        chunkFileNames: "bundle/[name]-[hash].js",
+        assetFileNames: "bundle/[name]-[hash][extname]",
+      },
+    },
+  },
   build: {
     outDir: output,
     emptyOutDir: false,

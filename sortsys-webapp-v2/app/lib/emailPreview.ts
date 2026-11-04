@@ -1,11 +1,21 @@
 import PostalMime, { type Address } from "postal-mime";
-import MsgReader from "@kenjiuno/msgreader";
+import MsgReaderModule from "@kenjiuno/msgreader";
 import { sanitizeEmailHtml } from "./emailSanitizer";
 import { decode } from "./msgTextEncoding";
 import { decompressMsgRtf, rtfToText } from "./msgRtf";
 
 export const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
 const MAX_BODY_BYTES = 3 * 1024 * 1024;
+
+// The CommonJS package is a constructor in Bun, but its browser bundle exposes
+// an object containing that constructor as `default`.
+function msgReaderConstructor(
+  imported: typeof MsgReaderModule | { default: typeof MsgReaderModule },
+) {
+  return typeof imported === "function" ? imported : imported.default;
+}
+
+const MsgReader = msgReaderConstructor(MsgReaderModule);
 
 export type EmailAttachment = {
   fileName: string;

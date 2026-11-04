@@ -756,6 +756,10 @@ test("only opted-in document editors are edge-to-edge with a compact context hea
     });
     const closeBounds = await close.boundingBox();
     assert.ok(
+      Math.abs(closeBounds.y + closeBounds.height / 2 - header.y - header.height / 2) <= 1,
+      JSON.stringify({ header, closeBounds }),
+    );
+    assert.ok(
       viewport.width - closeBounds.x - closeBounds.width <= 5,
       JSON.stringify(closeBounds),
     );

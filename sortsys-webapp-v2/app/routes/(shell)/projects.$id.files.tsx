@@ -1511,7 +1511,7 @@ export default function ProjectFilesPage() {
           modalLabel={activePreviewFile.fileName}
           closeButtonLabel={uiText("Schließen", "Close")}
           onRequestClose={closeAttachmentPreview}
-          edgeToEdge={attachmentPreviewKind(activePreviewFile) === "pdf"}
+          edgeToEdge
           data-fullheight="true"
           data-fullwidth="true"
           className="project-files-office-modal"
@@ -1615,9 +1615,10 @@ export default function ProjectFilesPage() {
           open
           passiveModal
           modalHeading={uiText("DWG Viewer")}
-          modalLabel={project.title}
+          modalLabel={activeDwgFile.fileName}
           closeButtonLabel={uiText("Schließen")}
           onRequestClose={closeDwgViewer}
+          edgeToEdge
           data-fullheight="true"
           data-fullwidth="true"
           className="project-files-dwg-modal"
@@ -1692,6 +1693,7 @@ export default function ProjectFilesPage() {
           modalLabel={activeVideo.fileName}
           closeButtonLabel={uiText("Schließen", "Close")}
           onRequestClose={closeVideoViewer}
+          edgeToEdge
           data-fullheight="true"
           data-fullwidth="true"
           className="project-files-video-modal"
@@ -1786,9 +1788,10 @@ export default function ProjectFilesPage() {
           open
           passiveModal
           modalHeading={uiText("Bilder")}
-          modalLabel={project.title}
+          modalLabel={activeImage.fileName}
           closeButtonLabel={uiText("Schließen")}
           onRequestClose={closeImageViewer}
+          edgeToEdge
           data-fullheight="true"
           data-fullwidth="true"
           className="project-files-image-modal"

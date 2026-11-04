@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import superjson from "superjson";
-import { createFixtureServer } from "./browser-support.mjs";
+import { createFixtureServer, fixtureDirectory } from "./browser-support.mjs";
+import { makeMsgFixture } from "../../test-fixtures/msgFixture.mjs";
 
 let browser;
 let server;
@@ -1500,6 +1501,44 @@ function populateAttachments() {
   ]);
 }
 
+test("production email worker reads Outlook MSG and MIME EML messages", async () => {
+  const { assets } = JSON.parse(
+    await readFile(join(fixtureDirectory, "assets.json"), "utf8"),
+  );
+  const worker = (await readdir(join(assets, "assets")))
+    .find(name => /^emailPreview\.worker-.*\.js$/.test(name));
+  assert.ok(worker, "Exercise the actual production worker bundle");
+  await page.goto(server.origin);
+  for (const [format, bytes, subject] of [
+    ["eml", new TextEncoder().encode("From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email."), "MIME email"],
+    ["msg", new Uint8Array(makeMsgFixture()), "Baufortschritt – Grüße"],
+    ["msg", new Uint8Array(makeMsgFixture({ rtfOnly: true })), "Baufortschritt – Grüße"],
+  ]) {
+    const result = await page.evaluate(({ path, format, bytes }) => new Promise((resolve, reject) => {
+      const worker = new Worker(path, { type: "module" });
+      const timeout = setTimeout(() => {
+        worker.terminate();
+        reject(new Error("Production email worker timed out"));
+      }, 5000);
+      worker.onmessage = event => {
+        clearTimeout(timeout);
+        worker.terminate();
+        resolve(event.data);
+      };
+      worker.onerror = event => {
+        clearTimeout(timeout);
+        worker.terminate();
+        reject(new Error(event.message));
+      };
+      const buffer = new Uint8Array(bytes).buffer;
+      worker.postMessage({ bytes: buffer, format }, [buffer]);
+    }), { path: `/assets/${worker}`, format, bytes: Array.from(bytes) });
+    assert.equal(result.error, undefined);
+    assert.equal(result.mail.subject, subject);
+    if (format === "msg") assert.equal(result.mail.attachments[0].fileName, "Lieferschein.txt");
+  }
+});
+
 for (const locale of ["de", "en"]) {
   test(`dashboard wraps six quick actions on one wide row in ${locale}`, async () => {
     populateDashboard();
@@ -1786,6 +1825,60 @@ for (const [locale, theme, viewport] of [
     );
     await dialog.getByRole("button", { name: /Abbrechen|Cancel/ }).click();
     await browser.getByRole("button", { name: /Specification.pdf/ }).waitFor();
+  });
+
+  test(`actual email previews decode MSG and EML with compact headers in ${variant}`, async () => {
+    const date = new Date("2026-10-27T08:00:00Z");
+    const files = ["msg", "eml"].map(format => ({
+      id: `email-${format}`,
+      projectId: "project-fixture",
+      folderId: null,
+      fileName: `Correspondence.${format}`,
+      mimeType: format === "msg" ? "application/vnd.ms-outlook" : "message/rfc822",
+      kind: "file",
+      sizeBytes: 2048,
+      status: "uploaded",
+      textExtractionStatus: "ready",
+      createdByUserId: "fixture-user",
+      createdAt: date,
+      modifiedAt: date,
+      uploadedAt: date,
+      downloadUrl: `${server.origin}/mail.${format}`,
+    }));
+    api.respond("projects.files.list", files);
+    api.respond("projects.files.folders.list", []);
+    await page.route(`${server.origin}/mail.msg`, route => route.fulfill({
+      contentType: "application/vnd.ms-outlook", body: Buffer.from(makeMsgFixture()),
+    }));
+    await page.route(`${server.origin}/mail.eml`, route => route.fulfill({
+      contentType: "message/rfc822",
+      body: "From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email.",
+    }));
+    await page.setViewportSize(viewport);
+    await openApplication("/projects/project-fixture/files", locale, theme);
+    for (const format of ["msg", "eml"]) {
+      const trigger = page.getByRole("button", { name: new RegExp(`Correspondence\\.${format}`) });
+      await trigger.click();
+      const dialog = page.getByRole("dialog", { name: /E-Mail ansehen|View email/ });
+      await dialog.locator(".attachment-email-metadata").waitFor();
+      assert.equal(await dialog.locator(".ss-modal-label").textContent(), `Correspondence.${format}`);
+      const header = await dialog.locator(".ss-modal-header").boundingBox();
+      const close = dialog.getByRole("button", { name: /^(Schließen|Close)$/ });
+      const bounds = await close.boundingBox();
+      assert.ok(header.height <= 44);
+      assert.ok(Math.abs(bounds.y + bounds.height / 2 - header.y - header.height / 2) <= 1);
+      const body = dialog.frameLocator(".attachment-email-body");
+      await body.getByText(format === "msg" ? "Lieferung morgen." : "Hello email.").waitFor();
+      if (process.env.SORTSYS_UI_SCREENSHOTS) {
+        await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
+        await page.screenshot({
+          path: join(process.env.SORTSYS_UI_SCREENSHOTS, `email-${format}-${variant}.png`),
+          animations: "disabled",
+        });
+      }
+      await close.click();
+      await dialog.waitFor({ state: "hidden" });
+    }
   });
 }
 
