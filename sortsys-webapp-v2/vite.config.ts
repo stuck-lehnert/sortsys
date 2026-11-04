@@ -69,6 +69,11 @@ export default defineConfig({
       allow: [webappSource, dwgviewerSource],
     },
   },
+  ssr: {
+    // This local package exports TSX sources that Node cannot load directly
+    // while React Router prerenders the SPA shell.
+    noExternal: ["@sortsys/react-components"],
+  },
   plugins: [
     tailwindcss(),
     reactRouter(),
