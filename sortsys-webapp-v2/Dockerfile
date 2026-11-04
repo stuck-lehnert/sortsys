@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.3 AS api-client-builder
+FROM oven/bun:1.4.4 AS api-client-builder
 WORKDIR /app/sortsys-api-v2/client
 COPY sortsys-api-v2/client/ ./
 RUN bun install --frozen-lockfile \

@@ -414,14 +414,10 @@ test("publication reuses attested OCI images and retains direct deploy pushes", 
       return step.run?.includes("ci-artifacts.mjs publish");
     }),
   );
-  assert.ok(
-    producer.jobs.build.steps.some(
-      (step) => step.uses === "docker/bake-action@v6",
-    ),
-  );
   const packaging = producer.jobs.build.steps.find((step) => {
-    return step.uses === "docker/bake-action@v6";
+    return step.uses?.startsWith("docker/bake-action@");
   });
+  assert.ok(packaging, "the checked outputs are packaged with Docker Bake");
   assert.equal(packaging.with.source, ".");
   assert.equal(producer.env.CI_BUILD_DIR, "${{ github.workspace }}-compiled");
   assert.equal(producer.env.BUNDLES_DIR, "${{ github.workspace }}-bundles");

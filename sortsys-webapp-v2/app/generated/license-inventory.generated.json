@@ -172,14 +172,14 @@
       {
         "ecosystem": "Rust",
         "name": "brotli",
-        "version": "9.0.0",
+        "version": "9.1.1",
         "license": "BSD-3-Clause AND MIT",
         "source": "https://github.com/dropbox/rust-brotli"
       },
       {
         "ecosystem": "Rust",
         "name": "brotli-decompressor",
-        "version": "6.0.1",
+        "version": "6.2.0",
         "license": "BSD-3-Clause/MIT",
         "source": "https://github.com/dropbox/rust-brotli-decompressor"
       },
@@ -340,7 +340,7 @@
       {
         "ecosystem": "Rust",
         "name": "crc32fast",
-        "version": "1.5.2",
+        "version": "1.5.4",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/srijs/rust-crc32fast"
       },
@@ -375,7 +375,7 @@
       {
         "ecosystem": "Rust",
         "name": "crypto-bigint",
-        "version": "0.7.5",
+        "version": "0.7.10",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/crypto-bigint"
       },
@@ -403,7 +403,7 @@
       {
         "ecosystem": "Rust",
         "name": "ctutils",
-        "version": "0.4.3",
+        "version": "0.4.8",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/utils"
       },
@@ -438,7 +438,7 @@
       {
         "ecosystem": "Rust",
         "name": "der",
-        "version": "0.8.2",
+        "version": "0.8.3",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/formats"
       },
@@ -522,7 +522,7 @@
       {
         "ecosystem": "Rust",
         "name": "elliptic-curve",
-        "version": "0.14.1",
+        "version": "0.14.3",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/traits"
       },
@@ -872,49 +872,49 @@
       {
         "ecosystem": "Rust",
         "name": "icu_collections",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "icu_locale_core",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "icu_normalizer",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "icu_normalizer_data",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "icu_properties",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "icu_properties_data",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "icu_provider",
-        "version": "2.3.1",
+        "version": "2.4.0",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
@@ -1026,7 +1026,7 @@
       {
         "ecosystem": "Rust",
         "name": "log",
-        "version": "0.4.34",
+        "version": "0.4.35",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/rust-lang/log"
       },
@@ -1516,7 +1516,7 @@
       {
         "ecosystem": "Rust",
         "name": "rustls-webpki",
-        "version": "0.103.15",
+        "version": "0.103.16",
         "license": "ISC",
         "source": "https://github.com/rustls/webpki"
       },
@@ -1677,7 +1677,7 @@
       {
         "ecosystem": "Rust",
         "name": "smallvec",
-        "version": "1.16.3",
+        "version": "1.16.4",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/servo/rust-smallvec"
       },
@@ -1859,7 +1859,7 @@
       {
         "ecosystem": "Rust",
         "name": "tinystr",
-        "version": "0.8.4",
+        "version": "0.8.5",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
@@ -1873,7 +1873,7 @@
       {
         "ecosystem": "Rust",
         "name": "tokio",
-        "version": "1.53.3",
+        "version": "1.54.1",
         "license": "MIT",
         "source": "https://github.com/tokio-rs/tokio"
       },
@@ -2041,8 +2041,8 @@
       {
         "ecosystem": "Rust",
         "name": "unicode-properties",
-        "version": "0.1.4",
-        "license": "MIT/Apache-2.0",
+        "version": "0.1.5",
+        "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
         "source": "https://github.com/unicode-rs/unicode-properties"
       },
       {
@@ -2068,8 +2068,15 @@
       },
       {
         "ecosystem": "Rust",
+        "name": "utf_types",
+        "version": "1.0.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/hsivonen/utf_types"
+      },
+      {
+        "ecosystem": "Rust",
         "name": "utf8_iter",
-        "version": "1.0.4",
+        "version": "1.1.0",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/hsivonen/utf8_iter"
       },
@@ -2174,7 +2181,7 @@
       {
         "ecosystem": "Rust",
         "name": "webpki-roots",
-        "version": "1.0.9",
+        "version": "1.0.11",
         "license": "CDLA-Permissive-2.0",
         "source": "https://github.com/rustls/webpki-roots"
       },
@@ -2398,7 +2405,7 @@
       {
         "ecosystem": "Rust",
         "name": "yoke",
-        "version": "0.8.3",
+        "version": "0.8.4",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
@@ -2461,14 +2468,14 @@
       {
         "ecosystem": "Rust",
         "name": "zerovec",
-        "version": "0.11.8",
+        "version": "0.11.9",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
       {
         "ecosystem": "Rust",
         "name": "zerovec-derive",
-        "version": "0.11.6",
+        "version": "0.11.7",
         "license": "Unicode-3.0",
         "source": "https://github.com/unicode-org/icu4x"
       },
@@ -2489,7 +2496,7 @@
       {
         "ecosystem": "Rust",
         "name": "zstd",
-        "version": "0.14.2",
+        "version": "0.14.3",
         "license": "BSD-3-Clause",
         "source": "https://github.com/gyscos/zstd-rs"
       },
@@ -2586,9 +2593,9 @@
       {
         "ecosystem": "npm",
         "name": "@carbon/icons-react",
-        "version": "11.90.0",
+        "version": "11.91.0",
         "license": "Apache-2.0",
-        "source": "https://www.npmjs.com/package/%40carbon%2Ficons-react/v/11.90.0"
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficons-react/v/11.91.0"
       },
       {
         "ecosystem": "npm",
@@ -2631,6 +2638,13 @@
         "version": "3.2.6",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/%40heroui%2Fstyles/v/3.2.6"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@heroui/styles",
+        "version": "3.2.7",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40heroui%2Fstyles/v/3.2.7"
       },
       {
         "ecosystem": "npm",
@@ -2866,23 +2880,23 @@
       {
         "ecosystem": "npm",
         "name": "@react-router/express",
-        "version": "8.4.0",
+        "version": "8.5.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40react-router%2Fexpress/v/8.4.0"
+        "source": "https://www.npmjs.com/package/%40react-router%2Fexpress/v/8.5.0"
       },
       {
         "ecosystem": "npm",
         "name": "@react-router/node",
-        "version": "8.4.0",
+        "version": "8.5.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40react-router%2Fnode/v/8.4.0"
+        "source": "https://www.npmjs.com/package/%40react-router%2Fnode/v/8.5.0"
       },
       {
         "ecosystem": "npm",
         "name": "@react-router/serve",
-        "version": "8.4.0",
+        "version": "8.5.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40react-router%2Fserve/v/8.4.0"
+        "source": "https://www.npmjs.com/package/%40react-router%2Fserve/v/8.5.0"
       },
       {
         "ecosystem": "npm",
@@ -3104,16 +3118,16 @@
       {
         "ecosystem": "npm",
         "name": "@types/react",
-        "version": "19.2.18",
+        "version": "19.3.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40types%2Freact/v/19.2.18"
+        "source": "https://www.npmjs.com/package/%40types%2Freact/v/19.3.0"
       },
       {
         "ecosystem": "npm",
         "name": "@types/react-dom",
-        "version": "19.2.5",
+        "version": "19.3.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40types%2Freact-dom/v/19.2.5"
+        "source": "https://www.npmjs.com/package/%40types%2Freact-dom/v/19.3.0"
       },
       {
         "ecosystem": "npm",
@@ -4652,9 +4666,9 @@
       {
         "ecosystem": "npm",
         "name": "postal-mime",
-        "version": "4.0.8",
+        "version": "4.2.0",
         "license": "MIT-0",
-        "source": "https://www.npmjs.com/package/postal-mime/v/4.0.8"
+        "source": "https://www.npmjs.com/package/postal-mime/v/4.2.0"
       },
       {
         "ecosystem": "Rust",
@@ -4722,13 +4736,6 @@
       {
         "ecosystem": "npm",
         "name": "react",
-        "version": "19.3.0",
-        "license": "MIT",
-        "source": "https://www.npmjs.com/package/react/v/19.3.0"
-      },
-      {
-        "ecosystem": "npm",
-        "name": "react",
         "version": "19.3.1",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/react/v/19.3.1"
@@ -4746,13 +4753,6 @@
         "version": "1.22.1",
         "license": "Apache-2.0",
         "source": "https://www.npmjs.com/package/react-aria-components/v/1.22.1"
-      },
-      {
-        "ecosystem": "npm",
-        "name": "react-dom",
-        "version": "19.3.0",
-        "license": "MIT",
-        "source": "https://www.npmjs.com/package/react-dom/v/19.3.0"
       },
       {
         "ecosystem": "npm",
@@ -4792,9 +4792,9 @@
       {
         "ecosystem": "npm",
         "name": "react-router",
-        "version": "8.4.0",
+        "version": "8.5.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/react-router/v/8.4.0"
+        "source": "https://www.npmjs.com/package/react-router/v/8.5.0"
       },
       {
         "ecosystem": "npm",
