@@ -23,6 +23,11 @@ pub(crate) mod project_files;
 mod project_schedule;
 
 pub(crate) use project_costs::overview_for_authenticated_user as project_cost_overview_for_authenticated_user;
+pub(crate) mod commercial;
+pub(crate) mod commercial_billing;
+pub(crate) mod commercial_documents;
+mod document_templates;
+mod gaeb_positions;
 mod projects;
 mod regie_reports;
 mod remarks;
@@ -107,16 +112,22 @@ pub fn register(
     let builder = personalization::register(builder, Arc::clone(&state));
     let builder = products::register(builder, Arc::clone(&state));
     let builder = projects::register(builder, Arc::clone(&state));
+    let builder = commercial::register(builder, Arc::clone(&state));
+    let builder = commercial_billing::register(builder, Arc::clone(&state));
+    let builder = commercial_documents::register(builder, Arc::clone(&state));
+    let builder = gaeb_positions::register(builder, Arc::clone(&state));
     let builder = project_costs::register(builder, Arc::clone(&state));
     let builder = project_schedule::register(builder, Arc::clone(&state));
     let builder = project_files::register(builder, Arc::clone(&state));
     let builder = crate::onlyoffice::register(builder, Arc::clone(&state));
     let builder = crate::drawio::register(builder, Arc::clone(&state));
+    let builder = crate::xml_documents::register(builder, Arc::clone(&state));
     let builder = crate::office_exports::register(builder, Arc::clone(&state));
     let builder = project_daily_reports::register(builder, Arc::clone(&state));
     let builder = project_contacts::register(builder, Arc::clone(&state));
     let builder = regie_reports::register(builder, Arc::clone(&state));
     let builder = settings::register(builder, Arc::clone(&state));
+    let builder = document_templates::register(builder, Arc::clone(&state));
     let builder = settings_logo::register(builder, Arc::clone(&state));
     let builder = tools::register(builder, Arc::clone(&state));
     let builder = users::register(builder, Arc::clone(&state));
@@ -125,12 +136,19 @@ pub fn register(
 }
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    let builder = settings::register_contract(builder);
+    let builder = document_templates::register_contract(builder);
+    let builder = commercial::register_contract(builder);
+    let builder = commercial_billing::register_contract(builder);
+    let builder = commercial_documents::register_contract(builder);
+    let builder = gaeb_positions::register_contract(builder);
     let builder = personalization::register_contract(builder);
     let builder = llm::register_contract(builder);
     let builder = delivery_notes::register_contract(builder);
     let builder = products::register_contract(builder);
     let builder = project_files::register_contract(builder);
     let builder = crate::drawio::register_contract(builder);
+    let builder = crate::xml_documents::register_contract(builder);
     let builder = crate::office_exports::register_contract(builder);
 
     crate::onlyoffice::register_contract(builder)

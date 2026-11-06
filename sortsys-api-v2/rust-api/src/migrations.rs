@@ -14,6 +14,11 @@ pub fn apply(
 
 async fn apply_inner(pool: PgPool) -> Result<(), sqlx::Error> {
     let mut transaction = pool.begin().await?;
+    // IF NOT EXISTS alone does not serialize concurrent catalog writes on a
+    // fresh database. Hold this database-local lock through DDL and history.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('sortsys:tenant:migrations', 0))")
+        .execute(&mut *transaction)
+        .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS __migrations (\
          name TEXT PRIMARY KEY, \
@@ -58,6 +63,6 @@ mod tests {
             assert!(!sql.trim().is_empty());
             previous = name;
         }
-        assert_eq!(MIGRATIONS.len(), 49);
+        assert_eq!(MIGRATIONS.len(), 54);
     }
 }

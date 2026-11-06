@@ -1,4 +1,6 @@
 import { attachmentPreviewKind } from "./attachmentPreview";
+import { isGaebFile } from "@sortsys/gaeb";
+export { isGaebFile as isGaebAttachment } from "@sortsys/gaeb";
 
 type FileMetadata = {
   fileName: string;
@@ -128,6 +130,7 @@ export function isVideoAttachment(file: FileMetadata) {
 }
 
 export function projectFilePreviewKind(file: FileMetadata) {
+  if (isGaebFile(file)) return "gaeb";
   const attachmentKind = attachmentPreviewKind(file);
 
   if (attachmentKind) {

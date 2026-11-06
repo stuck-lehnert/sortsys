@@ -2,6 +2,7 @@
 @import "@heroui/styles";
 
 @source "../../sortsys-react-components/src";
+@source "../../sortsys-gaeb/src";
 
 @theme {
   --font-sans: "Ubuntu", "Segoe UI", sans-serif;

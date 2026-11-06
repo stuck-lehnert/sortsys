@@ -1,3 +1,4 @@
+import { showCommercialWorkspace } from "~/modals/commercial";
 import { uiText } from "~/lib/i18n";
 import { useOutletContext } from "react-router";
 import { AttrList } from "~/components/AttrList";
@@ -67,7 +68,11 @@ function getIsoWeekInfo(date: Date) {
   const firstDay = (firstThursday.getDay() + 6) % 7;
   firstThursday.setDate(firstThursday.getDate() + 3 - firstDay);
 
-  const weekNumber = 1 + Math.round((value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const weekNumber =
+    1 +
+    Math.round(
+      (value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
 
   return {
     weekNumber,
@@ -80,14 +85,16 @@ function isoWeekLabel(date: Date) {
   return `KW ${info.weekNumber}/${info.isoYear}`;
 }
 
-const MISSING_INVOICE_NOTICE = uiText('Gewinn/Verlust kann nicht berechnet werden, da Rechnungssummen fehlen.');
+const MISSING_INVOICE_NOTICE = uiText(
+  "Gewinn/Verlust kann nicht berechnet werden, da Rechnungssummen fehlen.",
+);
 
 function hasNumberData(value: number | null | undefined) {
   return Math.abs(Number(value ?? 0)) > 0.000001;
 }
 
 function formatCurrencyOrDash(value: number | null | undefined) {
-  return hasNumberData(value) ? formatCurrency(Number(value ?? 0)) : '-';
+  return hasNumberData(value) ? formatCurrency(Number(value ?? 0)) : "-";
 }
 
 function formatGainOrLossPercentage(value: number, invoicesTotal: number) {
@@ -97,10 +104,16 @@ function formatGainOrLossPercentage(value: number, invoicesTotal: number) {
 
 function formatGainOrLossText(value: number, invoicesTotal: number) {
   const percentage = formatGainOrLossPercentage(value, invoicesTotal);
-  return `${percentage ? `(${percentage}) ` : ''}${formatCurrency(value)}`;
+  return `${percentage ? `(${percentage}) ` : ""}${formatCurrency(value)}`;
 }
 
-function GainOrLossText({ value, invoicesTotal }: { value: number; invoicesTotal: number }) {
+function GainOrLossText({
+  value,
+  invoicesTotal,
+}: {
+  value: number;
+  invoicesTotal: number;
+}) {
   return (
     <span style={{ color: gainOrLossColor(value), fontWeight: 700 }}>
       {formatGainOrLossText(value, invoicesTotal)}
@@ -109,32 +122,39 @@ function GainOrLossText({ value, invoicesTotal }: { value: number; invoicesTotal
 }
 
 function formatProductAmount(amount: number, unit: string) {
-  const normalizedUnit = `${unit ?? ''}`.trim();
-  return `${formatNumber(amount)}${normalizedUnit ? ` ${normalizedUnit}` : ''}`;
+  const normalizedUnit = `${unit ?? ""}`.trim();
+  return `${formatNumber(amount)}${normalizedUnit ? ` ${normalizedUnit}` : ""}`;
 }
 
-function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
-  const normalizedBaseUnit = `${baseUnit ?? ''}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ''}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return '-';
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ''}`;
+function formatBaseQuantity(
+  baseQuantity: number,
+  baseUnit: string,
+  displayUnit: string,
+) {
+  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
+  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
+  if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
+  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
 }
 
 export default function ProjectDetailCosts() {
   const { project } = useOutletContext<{ project: Project }>();
   const modals = useMyModals();
   const sessionInfo = useSessionInfo();
-  const canManageProjectFinancialEntries = sessionInfo.canDo('manage:projects');
+  const canManageProjectFinancialEntries = sessionInfo.canDo("manage:projects");
 
-  const [costs] = useClientStream(() => client.streamQuery('projects.costs.get', { projectId: project.id }), [project.id]);
+  const [costs] = useClientStream(
+    () => client.streamQuery("projects.costs.get", { projectId: project.id }),
+    [project.id],
+  );
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [pdfExportErr, setPdfExportErr] = useState<string | null>(null);
 
-  useShortcut('Control+p', e => {
+  useShortcut("Control+p", (e) => {
     if (!costs) return;
     e.preventDefault();
     if (isPdfExporting) return;
-    void exportCostsToPdf('overall', 'open');
+    void exportCostsToPdf("overall", "open");
   });
 
   if (!costs) return;
@@ -142,16 +162,23 @@ export default function ProjectDetailCosts() {
   const offers: ProjectFinancialEntry[] = costs.offers ?? [];
   const invoices: ProjectFinancialEntry[] = costs.invoices ?? [];
 
-  const offersTotal = Number(costs.totalCosts.offers ?? offers.reduce((sum, entry) => sum + (entry.amount ?? 0), 0));
-  const invoicesTotal = Number(costs.totalCosts.invoices ?? invoices.reduce((sum, entry) => sum + (entry.amount ?? 0), 0));
+  const offersTotal = Number(
+    costs.totalCosts.offers ??
+      offers.reduce((sum, entry) => sum + (entry.amount ?? 0), 0),
+  );
+  const invoicesTotal = Number(
+    costs.totalCosts.invoices ??
+      invoices.reduce((sum, entry) => sum + (entry.amount ?? 0), 0),
+  );
   const hasFinancialEntries = offers.length > 0 || invoices.length > 0;
   const hasInvoices = invoices.length > 0;
   const gainOrLoss = invoicesTotal - Number(costs.totalCosts.overall ?? 0);
 
   const commonCosts = costs.commonCosts;
-  const fallbackCommonCostsOverhead = Number(commonCosts.fgk.overheadCost ?? 0)
-    + Number(commonCosts.mgk.overheadCost ?? 0)
-    + Number(commonCosts.ngk.overheadCost ?? 0);
+  const fallbackCommonCostsOverhead =
+    Number(commonCosts.fgk.overheadCost ?? 0) +
+    Number(commonCosts.mgk.overheadCost ?? 0) +
+    Number(commonCosts.ngk.overheadCost ?? 0);
   const commonCostsOverhead = hasNumberData(commonCosts.overallOverhead)
     ? Number(commonCosts.overallOverhead ?? 0)
     : fallbackCommonCostsOverhead;
@@ -159,11 +186,20 @@ export default function ProjectDetailCosts() {
   const subcontractorWorkHours = costs.subcontractorWorkHours ?? [];
   const regularWorkHours = costs.workHours ?? [];
   const workHoursTotal = Number(costs.totalCosts.workHours ?? 0);
-  const subcontractorWorkHoursTotal = Number(costs.totalCosts.subcontractorWorkHours ?? subcontractorWorkHours.reduce((sum, entry) => sum + Number(entry.totalCost ?? 0), 0));
+  const subcontractorWorkHoursTotal = Number(
+    costs.totalCosts.subcontractorWorkHours ??
+      subcontractorWorkHours.reduce(
+        (sum, entry) => sum + Number(entry.totalCost ?? 0),
+        0,
+      ),
+  );
 
-  async function exportCostsToPdf(mode: 'overall' | 'weekly' = 'overall', target: BlobTarget = 'open') {
+  async function exportCostsToPdf(
+    mode: "overall" | "weekly" = "overall",
+    target: BlobTarget = "open",
+  ) {
     if (!costs) return;
-    const pdfWindow = target === 'open' ? window.open('', '_blank') : null;
+    const pdfWindow = target === "open" ? window.open("", "_blank") : null;
 
     setPdfExportErr(null);
     setIsPdfExporting(true);
@@ -172,113 +208,213 @@ export default function ProjectDetailCosts() {
       const toolNameMap = new Map<string, string>();
       const userNameMap = new Map<string, string>();
 
-      const productIds = [...new Set((costs.products ?? []).map((entry) => entry.productId))];
-      const toolIds = [...new Set((costs.toolTrackings ?? []).map((entry) => entry.toolId))];
-      const userIds = [...new Set([...regularWorkHours, ...subcontractorWorkHours].map((entry) => entry.userId).filter(Boolean))] as string[];
+      const productIds = [
+        ...new Set((costs.products ?? []).map((entry) => entry.productId)),
+      ];
+      const toolIds = [
+        ...new Set((costs.toolTrackings ?? []).map((entry) => entry.toolId)),
+      ];
+      const userIds = [
+        ...new Set(
+          [...regularWorkHours, ...subcontractorWorkHours]
+            .map((entry) => entry.userId)
+            .filter(Boolean),
+        ),
+      ] as string[];
 
       const [productEntries] = await Promise.all([
-        Promise.all(productIds.map(async (id) => {
-          const [product] = await client.query('products.get', { id }, { strategy: 'cache-first' });
-          return [id, product ?? null] as const;
-        })),
-        Promise.all(toolIds.map(async (id) => {
-          const [tool] = await client.query('tools.get', { id }, { strategy: 'cache-first' });
-          toolNameMap.set(id, tool ? `${tool.customId} ${toolTitle(tool)}` : id);
-        })),
-        Promise.all(userIds.map(async (id) => {
-          const [user] = await client.query('users.get', { id }, { strategy: 'cache-first' });
-          userNameMap.set(id, user ? userFullName(user) : id);
-        })),
+        Promise.all(
+          productIds.map(async (id) => {
+            const [product] = await client.query(
+              "products.get",
+              { id },
+              { strategy: "cache-first" },
+            );
+            return [id, product ?? null] as const;
+          }),
+        ),
+        Promise.all(
+          toolIds.map(async (id) => {
+            const [tool] = await client.query(
+              "tools.get",
+              { id },
+              { strategy: "cache-first" },
+            );
+            toolNameMap.set(
+              id,
+              tool ? `${tool.customId} ${toolTitle(tool)}` : id,
+            );
+          }),
+        ),
+        Promise.all(
+          userIds.map(async (id) => {
+            const [user] = await client.query(
+              "users.get",
+              { id },
+              { strategy: "cache-first" },
+            );
+            userNameMap.set(id, user ? userFullName(user) : id);
+          }),
+        ),
       ]);
       const productMap = new Map(productEntries);
 
       const sections: PdfTableSection[] = [];
 
-      const buildCommonCostsSection = (sourceCommonCosts = commonCosts): PdfTableSection => ({
+      const buildCommonCostsSection = (
+        sourceCommonCosts = commonCosts,
+      ): PdfTableSection => ({
         title: uiText("Gemeinkosten"),
-        columns: ['Kostenart', 'Basis', 'Gemeinkosten'],
+        columns: ["Kostenart", "Basis", "Gemeinkosten"],
         rows: [
-          [uiText('Lohngemeinkosten', 'Labour overhead'), formatCurrencyOrDash(sourceCommonCosts.fgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.fgk.overheadCost)],
-          [uiText('Materialgemeinkosten', 'Material overhead'), formatCurrencyOrDash(sourceCommonCosts.mgk.baseCost), formatCurrencyOrDash(sourceCommonCosts.mgk.overheadCost)],
-          [uiText('Nachunternehmergemeinkosten', 'Subcontractor overhead'), formatCurrencyOrDash(sourceCommonCosts.ngk.baseCost), formatCurrencyOrDash(sourceCommonCosts.ngk.overheadCost)],
+          [
+            uiText("Lohngemeinkosten", "Labour overhead"),
+            formatCurrencyOrDash(sourceCommonCosts.fgk.baseCost),
+            formatCurrencyOrDash(sourceCommonCosts.fgk.overheadCost),
+          ],
+          [
+            uiText("Materialgemeinkosten", "Material overhead"),
+            formatCurrencyOrDash(sourceCommonCosts.mgk.baseCost),
+            formatCurrencyOrDash(sourceCommonCosts.mgk.overheadCost),
+          ],
+          [
+            uiText("Nachunternehmergemeinkosten", "Subcontractor overhead"),
+            formatCurrencyOrDash(sourceCommonCosts.ngk.baseCost),
+            formatCurrencyOrDash(sourceCommonCosts.ngk.overheadCost),
+          ],
         ],
-        align: ['left', 'right', 'right'],
-        columnWidths: ['2fr', '1fr', '1fr'],
+        align: ["left", "right", "right"],
+        columnWidths: ["2fr", "1fr", "1fr"],
       });
 
-      const buildFinancialEntrySection = (title: string, entries: ProjectFinancialEntry[]): PdfTableSection | null => {
+      const buildFinancialEntrySection = (
+        title: string,
+        entries: ProjectFinancialEntry[],
+      ): PdfTableSection | null => {
         const rows = [...entries]
-          .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+          .sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime(),
+          )
           .map((entry) => [
-            formatDate(entry.createdAt, 'short'),
+            formatDate(entry.createdAt, "short"),
             formatCurrencyOrDash(entry.amount),
-            entry.comment || '-',
+            entry.comment || "-",
           ]);
         if (!rows.length) return null;
 
         return {
           title,
-          columns: ['Erfasst am', 'Betrag', uiText('Kommentar')],
+          columns: ["Erfasst am", "Betrag", uiText("Kommentar")],
           rows,
-          align: ['left', 'right', 'left'],
-          columnWidths: ['1.1fr', '1.1fr', '2.4fr'],
+          align: ["left", "right", "left"],
+          columnWidths: ["1.1fr", "1.1fr", "2.4fr"],
         };
       };
 
-      const summaryRows: PdfTableSection['rows'] = [
-        ['Gesamtkosten', { value: formatCurrencyOrDash(costs.totalCosts.overall), bold: true }],
+      const summaryRows: PdfTableSection["rows"] = [
+        [
+          "Gesamtkosten",
+          { value: formatCurrencyOrDash(costs.totalCosts.overall), bold: true },
+        ],
       ];
       if (offers.length > 0 || hasNumberData(offersTotal)) {
         const offersAmount = formatCurrencyOrDash(offersTotal);
-        summaryRows.push(['Angebotssummen', {
-          value: offersAmount,
-          detail: offers.length > 1 ? uiText(`${offers.length} Einträge`, `${offers.length} entries`) : undefined,
-        }]);
+        summaryRows.push([
+          "Angebotssummen",
+          {
+            value: offersAmount,
+            detail:
+              offers.length > 1
+                ? uiText(
+                    `${offers.length} Einträge`,
+                    `${offers.length} entries`,
+                  )
+                : undefined,
+          },
+        ]);
       }
       if (invoices.length > 0 || hasNumberData(invoicesTotal)) {
-        summaryRows.push(['Rechnungssummen', formatCurrencyOrDash(invoicesTotal)]);
+        summaryRows.push([
+          "Rechnungssummen",
+          formatCurrencyOrDash(invoicesTotal),
+        ]);
       }
       if (hasInvoices) {
         const balanceColor = gainOrLossColor(gainOrLoss);
         summaryRows.push([
-          'Gewinn/Verlust',
+          "Gewinn/Verlust",
           {
-            value: formatCurrency(gainOrLoss), bold: true, color: balanceColor,
-            detail: formatGainOrLossPercentage(gainOrLoss, invoicesTotal) ?? undefined,
+            value: formatCurrency(gainOrLoss),
+            bold: true,
+            color: balanceColor,
+            detail:
+              formatGainOrLossPercentage(gainOrLoss, invoicesTotal) ??
+              undefined,
           },
         ]);
       }
       sections.push({
         title: uiText("Zusammenfassung"),
         subtitle: !hasInvoices ? MISSING_INVOICE_NOTICE : undefined,
-        columns: [uiText('Kennzahl'), uiText('Wert')],
+        columns: [uiText("Kennzahl"), uiText("Wert")],
         rows: summaryRows,
-        presentation: 'metrics',
+        presentation: "metrics",
         withHeader: false,
-        align: ['left', 'right'],
-        columnWidths: ['2fr', '1fr'],
+        align: ["left", "right"],
+        columnWidths: ["2fr", "1fr"],
       });
 
-      const offerSection = buildFinancialEntrySection(uiText('Angebotssummen'), offers);
+      const offerSection = buildFinancialEntrySection(
+        uiText("Angebotssummen"),
+        offers,
+      );
       if (offerSection) sections.push(offerSection);
-      const invoiceSection = buildFinancialEntrySection(uiText('Rechnungssummen'), invoices);
+      const invoiceSection = buildFinancialEntrySection(
+        uiText("Rechnungssummen"),
+        invoices,
+      );
       if (invoiceSection) sections.push(invoiceSection);
 
       const costAreaRows: string[][] = [];
-      if (hasNumberData(costs.totalCosts.products)) costAreaRows.push(['Produkte', formatCurrencyOrDash(costs.totalCosts.products)]);
-      if (hasNumberData(costs.totalCosts.specialRecords)) costAreaRows.push(['Sonderposten', formatCurrencyOrDash(costs.totalCosts.specialRecords)]);
-      if (hasNumberData(costs.totalCosts.toolTrackings)) costAreaRows.push(['Werkzeuge', formatCurrencyOrDash(costs.totalCosts.toolTrackings)]);
-      if (hasNumberData(workHoursTotal)) costAreaRows.push([uiText('Arbeitszeit'), formatCurrencyOrDash(workHoursTotal)]);
-      if (hasNumberData(subcontractorWorkHoursTotal)) costAreaRows.push([uiText('Nachunternehmer-Arbeitszeit'), formatCurrencyOrDash(subcontractorWorkHoursTotal)]);
-      if (hasNumberData(commonCostsOverhead)) costAreaRows.push(['Gemeinkosten', formatCurrencyOrDash(commonCostsOverhead)]);
+      if (hasNumberData(costs.totalCosts.products))
+        costAreaRows.push([
+          "Produkte",
+          formatCurrencyOrDash(costs.totalCosts.products),
+        ]);
+      if (hasNumberData(costs.totalCosts.specialRecords))
+        costAreaRows.push([
+          "Sonderposten",
+          formatCurrencyOrDash(costs.totalCosts.specialRecords),
+        ]);
+      if (hasNumberData(costs.totalCosts.toolTrackings))
+        costAreaRows.push([
+          "Werkzeuge",
+          formatCurrencyOrDash(costs.totalCosts.toolTrackings),
+        ]);
+      if (hasNumberData(workHoursTotal))
+        costAreaRows.push([
+          uiText("Arbeitszeit"),
+          formatCurrencyOrDash(workHoursTotal),
+        ]);
+      if (hasNumberData(subcontractorWorkHoursTotal))
+        costAreaRows.push([
+          uiText("Nachunternehmer-Arbeitszeit"),
+          formatCurrencyOrDash(subcontractorWorkHoursTotal),
+        ]);
+      if (hasNumberData(commonCostsOverhead))
+        costAreaRows.push([
+          "Gemeinkosten",
+          formatCurrencyOrDash(commonCostsOverhead),
+        ]);
       if (costAreaRows.length > 0) {
         sections.push({
           title: uiText("Kostenbereiche"),
-          columns: ['Bereich', 'Betrag'],
+          columns: ["Bereich", "Betrag"],
           rows: costAreaRows,
           withHeader: false,
-          align: ['left', 'right'],
-          columnWidths: ['2fr', '1fr'],
+          align: ["left", "right"],
+          columnWidths: ["2fr", "1fr"],
         });
       }
 
@@ -286,7 +422,7 @@ export default function ProjectDetailCosts() {
         sections.push(buildCommonCostsSection());
       }
 
-      if (mode === 'weekly') {
+      if (mode === "weekly") {
         type WeeklyBucket = {
           weekStart: Date;
           weekEnd: Date;
@@ -296,7 +432,10 @@ export default function ProjectDetailCosts() {
           workHours: number;
           subcontractorWorkHours: number;
           toolTrackingsCost: number;
-          productTotals: Map<string, { quantityBase: number; totalCost: number; }>;
+          productTotals: Map<
+            string,
+            { quantityBase: number; totalCost: number }
+          >;
           deliveryNotes: typeof costs.deliveryNotes;
           specialRecords: typeof costs.specialRecords;
           workHourEntries: typeof costs.workHours;
@@ -343,11 +482,17 @@ export default function ProjectDetailCosts() {
           return bucket;
         };
 
-        const noteCostEntries = await Promise.all((costs.deliveryNotes ?? []).map(async (note) => {
-          const [noteCosts, noteCostsErr] = await client.query('deliveryNotes.costs.get', { id: note.noteId }, { strategy: 'cache-first' });
-          if (noteCostsErr) throw noteCostsErr;
-          return { note, noteCosts };
-        }));
+        const noteCostEntries = await Promise.all(
+          (costs.deliveryNotes ?? []).map(async (note) => {
+            const [noteCosts, noteCostsErr] = await client.query(
+              "deliveryNotes.costs.get",
+              { id: note.noteId },
+              { strategy: "cache-first" },
+            );
+            if (noteCostsErr) throw noteCostsErr;
+            return { note, noteCosts };
+          }),
+        );
 
         noteCostEntries.forEach(({ note, noteCosts }) => {
           const bucket = ensureWeeklyBucket(note.effectiveTimestamp);
@@ -357,7 +502,7 @@ export default function ProjectDetailCosts() {
 
           const records = ((noteCosts as any)?.records ?? []) as Array<any>;
           records.forEach((record) => {
-            const productId = `${record?.productId ?? ''}`;
+            const productId = `${record?.productId ?? ""}`;
             if (!productId) return;
 
             const current = bucket.productTotals.get(productId) ?? {
@@ -420,71 +565,117 @@ export default function ProjectDetailCosts() {
           bucket.invoices.push(entry);
         });
 
-        const weeklyEntries = Array.from(weeklyBuckets.values())
-          .sort((left, right) => left.weekStart.getTime() - right.weekStart.getTime());
+        const weeklyEntries = Array.from(weeklyBuckets.values()).sort(
+          (left, right) => left.weekStart.getTime() - right.weekStart.getTime(),
+        );
 
-        await Promise.all(weeklyEntries.map(async (entry) => {
-          const [weekCosts, weekCostsErr] = await client.query('projects.costs.get', {
-            projectId: project.id,
-            from: entry.weekStart,
-            to: endOfDay(entry.weekEnd),
-          }, { strategy: 'cache-first' });
-          if (weekCostsErr) throw weekCostsErr;
-          entry.commonCosts = weekCosts?.commonCosts;
-        }));
+        await Promise.all(
+          weeklyEntries.map(async (entry) => {
+            const [weekCosts, weekCostsErr] = await client.query(
+              "projects.costs.get",
+              {
+                projectId: project.id,
+                from: entry.weekStart,
+                to: endOfDay(entry.weekEnd),
+              },
+              { strategy: "cache-first" },
+            );
+            if (weekCostsErr) throw weekCostsErr;
+            entry.commonCosts = weekCosts?.commonCosts;
+          }),
+        );
 
         if (weeklyEntries.length > 0) {
           sections.push({
-            title: uiText('Einzelkosten je Woche', 'Direct costs per week'),
-            subtitle: uiText('Ohne Gemeinkosten. Material umfasst Produkte und Sonderposten, Personal umfasst Mitarbeiter und Nachunternehmer. Einzelpositionen folgen je Woche.', 'Excluding overhead. Materials include products and special items; personnel includes employees and subcontractors. Detailed positions follow for each week.'),
-            columns: [uiText('Woche', 'Week'), uiText('Material', 'Materials'), uiText('Personal', 'Personnel'), uiText('Werkzeuge'), uiText('Einzelkosten', 'Direct costs')],
+            title: uiText("Einzelkosten je Woche", "Direct costs per week"),
+            subtitle: uiText(
+              "Ohne Gemeinkosten. Material umfasst Produkte und Sonderposten, Personal umfasst Mitarbeiter und Nachunternehmer. Einzelpositionen folgen je Woche.",
+              "Excluding overhead. Materials include products and special items; personnel includes employees and subcontractors. Detailed positions follow for each week.",
+            ),
+            columns: [
+              uiText("Woche", "Week"),
+              uiText("Material", "Materials"),
+              uiText("Personal", "Personnel"),
+              uiText("Werkzeuge"),
+              uiText("Einzelkosten", "Direct costs"),
+            ],
             rows: weeklyEntries.map((entry) => [
               entry.weekLabel,
               formatCurrencyOrDash(entry.products + entry.specialRecordsCost),
-              formatCurrencyOrDash(entry.workHours + entry.subcontractorWorkHours),
+              formatCurrencyOrDash(
+                entry.workHours + entry.subcontractorWorkHours,
+              ),
               formatCurrencyOrDash(entry.toolTrackingsCost),
-              formatCurrencyOrDash(entry.products + entry.specialRecordsCost + entry.workHours + entry.subcontractorWorkHours + entry.toolTrackingsCost),
+              formatCurrencyOrDash(
+                entry.products +
+                  entry.specialRecordsCost +
+                  entry.workHours +
+                  entry.subcontractorWorkHours +
+                  entry.toolTrackingsCost,
+              ),
             ]),
-            align: ['left', 'right', 'right', 'right', 'right'],
-            columnWidths: ['1.1fr', '1.2fr', '1.2fr', '1.1fr', '1.3fr'],
+            align: ["left", "right", "right", "right", "right"],
+            columnWidths: ["1.1fr", "1.2fr", "1.2fr", "1.1fr", "1.3fr"],
           });
         }
 
         const weeklyReports = weeklyEntries.map((entry) => {
           const weeklySections: PdfTableSection[] = [];
 
-          const weeklyTotal = entry.products + entry.specialRecordsCost + entry.workHours + entry.subcontractorWorkHours + entry.toolTrackingsCost;
-          const weeklySummaryRows: PdfTableSection['rows'] = [
-            [uiText('Einzelkosten', 'Direct costs'), { value: formatCurrencyOrDash(weeklyTotal), bold: true }],
-            ['Produkte', formatCurrencyOrDash(entry.products)],
-            ['Sonderposten', formatCurrencyOrDash(entry.specialRecordsCost)],
-            [uiText('Arbeitszeit'), formatCurrencyOrDash(entry.workHours)],
+          const weeklyTotal =
+            entry.products +
+            entry.specialRecordsCost +
+            entry.workHours +
+            entry.subcontractorWorkHours +
+            entry.toolTrackingsCost;
+          const weeklySummaryRows: PdfTableSection["rows"] = [
+            [
+              uiText("Einzelkosten", "Direct costs"),
+              { value: formatCurrencyOrDash(weeklyTotal), bold: true },
+            ],
+            ["Produkte", formatCurrencyOrDash(entry.products)],
+            ["Sonderposten", formatCurrencyOrDash(entry.specialRecordsCost)],
+            [uiText("Arbeitszeit"), formatCurrencyOrDash(entry.workHours)],
           ];
 
           if (hasNumberData(entry.subcontractorWorkHours)) {
-            weeklySummaryRows.push([uiText('Nachunternehmer-Arbeitszeit'), formatCurrencyOrDash(entry.subcontractorWorkHours)]);
+            weeklySummaryRows.push([
+              uiText("Nachunternehmer-Arbeitszeit"),
+              formatCurrencyOrDash(entry.subcontractorWorkHours),
+            ]);
           }
 
           if (hasNumberData(entry.toolTrackingsCost)) {
-            weeklySummaryRows.push(['Werkzeuge', formatCurrencyOrDash(entry.toolTrackingsCost)]);
+            weeklySummaryRows.push([
+              "Werkzeuge",
+              formatCurrencyOrDash(entry.toolTrackingsCost),
+            ]);
           }
 
           weeklySections.push({
-            title: '',
-            columns: [uiText('Kennzahl'), uiText('Wert')],
+            title: "",
+            columns: [uiText("Kennzahl"), uiText("Wert")],
             rows: weeklySummaryRows,
-            presentation: 'metrics',
+            presentation: "metrics",
             withHeader: false,
-            align: ['left', 'right'],
-            columnWidths: ['2fr', '1fr'],
+            align: ["left", "right"],
+            columnWidths: ["2fr", "1fr"],
           });
 
-          const weeklyOfferSection = buildFinancialEntrySection(uiText('Angebotssummen'), entry.offers);
+          const weeklyOfferSection = buildFinancialEntrySection(
+            uiText("Angebotssummen"),
+            entry.offers,
+          );
           if (weeklyOfferSection) weeklySections.push(weeklyOfferSection);
-          const weeklyInvoiceSection = buildFinancialEntrySection(uiText('Rechnungssummen'), entry.invoices);
+          const weeklyInvoiceSection = buildFinancialEntrySection(
+            uiText("Rechnungssummen"),
+            entry.invoices,
+          );
           if (weeklyInvoiceSection) weeklySections.push(weeklyInvoiceSection);
 
-          const weeklyCommonCostsOverhead = Number(entry.commonCosts?.overallOverhead ?? 0);
+          const weeklyCommonCostsOverhead = Number(
+            entry.commonCosts?.overallOverhead ?? 0,
+          );
           if (hasNumberData(weeklyCommonCostsOverhead) && entry.commonCosts) {
             weeklySections.push(buildCommonCostsSection(entry.commonCosts));
           }
@@ -501,20 +692,34 @@ export default function ProjectDetailCosts() {
                 ? `${rightProduct.customId} ${productTitle(rightProduct)}`
                 : right[0];
 
-              return leftLabel.localeCompare(rightLabel, 'de', { sensitivity: 'base' });
+              return leftLabel.localeCompare(rightLabel, "de", {
+                sensitivity: "base",
+              });
             })
             .map(([productId, total]) => {
               const product = productMap.get(productId);
-              const [amount, unit] = product ? upmatchUnit(product, total.quantityBase) : [total.quantityBase, ''];
-              const baseUnit = product?.baseUnit ?? '';
-              const inBaseUnits = formatBaseQuantity(total.quantityBase, baseUnit, unit);
-              const avgUnitPrice = total.quantityBase > 0 && hasNumberData(total.totalCost)
-                ? `${formatCurrency(total.totalCost / total.quantityBase)}${baseUnit ? `/${baseUnit}` : ''}`
-                : '-';
+              const [amount, unit] = product
+                ? upmatchUnit(product, total.quantityBase)
+                : [total.quantityBase, ""];
+              const baseUnit = product?.baseUnit ?? "";
+              const inBaseUnits = formatBaseQuantity(
+                total.quantityBase,
+                baseUnit,
+                unit,
+              );
+              const avgUnitPrice =
+                total.quantityBase > 0 && hasNumberData(total.totalCost)
+                  ? `${formatCurrency(total.totalCost / total.quantityBase)}${baseUnit ? `/${baseUnit}` : ""}`
+                  : "-";
 
               return {
-                number: product ? `${product.customId}` : '-',
-                name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${productId})`, `Unknown product (${productId})`),
+                number: product ? `${product.customId}` : "-",
+                name: product
+                  ? productTitle(product)
+                  : uiText(
+                      `Unbekanntes Produkt (${productId})`,
+                      `Unknown product (${productId})`,
+                    ),
                 quantity: formatProductAmount(amount, unit),
                 baseQuantity: inBaseUnits,
                 price: avgUnitPrice,
@@ -527,7 +732,11 @@ export default function ProjectDetailCosts() {
           }
 
           const weeklySpecialRows = [...(entry.specialRecords ?? [])]
-            .sort((left, right) => `${left.name ?? ''}`.localeCompare(`${right.name ?? ''}`, 'de', { sensitivity: 'base' }))
+            .sort((left, right) =>
+              `${left.name ?? ""}`.localeCompare(`${right.name ?? ""}`, "de", {
+                sensitivity: "base",
+              }),
+            )
             .map((specialRecord) => [
               specialRecord.name,
               `${formatNumber(specialRecord.amount)} ${specialRecord.unit}`,
@@ -538,18 +747,26 @@ export default function ProjectDetailCosts() {
           if (weeklySpecialRows.length > 0) {
             weeklySections.push({
               title: uiText("Sonderposten"),
-              columns: ['Bezeichnung', 'Menge', uiText('Kosten'), uiText('Lieferschein')],
+              columns: [
+                "Bezeichnung",
+                "Menge",
+                uiText("Kosten"),
+                uiText("Lieferschein"),
+              ],
               rows: weeklySpecialRows,
-              align: ['left', 'right', 'right', 'right'],
-              columnWidths: ['1.9fr', '1fr', '1fr', '0.8fr'],
+              align: ["left", "right", "right", "right"],
+              columnWidths: ["1.9fr", "1fr", "1fr", "0.8fr"],
             });
           }
 
           const weeklyWorkHourRows = [...(entry.workHourEntries ?? [])]
             .sort((left, right) => left.day.getTime() - right.day.getTime())
             .map((workHourEntry) => [
-              formatDate(workHourEntry.day, 'short'),
-              workHourEntry.userId ? (userNameMap.get(workHourEntry.userId) ?? workHourEntry.userId) : 'Unbekannt',
+              formatDate(workHourEntry.day, "short"),
+              workHourEntry.userId
+                ? (userNameMap.get(workHourEntry.userId) ??
+                  workHourEntry.userId)
+                : "Unbekannt",
               formatPdfNumber(workHourEntry.hours),
               formatCurrencyOrDash(workHourEntry.totalCost),
             ]);
@@ -557,18 +774,28 @@ export default function ProjectDetailCosts() {
           if (weeklyWorkHourRows.length > 0) {
             weeklySections.push({
               title: uiText("Arbeitszeit"),
-              columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
+              columns: [
+                "Tag",
+                "Mitarbeiter",
+                uiText("Stunden"),
+                uiText("Kosten"),
+              ],
               rows: weeklyWorkHourRows,
-              align: ['left', 'left', 'right', 'right'],
-              columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
+              align: ["left", "left", "right", "right"],
+              columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
             });
           }
 
-          const weeklySubcontractorWorkHourRows = [...(entry.subcontractorWorkHourEntries ?? [])]
+          const weeklySubcontractorWorkHourRows = [
+            ...(entry.subcontractorWorkHourEntries ?? []),
+          ]
             .sort((left, right) => left.day.getTime() - right.day.getTime())
             .map((workHourEntry) => [
-              formatDate(workHourEntry.day, 'short'),
-              workHourEntry.userId ? (userNameMap.get(workHourEntry.userId) ?? workHourEntry.userId) : 'Unbekannt',
+              formatDate(workHourEntry.day, "short"),
+              workHourEntry.userId
+                ? (userNameMap.get(workHourEntry.userId) ??
+                  workHourEntry.userId)
+                : "Unbekannt",
               formatPdfNumber(workHourEntry.hours),
               formatCurrencyOrDash(workHourEntry.totalCost),
             ]);
@@ -576,21 +803,32 @@ export default function ProjectDetailCosts() {
           if (weeklySubcontractorWorkHourRows.length > 0) {
             weeklySections.push({
               title: uiText("Nachunternehmer-Arbeitszeit"),
-              columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
+              columns: [
+                "Tag",
+                "Mitarbeiter",
+                uiText("Stunden"),
+                uiText("Kosten"),
+              ],
               rows: weeklySubcontractorWorkHourRows,
-              align: ['left', 'left', 'right', 'right'],
-              columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
+              align: ["left", "left", "right", "right"],
+              columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
             });
           }
 
           const weeklyDeliveryRows = [...(entry.deliveryNotes ?? [])]
             .sort((left, right) => {
-              const leftTime = left.effectiveTimestamp ? new Date(left.effectiveTimestamp).getTime() : 0;
-              const rightTime = right.effectiveTimestamp ? new Date(right.effectiveTimestamp).getTime() : 0;
+              const leftTime = left.effectiveTimestamp
+                ? new Date(left.effectiveTimestamp).getTime()
+                : 0;
+              const rightTime = right.effectiveTimestamp
+                ? new Date(right.effectiveTimestamp).getTime()
+                : 0;
               return leftTime - rightTime;
             })
             .map((deliveryEntry) => [
-              deliveryEntry.effectiveTimestamp ? formatDate(deliveryEntry.effectiveTimestamp, 'short') : '-',
+              deliveryEntry.effectiveTimestamp
+                ? formatDate(deliveryEntry.effectiveTimestamp, "short")
+                : "-",
               `#${deliveryEntry.autoId}`,
               formatCurrencyOrDash(deliveryEntry.totalCost),
             ]);
@@ -598,24 +836,35 @@ export default function ProjectDetailCosts() {
           if (weeklyDeliveryRows.length > 0) {
             weeklySections.push({
               title: uiText("Lieferscheine"),
-              columns: [uiText('Datum'), uiText('Nummer'), uiText('Kosten')],
+              columns: [uiText("Datum"), uiText("Nummer"), uiText("Kosten")],
               rows: weeklyDeliveryRows,
-              align: ['left', 'left', 'right'],
-              columnWidths: ['1.2fr', '1fr', '1fr'],
+              align: ["left", "left", "right"],
+              columnWidths: ["1.2fr", "1fr", "1fr"],
             });
           }
 
           const weeklyToolRows = [...(entry.toolTrackings ?? [])]
-            .sort((left, right) => left.startedAt.getTime() - right.startedAt.getTime())
+            .sort(
+              (left, right) =>
+                left.startedAt.getTime() - right.startedAt.getTime(),
+            )
             .map((toolTrackingEntry) => {
               const start = startOfDay(toolTrackingEntry.startedAt);
               const end = endOfDay(toolTrackingEntry.endedAt || new Date());
-              const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (24 * 3600 * 1000)));
+              const days = Math.max(
+                1,
+                Math.ceil(
+                  (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
+                ),
+              );
 
               return [
-                toolNameMap.get(toolTrackingEntry.toolId) ?? toolTrackingEntry.toolId,
-                formatDate(toolTrackingEntry.startedAt, 'short'),
-                toolTrackingEntry.endedAt ? formatDate(toolTrackingEntry.endedAt, 'short') : 'offen',
+                toolNameMap.get(toolTrackingEntry.toolId) ??
+                  toolTrackingEntry.toolId,
+                formatDate(toolTrackingEntry.startedAt, "short"),
+                toolTrackingEntry.endedAt
+                  ? formatDate(toolTrackingEntry.endedAt, "short")
+                  : "offen",
                 formatPdfNumber(days),
                 formatCurrencyOrDash(toolTrackingEntry.totalCost),
               ];
@@ -624,10 +873,16 @@ export default function ProjectDetailCosts() {
           if (weeklyToolRows.length > 0) {
             weeklySections.push({
               title: uiText("Werkzeuge"),
-              columns: [uiText('Werkzeug'), uiText('Von'), uiText('Bis'), 'Tage', uiText('Kosten')],
+              columns: [
+                uiText("Werkzeug"),
+                uiText("Von"),
+                uiText("Bis"),
+                "Tage",
+                uiText("Kosten"),
+              ],
               rows: weeklyToolRows,
-              align: ['left', 'center', 'center', 'right', 'right'],
-              columnWidths: ['2fr', '0.9fr', '0.9fr', '0.6fr', '0.9fr'],
+              align: ["left", "center", "center", "right", "right"],
+              columnWidths: ["2fr", "0.9fr", "0.9fr", "0.6fr", "0.9fr"],
             });
           }
 
@@ -640,15 +895,25 @@ export default function ProjectDetailCosts() {
           };
         });
 
-        const pdfData = await renderStructuredPdf(buildWeeklyProjectCostsPdfDocument({
-          projectTitle: project.title,
-          overviewSections: sections,
-          weeks: weeklyReports,
-        }));
+        const pdfData = await renderStructuredPdf(
+          buildWeeklyProjectCostsPdfDocument({
+            projectTitle: project.title,
+            overviewSections: sections,
+            weeks: weeklyReports,
+          }),
+        );
 
-        const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
-        const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-        deliverBlob(blob, uiText(`Projektkosten-wochenweise-${safeTitle}.pdf`, `Projectkosten-wochenweise-${safeTitle}.pdf`), target, pdfWindow);
+        const safeTitle = project.title.replace(/[^\w\-]+/g, "-");
+        const blob = new Blob([pdfData] as any, { type: "application/pdf" });
+        deliverBlob(
+          blob,
+          uiText(
+            `Projektkosten-wochenweise-${safeTitle}.pdf`,
+            `Projectkosten-wochenweise-${safeTitle}.pdf`,
+          ),
+          target,
+          pdfWindow,
+        );
         return;
       }
 
@@ -663,21 +928,31 @@ export default function ProjectDetailCosts() {
           ? `${rightProduct.customId} ${productTitle(rightProduct)}`
           : right.productId;
 
-        return leftLabel.localeCompare(rightLabel, 'de', { sensitivity: 'base' });
+        return leftLabel.localeCompare(rightLabel, "de", {
+          sensitivity: "base",
+        });
       });
 
       const productRows = sortedProducts.map((entry) => {
         const product = productMap.get(entry.productId);
         const baseQuantity = Number(entry.quantity ?? 0);
-        const [amount, unit] = product ? upmatchUnit(product, baseQuantity) : [baseQuantity, ''];
-        const baseUnit = product?.baseUnit ?? '';
+        const [amount, unit] = product
+          ? upmatchUnit(product, baseQuantity)
+          : [baseQuantity, ""];
+        const baseUnit = product?.baseUnit ?? "";
         const inBaseUnits = formatBaseQuantity(baseQuantity, baseUnit, unit);
-        const avgUnitPrice = baseQuantity > 0 && hasNumberData(entry.totalCost)
-          ? `${formatCurrency(Number(entry.totalCost ?? 0) / baseQuantity)}${baseUnit ? `/${baseUnit}` : ''}`
-          : '-';
+        const avgUnitPrice =
+          baseQuantity > 0 && hasNumberData(entry.totalCost)
+            ? `${formatCurrency(Number(entry.totalCost ?? 0) / baseQuantity)}${baseUnit ? `/${baseUnit}` : ""}`
+            : "-";
         return {
-          number: product ? `${product.customId}` : '-',
-          name: product ? productTitle(product) : uiText(`Unbekanntes Produkt (${entry.productId})`, `Unknown product (${entry.productId})`),
+          number: product ? `${product.customId}` : "-",
+          name: product
+            ? productTitle(product)
+            : uiText(
+                `Unbekanntes Produkt (${entry.productId})`,
+                `Unknown product (${entry.productId})`,
+              ),
           quantity: formatProductAmount(amount, unit),
           baseQuantity: inBaseUnits,
           price: avgUnitPrice,
@@ -688,9 +963,15 @@ export default function ProjectDetailCosts() {
         sections.push(buildPdfProductSection(productRows));
       }
 
-      const sortedSpecialRecords = [...(costs.specialRecords ?? [])].sort((left, right) => {
-        return `${left.name ?? ''}`.localeCompare(`${right.name ?? ''}`, 'de', { sensitivity: 'base' });
-      });
+      const sortedSpecialRecords = [...(costs.specialRecords ?? [])].sort(
+        (left, right) => {
+          return `${left.name ?? ""}`.localeCompare(
+            `${right.name ?? ""}`,
+            "de",
+            { sensitivity: "base" },
+          );
+        },
+      );
 
       const specialRows = sortedSpecialRecords.map((entry) => [
         entry.name,
@@ -701,88 +982,115 @@ export default function ProjectDetailCosts() {
       if (specialRows.length > 0) {
         sections.push({
           title: uiText("Sonderposten"),
-          columns: ['Bezeichnung', 'Menge', uiText('Kosten'), uiText('Lieferschein')],
+          columns: [
+            "Bezeichnung",
+            "Menge",
+            uiText("Kosten"),
+            uiText("Lieferschein"),
+          ],
           rows: specialRows,
-          align: ['left', 'right', 'right', 'right'],
-          columnWidths: ['1.9fr', '1fr', '1fr', '0.8fr'],
+          align: ["left", "right", "right", "right"],
+          columnWidths: ["1.9fr", "1fr", "1fr", "0.8fr"],
         });
       }
 
-      const sortedToolTrackings = [...(costs.toolTrackings ?? [])]
-        .sort((left, right) => left.startedAt.getTime() - right.startedAt.getTime());
+      const sortedToolTrackings = [...(costs.toolTrackings ?? [])].sort(
+        (left, right) => left.startedAt.getTime() - right.startedAt.getTime(),
+      );
 
       const toolRows = sortedToolTrackings.map((entry) => {
         const start = startOfDay(entry.startedAt);
         const end = endOfDay(entry.endedAt || new Date());
-        const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (24 * 3600 * 1000)));
+        const days = Math.max(
+          1,
+          Math.ceil((end.getTime() - start.getTime()) / (24 * 3600 * 1000)),
+        );
 
         return [
           toolNameMap.get(entry.toolId) ?? entry.toolId,
-          formatDate(entry.startedAt, 'short'),
-          entry.endedAt ? formatDate(entry.endedAt, 'short') : 'offen',
+          formatDate(entry.startedAt, "short"),
+          entry.endedAt ? formatDate(entry.endedAt, "short") : "offen",
           formatPdfNumber(days),
           formatCurrencyOrDash(entry.totalCost),
         ];
       });
 
-      const sortedWorkHours = [...regularWorkHours].sort((left, right) => left.day.getTime() - right.day.getTime());
+      const sortedWorkHours = [...regularWorkHours].sort(
+        (left, right) => left.day.getTime() - right.day.getTime(),
+      );
 
       const workHourRows = sortedWorkHours.map((entry) => [
-        formatDate(entry.day, 'short'),
-        entry.userId ? (userNameMap.get(entry.userId) ?? entry.userId) : 'Unbekannt',
+        formatDate(entry.day, "short"),
+        entry.userId
+          ? (userNameMap.get(entry.userId) ?? entry.userId)
+          : "Unbekannt",
         formatPdfNumber(entry.hours),
         formatCurrencyOrDash(entry.totalCost),
       ]);
       if (workHourRows.length > 0) {
         sections.push({
           title: uiText("Arbeitszeit"),
-          columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
+          columns: ["Tag", "Mitarbeiter", uiText("Stunden"), uiText("Kosten")],
           rows: workHourRows,
-          align: ['left', 'left', 'right', 'right'],
-          columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
+          align: ["left", "left", "right", "right"],
+          columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
         });
       }
 
-      const sortedSubcontractorWorkHours = [...subcontractorWorkHours].sort((left, right) => left.day.getTime() - right.day.getTime());
+      const sortedSubcontractorWorkHours = [...subcontractorWorkHours].sort(
+        (left, right) => left.day.getTime() - right.day.getTime(),
+      );
 
-      const subcontractorWorkHourRows = sortedSubcontractorWorkHours.map((entry) => [
-        formatDate(entry.day, 'short'),
-        entry.userId ? (userNameMap.get(entry.userId) ?? entry.userId) : 'Unbekannt',
-        formatPdfNumber(entry.hours),
-        formatCurrencyOrDash(entry.totalCost),
-      ]);
+      const subcontractorWorkHourRows = sortedSubcontractorWorkHours.map(
+        (entry) => [
+          formatDate(entry.day, "short"),
+          entry.userId
+            ? (userNameMap.get(entry.userId) ?? entry.userId)
+            : "Unbekannt",
+          formatPdfNumber(entry.hours),
+          formatCurrencyOrDash(entry.totalCost),
+        ],
+      );
       if (subcontractorWorkHourRows.length > 0) {
         sections.push({
           title: uiText("Nachunternehmer-Arbeitszeit"),
-          columns: ['Tag', 'Mitarbeiter', uiText('Stunden'), uiText('Kosten')],
+          columns: ["Tag", "Mitarbeiter", uiText("Stunden"), uiText("Kosten")],
           rows: subcontractorWorkHourRows,
-          align: ['left', 'left', 'right', 'right'],
-          columnWidths: ['0.9fr', '1.7fr', '0.7fr', '0.9fr'],
+          align: ["left", "left", "right", "right"],
+          columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
         });
       }
 
       const deliveryRows = (costs.deliveryNotes ?? []).map((entry) => [
-        entry.effectiveTimestamp ? formatDate(entry.effectiveTimestamp, 'short') : '-',
+        entry.effectiveTimestamp
+          ? formatDate(entry.effectiveTimestamp, "short")
+          : "-",
         `#${entry.autoId}`,
         formatCurrencyOrDash(entry.totalCost),
       ]);
       if (deliveryRows.length > 0) {
         sections.push({
           title: uiText("Lieferscheine"),
-          columns: [uiText('Datum'), uiText('Nummer'), uiText('Kosten')],
+          columns: [uiText("Datum"), uiText("Nummer"), uiText("Kosten")],
           rows: deliveryRows,
-          align: ['left', 'left', 'right'],
-          columnWidths: ['1.2fr', '1fr', '1fr'],
+          align: ["left", "left", "right"],
+          columnWidths: ["1.2fr", "1fr", "1fr"],
         });
       }
 
       if (toolRows.length > 0) {
         sections.push({
           title: uiText("Werkzeuge"),
-          columns: [uiText('Werkzeug'), uiText('Von'), uiText('Bis'), 'Tage', uiText('Kosten')],
+          columns: [
+            uiText("Werkzeug"),
+            uiText("Von"),
+            uiText("Bis"),
+            "Tage",
+            uiText("Kosten"),
+          ],
           rows: toolRows,
-          align: ['left', 'center', 'center', 'right', 'right'],
-          columnWidths: ['2fr', '0.9fr', '0.9fr', '0.6fr', '0.9fr'],
+          align: ["left", "center", "center", "right", "right"],
+          columnWidths: ["2fr", "0.9fr", "0.9fr", "0.6fr", "0.9fr"],
         });
       }
 
@@ -793,12 +1101,23 @@ export default function ProjectDetailCosts() {
         emptyMessage: uiText("Keine Kosteninformationen verfügbar."),
       });
 
-      const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
-      const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      deliverBlob(blob, uiText(`Projektkosten-${safeTitle}.pdf`, `Projectkosten-${safeTitle}.pdf`), target, pdfWindow);
+      const safeTitle = project.title.replace(/[^\w\-]+/g, "-");
+      const blob = new Blob([pdfData] as any, { type: "application/pdf" });
+      deliverBlob(
+        blob,
+        uiText(
+          `Projektkosten-${safeTitle}.pdf`,
+          `Projectkosten-${safeTitle}.pdf`,
+        ),
+        target,
+        pdfWindow,
+      );
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
+      setPdfExportErr(
+        (err as Error)?.message ||
+          uiText("Unbekannter Fehler beim PDF-Export."),
+      );
     } finally {
       setIsPdfExporting(false);
     }
@@ -812,7 +1131,8 @@ export default function ProjectDetailCosts() {
     const columns: MyTableColumn<ProjectFinancialEntry>[] = [
       {
         label: uiText("Erfasst am"),
-        render: (row: ProjectFinancialEntry) => formatDate(row.createdAt, 'long'),
+        render: (row: ProjectFinancialEntry) =>
+          formatDate(row.createdAt, "long"),
         sortKey: (row: ProjectFinancialEntry) => row.createdAt.getTime(),
       },
       {
@@ -822,41 +1142,53 @@ export default function ProjectDetailCosts() {
       },
       {
         label: uiText("Kommentar"),
-        render: (row: ProjectFinancialEntry) => row.comment || '',
-        sortKey: (row: ProjectFinancialEntry) => (row.comment || '').toLowerCase(),
+        render: (row: ProjectFinancialEntry) => row.comment || "",
+        sortKey: (row: ProjectFinancialEntry) =>
+          (row.comment || "").toLowerCase(),
       },
     ];
 
     if (canManageProjectFinancialEntries) {
       columns.push({
         label: uiText("Aktionen"),
-        render: (row: ProjectFinancialEntry) => (
-          <div className="flex items-center gap-1">
+        render: (row: ProjectFinancialEntry) =>
+          row.commercialCaseId ? (
             <MyButton
-              size="sm"
               kind="ghost"
-              aria-label={uiText("Bearbeiten")}
-              title={uiText("Bearbeiten")}
-              onClick={() =>
-                showModifyProjectFinancialEntryModal(modals, project, row)
-              }
-            >
-              <Icons.Edit />
-            </MyButton>
-
-            <MyButton
               size="sm"
-              kind="danger--tertiary"
-              aria-label={uiText("Löschen")}
-              title={uiText("Löschen")}
               onClick={() =>
-                showDeleteProjectFinancialEntryModal(modals, project, row)
+                showCommercialWorkspace(modals, row.commercialCaseId!)
               }
             >
-              <Icons.Delete />
+              {uiText("Vertragsgrundlage öffnen", "Open contract baseline")}
             </MyButton>
-          </div>
-        ),
+          ) : (
+            <div className="flex items-center gap-1">
+              <MyButton
+                size="sm"
+                kind="ghost"
+                aria-label={uiText("Bearbeiten")}
+                title={uiText("Bearbeiten")}
+                onClick={() =>
+                  showModifyProjectFinancialEntryModal(modals, project, row)
+                }
+              >
+                <Icons.Edit />
+              </MyButton>
+
+              <MyButton
+                size="sm"
+                kind="danger--tertiary"
+                aria-label={uiText("Löschen")}
+                title={uiText("Löschen")}
+                onClick={() =>
+                  showDeleteProjectFinancialEntryModal(modals, project, row)
+                }
+              >
+                <Icons.Delete />
+              </MyButton>
+            </div>
+          ),
       });
     }
 
@@ -1600,372 +1932,376 @@ export default function ProjectDetailCosts() {
       </AttrList>
 
       <div className="project-cost-sections grid gap-3">
-      {hasCommonCosts && (
-        <MyExpandable
-          title={`Gemeinkosten (${formatCurrency(commonCostsOverhead)})`}
-        >
-          <AttrList>
-            <AttrList.Attr
-              name="LKG"
-              value={formatCurrency(commonCosts.fgk.overheadCost)}
-              third={`Basis: ${formatCurrency(commonCosts.fgk.baseCost)}`}
-            />
-            <AttrList.Attr
-              name="MGK"
-              value={formatCurrency(commonCosts.mgk.overheadCost)}
-              third={`Basis: ${formatCurrency(commonCosts.mgk.baseCost)}`}
-            />
-            <AttrList.Attr
-              name="NUGK"
-              value={formatCurrency(commonCosts.ngk.overheadCost)}
-              third={`Basis: ${formatCurrency(commonCosts.ngk.baseCost)}`}
-            />
-          </AttrList>
-        </MyExpandable>
-      )}
-
-      {!!costs.products?.length && (
-        <MyExpandable
-          title={`Produkte (${formatCurrency(costs.totalCosts.products)})`}
-        >
-          <MyTable
-            className="th-25rem"
-            rows={costs.products.map((p) => ({ ...p, id: p.productId }))}
-            columns={[
-              {
-                label: uiText("Bezeichnung"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!product) return "Unbekannt";
-                  return (
-                    <MyLink to={`/products/${product.id}`}>
-                      {productTitle(product)}
-                    </MyLink>
-                  );
-                },
-              },
-              {
-                label: uiText("Menge"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!product) return `${formatNumber(row.quantity)} ???`;
-                  const [amount, unit] = upmatchUnit(product, row.quantity);
-                  return formatProductAmount(amount, unit);
-                },
-              },
-              {
-                label: uiText("Basismenge"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!product) return formatNumber(row.quantity);
-                  const [, unit] = upmatchUnit(product, row.quantity);
-                  return formatBaseQuantity(
-                    Number(row.quantity ?? 0),
-                    product.baseUnit ?? "",
-                    unit,
-                  );
-                },
-              },
-              {
-                label: uiText("mittlerer EP"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  const quantity = Number(row.quantity ?? 0);
-                  if (
-                    !product ||
-                    quantity <= 0 ||
-                    !hasNumberData(row.totalCost)
-                  )
-                    return "-";
-                  return `${formatCurrency(Number(row.totalCost ?? 0) / quantity)}/${product.baseUnit}`;
-                },
-              },
-              {
-                label: uiText("Kosten"),
-                render: (row) =>
-                  !!row.totalCost && formatCurrency(row.totalCost),
-                sortKey: (row) => row.totalCost,
-              },
-            ]}
-            loadMore={{}}
-            autoConvertSmallViewport
-          />
-        </MyExpandable>
-      )}
-
-      {!!costs.specialRecords?.length && (
-        <MyExpandable
-          title={`Sonderposten (${formatCurrency(costs.totalCosts.specialRecords)})`}
-        >
-          <MyTable
-            className="th-25rem"
-            rows={costs.specialRecords}
-            columns={[
-              {
-                label: uiText("Bezeichnung"),
-                render: (row) => row.name,
-                sortKey: (row) => row.name.toLowerCase(),
-              },
-              {
-                label: uiText("Menge"),
-                render: (row) => `${formatNumber(row.amount)} ${row.unit}`,
-              },
-              {
-                label: uiText("Preis pro Einheit"),
-                render: (row) =>
-                  !!row.pricePerUnit && formatCurrency(row.pricePerUnit),
-                sortKey: (row) => row.pricePerUnit ?? 0,
-              },
-              {
-                label: uiText("Kosten"),
-                render: (row) =>
-                  !!row.totalCost && formatCurrency(row.totalCost),
-                sortKey: (row) => row.totalCost,
-              },
-              {
-                label: uiText("Lieferschein"),
-                render: (row) => (
-                  <MyLink
-                    to={`/products/deliveryNotes/${row.noteId}`}
-                  >{`#${row.noteAutoId}`}</MyLink>
-                ),
-                sortKey: (row) => row.noteAutoId,
-              },
-            ]}
-            loadMore={{}}
-            autoConvertSmallViewport
-          />
-        </MyExpandable>
-      )}
-
-      {!!costs.toolTrackings?.length && (
-        <MyExpandable
-          title={`Werkzeuge (${formatCurrency(costs.totalCosts.toolTrackings)})`}
-        >
-          <MyTable
-            className="th-25rem"
-            rows={costs.toolTrackings}
-            columns={[
-              {
-                label: uiText("Werkzeug"),
-                render: async (row) => {
-                  const [tool] = await client.query(
-                    "tools.get",
-                    { id: row.toolId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!tool) return "Unbekannt";
-                  return (
-                    <MyLink to={`/tools/${tool.id}`}>
-                      {tool.customId} {toolTitle(tool)}
-                    </MyLink>
-                  );
-                },
-              },
-              {
-                label: uiText("Von"),
-                render: (row) => formatDate(row.startedAt),
-                sortKey: (row) => row.startedAt.getTime(),
-              },
-              {
-                label: uiText("Bis"),
-                render: (row) =>
-                  row.endedAt ? formatDate(row.endedAt) : "offen",
-                sortKey: (row) =>
-                  row.endedAt?.getTime() ?? Number.MAX_SAFE_INTEGER,
-              },
-              {
-                label: uiText("Tage"),
-                render: (row) => {
-                  let start = startOfDay(row.startedAt);
-                  let end = endOfDay(row.endedAt || new Date());
-                  const days = Math.ceil(
-                    (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
-                  );
-                  return days.toString();
-                },
-                sortKey: (row) => {
-                  let start = startOfDay(row.startedAt);
-                  let end = endOfDay(row.endedAt || new Date());
-                  return Math.ceil(
-                    (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
-                  );
-                },
-              },
-              // {
-              //   label: 'Kosten pro Tag',
-              //   render: row => formatCurrency(row.toolUsageCostPerDay!),
-              //   sortKey: row => row.toolUsageCostPerDay!,
-              // },
-              {
-                label: uiText("Kosten"),
-                render: (row) =>
-                  !!row.totalCost && formatCurrency(row.totalCost),
-                sortKey: (row) => row.totalCost,
-              },
-            ]}
-            loadMore={{}}
-            autoConvertSmallViewport
-          />
-        </MyExpandable>
-      )}
-
-      {!!regularWorkHours.length && (
-        <MyExpandable
-          title={uiText(
-            `Arbeitszeit (${formatCurrency(workHoursTotal)})`,
-            `Working time (${formatCurrency(workHoursTotal)})`,
-          )}
-        >
-          <MyTable
-            className="th-25rem"
-            rows={regularWorkHours}
-            columns={[
-              {
-                label: uiText("Benutzer"),
-                render: async (row) => {
-                  if (!row.userId) return "Unbekannt";
-                  const [user] = await client.query(
-                    "users.get",
-                    { id: row.userId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!user) return "Unbekannt";
-                  return (
-                    <MyLink to={`/users/${user.id}`}>
-                      {userFullName(user)}
-                    </MyLink>
-                  );
-                },
-              },
-              {
-                label: uiText("Tag"),
-                render: (row) => formatDate(row.day),
-                sortKey: (row) => row.day.getTime(),
-              },
-              {
-                label: uiText("Stunden"),
-                render: (row) => formatNumber(row.hours),
-                sortKey: (row) => row.hours,
-              },
-              {
-                label: uiText("Kosten"),
-                render: (row) =>
-                  !!row.totalCost && formatCurrency(row.totalCost),
-                sortKey: (row) => row.totalCost,
-              },
-            ]}
-            loadMore={{}}
-            autoConvertSmallViewport
-          />
-        </MyExpandable>
-      )}
-
-      {!!subcontractorWorkHours.length && (
-        <MyExpandable
-          title={uiText(
-            `Nachunternehmer-Arbeitszeit (${formatCurrency(subcontractorWorkHoursTotal)})`,
-            `Subcontractor work (${formatCurrency(subcontractorWorkHoursTotal)})`,
-          )}
-        >
-          <MyTable
-            className="th-25rem"
-            rows={subcontractorWorkHours}
-            columns={[
-              {
-                label: uiText("Benutzer"),
-                render: async (row) => {
-                  if (!row.userId) return "Unbekannt";
-                  const [user] = await client.query(
-                    "users.get",
-                    { id: row.userId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!user) return "Unbekannt";
-                  return (
-                    <MyLink to={`/users/${user.id}`}>
-                      {userFullName(user)}
-                    </MyLink>
-                  );
-                },
-              },
-              {
-                label: uiText("Tag"),
-                render: (row) => formatDate(row.day),
-                sortKey: (row) => row.day.getTime(),
-              },
-              {
-                label: uiText("Stunden"),
-                render: (row) => formatNumber(row.hours),
-                sortKey: (row) => row.hours,
-              },
-              {
-                label: uiText("Kosten"),
-                render: (row) =>
-                  !!row.totalCost && formatCurrency(row.totalCost),
-                sortKey: (row) => row.totalCost,
-              },
-            ]}
-            loadMore={{}}
-            autoConvertSmallViewport
-          />
-        </MyExpandable>
-      )}
-
-      {!!costs.deliveryNotes?.length && (
-        <MyExpandable title={`Lieferscheine`}>
-          <MyTable
-            className="th-25rem"
-            rows={costs.deliveryNotes.map((e) => ({ ...e, id: e.noteId }))}
-            columns={[
-              {
-                label: uiText("Produkt"),
-                render: (row) => (
-                  <MyLink to={`/products/deliveryNotes/${row.id}`}>
-                    {uiText(
-                      `Lieferschein #${row.autoId}`,
-                      `Delivery note #${row.autoId}`,
-                    )}
-                  </MyLink>
-                ),
-              },
-              {
-                label: uiText("Kosten"),
-                render: (row) =>
-                  !!row.totalCost && formatCurrency(row.totalCost),
-                sortKey: (row) => row.totalCost,
-              },
-            ]}
-            loadMore={{}}
-            autoConvertSmallViewport
-          />
-        </MyExpandable>
-      )}
-
-      {!!offers.length &&
-        renderFinancialEntriesExpandable("Angebotssummen", offersTotal, offers)}
-      {!!invoices.length &&
-        renderFinancialEntriesExpandable(
-          "Rechnungssummen",
-          invoicesTotal,
-          invoices,
+        {hasCommonCosts && (
+          <MyExpandable
+            title={`Gemeinkosten (${formatCurrency(commonCostsOverhead)})`}
+          >
+            <AttrList>
+              <AttrList.Attr
+                name="LKG"
+                value={formatCurrency(commonCosts.fgk.overheadCost)}
+                third={`Basis: ${formatCurrency(commonCosts.fgk.baseCost)}`}
+              />
+              <AttrList.Attr
+                name="MGK"
+                value={formatCurrency(commonCosts.mgk.overheadCost)}
+                third={`Basis: ${formatCurrency(commonCosts.mgk.baseCost)}`}
+              />
+              <AttrList.Attr
+                name="NUGK"
+                value={formatCurrency(commonCosts.ngk.overheadCost)}
+                third={`Basis: ${formatCurrency(commonCosts.ngk.baseCost)}`}
+              />
+            </AttrList>
+          </MyExpandable>
         )}
+
+        {!!costs.products?.length && (
+          <MyExpandable
+            title={`Produkte (${formatCurrency(costs.totalCosts.products)})`}
+          >
+            <MyTable
+              className="th-25rem"
+              rows={costs.products.map((p) => ({ ...p, id: p.productId }))}
+              columns={[
+                {
+                  label: uiText("Bezeichnung"),
+                  render: async (row) => {
+                    const [product] = await client.query(
+                      "products.get",
+                      { id: row.productId },
+                      { strategy: "cache-first" },
+                    );
+                    if (!product) return "Unbekannt";
+                    return (
+                      <MyLink to={`/products/${product.id}`}>
+                        {productTitle(product)}
+                      </MyLink>
+                    );
+                  },
+                },
+                {
+                  label: uiText("Menge"),
+                  render: async (row) => {
+                    const [product] = await client.query(
+                      "products.get",
+                      { id: row.productId },
+                      { strategy: "cache-first" },
+                    );
+                    if (!product) return `${formatNumber(row.quantity)} ???`;
+                    const [amount, unit] = upmatchUnit(product, row.quantity);
+                    return formatProductAmount(amount, unit);
+                  },
+                },
+                {
+                  label: uiText("Basismenge"),
+                  render: async (row) => {
+                    const [product] = await client.query(
+                      "products.get",
+                      { id: row.productId },
+                      { strategy: "cache-first" },
+                    );
+                    if (!product) return formatNumber(row.quantity);
+                    const [, unit] = upmatchUnit(product, row.quantity);
+                    return formatBaseQuantity(
+                      Number(row.quantity ?? 0),
+                      product.baseUnit ?? "",
+                      unit,
+                    );
+                  },
+                },
+                {
+                  label: uiText("mittlerer EP"),
+                  render: async (row) => {
+                    const [product] = await client.query(
+                      "products.get",
+                      { id: row.productId },
+                      { strategy: "cache-first" },
+                    );
+                    const quantity = Number(row.quantity ?? 0);
+                    if (
+                      !product ||
+                      quantity <= 0 ||
+                      !hasNumberData(row.totalCost)
+                    )
+                      return "-";
+                    return `${formatCurrency(Number(row.totalCost ?? 0) / quantity)}/${product.baseUnit}`;
+                  },
+                },
+                {
+                  label: uiText("Kosten"),
+                  render: (row) =>
+                    !!row.totalCost && formatCurrency(row.totalCost),
+                  sortKey: (row) => row.totalCost,
+                },
+              ]}
+              loadMore={{}}
+              autoConvertSmallViewport
+            />
+          </MyExpandable>
+        )}
+
+        {!!costs.specialRecords?.length && (
+          <MyExpandable
+            title={`Sonderposten (${formatCurrency(costs.totalCosts.specialRecords)})`}
+          >
+            <MyTable
+              className="th-25rem"
+              rows={costs.specialRecords}
+              columns={[
+                {
+                  label: uiText("Bezeichnung"),
+                  render: (row) => row.name,
+                  sortKey: (row) => row.name.toLowerCase(),
+                },
+                {
+                  label: uiText("Menge"),
+                  render: (row) => `${formatNumber(row.amount)} ${row.unit}`,
+                },
+                {
+                  label: uiText("Preis pro Einheit"),
+                  render: (row) =>
+                    !!row.pricePerUnit && formatCurrency(row.pricePerUnit),
+                  sortKey: (row) => row.pricePerUnit ?? 0,
+                },
+                {
+                  label: uiText("Kosten"),
+                  render: (row) =>
+                    !!row.totalCost && formatCurrency(row.totalCost),
+                  sortKey: (row) => row.totalCost,
+                },
+                {
+                  label: uiText("Lieferschein"),
+                  render: (row) => (
+                    <MyLink
+                      to={`/products/deliveryNotes/${row.noteId}`}
+                    >{`#${row.noteAutoId}`}</MyLink>
+                  ),
+                  sortKey: (row) => row.noteAutoId,
+                },
+              ]}
+              loadMore={{}}
+              autoConvertSmallViewport
+            />
+          </MyExpandable>
+        )}
+
+        {!!costs.toolTrackings?.length && (
+          <MyExpandable
+            title={`Werkzeuge (${formatCurrency(costs.totalCosts.toolTrackings)})`}
+          >
+            <MyTable
+              className="th-25rem"
+              rows={costs.toolTrackings}
+              columns={[
+                {
+                  label: uiText("Werkzeug"),
+                  render: async (row) => {
+                    const [tool] = await client.query(
+                      "tools.get",
+                      { id: row.toolId },
+                      { strategy: "cache-first" },
+                    );
+                    if (!tool) return "Unbekannt";
+                    return (
+                      <MyLink to={`/tools/${tool.id}`}>
+                        {tool.customId} {toolTitle(tool)}
+                      </MyLink>
+                    );
+                  },
+                },
+                {
+                  label: uiText("Von"),
+                  render: (row) => formatDate(row.startedAt),
+                  sortKey: (row) => row.startedAt.getTime(),
+                },
+                {
+                  label: uiText("Bis"),
+                  render: (row) =>
+                    row.endedAt ? formatDate(row.endedAt) : "offen",
+                  sortKey: (row) =>
+                    row.endedAt?.getTime() ?? Number.MAX_SAFE_INTEGER,
+                },
+                {
+                  label: uiText("Tage"),
+                  render: (row) => {
+                    let start = startOfDay(row.startedAt);
+                    let end = endOfDay(row.endedAt || new Date());
+                    const days = Math.ceil(
+                      (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
+                    );
+                    return days.toString();
+                  },
+                  sortKey: (row) => {
+                    let start = startOfDay(row.startedAt);
+                    let end = endOfDay(row.endedAt || new Date());
+                    return Math.ceil(
+                      (end.getTime() - start.getTime()) / (24 * 3600 * 1000),
+                    );
+                  },
+                },
+                // {
+                //   label: 'Kosten pro Tag',
+                //   render: row => formatCurrency(row.toolUsageCostPerDay!),
+                //   sortKey: row => row.toolUsageCostPerDay!,
+                // },
+                {
+                  label: uiText("Kosten"),
+                  render: (row) =>
+                    !!row.totalCost && formatCurrency(row.totalCost),
+                  sortKey: (row) => row.totalCost,
+                },
+              ]}
+              loadMore={{}}
+              autoConvertSmallViewport
+            />
+          </MyExpandable>
+        )}
+
+        {!!regularWorkHours.length && (
+          <MyExpandable
+            title={uiText(
+              `Arbeitszeit (${formatCurrency(workHoursTotal)})`,
+              `Working time (${formatCurrency(workHoursTotal)})`,
+            )}
+          >
+            <MyTable
+              className="th-25rem"
+              rows={regularWorkHours}
+              columns={[
+                {
+                  label: uiText("Benutzer"),
+                  render: async (row) => {
+                    if (!row.userId) return "Unbekannt";
+                    const [user] = await client.query(
+                      "users.get",
+                      { id: row.userId },
+                      { strategy: "cache-first" },
+                    );
+                    if (!user) return "Unbekannt";
+                    return (
+                      <MyLink to={`/users/${user.id}`}>
+                        {userFullName(user)}
+                      </MyLink>
+                    );
+                  },
+                },
+                {
+                  label: uiText("Tag"),
+                  render: (row) => formatDate(row.day),
+                  sortKey: (row) => row.day.getTime(),
+                },
+                {
+                  label: uiText("Stunden"),
+                  render: (row) => formatNumber(row.hours),
+                  sortKey: (row) => row.hours,
+                },
+                {
+                  label: uiText("Kosten"),
+                  render: (row) =>
+                    !!row.totalCost && formatCurrency(row.totalCost),
+                  sortKey: (row) => row.totalCost,
+                },
+              ]}
+              loadMore={{}}
+              autoConvertSmallViewport
+            />
+          </MyExpandable>
+        )}
+
+        {!!subcontractorWorkHours.length && (
+          <MyExpandable
+            title={uiText(
+              `Nachunternehmer-Arbeitszeit (${formatCurrency(subcontractorWorkHoursTotal)})`,
+              `Subcontractor work (${formatCurrency(subcontractorWorkHoursTotal)})`,
+            )}
+          >
+            <MyTable
+              className="th-25rem"
+              rows={subcontractorWorkHours}
+              columns={[
+                {
+                  label: uiText("Benutzer"),
+                  render: async (row) => {
+                    if (!row.userId) return "Unbekannt";
+                    const [user] = await client.query(
+                      "users.get",
+                      { id: row.userId },
+                      { strategy: "cache-first" },
+                    );
+                    if (!user) return "Unbekannt";
+                    return (
+                      <MyLink to={`/users/${user.id}`}>
+                        {userFullName(user)}
+                      </MyLink>
+                    );
+                  },
+                },
+                {
+                  label: uiText("Tag"),
+                  render: (row) => formatDate(row.day),
+                  sortKey: (row) => row.day.getTime(),
+                },
+                {
+                  label: uiText("Stunden"),
+                  render: (row) => formatNumber(row.hours),
+                  sortKey: (row) => row.hours,
+                },
+                {
+                  label: uiText("Kosten"),
+                  render: (row) =>
+                    !!row.totalCost && formatCurrency(row.totalCost),
+                  sortKey: (row) => row.totalCost,
+                },
+              ]}
+              loadMore={{}}
+              autoConvertSmallViewport
+            />
+          </MyExpandable>
+        )}
+
+        {!!costs.deliveryNotes?.length && (
+          <MyExpandable title={`Lieferscheine`}>
+            <MyTable
+              className="th-25rem"
+              rows={costs.deliveryNotes.map((e) => ({ ...e, id: e.noteId }))}
+              columns={[
+                {
+                  label: uiText("Produkt"),
+                  render: (row) => (
+                    <MyLink to={`/products/deliveryNotes/${row.id}`}>
+                      {uiText(
+                        `Lieferschein #${row.autoId}`,
+                        `Delivery note #${row.autoId}`,
+                      )}
+                    </MyLink>
+                  ),
+                },
+                {
+                  label: uiText("Kosten"),
+                  render: (row) =>
+                    !!row.totalCost && formatCurrency(row.totalCost),
+                  sortKey: (row) => row.totalCost,
+                },
+              ]}
+              loadMore={{}}
+              autoConvertSmallViewport
+            />
+          </MyExpandable>
+        )}
+
+        {!!offers.length &&
+          renderFinancialEntriesExpandable(
+            "Angebotssummen",
+            offersTotal,
+            offers,
+          )}
+        {!!invoices.length &&
+          renderFinancialEntriesExpandable(
+            "Rechnungssummen",
+            invoicesTotal,
+            invoices,
+          )}
       </div>
     </>
   );

@@ -2,9 +2,15 @@
 
 export type ActivityResourceType = "project" | "tool" | "user" | "customer" | "contact" | "product" | "productVendor" | "deliveryNote" | "regieReport" | "dailyProjectReport";
 
+export type Address = { country?: string | null, zip?: string | null, city: string, streetAddress: string, };
+
 export type ApplyPriceImportRow = { productId: Id | null, productName: string, brand: string | null, description: string | null, baseUnit: string, otherUnits: { [key in string]: number }, pricePerBaseUnit: number, comment: string | null, };
 
+export type Asset = { id: Id, name: string, mimeType: string, sizeBytes: number, downloadUrl: string | null, };
+
 export type AssistantLocale = "de" | "en";
+
+export type CaseEvent = { id: Id, action: string, previousStatus: string | null, status: string, createdAt: string, actor: string, };
 
 export type ChangeProposal = { id: Id, assistantMessageId: Id | null, title: string, summary: string, operations: JsonValue, executionResults: JsonValue | null, status: "pending" | "declined" | "revision_requested" | "accepted", reviewComment: string | null, createdAt: Date, reviewedAt: Date, };
 
@@ -12,9 +18,19 @@ export type ChatMessage = { id: Id, role: "user" | "assistant", content: string,
 
 export type ChatSummary = { id: Id, title: string, createdAt: Date, updatedAt: Date, };
 
+export type CommercialCase = { id: Id, reference: string, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', title: string, existingContract: boolean, projectId: Id | null, projectTitle: string | null, parentCaseId: Id | null, customerId: Id | null, customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, validUntil: string | null, notes: string | null, scopeItemIds: JsonValue, selectedOfferDocumentId: Id | null, acceptedAt: string | null, createdAt: string, modifiedAt: string, };
+
 export type DeliveryNoteScanResult = { supplier: string | null, deliveryNumber: string | null, deliveryDate: string | null, comment: string | null, records: Array<ScannedProductRecord>, specialRecords: Array<ScannedSpecialRecord>, warnings: Array<string>, };
 
+export type Document = { id: Id, caseId: Id, purpose: string, phase: string, fileName: string, version: bigint, readOnly: boolean, sourceDocumentId: Id | null, sourceVersion: bigint | null, sourceCurrentVersion: bigint | null, partnerName: string | null, netAmount: string | null, createdAt: string, modifiedAt: string, };
+
 export type Id = string;
+
+export type InvoiceDetails = { basis: string, vatRate: string, invoiceNumber: string | null, invoiceDate: string, dueDate: string, serviceStart: string, serviceEnd: string, totalNet: string, deductedNet: string, grossAmount: string, paidAmount: string, payments: Array<InvoicePayment>, };
+
+export type InvoiceNumberingScheme = "sequential" | "dateSeparated" | "dateCompact" | "projectLocal" | "projectGlobal";
+
+export type InvoicePayment = { id: Id, amount: string, paidOn: string, reference: string, };
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
@@ -22,7 +38,11 @@ export type LlmUseCase = "chat" | "documentImport";
 
 export type ParseScanInput = { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };
 
+export type Position = { id: string, shortText: string, description: string, unit: string, sourceFile: string, };
+
 export type PriceListScanResult = { supplier: string | null, documentNumber: string | null, effectiveDate: string | null, rows: Array<ScannedPriceRow>, warnings: Array<string>, };
+
+export type PriorInvoice = { id: Id, invoiceNumber: string, invoiceDate: string, netAmount: string, grossAmount: string, paidAmount: string, vatRate: string, };
 
 export type ProposalDecision = "accept" | "decline" | "requestRevision";
 
@@ -61,6 +81,11 @@ export type QueryInputs = {
   "auth.sessionInfo": void;
   "clientScripts.get": { id: string; };
   "clientScripts.list": undefined | void | { search?: undefined | null | string; includeDisabled?: undefined | false | true; limit?: undefined | number; };
+  "commercial.cases.get": { id: Id, };
+  "commercial.cases.list": { projectId?: Id | null, kind?: string | null, status?: string | null, search?: string | null, limit?: bigint | null, offset?: bigint | null, };
+  "commercial.documents.download": { caseId: Id, id: Id, };
+  "commercial.documents.get": { caseId: Id, id: Id, };
+  "commercial.invoices.context": { contractCaseId: Id, };
   "contacts.customers.list": { contactId: string; };
   "contacts.get": { id: string; };
   "contacts.list": { search?: undefined | null | string; };
@@ -73,6 +98,7 @@ export type QueryInputs = {
   "deliveryNotes.list": { projectId?: undefined | null | string; createdByUserId?: undefined | null | string; };
   "deliveryNotes.scan.list": void;
   "deliveryNotes.scan.status": { scanId: Id, };
+  "gaeb.positions.search": { query: string, };
   "llm.admin.usage": void;
   "llm.chats.get": { chatId: Id, };
   "llm.chats.list": void;
@@ -80,6 +106,7 @@ export type QueryInputs = {
   "office.exports.officeConfig": { sessionToken: string, };
   "personalization.actions.list": undefined | void | { limit?: undefined | number; };
   "personalization.activity.list": { latestPerResource?: boolean, cursor?: Id | null, limit?: number, resourceType?: ActivityResourceType | null, resourceId?: Id | null, contextId?: Id | null, includeProjectContext?: boolean, } | void;
+  "personalization.gaebView.get": void;
   "personalization.visits.list": undefined | void | { limit?: undefined | number; };
   "ping": void;
   "products.brands.list": void;
@@ -103,6 +130,7 @@ export type QueryInputs = {
   "projects.files.list": { projectId: string; };
   "projects.files.officeConfig": { projectId: Id, fileId: Id, };
   "projects.files.search": { query: string, projectId?: Id | null, limit: bigint, };
+  "projects.files.xmlContent": { projectId: Id, fileId: Id, };
   "projects.get": { id: string; };
   "projects.list": { search?: undefined | null | string; finished?: undefined | null | false | true; customerId?: undefined | null | string; orderBy?: undefined | null | "title" | "activity"; };
   "projects.unavailability.list": { from?: unknown; to?: unknown; projectId?: undefined | null | string; };
@@ -111,7 +139,10 @@ export type QueryInputs = {
   "regieReports.list": { projectId?: undefined | null | string; dayFrom?: undefined | string; dayTo?: undefined | string; limit?: undefined | number; offset?: undefined | number; };
   "remarks.list": { resourceType: "customer" | "project" | "contact" | "tool"; resourceId: string; };
   "settings.costs.get": void;
+  "settings.documentTemplate.get": void;
   "settings.global.get": { key: string; };
+  "settings.invoiceNumbering.get": void;
+  "settings.organization.get": void;
   "settings.publicGlobal.get": { key: string; };
   "settings.tenantLogo.get": void;
   "settings.tenantName.get": void;
@@ -153,6 +184,11 @@ export type QueryOutputs = {
   "auth.sessionInfo": { user: { id: string; username: string; salutation: null | string; firstName: string; lastName: null | string; contractType: "internal" | "external" | "subcontractor"; phone: null | string; email: null | string; locale: "de" | "en"; }; session: { id: string; inetAddr: null | string; userAgent: null | string; createdAt: Date; expiresAt: Date; }; roles: (":admin" | ":llm" | "view:users" | "manage:users" | "delete:users" | "view:projects" | "manage:projects" | "delete:projects" | "view:projectDeployments" | "manage:projectDeployments" | "delete:projectDeployments" | "view:userVacations" | "manage:userVacations" | "delete:userVacations" | "view:tools" | "manage:tools" | "delete:tools" | "view:toolTrackings" | "manage:toolTrackings" | "delete:toolTrackings" | "view:toolInventories" | "manage:toolInventories" | "delete:toolInventories" | "view:products" | "manage:products" | "delete:products" | "view:deliveryNotes" | "manage:deliveryNotes" | "delete:deliveryNotes" | "view:productVendors" | "manage:productVendors" | "delete:productVendors" | "view:productPriceRecords" | "manage:productPriceRecords" | "delete:productPriceRecords" | "view:customers" | "manage:customers" | "delete:customers" | "view:contacts" | "manage:contacts" | "delete:contacts" | "view:dailyProjectReports" | "manage:dailyProjectReports" | "delete:dailyProjectReports" | "view:regieReports" | "manage:regieReports" | "delete:regieReports" | "view:clientScripts" | "manage:clientScripts" | "delete:clientScripts")[]; tenant: { companyName: null | string; objectStorageEnabled: boolean; }; };
   "clientScripts.get": null | { id: string; name: string; description: null | string; code: string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; };
   "clientScripts.list": { id: string; name: string; description: null | string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
+  "commercial.cases.get": { case: CommercialCase, documents: Array<Document>, events: Array<CaseEvent>, canManage: boolean, invoice: InvoiceDetails | null, };
+  "commercial.cases.list": Array<{ id: Id, reference: string, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', title: string, existingContract: boolean, projectId: Id | null, projectTitle: string | null, parentCaseId: Id | null, customerId: Id | null, customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, validUntil: string | null, notes: string | null, scopeItemIds: JsonValue, selectedOfferDocumentId: Id | null, acceptedAt: string | null, createdAt: string, modifiedAt: string, }>;
+  "commercial.documents.download": { url: string, fileName: string, };
+  "commercial.documents.get": { xml: string, referenceXml: string | null, fileName: string, version: bigint, canEdit: boolean, liveTicket: string, livePath: string, recoveryScope: string, };
+  "commercial.invoices.context": { progressInvoices: Array<PriorInvoice>, hasInvoice: boolean, hasFinalInvoice: boolean, vatRate: string | null, };
   "contacts.customers.list": { id: string; salutation: null | string; name: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers: { number: string; name?: undefined | null | string; }[]; emailAddresses: { email: string; name?: undefined | null | string; }[]; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
   "contacts.get": { id: string; salutation: null | string; firstName: null | string; lastName: null | string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers: { number: string; name?: undefined | null | string; }[]; emailAddresses: { email: string; name?: undefined | null | string; }[]; createdAt: Date; modifiedAt: Date; };
   "contacts.list": { id: string; salutation: null | string; firstName: null | string; lastName: null | string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers: { number: string; name?: undefined | null | string; }[]; emailAddresses: { email: string; name?: undefined | null | string; }[]; createdAt: Date; modifiedAt: Date; }[];
@@ -165,6 +201,7 @@ export type QueryOutputs = {
   "deliveryNotes.list": { id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; }[];
   "deliveryNotes.scan.list": Array<{ id: Id, fileName: string, fileNames: Array<string>, state: ScanJobState, documentType: ScanDocumentType | null, error: string | null, createdAt: Date, updatedAt: Date, }>;
   "deliveryNotes.scan.status": { state: ScanJobState, error: string | null, };
+  "gaeb.positions.search": { items: Array<Position>, indexing: boolean, };
   "llm.admin.usage": Array<{ tenant: string, provider: string, model: string, purpose: string, requestCount: bigint, inputTokens: bigint, outputTokens: bigint, totalTokens: bigint, failedRequests: bigint, }>;
   "llm.chats.get": { chat: ChatSummary, messages: Array<ChatMessage>, proposals: Array<ChangeProposal>, };
   "llm.chats.list": Array<{ id: Id, title: string, createdAt: Date, updatedAt: Date, }>;
@@ -172,6 +209,7 @@ export type QueryOutputs = {
   "office.exports.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
   "personalization.actions.list": { id: string; actionId: string; label: string; href: null | string; usedAt: Date; }[];
   "personalization.activity.list": Array<{ id: Id, entityTable: string, entityId: string, changedColumns: Array<string>, actorUserId: Id | null, actorKind: string, actorName: string | null, isImported: boolean, resourceType: ActivityResourceType, resourceId: Id, contextId: Id | null, contextTitle: string | null, contextDate: Date | null, title: string, resourceTitle: string | null, description: string | null, action: "created" | "updated" | "deleted" | "completed" | "resumed", occurredAt: Date, createdAt: Date, modifiedAt: Date | null, }>;
+  "personalization.gaebView.get": { showFields: boolean, outlineOpen: boolean, outlineWidth: number, ribbonCollapsed: boolean, zoom: number | null, };
   "personalization.visits.list": { id: string; path: string; title: null | string; visitedAt: Date; }[];
   "ping": string;
   "products.brands.list": string[];
@@ -195,6 +233,7 @@ export type QueryOutputs = {
   "projects.files.list": { id: string; projectId: string; folderId: null | string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; textExtractionStatus: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[];
   "projects.files.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
   "projects.files.search": Array<{ id: Id, projectId: Id, projectTitle: string, fileName: string, mimeType: string, textExtractionStatus: string, excerpt: string | null, rank: number, modifiedAt: Date, }>;
+  "projects.files.xmlContent": { recoveryScope: string, liveTicket: string, livePath: string, canEdit: boolean, fileName: string, version: bigint, xml: string, };
   "projects.get": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; };
   "projects.list": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; }[];
   "projects.unavailability.list": { id: string; projectId: string; from: Date; to: Date; reason: string; note: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
@@ -203,7 +242,10 @@ export type QueryOutputs = {
   "regieReports.list": { id: string; projectId: string; day: Date; summary: null | string; createdByUserId: string; createdAt: Date; autoId: number; products: { id: string; reportId: string; productId: string; quantity: number; comment: null | string; }[]; specialRecords: { id: string; reportId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { id: string; reportId: string; userId: null | string; day: Date; hours: number; }[]; }[];
   "remarks.list": { id: string; body: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
   "settings.costs.get": { fgk: { type: "fgk" | "mgk" | "ngk"; effectiveAt: Date; relativeFactor: number; constant: number; }; mgk: { type: "fgk" | "mgk" | "ngk"; effectiveAt: Date; relativeFactor: number; constant: number; }; ngk: { type: "fgk" | "mgk" | "ngk"; effectiveAt: Date; relativeFactor: number; constant: number; }; history: { id: string; type: "fgk" | "mgk" | "ngk"; effectiveAt: Date; relativeFactor: number; constant: number; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[]; productOverheadFactor: number; workHourOverheadFactor: number; specialRecordOverheadFactor: number; toolOverheadFactor: number; };
+  "settings.documentTemplate.get": { source: string | null, revision: string, assets: Array<Asset>, };
   "settings.global.get": { key: string; name: any; };
+  "settings.invoiceNumbering.get": { scheme: InvoiceNumberingScheme, startNumber: string, };
+  "settings.organization.get": { companyName: string | null, address: Address | null, };
   "settings.publicGlobal.get": { key: string; name: any; };
   "settings.tenantLogo.get": { status: "none" | "processing" | "failed" | "queued" | "ready" | "uploading"; mimeType: null | string; fileName: null | string; width: null | number; height: null | number; downloadUrl: null | string; downloadExpiresAt: null | Date; error: null | string; };
   "settings.tenantName.get": { companyName: null | string; };
@@ -265,6 +307,16 @@ export type MutationInputs = {
   "clientScripts.create": { name: string; code: string; description?: undefined | null | string; enabled?: undefined | false | true; };
   "clientScripts.delete": { id: string; };
   "clientScripts.update": { id: string; data: { name?: undefined | string; description?: undefined | null | string; code?: undefined | string; enabled?: undefined | false | true; }; };
+  "commercial.cases.adoptContract": { projectId: Id, title: string, orderXml: string, offerXml: string, netAmount: string, };
+  "commercial.cases.create": { kind: string, title: string, projectId?: Id | null, parentCaseId?: Id | null, customerId?: Id | null, counterpartyName?: string | null, scopeItemIds: Array<string>, billingBasis?: string | null, vatRate?: string | null, };
+  "commercial.cases.createProject": { id: Id, };
+  "commercial.cases.transition": { id: Id, expectedStatus: string, status: string, selectedOfferDocumentId?: Id | null, awardedItemIds?: Array<string> | null, };
+  "commercial.cases.update": { id: Id, title: string, customerId: Id | null, counterpartyName: string | null, validUntil: string | null, notes: string | null, };
+  "commercial.documents.create": { caseId: Id, purpose: string, fileName: string, xml: string, readOnly: boolean, netAmount?: string | null, partnerName?: string | null, sourceDocumentId?: Id | null, sourceVersion?: bigint | null, replaceDocumentId?: Id | null, expectedVersion?: bigint | null, };
+  "commercial.documents.finalize": { caseId: Id, id: Id, version: bigint, };
+  "commercial.documents.save": { caseId: Id, id: Id, version: bigint, xml: string, netAmount?: string | null, };
+  "commercial.invoices.issue": { id: Id, };
+  "commercial.invoices.recordPayment": { id: Id, amount: string, paidOn: string, reference: string, };
   "contacts.create": { salutation?: undefined | null | string; firstName?: undefined | null | string; lastName?: undefined | null | string; address?: undefined | null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers?: undefined | { number: string; name?: undefined | null | string; }[]; emailAddresses?: undefined | { email: string; name?: undefined | null | string; }[]; };
   "contacts.delete": { id: string; };
   "contacts.update": { id: string; data: { salutation?: undefined | null | string; firstName?: undefined | null | string; lastName?: undefined | null | string; address?: undefined | null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers?: undefined | { number: string; name?: undefined | null | string; }[]; emailAddresses?: undefined | { email: string; name?: undefined | null | string; }[]; }; };
@@ -288,6 +340,7 @@ export type MutationInputs = {
   "llm.proposals.review": { proposalId: Id, decision: ProposalDecision, comment?: string | null, executionResults?: Array<ProposalExecutionResult> | null, continueConversation?: boolean, };
   "office.exports.createUpload": { fileName: string, mimeType: string, sizeBytes: number, };
   "personalization.actions.append": { actionId: string; label: string; href?: undefined | null | string; };
+  "personalization.gaebView.set": { showFields: boolean, outlineOpen: boolean, outlineWidth: number, ribbonCollapsed: boolean, zoom: number | null, };
   "personalization.visits.append": { path: string; title?: undefined | null | string; };
   "products.categories.set": { id: string; categories: string[]; };
   "products.categories.tag": { id: string; category: string; };
@@ -328,6 +381,7 @@ export type MutationInputs = {
   "projects.files.folders.rename": { projectId: Id, folderId: Id, name: string, };
   "projects.files.move": { projectId: Id, fileIds: Array<Id>, folderId?: Id | null, };
   "projects.files.rename": { projectId: Id, fileId: Id, fileName: string, };
+  "projects.files.xmlSave": { projectId: Id, fileId: Id, version: bigint, xml: string, };
   "projects.finish": { id: string; };
   "projects.resume": { id: string; };
   "projects.unavailability.create": { projectId: string; from: unknown; to: unknown; reason: string; note?: undefined | null | string; };
@@ -343,9 +397,15 @@ export type MutationInputs = {
   "settings.costs.delete": { type: "fgk" | "mgk" | "ngk"; effectiveAt: unknown; };
   "settings.costs.set": { type: "fgk" | "mgk" | "ngk"; effectiveAt: unknown; relativeFactor: number; constant: number; };
   "settings.costs.update": { productOverheadFactor?: undefined | number; workHourOverheadFactor?: undefined | number; specialRecordOverheadFactor?: undefined | number; toolOverheadFactor?: undefined | number; };
+  "settings.documentTemplate.assets.completeUpload": { id: Id, };
+  "settings.documentTemplate.assets.createUpload": { name: string, mimeType: string, sizeBytes: number, };
+  "settings.documentTemplate.assets.delete": { id: Id, };
+  "settings.documentTemplate.set": { source: string, expectedRevision: string, };
   "settings.global.delete": { key: string; };
   "settings.global.set": { key: string; name: any; };
+  "settings.invoiceNumbering.set": { scheme: InvoiceNumberingScheme, startNumber: string, };
   "settings.language.set": { locale: "de" | "en"; };
+  "settings.organization.set": { companyName: string | null, address: Address | null, };
   "settings.publicGlobal.delete": { key: string; };
   "settings.publicGlobal.set": { key: string; name: any; };
   "settings.tenantLogo.completeUpload": { generationId: string; etag?: undefined | null | string; };
@@ -419,6 +479,16 @@ export type MutationOutputs = {
   "clientScripts.create": { id: string; name: string; description: null | string; code: string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; };
   "clientScripts.delete": { success: true; };
   "clientScripts.update": null | { id: string; name: string; description: null | string; code: string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; };
+  "commercial.cases.adoptContract": { id: Id, };
+  "commercial.cases.create": { id: Id, };
+  "commercial.cases.createProject": { id: Id, };
+  "commercial.cases.transition": { success: true, };
+  "commercial.cases.update": { success: true, };
+  "commercial.documents.create": { id: Id, };
+  "commercial.documents.finalize": { version: bigint, savedAt: string, };
+  "commercial.documents.save": { version: bigint, savedAt: string, };
+  "commercial.invoices.issue": { success: true, };
+  "commercial.invoices.recordPayment": { success: true, };
   "contacts.create": { id: string; };
   "contacts.delete": { success: true; };
   "contacts.update": { success: true; };
@@ -442,6 +512,7 @@ export type MutationOutputs = {
   "llm.proposals.review": { success: true, };
   "office.exports.createUpload": { uploadUrl: string, uploadMethod: string, uploadHeaders: { [key in string]: string }, expiresAt: string, sessionToken: string, };
   "personalization.actions.append": { success: true; };
+  "personalization.gaebView.set": { success: true, };
   "personalization.visits.append": { success: true; };
   "products.categories.set": { success: true; };
   "products.categories.tag": { success: true; };
@@ -482,6 +553,7 @@ export type MutationOutputs = {
   "projects.files.folders.rename": { success: true, };
   "projects.files.move": { success: true, };
   "projects.files.rename": { success: true, };
+  "projects.files.xmlSave": { version: bigint, savedAt: Date, };
   "projects.finish": { success: true; };
   "projects.resume": { success: true; };
   "projects.unavailability.create": { id: string; };
@@ -497,9 +569,15 @@ export type MutationOutputs = {
   "settings.costs.delete": { success: true; };
   "settings.costs.set": { success: true; };
   "settings.costs.update": { success: true; };
+  "settings.documentTemplate.assets.completeUpload": { success: true, };
+  "settings.documentTemplate.assets.createUpload": { id: Id, uploadUrl: string, uploadMethod: string, uploadHeaders: { [key in string]: string }, };
+  "settings.documentTemplate.assets.delete": { success: true, };
+  "settings.documentTemplate.set": { source: string | null, revision: string, };
   "settings.global.delete": { success: true; };
   "settings.global.set": { success: true; };
+  "settings.invoiceNumbering.set": { success: true, };
   "settings.language.set": { success: true; };
+  "settings.organization.set": { success: true, };
   "settings.publicGlobal.delete": { success: true; };
   "settings.publicGlobal.set": { success: true; };
   "settings.tenantLogo.completeUpload": { success: true; };

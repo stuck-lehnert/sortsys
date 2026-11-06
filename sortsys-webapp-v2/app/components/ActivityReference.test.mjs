@@ -46,14 +46,14 @@ function renderReference(overrides = {}, hideOwnerTitle = false) {
 test("renders the referenced file name as a link to its existing preview route", () => {
   const markup = renderReference();
 
-  expect(markup).toContain(`href="/projects/${projectId}/files?file=7dbfi"`);
+  expect(markup).toContain(`href="/projects/${projectId}/files/7dbfi"`);
   expect(markup).toContain(">Plan.pdf</a>");
 });
 
 test("keeps a file clickable when its name matches the project title", () => {
   const markup = renderReference({ title: "Rathaus", action: "updated" }, true);
 
-  expect(markup).toContain(`href="/projects/${projectId}/files?file=7dbfi"`);
+  expect(markup).toContain(`href="/projects/${projectId}/files/7dbfi"`);
   expect(markup).toContain(">Rathaus</a>");
 });
 

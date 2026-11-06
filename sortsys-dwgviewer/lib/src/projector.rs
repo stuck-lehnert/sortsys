@@ -199,6 +199,19 @@ fn project_section_streams(
         return;
     };
 
+    // Legacy handle-map offsets are absolute file positions. Modern Objects
+    // sections use offsets relative to their reconstructed section stream.
+    let entries = if file.layout == dwgfile::LayoutKind::LegacySections {
+        entries
+            .into_iter()
+            .map(|mut entry| {
+                entry.offset -= object_data.offset as i64;
+                entry
+            })
+            .collect::<Vec<_>>()
+    } else {
+        entries
+    };
     let raw_objects = crate::objects::slice_raw_objects(&object_data.data, &entries);
     if raw_objects.is_empty() {
         document.add_diagnostic(

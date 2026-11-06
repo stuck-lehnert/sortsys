@@ -48,6 +48,7 @@ type MyInputProps<ItemT = any, PrepT = any> = Omit<
   onValueChange?: (value: string) => PromiseOr<void>;
   notifyLoaded?: (field: MyFormField<string>) => PromiseOr<void>;
   labelText: string;
+  focusOnMount?: boolean;
   type?: string;
   id?: string;
 } & ({
@@ -81,6 +82,7 @@ type MyMultiSelectProps<T extends Record<string, any> & { id: string | number },
 > & {
   name?: string;
   labelText: string;
+  focusOnMount?: boolean;
 
   renderTile?: (item: T) => React.ReactNode;
   renderTileDisallowUndo?: boolean;

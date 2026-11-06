@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@sortsys/gaeb": ["../sortsys-gaeb/src/index.ts"],
+      "~/*": ["./app/*"],
+      "@sortsys/dwgviewer": ["../sortsys-dwgviewer/src/index.ts"],
+      "@sortsys/dwgviewer/styles.css": ["../sortsys-dwgviewer/src/styles.css"],
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"]
+    }
+  }
+}

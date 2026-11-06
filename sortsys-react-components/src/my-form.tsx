@@ -13,6 +13,7 @@ import {
 } from "./index.js";
 import {
   createContext,
+  useCallback,
   isValidElement,
   useContext,
   useEffect,
@@ -23,6 +24,7 @@ import {
   useSyncExternalStore,
   type ComponentProps,
   type RefObject,
+  type Ref,
   type ReactNode,
 } from "react";
 import { SSButton } from "./my-button.js";
@@ -63,6 +65,46 @@ interface MyFormContext {
 export type MyPublicFormContext = Omit<MyFormContext, "setField" | "delField">;
 
 const MyFormContext = createContext(null as unknown as MyFormContext);
+
+/** An explicit request from a newly added row, independent of dialog autofocus. */
+function useRequestedFieldFocus(
+  requested: boolean | undefined,
+  disabled: boolean,
+  forwardedRef?: Ref<HTMLElement>,
+) {
+  const element = useRef<HTMLElement | null>(null);
+  const fulfilled = useRef(false);
+  const ref = useCallback(
+    (node: HTMLElement | null) => {
+      element.current = node;
+      if (typeof forwardedRef === "function") forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    },
+    [forwardedRef],
+  );
+
+  useLayoutEffect(() => {
+    if (!requested) {
+      fulfilled.current = false;
+      return;
+    }
+    if (disabled || fulfilled.current) return;
+    // Field registration/prefill can briefly disable the form in this commit.
+    // Focus once the requested field is usable, without refocusing on edits.
+    const frame = requestAnimationFrame(() => {
+      const root = element.current;
+      const input = root?.matches("input, textarea, select, button")
+        ? root
+        : root?.querySelector<HTMLElement>("input, textarea, select, button");
+      if (!input || input.matches(":disabled") || input.closest("[inert]")) return;
+      input.focus();
+      fulfilled.current = input.ownerDocument.activeElement === input;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [requested, disabled]);
+
+  return ref;
+}
 
 function useRefState<T>(initialValue: T): [() => T, (value: T, rerender?: boolean) => void] {
   const ref = useRef(initialValue);
@@ -344,6 +386,8 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
     suffix,
     type,
     textArea,
+    focusOnMount,
+    ref: forwardedRef,
     ...props
   } = _props;
   const context = useContext(MyFormContext);
@@ -414,6 +458,8 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
   const suggInit = suggestionsState.initialization;
 
   const InputComponent = textArea ? TextArea : TextInput;
+  const inputDisabled = Boolean(props.disabled || context?.loading() || loading());
+  const focusRef = useRequestedFieldFocus(focusOnMount, inputDisabled, forwardedRef);
 
   return (
     <>
@@ -421,6 +467,7 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
         <InputComponent
           id={id}
           {...props}
+          ref={focusRef}
           labelText={labelText}
           suffix={suffix}
           value={value()}
@@ -439,6 +486,7 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
         <ComboBox
           id={id}
           {...props}
+          ref={focusRef}
           titleText={labelText}
           allowCustomValue
           value={value()}
@@ -678,11 +726,13 @@ const MyMultiSelect = function(_props: any) {
     stringifyItem: stringifyItemCustom,
     createAction,
     onValueChange,
+    focusOnMount,
     ...props
   } = _props;
   const context = useContext(MyFormContext);
 
   const id = useId();
+  const focusRef = useRequestedFieldFocus(focusOnMount, Boolean(props.disabled || context.loading()));
 
   let labelText = `${_labelText ?? ""}`.trim();
   if (minSelectedItems) {
@@ -829,6 +879,7 @@ const MyMultiSelect = function(_props: any) {
     <FilterableMultiSelect
       id={id}
       {...props}
+      ref={focusRef}
       titleText={labelText}
       selectedItems={value()}
       onInputValueChange={(newValue: any) => {

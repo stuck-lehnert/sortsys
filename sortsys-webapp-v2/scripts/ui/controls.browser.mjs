@@ -756,7 +756,9 @@ test("only opted-in document editors are edge-to-edge with a compact context hea
     });
     const closeBounds = await close.boundingBox();
     assert.ok(
-      Math.abs(closeBounds.y + closeBounds.height / 2 - header.y - header.height / 2) <= 1,
+      Math.abs(
+        closeBounds.y + closeBounds.height / 2 - header.y - header.height / 2,
+      ) <= 1,
       JSON.stringify({ header, closeBounds }),
     );
     assert.ok(
@@ -1350,3 +1352,205 @@ test("load-more tables restore the expanded view and reset for filters and sorti
     "Entry 05",
   ]);
 });
+
+async function activeSuggestion(input) {
+  return input.evaluate((node) => {
+    const active = node.ownerDocument.getElementById(
+      node.getAttribute("aria-activedescendant"),
+    );
+    return active?.textContent?.trim() ?? null;
+  });
+}
+
+test("autocomplete results share Tab, Shift-Tab and arrow navigation without changing the value", async () => {
+  await openFixture();
+  const input = page.getByRole("combobox", {
+    name: "Single selection",
+    exact: true,
+  });
+  await input.click();
+  await page.getByRole("option", { name: "Alpha", exact: true }).waitFor();
+  await input.press("Tab");
+  assert.equal(await activeSuggestion(input), "Alpha");
+  assert.equal(
+    await input.evaluate((node) => node === document.activeElement),
+    true,
+  );
+  await input.press("Tab");
+  assert.equal(await activeSuggestion(input), "Beta");
+  await input.press("Shift+Tab");
+  assert.equal(await activeSuggestion(input), "Alpha");
+  await input.press("ArrowDown");
+  assert.equal(await activeSuggestion(input), "Beta");
+  assert.equal((await readState(page, "Field values")).single, null);
+  await input.press("Enter");
+  await waitForState(page, "Field values", (value) => value.single === "beta");
+});
+
+test("multiselect results include the create action in Tab order and leave at the boundary", async () => {
+  await openFixture();
+  const input = page.getByRole("combobox", {
+    name: "Multiple selection",
+    exact: true,
+  });
+  await input.click();
+  const options = page.getByRole("option");
+  await options.first().waitFor();
+  const labels = (await options.allTextContents()).map((text) => text.trim());
+  for (const label of labels) {
+    await input.press("Tab");
+    assert.equal(await activeSuggestion(input), label);
+  }
+  assert.equal((await readState(page, "Field values")).multiple.length, 0);
+  await input.press("Tab");
+  assert.equal(
+    await input.evaluate((node) => node === document.activeElement),
+    false,
+  );
+  assert.equal((await readState(page, "Field values")).multiple.length, 0);
+  await input.click();
+  await input.press("Shift+Tab");
+  assert.equal(await activeSuggestion(input), labels.at(-1));
+  await input.press("Shift+Tab");
+  assert.equal(await activeSuggestion(input), labels.at(-2));
+  await input.press("Enter");
+  await waitForState(
+    page,
+    "Field values",
+    (value) => value.multiple.length === 1,
+  );
+});
+
+test("autocomplete Tab leaves empty results and Escape returns to normal form tabbing", async () => {
+  await openFixture();
+  const input = page.getByRole("combobox", {
+    name: "Single selection",
+    exact: true,
+    includeHidden: true,
+  });
+  const next = page.getByRole("combobox", {
+    name: "Multiple selection",
+    exact: true,
+  });
+  await input.fill("No matching result");
+  await input.press("Tab");
+  assert.equal(
+    await input.evaluate((node) => node === document.activeElement),
+    false,
+  );
+  assert.equal((await readState(page, "Field values")).single, null);
+  await input.fill("");
+  await page.getByRole("option", { name: "Alpha", exact: true }).waitFor();
+  await input.press("Tab");
+  await input.press("Escape");
+  await input.press("Tab");
+  assert.equal(
+    await next.evaluate((node) => node === document.activeElement),
+    true,
+  );
+});
+
+test("Tab skips disabled suggestions, scrolls active results and leaves without selecting", async () => {
+  await openFixture({ screen: "long" });
+  const input = page.getByRole("combobox", {
+    name: "Long choices",
+    exact: true,
+  });
+  await input.scrollIntoViewIfNeeded();
+  await input.click();
+  await input.fill("Result");
+  await page.waitForFunction(
+    (node) => node.getAttribute("aria-expanded") === "true",
+    await input.elementHandle(),
+  );
+  await page.getByRole("option", { name: "Result 01", exact: true }).waitFor();
+  await input.press("Tab");
+  assert.equal(await activeSuggestion(input), "Result 01");
+  await input.press("Tab");
+  assert.equal(await activeSuggestion(input), "Result 03");
+  for (let index = 3; index < 40; index++) await input.press("Tab");
+  assert.equal(await activeSuggestion(input), "Result 40");
+  const option = page.getByRole("option", { name: "Result 40", exact: true });
+  const bounds = await option.boundingBox();
+  const list = await page.getByRole("listbox").boundingBox();
+  assert.ok(
+    bounds.y >= list.y - 1 &&
+      bounds.y + bounds.height <= list.y + list.height + 1,
+    "The active suggestion scrolls into the listbox viewport",
+  );
+  await input.press("Tab");
+  const next = page.getByRole("textbox", {
+    name: "After long choices",
+    exact: true,
+  });
+  assert.equal(
+    await next.evaluate((node) => node === document.activeElement),
+    true,
+  );
+  assert.equal(
+    await page.getByLabel("Long choice state").textContent(),
+    "none",
+  );
+  await input.click();
+  await input.fill("Result ");
+  await page.waitForFunction(
+    (node) => node.getAttribute("aria-expanded") === "true",
+    await input.elementHandle(),
+  );
+  await input.press("Tab");
+  await input.press("Shift+Tab");
+  const previous = page.getByRole("button", {
+    name: "Before long choices",
+    exact: true,
+  });
+  assert.equal(
+    await previous.evaluate((node) => node === document.activeElement),
+    true,
+  );
+});
+
+for (const theme of ["light", "dark"])
+  test(`all notice variants and floating notifications have a visible surface and accessible contrast in ${theme}`, async () => {
+    await openFixture({ theme, screen: "notices" });
+    const notices = page.getByTestId("notices");
+    await notices.getByText("info notice", { exact: true }).waitFor();
+    assert.equal(await notices.locator(".ss-notice").count(), 4);
+    const colors = await notices.locator(".ss-notice").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          background: style.backgroundColor,
+          border: style.borderLeftColor,
+          fg: getComputedStyle(node.querySelector('[data-slot="alert-title"]'))
+            .color,
+        };
+      }),
+    );
+    for (const color of colors) {
+      assert.notEqual(color.background, "rgba(0, 0, 0, 0)");
+      assert.notEqual(color.fg, color.background);
+      assert.notEqual(color.border, color.background);
+    }
+    await page
+      .getByRole("button", { name: "Show warning notification", exact: true })
+      .click();
+    await page.getByText("Warning notification", { exact: true }).waitFor();
+    const accessibility = await new AxeBuilder({ page })
+      .withTags(["wcag2aa", "wcag21aa"])
+      .analyze();
+    assert.deepEqual(
+      accessibility.violations.map(({ id, nodes }) => ({
+        id,
+        elements: nodes.map(({ target, failureSummary }) => ({
+          target,
+          failureSummary,
+        })),
+      })),
+      [],
+    );
+    await assertNoPageOverflow();
+    await page.screenshot({
+      path: join(fixtureDirectory, "screenshots", `notices-${theme}.png`),
+      fullPage: true,
+    });
+  });

@@ -64,9 +64,10 @@ function pickQuickActions(actions: UserAction[], history: ActionHistoryItem[] | 
   const stats = new Map<string, { count: number; lastUsedAt: number }>();
 
   (history ?? []).forEach(item => {
-    if (!actionById.has(item.actionId)) return;
-    const previous = stats.get(item.actionId) ?? { count: 0, lastUsedAt: 0 };
-    stats.set(item.actionId, {
+    const actionId = item.actionId === 'projects.create' ? 'offers.create' : item.actionId;
+    if (!actionById.has(actionId)) return;
+    const previous = stats.get(actionId) ?? { count: 0, lastUsedAt: 0 };
+    stats.set(actionId, {
       count: previous.count + 1,
       lastUsedAt: Math.max(previous.lastUsedAt, item.usedAt.getTime()),
     });

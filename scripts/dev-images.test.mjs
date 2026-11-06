@@ -220,3 +220,34 @@ test("a required image failure still prevents startup", () => {
   assert.doesNotMatch(output, /All development images are ready/);
   assert.doesNotMatch(output, /Selected S3 image:/);
 });
+
+test("a failed API startup remains inspectable after cleanup", () => {
+  const result = runShell(`
+${developmentFunction("wait_for_api_ready")}
+${developmentFunction("cleanup_containers")}
+CONTAINER_RUNTIME=fixture_runtime
+DEV_API_CONTAINER=fixture-api
+DEV_ALL_CONTAINERS=(fixture-api fixture-postgres)
+DEV_PRESERVE_FAILED_API=false
+removed_api=$(mktemp)
+rm -f "$removed_api"
+fixture_runtime() {
+  if [ "$1" = inspect ]; then printf 'Exit code=7; seed failed\\n'; fi
+  if [ "$1" = rm ] && [ "$3" = fixture-api ]; then touch "$removed_api"; fi
+}
+container_is_running() { return 1; }
+if wait_for_api_ready; then exit 91; fi
+[ "$DEV_PRESERVE_FAILED_API" = true ]
+cleanup_containers
+if [ -e "$removed_api" ]; then
+  rm -f "$removed_api"
+  exit 92
+fi
+`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Exit code=7/);
+  assert.match(result.stderr, /Failed API container retained/);
+  const start = developmentFunction("start_api_container");
+  assert.doesNotMatch(start, /--rm\s*\\/);
+  assert.match(start, /logs\/api-startup\.log/);
+});

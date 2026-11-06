@@ -20,6 +20,7 @@ const PdfAttachmentViewer = lazy(
 const EmailAttachmentViewer = lazy(
   () => import("~/components/EmailAttachmentViewer"),
 );
+const GaebFileModal = lazy(() => import("~/components/GaebFileModal"));
 const PlanViewer = lazy(() =>
   import("@sortsys/dwgviewer").then((module) => ({
     default: module.PlanViewer,
@@ -347,6 +348,10 @@ export default function ProjectFilePreviewModal({
     onClose();
     void client.invalidate("projects.files.list");
   }, [onClose]);
+
+  if (file && kind === "gaeb") {
+    return <Suspense fallback={<PreviewLoading />}><GaebFileModal projectId={target.projectId} fileId={file.id} fileName={file.fileName} onClose={closePreview} /></Suspense>;
+  }
 
   return (
     <Modal

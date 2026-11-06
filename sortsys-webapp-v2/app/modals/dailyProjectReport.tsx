@@ -176,7 +176,7 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
                   <MyForm.MultiSelect
                     name={`workHour:${id}:user`}
                     labelText={uiText("Mitarbeiter")}
-                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    focusOnMount={autoFocusFieldName === `workHour:${id}:user`}
                     onValueChange={(selected) => {
                       focusReportHours(selected, () => hoursInputs.current[id]);
                     }}
@@ -554,7 +554,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
                         <MyForm.MultiSelect
                           name={`day:${dayIndex}:workHour:${id}:user`}
                           labelText={uiText("Mitarbeiter")}
-                          autoFocus={
+                          focusOnMount={
                             autoFocusFieldName ===
                             `day:${dayIndex}:workHour:${id}:user`
                           }
@@ -1312,7 +1312,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                   <MyForm.MultiSelect
                     name={`workHour:${id}:user`}
                     labelText={uiText("Mitarbeiter")}
-                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    focusOnMount={autoFocusFieldName === `workHour:${id}:user`}
                     onValueChange={(selected) => {
                       focusReportHours(selected, () => hoursInputs.current[id]);
                     }}

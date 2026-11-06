@@ -1,5 +1,6 @@
 import {
   Button,
+  InlineNotification,
   Checkbox,
   ComboBox,
   Content,
@@ -28,7 +29,7 @@ import {
 } from "@sortsys/react-components/notifications";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Link, MemoryRouter, useLocation } from "react-router";
+import { Link, BrowserRouter, MemoryRouter, useLocation } from "react-router";
 import { MyDropdown } from "~/components/MyDropdown";
 import { MyHeader } from "~/components/MyHeader";
 import { MyTable } from "~/components/MyTable";
@@ -39,6 +40,15 @@ import { AttrList } from "~/components/AttrList";
 import { MyModalsProvider, useMyModals } from "~/hooks/useMyModals";
 import { I18nProvider, useI18n } from "~/lib/i18n";
 
+if (
+  /^\/(?:admin|settings|projects|offers|gaeb|import)(?:\/|$)/.test(
+    location.pathname,
+  )
+) {
+  const url = new URL(location.href);
+  url.searchParams.set("screen", "application");
+  history.replaceState(history.state, "", url);
+}
 const parameters = new URLSearchParams(window.location.search);
 const requestedLocale = parameters.get("locale") === "en" ? "en" : "de";
 const theme = parameters.get("theme") === "dark" ? "dark" : "light";
@@ -130,6 +140,28 @@ function FieldsFixture() {
           dates: dates?.map((date) => date.toISOString()) ?? null,
         })}
       </output>
+    </Tile>
+  );
+}
+
+function LongAutocompleteFixture() {
+  const [selected, setSelected] = useState(null);
+  const items = Array.from({ length: 40 }, (_, index) => ({
+    id: `choice-${index}`,
+    name: `Result ${String(index + 1).padStart(2, "0")}`,
+  }));
+  return (
+    <Tile role="region" aria-label="Long autocomplete">
+      <Button>Before long choices</Button>
+      <ComboBox
+        titleText="Long choices"
+        items={items}
+        disabledKeys={["choice-1"]}
+        itemToString={(item) => item.name}
+        onChange={({ selectedItem }) => setSelected(selectedItem)}
+      />
+      <TextInput labelText="After long choices" />
+      <output aria-label="Long choice state">{selected?.id ?? "none"}</output>
     </Tile>
   );
 }
@@ -664,6 +696,37 @@ function ShellFixture() {
   );
 }
 
+function NoticesFixture() {
+  const notifications = useNotifications();
+  return (
+    <section
+      data-testid="notices"
+      className="grid gap-4"
+      aria-label="Status messages"
+    >
+      {["info", "success", "warning", "error"].map((kind) => (
+        <InlineNotification
+          key={kind}
+          kind={kind}
+          title={`${kind} notice`}
+          subtitle="Readable status details with enough contrast."
+        />
+      ))}
+      <Button
+        onClick={() =>
+          notifications.warning({
+            title: "Warning notification",
+            content: "Details remain readable on the status background.",
+            duration: 0,
+          })
+        }
+      >
+        Show warning notification
+      </Button>
+    </section>
+  );
+}
+
 function FixtureContent() {
   const { setLocale } = useI18n();
 
@@ -676,7 +739,10 @@ function FixtureContent() {
     };
   }, [setLocale]);
 
-  if (parameters.get("screen") === "application") {
+  if (
+    parameters.get("screen") === "application" ||
+    window.location.pathname.startsWith("/offers")
+  ) {
     return <ApplicationFixture />;
   }
 
@@ -693,17 +759,25 @@ function FixtureContent() {
           ) : (
             <main className="mx-auto flex min-h-dvh max-w-5xl flex-col gap-6 p-4 sm:p-8">
               <MyHeader title="HeroUI workflow fixtures" />
-              <FieldsFixture />
-              <AsyncAutocompleteFixture />
-              <FormFixture />
-              <MenusFixture />
-              <DialogsFixture />
-              <FormFieldsFixture />
-              <ModalSizingFixture />
-              <ExpandableFixture />
-              <TableFixture />
-              <ProgressiveTableFixture />
-              <NotificationsFixture />
+              {parameters.get("screen") === "notices" ? (
+                <NoticesFixture />
+              ) : parameters.get("screen") === "long" ? (
+                <LongAutocompleteFixture />
+              ) : (
+                <>
+                  <FieldsFixture />
+                  <AsyncAutocompleteFixture />
+                  <FormFixture />
+                  <MenusFixture />
+                  <DialogsFixture />
+                  <FormFieldsFixture />
+                  <ModalSizingFixture />
+                  <ExpandableFixture />
+                  <TableFixture />
+                  <ProgressiveTableFixture />
+                  <NotificationsFixture />
+                </>
+              )}
             </main>
           )}
         </NotificationProvider>
@@ -712,12 +786,24 @@ function FixtureContent() {
   );
 }
 
+const FixtureRouter =
+  /^\/(?:admin|settings|projects|offers|gaeb|import)(?:\/|$)/.test(
+    location.pathname,
+  )
+    ? BrowserRouter
+    : MemoryRouter;
 const root = createRoot(document.getElementById("root"));
 window.__uiUnmount = () => root.unmount();
 root.render(
   <I18nProvider>
-    <MemoryRouter initialEntries={[parameters.get("path") ?? "/home"]}>
+    <FixtureRouter
+      initialEntries={[
+        window.location.pathname.startsWith("/offers")
+          ? `${window.location.pathname}${window.location.search}`
+          : (parameters.get("path") ?? "/home"),
+      ]}
+    >
       <FixtureContent />
-    </MemoryRouter>
+    </FixtureRouter>
   </I18nProvider>,
 );

@@ -52,7 +52,7 @@ export function readRuntimeSnapshot(root = fileURLToPath(new URL('../', import.m
     ].join('\n'),
     rustImages: { catalog, api, apiTest, webappDocker },
     nodeImages: { catalog, webappDocker },
-    manifests: Object.fromEntries(['sortsys-api-v2/client', 'sortsys-dwgviewer', 'sortsys-webapp-v2'].map(path => [path, JSON.parse(read(path + '/package.json'))])),
+    manifests: Object.fromEntries(['sortsys-api-v2/client', 'sortsys-dwgviewer', 'sortsys-webapp-v2', 'sortsys-gaeb'].map(path => [path, JSON.parse(read(path + '/package.json'))])),
     postgresImages: { catalog, api, apiTest, compose: read('compose.yaml'), ghcrCompose: read('ghcr-compose.yaml') },
     webappDocker,
   };

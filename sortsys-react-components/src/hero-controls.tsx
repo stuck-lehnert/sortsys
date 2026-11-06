@@ -1,5 +1,6 @@
 import { controlText } from "./hero-utils.js";
 import type { FilterableMultiSelectProps } from "./control-types.js";
+import { ComboBoxStateContext } from "react-aria-components/ComboBox";
 import React, {
   Children,
   createContext,
@@ -39,6 +40,57 @@ function useFieldAutoFocus(autoFocus?: boolean) {
 
   return Boolean(autoFocus) && !isDialogField;
 }
+
+// Keep DOM focus in the input so typing and screen-reader announcements retain
+// the same active descendant as arrow navigation. Tab leaves at either end.
+const AutocompleteInput = forwardRef<
+  HTMLInputElement,
+  React.ComponentProps<typeof Input>
+>(function AutocompleteInput({ onKeyDownCapture, ...props }, ref) {
+  const state = useContext(ComboBoxStateContext);
+  return (
+    <Input
+      {...props}
+      ref={ref}
+      onKeyDownCapture={(event) => {
+        onKeyDownCapture?.(event);
+        if (
+          event.defaultPrevented ||
+          event.key !== "Tab" ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          event.nativeEvent.isComposing ||
+          !state?.isOpen
+        )
+          return;
+        const keys = [...state.collection.getKeys()].filter(
+          (key) =>
+            state.collection.getItem(key)?.type === "item" &&
+            !state.selectionManager.isDisabled(key),
+        );
+        if (!keys.length) return;
+        const current = keys.indexOf(state.selectionManager.focusedKey!);
+        const next =
+          current < 0
+            ? event.shiftKey
+              ? keys.length - 1
+              : 0
+            : current + (event.shiftKey ? -1 : 1);
+        event.stopPropagation();
+        if (next >= 0 && next < keys.length) {
+          event.preventDefault();
+          state.selectionManager.setFocusedKey(keys[next]!);
+        } else {
+          // React Aria normally commits the highlighted result on Tab. Leaving
+          // the results must neither select a value nor invoke a create action.
+          state.selectionManager.setFocusedKey(null);
+          state.close();
+        }
+      }}
+    />
+  );
+});
 
 // These adapters preserve the existing form and route contracts. HeroUI owns
 // keyboard interaction, focus management, validation semantics and overlays.
@@ -542,7 +594,7 @@ export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(
     >
       {titleText && <Label>{titleText}</Label>}
       <HeroComboBox.InputGroup>
-        <Input
+        <AutocompleteInput
           ref={ref}
           placeholder={placeholder}
           autoFocus={fieldAutoFocus}
@@ -692,7 +744,7 @@ export function FilterableMultiSelect<T = unknown>({
       >
         {titleText && <Label>{titleText}</Label>}
         <HeroComboBox.InputGroup>
-          <Input
+          <AutocompleteInput
             {...inputProps}
             ref={inputRef}
             autoFocus={fieldAutoFocus}
@@ -841,6 +893,8 @@ export const MultiSelect = FilterableMultiSelect;
 export function Tabs({
   selectedIndex,
   onChange,
+  selectedKey,
+  onSelectionChange,
   className,
   children,
   ...props
@@ -849,10 +903,13 @@ export function Tabs({
     <HeroTabs
       {...props}
       selectedKey={
-        selectedIndex === undefined ? undefined : String(selectedIndex)
+        selectedIndex === undefined ? selectedKey : String(selectedIndex)
       }
-      onSelectionChange={(key) => onChange?.({ selectedIndex: Number(key) })}
-      className={classes("ss-tabs", className)}
+      onSelectionChange={(key) => {
+        onSelectionChange?.(key);
+        onChange?.({ selectedIndex: Number(key) });
+      }}
+      className={classes("ss-tabs w-full min-w-0", className)}
     >
       {children}
     </HeroTabs>
@@ -861,22 +918,36 @@ export function Tabs({
 
 export function TabList({ children, className, ...props }: any) {
   return (
-    <HeroTabs.ListContainer>
-      <HeroTabs.List {...props} className={classes("ss-tab-list", className)}>
+    <HeroTabs.ListContainer className="max-w-full">
+      <HeroTabs.List
+        {...props}
+        className={classes("ss-tab-list max-w-full overflow-x-auto", className)}
+      >
         {Children.map(children, (child, index) => {
           if (!isValidElement<Record<string, unknown>>(child)) {
             return child;
           }
 
-          return <HeroTabs.Tab {...child.props} id={String(index)} />;
+          return <Tab {...child.props} id={child.props.id ?? String(index)} />;
         })}
       </HeroTabs.List>
     </HeroTabs.ListContainer>
   );
 }
 
-export function Tab(props: any) {
-  return <HeroTabs.Tab {...props} />;
+export function Tab({ children, className, ...props }: any) {
+  return (
+    <HeroTabs.Tab
+      {...props}
+      className={classes(
+        "w-auto shrink-0 text-foreground data-[hovered=true]:text-foreground",
+        className,
+      )}
+    >
+      {children}
+      <HeroTabs.Indicator />
+    </HeroTabs.Tab>
+  );
 }
 
 export function Tag({
@@ -960,7 +1031,8 @@ export function Callout({
       {...props}
       status={status}
       role={props.role ?? (status === "danger" ? "alert" : "status")}
-      className={className}
+      className={classes("ss-notice", className)}
+      data-kind={status}
     >
       <Alert.Indicator>
         {Icon && <Icon size={18} aria-hidden="true" />}
@@ -1105,12 +1177,10 @@ export function Modal({
                 }
 
                 const target = event.target;
-                if (
-                  !(
-                    target instanceof HTMLInputElement ||
-                    target instanceof HTMLSelectElement
-                  )
-                ) {
+                if (!(
+                  target instanceof HTMLInputElement ||
+                  target instanceof HTMLSelectElement
+                )) {
                   return;
                 }
 

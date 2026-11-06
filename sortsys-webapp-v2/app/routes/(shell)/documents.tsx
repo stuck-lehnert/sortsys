@@ -1,3 +1,4 @@
+import { projectFileHref } from "~/lib/projectFileLinks";
 import {
   Button,
   Form,
@@ -67,9 +68,15 @@ export default function DocumentsPage() {
   }, [query]);
 
   const [results, error] = useClientStream(
-    () => query.length >= 2
-      ? client.streamQuery("projects.files.search", { query, limit: 50n })
-      : from([[[] as DocumentSearchResult[], null] as [DocumentSearchResult[], null]]),
+    () =>
+      query.length >= 2
+        ? client.streamQuery("projects.files.search", { query, limit: 50n })
+        : from([
+            [[] as DocumentSearchResult[], null] as [
+              DocumentSearchResult[],
+              null,
+            ],
+          ]),
     [query],
   );
 
@@ -181,12 +188,10 @@ export default function DocumentsPage() {
               <div className="documents-search__result-copy">
                 <h2 className="text-2xl leading-snug font-semibold">
                   <Link
-                    to={
-                      "/projects/" +
-                      result.projectId +
-                      "/files?file=" +
-                      result.id
-                    }
+                    to={projectFileHref({
+                      projectId: result.projectId,
+                      fileId: result.id,
+                    })}
                   >
                     {result.fileName}
                   </Link>

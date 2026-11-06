@@ -6,6 +6,7 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY rust-api ./rust-api
+COPY seed-assets ./seed-assets
 
 RUN cargo build --release --locked --package sortsys-api
 

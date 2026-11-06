@@ -523,8 +523,7 @@ export default function ImportDeliveryNotePage() {
                 scan.state === "completed" || scan.state === "failed";
 
               return (
-                <UIAction
-                  kind="ghost"
+                <button
                   key={scan.id}
                   type="button"
                   className="delivery-scan-history-row"
@@ -571,7 +570,7 @@ export default function ImportDeliveryNotePage() {
                   {scan.state === "completed" && (
                     <Icons.AccordionClosed aria-hidden="true" />
                   )}
-                </UIAction>
+                </button>
               );
             })}
           </div>

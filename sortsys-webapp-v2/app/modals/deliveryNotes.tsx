@@ -71,9 +71,7 @@ export function showCreateDeliveryNoteModal(
           return id;
         })
       );
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(
-        prefill ? null : "record:" + recordIds[0] + ":product",
-      );
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
       const createEntityAction = useCreateEntityAction(modals);
       const forceUpdate = useForceUpdate();
 
@@ -144,7 +142,7 @@ export function showCreateDeliveryNoteModal(
                 <MyForm.MultiSelect
                   name={prefix + "product"}
                   labelText={uiText("Produkt")}
-                  autoFocus={autoFocusFieldName === prefix + "product"}
+                  focusOnMount={autoFocusFieldName === prefix + "product"}
                   minSelectedItems={1}
                   maxSelectedItems={1}
                   getOptions={async ({ query }) => {
@@ -274,7 +272,7 @@ export function showCreateDeliveryNoteModal(
                       required
                       name={prefix + "name"}
                       labelText={uiText("Bezeichnung")}
-                      autoFocus={autoFocusFieldName === prefix + "name"}
+                      focusOnMount={autoFocusFieldName === prefix + "name"}
                     />
 
                     <div className="flex gap-2">
@@ -553,7 +551,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                 <MyForm.MultiSelect
                   name={`record:${id}:product`}
                   labelText={uiText("Produkt")}
-                  autoFocus={autoFocusFieldName === `record:${id}:product`}
+                  focusOnMount={autoFocusFieldName === `record:${id}:product`}
                   minSelectedItems={1}
                   maxSelectedItems={1}
                   getOptions={async ({ query }) => {
@@ -681,7 +679,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                         required
                         name={`specialRecord:${id}:name`}
                         labelText={uiText("Bezeichnung")}
-                        autoFocus={
+                        focusOnMount={
                           autoFocusFieldName === `specialRecord:${id}:name`
                         }
                       />

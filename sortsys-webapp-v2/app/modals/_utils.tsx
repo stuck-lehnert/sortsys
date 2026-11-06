@@ -80,7 +80,7 @@ export function ContactChannelsFormFields({ phoneNumbers = [], emailAddresses = 
           <MyForm.Input
             name={`${kind}:${id}:name`}
             labelText={uiText("Bezeichnung")}
-            autoFocus={autoFocusFieldName === `${kind}:${id}:name`}
+            focusOnMount={autoFocusFieldName === `${kind}:${id}:name`}
           />
         </div>
 

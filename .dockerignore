@@ -8,6 +8,8 @@ sortsys-api-v2/**
 !sortsys-dwgviewer/**
 !sortsys-react-components/
 !sortsys-react-components/**
+!sortsys-gaeb/
+!sortsys-gaeb/**
 !sortsys-webapp-v2/
 !sortsys-webapp-v2/**
 

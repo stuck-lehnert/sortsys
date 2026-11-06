@@ -6,6 +6,7 @@
       "name": "@sortsys/react-components",
       "dependencies": {
         "@heroui/react": "3.2.6",
+        "react-aria-components": "1.22.1",
       },
       "devDependencies": {
         "@types/react": "^19.3.0",

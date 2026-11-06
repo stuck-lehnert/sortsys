@@ -7,6 +7,7 @@ updates:
       - /sortsys-webapp-v2
       - /sortsys-dwgviewer
       - /sortsys-react-components
+      - /sortsys-gaeb
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -29,6 +30,7 @@ updates:
 
   - package-ecosystem: bun
     directories:
+      - /sortsys-gaeb
       - /sortsys-api-v2/client
       - /sortsys-webapp-v2
     schedule:

@@ -50,6 +50,7 @@ export interface MyInputProps<ItemT = any, PrepT = any>
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   id?: string;
   labelText: string;
+  focusOnMount?: boolean;
   suffix?: React.ReactNode;
   textArea?: boolean;
   rules?: MyRule<string>[];
@@ -106,6 +107,7 @@ export interface MyMultiSelectProps<
 > extends React.HTMLAttributes<HTMLDivElement> {
   name?: string;
   labelText: string;
+  focusOnMount?: boolean;
   renderTile?: (item: T) => React.ReactNode;
   renderTileDisallowUndo?: boolean;
   minSelectedItems?: number;

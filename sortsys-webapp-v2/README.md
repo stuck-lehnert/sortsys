@@ -42,6 +42,13 @@ Users can create DOCX, PPTX, XLSX, and diagrams.net files directly in a project'
 
 Uploaded PDFs are indexed in the background. The **Documents** view searches file names and recognized PDF text across every project the current user may access.
 
+Project attachments open at `/projects/:id/files/:fileId`. The viewer stays above
+the mounted attachment browser, retaining its current search and selection.
+Direct links and reloads reopen the file; Back closes through the editor's save
+guard, and Forward reopens it. Gallery navigation replaces the file ID in the
+same history entry. Older `/projects/:id/files?file=:fileId` links still work and
+are normalized to the new path. Unavailable files show an access/error message.
+
 PDF attachments open in the locally hosted [Mozilla PDF.js viewer](https://github.com/mozilla/pdf.js),
 with its own search, page navigation, zoom, print and download controls.
 The viewer loads on demand and follows the user's UI language.

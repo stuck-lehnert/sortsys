@@ -21,13 +21,46 @@ const VISIT_HISTORY_LIMIT: i64 = 100;
 const ACTION_HISTORY_LIMIT: i64 = 200;
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    builder.query_stub::<Option<ActivityListInput>, Vec<Activity>>("personalization.activity.list")
+    builder
+        .query_stub::<Option<ActivityListInput>, Vec<Activity>>("personalization.activity.list")
+        .query_stub::<(), GaebViewPreferences>("personalization.gaebView.get")
+        .mutation_stub::<GaebViewPreferences, Success>("personalization.gaebView.set")
 }
 
 pub fn register(
     mut builder: ProcedureRegistryBuilder,
     state: Arc<AppState>,
 ) -> ProcedureRegistryBuilder {
+    let view_get_state = Arc::clone(&state);
+    builder = builder.query(
+        "personalization.gaebView.get",
+        move |context, _input: ()| {
+            let state = Arc::clone(&view_get_state);
+            async move {
+                let (auth, pool) = authenticated_pool(&state, &context).await?;
+                let user = auth.user.id.parse::<i64>().map_err(internal)?;
+                let row: Option<sqlx::types::Json<GaebViewPreferences>> = sqlx::query_scalar(
+                    "SELECT preferences FROM user_gaeb_view_preferences WHERE user_id=$1",
+                )
+                .bind(user)
+                .fetch_optional(&pool)
+                .await
+                .map_err(internal)?;
+                Ok(row.map(|value| value.0).unwrap_or_default())
+            }
+        },
+    );
+    let view_set_state = Arc::clone(&state);
+    builder = builder.mutation("personalization.gaebView.set", move |context, input: GaebViewPreferences| {
+        let state = Arc::clone(&view_set_state);
+        async move {
+            let (auth, pool) = authenticated_pool(&state, &context).await?;
+            let user = auth.user.id.parse::<i64>().map_err(internal)?;
+            if !(200..=600).contains(&input.outline_width) || input.zoom.is_some_and(|value| !value.is_finite() || !(0.25..=3.0).contains(&value)) { return Err(bad_request("Invalid editor view preferences")); }
+            sqlx::query("INSERT INTO user_gaeb_view_preferences(user_id,preferences) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET preferences=EXCLUDED.preferences").bind(user).bind(sqlx::types::Json(input)).execute(&pool).await.map_err(internal)?;
+            Ok(Success {success:true})
+        }
+    });
     let activity_state = Arc::clone(&state);
     builder = builder.query(
         "personalization.activity.list",
@@ -669,6 +702,27 @@ impl From<ActivityRow> for Activity {
             occurred_at: row.occurred_at,
             created_at: row.created_at,
             modified_at: row.modified_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+struct GaebViewPreferences {
+    show_fields: bool,
+    outline_open: bool,
+    outline_width: u32,
+    ribbon_collapsed: bool,
+    zoom: Option<f64>,
+}
+impl Default for GaebViewPreferences {
+    fn default() -> Self {
+        Self {
+            show_fields: true,
+            outline_open: true,
+            outline_width: 320,
+            ribbon_collapsed: false,
+            zoom: None,
         }
     }
 }

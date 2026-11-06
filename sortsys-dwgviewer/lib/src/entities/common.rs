@@ -74,7 +74,13 @@ pub(super) fn read_entity_display_properties(
     version_code: &str,
     mut common: Common,
 ) -> ParseResult<Common> {
-    if is_r2004_or_later(version_code) && !is_r2010_or_later(version_code) {
+    if version_code == "AC1015" {
+        // R2000 common data stores entity mode and persistent reactor count
+        // before the no-links flag (ODA Common Entity Data).
+        cursor.read_bits(2)?;
+        cursor.read_bit_long()?;
+        cursor.read_bit()?;
+    } else if is_r2004_or_later(version_code) && !is_r2010_or_later(version_code) {
         cursor.read_bits(5)?;
     } else {
         cursor.read_bit()?;

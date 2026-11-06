@@ -2,6 +2,16 @@
 
 sortsys is a web-based operations system for construction and trade businesses. It covers customers, projects, personnel planning, absences, tools and inventory, products, delivery notes, daily reports, Regieberichte, project files, and cost tracking. The interface is available in German and English.
 
+## Client-side processing
+
+Features and changes run processing in the browser whenever it can be performed
+locally. This includes file parsing and format conversion, document editing,
+rendering, calculations, schema validation, and PDF generation. Heavy local work
+belongs in Web Workers or WebAssembly. D83/P83 requests follow this rule too: the
+browser reads them and prepares their native X83 representation before saving.
+The API provides durable storage, access control, collaboration, and checks that
+require authoritative shared state or atomic transactions.
+
 ## Repository layout
 
 | Path | Purpose | Main technology |
@@ -12,6 +22,7 @@ sortsys is a web-based operations system for construction and trade businesses. 
 | [`sortsys-webapp-v2`](sortsys-webapp-v2/README.md) | Browser application | React 19, React Router 7 |
 | [`sortsys-react-components`](sortsys-react-components/README.md) | Shared UI components and styles | React, CSS |
 | [`sortsys-dwgviewer`](sortsys-dwgviewer/README.md) | PDF and DWG plan viewer | React, Canvas, Web Workers |
+| [`sortsys-gaeb`](sortsys-gaeb/README.md) | Independent GAEB editor suite for X83/X84/X86/X87/X31 | React, Canvas, browser-only XML/XSD |
 | [`sortsys-dwgviewer/lib`](sortsys-dwgviewer/lib/README.md) | DWG parser compiled to WebAssembly | Rust |
 | [`sortsys-v2-job_runner`](sortsys-v2-job_runner/README.md) | Media and OCR worker | Go |
 
@@ -63,6 +74,37 @@ values in `.env`. The file is parsed as data, never sourced as shell code.
 
 The seeded tenant is `test`. Its default users are `john.doe` and `frank.doe`; both use the development password `123456`, and `john.doe` is an administrator. These credentials are for local development only. Startup also installs the Sortsys company logo through the normal upload API and waits for its WebP conversion and download to succeed.
 
+Development seeding also installs the fictional company address in Administration →
+Organization and adds native contractor workflows: inquiries, offers, X85 alternatives,
+variations, X86/X87 contracts, X31 measurements, subcontract packages, X52 cost
+components, X93/X94/X96/X97 supplier exchanges and X89 billing. Examples cover draft,
+submitted, accepted, declined, withdrawn, approved and payment states where relevant.
+Progress invoices include work-based and lump-sum examples; final invoices deduct
+issued progress invoices, while ordinary invoices belong to contracts without them.
+Positions are generated from the seed RNG, with shared stable IDs along each chain.
+Seeded X31 examples contain six measured positions with 24 editable approaches:
+room labels, counts, lengths, surfaces, three dimensions, arch factors, triangles,
+trapezoids, opening deductions and partial lump-sum work. Quantities are calculated
+from the native FN91 records with exact decimal arithmetic. The per-opening 2.50 m²
+rule includes examples below, exactly at and above the limit. Project, measurement
+name and referenced contract remain separate.
+
+The document extension is additive and versioned by `development_seed_manifests`:
+rerunning `seed_dev` on an existing development tenant adds missing demo scenarios
+once and keeps existing workflows and organization edits. A separate measurement
+manifest adds the richer examples to older seed databases without changing their
+existing documents. To apply just these document extensions to the running dev
+container, use `docker exec sortsys-dev-api cargo run --package sortsys-api --bin seed_dev -- --extend-native-documents`.
+The full `scripts/dev`
+bootstrap still uses its normal development database lifecycle. The committed
+[seed assets](sortsys-api-v2/seed-assets/README.md) include two DWG/PDF plans,
+two other PDFs, and two MSG/EML pairs with PDF attachments. Runtime seeding uploads
+their fixed bytes into project folders instead of generating new binary documents.
+
+If the API stops during compilation or development seeding, its container remains
+available for `docker logs sortsys-dev-api`. The complete startup log is also kept
+at `.dev-data/logs/api-startup.log`; the next start replaces the failed container.
+
 Press `Ctrl+C` to stop the stack and remove its development containers. The port and image defaults can be changed through the `DEV_*` variables declared near the top of [`scripts/dev`](scripts/dev).
 
 ## Tests
@@ -86,6 +128,33 @@ WebAssembly, client, and webapp outputs. Fresh-instance tests, populated-deploy
 upgrade tests, and runtime checks reuse that build. Publishing copies the checked
 OCI images, including their SBOM and provenance, without compiling again. The
 pinned `deploy` revision has a separate seeder build for the upgrade fixture.
+
+### API replicas and collaboration
+
+API instances may run independently behind a load balancer. They must share the
+master/tenant PostgreSQL databases, object storage and signing/encryption secrets.
+Tenant migrations and master schema setup acquire transaction-scoped advisory
+locks before any DDL; schema changes and migration history commit together.
+Native document writes use row locks and exact revisions, invoice counters use
+atomic database increments, and jobs use database-backed acquisition/leases.
+
+GAEB collaboration uses Yjs/yrs with a tenant-local PostgreSQL delta log and
+LISTEN/NOTIFY. Field initialization is serialized per document so replicas never
+insert the baseline twice. Small deltas travel in notifications; larger changes
+are read from the log. Periodic checkpoints bound replay work. Cursor updates are
+coalesced, presence expires after crashes, and listener reconnection reconciles
+missed changes. Native file and workflow notifications commit with their writes
+through database triggers. Document parsing, calculation, validation and printing
+remain in the browser.
+
+No sticky routing or singleton API/document server is required. Enable WebSocket
+upgrades and allow at least 90 seconds of idle time at the load balancer. The
+listener uses its own session connection (one per active tenant and replica,
+released after one idle minute); PostgreSQL must be reachable with session
+semantics, not through a transaction-only pooler. Business connections remain in
+the existing bounded pools. `scripts/test-api` includes independent API replicas,
+concurrent initialization/edits, cursor presence, checkpoint replay, listener
+recovery and eight concurrent migration runners.
 
 ### Frontend UI checks
 

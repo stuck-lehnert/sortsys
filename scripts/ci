@@ -101,6 +101,15 @@ echo "Checking the shared component implementation"
   bun run typecheck
 )
 
+echo "Checking the standalone GAEB editor suite"
+(
+  cd sortsys-gaeb
+  bun install --frozen-lockfile
+  bun run typecheck
+  bun test
+  bun run build
+)
+
 echo
 echo "Running webapp checks and building the webapp once"
 (
@@ -125,6 +134,7 @@ echo "Running webapp checks and building the webapp once"
   bun run test:security-deps
   bun run test:pdf
   bun run test:regie-list
+  bun run test:invoice-numbering
   bun run build
 
   if [ "${CI:-}" = "true" ]; then
@@ -134,6 +144,7 @@ echo "Running webapp checks and building the webapp once"
   fi
 
   SORTSYS_UI_ASSETS="$PWD/build/client" bun run test:ui
+  (cd ../sortsys-gaeb && bun run test:browser)
 )
 
 if [ -n "$CI_BUILD_DIR" ]; then

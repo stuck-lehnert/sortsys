@@ -95,6 +95,18 @@ async fn create_entry(
     let creator_id = auth.user.id.parse::<i64>().map_err(internal)?;
 
     ensure_project_exists(&pool, input.project_id).await?;
+    if input.entry_type == "offer" {
+        let managed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM commercial_cases WHERE project_id=$1 AND kind='offer')",
+        )
+        .bind(input.project_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(internal)?;
+        if managed {
+            return Err(bad_request("Create a variation in the contract workflow"));
+        }
+    }
 
     sqlx::query(
         r#"
@@ -133,6 +145,7 @@ async fn update_entry(
         SET amount = $3, comment = $4
         WHERE id = $1
           AND project_id = $2
+          AND commercial_case_id IS NULL
         "#,
     )
     .bind(input.id.0)
@@ -158,7 +171,7 @@ async fn delete_entry(
     let (_, pool) = authorized_pool(state, context, "manage:projects").await?;
 
     let result =
-        sqlx::query("DELETE FROM project_financial_entries WHERE id = $1 AND project_id = $2")
+        sqlx::query("DELETE FROM project_financial_entries WHERE id = $1 AND project_id = $2 AND commercial_case_id IS NULL")
             .bind(input.id.0)
             .bind(input.project_id.0)
             .execute(&pool)
@@ -494,7 +507,7 @@ async fn get(state: &AppState, context: &RequestContext, input: Value) -> RpcRes
 
     let financial_entries = sqlx::query_as::<_, FinancialEntryRow>(
         r#"
-        SELECT id, project_id, type, amount, comment, created_by_user_id, created_at
+        SELECT id, project_id, type, amount, comment, created_by_user_id, created_at, commercial_case_id
         FROM project_financial_entries
         WHERE project_id = $1
           AND ($2::timestamptz IS NULL OR created_at >= $2)
@@ -1043,6 +1056,7 @@ struct OverviewRow {
 #[derive(FromRow)]
 struct FinancialEntryRow {
     id: i64,
+    commercial_case_id: Option<i64>,
     project_id: i64,
 
     #[sqlx(rename = "type")]
@@ -1059,6 +1073,7 @@ impl FinancialEntryRow {
         json!({
             "id": Id(self.id),
             "projectId": Id(self.project_id),
+            "commercialCaseId": self.commercial_case_id.map(Id),
             "type": self.entry_type,
             "amount": self.amount,
             "comment": self.comment,

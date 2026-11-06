@@ -15,6 +15,7 @@ const HOST = (() => {
 
   return '/api/v2';
 })();
+export const API_ENDPOINT = HOST;
 
 const baseClient = createClient(HOST, "webapp", {
   revision: BUILD_REVISION,
@@ -143,7 +144,8 @@ export const client: Client = {
   mutate: (async (path: any, input: any, opts: any) => {
     const result = await baseClient.mutate(path, input, opts);
     const err = result[1];
-    if (err && path !== 'errorReports.report') {
+    const expectedDocumentConflict = ['projects.files.xmlSave', 'commercial.documents.save'].includes(path) && err?.message.includes('changed in another editor');
+    if (err && path !== 'errorReports.report' && !expectedDocumentConflict) {
       void reportClientError({
         source: 'client.mutate',
         message: errorMessage(err),

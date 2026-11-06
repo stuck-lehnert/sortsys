@@ -31,6 +31,7 @@ import { nowrap } from "~/lib/primitives";
 import type { PromiseOr } from "~/type-helpers";
 import { useUserActions, type UserAction } from "~/lib/userActions";
 import { showCommandPaletteModal } from "~/modals/commandPalette";
+import { CommercialLinkHandler } from "~/modals/commercial";
 
 const MySideNavMenu = function (_props: ComponentProps<typeof SideNavMenu>) {
   const { children, ...props } = _props;
@@ -118,7 +119,8 @@ export default Authenticated(function () {
 
   useShortcut("Control+n", (e) => {
     const actionIdByPath: Record<string, string> = {
-      "/projects": "projects.create",
+      "/projects": "offers.create",
+      "/offers": "offers.create",
       "/tools": "tools.create",
       "/products": "products.create",
       "/products/deliveryNotes": "deliveryNotes.create",
@@ -204,6 +206,7 @@ export default Authenticated(function () {
 
   return (
     <div data-small={isSmall.toString()}>
+      <CommercialLinkHandler />
       <Header>
         <SkipToContent />
 
@@ -301,6 +304,8 @@ export default Authenticated(function () {
             title={t("shell.projectWork")}
             renderIcon={Icons.Project}
             defaultExpanded={
+              isPathActive("/offers") ||
+              isPathActive("/commercial") ||
               isPathActive("/projects") ||
               isPathActive("/regieReports") ||
               isPathActive("/documents") ||
@@ -308,6 +313,7 @@ export default Authenticated(function () {
               isPathActive("/vacations")
             }
           >
+            {canViewProjects && <MySideNavLink icon={Icons.DocumentAdd} href="/offers" title={uiText("Angebote", "Offers")} />}
             {canViewProjects && (
               <MySideNavLink
                 icon={Icons.Project}

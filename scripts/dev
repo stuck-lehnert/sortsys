@@ -20,12 +20,14 @@ DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
 DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
 DEV_DATA_DIR="$ROOT_DIR/.dev-data"
+DEV_PRESERVE_FAILED_API=false
 DEV_POSTGRES_DATA_DIR="$DEV_DATA_DIR/postgres"
 DEV_S3_DATA_DIR="$DEV_DATA_DIR/s3"
 DEV_GO_BUILD_CACHE_DIR="$DEV_DATA_DIR/go-build"
 DEV_GO_MODULE_CACHE_DIR="$DEV_DATA_DIR/go-modules"
 DEV_WEBAPP_DEPS_DIR="$DEV_DATA_DIR/webapp-dependencies"
 DEV_DWG_DEPS_DIR="$DEV_DATA_DIR/dwgviewer-dependencies"
+DEV_GAEB_DEPS_DIR="$DEV_DATA_DIR/gaeb-dependencies"
 DEV_ONLYOFFICE_DATA_DIR="$DEV_DATA_DIR/euro-office/data"
 DEV_ONLYOFFICE_STATE_DIR="$DEV_DATA_DIR/euro-office/state"
 DEV_ONLYOFFICE_DATABASE_DIR="$DEV_DATA_DIR/euro-office/database"
@@ -245,6 +247,7 @@ prepare_development_directories() {
     "$DEV_GO_MODULE_CACHE_DIR" \
     "$DEV_WEBAPP_DEPS_DIR" \
     "$DEV_DWG_DEPS_DIR" \
+    "$DEV_GAEB_DEPS_DIR" \
     "$DEV_ONLYOFFICE_DATA_DIR" \
     "$DEV_ONLYOFFICE_STATE_DIR" \
     "$DEV_ONLYOFFICE_DATABASE_DIR" \
@@ -255,6 +258,9 @@ cleanup_containers() {
   local pids=()
 
   for container_name in "${DEV_ALL_CONTAINERS[@]}"; do
+    if [ "$container_name" = "$DEV_API_CONTAINER" ] && [ "${DEV_PRESERVE_FAILED_API:-false}" = true ]; then
+      continue
+    fi
     "$CONTAINER_RUNTIME" rm -f "$container_name" >/dev/null 2>&1 &
     pids+=("$!")
   done
@@ -443,6 +449,11 @@ wait_for_api_ready() {
   for ((attempt = 1; attempt <= 600; attempt++)); do
     if ! container_is_running "$DEV_API_CONTAINER"; then
       echo "API container stopped during startup" >&2
+      DEV_PRESERVE_FAILED_API=true
+      "$CONTAINER_RUNTIME" inspect --format \
+        'Exit code={{.State.ExitCode}}; OOM killed={{.State.OOMKilled}}; error={{.State.Error}}' \
+        "$DEV_API_CONTAINER" >&2 || true
+      echo "Failed API container retained: ${CONTAINER_RUNTIME} logs ${DEV_API_CONTAINER}" >&2
       return 1
     fi
     if "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" 2>&1 |
@@ -736,7 +747,6 @@ start_api_container() {
   echo "Starting containerized API on port ${DEV_API_PORT}"
 
   printf '%s\n' "$DEV_LLM_ENV_CONTENT" | "$CONTAINER_RUNTIME" run -d \
-    --rm \
     --name "$DEV_API_CONTAINER" \
     "${runtime_pull_args[@]}" \
     "${runtime_user_args[@]}" \
@@ -797,7 +807,10 @@ start_api_container() {
   cleanup_llm_environment
 
   if ! wait_for_api_ready; then
-    "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" || true
+    mkdir -p "$DEV_DATA_DIR/logs"
+    "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" > "$DEV_DATA_DIR/logs/api-startup.log" 2>&1 || true
+    tail -n 150 "$DEV_DATA_DIR/logs/api-startup.log" >&2
+    echo "Full API startup log: $DEV_DATA_DIR/logs/api-startup.log" >&2
     exit 1
   fi
 }
@@ -927,6 +940,7 @@ start_webapp_container() {
     -w /workspace/sortsys-webapp-v2 \
     -v "${DEV_WEBAPP_DEPS_DIR}:/workspace/sortsys-webapp-v2/node_modules${runtime_mount_suffix}" \
     -v "${DEV_DWG_DEPS_DIR}:/workspace/sortsys-dwgviewer/node_modules${runtime_mount_suffix}" \
+    -v "${DEV_GAEB_DEPS_DIR}:/workspace/sortsys-gaeb/node_modules${runtime_mount_suffix}" \
     -e CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}" \
     -e DEV_WEBAPP_PORT="$DEV_WEBAPP_PORT" \
     -e SORTSYS_REVISION="$DEV_REVISION" \
@@ -976,6 +990,7 @@ start_webapp_container() {
       }
 
       ensure_dependencies /workspace/sortsys-dwgviewer ci
+      ensure_dependencies /workspace/sortsys-gaeb ci
       ensure_dependencies \
         /workspace/sortsys-webapp-v2 \
         install \

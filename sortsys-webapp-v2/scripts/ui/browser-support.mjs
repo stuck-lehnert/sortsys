@@ -15,6 +15,7 @@ export const fixtureDirectory = join(
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
+  [".mjs", "text/javascript; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".json", "application/json"],
   [".woff2", "font/woff2"],
@@ -22,7 +23,11 @@ const contentTypes = new Map([
   [".ttf", "font/ttf"],
   [".svg", "image/svg+xml"],
   [".png", "image/png"],
+  [".gif", "image/gif"],
   [".wasm", "application/wasm"],
+  [".ftl", "text/plain; charset=utf-8"],
+  [".bcmap", "application/octet-stream"],
+  [".pfb", "application/octet-stream"],
 ]);
 
 function containedFile(root, pathname) {
@@ -44,13 +49,20 @@ export async function createFixtureServer() {
       const pathname = decodeURIComponent(
         new URL(request.url, "http://fixture.invalid").pathname,
       );
-      if (pathname === "/" || pathname === "/controls") {
+      if (
+        pathname === "/" ||
+        pathname === "/controls" ||
+        /^\/(?:admin|settings|projects|import)(?:\/|$)/.test(pathname) ||
+        /^\/(?:offers(?:\/new)?|gaeb\/[^/]+)\/?$/.test(pathname)
+      ) {
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         response.end(html);
         return;
       }
 
-      const root = pathname.startsWith("/assets/") ? assets : fixtureDirectory;
+      const root = /^\/(?:assets|pdfjs)\//.test(pathname)
+        ? assets
+        : fixtureDirectory;
       const filename = containedFile(root, pathname);
       const contentType = filename && contentTypes.get(extname(filename));
       if (!filename || !contentType) {

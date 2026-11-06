@@ -179,6 +179,39 @@ pub fn build_project_object_key(
     }
 }
 
+pub fn build_commercial_object_key(
+    config: &EnabledStorage,
+    case_id: Id,
+    file_name: &str,
+) -> String {
+    let prefix = clean_path(config.key_prefix.as_deref().unwrap_or_default());
+    let path = format!(
+        "commercial/{}/documents/{}-{}",
+        case_id.encode(),
+        unique_nonce(),
+        normalize_file_name(file_name)
+    );
+    if prefix.is_empty() {
+        path
+    } else {
+        format!("{prefix}/{path}")
+    }
+}
+
+pub fn build_template_object_key(config: &EnabledStorage, id: Id, file_name: &str) -> String {
+    let prefix = clean_path(config.key_prefix.as_deref().unwrap_or_default());
+    let path = format!(
+        "templates/assets/{}/{}",
+        id.encode(),
+        normalize_file_name(file_name)
+    );
+    if prefix.is_empty() {
+        path
+    } else {
+        format!("{prefix}/{path}")
+    }
+}
+
 pub fn build_export_object_key(config: &EnabledStorage, user_id: i64, file_name: &str) -> String {
     let prefix = clean_path(config.key_prefix.as_deref().unwrap_or_default());
     let safe_name = normalize_file_name(file_name);

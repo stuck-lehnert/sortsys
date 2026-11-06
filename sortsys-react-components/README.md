@@ -24,6 +24,20 @@ Shared styles live in `src/styles.css`. The public exports are declared in `pack
 
 React 19 and React DOM 19 are peer dependencies.
 
+## Keyboard behavior
+
+Autocomplete suggestions support Tab/Shift-Tab and arrow keys using the same
+active result. Enter selects it; Escape dismisses suggestions. Tabbing beyond the
+first/last result continues through the form without accepting a suggestion or
+invoking the create action.
+
+For a field added by an explicit user action, set `focusOnMount` on `MyForm.Input`
+or `MyForm.MultiSelect` for that new row's first field. The request waits until
+field registration/prefill has finished disabling the form, then focuses once.
+It does not refocus on typing or subsequent form updates. Dialog autofocus remains
+separate so initial and asynchronously loaded fields do not steal the dialog's
+focus. Keep initial row requests false and enable them in the add-row handler.
+
 ## License
 
 This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).

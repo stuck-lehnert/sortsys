@@ -62,6 +62,8 @@ await viteBuild({
       "react-stately",
     ],
     alias: [
+      { find: /^@sortsys\/gaeb\/styles\.css$/, replacement: join(repository, "sortsys-gaeb/src/styles.css") },
+      { find: /^@sortsys\/gaeb$/, replacement: join(repository, "sortsys-gaeb/src/index.ts") },
       {
         find: /^iconv-lite$/,
         replacement: join(webapp, "app/lib/msgTextEncoding.ts"),
@@ -108,6 +110,7 @@ await viteBuild({
     },
   ],
   worker: {
+    format: "es",
     rollupOptions: {
       output: {
         entryFileNames: "bundle/[name]-[hash].js",
