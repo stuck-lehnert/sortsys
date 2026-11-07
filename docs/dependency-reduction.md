@@ -1,57 +1,109 @@
-# Dependency reduction
+# Weniger Abhängigkeiten, klarere Zuständigkeiten
 
-Prefer platform features and small first-party modules when they cover the application's actual requirements. Evaluate source usage, generated framework code and both npm and Bun lock graphs before removing a package. A missing application import does not establish that a framework dependency is unused.
+Plattformfunktionen und kleine eigene Module halten sortsys übersichtlich, wenn
+sie die tatsächlichen Anforderungen abdecken. Vor dem Entfernen einer Bibliothek
+Quellnutzung, erzeugten Framework-Code sowie npm- und Bun-Abhängigkeitsbäume
+prüfen. Ein fehlender Anwendungsimport allein belegt keine ungenutzte Abhängigkeit.
 
-## Error boundaries
+## Fehlergrenzen
 
-`sortsys-webapp-v2/app/components/primitives/ErrorBoundary.ts` owns the React error-boundary lifecycle. Its interface supports a fallback renderer, error reporting, explicit retry and reset keys compared with `Object.is`. It has no application UI, translations, network calls or telemetry dependencies.
+`sortsys-webapp-v2/app/components/primitives/ErrorBoundary.ts` übernimmt den
+React-Lebenszyklus einer Fehlergrenze: Ersatzdarstellung, Fehlerweitergabe,
+gezielter erneuter Versuch und mit `Object.is` verglichene Rücksetzschlüssel.
+Das Grundelement enthält keine Anwendungsoberfläche, Übersetzungen, Netzaufrufe
+oder Telemetrieabhängigkeiten.
 
-`ScopedErrorBoundary.tsx` supplies the existing localized fallback and client-error reporting. Feature routes continue to use that wrapper. Keep presentation and reporting out of the generic primitive.
+`ScopedErrorBoundary.tsx` ergänzt die lokalisierte Fehleransicht und
+Client-Fehlermeldung. Fachseiten verwenden diese Hülle weiter; Darstellung und
+Meldung bleiben außerhalb des generischen Grundelements.
 
-The primitive covers descendant rendering and lifecycle failures. React error boundaries do not catch errors from event handlers, arbitrary asynchronous callbacks or server-side rendering. Callers must handle those errors at their respective boundaries.
+Abgedeckt sind Render- und Lebenszyklusfehler untergeordneter Komponenten.
+Ereignishandler, beliebige asynchrone Rückrufe und serverseitiges Rendern benötigen
+eigene Fehlerbehandlung. `npm run test:error-boundary` prüft den Lebenszyklus mit
+kontrollierter Zustandsplanung, jedoch keine Integration mit einem DOM-Renderer.
+Die Tests laufen mit Typprüfung und Produktionsbuild in der CI.
 
-`npm run test:error-boundary` checks the component's lifecycle contract. The tests control state scheduling and are not DOM-renderer integration tests. They run in repository CI alongside typechecks and production builds.
+## Build-Konfiguration
 
-## Build configuration
+Vite 8 löst TypeScript-Pfade mit `resolve.tsconfigPaths: true` auf. Das Plugin
+`vite-tsconfig-paths` ist entfernt; Browser- und lokale Paketaliase bleiben in
+`vite.config.ts` ausdrücklich definiert.
 
-Vite 8 resolves TypeScript paths with `resolve.tsconfigPaths: true`. The `vite-tsconfig-paths` plugin is removed; explicit browser-build and first-party-package aliases remain in `vite.config.ts`.
+`isbot` bleibt direkt abhängig: Der erzeugte React-Router-Servereinstieg benötigt
+es, und das Werkzeug installiert es bei Fehlen selbst in dieser SPA-Konfiguration.
 
-`isbot` remains a direct dependency because React Router's generated server entry requires it and its tooling automatically installs it when missing, including this SPA configuration.
+## API-Client
 
-## API client
+Das veröffentlichte `@sortsys/v2-client` benötigt `rxjs` und `superjson`.
+Das ungenutzte `@types/send` ist entfernt. `@types/node` bleibt für Build-Skripte
+und Tests eine Entwicklungsabhängigkeit; öffentliche Deklarationen verlangen
+keine globalen Node- oder Bun-Typen.
 
-The published `@sortsys/v2-client` package depends on `rxjs` and `superjson`. Its unused `@types/send` dependency is removed. `@types/node` remains a development dependency for build scripts and tests; the public client declarations do not require ambient Node or Bun types.
+Nach dem Client-Build prüft `test:local-package-locks` die veröffentlichten
+Abhängigkeiten und einen Verbraucher mit `types: []` sowie `skipLibCheck: false`.
+Zudem werden npm-/Bun-Metadaten für Client, DWG-Viewer und React-Komponenten mit
+ihren Quellmanifesten verglichen.
 
-`test:local-package-locks` checks the published client dependency list and typechecks a consumer with `types: []` and `skipLibCheck: false`. It also compares the npm and Bun metadata for the API client, DWG viewer and shared React components with their source manifests. Run it after building the client.
+RxJS trägt die öffentliche Observable-Schnittstelle. SuperJSON erhält Datum,
+große Ganzzahlen und nicht definierte Werte im RPC-Protokoll. Ihr Ersatz benötigt
+eine gesonderte Kompatibilitätsprüfung.
 
-RxJS remains part of the public observable interface. SuperJSON preserves the RPC representation of dates, big integers and undefined values. Replacing either library requires a separate compatibility assessment.
+## Rust-API
 
-## Rust API
+`sortsys-api-v2/rust-api/src/hex_encoding.rs` erzeugt mit der Standardbibliothek
+kleingeschriebene Hexadezimaldarstellungen. Führende Nullen bleiben erhalten;
+`AsRef<[u8]>` akzeptiert Byteausschnitte, Arrays und Hash-Puffer. Hashes, HMAC,
+Verschlüsselung und Zufallsquellen der Aufrufer bleiben bestehen.
 
-`sortsys-api-v2/rust-api/src/hex_encoding.rs` provides lowercase hexadecimal encoding using the Rust standard library. It preserves leading zeroes and accepts byte slices, arrays and digest buffers through `AsRef<[u8]>`. Callers retain their existing hash, HMAC, encryption and operating-system randomness implementations.
+`hex` ist keine direkte Abhängigkeit mehr, wird aber weiterhin transitiv von SQLx
+benötigt. Die Zahl aufgelöster Cargo-Pakete sinkt dadurch nicht. Tests vergleichen
+leere Eingaben, typische Bytes und alle Bytewerte mit der Standardformatierung.
+Der konstante AES-GCM-Testvektor ist als Bytefolge hinterlegt.
 
-The API no longer declares `hex` directly. SQLx still requires that crate transitively, so this change removes a direct dependency without reducing the resolved Cargo package count. The helper's unit tests cover empty input, representative bytes and every byte value against standard-library formatting. The constant AES-GCM test vector is written as bytes instead of requiring a decoder.
+## DWG-Viewer
 
-## DWG viewer
+Der Viewer führt seine 31 bisherigen Prüfungen mit `node:test` und
+`node:assert/strict` unter Node 24 aus. Native TypeScript-Verarbeitung ersetzt
+den Test-Transpiler. Nach Entfernung von `vitest` schrumpft die eigene npm-Lockdatei
+von 103 auf 43 Einträge einschließlich Paketwurzel und optionaler Plattformpakete;
+andere Paketversionen dieser Lockdatei ändern sich nicht.
 
-The viewer runs its 31 existing tests with Node 24's `node:test` and `node:assert/strict`. Native TypeScript stripping executes the core modules without a test transpiler. `vitest` is removed from the viewer manifest; its standalone npm lock shrinks from 103 to 43 entries, including the root and optional platform packages. No remaining package version changes in that lock.
+`viewportInteractionTransform` liegt als reine Funktion in `src/core/cadViewport.ts`.
+`PlanViewer.tsx` verwendet sie und erhält den bisherigen benannten Export.
+Geometrie, Darstellungsmodell, Normalisierung und Szenenadapter bleiben geprüft;
+der Browser-Renderer selbst ist nicht Teil dieser Tests.
 
-The pure `viewportInteractionTransform` function lives in `src/core/cadViewport.ts`. `PlanViewer.tsx` uses it and retains the previous named export. Geometry, render-model, normalization and scene-adapter assertions remain covered. These tests do not exercise a browser renderer.
+`src/assets.d.ts` beschreibt WASM-URLs und eingebettete Worker-Konstruktoren.
+Der Viewer benötigt dadurch keine globalen Vite-Clienttypen. Die Webapp bündelt
+ihn weiterhin mit Vite.
 
-`src/assets.d.ts` defines the two asset import forms used by the viewer: WASM URLs and inline worker constructors. This removes the viewer's dependence on Vite's ambient client types. The webapp continues to bundle the viewer with Vite.
+Die erneuerten lokalen Paketmetadaten korrigieren auch alte Node-22-/25-Einträge
+und fehlende TypeScript-7-Deklarationen im Bun-Lock der Webapp. Gegenüber dem Stand
+vor der Umstellung entfallen vier Einträge und kommen 23 hinzu: 20 optionale
+TypeScript-7-Plattformpakete, der lokale Viewer-TypeScript-Eintrag und zwei
+React-Typeinträge. Der Zuwachs um 19 dokumentiert bereits erklärte Abhängigkeiten.
 
-Refreshing the local-package metadata also corrects stale Node 22/25 entries and the viewer's missing TypeScript 7 declarations in the webapp Bun lock. Compared with the lock before this project-wide pass, four entries disappear and 23 appear: TypeScript 7's 20 optional platform packages, its viewer-local package entry and two viewer-local React type entries. The Bun lock therefore grows by 19 entries. These are existing declared development requirements made explicit in the lock, rather than new test-framework dependencies.
+## Weitere Komponenten
 
-## Other components
+Die React-Komponenten deklarieren nur React und React DOM als Peer-Abhängigkeiten.
+Die Lockdatei-Prüfung erfasst ihre lokalen Metadaten; zusätzliche Hilfsbibliotheken
+werden nicht eingeführt.
 
-The shared React components already declare only React and React DOM peers. Their local-package metadata is covered by the lock tests; no additional utility dependency is introduced.
+Der Rust-DWG-Parser behält Serde und Serde JSON für Szenen und Worker-Schnittstelle.
+Der Go-Hintergrunddienst verwendet Gorilla WebSocket für den Transport, nativewebp
+für WebP und `golang.org/x/image/draw` für Catmull–Rom-Skalierung. Ein Ersatz
+verlangt passende Transport-, Format- oder Bildqualitätstests.
 
-The Rust DWG parser retains Serde and Serde JSON for its scene serialization and browser-worker ABI. The Go job runner uses each of its three dependencies: Gorilla WebSocket for runner transport, nativewebp for WebP decoding and encoding, and `golang.org/x/image/draw` for Catmull–Rom image scaling. Replacing these requires transport, format or image-quality tests beyond a small helper replacement.
+Build und Wartung verwenden die vorhandenen Node-, Python-, Shell- und
+Sprachwerkzeuge. Es wird keine Ersatz-Testbibliothek eingeführt.
 
-Build and maintenance scripts continue to use the existing Node, Python, shell and language toolchains. No replacement test library is added.
+## Weitere Ablösungen
 
-## Further replacements
+Vor einem Ersatz eine kleine typisierte Schnittstelle und das benötigte Verhalten
+festlegen, anschließend Grenzfälle prüfen. Kontrollieren, ob transitive Pakete
+tatsächlich verschwinden und keine neue Testabhängigkeit die Ersparnis aufhebt.
+Beide Lockdateien und das Lizenzverzeichnis aktualisieren.
 
-Use a separate module with a small typed interface, define the required behavior before implementation, and test edge cases before removing the existing dependency. Check that transitive packages actually disappear and that no replacement test dependency offsets the reduction. Update both lock graphs and the license inventory.
-
-Rich-text parsing, HTML sanitization, cryptography, compression, complex document formats and large editors need a separate assessment. These areas have substantial compatibility or security requirements and are outside this initial replacement.
+Rich Text, HTML-Bereinigung, Kryptografie, Kompression, komplexe Dokumentformate
+und große Editoren benötigen wegen ihrer Kompatibilitäts- und Sicherheitsanforderungen
+eine eigenständige Bewertung.

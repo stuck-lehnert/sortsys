@@ -10,7 +10,8 @@ node ./scripts/check-runtime-versions.mjs
 node --test ./scripts/check-runtime-versions.test.mjs
 
 echo "Checking branch promotion and API test orchestration"
-node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs
+node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs \
+  ./scripts/reuse-ci-success.test.mjs
 
 echo
 echo "Checking Docker contexts and Compose configurations"

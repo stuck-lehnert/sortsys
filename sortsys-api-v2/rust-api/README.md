@@ -1,26 +1,28 @@
 # sortsys-api
 
-`sortsys-api` is the Rust backend for sortsys. It serves the typed batched RPC API, manages tenant databases, authenticates users and passkeys, signs object-storage requests, runs migrations, and coordinates background jobs over WebSockets.
+Das Rust-Backend hält die betrieblichen Abläufe zusammen: typisierte, gebündelte
+RPC-Aufrufe, Mandantendatenbanken, Benutzer und Passkeys, signierte Speicherzugriffe,
+Migrationen und Hintergrundaufträge über WebSockets.
 
-## Code map
+## Orientierung im Code
 
-| Path | Responsibility |
+| Pfad | Zuständigkeit |
 | --- | --- |
-| `src/main.rs` | process startup and HTTP listener |
-| `src/api.rs` | procedure registry and generated contract metadata |
-| `src/rpc.rs` | HTTP batching, SuperJSON-compatible values, and error envelopes |
-| `src/procedures/` | procedure validation and database operations by domain |
-| `src/auth.rs` and `src/webauthn.rs` | sessions, authorization, passwords, and passkeys |
-| `src/managed_db.rs` | tenant database lifecycle and backups |
-| `src/object_storage.rs` | S3-compatible object storage |
-| `src/job_runners.rs` | internal worker WebSocket protocol |
-| `src/seed.rs` | plausible development and test data |
-| `migrations/` | ordered PostgreSQL tenant migrations |
-| `tests/network_scenarios.rs` | end-to-end RPC scenarios against live services |
+| `src/main.rs` | Prozessstart und HTTP-Listener |
+| `src/api.rs` | Prozedurregistrierung und Metadaten des erzeugten Vertrags |
+| `src/rpc.rs` | HTTP-Bündelung, SuperJSON-kompatible Werte und Fehlerhüllen |
+| `src/procedures/` | fachliche Validierung und Datenbankzugriffe |
+| `src/auth.rs` und `src/webauthn.rs` | Sitzungen, Rechte, Passwörter und Passkeys |
+| `src/managed_db.rs` | Lebenszyklus und Sicherungen von Mandantendatenbanken |
+| `src/object_storage.rs` | S3-kompatibler Objektspeicher |
+| `src/job_runners.rs` | internes WebSocket-Protokoll der Hintergrunddienste |
+| `src/seed.rs` | nachvollziehbare Entwicklungs- und Testdaten |
+| `migrations/` | geordnete PostgreSQL-Mandantenmigrationen |
+| `tests/network_scenarios.rs` | vollständige RPC-Abläufe mit laufenden Diensten |
 
-## Run and check
+## Starten und prüfen
 
-Run these commands from `sortsys-api-v2`:
+Aus `sortsys-api-v2` ausführen:
 
 ```bash
 cargo run --package sortsys-api --bin sortsys-api
@@ -29,31 +31,37 @@ cargo fmt --all -- --check
 cargo clippy --package sortsys-api --all-targets -- -D warnings
 ```
 
-Direct startup requires `PG_MASTER_DSN`, `JWT_SECRET`, and `ADMIN_HASH`; production also requires `JOB_RUNNER_TOKEN`. See the [workspace README](../README.md#runtime-configuration) for the full table. The repository-level `scripts/dev` command supplies these values and starts PostgreSQL and MinIO for you.
+Der direkte Start benötigt `PG_MASTER_DSN`, `JWT_SECRET` und `ADMIN_HASH`, produktiv
+zusätzlich `JOB_RUNNER_TOKEN`. Die [Workspace-Konfiguration](../README.md#laufzeitkonfiguration)
+beschreibt alle Variablen. `scripts/dev` im Hauptverzeichnis liefert sie und
+startet PostgreSQL und MinIO mit.
 
-## Migrations and contracts
+## Migrationen und Verträge
 
-Migrations are embedded in the binary and applied in filename order. Add schema changes as new SQL files; do not rewrite a migration that may already have run.
+Migrationen sind im Programm enthalten und werden in Dateinamensreihenfolge
+angewandt. Schemaänderungen als neue SQL-Dateien hinzufügen; möglicherweise
+bereits angewandte Migrationen nicht umschreiben.
 
-The TypeScript contract is generated from `api::contract_registry()`:
+Der TypeScript-Vertrag entsteht aus `api::contract_registry()`:
 
 ```bash
 cargo run --package sortsys-api --bin generate_contract
 ```
 
-Commit the updated `client/src/generated/contract.ts` with any procedure contract change.
+Bei geänderten Prozedurverträgen `client/src/generated/contract.ts` mit einchecken.
 
-## Integration tests
+## Integrationstests
 
-Unit tests do not replace the network scenarios. From the repository root, run:
+Unit-Tests ergänzen die Netzwerkprüfungen. Aus dem Hauptverzeichnis:
 
 ```bash
 ./scripts/test-api
 ```
 
-That command provisions disposable PostgreSQL and MinIO instances, starts the API and two workers, and exercises the protocol, tenant databases, files, and backups over the network.
+Der Befehl startet temporäre PostgreSQL- und MinIO-Instanzen, API und zwei
+Hintergrunddienste und prüft Protokoll, Mandantendatenbanken, Dateien und
+Sicherungen über das Netzwerk.
 
-## License
+## Lizenz
 
-This crate is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
-
+Für diese Crate gilt die [GNU Affero General Public License v3.0 only](../LICENSE).

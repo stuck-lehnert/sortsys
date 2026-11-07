@@ -1,60 +1,69 @@
-# CI and branch flow
+# CI und Veröffentlichungsablauf
 
-- Every branch push runs the repository tests through `scripts/ci`.
-- A successful push to `predeploy` fast-forwards `deploy` to that tested commit.
-  Failed tests or a superseded `predeploy` commit leave `deploy` unchanged.
-- On `deploy`, the container workflow builds the API, job runner and webapp from
-  their normal Dockerfiles and publishes them to GHCR, tagged `latest` and with
-  the first ten characters of the commit SHA.
+- Branch-Pushes prüfen das Repository mit `scripts/ci`. Auf `predeploy` entfällt
+  ein erneuter Testlauf, wenn exakt derselbe Commit bereits erfolgreich geprüft wurde.
+- Ein erfolgreicher `predeploy`-Lauf übernimmt den geprüften Commit per Fast-forward
+  nach `deploy`. Überholte Commits können nicht mehr veröffentlicht werden.
+- Auf `deploy` werden API, Hintergrunddienst und Webapp mit ihren regulären
+  Dockerfiles gebaut und in GHCR veröffentlicht. Die Tags sind `latest` und die
+  ersten zehn Zeichen der Commit-SHA.
 
-The CI workflow only listens to branch pushes. Opening or updating a pull request
-in this repository does not run the same commit's tests a second time. Tags do
-not start CI. A direct push to `deploy` triggers its tests and container workflow;
-normal releases go through the tests on `predeploy` first.
+Die CI reagiert auf Branch-Pushes. Das Öffnen oder Aktualisieren eines Pull Requests
+startet keinen doppelten Lauf für denselben Commit. Tags starten keine CI.
+Ein direkter Push auf `deploy` startet Tests und Container-Veröffentlichung;
+der reguläre Weg führt zuerst über die Tests auf `predeploy`.
 
-Run the same tests locally with:
+Dieselben Prüfungen lokal ausführen:
 
 ```bash
 ./scripts/ci
 ```
 
-## GitHub setup
+## GitHub einrichten
 
-Keep `master` as the default branch and create the release branches once:
+`master` bleibt der Standardbranch. Die Veröffentlichungsbranches einmalig anlegen:
 
 ```bash
 git push origin master:predeploy
 git push origin master:deploy
 ```
 
-The workflows request their required `GITHUB_TOKEN` permissions: tests are read
-only, promotion needs contents/actions write, and publication needs packages
-write. Repository or organization policy must allow these permissions. No PAT,
-GitHub App or additional secret is required.
+Die Workflows fordern die benötigten `GITHUB_TOKEN`-Rechte an: Leserechte für Tests
+und CI-Verlauf, Schreibrechte auf Inhalte und Actions für die Übernahme sowie
+Paket-Schreibrechte für die Veröffentlichung. Repository- und Organisationsregeln
+müssen diese Rechte erlauben. Zusätzliche PATs, GitHub Apps oder Geheimnisse sind
+nicht erforderlich.
 
-Promotion uses a normal fast-forward push, never a history rewrite. Because a
-push made with `GITHUB_TOKEN` does not trigger another push workflow, the same
-promotion job explicitly starts `publish-containers.yml` on `deploy` using
-`workflow_dispatch`. [GitHub documents this token behavior and the dispatch
-exception](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
-Merge the workflows to the default branch before using this release flow.
+Die Übernahme verwendet einen normalen Fast-forward-Push. Ein Push mit
+`GITHUB_TOKEN` startet keinen weiteren Push-Workflow. Deshalb startet derselbe
+Job anschließend `publish-containers.yml` auf `deploy` ausdrücklich per
+`workflow_dispatch`. [GitHub beschreibt das Token-Verhalten und die Dispatch-Ausnahme](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+Vor der ersten Nutzung die Workflows in den Standardbranch übernehmen.
 
-## Releasing
+## Einen Stand veröffentlichen
 
 ```bash
 git push origin master:predeploy
 ```
 
-The tests must finish successfully before promotion. If `predeploy` changes while
-its tests run, the older run cannot promote it. Divergent `deploy` history is
-rejected by Git; integrate that history before retrying. Roll back with a revert
-commit rather than resetting the release branches.
+Ein abgeschlossener, erfolgreicher `ci.yml`-Push-Lauf aus diesem Repository zählt
+für exakt dieselbe Commit-SHA unabhängig vom ursprünglichen Branch. Dann werden
+Compiler-Einrichtung und Tests übersprungen und die Übernahme beginnt direkt.
+Fehlgeschlagene, abgebrochene, laufende, fremde oder zu anderen Commits gehörende
+Läufe zählen nicht. Ohne Treffer oder bei fehlgeschlagener Abfrage laufen die
+Tests regulär. Die Grundlage ist der CI-Verlauf.
 
-`Publish containers` can also be rerun manually on `deploy` if publication fails
-after promotion. It will not publish when dispatched on another branch. Container
-publishing is serialized and does not interrupt an in-progress release.
+Vor der Übernahme müssen die Tests dieses Commits erfolgreich abgeschlossen sein.
+Ändert sich `predeploy` währenddessen, darf der ältere Lauf den neuen Stand nicht
+übernehmen. Git weist eine abweichende `deploy`-Historie zurück; diese muss vorher
+integriert werden. Für eine Rücknahme einen Revert-Commit verwenden.
 
-The CI does not transfer compiled artifacts between jobs or maintain custom
-remote build caches. Ordinary caches within an individual Docker build still
-work. Populated deploy-upgrade and runtime-container checks remain local tools;
-they are not extra workflow stages or prerequisites of promotion.
+Scheitert die Container-Veröffentlichung nach der Übernahme, lässt sich
+`Publish containers` auf `deploy` manuell erneut starten. Auf anderen Branches
+veröffentlicht dieser Workflow nichts. Veröffentlichungen laufen nacheinander;
+ein laufender Vorgang wird nicht unterbrochen.
+
+Die CI überträgt keine kompilierten Artefakte zwischen Jobs und pflegt keine
+eigenen entfernten Build-Caches. Reguläre Docker-Caches innerhalb eines Builds
+bleiben verfügbar. Prüfungen von Updates bestehender Installationen und
+Container-Laufzeitprüfungen sind optionale lokale Werkzeuge.

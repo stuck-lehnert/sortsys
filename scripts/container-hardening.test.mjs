@@ -338,6 +338,17 @@ test("branch pushes run tests once and only successful predeploy tests can promo
   assert.ok(
     workflow.jobs.test.steps.some((step) => step.run === "./scripts/ci"),
   );
+  const previous = workflow.jobs.test.steps.find(
+    (step) => step.id === "previous",
+  );
+  assert.equal(previous.if, "github.ref == 'refs/heads/predeploy'");
+  assert.equal(previous.run, "./scripts/reuse-ci-success");
+  assert.equal(workflow.jobs.test.permissions.actions, "read");
+  for (const step of workflow.jobs.test.steps.filter(
+    (step) => step.with || step.run === "./scripts/ci",
+  )) {
+    assert.equal(step.if, "steps.previous.outputs.reused != 'true'");
+  }
   assert.equal(workflow.jobs.promote.needs, "test");
   assert.equal(
     workflow.jobs.promote.if,

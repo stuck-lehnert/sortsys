@@ -1,25 +1,22 @@
-# Fixed, fictional development documents
+# Feste, fiktive Dokumentbeispiele
 
-The PDF plans, DWG plans and email examples in this directory are authored for
-sortsys. Company, people, addresses and project details are fictional. These
-files are repository fixtures; the development seed reads their committed bytes
-and never regenerates them. `manifest.json` pins their hashes and sizes.
+Mit diesen Plänen und E-Mails lassen sich Dokumentabläufe direkt ausprobieren.
+Unternehmen, Personen, Adressen und Projektdaten sind frei erfunden. Das Seeding
+liest die eingecheckten Dateien unverändert; `manifest.json` hält Größe und
+Prüfsumme fest.
 
-- `grundriss-erdgeschoss.{pdf,dwg}` and `grundriss-obergeschoss.{pdf,dwg}`:
-  schematic architectural plans with walls, room names and dimensions.
-- `baubesprechung.pdf` and `materialfreigabe.pdf`: project correspondence.
-- The corresponding `.eml` and `.msg` files include readable German email text
-  and an actual PDF attachment. No tracker, script or external attachment URL.
+- `grundriss-erdgeschoss.{pdf,dwg}` und `grundriss-obergeschoss.{pdf,dwg}`: schematische Pläne mit Wänden, Raumnamen und Maßen.
+- `baubesprechung.pdf` und `materialfreigabe.pdf`: Projektkorrespondenz.
+- Zugehörige `.eml`- und `.msg`-Dateien: deutsche E-Mail-Texte mit tatsächlichem PDF-Anhang, ohne Tracker, Skripte oder externe Anhangs-URLs.
 
-Maintainer regeneration, when intentionally changing the fixtures:
+## Beispiele gezielt erneuern
 
-1. Install Python `reportlab`, `ezdxf` and `pymupdf` in an isolated environment.
-2. Run `generate-pdfs.py` and visually inspect all four PDFs.
-3. Convert the two committed DXF sources once with GNU LibreDWG 0.14:
-   `dxf2dwg --as r2000 -o grundriss-erdgeschoss.dwg grundriss-erdgeschoss.dxf`
-   (and similarly for the upper floor). Read them back and check visible entities.
-4. Run `generate-mails.mjs` with the monorepo webapp dependencies installed.
-5. Update `manifest.json`. Its checksums are verified by the Rust tests.
+1. Python-Pakete `reportlab`, `ezdxf` und `pymupdf` in einer isolierten Umgebung installieren.
+2. `generate-pdfs.py` ausführen und alle vier PDFs visuell prüfen.
+3. Die beiden eingecheckten DXF-Dateien einmalig mit GNU LibreDWG 0.14 konvertieren: `dxf2dwg --as r2000 -o grundriss-erdgeschoss.dwg grundriss-erdgeschoss.dxf`; entsprechend für das Obergeschoss. Anschließend einlesen und sichtbare Elemente prüfen.
+4. `generate-mails.mjs` mit installierten Webapp-Abhängigkeiten des Monorepos ausführen.
+5. `manifest.json` aktualisieren. Die Rust-Tests prüfen seine Prüfsummen.
 
-The DXF sources are included for reproducibility. LibreDWG is a maintainer tool,
-not a runtime or browser dependency. Its code is not included in these files.
+Die DXF-Quellen sichern die Reproduzierbarkeit. LibreDWG ist ein Wartungswerkzeug,
+keine Laufzeit- oder Browserabhängigkeit; sein Code ist in diesen Beispieldateien
+nicht enthalten.

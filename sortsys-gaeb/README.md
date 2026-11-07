@@ -1,9 +1,12 @@
 # sortsys GAEB
 
-Independent, browser-only GAEB editor suite in the sortsys monorepo. The editable
-document is the original X-file. Opening a project file does not import it into a
-separate database model. Parsing, canvas rendering, decimal calculations and XSD
-validation run locally; the host application supplies versioned file storage.
+**Angebote kalkulieren, Aufmaße erfassen und gemeinsam am Original arbeiten – direkt im Browser.**
+
+Die eigenständige GAEB-Editorsuite im sortsys-Monorepo verbindet eine vertraute
+Dokumentansicht mit den Abläufen von Auftragnehmern. Bearbeitet wird die originale
+X-Datei. Das Öffnen überführt sie in kein separates Datenbankmodell. Parsing,
+Canvas-Darstellung, Dezimalberechnungen und XSD-Prüfung laufen lokal; die
+Host-Anwendung stellt versionierten Dateispeicher bereit.
 
 ```sh
 cd sortsys-gaeb
@@ -11,12 +14,13 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-`bun run build` produces a standalone static app and an ES-module entry
-`dist/editor.js`. Changes are saved automatically. The standalone app writes an
-opened file through the browser's File System Access API; without that API it
-keeps the document in IndexedDB and offers an explicit file download. The sortsys
-integration saves the existing project file. Closing an editor flushes pending
-changes; a confirmation is needed only if saving actually fails.
+`bun run build` erzeugt eine eigenständige statische Anwendung und den
+ES-Modul-Einstieg `dist/editor.js`. Änderungen werden automatisch gespeichert.
+Die eigenständige Anwendung schreibt geöffnete Dateien über die File System
+Access API des Browsers. Ohne diese API hält sie das Dokument in IndexedDB und
+bietet einen ausdrücklichen Dateidownload an. Die sortsys-Einbindung speichert die
+bestehende Projektdatei. Beim Schließen werden ausstehende Änderungen gespeichert;
+eine Rückfrage erscheint nur, wenn das Speichern tatsächlich fehlschlägt.
 
 ```tsx
 import { GaebEditor } from "@sortsys/gaeb";
@@ -32,283 +36,379 @@ import "@sortsys/gaeb/styles.css";
 />;
 ```
 
-## First release
+## Dateiformate und Dokumentdarstellung
 
-- Direct editing of X80, X83–X87, X31, X52, X89, X93 and X96; X81/X82 and
-  received X94/X97 files open read only. Phase detection from the namespace
-  and GAEB header, with a separate filename mismatch notice.
-- GAEB XML 3.3 LV schemas (2021-05), X31 (2021-05 and 2023-01), plus bundled older
-  3.2 and 3.1 schemas. No implicit version or phase conversion.
-- One continuous document surface painted entirely with Canvas, without page
-  breaks: text, typography, line wrapping, lists, tables, prices, text selection
-  and caret. Invisible canvas tiles limit memory use in long documents. A hidden
-  native textarea handles keyboard/IME/clipboard input and survives layout changes;
-  invisible semantic controls provide keyboard and assistive-technology access.
-  The visible document uses no DOM text layout, contenteditable or HTML tables.
-- Direct text/quantity/price editing, selection formatting, paragraphs, search,
-  new items, undo/redo and read-only mode. Trackpad pinch (including Safari
-  gestures), Ctrl/Cmd-wheel and numeric zoom retain the point under the gesture;
-  fit-to-width follows viewport resizing. Canvas bitmaps are redrawn at the
-  editor zoom and current display pixel density, including display changes.
-  Adaptive tile heights bound each bitmap to 8 megapixels at maximum zoom.
-  Tiles share document coordinates and a single device-pixel grid; field hover,
-  selection, underlines and table borders continue across their boundaries.
-  Structured text remains GAEB XML.
-  All supported GAEB phases share the same canvas layout and input engine.
-  Zoom gestures reuse the current bitmap and rerasterize after settling. Text
-  measurements and unchanged position layouts are cached; canvas tiles paint
-  only commands intersecting their bounds, including during rapid typing.
-  Row commands and hit targets retain their identity until their content or
-  coordinates change; tiling distributes commands in one pass. Unchanged tiles
-  and the outline skip React reconciliation while typing. Schema validation
-  runs automatically; it has no manual ribbon command.
-- Creation actions use business names such as “Neues Angebot” and “Neues Aufmaß”.
-  Technical phase names belong to filenames and schema diagnostics.
-- Contractor documents use a consistent offer layout: document heading and
-  contract details, columns for item/description/quantity/unit/EP/amount,
-  compact price and amount columns that grow with their contents and show the
-  document currency,
-  flowing long descriptions and a net/VAT/grand-total section when those values
-  are present. No tax rate or document data is invented from a screenshot.
-- Editable fields have subtle blue backgrounds and dashed boundaries, with
-  clearer hover/focus outlines and a toggle. Cursor changes identify the current input. Wrapped text selection tracks the
-  pointer beyond the original hit region, preserves selection direction, scrolls
-  near viewport edges and keeps the user's zoom when focusing a field. Print
-  output omits input indicators.
-- Double-click selects a word; triple-click selects its complete paragraph,
-  including wrapped lines. Mouse-down applies the final selection immediately;
-  dragging extends it by words/paragraphs without briefly collapsing to a caret.
-  Clicking blank paper, workspace or outline clears the caret and selection,
-  commits pending input and keeps keyboard focus within a fullscreen host dialog.
-  Formatting controls retain the active selection. Touch taps keep native input
-  focus through compatibility mouse events.
-  Number, description and quantity columns share a
-  text baseline, including descriptions with imported font sizes.
-- The outline works as a folder explorer: selected sections contain new entries;
-  selecting an item uses its parent. Name new empty sections directly in the tree,
-  rename with F2 or the entry menu, commit with Enter/blur and cancel with Escape.
-  Single-click section names to expand/collapse, or collapse all from the toolbar.
-  Context menus and per-row action menus provide the same actions on mouse,
-  keyboard and touch. Adding a section keeps existing items out of the new folder.
-  Items can be moved directly into any ancestor or mixed between groups.
-  Section creation expands collapsed ancestors.
-  Drag rows between entries to reorder them, onto a section to move them inside,
-  or onto “Entire document” to move a section to the top level. Collapsed sections
-  expand while hovering; insertion lines and highlighted sections show the target.
-  Whole subtrees move together. Keyboard drag and Alt+Up/Down remain available.
-  Confirm deletion of a complete subtree; moving uses drag and drop without an extra form.
-  Rows have no visible drag handles; the keyboard drag trigger remains accessible.
-  The outline width can be dragged like an explorer sidebar, adjusted with the
-  separator's arrow/Home/End keys, and reset with a double click. The preference
-  survives reopening; narrow screens retain a full-width outline above the canvas.
-  Branches may have different depths; no filler chains appear in the outline.
-  Schema-required mixed-content containers use reserved `sortsys_direct_` IDs and
-  stay out of the outline and document drawing. They preserve native item IDs and
-  official OZs; unused lower numbering levels are displayed with `_`.
-  The same projection survives X83/X84/X86/X87/X31 derivation and reopening.
-  Reordering retains inherited namespaces and protects indexed, alphanumeric
-  and reference-dependent numbering. Existing prices follow IDs when updating a
-  calculation; a new item never inherits a reused number's old price.
-  Linked X84/X31 documents inherit their hierarchy from the source document.
-  GAEB's global hierarchy rules are documented in the [official specification,
-  sections 4.2.2–4.3.4](https://www.gaeb.de/wp-content/uploads/2021/07/Fachdokumentation_GAEB-DA-XML_3.3_2021-05.pdf).
-- Group headings align with item text and use 20/18/17/16/15 px by level.
-  New short texts are bold, while Enter starts a normal-weight description.
-  Groups support descriptions in their native label text; inline renaming retains
-  them. New positions synchronize native short text with the first paragraph,
-  while imported independent short/long texts retain their content and styles.
-  Paragraphs have a 6 px gap; rows remain compact.
-- A searchable autocomplete reuses previous positions including descriptions and
-  units, with new quantities and prices starting at zero. Sortsys automatically
-  indexes existing native commercial documents and project files, updates changed
-  sources, deduplicates suggestions and searches short and long text. Its tenant-local
-  metadata cache never replaces the native files. Standalone editors use scoped
-  IndexedDB history; hosts can provide `searchPositions` and `positionLibraryScope`.
-  Reused positions are inserted immediately after the last edited position,
-  retaining its parent, even after clicking blank space or opening the search.
-- A collapsible Office-style ribbon groups commands under Home, Insert and View. Workflow actions and editing groups stay left; presence, search and
-  printing stay right. Tabs support arrow/Home/End navigation. A compact title
-  bar shows the document type and filename together; zoom stays in the footer.
-  Visible action captions use balanced two-line labels with bottom spacing; accessible names
-  and keyboard shortcuts retain the full action name. Extra group captions and hover tooltips
-  are omitted. View includes a keyboard-shortcut reference. Formatting states remain accessible.
-  The old file-details footer is removed; embedded downloads live under Insert.
-- Autosave commits focused input after a short typing pause, validates before
-  writing, serializes requests and retries failures. IndexedDB recovery retains
-  unacknowledged XML and incomplete field drafts under a user/document scope.
-  Invalid field drafts wait for correction instead of retrying indefinitely;
-  only problems display a status message; successful saves and schema checks stay quiet.
-  Units follow GAEB's four-character limit. Common written names such as
-  “Stück” and “pauschal” become “Stk” and “psch”; unknown units are never
-  truncated. Hosts can record autosave errors with their failed processing stage,
-  without including document contents in diagnostics.
-- Authenticated WebSocket sessions synchronize shared text before autosave using
-  Yjs/yrs, with colored cursors and selections attached to text positions. Text
-  insertions/deletions converge in the same field; Undo removes only the local
-  user's operations. Workflow/document metadata is pushed on the same connection;
-  the browser does not poll or reload the complete case after each save.
-  API replicas share a PostgreSQL-backed delta log, canonical field initialization
-  and expiring presence. Tenant-scoped LISTEN/NOTIFY pushes small text deltas and
-  committed native file/workflow changes between replicas; no sticky sessions or
-  separate document service are required. Checkpoints bound replay cost, and a
-  lost LISTEN connection recovers from the log before continuing. One additional
-  listener connection per active tenant/replica closes after a minute of inactivity.
-  Cursor changes coalesce at 100 ms; authorization/lease checks run every 30 s.
-  Short-lived,
-  document-scoped tickets travel in the first socket message, never its URL;
-  session/project access is rechecked while connected.
-- Native XML revisions use a conservative three-way merge, separate from shared
-  field text. Independent fields merge and reproducible totals are recalculated.
-  Conflicting prices or overlapping structure/formatting edits retain the local
-  recovery copy and report a conflict. Quantities/prices are not character CRDTs.
-  Remote changes clear whole-file undo snapshots so Undo cannot remove another
-  participant's work. Reconnecting refreshes the document before resuming.
-- Source-span edits preserve untouched XML byte for byte, including comments,
-  CDATA, namespaces, attributes and vendor extensions. Vendor namespaces are
-  excluded only from the temporary XSD validation tree, as in the GAEB checker.
-- Fixed-point quantity/unit-price calculations and commercial rounding. Existing
-  item/section/BoQ totals and simple discounts are updated. Specialized pricing
-  (alternative groups, holdout items, markup items, price components, split
-  quantities, lump-sum overrides and VAT partitions) is preserved; automatic
-  price editing is disabled for those documents until the corresponding business
-  rules have dedicated implementations and test cases.
-- X31 offers multiple assisted measurement rows per position, with editable location,
-  description, repeat count and dimensions. Lengths/joints, rectangular surfaces,
-  three dimensions, triangles, trapezoids, adjustable arch/shape factors and free
-  arithmetic expressions share the normal canvas typography and keyboard input.
-  Decimal fields use the document locale and at least three decimal places; extra
-  input precision is retained. The expression parser uses bounded exact rational
-  arithmetic, accepts decimal commas/points and ×/x/*, and never evaluates JavaScript.
-  Opening deductions can explicitly enable a 2.50 m² or 0.50 m² per-opening limit;
-  the single opening area is tested before its repeat count. Other deductions and
-  additions are unaffected. Rules are selected per measurement, not inferred from
-  the trade. The arch template's factor is editable and does not assert a universal
-  circular-segment formula.
-  Each assisted row writes an executable native REB FN91 row and automatically updates
-  its X31 quantity. Shapes, full descriptions and location labels survive in versioned
-  XML comments without changing the official schema; native addresses stay stable.
-  Existing FN91 rows can be edited as formulas. Quantity-only files retain an explicit
-  inherited measure; unsupported REB rows retain their bytes and baseline quantity.
-  Inconsistent externally edited totals/metadata stop assisted changes. Independent
-  row edits merge before totals are recalculated, while conflicting business inputs
-  remain protected. REB 2009 sums exact approaches before rounding the quantity;
-  REB 1979 rounds individual approaches. The 2023 edition retains/adds/downloads
-  embedded PDF/image attachments. The native row format follows [GAEB 3.3, §7](https://www.gaeb.de/wp-content/uploads/2023/09/Fachdokumentation_GAEB-DA-XML_3.3_2023-01.pdf).
-  Ctrl/Cmd+Enter adds a measure, Ctrl/Cmd+Shift+Enter duplicates it and
-  Ctrl/Cmd+Alt+Backspace deletes the selected measure; Tab/Shift+Tab and Enter
-  navigate its fields. New rows are inserted after the selected measure.
-- Document address blocks show only the postal recipient without role headings.
-  Reduced X84/X31 files use the linked source's recipient where necessary. Other
-  parties remain in the native XML and sender details remain available to templates.
-  The measurement's own designation is distinct from its referenced construction
-  project and bill of quantities, including after reopening and in Typst output.
-- Signed documents open read only. DTDs are rejected, schemas are bundled,
-  validation runs in a cancellable worker, documents are limited to 20 MiB and
-  individual attachments to 10 MiB. Rendering never executes document HTML/URLs.
-- sortsys storage uses permission checks, revision conflicts and new object keys
-  before committing the metadata, preventing a failed save from replacing the
-  current document. Unsaved close confirmation belongs to the host modal.
+- Direkt bearbeitbar sind X80, X83–X87, X31, X52, X89, X93 und X96. X81/X82 sowie empfangene X94/X97 werden schreibgeschützt geöffnet. Namensraum und GAEB-Header bestimmen die Phase; eine abweichende Dateiendung wird gesondert gemeldet.
+- Enthalten sind die offiziellen GAEB-XML-3.3-LV-Schemas von 2021-05, X31 von 2021-05 und 2023-01 sowie ältere Schemas für 3.2 und 3.1. Version oder Phase werden nicht stillschweigend umgewandelt.
+- Eine durchgängige Canvas-Fläche zeigt Text, Typografie, Zeilenumbrüche, Listen, Tabellen, Preise, Auswahl und Cursor ohne Seitenumbrüche. Unsichtbare Canvas-Kacheln begrenzen den Speicherbedarf langer Dokumente. Ein verborgenes natives Textfeld übernimmt Tastatur, IME und Zwischenablage und bleibt bei Layoutänderungen erhalten. Unsichtbare semantische Bedienelemente ermöglichen Tastatur- und Hilfsmittelzugriff. Die sichtbare Darstellung verwendet weder DOM-Textlayout noch `contenteditable` oder HTML-Tabellen.
+- Texte, Mengen und Preise lassen sich direkt bearbeiten. Dazu kommen Auswahlformatierung, Absätze, Suche, neue Positionen, Rückgängig/Wiederholen und ein schreibgeschützter Modus. Strukturierte Texte bleiben GAEB XML. Alle unterstützten Phasen verwenden dieselbe Canvas- und Eingabelogik.
+- Trackpad-Zoom einschließlich Safari-Gesten, Strg/Cmd+Mausrad und numerischer Zoom halten den Punkt unter der Geste fest. Die Breitenanpassung folgt der Fenstergröße. Bitmaps werden für Editorzoom und aktuelle Pixeldichte neu gezeichnet, auch beim Bildschirmwechsel. Adaptive Kachelhöhen begrenzen jede Bitmap selbst bei maximalem Zoom auf acht Megapixel. Gemeinsame Dokumentkoordinaten und ein einheitliches Geräteraster halten Feldmarkierungen, Auswahl, Unterstreichungen und Tabellenlinien über Kachelgrenzen hinweg zusammen.
+- Während Zoomgesten wird die vorhandene Bitmap verwendet und anschließend neu gerastert. Textmessungen und unveränderte Positionslayouts werden zwischengespeichert. Kacheln zeichnen nur die Befehle innerhalb ihrer Grenzen, auch bei schnellem Tippen. Zeichenbefehle und Trefferflächen behalten ihre Identität, bis sich Inhalt oder Koordinaten ändern; die Verteilung auf Kacheln benötigt einen Durchlauf. Unveränderte Kacheln und die Gliederung überspringen beim Tippen die React-Abstimmung. Die Schema-Prüfung läuft automatisch und benötigt keinen Menübandbefehl.
+- Aktionen heißen fachlich etwa „Neues Angebot“ und „Neues Aufmaß“. Technische Phasenkennungen gehören in Dateinamen und Schema-Diagnosen.
+- Auftragnehmerdokumente verwenden ein einheitliches Angebotslayout: Dokumentüberschrift und Auftragsdaten, Positionsnummer links, Beschreibung sowie Menge, Einheit, EP und Summe rechts davon. Kompakte Preis- und Summenspalten wachsen mit ihrem Inhalt und zeigen die Dokumentwährung. Langtexte fließen weiter; Netto-, Umsatzsteuer- und Gesamtsummen erscheinen, wenn diese Werte vorliegen. Steuersätze und Dokumentdaten werden nicht aus einer Bildschirmvorlage erfunden.
 
-XRechnung/ZUGFeRD, D-/P-files, X89B, signature generation and
-the remaining REB formula catalogue and dependent address references are separate extensions. A successful XSD check is a formal
-schema check, not GAEB/BVBS certification or a complete commercial audit.
+## Direkt bearbeiten und klar navigieren
 
-## Contractor workflows in the host
+Bearbeitbare Felder haben dezente blaue Hintergründe und gestrichelte, rechteckige
+Rahmen. Deutlichere Linien bei Fokus und Mausberührung sowie der Mauszeiger
+kennzeichnen die Eingabe; die Feldanzeige lässt sich abschalten. Textauswahl folgt
+dem Zeiger über die ursprüngliche Trefferfläche hinaus, behält ihre Richtung bei
+und scrollt an Fensterrändern. Feldfokus verändert den gewählten Zoom nicht.
+Gedruckt werden keine Eingabemarkierungen.
 
-The webapp keeps offers separate from projects. Start a main offer from an X83
-or write its scope in the canvas editor, then price it in its linked X84.
-Submission and acceptance retain fixed native document revisions. An accepted
-main offer can create exactly one new project; its contract amount enters the
-project cost overview once. Further offers in that project are variations.
-Accepted variations, including reductions, update the contract value.
+Doppelklick markiert ein Wort, Dreifachklick den vollständigen Absatz einschließlich
+umgebrochener Zeilen. Bereits beim Drücken der Maustaste gilt die endgültige
+Auswahl. Ziehen erweitert sie wort- oder absatzweise, ohne kurz zum Cursor
+zusammenzufallen. Ein Klick auf leeres Papier, Arbeitsfläche oder Gliederung
+entfernt Cursor und Auswahl, übernimmt offene Eingaben und hält den Tastaturfokus
+im Vollbilddialog. Formatierungsbefehle erhalten die Auswahl. Berührungen behalten
+den nativen Eingabefokus auch bei nachfolgenden Kompatibilitäts-Mausereignissen.
+Positionsnummer, Beschreibung und Menge teilen eine Textgrundlinie, auch bei
+importierten Schriftgrößen.
 
-Every integrated editor opens in a fullscreen dialog, including on narrow
-screens. Offers open straight from the list into that dialog. Their toolbar opens
-an X83 inquiry, starts its linked X84 calculation and advances submission and
-acceptance. Download and workflow history have their own ribbon buttons. Contextual actions
-open the scope or return to pricing directly; the current document is never
-listed as a switch target.
-Opening and closing keep the underlying page, filters and loaded rows in place.
-The address is `/gaeb/:caseId` while a commercial document is open. Reloads and direct links
-reopen the fullscreen dialog; Back closes through autosave and Forward reopens it.
-Closing returns to the previous address without replacing the background page.
-The same dialog and focus scope remain mounted while loading, creating the
-offer and switching between its native documents.
-There is no separate offer detail page and no inline editor. Creation uses the
-shared customer search rather than loading every customer into a dropdown.
-Administration → Organization stores the company name and postal address used for new
-bids and purchasing inquiries. Tabs separate company details, invoice numbering, document templates,
-logo, staff defaults and LLM usage; switching tabs retains form drafts. Native address fields remain editable; updating
-a calculation retains the address already entered in that bid.
-Invoice-numbering settings offer a global sequence, separated or compact dates,
-and project-local or project/global sequences, with an exact decimal start value
-and five consecutive preview numbers. The project prefix is the last eight decimal digits
-of the decoded public project ID, padded with leading zeros. This fixed-width prefix is
-not collision-free; invoice issuance must enforce invoice-number uniqueness separately. These settings configure the numbering policy; invoice issuance and
-transactional counter allocation remain part of the future invoicing workflow.
+### Gliederung wie ein Dateibaum
 
-The project's **Contract & work** tab brings the accepted offer, customer X86,
-X87 confirmation, variations, X31 measurements and subcontract packages together.
-A received order is compared with the offer before creating its confirmation.
-Existing projects can adopt their original X86 once; historic financial entries
-are retained without adding the contract value again.
+Ausgewählte Gruppen nehmen neue Einträge auf; bei ausgewählten Positionen gilt
+deren übergeordnete Gruppe. Neue leere Gruppen werden direkt im Baum benannt.
+F2 oder das Eintragsmenü benennt um, Enter oder Fokusverlust übernimmt, Escape
+bricht ab. Ein Klick auf Gruppennamen klappt sie ein oder aus; die Werkzeugleiste
+kann alle einklappen. Kontext- und Zeilenmenüs bieten dieselben Aktionen für Maus,
+Tastatur und Berührung. Neue Gruppen verschieben keine vorhandenen Positionen
+ungefragt. Beim Anlegen werden eingeklappte übergeordnete Gruppen geöffnet.
 
-Measurements reference an accepted contract or variation and keep contract
-quantities separate from measured quantities. Subcontract packages use selected
-whole positions to create a new X83 with selling prices and opaque vendor payloads
-removed. Multiple subcontractor X84 offers can be compared; a chosen bid creates
-an X86 purchase order. Awarded positions cannot be awarded twice under the same
-contract. Supplier X87 files record confirmation. Quantities that differ from the
-inquiry and missing bid positions must be resolved before award.
+Zeilen lassen sich zwischen Positionen und Gruppen einsortieren, auf Gruppen
+ablegen oder über „Gesamtes Dokument“ auf die oberste Ebene verschieben. Auch der
+direkte Wechsel in eine beliebige übergeordnete Gruppe ist möglich. Eingeklappte
+Gruppen öffnen sich beim längeren Darüberhalten; Einfügelinien und hervorgehobene
+Gruppen zeigen das Ziel. Teilbäume ziehen gemeinsam um. Tastaturziehen und
+Alt+Auf/Ab bleiben verfügbar. Das Löschen eines vollständigen Teilbaums verlangt
+eine Bestätigung; Verschieben benötigt kein zusätzliches Formular. Sichtbare
+Ziehgriffe entfallen, der Tastaturauslöser bleibt zugänglich.
 
-Source files and source revision links remain intact. Derived files use GAEB 3.3;
-unsupported pricing or position rules stop derivation explicitly rather than
-being dropped. The workflow currently uses EUR. Native editing retains other
-currencies and specialized data. X86-to-X87 confirmation retains the complete
-order, including its price rules and parties. These workflows record submission,
-acceptance and award; sending documents to a customer or supplier remains an
-explicit action outside the editor. Legacy `projects.create` remains available
-for existing API clients; new product entrypoints use offers.
+Die Gliederungsbreite lässt sich wie eine Explorer-Seitenleiste ziehen, mit den
+Pfeil-/Pos1-/Ende-Tasten am Trenner einstellen und per Doppelklick zurücksetzen.
+Die Einstellung bleibt beim Wiederöffnen bestehen. Auf schmalen Bildschirmen
+steht die Gliederung in voller Breite oberhalb des Dokuments.
 
-## Keyboard editing
+Zweige dürfen unterschiedlich tief sein; sichtbare Füllgruppen entstehen nicht.
+Vom Schema benötigte Zwischencontainer tragen reservierte `sortsys_direct_`-IDs
+und bleiben in Gliederung und Zeichnung verborgen. Native Positions-IDs und
+offizielle Ordnungszahlen bleiben erhalten; ungenutzte tiefere Nummernstufen
+erscheinen als `_`. Dieselbe Abbildung bleibt beim Ableiten und Wiederöffnen von
+X83/X84/X86/X87/X31 erhalten. Umsortieren erhält geerbte Namensräume und schützt
+indizierte, alphanumerische sowie referenzabhängige Nummerierungen. Beim
+Aktualisieren einer Kalkulation folgen Preise den IDs; neue Positionen übernehmen
+keinen alten Preis einer wiederverwendeten Nummer. Verknüpfte X84/X31 übernehmen
+die Hierarchie des Quelldokuments. Die globalen GAEB-Regeln erläutert die
+[offizielle Spezifikation, Abschnitte 4.2.2–4.3.4](https://www.gaeb.de/wp-content/uploads/2021/07/Fachdokumentation_GAEB-DA-XML_3.3_2021-05.pdf).
 
-Tab and Shift+Tab move through editable document fields and individual paragraphs in reading
-order, selecting the complete target paragraph. At the first or last field they return to the
-surrounding controls. Enter advances in
-single-line fields; in descriptions it inserts a paragraph. Shift+Enter goes to
-the previous single-line field.
+Gruppentitel beginnen auf derselben horizontalen Position wie Positionstexte und
+verwenden je Ebene 20/18/17/16/15 px. Neue Kurztexte sind fett; Enter beginnt eine
+normal gesetzte Beschreibung. Gruppenbeschreibungen bleiben im nativen Titeltext
+erhalten, auch beim Umbenennen im Baum. Neue Positionen gleichen den Kurztext mit
+dem ersten Absatz ab. Unabhängige importierte Kurz- und Langtexte behalten Inhalt
+und Formatierung. Absätze haben sechs Pixel Abstand; Positionszeilen bleiben kompakt.
 
-Descriptions combine adjacent paragraphs and styled spans into one text buffer.
-Table cells, list items and protected structures retain their own boundaries.
-Ctrl/Cmd+A selects the active text buffer; Ctrl/Cmd+C, X and V use the clipboard.
-Copy also works in read-only documents. Clipboard text retains paragraph breaks;
-unselected XML, formatting and extensions stay in the native document.
+### Frühere Positionen wiederverwenden
 
-| Action                     | Windows/Linux                   | macOS                        |
-| -------------------------- | ------------------------------- | ---------------------------- |
-| Move by word               | Ctrl+Left/Right                 | Option+Left/Right            |
-| Visual line start/end      | Home/End                        | Cmd+Left/Right or Home/End   |
-| Text buffer start/end      | Ctrl+Home/End                   | Cmd+Up/Down                  |
-| Paragraph navigation       | Ctrl+Up/Down                    | Option+Up/Down               |
-| Extend selection           | Add Shift to navigation keys    | Add Shift to navigation keys |
-| Delete word                | Ctrl+Backspace/Delete           | Option+Backspace/Delete      |
-| Delete to visual line edge | —                               | Cmd+Backspace/Delete         |
-| Bold / italic / underline  | Ctrl+B/I/U                      | Cmd+B/I/U                    |
-| Undo / redo                | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Cmd+Z / Cmd+Shift+Z          |
-| New item                   | Ctrl+Enter                      | Cmd+Enter                    |
-| New group                  | Ctrl+Shift+Enter                | Cmd+Shift+Enter              |
-| Delete selected entry      | Ctrl+Alt+Backspace              | Cmd+Option+Backspace         |
-| Export print PDF (Typst)   | Ctrl+P                          | Cmd+P                        |
+Eine durchsuchbare Vervollständigung findet frühere Positionen samt Beschreibung
+und Einheit. Neue Mengen und Preise beginnen bei null. sortsys indiziert native
+kaufmännische Dokumente und Projektdateien automatisch, aktualisiert geänderte
+Quellen, entfernt doppelte Vorschläge und durchsucht Kurz- und Langtexte. Der
+mandantenbezogene Metadatenindex ersetzt keine Originaldatei. Eigenständige
+Editoren verwenden eine abgegrenzte IndexedDB-Historie; Host-Anwendungen können
+`searchPositions` und `positionLibraryScope` bereitstellen. Eingefügt wird direkt
+unter der zuletzt bearbeiteten Position innerhalb derselben Gruppe, auch nach
+einem Klick auf leere Fläche oder dem Öffnen der Suche.
 
-Up/Down and PageUp/PageDown follow the rendered canvas lines, retaining the
-horizontal caret position. Character movement and deletion respect grapheme
-clusters, including combining accents and joined emoji. Shift selections retain
-their original anchor when reversing direction.
-The caret stays visible while navigation keys are held and restarts its blink
-pause after movement. Selected text uses a blue (`#0000ff`) background and white
-(`#ffffff`) glyphs, including formatting and underlines.
+### Vertrautes Menüband
 
-## Verification
+Das einklappbare Office-artige Menüband ordnet Befehle unter Start, Einfügen und
+Ansicht. Arbeitsabläufe und Bearbeitung stehen links, Anwesenheit, Suche und
+Drucken rechts. Die Reiter unterstützen Pfeil-/Pos1-/Ende-Navigation. Eine
+kompakte Titelleiste zeigt Dokumenttyp und Dateiname zusammen; der Zoom steht in
+der Fußleiste. Sichtbare Aktionsbeschriftungen nutzen ausgewogene Zweizeiler mit
+unterem Abstand. Zugängliche Namen und Tastenkürzel behalten den vollen Namen.
+Zusätzliche Gruppenuntertitel und Hover-Tooltips entfallen. Unter Ansicht steht
+eine Tastenkürzelübersicht; Formatierungszustände bleiben zugänglich.
+Die frühere Dateidetail-Fußleiste entfällt, eingebettete Dateien liegen unter Einfügen.
+
+## Automatisch speichern und gemeinsam arbeiten
+
+Automatisches Speichern übernimmt fokussierte Eingaben nach einer kurzen
+Schreibpause, prüft vor dem Schreiben, arbeitet Anfragen nacheinander ab und
+wiederholt fehlgeschlagene Versuche. IndexedDB hält unbestätigtes XML und
+unvollständige Feldeingaben für Benutzer und Dokument zur Wiederherstellung vor.
+Ungültige Eingaben warten auf Korrektur, statt endlos erneut gesendet zu werden.
+Nur Probleme erzeugen Statusmeldungen; erfolgreiche Speicherung und Schema-Prüfung
+bleiben unaufdringlich. Einheiten beachten das GAEB-Limit von vier Zeichen.
+Übliche Namen wie „Stück“ und „pauschal“ werden zu „Stk“ und „psch“; unbekannte
+Einheiten werden nie abgeschnitten. Host-Anwendungen können Fehler mit dem
+betroffenen Verarbeitungsschritt protokollieren, ohne Dokumentinhalte aufzunehmen.
+
+Authentifizierte WebSocket-Sitzungen gleichen gemeinsame Texte vor dem Speichern
+über Yjs/yrs ab. Farbige Cursor und Auswahlen folgen den Textpositionen.
+Einfügungen und Löschungen im selben Feld laufen zusammen; Rückgängig entfernt
+nur eigene Operationen. Vorgangs- und Dokumentmetadaten kommen über dieselbe
+Verbindung. Der Browser fragt nach dem Speichern nicht den ganzen Vorgang erneut ab.
+
+API-Instanzen teilen sich ein PostgreSQL-Änderungsprotokoll, eine einheitliche
+Feldinitialisierung und zeitlich begrenzte Anwesenheitsdaten. Mandantenbezogenes
+LISTEN/NOTIFY überträgt kleine Textänderungen und bestätigte Datei-/Vorgangsänderungen
+zwischen Instanzen. Feste Instanzzuordnung oder ein separater Dokumentdienst sind
+nicht nötig. Prüfpunkte begrenzen die Wiederholungskosten; nach Verbindungsverlust
+holt ein Listener Änderungen aus dem Protokoll nach. Pro aktivem Mandanten und
+API-Instanz besteht eine zusätzliche Listener-Verbindung, die nach einer Minute
+Inaktivität schließt. Cursoränderungen werden alle 100 ms zusammengefasst,
+Berechtigungen und Gültigkeit alle 30 Sekunden geprüft. Kurzlebige,
+dokumentbezogene Tickets stehen in der ersten Socket-Nachricht, nie in der URL.
+Sitzungs- und Projektzugriff werden während der Verbindung erneut geprüft.
+
+Native XML-Stände verwenden einen vorsichtigen Drei-Wege-Abgleich, getrennt vom
+gemeinsamen Feldtext. Unabhängige Felder werden zusammengeführt, reproduzierbare
+Summen neu berechnet. Widersprüchliche Preise oder überlappende Struktur- und
+Formatänderungen erhalten die lokale Wiederherstellungskopie und melden einen
+Konflikt. Mengen und Preise sind keine Zeichen-CRDTs. Fremde Änderungen entfernen
+Rückgängig-Schnappschüsse der Gesamtdatei, damit Rückgängig keine fremde Arbeit
+verwirft. Nach Wiederverbindung wird das Dokument vor dem Fortsetzen aktualisiert.
+
+## Aufmaß mit mehreren Ansätzen
+
+X31 unterstützt mehrere Maßansätze je Position mit Ort, Beschreibung, Anzahl und
+Dimensionen. Längen/Fugen, Rechteckflächen, drei Dimensionen, Dreiecke, Trapeze,
+anpassbare Bogen-/Formfaktoren und freie Rechenausdrücke verwenden dieselbe
+Canvas-Typografie und Tastaturbedienung. Dezimalfelder verwenden das Gebietsschema
+des Dokuments und mindestens drei Nachkommastellen; zusätzliche Eingabegenauigkeit
+bleibt erhalten. Der Ausdrucksparser rechnet begrenzt mit exakten rationalen Zahlen,
+akzeptiert Dezimalkomma/-punkt und ×/x/* und führt kein JavaScript aus.
+
+Für Öffnungsabzüge lässt sich ausdrücklich eine Grenze von 2,50 m² oder 0,50 m²
+je Öffnung aktivieren. Geprüft wird die einzelne Fläche vor ihrer Vervielfachung.
+Andere Zu- und Abzüge bleiben unberührt. Die Regel wird je Ansatz gewählt und
+nicht aus dem Gewerk vermutet. Der Faktor der Bogenvorlage ist editierbar und
+behauptet keine universelle Kreissegmentformel.
+
+Jeder unterstützte Ansatz schreibt eine ausführbare native REB-FN91-Zeile und
+aktualisiert die X31-Menge. Form, vollständige Beschreibung und Ortsbezeichnung
+bleiben in versionierten XML-Kommentaren erhalten, ohne das offizielle Schema
+zu ändern; native Adressen bleiben stabil. Vorhandene FN91-Zeilen sind als
+Formeln bearbeitbar. Reine Mengendateien behalten ein ausdrücklich ausgewiesenes
+übernommenes Aufmaß; nicht unterstützte REB-Zeilen behalten Bytes und Basismenge.
+Inkonsistente extern bearbeitete Summen oder Metadaten stoppen unterstützte
+Änderungen. Unabhängige Zeilenänderungen werden vor der Summenberechnung vereinigt,
+widersprüchliche fachliche Eingaben bleiben geschützt. REB 2009 summiert exakte
+Ansätze vor der Mengenrundung; REB 1979 rundet einzelne Ansätze. Die Ausgabe 2023
+erhält eingebettete PDFs/Bilder und erlaubt Hinzufügen sowie Herunterladen.
+Das native Zeilenformat folgt [GAEB 3.3, §7](https://www.gaeb.de/wp-content/uploads/2023/09/Fachdokumentation_GAEB-DA-XML_3.3_2023-01.pdf).
+
+Strg/Cmd+Enter fügt einen Ansatz hinzu, Strg/Cmd+Umschalt+Enter dupliziert ihn,
+Strg/Cmd+Alt+Rücktaste löscht den ausgewählten Ansatz. Tab/Umschalt+Tab und Enter
+wechseln zwischen Feldern. Neue Zeilen folgen direkt dem ausgewählten Ansatz.
+
+## Originaltreue und fachliche Grenzen
+
+Bearbeitungen anhand der Quellpositionen erhalten unangetastetes XML bytegenau,
+einschließlich Kommentaren, CDATA, Namensräumen, Attributen und Herstellererweiterungen.
+Herstellernamensräume werden nur aus dem vorübergehenden XSD-Prüfbaum entfernt,
+entsprechend dem GAEB-Prüfprogramm.
+
+Mengen und Einheitspreise verwenden Festkommaarithmetik und kaufmännische Rundung.
+Vorhandene Positions-, Gruppen- und LV-Summen sowie einfache Nachlässe werden
+aktualisiert. Besondere Preisregeln – Alternativgruppen, HoldOut-Positionen,
+Zuschlagspositionen, Preisanteile, Teilmengen, Pauschalüberschreibungen und getrennte
+Umsatzsteuersummen – bleiben erhalten. Die automatische Preisbearbeitung ist für
+solche Dokumente gesperrt, bis eigene Fachregeln und Tests dafür vorliegen.
+
+Adressblöcke zeigen ausschließlich den postalischen Empfänger ohne Rollenüberschrift.
+Reduzierte X84/X31 verwenden nötigenfalls den Empfänger der verknüpften Quelle.
+Andere Beteiligte bleiben im nativen XML; Absenderdaten sind für Vorlagen verfügbar.
+Die interne Aufmaßbezeichnung bleibt von Bauvorhaben und LV getrennt, auch nach
+Wiederöffnen und in der Typst-Ausgabe.
+
+Signierte Dokumente öffnen schreibgeschützt. DTDs werden abgelehnt, Schemas lokal
+mitgeliefert und Prüfungen in einem abbrechbaren Worker ausgeführt. Dokumente sind
+auf 20 MiB, einzelne Anlagen auf 10 MiB begrenzt. Dokument-HTML und URLs werden
+beim Darstellen nie ausgeführt. sortsys prüft Speicherberechtigungen und Revisionen
+und schreibt neue Objektschlüssel vor Bestätigung der Metadaten. Ein fehlgeschlagener
+Speicherversuch ersetzt so kein bestehendes Dokument. Die Rückfrage beim Schließen
+mit ungesicherten Änderungen übernimmt der Host-Dialog.
+
+XRechnung/ZUGFeRD, X89B, Signaturerzeugung sowie der übrige REB-Formelkatalog mit
+abhängigen Adressverweisen sind gesonderte Erweiterungen. Eine erfolgreiche
+XSD-Prüfung bestätigt das Schema; sie ist keine GAEB-/BVBS-Zertifizierung und
+keine vollständige kaufmännische Prüfung.
+
+## Vom Angebot zum Auftrag
+
+Die Webapp trennt Angebote von Projekten. Ein Hauptangebot beginnt mit einer X83
+oder einem direkt erfassten Leistungsumfang und wird in der verknüpften X84
+kalkuliert. Abgabe und Annahme halten feste native Dokumentstände fest. Ein
+angenommenes Hauptangebot kann genau ein neues Projekt erzeugen; sein Auftragswert
+geht einmal in die Projektkostenübersicht ein. Weitere Angebote dieses Projekts
+sind Nachträge. Angenommene Nachträge einschließlich Minderungen ändern den Auftragswert.
+
+Jeder eingebundene Editor öffnet im Vollbilddialog, auch auf schmalen Bildschirmen.
+Die Angebotsliste öffnet direkt diesen Dialog. Im Menüband lassen sich eine X83
+öffnen, die verknüpfte X84-Kalkulation beginnen sowie Abgabe und Annahme erfassen.
+Herunterladen und Vorgangsverlauf haben eigene Schaltflächen. Kontextabhängige
+Aktionen öffnen den Leistungsumfang oder kehren zur Kalkulation zurück; das
+aktuelle Dokument steht nie selbst als Wechselziel zur Auswahl.
+
+Hintergrundseite, Filter und geladene Zeilen bleiben beim Öffnen und Schließen
+erhalten. Ein offener kaufmännischer Vorgang trägt die Adresse `/gaeb/:caseId`.
+Neuladen und Direktlinks öffnen den Dialog wieder; Zurück schließt über die
+Speicherlogik, Vorwärts öffnet erneut. Beim Schließen wird die vorherige Adresse
+ohne Austausch der Hintergrundseite wiederhergestellt. Derselbe Dialog und
+Fokusbereich bleiben beim Laden, Anlegen und Wechseln nativer Dokumente bestehen.
+Eine separate Angebotsdetailseite oder ein Inline-Editor entfällt. Die Anlage
+verwendet die gemeinsame interaktive Kundensuche.
+
+Verwaltung → Organisation hält Unternehmensname und Anschrift für neue Angebote
+und Preisanfragen bereit. Reiter trennen Unternehmensdaten, Rechnungsnummern,
+Dokumentvorlagen, Logo, Personalvorgaben und LLM-Nutzung. Formularentwürfe bleiben
+beim Reiterwechsel erhalten. Native Anschriften sind bearbeitbar; das Aktualisieren
+einer Kalkulation erhält die bereits eingetragene Anschrift.
+
+Rechnungsnummern können global fortlaufend, mit getrenntem oder kompaktem Datum
+sowie projektlokal oder projektbezogen global fortlaufend vergeben werden.
+Eine exakte dezimale Startnummer und fünf aufeinanderfolgende Vorschaunummern
+zeigen das Ergebnis. Der Projektteil verwendet die letzten acht Dezimalziffern
+der decodierten öffentlichen Projekt-ID mit führenden Nullen. Dieser feste
+Ausschnitt ist nicht kollisionsfrei; die Rechnungsvergabe erzwingt die Eindeutigkeit
+zusätzlich. Die Zähler werden bei Ausstellung transaktional vergeben.
+
+Unter **Auftrag & Leistungen** stehen angenommenes Angebot, Kunden-X86,
+X87-Bestätigung, Nachträge, X31-Aufmaße und Nachunternehmerpakete zusammen.
+Ein eingegangener Auftrag wird vor seiner Bestätigung mit dem Angebot verglichen.
+Bestehende Projekte können ihren ursprünglichen X86-Auftrag einmal übernehmen;
+historische Finanzbuchungen bleiben ohne erneute Auftragswertbuchung erhalten.
+
+Aufmaße verweisen auf einen angenommenen Auftrag oder Nachtrag. Vertragsmengen
+bleiben von aufgemessenen Mengen getrennt. Weitervergaben erstellen aus gewählten
+vollständigen Positionen eine neue X83 ohne Verkaufspreise und undurchsichtige
+Herstellerdaten. Mehrere Nachunternehmer-X84 können verglichen werden; das gewählte
+Angebot wird zum X86-Auftrag. Bereits vergebene Positionen können unter demselben
+Auftrag nicht doppelt vergeben werden. X87-Dateien des Nachunternehmers halten die
+Bestätigung fest. Abweichende Mengen und fehlende Angebotspositionen müssen vor
+Vergabe geklärt werden.
+
+Quelldateien und Verweise auf deren Stände bleiben erhalten. Ableitungen verwenden
+GAEB 3.3. Nicht unterstützte Preis- oder Positionsregeln stoppen die Ableitung
+ausdrücklich, statt Daten zu verlieren. Der Ablauf verwendet derzeit EUR; die
+native Bearbeitung erhält andere Währungen und Spezialdaten. X86→X87 erhält den
+vollständigen Auftrag samt Preisregeln und Beteiligten. Diese Abläufe erfassen
+Abgabe, Annahme und Vergabe. Das Versenden an Kunden oder Lieferanten bleibt eine
+ausdrückliche Aktion außerhalb des Editors. `projects.create` bleibt für vorhandene
+API-Clients verfügbar; neue Produktoberflächen beginnen beim Angebot.
+
+## Tastaturbedienung
+
+Tab und Umschalt+Tab wechseln in Lesereihenfolge durch bearbeitbare Felder und
+einzelne Absätze. Der Zielabsatz wird vollständig markiert. Am ersten und letzten
+Feld geht der Fokus zu den umgebenden Bedienelementen zurück. Enter wechselt in
+einzeiligen Feldern weiter und fügt in Beschreibungen einen Absatz ein.
+Umschalt+Enter geht zum vorherigen einzeiligen Feld.
+
+Benachbarte Absätze und formatierte Textteile bilden einen gemeinsamen Textpuffer.
+Tabellenzellen, Listeneinträge und geschützte Strukturen behalten eigene Grenzen.
+Strg/Cmd+A markiert den aktiven Puffer; Strg/Cmd+C, X und V verwenden die
+Zwischenablage. Kopieren funktioniert auch schreibgeschützt. Absatzumbrüche bleiben
+beim Kopieren erhalten; nicht ausgewähltes XML, Formatierungen und Erweiterungen
+bleiben im Dokument.
+
+| Aktion | Windows/Linux | macOS |
+| --- | --- | --- |
+| Wortweise bewegen | Strg+Links/Rechts | Option+Links/Rechts |
+| Anfang/Ende der sichtbaren Zeile | Pos1/Ende | Cmd+Links/Rechts oder Pos1/Ende |
+| Anfang/Ende des Textpuffers | Strg+Pos1/Ende | Cmd+Auf/Ab |
+| Absatzweise bewegen | Strg+Auf/Ab | Option+Auf/Ab |
+| Auswahl erweitern | Navigationstaste mit Umschalt | Navigationstaste mit Umschalt |
+| Wort löschen | Strg+Rücktaste/Entf | Option+Rücktaste/Entf |
+| Bis zum sichtbaren Zeilenrand löschen | — | Cmd+Rücktaste/Entf |
+| Fett / kursiv / unterstrichen | Strg+B/I/U | Cmd+B/I/U |
+| Rückgängig / Wiederholen | Strg+Z / Strg+Y oder Strg+Umschalt+Z | Cmd+Z / Cmd+Umschalt+Z |
+| Neue Position | Strg+Enter | Cmd+Enter |
+| Neue Gruppe | Strg+Umschalt+Enter | Cmd+Umschalt+Enter |
+| Ausgewählten Eintrag löschen | Strg+Alt+Rücktaste | Cmd+Option+Rücktaste |
+| Druck-PDF mit Typst erzeugen | Strg+P | Cmd+P |
+
+Auf/Ab und Bild-auf/Bild-ab folgen den gezeichneten Canvas-Zeilen und erhalten die
+horizontale Cursorposition. Bewegung und Löschen beachten Graphemgruppen, auch
+kombinierte Akzente und verbundene Emoji. Umschalt-Auswahl behält beim
+Richtungswechsel ihren ursprünglichen Anker. Bei gehaltenen Navigationstasten
+bleibt der Cursor sichtbar; nach Bewegung beginnt die Blinkpause neu. Markierter
+Text verwendet blauen Hintergrund (`#0000ff`) und weiße Zeichen (`#ffffff`),
+einschließlich Formatierung und Unterstreichung.
+
+## Druckvorlagen und Ansichtseinstellungen
+
+Unter Verwaltung → Organisation → Dokumentvorlagen stehen ein Monaco-Typst-Editor
+und eine direkte PDF-Vorschau nebeneinander. Vorlagen definieren
+`document-header(data)`, `document-footer(data)`, `table-style` und
+`document-style(data, body)`. Erzeugte native Dokumentdaten bleiben vom
+bearbeitbaren Vorlagentext getrennt. Derselbe lokale Compiler, dieselben
+mitgelieferten Schriften und dieselbe Vorlage versorgen Drucken und Strg/Cmd+P.
+Drucken erzeugt ein PDF mit Seiten; der interaktive Canvas bleibt durchgängig.
+Compilerfehler zeigen Diagnosen und erhalten die letzte gültige Vorschau.
+Speichern prüft den erwarteten Vorlagenstand und schützt Entwürfe bei gleichzeitiger Änderung.
+
+Administratoren können Bilder und PDFs mit jeweils bis zu 20 MiB hochladen.
+`#asset("logo.png", width: 30mm)` bettet ein Bild ein,
+`#asset("terms.pdf", page: 1, width: 100%)` eine PDF-Seite und
+`#attachment("terms.pdf", width: 100%)` alle Seiten. Bilder werden zu PNG
+normalisiert, PDF-Seiten vor dem Kompilieren lokal mit PDF.js gerendert.
+Vorbereitete Seiten und Gesamtspeicher sind begrenzt. Vorlagentexte und
+Dateimetadaten gehören zur Organisation; Binärdateien liegen privat im
+Objektspeicher und werden über signierte URLs geladen. Der Compiler läuft
+vollständig im Browser.
+
+Feldanzeige, Gliederungssichtbarkeit und -breite, eingeklapptes Menüband sowie
+Zoom- und Breitenanpassung werden pro angemeldetem Benutzer serverseitig gespeichert.
+Schließen überträgt ausstehende Einstellungen. Der eigenständige Editor verwendet
+ersatzweise lokale Vorgaben. Ladeanzeigen für Angebote und native Dokumente stehen
+mittig im Vollbilddialog, ohne dessen Fokusbereich auszutauschen.
+
+## Native Abrechnung und Beschaffung
+
+X85-Nebenangebote haben eigene Abgabe- und Annahmestände und behalten den Bezug zum
+Hauptangebot. Angenommene Nebenangebote können ebenfalls Projektauftrag werden.
+Projektformulare erstellen X31, X52, X93 und X89 aus einem angenommenen Auftrag.
+X52-Kostenbestandteile zeigen Kennung, Menge, Einheit, optional Leistung und Wert
+im Canvas-Editor.
+
+X93-Preisanfragen enthalten keine Verkaufspreise. Empfangene X94-Angebote sind
+unveränderlich; das gewählte Angebot wird bis zur Vergabe als native X96-Bestellung
+bearbeitet. X97-Lieferantenbestätigungen bleiben unveränderlich. Handelsdateien
+verwenden ihre native flache `OrderItem`-Struktur sowie native Preise und Preisbasen.
+Der Editor erfindet dafür keine LV-Gruppen.
+
+X89-Entwürfe zeigen Beteiligte, Rechnungsdatum, Leistungszeitraum und Steuernummer.
+Ausstellung vergibt serverseitig die konfigurierte Rechnungsnummer, hält einen
+nativen Stand fest und bucht den Nettobetrag einmal. Zahlungen sind separate
+Datensätze; Teil-/Vollzahlungsstände folgen dem exakten offenen Bruttobetrag.
+Leistungsbezogene und pauschale Abschlagsrechnungen verwenden periodische
+Abrechnung. Eine Schlussrechnung setzt ausgestellte Abschlagsrechnungen voraus
+und zieht diese unabhängig vom Zahlungsstand ab. Eine gewöhnliche Rechnung steht
+nur für Aufträge ohne Abschlagsrechnungen bereit. Nicht unterstützte Abrechnungs-
+oder Preisregeln bleiben einsehbar und gelangen nicht unbemerkt in diese Abläufe.
+
+Die Regressionsbeispiele unter `scripts/fixtures/native-seed` entstehen mit den
+tatsächlichen Seed-Konstruktoren der API. Browserprüfungen validieren alle
+offiziellen Schemas und prüfen native Bearbeitung, Ableitung, Festkomma-Umsatzsteuer
+und Abrechnung.
+
+## Ältere Angebotsaufforderungen öffnen
+
+Neben X83 kann die Schaltfläche für Leistungsanfragen D83 (GAEB 90) und P83
+(GAEB 2000) öffnen. Der Client erkennt den Inhalt und überführt Festbreitenmengen,
+OZ-Strukturen und GAEB-2000-RTF-Texte in eine schema-geprüfte X83. Die vollständigen
+Originalbytes bleiben in einem reservierten XML-Kommentar erhalten. P83-Texte
+werden nach bestem Bemühen übernommen; nicht unterstützte besondere
+D83-Positionsarten werden ausdrücklich abgelehnt, statt als gewöhnliche
+bepreiste Positionen zu erscheinen. Fiktive Regressionsbeispiele stehen unter
+`scripts/fixtures/legacy/`.
+
+## Prüfungen
 
 ```sh
 bun run typecheck
@@ -318,72 +418,14 @@ bunx playwright install chromium
 bun run test:browser
 ```
 
-`test:browser` builds the measurement fixture page before running the suite.
-Normal builds omit those fictional test documents.
+`test:browser` baut vor der Testsuite die Aufmaß-Beispielseite. Normale Builds
+enthalten diese fiktiven Prüfdokumente nicht.
 
-The production-browser tests cover exact XML preservation, all supported phases,
-embedded X31 data, continuous rendering, anchored gesture zoom, autosave and draft
-recovery. The host's browser suite exercises two simultaneous editors, combined
-totals, presence and reconnecting. The API suite additionally tests real
-S3/PostgreSQL writes, scoped live tickets, socket cleanup, revisions, project
-isolation and authentication.
+Produktionsbrowser-Tests decken bytegenauen XML-Erhalt, alle unterstützten Phasen,
+eingebettete X31-Daten, kontinuierliche Darstellung, verankerten Gestenzoom,
+automatisches Speichern und Wiederherstellung ab. Die Browser-Suite der
+Host-Anwendung prüft zwei gleichzeitige Editoren, gemeinsame Summen, Anwesenheit
+und Wiederverbindung. API-Tests prüfen zusätzlich echte S3-/PostgreSQL-Schreibzugriffe,
+begrenzte Live-Tickets, Socket-Bereinigung, Revisionen, Projekttrennung und Anmeldung.
 
-Original schema provenance and archive hashes: [vendor/gaeb](vendor/gaeb/README.md).
-
-## Organization print templates and view preferences
-
-Administration → Organization → Document templates contains a Monaco Typst editor and a live
-PDF preview. Templates define `document-header(data)`, `document-footer(data)`, `table-style`
-and `document-style(data, body)`. Generated native document data stays separate from editable
-source. The same browser-only compiler, bundled fonts and template power the editor's Print
-button and Ctrl/Cmd+P. Print creates a paginated PDF; the interactive Canvas stays continuous.
-A failed compilation shows diagnostics and retains the last valid preview. Saving checks the
-expected template revision, preserving drafts on concurrent changes.
-
-Administrators can upload images and PDF files up to 20 MiB each. `#asset("logo.png", width: 30mm)`
-embeds an image, `#asset("terms.pdf", page: 1, width: 100%)` embeds one PDF page, and
-`#attachment("terms.pdf", width: 100%)` embeds every page. Images are normalized to PNG and PDF
-pages rendered locally with PDF.js before compilation; prepared pages and aggregate memory
-are bounded. Template sources and asset metadata are organization-scoped; binary files use
-private object storage with signed URLs. The compiler itself runs entirely in the browser.
-
-Show editable fields, outline visibility/width, ribbon collapse and zoom/fit settings are saved
-per authenticated user on the server. Closing flushes pending preferences. The standalone
-editor uses a local preference fallback. Fullscreen offer loaders are centered during both
-workflow and native-document loading without replacing the dialog focus scope.
-
-
-## Native billing and procurement
-
-Native X85 alternative offers have their own submission/acceptance lifecycle and
-retain their related main offer. Accepted alternatives can also become the project
-contract. Project forms create X31, X52, X93 and X89 documents from an accepted
-contract, rather than unlinked attachments. X52 cost components expose code,
-quantity, unit, optional performance and value in the canvas editor.
-
-X93 inquiries omit selling prices. Received X94 quotes are immutable; the selected
-quote becomes an editable native X96 purchase order until its award is recorded.
-X97 supplier confirmations remain immutable. Trade files use their native flat
-OrderItem structure, native prices and price bases; the editor does not invent LV
-folders for them.
-
-X89 drafts expose parties, invoice date, service period and tax number. Issuance
-allocates the configured invoice number on the server, freezes a native revision
-and posts its net amount once. Payments are separate records; partial/full payment
-states follow the exact outstanding gross amount. Work-based and lump-sum progress
-invoices use periodic settlement. A final invoice requires issued progress invoices
-and deducts those invoices regardless of payment state. An ordinary invoice is only
-available for contracts without progress invoices. Unsupported settlement/price
-rules remain viewable and cannot silently enter these billing workflows.
-
-The seed regression corpus in `scripts/fixtures/native-seed` is generated by the
-API's actual seed constructors. Browser checks validate it against every official
-schema and exercise native editing, derivation, fixed-point VAT and settlement.
-
-Legacy requests can be opened from the work-inquiry button as D83 (GAEB 90)
-or P83 (GAEB 2000), alongside native X83. The client recognizes their contents,
-projects fixed-width quantities/OZ structures and GAEB-2000 RTF text into a
-schema-validated X83, and retains the complete original bytes in a reserved XML
-comment. P83 text projection is best effort; unsupported special D83 item types
-are rejected explicitly instead of silently becoming ordinary priced items.
-Fictional regression samples are in `scripts/fixtures/legacy/`.
+Herkunft der Originalschemas und Archivprüfsummen: [GAEB-Schemas](vendor/gaeb/README.md).

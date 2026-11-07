@@ -1,65 +1,70 @@
-# Deployment
+# Bereitstellung und Betrieb
 
-The repository provides [source-build Compose](../compose.yaml) and
-[GHCR-image Compose](../ghcr-compose.yaml). For a local Compose deployment:
+sortsys lässt sich aus dem Quellcode oder mit veröffentlichten Images betreiben.
+Dafür stehen [Compose mit lokalem Build](../compose.yaml) und
+[Compose mit GHCR-Images](../ghcr-compose.yaml) bereit. Lokal beginnen:
 
 ```bash
 cp .compose-env.example .compose-env
-# Fill in the required configuration and secrets.
+# Konfiguration und Geheimnisse ergänzen.
 docker compose --env-file .compose-env up -d
 ```
 
-[.compose-env.example](../.compose-env.example) documents deployment variables;
-the [API configuration](../sortsys-api-v2/README.md#runtime-configuration) describes
-server settings. Tenant files and backups need external S3-compatible storage;
-production Compose does not include MinIO.
+[.compose-env.example](../.compose-env.example) beschreibt die Betriebsvariablen,
+die [API-Konfiguration](../sortsys-api-v2/README.md#laufzeitkonfiguration) die
+Servereinstellungen. Mandantendateien und Sicherungen benötigen einen externen
+S3-kompatiblen Speicher; das produktive Compose enthält kein MinIO.
 
-## Coolify and public access
+## Coolify und öffentlicher Zugriff
 
-Use either Compose file with Coolify. It generates and persists the configured
-`SERVICE_*` secrets. Supply `ADMIN_HASH` as a bcrypt hash for the global
-administrator; mark it literal so `$` characters are preserved.
+Beide Compose-Dateien können mit Coolify eingesetzt werden. Coolify erzeugt und
+speichert die konfigurierten `SERVICE_*`-Geheimnisse. `ADMIN_HASH` muss als
+bcrypt-Hash des globalen Administratorpassworts angegeben werden. Als literalen
+Wert markieren, damit `$`-Zeichen erhalten bleiben.
 
-Assign a public HTTPS domain to `webapp`. It proxies the API and serves editor
-routes under `/office/` and `/drawio/`. Keep document-server ports internal.
-Euro-Office and diagrams.net readiness do not block the core application's startup.
+Weise `webapp` eine öffentliche HTTPS-Domain zu. Sie vermittelt die API und die
+Editorpfade `/office/` und `/drawio/`. Dokumentenserver-Ports bleiben intern.
+Die Startbereitschaft von Euro-Office und diagrams.net blockiert die Kernanwendung nicht.
 
-## Editor secrets and upgrades
+## Editor-Geheimnisse und Aktualisierungen
 
-Euro-Office's `JWT_SECRET` and the API's `ONLYOFFICE_JWT_SECRET` must match. Both use
-`SERVICE_BASE64_64_ONLYOFFICE`, separate from the API session secret
-`SERVICE_BASE64_64_JWT`. For local Compose, set a random editor secret of at least
-32 characters. Rotate it only after saving and closing active documents.
+Euro-Offices `JWT_SECRET` und `ONLYOFFICE_JWT_SECRET` der API müssen übereinstimmen.
+Beide verwenden `SERVICE_BASE64_64_ONLYOFFICE`, getrennt vom API-Sitzungsgeheimnis
+`SERVICE_BASE64_64_JWT`. Für lokales Compose ist ein zufälliges Editor-Geheimnis
+mit mindestens 32 Zeichen erforderlich. Vor einem Wechsel aktive Dokumente
+speichern und schließen.
 
-The `onlyoffice` service and `ONLYOFFICE_*` names refer to Euro-Office's compatible
-DocsAPI integration. `ONLYOFFICE_IMAGE` overrides the pinned default image.
-See the [upstream installation guide](https://euro-office.github.io/documentation/installation/docker/)
-for editor resource requirements and persistent paths.
+Der Dienstname `onlyoffice` und die Variablen `ONLYOFFICE_*` bezeichnen die
+kompatible DocsAPI-Anbindung von Euro-Office. `ONLYOFFICE_IMAGE` überschreibt das
+festgelegte Standardimage. Anforderungen an Ressourcen und persistente Pfade
+beschreibt die [Installationsanleitung des Herstellers](https://euro-office.github.io/documentation/installation/docker/).
 
-When switching an older ONLYOFFICE deployment to Euro-Office, save and close
-active documents and back up the old configuration and volumes. Euro-Office uses
-separate `euro-office-*` volumes; old editor caches and databases are not migrated.
-Tenant documents remain in S3. Retain the old volume mappings for rollback.
+Beim Umstieg einer älteren ONLYOFFICE-Installation aktive Dokumente speichern und
+schließen sowie Konfiguration und Volumes sichern. Euro-Office verwendet eigene
+`euro-office-*`-Volumes; alte Editor-Caches und Datenbanken werden nicht migriert.
+Mandantendokumente bleiben in S3. Die bisherigen Volume-Zuordnungen für eine
+Rückkehr zur alten Installation aufbewahren.
 
-## Runtime requirements
+## Laufzeitanforderungen
 
-The webapp runs with a read-only root filesystem and uses `/tmp` for generated
-Nginx configuration and buffered requests. Size `WEBAPP_TMPFS_SIZE` (default
-`256m`) for `CLIENT_MAX_BODY_SIZE` and concurrent uploads. Its namespaced
-`net.ipv4.ip_unprivileged_port_start=0` setting permits non-root Nginx on port 80;
-other environments need that setting or an adjusted listener/proxy port.
+Die Webapp verwendet ein schreibgeschütztes Wurzeldateisystem. Generierte
+Nginx-Konfiguration und gepufferte Anfragen liegen unter `/tmp`.
+`WEBAPP_TMPFS_SIZE` (Standard `256m`) muss zu `CLIENT_MAX_BODY_SIZE` und gleichzeitig
+laufenden Uploads passen. `net.ipv4.ip_unprivileged_port_start=0` erlaubt Nginx
+innerhalb seines Netzwerk-Namensraums Port 80 ohne Root-Rechte. Andere Umgebungen
+benötigen diese Einstellung oder angepasste Listener- und Proxy-Ports.
 
-The API and job runner need writable, disk-backed temporary space for database
-backups, restores and OCR. See [API replicas and collaboration](../sortsys-api-v2/README.md#replicas-and-collaboration)
-when running multiple API instances behind a load balancer.
+API und Hintergrunddienst benötigen beschreibbaren temporären Plattenspeicher für
+Datenbanksicherungen, Wiederherstellung und OCR. Für mehrere API-Instanzen hinter
+einem Load Balancer gilt [Skalierung und Zusammenarbeit](../sortsys-api-v2/README.md#skalierung-und-zusammenarbeit).
 
-## Releases and rollback
+## Veröffentlichungen und Rückkehr zu älteren Ständen
 
-The [release flow](../.github/BRANCHES.md) publishes API, job runner and webapp
-images. `ghcr-compose.yaml` defaults to `latest`; pin `SORTSYS_API_IMAGE`,
-`SORTSYS_JOBRUNNER_IMAGE` and `SORTSYS_WEBAPP_IMAGE` to the same release, preferably
-by digest, for reproducible deployments.
+Der [Veröffentlichungsablauf](../.github/BRANCHES.md) stellt API-, Hintergrunddienst-
+und Webapp-Images bereit. `ghcr-compose.yaml` verwendet standardmäßig `latest`.
+Für reproduzierbare Installationen `SORTSYS_API_IMAGE`, `SORTSYS_JOBRUNNER_IMAGE`
+und `SORTSYS_WEBAPP_IMAGE` auf denselben Stand festlegen, bevorzugt per Digest.
 
-Back up persistent data before upgrades. Keep volumes when changing images;
-`compose down --volumes` deletes data. Database major upgrades require the
-[documented migration procedure](runtime-upgrades.md#postgresql-17--18-migration-gate).
+Persistente Daten vor Aktualisierungen sichern. Volumes beim Image-Wechsel
+behalten; `compose down --volumes` löscht Daten. Größere Datenbankversionswechsel
+erfordern das [dokumentierte Migrationsverfahren](runtime-upgrades.md#postgresql-17--18-migration).

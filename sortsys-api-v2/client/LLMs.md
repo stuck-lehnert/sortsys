@@ -1,8 +1,9 @@
-# Supported procedures
+# Unterstützte Prozeduren
 
-This list reflects the Rust-generated contract. Procedures absent here are not available.
+Ausgewählte Prozeduren für den typisierten API-Zugriff. Den vollständigen aktuellen
+Umfang beschreibt der von Rust erzeugte Vertrag unter `src/generated/contract.ts`.
 
-## Queries
+## Abfragen
 
 - `ping`
 - `auth.check`
@@ -11,11 +12,11 @@ This list reflects the Rust-generated contract. Procedures absent here are not a
 - `clientScripts.list`
 - `remarks.list`
 
-## Mutations
+## Änderungen
 
 - `auth.login`, `auth.logout`
 - `clientScripts.create`, `clientScripts.update`, `clientScripts.delete`
 - `errorReports.report`
 - `remarks.create`, `remarks.update`, `remarks.delete`
 
-Use `query`, `streamQuery`, and `mutate` from `@sortsys/v2-client`.
+Aufrufe verwenden `query`, `streamQuery` und `mutate` aus `@sortsys/v2-client`.

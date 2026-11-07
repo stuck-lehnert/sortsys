@@ -1,52 +1,54 @@
 # sortsys
 
-Web application for contractors and trade businesses: offers, projects, personnel,
-tools, materials and documents. Available in German and English.
+**Angebote kalkulieren, Leistungen aufmessen und Teams koordinieren – an einem Ort.**
+sortsys verbindet Projekte, Personal, Werkzeuge, Material und Dokumente für
+Bauunternehmen und Handwerksbetriebe. Direkt im Browser, auf Deutsch und Englisch.
 
-## Development
+## Entwicklung
 
-Requires Bash and Docker or Podman. From the repository root:
+Voraussetzungen: Bash und Docker oder Podman. Im Hauptverzeichnis starten:
 
 ```bash
 ./scripts/dev
 ```
 
-Open <http://127.0.0.1:5173>. Local administrator: tenant `test`, user `john.doe`,
-password `123456`.
+Öffne <http://127.0.0.1:5173>. Lokaler Administrator: Mandant `test`, Benutzer
+`john.doe`, Passwort `123456`.
 
-**Each start recreates and seeds the development databases.** `Ctrl+C` stops the
-stack. See the [development guide](docs/development.md) for configuration and logs.
+**Jeder Start legt die Entwicklungsdatenbanken neu an und befüllt sie mit Beispieldaten.**
+`Ctrl+C` beendet die Umgebung. Konfiguration und Protokolle beschreibt der
+[Entwicklungsleitfaden](docs/development.md).
 
-## Checks
+## Prüfungen
 
 ```bash
-./scripts/ci        # Complete repository checks
-./scripts/test-api  # API integration and client checks
+./scripts/ci        # Gesamtes Repository prüfen
+./scripts/test-api  # API-Integration und Client prüfen
 ```
 
-The [CI and release flow](.github/BRANCHES.md) describes branch tests and promotion
-from `predeploy` to `deploy`.
+Der [CI- und Veröffentlichungsablauf](.github/BRANCHES.md) erklärt Branch-Tests
+und die Übernahme von `predeploy` nach `deploy`.
 
-## Packages
+## Pakete
 
-| Package | Purpose |
+| Paket | Aufgabe |
 | --- | --- |
-| [API](sortsys-api-v2/README.md) | Rust service, tenant databases and typed TypeScript client |
-| [Webapp](sortsys-webapp-v2/README.md) | React application |
-| [Components](sortsys-react-components/README.md) | Shared UI controls and styles |
-| [GAEB](sortsys-gaeb/README.md) | Canvas document editors and calculations |
-| [Plan viewer](sortsys-dwgviewer/README.md) | PDF/DWG viewer with a Rust/WASM parser |
-| [Job runner](sortsys-v2-job_runner/README.md) | Media processing and OCR |
+| [API](sortsys-api-v2/README.md) | Rust-Dienst, Mandantendatenbanken und typisierter TypeScript-Client |
+| [Webapp](sortsys-webapp-v2/README.md) | React-Anwendung für den Arbeitsalltag |
+| [Komponenten](sortsys-react-components/README.md) | Einheitliche Bedienelemente und Gestaltung |
+| [GAEB](sortsys-gaeb/README.md) | Dokumente direkt bearbeiten und Leistungen kalkulieren |
+| [Planansicht](sortsys-dwgviewer/README.md) | PDF-/DWG-Pläne mit Rust-/WASM-Parser |
+| [Hintergrunddienst](sortsys-v2-job_runner/README.md) | Medienverarbeitung und Texterkennung |
 
-Processing runs in the browser wherever possible. The API handles storage,
-authorization and operations requiring authoritative shared state.
+Verarbeitung erfolgt nach Möglichkeit im Browser. Die API übernimmt Speicherung,
+Berechtigungen und Vorgänge, die einen verbindlichen gemeinsamen Datenstand benötigen.
 
-## Deployment
+## Bereitstellung
 
-See the [deployment guide](docs/deployment.md) for Compose, Coolify and published
-container images. Configuration starts with [.compose-env.example](.compose-env.example).
+Der [Betriebsleitfaden](docs/deployment.md) führt durch Compose, Coolify und die
+veröffentlichten Container-Images. Ausgangspunkt ist [.compose-env.example](.compose-env.example).
 
-## License and community
+## Lizenz und Gemeinschaft
 
-[AGPL-3.0-only](LICENSE) · [Code of Conduct](CODE_OF_CONDUCT.md).
-Third-party dependencies and fixtures retain their respective licenses and notices.
+[AGPL-3.0-only](LICENSE) · [Verhaltenskodex](CODE_OF_CONDUCT.md).
+Für fremde Abhängigkeiten und Beispieldateien gelten deren eigene Lizenzen und Hinweise.
