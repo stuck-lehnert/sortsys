@@ -88,8 +88,8 @@ function fixture(t) {
     commit,
     deployed: () =>
       git(directory, `--git-dir=${remote}`, "rev-parse", "refs/heads/deploy"),
-    promote: (revision = candidate, baseline = base, env = {}) =>
-      spawnSync("bash", [promotion, revision, baseline], {
+    promote: (revision = candidate, env = {}) =>
+      spawnSync("bash", [promotion, revision], {
         cwd: work,
         encoding: "utf8",
         env: { ...process.env, ...env },
@@ -97,14 +97,14 @@ function fixture(t) {
   };
 }
 
-test("promotes the exact tested candidate from the exact tested deploy baseline", (t) => {
+test("fast-forwards deploy to the exact tested predeploy commit", (t) => {
   const f = fixture(t);
   const result = f.promote();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(f.deployed(), f.candidate);
 });
 
-test("rejects a stale deploy baseline even when promotion would still fast-forward", (t) => {
+test("allows a concurrent earlier release when the tested commit contains it", (t) => {
   const f = fixture(t);
   git(
     f.directory,
@@ -114,9 +114,8 @@ test("rejects a stale deploy baseline even when promotion would still fast-forwa
     f.intermediate,
   );
   const result = f.promote();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /deploy changed after the upgrade check/);
-  assert.equal(f.deployed(), f.intermediate);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.deployed(), f.candidate);
 });
 
 test("rejects a candidate superseded on predeploy", (t) => {
@@ -134,14 +133,17 @@ test("never rewrites divergent deploy history", (t) => {
   git(f.work, "checkout", "--detach", f.base);
   const divergent = f.commit("separate deploy history");
   git(f.work, "push", "origin", `${divergent}:refs/heads/deploy`);
-  const result = f.promote(f.candidate, divergent);
+  const result = f.promote(f.candidate);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /must contain the current deploy history/);
   assert.equal(f.deployed(), divergent);
 });
 
-test("an atomic lease rejects deploy changes between validation and push", (t) => {
+test("a normal push rejects divergent deploy changes between validation and push", (t) => {
   const f = fixture(t);
+  git(f.work, "checkout", "--detach", f.base);
+  const divergent = f.commit("concurrent divergent release");
+  git(f.work, "push", "origin", `${divergent}:refs/heads/concurrent`);
   const bin = join(f.directory, "bin");
   mkdirSync(bin);
   executable(
@@ -156,20 +158,20 @@ fi
 exec "$REAL_GIT" "$@"
 `,
   );
-  const result = f.promote(f.candidate, f.base, {
+  const result = f.promote(f.candidate, {
     PATH: `${bin}:${process.env.PATH}`,
     REAL_GIT: realGit,
     FIXTURE_REMOTE: f.remote,
-    RACE_DEPLOY: f.intermediate,
+    RACE_DEPLOY: divergent,
   });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /stale info/);
-  assert.equal(f.deployed(), f.intermediate);
+  assert.match(result.stderr, /rejected|non-fast-forward/);
+  assert.equal(f.deployed(), divergent);
 });
 
 test("promotion fails closed without a deploy branch or valid pinned SHAs", (t) => {
   const f = fixture(t);
-  const invalid = f.promote(f.candidate, "");
+  const invalid = f.promote("");
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /Usage/);
   assert.equal(f.deployed(), f.base);
@@ -291,21 +293,4 @@ test("unknown upgrade phase names are rejected before cargo runs", (t) => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Unknown deploy-upgrade test phase/);
   assert.throws(() => readFileSync(f.calls));
-});
-
-test("the workflow requires application, upgrade and container checks before promotion", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  const promote = workflow
-    .split("  promote:\n")[1]
-    .split("  publish-deploy:\n")[0];
-  assert.match(
-    promote,
-    /needs: \[build, test, deploy-build, upgrade, containers\]/,
-  );
-  assert.match(promote, /needs\.deploy-build\.outputs\.deploy_sha/);
-  assert.match(
-    promote,
-    /promote-predeploy "\$TESTED_CANDIDATE_SHA" "\$TESTED_DEPLOY_SHA"/,
-  );
-  assert.doesNotMatch(promote, /continue-on-error|git push/);
 });

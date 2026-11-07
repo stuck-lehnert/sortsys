@@ -1,52 +1,60 @@
 # CI and branch flow
 
-The repository uses three trusted, long-lived branches:
+- Every branch push runs the repository tests through `scripts/ci`.
+- A successful push to `predeploy` fast-forwards `deploy` to that tested commit.
+  Failed tests or a superseded `predeploy` commit leave `deploy` unchanged.
+- On `deploy`, the container workflow builds the API, job runner and webapp from
+  their normal Dockerfiles and publishes them to GHCR, tagged `latest` and with
+  the first ten characters of the commit SHA.
 
-- `master` contains ongoing work. CI runs after every push and for pull requests targeting `master`.
-- `predeploy` marks a revision for release.
-- `deploy` contains the latest deployable revision.
+The CI workflow only listens to branch pushes. Opening or updating a pull request
+in this repository does not run the same commit's tests a second time. Tags do
+not start CI. A direct push to `deploy` triggers its tests and container workflow;
+normal releases go through the tests on `predeploy` first.
 
-A push to `predeploy` runs the same checks as `master`. When they pass, CI fast-forwards `deploy` to the exact tested commit. A failing check leaves `deploy` unchanged. The promotion fails if `predeploy` no longer contains the current `deploy` history; create a revert on `master` when rolling back a release.
-
-Run the same checks locally with:
+Run the same tests locally with:
 
 ```bash
 ./scripts/ci
 ```
 
-## Initial GitHub setup
+## GitHub setup
 
-Commit the workflow to `master`, then create the two release branches:
+Keep `master` as the default branch and create the release branches once:
 
 ```bash
 git push origin master:predeploy
 git push origin master:deploy
 ```
 
-Keep `master` as the default branch. Under **Settings > Actions > General > Workflow permissions**, allow read and write access for `GITHUB_TOKEN`.
+The workflows request their required `GITHUB_TOKEN` permissions: tests are read
+only, promotion needs contents/actions write, and publication needs packages
+write. Repository or organization policy must allow these permissions. No PAT,
+GitHub App or additional secret is required.
 
-No rulesets, GitHub App, repository variables, or deployment secrets are required. This setup intentionally treats anyone with branch write access as trusted.
+Promotion uses a normal fast-forward push, never a history rewrite. Because a
+push made with `GITHUB_TOKEN` does not trigger another push workflow, the same
+promotion job explicitly starts `publish-containers.yml` on `deploy` using
+`workflow_dispatch`. [GitHub documents this token behavior and the dispatch
+exception](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+Merge the workflows to the default branch before using this release flow.
 
 ## Releasing
-
-Push the current `master` revision to `predeploy`:
 
 ```bash
 git push origin master:predeploy
 ```
 
-GitHub builds the candidate applications once and packages their runtime images.
-The fresh-instance tests, populated-deploy upgrade tests, and runtime checks use
-those outputs. A separate job builds the original seeder from the pinned `deploy`
-revision; its cache and binaries remain separate from the candidate.
+The tests must finish successfully before promotion. If `predeploy` changes while
+its tests run, the older run cannot promote it. Divergent `deploy` history is
+rejected by Git; integrate that history before retrying. Roll back with a revert
+commit rather than resetting the release branches.
 
-After all checks pass, promotion fast-forwards `deploy` using the exact tested
-candidate and baseline refs. The same CI run then copies the checked API, job
-runner, and webapp OCI images to GHCR with the ten-character commit tag and
-`latest`. Image digests, SBOMs, and provenance are preserved; publishing does not
-recompile the applications.
+`Publish containers` can also be rerun manually on `deploy` if publication fails
+after promotion. It will not publish when dispatched on another branch. Container
+publishing is serialized and does not interrupt an in-progress release.
 
-Direct pushes to `deploy` also build and test one candidate, then publish its
-checked images. Every consumer downloads immutable artifact IDs from its own CI
-run and verifies the revision, platform, file checksums, and image metadata before
-use. Local `./scripts/ci` and `./scripts/test-api` retain their source-build paths.
+The CI does not transfer compiled artifacts between jobs or maintain custom
+remote build caches. Ordinary caches within an individual Docker build still
+work. Populated deploy-upgrade and runtime-container checks remain local tools;
+they are not extra workflow stages or prerequisites of promotion.

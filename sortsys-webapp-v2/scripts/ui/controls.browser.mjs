@@ -1471,12 +1471,21 @@ test("Tab skips disabled suggestions, scrolls active results and leaves without 
   for (let index = 3; index < 40; index++) await input.press("Tab");
   assert.equal(await activeSuggestion(input), "Result 40");
   const option = page.getByRole("option", { name: "Result 40", exact: true });
-  const bounds = await option.boundingBox();
-  const list = await page.getByRole("listbox").boundingBox();
-  assert.ok(
-    bounds.y >= list.y - 1 &&
-      bounds.y + bounds.height <= list.y + list.height + 1,
-    "The active suggestion scrolls into the listbox viewport",
+  // React Aria scrolls the focused option during layout. The active-descendant
+  // attribute can already be updated before that frame has reached the viewport.
+  await page.waitForFunction(
+    ({ option, list }) => {
+      const bounds = option.getBoundingClientRect();
+      const viewport = list.getBoundingClientRect();
+      return (
+        bounds.y >= viewport.y - 1 &&
+        bounds.y + bounds.height <= viewport.y + viewport.height + 1
+      );
+    },
+    {
+      option: await option.elementHandle(),
+      list: await page.getByRole("listbox").elementHandle(),
+    },
   );
   await input.press("Tab");
   const next = page.getByRole("textbox", {

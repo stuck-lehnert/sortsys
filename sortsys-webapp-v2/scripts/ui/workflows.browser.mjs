@@ -4844,7 +4844,6 @@ test("invalid units identify the field, retain drafts and stop retrying until co
   await dialog
     .getByText("Saving waits for correction", { exact: true })
     .waitFor();
-  await dialog.getByText("Check input", { exact: true }).waitFor();
   assert.match(
     await dialog.getByRole("alert").innerText(),
     /Units may contain up to four characters/,

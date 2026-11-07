@@ -123,11 +123,12 @@ Run the same complete repository check as GitHub Actions with:
 
 This also checks the Go job runner, Rust DWG parser, DWG viewer, WebAssembly build, and web application. The [CI branch flow](.github/BRANCHES.md) documents how `master`, `predeploy`, and `deploy` are used.
 
-In GitHub Actions, one candidate build supplies the API, job runner, DWG
-WebAssembly, client, and webapp outputs. Fresh-instance tests, populated-deploy
-upgrade tests, and runtime checks reuse that build. Publishing copies the checked
-OCI images, including their SBOM and provenance, without compiling again. The
-pinned `deploy` revision has a separate seeder build for the upgrade fixture.
+GitHub Actions runs `scripts/ci` once per branch push. A successful `predeploy`
+run fast-forwards `deploy` and starts its container workflow. The `deploy` workflow
+builds the three production Dockerfiles and publishes their images to GHCR.
+There are no cross-job build bundles or custom Actions caches. The optional
+`./scripts/test-deploy-upgrade <deploy-commit>` remains available for a populated
+upgrade check when working on migrations.
 
 ### API replicas and collaboration
 

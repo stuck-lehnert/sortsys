@@ -46,10 +46,7 @@ export function readRuntimeSnapshot(root = fileURLToPath(new URL('../', import.m
   return {
     nodeVersion: read('.node-version'),
     actualNodeMajor: process.versions.node.split('.')[0],
-    ci: [
-      read('.github/workflows/ci.yml'),
-      read('.github/workflows/build-candidate.yml'),
-    ].join('\n'),
+    ci: read('.github/workflows/ci.yml'),
     rustImages: { catalog, api, apiTest, webappDocker },
     nodeImages: { catalog, webappDocker },
     manifests: Object.fromEntries(['sortsys-api-v2/client', 'sortsys-dwgviewer', 'sortsys-webapp-v2', 'sortsys-gaeb'].map(path => [path, JSON.parse(read(path + '/package.json'))])),
