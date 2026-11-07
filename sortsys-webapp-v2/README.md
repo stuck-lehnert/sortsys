@@ -36,6 +36,17 @@ npm run typecheck
 npm run build
 ```
 
+For UI changes, follow the [UI guardrails](../UX_UI_GUARDRAILS.md) and run the
+browser fixtures against the production stylesheet:
+
+```bash
+bun run test:ui
+```
+
+Build the client and DWG WebAssembly first. The fixtures cover German/English,
+keyboard interaction, accessibility and document dialogs. `SORTSYS_UI_ASSETS` can
+select an existing `build/client` directory.
+
 The production container serves the static build through Nginx. `API_UPSTREAM` selects the internal API origin, while `ONLYOFFICE_UPSTREAM` and `DRAWIO_UPSTREAM` select the internal editor services. `CLIENT_MAX_BODY_SIZE` defaults to `64m`.
 
 Users can create DOCX, PPTX, XLSX, and diagrams.net files directly in a project's attachment area. Office files open in ONLYOFFICE; diagrams open in the embedded diagrams.net editor. Both editors save through authenticated API procedures.

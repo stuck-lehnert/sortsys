@@ -17,7 +17,8 @@ The supported way to run the API with its required services and seeded tenant is
 ./scripts/dev
 ```
 
-To work on the Rust workspace directly, install Rust 1.88 or newer and run:
+To work on the Rust workspace directly, use the toolchain selected in
+[CI](../.github/workflows/ci.yml) and run:
 
 ```bash
 cargo fmt --all -- --check
@@ -31,49 +32,42 @@ The full integration environment uses real PostgreSQL and S3-compatible storage:
 ../scripts/test-api
 ```
 
-## Deploy upgrade guard
+## Populated upgrade checks
 
-The `Upgrade populated deploy databases` CI job runs on `predeploy` separately
-from the normal repository tests. Both jobs must succeed before automatic
-promotion to `deploy` and container publication.
-
-The guard pins the current `deploy` commit, archives its API source, and runs
-that version's development seed against disposable PostgreSQL and S3 services.
-It retains those services and their data while replacing the API with the
-candidate. The populated fixture includes users, customers, projects, products,
-reports, work hours, planning, financial entries, relations, and entity history.
-No production database or production credentials are used.
-
-Before candidate bootstrap, direct SQL captures the original tenant records and
-managed-database metadata. The candidate then applies the production master
-bootstrap and tenant migrations. The tests check original data preservation,
-registered migrations, and idempotence after reconnecting. The running candidate
-must expose the original records through the API, authenticate existing accounts,
-and support updates, creation, deletion, and audit history. The full existing API
-and client checks run afterward. Required upgrade phases fail if their tests are
-missing; an empty test selection cannot satisfy the guard.
-
-Additive schema changes and new rows are accepted. Existing persisted fields
-must remain unchanged, excluding derived search vectors. A migration that
-intentionally transforms existing data needs explicit, reviewed upgrade
-expectations in `rust-api/tests/upgrade_scenarios.rs`; do not remove preservation
-checks to accommodate it.
-
-Promotion checks the pinned deploy revision again and uses an atomic Git lease.
-If `deploy` changes, CI must run against that new baseline. Divergent history and
-superseded `predeploy` candidates are rejected. A missing `deploy` branch fails
-the guard rather than falling back to an empty database.
-
-To run locally with Docker or Podman, fetch `deploy` and pass its exact commit:
+To check migrations against an existing revision with disposable PostgreSQL and
+S3 services, run from the repository root:
 
 ```bash
 git fetch origin deploy
 ./scripts/test-deploy-upgrade "$(git rev-parse origin/deploy)"
 ```
 
-This workflow gates automatic promotion. Repository branch protection must also
-require the upgrade check if direct pushes to `deploy` are allowed by repository
-policy. Changes to GitHub branch protection are not applied by this script.
+The helper seeds the archived deploy source, retains its data, then starts the
+candidate and verifies data preservation, migrations and API writes. Intentional
+transformations need explicit expectations in `rust-api/tests/upgrade_scenarios.rs`.
+This is an optional local check; [CI promotion](../.github/BRANCHES.md) depends on
+the normal repository tests.
+
+## Replicas and collaboration
+
+API instances share the master/tenant PostgreSQL databases, object storage and
+signing/encryption secrets. Master bootstrap and tenant migrations use
+transaction-scoped advisory locks. Native document saves use row locks and exact
+revisions; invoice counters and job leases are coordinated through PostgreSQL.
+
+GAEB collaboration uses Yjs/yrs, a tenant-local delta log and LISTEN/NOTIFY.
+Checkpoints bound replay work; expiring presence and session epochs support
+reconnection without duplicating initial text. Native document and workflow
+notifications commit with their database writes. Parsing, editing, calculation,
+validation and printing remain client-side.
+
+No sticky routing or separate document server is needed for GAEB. Enable
+WebSocket upgrades and at least 90 seconds of idle time at the load balancer.
+Each active tenant/replica uses one separate listener connection, released after
+one idle minute. PostgreSQL listeners require session connections, not a
+transaction-only pooler. Business connections use the existing bounded pools.
+The API integration suite exercises independent replicas, reconnection,
+concurrent writes and migrations.
 
 ## Generated client contract
 
