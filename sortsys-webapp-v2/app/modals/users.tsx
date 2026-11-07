@@ -97,15 +97,11 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
             getOptions={async ({ query }) => {
               const [users, err] = await client.query(
                 "users.list",
-                {},
+                { search: query },
                 { strategy: "cache-first" },
               );
               if (err) throw err;
-              const needle = query.trim().toLowerCase();
-              return (users ?? []).filter((user) => {
-                if (!needle) return true;
-                return userFullName(user).toLowerCase().includes(needle);
-              });
+              return users ?? [];
             }}
             renderItem={({ item }) => userFullName(item)}
             renderTile={(item) => <SmallUserTile data={item} noLink />}
@@ -216,16 +212,11 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
             getOptions={async ({ query }) => {
               const [users, err] = await client.query(
                 "users.list",
-                {},
+                { search: query },
                 { strategy: "cache-first" },
               );
               if (err) throw err;
-              const needle = query.trim().toLowerCase();
-              return (users ?? []).filter((candidate) => {
-                if (candidate.id === user.id) return false;
-                if (!needle) return true;
-                return userFullName(candidate).toLowerCase().includes(needle);
-              });
+              return (users ?? []).filter((candidate) => candidate.id !== user.id);
             }}
             renderItem={({ item }) => userFullName(item)}
             renderTile={(item) => <SmallUserTile data={item} noLink />}
@@ -330,16 +321,11 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
             getOptions={async ({ query }) => {
               const [users, err] = await client.query(
                 "users.list",
-                {},
+                { search: query },
                 { strategy: "cache-first" },
               );
               if (err) throw err;
-              const needle = query.trim().toLowerCase();
-              return (users ?? []).filter((candidate) => {
-                if (candidate.id === user.id) return false;
-                if (!needle) return true;
-                return userFullName(candidate).toLowerCase().includes(needle);
-              });
+              return (users ?? []).filter((candidate) => candidate.id !== user.id);
             }}
             renderItem={({ item }) => userFullName(item)}
             renderTile={(item) => <SmallUserTile data={item} noLink />}

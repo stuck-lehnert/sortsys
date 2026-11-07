@@ -3779,7 +3779,7 @@ test("previous positions autocomplete searches descriptions and inserts short te
     name: "Bisherige Positionen durchsuchen",
     exact: true,
   });
-  await search.fill("Brandschutz");
+  await search.fill("montieren Revisionsklappe");
   await page
     .getByRole("option", { name: /Revisionsklappe.*Brandschutzplatte/ })
     .click();

@@ -495,6 +495,7 @@ const MyInput = function<ItemT = any, PrepT = any>(_props: any) {
           disabled={props.disabled || context?.loading() || loading()}
           autoComplete={props.autoComplete ?? "off"}
           items={suggItems}
+          defaultFilter={() => true}
           loading={suggestionsState.loading}
           loadError={suggestionsState.failed}
           onInputChange={(newValue: any) => {

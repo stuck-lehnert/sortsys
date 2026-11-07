@@ -366,9 +366,12 @@ async function loadAsyncChoices({ query, init }) {
       ? { id: "slow", name: "Slow stale result" }
       : query === "fresh"
         ? { id: "fresh", name: "Fresh result" }
-        : { id: "alpha", name: "Alpha contact" };
+        : { id: "alpha", name: "Alpha contact", description: "description-only-match" };
 
-  return [existingAsyncContact, existingAsyncContact, result, result];
+  // Model server-side matching across labels and additional searchable fields.
+  return [existingAsyncContact, existingAsyncContact, result, result].filter(
+    (item) => `${item.name} ${item.description ?? ""}`.toLowerCase().includes(query),
+  );
 }
 
 const asyncSuggestions = {

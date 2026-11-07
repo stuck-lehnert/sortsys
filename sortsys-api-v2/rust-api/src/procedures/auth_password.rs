@@ -61,16 +61,53 @@ async fn set_password(
         .tenant_pool(&auth.tenant)
         .await
         .map_err(internal)?;
-    let result = sqlx::query("UPDATE users SET password = $2 WHERE username = $1")
-        .bind(input.username)
+    let mut transaction = pool.begin().await.map_err(internal)?;
+    let user_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE username = $1 FOR UPDATE")
+            .bind(&input.username)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(internal)?
+            .ok_or_else(not_found)?;
+    let session_id = auth.session.id.parse::<i64>().map_err(internal)?;
+    // Hashing or waiting for the target's lock may have overlapped a password
+    // reset. Recheck the caller after the lock, using a fresh statement snapshot.
+    let authorized = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM user_sessions AS session \
+         JOIN users AS caller ON caller.id = session.user_id \
+         WHERE session.id = $1 AND caller.id = $2 AND caller.deactivated_at IS NULL \
+           AND session.created_at < statement_timestamp() \
+           AND session.expires_at > statement_timestamp() \
+           AND (caller.username = $3 OR EXISTS (SELECT 1 FROM user_role_assignments \
+                WHERE user_id = caller.id AND role_name = ':admin')))",
+    )
+    .bind(session_id)
+    .bind(auth.user.id.parse::<i64>().map_err(internal)?)
+    .bind(&input.username)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(internal)?;
+    if !authorized {
+        return Err(
+            RpcError::new(ErrorCode::Unauthorized, "Session no longer authorized")
+                .with_http_code(401),
+        );
+    }
+    sqlx::query("UPDATE users SET password = $2 WHERE id = $1")
+        .bind(user_id)
         .bind(password_hash)
-        .execute(&pool)
+        .execute(&mut *transaction)
         .await
         .map_err(internal)?;
-
-    if result.rows_affected() == 0 {
-        return Err(not_found());
-    }
+    let keep_session = if user_id.to_string() == auth.user.id {
+        Some(session_id)
+    } else {
+        None
+    };
+    crate::auth::expire_user_sessions(&mut transaction, user_id, keep_session)
+        .await
+        .map_err(internal)?;
+    transaction.commit().await.map_err(internal)?;
 
     Ok(Success { success: true })
 }

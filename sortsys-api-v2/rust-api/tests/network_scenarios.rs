@@ -78,6 +78,8 @@ mod documents;
 mod openrouter;
 #[path = "network_scenarios/replicas.rs"]
 mod replicas;
+#[path = "network_scenarios/security.rs"]
+mod security;
 #[path = "network_scenarios/seed_documents.rs"]
 mod seed_documents;
 
@@ -3104,6 +3106,7 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
             json!({
                 "customId": 9101,
                 "name": "Integration mortar",
+                "description": "Haftbrücke für mineralische Untergründe",
                 "regieReportName": "  Fassadenbeschichtung  ",
                 "baseUnit": "kg",
                 "brand": "Ferris",
@@ -3260,6 +3263,12 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
     assert_eq!(customer_search.as_array().unwrap().len(), 1);
     assert_eq!(customer_search[0]["id"], product["id"]);
 
+    let description_search = rpc
+        .query("products.list", json!({ "search": "Haftbr" }), Some(&token))
+        .await;
+    assert_eq!(description_search.as_array().unwrap().len(), 1);
+    assert_eq!(description_search[0]["id"], product["id"]);
+
     let listed_products = rpc
         .query(
             "products.list",
@@ -3316,6 +3325,18 @@ async fn products_delivery_notes_and_project_costs_use_real_postgres() {
         .query("products.get", json!({ "id": product["id"] }), Some(&token))
         .await;
     assert_eq!(preserved_product["regieReportName"], "Fassadenbeschichtung");
+    let updated_description_search = rpc
+        .query(
+            "products.list",
+            json!({ "search": "through" }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(updated_description_search[0]["id"], product["id"]);
+    let old_description_search = rpc
+        .query("products.list", json!({ "search": "Haftbr" }), Some(&token))
+        .await;
+    assert!(old_description_search.as_array().unwrap().is_empty());
     rpc.mutation(
         "products.update",
         json!({ "id": product["id"], "data": { "regieReportName": "Kundenmaterial" } }),
@@ -5280,6 +5301,17 @@ async fn global_admin_tenants_users_and_errors_use_real_databases() {
         )
         .await;
     assert_eq!(created_admin["password"], "Initial-Admin-Password-2026");
+    let previous_admin_login = rpc
+        .mutation(
+            "auth.login",
+            json!({
+                "tenant": fixture.tenant,
+                "username": "cross.tenant.admin",
+                "password": "Initial-Admin-Password-2026",
+            }),
+            None,
+        )
+        .await;
 
     let admin_users = rpc
         .query(
@@ -5340,6 +5372,14 @@ async fn global_admin_tenants_users_and_errors_use_real_databases() {
         )
         .await;
     assert_eq!(reset["password"], "Reset-Admin-Password-2026");
+    rpc.expect_error(
+        "auth.check",
+        Method::GET,
+        Value::Null,
+        previous_admin_login["token"].as_str(),
+        "UNAUTHORIZED",
+    )
+    .await;
 
     let tenant_login = rpc
         .mutation(

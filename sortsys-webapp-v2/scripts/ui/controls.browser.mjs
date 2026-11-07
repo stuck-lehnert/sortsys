@@ -1084,6 +1084,25 @@ test("text links stay blue and soften to seventy percent on hover", async () => 
   );
 });
 
+test("async multiselect keeps results matched by description rather than their visible label", async () => {
+  await openFixture();
+  const region = page.getByRole("region", {
+    name: "Async autocomplete",
+    exact: true,
+  });
+  const input = region.getByRole("combobox", {
+    name: "Async people",
+    exact: true,
+  });
+  await region.getByRole("button", { name: "Remove Existing contact", exact: true }).waitFor();
+  await input.fill("description-only-match");
+  const result = page.getByRole("option", { name: "Alpha contact", exact: true });
+  await result.waitFor();
+  await result.click();
+  await input.press("Escape");
+  await region.getByRole("button", { name: "Remove Alpha contact", exact: true }).waitFor();
+});
+
 test("actual async single suggestions show pending status and appear while typing", async () => {
   await openFixture();
   const region = page.getByRole("region", {
@@ -1131,6 +1150,16 @@ test("actual async single suggestions show pending status and appear while typin
     .getByText("Suggestions could not be loaded.", { exact: true })
     .waitFor();
   assert.equal(await root.getByRole("status").count(), 0);
+});
+
+test("async single suggestions keep results matched outside the visible label", async () => {
+  await openFixture();
+  const input = page.getByRole("combobox", { name: "Async single", exact: true });
+  await input.fill("description-only-match");
+  const result = page.getByRole("option", { name: "Alpha contact", exact: true });
+  await result.waitFor();
+  await result.click();
+  assert.equal(await input.inputValue(), "Alpha contact");
 });
 
 test("preselected async multiselect uses unique removable chips and separate action slots", async () => {

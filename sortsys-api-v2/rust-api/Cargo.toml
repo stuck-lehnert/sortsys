@@ -19,7 +19,7 @@ flate2 = "1"
 futures-util = "0.3"
 getrandom = "0.4"
 hmac = "0.13"
-jsonwebtoken = { version = "11", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["aws_lc_rs"] }
 percent-encoding = "2"
 p256 = { version = "0.14", features = ["ecdsa"] }
 regex = "1"
@@ -40,6 +40,6 @@ url = "2"
 yrs = { version = "0.28", features = ["sync"] }
 
 [dev-dependencies]
-tokio-tungstenite = "0.29"
+tokio-tungstenite = "0.30"
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }

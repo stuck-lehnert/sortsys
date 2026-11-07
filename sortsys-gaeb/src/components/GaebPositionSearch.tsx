@@ -74,6 +74,7 @@ export function GaebPositionSearch({
         placeholder={label}
         value={query}
         items={items}
+        defaultFilter={() => true}
         loading={loading}
         loadError={failed}
         itemToString={(item: GaebPositionSuggestion) =>

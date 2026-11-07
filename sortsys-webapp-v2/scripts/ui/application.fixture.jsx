@@ -11,7 +11,12 @@ import GlobalAdminErrorsPage from "../../app/routes/(admin)/__admin.errors";
 import GlobalAdminLlmPage from "../../app/routes/(admin)/__admin.llm";
 import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
-import { showSetUserPasswordModal } from "../../app/modals/users";
+import {
+  showCreateUserModal,
+  showModifyUserModal,
+  showSetUserPasswordModal,
+  showSetUserSupervisorModal,
+} from "../../app/modals/users";
 import { showCreateDailyProjectReportModal } from "../../app/modals/dailyProjectReport";
 import { showCreateRegieReportModal } from "../../app/modals/regieReports";
 import { showCreateProductModal } from "../../app/modals/products";
@@ -113,6 +118,9 @@ function FormEntrypoints() {
       <Button onClick={() => showSetUserPasswordModal(modals, user)}>
         Set password
       </Button>
+      <Button onClick={() => showCreateUserModal(modals)}>Create user</Button>
+      <Button onClick={() => showModifyUserModal(modals, user)}>Edit user</Button>
+      <Button onClick={() => showSetUserSupervisorModal(modals, user)}>Set supervisor</Button>
       <Button onClick={() => showCreateDailyProjectReportModal(modals)}>
         Create daily report
       </Button>

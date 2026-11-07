@@ -9,6 +9,10 @@ import * as Y from "yjs";
 import { createFixtureServer, fixtureDirectory } from "./browser-support.mjs";
 import { makeMsgFixture } from "../../test-fixtures/msgFixture.mjs";
 
+const pdfjsVersion = JSON.parse(
+  await readFile(new URL("../../vendor/pdfjs/release.json", import.meta.url), "utf8"),
+).version;
+
 let browser;
 let server;
 let context;
@@ -1454,6 +1458,56 @@ test("actual restricted roles cannot use administration or the LLM composer", as
     false,
   );
 });
+
+test("price-import lookups retain description-only server matches for vendors and products", async () => {
+  const vendor = { id: "description-vendor", name: "Nordbau", description: "Fassadenlieferant" };
+  const product = {
+    id: "description-product", customId: 840, name: "Reparaturmörtel",
+    description: "Haftbrücke für mineralische Untergründe", baseUnit: "kg",
+    brand: "Bauwerk", otherUnits: {},
+  };
+  api.respond("products.vendors.list", ({ search }) => search === "fassaden" ? [vendor] : []);
+  api.respond("products.list", ({ search }) => search === "mineralisch haftbrücke" ? [product] : []);
+  await openApplication("/fixtures/forms");
+  await page.getByRole("button", { name: "Import price list", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const vendorInput = dialog.getByRole("combobox", { name: "Vendor", exact: true });
+  await vendorInput.fill("fassaden");
+  await page.getByRole("option", { name: "Nordbau", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.price-import-fields input')?.value === "Nordbau");
+  await dialog.getByRole("button", { name: "Open details for Fixture material 1", exact: true }).click();
+  const productInput = dialog.getByRole("combobox", { name: "Product match", exact: true });
+  await productInput.fill("mineralisch haftbrücke");
+  await page.getByRole("option", { name: /840 · Reparaturmörtel/ }).click();
+  await page.waitForFunction(() => document.querySelector('.price-import-row-body input')?.value === "840 · Reparaturmörtel");
+  await dialog.getByText(/^Existing product/).waitFor();
+  assert.ok(api.requests.some(({ path, input }) => path === "products.list" && input.search === "mineralisch haftbrücke"));
+});
+
+for (const entrypoint of ["Create user", "Edit user", "Set supervisor"]) {
+  test(`${entrypoint} searches supervisors through the API and retains email matches`, async () => {
+    const candidate = {
+      id: "supervisor-fixture", username: "abauer", firstName: "Alex", lastName: "Bauer",
+      email: "planung@example.test",
+    };
+    api.respond("users.list", ({ search }) => search === "planung@example.test" ? [
+      { id: "fixture-user", username: "fixture.user", firstName: "Fixture", lastName: "User" },
+      candidate,
+    ] : []);
+    await openApplication("/fixtures/forms");
+    await page.getByRole("button", { name: entrypoint, exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const input = dialog.getByRole("combobox", { name: /^Supervisor/ });
+    await input.fill("planung@example.test");
+    const option = page.getByRole("option", { name: "Alex Bauer", exact: true });
+    await option.waitFor();
+    if (entrypoint !== "Create user")
+      assert.equal(await page.getByRole("option", { name: "Fixture User", exact: true }).count(), 0);
+    await option.click();
+    await dialog.locator(".ss-single-select-preview").getByText("Alex Bauer", { exact: true }).waitFor();
+    assert.ok(api.requests.some(({ path, input }) => path === "users.list" && input.search === "planung@example.test"));
+  });
+}
 
 function populatePlanning(employeeCount = 1) {
   const project = { id: "project-fixture", title: "Fixture project" };
@@ -3817,13 +3871,15 @@ for (const [locale, theme, width] of [
       })
       .click();
     const measurementDialog = page.getByRole("dialog");
+    const measuredItem = measurementDialog.getByRole("checkbox").first();
+    // The contract loads asynchronously and temporarily disables the fields.
+    // Fill the designation once its scope has arrived, rather than racing init.
+    await measuredItem.waitFor();
     await measurementDialog
       .getByRole("textbox", {
         name: locale === "de" ? /^Bezeichnung/ : /^Title/,
       })
       .fill("First measured work");
-    const measuredItem = measurementDialog.getByRole("checkbox").first();
-    await measuredItem.waitFor();
     assert.equal(await measuredItem.isChecked(), true);
     await measuredItem
       .locator("xpath=ancestor::*[@data-slot='checkbox']")
@@ -4714,10 +4770,10 @@ test(
     const printed = await readFile(await file.path());
     assert.equal(printed.subarray(0, 5).toString(), "%PDF-");
     const text = await page.evaluate(
-      async (data) => {
-        const pdfjs = await import("/pdfjs/6.4.299/build/pdf.mjs");
+      async ({ data, version }) => {
+        const pdfjs = await import(`/pdfjs/${version}/build/pdf.mjs`);
         pdfjs.GlobalWorkerOptions.workerSrc =
-          "/pdfjs/6.4.299/build/pdf.worker.mjs";
+          `/pdfjs/${version}/build/pdf.worker.mjs`;
         const task = pdfjs.getDocument({ data: new Uint8Array(data) });
         const pdf = await task.promise;
         try {
@@ -4733,7 +4789,7 @@ test(
           await task.destroy();
         }
       },
-      [...printed],
+      { data: [...printed], version: pdfjsVersion },
     );
     assert.match(text, /CUSTOM HEADER Fixture Company/);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
@@ -5225,7 +5281,7 @@ test("previous-position autocomplete searches descriptions and reuses the comple
   const state = await createOfferInEditor("Library offer");
   api.respond("gaeb.positions.search", ({ query }) => {
     return {
-      items: query.toLowerCase().includes("fire")
+      items: query.toLowerCase().includes("plasterboard")
         ? [
             {
               id: "catalog-hatch",
@@ -5248,7 +5304,7 @@ test("previous-position autocomplete searches descriptions and reuses the comple
   const request = page.waitForRequest((request) =>
     request.url().includes("gaeb.positions.search"),
   );
-  await search.fill("fire");
+  await search.fill("plasterboard inspection");
   await request;
   await dialog
     .locator(".gaeb-document-scroll")
@@ -5263,7 +5319,7 @@ test("previous-position autocomplete searches descriptions and reuses the comple
   );
   api.release("gaeb.positions.search");
   await response;
-  await search.fill("fire");
+  await search.fill("plasterboard inspection");
   await page
     .getByRole("option", { name: /Inspection hatch.*fire-rated/ })
     .waitFor();
@@ -5277,7 +5333,7 @@ test("previous-position autocomplete searches descriptions and reuses the comple
   await page.waitForFunction(() =>
     document.activeElement?.classList.contains("gaeb-editor"),
   );
-  await search.fill("fire");
+  await search.fill("plasterboard inspection");
   await page
     .getByRole("option", { name: /Inspection hatch.*fire-rated/ })
     .click();

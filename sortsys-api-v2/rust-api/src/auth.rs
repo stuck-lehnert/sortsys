@@ -10,7 +10,7 @@ use bcrypt::verify;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgConnection};
 use ts_rs::TS;
 
 use crate::{
@@ -22,6 +22,24 @@ use crate::{
 const USER_TOKEN_TTL_SECONDS: usize = 30 * 24 * 60 * 60;
 const ADMIN_TOKEN_TTL_SECONDS: usize = 2 * 60 * 60;
 const MCP_TOKEN_TTL_SECONDS: usize = 10 * 60;
+
+/// Call in the transaction that changes the user's password, after locking the
+/// user row. Keeping the caller's session is only appropriate for a self-change.
+pub(crate) async fn expire_user_sessions(
+    connection: &mut PgConnection,
+    user_id: i64,
+    keep_session: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE user_sessions SET expires_at = NOW() \
+         WHERE user_id = $1 AND ($2::bigint IS NULL OR id <> $2) AND expires_at > NOW()",
+    )
+    .bind(user_id)
+    .bind(keep_session)
+    .execute(connection)
+    .await?;
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum McpScope {
@@ -134,6 +152,7 @@ impl AuthService {
         .await
         .ok()??;
         let password_hash = user.password?;
+        let verified_hash = password_hash.clone();
         let password = password.to_owned();
         let matches = tokio::task::spawn_blocking(move || verify(password, &password_hash))
             .await
@@ -143,6 +162,18 @@ impl AuthService {
             return None;
         }
 
+        // Serialize session creation with password changes. A verification that
+        // started before a reset must not recreate a session with the old hash.
+        let mut transaction = pool.begin().await.ok()?;
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM users WHERE id = $1 AND password = $2 \
+             AND (deactivated_at IS NULL OR deactivated_at > NOW()) FOR SHARE",
+        )
+        .bind(user.id)
+        .bind(verified_hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .ok()??;
         let session_id: i64 = sqlx::query_scalar(
             "INSERT INTO user_sessions (user_id, inet_addr, user_agent) \
              VALUES ($1, $2, $3) RETURNING id",
@@ -150,9 +181,10 @@ impl AuthService {
         .bind(user.id)
         .bind(inet_addr)
         .bind(user_agent)
-        .fetch_one(&pool)
+        .fetch_one(&mut *transaction)
         .await
         .ok()?;
+        transaction.commit().await.ok()?;
         self.issue_user_token(&tenant, &session_id.to_string()).ok()
     }
 
@@ -493,6 +525,74 @@ struct AuthRow {
 #[cfg(test)]
 mod tests {
     use super::McpScope;
+    use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+    use serde::{Deserialize, Serialize};
+
+    #[test]
+    fn jwt_backend_preserves_hmac_tokens_and_rejects_wrong_secrets_or_algorithms() {
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+        struct FixtureClaims {
+            sub: String,
+            exp: u64,
+        }
+        let claims = FixtureClaims {
+            sub: "compatibility-fixture".into(),
+            exp: 4_102_444_800,
+        };
+        let secret = b"fixed-test-key-for-jwt-compatibility";
+        // Fixed vectors independently generated with Python's hmac/hashlib.
+        for (algorithm, expected) in [
+            (
+                Algorithm::HS256,
+                "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjb21wYXRpYmlsaXR5LWZpeHR1cmUiLCJleHAiOjQxMDI0NDQ4MDB9.1raetudmk3pmvbPYLWHDZoAciyHKmY3-JGU05kxOPN8",
+            ),
+            (
+                Algorithm::HS512,
+                "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJjb21wYXRpYmlsaXR5LWZpeHR1cmUiLCJleHAiOjQxMDI0NDQ4MDB9.a528zzvpgLXABhEbUgJ5_V3z0Fz2RwUP1ArqCa8cxOXbF2N05rmLhE522Mf8qBENLqoguCDLxtjW88jKYvd8YQ",
+            ),
+        ] {
+            assert_eq!(
+                encode(
+                    &Header::new(algorithm),
+                    &claims,
+                    &EncodingKey::from_secret(secret)
+                )
+                .unwrap(),
+                expected
+            );
+            assert_eq!(
+                decode::<FixtureClaims>(
+                    expected,
+                    &DecodingKey::from_secret(secret),
+                    &Validation::new(algorithm)
+                )
+                .unwrap()
+                .claims,
+                claims
+            );
+            assert!(
+                decode::<FixtureClaims>(
+                    expected,
+                    &DecodingKey::from_secret(b"incorrect-test-key"),
+                    &Validation::new(algorithm)
+                )
+                .is_err()
+            );
+            let other = if algorithm == Algorithm::HS256 {
+                Algorithm::HS512
+            } else {
+                Algorithm::HS256
+            };
+            assert!(
+                decode::<FixtureClaims>(
+                    expected,
+                    &DecodingKey::from_secret(secret),
+                    &Validation::new(other)
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn mcp_delegations_are_purpose_and_context_bound() {

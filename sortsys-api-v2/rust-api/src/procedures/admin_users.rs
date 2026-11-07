@@ -298,12 +298,17 @@ async fn reset_password(
         };
     }
 
+    let mut transaction = pool.begin().await.map_err(internal)?;
     sqlx::query("UPDATE users SET password = $2 WHERE id = $1")
         .bind(input.user_id.0)
         .bind(hash)
-        .execute(&pool)
+        .execute(&mut *transaction)
         .await
         .map_err(internal)?;
+    crate::auth::expire_user_sessions(&mut transaction, input.user_id.0, None)
+        .await
+        .map_err(internal)?;
+    transaction.commit().await.map_err(internal)?;
 
     Ok(UserResetPasswordOutput { password })
 }

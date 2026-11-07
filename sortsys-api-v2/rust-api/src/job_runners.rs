@@ -4,7 +4,7 @@
 //! report completion or failure. Work still owned when a socket closes is
 //! returned to the queue.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -29,6 +29,7 @@ use crate::{
 pub const WS_PATH: &str = "/internal/job-runners/ws";
 
 const MAX_MESSAGE_BYTES: usize = 2 * 1024 * 1024;
+const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_POLL_LIMIT: i64 = 10;
 const DEFAULT_RETRY_SECONDS: i32 = 30;
 
@@ -44,8 +45,28 @@ async fn upgrade(State(state): State<Arc<AppState>>, websocket: WebSocketUpgrade
 
 async fn serve_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut context = SocketContext::new();
+    let authentication_deadline = tokio::time::Instant::now() + AUTHENTICATION_TIMEOUT;
 
-    while let Some(message) = socket.recv().await {
+    loop {
+        let message = if context.authenticated {
+            socket.recv().await
+        } else {
+            match tokio::time::timeout_at(authentication_deadline, socket.recv()).await {
+                Ok(message) => message,
+                Err(_) => {
+                    let _ = tokio::time::timeout(
+                        Duration::from_millis(100),
+                        socket.send(Message::Close(Some(CloseFrame {
+                            code: 1008,
+                            reason: "Authentication timed out".into(),
+                        }))),
+                    )
+                    .await;
+                    break;
+                }
+            }
+        };
+        let Some(message) = message else { break };
         let response = match message {
             Ok(Message::Text(text)) => handle_message(&state, &mut context, text.as_str()).await,
             Ok(Message::Binary(bytes)) => match std::str::from_utf8(&bytes) {
@@ -65,17 +86,30 @@ async fn serve_socket(mut socket: WebSocket, state: Arc<AppState>) {
         };
         let close_after_response = context.close_after_response;
 
-        if send(&mut socket, response).await.is_err() {
+        let sent = if context.authenticated {
+            send(&mut socket, response).await.is_ok()
+        } else {
+            // A peer that stops reading must not bypass the authentication
+            // deadline by filling the outgoing socket buffer with errors.
+            matches!(
+                tokio::time::timeout_at(authentication_deadline, send(&mut socket, response),)
+                    .await,
+                Ok(Ok(()))
+            )
+        };
+        if !sent {
             break;
         }
 
         if close_after_response {
-            let _ = socket
-                .send(Message::Close(Some(CloseFrame {
+            let _ = tokio::time::timeout_at(
+                authentication_deadline,
+                socket.send(Message::Close(Some(CloseFrame {
                     code: 1008,
                     reason: "Unauthorized".into(),
-                })))
-                .await;
+                }))),
+            )
+            .await;
             break;
         }
     }

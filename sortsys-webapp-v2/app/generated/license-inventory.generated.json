@@ -74,7 +74,7 @@
       {
         "ecosystem": "Rust",
         "name": "async-compression",
-        "version": "0.4.51",
+        "version": "0.4.52",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Nullus157/async-compression"
       },
@@ -108,6 +108,20 @@
       },
       {
         "ecosystem": "Rust",
+        "name": "aws-lc-rs",
+        "version": "1.19.0",
+        "license": "ISC AND (Apache-2.0 OR ISC)",
+        "source": "https://github.com/aws/aws-lc-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "aws-lc-sys",
+        "version": "0.47.0",
+        "license": "ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)",
+        "source": "https://github.com/aws/aws-lc-rs"
+      },
+      {
+        "ecosystem": "Rust",
         "name": "axum",
         "version": "0.8.9",
         "license": "MIT",
@@ -119,13 +133,6 @@
         "version": "0.5.6",
         "license": "MIT",
         "source": "https://github.com/tokio-rs/axum"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "base16ct",
-        "version": "0.2.0",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/formats/tree/master/base16ct"
       },
       {
         "ecosystem": "Rust",
@@ -291,7 +298,7 @@
       {
         "ecosystem": "Rust",
         "name": "compression-codecs",
-        "version": "0.4.46",
+        "version": "0.4.47",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Nullus157/async-compression"
       },
@@ -389,13 +396,6 @@
       {
         "ecosystem": "Rust",
         "name": "crypto-bigint",
-        "version": "0.5.5",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/crypto-bigint"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "crypto-bigint",
         "version": "0.7.10",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/crypto-bigint"
@@ -430,20 +430,6 @@
       },
       {
         "ecosystem": "Rust",
-        "name": "curve25519-dalek",
-        "version": "4.1.3",
-        "license": "BSD-3-Clause",
-        "source": "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "curve25519-dalek-derive",
-        "version": "0.1.1",
-        "license": "MIT/Apache-2.0",
-        "source": "https://github.com/dalek-cryptography/curve25519-dalek"
-      },
-      {
-        "ecosystem": "Rust",
         "name": "dashmap",
         "version": "6.2.1",
         "license": "MIT",
@@ -469,13 +455,6 @@
         "version": "0.8.3",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/formats"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "deranged",
-        "version": "0.5.9",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/jhpratt/deranged"
       },
       {
         "ecosystem": "Rust",
@@ -508,30 +487,9 @@
       {
         "ecosystem": "Rust",
         "name": "ecdsa",
-        "version": "0.16.9",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/signatures/tree/master/ecdsa"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "ecdsa",
         "version": "0.17.0",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/signatures"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "ed25519",
-        "version": "2.2.3",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/signatures/tree/master/ed25519"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "ed25519-dalek",
-        "version": "2.2.0",
-        "license": "BSD-3-Clause",
-        "source": "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek"
       },
       {
         "ecosystem": "Rust",
@@ -539,13 +497,6 @@
         "version": "1.19.0",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/rayon-rs/either"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "elliptic-curve",
-        "version": "0.13.8",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/traits/tree/master/elliptic-curve"
       },
       {
         "ecosystem": "Rust",
@@ -606,23 +557,9 @@
       {
         "ecosystem": "Rust",
         "name": "ff",
-        "version": "0.13.1",
-        "license": "MIT/Apache-2.0",
-        "source": "https://github.com/zkcrypto/ff"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "ff",
         "version": "0.14.0",
         "license": "MIT/Apache-2.0",
         "source": "https://github.com/zkcrypto/ff"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "fiat-crypto",
-        "version": "0.2.9",
-        "license": "MIT OR Apache-2.0 OR BSD-1-Clause",
-        "source": "https://github.com/mit-plv/fiat-crypto"
       },
       {
         "ecosystem": "Rust",
@@ -749,13 +686,6 @@
         "version": "0.6.0",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/universal-hashes"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "group",
-        "version": "0.13.0",
-        "license": "MIT/Apache-2.0",
-        "source": "https://github.com/zkcrypto/group"
       },
       {
         "ecosystem": "Rust",
@@ -1144,24 +1074,10 @@
       },
       {
         "ecosystem": "Rust",
-        "name": "num-bigint",
-        "version": "0.4.8",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/rust-num/num-bigint"
-      },
-      {
-        "ecosystem": "Rust",
         "name": "num-bigint-dig",
         "version": "0.8.6",
         "license": "MIT/Apache-2.0",
         "source": "https://github.com/dignifiedquire/num-bigint"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "num-conv",
-        "version": "0.2.2",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/jhpratt/num-conv"
       },
       {
         "ecosystem": "Rust",
@@ -1194,23 +1110,9 @@
       {
         "ecosystem": "Rust",
         "name": "p256",
-        "version": "0.13.2",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/elliptic-curves/tree/master/p256"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "p256",
         "version": "0.14.0",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/elliptic-curves"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "p384",
-        "version": "0.13.1",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/elliptic-curves/tree/master/p384"
       },
       {
         "ecosystem": "Rust",
@@ -1232,13 +1134,6 @@
         "version": "0.9.12",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Amanieu/parking_lot"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "pem",
-        "version": "3.0.6",
-        "license": "MIT",
-        "source": "https://github.com/jcreekmore/pem-rs.git"
       },
       {
         "ecosystem": "Rust",
@@ -1326,13 +1221,6 @@
       },
       {
         "ecosystem": "Rust",
-        "name": "powerfmt",
-        "version": "0.2.1",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/jhpratt/powerfmt"
-      },
-      {
-        "ecosystem": "Rust",
         "name": "ppv-lite86",
         "version": "0.2.21",
         "license": "MIT OR Apache-2.0",
@@ -1344,13 +1232,6 @@
         "version": "0.14.0",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/elliptic-curves"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "primeorder",
-        "version": "0.13.6",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder"
       },
       {
         "ecosystem": "Rust",
@@ -1516,13 +1397,6 @@
       {
         "ecosystem": "Rust",
         "name": "rfc6979",
-        "version": "0.4.0",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/signatures/tree/master/rfc6979"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "rfc6979",
         "version": "0.6.0",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/RustCrypto/signatures"
@@ -1596,13 +1470,6 @@
         "version": "1.2.0",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/bluss/scopeguard"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "sec1",
-        "version": "0.7.3",
-        "license": "Apache-2.0 OR MIT",
-        "source": "https://github.com/RustCrypto/formats/tree/master/sec1"
       },
       {
         "ecosystem": "Rust",
@@ -1715,13 +1582,6 @@
         "version": "0.3.10",
         "license": "MIT",
         "source": "https://github.com/mcountryman/simd-adler32"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "simple_asn1",
-        "version": "0.6.4",
-        "license": "ISC",
-        "source": "https://github.com/acw/simple_asn1"
       },
       {
         "ecosystem": "Rust",
@@ -1904,27 +1764,6 @@
         "version": "1.1.10",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Amanieu/thread_local-rs"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "time",
-        "version": "0.3.55",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/time-rs/time"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "time-core",
-        "version": "0.1.9",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/time-rs/time"
-      },
-      {
-        "ecosystem": "Rust",
-        "name": "time-macros",
-        "version": "0.2.32",
-        "license": "MIT OR Apache-2.0",
-        "source": "https://github.com/time-rs/time"
       },
       {
         "ecosystem": "Rust",
@@ -2121,6 +1960,13 @@
         "version": "0.6.1",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/RustCrypto/traits"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "untrusted",
+        "version": "0.7.1",
+        "license": "ISC",
+        "source": "https://github.com/briansmith/untrusted"
       },
       {
         "ecosystem": "Rust",
@@ -2690,6 +2536,13 @@
       },
       {
         "ecosystem": "npm",
+        "name": "@carbon/icons-react",
+        "version": "11.92.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficons-react/v/11.92.0"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@fast-csv/format",
         "version": "4.3.5",
         "license": "MIT",
@@ -2719,16 +2572,9 @@
       {
         "ecosystem": "npm",
         "name": "@heroui/react",
-        "version": "3.2.6",
-        "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40heroui%2Freact/v/3.2.6"
-      },
-      {
-        "ecosystem": "npm",
-        "name": "@heroui/styles",
-        "version": "3.2.6",
-        "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40heroui%2Fstyles/v/3.2.6"
+        "version": "3.2.7",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40heroui%2Freact/v/3.2.7"
       },
       {
         "ecosystem": "npm",
@@ -2803,100 +2649,100 @@
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-android-arm64",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-android-arm64/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-android-arm64/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-darwin-arm64",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-arm64/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-arm64/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-darwin-x64",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-x64/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-darwin-x64/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-linux-arm-gnueabihf",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm-gnueabihf/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm-gnueabihf/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-linux-arm64-gnu",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-gnu/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-gnu/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-linux-arm64-musl",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-musl/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-arm64-musl/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-linux-riscv64-gnu",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-riscv64-gnu/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-riscv64-gnu/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-linux-x64-gnu",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-gnu/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-gnu/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-linux-x64-musl",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-musl/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-linux-x64-musl/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-win32-arm64-msvc",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-arm64-msvc/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-arm64-msvc/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@napi-rs/canvas-win32-x64-msvc",
-        "version": "1.0.10",
+        "version": "1.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-x64-msvc/v/1.0.10"
+        "source": "https://www.npmjs.com/package/%40napi-rs%2Fcanvas-win32-x64-msvc/v/1.1.0"
       },
       {
         "ecosystem": "npm",
         "name": "@radix-ui/primitive",
-        "version": "1.1.7",
+        "version": "1.2.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40radix-ui%2Fprimitive/v/1.1.7"
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Fprimitive/v/1.2.0"
       },
       {
         "ecosystem": "npm",
         "name": "@radix-ui/react-avatar",
-        "version": "1.2.6",
+        "version": "1.3.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-avatar/v/1.2.6"
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-avatar/v/1.3.1"
       },
       {
         "ecosystem": "npm",
@@ -2908,30 +2754,30 @@
       {
         "ecosystem": "npm",
         "name": "@radix-ui/react-context",
-        "version": "1.2.2",
+        "version": "1.3.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-context/v/1.2.2"
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-context/v/1.3.0"
       },
       {
         "ecosystem": "npm",
         "name": "@radix-ui/react-primitive",
-        "version": "2.1.10",
+        "version": "2.2.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-primitive/v/2.1.10"
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-primitive/v/2.2.0"
       },
       {
         "ecosystem": "npm",
         "name": "@radix-ui/react-slot",
-        "version": "1.3.3",
+        "version": "1.5.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-slot/v/1.3.3"
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-slot/v/1.5.0"
       },
       {
         "ecosystem": "npm",
         "name": "@radix-ui/react-use-callback-ref",
-        "version": "1.1.4",
+        "version": "1.1.5",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-use-callback-ref/v/1.1.4"
+        "source": "https://www.npmjs.com/package/%40radix-ui%2Freact-use-callback-ref/v/1.1.5"
       },
       {
         "ecosystem": "npm",
@@ -2971,23 +2817,23 @@
       {
         "ecosystem": "npm",
         "name": "@react-router/express",
-        "version": "8.5.0",
+        "version": "8.5.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40react-router%2Fexpress/v/8.5.0"
+        "source": "https://www.npmjs.com/package/%40react-router%2Fexpress/v/8.5.1"
       },
       {
         "ecosystem": "npm",
         "name": "@react-router/node",
-        "version": "8.5.0",
+        "version": "8.5.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40react-router%2Fnode/v/8.5.0"
+        "source": "https://www.npmjs.com/package/%40react-router%2Fnode/v/8.5.1"
       },
       {
         "ecosystem": "npm",
         "name": "@react-router/serve",
-        "version": "8.5.0",
+        "version": "8.5.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/%40react-router%2Fserve/v/8.5.0"
+        "source": "https://www.npmjs.com/package/%40react-router%2Fserve/v/8.5.1"
       },
       {
         "ecosystem": "npm",
@@ -3023,13 +2869,6 @@
         "version": "3.2.0",
         "license": "Apache-2.0",
         "source": "https://www.npmjs.com/package/%40react-types%2Fcolor/v/3.2.0"
-      },
-      {
-        "ecosystem": "npm",
-        "name": "@react-types/shared",
-        "version": "3.36.1",
-        "license": "Apache-2.0",
-        "source": "https://www.npmjs.com/package/%40react-types%2Fshared/v/3.36.1"
       },
       {
         "ecosystem": "npm",
@@ -3482,16 +3321,9 @@
       {
         "ecosystem": "npm",
         "name": "content-disposition",
-        "version": "1.1.0",
+        "version": "2.0.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/content-disposition/v/1.1.0"
-      },
-      {
-        "ecosystem": "npm",
-        "name": "content-type",
-        "version": "1.0.5",
-        "license": "MIT",
-        "source": "https://www.npmjs.com/package/content-type/v/1.0.5"
+        "source": "https://www.npmjs.com/package/content-disposition/v/2.0.1"
       },
       {
         "ecosystem": "npm",
@@ -3734,9 +3566,9 @@
       {
         "ecosystem": "npm",
         "name": "encodeurl",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/encodeurl/v/2.0.0"
+        "source": "https://www.npmjs.com/package/encodeurl/v/2.0.1"
       },
       {
         "ecosystem": "npm",
@@ -3748,9 +3580,9 @@
       {
         "ecosystem": "npm",
         "name": "entities",
-        "version": "8.1.0",
+        "version": "9.0.0",
         "license": "BSD-2-Clause",
-        "source": "https://www.npmjs.com/package/entities/v/8.1.0"
+        "source": "https://www.npmjs.com/package/entities/v/9.0.0"
       },
       {
         "ecosystem": "npm",
@@ -3825,9 +3657,9 @@
       {
         "ecosystem": "npm",
         "name": "express",
-        "version": "5.2.1",
+        "version": "5.3.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/express/v/5.2.1"
+        "source": "https://www.npmjs.com/package/express/v/5.3.0"
       },
       {
         "ecosystem": "npm",
@@ -4757,9 +4589,9 @@
       {
         "ecosystem": "npm",
         "name": "parse5",
-        "version": "8.0.1",
+        "version": "8.1.0",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/parse5/v/8.0.1"
+        "source": "https://www.npmjs.com/package/parse5/v/8.1.0"
       },
       {
         "ecosystem": "npm",
@@ -4785,9 +4617,9 @@
       {
         "ecosystem": "npm",
         "name": "pdfjs-dist",
-        "version": "6.4.299",
+        "version": "6.5.438",
         "license": "Apache-2.0",
-        "source": "https://www.npmjs.com/package/pdfjs-dist/v/6.4.299"
+        "source": "https://www.npmjs.com/package/pdfjs-dist/v/6.5.438"
       },
       {
         "ecosystem": "npm",
@@ -4918,9 +4750,9 @@
       {
         "ecosystem": "npm",
         "name": "react-router",
-        "version": "8.5.0",
+        "version": "8.5.1",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/react-router/v/8.5.0"
+        "source": "https://www.npmjs.com/package/react-router/v/8.5.1"
       },
       {
         "ecosystem": "npm",
@@ -5226,9 +5058,9 @@
       {
         "ecosystem": "npm",
         "name": "tailwindcss",
-        "version": "4.3.3",
+        "version": "4.3.4",
         "license": "MIT",
-        "source": "https://www.npmjs.com/package/tailwindcss/v/4.3.3"
+        "source": "https://www.npmjs.com/package/tailwindcss/v/4.3.4"
       },
       {
         "ecosystem": "npm",

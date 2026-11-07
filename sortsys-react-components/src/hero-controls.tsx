@@ -710,6 +710,9 @@ export function FilterableMultiSelect<T = unknown>({
         isRequired={required}
         isReadOnly={readOnly}
         selectionMode="multiple"
+        // getOptions/filterItems may match descriptions or other fields that
+        // are absent from the label. Do not filter those results a second time.
+        defaultFilter={filterItems ? () => true : undefined}
         allowsCustomValue
         allowsEmptyCollection
         aria-busy={loading}

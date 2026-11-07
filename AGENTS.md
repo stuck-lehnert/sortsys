@@ -8,3 +8,8 @@
 - Organize each document around its reader and task. Use READMEs as entry points and link to sustained user guides, workflow descriptions or implementation details. Avoid imposing the same outline on every document, mixing instructions with change history, and adding empty introductions or closing summaries. Choose tables for comparisons and lists for steps or reference material, not as a default for prose.
 - Keep technical instructions precise and concise. The root README is a short entry point; link to detailed guides instead of expanding it.
 - Preserve commands, API identifiers, filenames and checksums. Update internal links when translating headings.
+
+# Search results
+
+- Server-side search and query-aware option providers own text matching. Disable built-in label filtering when displaying their results; do not apply another client-side text filter.
+- Local text matching is appropriate for complete local datasets. Keep eligibility checks, such as excluding the current user from their own supervisor choices, separate from search matching.

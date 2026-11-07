@@ -185,6 +185,7 @@ function AutocompleteSelect<T>({
       placeholder={placeholder}
       value={query}
       items={options}
+      defaultFilter={() => true}
       disabled={disabled}
       invalid={!!error}
       invalidText={error}
