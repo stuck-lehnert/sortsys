@@ -1,8 +1,11 @@
-# sortsys job runner
+# Hintergrunddienst
 
-The job runner handles media and document work outside the API process. It connects to `/internal/job-runners/ws`, leases jobs, downloads source files through signed URLs, uploads generated files, and reports completion or failure. Each runner can generate thumbnails and tenant-logo variants, read PDF text, and perform OCR.
+Der sortsys-Hintergrunddienst übernimmt Medien- und Dokumentaufgaben außerhalb
+des API-Prozesses: Vorschaubilder, Unternehmenslogos, PDF-Text und OCR.
+Über `/internal/job-runners/ws` erhält er befristete Aufträge, lädt Quellen über
+signierte URLs, speichert Ergebnisse und meldet Erfolg oder Fehler zurück.
 
-## Run locally
+## Lokal ausführen
 
 ```bash
 go test ./...
@@ -12,34 +15,38 @@ JOB_RUNNER_TOKEN=dev-job-runner-token \
 go run ./cmd/job-runner
 ```
 
-The repository-level `scripts/dev` command starts two watched job runners. Both accept media and OCR jobs.
+`scripts/dev` im Hauptverzeichnis startet zwei Dienste mit automatischem Neustart
+bei Quelländerungen. Beide bearbeiten Medien- und OCR-Aufträge.
 
-## Configuration
+## Konfiguration
 
-| Variable | Default | Meaning |
+| Variable | Standard | Bedeutung |
 | --- | --- | --- |
-| `JOB_RUNNER_WS_URL` | required | API WebSocket URL |
-| `JOB_RUNNER_TOKEN` | required | shared token configured on the API |
-| `JOB_RUNNER_ID` | random | stable identifier for this runner |
-| `JOB_RUNNER_WS_IGNORE_PROXY` | `false` | bypass `HTTP_PROXY` and `HTTPS_PROXY` for the API connection |
-| `JOB_RUNNER_LEASE_SEC` | `90` | requested job lease duration, with a minimum of 5 seconds |
-| `JOB_RUNNER_POLL_LIMIT` | `10` | jobs requested per poll, clamped to 1–50 |
-| `JOB_RUNNER_POLL_INTERVAL_MS` | `800` | delay between polls, with a minimum of 100 ms |
-| `JOB_RUNNER_JOB_TYPE` | `project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract` | comma-separated accepted job types |
-| `JOB_RUNNER_JPEG_QUALITY` | `85` | JPEG quality, clamped to 60–95 |
-| `JOB_RUNNER_RETRY_AFTER_SEC` | `60` | retry delay after failures, with a minimum of 5 seconds |
-| `JOB_RUNNER_USER_AGENT` | `sortsys-v2-job-runner/0.1` | WebSocket client user agent |
+| `JOB_RUNNER_WS_URL` | erforderlich | WebSocket-Adresse der API |
+| `JOB_RUNNER_TOKEN` | erforderlich | gemeinsames, auch in der API hinterlegtes Token |
+| `JOB_RUNNER_ID` | zufällig | feste Kennung dieser Instanz |
+| `JOB_RUNNER_WS_IGNORE_PROXY` | `false` | `HTTP_PROXY` und `HTTPS_PROXY` für die API-Verbindung umgehen |
+| `JOB_RUNNER_LEASE_SEC` | `90` | gewünschte Zuweisungsdauer, mindestens 5 Sekunden |
+| `JOB_RUNNER_POLL_LIMIT` | `10` | Aufträge je Abfrage, begrenzt auf 1–50 |
+| `JOB_RUNNER_POLL_INTERVAL_MS` | `800` | Abstand zwischen Abfragen, mindestens 100 ms |
+| `JOB_RUNNER_JOB_TYPE` | `project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract` | akzeptierte Auftragstypen, durch Komma getrennt |
+| `JOB_RUNNER_JPEG_QUALITY` | `85` | JPEG-Qualität, begrenzt auf 60–95 |
+| `JOB_RUNNER_RETRY_AFTER_SEC` | `60` | Wartezeit nach Fehlern, mindestens 5 Sekunden |
+| `JOB_RUNNER_USER_AGENT` | `sortsys-v2-job-runner/0.1` | Benutzerkennung des WebSocket-Clients |
 
-## Container images
+## Container-Image
 
 ```bash
 docker build -t sortsys-job-runner:local .
 ```
 
-The image includes Poppler, ImageMagick, and Tesseract with German and English language data. PDF jobs first use an existing text layer. Scanned pages and images are sent through local OCR only when needed.
+Das Image enthält Poppler, ImageMagick und Tesseract mit deutschen und englischen
+Sprachdaten. PDF-Aufträge verwenden zuerst vorhandenen Text; lokale OCR folgt
+nur bei Bedarf für gescannte Seiten und Bilder.
 
-The image runs without root privileges. Document jobs receive short-lived signed download URLs; runners do not receive tenant database credentials or LLM API keys.
+Der Dienst läuft ohne Root-Rechte. Er erhält kurzlebige signierte Download-URLs,
+jedoch keine Mandantendatenbank-Zugänge oder LLM-API-Schlüssel.
 
-## License
+## Lizenz
 
-This service is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
+Für diesen Dienst gilt die [GNU Affero General Public License v3.0 only](../LICENSE).

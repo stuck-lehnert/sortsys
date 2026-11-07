@@ -5,6 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import superjson from "superjson";
+import * as Y from "yjs";
 import { createFixtureServer, fixtureDirectory } from "./browser-support.mjs";
 import { makeMsgFixture } from "../../test-fixtures/msgFixture.mjs";
 
@@ -78,6 +79,15 @@ async function openModelDialog(title) {
 function createWorkflowApi() {
   let locale = "en";
   let roles = [":admin"];
+  let gaebView = {
+    showFields: true,
+    outlineOpen: true,
+    outlineWidth: 320,
+    ribbonCollapsed: false,
+    zoom: null,
+  };
+  let documentTemplate = { source: null, revision: "0", assets: [] };
+  let invoiceNumbering = { scheme: "sequential", startNumber: "1" };
   const failures = new Map();
   const injectedErrors = new Set();
   const responses = new Map();
@@ -136,7 +146,8 @@ function createWorkflowApi() {
     }
 
     if (responses.has(path)) {
-      return responses.get(path);
+      const response = responses.get(path);
+      return typeof response === "function" ? response(input) : response;
     }
 
     switch (path) {
@@ -214,6 +225,35 @@ function createWorkflowApi() {
         return [];
       case "users.supervisors.getDefault":
         return { userId: null };
+      case "personalization.gaebView.get":
+        return gaebView;
+      case "personalization.gaebView.set":
+        gaebView = input;
+        return { success: true };
+      case "settings.documentTemplate.get":
+        return documentTemplate;
+      case "settings.documentTemplate.set":
+        documentTemplate = {
+          ...documentTemplate,
+          source: input.source,
+          revision: "test-revision",
+        };
+        return { source: input.source, revision: documentTemplate.revision };
+      case "settings.invoiceNumbering.get":
+        return invoiceNumbering;
+      case "settings.invoiceNumbering.set":
+        invoiceNumbering = input;
+        return { success: true };
+      case "settings.organization.get":
+        return {
+          companyName: "Fixture Company",
+          address: {
+            streetAddress: "Bauweg 12",
+            zip: "06108",
+            city: "Halle",
+            country: "Deutschland",
+          },
+        };
       case "settings.tenantLogo.get":
         return { status: "none", downloadUrl: null, error: null };
       case "projects.files.search":
@@ -516,7 +556,9 @@ async function openApplication(path, locale = "en", theme = "light") {
 
   api.setLocale(locale);
   await page.emulateMedia({ colorScheme: theme });
-  await page.goto(`${server.origin}/controls?${query}`);
+  await page.goto(
+    `${server.origin}${/^\/(?:offers|gaeb|admin|settings|projects|import)(?:\/|$)/.test(applicationUrl.pathname) ? applicationUrl.pathname : "/controls"}?${query}`,
+  );
   await page.waitForFunction(
     (language) => document.documentElement.lang === language,
     locale,
@@ -1505,37 +1547,53 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
   const { assets } = JSON.parse(
     await readFile(join(fixtureDirectory, "assets.json"), "utf8"),
   );
-  const worker = (await readdir(join(assets, "assets")))
-    .find(name => /^emailPreview\.worker-.*\.js$/.test(name));
+  const worker = (await readdir(join(assets, "assets"))).find((name) =>
+    /^emailPreview\.worker-.*\.js$/.test(name),
+  );
   assert.ok(worker, "Exercise the actual production worker bundle");
   await page.goto(server.origin);
   for (const [format, bytes, subject] of [
-    ["eml", new TextEncoder().encode("From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email."), "MIME email"],
+    [
+      "eml",
+      new TextEncoder().encode(
+        "From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email.",
+      ),
+      "MIME email",
+    ],
     ["msg", new Uint8Array(makeMsgFixture()), "Baufortschritt – Grüße"],
-    ["msg", new Uint8Array(makeMsgFixture({ rtfOnly: true })), "Baufortschritt – Grüße"],
+    [
+      "msg",
+      new Uint8Array(makeMsgFixture({ rtfOnly: true })),
+      "Baufortschritt – Grüße",
+    ],
   ]) {
-    const result = await page.evaluate(({ path, format, bytes }) => new Promise((resolve, reject) => {
-      const worker = new Worker(path, { type: "module" });
-      const timeout = setTimeout(() => {
-        worker.terminate();
-        reject(new Error("Production email worker timed out"));
-      }, 5000);
-      worker.onmessage = event => {
-        clearTimeout(timeout);
-        worker.terminate();
-        resolve(event.data);
-      };
-      worker.onerror = event => {
-        clearTimeout(timeout);
-        worker.terminate();
-        reject(new Error(event.message));
-      };
-      const buffer = new Uint8Array(bytes).buffer;
-      worker.postMessage({ bytes: buffer, format }, [buffer]);
-    }), { path: `/assets/${worker}`, format, bytes: Array.from(bytes) });
+    const result = await page.evaluate(
+      ({ path, format, bytes }) =>
+        new Promise((resolve, reject) => {
+          const worker = new Worker(path, { type: "module" });
+          const timeout = setTimeout(() => {
+            worker.terminate();
+            reject(new Error("Production email worker timed out"));
+          }, 5000);
+          worker.onmessage = (event) => {
+            clearTimeout(timeout);
+            worker.terminate();
+            resolve(event.data);
+          };
+          worker.onerror = (event) => {
+            clearTimeout(timeout);
+            worker.terminate();
+            reject(new Error(event.message));
+          };
+          const buffer = new Uint8Array(bytes).buffer;
+          worker.postMessage({ bytes: buffer, format }, [buffer]);
+        }),
+      { path: `/assets/${worker}`, format, bytes: Array.from(bytes) },
+    );
     assert.equal(result.error, undefined);
     assert.equal(result.mail.subject, subject);
-    if (format === "msg") assert.equal(result.mail.attachments[0].fileName, "Lieferschein.txt");
+    if (format === "msg")
+      assert.equal(result.mail.attachments[0].fileName, "Lieferschein.txt");
   }
 });
 
@@ -1829,12 +1887,13 @@ for (const [locale, theme, viewport] of [
 
   test(`actual email previews decode MSG and EML with compact headers in ${variant}`, async () => {
     const date = new Date("2026-10-27T08:00:00Z");
-    const files = ["msg", "eml"].map(format => ({
+    const files = ["msg", "eml"].map((format) => ({
       id: `email-${format}`,
       projectId: "project-fixture",
       folderId: null,
       fileName: `Correspondence.${format}`,
-      mimeType: format === "msg" ? "application/vnd.ms-outlook" : "message/rfc822",
+      mimeType:
+        format === "msg" ? "application/vnd.ms-outlook" : "message/rfc822",
       kind: "file",
       sizeBytes: 2048,
       status: "uploaded",
@@ -1847,32 +1906,56 @@ for (const [locale, theme, viewport] of [
     }));
     api.respond("projects.files.list", files);
     api.respond("projects.files.folders.list", []);
-    await page.route(`${server.origin}/mail.msg`, route => route.fulfill({
-      contentType: "application/vnd.ms-outlook", body: Buffer.from(makeMsgFixture()),
-    }));
-    await page.route(`${server.origin}/mail.eml`, route => route.fulfill({
-      contentType: "message/rfc822",
-      body: "From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email.",
-    }));
+    await page.route(`${server.origin}/mail.msg`, (route) =>
+      route.fulfill({
+        contentType: "application/vnd.ms-outlook",
+        body: Buffer.from(makeMsgFixture()),
+      }),
+    );
+    await page.route(`${server.origin}/mail.eml`, (route) =>
+      route.fulfill({
+        contentType: "message/rfc822",
+        body: "From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email.",
+      }),
+    );
     await page.setViewportSize(viewport);
     await openApplication("/projects/project-fixture/files", locale, theme);
     for (const format of ["msg", "eml"]) {
-      const trigger = page.getByRole("button", { name: new RegExp(`Correspondence\\.${format}`) });
+      const trigger = page.getByRole("button", {
+        name: new RegExp(`Correspondence\\.${format}`),
+      });
       await trigger.click();
-      const dialog = page.getByRole("dialog", { name: /E-Mail ansehen|View email/ });
+      assert.equal(
+        new URL(page.url()).pathname,
+        `/projects/project-fixture/files/email-${format}`,
+      );
+      const dialog = page.getByRole("dialog", {
+        name: /E-Mail ansehen|View email/,
+      });
       await dialog.locator(".attachment-email-metadata").waitFor();
-      assert.equal(await dialog.locator(".ss-modal-label").textContent(), `Correspondence.${format}`);
+      assert.equal(
+        await dialog.locator(".ss-modal-label").textContent(),
+        `Correspondence.${format}`,
+      );
       const header = await dialog.locator(".ss-modal-header").boundingBox();
       const close = dialog.getByRole("button", { name: /^(Schließen|Close)$/ });
       const bounds = await close.boundingBox();
       assert.ok(header.height <= 44);
-      assert.ok(Math.abs(bounds.y + bounds.height / 2 - header.y - header.height / 2) <= 1);
+      assert.ok(
+        Math.abs(bounds.y + bounds.height / 2 - header.y - header.height / 2) <=
+          1,
+      );
       const body = dialog.frameLocator(".attachment-email-body");
-      await body.getByText(format === "msg" ? "Lieferung morgen." : "Hello email.").waitFor();
+      await body
+        .getByText(format === "msg" ? "Lieferung morgen." : "Hello email.")
+        .waitFor();
       if (process.env.SORTSYS_UI_SCREENSHOTS) {
         await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
         await page.screenshot({
-          path: join(process.env.SORTSYS_UI_SCREENSHOTS, `email-${format}-${variant}.png`),
+          path: join(
+            process.env.SORTSYS_UI_SCREENSHOTS,
+            `email-${format}-${variant}.png`,
+          ),
           animations: "disabled",
         });
       }
@@ -1881,6 +1964,337 @@ for (const [locale, theme, viewport] of [
     }
   });
 }
+
+for (const canEdit of [true, false]) {
+  test(`actual GAEB files open in their native editor and respect canEdit=${canEdit}`, async () => {
+    populateAttachments();
+    const date = new Date("2026-10-27T08:00:00Z");
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?><GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA84/3.3"><GAEBInfo><Version>3.3</Version><VersDate>2021-05</VersDate><Date>2026-11-04</Date></GAEBInfo><Award><DP>84</DP><CTR><Address><Name1>Fixture</Name1><Street>Teststraße 1</Street><PCode>10115</PCode><City>Berlin</City></Address><CntryType>EEA</CntryType></CTR><BoQ ID="boq"><BoQInfo><Name>Fixture bid</Name><BoQBkdn><Type>Item</Type><Length>4</Length><Num>Yes</Num></BoQBkdn></BoQInfo><BoQBody><Itemlist><Item ID="item1" RNoPart="0001"><Qty>2.000</Qty><UP>10.000</UP><IT>20.00</IT></Item></Itemlist></BoQBody></BoQ></Award></GAEB>';
+    api.respond("projects.files.list", [
+      {
+        id: "gaeb-file",
+        projectId: "project-fixture",
+        folderId: null,
+        fileName: "Angebot.x84",
+        mimeType: "application/xml",
+        kind: "file",
+        status: "uploaded",
+        sizeBytes: xml.length,
+        textExtractionStatus: "none",
+        createdAt: date,
+        modifiedAt: date,
+        uploadedAt: date,
+      },
+    ]);
+    api.respond("projects.files.folders.list", []);
+    api.respond("projects.files.xmlContent", {
+      xml,
+      fileName: "Angebot.x84",
+      version: 1n,
+      canEdit,
+    });
+    api.respond("projects.files.xmlSave", { version: 2n, savedAt: date });
+    await page.setViewportSize({ width: canEdit ? 1400 : 390, height: 900 });
+    await openApplication("/projects/project-fixture/files", "en");
+    await page.getByRole("button", { name: /Angebot.x84/ }).click();
+    assert.equal(
+      new URL(page.url()).pathname,
+      "/projects/project-fixture/files/gaeb-file",
+    );
+    const dialog = page.getByRole("dialog", {
+      name: canEdit ? "Edit GAEB" : "View GAEB",
+      exact: true,
+    });
+    const quantityTarget = dialog.getByRole("button", {
+      name: "Quantity",
+      exact: true,
+    });
+    await quantityTarget.waitFor();
+    if (canEdit) await quantityTarget.and(page.locator(":enabled")).waitFor();
+    assert.equal(await quantityTarget.isDisabled(), !canEdit);
+    if (canEdit) {
+      await quantityTarget.focus();
+      const quantity = dialog.getByRole("textbox", {
+        name: "Quantity",
+        exact: true,
+      });
+      await quantity.fill("3.500");
+      // Autosave must commit while the caret remains inside the quantity field.
+      await dialog
+        .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+        .waitFor();
+      assert.equal(
+        await dialog.getByRole("button", { name: "Save", exact: true }).count(),
+        0,
+      );
+      assert.equal(
+        await dialog.getByText("Angebot.x84", { exact: true }).count(),
+        1,
+      );
+      const saved = api.requests.find(
+        (request) => request.path === "projects.files.xmlSave",
+      );
+      assert.equal(saved.input.fileId, "gaeb-file");
+      assert.equal(saved.input.version, 1n);
+      assert.match(saved.input.xml, /<Qty>3.500<\/Qty>/);
+      assert.match(saved.input.xml, /<IT>35.00<\/IT>/);
+      await quantity.press("Tab");
+      const price = dialog.getByRole("textbox", {
+        name: "Unit price",
+        exact: true,
+      });
+      await price.waitFor();
+      assert.equal(
+        await price.evaluate((node) => node === document.activeElement),
+        true,
+      );
+      await price.press("Shift+Tab");
+      assert.equal(
+        await quantity.evaluate((node) => node === document.activeElement),
+        true,
+      );
+      await quantity.press("Enter");
+      assert.equal(
+        await price.evaluate((node) => node === document.activeElement),
+        true,
+      );
+      await price.press("Shift+Enter");
+      assert.equal(
+        await quantity.evaluate((node) => node === document.activeElement),
+        true,
+      );
+      await quantity.press("Tab");
+      await price.press("Tab");
+      assert.equal(
+        await dialog
+          .getByRole("button", { name: "Zoom out", exact: true })
+          .evaluate((node) => node === document.activeElement),
+        true,
+      );
+      await page.keyboard.press("Tab");
+      assert.equal(
+        await dialog.evaluate((node) => node.contains(document.activeElement)),
+        true,
+      );
+    } else {
+      assert.equal(
+        await dialog.getByRole("button", { name: "Save", exact: true }).count(),
+        0,
+      );
+    }
+    await checkPageLayout(`gaeb-integrated-${canEdit ? "edit" : "readonly"}`);
+    if (canEdit) {
+      api.hold("projects.files.xmlSave");
+      const saving = page.waitForRequest((request) =>
+        request.url().includes("projects.files.xmlSave"),
+      );
+      await quantityTarget.focus();
+      await dialog
+        .getByRole("textbox", { name: "Quantity", exact: true })
+        .fill("4.500");
+      await saving;
+      await page.evaluate(() => history.back());
+      await page.waitForTimeout(150);
+      assert.equal(
+        await dialog.isVisible(),
+        true,
+        "Back waits for the pending autosave",
+      );
+      assert.equal(
+        new URL(page.url()).pathname,
+        "/projects/project-fixture/files/gaeb-file",
+      );
+      api.release("projects.files.xmlSave");
+    } else
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.waitForURL(
+      (url) => url.pathname === "/projects/project-fixture/files",
+    );
+    if (canEdit)
+      assert.match(
+        api.requests
+          .filter((request) => request.path === "projects.files.xmlSave")
+          .at(-1).input.xml,
+        /<Qty>4.500<\/Qty>/,
+      );
+  });
+}
+
+test("two GAEB editors autosave parallel changes and reconnect without overwriting each other", async () => {
+  populateAttachments();
+  const date = new Date("2026-10-27T08:00:00Z");
+  let xml =
+    '<?xml version="1.0" encoding="UTF-8"?><GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA84/3.3"><GAEBInfo><Version>3.3</Version><VersDate>2021-05</VersDate><Date>2026-11-04</Date></GAEBInfo><Award><DP>84</DP><CTR><Address><Name1>Fixture</Name1><Street>Teststraße 1</Street><PCode>10115</PCode><City>Berlin</City></Address><CntryType>EEA</CntryType></CTR><BoQ ID="boq"><BoQInfo><Name>Gemeinsames Angebot</Name><BoQBkdn><Type>Item</Type><Length>4</Length><Num>Yes</Num></BoQBkdn><Totals><Total>30.00</Total></Totals></BoQInfo><BoQBody><Itemlist><Item ID="item1" RNoPart="0001"><Qty>2.000</Qty><UP>10.000</UP><IT>20.00</IT></Item><Item ID="item2" RNoPart="0002"><Qty>1.000</Qty><UP>10.000</UP><IT>10.00</IT></Item></Itemlist></BoQBody></BoQ></Award></GAEB>';
+  let version = 1n,
+    available = true,
+    handshakes = 0;
+  const sockets = new Map();
+  const peers = () =>
+    [...sockets].map(([id, socket]) => ({
+      id,
+      name: socket.name,
+      color: "#2563eb",
+      field: socket.field,
+    }));
+  const presence = () => {
+    for (const { route } of sockets.values())
+      route.send(JSON.stringify({ type: "presence", participants: peers() }));
+  };
+  await context.routeWebSocket(
+    "ws://127.0.0.1:3000/documents/xml/live",
+    (route) => {
+      const id = `peer-${Math.random()}`;
+      route.onMessage((raw) => {
+        const message = JSON.parse(String(raw));
+        if (message.ticket) {
+          handshakes++;
+          const name = sockets.size ? "Ben Schneider" : "Anna Müller";
+          sockets.set(id, { route, name, field: null });
+          route.send(
+            JSON.stringify({
+              type: "ready",
+              clientId: id,
+              version: String(version),
+            }),
+          );
+          presence();
+        } else if (sockets.has(id)) {
+          sockets.get(id).field = message.field;
+          presence();
+        }
+      });
+      route.onClose((code, reason) => {
+        sockets.delete(id);
+        presence();
+        void route.close({ code, reason });
+      });
+    },
+  );
+  api.respond("projects.files.list", [
+    {
+      id: "gaeb-file",
+      projectId: "project-fixture",
+      folderId: null,
+      fileName: "Angebot.x84",
+      mimeType: "application/xml",
+      kind: "file",
+      status: "uploaded",
+      sizeBytes: xml.length,
+      textExtractionStatus: "none",
+      createdAt: date,
+      modifiedAt: date,
+      uploadedAt: date,
+    },
+  ]);
+  api.respond("projects.files.folders.list", []);
+  api.respond("projects.files.xmlContent", () => ({
+    xml,
+    version,
+    fileName: "Angebot.x84",
+    canEdit: true,
+    livePath: "/documents/xml/live",
+    liveTicket: "document-scoped-fixture-ticket",
+    recoveryScope: "fixture-user",
+  }));
+  api.respond("projects.files.xmlSave", (input) => {
+    if (!available) throw new Error("Fixture is offline");
+    if (input.version !== version)
+      throw new Error("The document was changed in another editor");
+    xml = input.xml;
+    version++;
+    for (const { route } of sockets.values())
+      route.send(JSON.stringify({ type: "changed", version: String(version) }));
+    return { version, savedAt: date };
+  });
+  const originalPage = page;
+  const second = await context.newPage();
+  second.setDefaultTimeout(10000);
+  try {
+    await openApplication("/projects/project-fixture/files", "en");
+    await page.getByRole("button", { name: /Angebot.x84/ }).click();
+    page = second;
+    await openApplication("/projects/project-fixture/files", "en");
+    await page.getByRole("button", { name: /Angebot.x84/ }).click();
+    const firstEditor = originalPage.getByRole("dialog", {
+      name: "Edit GAEB",
+      exact: true,
+    });
+    const secondEditor = second.getByRole("dialog", {
+      name: "Edit GAEB",
+      exact: true,
+    });
+    await firstEditor.getByLabel("Ben Schneider", { exact: true }).waitFor();
+    await secondEditor.getByLabel("Anna Müller", { exact: true }).waitFor();
+    const firstQuantity = firstEditor.locator(
+      '[data-gaeb-field="item-item1:Qty"]',
+    );
+    const secondQuantity = secondEditor.locator(
+      '[data-gaeb-field="item-item2:Qty"]',
+    );
+    await firstQuantity.focus();
+    await firstEditor
+      .getByRole("textbox", { name: "Quantity", exact: true })
+      .fill("3.000");
+    await secondQuantity.focus();
+    await secondEditor
+      .getByRole("textbox", { name: "Quantity", exact: true })
+      .fill("4.000");
+    await firstEditor
+      .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+      .waitFor();
+    await secondEditor
+      .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+      .waitFor();
+    await originalPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-gaeb-field="item-item2:Qty"]')
+          ?.getAttribute("aria-description") === "4.000",
+    );
+    await second.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-gaeb-field="item-item1:Qty"]')
+          ?.getAttribute("aria-description") === "3.000",
+    );
+    assert.match(xml, /<Total>70.00<\/Total>/);
+    assert.match(xml, /<IT>30.00<\/IT>/);
+    assert.match(xml, /<IT>40.00<\/IT>/);
+    // Simulate a dropped live socket. The fresh handshake must include changes
+    // saved while disconnected, without a manual reload or save action.
+    const beforeReconnect = handshakes;
+    await Promise.all([...sockets.values()].map(({ route }) => route.close()));
+    sockets.clear();
+    for (
+      let attempt = 0;
+      attempt < 80 && handshakes < beforeReconnect + 2;
+      attempt++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.ok(handshakes >= beforeReconnect + 2);
+    await firstEditor
+      .getByRole("group", { name: "Together in this document" })
+      .getByRole("img")
+      .first()
+      .waitFor();
+    await secondEditor
+      .getByRole("group", { name: "Together in this document" })
+      .getByRole("img")
+      .first()
+      .waitFor();
+    assert.equal(
+      await firstEditor
+        .getByRole("button", { name: "Save", exact: true })
+        .count(),
+      0,
+    );
+  } finally {
+    page = originalPage;
+    await second.close();
+  }
+});
 
 test("actual attachments announce loading and a single empty result", async () => {
   populateAttachments();
@@ -2938,4 +3352,3313 @@ test("client scripts do not render a draft editor for an empty listing", async (
     false,
   );
   await checkPageLayout("client-scripts-empty");
+});
+
+const contractorInquiry = `<?xml version="1.0" encoding="UTF-8"?><GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA83/3.3"><GAEBInfo><Version>3.3</Version><VersDate>2021-05</VersDate><Date>2026-11-04</Date></GAEBInfo><Award><DP>83</DP><AwardInfo><Cur>EUR</Cur></AwardInfo><BoQ ID="boq"><BoQInfo><Name>School renovation</Name><LblBoQ>School renovation</LblBoQ><OutlCompl>AllTxt</OutlCompl><BoQBkdn><Type>Item</Type><Length>4</Length><Num>Yes</Num></BoQBkdn></BoQInfo><BoQBody><Itemlist><Item ID="item1" RNoPart="0001"><Qty>2.000</Qty><QU>m²</QU><Description><CompleteText><DetailTxt><Text><p><span>Install insulation</span></p></Text></DetailTxt></CompleteText></Description></Item></Itemlist></BoQBody></BoQ></Award></GAEB>`;
+function seedContractorWorkflows(canManage = true) {
+  const cases = new Map(),
+    documents = new Map();
+  let sequence = 0;
+  api.respond("customers.list", [
+    { id: "customer-fixture", name: "Fixture Customer" },
+  ]);
+  api.respond("commercial.cases.list", (input) =>
+    [...cases.values()]
+      .map((detail) => detail.case)
+      .filter(
+        (row) =>
+          (!input?.projectId || row.projectId === input.projectId) &&
+          (!input?.kind ||
+            (input.kind === "sales"
+              ? ["offer", "alternative"].includes(row.kind)
+              : row.kind === input.kind)) &&
+          (!input?.status || row.status === input.status),
+      ),
+  );
+  api.respond("commercial.cases.get", ({ id }) => {
+    const detail = cases.get(id);
+    assert.ok(detail, `Unknown case ${id}`);
+    return {
+      ...detail,
+      documents: [...documents.values()]
+        .filter((doc) => doc.caseId === id)
+        .map(({ xml, ...doc }) => ({
+          ...doc,
+          sourceCurrentVersion: doc.sourceDocumentId
+            ? documents.get(doc.sourceDocumentId).version
+            : null,
+        })),
+      canManage,
+    };
+  });
+  api.respond("commercial.cases.create", (input) => {
+    const id = `case-${++sequence}`;
+    cases.set(id, {
+      case: {
+        ...input,
+        id,
+        reference: `ANG-${sequence}`,
+        status: "draft",
+        existingContract: false,
+        projectId: input.projectId ?? null,
+        parentCaseId: input.parentCaseId ?? null,
+        customerName: "Fixture Customer",
+        customerId: "customer-fixture",
+        counterpartyName: null,
+        currency: "EUR",
+        netAmount: null,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+      },
+      events: [],
+    });
+    return { id };
+  });
+  api.respond("commercial.documents.create", (input) => {
+    const id = input.replaceDocumentId ?? `doc-${++sequence}`;
+    const previous = documents.get(id);
+    documents.set(id, {
+      ...input,
+      id,
+      phase: {
+        inquiry: "83",
+        offer: "84",
+        order: "86",
+        confirmation: "87",
+        measurement: "31",
+        alternative: "85",
+        calculation: "52",
+        invoice: "89",
+        price_inquiry: "93",
+        supplier_offer: "94",
+        purchase_order: "96",
+        supplier_confirmation: "97",
+      }[input.purpose],
+      version: previous ? previous.version + 1n : 1n,
+      sourceDocumentId: input.sourceDocumentId ?? null,
+      sourceVersion: input.sourceVersion ?? null,
+      createdAt: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
+    });
+    if (
+      ["offer", "alternative", "invoice"].includes(input.purpose) &&
+      !["subcontract", "procurement"].includes(
+        cases.get(input.caseId).case.kind,
+      )
+    )
+      cases.get(input.caseId).case.netAmount = input.netAmount;
+    return { id };
+  });
+  api.respond("commercial.documents.get", ({ caseId, id }) => {
+    const doc = documents.get(id);
+    assert.equal(doc.caseId, caseId);
+    const state = cases.get(caseId).case.status;
+    const source = documents.get(doc.sourceDocumentId);
+    return {
+      xml: doc.xml,
+      referenceXml: source?.xml ?? null,
+      fileName: doc.fileName,
+      version: doc.version,
+      canEdit: canManage && !doc.readOnly && state === "draft",
+      recoveryScope: "contractor-fixture",
+    };
+  });
+  api.respond(
+    "commercial.documents.save",
+    ({ caseId, id, version, xml, netAmount }) => {
+      const doc = documents.get(id);
+      assert.equal(version, doc.version);
+      doc.xml = xml;
+      const title =
+        /<!--sortsys:takeoff-title:v1:([\s\S]*?)-->/.exec(xml) ??
+        /<!--sortsys:document-title:v1:([\s\S]*?)-->/.exec(xml);
+      if (title) cases.get(caseId).case.title = decodeURIComponent(title[1]);
+      doc.version++;
+      doc.netAmount = netAmount;
+      if (
+        doc.purpose === "offer" &&
+        cases.get(caseId).case.kind !== "subcontract"
+      )
+        cases.get(caseId).case.netAmount = netAmount;
+      return { version: doc.version, savedAt: new Date().toISOString() };
+    },
+  );
+  api.respond(
+    "commercial.cases.transition",
+    ({ id, expectedStatus, status, ...input }) => {
+      const detail = cases.get(id);
+      assert.equal(detail.case.status, expectedStatus);
+      Object.assign(detail.case, { status, ...input });
+      return { success: true };
+    },
+  );
+  api.respond("commercial.cases.createProject", ({ id }) => {
+    const detail = cases.get(id);
+    assert.equal(detail.case.status, "accepted");
+    detail.case.projectId = "project-fixture";
+    return { id: "project-fixture" };
+  });
+  return { cases, documents };
+}
+
+for (const [locale, theme, width] of [
+  ["en", "light", 1400],
+  ["de", "dark", 390],
+]) {
+  test(`contractor offer starts from X83, autosaves prices and becomes its own project in ${locale}`, async () => {
+    const state = seedContractorWorkflows();
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/offers", locale, theme);
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Angebot erstellen" : "Create an offer",
+        exact: true,
+      })
+      .click();
+    const creationDialog = page.getByRole("dialog", {
+      name: locale === "de" ? "Angebot erstellen" : "Create an offer",
+      exact: true,
+    });
+    await creationDialog.waitFor();
+    const persistentDialog = await creationDialog.elementHandle();
+    const inquiryXml =
+      locale === "de"
+        ? contractorInquiry.replace(
+            "Install insulation",
+            "Vorhandene oberflächenfertige Bauteile mit Klebeband und Folie für die bevorstehenden Arbeiten abkleben. Entfernen alter, einlagiger Tapeten an Leibungsflächen, Leibungstiefe bis 60 cm. Herstellen einer vertikalen Deckenschürze. Unterkonstruktion aus verzinkten Profilen. Beplankung mit GK-Platten, 12,5 mm, Baustoffklasse A2. Kantenschutzprofil an der Deckenkante montieren und einspachteln. Oberfläche Qualitätsstufe Q2 verspachtelt und geschliffen.",
+          )
+        : contractorInquiry;
+    const title = page.getByRole("textbox", {
+      name: locale === "de" ? /^Bezeichnung/ : /^Title/,
+    });
+    await title.fill("School renovation");
+    const customer = page.getByRole("combobox", {
+      name: locale === "de" ? /^Kunde/ : /^Customer/,
+    });
+    await customer.fill("Fixture");
+    await page
+      .getByRole("option", { name: "Fixture Customer", exact: true })
+      .click();
+    await page.getByRole("listbox").waitFor({ state: "hidden" });
+    assert.ok(
+      api.requests.some(
+        (request) =>
+          request.path === "customers.list" &&
+          request.input.search === "fixture",
+      ),
+      "Customer choices must come from interactive search",
+    );
+    assert.equal(
+      await page.locator('input[type="file"]').count(),
+      0,
+      "Inquiry files are opened inside the editor",
+    );
+    await checkPageLayout(`contractor-create-${locale}`);
+    await creationDialog
+      .getByRole("button", {
+        name: locale === "de" ? "Angebot erstellen" : "Create an offer",
+        exact: true,
+      })
+      .click();
+    const editorDialog = page
+      .getByRole("dialog")
+      .filter({ has: page.locator(".gaeb-editor") });
+    await editorDialog.waitFor();
+    assert.equal(
+      await persistentDialog.evaluate(
+        (node) => node === document.querySelector('[role="dialog"]'),
+      ),
+      true,
+      "Creating an offer retains the same dialog and focus scope while the editor loads",
+    );
+    assert.equal(
+      await page
+        .locator("[data-fixture-path]")
+        .getAttribute("data-fixture-path"),
+      "/offers",
+    );
+    assert.equal(
+      await page
+        .getByRole("region", {
+          name: /Workflow documents|Dokumente im Vorgang/,
+        })
+        .count(),
+      0,
+    );
+    const fileChooser = page.waitForEvent("filechooser");
+    await editorDialog
+      .getByRole("button", {
+        name:
+          locale === "de" ? "Leistungsanfrage einlesen" : "Read work inquiry",
+        exact: true,
+      })
+      .click();
+    await (
+      await fileChooser
+    ).setFiles({
+      name: "School.x83",
+      mimeType: "application/xml",
+      buffer: Buffer.from(inquiryXml),
+    });
+    await editorDialog.getByText("School.x83", { exact: true }).waitFor();
+    assert.equal(
+      [...state.documents.values()].filter((doc) => doc.purpose === "offer")
+        .length,
+      0,
+      "Reading an inquiry must not start pricing implicitly",
+    );
+    await editorDialog
+      .getByRole("button", {
+        name: locale === "de" ? "Kalkulation beginnen" : "Start pricing",
+        exact: true,
+      })
+      .click();
+    const price = page.getByRole("button", {
+      name: locale === "de" ? "Einheitspreis" : "Unit price",
+      exact: true,
+    });
+    await price.waitFor().catch(async (error) => {
+      throw new Error(
+        `${error.message}\n${await page.locator("body").innerText()}\n${JSON.stringify({ docs: [...state.documents.values()].map((doc) => ({ id: doc.id, purpose: doc.purpose, fileName: doc.fileName })), requests: api.requests.filter((request) => request.path.startsWith("commercial.")).map((request) => ({ path: request.path, id: request.input.id, purpose: request.input.purpose })) })}`,
+      );
+    });
+    assert.equal(
+      api.requests.some(({ path }) => path === "projects.create"),
+      false,
+    );
+    assert.equal(state.cases.size, 1);
+    assert.equal(
+      [...state.documents.values()]
+        .filter((doc) => doc.purpose === "inquiry")
+        .at(-1).xml,
+      inquiryXml,
+    );
+    assert.equal(
+      [...state.documents.values()]
+        .filter((doc) => doc.purpose === "inquiry")
+        .at(-1).readOnly,
+      true,
+    );
+    assert.match(
+      [...state.documents.values()].find((doc) => doc.purpose === "offer").xml,
+      /<Qty>2.000<\/Qty>/,
+    );
+    await price.focus();
+    await price.press("Enter");
+    await page.locator("textarea.gaeb-canvas-input").fill("125.500");
+    await page
+      .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+      .waitFor();
+    assert.equal([...state.cases.values()][0].case.netAmount, "251.00");
+    assert.equal(
+      await page
+        .getByRole("button", {
+          name: locale === "de" ? "Speichern" : "Save",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    assert.equal(await page.locator(".gaeb-document-paper").count(), 1);
+    await page.waitForFunction(
+      () => !document.querySelector("[data-entering]"),
+    );
+    const editorBounds = await editorDialog.boundingBox();
+    assert.ok(
+      editorBounds.width >= width - 2 && editorBounds.height >= 998,
+      `Editor must be fullscreen: ${JSON.stringify(editorBounds)}`,
+    );
+    await page
+      .locator(".gaeb-document-scroll")
+      .evaluate((node) => node.scrollTo(0, 0));
+    // React Aria's transient selection announcement still references the customer
+    // search label until its live-region message expires after leaving the form.
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('[role="log"] [role="img"]')].every(
+          (node) =>
+            node
+              .getAttribute("aria-labelledby")
+              ?.split(" ")
+              .some((id) => document.getElementById(id)?.textContent?.trim()),
+        ),
+      null,
+      { timeout: 10000 },
+    );
+    await checkPageLayout(`contractor-priced-${locale}`);
+    await editorDialog
+      .getByRole("button", {
+        name: locale === "de" ? "Schließen" : "Close",
+        exact: true,
+      })
+      .click();
+    await editorDialog.waitFor({ state: "hidden" });
+    assert.equal(
+      await page.locator(".gaeb-editor").count(),
+      0,
+      "No inline editor may remain in the workflow",
+    );
+    await page
+      .getByRole("heading", {
+        name: locale === "de" ? "Angebote" : "Offers",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByText(
+          /Price inquiries, submit offers|Anfragen kalkulieren, Angebote abgeben/,
+        )
+        .count(),
+      0,
+    );
+    if (width < 1000)
+      await page
+        .getByRole("button", { name: "Eintrag öffnen", exact: true })
+        .click();
+    else
+      await page
+        .getByText("School renovation", { exact: true })
+        .first()
+        .click();
+    await editorDialog.waitFor();
+    assert.equal(
+      await page
+        .locator("[data-fixture-path]")
+        .getAttribute("data-fixture-path"),
+      "/offers",
+    );
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Abgabe erfassen" : "Record submission",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Annahme erfassen" : "Record acceptance",
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name:
+        locale === "de"
+          ? "Annahme des Angebots erfassen"
+          : "Record offer acceptance",
+      exact: true,
+    });
+    await dialog
+      .getByRole("button", {
+        name: locale === "de" ? "Annahme erfassen" : "Record acceptance",
+        exact: true,
+      })
+      .click();
+    await page.waitForFunction(() => !document.querySelector("[data-exiting]"));
+    await page
+      .getByRole("button", {
+        name:
+          locale === "de"
+            ? "Projekt aus Angebot anlegen"
+            : "Create project from offer",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("heading", {
+        name: locale === "de" ? "Auftrag & Leistungen" : "Contract & work",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      [...state.cases.values()][0].case.projectId,
+      "project-fixture",
+    );
+    await page.getByText("School renovation", { exact: true }).waitFor();
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('[role="log"] [role="img"]')].every(
+          (node) =>
+            node
+              .getAttribute("aria-labelledby")
+              ?.split(" ")
+              .some((id) => document.getElementById(id)?.textContent?.trim()),
+        ),
+      null,
+      { timeout: 10000 },
+    );
+    assert.equal(
+      await page
+        .getByRole("region", {
+          name: locale === "de" ? "Vorgangsübersicht" : "Workflows list",
+          exact: true,
+        })
+        .getByText(locale === "de" ? "Projekt" : "Project", { exact: true })
+        .count(),
+      0,
+      "The current project's list omits its redundant Project column",
+    );
+    await checkPageLayout(`contractor-project-${locale}`);
+    const newDocument = page.getByRole("button", {
+      name: locale === "de" ? "Vorgang erstellen" : "Create document",
+      exact: true,
+    });
+    await newDocument.waitFor();
+    const primary = await newDocument.evaluate((node) => ({
+      color: getComputedStyle(node).backgroundColor,
+      primary: node.className.includes("primary"),
+    }));
+    assert.ok(primary.primary, "New uses the primary button style");
+    assert.notEqual(primary.color, "rgba(0, 0, 0, 0)");
+    await newDocument.click();
+    await page
+      .getByRole("menuitem", {
+        name: locale === "de" ? "Aufmaß" : "Measurement",
+        exact: true,
+      })
+      .click();
+    const measurementDialog = page.getByRole("dialog");
+    await measurementDialog
+      .getByRole("textbox", {
+        name: locale === "de" ? /^Bezeichnung/ : /^Title/,
+      })
+      .fill("First measured work");
+    const measuredItem = measurementDialog.getByRole("checkbox").first();
+    await measuredItem.waitFor();
+    assert.equal(await measuredItem.isChecked(), true);
+    await measuredItem
+      .locator("xpath=ancestor::*[@data-slot='checkbox']")
+      .click();
+    assert.equal(
+      await measuredItem.isChecked(),
+      false,
+      "A measurement item can be unchecked individually",
+    );
+    const measuredRow = measuredItem.locator(
+      "xpath=ancestor::*[@data-slot='checkbox']",
+    );
+    await measuredRow.locator('[data-slot="label"]').click();
+    assert.equal(
+      await measuredItem.isChecked(),
+      true,
+      "The label also selects the position",
+    );
+    await measuredRow.locator('[data-slot="checkbox-control"]').click();
+    assert.equal(
+      await measuredItem.isChecked(),
+      false,
+      "The checkbox itself deselects the position",
+    );
+    const startMeasurement = measurementDialog.getByRole("button", {
+      name: locale === "de" ? "Aufmaß beginnen" : "Start measurement",
+      exact: true,
+    });
+    assert.equal(
+      await startMeasurement.isDisabled(),
+      true,
+      "An empty scope cannot be submitted",
+    );
+    await measuredItem.focus();
+    await page.keyboard.press("Space");
+    assert.equal(
+      await measuredItem.isChecked(),
+      true,
+      "Space restores an individual item",
+    );
+    await measurementDialog
+      .getByRole("button", {
+        name: locale === "de" ? "Aufmaß beginnen" : "Start measurement",
+        exact: true,
+      })
+      .click();
+    await page.getByRole("dialog").locator(".gaeb-editor").waitFor();
+    const measurement = [...state.documents.values()].find(
+      (doc) => doc.purpose === "measurement",
+    );
+    assert.ok(measurement);
+    assert.match(measurement.xml, /<Qty>0.000<\/Qty>/);
+    const measurementCase = state.cases.get(measurement.caseId).case;
+    assert.equal(
+      measurementCase.parentCaseId,
+      [...state.cases.values()][0].case.id,
+    );
+    assert.equal(measurementCase.projectId, "project-fixture");
+    await page
+      .getByRole("dialog")
+      .filter({ has: page.locator(".gaeb-editor") })
+      .waitFor();
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Gesamtaufmaß" : "Measured quantity",
+        exact: true,
+      })
+      .waitFor();
+    await page.waitForFunction(
+      () => !document.querySelector("[data-entering],[data-exiting]"),
+    );
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('[role="log"] [role="img"]')].every(
+          (node) =>
+            node
+              .getAttribute("aria-labelledby")
+              ?.split(" ")
+              .some((id) => document.getElementById(id)?.textContent?.trim()),
+        ),
+      null,
+      { timeout: 10000 },
+    );
+    const measuredEditor = page
+      .getByRole("dialog")
+      .filter({ has: page.locator(".gaeb-editor") });
+    assert.equal(
+      await measuredEditor
+        .getByRole("button", {
+          name: locale === "de" ? "Vorgang anzeigen" : "Show workflow",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    await measuredEditor
+      .getByRole("button", {
+        name: locale === "de" ? "Einreichung erfassen" : "Record submission",
+        exact: true,
+      })
+      .click();
+    await measuredEditor
+      .getByRole("button", {
+        name: locale === "de" ? "Aufmaß freigeben" : "Approve measurement",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(measurementCase.status, "submitted");
+    await measuredEditor
+      .getByRole("button", {
+        name: locale === "de" ? "Überarbeiten" : "Revise",
+        exact: true,
+      })
+      .click();
+    await measuredEditor
+      .getByRole("button", {
+        name: locale === "de" ? "Einreichung erfassen" : "Record submission",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(measurementCase.status, "draft");
+    await checkPageLayout(`contractor-measurement-${locale}`);
+  });
+}
+
+test("contractor offer listing has localized empty, failed and permission-restricted states", async () => {
+  seedContractorWorkflows(false);
+  api.setRoles(["view:projects"]);
+  await openApplication("/offers", "en", "dark");
+  await page
+    .getByText("No offers yet. Start with a work inquiry or your own offer.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Create an offer", exact: true })
+      .count(),
+    0,
+  );
+  await checkPageLayout("contractor-list-restricted-empty");
+  api.fail("commercial.cases.list", "Synthetic list failure");
+  await page
+    .getByRole("textbox", { name: "Search", exact: true })
+    .fill("School");
+  await page.getByRole("button", { name: "Try again", exact: true }).waitFor();
+  api.recover("commercial.cases.list");
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await page
+    .getByText("No offers yet. Start with a work inquiry or your own offer.", {
+      exact: true,
+    })
+    .waitFor();
+});
+
+test("contractor subcontract package selects contract work, compares purchase bids and creates a native order", async () => {
+  const { cases, documents } = seedContractorWorkflows();
+  const bidXml =
+    '<?xml version="1.0" encoding="UTF-8"?><GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA84/3.3"><GAEBInfo><Version>3.3</Version><VersDate>2021-05</VersDate><Date>2026-11-04</Date></GAEBInfo><Award><DP>84</DP><AwardInfo><Cur>EUR</Cur></AwardInfo><CTR><Address><Name1>Contractor</Name1><Street>Test Street 1</Street><PCode>10115</PCode><City>Berlin</City></Address><CntryType>EEA</CntryType></CTR><BoQ ID="boq"><BoQInfo><Name>School renovation</Name><BoQBkdn><Type>Item</Type><Length>4</Length><Num>Yes</Num></BoQBkdn><Totals><Total>251.00</Total></Totals></BoQInfo><BoQBody><Itemlist><Item ID="item1" RNoPart="0001"><Qty>2.000</Qty><UP>125.500</UP><IT>251.00</IT></Item></Itemlist></BoQBody></BoQ></Award></GAEB>';
+  const contract = {
+    id: "main-contract",
+    reference: "ANG-1",
+    title: "School renovation",
+    kind: "offer",
+    status: "accepted",
+    existingContract: false,
+    projectId: "project-fixture",
+    customerId: "customer-fixture",
+    customerName: "Fixture Customer",
+    currency: "EUR",
+    netAmount: "251.00",
+    scopeItemIds: [],
+    createdAt: new Date().toISOString(),
+    modifiedAt: new Date().toISOString(),
+  };
+  cases.set(contract.id, { case: contract, events: [] });
+  documents.set("contract-inquiry", {
+    id: "contract-inquiry",
+    caseId: contract.id,
+    purpose: "inquiry",
+    phase: "83",
+    fileName: "School.x83",
+    xml: contractorInquiry,
+    version: 1n,
+    readOnly: true,
+    sourceDocumentId: null,
+    sourceVersion: null,
+  });
+  documents.set("contract-bid", {
+    id: "contract-bid",
+    caseId: contract.id,
+    purpose: "offer",
+    phase: "84",
+    fileName: "School.x84",
+    xml: bidXml,
+    version: 1n,
+    readOnly: true,
+    sourceDocumentId: "contract-inquiry",
+    sourceVersion: 1n,
+    netAmount: "251.00",
+  });
+  await openApplication("/projects/project-fixture/contract", "en", "light");
+  await page
+    .getByRole("button", { name: "Create document", exact: true })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Subcontract", exact: true })
+    .click();
+  const form = page.getByRole("dialog", {
+    name: "Subcontract work",
+    exact: true,
+  });
+  await form
+    .getByRole("textbox", { name: /^Title/ })
+    .fill("Electrical package");
+  const packageItem = form.getByRole("checkbox").first();
+  await packageItem.waitFor();
+  assert.equal(await packageItem.isChecked(), false);
+  await packageItem
+    .locator("xpath=ancestor::*[@data-slot='checkbox']")
+    .locator('[data-slot="checkbox-control"]')
+    .click();
+  assert.equal(
+    await packageItem.isChecked(),
+    true,
+    "An individual item can be selected for subcontracting",
+  );
+  await packageItem.focus();
+  await page.keyboard.press("Space");
+  assert.equal(await packageItem.isChecked(), false);
+  assert.equal(
+    await form
+      .getByRole("button", { name: "Create work package", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await page.keyboard.press("Space");
+  assert.equal(await packageItem.isChecked(), true);
+  await form
+    .getByRole("button", { name: "Create work package", exact: true })
+    .click();
+  const editor = page
+    .getByRole("dialog")
+    .filter({ has: page.locator(".gaeb-editor") });
+  await editor.waitFor().catch(async (error) => {
+    throw new Error(
+      `${error.message}\n${await page.locator("body").innerText()}\n${api.requests.map((request) => request.path).join(", ")}`,
+    );
+  });
+  await editor.getByRole("button", { name: "Quantity", exact: true }).waitFor();
+  const inquiry = [...documents.values()].find(
+    (doc) => doc.caseId !== contract.id && doc.purpose === "inquiry",
+  );
+  assert.ok(inquiry);
+  assert.doesNotMatch(inquiry.xml, /<UP>|125.500|251.00/);
+  assert.match(inquiry.xml, /Install insulation/);
+  assert.equal(
+    await editor
+      .getByRole("button", { name: "Show workflow", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await page
+      .getByRole("region", { name: "Workflow documents", exact: true })
+      .count(),
+    0,
+  );
+  await editor
+    .getByRole("button", { name: "Record inquiry", exact: true })
+    .click();
+  await editor
+    .getByRole("button", { name: "Open subcontractor offer", exact: true })
+    .click();
+  const importOffer = page.getByRole("dialog", {
+    name: "Open subcontractor offer",
+    exact: true,
+  });
+  await importOffer
+    .getByRole("textbox", { name: "Subcontractor / company", exact: true })
+    .fill("Electrical Ltd");
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    importOffer
+      .getByRole("button", { name: "Choose file", exact: true })
+      .click(),
+  ]);
+  await chooser.setFiles({
+    name: "Supplier.x84",
+    mimeType: "application/xml",
+    buffer: Buffer.from(
+      bidXml.replaceAll("125.500", "80.000").replaceAll("251.00", "160.00"),
+    ),
+  });
+  await editor.waitFor();
+  await editor.getByText("Read only", { exact: true }).waitFor();
+  await importOffer.waitFor({ state: "hidden" });
+  assert.equal(
+    await editor.locator(".gaeb-editor").count(),
+    1,
+    "The editor stays open without a workflow overview",
+  );
+  await editor
+    .getByRole("button", { name: "Compare purchase offers", exact: true })
+    .click();
+  await page.getByRole("button", { name: /Select an offer/ }).click();
+  await page.getByRole("option", { name: /Electrical Ltd/ }).click();
+  await page.getByRole("listbox").waitFor({ state: "hidden" });
+  await page
+    .getByRole("button", { name: "Award work package", exact: true })
+    .click();
+  const award = page.getByRole("dialog", {
+    name: "Award work package",
+    exact: true,
+  });
+  await award
+    .getByRole("button", { name: "Confirm award", exact: true })
+    .click();
+  await award.waitFor({ state: "hidden" });
+  const order = [...documents.values()].find(
+    (doc) => doc.caseId === inquiry.caseId && doc.purpose === "order",
+  );
+  assert.ok(order);
+  assert.match(order.xml, /<DP>86<\/DP>/);
+  assert.match(order.xml, /<UP>80.000<\/UP>/);
+  assert.doesNotMatch(order.xml, /125.500/);
+  assert.equal(cases.get(inquiry.caseId).case.status, "awarded");
+  assert.equal(
+    api.requests.filter(({ path }) => path === "commercial.cases.createProject")
+      .length,
+    0,
+  );
+  await editor.getByText(/Beauftragung\.x86/, { exact: false }).waitFor();
+  assert.equal(
+    await editor
+      .getByRole("button", { name: "Show workflow", exact: true })
+      .count(),
+    0,
+  );
+  await page.waitForFunction(
+    () => !document.querySelector("[data-entering],[data-exiting]"),
+  );
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[role="log"] [role="img"]')].every(
+        (node) =>
+          node
+            .getAttribute("aria-labelledby")
+            ?.split(" ")
+            .some((id) => document.getElementById(id)?.textContent?.trim()),
+      ),
+    null,
+    { timeout: 10000 },
+  );
+  await checkPageLayout("contractor-subcontract-awarded");
+});
+
+for (const [locale, width] of [
+  ["en", 1400],
+  ["de", 390],
+]) {
+  test(`organization administration groups details, logo, staff and LLM usage in persistent tabs in ${locale}`, async () => {
+    let profile = {
+      companyName: "Bau GmbH",
+      address: {
+        streetAddress: "Altweg 1",
+        zip: "06108",
+        city: "Halle",
+        country: "Deutschland",
+      },
+    };
+    api.respond("settings.organization.get", () => profile);
+    api.respond("settings.organization.set", (input) => {
+      profile = input;
+      return { success: true };
+    });
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/admin", locale);
+    const street = () =>
+      page.getByRole("textbox", {
+        name: locale === "de" ? "Straße und Hausnummer" : "Street and number",
+        exact: true,
+      });
+    const details = page.getByRole("tab", {
+      name: locale === "de" ? "Stammdaten" : "Company details",
+      exact: true,
+    });
+    await street().fill("Neuweg 2");
+    await page.getByRole("tab", { name: "Logo", exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Logo hochladen" : "Upload logo",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await street().count(),
+      0,
+      "Inactive forms stay out of the focus and accessibility order",
+    );
+    await checkPageLayout(`organization-logo-${locale}`);
+    await page
+      .getByRole("tab", {
+        name: locale === "de" ? "Personal" : "Staff",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("combobox", {
+        name:
+          locale === "de" ? /^Standard-Vorgesetzter/ : /^Default supervisor/,
+      })
+      .waitFor();
+    assert.equal(new URL(page.url()).searchParams.get("tab"), "staff");
+    await checkPageLayout(`organization-staff-${locale}`);
+    await page
+      .getByRole("tab", {
+        name: locale === "de" ? "LLM-Verbrauch" : "LLM usage",
+        exact: true,
+      })
+      .click();
+    await page.waitForFunction(() =>
+      document.querySelector('[role="tabpanel"]')?.textContent?.includes("LLM"),
+    );
+    await checkPageLayout(`organization-usage-${locale}`);
+    await page.reload();
+    await page
+      .getByRole("tab", {
+        name: locale === "de" ? "LLM-Verbrauch" : "LLM usage",
+        selected: true,
+      })
+      .waitFor();
+    await details.click();
+    // Reload restores saved data; ordinary tab switching retains unsaved form values.
+    await street().fill("Neuweg 2");
+    await page.getByRole("tab", { name: "Logo", exact: true }).click();
+    await details.click();
+    assert.equal(await street().inputValue(), "Neuweg 2");
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Speichern" : "Save",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByText(
+        locale === "de" ? "Organisation gespeichert" : "Organization saved",
+        { exact: true },
+      )
+      .waitFor();
+    assert.equal(profile.address.streetAddress, "Neuweg 2");
+    await page.reload();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('input[name="streetAddress"]')?.value ===
+        "Neuweg 2",
+    );
+    await checkPageLayout(`organization-details-${locale}`);
+    await openApplication("/settings/organization", locale);
+    await page.waitForURL((url) => url.pathname === "/admin");
+    await street().waitFor();
+    await openApplication("/settings", locale);
+    assert.equal(await page.getByRole("tab").count(), 3);
+    assert.equal(
+      await page
+        .getByRole("tab", {
+          name: locale === "de" ? "Organisation" : "Organization",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+  });
+}
+
+for (const [locale, width] of [
+  ["de", 390],
+  ["en", 1400],
+]) {
+  test(`organization invoice numbering dropdown explains each scheme and persists exact starting numbers in ${locale}`, async () => {
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/admin?tab=invoices", locale);
+    const scheme = page.getByRole("button", {
+      name:
+        locale === "de" ? /Rechnungsnummer-Schema/ : /Invoice numbering scheme/,
+    });
+    await scheme.and(page.locator(":enabled")).waitFor();
+    const output = page.getByRole("status", {
+      name:
+        locale === "de"
+          ? "Beispiel-Rechnungsnummern"
+          : "Example invoice numbers",
+      exact: true,
+    });
+    const choices =
+      locale === "de"
+        ? [
+            "Global fortlaufend",
+            "Datumsbasiert mit Trennzeichen",
+            "Datumsbasiert kompakt",
+            "Projektbasiert, lokal fortlaufend",
+            "Projektbasiert, global fortlaufend",
+          ]
+        : [
+            "Global sequence",
+            "Date with separators",
+            "Compact date",
+            "Project with local sequence",
+            "Project with global sequence",
+          ];
+    const descriptions =
+      locale === "de"
+        ? [
+            "Ein gemeinsamer Zähler für alle Rechnungen.",
+            "JJ-MM-TT und globale Nummer. Der Zähler läuft über Datumsgrenzen weiter.",
+            "JJMMTT direkt vor der global fortlaufenden Nummer.",
+            "Die achtstellige Nummer aus der Projekt-ID steht vor einem eigenen Zähler je Projekt.",
+            "Die achtstellige Nummer aus der Projekt-ID steht vor einem gemeinsamen Zähler für alle Projekte.",
+          ]
+        : [
+            "One shared counter for all invoices.",
+            "YY-MM-DD and a global number. The counter continues across dates.",
+            "YYMMDD followed directly by the global sequence.",
+            "The eight-digit number derived from the project ID precedes a separate counter per project.",
+            "The eight-digit number derived from the project ID precedes one shared counter across all projects.",
+          ];
+    for (let i = 0; i < choices.length; i++) {
+      await scheme.click();
+      assert.equal(await page.getByRole("option").count(), 5);
+      await page.getByRole("option", { name: choices[i], exact: true }).click();
+      assert.ok((await scheme.innerText()).includes(choices[i]));
+      await page.getByText(descriptions[i], { exact: true }).waitFor();
+      for (let other = 0; other < descriptions.length; other++) {
+        if (other !== i)
+          assert.equal(
+            await page.getByText(descriptions[other], { exact: true }).count(),
+            0,
+          );
+      }
+      await page
+        .getByRole("textbox", {
+          name:
+            locale === "de"
+              ? /^(Globale Startnummer|Startnummer je Projekt)/
+              : /^(Global starting number|Starting number per project)/,
+        })
+        .fill(i === 3 ? "1" : "5368");
+      const expected = [
+        /^5368$/,
+        /^\d{2}-\d{2}-\d{2}-5368$/,
+        /^\d{6}5368$/,
+        /^00238427-1$/,
+        /^00238427-5368$/,
+      ][i];
+      const numbers = await output.locator("code").allTextContents();
+      assert.equal(numbers.length, 5);
+      assert.match(numbers[0], expected);
+      const firstCounter = i === 3 ? "1" : "5368";
+      const prefix = numbers[0].slice(0, -firstCounter.length);
+      assert.deepEqual(
+        numbers,
+        Array.from(
+          { length: 5 },
+          (_, index) => `${prefix}${BigInt(firstCounter) + BigInt(index)}`,
+        ),
+      );
+    }
+    const start = page.getByRole("textbox", {
+      name:
+        locale === "de" ? /^Globale Startnummer/ : /^Global starting number/,
+    });
+    await start.fill("9007199254740993");
+    const save = page.getByRole("button", {
+      name: locale === "de" ? "Speichern" : "Save",
+      exact: true,
+    });
+    await save.click();
+    await page
+      .getByText(
+        locale === "de"
+          ? "Rechnungsnummern gespeichert"
+          : "Invoice numbering saved",
+        { exact: true },
+      )
+      .waitFor();
+    const request = api.requests
+      .filter(({ path }) => path === "settings.invoiceNumbering.set")
+      .at(-1);
+    assert.deepEqual(request.input, {
+      scheme: "projectGlobal",
+      startNumber: "9007199254740993",
+    });
+    await page.reload();
+    await scheme.getByText(choices[4], { exact: true }).waitFor();
+    assert.equal(await start.inputValue(), "9007199254740993");
+    assert.equal(
+      await output.locator("code").first().innerText(),
+      "00238427-9007199254740993",
+    );
+    assert.equal(await output.locator("code").count(), 5);
+    await checkPageLayout(`invoice-numbering-${locale}`);
+    await start.fill("0");
+    await save.click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('input[name="startNumber"]')
+          ?.getAttribute("aria-invalid") === "true",
+    );
+    assert.equal(
+      api.requests.filter(
+        ({ path }) => path === "settings.invoiceNumbering.set",
+      ).length,
+      1,
+    );
+  });
+}
+
+async function createOfferInEditor(title) {
+  const state = seedContractorWorkflows();
+  await openApplication("/offers", "en");
+  await page
+    .getByRole("button", { name: "Create an offer", exact: true })
+    .click();
+  const creation = page.getByRole("dialog", {
+    name: "Create an offer",
+    exact: true,
+  });
+  await creation.getByRole("textbox", { name: /^Title/ }).fill(title);
+  await page.getByRole("combobox", { name: /^Customer/ }).fill("Fixture");
+  await page
+    .getByRole("option", { name: "Fixture Customer", exact: true })
+    .click();
+  await creation
+    .getByRole("button", { name: "Create an offer", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Offer", exact: true })
+    .locator(".gaeb-editor")
+    .waitFor();
+  return state;
+}
+
+test("editor view preferences persist on the server across closing and a browser reload", async () => {
+  seedOverlayOffers(1, true);
+  await openApplication("/offers", "en");
+  const open = async () => {
+    await page.getByText("Offer 0", { exact: true }).click();
+    await page.getByRole("dialog").locator(".gaeb-editor").waitFor();
+  };
+  await open();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: "View", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Show editable fields", exact: true })
+    .click();
+  const separator = dialog.getByRole("separator", {
+    name: "Outline width",
+    exact: true,
+  });
+  await separator.focus();
+  await separator.press("End");
+  await dialog
+    .getByRole("button", { name: "Collapse ribbon", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+  const settings = api.requests
+    .filter(({ path }) => path === "personalization.gaebView.set")
+    .at(-1)?.input;
+  assert.equal(settings.showFields, false);
+  assert.equal(settings.outlineWidth, 600);
+  assert.equal(settings.ribbonCollapsed, true);
+  await page.reload();
+  await open();
+  assert.equal(await dialog.getByRole("tabpanel").count(), 0);
+  await dialog.getByRole("tab", { name: "View", exact: true }).click();
+  assert.equal(
+    await dialog
+      .getByRole("button", { name: "Show editable fields", exact: true })
+      .getAttribute("aria-pressed"),
+    "false",
+  );
+  assert.equal(await separator.getAttribute("aria-valuenow"), "600");
+  assert.equal(await page.locator(".gaeb-status").count(), 0);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+test(
+  "organization Typst split editor compiles previews, embeds images and PDF pages and retains invalid drafts",
+  { timeout: 60000 },
+  async () => {
+    const source = `#let document-header(data) = [HEADER #data.sender.name]
+#let document-footer(data) = context [FOOTER #counter(page).display("1")]
+#let table-style = (stroke: 0.3pt + blue, inset: 4pt)
+#let document-style(data, body) = {
+  set page(paper: "a4", margin: 20mm, header: document-header(data), footer: document-footer(data))
+  set text(font: "NimbusSanL", size: 10pt)
+  body
+}
+`;
+    let template = { source, revision: "0", assets: [] };
+    const uploaded = new Map();
+    api.respond("settings.documentTemplate.get", () => template);
+    api.respond("settings.documentTemplate.set", (input) => {
+      template = {
+        ...template,
+        source: input.source,
+        revision: "saved-revision",
+      };
+      return { source: template.source, revision: template.revision };
+    });
+    api.respond("settings.documentTemplate.assets.createUpload", (input) => {
+      const id = `asset-${uploaded.size}`;
+      const url = `${server.origin}/template-test/${id}`;
+      uploaded.set(id, { ...input, id, downloadUrl: url });
+      return {
+        id,
+        uploadUrl: url,
+        uploadMethod: "PUT",
+        uploadHeaders: { "Content-Type": input.mimeType },
+      };
+    });
+    api.respond("settings.documentTemplate.assets.completeUpload", ({ id }) => {
+      const { buffer, ...asset } = uploaded.get(id);
+      template.assets.push(asset);
+      return { success: true };
+    });
+    await context.route("**/template-test/*", async (route) => {
+      const asset = uploaded.get(
+        new URL(route.request().url()).pathname.split("/").at(-1),
+      );
+      if (route.request().method() === "PUT") {
+        asset.buffer = route.request().postDataBuffer();
+        await route.fulfill({ status: 200, body: "" });
+      } else
+        await route.fulfill({
+          status: 200,
+          contentType: asset.mimeType,
+          body: asset.buffer,
+        });
+    });
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await openApplication("/admin?tab=templates", "en");
+    const code = page.getByRole("textbox", { name: /Typst template source/ });
+    await code.waitFor();
+    const tabs = await page.getByRole("tab").evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        x: node.getBoundingClientRect().x,
+        width: node.getBoundingClientRect().width,
+      })),
+    );
+    assert.equal(tabs.length, 6);
+    assert.ok(
+      tabs.every((tab) => tab.width < 250 && tab.x + tab.width <= 1600),
+      JSON.stringify(tabs),
+    );
+    const pdfText = async () => {
+      const frame = await page
+        .getByTitle("View PDF", { exact: true })
+        .elementHandle();
+      const content = await frame.contentFrame();
+      await content.waitForFunction(
+        () => !!window.PDFViewerApplication?.pdfDocument,
+      );
+      return content.evaluate(async () => {
+        const pdf = window.PDFViewerApplication.pdfDocument;
+        const result = [];
+        for (let i = 1; i <= pdf.numPages; i++)
+          result.push(
+            (await (await pdf.getPage(i)).getTextContent()).items
+              .map((item) => item.str)
+              .join(" "),
+          );
+        return result.join("\n");
+      });
+    };
+    await page
+      .getByTitle("View PDF", { exact: true })
+      .waitFor({ timeout: 20000 });
+    assert.match(await pdfText(), /HEADER Fixture Company/);
+    const geometry = await page
+      .getByRole("region", { name: "Typst source", exact: true })
+      .boundingBox();
+    const right = await page
+      .getByRole("region", { name: "PDF preview", exact: true })
+      .boundingBox();
+    assert.ok(
+      right.x > geometry.x + geometry.width,
+      JSON.stringify({ geometry, right }),
+    );
+    const setCode = async (text) => {
+      await code.focus();
+      await page.keyboard.press("Control+a");
+      await page.keyboard.insertText(text);
+    };
+    await setCode(source.replace("HEADER", "CUSTOM HEADER"));
+    const save = page.getByRole("button", {
+      name: "Save template",
+      exact: true,
+    });
+    await save.and(page.locator(":enabled")).waitFor({ timeout: 20000 });
+    assert.match(await pdfText(), /CUSTOM HEADER Fixture Company/);
+    const saved = page.waitForResponse((response) =>
+      response.url().includes("settings.documentTemplate.set"),
+    );
+    await save.click();
+    await saved;
+    assert.match(template.source, /CUSTOM HEADER/);
+    // Upload a real PNG, then use the compiled preview PDF as a PDF asset.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1kAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const upload = async (name, mimeType, buffer) => {
+      const chooser = page.waitForEvent("filechooser");
+      await page
+        .getByRole("button", { name: "Add image or PDF", exact: true })
+        .click();
+      await (await chooser).setFiles({ name, mimeType, buffer });
+      await page
+        .getByText(name, { exact: true })
+        .waitFor()
+        .catch(async (cause) => {
+          throw new Error(
+            `${cause.message}\n${await page.locator("body").innerText()}\n${JSON.stringify(api.requests.filter(({ path }) => path.startsWith("settings.documentTemplate.assets")))}`,
+          );
+        });
+    };
+    const bytes = await page
+      .getByTitle("View PDF", { exact: true })
+      .evaluate(async (node) => {
+        const pdf = node.contentWindow.PDFViewerApplication.pdfDocument;
+        return Array.from(await pdf.getData());
+      });
+    await upload("logo.png", "image/png", png);
+    await upload("terms.pdf", "application/pdf", Buffer.from(bytes));
+    await setCode(
+      template.source +
+        '\n#asset("logo.png", width: 10mm)\n#attachment("terms.pdf", width: 100%)\n',
+    );
+    await save
+      .and(page.locator(":enabled"))
+      .waitFor({ timeout: 20000 })
+      .catch(async (cause) => {
+        throw new Error(
+          `${cause.message}\n${await page.locator("body").innerText()}`,
+        );
+      });
+    assert.match(await pdfText(), /CUSTOM HEADER/);
+    assert.equal(template.assets.length, 2);
+    const savedAssets = page.waitForResponse((response) =>
+      response.url().includes("settings.documentTemplate.set"),
+    );
+    await save.click();
+    await savedAssets;
+    const validSource = template.source;
+    await page.screenshot({
+      path: join(
+        process.env.SORTSYS_UI_SCREENSHOTS ?? "/tmp",
+        "typst-split-editor.png",
+      ),
+    });
+    await setCode(validSource + "\n#this-function-does-not-exist()\n");
+    await page
+      .getByText("The last valid preview remains visible.", { exact: true })
+      .waitFor();
+    assert.equal(await save.isDisabled(), true);
+    assert.match(await pdfText(), /CUSTOM HEADER/);
+    assert.equal(template.source, validSource);
+    await page.screenshot({
+      path: join(
+        process.env.SORTSYS_UI_SCREENSHOTS ?? "/tmp",
+        "typst-split-editor-invalid.png",
+      ),
+    });
+    seedOverlayOffers(1, true);
+    await openApplication("/offers", "en");
+    await page.getByText("Offer 0", { exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const editor = dialog.locator(".gaeb-editor");
+    await editor.waitFor();
+    await editor.focus();
+    const downloaded = page.waitForEvent("download");
+    await page.keyboard.press("Control+p");
+    const file = await downloaded;
+    assert.match(file.suggestedFilename(), /\.pdf$/i);
+    const printed = await readFile(await file.path());
+    assert.equal(printed.subarray(0, 5).toString(), "%PDF-");
+    const text = await page.evaluate(
+      async (data) => {
+        const pdfjs = await import("/pdfjs/6.4.299/build/pdf.mjs");
+        pdfjs.GlobalWorkerOptions.workerSrc =
+          "/pdfjs/6.4.299/build/pdf.worker.mjs";
+        const task = pdfjs.getDocument({ data: new Uint8Array(data) });
+        const pdf = await task.promise;
+        try {
+          const text = [];
+          for (let index = 1; index <= pdf.numPages; index++)
+            text.push(
+              (await (await pdf.getPage(index)).getTextContent()).items
+                .map((item) => item.str)
+                .join(" "),
+            );
+          return text.join("\n");
+        } finally {
+          await task.destroy();
+        }
+      },
+      [...printed],
+    );
+    assert.match(text, /CUSTOM HEADER Fixture Company/);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  },
+);
+
+test("offer scope autosaves before pricing and changed quantities reuse the existing calculation", async () => {
+  const state = await createOfferInEditor("Own offer");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const persistentDialog = await dialog.elementHandle();
+  await dialog.getByRole("button", { name: "Add item", exact: true }).click();
+  const input = dialog.locator("textarea.gaeb-canvas-input");
+  await input.fill("Install the new insulation");
+  await input.press("Tab");
+  await input.fill("4.500");
+  await dialog
+    .getByRole("button", { name: "Start pricing", exact: true })
+    .click();
+  const price = dialog.getByRole("button", { name: "Unit price", exact: true });
+  await price.waitFor();
+  assert.equal(
+    await persistentDialog.evaluate(
+      (node) => node === document.querySelector('[role="dialog"]'),
+    ),
+    true,
+    "Pricing replaces document content within the existing dialog",
+  );
+  await price.and(page.locator(":enabled")).waitFor();
+  const inquiry = [...state.documents.values()].find(
+    (doc) => doc.purpose === "inquiry",
+  );
+  const offer = [...state.documents.values()].find(
+    (doc) => doc.purpose === "offer",
+  );
+  assert.match(inquiry.xml, /Install the new insulation/);
+  assert.match(inquiry.xml, /<Qty>4.500<\/Qty>/);
+  assert.match(offer.xml, /<Street>Bauweg 12<\/Street>/);
+  assert.match(offer.xml, /<PCode>06108<\/PCode>/);
+  assert.match(offer.xml, /<City>Halle<\/City>/);
+  assert.equal(
+    await dialog
+      .getByRole("button", { name: "More offer actions", exact: true })
+      .count(),
+    0,
+  );
+  await dialog.getByRole("button", { name: "Download", exact: true }).waitFor();
+  await dialog
+    .getByRole("button", { name: "Workflow history", exact: true })
+    .click();
+  const history = page.getByRole("dialog", {
+    name: "Workflow history",
+    exact: true,
+  });
+  await history.waitFor();
+  await history.getByRole("button", { name: "Close", exact: true }).click();
+  assert.equal(offer.sourceDocumentId, inquiry.id);
+  assert.equal(offer.sourceVersion, inquiry.version);
+  await price.focus();
+  await input.fill("7.250");
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  await dialog
+    .getByRole("button", { name: "Edit scope of work", exact: true })
+    .click();
+  const quantity = dialog.getByRole("button", {
+    name: "Quantity",
+    exact: true,
+  });
+  await quantity.and(page.locator(":enabled")).waitFor();
+  await quantity.focus();
+  await input.fill("6.000");
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  await dialog
+    .getByRole("button", { name: "Update pricing", exact: true })
+    .click();
+  await price.and(page.locator(":enabled")).waitFor();
+  const updated = state.documents.get(offer.id);
+  assert.equal(
+    [...state.documents.values()].filter((doc) => doc.purpose === "offer")
+      .length,
+    1,
+  );
+  assert.match(updated.xml, /<UP>7.250<\/UP>/);
+  assert.match(updated.xml, /<Qty>6.000<\/Qty>/);
+  assert.equal(updated.netAmount, "43.50");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("heading", { name: "Offers", exact: true }).waitFor();
+  assert.equal(await page.locator(".gaeb-editor").count(), 0);
+});
+
+test("invalid units identify the field, retain drafts and stop retrying until corrected", async () => {
+  const state = seedOverlayOffers(1, true);
+  api.respond("errorReports.report", { success: true });
+  await openApplication("/offers", "en");
+  await page.getByText("Offer 0", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const unit = dialog.getByRole("button", { name: "Unit", exact: true });
+  await unit.and(page.locator(":enabled")).waitFor();
+  await unit.focus();
+  const input = dialog.locator("textarea.gaeb-canvas-input");
+  const diagnostic = page.waitForResponse((response) =>
+    response.url().includes("errorReports.report"),
+  );
+  await input.fill("unknown-unit");
+  await dialog
+    .getByText("Saving waits for correction", { exact: true })
+    .waitFor();
+  assert.match(
+    await dialog.getByRole("alert").innerText(),
+    /Units may contain up to four characters/,
+  );
+  assert.equal(
+    await dialog
+      .locator('xpath=descendant-or-self::*[@data-schema-state="valid"]')
+      .count(),
+    0,
+  );
+  assert.equal(await input.inputValue(), "unknown-unit");
+  await dialog
+    .locator(".gaeb-document-scroll")
+    .click({ position: { x: 4, y: 4 } });
+  await page.waitForFunction(() =>
+    document.activeElement?.classList.contains("gaeb-editor"),
+  );
+  await unit.focus();
+  assert.equal(
+    await input.inputValue(),
+    "unknown-unit",
+    "Deselecting preserves an invalid draft for correction",
+  );
+  const attempts = () =>
+    api.requests.filter(
+      (request) =>
+        request.path === "errorReports.report" &&
+        request.input.source === "gaeb.autosave",
+    );
+  await page.waitForFunction(() =>
+    document
+      .querySelector(".gaeb-status")
+      ?.textContent?.includes("Saving waits for correction"),
+  );
+  await diagnostic;
+  const before = attempts().length;
+  assert.ok(before > 0);
+  assert.equal(attempts()[0].input.message, "unit-too-long");
+  assert.equal(attempts()[0].input.metadata.stage, "drafts");
+  await page.waitForTimeout(5500);
+  assert.equal(
+    attempts().length,
+    before,
+    "Invalid input must not cause an automatic retry loop",
+  );
+  assert.equal(
+    api.requests.filter(
+      (request) => request.path === "commercial.documents.save",
+    ).length,
+    0,
+  );
+  await checkPageLayout("gaeb-invalid-unit");
+  await page.setViewportSize({ width: 390, height: 900 });
+  await checkPageLayout("gaeb-invalid-unit-mobile");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  const pending = page.getByRole("dialog", {
+    name: "Saving has not completed",
+    exact: true,
+  });
+  await pending
+    .getByRole("button", { name: "Continue editing", exact: true })
+    .click();
+  await unit.focus();
+  assert.equal(await input.inputValue(), "unknown-unit");
+  await input.fill("Stück");
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  assert.match(state.documents.get("scope-0").xml, /<QU>Stk<\/QU>/);
+  assert.equal(await input.inputValue(), "Stk");
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-schema-state="valid"]')
+    .waitFor();
+  assert.equal(await dialog.getByRole("alert").count(), 0);
+});
+
+test("live offer text and cursors synchronize before autosave and workflow updates never poll the case", async () => {
+  const state = seedOverlayOffers(1, true);
+  const document = state.documents.get("scope-0");
+  const shared = new Y.Doc();
+  const sockets = new Map();
+  let holdUpdates = false;
+  const updates = [];
+  const broadcast = (message) => {
+    const text = JSON.stringify(message);
+    for (const { route } of sockets.values()) route.send(text);
+  };
+  const presence = () =>
+    broadcast({
+      type: "presence",
+      participants: [...sockets].map(([id, peer]) => ({
+        id,
+        name: peer.name,
+        color: "#9333ea",
+        field: peer.field ?? null,
+        start: peer.start,
+        end: peer.end,
+        anchor: peer.anchor,
+        head: peer.head,
+      })),
+    });
+  const caseDetail = () => ({
+    ...state.cases.get("overlay-0"),
+    canManage: true,
+    documents: [...state.documents.values()].map(({ xml, ...item }) => ({
+      ...item,
+      version: String(item.version),
+      sourceVersion: null,
+      sourceCurrentVersion: null,
+    })),
+  });
+  await context.routeWebSocket(
+    "ws://127.0.0.1:3000/documents/xml/live",
+    (route) => {
+      const id = `peer-${sockets.size}`;
+      route.onMessage((raw) => {
+        const message = JSON.parse(String(raw));
+        if (message.ticket) {
+          sockets.set(id, {
+            route,
+            name: sockets.size ? "Ben Schneider" : "Anna Müller",
+            field: null,
+          });
+          route.send(
+            JSON.stringify({
+              type: "ready",
+              clientId: id,
+              version: String(document.version),
+              collaboration: true,
+            }),
+          );
+          route.send(
+            JSON.stringify({
+              type: "sync",
+              data: Buffer.from(Y.encodeStateAsUpdate(shared)).toString(
+                "base64",
+              ),
+            }),
+          );
+          presence();
+        } else if (message.type === "initialize") {
+          const keys = shared.getMap("__fields");
+          if (keys.has(message.key)) return;
+          const vector = Y.encodeStateVector(shared);
+          shared.transact(() => {
+            keys.set(message.key, true);
+            shared.getText(message.key).insert(0, message.value);
+          });
+          broadcast({
+            type: "sync",
+            data: Buffer.from(Y.encodeStateAsUpdate(shared, vector)).toString(
+              "base64",
+            ),
+          });
+        } else if (message.type === "update") {
+          const apply = () => {
+            Y.applyUpdate(shared, Buffer.from(message.data, "base64"));
+            broadcast({ type: "sync", data: message.data });
+          };
+          if (holdUpdates) updates.push(apply);
+          else apply();
+        } else if (sockets.has(id)) {
+          Object.assign(sockets.get(id), message);
+          presence();
+        }
+      });
+      route.onClose(() => {
+        sockets.delete(id);
+        presence();
+      });
+    },
+  );
+  api.respond("commercial.documents.get", () => ({
+    ...document,
+    canEdit: true,
+    livePath: "/documents/xml/live",
+    liveTicket: "fixture-ticket",
+    recoveryScope: "live-offer-fixture",
+  }));
+  api.respond("commercial.documents.save", (input) => {
+    if (input.version !== document.version)
+      throw new Error("The document was changed in another editor");
+    document.xml = input.xml;
+    document.version++;
+    broadcast({ type: "changed", version: String(document.version) });
+    broadcast({ type: "case", detail: caseDetail() });
+    return { version: document.version, savedAt: new Date().toISOString() };
+  });
+  api.hold("commercial.documents.save");
+  const first = page,
+    second = await context.newPage();
+  second.setDefaultTimeout(10000);
+  try {
+    await openApplication("/offers", "en");
+    await page.getByText("Offer 0", { exact: true }).click();
+    page = second;
+    await openApplication("/offers", "en");
+    await page.getByText("Offer 0", { exact: true }).click();
+    const firstEditor = first.getByRole("dialog", {
+      name: "Offer",
+      exact: true,
+    });
+    const secondEditor = second.getByRole("dialog", {
+      name: "Offer",
+      exact: true,
+    });
+    await firstEditor.getByLabel("Ben Schneider", { exact: true }).waitFor();
+    await secondEditor.getByLabel("Anna Müller", { exact: true }).waitFor();
+    for (const editor of [firstEditor, secondEditor])
+      await editor
+        .locator('[data-gaeb-field="item-item1:text:0"]')
+        .and(editor.locator(":enabled"))
+        .focus();
+    const one = firstEditor.locator("textarea.gaeb-canvas-input"),
+      two = secondEditor.locator("textarea.gaeb-canvas-input");
+    await one.fill("Hallo Welt");
+    await second.waitForFunction(
+      () =>
+        document.querySelector("textarea.gaeb-canvas-input").value ===
+        "Hallo Welt",
+    );
+    assert.match(
+      document.xml,
+      /Install insulation/,
+      "The peer sees edits before the file has been saved",
+    );
+    await one.press("End");
+    await one.press("Control+Shift+ArrowLeft");
+    await first.waitForFunction(
+      () =>
+        document.querySelector("textarea.gaeb-canvas-input").selectionStart ===
+        6,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.ok(
+      [...sockets.values()].some((peer) => peer.start === 6 && peer.end === 10),
+    );
+    holdUpdates = true;
+    await Promise.all([one.fill("Hallo A Welt"), two.fill("Hallo B Welt")]);
+    holdUpdates = false;
+    updates.splice(0).forEach((apply) => apply());
+    const converged = () => {
+      const value = document.querySelector("textarea.gaeb-canvas-input").value;
+      return value.includes("A ") && value.includes("B ");
+    };
+    await first.waitForFunction(converged);
+    await second.waitForFunction(converged);
+    const value = await one.inputValue();
+    assert.equal(await two.inputValue(), value);
+    assert.equal((value.match(/Hallo/g) ?? []).length, 1);
+    const calls = api.requests.filter(
+      (request) => request.path === "commercial.cases.get",
+    ).length;
+    api.release("commercial.documents.save");
+    await firstEditor
+      .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+      .waitFor({ timeout: 15000 });
+    await secondEditor
+      .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+      .waitFor({ timeout: 15000 });
+    assert.ok(document.xml.includes(value));
+    await new Promise((resolve) => setTimeout(resolve, 5500));
+    assert.equal(
+      api.requests.filter((request) => request.path === "commercial.cases.get")
+        .length,
+      calls,
+      "Typing, saving and idle editors never reload the entire case",
+    );
+    state.cases.get("overlay-0").case.status = "sent";
+    broadcast({ type: "case", detail: caseDetail() });
+    await firstEditor
+      .getByRole("button", { name: "Revise offer", exact: true })
+      .waitFor();
+    await secondEditor
+      .getByRole("button", { name: "Revise offer", exact: true })
+      .waitFor();
+    assert.equal(
+      api.requests.filter((request) => request.path === "commercial.cases.get")
+        .length,
+      calls,
+    );
+    page = first;
+    await checkPageLayout("gaeb-live-text-and-cursors");
+  } finally {
+    api.release("commercial.documents.save");
+    page = first;
+    await second.close();
+  }
+});
+
+test("temporary storage errors still retry autosave and report their original cause", async () => {
+  const state = seedOverlayOffers(1, true);
+  api.fail("commercial.documents.save", "Temporary storage unavailable");
+  await openApplication("/offers", "en");
+  await page.getByText("Offer 0", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const quantity = dialog.getByRole("button", {
+    name: "Quantity",
+    exact: true,
+  });
+  await quantity.and(page.locator(":enabled")).waitFor();
+  await quantity.focus();
+  await dialog.locator("textarea.gaeb-canvas-input").fill("9.000");
+  await dialog
+    .getByText("Save failed — retrying automatically", { exact: true })
+    .waitFor();
+  assert.equal(
+    await dialog
+      .getByText("Saving waits for correction", { exact: true })
+      .count(),
+    0,
+  );
+  api.recover("commercial.documents.save");
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  assert.match(state.documents.get("scope-0").xml, /<Qty>9.000<\/Qty>/);
+});
+
+test("clicking empty editor space releases focus inside fullscreen and autosaves the last input", async () => {
+  const state = await createOfferInEditor("Blurred offer");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const editor = dialog.getByRole("region", {
+    name: "GAEB editor",
+    exact: true,
+  });
+  await dialog.getByRole("button", { name: "Add item", exact: true }).click();
+  await dialog
+    .locator("textarea.gaeb-canvas-input")
+    .fill("Saved after clicking blank space");
+  await editor
+    .locator(".gaeb-document-scroll")
+    .click({ position: { x: 4, y: 4 } });
+  await page.waitForFunction(() =>
+    document.activeElement?.classList.contains("gaeb-editor"),
+  );
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  assert.equal(await dialog.isVisible(), true);
+  assert.equal(
+    await editor.locator('.gaeb-outline [aria-selected="true"]').count(),
+    0,
+  );
+  assert.equal(
+    await editor
+      .getByRole("button", { name: "Bold", exact: true })
+      .isDisabled(),
+    true,
+  );
+  const scope = [...state.documents.values()].find(
+    (doc) => doc.purpose === "inquiry",
+  );
+  assert.match(scope.xml, /Saved after clicking blank space/);
+  const outline = editor.getByRole("navigation", {
+    name: "Document outline",
+    exact: true,
+  });
+  await outline
+    .getByText("Saved after clicking blank space", { exact: true })
+    .click();
+  const tree = outline.getByRole("treegrid");
+  const box = await tree.boundingBox();
+  await tree.click({ position: { x: 140, y: box.height - 10 } });
+  await page.waitForFunction(() =>
+    document.activeElement?.classList.contains("gaeb-editor"),
+  );
+  assert.equal(await outline.locator('[aria-selected="true"]').count(), 0);
+  await page.keyboard.press("Tab");
+  assert.equal(
+    await dialog.evaluate((node) => node.contains(document.activeElement)),
+    true,
+    "Keyboard focus remains in the fullscreen dialog after deselection",
+  );
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+test("previous-position autocomplete searches descriptions and reuses the complete text inside fullscreen", async () => {
+  const state = await createOfferInEditor("Library offer");
+  api.respond("gaeb.positions.search", ({ query }) => {
+    return {
+      items: query.toLowerCase().includes("fire")
+        ? [
+            {
+              id: "catalog-hatch",
+              shortText: "Inspection hatch",
+              description: "Fit fire-rated plasterboard.",
+              unit: "m²",
+              sourceFile: "Previous scope.x83",
+            },
+          ]
+        : [],
+      indexing: false,
+    };
+  });
+  api.hold("gaeb.positions.search");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const search = dialog.getByRole("combobox", {
+    name: "Search previous items",
+    exact: true,
+  });
+  const request = page.waitForRequest((request) =>
+    request.url().includes("gaeb.positions.search"),
+  );
+  await search.fill("fire");
+  await request;
+  await dialog
+    .locator(".gaeb-document-scroll")
+    .click({ position: { x: 4, y: 4 } });
+  await page.waitForFunction(
+    () =>
+      document.activeElement?.classList.contains("gaeb-editor") &&
+      !document.querySelector('.gaeb-position-search [aria-busy="true"]'),
+  );
+  const response = page.waitForResponse((response) =>
+    response.url().includes("gaeb.positions.search"),
+  );
+  api.release("gaeb.positions.search");
+  await response;
+  await search.fill("fire");
+  await page
+    .getByRole("option", { name: /Inspection hatch.*fire-rated/ })
+    .waitFor();
+  await checkPageLayout("gaeb-position-autocomplete");
+  await dialog
+    .locator(".gaeb-document-scroll")
+    .click({ position: { x: 4, y: 4 } });
+  await page
+    .getByRole("option", { name: /Inspection hatch.*fire-rated/ })
+    .waitFor({ state: "hidden" });
+  await page.waitForFunction(() =>
+    document.activeElement?.classList.contains("gaeb-editor"),
+  );
+  await search.fill("fire");
+  await page
+    .getByRole("option", { name: /Inspection hatch.*fire-rated/ })
+    .click();
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  const scope = [...state.documents.values()].find(
+    (doc) => doc.purpose === "inquiry",
+  );
+  assert.match(scope.xml, /Inspection hatch/);
+  assert.match(scope.xml, /Fit fire-rated plasterboard/);
+  assert.match(scope.xml, /<QU>m²<\/QU>/);
+  assert.match(scope.xml, /<Qty>0.000<\/Qty>/);
+  assert.equal(await page.getByRole("dialog").count(), 1);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+test("offer ribbon groups workflow and editing commands with a compact title bar on desktop and mobile", async () => {
+  seedOverlayOffers(1, true);
+  await openApplication("/offers", "en");
+  await page.getByText("Offer 0", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  await dialog.locator(".gaeb-editor").waitFor();
+  await dialog.getByRole("tabpanel", { name: "Home", exact: true }).waitFor();
+  const heading = await dialog.locator(".ss-modal-heading").boundingBox();
+  const label = await dialog.locator(".ss-modal-label").boundingBox();
+  assert.ok(
+    heading.x < 24 && label.x > heading.x + heading.width,
+    `Title and filename are aligned together at the left ${JSON.stringify({ heading, label })}`,
+  );
+  await checkPageLayout("offer-ribbon-desktop");
+  assert.equal(
+    await dialog.getByRole("tab", { name: "Review", exact: true }).count(),
+    0,
+  );
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-schema-state="valid"]')
+    .waitFor();
+  await dialog.getByRole("tab", { name: "Home", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 900 });
+  await checkPageLayout("offer-ribbon-mobile");
+  await dialog
+    .getByRole("button", { name: "Collapse ribbon", exact: true })
+    .click();
+  assert.equal(await dialog.getByRole("tabpanel").count(), 0);
+  await checkPageLayout("offer-ribbon-mobile-collapsed");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+for (const locale of ["de", "en"]) {
+  test(`offer header shows scope and pricing clearly with compact labels in ${locale}`, async () => {
+    seedOverlayOffers(1, true);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await openApplication("/offers", locale);
+    await page.getByText("Offer 0", { exact: true }).click();
+    const dialog = page.getByRole("dialog", {
+      name: locale === "de" ? "Angebot" : "Offer",
+      exact: true,
+    });
+    await dialog.locator(".gaeb-editor").waitFor();
+    const header = async (name) => {
+      if (!process.env.SORTSYS_UI_SCREENSHOTS) return;
+      await page.mouse.move(5, 5);
+      await page.getByRole("tooltip").waitFor({ state: "hidden" });
+      const box = await dialog.locator(".gaeb-office-ribbon").boundingBox();
+      await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
+      await page.screenshot({
+        path: join(
+          process.env.SORTSYS_UI_SCREENSHOTS,
+          `${name}-${locale}-crop.png`,
+        ),
+        clip: {
+          x: 0,
+          y: 0,
+          width: page.viewportSize().width,
+          height: Math.ceil(box.y + box.height + 26),
+        },
+      });
+    };
+    const start = dialog.getByRole("button", {
+      name: locale === "de" ? "Kalkulation beginnen" : "Start pricing",
+      exact: true,
+    });
+    assert.match(await start.locator("span").innerText(), /\n/);
+    assert.ok(
+      (await start.boundingBox()).width < 110,
+      "Two-part captions use compact two-line buttons",
+    );
+    await header("header-scope-desktop");
+    await dialog
+      .getByRole("button", {
+        name: locale === "de" ? "Kalkulation beginnen" : "Start pricing",
+        exact: true,
+      })
+      .click();
+    await dialog
+      .getByRole("button", {
+        name: locale === "de" ? "Einheitspreis" : "Unit price",
+        exact: true,
+      })
+      .and(page.locator(":enabled"))
+      .waitFor();
+    assert.equal(
+      await dialog
+        .getByRole("button", {
+          name: locale === "de" ? "Dokument wechseln" : "Switch document",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    assert.equal(await dialog.getByRole("menuitemcheckbox").count(), 0);
+    const scope = dialog.getByRole("button", {
+      name:
+        locale === "de" ? "Leistungsumfang bearbeiten" : "Edit scope of work",
+      exact: true,
+    });
+    const submission = dialog.getByRole("button", {
+      name: locale === "de" ? "Abgabe erfassen" : "Record submission",
+      exact: true,
+    });
+    assert.match(await submission.locator("span").innerText(), /\n/);
+    assert.ok((await submission.boundingBox()).width < 100);
+    assert.equal(
+      await dialog
+        .getByRole("button", {
+          name: locale === "de" ? "Kalkulation öffnen" : "Open pricing",
+          exact: true,
+        })
+        .count(),
+      0,
+      "The current document is not offered as its own action",
+    );
+    await scope.click();
+    await dialog
+      .getByRole("button", {
+        name: locale === "de" ? "Menge" : "Quantity",
+        exact: true,
+      })
+      .and(page.locator(":enabled"))
+      .waitFor();
+    const calculation = dialog.getByRole("button", {
+      name: locale === "de" ? "Kalkulation öffnen" : "Open pricing",
+      exact: true,
+    });
+    await calculation.focus();
+    await calculation.press("Enter");
+    await dialog
+      .getByRole("button", {
+        name: locale === "de" ? "Einheitspreis" : "Unit price",
+        exact: true,
+      })
+      .and(page.locator(":enabled"))
+      .waitFor();
+    await header("header-pricing-desktop");
+    await checkPageLayout(`header-pricing-desktop-${locale}`);
+    await page.setViewportSize({ width: 390, height: 900 });
+    const view = dialog.getByRole("tab", {
+      name: locale === "de" ? "Ansicht" : "View",
+      exact: true,
+    });
+    const [viewBounds, tabsBounds] = await Promise.all([
+      view.boundingBox(),
+      dialog
+        .getByRole("tablist", {
+          name: locale === "de" ? "Menüband" : "Ribbon",
+          exact: true,
+        })
+        .boundingBox(),
+    ]);
+    assert.ok(
+      viewBounds.x + viewBounds.width <= tabsBounds.x + tabsBounds.width + 1,
+      `All ribbon tabs fit without clipping at 390px: ${JSON.stringify({ viewBounds, tabsBounds })}`,
+    );
+    await header("header-pricing-mobile");
+    await checkPageLayout(`header-pricing-mobile-${locale}`);
+  });
+}
+
+test("fullscreen outline mixes groups with items and moves a deep position directly into its ancestor", async () => {
+  const state = await createOfferInEditor("Mixed hierarchy");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const outline = dialog.getByRole("navigation", {
+    name: "Document outline",
+    exact: true,
+  });
+  for (const title of ["Group A", "Group B", "Group C"]) {
+    await outline
+      .getByRole("button", { name: "New section", exact: true })
+      .click();
+    const name = outline.getByRole("textbox", {
+      name: "Section name",
+      exact: true,
+    });
+    await name.fill(title);
+    await name.press("Enter");
+  }
+  await dialog.getByRole("button", { name: "Add item", exact: true }).click();
+  await dialog.locator("textarea.gaeb-canvas-input").fill("Position A");
+  const row = (label) =>
+    outline
+      .locator("[data-gaeb-entry]")
+      .filter({ has: page.getByText(label, { exact: true }) });
+  await row("Position A").dragTo(row("Group A"), {
+    sourcePosition: { x: 140, y: 18 },
+    targetPosition: { x: 170, y: 18 },
+  });
+  await page.waitForFunction(() => {
+    const rows = [
+      ...document.querySelectorAll(".gaeb-outline [data-gaeb-entry]"),
+    ];
+    const position = rows
+      .find((row) => row.textContent.includes("Position A"))
+      ?.querySelector(".gaeb-tree-row");
+    const group = rows
+      .find((row) => row.textContent.includes("Group B"))
+      ?.querySelector(".gaeb-tree-row");
+    return (
+      position &&
+      group &&
+      position.style.paddingInlineStart === group.style.paddingInlineStart
+    );
+  });
+  assert.equal(
+    await outline.getByText("Work items", { exact: true }).count(),
+    0,
+  );
+  const itemBox = await row("Position A").boundingBox();
+  await row("Group B").dragTo(row("Position A"), {
+    sourcePosition: { x: 140, y: 18 },
+    targetPosition: { x: 140, y: itemBox.height - 2 },
+  });
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  const labels = await outline.locator(".gaeb-tree-label").allTextContents();
+  assert.deepEqual(labels, ["Group A", "Position A", "Group B", "Group C"]);
+  assert.match(
+    [...state.documents.values()].find((doc) => doc.purpose === "inquiry").xml,
+    /Position A/,
+  );
+  await row("Group C").getByText("Group C", { exact: true }).click();
+  await dialog.getByRole("button", { name: "Add item", exact: true }).click();
+  await dialog.locator("textarea.gaeb-canvas-input").fill("Nested position");
+  await outline
+    .getByRole("button", { name: "Entire document", exact: true })
+    .click();
+  await outline
+    .getByRole("button", { name: "New section", exact: true })
+    .click();
+  const sectionName = outline.getByRole("textbox", {
+    name: "Section name",
+    exact: true,
+  });
+  await sectionName.fill("Group D");
+  await sectionName.press("Enter");
+  await row("Group D").dragTo(row("Nested position"), {
+    sourcePosition: { x: 140, y: 18 },
+    targetPosition: { x: 140, y: 2 },
+  });
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  assert.deepEqual(
+    await outline.locator(".gaeb-tree-label").allTextContents(),
+    [
+      "Group A",
+      "Position A",
+      "Group B",
+      "Group C",
+      "Group D",
+      "Nested position",
+    ],
+  );
+  await checkPageLayout("gaeb-mixed-hierarchy");
+  await page.setViewportSize({ width: 390, height: 900 });
+  await checkPageLayout("gaeb-mixed-hierarchy-mobile");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+test("offer hierarchy edits stay inside the fullscreen focus scope and flow into pricing", async () => {
+  const state = await createOfferInEditor("Hierarchical offer");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const input = dialog.locator("textarea.gaeb-canvas-input");
+  const outline = dialog.getByRole("navigation", {
+    name: "Document outline",
+    exact: true,
+  });
+  await outline
+    .getByRole("button", { name: "New section", exact: true })
+    .click();
+  const draftName = outline.getByRole("textbox", {
+    name: "Section name",
+    exact: true,
+  });
+  await draftName.fill("Cancel this folder");
+  await draftName.press("Escape");
+  assert.equal(await dialog.isVisible(), true);
+  assert.equal(
+    await outline.getByText("Cancel this folder", { exact: true }).count(),
+    0,
+  );
+  for (const label of ["Exterior", "Insulation"]) {
+    const action = "New section";
+    await outline.getByRole("button", { name: action, exact: true }).click();
+    const form = outline.getByRole("form", {
+      name: "Create section",
+      exact: true,
+    });
+    await form.getByRole("textbox", { name: /^Section name/ }).fill(label);
+    await form
+      .getByRole("textbox", { name: "Section name", exact: true })
+      .press("Enter");
+    await form.waitFor({ state: "hidden" });
+    assert.equal(
+      await outline
+        .locator('[aria-selected="true"]')
+        .evaluate((node) => node === document.activeElement),
+      true,
+      "Creating a folder keeps keyboard focus in the outline",
+    );
+  }
+  await dialog.getByRole("button", { name: "Add item", exact: true }).click();
+  await input.fill("Install the insulation panels");
+  await input.press("Tab");
+  await input.fill("4.000");
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  await outline
+    .getByText("Install the insulation panels", { exact: true })
+    .waitFor();
+  const scope = [...state.documents.values()].find(
+    (doc) => doc.purpose === "inquiry",
+  );
+  assert.match(scope.xml, /<Qty>4.000<\/Qty>/);
+  assert.equal((scope.xml.match(/<Type>BoQLevel<\/Type>/g) ?? []).length, 2);
+  await dialog
+    .getByRole("button", { name: "Start pricing", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Unit price", exact: true })
+    .waitFor();
+  const bid = [...state.documents.values()].find(
+    (doc) => doc.purpose === "offer",
+  );
+  assert.ok(bid.xml.includes('RNoPart="1"'));
+  assert.equal((bid.xml.match(/<Type>BoQLevel<\/Type>/g) ?? []).length, 2);
+  assert.equal(await page.getByRole("dialog").count(), 1);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+});
+
+test("offer rows drag inside fullscreen, retain prices by ID and cancel keyboard drag without closing", async () => {
+  const state = await createOfferInEditor("Reordered offer");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const input = dialog.locator("textarea.gaeb-canvas-input");
+  const outline = dialog.getByRole("navigation", {
+    name: "Document outline",
+    exact: true,
+  });
+  const row = (label) =>
+    outline
+      .locator("[data-gaeb-entry]")
+      .filter({ has: page.getByText(label, { exact: true }) });
+  for (const label of ["Alpha", "Beta"]) {
+    await dialog.getByRole("button", { name: "Add item", exact: true }).click();
+    await input.fill(label);
+    await input.press("Tab");
+    await input.fill("2.000");
+  }
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  await dialog
+    .getByRole("button", { name: "Start pricing", exact: true })
+    .click();
+  const prices = dialog.getByRole("button", {
+    name: "Unit price",
+    exact: true,
+  });
+  await prices.first().and(page.locator(":enabled")).waitFor();
+  for (const [index, price] of ["11.000", "22.000"].entries()) {
+    await prices.nth(index).focus();
+    await input.fill(price);
+  }
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  const bid = [...state.documents.values()].find(
+    (doc) => doc.purpose === "offer",
+  );
+  const pricesById = async (xml) =>
+    page.evaluate((source) => {
+      const doc = new DOMParser().parseFromString(source, "application/xml");
+      return Object.fromEntries(
+        [...doc.getElementsByTagNameNS("*", "Item")].map((item) => [
+          item.getAttribute("ID"),
+          item.getElementsByTagNameNS("*", "UP")[0]?.textContent,
+        ]),
+      );
+    }, xml);
+  const originalPrices = await pricesById(bid.xml);
+  assert.deepEqual(Object.values(originalPrices), ["11.000", "22.000"]);
+  await dialog
+    .getByRole("button", { name: "Edit scope of work", exact: true })
+    .click();
+  await row("Beta")
+    .getByRole("button", { name: /Move entry/ })
+    .waitFor();
+  await row("Beta").dragTo(row("Alpha"), {
+    sourcePosition: { x: 140, y: 18 },
+    targetPosition: { x: 140, y: 2 },
+  });
+  await row("Beta").getByText("1", { exact: true }).waitFor();
+  await row("Alpha").getByText("2", { exact: true }).waitFor();
+  const handle = row("Beta").getByRole("button", { name: /Move entry/ });
+  await handle.focus();
+  await handle.press("Enter");
+  await page.keyboard.press("Escape");
+  assert.equal(
+    await dialog.isVisible(),
+    true,
+    "Escape cancels the drag within the fullscreen dialog",
+  );
+  await row("Beta").getByText("1", { exact: true }).waitFor();
+  await dialog
+    .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
+    .waitFor();
+  const scope = [...state.documents.values()].find(
+    (doc) => doc.purpose === "inquiry",
+  );
+  assert.ok(scope.xml.indexOf("Beta") < scope.xml.indexOf("Alpha"));
+  await dialog
+    .getByRole("button", { name: "Update pricing", exact: true })
+    .click();
+  await prices.first().and(page.locator(":enabled")).waitFor();
+  assert.deepEqual(
+    await pricesById(state.documents.get(bid.id).xml),
+    originalPrices,
+  );
+  assert.equal(
+    await outline.getByRole("button", { name: /^Move (up|down)$/ }).count(),
+    0,
+  );
+  await checkPageLayout("offer-dragged-outline");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+test("offer inquiry button rejects the wrong phase inside the dialog without replacing the scope", async () => {
+  const state = await createOfferInEditor("Retained scope");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const before = [...state.documents.values()][0].xml;
+  const chooser = page.waitForEvent("filechooser");
+  await dialog
+    .getByRole("button", { name: "Read work inquiry", exact: true })
+    .click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "Wrong.x84",
+    mimeType: "application/xml",
+    buffer: Buffer.from(
+      contractorInquiry
+        .replaceAll("DA83", "DA84")
+        .replace("<DP>83</DP>", "<DP>84</DP>"),
+    ),
+  });
+  await dialog
+    .getByText(
+      "This file does not have the document type needed for this step. Check its GAEB phase.",
+      { exact: true },
+    )
+    .waitFor();
+  assert.equal(state.documents.size, 1);
+  assert.equal([...state.documents.values()][0].xml, before);
+  assert.equal(
+    await dialog
+      .getByRole("button", { name: "Start pricing", exact: true })
+      .isEnabled(),
+    true,
+  );
+});
+
+test("read-only offers open directly in fullscreen without mutation actions or an intermediate detail page", async () => {
+  const state = seedContractorWorkflows(false);
+  state.cases.set("offer-readonly", {
+    case: {
+      id: "offer-readonly",
+      kind: "offer",
+      title: "Read-only offer",
+      reference: "ANG-READ",
+      status: "draft",
+      customerName: "Fixture Customer",
+      customerId: "customer-fixture",
+      projectId: "project-fixture",
+      parentCaseId: null,
+      netAmount: null,
+      currency: "EUR",
+      existingContract: false,
+    },
+    events: [],
+  });
+  state.documents.set("readonly-inquiry", {
+    id: "readonly-inquiry",
+    caseId: "offer-readonly",
+    purpose: "inquiry",
+    phase: "83",
+    fileName: "Readonly.x83",
+    xml: contractorInquiry,
+    readOnly: true,
+    version: 1n,
+    sourceDocumentId: null,
+    sourceVersion: null,
+  });
+  await openApplication("/offers", "en");
+  await page.getByText("Read-only offer", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  await dialog.locator(".gaeb-editor").waitFor();
+  assert.equal(await dialog.locator('[draggable="true"]').count(), 0);
+  assert.equal(
+    await dialog.getByRole("button", { name: /Move entry/ }).count(),
+    0,
+  );
+  assert.equal(
+    await dialog
+      .getByRole("button", { name: "Read work inquiry", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await dialog
+      .getByRole("button", { name: "Start pricing", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await page
+      .getByRole("region", { name: "Workflow documents", exact: true })
+      .count(),
+    0,
+  );
+  await checkPageLayout("offer-readonly-direct-editor");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("heading", { name: "Offers", exact: true }).waitFor();
+});
+
+function seedOverlayOffers(count = 1, canManage = false) {
+  const state = seedContractorWorkflows(canManage);
+  for (let index = 0; index < count; index++) {
+    const id = `overlay-${index}`;
+    state.cases.set(id, {
+      case: {
+        id,
+        kind: "offer",
+        title: `Offer ${index}`,
+        reference: `ANG-${index}`,
+        status: "draft",
+        customerId: "customer-fixture",
+        customerName: "Fixture Customer",
+        projectId: null,
+        parentCaseId: null,
+        netAmount: null,
+        currency: "EUR",
+        existingContract: false,
+      },
+      events: [],
+    });
+    state.documents.set(`scope-${index}`, {
+      id: `scope-${index}`,
+      caseId: id,
+      purpose: "inquiry",
+      phase: "83",
+      fileName: `Offer-${index}.x83`,
+      xml: contractorInquiry,
+      readOnly: !canManage,
+      version: 1n,
+      sourceDocumentId: null,
+      sourceVersion: null,
+    });
+  }
+  api.respond("commercial.cases.list", (input) =>
+    [...state.cases.values()]
+      .map((detail) => detail.case)
+      .filter(
+        (row) =>
+          (!input?.kind ||
+            (input.kind === "sales"
+              ? ["offer", "alternative"].includes(row.kind)
+              : row.kind === input.kind)) &&
+          (!input?.status || row.status === input.status) &&
+          (!input?.search ||
+            row.title.toLowerCase().includes(input.search.toLowerCase())),
+      )
+      .slice(
+        Number(input?.offset ?? 0),
+        Number(input?.offset ?? 0) + Number(input?.limit ?? 50),
+      ),
+  );
+  return state;
+}
+
+test("offer overlay preserves the current route, filters, loaded pages, focus and scroll position", async () => {
+  seedOverlayOffers(60);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await openApplication("/offers", "en");
+  const search = page.getByRole("textbox", { name: "Search", exact: true });
+  await search.fill("Offer");
+  const searchNode = await search.elementHandle();
+  await page.getByText("Offer 49", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Show more", exact: true }).click();
+  const last = page
+    .getByRole("row")
+    .filter({ has: page.getByText("Offer 59", { exact: true }) });
+  await last.scrollIntoViewIfNeeded();
+  await last.focus();
+  const before = await page.evaluate(() => ({
+    url: location.href,
+    length: history.length,
+    scroll: scrollY,
+    title: document.title,
+  }));
+  await last.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  await dialog.locator(".gaeb-editor").waitFor();
+  assert.equal(
+    await page.locator("[data-fixture-path]").getAttribute("data-fixture-path"),
+    "/offers",
+  );
+  assert.equal(await searchNode.evaluate((node) => node.isConnected), true);
+  assert.equal(new URL(page.url()).pathname, "/gaeb/overlay-59");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.locator('[aria-label="Offers list"][aria-busy="true"]').waitFor();
+  await page.locator('[aria-label="Offers list"][aria-busy="false"]').waitFor();
+  assert.equal(await search.inputValue(), "Offer");
+  assert.equal(await searchNode.evaluate((node) => node.isConnected), true);
+  assert.equal(await page.getByText("Offer 59", { exact: true }).count(), 1);
+  const after = await page.evaluate(() => ({
+    url: location.href,
+    length: history.length,
+    scroll: scrollY,
+    title: document.title,
+  }));
+  assert.equal(after.url, before.url);
+  assert.equal(after.length, before.length + 1);
+  assert.equal(after.title, before.title);
+  assert.ok(
+    Math.abs(after.scroll - before.scroll) <= 2,
+    JSON.stringify({ before, after }),
+  );
+  assert.equal(
+    await last.evaluate(
+      (node) =>
+        node === document.activeElement ||
+        node.contains(document.activeElement),
+    ),
+    true,
+  );
+});
+
+test("offer backdrop and focus scope remain mounted through delayed workflow and document loading", async () => {
+  seedOverlayOffers(1);
+  api.hold("commercial.cases.get");
+  api.hold("commercial.documents.get");
+  await openApplication("/offers", "en");
+  await page.getByText("Offer 0", { exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  const initial = await dialog.elementHandle();
+  const assertCenteredLoading = async (name) => {
+    const loading = dialog.locator(".commercial-editor-loading");
+    await loading.waitFor();
+    const geometry = await loading.evaluate((node) => {
+      const content = node.closest(".ss-modal-content").getBoundingClientRect();
+      const spinner = node.querySelector(".ss-spinner").getBoundingClientRect();
+      return {
+        dx: Math.abs(
+          (spinner.left + spinner.right - content.left - content.right) / 2,
+        ),
+        dy: Math.abs(
+          (spinner.top + spinner.bottom - content.top - content.bottom) / 2,
+        ),
+      };
+    });
+    assert.ok(geometry.dx < 120 && geometry.dy < 50, JSON.stringify(geometry));
+    await page.screenshot({
+      path: join(process.env.SORTSYS_UI_SCREENSHOTS ?? "/tmp", `${name}.png`),
+    });
+  };
+  await assertCenteredLoading("offer-loading-workflow");
+  await initial.evaluate((node) => {
+    window.__commercialDialogDetached = false;
+    window.__commercialDialogObserver = new MutationObserver(() => {
+      if (!node.isConnected) window.__commercialDialogDetached = true;
+    });
+    window.__commercialDialogObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  });
+  api.release("commercial.cases.get");
+  await page.getByRole("dialog", { name: "Offer", exact: true }).waitFor();
+  assert.equal(await initial.evaluate((node) => node.isConnected), true);
+  await assertCenteredLoading("offer-loading-document");
+  api.release("commercial.documents.get");
+  await dialog.locator(".gaeb-editor").waitFor();
+  assert.equal(await dialog.count(), 1);
+  assert.equal(
+    await initial.evaluate(
+      (node) => node === document.querySelector('[role="dialog"]'),
+    ),
+    true,
+  );
+  assert.equal(
+    await page.evaluate(() => window.__commercialDialogDetached),
+    false,
+  );
+  assert.equal(
+    await dialog.evaluate((node) => node.contains(document.activeElement)),
+    true,
+  );
+  await page.evaluate(() => window.__commercialDialogObserver.disconnect());
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+});
+
+test("browser Back closes the offer overlay through autosave without navigating the background page", async () => {
+  const state = seedOverlayOffers(1, true);
+  await openApplication("/offers", "en");
+  await page.evaluate(() => {
+    const url = new URL(location.href);
+    url.searchParams.set("back-test", "1");
+    history.pushState(history.state, "", url);
+  });
+  const originalUrl = page.url();
+  await page.getByText("Offer 0", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const quantity = dialog.getByRole("button", {
+    name: "Quantity",
+    exact: true,
+  });
+  await quantity.and(page.locator(":enabled")).waitFor();
+  await quantity.focus();
+  await dialog.locator("textarea.gaeb-canvas-input").fill("6.750");
+  await dialog.locator('[data-save-state="saving"]').waitFor();
+  await page.evaluate(() => history.back());
+  await dialog.waitFor({ state: "hidden" });
+  await page.waitForURL(originalUrl);
+  assert.equal(
+    await page.locator("[data-fixture-path]").getAttribute("data-fixture-path"),
+    "/offers",
+  );
+  assert.match(state.documents.get("scope-0").xml, /<Qty>6.750<\/Qty>/);
+});
+
+for (const kind of ["offer", "measurement"])
+  test(`${kind} uses the GAEB URL on refresh, direct links and browser Forward while preserving the background`, async () => {
+    const state = seedOverlayOffers(1, true);
+    if (kind === "measurement") {
+      state.cases.get("overlay-0").case.kind = "measurement";
+      Object.assign(state.documents.get("scope-0"), {
+        purpose: "measurement",
+        phase: "31",
+        fileName: "Measured.x31",
+        xml: await readFile(
+          new URL(
+            "../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x31",
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      });
+    }
+    await openApplication("/gaeb/overlay-0", "en");
+    const dialog = page.getByRole("dialog", {
+      name: kind === "measurement" ? "Measured work" : "Offer",
+      exact: true,
+    });
+    await dialog.locator(".gaeb-editor").waitFor();
+    const link = page.url();
+    assert.equal(new URL(link).pathname, "/gaeb/overlay-0");
+    await page.reload();
+    await dialog.locator(".gaeb-editor").waitFor();
+    assert.equal(page.url(), link);
+    assert.equal(await page.getByRole("dialog").count(), 1);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.waitForURL((url) => url.pathname === "/offers");
+    await page.goForward();
+    await dialog.locator(".gaeb-editor").waitFor();
+    assert.equal(page.url(), link);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.waitForURL((url) => url.pathname === "/offers");
+    await page.goto(link);
+    await dialog.locator(".gaeb-editor").waitFor();
+    assert.equal(
+      await page
+        .locator("[data-fixture-path]")
+        .getAttribute("data-fixture-path"),
+      "/gaeb/overlay-0",
+    );
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.waitForURL((url) => url.pathname === "/offers");
+  });
+
+test("project attachment URLs preserve the browser and reopen through history, reload and legacy links", async () => {
+  populateAttachments();
+  await openApplication("/projects/project-fixture/files?keep=1", "en");
+  const search = page.getByPlaceholder("Search attachments", { exact: true });
+  await search.fill("Specification");
+  const input = await search.elementHandle();
+  const background = page.url();
+  const trigger = page.getByRole("button", { name: /Specification.pdf/ });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "View PDF", exact: true });
+  await dialog.waitFor();
+  const link = page.url();
+  assert.equal(
+    new URL(link).pathname,
+    "/projects/project-fixture/files/file-fixture",
+  );
+  assert.equal(new URL(link).searchParams.has("file"), false);
+  assert.equal(await input.evaluate((node) => node.isConnected), true);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+  assert.equal(await search.inputValue(), "Specification");
+  assert.equal(await input.evaluate((node) => node.isConnected), true);
+  await trigger.click();
+  await dialog.waitFor();
+  await page.evaluate(() => history.back());
+  await dialog.waitFor({ state: "hidden" });
+  await page.waitForURL(background);
+  await page.goForward();
+  await page.waitForURL(link);
+  await dialog.waitFor();
+  assert.equal(page.url(), link);
+  await page.reload();
+  await dialog.waitFor();
+  assert.equal(page.url(), link);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+  await page.goto(link);
+  await dialog.waitFor();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+  const trailing = new URL(link);
+  trailing.pathname += "/";
+  await page.goto(trailing.href);
+  await dialog.waitFor();
+  await page.waitForURL(link);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+  const legacy = new URL(link);
+  legacy.pathname = "/projects/project-fixture/files";
+  legacy.searchParams.set("file", "file-fixture");
+  await page.goto(legacy.href);
+  await dialog.waitFor();
+  await page.waitForURL(link);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+  legacy.pathname += "/";
+  await page.goto(legacy.href);
+  await dialog.waitFor();
+  await page.waitForURL(link);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+  const missing = new URL(link);
+  missing.pathname = "/projects/project-fixture/files/missing-file";
+  await page.goto(missing.href);
+  const unavailable = page.getByRole("dialog", {
+    name: "File preview",
+    exact: true,
+  });
+  await unavailable
+    .getByText("The file is unavailable or you do not have access to it.", {
+      exact: true,
+    })
+    .waitFor();
+  await unavailable.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForURL(background);
+});
+
+test("the project image gallery updates its file ID without adding history entries per photo", async () => {
+  populateAttachments();
+  const date = new Date("2026-10-27T08:00:00Z");
+  const image =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
+  api.respond(
+    "projects.files.list",
+    ["photo-1", "photo-2"].map((id, index) => ({
+      id,
+      projectId: "project-fixture",
+      folderId: null,
+      fileName: `Photo ${index + 1}.png`,
+      mimeType: "image/png",
+      kind: "image",
+      status: "uploaded",
+      textExtractionStatus: "none",
+      createdAt: date,
+      modifiedAt: date,
+      uploadedAt: date,
+      downloadUrl: image,
+    })),
+  );
+  await openApplication("/projects/project-fixture/files", "en");
+  const background = page.url();
+  const length = await page.evaluate(() => history.length);
+  await page.getByRole("button", { name: "Photo 1.png", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  await page.keyboard.press("ArrowRight");
+  assert.equal(
+    new URL(page.url()).pathname,
+    "/projects/project-fixture/files/photo-2",
+  );
+  assert.equal(
+    await dialog.locator(".ss-modal-label").textContent(),
+    "Photo 2.png",
+  );
+  assert.equal(await page.evaluate(() => history.length), length + 1);
+  const link = page.url();
+  await page.reload();
+  await dialog.waitFor();
+  assert.equal(
+    await dialog.locator(".ss-modal-label").textContent(),
+    "Photo 2.png",
+  );
+  assert.equal(page.url(), link);
+  await page.evaluate(() => history.back());
+  await dialog.waitFor({ state: "hidden" });
+  await page.waitForURL(background);
+});
+
+test("shared tab bars match organization tabs and every organization tab uses the full available width", async () => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  const appearance = () =>
+    page.getByRole("tablist").evaluate((node) => {
+      const selected = node.querySelector('[aria-selected="true"]');
+      const indicator = selected.querySelector('[data-slot="tabs-indicator"]');
+      const bar =
+        node.closest('[data-slot="tabs-list-container"]') ??
+        node.parentElement.parentElement;
+      return {
+        background: getComputedStyle(bar).backgroundColor,
+        radius: getComputedStyle(bar).borderRadius,
+        height: selected.getBoundingClientRect().height,
+        selectedBackground: getComputedStyle(indicator).backgroundColor,
+      };
+    });
+  await openApplication("/admin", "en");
+  await page
+    .getByRole("tab", { name: "Company details", selected: true })
+    .waitFor();
+  const expected = await appearance();
+  for (const label of [
+    "Company details",
+    "Invoice numbers",
+    "Logo",
+    "Staff",
+    "LLM usage",
+  ]) {
+    await page.getByRole("tab", { name: label, exact: true }).click();
+    await page.getByRole("tab", { name: label, selected: true }).waitFor();
+    const width = await page
+      .locator(".ss-tabs")
+      .evaluate((node) => node.parentElement.getBoundingClientRect().width);
+    assert.ok(width >= 1550, `${label}: ${width}px`);
+  }
+  await openApplication("/settings", "en");
+  await page.getByRole("tab").first().waitFor();
+  assert.deepEqual(await appearance(), expected);
+  const tabs = page.getByRole("tab");
+  await tabs.first().focus();
+  await page.keyboard.press("ArrowRight");
+  await page.waitForURL((url) => url.pathname === "/settings/passkeys");
+  await tabs.nth(1).and(page.locator('[aria-selected="true"]')).waitFor();
+  await page.keyboard.press("End");
+  await page.waitForURL((url) => url.pathname === "/settings/language");
+  await tabs.nth(2).and(page.locator('[aria-selected="true"]')).waitFor();
+  await checkPageLayout("shared-tabs-settings");
+});
+
+async function seedExtendedContract() {
+  const state = seedContractorWorkflows();
+  const now = new Date().toISOString();
+  state.cases.set("extended-contract", {
+    case: {
+      id: "extended-contract",
+      reference: "ANG-42",
+      kind: "offer",
+      status: "accepted",
+      title: "Musterhaus",
+      existingContract: false,
+      projectId: "project-fixture",
+      parentCaseId: null,
+      customerId: "customer-fixture",
+      customerName: "Fixture Customer",
+      currency: "EUR",
+      netAmount: "10000.00",
+      scopeItemIds: [],
+      createdAt: now,
+      modifiedAt: now,
+    },
+    events: [],
+  });
+  const xml = await readFile(
+    new URL(
+      "../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x86",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  state.documents.set("extended-order", {
+    id: "extended-order",
+    caseId: "extended-contract",
+    purpose: "order",
+    phase: "86",
+    fileName: "Musterhaus.x86",
+    xml,
+    version: 1n,
+    readOnly: true,
+    sourceDocumentId: null,
+    sourceVersion: null,
+  });
+  api.respond("commercial.invoices.context", {
+    progressInvoices: [],
+    hasInvoice: false,
+    hasFinalInvoice: false,
+    vatRate: null,
+  });
+  api.respond("customers.get", {
+    id: "customer-fixture",
+    name: "Fixture Customer",
+    address: { streetAddress: "Musterweg 20", zip: "06108", city: "Halle" },
+    phoneNumbers: [],
+    emailAddresses: [],
+  });
+  return state;
+}
+
+test("project creates a native X89 invoice and keeps it inside its fullscreen editor", async () => {
+  const state = await seedExtendedContract();
+  await openApplication("/projects/project-fixture/contract", "en");
+  await page
+    .getByRole("button", { name: "Create document", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Invoice", exact: true }).click();
+  const form = page.getByRole("dialog", {
+    name: "Create invoice",
+    exact: true,
+  });
+  await form
+    .getByRole("textbox", { name: /^Your tax number \/ VAT ID/ })
+    .fill("DEMO-123");
+  await form.getByRole("button", { name: "Edit invoice", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Invoice", exact: true });
+  await editor.waitFor();
+  await editor.locator("canvas").first().waitFor();
+  const invoice = [...state.documents.values()].find(
+    (d) => d.purpose === "invoice",
+  );
+  assert.ok(invoice.xml.includes("DA89/3.3"));
+  assert.ok(invoice.xml.includes("<TaxNo>DEMO-123</TaxNo>"));
+  assert.ok(invoice.xml.includes("Fixture Company"));
+  assert.ok(invoice.xml.includes("Musterweg 20"));
+  assert.equal(
+    state.cases.get(invoice.caseId).case.parentCaseId,
+    "extended-contract",
+  );
+  await editor
+    .getByRole("button", { name: "Issue invoice", exact: true })
+    .waitFor();
+});
+
+for (const type of ["procurement", "calculation"]) {
+  test(`project creates editable native ${type} from the accepted contract`, async () => {
+    const state = await seedExtendedContract();
+    await openApplication("/projects/project-fixture/contract", "en");
+    await page
+      .getByRole("button", { name: "Create document", exact: true })
+      .click();
+    await page
+      .getByRole("menuitem", {
+        name: type === "procurement" ? "Price inquiry" : "Cost calculation",
+        exact: true,
+      })
+      .click();
+    const form = page.getByRole("dialog", {
+      name: type === "procurement" ? "Price inquiry" : "Cost calculation",
+      exact: true,
+    });
+    await form
+      .getByRole("textbox", { name: /^Title/ })
+      .fill(type === "procurement" ? "Material order" : "Internal costing");
+    await form
+      .getByRole("button", {
+        name:
+          type === "procurement"
+            ? "Create price inquiry"
+            : "Create calculation",
+        exact: true,
+      })
+      .click();
+    const editor = page.getByRole("dialog", {
+      name: type === "procurement" ? "Price inquiry" : "Cost calculation",
+      exact: true,
+    });
+    await editor.waitFor();
+    await editor.locator("canvas").first().waitFor();
+    const doc = [...state.documents.values()].find(
+      (d) =>
+        d.purpose ===
+        (type === "procurement" ? "price_inquiry" : "calculation"),
+    );
+    assert.ok(
+      doc.xml.includes(type === "procurement" ? "DA93/3.3" : "DA52/3.3"),
+    );
+    assert.equal(
+      state.cases.get(doc.caseId).case.parentCaseId,
+      "extended-contract",
+    );
+    if (type === "procurement") assert.ok(!doc.xml.includes("<UP>"));
+    else
+      await editor
+        .getByRole("button", { name: "Add cost component", exact: true })
+        .waitFor();
+  });
+}
+
+for (const locale of ["en", "de"]) {
+  test(`added daily-report hours focus the new employee field in ${locale}`, async () => {
+    await openApplication("/fixtures/forms", locale);
+    await page
+      .getByRole("button", { name: "Create daily report", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog");
+    await dialog.waitFor();
+    const add = dialog.getByRole("button", {
+      name: locale === "de" ? "Arbeitszeit" : "Work hours",
+      exact: true,
+    });
+    await add.click();
+    const employee = dialog
+      .getByRole("combobox", {
+        name: locale === "de" ? /^Mitarbeiter/ : /^Employee/,
+      })
+      .last();
+    await page.waitForFunction(
+      (node) => node === document.activeElement,
+      await employee.elementHandle(),
+    );
+    await employee.fill("Anna");
+    const previousEmployee = await employee.elementHandle();
+    await employee.press("Escape");
+    await add.click();
+    const next = dialog
+      .getByRole("combobox", {
+        name: locale === "de" ? /^Mitarbeiter/ : /^Employee/,
+      })
+      .last();
+    await page.waitForFunction(
+      (node) => node === document.activeElement,
+      await next.elementHandle(),
+    );
+    assert.equal(await previousEmployee.evaluate((node) => node.value), "Anna");
+  });
+}
+
+test("added delivery-note products and special items focus the new field without stealing it back", async () => {
+  await openApplication("/fixtures/forms", "en");
+  await page
+    .getByRole("button", { name: "Create delivery note", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  await dialog.getByRole("button", { name: "Entry", exact: true }).click();
+  const product = dialog.getByRole("combobox", { name: /^Product/ }).last();
+  await page.waitForFunction(
+    (node) => node === document.activeElement,
+    await product.elementHandle(),
+  );
+  await product.press("Escape");
+  await dialog
+    .getByRole("button", { name: "Special items", exact: true })
+    .click();
+  const name = dialog.getByRole("textbox", { name: /^Name/ }).last();
+  await page.waitForFunction(
+    (node) => node === document.activeElement,
+    await name.elementHandle(),
+  );
+  await name.fill("Extra delivery");
+  await name.press("Tab");
+  const amount = dialog.getByRole("spinbutton", { name: /^Quantity/ }).last();
+  await page.waitForFunction(
+    (node) => node === document.activeElement,
+    await amount.elementHandle(),
+  );
+  await amount.fill("2");
+  assert.equal(
+    await amount.evaluate((node) => node === document.activeElement),
+    true,
+  );
+});
+
+test("regie-report additions focus employees, products and special item names", async () => {
+  await openApplication("/fixtures/forms", "en");
+  await page
+    .getByRole("button", { name: "Create regie report", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  for (const [button, role, label] of [
+    ["Work hours", "combobox", /^Employee/],
+    ["Entry", "combobox", /^Product/],
+    ["Special items", "textbox", /^Name/],
+  ]) {
+    await dialog.getByRole("button", { name: button, exact: true }).click();
+    const input = dialog.getByRole(role, { name: label }).last();
+    await page.waitForFunction(
+      (node) => node === document.activeElement,
+      await input.elementHandle(),
+    );
+    await input.press("Escape");
+  }
+});
+
+test("a newly added product unit focuses its name autocomplete", async () => {
+  api.respond("products.units.list", ["kg", "m²", "Stk"]);
+  await openApplication("/fixtures/forms", "en");
+  await page
+    .getByRole("button", { name: "Create product", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  await dialog
+    .getByRole("button", { name: /^(Add unit|Weitere Einheit)$/, exact: true })
+    .click();
+  const unit = dialog.getByRole("combobox", { name: /^(Unit|Einheit)/ }).last();
+  await page.waitForFunction(
+    (node) => node === document.activeElement,
+    await unit.elementHandle(),
+  );
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [390, 1440]) {
+    test(`scan history has content-sized rows and readable notices at ${width}px in ${theme}`, async () => {
+      await page.setViewportSize({ width, height: 1000 });
+      const states = [
+        "failed",
+        "completed",
+        "completed",
+        "queued",
+        "ocr",
+        "matching",
+      ];
+      api.respond(
+        "deliveryNotes.scan.list",
+        states.map((state, index) => ({
+          id: `scan-${index}`,
+          state,
+          fileName:
+            index === 0
+              ? "Sonderpreisliste 24.09.2026 Fa. Musterunternehmen.xlsx"
+              : `PXL_20260904_144550517_${index}.jpg`,
+          fileNames: ["scan.jpg"],
+          documentType:
+            index === 1 ? "invoice" : index === 2 ? "priceList" : null,
+          error: state === "failed" ? "The document could not be read." : null,
+          createdAt: new Date("2026-11-06T18:00:00Z"),
+          updatedAt: new Date("2026-11-06T18:00:00Z"),
+        })),
+      );
+      await openApplication("/import", "en", theme);
+      const rows = page.locator(".delivery-scan-history-row");
+      await rows.nth(5).waitFor();
+      const geometry = await rows.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const row = node.getBoundingClientRect();
+          return {
+            top: row.top,
+            bottom: row.bottom,
+            height: row.height,
+            children: [
+              ...node.querySelectorAll(
+                ".delivery-scan-history-file > *, .delivery-scan-history-state",
+              ),
+            ].map((child) => {
+              const r = child.getBoundingClientRect();
+              return { top: r.top, bottom: r.bottom };
+            }),
+          };
+        }),
+      );
+      geometry.forEach((row, index) => {
+        for (const child of row.children)
+          assert.ok(
+            child.top >= row.top && child.bottom <= row.bottom,
+            JSON.stringify({ row, child }),
+          );
+        if (index)
+          assert.ok(
+            row.top >= geometry[index - 1].bottom,
+            JSON.stringify(geometry),
+          );
+      });
+      assert.ok(
+        geometry[1].height > geometry[0].height,
+        "Document type adds its own line of space",
+      );
+      await rows.first().focus();
+      await page.keyboard.press("Enter");
+      await page
+        .getByRole("alert")
+        .filter({ hasText: "The document could not be read." })
+        .waitFor();
+      await checkPageLayout(`scan-history-${theme}-${width}`);
+    });
+  }
+
+for (const extension of ["d83", "p83"])
+  test(`work inquiry button opens ${extension} and starts native pricing without an address form`, async () => {
+    const state = await createOfferInEditor(`Legacy ${extension}`);
+    const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+    const chooser = page.waitForEvent("filechooser");
+    await dialog
+      .getByRole("button", { name: "Read work inquiry", exact: true })
+      .click();
+    await (
+      await chooser
+    ).setFiles(
+      new URL(
+        `../../../sortsys-gaeb/scripts/fixtures/legacy/anfrage.${extension}`,
+        import.meta.url,
+      ).pathname,
+    );
+    await dialog.getByText("anfrage.x83", { exact: true }).waitFor();
+    await dialog
+      .getByRole("button", { name: "Start pricing", exact: true })
+      .click();
+    await dialog
+      .getByRole("button", { name: "Unit price", exact: true })
+      .and(page.locator(":enabled"))
+      .first()
+      .waitFor();
+    const inquiry = [...state.documents.values()].find(
+      (doc) => doc.readOnly && doc.phase === "83",
+    );
+    const offer = [...state.documents.values()].find(
+      (doc) => doc.purpose === "offer",
+    );
+    assert.ok(inquiry.xml.includes("Wände verputzen"));
+    assert.ok(inquiry.xml.includes("<Qty>12.500</Qty>"));
+    assert.ok(inquiry.xml.includes("sortsys:legacy-source:v1:"));
+    assert.equal(offer.phase, "84");
+    assert.equal(offer.sourceDocumentId, inquiry.id);
+    assert.ok(offer.xml.includes("Fixture Company"));
+    assert.equal(await page.getByRole("dialog").count(), 1);
+  });
+test("editing the document designation updates the workflow heading and overview after autosave", async () => {
+  const state = await createOfferInEditor("Initial designation");
+  const dialog = page.getByRole("dialog", { name: "Offer", exact: true });
+  const field = dialog.locator('[data-gaeb-field="document:title"]');
+  await field.and(page.locator(":enabled")).waitFor();
+  await field.focus();
+  const input = dialog.locator("textarea.gaeb-canvas-input");
+  await input.fill("Sanierung Südflügel – Angebot");
+  await input.press("Tab");
+  await dialog.locator('.gaeb-editor[data-save-state="saved"]').waitFor();
+  assert.equal(
+    [...state.cases.values()][0].case.title,
+    "Sanierung Südflügel – Angebot",
+  );
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page
+    .getByText("Sanierung Südflügel – Angebot", { exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByText("Initial designation", { exact: true }).count(),
+    0,
+  );
 });

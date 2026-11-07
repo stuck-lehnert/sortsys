@@ -1,18 +1,25 @@
-# sortsys web application
+# sortsys im Browser
 
-This package contains the German-language sortsys browser interface. It is built with React 19 and React Router 7 and uses the repository’s API client, component library, and plan viewer as local packages.
+In der Webapp bearbeiten Auftragnehmer Angebote und Projektunterlagen. Die
+Oberfläche ist auf Deutsch und Englisch verfügbar und verwendet React 19 mit
+React Router. API-Client, Bedienelemente, GAEB-Editor und Planansicht sind
+lokale Pakete des Monorepos.
 
-## Development
+## Entwicklung
 
-For the complete application with PostgreSQL, MinIO, ONLYOFFICE Document Server, diagrams.net, API, workers, generated client, and seed data, run this from the repository root:
+Die vollständige Umgebung mit PostgreSQL, MinIO, Euro-Office, diagrams.net, API,
+Hintergrunddiensten, erzeugtem Client und Beispieldaten im Hauptverzeichnis starten:
 
 ```bash
 ./scripts/dev
 ```
 
-The web application is then available at `http://127.0.0.1:5173`.
+Die Webapp ist unter `http://127.0.0.1:5173` erreichbar.
 
-To run only the frontend, first build the API client and install the local DWG viewer dependencies:
+Für den separaten Frontend-Start werden Node gemäß [`.node-version`](../.node-version),
+Bun und die Rust-Toolchain aus der [CI](../.github/workflows/ci.yml) benötigt.
+Die folgenden Befehle beginnen im Hauptverzeichnis. Sie bauen den API-Client und
+DWG-Parser und installieren die Abhängigkeiten der lokalen Pakete:
 
 ```bash
 cd sortsys-api-v2/client
@@ -21,38 +28,67 @@ bun run build
 
 cd ../../sortsys-dwgviewer
 npm ci
+npm run build:wasm:rust
+
+cd ../sortsys-gaeb
+npm ci
 
 cd ../sortsys-webapp-v2
 npm ci
 npm run dev
 ```
 
-The development client expects the API at `http://127.0.0.1:3000`.
+Der Entwicklungsclient erwartet die API unter `http://127.0.0.1:3000`.
 
-## Checks and production build
+## Prüfungen und Produktionsbuild
 
 ```bash
 npm run typecheck
 npm run build
 ```
 
-The production container serves the static build through Nginx. `API_UPSTREAM` selects the internal API origin, while `ONLYOFFICE_UPSTREAM` and `DRAWIO_UPSTREAM` select the internal editor services. `CLIENT_MAX_BODY_SIZE` defaults to `64m`.
+Bei Oberflächenänderungen die [UI-Leitlinien](../UX_UI_GUARDRAILS.md) beachten und
+Browserbeispiele mit dem produktiven Stylesheet prüfen:
 
-Users can create DOCX, PPTX, XLSX, and diagrams.net files directly in a project's attachment area. Office files open in ONLYOFFICE; diagrams open in the embedded diagrams.net editor. Both editors save through authenticated API procedures.
+```bash
+bun run test:ui
+```
 
-Uploaded PDFs are indexed in the background. The **Documents** view searches file names and recognized PDF text across every project the current user may access.
+Client und DWG-WebAssembly vorher bauen. Die Beispiele prüfen beide Sprachen,
+Tastaturbedienung, Zugänglichkeit und Dokumentdialoge. `SORTSYS_UI_ASSETS` kann ein
+vorhandenes `build/client`-Verzeichnis auswählen.
 
-PDF attachments open in the locally hosted [Mozilla PDF.js viewer](https://github.com/mozilla/pdf.js),
-with its own search, page navigation, zoom, print and download controls.
-The viewer loads on demand and follows the user's UI language.
-See [the vendored release](vendor/pdfjs/README.md) for license and update details.
+Nginx liefert den statischen Produktionsbuild aus. `API_UPSTREAM` bestimmt die
+interne API-Adresse, `ONLYOFFICE_UPSTREAM` und `DRAWIO_UPSTREAM` die Editorziele.
+`CLIENT_MAX_BODY_SIZE` beträgt standardmäßig `64m`.
 
-## Local packages
+## Dokumentbearbeitung
 
-- `@sortsys/v2-client` provides typed queries, mutations, authentication, and caching.
-- `@sortsys/react-components` provides the shared controls and visual language.
-- `@sortsys/dwgviewer` renders PDF and DWG project plans.
+DOCX, PPTX, XLSX und diagrams.net-Dateien lassen sich direkt bei Projektanhängen
+anlegen. Office-Dokumente öffnen in Euro-Office, Diagramme im eingebetteten
+Editor. Beide speichern über authentifizierte API-Prozeduren.
 
-## License
+Hochgeladene PDFs werden im Hintergrund indiziert. Die Ansicht **Dokumente**
+durchsucht Dateinamen und erkannten PDF-Text aller zugänglichen Projekte.
 
-This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
+Projektanhänge öffnen unter `/projects/:id/files/:fileId` über dem weiterhin
+geladenen Dateibrowser. Suche und Auswahl bleiben erhalten. Direktlinks und
+Neuladen öffnen die Datei erneut; Zurück schließt mit Speicherprüfung, Vorwärts
+öffnet wieder. Die Bildgalerie ersetzt die Datei-ID im selben Verlaufseintrag.
+Nicht zugängliche Dateien zeigen eine Fehlermeldung.
+
+PDF-Anhänge nutzen den lokal bereitgestellten [Mozilla-PDF.js-Viewer](https://github.com/mozilla/pdf.js)
+mit Suche, Seitennavigation, Zoom, Druck und Download. Er wird bei Bedarf in der
+Oberflächensprache geladen. Hinweise zu Lizenz und Aktualisierung stehen bei der
+[eingebundenen Veröffentlichung](vendor/pdfjs/README.md).
+
+## Lokale Pakete
+
+- `@sortsys/v2-client`: typisierte Abfragen, Änderungen, Authentifizierung und Caching.
+- `@sortsys/react-components`: gemeinsame Bedienelemente und Gestaltung.
+- `@sortsys/dwgviewer`: PDF- und DWG-Pläne.
+- `@sortsys/gaeb`: native Dokumentbearbeitung und Kalkulation im Canvas-Editor.
+
+## Lizenz
+
+Für dieses Paket gilt die [GNU Affero General Public License v3.0 only](../LICENSE).

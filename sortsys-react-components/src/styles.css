@@ -122,3 +122,32 @@
     animation: none;
   }
 }
+
+/* Inline banners and floating notifications use the same readable status surface. */
+.ss-notice {
+  --ss-notice-tone: var(--accent);
+  background: color-mix(in srgb, var(--ss-notice-tone) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ss-notice-tone) 35%, var(--border));
+  border-inline-start: 3px solid var(--ss-notice-tone);
+  color: var(--foreground);
+}
+.ss-notice[data-kind="success"] {
+  --ss-notice-tone: var(--success);
+}
+.ss-notice[data-kind="warning"] {
+  --ss-notice-tone: var(--warning);
+}
+.ss-notice[data-kind="danger"] {
+  --ss-notice-tone: var(--danger);
+}
+.ss-notice :is([data-slot="alert-title"], [data-slot="toast-title"]) {
+  color: var(--foreground);
+}
+.ss-notice
+  :is([data-slot="alert-description"], [data-slot="toast-description"]) {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+.ss-notice :is([data-slot="alert-indicator"], [data-slot="toast-indicator"]) {
+  color: color-mix(in srgb, var(--ss-notice-tone) 60%, var(--foreground));
+}

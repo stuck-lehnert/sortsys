@@ -1,27 +1,31 @@
-# sortsys DWG parser
+# Der DWG-Parser von sortsys
 
-This Rust crate parses DWG files for `@sortsys/dwgviewer`. It builds as a native library for tests and as WebAssembly for the browser worker.
+Diese Rust-Crate liest DWG-Zeichnungen für `@sortsys/dwgviewer`: als native
+Bibliothek in Tests und als WebAssembly im Browser-Worker. Sie liest den
+Dateicontainer, rekonstruiert komprimierte Abschnitte, decodiert unterstützte
+Objekte, löst Blockreferenzen auf und überführt Zeichnungselemente in das
+JSON-Schema `sortsys-dwg-scene@1`. Nicht lesbare Datensätze werden als gruppierte
+Diagnosen gemeldet und nicht durch vermutete Geometrie ersetzt.
 
-The parser reads the file container, reconstructs compressed sections, decodes supported object records, resolves block references, and projects drawing entities into the stable `sortsys-dwg-scene@1` JSON schema. Records it cannot decode are reported as grouped diagnostics instead of guessed geometry.
+## Quellstruktur
 
-## Source layout
-
-| Path | Responsibility |
+| Pfad | Zuständigkeit |
 | --- | --- |
-| `src/bits.rs` | Byte-aligned and bit-aligned DWG values |
-| `src/dwgfile/` | Version headers, section maps, pages, and decompression |
-| `src/objects.rs` | Object maps, raw records, and handle references |
-| `src/entities/` | Entity headers, geometry, hatches, and version-specific layouts |
-| `src/projector.rs` | Conversion from decoded objects to the browser scene |
-| `src/projector/blocks.rs` | Recursive block and INSERT expansion |
-| `src/scene.rs` | Serializable scene types and diagnostics |
-| `src/wasm.rs` | Browser-facing WebAssembly ABI |
+| `src/bits.rs` | byte- und bitausgerichtete DWG-Werte |
+| `src/dwgfile/` | Versionsheader, Abschnittsverzeichnisse, Seiten und Dekomprimierung |
+| `src/objects.rs` | Objektverzeichnisse, Rohdatensätze und Handle-Referenzen |
+| `src/entities/` | Elementheader, Geometrie, Schraffuren und Versionslayouts |
+| `src/projector.rs` | Überführung decodierter Objekte in die Browserszene |
+| `src/projector/blocks.rs` | rekursive Auflösung von Blöcken und INSERTs |
+| `src/scene.rs` | serialisierbare Szenentypen und Diagnosen |
+| `src/wasm.rs` | WebAssembly-Schnittstelle für den Browser |
 
-Format notes and the provenance of fixture-derived offsets are recorded in [`docs/provenance.md`](docs/provenance.md).
+Formathinweise und die Herkunft aus Beispieldateien ermittelter Offsets stehen
+in [`docs/provenance.md`](docs/provenance.md).
 
-## Build and test
+## Bauen und prüfen
 
-The crate requires Rust 1.88 or newer.
+Die im Repository verwendete Toolchain steht in der [CI-Konfiguration](../../.github/workflows/ci.yml).
 
 ```bash
 cargo fmt --all -- --check
@@ -30,11 +34,13 @@ cargo test
 cargo build --locked --release --target wasm32-unknown-unknown
 ```
 
-From the parent package, `npm run build:wasm:rust` installs the target when needed and copies the compiled module to `src/dwg/wasm/sortsys-dwg-rust.wasm`.
+Im übergeordneten Paket installiert `npm run build:wasm:rust` bei Bedarf das
+Ziel und kopiert das Modul nach `src/dwg/wasm/sortsys-dwg-rust.wasm`.
 
-## WebAssembly ABI
+## WebAssembly-Schnittstelle
 
-The browser copies a DWG byte array into module-owned memory, calls the parser, and reads a UTF-8 JSON result from the module result buffer. The exported functions are:
+Der Browser kopiert DWG-Bytes in den Modulspeicher, ruft den Parser auf und liest
+das UTF-8-JSON aus dem Ergebnispuffer. Exportiert werden:
 
 - `sortsys_dwg_alloc`
 - `sortsys_dwg_dealloc`
@@ -42,8 +48,10 @@ The browser copies a DWG byte array into module-owned memory, calls the parser, 
 - `sortsys_dwg_result_ptr`
 - `sortsys_dwg_result_len`
 
-Keeping this boundary small avoids generated bindings and a second JavaScript runtime in the worker.
+Diese kleine Schnittstelle benötigt weder erzeugte Bindings noch eine zweite
+JavaScript-Laufzeit im Worker.
 
-## License
+## Lizenz
 
-This crate is licensed under the [GNU Affero General Public License v3.0 only](../../LICENSE). Referenced specifications and test fixtures retain their own terms.
+Für diese Crate gilt die [GNU Affero General Public License v3.0 only](../../LICENSE).
+Referenzierte Spezifikationen und Beispieldateien behalten ihre eigenen Bedingungen.

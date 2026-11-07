@@ -1,10 +1,13 @@
 # @sortsys/v2-client
 
-`@sortsys/v2-client` is the typed TypeScript client for the sortsys Rust API. It keeps the familiar path-based query and mutation style of the former tRPC client while implementing batching, SuperJSON-compatible dates, bearer authentication, request deduplication, caching, and stream refetching without a tRPC dependency.
+`@sortsys/v2-client` ist der TypeScript-Client für die sortsys-API. Er bündelt
+Anfragen, erhält SuperJSON-kompatible Datumswerte und übernimmt
+Bearer-Authentifizierung, Entdoppelung, Caching und erneutes Laden von Streams.
+Zur Laufzeit besteht keine tRPC-Abhängigkeit.
 
-## Build
+## Bauen
 
-The generated contract must be current before building:
+Vor dem Build muss der erzeugte Vertrag aktuell sein:
 
 ```bash
 cd sortsys-api-v2
@@ -14,9 +17,9 @@ bun install --frozen-lockfile
 bun run build
 ```
 
-The build writes JavaScript, declarations, and package metadata to `dist/`.
+JavaScript, Typdeklarationen und Paketmetadaten entstehen in `dist/`.
 
-## Usage
+## Verwendung
 
 ```ts
 import { createClient } from "@sortsys/v2-client";
@@ -40,7 +43,10 @@ await client.mutate("projects.create", {
 });
 ```
 
-`query` and `mutate` paths, inputs, and outputs come from `src/generated/contract.ts`. Query cache strategies are `network-first`, `network-only`, `cache-first`, and `cache-only`. Authentication tokens are attached as bearer headers; browser sessions can be restored with `restoreSession()`.
+Pfade, Eingaben und Ergebnisse von `query` und `mutate` kommen aus
+`src/generated/contract.ts`. Cache-Strategien sind `network-first`, `network-only`,
+`cache-first` und `cache-only`. Tokens werden als Bearer-Header angehängt;
+`restoreSession()` stellt Browsersitzungen wieder her.
 
 ## Tests
 
@@ -48,9 +54,9 @@ await client.mutate("projects.create", {
 bun test
 ```
 
-The repository-level `scripts/test-api` command also checks the generated contract and runs the client suite as part of the API integration environment.
+`scripts/test-api` im Repository prüft zusätzlich den erzeugten Vertrag und die
+Client-Suite innerhalb der API-Integrationsumgebung.
 
-## License
+## Lizenz
 
-This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
-
+Für dieses Paket gilt die [GNU Affero General Public License v3.0 only](../LICENSE).

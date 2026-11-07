@@ -1,52 +1,71 @@
-# CI and branch flow
+# CI und Veröffentlichungsablauf
 
-The repository uses three trusted, long-lived branches:
+- Branch-Pushes prüfen das Repository mit `scripts/ci`. Auf `predeploy` entfällt
+  ein erneuter Testlauf, wenn exakt derselbe Commit bereits erfolgreich geprüft wurde.
+- Ein erfolgreicher `predeploy`-Lauf übernimmt den geprüften Commit per Fast-forward
+  nach `deploy`. Überholte Commits können nicht mehr veröffentlicht werden.
+- Auf `deploy` werden API, Hintergrunddienst und Webapp mit ihren regulären
+  Dockerfiles gebaut und in GHCR veröffentlicht. Die Tags sind `latest` und die
+  ersten zehn Zeichen der Commit-SHA.
 
-- `master` contains ongoing work. CI runs after every push and for pull requests targeting `master`.
-- `predeploy` marks a revision for release.
-- `deploy` contains the latest deployable revision.
+Die CI reagiert auf Branch-Pushes. Das Öffnen oder Aktualisieren eines Pull Requests
+startet keinen doppelten Lauf für denselben Commit. Tags starten keine CI.
+Ein direkter Push auf `deploy` startet Tests und Container-Veröffentlichung;
+der reguläre Weg führt zuerst über die Tests auf `predeploy`.
 
-A push to `predeploy` runs the same checks as `master`. When they pass, CI fast-forwards `deploy` to the exact tested commit. A failing check leaves `deploy` unchanged. The promotion fails if `predeploy` no longer contains the current `deploy` history; create a revert on `master` when rolling back a release.
-
-Run the same checks locally with:
+Für die lokalen Prüfungen werden Docker mit Compose sowie Node, Bun, Rust und
+Go benötigt. Die Versionen stehen in der [CI-Konfiguration](workflows/ci.yml).
+Im Hauptverzeichnis ausführen:
 
 ```bash
 ./scripts/ci
 ```
 
-## Initial GitHub setup
+## GitHub einrichten
 
-Commit the workflow to `master`, then create the two release branches:
+`master` bleibt der Standardbranch. Die Veröffentlichungsbranches einmalig anlegen:
 
 ```bash
 git push origin master:predeploy
 git push origin master:deploy
 ```
 
-Keep `master` as the default branch. Under **Settings > Actions > General > Workflow permissions**, allow read and write access for `GITHUB_TOKEN`.
+Die Workflows fordern die benötigten `GITHUB_TOKEN`-Rechte an: Leserechte für Tests
+und CI-Verlauf, Schreibrechte auf Inhalte und Actions für die Übernahme sowie
+Paket-Schreibrechte für die Veröffentlichung. Repository- und Organisationsregeln
+müssen diese Rechte erlauben. Zusätzliche PATs, GitHub Apps oder Geheimnisse sind
+nicht erforderlich.
 
-No rulesets, GitHub App, repository variables, or deployment secrets are required. This setup intentionally treats anyone with branch write access as trusted.
+Die Übernahme verwendet einen normalen Fast-forward-Push. Ein Push mit
+`GITHUB_TOKEN` startet keinen weiteren Push-Workflow. Deshalb startet derselbe
+Job anschließend `publish-containers.yml` auf `deploy` ausdrücklich per
+`workflow_dispatch`. [GitHub beschreibt das Token-Verhalten und die Dispatch-Ausnahme](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+Vor der ersten Nutzung die Workflows in den Standardbranch übernehmen.
 
-## Releasing
-
-Push the current `master` revision to `predeploy`:
+## Einen Stand veröffentlichen
 
 ```bash
 git push origin master:predeploy
 ```
 
-GitHub builds the candidate applications once and packages their runtime images.
-The fresh-instance tests, populated-deploy upgrade tests, and runtime checks use
-those outputs. A separate job builds the original seeder from the pinned `deploy`
-revision; its cache and binaries remain separate from the candidate.
+Ein abgeschlossener, erfolgreicher `ci.yml`-Push-Lauf aus diesem Repository zählt
+für exakt dieselbe Commit-SHA unabhängig vom ursprünglichen Branch. Dann werden
+Compiler-Einrichtung und Tests übersprungen und die Übernahme beginnt direkt.
+Fehlgeschlagene, abgebrochene, laufende, fremde oder zu anderen Commits gehörende
+Läufe zählen nicht. Ohne Treffer oder bei fehlgeschlagener Abfrage laufen die
+Tests regulär. Die Grundlage ist der CI-Verlauf.
 
-After all checks pass, promotion fast-forwards `deploy` using the exact tested
-candidate and baseline refs. The same CI run then copies the checked API, job
-runner, and webapp OCI images to GHCR with the ten-character commit tag and
-`latest`. Image digests, SBOMs, and provenance are preserved; publishing does not
-recompile the applications.
+Vor der Übernahme müssen die Tests dieses Commits erfolgreich abgeschlossen sein.
+Ändert sich `predeploy` währenddessen, darf der ältere Lauf den neuen Stand nicht
+übernehmen. Git weist eine abweichende `deploy`-Historie zurück; diese muss vorher
+integriert werden. Für eine Rücknahme einen Revert-Commit verwenden.
 
-Direct pushes to `deploy` also build and test one candidate, then publish its
-checked images. Every consumer downloads immutable artifact IDs from its own CI
-run and verifies the revision, platform, file checksums, and image metadata before
-use. Local `./scripts/ci` and `./scripts/test-api` retain their source-build paths.
+Scheitert die Container-Veröffentlichung nach der Übernahme, lässt sich
+`Publish containers` auf `deploy` manuell erneut starten. Auf anderen Branches
+veröffentlicht dieser Workflow nichts. Veröffentlichungen laufen nacheinander;
+ein laufender Vorgang wird nicht unterbrochen.
+
+Die CI überträgt keine kompilierten Artefakte zwischen Jobs und pflegt keine
+eigenen entfernten Build-Caches. Reguläre Docker-Caches innerhalb eines Builds
+bleiben verfügbar. Prüfungen von Updates bestehender Installationen und
+Container-Laufzeitprüfungen sind optionale lokale Werkzeuge.

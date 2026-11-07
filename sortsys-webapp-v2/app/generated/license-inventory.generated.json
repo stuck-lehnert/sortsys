@@ -66,10 +66,31 @@
       },
       {
         "ecosystem": "Rust",
+        "name": "arc-swap",
+        "version": "1.9.3",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/vorner/arc-swap"
+      },
+      {
+        "ecosystem": "Rust",
         "name": "async-compression",
         "version": "0.4.51",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/Nullus157/async-compression"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "async-lock",
+        "version": "3.5.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/smol-rs/async-lock"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "async-trait",
+        "version": "0.1.92",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/async-trait"
       },
       {
         "ecosystem": "Rust",
@@ -423,6 +444,13 @@
       },
       {
         "ecosystem": "Rust",
+        "name": "dashmap",
+        "version": "6.2.1",
+        "license": "MIT",
+        "source": "https://github.com/xacrimon/dashmap"
+      },
+      {
+        "ecosystem": "Rust",
         "name": "data-encoding",
         "version": "2.11.1",
         "license": "MIT",
@@ -560,6 +588,20 @@
         "version": "5.4.2",
         "license": "Apache-2.0 OR MIT",
         "source": "https://github.com/smol-rs/event-listener"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "event-listener-strategy",
+        "version": "0.5.4",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/smol-rs/event-listener-strategy"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "fastrand",
+        "version": "2.5.0",
+        "license": "Apache-2.0 OR MIT",
+        "source": "https://github.com/smol-rs/fastrand"
       },
       {
         "ecosystem": "Rust",
@@ -728,6 +770,13 @@
         "version": "2.7.1",
         "license": "MIT OR Apache-2.0",
         "source": "https://github.com/VoidStarKat/half-rs"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "hashbrown",
+        "version": "0.14.5",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/rust-lang/hashbrown"
       },
       {
         "ecosystem": "Rust",
@@ -1487,6 +1536,13 @@
       },
       {
         "ecosystem": "Rust",
+        "name": "roxmltree",
+        "version": "0.21.2",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/RazrFalcon/roxmltree"
+      },
+      {
+        "ecosystem": "Rust",
         "name": "rsa",
         "version": "0.9.10",
         "license": "MIT OR Apache-2.0",
@@ -1519,6 +1575,13 @@
         "version": "0.103.16",
         "license": "ISC",
         "source": "https://github.com/rustls/webpki"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "rustversion",
+        "version": "1.0.23",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/dtolnay/rustversion"
       },
       {
         "ecosystem": "Rust",
@@ -1673,6 +1736,13 @@
         "version": "0.4.12",
         "license": "MIT",
         "source": "https://github.com/tokio-rs/slab"
+      },
+      {
+        "ecosystem": "Rust",
+        "name": "smallstr",
+        "version": "0.3.1",
+        "license": "MIT OR Apache-2.0",
+        "source": "https://github.com/murarth/smallstr"
       },
       {
         "ecosystem": "Rust",
@@ -2418,6 +2488,13 @@
       },
       {
         "ecosystem": "Rust",
+        "name": "yrs",
+        "version": "0.28.1",
+        "license": "MIT",
+        "source": "https://github.com/y-crdt/y-crdt/"
+      },
+      {
+        "ecosystem": "Rust",
         "name": "zerocopy",
         "version": "0.8.63",
         "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
@@ -2579,6 +2656,13 @@
       {
         "ecosystem": "npm",
         "name": "@babel/runtime",
+        "version": "7.29.10",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/%40babel%2Fruntime/v/7.29.10"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@babel/runtime",
         "version": "7.29.7",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/%40babel%2Fruntime/v/7.29.7"
@@ -2589,6 +2673,13 @@
         "version": "10.84.0",
         "license": "Apache-2.0",
         "source": "https://www.npmjs.com/package/%40carbon%2Ficon-helpers/v/10.84.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@carbon/icon-helpers",
+        "version": "10.85.0",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40carbon%2Ficon-helpers/v/10.85.0"
       },
       {
         "ecosystem": "npm",
@@ -3002,6 +3093,13 @@
         "version": "0.5.23",
         "license": "Apache-2.0",
         "source": "https://www.npmjs.com/package/%40swc%2Fhelpers/v/0.5.23"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@swc/helpers",
+        "version": "0.5.24",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40swc%2Fhelpers/v/0.5.24"
       },
       {
         "ecosystem": "npm",
@@ -3593,6 +3691,13 @@
       },
       {
         "ecosystem": "npm",
+        "name": "diff",
+        "version": "9.0.0",
+        "license": "BSD-3-Clause",
+        "source": "https://www.npmjs.com/package/diff/v/9.0.0"
+      },
+      {
+        "ecosystem": "npm",
         "name": "dom-helpers",
         "version": "5.2.1",
         "license": "MIT",
@@ -3991,6 +4096,13 @@
         "source": "https://www.npmjs.com/package/isbot/v/5.2.2"
       },
       {
+        "ecosystem": "npm",
+        "name": "isomorphic.js",
+        "version": "0.2.5",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/isomorphic.js/v/0.2.5"
+      },
+      {
         "ecosystem": "Rust",
         "name": "itoa",
         "version": "1.0.18",
@@ -4024,6 +4136,20 @@
         "version": "1.0.1",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/lazystream/v/1.0.1"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lib0",
+        "version": "0.2.119",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/lib0/v/0.2.119"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "libxml2-wasm",
+        "version": "0.7.2",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/libxml2-wasm/v/0.7.2"
       },
       {
         "ecosystem": "npm",
@@ -5155,6 +5281,13 @@
       },
       {
         "ecosystem": "npm",
+        "name": "tslib",
+        "version": "2.9.1",
+        "license": "0BSD",
+        "source": "https://www.npmjs.com/package/tslib/v/2.9.1"
+      },
+      {
+        "ecosystem": "npm",
         "name": "tw-animate-css",
         "version": "1.4.0",
         "license": "MIT",
@@ -5253,6 +5386,13 @@
       },
       {
         "ecosystem": "npm",
+        "name": "use-sync-external-store",
+        "version": "1.7.0",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/use-sync-external-store/v/1.7.0"
+      },
+      {
+        "ecosystem": "npm",
         "name": "util-deprecate",
         "version": "1.0.2",
         "license": "MIT",
@@ -5306,6 +5446,13 @@
         "version": "2.2.0",
         "license": "MIT",
         "source": "https://www.npmjs.com/package/xmlchars/v/2.2.0"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "yjs",
+        "version": "13.6.33",
+        "license": "MIT",
+        "source": "https://www.npmjs.com/package/yjs/v/13.6.33"
       },
       {
         "ecosystem": "npm",

@@ -24,6 +24,7 @@ use base64::{
 use bcrypt::hash;
 use ciborium::value::Value as CborValue;
 use flate2::read::GzDecoder;
+use futures_util::{SinkExt, StreamExt};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use p256::{
     ecdsa::{Signature, SigningKey, signature::Signer},
@@ -42,10 +43,296 @@ use url::Url;
 
 use sortsys_api::{AppState, backup_scheduler, config::Config, ids::Id, migrations, seed};
 
+type LiveSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+async fn xml_live_message(socket: &mut LiveSocket, kind: &str) -> Value {
+    tokio::time::timeout(Duration::from_secs(6), async {
+        while let Some(message) = socket.next().await {
+            match message.unwrap() {
+                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                    let message: Value = serde_json::from_str(&text).unwrap();
+                    if message["type"] == kind {
+                        return message;
+                    }
+                }
+                tokio_tungstenite::tungstenite::Message::Ping(bytes) => socket
+                    .send(tokio_tungstenite::tungstenite::Message::Pong(bytes))
+                    .await
+                    .unwrap(),
+                _ => {}
+            }
+        }
+        panic!("Live socket closed before {kind}");
+    })
+    .await
+    .expect("Live document message timed out")
+}
+
+#[path = "network_scenarios/billing.rs"]
+mod billing;
+#[path = "network_scenarios/commercial.rs"]
+mod commercial;
 #[path = "network_scenarios/documents.rs"]
 mod documents;
 #[path = "network_scenarios/openrouter.rs"]
 mod openrouter;
+#[path = "network_scenarios/replicas.rs"]
+mod replicas;
+#[path = "network_scenarios/seed_documents.rs"]
+mod seed_documents;
+
+async fn exercise_browser_xml_files(rpc: &RpcClient, project_id: &str, token: &str) -> String {
+    let mut first = String::new();
+    let other = rpc
+        .mutation(
+            "projects.create",
+            json!({"title": "XML access isolation"}),
+            Some(token),
+        )
+        .await;
+    for extension in ["x83", "x84", "x86", "x87", "x31"] {
+        // The API is an opaque storage transport. Format semantics stay client-side.
+        // Exceed the transport's ordinary 2 MiB body limit for an X31 file.
+        let embedded = if extension == "x31" {
+            format!("<!--{}-->", " ".repeat(3 * 1024 * 1024))
+        } else {
+            String::new()
+        };
+        let xml = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<GAEB extra=\"Grüße\"><!-- untouched -->{embedded}<vendor:unknown xmlns:vendor=\"urn:test\"/></GAEB>\n"
+        );
+        let upload = rpc.mutation("projects.files.createUpload", json!({"projectId": project_id, "fileName": format!("native.{extension}"), "mimeType": "application/xml", "sizeBytes": xml.len()}), Some(token)).await;
+        let response = rpc
+            .http
+            .put(upload["uploadUrl"].as_str().unwrap())
+            .header("Content-Type", "application/xml")
+            .body(xml.clone())
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        let id = upload["fileId"].as_str().unwrap();
+        if first.is_empty() {
+            first = id.to_owned();
+        }
+        rpc.mutation(
+            "projects.files.completeUpload",
+            json!({"projectId": project_id, "fileId": id}),
+            Some(token),
+        )
+        .await;
+        let input = json!({"projectId": project_id, "fileId": id});
+        let loaded = rpc
+            .query("projects.files.xmlContent", input.clone(), Some(token))
+            .await;
+        assert_eq!(loaded["xml"], xml);
+        assert_eq!(loaded["canEdit"], true);
+        let mut live = if extension == "x83" {
+            let url = format!(
+                "{}{}",
+                rpc.base_url.replacen("http", "ws", 1),
+                loaded["livePath"].as_str().unwrap()
+            );
+            let (mut first_socket, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+            let (mut second_socket, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+            let (mut rejected, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+            rejected
+                .send(tokio_tungstenite::tungstenite::Message::Text(
+                    json!({"ticket":"not-a-valid-document-ticket"})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            let denied = tokio::time::timeout(Duration::from_secs(3), rejected.next())
+                .await
+                .unwrap();
+            assert!(!matches!(
+                denied,
+                Some(Ok(tokio_tungstenite::tungstenite::Message::Text(_)))
+            ));
+            for socket in [&mut first_socket, &mut second_socket] {
+                socket
+                    .send(tokio_tungstenite::tungstenite::Message::Text(
+                        json!({"ticket":loaded["liveTicket"]}).to_string().into(),
+                    ))
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    xml_live_message(socket, "ready").await["version"],
+                    loaded["version"].as_i64().unwrap().to_string()
+                );
+            }
+            loop {
+                let presence = xml_live_message(&mut first_socket, "presence").await;
+                if presence["participants"].as_array().unwrap().len() == 2 {
+                    break;
+                }
+            }
+            first_socket
+                .send(tokio_tungstenite::tungstenite::Message::Text(
+                    json!({"field":"item-test:Qty"}).to_string().into(),
+                ))
+                .await
+                .unwrap();
+            loop {
+                let presence = xml_live_message(&mut second_socket, "presence").await;
+                if presence["participants"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|peer| peer["field"] == "item-test:Qty")
+                {
+                    break;
+                }
+            }
+            // Unsaved text changes and precise selections travel over the same
+            // authenticated socket; no native-file save is needed to see them.
+            first_socket
+                .send(tokio_tungstenite::tungstenite::Message::Text(
+                    json!({
+                        "type":"initialize", "key":"item-test:text:0", "value":"Hallo 👋 Welt"
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap();
+            let first = xml_live_message(&mut first_socket, "sync").await;
+            let second = xml_live_message(&mut second_socket, "sync").await;
+            assert_eq!(first["data"], second["data"]);
+            {
+                use yrs::updates::decoder::Decode;
+                use yrs::{Doc, GetString, Text, Transact, Update};
+                let documents = [Doc::new(), Doc::new()];
+                let initial = STANDARD.decode(first["data"].as_str().unwrap()).unwrap();
+                for document in &documents {
+                    document
+                        .transact_mut()
+                        .apply_update(Update::decode_v1(&initial).unwrap())
+                        .unwrap();
+                }
+                for (index, socket) in [&mut first_socket, &mut second_socket]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let text = documents[index].get_or_insert_text("item-test:text:0");
+                    let data = {
+                        let mut transaction = documents[index].transact_mut();
+                        text.insert(&mut transaction, 0, if index == 0 { "A " } else { "B " });
+                        transaction.encode_update_v1()
+                    };
+                    socket
+                        .send(tokio_tungstenite::tungstenite::Message::Text(
+                            json!({"type":"update", "data":STANDARD.encode(data)})
+                                .to_string()
+                                .into(),
+                        ))
+                        .await
+                        .unwrap();
+                }
+                for (index, socket) in [&mut first_socket, &mut second_socket]
+                    .into_iter()
+                    .enumerate()
+                {
+                    for _ in 0..2 {
+                        let update = xml_live_message(socket, "sync").await;
+                        documents[index]
+                            .transact_mut()
+                            .apply_update(
+                                Update::decode_v1(
+                                    &STANDARD.decode(update["data"].as_str().unwrap()).unwrap(),
+                                )
+                                .unwrap(),
+                            )
+                            .unwrap();
+                    }
+                }
+                let values: Vec<_> = documents
+                    .iter()
+                    .map(|document| {
+                        document
+                            .get_or_insert_text("item-test:text:0")
+                            .get_string(&document.transact())
+                    })
+                    .collect();
+                assert_eq!(values[0], values[1]);
+                assert!(
+                    values[0].contains("A ")
+                        && values[0].contains("B ")
+                        && values[0].contains("Hallo 👋 Welt")
+                );
+            }
+            Some((first_socket, second_socket))
+        } else {
+            None
+        };
+        let changed = xml.replace("Grüße", "Änderung – €");
+        let save_input = json!({"projectId": project_id, "fileId": id, "version": loaded["version"], "xml": changed});
+        let saved = rpc
+            .mutation("projects.files.xmlSave", save_input.clone(), Some(token))
+            .await;
+        if let Some((first_socket, second_socket)) = live.as_mut() {
+            for socket in [&mut *first_socket, &mut *second_socket] {
+                assert_eq!(
+                    xml_live_message(socket, "changed").await["version"],
+                    saved["version"].as_i64().unwrap().to_string()
+                );
+            }
+            first_socket.close(None).await.unwrap();
+            loop {
+                let presence = xml_live_message(second_socket, "presence").await;
+                if presence["participants"].as_array().unwrap().len() == 1 {
+                    break;
+                }
+            }
+        }
+        let reloaded = rpc
+            .query("projects.files.xmlContent", input.clone(), Some(token))
+            .await;
+        assert_eq!(reloaded["xml"], changed);
+        assert_eq!(reloaded["version"], saved["version"]);
+        assert_ne!(loaded["version"], reloaded["version"]);
+        rpc.expect_error(
+            "projects.files.xmlSave",
+            Method::POST,
+            save_input.clone(),
+            Some(token),
+            "CONFLICT",
+        )
+        .await;
+        assert_eq!(
+            rpc.query("projects.files.xmlContent", input.clone(), Some(token))
+                .await["xml"],
+            changed
+        );
+        rpc.expect_error(
+            "projects.files.xmlContent",
+            Method::GET,
+            input,
+            None,
+            "UNAUTHORIZED",
+        )
+        .await;
+        rpc.expect_error(
+            "projects.files.xmlSave",
+            Method::POST,
+            save_input,
+            None,
+            "UNAUTHORIZED",
+        )
+        .await;
+        rpc.expect_error(
+            "projects.files.xmlContent",
+            Method::GET,
+            json!({"projectId": other["id"], "fileId": id}),
+            Some(token),
+            "NOT_FOUND",
+        )
+        .await;
+    }
+    first
+}
 
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -1458,6 +1745,7 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
         )
         .await;
     let project_id = project["id"].as_str().unwrap();
+    let xml_file_id = exercise_browser_xml_files(&rpc, project_id, &token).await;
     let fetched_project = rpc
         .query("projects.get", json!({ "id": project_id }), Some(&token))
         .await;
@@ -1707,6 +1995,22 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
         )
         .await;
     let restricted_token = restricted_login["token"].as_str().unwrap();
+    rpc.expect_error(
+        "projects.files.xmlContent",
+        Method::GET,
+        json!({"projectId": project_id, "fileId": xml_file_id}),
+        Some(restricted_token),
+        "FORBIDDEN",
+    )
+    .await;
+    rpc.expect_error(
+        "projects.files.xmlSave",
+        Method::POST,
+        json!({"projectId": project_id, "fileId": xml_file_id, "version": 1, "xml": "<GAEB/>"}),
+        Some(restricted_token),
+        "FORBIDDEN",
+    )
+    .await;
 
     let hidden_results = rpc
         .query(
@@ -4017,7 +4321,7 @@ async fn settings_relationships_personalization_and_scripts_use_real_postgres() 
     };
 
     let fixture = Fixture::create(&environment).await;
-    let rpc = RpcClient::new(environment.api_base_url);
+    let rpc = RpcClient::new(environment.api_base_url.clone());
     let login = rpc
         .mutation(
             "auth.login",
@@ -4030,6 +4334,342 @@ async fn settings_relationships_personalization_and_scripts_use_real_postgres() 
         )
         .await;
     let token = login["token"].as_str().unwrap().to_owned();
+
+    let profile = json!({"companyName": "  Angebotsbau GmbH  ", "address": {
+        "streetAddress": "  Bauweg 12  ", "zip": "06108", "city": "Halle", "country": "Deutschland"
+    }});
+    rpc.expect_error(
+        "settings.organization.get",
+        Method::GET,
+        Value::Null,
+        None,
+        "UNAUTHORIZED",
+    )
+    .await;
+    rpc.mutation("settings.organization.set", profile.clone(), Some(&token))
+        .await;
+    let organization = rpc
+        .query("settings.organization.get", Value::Null, Some(&token))
+        .await;
+    assert_eq!(organization["companyName"], "Angebotsbau GmbH");
+    assert_eq!(organization["address"]["streetAddress"], "Bauweg 12");
+    rpc.expect_error(
+        "settings.organization.set",
+        Method::POST,
+        json!({"companyName":"Bau GmbH", "address":{"streetAddress":"", "city":"Halle"}}),
+        Some(&token),
+        "BAD_REQUEST",
+    )
+    .await;
+    // Public postal details are available to offer creators without admin rights.
+    let reader_name = format!("organization-reader-{}", unique_suffix());
+    let reader_password = "Organization-Reader-123!";
+    sqlx::query("INSERT INTO users (username, first_name, password, deactivated_at) VALUES ($1, 'Reader', $2, NULL)")
+        .bind(&reader_name)
+        .bind(hash(reader_password, 4).unwrap())
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let reader_login = rpc
+        .mutation(
+            "auth.login",
+            json!({"tenant":fixture.tenant, "username":reader_name, "password":reader_password}),
+            None,
+        )
+        .await;
+    let reader_token = reader_login["token"].as_str().unwrap();
+    assert_eq!(
+        rpc.query("settings.organization.get", Value::Null, Some(reader_token))
+            .await,
+        organization
+    );
+    rpc.expect_error(
+        "settings.organization.set",
+        Method::POST,
+        profile,
+        Some(reader_token),
+        "FORBIDDEN",
+    )
+    .await;
+    rpc.mutation(
+        "settings.tenantName.set",
+        json!({"companyName":"Renamed GmbH"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(
+        rpc.query("settings.organization.get", Value::Null, Some(&token))
+            .await["address"],
+        organization["address"]
+    );
+
+    assert_eq!(
+        rpc.query("settings.invoiceNumbering.get", Value::Null, Some(&token))
+            .await,
+        json!({"scheme":"sequential", "startNumber":"1"})
+    );
+    rpc.expect_error(
+        "settings.invoiceNumbering.get",
+        Method::GET,
+        Value::Null,
+        None,
+        "UNAUTHORIZED",
+    )
+    .await;
+    for scheme in [
+        "sequential",
+        "dateSeparated",
+        "dateCompact",
+        "projectLocal",
+        "projectGlobal",
+    ] {
+        rpc.mutation(
+            "settings.invoiceNumbering.set",
+            json!({"scheme":scheme,"startNumber":"0005368"}),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(
+            rpc.query("settings.invoiceNumbering.get", Value::Null, Some(&token))
+                .await,
+            json!({"scheme":scheme,"startNumber":"5368"})
+        );
+    }
+    for value in ["0", "-1", "1.5", "1e3", "9223372036854775808", ""] {
+        rpc.expect_error(
+            "settings.invoiceNumbering.set",
+            Method::POST,
+            json!({"scheme":"sequential", "startNumber":value}),
+            Some(&token),
+            "BAD_REQUEST",
+        )
+        .await;
+    }
+    rpc.expect_error(
+        "settings.invoiceNumbering.set",
+        Method::POST,
+        json!({"scheme":"unsupported", "startNumber":"1"}),
+        Some(&token),
+        "BAD_REQUEST",
+    )
+    .await;
+    rpc.expect_error(
+        "settings.invoiceNumbering.get",
+        Method::GET,
+        Value::Null,
+        Some(reader_token),
+        "FORBIDDEN",
+    )
+    .await;
+    rpc.expect_error(
+        "settings.invoiceNumbering.set",
+        Method::POST,
+        json!({"scheme":"projectLocal", "startNumber":"1"}),
+        Some(reader_token),
+        "FORBIDDEN",
+    )
+    .await;
+    rpc.mutation(
+        "settings.invoiceNumbering.set",
+        json!({"scheme":"sequential", "startNumber":"9007199254740993"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(
+        rpc.query("settings.invoiceNumbering.get", Value::Null, Some(&token))
+            .await["startNumber"],
+        "9007199254740993"
+    );
+    assert_eq!(
+        rpc.query("settings.organization.get", Value::Null, Some(&token))
+            .await["address"],
+        organization["address"]
+    );
+    rpc.mutation(
+        "settings.organization.set",
+        json!({"companyName":"Numbered GmbH", "address":organization["address"]}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(
+        rpc.query("settings.invoiceNumbering.get", Value::Null, Some(&token))
+            .await["startNumber"],
+        "9007199254740993"
+    );
+
+    let other_organization = Fixture::create(&environment).await;
+    let other_login = rpc.mutation("auth.login", json!({
+        "tenant":other_organization.tenant, "username":other_organization.admin_username, "password":other_organization.admin_password
+    }), None).await;
+    assert_eq!(
+        rpc.query(
+            "settings.invoiceNumbering.get",
+            Value::Null,
+            other_login["token"].as_str()
+        )
+        .await,
+        json!({"scheme":"sequential", "startNumber":"1"}),
+        "Invoice numbering is isolated per organization"
+    );
+
+    let view = json!({"showFields":false,"outlineOpen":false,"outlineWidth":450,"ribbonCollapsed":true,"zoom":1.5});
+    rpc.mutation("personalization.gaebView.set", view.clone(), Some(&token))
+        .await;
+    assert_eq!(
+        rpc.query("personalization.gaebView.get", Value::Null, Some(&token))
+            .await,
+        view
+    );
+    assert_eq!(
+        rpc.query(
+            "personalization.gaebView.get",
+            Value::Null,
+            Some(reader_token)
+        )
+        .await["showFields"],
+        true
+    );
+    rpc.expect_error(
+        "personalization.gaebView.get",
+        Method::GET,
+        Value::Null,
+        None,
+        "UNAUTHORIZED",
+    )
+    .await;
+    rpc.expect_error(
+        "personalization.gaebView.set",
+        Method::POST,
+        json!({"outlineWidth":199}),
+        Some(&token),
+        "BAD_REQUEST",
+    )
+    .await;
+    rpc.expect_error(
+        "personalization.gaebView.set",
+        Method::POST,
+        json!({"zoom":4}),
+        Some(&token),
+        "BAD_REQUEST",
+    )
+    .await;
+    let template = rpc
+        .query("settings.documentTemplate.get", Value::Null, Some(&token))
+        .await;
+    assert_eq!(template["revision"], "0");
+    assert!(template["source"].is_null());
+    rpc.expect_error(
+        "settings.documentTemplate.get",
+        Method::GET,
+        Value::Null,
+        None,
+        "UNAUTHORIZED",
+    )
+    .await;
+    rpc.expect_error(
+        "settings.documentTemplate.set",
+        Method::POST,
+        json!({"source":"#let document-style(data,body)=body", "expectedRevision":"0"}),
+        Some(reader_token),
+        "FORBIDDEN",
+    )
+    .await;
+    let saved = rpc
+        .mutation(
+            "settings.documentTemplate.set",
+            json!({"source":"#let document-style(data,body)=body", "expectedRevision":"0"}),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(saved["revision"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        rpc.query(
+            "settings.documentTemplate.get",
+            Value::Null,
+            Some(reader_token)
+        )
+        .await["source"],
+        saved["source"]
+    );
+    rpc.expect_error(
+        "settings.documentTemplate.set",
+        Method::POST,
+        json!({"source":"#let document-style(data,body)={body}", "expectedRevision":"0"}),
+        Some(&token),
+        "CONFLICT",
+    )
+    .await;
+    assert!(
+        rpc.query(
+            "settings.documentTemplate.get",
+            Value::Null,
+            other_login["token"].as_str()
+        )
+        .await["source"]
+            .is_null()
+    );
+    let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1kAAAAASUVORK5CYII=").unwrap();
+    let asset = rpc
+        .mutation(
+            "settings.documentTemplate.assets.createUpload",
+            json!({"name":"logo.png","mimeType":"image/png","sizeBytes":png.len()}),
+            Some(&token),
+        )
+        .await;
+    let upload = reqwest::Client::new()
+        .put(asset["uploadUrl"].as_str().unwrap())
+        .header("Content-Type", "image/png")
+        .body(png.clone())
+        .send()
+        .await
+        .unwrap();
+    assert!(upload.status().is_success());
+    rpc.mutation(
+        "settings.documentTemplate.assets.completeUpload",
+        json!({"id":asset["id"]}),
+        Some(&token),
+    )
+    .await;
+    let configured = rpc
+        .query("settings.documentTemplate.get", Value::Null, Some(&token))
+        .await;
+    assert_eq!(configured["assets"][0]["name"], "logo.png");
+    let downloaded = reqwest::get(configured["assets"][0]["downloadUrl"].as_str().unwrap())
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(downloaded.as_ref(), png);
+    rpc.expect_error(
+        "settings.documentTemplate.assets.delete",
+        Method::POST,
+        json!({"id":asset["id"]}),
+        Some(reader_token),
+        "FORBIDDEN",
+    )
+    .await;
+    rpc.expect_error(
+        "settings.documentTemplate.assets.completeUpload",
+        Method::POST,
+        json!({"id":asset["id"]}),
+        other_login["token"].as_str(),
+        "NOT_FOUND",
+    )
+    .await;
+    rpc.mutation(
+        "settings.documentTemplate.assets.delete",
+        json!({"id":asset["id"]}),
+        Some(&token),
+    )
+    .await;
+    assert!(
+        rpc.query("settings.documentTemplate.get", Value::Null, Some(&token))
+            .await["assets"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 
     rpc.expect_error(
         "personalization.visits.list",

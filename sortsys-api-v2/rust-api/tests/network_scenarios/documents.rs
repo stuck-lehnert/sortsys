@@ -351,11 +351,7 @@ async fn verify_text(rpc: &RpcClient, token: &str, project: Id, file: Id) {
         assert_eq!(output["contentAvailable"], true);
         assert_eq!(
             output["sourceUrl"],
-            format!(
-                "/projects/{}/files?file={}",
-                project.encode(),
-                file.encode()
-            )
+            format!("/projects/{}/files/{}", project.encode(), file.encode())
         );
         assert!(output.get("objectKey").is_none());
 

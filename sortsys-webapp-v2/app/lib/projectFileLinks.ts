@@ -3,6 +3,13 @@ export type ProjectFileTarget = {
   fileId: string;
 };
 
+export function projectFileHref({
+  projectId,
+  fileId,
+}: ProjectFileTarget): string {
+  return `/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`;
+}
+
 type LinkClick = {
   button: number;
   defaultPrevented: boolean;
@@ -42,15 +49,17 @@ export function projectFileLinkTarget(
       return null;
     }
 
-    const path = new RegExp("^/projects/([^/]+)/files/?$").exec(link.pathname);
+    const path = new RegExp("^/projects/([^/]+)/files(?:/([^/]+))?/?$").exec(
+      link.pathname,
+    );
     const fileIds = link.searchParams.getAll("file");
 
-    if (!path || fileIds.length !== 1) {
+    if (!path || (path[2] ? fileIds.length !== 0 : fileIds.length !== 1)) {
       return null;
     }
 
     const projectId = decodeURIComponent(path[1]);
-    const fileId = fileIds[0];
+    const fileId = path[2] ? decodeURIComponent(path[2]) : fileIds[0];
 
     // Match public route IDs rather than accepting storage or arbitrary download URLs.
     if (

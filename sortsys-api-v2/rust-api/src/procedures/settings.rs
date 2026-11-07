@@ -9,7 +9,8 @@ use sqlx::{FromRow, PgPool, types::Json};
 use ts_rs::TS;
 
 use super::common::{
-    authenticated_pool, bad_request, internal, not_found, require_role, trim_required,
+    Address, authenticated_pool, bad_request, internal, not_found, require_role, trim_required,
+    validate_address,
 };
 use crate::{
     AppState,
@@ -23,10 +24,172 @@ use crate::{
 const GLOBAL_SETTINGS_TABLE: &str = "global_settings";
 const PUBLIC_SETTINGS_TABLE: &str = "public_global_settings";
 
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Organization {
+    pub company_name: Option<String>,
+    pub address: Option<Address>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum InvoiceNumberingScheme {
+    Sequential,
+    DateSeparated,
+    DateCompact,
+    ProjectLocal,
+    ProjectGlobal,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InvoiceNumbering {
+    pub scheme: InvoiceNumberingScheme,
+    // Decimal strings retain exact counters across JSON and JavaScript.
+    pub start_number: String,
+}
+
+impl Default for InvoiceNumbering {
+    fn default() -> Self {
+        Self {
+            scheme: InvoiceNumberingScheme::Sequential,
+            start_number: "1".to_owned(),
+        }
+    }
+}
+
+async fn get_invoice_numbering(
+    state: &AppState,
+    context: &RequestContext,
+) -> RpcResult<InvoiceNumbering> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+    ensure_admin(&auth)?;
+    let config: Option<Json<InvoiceNumbering>> = sqlx::query_scalar(
+        "SELECT name FROM global_settings WHERE key = 'organization.invoiceNumbering'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(internal)?
+    .flatten();
+    Ok(config.map(|value| value.0).unwrap_or_default())
+}
+
+async fn set_invoice_numbering(
+    state: &AppState,
+    context: &RequestContext,
+    mut input: InvoiceNumbering,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+    ensure_admin(&auth)?;
+    let raw = input.start_number.trim();
+    if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(bad_request("startNumber must be a positive integer"));
+    }
+    if raw.len() > 19 {
+        return Err(bad_request("startNumber is out of range"));
+    }
+    let start = raw
+        .parse::<i64>()
+        .map_err(|_| bad_request("startNumber is out of range"))?;
+    if start < 1 {
+        return Err(bad_request("startNumber must be a positive integer"));
+    }
+    input.start_number = start.to_string();
+    sqlx::query("INSERT INTO global_settings (key, name) VALUES ('organization.invoiceNumbering', $1) ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name")
+        .bind(Json(input)).execute(&pool).await.map_err(internal)?;
+    Ok(Success { success: true })
+}
+
+pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    builder
+        .query_stub::<(), Organization>("settings.organization.get")
+        .mutation_stub::<Organization, Success>("settings.organization.set")
+        .query_stub::<(), InvoiceNumbering>("settings.invoiceNumbering.get")
+        .mutation_stub::<InvoiceNumbering, Success>("settings.invoiceNumbering.set")
+}
+
+async fn get_organization(state: &AppState, context: &RequestContext) -> RpcResult<Organization> {
+    let auth = state.auth.authenticate(&context.headers).await?;
+    let tenant = state
+        .tenants
+        .tenant(&auth.tenant)
+        .await
+        .map_err(internal)?
+        .ok_or_else(not_found)?;
+    let address = tenant
+        .contact_details
+        .get("address")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(internal)?;
+    Ok(Organization {
+        company_name: tenant
+            .contact_details
+            .get("companyName")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        address,
+    })
+}
+
+async fn set_organization(
+    state: &AppState,
+    context: &RequestContext,
+    mut input: Organization,
+) -> RpcResult<Success> {
+    let auth = state.auth.authenticate(&context.headers).await?;
+    ensure_admin(&auth)?;
+    let name = input
+        .company_name
+        .as_mut()
+        .ok_or_else(|| bad_request("companyName is required"))?;
+    trim_required(name, "companyName", 120)?;
+    validate_address(&mut input.address)?;
+    let result = sqlx::query(
+        "UPDATE __tenants SET contact_details = contact_details || $2::jsonb WHERE name = $1",
+    )
+    .bind(&auth.tenant)
+    .bind(Json(input))
+    .execute(state.tenants.master())
+    .await
+    .map_err(internal)?;
+    if result.rows_affected() == 0 {
+        return Err(not_found());
+    }
+    Ok(Success { success: true })
+}
+
 pub fn register(
     mut builder: ProcedureRegistryBuilder,
     state: Arc<AppState>,
 ) -> ProcedureRegistryBuilder {
+    let get_numbering_state = Arc::clone(&state);
+    builder = builder.query(
+        "settings.invoiceNumbering.get",
+        move |context, _input: ()| {
+            let state = Arc::clone(&get_numbering_state);
+            async move { get_invoice_numbering(&state, &context).await }
+        },
+    );
+    let set_numbering_state = Arc::clone(&state);
+    builder = builder.mutation("settings.invoiceNumbering.set", move |context, input| {
+        let state = Arc::clone(&set_numbering_state);
+        async move { set_invoice_numbering(&state, &context, input).await }
+    });
+
+    let get_organization_state = Arc::clone(&state);
+    builder = builder.query("settings.organization.get", move |context, _input: ()| {
+        let state = Arc::clone(&get_organization_state);
+        async move { get_organization(&state, &context).await }
+    });
+    let set_organization_state = Arc::clone(&state);
+    builder = builder.mutation("settings.organization.set", move |context, input| {
+        let state = Arc::clone(&set_organization_state);
+        async move { set_organization(&state, &context, input).await }
+    });
+
     let set_language_state = Arc::clone(&state);
     builder = builder.mutation("settings.language.set", move |context, input| {
         let state = Arc::clone(&set_language_state);

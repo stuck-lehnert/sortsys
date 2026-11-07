@@ -109,7 +109,9 @@ fn fixed_entity(object_type: u8, write_payload: impl FnOnce(&mut BitWriter)) -> 
     writer.bit_short_zero();
     writer.bit(false);
 
-    // Sequential entity display properties.
+    // Sequential R2000 entity mode, reactor count and display properties.
+    writer.bits(2, 2);
+    writer.bit_long_zero();
     writer.bit(true);
     writer.bit_short_zero();
     writer.bit_double_zero();

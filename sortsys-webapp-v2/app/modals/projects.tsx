@@ -75,7 +75,7 @@ function ProjectContactsFormFields({ context, modals, projectId, onLoaded }: {
               <MyForm.MultiSelect
                 labelText={uiText("Kontakt")}
                 name={`projectContact:${id}:contact`}
-                autoFocus={
+                focusOnMount={
                   autoFocusFieldName === `projectContact:${id}:contact`
                 }
                 minSelectedItems={1}
@@ -559,6 +559,7 @@ function parseDateValue(value: unknown) {
 type ProjectFinancialEntryType = 'offer' | 'invoice';
 
 export type ProjectFinancialEntry = {
+  commercialCaseId?: string | null;
   id: string;
   projectId: string;
   type: ProjectFinancialEntryType;

@@ -45,7 +45,6 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
       useEffect(() => {
         const id = generateId();
         setWorkHourIds([id]);
-        setAutoFocusFieldName(`workHour:${id}:user`);
         context.setValues({ [`workHour:${id}:dayIndex`]: '0' });
       }, []);
 
@@ -135,7 +134,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                   <MyForm.MultiSelect
                     name={`workHour:${id}:user`}
                     labelText={uiText("Mitarbeiter")}
-                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    focusOnMount={autoFocusFieldName === `workHour:${id}:user`}
                     minSelectedItems={1}
                     maxSelectedItems={1}
                     getOptions={async ({ query }) => {
@@ -232,7 +231,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                 <MyForm.MultiSelect
                   name={`record:${id}:product`}
                   labelText={uiText("Produkt")}
-                  autoFocus={autoFocusFieldName === `record:${id}:product`}
+                  focusOnMount={autoFocusFieldName === `record:${id}:product`}
                   minSelectedItems={1}
                   maxSelectedItems={1}
                   getOptions={async ({ query }) => {
@@ -335,7 +334,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
                         required
                         name={`specialRecord:${id}:name`}
                         labelText={uiText("Bezeichnung")}
-                        autoFocus={
+                        focusOnMount={
                           autoFocusFieldName === `specialRecord:${id}:name`
                         }
                       />
@@ -638,7 +637,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                   <MyForm.MultiSelect
                     name={`workHour:${id}:user`}
                     labelText={uiText("Mitarbeiter")}
-                    autoFocus={autoFocusFieldName === `workHour:${id}:user`}
+                    focusOnMount={autoFocusFieldName === `workHour:${id}:user`}
                     minSelectedItems={1}
                     maxSelectedItems={1}
                     getOptions={async ({ query }) => {
@@ -750,7 +749,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                 <MyForm.MultiSelect
                   name={`record:${id}:product`}
                   labelText={uiText("Produkt")}
-                  autoFocus={autoFocusFieldName === `record:${id}:product`}
+                  focusOnMount={autoFocusFieldName === `record:${id}:product`}
                   minSelectedItems={1}
                   maxSelectedItems={1}
                   getOptions={async ({ query }) => {
@@ -877,7 +876,7 @@ export function showModifyRegieReportModal(modals: MyModalsInterface, report: Re
                         required
                         name={`specialRecord:${id}:name`}
                         labelText={uiText("Bezeichnung")}
-                        autoFocus={
+                        focusOnMount={
                           autoFocusFieldName === `specialRecord:${id}:name`
                         }
                       />

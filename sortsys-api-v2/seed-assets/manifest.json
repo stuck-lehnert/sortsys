@@ -1,0 +1,52 @@
+[
+  {
+    "name": "baubesprechung.eml",
+    "sha256": "a86ab32081ba63dcc1e0ec9b83fe66c24b06a6828881619cd00c60e61a7f2328",
+    "size": 4127
+  },
+  {
+    "name": "baubesprechung.msg",
+    "sha256": "cadbdf927471e6814ca56c59a27240f8c51d0598a21cfd4b8e81fba7ca593f98",
+    "size": 6656
+  },
+  {
+    "name": "baubesprechung.pdf",
+    "sha256": "1af424a7b6e74c220580511a23535ad4ae7f97964ab105e450846a5cca2d64da",
+    "size": 2367
+  },
+  {
+    "name": "grundriss-erdgeschoss.dwg",
+    "sha256": "8b26aab3dcfb752228baf7663c58c7b8d9fcde0f47ceddf957e1c91879aed8ef",
+    "size": 6346
+  },
+  {
+    "name": "grundriss-erdgeschoss.pdf",
+    "sha256": "d73de00204f4e386e668cc745d97b1f0e419353cdcf66ad48b2e06db06b5817f",
+    "size": 2522
+  },
+  {
+    "name": "grundriss-obergeschoss.dwg",
+    "sha256": "47f8ec8818f7c402dfefdf1453706d66e7e04bcb431c0d2ae96623ba9acd72df",
+    "size": 6342
+  },
+  {
+    "name": "grundriss-obergeschoss.pdf",
+    "sha256": "1324c7c9e3a92b426c4391caa74be0ecc12e9524c4aad9e7f410dcae776f01e5",
+    "size": 2516
+  },
+  {
+    "name": "materialfreigabe.eml",
+    "sha256": "7a682c839e46eb2084954d394c87c4b52ef5b5e94ccaddd34a2bf8d51258e3fa",
+    "size": 4033
+  },
+  {
+    "name": "materialfreigabe.msg",
+    "sha256": "fb63d415d7868e9636e425172ad9df76d2d71ae1adc18ff7a464f1346d29f10f",
+    "size": 6656
+  },
+  {
+    "name": "materialfreigabe.pdf",
+    "sha256": "24fbb95048b993ee01542d9d9a9531b6989a2b2724fa87827fcfba4850d383f1",
+    "size": 2301
+  }
+]

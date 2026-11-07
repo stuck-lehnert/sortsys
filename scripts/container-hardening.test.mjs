@@ -249,22 +249,10 @@ test("the worker's smaller runtime retains its required image, PDF and language 
   );
 });
 
-test("CI exports genuine worker tests separately and requires exact runtime selection", () => {
-  const workflow = YAML.parse(read(".github/workflows/ci.yml"));
-  const steps = workflow.jobs.containers.steps;
-  const runtime = steps.find((step) => {
-    return step.run?.includes("test-container-runtime");
-  });
-  const producer = read("scripts/ci");
+test("optional runtime checks use genuine worker tests separately from production", () => {
   const harness = read("scripts/test-container-runtime");
   const dockerfile = read("sortsys-v2-job_runner/Dockerfile");
 
-  assert.match(producer, /CGO_ENABLED=0 go test -mod=readonly -c/);
-  assert.match(producer, /jobrunner-tests\/ocr-runtime\.test/);
-  assert.equal(
-    runtime.env.JOBRUNNER_RUNTIME_TEST,
-    "${{ runner.temp }}/runtime-image/ocr-runtime.test",
-  );
   assert.match(dockerfile, /^FROM scratch AS runtime-test-binary$/m);
   assert.ok(
     dockerfile.includes(
@@ -343,112 +331,73 @@ test("prebuilt image references can be pinned without changing production defaul
   }
 });
 
-test("CI loads every checked runtime without rebuilding and gates promotion", () => {
+test("branch pushes run tests once and only successful predeploy tests can promote", () => {
   const workflow = YAML.parse(read(".github/workflows/ci.yml"));
-  const job = workflow.jobs.containers;
-  assert.deepEqual(job.strategy.matrix.image, ["api", "jobrunner", "webapp"]);
-  assert.equal(job.needs, "build");
-  assert.equal(
-    job.steps.some((step) => step.uses?.includes("build-push-action")),
-    false,
+  assert.deepEqual(workflow.on, { push: { branches: ["**"] } });
+  assert.equal(workflow.jobs.test.needs, undefined);
+  assert.ok(
+    workflow.jobs.test.steps.some((step) => step.run === "./scripts/ci"),
   );
-  const runtime = job.steps.find((step) =>
-    step.run?.includes("test-container-runtime"),
+  const previous = workflow.jobs.test.steps.find(
+    (step) => step.id === "previous",
+  );
+  assert.equal(previous.if, "github.ref == 'refs/heads/predeploy'");
+  assert.equal(previous.run, "./scripts/reuse-ci-success");
+  assert.equal(workflow.jobs.test.permissions.actions, "read");
+  for (const step of workflow.jobs.test.steps.filter(
+    (step) => step.with || step.run === "./scripts/ci",
+  )) {
+    assert.equal(step.if, "steps.previous.outputs.reused != 'true'");
+  }
+  assert.equal(workflow.jobs.promote.needs, "test");
+  assert.equal(
+    workflow.jobs.promote.if,
+    "github.ref == 'refs/heads/predeploy'",
+  );
+  const promote = workflow.jobs.promote.steps.find((step) =>
+    step.run?.includes("scripts/promote-predeploy"),
   );
   assert.ok(
-    runtime.run.includes("\\\n"),
-    "Shell continuation retains its newline",
+    promote.run.indexOf("scripts/promote-predeploy") <
+      promote.run.indexOf(
+        "gh workflow run publish-containers.yml --ref deploy",
+      ),
   );
-  assert.deepEqual(workflow.jobs.promote.needs, [
-    "build",
-    "test",
-    "deploy-build",
-    "upgrade",
-    "containers",
-  ]);
+  assert.equal(workflow.jobs.promote.permissions.contents, "write");
+  assert.equal(workflow.jobs.promote.permissions.actions, "write");
   assert.ok(
     read("scripts/ci").includes("./scripts/container-hardening.test.mjs"),
   );
 });
 
-test("prebuilt API tests use the loader's Docker image store", () => {
-  const workflow = YAML.parse(read(".github/workflows/ci.yml"));
-
-  assert.match(read("scripts/ci-artifacts.mjs"), /docker-daemon:/);
-
-  for (const name of ["test", "upgrade"]) {
-    const consumer = workflow.jobs[name].steps.find((step) => {
-      return step.env?.TEST_PREBUILT_REVISION === "${{ github.sha }}";
-    });
-
-    assert.equal(consumer?.env.CONTAINER_RUNTIME, "docker");
-  }
-});
-
-test("publication reuses attested OCI images and retains direct deploy pushes", () => {
-  const workflow = YAML.parse(read(".github/workflows/ci.yml"));
-  const publisher = YAML.parse(
-    read(".github/workflows/publish-containers.yml"),
-  );
-  const producer = YAML.parse(read(".github/workflows/build-candidate.yml"));
-  assert.ok(Object.hasOwn(workflow.on, "push"));
-  const direct = workflow.jobs["publish-deploy"];
-  assert.equal(
-    direct.if,
-    "github.event_name == 'push' && github.ref == 'refs/heads/deploy'",
-  );
-  assert.deepEqual(direct.needs, ["build", "test", "containers"]);
-  assert.deepEqual(Object.keys(publisher.on), ["workflow_call"]);
-  assert.equal(publisher.on.workflow_call.inputs.artifacts.required, true);
-  assert.equal(
-    publisher.jobs.publish.steps.some((step) => {
-      return (
-        step.uses?.includes("build-push-action") ||
-        step.run?.includes("docker build")
-      );
-    }),
-    false,
-  );
-  assert.ok(
-    publisher.jobs.publish.steps.some((step) => {
-      return step.run?.includes("ci-artifacts.mjs publish");
-    }),
-  );
-  const packaging = producer.jobs.build.steps.find((step) => {
-    return step.uses?.startsWith("docker/bake-action@");
+test("deploy builds and publishes the three applications directly from their Dockerfiles", () => {
+  const workflow = YAML.parse(read(".github/workflows/publish-containers.yml"));
+  assert.deepEqual(workflow.on, {
+    push: { branches: ["deploy"] },
+    workflow_dispatch: null,
   });
-  assert.ok(packaging, "the checked outputs are packaged with Docker Bake");
-  assert.equal(packaging.with.source, ".");
-  assert.equal(producer.env.CI_BUILD_DIR, "${{ github.workspace }}-compiled");
-  assert.equal(producer.env.BUNDLES_DIR, "${{ github.workspace }}-bundles");
-  assert.equal(
-    packaging.with.allow,
-    "fs.read=${{ env.CI_BUILD_DIR }}\nfs.write=${{ env.BUNDLES_DIR }}\n",
+  assert.equal(workflow.jobs.publish.if, "github.ref == 'refs/heads/deploy'");
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  const matrix = workflow.jobs.publish.strategy.matrix.include;
+  assert.deepEqual(
+    matrix.map((entry) => entry.image),
+    ["api", "jobrunner", "webapp"],
   );
-  const artifacts = read("scripts/ci-artifacts.mjs");
-  assert.match(artifacts, /type=sbom/);
-  assert.match(artifacts, /type=provenance,mode=min/);
-  assert.match(artifacts, /--preserve-digests/);
-
-  for (const name of ["test", "upgrade"]) {
-    const downloads = workflow.jobs[name].steps.filter((step) => {
-      return step.uses?.startsWith("actions/download-artifact@");
-    });
+  for (const entry of matrix)
     assert.ok(
-      downloads.some((step) => {
-        return (
-          step.with["artifact-ids"] ===
-          "${{ fromJSON(needs.build.outputs.artifacts).tests }}"
-        );
-      }),
+      read(entry.file).startsWith("FROM") || read(entry.file).startsWith("ARG"),
     );
-    assert.ok(
-      downloads.some((step) => {
-        return (
-          step.with["artifact-ids"] ===
-          "${{ fromJSON(needs.build.outputs.artifacts).jobrunner }}"
-        );
-      }),
+  const build = workflow.jobs.publish.steps.find((step) =>
+    step.uses?.startsWith("docker/build-push-action@"),
+  );
+  assert.equal(build.with.push, true);
+  assert.equal(build.with.context, "${{ matrix.context }}");
+  assert.match(build.with.tags, /:latest/);
+  assert.match(build.with.tags, /steps.tags.outputs.revision/);
+  for (const filename of ["ci.yml", "publish-containers.yml"]) {
+    assert.doesNotMatch(
+      read(`.github/workflows/${filename}`),
+      /actions\/(?:cache|upload-artifact|download-artifact)@|cache-(?:from|to):|workflow_call:/,
     );
   }
 });

@@ -171,7 +171,7 @@ fn revisions_prevent_mixing_changed_documents_and_preview_ids_are_lossless() {
     assert_eq!(
         source_url(project_id, file_id),
         format!(
-            "/projects/{}/files?file={}",
+            "/projects/{}/files/{}",
             project_id.encode(),
             file_id.encode()
         )

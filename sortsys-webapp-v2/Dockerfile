@@ -27,6 +27,8 @@ COPY sortsys-webapp-v2/package.json sortsys-webapp-v2/package-lock.json ./
 COPY --from=api-client-builder /app/sortsys-api-v2/client/dist /app/sortsys-api-v2/client/dist
 COPY --from=api-client-builder /app/sortsys-api-v2/client/package.json /app/sortsys-api-v2/client/package.json
 COPY sortsys-react-components /app/sortsys-react-components
+COPY sortsys-gaeb /app/sortsys-gaeb
+RUN npm --prefix /app/sortsys-gaeb ci
 RUN npm ci
 COPY sortsys-dwgviewer/ /app/sortsys-dwgviewer/
 COPY --from=dwg-wasm-builder /out/ /app/sortsys-dwgviewer/src/dwg/wasm/

@@ -1,63 +1,87 @@
-# sortsys Code of Conduct
+# Verhaltenskodex von sortsys
 
-## Purpose
+## Unser Anspruch
 
-We welcome people with different backgrounds, identities, experiences, and levels of expertise. We want project spaces to be useful, respectful places where contributors can discuss the work honestly and safely.
+Menschen mit unterschiedlichen Hintergründen, Identitäten, Erfahrungen und
+Kenntnissen sind willkommen. Gemeinsam schaffen wir hilfreiche, respektvolle
+Projekträume, in denen Beiträge offen und sicher besprochen werden können.
 
-Disagreement, firm technical review, and criticism are part of open-source work. We welcome them when they address the work rather than the person.
+Meinungsverschiedenheiten, gründliche technische Prüfungen und Kritik gehören
+zu freier Software. Sie sind willkommen, solange sie die Arbeit betreffen und
+nicht die Person angreifen.
 
-## Expected behavior
+## Gewünschtes Verhalten
 
-We ask everyone participating in the project to:
+Alle Mitwirkenden sollen:
 
-- communicate respectfully and assume good faith unless there is evidence otherwise;
-- give specific, constructive feedback and accept corrections without hostility;
-- make room for people who are less experienced or communicate differently;
-- respect personal boundaries and requests to stop unwelcome behavior;
-- disclose relevant conflicts of interest; and
-- take responsibility for mistakes, apologize where appropriate, and repair harm where possible.
+- respektvoll kommunizieren und ohne gegenteilige Hinweise gute Absichten annehmen;
+- konkrete, konstruktive Rückmeldungen geben und Korrekturen ohne Feindseligkeit annehmen;
+- Menschen mit weniger Erfahrung oder anderen Kommunikationsweisen Raum geben;
+- persönliche Grenzen und Bitten respektieren, unerwünschtes Verhalten zu beenden;
+- relevante Interessenkonflikte offenlegen;
+- Verantwortung für Fehler übernehmen, sich gegebenenfalls entschuldigen und Schäden nach Möglichkeit beheben.
 
-## Unacceptable behavior
+## Nicht akzeptiertes Verhalten
 
-We do not accept:
+Wir dulden nicht:
 
-- harassment, threats, intimidation, stalking, or sustained disruption;
-- discriminatory or demeaning comments related to personal characteristics;
-- sexualized language, imagery, or attention where it is not clearly welcome;
-- insults, personal attacks, deliberate humiliation, or targeted inflammatory behavior;
-- publishing private information without permission;
-- impersonation, manipulation of evidence, or knowingly false accusations;
-- retaliation against someone who reports a concern or assists with a review; and
-- conduct that would reasonably make participation unsafe or hostile.
+- Belästigung, Drohungen, Einschüchterung, Nachstellung oder anhaltende Störungen;
+- diskriminierende oder herabwürdigende Äußerungen über persönliche Merkmale;
+- sexualisierte Sprache, Darstellungen oder Aufmerksamkeit ohne erkennbare Zustimmung;
+- Beleidigungen, persönliche Angriffe, absichtliche Demütigung oder gezielte Provokation;
+- die Veröffentlichung privater Informationen ohne Erlaubnis;
+- Identitätsvortäuschung, Manipulation von Belegen oder wissentlich falsche Anschuldigungen;
+- Vergeltung gegen Personen, die Bedenken melden oder eine Prüfung unterstützen;
+- Verhalten, das die Teilnahme nachvollziehbar unsicher oder feindselig macht.
 
-## Scope
+## Geltungsbereich
 
-We apply this code to repositories, issues, pull requests, reviews, discussions, chat rooms, community events, and other spaces we manage as part of the sortsys project. We also apply it when someone publicly represents the project, such as by using an official account or speaking on our behalf.
+Dieser Kodex gilt für Repositories, Issues, Pull Requests, Reviews, Diskussionen,
+Chats, Veranstaltungen und weitere vom sortsys-Projekt betreute Räume. Er gilt
+auch bei öffentlicher Vertretung des Projekts, etwa über offizielle Konten.
 
-We may consider private conduct when it creates a credible safety risk for project participants or directly affects their ability to take part in the project.
+Privates Verhalten kann berücksichtigt werden, wenn es eine glaubhafte Gefahr
+für Beteiligte darstellt oder ihre Teilnahme am Projekt unmittelbar beeinträchtigt.
 
-## Reporting a concern
+## Bedenken melden
 
-For concerns that can be discussed publicly, open a repository issue and label it `conduct` when that label is available.
+Öffentlich besprechbare Anliegen können als Repository-Issue gemeldet und,
+soweit verfügbar, mit `conduct` markiert werden.
 
-Do not put sensitive details in a public issue. Send those privately to a repository owner or maintainer through the hosting platform. If the report concerns a maintainer, contact a different maintainer where possible. A person named in a report must not investigate or decide that report.
+Vertrauliche Einzelheiten gehören nicht in öffentliche Issues. Sende sie über die
+Hostingplattform privat an eine verantwortliche Person des Repositories.
+Betrifft die Meldung diese Person, wende dich nach Möglichkeit an eine andere.
+Eine beschuldigte Person darf die betreffende Meldung weder untersuchen noch
+über sie entscheiden.
 
-Include the relevant dates, locations or links, a description of what happened, and any supporting material you are comfortable sharing. We will handle good-faith reports discreetly and share information only with the people needed to review the concern, subject to legal obligations and immediate safety needs.
+Hilfreich sind Datum, Ort oder Links, eine Beschreibung des Vorfalls und Belege,
+die du teilen möchtest. Gutgläubige Meldungen werden diskret behandelt.
+Informationen erhalten nur die für die Prüfung nötigen Personen, vorbehaltlich
+rechtlicher Pflichten und unmittelbarer Schutzmaßnahmen.
 
-We aim to acknowledge reports within seven days and will provide an update when a review takes longer. Deliberately false or bad-faith reports may themselves violate this code; an unproven report does not, by itself, establish bad faith.
+Wir streben eine Eingangsbestätigung innerhalb von sieben Tagen an und geben
+bei längerer Prüfung eine Rückmeldung. Bewusst falsche oder böswillige Meldungen
+können selbst gegen den Kodex verstoßen. Eine nicht belegte Meldung allein ist
+kein Nachweis böser Absicht.
 
-## Enforcement
+## Durchsetzung
 
-As maintainers, we may take action including:
+Verantwortliche können unter anderem:
 
-1. asking for a correction, edit, or apology;
-2. issuing a private or public warning;
-3. temporarily limiting participation;
-4. removing content or reversing project actions; or
-5. permanently banning someone from project spaces.
+1. um Korrektur, Bearbeitung oder Entschuldigung bitten;
+2. privat oder öffentlich verwarnen;
+3. die Teilnahme vorübergehend einschränken;
+4. Inhalte entfernen oder Projektaktionen zurücknehmen;
+5. Personen dauerhaft aus Projekträumen ausschließen.
 
-We base our response on the behavior, its impact, the surrounding context, and any established pattern. We may use immediate temporary restrictions when needed to protect participants while we review a report.
+Die Reaktion berücksichtigt Verhalten, Auswirkungen, Umstände und erkennbare
+Muster. Zum Schutz Beteiligter können während der Prüfung sofortige vorläufige
+Einschränkungen erforderlich sein.
 
-Whenever practical, we will tell the affected person what rule was violated, what action we took, how long it lasts, and what is required before participation can resume. They may request reconsideration by a maintainer who was not involved in the original decision, if one is available.
+Soweit praktikabel, erklären wir Betroffenen die verletzte Regel, die Maßnahme,
+ihre Dauer und die Bedingungen für eine erneute Teilnahme. Eine Überprüfung durch
+eine unbeteiligte verantwortliche Person kann beantragt werden, sofern eine solche
+Person verfügbar ist.
 
-We are responsible for applying this code consistently. Maintainers who violate it are subject to the same process and consequences as anyone else.
+Auch die Projektverantwortlichen sind an diesen Kodex, dasselbe Verfahren und
+dieselben möglichen Folgen gebunden.

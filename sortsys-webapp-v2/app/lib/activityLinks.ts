@@ -1,3 +1,4 @@
+import { projectFileHref } from "./projectFileLinks";
 import type { ActivityItem } from "./activity";
 
 type ProjectFileActivity = Pick<
@@ -26,5 +27,8 @@ export function activityProjectFileHref(
     return null;
   }
 
-  return `/projects/${encodeURIComponent(item.resourceId)}/files?file=${fileId.toString(32)}`;
+  return projectFileHref({
+    projectId: item.resourceId,
+    fileId: fileId.toString(32),
+  });
 }

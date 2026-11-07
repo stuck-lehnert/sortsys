@@ -162,6 +162,7 @@ function goLicenses(moduleDirectory) {
 
 const clientNpm = npmLicenses(join(root, "sortsys-webapp-v2/package-lock.json"));
 const dwgNpm = npmLicenses(join(root, "sortsys-dwgviewer/package-lock.json"));
+const gaebNpm = npmLicenses(join(root, "sortsys-gaeb/package-lock.json"));
 const inventory = {
   server: {
     api: cargoLicenses(join(root, "sortsys-api-v2/Cargo.toml")),
@@ -171,6 +172,7 @@ const inventory = {
     webapp: deduplicate([
       ...clientNpm,
       ...dwgNpm,
+      ...gaebNpm,
       ...JSON.parse(readFileSync(join(root, "sortsys-webapp-v2/vendor/font-licenses.json"), "utf8")),
       ...cargoLicenses(join(root, "sortsys-dwgviewer/lib/Cargo.toml")),
     ]),

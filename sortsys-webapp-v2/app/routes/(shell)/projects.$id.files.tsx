@@ -13,7 +13,9 @@ import {
   type ProjectFileBrowserFile,
   type ProjectFileBrowserFolder,
 } from "~/components/ProjectFileBrowser";
-import { useOutletContext, useSearchParams } from "react-router";
+import { useOutletContext } from "react-router";
+import { useProjectFileLocation } from "~/hooks/useProjectFileLocation";
+import type { GaebWorkspaceHandle } from "~/components/GaebFileModal";
 import { from } from "rxjs";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -32,6 +34,7 @@ import { client } from "~/lib/client";
 import { attachmentPreviewKind } from "~/lib/attachmentPreview";
 import {
   isDrawioAttachment,
+  isGaebAttachment,
   isDwgAttachment,
   isOnlyOfficeAttachment,
   isVideoAttachment,
@@ -50,8 +53,16 @@ import {
   useState,
 } from "react";
 
-const PdfAttachmentViewer = lazy(() => import("~/components/PdfAttachmentViewer"));
-const EmailAttachmentViewer = lazy(() => import("~/components/EmailAttachmentViewer"));
+const PdfAttachmentViewer = lazy(
+  () => import("~/components/PdfAttachmentViewer"),
+);
+const EmailAttachmentViewer = lazy(
+  () => import("~/components/EmailAttachmentViewer"),
+);
+const GaebFileModal = lazy(() => import("~/components/GaebFileModal"));
+const ProjectFilePreviewModal = lazy(
+  () => import("~/components/ProjectFilePreviewModal"),
+);
 
 type ProjectFileEntry = {
   id: string;
@@ -59,10 +70,10 @@ type ProjectFileEntry = {
   folderId: string | null;
   fileName: string;
   mimeType: string;
-  kind: 'image' | 'file';
+  kind: "image" | "file";
   sizeBytes: number | null;
-  status: 'pending' | 'uploaded';
-  thumbnailStatus?: 'none' | 'queued' | 'processing' | 'ready' | 'failed';
+  status: "pending" | "uploaded";
+  thumbnailStatus?: "none" | "queued" | "processing" | "ready" | "failed";
   thumbnailUrl?: string | null;
   thumbnailExpiresAt?: Date | null;
   previewUrl?: string | null;
@@ -95,11 +106,11 @@ type DrawioSession = {
 };
 
 function formatBytes(bytes: number | null | undefined) {
-  if (bytes == null) return '-';
+  if (bytes == null) return "-";
 
   if (bytes < 1024) return `${bytes} B`;
 
-  const units = ['KB', 'MB', 'GB', 'TB'];
+  const units = ["KB", "MB", "GB", "TB"];
   let size = bytes;
   let unitIndex = -1;
 
@@ -112,9 +123,9 @@ function formatBytes(bytes: number | null | undefined) {
 }
 
 function safeZipEntryName(fileName: string, fallbackName: string) {
-  const cleaned = `${fileName ?? ''}`
-    .replace(/[\/]+/g, '-')
-    .replace(/[\x00-\x1F\x7F]/g, '')
+  const cleaned = `${fileName ?? ""}`
+    .replace(/[\/]+/g, "-")
+    .replace(/[\x00-\x1F\x7F]/g, "")
     .trim();
 
   const value = cleaned || fallbackName;
@@ -127,10 +138,10 @@ function ensureUniqueFileName(fileName: string, usedNames: Set<string>) {
     return fileName;
   }
 
-  const dotIndex = fileName.lastIndexOf('.');
+  const dotIndex = fileName.lastIndexOf(".");
   const hasExtension = dotIndex > 0;
   const base = hasExtension ? fileName.slice(0, dotIndex) : fileName;
-  const extension = hasExtension ? fileName.slice(dotIndex) : '';
+  const extension = hasExtension ? fileName.slice(dotIndex) : "";
 
   let counter = 2;
   while (counter < 10000) {
@@ -149,49 +160,66 @@ function ensureUniqueFileName(fileName: string, usedNames: Set<string>) {
 
 export default function ProjectFilesPage() {
   const { project } = useOutletContext<{ project: Project }>();
-  const [searchParams, setSearchParams] = useSearchParams();
   const sessionInfo = useSessionInfo();
   const modals = useMyModals();
   const notifications = useNotifications();
 
   const supportsProjectFiles = sessionInfo.supportsProjectFiles();
 
-  const [projectFiles, projectFilesErr] = useClientStream(
-    () => {
-      if (!supportsProjectFiles) {
-        return from([[[], null] as [Array<ProjectFileEntry>, null]]);
-      }
+  const [projectFiles, projectFilesErr] = useClientStream(() => {
+    if (!supportsProjectFiles) {
+      return from([[[], null] as [Array<ProjectFileEntry>, null]]);
+    }
 
-      return client.streamQuery('projects.files.list', { projectId: project.id! });
-    },
-    [project.id, supportsProjectFiles],
-  );
+    return client.streamQuery("projects.files.list", {
+      projectId: project.id!,
+    });
+  }, [project.id, supportsProjectFiles]);
 
-  const [projectFolders, projectFoldersErr] = useClientStream(
-    () => {
-      if (!supportsProjectFiles) {
-        return from([[[], null] as [Array<ProjectFileBrowserFolder>, null]]);
-      }
+  const [projectFolders, projectFoldersErr] = useClientStream(() => {
+    if (!supportsProjectFiles) {
+      return from([[[], null] as [Array<ProjectFileBrowserFolder>, null]]);
+    }
 
-      return client.streamQuery("projects.files.folders.list", { projectId: project.id! });
-    },
-    [project.id, supportsProjectFiles],
-  );
+    return client.streamQuery("projects.files.folders.list", {
+      projectId: project.id!,
+    });
+  }, [project.id, supportsProjectFiles]);
 
   const [isUploading, setIsUploading] = useState(false);
-  const [batchBusyAction, setBatchBusyAction] = useState<'download' | 'delete' | 'move' | 'organize' | null>(null);
-  const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
+  const [batchBusyAction, setBatchBusyAction] = useState<
+    "download" | "delete" | "move" | "organize" | null
+  >(null);
+  const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>(
+    [],
+  );
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
-  const [activeVideoFileId, setActiveVideoFileId] = useState<string | null>(null);
+  const [activeVideoFileId, setActiveVideoFileId] = useState<string | null>(
+    null,
+  );
   const [videoError, setVideoError] = useState<string | null>(null);
   const [activeDwgFileId, setActiveDwgFileId] = useState<string | null>(null);
-  const [activeOfficeFileId, setActiveOfficeFileId] = useState<string | null>(null);
-  const [activePreviewFileId, setActivePreviewFileId] = useState<string | null>(null);
-  const [officeSession, setOfficeSession] = useState<OnlyOfficeSession | null>(null);
+  const [activeOfficeFileId, setActiveOfficeFileId] = useState<string | null>(
+    null,
+  );
+  const [activePreviewFileId, setActivePreviewFileId] = useState<string | null>(
+    null,
+  );
+  const [officeSession, setOfficeSession] = useState<OnlyOfficeSession | null>(
+    null,
+  );
   const [officeError, setOfficeError] = useState<string | null>(null);
   const [officeLoading, setOfficeLoading] = useState(false);
-  const [activeDrawioFileId, setActiveDrawioFileId] = useState<string | null>(null);
-  const [drawioSession, setDrawioSession] = useState<DrawioSession | null>(null);
+  const [activeDrawioFileId, setActiveDrawioFileId] = useState<string | null>(
+    null,
+  );
+  const [activeGaebFileId, setActiveGaebFileId] = useState<string | null>(null);
+  const [activeFallbackFileId, setActiveFallbackFileId] = useState<
+    string | null
+  >(null);
+  const [drawioSession, setDrawioSession] = useState<DrawioSession | null>(
+    null,
+  );
   const [drawioError, setDrawioError] = useState<string | null>(null);
   const [drawioLoading, setDrawioLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -199,16 +227,42 @@ export default function ProjectFilesPage() {
   const pendingOpenFileIdRef = useRef<string | null>(null);
   const openedUrlFileIdRef = useRef<string | null>(null);
 
-  const clearOpenFileParam = useCallback(() => {
-    if (!searchParams.has("file")) return;
-
-    const nextSearchParams = new URLSearchParams(searchParams);
-    nextSearchParams.delete("file");
+  const gaebWorkspace = useRef<GaebWorkspaceHandle>(null);
+  const editorRequest = useRef(0);
+  const fileLocation = useProjectFileLocation(project.id, () => {
+    if (activeGaebFileId && gaebWorkspace.current)
+      void gaebWorkspace.current.requestClose();
+    else closeAllViewers();
+  });
+  const resetViewers = () => {
+    editorRequest.current++;
+    setActiveImageIndex(null);
+    setActiveVideoFileId(null);
+    setActiveDwgFileId(null);
+    setActiveOfficeFileId(null);
+    setActivePreviewFileId(null);
+    setActiveDrawioFileId(null);
+    setActiveGaebFileId(null);
+    setActiveFallbackFileId(null);
+    setOfficeSession(null);
+    setDrawioSession(null);
+  };
+  const closeFileLocation = useCallback(() => {
     openedUrlFileIdRef.current = null;
-    setSearchParams(nextSearchParams, { replace: true });
-  }, [searchParams, setSearchParams]);
+    fileLocation.close();
+  }, [fileLocation.close]);
+  const closeAllViewers = () => {
+    resetViewers();
+    closeFileLocation();
+  };
 
-  useTitle(() => project ? uiText(`Anhänge – ${project.title}`, `Attachments – ${project.title}`) : null, [JSON.stringify(project)]);
+  useTitle(
+    () =>
+      project
+        ? uiText(`Anhänge – ${project.title}`, `Attachments – ${project.title}`)
+        : null,
+    [JSON.stringify(project)],
+  );
 
   const attachments = useMemo(() => {
     return ((projectFiles ?? []) as ProjectFileEntry[])
@@ -216,32 +270,47 @@ export default function ProjectFilesPage() {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }, [projectFiles]);
   useEffect(() => {
-    const requestedFileId = searchParams.get("file");
+    const requestedFileId = fileLocation.requestedFileId;
     const pendingFileId = pendingOpenFileIdRef.current;
     const fileId = pendingFileId ?? requestedFileId;
     if (!fileId) return;
     if (!pendingFileId && openedUrlFileIdRef.current === fileId) return;
 
-    const file = attachments.find(candidate => candidate.id === fileId);
-    if (!file) return;
+    const file = attachments.find((candidate) => candidate.id === fileId);
+    if (!file) {
+      if (supportsProjectFiles && projectFiles != null && !projectFilesErr) {
+        openedUrlFileIdRef.current = fileId;
+        setActiveFallbackFileId(fileId);
+        fileLocation.open(fileId);
+      }
+      return;
+    }
 
     pendingOpenFileIdRef.current = null;
     if (requestedFileId === fileId) {
       openedUrlFileIdRef.current = fileId;
     }
     openBrowserFile(file);
-  }, [attachments, searchParams]);
+  }, [
+    attachments,
+    fileLocation.requestedFileId,
+    projectFiles,
+    projectFilesErr,
+    supportsProjectFiles,
+  ]);
 
   const selectedAttachmentIdSet = useMemo(() => {
     return new Set(selectedAttachmentIds);
   }, [selectedAttachmentIds]);
 
   const selectedAttachments = useMemo(() => {
-    return attachments.filter(entry => selectedAttachmentIdSet.has(entry.id));
+    return attachments.filter((entry) => selectedAttachmentIdSet.has(entry.id));
   }, [attachments, selectedAttachmentIdSet]);
 
   const imageFiles = useMemo(() => {
-    return attachments.filter(entry => entry.kind === 'image' && !isDwgAttachment(entry));
+    return attachments.filter(
+      (entry) => entry.kind === "image" && !isDwgAttachment(entry),
+    );
   }, [attachments]);
 
   const activeImage = useMemo(() => {
@@ -251,28 +320,30 @@ export default function ProjectFilesPage() {
 
   const activeVideo = useMemo(() => {
     if (!activeVideoFileId) return null;
-    return attachments.find(file => file.id === activeVideoFileId) ?? null;
+    return attachments.find((file) => file.id === activeVideoFileId) ?? null;
   }, [activeVideoFileId, attachments]);
 
   const activeDwgFile = useMemo(() => {
     if (!activeDwgFileId) return null;
-    return attachments.find(file => file.id === activeDwgFileId) ?? null;
+    return attachments.find((file) => file.id === activeDwgFileId) ?? null;
   }, [activeDwgFileId, attachments]);
 
   const activeOfficeFile = useMemo(() => {
     if (!activeOfficeFileId) return null;
-    return attachments.find(file => file.id === activeOfficeFileId) ?? null;
+    return attachments.find((file) => file.id === activeOfficeFileId) ?? null;
   }, [activeOfficeFileId, attachments]);
   const activePreviewFile = useMemo(() => {
-    return attachments.find(file => file.id === activePreviewFileId) ?? null;
+    return attachments.find((file) => file.id === activePreviewFileId) ?? null;
   }, [activePreviewFileId, attachments]);
   const activeDrawioFile = useMemo(() => {
     if (!activeDrawioFileId) return null;
-    return attachments.find(file => file.id === activeDrawioFileId) ?? null;
+    return attachments.find((file) => file.id === activeDrawioFileId) ?? null;
   }, [activeDrawioFileId, attachments]);
 
   const documentFiles = useMemo(() => {
-    return attachments.filter(entry => entry.kind !== 'image' || isDwgAttachment(entry));
+    return attachments.filter(
+      (entry) => entry.kind !== "image" || isDwgAttachment(entry),
+    );
   }, [attachments]);
 
   const folders = useMemo(() => {
@@ -280,14 +351,14 @@ export default function ProjectFilesPage() {
   }, [projectFolders]);
 
   const selectedDocumentIds = useMemo(() => {
-    const documentIds = new Set(documentFiles.map(file => file.id));
-    return selectedAttachmentIds.filter(id => documentIds.has(id));
+    const documentIds = new Set(documentFiles.map((file) => file.id));
+    return selectedAttachmentIds.filter((id) => documentIds.has(id));
   }, [documentFiles, selectedAttachmentIds]);
 
   useEffect(() => {
     setSelectedAttachmentIds((previous) => {
-      const available = new Set(attachments.map(entry => entry.id));
-      const filtered = previous.filter(id => available.has(id));
+      const available = new Set(attachments.map((entry) => entry.id));
+      const filtered = previous.filter((id) => available.has(id));
       if (filtered.length === previous.length) return previous;
       return filtered;
     });
@@ -295,40 +366,47 @@ export default function ProjectFilesPage() {
 
   useEffect(() => {
     if (!activeVideoFileId) return;
-    if (attachments.some(entry => entry.id === activeVideoFileId)) return;
+    if (attachments.some((entry) => entry.id === activeVideoFileId)) return;
     setActiveVideoFileId(null);
   }, [activeVideoFileId, attachments]);
 
   useEffect(() => {
     if (!activeDwgFileId) return;
-    if (attachments.some(entry => entry.id === activeDwgFileId)) return;
+    if (attachments.some((entry) => entry.id === activeDwgFileId)) return;
     setActiveDwgFileId(null);
   }, [activeDwgFileId, attachments]);
 
   useEffect(() => {
     if (!activeOfficeFileId) return;
-    if (attachments.some(entry => entry.id === activeOfficeFileId)) return;
+    if (attachments.some((entry) => entry.id === activeOfficeFileId)) return;
 
     setActiveOfficeFileId(null);
     setOfficeSession(null);
   }, [activeOfficeFileId, attachments]);
   useEffect(() => {
-    if (activePreviewFileId && !attachments.some(file => file.id === activePreviewFileId)) {
+    if (
+      activePreviewFileId &&
+      !attachments.some((file) => file.id === activePreviewFileId)
+    ) {
       setActivePreviewFileId(null);
     }
   }, [activePreviewFileId, attachments]);
   useEffect(() => {
     if (!activeDrawioFileId) return;
-    if (attachments.some(entry => entry.id === activeDrawioFileId)) return;
+    if (attachments.some((entry) => entry.id === activeDrawioFileId)) return;
 
     setActiveDrawioFileId(null);
     setDrawioSession(null);
   }, [activeDrawioFileId, attachments]);
 
-  const imageCardUrl = (file: ProjectFileEntry) => file.previewUrl || file.thumbnailUrl || file.downloadUrl || null;
-  const attachmentDownloadUrl = (file: ProjectFileEntry) => file.downloadAttachmentUrl || file.downloadUrl || null;
+  const imageCardUrl = (file: ProjectFileEntry) =>
+    file.previewUrl || file.thumbnailUrl || file.downloadUrl || null;
+  const attachmentDownloadUrl = (file: ProjectFileEntry) =>
+    file.downloadAttachmentUrl || file.downloadUrl || null;
 
-  const activeDwgDownloadUrl = activeDwgFile ? activeDwgFile.downloadUrl || activeDwgFile.downloadAttachmentUrl || null : null;
+  const activeDwgDownloadUrl = activeDwgFile
+    ? activeDwgFile.downloadUrl || activeDwgFile.downloadAttachmentUrl || null
+    : null;
 
   const activeDwgDocument = useMemo<PlanDocument | null>(() => {
     if (!activeDwgFile || !activeDwgDownloadUrl) return null;
@@ -341,20 +419,23 @@ export default function ProjectFilesPage() {
   }, [activeDwgDownloadUrl, activeDwgFile?.fileName]);
 
   const imageCardFallback = (file: ProjectFileEntry) => {
-    if (file.thumbnailStatus === 'queued' || file.thumbnailStatus === 'processing') {
-      return uiText('Vorschau wird erstellt');
+    if (
+      file.thumbnailStatus === "queued" ||
+      file.thumbnailStatus === "processing"
+    ) {
+      return uiText("Vorschau wird erstellt");
     }
 
-    if (file.thumbnailStatus === 'failed') {
-      return uiText('Vorschau fehlgeschlagen');
+    if (file.thumbnailStatus === "failed") {
+      return uiText("Vorschau fehlgeschlagen");
     }
 
-    return uiText('Keine Vorschau');
+    return uiText("Keine Vorschau");
   };
 
   const closeImageViewer = () => {
     setActiveImageIndex(null);
-    clearOpenFileParam();
+    closeFileLocation();
   };
 
   const openVideoViewer = (file: ProjectFileEntry) => {
@@ -366,7 +447,7 @@ export default function ProjectFilesPage() {
   const closeVideoViewer = () => {
     setActiveVideoFileId(null);
     setVideoError(null);
-    clearOpenFileParam();
+    closeFileLocation();
   };
 
   const openDwgViewer = (file: ProjectFileEntry) => {
@@ -376,10 +457,11 @@ export default function ProjectFilesPage() {
 
   const closeDwgViewer = () => {
     setActiveDwgFileId(null);
-    clearOpenFileParam();
+    closeFileLocation();
   };
 
   const openOfficeEditor = async (file: ProjectFileEntry) => {
+    const request = ++editorRequest.current;
     setActiveOfficeFileId(file.id);
     setOfficeSession(null);
     setOfficeError(null);
@@ -390,12 +472,16 @@ export default function ProjectFilesPage() {
       projectId: project.id,
     });
 
+    if (request !== editorRequest.current) return;
     setOfficeLoading(false);
 
     if (error || !session) {
       setOfficeError(
-        error?.message
-          ?? uiText("Das Dokument konnte nicht geöffnet werden.", "The document could not be opened."),
+        error?.message ??
+          uiText(
+            "Das Dokument konnte nicht geöffnet werden.",
+            "The document could not be opened.",
+          ),
       );
       return;
     }
@@ -407,15 +493,16 @@ export default function ProjectFilesPage() {
     setActiveOfficeFileId(null);
     setOfficeSession(null);
     setOfficeError(null);
-    clearOpenFileParam();
+    closeFileLocation();
 
     void client.invalidate("projects.files.list");
-  }, [clearOpenFileParam]);
+  }, [closeFileLocation]);
   const closeAttachmentPreview = useCallback(() => {
     setActivePreviewFileId(null);
-    clearOpenFileParam();
-  }, [clearOpenFileParam]);
+    closeFileLocation();
+  }, [closeFileLocation]);
   const openDrawioEditor = async (file: ProjectFileEntry) => {
+    const request = ++editorRequest.current;
     setActiveDrawioFileId(file.id);
     setDrawioSession(null);
     setDrawioError(null);
@@ -426,12 +513,16 @@ export default function ProjectFilesPage() {
       projectId: project.id,
     });
 
+    if (request !== editorRequest.current) return;
     setDrawioLoading(false);
 
     if (error || !session) {
       setDrawioError(
-        error?.message
-          ?? uiText("Das Diagramm konnte nicht geöffnet werden.", "The diagram could not be opened."),
+        error?.message ??
+          uiText(
+            "Das Diagramm konnte nicht geöffnet werden.",
+            "The diagram could not be opened.",
+          ),
       );
       return;
     }
@@ -443,33 +534,49 @@ export default function ProjectFilesPage() {
     setActiveDrawioFileId(null);
     setDrawioSession(null);
     setDrawioError(null);
-    clearOpenFileParam();
+    closeFileLocation();
 
     void client.invalidate("projects.files.list");
-  }, [clearOpenFileParam]);
+  }, [closeFileLocation]);
 
-  const saveDrawio = useCallback(async (xml: string, version: bigint) => {
-    if (!activeDrawioFileId) {
-      throw new Error(uiText("Das Diagramm ist nicht mehr geöffnet.", "The diagram is no longer open."));
-    }
+  const saveDrawio = useCallback(
+    async (xml: string, version: bigint) => {
+      if (!activeDrawioFileId) {
+        throw new Error(
+          uiText(
+            "Das Diagramm ist nicht mehr geöffnet.",
+            "The diagram is no longer open.",
+          ),
+        );
+      }
 
-    const [result, error] = await client.mutate("projects.files.drawioSave", {
-      projectId: project.id,
-      fileId: activeDrawioFileId,
-      version,
-      xml,
-    });
-    if (error || !result) {
-      throw error ?? new Error(uiText("Das Diagramm konnte nicht gespeichert werden.", "The diagram could not be saved."));
-    }
+      const [result, error] = await client.mutate("projects.files.drawioSave", {
+        projectId: project.id,
+        fileId: activeDrawioFileId,
+        version,
+        xml,
+      });
+      if (error || !result) {
+        throw (
+          error ??
+          new Error(
+            uiText(
+              "Das Diagramm konnte nicht gespeichert werden.",
+              "The diagram could not be saved.",
+            ),
+          )
+        );
+      }
 
-    return result.version;
-  }, [activeDrawioFileId, project.id]);
+      return result.version;
+    },
+    [activeDrawioFileId, project.id],
+  );
 
   const toggleAttachmentSelection = (fileId: string) => {
     setSelectedAttachmentIds((previous) => {
       if (previous.includes(fileId)) {
-        return previous.filter(id => id !== fileId);
+        return previous.filter((id) => id !== fileId);
       }
 
       return [...previous, fileId];
@@ -477,7 +584,7 @@ export default function ProjectFilesPage() {
   };
 
   const selectAllAttachments = () => {
-    setSelectedAttachmentIds(attachments.map(file => file.id));
+    setSelectedAttachmentIds(attachments.map((file) => file.id));
   };
 
   const clearAttachmentSelection = () => {
@@ -493,10 +600,13 @@ export default function ProjectFilesPage() {
     }
 
     setActiveImageIndex(imageIndex);
+    fileLocation.open(imageId);
   };
 
-  const selectionMenuItems = useMemo<Parameters<typeof MyDropdown>[0]['items']>(() => {
-    const items: Parameters<typeof MyDropdown>[0]['items'] = [
+  const selectionMenuItems = useMemo<
+    Parameters<typeof MyDropdown>[0]["items"]
+  >(() => {
+    const items: Parameters<typeof MyDropdown>[0]["items"] = [
       {
         label: uiText("Alle auswählen"),
         renderIcon: Icons.Accept,
@@ -516,21 +626,15 @@ export default function ProjectFilesPage() {
     return items;
   }, [attachments.length, batchBusyAction, selectedAttachmentIds.length]);
 
-  const showPreviousImage = () => {
-    setActiveImageIndex((value) => {
-      if (value == null || !imageFiles.length) return value;
-      if (value <= 0) return imageFiles.length - 1;
-      return value - 1;
-    });
+  const showImage = (direction: number) => {
+    if (activeImageIndex == null || !imageFiles.length) return;
+    const index =
+      (activeImageIndex + direction + imageFiles.length) % imageFiles.length;
+    setActiveImageIndex(index);
+    fileLocation.open(imageFiles[index]!.id);
   };
-
-  const showNextImage = () => {
-    setActiveImageIndex((value) => {
-      if (value == null || !imageFiles.length) return value;
-      if (value >= imageFiles.length - 1) return 0;
-      return value + 1;
-    });
-  };
+  const showPreviousImage = () => showImage(-1);
+  const showNextImage = () => showImage(1);
 
   useEffect(() => {
     if (activeImageIndex == null) return;
@@ -549,38 +653,49 @@ export default function ProjectFilesPage() {
     if (activeImageIndex == null) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         closeImageViewer();
       }
 
-      if (event.key === 'ArrowLeft') {
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
         showPreviousImage();
       }
 
-      if (event.key === 'ArrowRight') {
+      if (event.key === "ArrowRight") {
         event.preventDefault();
         showNextImage();
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [activeImageIndex, imageFiles.length]);
 
   async function uploadProjectFile(file: File, folderId: string | null) {
-    const [uploadData, createError] = await client.mutate("projects.files.createUpload", {
-      projectId: project.id,
-      folderId,
-      fileName: file.name,
-      mimeType: file.type || "application/octet-stream",
-      sizeBytes: Number.isFinite(file.size) ? file.size : null,
-    });
+    const [uploadData, createError] = await client.mutate(
+      "projects.files.createUpload",
+      {
+        projectId: project.id,
+        folderId,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: Number.isFinite(file.size) ? file.size : null,
+      },
+    );
     if (createError || !uploadData) {
-      throw createError ?? new Error(uiText("Upload konnte nicht vorbereitet werden.", "Upload could not be prepared."));
+      throw (
+        createError ??
+        new Error(
+          uiText(
+            "Upload konnte nicht vorbereitet werden.",
+            "Upload could not be prepared.",
+          ),
+        )
+      );
     }
 
     const response = await fetch(uploadData.uploadUrl, {
@@ -589,17 +704,22 @@ export default function ProjectFilesPage() {
       body: file,
     });
     if (!response.ok) {
-      throw new Error(uiText(
-        `Datei-Upload fehlgeschlagen (${response.status})`,
-        `File upload failed (${response.status})`,
-      ));
+      throw new Error(
+        uiText(
+          `Datei-Upload fehlgeschlagen (${response.status})`,
+          `File upload failed (${response.status})`,
+        ),
+      );
     }
 
-    const [, completeError] = await client.mutate("projects.files.completeUpload", {
-      projectId: project.id,
-      fileId: uploadData.fileId,
-      etag: response.headers.get("etag"),
-    });
+    const [, completeError] = await client.mutate(
+      "projects.files.completeUpload",
+      {
+        projectId: project.id,
+        fileId: uploadData.fileId,
+        etag: response.headers.get("etag"),
+      },
+    );
     if (completeError) throw completeError;
 
     return uploadData.fileId;
@@ -622,20 +742,29 @@ export default function ProjectFilesPage() {
         await uploadProjectFile(file, folderId);
       }
 
-      await client.invalidate('projects.files.list');
+      await client.invalidate("projects.files.list");
       notifications.success({
-        title: selected.length === 1
-          ? uiText("Datei hochgeladen", "File uploaded")
-          : uiText(`${selected.length} Dateien hochgeladen`, `${selected.length} files uploaded`),
+        title:
+          selected.length === 1
+            ? uiText("Datei hochgeladen", "File uploaded")
+            : uiText(
+                `${selected.length} Dateien hochgeladen`,
+                `${selected.length} files uploaded`,
+              ),
       });
     } catch (err) {
       notifications.danger({
         title: uiText("Upload fehlgeschlagen", "Upload failed"),
-        content: (err as Error)?.message || uiText("Die Datei konnte nicht hochgeladen werden.", "The file could not be uploaded."),
+        content:
+          (err as Error)?.message ||
+          uiText(
+            "Die Datei konnte nicht hochgeladen werden.",
+            "The file could not be uploaded.",
+          ),
       });
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -654,9 +783,13 @@ export default function ProjectFilesPage() {
   function notifyOrganizationError(error: unknown) {
     notifications.danger({
       title: uiText("Aktion fehlgeschlagen", "Action failed"),
-      content: error instanceof Error
-        ? error.message
-        : uiText("Die Dateiablage konnte nicht aktualisiert werden.", "The file storage could not be updated."),
+      content:
+        error instanceof Error
+          ? error.message
+          : uiText(
+              "Die Dateiablage konnte nicht aktualisiert werden.",
+              "The file storage could not be updated.",
+            ),
     });
   }
 
@@ -667,7 +800,9 @@ export default function ProjectFilesPage() {
 
     while (parentFolderId && !seen.has(parentFolderId)) {
       seen.add(parentFolderId);
-      const parent = folders.find(candidate => candidate.id === parentFolderId);
+      const parent = folders.find(
+        (candidate) => candidate.id === parentFolderId,
+      );
       if (!parent) break;
 
       names.unshift(parent.name);
@@ -684,7 +819,9 @@ export default function ProjectFilesPage() {
     while (folderId && !seen.has(folderId)) {
       if (folderId === ancestorId) return true;
       seen.add(folderId);
-      folderId = folders.find(folder => folder.id === folderId)?.parentFolderId ?? null;
+      folderId =
+        folders.find((folder) => folder.id === folderId)?.parentFolderId ??
+        null;
     }
 
     return false;
@@ -704,11 +841,14 @@ export default function ProjectFilesPage() {
       if (error) throw error;
 
       await invalidateFileBrowser();
-      setSelectedAttachmentIds(previous => previous.filter(id => !fileIds.includes(id)));
+      setSelectedAttachmentIds((previous) =>
+        previous.filter((id) => !fileIds.includes(id)),
+      );
       notifications.success({
-        title: fileIds.length === 1
-          ? uiText("Datei verschoben", "File moved")
-          : uiText("Dateien verschoben", "Files moved"),
+        title:
+          fileIds.length === 1
+            ? uiText("Datei verschoben", "File moved")
+            : uiText("Dateien verschoben", "Files moved"),
       });
     } finally {
       setBatchBusyAction(null);
@@ -718,9 +858,11 @@ export default function ProjectFilesPage() {
   function showMoveFilesModal(fileIds: string[]) {
     if (!fileIds.length) return;
 
-    const firstFile = documentFiles.find(file => file.id === fileIds[0]);
+    const firstFile = documentFiles.find((file) => file.id === fileIds[0]);
     const destinationRef = { current: firstFile?.folderId ?? "" };
-    const destinations = folders.slice().sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
+    const destinations = folders
+      .slice()
+      .sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
 
     modals.showDefault({
       content: () => (
@@ -745,9 +887,10 @@ export default function ProjectFilesPage() {
       ),
       modalProps: () => ({
         noFullscreen: true,
-        modalHeading: fileIds.length === 1
-          ? uiText("Datei verschieben", "Move file")
-          : uiText("Dateien verschieben", "Move files"),
+        modalHeading:
+          fileIds.length === 1
+            ? uiText("Datei verschieben", "Move file")
+            : uiText("Dateien verschieben", "Move files"),
         modalLabel: project.title,
         primaryButtonText: uiText("Verschieben", "Move"),
       }),
@@ -758,7 +901,10 @@ export default function ProjectFilesPage() {
     });
   }
 
-  async function moveFolder(folder: ProjectFileBrowserFolder, parentFolderId: string | null) {
+  async function moveFolder(
+    folder: ProjectFileBrowserFolder,
+    parentFolderId: string | null,
+  ) {
     if (folder.parentFolderId === parentFolderId) return;
 
     setBatchBusyAction("organize");
@@ -772,7 +918,9 @@ export default function ProjectFilesPage() {
       if (error) throw error;
 
       await invalidateFileBrowser();
-      notifications.success({ title: uiText("Ordner verschoben", "Folder moved") });
+      notifications.success({
+        title: uiText("Ordner verschoben", "Folder moved"),
+      });
     } finally {
       setBatchBusyAction(null);
     }
@@ -781,7 +929,7 @@ export default function ProjectFilesPage() {
   function showMoveFolderModal(folder: ProjectFileBrowserFolder) {
     const destinationRef = { current: folder.parentFolderId ?? "" };
     const destinations = folders
-      .filter(candidate => !isFolderInside(candidate.id, folder.id))
+      .filter((candidate) => !isFolderInside(candidate.id, folder.id))
       .sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
 
     modals.showDefault({
@@ -818,8 +966,13 @@ export default function ProjectFilesPage() {
     });
   }
 
-  function showCreateFileModal(type: NewProjectFileType, folderId: string | null) {
-    const definition = NEW_PROJECT_FILE_TYPES.find(candidate => candidate.type === type);
+  function showCreateFileModal(
+    type: NewProjectFileType,
+    folderId: string | null,
+  ) {
+    const definition = NEW_PROJECT_FILE_TYPES.find(
+      (candidate) => candidate.type === type,
+    );
     if (!definition) return;
 
     const defaultBaseName: Record<NewProjectFileType, string> = {
@@ -827,8 +980,15 @@ export default function ProjectFilesPage() {
       pptx: uiText("Neue Präsentation", "New presentation"),
       xlsx: uiText("Neue Arbeitsmappe", "New workbook"),
       drawio: uiText("Neues Diagramm", "New diagram"),
+      x83: uiText("Neue Angebotsaufforderung", "New invitation to tender"),
+      x84: uiText("Neues Angebot", "New bid"),
+      x86: uiText("Neue Auftragserteilung", "New contract award"),
+      x87: uiText("Neue Auftragsbestätigung", "New order confirmation"),
+      x31: uiText("Neues Aufmaß", "New quantity takeoff"),
     };
-    const nameRef = { current: `${defaultBaseName[type]}${definition.extension}` };
+    const nameRef = {
+      current: `${defaultBaseName[type]}${definition.extension}`,
+    };
 
     modals.showDefault({
       content: () => (
@@ -863,7 +1023,9 @@ export default function ProjectFilesPage() {
       onPrimaryAction: async ({ hide }) => {
         let fileName = nameRef.current.trim();
         if (!fileName) {
-          throw new Error(uiText("Gib einen Dateinamen ein.", "Enter a file name."));
+          throw new Error(
+            uiText("Gib einen Dateinamen ein.", "Enter a file name."),
+          );
         }
         if (!fileName.toLocaleLowerCase().endsWith(definition.extension)) {
           fileName += definition.extension;
@@ -914,7 +1076,10 @@ export default function ProjectFilesPage() {
       }),
       onPrimaryAction: async ({ hide }) => {
         const name = nameRef.current.trim();
-        if (!name) throw new Error(uiText("Gib einen Ordnernamen ein.", "Enter a folder name."));
+        if (!name)
+          throw new Error(
+            uiText("Gib einen Ordnernamen ein.", "Enter a folder name."),
+          );
 
         const [, error] = await client.mutate("projects.files.folders.create", {
           projectId: project.id,
@@ -924,7 +1089,9 @@ export default function ProjectFilesPage() {
         if (error) throw error;
 
         await invalidateFileBrowser();
-        notifications.success({ title: uiText("Ordner erstellt", "Folder created") });
+        notifications.success({
+          title: uiText("Ordner erstellt", "Folder created"),
+        });
         hide();
       },
     });
@@ -957,7 +1124,10 @@ export default function ProjectFilesPage() {
       }),
       onPrimaryAction: async ({ hide }) => {
         const name = nameRef.current.trim();
-        if (!name) throw new Error(uiText("Gib einen Ordnernamen ein.", "Enter a folder name."));
+        if (!name)
+          throw new Error(
+            uiText("Gib einen Ordnernamen ein.", "Enter a folder name."),
+          );
 
         const [, error] = await client.mutate("projects.files.folders.rename", {
           projectId: project.id,
@@ -967,7 +1137,9 @@ export default function ProjectFilesPage() {
         if (error) throw error;
 
         await invalidateFileBrowser();
-        notifications.success({ title: uiText("Ordner umbenannt", "Folder renamed") });
+        notifications.success({
+          title: uiText("Ordner umbenannt", "Folder renamed"),
+        });
         hide();
       },
     });
@@ -1000,7 +1172,10 @@ export default function ProjectFilesPage() {
       }),
       onPrimaryAction: async ({ hide }) => {
         const fileName = nameRef.current.trim();
-        if (!fileName) throw new Error(uiText("Gib einen Dateinamen ein.", "Enter a file name."));
+        if (!fileName)
+          throw new Error(
+            uiText("Gib einen Dateinamen ein.", "Enter a file name."),
+          );
 
         const [, error] = await client.mutate("projects.files.rename", {
           projectId: project.id,
@@ -1010,15 +1185,18 @@ export default function ProjectFilesPage() {
         if (error) throw error;
 
         await invalidateFileBrowser();
-        notifications.success({ title: uiText("Datei umbenannt", "File renamed") });
+        notifications.success({
+          title: uiText("Datei umbenannt", "File renamed"),
+        });
         hide();
       },
     });
   }
 
   function showDeleteFolderModal(folder: ProjectFileBrowserFolder) {
-    const hasContents = folders.some(candidate => candidate.parentFolderId === folder.id)
-      || documentFiles.some(file => file.folderId === folder.id);
+    const hasContents =
+      folders.some((candidate) => candidate.parentFolderId === folder.id) ||
+      documentFiles.some((file) => file.folderId === folder.id);
 
     if (hasContents) {
       notifications.warning({
@@ -1055,17 +1233,30 @@ export default function ProjectFilesPage() {
         if (error) throw error;
 
         await invalidateFileBrowser();
-        notifications.success({ title: uiText("Ordner gelöscht", "Folder deleted") });
+        notifications.success({
+          title: uiText("Ordner gelöscht", "Folder deleted"),
+        });
         hide();
       },
     });
   }
 
   function openBrowserFile(file: ProjectFileBrowserFile) {
-    const attachment = attachments.find(candidate => candidate.id === file.id);
+    const attachment = attachments.find(
+      (candidate) => candidate.id === file.id,
+    );
     if (!attachment) return;
 
-    if (attachmentPreviewKind(attachment)) {
+    resetViewers();
+    openedUrlFileIdRef.current = attachment.id;
+    fileLocation.open(attachment.id);
+    if (attachment.kind === "image" && !isDwgAttachment(attachment)) {
+      setActiveImageIndex(
+        imageFiles.findIndex((image) => image.id === attachment.id),
+      );
+    } else if (isGaebAttachment(attachment)) {
+      setActiveGaebFileId(attachment.id);
+    } else if (attachmentPreviewKind(attachment)) {
       setActivePreviewFileId(attachment.id);
     } else if (isDwgAttachment(attachment)) {
       openDwgViewer(attachment);
@@ -1076,13 +1267,14 @@ export default function ProjectFilesPage() {
     } else if (isOnlyOfficeAttachment(attachment)) {
       void openOfficeEditor(attachment);
     } else {
-      const url = attachment.downloadUrl || attachment.downloadAttachmentUrl;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      setActiveFallbackFileId(attachment.id);
     }
   }
 
   function downloadBrowserFile(file: ProjectFileBrowserFile) {
-    const attachment = attachments.find(candidate => candidate.id === file.id);
+    const attachment = attachments.find(
+      (candidate) => candidate.id === file.id,
+    );
     const url = attachment ? attachmentDownloadUrl(attachment) : null;
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
@@ -1091,15 +1283,21 @@ export default function ProjectFilesPage() {
     if (!selectedAttachments.length) return;
     if (batchBusyAction) return;
 
-    setBatchBusyAction('download');
+    setBatchBusyAction("download");
 
     try {
-      const candidates = selectedAttachments.filter(file => !!attachmentDownloadUrl(file));
+      const candidates = selectedAttachments.filter(
+        (file) => !!attachmentDownloadUrl(file),
+      );
       if (!candidates.length) {
-        throw new Error(uiText("Für die Auswahl sind aktuell keine Download-Links verfügbar."));
+        throw new Error(
+          uiText(
+            "Für die Auswahl sind aktuell keine Download-Links verfügbar.",
+          ),
+        );
       }
 
-      const { default: JSZip } = await import('jszip');
+      const { default: JSZip } = await import("jszip");
 
       const zip = new JSZip();
       const usedNames = new Set<string>();
@@ -1111,7 +1309,12 @@ export default function ProjectFilesPage() {
 
         const response = await fetch(url);
         if (!response.ok) {
-          throw new Error(uiText(`Download fehlgeschlagen: ${file.fileName} (${response.status})`, `Download failed: ${file.fileName} (${response.status})`));
+          throw new Error(
+            uiText(
+              `Download fehlgeschlagen: ${file.fileName} (${response.status})`,
+              `Download failed: ${file.fileName} (${response.status})`,
+            ),
+          );
         }
 
         const bytes = await response.arrayBuffer();
@@ -1123,36 +1326,54 @@ export default function ProjectFilesPage() {
       }
 
       const zipBlob = await zip.generateAsync({
-        type: 'blob',
-        compression: 'DEFLATE',
+        type: "blob",
+        compression: "DEFLATE",
         compressionOptions: { level: 6 },
       });
 
-      const safeProjectTitle = `${project.title ?? ''}`
-        .trim()
-        .replace(/[^\w\-]+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 80) || 'projekt';
+      const safeProjectTitle =
+        `${project.title ?? ""}`
+          .trim()
+          .replace(/[^\w\-]+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80) || "projekt";
 
-      downloadBlob(zipBlob, uiText(`Projektanhaenge-${safeProjectTitle}.zip`, `Projectanhaenge-${safeProjectTitle}.zip`));
+      downloadBlob(
+        zipBlob,
+        uiText(
+          `Projektanhaenge-${safeProjectTitle}.zip`,
+          `Projectanhaenge-${safeProjectTitle}.zip`,
+        ),
+      );
       notifications.success({
         title: uiText("ZIP-Archiv heruntergeladen", "ZIP archive downloaded"),
-        content: candidates.length === 1
-          ? uiText("1 Datei enthalten", "Contains 1 file")
-          : uiText(`${candidates.length} Dateien enthalten`, `Contains ${candidates.length} files`),
+        content:
+          candidates.length === 1
+            ? uiText("1 Datei enthalten", "Contains 1 file")
+            : uiText(
+                `${candidates.length} Dateien enthalten`,
+                `Contains ${candidates.length} files`,
+              ),
       });
     } catch (err) {
       notifications.danger({
         title: uiText("ZIP-Download fehlgeschlagen", "ZIP download failed"),
-        content: (err as Error)?.message || uiText("Das ZIP-Archiv konnte nicht erstellt werden.", "The ZIP archive could not be created."),
+        content:
+          (err as Error)?.message ||
+          uiText(
+            "Das ZIP-Archiv konnte nicht erstellt werden.",
+            "The ZIP archive could not be created.",
+          ),
       });
     } finally {
       setBatchBusyAction(null);
     }
   }
 
-  function showDeleteSelectedFilesConfirmModal(filesToDelete: readonly ProjectFileEntry[]) {
+  function showDeleteSelectedFilesConfirmModal(
+    filesToDelete: readonly ProjectFileEntry[],
+  ) {
     if (!filesToDelete.length) return;
 
     modals.showDefault({
@@ -1187,14 +1408,14 @@ export default function ProjectFilesPage() {
       onPrimaryAction: async ({ hide }) => {
         if (batchBusyAction) return;
 
-        setBatchBusyAction('delete');
+        setBatchBusyAction("delete");
 
-        const selectedIds = filesToDelete.map(file => file.id);
+        const selectedIds = filesToDelete.map((file) => file.id);
         const selectedIdsSet = new Set(selectedIds);
 
         try {
           for (const fileId of selectedIds) {
-            const [, err] = await client.mutate('projects.files.delete', {
+            const [, err] = await client.mutate("projects.files.delete", {
               projectId: project.id,
               fileId,
             });
@@ -1202,19 +1423,30 @@ export default function ProjectFilesPage() {
             if (err) throw err;
           }
 
-          await client.invalidate('projects.files.list');
+          await client.invalidate("projects.files.list");
 
-          setSelectedAttachmentIds(previous => previous.filter(id => !selectedIdsSet.has(id)));
+          setSelectedAttachmentIds((previous) =>
+            previous.filter((id) => !selectedIdsSet.has(id)),
+          );
           notifications.success({
-            title: selectedIds.length === 1
-              ? uiText("Datei gelöscht", "File deleted")
-              : uiText(`${selectedIds.length} Dateien gelöscht`, `${selectedIds.length} files deleted`),
+            title:
+              selectedIds.length === 1
+                ? uiText("Datei gelöscht", "File deleted")
+                : uiText(
+                    `${selectedIds.length} Dateien gelöscht`,
+                    `${selectedIds.length} files deleted`,
+                  ),
           });
           hide();
         } catch (err) {
           notifications.danger({
             title: uiText("Löschen fehlgeschlagen", "Deletion failed"),
-            content: (err as Error)?.message || uiText("Die Dateien konnten nicht gelöscht werden.", "The files could not be deleted."),
+            content:
+              (err as Error)?.message ||
+              uiText(
+                "Die Dateien konnten nicht gelöscht werden.",
+                "The files could not be deleted.",
+              ),
           });
         } finally {
           setBatchBusyAction(null);
@@ -1453,6 +1685,32 @@ export default function ProjectFilesPage() {
         />
       </section>
 
+      {activeFallbackFileId && (
+        <Suspense fallback={null}>
+          <ProjectFilePreviewModal
+            target={{ projectId: project.id, fileId: activeFallbackFileId }}
+            onClose={closeAllViewers}
+          />
+        </Suspense>
+      )}
+      {activeGaebFileId &&
+        attachments.some((file) => file.id === activeGaebFileId) && (
+          <Suspense fallback={null}>
+            <GaebFileModal
+              projectId={project.id}
+              fileId={activeGaebFileId}
+              fileName={
+                attachments.find((file) => file.id === activeGaebFileId)!
+                  .fileName
+              }
+              workspaceRef={gaebWorkspace}
+              onClose={() => {
+                setActiveGaebFileId(null);
+                closeFileLocation();
+              }}
+            />
+          </Suspense>
+        )}
       {!!activeDrawioFile && (
         <Modal
           open

@@ -310,7 +310,7 @@ export function NotificationProvider({
             notification.kind === "info" ? "accent" : notification.kind;
 
           return (
-            <Toast toast={toast} variant={variant}>
+            <Toast toast={toast} variant={variant} className="ss-notice" data-kind={variant}>
               <UnpausedTimeout
                 notification={notification}
                 onDismiss={dismissWithReason}

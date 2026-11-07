@@ -1,8 +1,11 @@
-# @sortsys/dwgviewer
+# PDF- und DWG-Planansicht
 
-`@sortsys/dwgviewer` is the browser plan viewer used by sortsys. It renders PDFs through PDF.js and parses DWG files in a Web Worker. The viewer supports pan and zoom, layer visibility, snapping, calibration, and distance, polyline, and area measurements.
+`@sortsys/dwgviewer` zeigt PDF- und DWG-Pläne im Browser an. Pläne lassen sich
+verschieben und zoomen, Ebenen einblenden und Maße ermitteln. Dafür stehen
+Fangpunkte, Kalibrierung sowie Strecken-, Linienzug- und Flächenmessung bereit.
+PDF.js rendert PDFs; DWG-Dateien werden in einem Web Worker gelesen.
 
-## Usage
+## Verwendung
 
 ```tsx
 import { PlanViewer } from "@sortsys/dwgviewer";
@@ -16,19 +19,23 @@ import "@sortsys/dwgviewer/styles.css";
 />
 ```
 
-Use `type: "pdf"` with the same URL source shape for PDF plans. PDF measurements require calibration against a known distance. DWG measurements use drawing units when the parser can recover them.
+Für PDF-Pläne `type: "pdf"` mit derselben URL-Struktur verwenden. PDF-Messungen
+benötigen eine Kalibrierung anhand einer bekannten Strecke. Bei DWG nutzt der
+Viewer die Zeichnungseinheiten, soweit der Parser sie ermitteln kann.
 
-## DWG parser
+## DWG-Parser
 
-The independent [Rust parser](lib/README.md) runs as a small WebAssembly module inside the DWG worker. Build it with:
+Der eigenständige [Rust-Parser](lib/README.md) läuft als WebAssembly-Modul
+im DWG-Worker. Bauen mit:
 
 ```bash
 npm run build:wasm:rust
 ```
 
-The command writes `src/dwg/wasm/sortsys-dwg-rust.wasm`. The module uses a narrow allocation-and-JSON ABI and does not need a JavaScript language runtime.
+Das Ergebnis liegt unter `src/dwg/wasm/sortsys-dwg-rust.wasm`. Eine schmale
+Speicher-/JSON-Schnittstelle vermeidet eine zusätzliche JavaScript-Laufzeit.
 
-## Checks
+## Prüfungen
 
 ```bash
 npm ci
@@ -37,16 +44,20 @@ npm test
 npm run test:wasm:rust
 ```
 
-To exercise local DWG samples, pass a fixture directory to the smoke script:
+Lokale DWG-Beispiele über ein Verzeichnis prüfen:
 
 ```bash
 npm run smoke:wasm:rust:fixtures -- /path/to/dwg-files
 ```
 
-## Public API
+## Öffentliche Schnittstelle
 
-`src/index.ts` exports `PlanViewer`, geometry and viewport helpers, the DWG parser entry point, PDF loading, and the public document, entity, measurement, calibration, and parser types. The package exports source modules and expects React 19 and React DOM 19 from the consuming application.
+`src/index.ts` exportiert `PlanViewer`, Geometrie- und Ansichtshilfen, den
+DWG-Parser-Einstieg, PDF-Ladefunktionen und Typen für Dokumente, Elemente,
+Messungen, Kalibrierung und Parser. Das Paket exportiert Quellmodule und erwartet
+React 19 sowie React DOM 19 von der einbindenden Anwendung.
 
-## License
+## Lizenz
 
-This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE). The Open Design Alliance specification, test fixtures, and PDF.js retain their own terms.
+Für dieses Paket gilt die [GNU Affero General Public License v3.0 only](../LICENSE).
+ODA-Spezifikation, Beispieldateien und PDF.js behalten ihre eigenen Bedingungen.

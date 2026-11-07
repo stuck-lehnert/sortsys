@@ -198,6 +198,10 @@ const fn default_pg_port() -> u16 {
 }
 
 async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('sortsys:master:schema', 0))")
+        .execute(&mut *transaction)
+        .await?;
     sqlx::raw_sql(
         r#"
         CREATE TABLE IF NOT EXISTS __tenants (
@@ -383,12 +387,12 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
           ON __llm_usage (tenant_name, created_at DESC);
         "#,
     )
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
     sqlx::raw_sql(include_str!("../schema/master_entity_changes.sql"))
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
-    Ok(())
+    transaction.commit().await
 }
 
 #[derive(Debug, thiserror::Error)]

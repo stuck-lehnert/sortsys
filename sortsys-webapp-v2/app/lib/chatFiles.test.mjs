@@ -7,7 +7,7 @@ import {
   AssistantFileLink,
   AssistantMarkdown,
 } from "../components/AssistantMarkdown.tsx";
-import { projectFileLinkTarget } from "./projectFileLinks.ts";
+import { projectFileHref, projectFileLinkTarget } from "./projectFileLinks.ts";
 import {
   isOnlyOfficeAttachment,
   isVideoAttachment,
@@ -15,7 +15,7 @@ import {
 } from "./projectFilePreview.ts";
 
 const currentUrl = "https://sortsys.example/llm/1abc?keep=chat#message";
-const fileHref = "/projects/1abc/files?file=2def";
+const fileHref = "/projects/1abc/files/2def";
 const target = { projectId: "1abc", fileId: "2def" };
 
 function click(overrides = {}) {
@@ -32,6 +32,9 @@ function click(overrides = {}) {
 
 for (const href of [
   fileHref,
+  "https://sortsys.example/projects/1abc/files/2def",
+  "/projects/%31abc/files/%32def?other=kept#page=2",
+  "/projects/1abc/files/2def/",
   "https://sortsys.example/projects/1abc/files?file=2def",
   "//sortsys.example/projects/1abc/files?file=2def",
   "/projects/1abc/files/?file=2def#page=2",
@@ -74,6 +77,11 @@ for (const href of [
   "/projects/%2F1abc/files?file=2def",
   "/projects/%FF/files?file=2def",
   "/projects/1abc/files?file=vvvvvvvvvvvvvv",
+  "/projects/1abc/files/2def?file=2def",
+  "/projects/1abc/files/2def/extra",
+  "/projects/1abc/files/%2F2def",
+  "/projects/1abc/files/%FF",
+  "/projects/1abc/files/vvvvvvvvvvvvvv",
   "/documents?q=test",
   "#message",
   "https://other.example/projects/1abc/files?file=2def",
@@ -91,7 +99,11 @@ for (const href of [
 }
 
 test("does not lose public IDs above JavaScript's safe integer range", () => {
-  const href = "/projects/7vvvvvvvvvvvv/files?file=7vvvvvvvvvvvu";
+  const href = projectFileHref({
+    projectId: "7vvvvvvvvvvvv",
+    fileId: "7vvvvvvvvvvvu",
+  });
+  assert.equal(href, "/projects/7vvvvvvvvvvvv/files/7vvvvvvvvvvvu");
 
   assert.deepEqual(projectFileLinkTarget(href, currentUrl, click()), {
     projectId: "7vvvvvvvvvvvv",

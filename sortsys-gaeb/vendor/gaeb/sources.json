@@ -1,0 +1,52 @@
+[
+  {
+    "directory": "3.3",
+    "url": "https://www.gaeb.de/wp-content/uploads/2021/06/2021-05_Leistungsverzeichnis.zip",
+    "sha256": "d4f19a79c46119ba6a7bbca1067bc2a26ccadb60d1b5fd8a82725f45b491e203"
+  },
+  {
+    "directory": "3.3-x31",
+    "url": "https://www.gaeb.de/wp-content/uploads/2023/09/2023-01_Mengenermittlung.zip",
+    "sha256": "4301767daaddb79b5ea249f287d65eaa60debaf75dbbc6123ff44db6cd43c735"
+  },
+  {
+    "directory": "3.2",
+    "url": "https://www.gaeb.de/wp-content/uploads/2019/04/Leistungsverzeichnis.zip",
+    "sha256": "b655e955db75df43c82f49bea0a4246c19f25bcb2ad01186a6a14ffdae03fe76"
+  },
+  {
+    "directory": "3.1",
+    "url": "https://www.gaeb.de/wp-content/uploads/2022/11/Schema_GAEB_DA_XML_3.1_2009-12_X81-X83_u_X85-X87.zip",
+    "sha256": "69c3d2e8c08088851e77c1dac173a2cc4314336f32896c43fae70494797b1cab"
+  },
+  {
+    "directory": "3.1",
+    "url": "https://www.gaeb.de/wp-content/uploads/2022/11/Schema_GAEB_DA_XML_3.1_2009-12_X84.zip",
+    "sha256": "531812b0b8b0618acf54af49d297c9269c0441aceefd5db0862ecbd7807f546e"
+  },
+  {
+    "directory": "3.3-x31-2021",
+    "url": "https://www.gaeb.de/wp-content/uploads/2021/06/2021-05_Mengenermittlung.zip",
+    "sha256": "88e796ec1c26419edf4446dab24953a83b449c0983297ae9c7e25ca3500888f0"
+  },
+  {
+    "directory": "3.2",
+    "url": "https://www.gaeb.de/wp-content/uploads/2019/04/Mengenermittlung_3.2_2013-10.zip",
+    "sha256": "f360a10886d164d7b4ddf297d3327b9e70a9b1194e50f76c4e59f88cf02d9267"
+  },
+  {
+    "directory": "3.3",
+    "url": "https://www.gaeb.de/wp-content/uploads/2021/06/2021-05_Handel.zip",
+    "sha256": "7b9a8d2decd1a80fee8a0ec749f09bbd856c6ffa64ec757f7267405e3f51b60f"
+  },
+  {
+    "directory": "3.3",
+    "url": "https://www.gaeb.de/wp-content/uploads/2021/06/2021-05_Kosten_und_Kalkulation.zip",
+    "sha256": "41fc1b1f0b999ffcf2c6d2766167cbacc7c0ba7f7d400d269be087e0a7898b70"
+  },
+  {
+    "directory": "3.3",
+    "url": "https://www.gaeb.de/wp-content/uploads/2021/06/2021-05_Rechnung.zip",
+    "sha256": "fe54f6da6ccf5da36bb78bd07a97d5d7fe14d03c515459a4e9f45316595e91f1"
+  }
+]

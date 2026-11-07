@@ -1,64 +1,81 @@
-# PDF layout
+# PDF-Layout
 
-Browser exports use the shared layout in `app/lib/pdfLayout.ts`. `app/lib/pdf.ts`
-renders tables, cards, images, signatures and plain-text paragraphs into that
-layout. The WASM compiler and Nimbus Sans L fonts remain client-side; the layout has no
-Typst Universe package dependencies.
+Browserexporte verwenden das gemeinsame Layout in `app/lib/pdfLayout.ts`.
+`app/lib/pdf.ts` fügt Tabellen, Karten, Bilder, Unterschriften und Textabsätze ein.
+WASM-Compiler und Nimbus-Sans-L-Schriften
+bleiben auf dem Client. Das Layout benötigt keine Typst-Universe-Pakete.
 
-Regular and Bold are bundled in `public/fonts/nimbus-sans-l` with their license
-and provenance. Typst uses their internal family name `NimbusSanL`. The renderer
-loads both from the application origin; missing font assets fail the export
-instead of silently substituting another font. The font is also listed in the
-application's license inventory.
+Normal- und Fettschnitt liegen samt Lizenz und Herkunftsnachweis unter
+`public/fonts/nimbus-sans-l`. Typst verwendet den internen Familiennamen
+`NimbusSanL`. Der Renderer lädt beide vom Ursprung (Origin) der Webapp. Fehlende Schriften
+brechen den Export ab, statt unbemerkt Ersatzschriften zu verwenden. Die Schrift
+steht auch im Lizenzverzeichnis der Anwendung.
 
-The separation between content and page layout follows the approach of
-[invoice-pro](https://typst.app/universe/package/invoice-pro) and
-[letter-pro](https://typst.app/universe/package/letter-pro). This implementation
-is maintained locally and does not copy either package's calculation logic.
+Die Trennung zwischen Inhalt und Seitenlayout folgt dem Ansatz von
+[invoice-pro](https://typst.app/universe/package/invoice-pro) und
+[letter-pro](https://typst.app/universe/package/letter-pro). Die Implementierung
+wird lokal gepflegt und übernimmt keine Berechnungslogik dieser Pakete.
 
-## Layouts
+## Seitenlayouts
 
-The default `report` layout uses A4, a 25 mm left margin, a 20 mm right margin,
-10 pt body text, 9 pt tables and 8 pt weekly matrices. `PDF_TYPOGRAPHY` defines
-the shared type scale: report titles 18 pt, letter subjects 14 pt, section headings
-11 pt, entry/contact headings 10 pt, table headers 9 pt, secondary hints and
-export metadata 8 pt. Summary values stay at 9 pt; primary financial results
-use 10 pt. Bold text distinguishes results without oversized numbers. Main text
-is black; secondary labels and hints use dark gray. Tables use clear column
-gutters, fine horizontal row separators and a stronger rule below the headers.
-Vertical borders and background fills are omitted. Regular tables use 6 pt of
-vertical cell padding; weekly matrices and lists with more than 20 positions use
-5 pt to keep long exports compact. The compact company header uses a
-logo scaled proportionally to at most 48 × 16 mm at the top right, beginning
-10 mm below the page edge (the same starting height as letter headers), postal
-sender details at the left and a thin
-separator below. The logo replaces the company name in both report and letter
-headers; without a logo, the company name is shown as text. Postal sender details
-and letter return addresses remain available in either case. Its height follows
-the actual sender/logo content; without a logo, the sender uses the full width
-and tighter spacing removes the unused logo area. The first-page header uses the top margin; continuation pages retain
-the regular 25 mm top margin. It is used by project
-reports, inventories and table exports. It does not reserve an address window.
+Das Standardlayout `report` verwendet A4, links 25 mm und rechts 20 mm Rand.
+Die Schriftgrößen sind in `PDF_TYPOGRAPHY` festgelegt:
 
-Use `kind: 'letter'` for correspondence, invoices and delivery notes. Form B is
-the default; form A moves the address window up by 18 mm. The 85 × 45 mm address
-field begins at x = 20 mm and y = 45 mm (B) or 27 mm (A). Its text starts at
-x = 25 mm. The recipient zone starts 17.7 mm below the field's top edge. The
-information block starts at x = 125 mm and y = 50 mm (B) or 32 mm (A).
+| Inhalt | Größe |
+| --- | --- |
+| Berichtstitel | 18 pt |
+| Briefbetreff | 14 pt |
+| Abschnittsüberschriften | 11 pt |
+| Eintrags- und Kontaktüberschriften, Fließtext | 10 pt |
+| Tabellen einschließlich Spaltenköpfen, Zusammenfassungswerte | 9 pt |
+| Wochenmatrizen, Nebenhinweise und Exportmetadaten | 8 pt |
+| Zentrale finanzielle Ergebnisse | 10 pt |
 
-These measurements are based on the
-[letter-pro reference implementation](https://github.com/Sematre/typst-letter-pro/blob/main/src/lib.typ).
-DIN Media also provides an official
-[DIN 5008:2020 business-letter example](https://www.dinmedia.de/de/themenseiten/din-5008/mustervorlage-geschaeftsbrief-din5008).
-The implementation covers page layout; the wording, completeness of addresses,
-country names, required invoice information and formatting of supplied amounts
-remain the responsibility of each document generator. Report layouts share the
-typography and margins; they are not business-letter forms.
+Ergebnisse werden durch Fettdruck hervorgehoben. Haupttext ist schwarz,
+nachrangige Beschriftungen und Hinweise sind dunkelgrau. Tabellen nutzen klare
+Spaltenabstände, feine waagerechte Zeilentrenner und eine stärkere Linie unter
+dem Kopf. Senkrechte Rahmen und Hintergrundfüllungen entfallen.
+Normale Tabellen haben vertikal 6 pt Zellabstand, Wochenmatrizen und Listen mit
+mehr als 20 Positionen 5 pt.
 
-## Adding a document type
+Der kompakte Dokumentkopf zeigt rechts oben ein proportional auf höchstens
+48 × 16 mm skaliertes Logo. Es beginnt 10 mm unter dem Seitenrand, auf derselben
+Höhe wie bei Briefen. Links stehen postalische Absenderdaten, darunter eine feine
+Trennlinie. In Berichts- und Briefköpfen ersetzt das Logo den Unternehmensnamen;
+ohne Logo erscheint dieser als Text. Postalischer Absender und Rücksendezeile
+bleiben in beiden Fällen verfügbar. Die Kopfhöhe folgt dem tatsächlichen Inhalt.
+Ohne Logo nutzt der Absender die volle Breite; engere Abstände schließen die
+ungenutzte Logofläche. Der erste Kopf nutzt den oberen Randbereich; Folgeseiten
+behalten regulär 25 mm oberen Rand. Dieses Layout dient Projektberichten,
+Inventuren und Tabellenexporten und reserviert kein Anschriftenfenster.
 
-Existing callers of `renderStructuredPdf` and `renderStructuredPdfBatch` use the
-shared layout automatically. Add `layout` and `paragraphs` to supply a letter:
+### Briefe
+
+Für Korrespondenz, Rechnungen und Lieferscheine gilt `kind: 'letter'`.
+Standard ist Form B; Form A verschiebt das Anschriftenfenster 18 mm nach oben.
+
+| Position ab Seitenrand | Form A | Form B |
+| --- | --- | --- |
+| Anschriftenfeld, x / y | 20 / 27 mm | 20 / 45 mm |
+| Informationsblock, x / y | 125 / 32 mm | 125 / 50 mm |
+
+Das Anschriftenfeld ist 85 × 45 mm groß. Sein Text startet bei x = 25 mm,
+die Empfängerzone 17,7 mm unter der Feldoberkante.
+
+Diese Maße orientieren sich an der
+[letter-pro-Referenzimplementierung](https://github.com/Sematre/typst-letter-pro/blob/main/src/lib.typ).
+DIN Media bietet außerdem eine offizielle
+[Geschäftsbriefvorlage nach DIN 5008:2020](https://www.dinmedia.de/de/themenseiten/din-5008/mustervorlage-geschaeftsbrief-din5008).
+Die Implementierung regelt die Seitengestaltung. Wortlaut, vollständige
+Anschriften, Ländernamen, Rechnungs-Pflichtangaben und die Formatierung gelieferter
+Beträge verantwortet der jeweilige Dokumentgenerator. Berichte teilen Typografie
+und Ränder, sind aber keine Geschäftsbriefformulare.
+
+## Dokumenttyp ergänzen
+
+Bestehende Aufrufer von `renderStructuredPdf` und `renderStructuredPdfBatch`
+verwenden das gemeinsame Layout automatisch. `layout` und `paragraphs` ergänzen
+einen Brief:
 
 ```ts
 await renderStructuredPdf({
@@ -83,118 +100,114 @@ await renderStructuredPdf({
 });
 ```
 
-The document title acts as the subject, without a “Betreff” prefix. The layout
-leaves two lines between the address field and subject, and between subject and
-body. Longer information blocks move the subject down. Sender headers are checked
-against the selected form's available height. Recipient addresses allow six lines;
-annotations allow four. Overlong address lines shrink to at least 8 pt (return
-addresses: 6 pt); lines that still do not fit fail compilation instead of
-overlapping. Content is encoded as text, including Typst special characters.
+Der Dokumenttitel dient als Betreff ohne vorangestelltes „Betreff“. Zwischen
+Anschriftenfeld und Betreff sowie Betreff und Text stehen jeweils zwei Zeilen.
+Längere Informationsblöcke verschieben den Betreff nach unten. Absenderköpfe
+werden gegen die verfügbare Höhe der gewählten Form geprüft. Empfängeranschriften
+erlauben sechs Zeilen, Vermerke vier. Bei überlangen Anschriftenzeilen wird die
+Schrift verkleinert, jedoch nicht unter 8 pt. Für Rücksendezeilen gilt eine Grenze
+von 6 pt. Reicht das nicht, scheitert die
+Kompilierung, statt Text überlappen zu lassen. Inhalte werden als Text kodiert,
+auch bei Typst-Sonderzeichen.
 
-`returnAddress` overrides the compact sender line. `foldMarks: false` disables
-fold and hole marks. `footer` repeats on every page and reserves additional space
-when needed. Continuation pages show the document title. Each document in a batch
-starts on a new page and has its own `Seite x / y` numbering.
+`returnAddress` überschreibt die kompakte Absenderzeile. `foldMarks: false`
+schaltet Falt- und Lochmarken ab. `footer` wiederholt sich auf jeder Seite und
+reserviert bei Bedarf zusätzlichen Platz. Folgeseiten zeigen den Dokumenttitel.
+Jedes Dokument eines Sammelexports beginnt auf einer neuen Seite und erhält eine
+eigene Nummerierung „Seite x / y“.
 
-## Content structure
+## Inhalte strukturieren
 
-`PdfTableSection.presentation` separates content from its visual representation:
+`PdfTableSection.presentation` trennt Inhalt und Darstellung:
 
-- `facts`: a two-column label/value table with 9 pt secondary labels and 9 pt values. Explicitly bold
-  values mark the complete row as a result. This is the default
-  for headerless two-column sections, including project metadata.
-- `summary`: a label/value table retaining the supplied row order. Values marked
-  `bold` or `emphasis: 'primary'` emphasize their complete row; secondary values
-  retain the same size as the other rows. Use this for delivery costs, reported hours,
-  attendance counts and inventory results.
-- `metrics`: a financial summary table with labels at the left and amounts aligned
-  at the right. Primary results use 10 pt, other amounts 9 pt.
-  A styled value's `detail`
-  keeps percentages and entry counts smaller, beneath the amount.
-- `text`: full-width body text; the default for headerless single-column sections.
-- `entries`: a bold label/date followed by full-width body text. Use this for
-  daily descriptions and project notes instead of long prose in narrow cells.
-- `table`: position lists with repeated section titles and column headers, fine
-  horizontal separators and aligned numeric columns. `totalRows` provides a bold final
-  total without repeating it on every page.
+- `facts`: zweispaltige Tabelle mit Beschriftung und Wert in 9 pt. Ausdrücklich fette Werte kennzeichnen die ganze Zeile als Ergebnis. Standard für kopflose Zweispaltenabschnitte, etwa Projektmetadaten.
+- `summary`: Beschriftung und Wert in gelieferter Reihenfolge. `bold` oder `emphasis: 'primary'` betonen die ganze Zeile; Nebenwerte bleiben gleich groß. Geeignet für Lieferkosten, gemeldete Stunden, Anwesenheitszahlen und Inventurergebnisse.
+- `metrics`: finanzielle Zusammenfassung mit Beschriftungen links und rechtsbündigen Beträgen. Zentrale Ergebnisse stehen in 10 pt, andere in 9 pt. `detail` eines formatierten Werts zeigt Prozentsätze und Eintragszahlen kleiner unter dem Betrag.
+- `text`: Fließtext über volle Breite; Standard für kopflose einspaltige Abschnitte.
+- `entries`: fette Beschriftung mit Datum, gefolgt von Fließtext über volle Breite. Geeignet für Tagesbeschreibungen und Projektnotizen, die sonst in schmalen Zellen landen würden.
+- `table`: Positionslisten mit wiederholten Abschnittstiteln und Spaltenköpfen, feinen waagerechten Trennern und ausgerichteten Zahlenspalten. `totalRows` ergänzt eine fette Endsumme, die nur am Ende erscheint.
 
-Contact records use one simple two-column layout per person: a bold name and
-smaller role above a fine rule, followed by secondary labels and contact details
-in fixed columns. Whitespace separates people. Ordinary records stay
-together; records longer than a page can break with repeated name headers instead
-of overflowing. `trailingSections` places supporting notes after the contacts,
-so the project data sheet shows project information, contacts, then notes. Photos keep
-their aspect ratio inside a 55 mm high frame, with their caption attached.
-Signature fields stay together, follow the content with 8.46 mm of space above
-the signature block and reserve 18 mm for writing.
-Empty sections show an explicit message rather than an empty table header.
+Kontakte verwenden je Person ein schlichtes Zweispaltenlayout: fetter Name und
+kleinere Rolle über einer feinen Linie, danach nachrangige Beschriftungen und
+Kontaktdaten in festen Spalten. Weißraum trennt Personen. Gewöhnliche Datensätze
+bleiben zusammen. Überlange Einträge dürfen mit wiederholtem Namenskopf umbrechen,
+statt die Seite zu überschreiten. `trailingSections` stellt ergänzende Notizen
+hinter die Kontakte; das Projektdatenblatt zeigt somit Projektinformationen,
+Kontakte und danach Notizen. Fotos behalten ihr Seitenverhältnis innerhalb eines
+55 mm hohen Rahmens und bleiben bei ihrer Bildunterschrift. Unterschriftenfelder
+bleiben zusammen, haben 8,46 mm Abstand über dem Block und reservieren 18 mm zum
+Schreiben. Leere Abschnitte zeigen eine ausdrückliche Meldung.
 
-`buildPdfProductSection` receives named product fields. Product numbers occupy
-a separate column headed `Nr.` to the left of the description, normally 15 mm
-wide and expanding to at most 25 mm for longer numbers; quantities
-and base-unit conversions share a column. The priced version explains average
-prices per base unit. Regie reports use the same builder with `showPrices: false`
-and `showNumbers: false`: internal product numbers never appear, including for
-unknown products. They use the optional product `regieReportName` (editable as
-“Bezeichnung für Regieberichte”) instead of the internal designation. Empty or
-missing values fall back to `productTitle`. This field participates in product
-full-text search. Individual and project-wide PDF/Excel regie exports share this
-naming rule. Regie reports show hours per employee and day without total-hours
-metadata, employee totals or a totals row.
-Hour counts
-use `formatPdfNumber`, which omits trailing zeros while retaining the original
-maximum of four decimal places. Amounts continue to use currency formatting.
-Cost details and inventories use compact numeric dates to avoid narrow columns
-filled with wrapped month names. Weekly cost summaries distinguish direct costs
-from overhead and group materials/personnel. Weekly project cost exports form
-one continuous document: one company header/title, an overall summary and then
-chronological week groups with a 14 pt heading and an 8 pt date range. Groups flow
-without forced page breaks, retaining individual categories and positions.
-Each heading stays with its first cost rows. On subsequent pages, repeated table
-headers include the calendar week in 8 pt type. Page numbers cover the entire
-report. Independent documents exported as a batch still have separate page counts.
-The reusable `StructuredPdfDocument.groups` API supports the same structure for
-other grouped reports; `buildWeeklyProjectCostsPdfDocument` supplies the cost
-report's overview and weekly groups.
+`buildPdfProductSection` erhält benannte Produktfelder. Produktnummern stehen
+links von der Beschreibung in einer eigenen Spalte „Nr.“, regulär 15 mm breit
+und für längere Nummern bis zu 25 mm. Mengen und Grundmengenumrechnungen teilen
+eine Spalte. Die bepreiste Fassung erklärt Durchschnittspreise je Grundeinheit.
+Regieberichte verwenden denselben Baustein mit `showPrices: false` und
+`showNumbers: false`. Interne Produktnummern erscheinen auch bei unbekannten
+Produkten nicht. Statt der internen Bezeichnung gilt das optionale
+`regieReportName`, bearbeitbar als „Bezeichnung für Regieberichte“. Bei fehlendem
+oder leerem Wert gilt `productTitle`. Das Feld fließt in die Produktvolltextsuche
+ein. Einzelne und projektweite PDF-/Excel-Regieexporte teilen diese Namensregel.
+Regieberichte zeigen Stunden je Mitarbeiter und Tag ohne Gesamtstundenmetadaten,
+Mitarbeitersummen oder Summenzeile. `formatPdfNumber` entfernt überflüssige
+Nachkommanullen und erhält die bisherige Genauigkeit von höchstens vier
+Nachkommastellen. Geldbeträge verwenden weiterhin Währungsformatierung.
 
-General table exports with more than six columns use `buildTablePdfDocument`
-to render aligned label/value records with a ruled header. All column labels and values
-are retained. Narrow exports use conventional column tables, with descriptive
-columns receiving more space and text aligned at the left by default. Both narrow
-and wide exports begin with a compact table of entry and field counts.
+Kostendetails und Inventuren verwenden kompakte numerische Daten, damit schmale
+Spalten keine umgebrochenen Monatsnamen enthalten. Wochenkosten unterscheiden
+Einzel- und Gemeinkosten und gruppieren Material sowie Personal. Ein wöchentlicher
+Projektkostenexport bildet ein durchgängiges Dokument: ein Dokumentkopf mit
+Titel, eine Gesamtübersicht und chronologische Wochengruppen mit 14-pt-Überschrift
+sowie Datumsbereich in 8 pt. Kategorien und Positionen fließen ohne erzwungene
+Seitenumbrüche. Jede Überschrift bleibt bei ihren ersten Kostenzeilen.
+Wiederholte Tabellenköpfe auf Folgeseiten enthalten die Kalenderwoche in 8 pt.
+Seitenzahlen gelten für den gesamten Bericht; unabhängige Dokumente eines
+Sammelexports behalten separate Zählungen. `StructuredPdfDocument.groups` bietet
+diese Struktur für weitere gruppierte Berichte; `buildWeeklyProjectCostsPdfDocument`
+liefert Gesamtübersicht und Wochengruppen des Kostenberichts.
 
-The renderer supplies the tenant name and logo when available. The current tenant
-settings API exposes no postal sender address or legal/bank footer: callers must
-supply those through `sender` and `footer`. Delivery notes use the project's
-customer address in form B when available; without it they use the report layout.
+Allgemeine Tabellenexporte mit mehr als sechs Spalten verwenden
+`buildTablePdfDocument` für ausgerichtete Datensätze mit Beschriftungen und Werten
+sowie abgesetztem Kopf. Sämtliche Spaltennamen und Werte bleiben erhalten. Schmale
+Exporte nutzen gewöhnliche Spaltentabellen, geben Beschreibungsspalten mehr Raum
+und richten Text standardmäßig links aus. Beide Varianten beginnen mit einer
+kompakten Übersicht der Eintrags- und Feldzahlen.
 
-## Verification
+Der Renderer ergänzt Mandantenname und Logo, soweit vorhanden. Aufrufer geben
+postalische Absenderdaten sowie rechtliche und Bankangaben über `sender` und
+`footer` mit. Lieferscheine verwenden die Projektkundenanschrift in Form B, wenn
+sie vorliegt; andernfalls gilt das Berichtslayout.
 
-Run `bun run test:pdf`. Data validation and browser WASM compilation tests always
-run with the bundled Regular/Bold fonts. When the Typst CLI is
-installed, the integration test compiles forms A/B and a multi-page report,
-extracts PDF text with PDF.js and checks address positions, reference positions,
-table headings and per-document page counts. This check is skipped without the
-CLI. The CLI tests use the same bundled Nimbus Sans L fonts without substitution.
-The browser test also compiles representative document types, checks actual PDF
-text bounds and adjacent-column overlaps, and verifies that all 90 positions in a long delivery note survive
-pagination, with repeated headers and attached signature fields. It also measures
-the rendered font sizes for every fixture to ensure that titles, sections,
-labels and results have a restrained hierarchy. Contact checks cover field/value
-alignment, notes following contacts and all 12 people in a multi-page data sheet.
-Logo checks measure the image bounds in the PDF: proportions, maximum size,
-alignment with the right margin and collapsed header space without a logo.
-A weekly cost test checks all 100 positions across three weeks, one large title
-and company header, continuous page counts, repeated week/column labels and no
-orphaned week heading. Three compact weeks must fit on a single page, including
-when two such reports are batched.
+## Prüfungen und Vorschau
 
-Run `bun run preview:pdf` to generate `/tmp/sortsys-pdf-preview/beispiele.pdf`
-and its Typst source, plus individual PDFs and sources for all 14 fixtures and
-`projektkosten-wochenweise.pdf` for a continuous three-week cost report,
-or pass an output directory as an argument. The fixture collection covers
-delivery notes (including 90 positions), daily/weekly reports, attendance reports,
-time-and-material reports, overall/weekly cost reports, inventory, project
-contacts (including a multi-page list) and narrow/wide table exports. It uses the
-same browser compiler and bundled fonts, with placeholder images in both
-orientations. Render the PDF with `pdftoppm -png` for visual inspection.
+`bun run test:pdf` führt Datenprüfung und Browser-WASM-Kompilierung immer mit den
+mitgelieferten Normal-/Fettschriften aus. Mit installierter Typst-CLI kompiliert
+der Integrationstest Form A/B und einen mehrseitigen Bericht. PDF.js liest Texte
+aus und prüft Anschriftenpositionen, Referenzpositionen, Tabellenköpfe und
+Seitenzahlen je Dokument. Ohne CLI entfällt diese Prüfung. Auch CLI-Tests
+verwenden Nimbus Sans L ohne Ersatzschriften.
+
+Der Browsertest kompiliert repräsentative Dokumenttypen, prüft tatsächliche
+PDF-Textgrenzen und Überschneidungen benachbarter Spalten. Alle 90 Positionen
+eines langen Lieferscheins müssen mit wiederholten Köpfen und zugehörigen
+Unterschriftenfeldern erhalten bleiben. Gemessene Schriftgrößen prüfen die
+zurückhaltende Hierarchie von Titeln, Abschnitten, Beschriftungen und Ergebnissen
+für jedes Beispieldokument. Kontaktprüfungen decken Feld-/Wertausrichtung,
+anschließende Notizen und alle zwölf Personen eines mehrseitigen Datenblatts ab.
+Logoprüfungen messen Seitenverhältnis, Höchstgröße, Ausrichtung am rechten Rand
+und entfallenden Leerraum ohne Logo.
+
+Ein Wochenkostentest prüft alle 100 Positionen aus drei Wochen, genau einen großen
+Titel und Dokumentkopf, fortlaufende Seitenzahlen, wiederholte Wochen-/Spaltenköpfe
+und keine alleinstehende Wochenüberschrift. Drei kompakte Wochen müssen auf eine
+Seite passen, auch beim gemeinsamen Export zweier solcher Berichte.
+
+`bun run preview:pdf` erzeugt `/tmp/sortsys-pdf-preview/beispiele.pdf` samt
+Typst-Quelle, einzelne PDFs mit Quellen für alle 14 Beispiele und
+`projektkosten-wochenweise.pdf` für einen durchgängigen Dreiwochenbericht.
+Ein Ausgabeverzeichnis kann als Argument übergeben werden. Die Sammlung enthält
+Lieferscheine einschließlich 90 Positionen, Tages-/Wochenberichte,
+Anwesenheits- und Regieberichte, Gesamt-/Wochenkosten, Inventuren, Projektkontakte
+mit mehrseitiger Liste und schmale/breite Tabellenexporte. Compiler und Schriften
+entsprechen dem Browserexport; Platzhalterbilder decken Hoch- und Querformat ab.
+`pdftoppm -png` rendert PDFs zur Sichtprüfung.

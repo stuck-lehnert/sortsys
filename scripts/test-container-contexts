@@ -67,11 +67,17 @@ for index in "${!ignore_files[@]}"; do
     sortsys-webapp-v2/public/icon.svg
     sortsys-webapp-v2/nginx.conf
     sortsys-react-components/src/index.tsx
+    sortsys-gaeb/src/index.ts
+    sortsys-gaeb/vendor/gaeb/sources.json
     sortsys-dwgviewer/lib/Cargo.lock
     go.mod
     go.sum
     cmd/job-runner/main.go
   )
+
+  if [[ $index -eq 1 ]]; then
+    retained+=(seed-assets/grundriss-erdgeschoss.dwg seed-assets/baubesprechung.msg seed-assets/manifest.json)
+  fi
 
   if [[ $index -eq 0 ]]; then
     # The webapp root context also excludes unrelated repository packages.

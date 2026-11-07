@@ -22,6 +22,8 @@ pub mod rpc;
 pub mod seed;
 pub mod superjson;
 pub mod webauthn;
+pub mod xml_documents;
+pub mod xml_live;
 
 pub mod managed_db;
 pub mod migrations;
@@ -38,6 +40,7 @@ pub struct AppState {
     pub config: Config,
     pub tenants: TenantStore,
     pub auth: AuthService,
+    pub xml_live: Arc<xml_live::Hub>,
 }
 
 impl AppState {
@@ -48,6 +51,7 @@ impl AppState {
             config,
             tenants,
             auth,
+            xml_live: Arc::new(xml_live::Hub::default()),
         }))
     }
 }
@@ -75,7 +79,9 @@ pub fn app_with_state(state: Arc<AppState>) -> axum::Router {
         .merge(job_runners::router(Arc::clone(&state)))
         .merge(onlyoffice::router(Arc::clone(&state)))
         .merge(office_exports::router(Arc::clone(&state)))
+        .merge(xml_live::router(Arc::clone(&state)))
         .merge(llm::mcp_router(state))
+        .layer(axum::middleware::from_fn(xml_documents::request_body_limit))
         .layer(axum::middleware::from_fn(audit::middleware))
 }
 pub fn app() -> axum::Router {

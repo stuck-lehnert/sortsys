@@ -20,7 +20,7 @@ describe("activity file links", () => {
       ["9223372036854775807", "7vvvvvvvvvvvv"],
     ]) {
       expect(activityProjectFileHref({ ...fileActivity, entityId })).toBe(
-        `${filesPath}?file=${publicId}`,
+        `${filesPath}/${publicId}`,
       );
     }
   });
@@ -33,7 +33,7 @@ describe("activity file links", () => {
           action,
           contextId: "different-project",
         }),
-      ).toBe(`${filesPath}?file=7dbfi`);
+      ).toBe(`${filesPath}/7dbfi`);
     }
   });
 

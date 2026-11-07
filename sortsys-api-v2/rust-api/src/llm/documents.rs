@@ -270,7 +270,7 @@ fn not_found() -> RpcError {
 
 fn source_url(project_id: Id, file_id: Id) -> String {
     format!(
-        "/projects/{}/files?file={}",
+        "/projects/{}/files/{}",
         project_id.encode(),
         file_id.encode()
     )

@@ -197,4 +197,24 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "260923120000_product_regie_report_name",
         include_str!("../migrations/260923120000_product_regie_report_name.sql"),
     ),
+    (
+        "261104180000_contractor_workflows",
+        include_str!("../migrations/261104180000_contractor_workflows.sql"),
+    ),
+    (
+        "261105130000_gaeb_position_library",
+        include_str!("../migrations/261105130000_gaeb_position_library.sql"),
+    ),
+    (
+        "261106160000_document_editor_preferences_and_templates",
+        include_str!("../migrations/261106160000_document_editor_preferences_and_templates.sql"),
+    ),
+    (
+        "261106170000_commercial_billing_and_trade",
+        include_str!("../migrations/261106170000_commercial_billing_and_trade.sql"),
+    ),
+    (
+        "261106210000_distributed_document_sessions",
+        include_str!("../migrations/261106210000_distributed_document_sessions.sql"),
+    ),
 ];

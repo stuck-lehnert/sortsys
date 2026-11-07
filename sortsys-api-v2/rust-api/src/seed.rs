@@ -12,7 +12,9 @@ use sqlx::{PgPool, Row};
 
 use crate::{AppState, llm, managed_db};
 
+mod commercial;
 mod development_llm;
+pub use commercial::{extend_development, write_validation_fixtures};
 
 pub type SeedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -33,6 +35,9 @@ pub struct SeedSummary {
     pub unavailability_periods: usize,
     pub financial_entries: usize,
     pub remarks: usize,
+    pub commercial_cases: usize,
+    pub commercial_documents: usize,
+    pub project_files: usize,
 }
 
 /// Creates and seeds the managed `test` tenant expected by `scripts/dev`.
@@ -144,7 +149,7 @@ pub async fn bootstrap_development(state: &AppState) -> SeedResult<SeedSummary> 
         ON CONFLICT (name) DO UPDATE SET
             admin_hash = EXCLUDED.admin_hash,
             disabled = FALSE,
-            contact_details = EXCLUDED.contact_details,
+            contact_details = EXCLUDED.contact_details || COALESCE(__tenants.contact_details, '{}'::jsonb),
             connection_details = EXCLUDED.connection_details,
             locked_at = NULL,
             deactivated_at = NULL,
@@ -156,6 +161,7 @@ pub async fn bootstrap_development(state: &AppState) -> SeedResult<SeedSummary> 
     .bind(json!({
         "email": "buero@malerbetrieb-beispiel.de",
         "companyName": "Malerbetrieb Beispiel GmbH",
+        "address": {"streetAddress": "Beispielweg 12", "zip": "06108", "city": "Halle (Saale)", "country": "Deutschland"},
     }))
     .bind(tenant_connection)
     .execute(state.tenants.master())
@@ -175,6 +181,7 @@ pub async fn bootstrap_development(state: &AppState) -> SeedResult<SeedSummary> 
 
     ensure_development_users(&tenant_pool).await?;
     configure_development_llm(state, &tenant_name, &tenant_pool).await?;
+    commercial::extend_development(state, &tenant_name, &tenant_pool, random_seed()).await?;
 
     // Include the stable Doe accounts and their planning records in the
     // displayed summary, not only the randomized portion created above.
@@ -961,6 +968,9 @@ pub async fn seed_randomized_data(pool: &PgPool, seed: u64) -> SeedResult<SeedSu
         unavailability_periods: unavailability_period_count,
         financial_entries: financial_entry_count,
         remarks: remark_count,
+        commercial_cases: 0,
+        commercial_documents: 0,
+        project_files: 0,
     })
 }
 
@@ -1151,7 +1161,10 @@ async fn current_summary(pool: &PgPool) -> SeedResult<SeedSummary> {
             (SELECT COUNT(*) FROM user_vacations) AS vacations,
             (SELECT COUNT(*) FROM project_unavailability_periods) AS unavailability_periods,
             (SELECT COUNT(*) FROM project_financial_entries) AS financial_entries,
-            (SELECT COUNT(*) FROM resource_notes) AS remarks
+            (SELECT COUNT(*) FROM resource_notes) AS remarks,
+            (SELECT COUNT(*) FROM commercial_cases) AS commercial_cases,
+            (SELECT COUNT(*) FROM commercial_documents) AS commercial_documents,
+            (SELECT COUNT(*) FROM project_files) AS project_files
         "#,
     )
     .fetch_one(pool)
@@ -1173,6 +1186,9 @@ async fn current_summary(pool: &PgPool) -> SeedResult<SeedSummary> {
         unavailability_periods: row.try_get::<i64, _>("unavailability_periods")? as usize,
         financial_entries: row.try_get::<i64, _>("financial_entries")? as usize,
         remarks: row.try_get::<i64, _>("remarks")? as usize,
+        commercial_cases: row.try_get::<i64, _>("commercial_cases")? as usize,
+        commercial_documents: row.try_get::<i64, _>("commercial_documents")? as usize,
+        project_files: row.try_get::<i64, _>("project_files")? as usize,
     })
 }
 async fn next_custom_id(

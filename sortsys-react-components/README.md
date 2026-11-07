@@ -1,10 +1,13 @@
-# @sortsys/react-components
+# Gemeinsame React-Komponenten
 
-This package contains the React controls and CSS used by the sortsys web application. It includes application-shell elements, menus and modals, form controls, tables, pagination, loading states, tags, tiles, and other data-display components.
+`@sortsys/react-components` enthält die gemeinsamen Bedienelemente und Stile der
+Webapp. Dazu gehören Navigation, Menüs, Dialoge, Formulare und Tabellen sowie
+Komponenten für Nachladen, Ladezustände, Schlagwörter, Kacheln und weitere Datenansichten.
 
-## Use from the repository
+## Im Repository verwenden
 
-The package exports source files directly and is consumed as a local dependency by `sortsys-webapp-v2`.
+Das Paket exportiert seine Quellen direkt und ist als lokale Abhängigkeit in
+`sortsys-webapp-v2` eingebunden.
 
 ```tsx
 import { Button, Heading } from "@sortsys/react-components";
@@ -20,11 +23,26 @@ export function SaveAction() {
 }
 ```
 
-Shared styles live in `src/styles.css`. The public exports are declared in `package.json` and `src/index.tsx`; update the declaration files when adding a public component.
+Gemeinsame Stile liegen in `src/styles.css`, öffentliche Exporte in `package.json`
+und dem Moduleinstieg unter `src/`. Bei neuen öffentlichen Komponenten die
+Typdeklarationen ergänzen. React 19 und React DOM 19 sind Peer-Abhängigkeiten.
 
-React 19 and React DOM 19 are peer dependencies.
+## Tastaturbedienung
 
-## License
+Autocomplete-Ergebnisse verwenden für Tab, Umschalt+Tab und Pfeiltasten denselben
+aktiven Eintrag. Enter wählt aus, Escape schließt die Vorschläge. Tab über den
+ersten oder letzten Eintrag hinaus setzt die Formularnavigation fort, ohne eine
+Auswahl oder eine Erstellaktion auszulösen.
 
-This package is licensed under the [GNU Affero General Public License v3.0 only](../LICENSE).
+Wenn der Benutzer eine Formularzeile hinzufügt, `focusOnMount` auf dem ersten
+neuen `MyForm.Input` oder `MyForm.MultiSelect` setzen. Das Feld erhält den Fokus
+einmalig, sobald es registriert und vorbelegt ist. Tippen oder spätere
+Aktualisierungen verschieben den Fokus nicht erneut.
 
+Beim Öffnen setzt der Dialog seinen Fokus selbst. Bereits vorhandene oder
+nachgeladene Felder dürfen ihn nicht übernehmen. Deshalb `focusOnMount` erst im
+Handler zum Hinzufügen setzen, nicht für die anfänglich sichtbaren Zeilen.
+
+## Lizenz
+
+Für dieses Paket gilt die [GNU Affero General Public License v3.0 only](../LICENSE).

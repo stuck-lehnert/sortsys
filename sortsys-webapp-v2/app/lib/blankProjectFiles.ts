@@ -1,6 +1,7 @@
 import type JSZip from "jszip";
+import { createGaebXml, GAEB_DOCUMENT_TYPES, type GaebPhase } from "@sortsys/gaeb";
 
-export type NewProjectFileType = "docx" | "pptx" | "xlsx" | "drawio";
+export type NewProjectFileType = "docx" | "pptx" | "xlsx" | "drawio" | "x83" | "x84" | "x86" | "x87" | "x31";
 
 export const NEW_PROJECT_FILE_TYPES: Array<{
   type: NewProjectFileType;
@@ -37,6 +38,10 @@ export const NEW_PROJECT_FILE_TYPES: Array<{
     germanLabel: "DrawIO",
     englishLabel: "DrawIO",
   },
+  ...(["83", "84", "86", "87", "31"] as GaebPhase[]).map(phase => ({
+    type: `x${phase}` as NewProjectFileType, extension: `.x${phase}`, mimeType: "application/xml",
+    germanLabel: GAEB_DOCUMENT_TYPES[phase].newDe, englishLabel: GAEB_DOCUMENT_TYPES[phase].newEn,
+  })),
 ];
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -258,6 +263,9 @@ async function createPptxBlob() {
 }
 
 export async function createBlankProjectFile(type: NewProjectFileType, fileName: string) {
+  if (type.startsWith("x") && type !== "xlsx") {
+    return new File([createGaebXml(type.slice(1) as GaebPhase, fileName)], fileName, { type: "application/xml" });
+  }
   const definition = NEW_PROJECT_FILE_TYPES.find(entry => entry.type === type);
   if (!definition) throw new Error("Unsupported project file type");
 
@@ -288,7 +296,7 @@ export async function createBlankProjectFile(type: NewProjectFileType, fileName:
       break;
   }
 
-  return new File([blob], fileName, {
+  return new File([blob!], fileName, {
     type: definition.mimeType,
     lastModified: Date.now(),
   });

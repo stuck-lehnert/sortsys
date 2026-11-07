@@ -4,6 +4,7 @@ import { NotificationProvider } from "@sortsys/react-components/notifications";
 import { Outlet, Route, Routes, useLocation } from "react-router";
 import { SessionInfoProvider } from "../../app/hooks/useSessionInfo";
 import { MyModalsProvider, useMyModals } from "../../app/hooks/useMyModals";
+import { CommercialLinkHandler } from "../../app/modals/commercial";
 import { client } from "../../app/lib/client";
 import { adminClient } from "../../app/lib/adminClient";
 import GlobalAdminErrorsPage from "../../app/routes/(admin)/__admin.errors";
@@ -12,6 +13,8 @@ import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
 import { showSetUserPasswordModal } from "../../app/modals/users";
 import { showCreateDailyProjectReportModal } from "../../app/modals/dailyProjectReport";
+import { showCreateRegieReportModal } from "../../app/modals/regieReports";
+import { showCreateProductModal } from "../../app/modals/products";
 import { showCreateDeliveryNoteModal } from "../../app/modals/deliveryNotes";
 import { showCommandPaletteModal } from "../../app/modals/commandPalette";
 import { showPriceImportModal } from "../../app/modals/priceImports";
@@ -28,12 +31,20 @@ const bookedTool = {
   available: false,
 };
 import DashboardPage from "../../app/routes/(shell)/dashboard";
+import ImportPage from "../../app/routes/(shell)/products.deliveryNotes.import";
 import DocumentsPage from "../../app/routes/(shell)/documents";
 import LlmPage from "../../app/routes/(shell)/llm";
 import LlmChatsPage from "../../app/routes/(shell)/llm.chats";
+import SettingsShell from "../../app/routes/(shell)/settings.shell";
+import OrganizationSettingsPage from "../../app/routes/(shell)/settings.organization";
 import AdminPage from "../../app/routes/(shell)/admin";
 import DeploymentsPage from "../../app/routes/(shell)/deployments";
 import ProjectFilesPage from "../../app/routes/(shell)/projects.$id.files";
+
+import OffersPage from "../../app/routes/(shell)/offers.index";
+import NewOfferPage from "../../app/routes/(shell)/offers.new";
+import GaebPage from "../../app/routes/(shell)/gaeb.$caseId";
+import ContractPage from "../../app/routes/(shell)/projects.$id.contract";
 
 const priceImport = {
   supplier: "Fixture Vendor",
@@ -55,7 +66,8 @@ const priceImport = {
 };
 
 if (
-  new URLSearchParams(window.location.search).get("screen") === "application"
+  new URLSearchParams(window.location.search).get("screen") === "application" ||
+  /^\/(?:admin|settings|projects|gaeb)(?:\/|$)/.test(location.pathname)
 ) {
   // Only synthetic, intercepted HTTP requests use this opaque fixture session.
   client.setToken("sortsys-ui-synthetic-session");
@@ -104,6 +116,12 @@ function FormEntrypoints() {
       <Button onClick={() => showCreateDailyProjectReportModal(modals)}>
         Create daily report
       </Button>
+      <Button onClick={() => showCreateRegieReportModal(modals)}>
+        Create regie report
+      </Button>
+      <Button onClick={() => showCreateProductModal(modals)}>
+        Create product
+      </Button>
       <Button onClick={() => showCreateDeliveryNoteModal(modals)}>
         Create delivery note
       </Button>
@@ -141,7 +159,11 @@ function ApplicationFrame({ children }) {
     );
   }
 
-  return <main className="p-3 sm:p-5">{children}</main>;
+  return (
+    <main data-fixture-path={pathname} className="p-3 sm:p-5">
+      {children}
+    </main>
+  );
 }
 
 export function ApplicationFixture() {
@@ -152,6 +174,7 @@ export function ApplicationFixture() {
         regionLabel="Notifications"
       >
         <MyModalsProvider>
+          <CommercialLinkHandler />
           <ApplicationFrame>
             <Routes>
               <Route path="/customers/:id" element={<CustomerPage />} />
@@ -159,12 +182,25 @@ export function ApplicationFixture() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/deployments" element={<DeploymentsPage />} />
               <Route path="/projects/:id" element={<ProjectFixture />}>
-                <Route path="files" element={<ProjectFilesPage />} />
+                <Route path="files/:fileId?" element={<ProjectFilesPage />} />
+                <Route path="contract" element={<ContractPage />} />
               </Route>
+              <Route path="/offers" element={<OffersPage />} />
+              <Route path="/offers/new" element={<NewOfferPage />} />
+              <Route path="/gaeb/:caseId" element={<GaebPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
+              <Route path="/import" element={<ImportPage />} />
               <Route path="/llm" element={<LlmPage />} />
               <Route path="/llm/chats" element={<LlmChatsPage />} />
               <Route path="/llm/:chatId" element={<LlmPage />} />
+              <Route path="/settings" element={<SettingsShell />}>
+                <Route path="passkeys" element={<p>Passkey settings</p>} />
+                <Route path="language" element={<p>Language settings</p>} />
+                <Route
+                  path="organization"
+                  element={<OrganizationSettingsPage />}
+                />
+              </Route>
               <Route path="/admin" element={<AdminPage />} />
               <Route
                 path="/__admin/errors"

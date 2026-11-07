@@ -24,6 +24,7 @@ export function MyDropdown({
   items,
   menuClassName,
   size = "md",
+  kind = "ghost",
 }: {
   icon?: React.ComponentType;
   label?: ReactNode;
@@ -31,6 +32,7 @@ export function MyDropdown({
   items: MenuItemProps[];
   menuClassName?: string;
   size?: "sm" | "md";
+  kind?: "primary" | "secondary" | "ghost";
 }) {
   const [open, setOpen] = useState(false);
   const actions = items
@@ -41,15 +43,15 @@ export function MyDropdown({
     return null;
   }
 
-  const accessibleLabel = ariaLabel ?? (
-    typeof label === "string" ? label : uiText("Aktionen", "Actions")
-  );
+  const accessibleLabel =
+    ariaLabel ??
+    (typeof label === "string" ? label : uiText("Aktionen", "Actions"));
 
   return (
     <Dropdown isOpen={open} onOpenChange={setOpen}>
       <Button
         type="button"
-        kind="ghost"
+        kind={kind}
         size={size}
         renderIcon={Icon}
         aria-label={accessibleLabel}

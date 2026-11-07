@@ -101,6 +101,7 @@ function fileTypeIcon(file: ProjectFileBrowserFile) {
   }
 
   if (extension === "json") return { icon: Icons.FileJson, kind: "code" };
+  if (["x31", "x52", "x80", "x81", "x82", "x83", "x84", "x85", "x86", "x87", "x89", "x93", "x94", "x96", "x97"].includes(extension)) return { icon: Icons.FileXml, kind: "code" };
   if (["xml", "xsd"].includes(extension)) return { icon: Icons.FileXml, kind: "code" };
   if (["js", "jsx", "ts", "tsx", "html", "css", "scss", "sql", "sh", "yaml", "yml", "toml"].includes(extension)) {
     return { icon: Icons.FileCode, kind: "code" };

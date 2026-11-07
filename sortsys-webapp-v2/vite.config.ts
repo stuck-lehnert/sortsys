@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { VitePWA } from "vite-plugin-pwa";
 import { pdfjsViewerPlugin } from "./scripts/pdfjsViewerPlugin";
+import { gaebLicensePlugin } from "../sortsys-gaeb/scripts/licensePlugin";
 
 const exceljsBareBrowserBuild = fileURLToPath(
   new URL("./node_modules/exceljs/dist/exceljs.bare.min.js", import.meta.url),
@@ -51,6 +52,40 @@ export default defineConfig({
     ],
     alias: [
       {
+        find: /^@sortsys\/react-components\/notifications$/,
+        replacement: fileURLToPath(
+          new URL(
+            "../sortsys-react-components/src/notifications-runtime.tsx",
+            import.meta.url,
+          ),
+        ),
+      },
+      {
+        find: /^@sortsys\/react-components$/,
+        replacement: fileURLToPath(
+          new URL("../sortsys-react-components/src/index.js", import.meta.url),
+        ),
+      },
+      {
+        find: /^@sortsys\/react-components\/(.*)$/,
+        replacement:
+          fileURLToPath(
+            new URL("../sortsys-react-components/src/", import.meta.url),
+          ) + "$1",
+      },
+      {
+        find: /^@sortsys\/gaeb\/styles\.css$/,
+        replacement: fileURLToPath(
+          new URL("../sortsys-gaeb/src/styles.css", import.meta.url),
+        ),
+      },
+      {
+        find: /^@sortsys\/gaeb$/,
+        replacement: fileURLToPath(
+          new URL("../sortsys-gaeb/src/index.ts", import.meta.url),
+        ),
+      },
+      {
         find: /^iconv-lite$/,
         replacement: fileURLToPath(
           new URL("./app/lib/msgTextEncoding.ts", import.meta.url),
@@ -66,7 +101,12 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [webappSource, dwgviewerSource],
+      allow: [
+        webappSource,
+        dwgviewerSource,
+        fileURLToPath(new URL("../sortsys-gaeb", import.meta.url)),
+        fileURLToPath(new URL("../sortsys-react-components", import.meta.url)),
+      ],
     },
   },
   ssr: {
@@ -74,16 +114,19 @@ export default defineConfig({
     // while React Router prerenders the SPA shell.
     noExternal: ["@sortsys/react-components"],
   },
+  worker: { format: "es" },
   plugins: [
     tailwindcss(),
     reactRouter(),
     pdfjsViewerPlugin(),
+    gaebLicensePlugin(),
 
     VitePWA({
       registerType: "autoUpdate",
       workbox: {
         navigateFallbackDenylist: [/^\/pdfjs\//],
         globIgnores: [
+          "**/gaebValidation*.js",
           "**/pdfjs/**",
           "**/pdf.worker*.mjs",
           "**/pdf-*.js",

@@ -72,7 +72,7 @@ export function showCreateProductModal(modals: MyModalsInterface, options: Creat
               <MyForm.Input
                 required
                 name={`unit:${id}:name`} labelText={uiText("Einheit")}
-                autoFocus={autoFocusFieldName === `unit:${id}:name`}
+                focusOnMount={autoFocusFieldName === `unit:${id}:name`}
                 suggestions={{
                   prepare: () => client.query('products.units.list', undefined).then(([data]) => data ?? []),
                   getItems: ({ query, init }) => init.filter((unit) => {
@@ -197,7 +197,7 @@ export function showModifyProductModal(modals: MyModalsInterface, product: Produ
               <MyForm.Input
                 required
                 name={`unit:${id}:name`} labelText={uiText("Einheit")}
-                autoFocus={autoFocusFieldName === `unit:${id}:name`}
+                focusOnMount={autoFocusFieldName === `unit:${id}:name`}
                 suggestions={{
                   prepare: () => client.query('products.units.list', undefined).then(([data]) => data ?? []),
                   getItems: ({ query, init }) => init.filter((unit) => {
