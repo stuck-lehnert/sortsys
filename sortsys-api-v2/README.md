@@ -1,9 +1,9 @@
-# Die API hinter sortsys
+# sortsys API
 
-Die Rust-API verbindet die Arbeitsabläufe von sortsys mit zuverlässiger Speicherung,
-Mandantentrennung und gemeinsamem Bearbeiten. Der eigene TypeScript-Client bietet
-einen typisierten Zugriff. Beide implementieren das gebündelte RPC-Protokoll direkt
-und benötigen zur Laufzeit kein tRPC.
+Die Rust-API speichert Daten getrennt je Mandant und synchronisiert gemeinsam
+bearbeitete Dokumente. Der TypeScript-Client stellt typisierte Aufrufe bereit.
+API und Client implementieren das gebündelte RPC-Protokoll direkt und benötigen
+zur Laufzeit kein tRPC.
 
 ## Aufbau
 
@@ -20,8 +20,8 @@ Die vollständige Umgebung samt Diensten und Beispielmandant im Hauptverzeichnis
 ./scripts/dev
 ```
 
-Für direkte Arbeiten im Rust-Workspace die in der [CI](../.github/workflows/ci.yml)
-ausgewählte Toolchain verwenden:
+Die folgenden Rust-Befehle aus `sortsys-api-v2` ausführen. Die Toolchain steht
+in der [CI](../.github/workflows/ci.yml):
 
 ```bash
 cargo fmt --all -- --check
@@ -76,7 +76,7 @@ Transaktions-Pooler reichen nicht aus. Fachliche Zugriffe nutzen begrenzte Pools
 Die Integrationssuite prüft unabhängige Instanzen, Wiederverbindungen,
 gleichzeitige Schreibzugriffe und Migrationen.
 
-## Erzeugter Clientvertrag
+## Erzeugte API-Typen
 
 Prozedurnamen sowie Ein- und Ausgabetypen entstehen aus der Rust-Registrierung:
 
@@ -112,7 +112,8 @@ bun run build
 | `PORT` | nein | HTTP-Port, standardmäßig `3000` |
 | `NODE_ENV` | nein | `production` aktiviert die Produktivanforderungen |
 
-Alle Werte können alternativ unter `/run/secrets/SORTSYS_API_V2_<NAME>` eingebunden werden.
+Außer `PORT` und `NODE_ENV` lassen sich diese Werte auch als Dateien unter
+`/run/secrets/SORTSYS_API_V2_<NAME>` bereitstellen. Umgebungsvariablen haben Vorrang.
 
 ### LLM-Anbindung
 
@@ -141,9 +142,9 @@ lassen sich diesen Anwendungsfällen aber nicht zuweisen.
 Der Chat bietet `sortsys_search_documents` und `sortsys_read_document`. Beide
 verwenden den Mandanten und die aktuellen Projektdatei-Berechtigungen des
 angemeldeten Benutzers. Die Suche nutzt den Volltextindex der Dokumentansicht
-und liefert Auszüge und Vorschaulinks. Das Lesen liefert begrenzte Unicode-
-Textabschnitte. Revisionen bei folgenden Offsets mitgeben, damit zwischenzeitliche
-Änderungen erkannt werden. Speicherzugänge, Objektschlüssel und signierte
+und liefert Auszüge und Vorschaulinks. Das Lesewerkzeug liefert Unicode-Text
+in begrenzten Abschnitten. Bei Folgeabrufen den Wert `revision` mitgeben, damit
+zwischenzeitliche Änderungen erkannt werden. Speicherzugänge, Objektschlüssel und signierte
 Download-Adressen werden nicht ausgegeben.
 
 Die Texterkennung unterstützt derzeit PDF-Text und OCR gescannter PDFs. Andere
@@ -156,8 +157,9 @@ vertrauenswürdige Daten und keine Anweisungen an den Assistenten.
 
 Die API prüft beim Start und minütlich auf fällige Sicherungen. Verwaltete
 Datenbanken auf dafür aktivierten Hosts werden täglich um 02:00 Uhr in
-`Europe/Berlin` gesichert. Mindestens ein Aufbewahrungszähler muss größer als null
-sein; vorhandene Host-Speichereinstellungen und Aufbewahrungsregeln gelten weiter.
+`Europe/Berlin` gesichert. Die Aufbewahrung wird getrennt für tägliche, wöchentliche,
+monatliche und jährliche Sicherungen eingestellt. Mindestens einer dieser Werte
+muss größer als null sein. Es gelten die Speichereinstellungen des Hosts.
 
 Beim Wechsel zur Sommerzeit wird die fehlende 02:00-Uhr-Ausführung um 03:00 Uhr
 nachgeholt. Bei der Rückstellung zählt das erste Auftreten von 02:00 Uhr.
@@ -166,8 +168,8 @@ damit Bereinigung und Neustarts keine Doppelungen auslösen. Advisory Locks
 koordinieren mehrere API-Instanzen und manuelle Sicherungen.
 
 Überfällige Sicherungen werden nach dem Start nachgeholt, Fehler nach 15 Minuten
-erneut versucht. Automatische Läufe sind auf sechs Stunden begrenzt. Eine
-fehlgeschlagene Datenbank stoppt die folgenden nicht. Temporäre Dump-Verzeichnisse
+erneut versucht. Automatische Läufe sind auf sechs Stunden begrenzt. Schlägt die
+Sicherung einer Datenbank fehl, laufen die übrigen Sicherungen weiter. Temporäre Dump-Verzeichnisse
 sind nur für ihren Eigentümer zugänglich und werden bei Abbruch entfernt.
 
 `AUTO_BACKUPS_ENABLED=false` deaktiviert die Hintergrundplanung; manuelle

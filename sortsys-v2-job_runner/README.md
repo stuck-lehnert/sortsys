@@ -1,4 +1,4 @@
-# Hintergrundverarbeitung für flüssiges Arbeiten
+# Hintergrunddienst
 
 Der sortsys-Hintergrunddienst übernimmt Medien- und Dokumentaufgaben außerhalb
 des API-Prozesses: Vorschaubilder, Unternehmenslogos, PDF-Text und OCR.

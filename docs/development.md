@@ -2,7 +2,8 @@
 
 Mit dem [Schnellstart](../README.md#entwicklung) steht eine vollständige Umgebung
 bereit: PostgreSQL, MinIO, API, zwei Hintergrunddienste, Webapp, Euro-Office und
-diagrams.net. Die Editoren dürfen später bereit werden als API und Webapp.
+diagrams.net. Euro-Office und diagrams.net starten unabhängig von API und Webapp
+und können erst später verfügbar sein.
 
 ## Dienste
 
@@ -42,15 +43,15 @@ in [`scripts/dev`](../scripts/dev).
 
 ## Beispieldaten
 
-Der Mandant `test` macht die Abläufe direkt erlebbar: fiktive Unternehmensdaten,
-Benutzer, Projekte und Auftragnehmervorgänge in verschiedenen Bearbeitungsständen,
+Der Mandant `test` enthält fiktive Unternehmensdaten, Benutzer und Projekte sowie
+Angebote, Aufmaße und weitere Dokumente in verschiedenen Bearbeitungsständen,
 einschließlich aufgemessener X31-Positionen und Rechnungsbeispielen. `john.doe`
 ist Administrator, `frank.doe` ein weiterer Beispielbenutzer. Beide verwenden
 lokal das Passwort `123456`.
 
 [Dokumentbeispiele](../sortsys-api-v2/seed-assets/README.md) liegen fest im Repository;
-das Seeding lädt ihre unveränderten Bytes hoch. Positionsdaten entstehen aus dem
-reproduzierbaren Zufallszahlengenerator des Seedings.
+das Seeding lädt sie unverändert hoch. Positionsdaten werden zufällig erzeugt.
+Mit demselben Zufallsstartwert lässt sich ein Lauf reproduzieren.
 
 Fehlende Dokumentbeispiele zu einem bestehenden, laufenden Entwicklungsmandanten hinzufügen:
 

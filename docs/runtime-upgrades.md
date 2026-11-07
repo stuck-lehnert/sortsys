@@ -10,8 +10,8 @@
 `node scripts/check-runtime-versions.mjs` und seine Tests stehen am Anfang von
 `scripts/ci`. Sie erkennen Abweichungen zwischen Images, CI und Typdeklarationen,
 reine Tag-Wechsel bei PostgreSQL und ungeprüfte Nginx-Mainline-Umstellungen.
-Betriebliche Vorgaben wie `POSTGRES_IMAGE` müssen gesondert geprüft werden;
-Repository-Standards belegen keine eingesetzte Überschreibung.
+Wird im Betrieb etwa `POSTGRES_IMAGE` überschrieben, muss auch dieses Image
+gesondert geprüft werden.
 
 ## Nginx prüfen
 
@@ -44,8 +44,6 @@ Vor Freigabe von Hauptversionsupdates und Änderung der Laufzeitprüfung:
 5. **Testumgebung wiederherstellen und prüfen.** Globale Objekte und sämtliche Datenbanken ohne tolerierte Fehler wiederherstellen. Erweiterungen, Eigentümer, Rechte, Sequenzen, Mandantenrouting, Migrationen, Sortierung, Indizes und repräsentative Daten prüfen. Die vollständige dienstgestützte API-Suite, Sicherungsabläufe und Anwendungsfälle gegen die neue Datenbank ausführen.
 6. **Umstellung und Rückkehr erproben.** API und Hintergrund-Schreibzugriffe stoppen, endgültig sichern, wiederherstellen beziehungsweise migrieren, prüfen und erst dann umschalten. Alten Cluster und verschlüsselte Sicherungen über den vereinbarten Rückkehrzeitraum aufbewahren. Nach Schreibzugriffen auf PostgreSQL 18 reicht ein alter Image-Tag nicht mehr: Die Behandlung der neuen Daten vorher festlegen.
 7. **Erst danach Vorgaben ändern.** Laufzeit-, Test- und Clientstandards, Mounts, Kubernetes-Erzeugung, Prüfungen und Dokumentation gemeinsam umstellen. Die Hauptversionssperre erst mit einem freigegebenen Migrationsverfahren entfernen.
-
-Diese Dokumentation führt selbst keine Bereitstellung oder Datenänderung aus.
 
 ## Grenzen automatischer Aktualisierungen
 

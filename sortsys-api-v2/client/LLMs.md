@@ -1,7 +1,7 @@
-# Unterstützte Prozeduren
+# Ausgewählte API-Prozeduren
 
-Ausgewählte Prozeduren für den typisierten API-Zugriff. Den vollständigen aktuellen
-Umfang beschreibt der von Rust erzeugte Vertrag unter `src/generated/contract.ts`.
+Die Liste enthält eine Auswahl der API-Prozeduren. Alle verfügbaren Prozeduren
+mit ihren Typen stehen im erzeugten Vertrag unter `src/generated/contract.ts`.
 
 ## Abfragen
 

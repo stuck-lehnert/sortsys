@@ -1,8 +1,8 @@
 # sortsys-api
 
-Das Rust-Backend hält die betrieblichen Abläufe zusammen: typisierte, gebündelte
-RPC-Aufrufe, Mandantendatenbanken, Benutzer und Passkeys, signierte Speicherzugriffe,
-Migrationen und Hintergrundaufträge über WebSockets.
+Das Rust-Backend verarbeitet typisierte, gebündelte RPC-Aufrufe. Es verwaltet
+Mandantendatenbanken, Benutzer und Passkeys, signiert Speicherzugriffe, führt
+Migrationen aus und verteilt Hintergrundaufträge über WebSockets.
 
 ## Orientierung im Code
 
@@ -10,7 +10,7 @@ Migrationen und Hintergrundaufträge über WebSockets.
 | --- | --- |
 | `src/main.rs` | Prozessstart und HTTP-Listener |
 | `src/api.rs` | Prozedurregistrierung und Metadaten des erzeugten Vertrags |
-| `src/rpc.rs` | HTTP-Bündelung, SuperJSON-kompatible Werte und Fehlerhüllen |
+| `src/rpc.rs` | HTTP-Bündelung, SuperJSON-kompatible Werte und Fehlerantworten |
 | `src/procedures/` | fachliche Validierung und Datenbankzugriffe |
 | `src/auth.rs` und `src/webauthn.rs` | Sitzungen, Rechte, Passwörter und Passkeys |
 | `src/managed_db.rs` | Lebenszyklus und Sicherungen von Mandantendatenbanken |
@@ -36,7 +36,7 @@ zusätzlich `JOB_RUNNER_TOKEN`. Die [Workspace-Konfiguration](../README.md#laufz
 beschreibt alle Variablen. `scripts/dev` im Hauptverzeichnis liefert sie und
 startet PostgreSQL und MinIO mit.
 
-## Migrationen und Verträge
+## Migrationen und API-Typen
 
 Migrationen sind im Programm enthalten und werden in Dateinamensreihenfolge
 angewandt. Schemaänderungen als neue SQL-Dateien hinzufügen; möglicherweise

@@ -1,9 +1,9 @@
 # @sortsys/v2-client
 
-Typisierter Zugriff auf die sortsys-API mit vertrauten Abfrage- und Änderungsaufrufen.
-`@sortsys/v2-client` bündelt Anfragen, erhält SuperJSON-kompatible Datumswerte und
-übernimmt Bearer-Authentifizierung, Entdoppelung, Caching und erneutes Laden von
-Streams. Zur Laufzeit besteht keine tRPC-Abhängigkeit.
+`@sortsys/v2-client` ist der TypeScript-Client für die sortsys-API. Er bündelt
+Anfragen, erhält SuperJSON-kompatible Datumswerte und übernimmt
+Bearer-Authentifizierung, Entdoppelung, Caching und erneutes Laden von Streams.
+Zur Laufzeit besteht keine tRPC-Abhängigkeit.
 
 ## Bauen
 

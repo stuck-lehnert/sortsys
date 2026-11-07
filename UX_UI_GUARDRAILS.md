@@ -1,8 +1,6 @@
 # Leitlinien für verständliche Bedienoberflächen
 
-sortsys soll den Arbeitsalltag erleichtern: klare Aufgaben, vertraute Bedienung
-und verlässliche Rückmeldungen. Diese Regeln gelten für Webapp-Seiten, gemeinsame
-Komponenten und Dialoge.
+Diese Regeln gelten für Webapp-Seiten, gemeinsame Komponenten und Dialoge.
 
 - HeroUI-Komponenten und deren Interaktionsverhalten verwenden. Layouts mit
   Tailwind und Gestaltung mit gemeinsamen Design-Tokens umsetzen. Eigenes CSS

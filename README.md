@@ -1,8 +1,9 @@
 # sortsys
 
-**Angebote kalkulieren, Leistungen aufmessen und Teams koordinieren – an einem Ort.**
-sortsys verbindet Projekte, Personal, Werkzeuge, Material und Dokumente für
-Bauunternehmen und Handwerksbetriebe. Direkt im Browser, auf Deutsch und Englisch.
+sortsys ist eine Betriebssoftware für Bauunternehmen und Handwerksbetriebe.
+Du kalkulierst Angebote, erfasst Aufmaße und verwaltest Projekte samt Personal,
+Werkzeugen, Material und Dokumenten im Browser. Die Oberfläche ist auf Deutsch
+und Englisch verfügbar.
 
 ## Entwicklung
 
@@ -34,7 +35,7 @@ und die Übernahme von `predeploy` nach `deploy`.
 | Paket | Aufgabe |
 | --- | --- |
 | [API](sortsys-api-v2/README.md) | Rust-Dienst, Mandantendatenbanken und typisierter TypeScript-Client |
-| [Webapp](sortsys-webapp-v2/README.md) | React-Anwendung für den Arbeitsalltag |
+| [Webapp](sortsys-webapp-v2/README.md) | React-Anwendung für Angebote, Projekte und Verwaltung |
 | [Komponenten](sortsys-react-components/README.md) | Einheitliche Bedienelemente und Gestaltung |
 | [GAEB](sortsys-gaeb/README.md) | Dokumente direkt bearbeiten und Leistungen kalkulieren |
 | [Planansicht](sortsys-dwgviewer/README.md) | PDF-/DWG-Pläne mit Rust-/WASM-Parser |

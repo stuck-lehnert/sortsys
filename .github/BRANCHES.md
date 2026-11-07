@@ -13,7 +13,9 @@ startet keinen doppelten Lauf für denselben Commit. Tags starten keine CI.
 Ein direkter Push auf `deploy` startet Tests und Container-Veröffentlichung;
 der reguläre Weg führt zuerst über die Tests auf `predeploy`.
 
-Dieselben Prüfungen lokal ausführen:
+Für die lokalen Prüfungen werden Docker mit Compose sowie Node, Bun, Rust und
+Go benötigt. Die Versionen stehen in der [CI-Konfiguration](workflows/ci.yml).
+Im Hauptverzeichnis ausführen:
 
 ```bash
 ./scripts/ci

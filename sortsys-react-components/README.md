@@ -1,8 +1,8 @@
-# Einheitliche Bedienung für sortsys
+# Gemeinsame React-Komponenten
 
-`@sortsys/react-components` sorgt für vertraute Abläufe in der gesamten Webapp:
-Navigation, Menüs und Dialoge, Formulare, Tabellen, Nachladen, Ladezustände,
-Schlagwörter, Kacheln und weitere Datenansichten teilen sich Komponenten und CSS.
+`@sortsys/react-components` enthält die gemeinsamen Bedienelemente und Stile der
+Webapp. Dazu gehören Navigation, Menüs, Dialoge, Formulare und Tabellen sowie
+Komponenten für Nachladen, Ladezustände, Schlagwörter, Kacheln und weitere Datenansichten.
 
 ## Im Repository verwenden
 
@@ -34,13 +34,14 @@ aktiven Eintrag. Enter wählt aus, Escape schließt die Vorschläge. Tab über d
 ersten oder letzten Eintrag hinaus setzt die Formularnavigation fort, ohne eine
 Auswahl oder eine Erstellaktion auszulösen.
 
-Bei ausdrücklich hinzugefügten Formularzeilen `focusOnMount` auf dem ersten neuen
-`MyForm.Input` oder `MyForm.MultiSelect` setzen. Die Anforderung wartet auf
-Feldregistrierung und Vorbelegung und fokussiert anschließend einmalig. Tippen
-oder spätere Aktualisierungen verschieben den Fokus nicht erneut. Die anfängliche
-Dialogfokussierung bleibt getrennt; initiale und nachgeladene Felder nehmen dem
-Dialog nicht den Fokus. Erste Zeilen erhalten keine Anforderung, neue Zeilen
-erst im Handler zum Hinzufügen.
+Wenn der Benutzer eine Formularzeile hinzufügt, `focusOnMount` auf dem ersten
+neuen `MyForm.Input` oder `MyForm.MultiSelect` setzen. Das Feld erhält den Fokus
+einmalig, sobald es registriert und vorbelegt ist. Tippen oder spätere
+Aktualisierungen verschieben den Fokus nicht erneut.
+
+Beim Öffnen setzt der Dialog seinen Fokus selbst. Bereits vorhandene oder
+nachgeladene Felder dürfen ihn nicht übernehmen. Deshalb `focusOnMount` erst im
+Handler zum Hinzufügen setzen, nicht für die anfänglich sichtbaren Zeilen.
 
 ## Lizenz
 

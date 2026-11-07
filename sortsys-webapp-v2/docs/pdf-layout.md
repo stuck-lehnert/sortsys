@@ -1,14 +1,13 @@
-# Einheitliche PDF-Dokumente aus dem Browser
+# PDF-Layout
 
-Ob Angebot, Lieferschein oder Projektbericht: gemeinsame Layoutregeln sorgen für
-wiedererkennbare, gut lesbare Ausgaben. Browserexporte verwenden
-`app/lib/pdfLayout.ts`; `app/lib/pdf.ts` fügt Tabellen, Karten, Bilder,
-Unterschriften und Textabsätze ein. WASM-Compiler und Nimbus-Sans-L-Schriften
+Browserexporte verwenden das gemeinsame Layout in `app/lib/pdfLayout.ts`.
+`app/lib/pdf.ts` fügt Tabellen, Karten, Bilder, Unterschriften und Textabsätze ein.
+WASM-Compiler und Nimbus-Sans-L-Schriften
 bleiben auf dem Client. Das Layout benötigt keine Typst-Universe-Pakete.
 
 Normal- und Fettschnitt liegen samt Lizenz und Herkunftsnachweis unter
 `public/fonts/nimbus-sans-l`. Typst verwendet den internen Familiennamen
-`NimbusSanL`. Der Renderer lädt beide vom Anwendungsursprung. Fehlende Schriften
+`NimbusSanL`. Der Renderer lädt beide vom Ursprung (Origin) der Webapp. Fehlende Schriften
 brechen den Export ab, statt unbemerkt Ersatzschriften zu verwenden. Die Schrift
 steht auch im Lizenzverzeichnis der Anwendung.
 
@@ -19,20 +18,27 @@ wird lokal gepflegt und übernimmt keine Berechnungslogik dieser Pakete.
 
 ## Seitenlayouts
 
-Das Standardlayout `report` verwendet A4, links 25 mm und rechts 20 mm Rand,
-10 pt Fließtext, 9 pt Tabellen und 8 pt Wochenmatrizen. `PDF_TYPOGRAPHY` legt die
-gemeinsamen Größen fest: Berichtstitel 18 pt, Briefbetreff 14 pt,
-Abschnittsüberschriften 11 pt, Eintrags-/Kontaktüberschriften 10 pt,
-Tabellenköpfe 9 pt sowie Nebenhinweise und Exportmetadaten 8 pt.
-Zusammenfassungswerte bleiben bei 9 pt; zentrale finanzielle Ergebnisse verwenden
-10 pt. Fettdruck hebt Ergebnisse ohne übergroße Zahlen hervor. Haupttext ist
-schwarz, nachrangige Beschriftungen und Hinweise sind dunkelgrau. Tabellen nutzen
-klare Spaltenabstände, feine waagerechte Zeilentrenner und eine stärkere Linie
-unter dem Kopf. Senkrechte Rahmen und Hintergrundfüllungen entfallen.
+Das Standardlayout `report` verwendet A4, links 25 mm und rechts 20 mm Rand.
+Die Schriftgrößen sind in `PDF_TYPOGRAPHY` festgelegt:
+
+| Inhalt | Größe |
+| --- | --- |
+| Berichtstitel | 18 pt |
+| Briefbetreff | 14 pt |
+| Abschnittsüberschriften | 11 pt |
+| Eintrags- und Kontaktüberschriften, Fließtext | 10 pt |
+| Tabellen einschließlich Spaltenköpfen, Zusammenfassungswerte | 9 pt |
+| Wochenmatrizen, Nebenhinweise und Exportmetadaten | 8 pt |
+| Zentrale finanzielle Ergebnisse | 10 pt |
+
+Ergebnisse werden durch Fettdruck hervorgehoben. Haupttext ist schwarz,
+nachrangige Beschriftungen und Hinweise sind dunkelgrau. Tabellen nutzen klare
+Spaltenabstände, feine waagerechte Zeilentrenner und eine stärkere Linie unter
+dem Kopf. Senkrechte Rahmen und Hintergrundfüllungen entfallen.
 Normale Tabellen haben vertikal 6 pt Zellabstand, Wochenmatrizen und Listen mit
 mehr als 20 Positionen 5 pt.
 
-Der kompakte Unternehmenskopf zeigt rechts oben ein proportional auf höchstens
+Der kompakte Dokumentkopf zeigt rechts oben ein proportional auf höchstens
 48 × 16 mm skaliertes Logo. Es beginnt 10 mm unter dem Seitenrand, auf derselben
 Höhe wie bei Briefen. Links stehen postalische Absenderdaten, darunter eine feine
 Trennlinie. In Berichts- und Briefköpfen ersetzt das Logo den Unternehmensnamen;
@@ -43,11 +49,18 @@ ungenutzte Logofläche. Der erste Kopf nutzt den oberen Randbereich; Folgeseiten
 behalten regulär 25 mm oberen Rand. Dieses Layout dient Projektberichten,
 Inventuren und Tabellenexporten und reserviert kein Anschriftenfenster.
 
+### Briefe
+
 Für Korrespondenz, Rechnungen und Lieferscheine gilt `kind: 'letter'`.
 Standard ist Form B; Form A verschiebt das Anschriftenfenster 18 mm nach oben.
-Das 85 × 45 mm große Feld beginnt bei x = 20 mm und y = 45 mm (B) oder 27 mm (A).
-Sein Text startet bei x = 25 mm, die Empfängerzone 17,7 mm unter der Feldoberkante.
-Der Informationsblock beginnt bei x = 125 mm und y = 50 mm (B) oder 32 mm (A).
+
+| Position ab Seitenrand | Form A | Form B |
+| --- | --- | --- |
+| Anschriftenfeld, x / y | 20 / 27 mm | 20 / 45 mm |
+| Informationsblock, x / y | 125 / 32 mm | 125 / 50 mm |
+
+Das Anschriftenfeld ist 85 × 45 mm groß. Sein Text startet bei x = 25 mm,
+die Empfängerzone 17,7 mm unter der Feldoberkante.
 
 Diese Maße orientieren sich an der
 [letter-pro-Referenzimplementierung](https://github.com/Sematre/typst-letter-pro/blob/main/src/lib.typ).
@@ -91,8 +104,9 @@ Der Dokumenttitel dient als Betreff ohne vorangestelltes „Betreff“. Zwischen
 Anschriftenfeld und Betreff sowie Betreff und Text stehen jeweils zwei Zeilen.
 Längere Informationsblöcke verschieben den Betreff nach unten. Absenderköpfe
 werden gegen die verfügbare Höhe der gewählten Form geprüft. Empfängeranschriften
-erlauben sechs Zeilen, Vermerke vier. Überlange Anschriftenzeilen werden höchstens
-auf 8 pt verkleinert, Rücksendezeilen auf 6 pt. Reicht das nicht, scheitert die
+erlauben sechs Zeilen, Vermerke vier. Bei überlangen Anschriftenzeilen wird die
+Schrift verkleinert, jedoch nicht unter 8 pt. Für Rücksendezeilen gilt eine Grenze
+von 6 pt. Reicht das nicht, scheitert die
 Kompilierung, statt Text überlappen zu lassen. Inhalte werden als Text kodiert,
 auch bei Typst-Sonderzeichen.
 
@@ -142,7 +156,7 @@ Nachkommastellen. Geldbeträge verwenden weiterhin Währungsformatierung.
 Kostendetails und Inventuren verwenden kompakte numerische Daten, damit schmale
 Spalten keine umgebrochenen Monatsnamen enthalten. Wochenkosten unterscheiden
 Einzel- und Gemeinkosten und gruppieren Material sowie Personal. Ein wöchentlicher
-Projektkostenexport bildet ein durchgängiges Dokument: ein Unternehmenskopf mit
+Projektkostenexport bildet ein durchgängiges Dokument: ein Dokumentkopf mit
 Titel, eine Gesamtübersicht und chronologische Wochengruppen mit 14-pt-Überschrift
 sowie Datumsbereich in 8 pt. Kategorien und Positionen fließen ohne erzwungene
 Seitenumbrüche. Jede Überschrift bleibt bei ihren ersten Kostenzeilen.
@@ -153,8 +167,8 @@ diese Struktur für weitere gruppierte Berichte; `buildWeeklyProjectCostsPdfDocu
 liefert Gesamtübersicht und Wochengruppen des Kostenberichts.
 
 Allgemeine Tabellenexporte mit mehr als sechs Spalten verwenden
-`buildTablePdfDocument` für ausgerichtete Beschriftung-/Wert-Datensätze mit
-abgesetztem Kopf. Sämtliche Spaltennamen und Werte bleiben erhalten. Schmale
+`buildTablePdfDocument` für ausgerichtete Datensätze mit Beschriftungen und Werten
+sowie abgesetztem Kopf. Sämtliche Spaltennamen und Werte bleiben erhalten. Schmale
 Exporte nutzen gewöhnliche Spaltentabellen, geben Beschreibungsspalten mehr Raum
 und richten Text standardmäßig links aus. Beide Varianten beginnen mit einer
 kompakten Übersicht der Eintrags- und Feldzahlen.
@@ -184,7 +198,7 @@ Logoprüfungen messen Seitenverhältnis, Höchstgröße, Ausrichtung am rechten 
 und entfallenden Leerraum ohne Logo.
 
 Ein Wochenkostentest prüft alle 100 Positionen aus drei Wochen, genau einen großen
-Titel und Unternehmenskopf, fortlaufende Seitenzahlen, wiederholte Wochen-/Spaltenköpfe
+Titel und Dokumentkopf, fortlaufende Seitenzahlen, wiederholte Wochen-/Spaltenköpfe
 und keine alleinstehende Wochenüberschrift. Drei kompakte Wochen müssen auf eine
 Seite passen, auch beim gemeinsamen Export zweier solcher Berichte.
 

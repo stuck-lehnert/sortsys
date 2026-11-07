@@ -1,9 +1,9 @@
 # Der DWG-Parser von sortsys
 
-Diese Rust-Crate erschließt DWG-Zeichnungen für `@sortsys/dwgviewer`: als native
+Diese Rust-Crate liest DWG-Zeichnungen für `@sortsys/dwgviewer`: als native
 Bibliothek in Tests und als WebAssembly im Browser-Worker. Sie liest den
 Dateicontainer, rekonstruiert komprimierte Abschnitte, decodiert unterstützte
-Objekte, löst Blockreferenzen auf und überführt Zeichnungselemente in das stabile
+Objekte, löst Blockreferenzen auf und überführt Zeichnungselemente in das
 JSON-Schema `sortsys-dwg-scene@1`. Nicht lesbare Datensätze werden als gruppierte
 Diagnosen gemeldet und nicht durch vermutete Geometrie ersetzt.
 

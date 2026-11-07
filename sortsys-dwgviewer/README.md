@@ -1,8 +1,8 @@
-# Pläne direkt im Browser verstehen
+# PDF- und DWG-Planansicht
 
-Mit `@sortsys/dwgviewer` bleiben PDF- und DWG-Pläne dort, wo die Arbeit stattfindet:
-in sortsys. Verschieben, zoomen, Ebenen einblenden und Maße ermitteln – mit
-Fangpunkten, Kalibrierung sowie Strecken-, Linienzug- und Flächenmessung.
+`@sortsys/dwgviewer` zeigt PDF- und DWG-Pläne im Browser an. Pläne lassen sich
+verschieben und zoomen, Ebenen einblenden und Maße ermitteln. Dafür stehen
+Fangpunkte, Kalibrierung sowie Strecken-, Linienzug- und Flächenmessung bereit.
 PDF.js rendert PDFs; DWG-Dateien werden in einem Web Worker gelesen.
 
 ## Verwendung
@@ -25,7 +25,7 @@ Viewer die Zeichnungseinheiten, soweit der Parser sie ermitteln kann.
 
 ## DWG-Parser
 
-Der eigenständige [Rust-Parser](lib/README.md) läuft als kleines WebAssembly-Modul
+Der eigenständige [Rust-Parser](lib/README.md) läuft als WebAssembly-Modul
 im DWG-Worker. Bauen mit:
 
 ```bash

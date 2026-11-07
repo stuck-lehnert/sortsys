@@ -1,9 +1,9 @@
 # sortsys im Browser
 
-Angebote, Projekte und Dokumente griffbereit: Die Webapp verbindet den Arbeitsalltag
-von Auftragnehmern in einer Oberfläche auf Deutsch und Englisch. React 19 und
-React Router 7 bilden die Grundlage; API-Client, Bedienelemente, GAEB-Editor und
-Planansicht sind lokale Pakete des Monorepos.
+In der Webapp bearbeiten Auftragnehmer Angebote und Projektunterlagen. Die
+Oberfläche ist auf Deutsch und Englisch verfügbar und verwendet React 19 mit
+React Router. API-Client, Bedienelemente, GAEB-Editor und Planansicht sind
+lokale Pakete des Monorepos.
 
 ## Entwicklung
 
@@ -16,7 +16,10 @@ Hintergrunddiensten, erzeugtem Client und Beispieldaten im Hauptverzeichnis star
 
 Die Webapp ist unter `http://127.0.0.1:5173` erreichbar.
 
-Für das Frontend allein zunächst den API-Client bauen und Viewer-Abhängigkeiten installieren:
+Für den separaten Frontend-Start werden Node gemäß [`.node-version`](../.node-version),
+Bun und die Rust-Toolchain aus der [CI](../.github/workflows/ci.yml) benötigt.
+Die folgenden Befehle beginnen im Hauptverzeichnis. Sie bauen den API-Client und
+DWG-Parser und installieren die Abhängigkeiten der lokalen Pakete:
 
 ```bash
 cd sortsys-api-v2/client
@@ -24,6 +27,10 @@ bun install --frozen-lockfile
 bun run build
 
 cd ../../sortsys-dwgviewer
+npm ci
+npm run build:wasm:rust
+
+cd ../sortsys-gaeb
 npm ci
 
 cd ../sortsys-webapp-v2
@@ -55,7 +62,7 @@ Nginx liefert den statischen Produktionsbuild aus. `API_UPSTREAM` bestimmt die
 interne API-Adresse, `ONLYOFFICE_UPSTREAM` und `DRAWIO_UPSTREAM` die Editorziele.
 `CLIENT_MAX_BODY_SIZE` beträgt standardmäßig `64m`.
 
-## Dokumente dort bearbeiten, wo sie gebraucht werden
+## Dokumentbearbeitung
 
 DOCX, PPTX, XLSX und diagrams.net-Dateien lassen sich direkt bei Projektanhängen
 anlegen. Office-Dokumente öffnen in Euro-Office, Diagramme im eingebetteten
@@ -68,8 +75,7 @@ Projektanhänge öffnen unter `/projects/:id/files/:fileId` über dem weiterhin
 geladenen Dateibrowser. Suche und Auswahl bleiben erhalten. Direktlinks und
 Neuladen öffnen die Datei erneut; Zurück schließt mit Speicherprüfung, Vorwärts
 öffnet wieder. Die Bildgalerie ersetzt die Datei-ID im selben Verlaufseintrag.
-Ältere Links über `/projects/:id/files?file=:fileId` werden auf den neuen Pfad
-normalisiert. Nicht zugängliche Dateien zeigen eine passende Fehlermeldung.
+Nicht zugängliche Dateien zeigen eine Fehlermeldung.
 
 PDF-Anhänge nutzen den lokal bereitgestellten [Mozilla-PDF.js-Viewer](https://github.com/mozilla/pdf.js)
 mit Suche, Seitennavigation, Zoom, Druck und Download. Er wird bei Bedarf in der
