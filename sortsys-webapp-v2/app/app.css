@@ -2008,20 +2008,6 @@ body.ss-theme-dark {
     .project-files-image-modal,
     .project-files-video-modal
   )
-  .ss-modal-header__text {
-  align-items: baseline;
-  flex-direction: row;
-  gap: 0.4rem;
-  overflow: hidden;
-}
-
-:is(
-    .project-files-office-modal,
-    .project-files-drawio-modal,
-    .project-files-dwg-modal,
-    .project-files-image-modal,
-    .project-files-video-modal
-  )
   .ss-modal-heading {
   flex: none;
   font-size: 0.9rem;

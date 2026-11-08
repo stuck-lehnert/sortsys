@@ -54,13 +54,12 @@ async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBu
   return bytes.buffer;
 }
 
-export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
-  url: string; format: "eml" | "msg"; downloadUrl: string;
+export default function EmailAttachmentViewer({ url, format }: {
+  url: string; format: "eml" | "msg";
 }) {
   const [mail, setMail] = useState<EmailPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const [plainText, setPlainText] = useState(false);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -68,7 +67,6 @@ export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     setMail(null);
     setError(null);
-    setPlainText(false);
 
     void (async () => {
       const bytes = await readEmailBytes(url, abort.signal);
@@ -96,11 +94,11 @@ export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
   const date = mail?.date ? new Date(mail.date) : null;
   const locale = currentLocaleTag();
   const document = useMemo(() => {
-    const body = mail && (plainText || !mail.html)
+    const body = mail && !mail.html
       ? "<pre>" + escapeEmailHtml(mail.text || uiText("Kein Nachrichtentext vorhanden.", "No message text.")) + "</pre>"
       : mail?.html ?? "";
     return emailPreviewDocument(body, locale);
-  }, [mail, plainText, locale]);
+  }, [mail, locale]);
   const attachments = mail?.attachments.filter(attachment => !attachment.inline) ?? [];
   const inlineImages = mail?.attachments.filter(attachment => attachment.inline) ?? [];
 
@@ -111,10 +109,9 @@ export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
           ? uiText("Die E-Mail ist für die Vorschau zu groß (maximal 25 MB).", "The email is too large to preview (maximum 25 MB).")
           : error === "email-timeout"
             ? uiText("Das Einlesen hat zu lange gedauert.", "Reading the email took too long.")
-            : uiText("Die E-Mail konnte nicht eingelesen werden. Die Originaldatei steht zum Herunterladen bereit.", "The email could not be read. The original file is available to download.")}
+            : uiText("Die E-Mail konnte nicht eingelesen werden.", "The email could not be read.")}
       </MyCallout>
       <MyButton size="sm" onClick={() => setRetry(value => value + 1)}>{uiText("Erneut versuchen", "Try again")}</MyButton>
-      <a href={downloadUrl} target="_blank" rel="noopener noreferrer">{uiText("Original herunterladen", "Download original")}</a>
     </div>}
     {!mail && !error && <div className="attachment-viewer-status" role="status"><span className="ss-spinner" aria-hidden="true" />{uiText("E-Mail wird eingelesen …", "Reading email …")}</div>}
 
@@ -122,15 +119,6 @@ export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
       <header className="attachment-email-metadata">
         <div className="attachment-email-heading">
           <h2>{mail.subject || uiText("Ohne Betreff", "No subject")}</h2>
-          <div className="attachment-email-actions">
-            {mail.html && mail.text && <MyButton size="sm" kind="ghost" renderIcon={plainText ? Icons.Email : Icons.FileText}
-              onClick={() => setPlainText(value => !value)}>
-              {plainText ? uiText("Formatierte Ansicht", "Formatted view") : uiText("Nur Text", "Plain text")}
-            </MyButton>}
-            <a className="attachment-email-original" href={downloadUrl} target="_blank" rel="noopener noreferrer">
-              <Icons.Download size={16} aria-hidden="true" />{uiText("Original herunterladen", "Download original")}
-            </a>
-          </div>
         </div>
         <div className="attachment-email-sender">
           <span className="attachment-email-avatar" aria-hidden="true"><Icons.Email size={20} /></span>
@@ -154,7 +142,7 @@ export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
           <EmailAttachments attachments={inlineImages} />
         </details>}
       </header>
-      {!!mail.blockedImages && !plainText && <div className="attachment-email-privacy">
+      {!!mail.blockedImages && <div className="attachment-email-privacy">
         <Icons.Lock size={14} aria-hidden="true" />{uiText("Externe Bilder sind blockiert.", "External images are blocked.")}
       </div>}
 

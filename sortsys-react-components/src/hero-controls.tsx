@@ -1119,7 +1119,7 @@ export function Modal({
       aria-label={closeButtonLabel}
       className={
         isFullScreen
-          ? "static order-3 m-0 min-h-0 min-w-0 self-center justify-self-end " +
+          ? "static order-3 m-0 ml-auto min-h-0 min-w-0 shrink-0 self-center " +
             "rounded-full p-0 outline-offset-[-2px]"
           : undefined
       }
@@ -1225,16 +1225,15 @@ export function Modal({
                 className={classes(
                   "ss-modal-header min-w-0 gap-1 pr-8",
                   isFullScreen &&
-                    "relative grid h-11 shrink-0 " +
-                      "grid-cols-[minmax(0,1fr)_minmax(0,3fr)_minmax(0,1fr)] " +
-                      "items-center gap-2 px-1 py-0",
+                    "relative flex h-11 shrink-0 flex-row " +
+                      "items-center gap-3 px-3 py-0",
                 )}
               >
-                {(modalLabel || isFullScreen) && (
+                {modalLabel && (
                   <p
                     className={classes(
                       "ss-modal-label m-0 text-xs leading-snug text-muted",
-                      isFullScreen ? "truncate" : "break-words",
+                      isFullScreen ? "order-2 min-w-0 flex-1 truncate" : "break-words",
                     )}
                   >
                     {modalLabel}
@@ -1251,7 +1250,7 @@ export function Modal({
                     className={classes(
                       "ss-modal-heading m-0 text-lg leading-snug",
                       isFullScreen
-                        ? "min-w-0 truncate text-center"
+                        ? "order-1 min-w-0 max-w-[45%] shrink-0 truncate text-left"
                         : "break-words",
                     )}
                   >

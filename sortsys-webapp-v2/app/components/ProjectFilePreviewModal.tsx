@@ -239,7 +239,6 @@ function FilePreview({
     return (
       <EmailAttachmentViewer
         url={url}
-        downloadUrl={downloadUrl}
         format={kind}
       />
     );

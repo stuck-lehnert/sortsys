@@ -1803,7 +1803,6 @@ export default function ProjectFilesPage() {
                       (activePreviewFile.downloadUrl ||
                         activePreviewFile.downloadAttachmentUrl)!
                     }
-                    downloadUrl={attachmentDownloadUrl(activePreviewFile)!}
                     format={
                       attachmentPreviewKind(activePreviewFile) === "msg"
                         ? "msg"

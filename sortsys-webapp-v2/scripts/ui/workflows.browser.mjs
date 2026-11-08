@@ -1988,7 +1988,8 @@ for (const [locale, theme, viewport] of [
     await browser.getByRole("button", { name: /Specification.pdf/ }).waitFor();
   });
 
-  test(`actual email previews decode MSG and EML with compact headers in ${variant}`, async () => {
+  const emailViewport = viewport.width >= 1400 ? { width: 2560, height: 1000 } : viewport;
+  test(`actual email previews decode MSG and EML with compact headers in ${locale}-${theme}-${emailViewport.width}`, async () => {
     const date = new Date("2026-10-27T08:00:00Z");
     const files = ["msg", "eml"].map((format) => ({
       id: `email-${format}`,
@@ -2021,7 +2022,7 @@ for (const [locale, theme, viewport] of [
         body: makeEmlFixture(),
       }),
     );
-    await page.setViewportSize(viewport);
+    await page.setViewportSize(emailViewport);
     await openApplication("/projects/project-fixture/files", locale, theme);
     const remoteRequests = [];
     page.on("request", request => {
@@ -2045,6 +2046,10 @@ for (const [locale, theme, viewport] of [
         `Correspondence.${format}`,
       );
       const header = await dialog.locator(".ss-modal-header").boundingBox();
+      const heading = await dialog.locator(".ss-modal-heading").boundingBox();
+      const filename = await dialog.locator(".ss-modal-label").boundingBox();
+      assert.ok(heading.x <= header.x + 16, "The dialog title stays at the left on wide displays");
+      assert.ok(filename.x >= heading.x + heading.width + 4, "The filename follows the title");
       const close = dialog.getByRole("button", { name: /^(Schließen|Close)$/ });
       const bounds = await close.boundingBox();
       assert.ok(header.height <= 44);
@@ -2071,23 +2076,20 @@ for (const [locale, theme, viewport] of [
       await embedded.locator("summary").click();
       const metadata = await dialog.locator(".attachment-email-metadata").boundingBox();
       const message = await dialog.locator(".attachment-email-body").boundingBox();
-      assert.ok(message.height >= viewport.height * .42, "The message retains sufficient reading space");
-      assert.ok(metadata.width <= viewport.width, "The mail header stays inside the viewport");
+      assert.ok(message.height >= emailViewport.height * .42, "The message retains sufficient reading space");
+      assert.ok(metadata.width <= emailViewport.width, "The mail header stays inside the viewport");
+      assert.equal(await dialog.getByRole("button", { name: /^(Nur Text|Plain text|Formatierte Ansicht|Formatted view)$/ }).count(), 0);
+      assert.equal(await dialog.getByRole("link", { name: /Original herunterladen|Download original/ }).count(), 0);
       if (process.env.SORTSYS_UI_SCREENSHOTS) {
         await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
         await page.screenshot({
           path: join(
             process.env.SORTSYS_UI_SCREENSHOTS,
-            `email-${format}-${variant}.png`,
+            `email-${format}-${locale}-${theme}-${emailViewport.width}.png`,
           ),
           animations: "disabled",
         });
       }
-      await dialog.getByRole("button", { name: /^(Nur Text|Plain text)$/ }).click();
-      await body.locator("pre").waitFor();
-      assert.equal(await body.locator("img").count(), 0);
-      await dialog.getByRole("button", { name: /Formatierte Ansicht|Formatted view/ }).click();
-      await body.getByRole("img", { name: "Musterbau Logo", exact: true }).waitFor();
       assert.deepEqual(remoteRequests, [], "Email rendering must never request remote or relative image/CSS URLs");
       await close.click();
       await dialog.waitFor({ state: "hidden" });

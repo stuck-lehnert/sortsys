@@ -704,6 +704,7 @@ test("200% text sizing reflows and reduced motion disables the product loading a
 
 test("only opted-in document editors are edge-to-edge with a compact context header", async () => {
   for (const viewport of [
+    { width: 2560, height: 1000 },
     { width: 1400, height: 1000 },
     { width: 390, height: 844 },
   ]) {
@@ -746,10 +747,10 @@ test("only opted-in document editors are edge-to-edge with a compact context hea
     const heading = await editor
       .getByRole("heading", { name: "Projects.xlsx" })
       .boundingBox();
-    assert.ok(
-      Math.abs(heading.x + heading.width / 2 - viewport.width / 2) <= 1,
-      JSON.stringify({ heading, viewport }),
-    );
+    const label = await editor.locator(".ss-modal-label").boundingBox();
+    assert.ok(heading.x <= 16, JSON.stringify({ heading, viewport }));
+    assert.ok(label.x >= heading.x + heading.width + 4, JSON.stringify({ heading, label }));
+    assert.ok(Math.abs(label.y + label.height / 2 - heading.y - heading.height / 2) <= 1);
     const close = editor.getByRole("button", {
       name: "Close editor",
       exact: true,
@@ -762,7 +763,7 @@ test("only opted-in document editors are edge-to-edge with a compact context hea
       JSON.stringify({ header, closeBounds }),
     );
     assert.ok(
-      viewport.width - closeBounds.x - closeBounds.width <= 5,
+      viewport.width - closeBounds.x - closeBounds.width <= 16,
       JSON.stringify(closeBounds),
     );
     assert.ok(
