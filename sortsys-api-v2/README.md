@@ -117,7 +117,8 @@ Außer `PORT` und `NODE_ENV` lassen sich diese Werte auch als Dateien unter
 
 ### LLM-Anbindung
 
-Chat und Dokumenteinlesen unterstützen OpenAI und Anthropic über deren native
+Chat und Dokumenteinlesen verwenden für Werkzeugabfragen denselben
+authentifizierten MCP-Endpunkt. OpenAI und Anthropic nutzen dafür ihre nativen
 MCP-Konnektoren. OpenRouter verwendet eine MCP-Brücke in der Anwendung: Sie
 ermittelt Werkzeuge, übergibt deren Schemata als Funktionswerkzeuge und führt
 Aufrufe über authentifiziertes MCP aus. Chatberechtigungen, Bestätigung von

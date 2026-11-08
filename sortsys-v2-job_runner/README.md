@@ -41,8 +41,10 @@ docker build -t sortsys-job-runner:local .
 ```
 
 Das Image enthält Poppler, ImageMagick und Tesseract mit deutschen und englischen
-Sprachdaten. PDF-Aufträge verwenden zuerst vorhandenen Text; lokale OCR folgt
-nur bei Bedarf für gescannte Seiten und Bilder.
+Sprachdaten sowie einer Erkennung der Leserichtung. Bei Fotos wird neben der
+EXIF-Orientierung auch die Richtung des Textes berücksichtigt, damit seitlich
+fotografierte Belege aufrecht gelesen werden. PDF-Aufträge verwenden zuerst
+vorhandenen Text; lokale OCR folgt nur bei Bedarf für gescannte Seiten und Bilder.
 
 Der Dienst läuft ohne Root-Rechte. Er erhält kurzlebige signierte Download-URLs,
 jedoch keine Mandantendatenbank-Zugänge oder LLM-API-Schlüssel.

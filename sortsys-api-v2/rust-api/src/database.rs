@@ -389,6 +389,9 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     )
     .execute(&mut *transaction)
     .await?;
+    sqlx::raw_sql(include_str!("../schema/master_login_attempts.sql"))
+        .execute(&mut *transaction)
+        .await?;
     sqlx::raw_sql(include_str!("../schema/master_entity_changes.sql"))
         .execute(&mut *transaction)
         .await?;

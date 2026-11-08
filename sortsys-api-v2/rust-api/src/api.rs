@@ -76,7 +76,7 @@ fn register_auth(
                         )
                         .await;
                     sleep(MIN_LOGIN_TIME.saturating_sub(started.elapsed())).await;
-                    token
+                    token?
                         .map(|token| LoginOutput { token })
                         .ok_or_else(|| unauthorized("Login failed"))
                 }

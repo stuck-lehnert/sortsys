@@ -237,11 +237,11 @@ test("the worker's smaller runtime retains its required image, PDF and language 
     "tesseract-ocr",
     "tesseract-ocr-data-deu",
     "tesseract-ocr-data-eng",
+    "tesseract-ocr-data-osd",
   ]) {
     assert.ok(packages.includes(name), name);
   }
 
-  assert.doesNotMatch(runtime, /tesseract-ocr-data-osd/);
   assert.doesNotMatch(runtime, /ocr-runtime\.test/);
   assert.match(
     runtime,

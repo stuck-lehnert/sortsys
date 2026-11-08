@@ -351,12 +351,29 @@ func runPDFOCR(ctx context.Context, sourcePath, workDir string) (deliveryNoteOCR
 }
 
 func runImageOCR(ctx context.Context, sourcePath, workDir string) (deliveryNoteOCRCompleteResult, error) {
-	prepared := filepath.Join(workDir, "prepared.png")
-	command := exec.CommandContext(ctx, "convert", sourcePath, "-auto-orient", "-deskew", "40%", "-colorspace", "Gray", "-contrast-stretch", "0x8%", prepared)
-	if err := command.Run(); err != nil {
-		prepared = sourcePath
+	orientation := detectOCRRotation(ctx, sourcePath, filepath.Join(workDir, "orientation.png"))
+	prepared := prepareImageOCR(ctx, sourcePath, filepath.Join(workDir, "prepared.png"), orientation.rotation)
+	result, err := recognizeOCRPages(ctx, []string{prepared})
+	if orientation.rotation == 0 || orientation.confidence >= 5 || prepared == sourcePath || ctx.Err() != nil {
+		return result, err
 	}
-	return recognizeOCRPages(ctx, []string{prepared})
+
+	// A short note can give OSD a weak signal. Accept that rotation only when
+	// recognition improves, so uncertain orientation cannot spoil readable text.
+	baseline := prepareImageOCR(ctx, sourcePath, filepath.Join(workDir, "baseline.png"), 0)
+	originalResult, originalErr := recognizeOCRPages(ctx, []string{baseline})
+	if originalErr == nil && (err != nil || originalResult.Confidence >= result.Confidence) {
+		return originalResult, nil
+	}
+	return result, err
+}
+
+func prepareImageOCR(ctx context.Context, sourcePath, prepared string, rotation int) string {
+	command := exec.CommandContext(ctx, "convert", sourcePath, "-auto-orient", "-rotate", strconv.Itoa(rotation), "-deskew", "40%", "-colorspace", "Gray", "-contrast-stretch", "0x8%", prepared)
+	if err := command.Run(); err != nil {
+		return sourcePath
+	}
+	return prepared
 }
 
 func recognizeOCRPages(ctx context.Context, pages []string) (deliveryNoteOCRCompleteResult, error) {

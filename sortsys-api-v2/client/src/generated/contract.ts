@@ -307,7 +307,7 @@ export type MutationInputs = {
   "clientScripts.create": { name: string; code: string; description?: undefined | null | string; enabled?: undefined | false | true; };
   "clientScripts.delete": { id: string; };
   "clientScripts.update": { id: string; data: { name?: undefined | string; description?: undefined | null | string; code?: undefined | string; enabled?: undefined | false | true; }; };
-  "commercial.cases.adoptContract": { projectId: Id, title: string, orderXml: string, offerXml: string, netAmount: string, };
+  "commercial.cases.adoptContract": { projectId: Id, title: string, sourceXml: string, sourcePhase: '84'|'85'|'86'|'87', sourceFileName: string, offerXml: string | null, referenceXml: string | null, netAmount: string, };
   "commercial.cases.create": { kind: string, title: string, projectId?: Id | null, parentCaseId?: Id | null, customerId?: Id | null, counterpartyName?: string | null, scopeItemIds: Array<string>, billingBasis?: string | null, vatRate?: string | null, };
   "commercial.cases.createProject": { id: Id, };
   "commercial.cases.transition": { id: Id, expectedStatus: string, status: string, selectedOfferDocumentId?: Id | null, awardedItemIds?: Array<string> | null, };

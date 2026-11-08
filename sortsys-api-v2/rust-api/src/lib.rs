@@ -3,6 +3,7 @@
 pub mod api;
 pub mod audit;
 pub mod auth;
+mod auth_limits;
 pub mod backup_scheduler;
 pub mod config;
 mod contract_generated;

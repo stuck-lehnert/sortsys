@@ -12,6 +12,7 @@ import {
   restoreAdminSession,
 } from "~/lib/adminClient";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
+import { loginErrorMessage } from "~/lib/loginError";
 
 export function meta() {
   return [
@@ -58,7 +59,7 @@ export default function GlobalAdminLoginPage() {
             return;
           }
 
-          setErrMsg(err.message || uiText("Anmeldung fehlgeschlagen"));
+          setErrMsg(loginErrorMessage(err));
         }}
       >
         <MyForm.Input

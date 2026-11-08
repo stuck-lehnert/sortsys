@@ -9,6 +9,7 @@ import { MyButton } from "~/components/MyButton";
 import { Icons } from "~/lib/icons";
 import { getPasskeyCredential } from "~/lib/passkeys";
 import { MyCallout } from "~/components/MyCallout";
+import { loginErrorMessage } from "~/lib/loginError";
 
 export function meta({}: Route.MetaArgs) {
     return [
@@ -58,7 +59,11 @@ export default Unauthenticated(function () {
             window.localStorage.setItem("sortsys.tenant", tenant);
           }
 
-          await client.login({ username, tenant, password });
+          try {
+            await client.login({ username, tenant, password });
+          } catch (error) {
+            throw new Error(loginErrorMessage(error));
+          }
         }}
       >
         <MyForm.Input

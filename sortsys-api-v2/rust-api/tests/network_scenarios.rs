@@ -74,6 +74,8 @@ mod billing;
 mod commercial;
 #[path = "network_scenarios/documents.rs"]
 mod documents;
+#[path = "network_scenarios/login_limits.rs"]
+mod login_limits;
 #[path = "network_scenarios/openrouter.rs"]
 mod openrouter;
 #[path = "network_scenarios/replicas.rs"]

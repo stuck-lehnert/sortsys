@@ -129,10 +129,19 @@ export default function CommercialWorkspace({
     if (error || !value) throw error ?? new Error("load-failed");
     if (generation !== requestGeneration.current) return value;
     setDetail(value);
+    const adoptedSource = value.case.existingContract
+      ? value.documents.find((doc) =>
+          ["84", "85", "86", "87"].includes(doc.phase) &&
+          (!doc.sourceDocumentId || value.documents.some((parent) =>
+            parent.id === doc.sourceDocumentId && parent.phase === "83",
+          )),
+        )
+      : undefined;
     setActiveId((previous) =>
       value.documents.some((doc) => doc.id === previous)
         ? previous
         : (
+            adoptedSource ??
             value.documents.find(
               (doc) =>
                 doc.purpose ===

@@ -118,7 +118,7 @@ async fn get_document(
         {
             return Err(not_found());
         }
-        if matches!(reference.phase.as_str(), "83" | "86") {
+        if matches!(reference.phase.as_str(), "83" | "85" | "86" | "87") {
             reference_xml = Some(
                 xml_documents::download_xml_object(
                     &storage,
@@ -693,8 +693,12 @@ struct DocumentContent {
 struct AdoptInput {
     project_id: Id,
     title: String,
-    order_xml: String,
-    offer_xml: String,
+    source_xml: String,
+    #[ts(type = "'84'|'85'|'86'|'87'")]
+    source_phase: String,
+    source_file_name: String,
+    offer_xml: Option<String>,
+    reference_xml: Option<String>,
     net_amount: String,
 }
 async fn adopt_contract(
@@ -704,8 +708,32 @@ async fn adopt_contract(
 ) -> RpcResult<CreatedDocument> {
     let (auth, pool) = commercial::access(state, context, true).await?;
     super::common::trim_required(&mut input.title, "title", 127)?;
-    xml_documents::validate_xml(&input.order_xml)?;
-    xml_documents::validate_xml(&input.offer_xml)?;
+    let purpose = match input.source_phase.as_str() {
+        "84" => "offer",
+        "85" => "alternative",
+        "86" => "order",
+        "87" => "confirmation",
+        _ => return Err(bad_request("Invalid contract phase")),
+    };
+    if input.source_file_name.is_empty()
+        || input.source_file_name.len() > 255
+        || input.source_file_name.contains(['/', '\\', '\0'])
+        || !(input
+            .source_file_name
+            .to_lowercase()
+            .ends_with(&format!(".x{}", input.source_phase))
+            || input.source_file_name.to_lowercase().ends_with(".xml"))
+        || (input.source_phase == "84") != input.offer_xml.is_none()
+    {
+        return Err(bad_request("Invalid contract documents"));
+    }
+    xml_documents::validate_xml(&input.source_xml)?;
+    for xml in [&input.offer_xml, &input.reference_xml]
+        .into_iter()
+        .flatten()
+    {
+        xml_documents::validate_xml(xml)?;
+    }
     check_amount(Some(&input.net_amount), false)?;
     let storage = xml_documents::required_storage(state, &auth.tenant).await?;
     let actor = auth.user.id.parse::<i64>().map_err(internal)?;
@@ -729,19 +757,63 @@ async fn adopt_contract(
         ));
     }
     let id:Id=sqlx::query_scalar("INSERT INTO commercial_cases(reference,kind,status,title,existing_contract,project_id,customer_id,net_amount,accepted_at,created_by_user_id) SELECT 'BES-'||TO_CHAR(NOW(),'YYYY')||'-'||nextval('commercial_case_number_seq')::text,'offer','accepted',$2,TRUE,id,customer_id,$3::numeric,COALESCE(order_received_at,NOW()),$4 FROM projects WHERE id=$1 RETURNING id").bind(input.project_id).bind(&input.title).bind(&input.net_amount).bind(actor).fetch_one(&mut *tx).await.map_err(internal)?;
-    let order_key = object_storage::build_commercial_object_key(&storage, id, "Auftrag.x86");
-    let offer_key = object_storage::build_commercial_object_key(&storage, id, "Vertragspreise.x84");
-    xml_documents::upload_xml(&storage, &order_key, &input.order_xml).await?;
-    if let Err(error) = xml_documents::upload_xml(&storage, &offer_key, &input.offer_xml).await {
-        let _ = object_storage::delete_object(&storage, &order_key).await;
+    // Keep the supplied phase. Only the client projects a price snapshot or an
+    // optional X83 scope; adopting an offer must not invent a customer's X86.
+    let mut documents = Vec::new();
+    if let Some(xml) = &input.reference_xml {
+        documents.push(("inquiry", "83", "Leistungsverzeichnis.x83", xml));
+    }
+    documents.push((
+        purpose,
+        input.source_phase.as_str(),
+        input.source_file_name.as_str(),
+        &input.source_xml,
+    ));
+    if let Some(xml) = &input.offer_xml {
+        documents.push(("offer", "84", "Vertragspreise.x84", xml));
+    }
+    let mut uploaded = Vec::new();
+    let stored = async {
+        let mut previous: Option<Id> = None;
+        for (purpose, phase, name, xml) in documents {
+            let key = object_storage::build_commercial_object_key(&storage, id, name);
+            uploaded.push(key.clone());
+            xml_documents::upload_xml(&storage, &key, xml).await?;
+            let document_id = sqlx::query_scalar::<_, Id>(
+                "INSERT INTO commercial_documents(case_id,purpose,phase,file_name,object_key,size_bytes,read_only,created_by_user_id,net_amount,source_document_id,source_version) VALUES($1,$2,$3,$4,$5,$6,TRUE,$7,$8::numeric,$9,$10) RETURNING id",
+            )
+            .bind(id).bind(purpose).bind(phase).bind(name).bind(&key)
+            .bind(xml.len() as i64).bind(actor)
+            .bind(if phase == "83" { None } else { Some(&input.net_amount) })
+            .bind(previous).bind(previous.map(|_| 1_i64))
+            .fetch_one(&mut *tx).await.map_err(internal)?;
+            previous = Some(document_id);
+        }
+        // Adoption never adds a historic contract amount twice.
+        sqlx::query(
+            "INSERT INTO project_financial_entries(project_id,type,amount,comment,created_by_user_id,commercial_case_id) \
+             SELECT $1,'offer',$2::numeric::double precision,$3,$4,$5 \
+             WHERE NOT EXISTS(SELECT 1 FROM project_financial_entries WHERE project_id=$1 AND type='offer')",
+        )
+        .bind(input.project_id).bind(&input.net_amount).bind(&input.title).bind(actor).bind(id)
+        .execute(&mut *tx).await.map_err(internal)?;
+        sqlx::query(
+            "INSERT INTO commercial_document_snapshots(document_id,version,object_key,event) \
+             SELECT id,version,object_key,'existing_contract' FROM commercial_documents WHERE case_id=$1",
+        )
+        .bind(id).execute(&mut *tx).await.map_err(internal)?;
+        commercial::event(&mut tx, id, "existing_contract", None, "accepted", actor).await?;
+        Ok::<_, crate::error::RpcError>(())
+    }.await;
+    if let Err(error) = stored {
+        let _ = tx.rollback().await;
+        for key in uploaded {
+            let _ = object_storage::delete_object(&storage, &key).await;
+        }
         return Err(error);
     }
-    let order_id:Id=sqlx::query_scalar("INSERT INTO commercial_documents(case_id,purpose,phase,file_name,object_key,size_bytes,read_only,created_by_user_id,net_amount) VALUES($1,'order','86','Auftrag.x86',$2,$3,TRUE,$4,$5::numeric) RETURNING id").bind(id).bind(&order_key).bind(input.order_xml.len() as i64).bind(actor).bind(&input.net_amount).fetch_one(&mut *tx).await.map_err(internal)?;
-    sqlx::query("INSERT INTO commercial_documents(case_id,purpose,phase,file_name,object_key,size_bytes,read_only,created_by_user_id,net_amount,source_document_id,source_version) VALUES($1,'offer','84','Vertragspreise.x84',$2,$3,TRUE,$4,$5::numeric,$6,1)").bind(id).bind(&offer_key).bind(input.offer_xml.len() as i64).bind(actor).bind(&input.net_amount).bind(order_id).execute(&mut *tx).await.map_err(internal)?;
-    // Preserve legacy bookkeeping. Adoption never adds the contract amount twice.
-    sqlx::query("INSERT INTO project_financial_entries(project_id,type,amount,comment,created_by_user_id,commercial_case_id) SELECT $1,'offer',$2::numeric::double precision,$3,$4,$5 WHERE NOT EXISTS(SELECT 1 FROM project_financial_entries WHERE project_id=$1 AND type='offer')").bind(input.project_id).bind(&input.net_amount).bind(&input.title).bind(actor).bind(id).execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query("INSERT INTO commercial_document_snapshots(document_id,version,object_key,event) SELECT id,version,object_key,'existing_contract' FROM commercial_documents WHERE case_id=$1").bind(id).execute(&mut *tx).await.map_err(internal)?;
-    commercial::event(&mut tx, id, "existing_contract", None, "accepted", actor).await?;
+    // A failed COMMIT acknowledgement may still have committed. Never remove
+    // objects here: doing so could destroy documents referenced by that commit.
     tx.commit().await.map_err(internal)?;
     Ok(CreatedDocument { id })
 }

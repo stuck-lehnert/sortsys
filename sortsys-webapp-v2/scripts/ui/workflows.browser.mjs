@@ -8,6 +8,8 @@ import superjson from "superjson";
 import * as Y from "yjs";
 import { createFixtureServer, fixtureDirectory } from "./browser-support.mjs";
 import { makeMsgFixture } from "../../test-fixtures/msgFixture.mjs";
+import { makeEmlFixture } from "../../test-fixtures/emailFixture.mjs";
+import { legacyContract } from "../../test-fixtures/gaebContractFixture.mjs";
 
 const pdfjsVersion = JSON.parse(
   await readFile(new URL("../../vendor/pdfjs/release.json", import.meta.url), "utf8"),
@@ -1606,7 +1608,7 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
   );
   assert.ok(worker, "Exercise the actual production worker bundle");
   await page.goto(server.origin);
-  for (const [format, bytes, subject] of [
+  for (const [format, bytes, subject, htmlText] of [
     [
       "eml",
       new TextEncoder().encode(
@@ -1619,6 +1621,18 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
       "msg",
       new Uint8Array(makeMsgFixture({ rtfOnly: true })),
       "Baufortschritt – Grüße",
+    ],
+    [
+      "msg",
+      new Uint8Array(makeMsgFixture({ htmlCodepage: 28591, messageCodepage: 1252 })),
+      "Baufortschritt – Grüße",
+      "Grüße vom Gelände.",
+    ],
+    [
+      "msg",
+      new Uint8Array(makeMsgFixture({ htmlCodepage: 77777, messageCodepage: 77777, htmlCharset: "iso-8859-1" })),
+      "Baufortschritt – Grüße",
+      "Grüße vom Gelände.",
     ],
   ]) {
     const result = await page.evaluate(
@@ -1646,9 +1660,44 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
     );
     assert.equal(result.error, undefined);
     assert.equal(result.mail.subject, subject);
+    if (htmlText) assert.ok(result.mail.html.includes(htmlText));
     if (format === "msg")
       assert.equal(result.mail.attachments[0].fileName, "Lieferschein.txt");
   }
+});
+
+test("reported MSG opens in the actual email dialog", { skip: !process.env.SORTSYS_TEST_EMAIL_MSG }, async () => {
+  // Personal correspondence stays outside the repository; CI uses synthetic
+  // MSG fixtures with the same code-page properties in the worker test above.
+  const bytes = await readFile(process.env.SORTSYS_TEST_EMAIL_MSG);
+  const date = new Date("2026-11-08T08:00:00Z");
+  api.respond("projects.files.list", [{
+    id: "reported-msg", projectId: "project-fixture", folderId: null,
+    fileName: "Reported message.msg", mimeType: "application/vnd.ms-outlook", kind: "file",
+    sizeBytes: bytes.length, status: "uploaded", textExtractionStatus: "ready",
+    createdByUserId: "fixture-user", createdAt: date, modifiedAt: date, uploadedAt: date,
+    downloadUrl: `${server.origin}/reported.msg`,
+  }]);
+  api.respond("projects.files.folders.list", []);
+  await page.route(`${server.origin}/reported.msg`, route => route.fulfill({ contentType: "application/vnd.ms-outlook", body: bytes }));
+  const external = [];
+  page.on("request", request => {
+    if (/^https?:/.test(request.url()) && ![server.origin, "http://127.0.0.1:3000"].includes(new URL(request.url()).origin)) external.push(request.url());
+  });
+  await openApplication("/projects/project-fixture/files/reported-msg", "de", "light");
+  const dialog = page.getByRole("dialog", { name: /E-Mail ansehen|View email/ });
+  await dialog.locator(".attachment-email-metadata").waitFor();
+  assert.match(await dialog.locator(".attachment-email-heading h2").textContent(), /Systemumstellung/);
+  const body = dialog.frameLocator(".attachment-email-body");
+  await body.locator("main").waitFor();
+  assert.ok((await body.locator("main").innerText()).length > 100);
+  assert.equal(await body.locator("img").count(), 2);
+  for (const image of await body.locator("img").all()) {
+    assert.ok((await image.getAttribute("src")).startsWith("data:image/"));
+    await image.evaluate(element => element.decode());
+    assert.ok(await image.evaluate(element => element.naturalWidth > 0));
+  }
+  assert.deepEqual(external, [], "The message must not load external resources");
 });
 
 for (const locale of ["de", "en"]) {
@@ -1963,17 +2012,21 @@ for (const [locale, theme, viewport] of [
     await page.route(`${server.origin}/mail.msg`, (route) =>
       route.fulfill({
         contentType: "application/vnd.ms-outlook",
-        body: Buffer.from(makeMsgFixture()),
+        body: Buffer.from(makeMsgFixture({ rich: true })),
       }),
     );
     await page.route(`${server.origin}/mail.eml`, (route) =>
       route.fulfill({
         contentType: "message/rfc822",
-        body: "From: sender@example.test\r\nSubject: MIME email\r\n\r\nHello email.",
+        body: makeEmlFixture(),
       }),
     );
     await page.setViewportSize(viewport);
     await openApplication("/projects/project-fixture/files", locale, theme);
+    const remoteRequests = [];
+    page.on("request", request => {
+      if (/tracker\.invalid|\/relative-pixel/.test(request.url())) remoteRequests.push(request.url());
+    });
     for (const format of ["msg", "eml"]) {
       const trigger = page.getByRole("button", {
         name: new RegExp(`Correspondence\\.${format}`),
@@ -2000,9 +2053,26 @@ for (const [locale, theme, viewport] of [
           1,
       );
       const body = dialog.frameLocator(".attachment-email-body");
-      await body
-        .getByText(format === "msg" ? "Lieferung morgen." : "Hello email.")
-        .waitFor();
+      await body.getByText("Freigabe der Fensterdetails", { exact: true }).waitFor();
+      const image = body.getByRole("img", { name: "Musterbau Logo", exact: true });
+      await image.waitFor();
+      await image.evaluate(element => element.decode());
+      assert.equal(await image.evaluate(element => element.naturalWidth), 44);
+      assert.equal(await body.locator("img").count(), 1);
+      assert.equal(await body.getByText("Freigabe der Fensterdetails", { exact: true }).evaluate(element => getComputedStyle(element).color), "rgb(22, 71, 124)");
+      await dialog.getByText(/Externe Bilder sind blockiert|External images are blocked/).waitFor();
+      assert.equal(await dialog.locator(".attachment-email-attachments .attachment-email-file").count(), 1);
+      const embedded = dialog.locator(".attachment-email-inline-images");
+      assert.equal(await embedded.getAttribute("open"), null);
+      await embedded.locator("summary").click();
+      const download = page.waitForEvent("download");
+      await embedded.getByRole("button", { name: /logo\.png/ }).click();
+      assert.equal((await download).suggestedFilename(), "logo.png");
+      await embedded.locator("summary").click();
+      const metadata = await dialog.locator(".attachment-email-metadata").boundingBox();
+      const message = await dialog.locator(".attachment-email-body").boundingBox();
+      assert.ok(message.height >= viewport.height * .42, "The message retains sufficient reading space");
+      assert.ok(metadata.width <= viewport.width, "The mail header stays inside the viewport");
       if (process.env.SORTSYS_UI_SCREENSHOTS) {
         await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
         await page.screenshot({
@@ -2013,6 +2083,12 @@ for (const [locale, theme, viewport] of [
           animations: "disabled",
         });
       }
+      await dialog.getByRole("button", { name: /^(Nur Text|Plain text)$/ }).click();
+      await body.locator("pre").waitFor();
+      assert.equal(await body.locator("img").count(), 0);
+      await dialog.getByRole("button", { name: /Formatierte Ansicht|Formatted view/ }).click();
+      await body.getByRole("img", { name: "Musterbau Logo", exact: true }).waitFor();
+      assert.deepEqual(remoteRequests, [], "Email rendering must never request remote or relative image/CSS URLs");
       await close.click();
       await dialog.waitFor({ state: "hidden" });
     }
@@ -6316,6 +6392,148 @@ test("shared tab bars match organization tabs and every organization tab uses th
   await page.waitForURL((url) => url.pathname === "/settings/language");
   await tabs.nth(2).and(page.locator('[aria-selected="true"]')).waitFor();
   await checkPageLayout("shared-tabs-settings");
+});
+
+function seedAdoption() {
+  const state = seedContractorWorkflows();
+  api.respond("commercial.cases.adoptContract", (input) => {
+    const id = "adopted-contract";
+    state.cases.set(id, {
+      case: {
+        id, projectId: input.projectId, title: input.title, kind: "offer", status: "accepted",
+        existingContract: true, reference: "BES-2026-1", customerId: "customer-fixture",
+        customerName: "Fixture Customer", currency: "EUR", netAmount: input.netAmount,
+        createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(),
+      }, events: [],
+    });
+    let sourceDocumentId = null;
+    const add = (purpose, phase, fileName, xml) => {
+      const docId = `adopted-${purpose}`;
+      state.documents.set(docId, {
+        id: docId, caseId: id, purpose, phase, fileName, xml, readOnly: true, version: 1n,
+        sourceDocumentId, sourceVersion: sourceDocumentId ? 1n : null,
+      });
+      sourceDocumentId = docId;
+    };
+    if (input.referenceXml) add("inquiry", "83", "Leistungsverzeichnis.x83", input.referenceXml);
+    add({ "84": "offer", "85": "alternative", "86": "order", "87": "confirmation" }[input.sourcePhase], input.sourcePhase, input.sourceFileName, input.sourceXml);
+    if (input.offerXml) add("offer", "84", "Vertragspreise.x84", input.offerXml);
+    return { id };
+  });
+  return state;
+}
+
+async function openAdoption(buffer, name) {
+  await openApplication("/projects/project-fixture/contract", "en");
+  await page.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Adopt existing contract", exact: true });
+  const chooser = page.waitForEvent("filechooser");
+  await form.getByRole("button", { name: "Choose GAEB file", exact: true }).click();
+  const input = await chooser;
+  assert.match(await input.element().getAttribute("accept"), /\.d87/);
+  await input.setFiles({ name, mimeType: "application/octet-stream", buffer });
+  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).and(page.locator(":enabled")).waitFor();
+  return form;
+}
+
+for (const format of ["x", "d", "p"]) {
+  for (const phase of ["84", "85", "86", "87"]) {
+    test(`existing ${format}${phase} contract adopts its real phase and supports subsequent measurements`, async () => {
+      const state = seedAdoption();
+      const buffer = format === "x"
+        ? await readFile(new URL(`../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x${phase}`, import.meta.url))
+        : legacyContract(phase, format);
+      const form = await openAdoption(buffer, `Bestand.${format}${phase}`);
+      // X84 itself has no unit column; its matching X83 provides the full scope.
+      if (format === "x" && phase === "84") {
+        const chooser = page.waitForEvent("filechooser");
+        await form.getByRole("button", { name: "Add bill of quantities", exact: true }).click();
+        await (await chooser).setFiles({
+          name: "Bestand.x83", mimeType: "application/xml",
+          buffer: await readFile(new URL("../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x83", import.meta.url)),
+        });
+        await form.getByText("Bestand.x83", { exact: true }).waitFor();
+      }
+      await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+      const editor = page.getByRole("dialog").filter({ has: page.locator(".gaeb-editor") });
+      await editor.locator("canvas").first().waitFor();
+      await editor.getByText(`Bestand.x${phase}`, { exact: true }).waitFor();
+      const request = api.requests.find(({ path }) => path === "commercial.cases.adoptContract");
+      assert.equal(request.input.sourcePhase, phase);
+      assert.equal(request.input.sourceFileName, `Bestand.x${phase}`);
+      if (format === "x") assert.equal(request.input.sourceXml, buffer.toString("utf8"));
+      else assert.match(request.input.sourceXml, /sortsys:legacy-source:v1:/);
+      assert.equal(state.cases.get("adopted-contract").case.status, "accepted");
+      if (format !== "x") assert.equal(request.input.netAmount, "154.25");
+      if (phase !== "86") assert.equal([...state.documents.values()].some((doc) => doc.phase === "86"), false);
+      await editor.getByRole("button", { name: "Close", exact: true }).click();
+      await editor.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: "Create document", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Measurement", exact: true }).click();
+      const measurement = page.getByRole("dialog", { name: "Start measurement", exact: true });
+      await measurement.getByRole("checkbox").first().waitFor();
+      await measurement.getByRole("textbox", { name: /^Title/ }).fill("Measured work");
+      await measurement.getByRole("button", { name: "Start measurement", exact: true }).click();
+      await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
+      const takeoff = [...state.documents.values()].find((doc) => doc.phase === "31");
+      assert.ok(takeoff);
+      assert.match(takeoff.xml, /<QtyDeterm>/);
+    });
+  }
+}
+
+test("existing XML with a legacy suffix uses the header phase and a modern filename", async () => {
+  seedAdoption();
+  const xml = await readFile(new URL("../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x87", import.meta.url));
+  const form = await openAdoption(xml, "Renamed.D84");
+  await form.getByText("Renamed.x87", { exact: true }).waitFor();
+  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+  await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
+  const request = api.requests.find(({ path }) => path === "commercial.cases.adoptContract");
+  assert.equal(request.input.sourcePhase, "87");
+  assert.equal(request.input.sourceFileName, "Renamed.x87");
+  assert.equal(request.input.sourceXml, xml.toString("utf8"));
+});
+
+for (const format of ["d", "p"]) {
+  test(`price-only ${format}84 adopts known amounts without an invented scope`, async () => {
+    seedAdoption();
+    const form = await openAdoption(legacyContract("84", format, true), `Preise.${format}84`);
+    await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+    await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
+    const request = api.requests.find(({ path }) => path === "commercial.cases.adoptContract");
+    assert.equal(request.input.sourcePhase, "84");
+    assert.equal(request.input.netAmount, "154.25");
+    assert.equal(request.input.offerXml, null);
+    assert.equal(request.input.referenceXml, null);
+    assert.ok(!request.input.sourceXml.includes("<Qty>"));
+    assert.ok(!request.input.sourceXml.includes("<QU>"));
+  });
+}
+
+test("a price-only P84 without a total can be completed by its D83 scope", async () => {
+  seedAdoption();
+  const form = await openAdoption(legacyContract("84", "p", true, false), "Preise.p84");
+  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+  await form.getByText("This price file requires its associated bill of quantities.", { exact: true }).waitFor();
+  assert.equal(api.requests.some(({ path }) => path === "commercial.cases.adoptContract"), false);
+  const wrongChooser = page.waitForEvent("filechooser");
+  await form.getByRole("button", { name: "Add bill of quantities", exact: true }).click();
+  await (await wrongChooser).setFiles({
+    name: "AnderesLV.d83", mimeType: "application/octet-stream",
+    buffer: Buffer.from(legacyContract("83", "d").toString("latin1").replace("010001", "010099"), "latin1"),
+  });
+  await form.getByText("AnderesLV.x83", { exact: true }).waitFor();
+  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+  await form.getByText("The bill of quantities and price file must contain matching items and quantities.", { exact: true }).waitFor();
+  assert.equal(api.requests.some(({ path }) => path === "commercial.cases.adoptContract"), false);
+  const chooser = page.waitForEvent("filechooser");
+  await form.getByRole("button", { name: "Add bill of quantities", exact: true }).click();
+  await (await chooser).setFiles({ name: "Leistungen.d83", mimeType: "application/octet-stream", buffer: legacyContract("83", "d") });
+  await form.getByText("Leistungen.x83", { exact: true }).waitFor();
+  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
+  await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
+  assert.equal(api.requests.find(({ path }) => path === "commercial.cases.adoptContract").input.netAmount, "154.25");
 });
 
 async function seedExtendedContract() {

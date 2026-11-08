@@ -527,6 +527,9 @@ export function gaebNetAmount(
       const value = doc.value(totals, name);
       if (value) return decimalString(decimal(value, 2), 2);
     }
+    const offered = doc.items.filter((item) => doc.value(item.element, "NotOffered") !== "Yes");
+    if (!doc.signed && offered.length && offered.every((item) => !!doc.value(item.element, "IT")))
+      return decimalString(offered.reduce((sum, item) => sum + decimal(doc.value(item.element, "IT"), 2), 0n), 2);
     return null;
   }
   const computed = new GaebDocument(doc.recalculate(), doc.fileName);

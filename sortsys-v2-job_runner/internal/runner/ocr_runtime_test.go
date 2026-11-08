@@ -44,7 +44,7 @@ func TestOCRRuntime(t *testing.T) {
 		t.Fatalf("list recognition languages: %v (%s)", err, languages)
 	}
 
-	for _, language := range []string{"deu", "eng"} {
+	for _, language := range []string{"deu", "eng", "osd"} {
 		if !slices.Contains(strings.Fields(string(languages)), language) {
 			t.Fatalf("missing recognition language %s: %s", language, languages)
 		}
@@ -56,7 +56,8 @@ func TestOCRRuntime(t *testing.T) {
 
 	source := ocrRuntimeImage(t)
 
-	for _, format := range []string{"png", "jpeg", "webp", "oriented-jpeg"} {
+	for _, format := range []string{"png", "jpeg", "webp", "oriented-jpeg",
+		"rotated-90-jpeg", "rotated-180-jpeg", "rotated-270-jpeg", "rotated-90-png", "rotated-90-webp"} {
 		t.Run(format, func(t *testing.T) {
 			workDir := t.TempDir()
 			data := encodeOCRRuntimeImage(t, source, format)
@@ -69,11 +70,9 @@ func TestOCRRuntime(t *testing.T) {
 			// runImageOCR can fall back to the original input. Check preprocessing
 			// separately so a missing ImageMagick module cannot pass unnoticed.
 			prepared := filepath.Join(workDir, "preprocessed.png")
-			command := exec.CommandContext(ctx, "convert", sourcePath, "-auto-orient",
-				"-deskew", "40%", "-colorspace", "Gray", "-contrast-stretch", "0x8%", prepared)
-
-			if output, err := command.CombinedOutput(); err != nil {
-				t.Fatalf("preprocess %s: %v (%s)", format, err, output)
+			orientation := detectOCRRotation(ctx, sourcePath, filepath.Join(workDir, "direction.png"))
+			if prepareImageOCR(ctx, sourcePath, prepared, orientation.rotation) == sourcePath {
+				t.Fatalf("preprocess %s failed", format)
 			}
 
 			preparedBytes, err := os.ReadFile(prepared)
@@ -279,6 +278,21 @@ func ocrRuntimeImage(t *testing.T) image.Image {
 func encodeOCRRuntimeImage(t *testing.T, source image.Image, format string) []byte {
 	t.Helper()
 
+	if parts := strings.Split(format, "-"); len(parts) == 3 && parts[0] == "rotated" {
+		turns := map[string]int{"90": 1, "180": 2, "270": 3}[parts[1]]
+		for range turns {
+			bounds := source.Bounds()
+			rotated := image.NewRGBA(image.Rect(0, 0, bounds.Dy(), bounds.Dx()))
+			for y := 0; y < bounds.Dy(); y++ {
+				for x := 0; x < bounds.Dx(); x++ {
+					rotated.Set(bounds.Dy()-1-y, x, source.At(x, y))
+				}
+			}
+			source = rotated
+		}
+		return encodeOCRRuntimeImage(t, source, parts[2])
+	}
+
 	if format == "webp" {
 		data, err := encodeWebPImage(source, false, 0)
 		if err != nil {
@@ -321,6 +335,30 @@ func encodeOCRRuntimeImage(t *testing.T, source image.Image, format string) []by
 	}
 
 	return buffer.Bytes()
+}
+
+// Local, opt-in regression check for a reported photograph. Personal documents
+// remain outside the test fixtures and are never sent to a model provider.
+func TestOCRRegressionPhoto(t *testing.T) {
+	source := os.Getenv("SORTSYS_TEST_OCR_PHOTO")
+	if source == "" {
+		t.Skip("set SORTSYS_TEST_OCR_PHOTO to check a local photograph")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	result, err := runImageOCR(ctx, source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range strings.Split(os.Getenv("SORTSYS_TEST_OCR_EXPECT_TEXT"), "\n") {
+		if text != "" && !strings.Contains(strings.ToLower(result.Text), strings.ToLower(text)) {
+			t.Fatalf("OCR did not recognize %q", text)
+		}
+	}
+	if result.Confidence < .72 || len(result.Text) < 40 {
+		t.Fatalf("photo is still unreadable: confidence %.3f, text length %d", result.Confidence, len(result.Text))
+	}
+	t.Logf("photo recognized: confidence %.3f, text length %d", result.Confidence, len(result.Text))
 }
 
 func assertOCRRuntimeText(t *testing.T, result deliveryNoteOCRCompleteResult, pages int) {

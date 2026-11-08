@@ -113,8 +113,8 @@ export default function ProjectContractPage() {
           <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-default p-4">
             <p className="min-w-0 flex-1 text-sm">
               {uiText(
-                "Für dieses bestehende Projekt fehlt noch das native Auftrags-LV. Übernimm es einmalig, um Positionen für Aufmaße und Weitervergaben zu verwenden.",
-                "This existing project does not have a native contract yet. Adopt it once to use its items for measurements and subcontracting.",
+                "Für dieses Projekt ist noch keine Vertragsgrundlage hinterlegt. Ein vorhandenes Angebot oder Auftragsdokument stellt die Positionen für Aufmaße und Weitervergaben bereit.",
+                "This project has no contract basis yet. An existing offer or order document provides the items for measurements and subcontracting.",
               )}
             </p>
             <Button kind="secondary" onClick={() => setAction("adopt")}>

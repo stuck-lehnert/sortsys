@@ -98,6 +98,20 @@ export function commercialError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   const known: Array<[string, string]> = [
     [
+      "contract-reference-mismatch",
+      uiText(
+        "Leistungsverzeichnis und Preisdatei müssen dieselben Positionen und Mengen enthalten.",
+        "The bill of quantities and price file must contain matching items and quantities.",
+      ),
+    ],
+    [
+      "legacy-gaeb-phase",
+      uiText(
+        "Diese ältere GAEB-Datenart wird noch nicht unterstützt.",
+        "This legacy GAEB phase is not supported yet.",
+      ),
+    ],
+    [
       "legacy-gaeb-structure",
       uiText(
         "Die ältere GAEB-Datei enthält eine unvollständige oder nicht unterstützte Struktur.",
@@ -307,7 +321,7 @@ export async function readGaebFile(file: File, phase?: GaebPhase) {
   if (model.currency !== "EUR") throw new Error("workflow-currency");
   const checked = await validateGaebInBrowser(xml, model.identity);
   if (!checked.valid) throw new Error("schema");
-  return { xml, model, fileName: input.fileName };
+  return { xml, model, fileName: input.fileName, referenceXml: input.referenceXml };
 }
 export async function deriveChecked(
   xml: string,

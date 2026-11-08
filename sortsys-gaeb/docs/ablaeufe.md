@@ -26,8 +26,17 @@ Positionen umgedeutet. Fiktive Regressionsbeispiele stehen unter
 Unter **Auftrag & Leistungen** stehen angenommenes Angebot, Kunden-X86,
 X87-Bestätigung, Nachträge, X31-Aufmaße und Nachunternehmerpakete zusammen.
 Ein eingegangener Auftrag wird vor seiner Bestätigung mit dem Angebot verglichen.
-Bestehende Projekte können ihren ursprünglichen X86-Auftrag einmal übernehmen;
-historische Finanzbuchungen bleiben ohne erneute Auftragswertbuchung erhalten.
+**Bestandsauftrag übernehmen** akzeptiert Angebote (X84), Nebenangebote (X85),
+Auftragserteilungen (X86) und Auftragsbestätigungen (X87), ebenso deren D- und
+P-Varianten aus GAEB 90 und GAEB 2000. Alte Dateien werden im Browser in die
+entsprechende XML-Phase umgewandelt; ihre Originalbytes bleiben im XML erhalten.
+Die Phase und der ursprüngliche Dokumentstand bleiben als Vertragsgrundlage
+erhalten. Historische Finanzbuchungen werden dabei nicht erneut gebucht.
+
+Reine Preisdateien lassen sich bei der Übernahme mit einem passenden X83-, D83-
+oder P83-Leistungsverzeichnis ergänzen. Mengen, Einheiten und Beschreibungen für
+Aufmaße und Weitervergaben stammen dann aus diesem Leistungsverzeichnis. Stimmen
+Positionen oder vorhandene Mengen nicht überein, wird die Übernahme angehalten.
 
 Projektformulare erstellen X31, X52, X93 und X89 aus einem angenommenen Auftrag.
 X52-Kostenbestandteile zeigen Kennung, Menge, Einheit, optional Leistung und Wert

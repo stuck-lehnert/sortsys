@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Button, TextInput } from "@sortsys/react-components";
+import { GaebDocument } from "@sortsys/gaeb";
 import { client } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
 import {
@@ -21,10 +22,17 @@ export function CommercialAdoptForm({
   onCreated: (id: string) => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
-  const [source, setSource] = useState<{ xml: string; name: string }>();
+  const [source, setSource] = useState<{
+    xml: string;
+    name: string;
+    phase: "84" | "85" | "86" | "87";
+    referenceXml?: string;
+    referenceName?: string;
+  }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const referenceInput = useRef<HTMLInputElement>(null);
   return (
     <form
       className="flex flex-col gap-5"
@@ -34,16 +42,37 @@ export function CommercialAdoptForm({
         setBusy(true);
         setError("");
         void (async () => {
-          const offerXml = await deriveChecked(source.xml, "84", { title });
-          const netAmount = documentAmount(offerXml);
-          if (netAmount === null) throw new Error("workflow-pricing-rules");
+          const offerXml = source.phase === "84"
+            ? undefined
+            : await deriveChecked(source.xml, "84", { title });
+          let amountXml = source.xml;
+          if (source.phase === "84" && source.referenceXml) {
+            const prices = new GaebDocument(source.xml, source.name);
+            const scope = new GaebDocument(source.referenceXml, "scope.x83");
+            const positions = new Set(scope.items.map((item) => item.oz));
+            if (prices.items.length !== scope.items.length || prices.items.some((item) => !positions.has(item.oz)))
+              throw new Error("contract-reference-mismatch");
+            try {
+              amountXml = await deriveChecked(source.xml, "86", { referenceXml: source.referenceXml });
+            } catch (failure) {
+              if (failure instanceof Error && ["workflow-missing-prices", "workflow-quantity-difference"].includes(failure.message))
+                throw new Error("contract-reference-mismatch");
+              throw failure;
+            }
+          }
+          const netAmount = documentAmount(amountXml);
+          if (netAmount === null)
+            throw new Error(source.phase === "84" ? "workflow-reference-required" : "workflow-pricing-rules");
           const [value, failure] = await client.mutate(
             "commercial.cases.adoptContract",
             {
               projectId,
               title,
-              orderXml: source.xml,
-              offerXml,
+              sourceXml: source.xml,
+              sourcePhase: source.phase,
+              sourceFileName: source.name,
+              referenceXml: source.referenceXml ?? null,
+              offerXml: offerXml ?? null,
               netAmount,
             },
           );
@@ -56,8 +85,8 @@ export function CommercialAdoptForm({
     >
       <p className="text-sm text-muted">
         {uiText(
-          "Übernimm den vorhandenen Auftrag als Grundlage für Aufmaße und Weitervergaben. Die originale Auftragsdatei bleibt erhalten. Bereits erfasste Angebotssummen bleiben bestehen und werden nicht erneut gebucht.",
-          "Use the existing contract as the basis for measurements and subcontracting. The original order file is retained. Existing offer totals are preserved without posting them again.",
+          "Ein vorhandenes Angebot, Nebenangebot oder Auftragsdokument als Grundlage für Aufmaße, Weitervergaben und Abrechnung übernehmen. Bereits erfasste Angebotssummen bleiben erhalten.",
+          "Adopt an existing offer, alternative offer or order document as the basis for measurements, subcontracting and billing. Existing offer totals are retained.",
         )}
       </p>
       {error && (
@@ -87,20 +116,20 @@ export function CommercialAdoptForm({
           disabled={busy}
           onClick={() => fileInput.current?.click()}
         >
-          {uiText("Auftragsdatei wählen", "Choose order file")}
+          {uiText("GAEB-Datei wählen", "Choose GAEB file")}
         </Button>
         <span className="min-w-0 break-all text-sm text-muted">
           {source?.name ??
             uiText(
-              "Auftragserteilung des Kunden (X86)",
-              "Customer order (X86)",
+              "X84–X87, D84–D87 oder P84–P87",
+              "X84–X87, D84–D87 or P84–P87",
             )}
         </span>
       </div>
       <input
         ref={fileInput}
         type="file"
-        accept=".x86,.xml"
+        accept=".x84,.x85,.x86,.x87,.d84,.d85,.d86,.d87,.p84,.p85,.p86,.p87,.xml"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -108,8 +137,44 @@ export function CommercialAdoptForm({
           if (!file) return;
           setBusy(true);
           setError("");
-          void readGaebFile(file, "86")
-            .then(({ xml }) => setSource({ xml, name: file.name }))
+          setSource(undefined);
+          void readGaebFile(file)
+            .then(({ xml, model, fileName, referenceXml }) => {
+              const phase = model.phase;
+              if (phase !== "84" && phase !== "85" && phase !== "86" && phase !== "87")
+                throw new Error("Expected X84, X85, X86 or X87");
+              const name = new RegExp(`\\.x${phase}$`, "i").test(fileName)
+                ? fileName
+                : `${fileName.replace(/\.[^./]+$/, "")}.x${phase}`;
+              setSource({ xml, name, phase, referenceXml });
+            })
+            .catch((failure) => setError(commercialError(failure)))
+            .finally(() => setBusy(false));
+        }}
+      />
+      {source?.phase === "84" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button kind="secondary" disabled={busy} onClick={() => referenceInput.current?.click()}>
+            {uiText("Leistungsverzeichnis ergänzen", "Add bill of quantities")}
+          </Button>
+          {source.referenceName && <span className="text-sm break-all">{source.referenceName}</span>}
+        </div>
+      )}
+      <input
+        ref={referenceInput}
+        type="file"
+        accept=".x83,.d83,.p83,.xml"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          setBusy(true);
+          setError("");
+          void readGaebFile(file, "83")
+            .then(({ xml, fileName }) => setSource((current) => current && {
+              ...current, referenceXml: xml, referenceName: fileName,
+            }))
             .catch((failure) => setError(commercialError(failure)))
             .finally(() => setBusy(false));
         }}

@@ -33,6 +33,7 @@ RUN apt-get update \
         tesseract-ocr \
         tesseract-ocr-deu \
         tesseract-ocr-eng \
+        tesseract-ocr-osd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/sortsys-v2-job_runner
@@ -49,6 +50,7 @@ RUN apk add --no-cache \
         tesseract-ocr \
         tesseract-ocr-data-deu \
         tesseract-ocr-data-eng \
+        tesseract-ocr-data-osd \
     && addgroup -S -g 10001 runner \
     && adduser -S -D -u 10001 -G runner runner
 

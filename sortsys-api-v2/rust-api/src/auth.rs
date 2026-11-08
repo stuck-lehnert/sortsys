@@ -6,7 +6,6 @@ use std::{
 };
 
 use axum::http::HeaderMap;
-use bcrypt::verify;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -14,6 +13,7 @@ use sqlx::{FromRow, PgConnection};
 use ts_rs::TS;
 
 use crate::{
+    auth_limits,
     config::Config,
     database::TenantStore,
     error::{ErrorCode, RpcError, RpcResult},
@@ -136,56 +136,101 @@ impl AuthService {
         password: &str,
         user_agent: Option<&str>,
         inet_addr: Option<&str>,
-    ) -> Option<String> {
-        if tenant.is_empty() || username.is_empty() || password.is_empty() {
-            return None;
+    ) -> RpcResult<Option<String>> {
+        let tenant = tenant.trim().to_lowercase();
+        let username = username.trim().to_lowercase();
+        if tenant.is_empty()
+            || username.is_empty()
+            || password.is_empty()
+            || tenant.chars().count() > 127
+            || username.chars().count() > 63
+            || password.len() > 2_000
+        {
+            return Ok(None);
         }
-        let tenant = tenant.to_lowercase();
-        let username = username.to_lowercase();
-        let pool = self.tenants.tenant_pool(&tenant).await.ok()?;
-        let user = sqlx::query_as::<_, LoginUser>(
-            "SELECT id, password FROM users \
-             WHERE username = $1 AND (deactivated_at IS NULL OR deactivated_at > NOW())",
+        let _admission = auth_limits::admit_login()?;
+        let attempt = auth_limits::reserve(
+            self.tenants.master(),
+            &self.jwt_secret,
+            "user",
+            &[&tenant, &username],
         )
-        .bind(username)
-        .fetch_optional(&pool)
-        .await
-        .ok()??;
-        let password_hash = user.password?;
-        let verified_hash = password_hash.clone();
-        let password = password.to_owned();
-        let matches = tokio::task::spawn_blocking(move || verify(password, &password_hash))
+        .await?;
+        let token = self
+            .login_user(&tenant, &username, password, user_agent, inet_addr)
+            .await?;
+        if token.is_some() {
+            attempt.succeeded(self.tenants.master()).await;
+        }
+        Ok(token)
+    }
+
+    async fn login_user(
+        &self,
+        tenant: &str,
+        username: &str,
+        password: &str,
+        user_agent: Option<&str>,
+        inet_addr: Option<&str>,
+    ) -> RpcResult<Option<String>> {
+        let credentials = async {
+            let pool = self.tenants.tenant_pool(tenant).await.ok()?;
+            let user = sqlx::query_as::<_, LoginUser>(
+                "SELECT id, password FROM users \
+             WHERE username = $1 AND (deactivated_at IS NULL OR deactivated_at > NOW())",
+            )
+            .bind(username)
+            .fetch_optional(&pool)
             .await
-            .ok()?
-            .ok()?;
+            .ok()??;
+            Some((pool, user.id, user.password?))
+        }
+        .await;
+        // Unknown accounts check the same capacity gate. Overload responses
+        // must not reveal whether a submitted user name exists.
+        let permit = auth_limits::password_slot().await?;
+        let Some((pool, user_id, password_hash)) = credentials else {
+            return Ok(None);
+        };
+        let verified_hash = password_hash.clone();
+        let matches =
+            auth_limits::verify_password(password.to_owned(), password_hash, permit).await?;
         if !matches {
-            return None;
+            return Ok(None);
         }
 
         // Serialize session creation with password changes. A verification that
         // started before a reset must not recreate a session with the old hash.
-        let mut transaction = pool.begin().await.ok()?;
-        sqlx::query_scalar::<_, i64>(
+        let Ok(mut transaction) = pool.begin().await else {
+            return Ok(None);
+        };
+        let Ok(Some(_)) = sqlx::query_scalar::<_, i64>(
             "SELECT id FROM users WHERE id = $1 AND password = $2 \
              AND (deactivated_at IS NULL OR deactivated_at > NOW()) FOR SHARE",
         )
-        .bind(user.id)
+        .bind(user_id)
         .bind(verified_hash)
         .fetch_optional(&mut *transaction)
         .await
-        .ok()??;
-        let session_id: i64 = sqlx::query_scalar(
+        else {
+            return Ok(None);
+        };
+        let Ok(session_id) = sqlx::query_scalar::<_, i64>(
             "INSERT INTO user_sessions (user_id, inet_addr, user_agent) \
              VALUES ($1, $2, $3) RETURNING id",
         )
-        .bind(user.id)
+        .bind(user_id)
         .bind(inet_addr)
         .bind(user_agent)
         .fetch_one(&mut *transaction)
         .await
-        .ok()?;
-        transaction.commit().await.ok()?;
-        self.issue_user_token(&tenant, &session_id.to_string()).ok()
+        else {
+            return Ok(None);
+        };
+        if transaction.commit().await.is_err() {
+            return Ok(None);
+        }
+        Ok(self.issue_user_token(tenant, &session_id.to_string()).ok())
     }
 
     pub(crate) fn issue_challenge_token<T: Serialize>(&self, claims: &T) -> RpcResult<String> {
@@ -210,20 +255,58 @@ impl AuthService {
         .map_err(|_| unauthorized("Invalid or expired passkey challenge"))
     }
 
-    pub async fn login_admin(&self, password: &str, tenant: Option<&str>) -> Option<String> {
-        let password_hash = match tenant {
-            Some(name) => self.tenants.tenant(name).await.ok()??.admin_hash,
-            None => self.admin_hash.to_string(),
-        };
-        let password = password.to_owned();
-        let matches = tokio::task::spawn_blocking(move || verify(password, &password_hash))
-            .await
-            .ok()?
-            .ok()?;
-        if !matches {
-            return None;
+    pub async fn login_admin(
+        &self,
+        password: &str,
+        tenant: Option<&str>,
+    ) -> RpcResult<Option<String>> {
+        let tenant = tenant.map(|name| name.trim().to_lowercase());
+        if password.is_empty()
+            || password.len() > 2_000
+            || tenant
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.chars().count() > 127)
+        {
+            return Ok(None);
         }
-        self.issue_admin_token(tenant.unwrap_or("+all")).ok()
+        let _admission = auth_limits::admit_login()?;
+        let (scope, parts) = match tenant.as_deref() {
+            Some(name) => ("admin-tenant", vec![name]),
+            None => ("admin-global", vec![]),
+        };
+        let attempt =
+            auth_limits::reserve(self.tenants.master(), &self.jwt_secret, scope, &parts).await?;
+        let token = self
+            .login_administrator(password, tenant.as_deref())
+            .await?;
+        if token.is_some() {
+            attempt.succeeded(self.tenants.master()).await;
+        }
+        Ok(token)
+    }
+
+    async fn login_administrator(
+        &self,
+        password: &str,
+        tenant: Option<&str>,
+    ) -> RpcResult<Option<String>> {
+        let password_hash = match tenant {
+            Some(name) => match self.tenants.tenant(name).await {
+                Ok(Some(tenant)) => Some(tenant.admin_hash),
+                _ => None,
+            },
+            None => Some(self.admin_hash.to_string()),
+        };
+        let permit = auth_limits::password_slot().await?;
+        let Some(password_hash) = password_hash else {
+            return Ok(None);
+        };
+        let matches =
+            auth_limits::verify_password(password.to_owned(), password_hash, permit).await?;
+        if !matches {
+            return Ok(None);
+        }
+        Ok(self.issue_admin_token(tenant.unwrap_or("+all")).ok())
     }
 
     pub async fn authenticate(&self, headers: &HeaderMap) -> RpcResult<AuthResult> {

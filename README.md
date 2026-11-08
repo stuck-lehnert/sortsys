@@ -1,9 +1,13 @@
 # sortsys
 
-sortsys ist eine Betriebssoftware für Bauunternehmen und Handwerksbetriebe.
-Du kalkulierst Angebote, erfasst Aufmaße und verwaltest Projekte samt Personal,
-Werkzeugen, Material und Dokumenten im Browser. Die Oberfläche ist auf Deutsch
-und Englisch verfügbar.
+sortsys ist eine Branchensoftware für Bauunternehmen und Handwerksbetriebe auf
+Auftragnehmerseite. Sie verbindet Angebotskalkulation, Projektabwicklung und
+Abrechnung: Aus angenommenen Angeboten entstehen Projekte, in denen Aufmaße,
+Nachträge, Weitervergaben und Rechnungen auf denselben Leistungen aufbauen.
+
+Dazu kommen Einsatzplanung, Bautagesberichte, Materiallieferungen und die
+Verwaltung von Werkzeugen, Plänen und weiteren Dokumenten. GAEB-Dateien lassen sich
+gemeinsam direkt im Browser bearbeiten. Die Oberfläche ist auf Deutsch und Englisch verfügbar.
 
 ## Entwicklung
 
@@ -13,8 +17,8 @@ Voraussetzungen: Bash und Docker oder Podman. Im Hauptverzeichnis starten:
 ./scripts/dev
 ```
 
-Öffne <http://127.0.0.1:5173>. Lokaler Administrator: Mandant `test`, Benutzer
-`john.doe`, Passwort `123456`.
+Die Webapp ist unter <http://127.0.0.1:5173> erreichbar. Lokaler Administrator:
+Mandant `test`, Benutzer `john.doe`, Passwort `123456`.
 
 **Jeder Start legt die Entwicklungsdatenbanken neu an und befüllt sie mit Beispieldaten.**
 `Ctrl+C` beendet die Umgebung. Konfiguration und Protokolle beschreibt der
@@ -51,5 +55,7 @@ veröffentlichten Container-Images. Ausgangspunkt ist [.compose-env.example](.co
 
 ## Lizenz und Gemeinschaft
 
-[AGPL-3.0-only](LICENSE) · [Verhaltenskodex](CODE_OF_CONDUCT.md).
+sortsys steht unter der [AGPL-3.0-only](LICENSE). Für Beiträge und den Austausch im
+Projekt gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
+
 Für fremde Abhängigkeiten und Beispieldateien gelten deren eigene Lizenzen und Hinweise.

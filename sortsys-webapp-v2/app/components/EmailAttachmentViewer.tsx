@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { EmailPreview } from "~/lib/emailPreview";
+import { useEffect, useMemo, useState } from "react";
+import type { EmailAttachment, EmailPreview } from "~/lib/emailPreview";
 import { emailPreviewDocument, escapeEmailHtml } from "~/lib/emailSanitizer";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { MyButton } from "./MyButton";
@@ -9,6 +9,26 @@ import { downloadBlob } from "~/lib/utils";
 import "./attachmentViewers.css";
 
 const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
+
+function attachmentSize(size: number): string {
+  if (size < 1024) return `${size.toLocaleString(currentLocaleTag())} B`;
+  const mb = size >= 1024 * 1024;
+  return `${(size / (mb ? 1024 * 1024 : 1024)).toLocaleString(currentLocaleTag(), { maximumFractionDigits: 1 })} ${mb ? "MB" : "KB"}`;
+}
+
+function EmailAttachments({ attachments }: { attachments: EmailAttachment[] }) {
+  return <ul className="attachment-email-file-list">{attachments.map((attachment, index) => {
+    const Icon = attachment.mimeType.startsWith("image/") ? Icons.FileImage
+      : attachment.mimeType === "application/pdf" ? Icons.FilePdf : Icons.FileText;
+    return <li key={index}><button type="button" className="attachment-email-file" onClick={() =>
+      downloadBlob(new Blob([attachment.content], { type: "application/octet-stream" }), attachment.fileName)}
+      aria-label={uiText(`${attachment.fileName} herunterladen`, `Download ${attachment.fileName}`)}>
+      <Icon size={24} aria-hidden="true" />
+      <span className="attachment-email-file-info"><span>{attachment.fileName}</span><small>{attachmentSize(attachment.content.byteLength)}</small></span>
+      <Icons.Download size={16} aria-hidden="true" />
+    </button></li>;
+  })}</ul>;
+}
 
 async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBuffer> {
   const response = await fetch(url, { signal, credentials: "omit" });
@@ -74,56 +94,74 @@ export default function EmailAttachmentViewer({ url, format, downloadUrl }: {
   }, [url, format, retry]);
 
   const date = mail?.date ? new Date(mail.date) : null;
-  const body = mail && (plainText || !mail.html)
-    ? "<pre>" + escapeEmailHtml(mail.text || uiText("Kein Nachrichtentext vorhanden.", "No message text.")) + "</pre>"
-    : mail?.html ?? "";
+  const locale = currentLocaleTag();
+  const document = useMemo(() => {
+    const body = mail && (plainText || !mail.html)
+      ? "<pre>" + escapeEmailHtml(mail.text || uiText("Kein Nachrichtentext vorhanden.", "No message text.")) + "</pre>"
+      : mail?.html ?? "";
+    return emailPreviewDocument(body, locale);
+  }, [mail, plainText, locale]);
+  const attachments = mail?.attachments.filter(attachment => !attachment.inline) ?? [];
+  const inlineImages = mail?.attachments.filter(attachment => attachment.inline) ?? [];
 
   return <div className="attachment-email-viewer">
-    <div className="attachment-viewer-toolbar">
-      {mail?.html && mail.text && <MyButton size="sm" kind="ghost" onClick={() => setPlainText(value => !value)}>
-        {plainText ? uiText("Formatierte Ansicht", "Formatted view") : uiText("Nur Text", "Plain text")}
-      </MyButton>}
-      <a href={downloadUrl} target="_blank" rel="noopener noreferrer">{uiText("Original herunterladen", "Download original")}</a>
-    </div>
-
     {error && <div className="attachment-viewer-status">
       <MyCallout color="red" icon={Icons.Deny}>
         {error === "email-too-large"
           ? uiText("Die E-Mail ist für die Vorschau zu groß (maximal 25 MB).", "The email is too large to preview (maximum 25 MB).")
           : error === "email-timeout"
             ? uiText("Das Einlesen hat zu lange gedauert.", "Reading the email took too long.")
-            : uiText("Die E-Mail konnte nicht eingelesen werden. Du kannst die Originaldatei herunterladen.", "The email could not be read. You can download the original file.")}
+            : uiText("Die E-Mail konnte nicht eingelesen werden. Die Originaldatei steht zum Herunterladen bereit.", "The email could not be read. The original file is available to download.")}
       </MyCallout>
       <MyButton size="sm" onClick={() => setRetry(value => value + 1)}>{uiText("Erneut versuchen", "Try again")}</MyButton>
+      <a href={downloadUrl} target="_blank" rel="noopener noreferrer">{uiText("Original herunterladen", "Download original")}</a>
     </div>}
-    {!mail && !error && <div className="attachment-viewer-status" role="status">{uiText("E-Mail wird eingelesen …", "Reading email …")}</div>}
+    {!mail && !error && <div className="attachment-viewer-status" role="status"><span className="ss-spinner" aria-hidden="true" />{uiText("E-Mail wird eingelesen …", "Reading email …")}</div>}
 
     {mail && <>
-      <div className="attachment-email-metadata">
-        <strong>{mail.subject || uiText("Ohne Betreff", "No subject")}</strong>
-        <dl>
-          <dt>{uiText("Von", "From")}</dt><dd>{mail.from || "–"}</dd>
-          <dt>{uiText("An", "To")}</dt><dd>{mail.to || "–"}</dd>
-          {mail.cc && <><dt>{uiText("Kopie", "Cc")}</dt><dd>{mail.cc}</dd></>}
-          <dt>{uiText("Datum", "Date")}</dt><dd>{date && !Number.isNaN(date.getTime())
-            ? date.toLocaleString(currentLocaleTag()) : mail.date || "–"}</dd>
-        </dl>
-        {!!mail.attachments.length && <details className="attachment-email-attachments">
-          <summary>{uiText(`Anhänge (${mail.attachments.length})`, `Attachments (${mail.attachments.length})`)}</summary>
-          <ul>{mail.attachments.map((attachment, index) => <li key={index}>
-            <MyButton size="sm" kind="ghost" renderIcon={Icons.Download} onClick={() =>
-              downloadBlob(new Blob([attachment.content], { type: "application/octet-stream" }), attachment.fileName)}>
-              {attachment.fileName}
-            </MyButton>
-            <span>{(attachment.content.byteLength / 1024).toLocaleString(currentLocaleTag(), { maximumFractionDigits: 1 })} {uiText("KB", "KB")}</span>
-          </li>)}</ul>
+      <header className="attachment-email-metadata">
+        <div className="attachment-email-heading">
+          <h2>{mail.subject || uiText("Ohne Betreff", "No subject")}</h2>
+          <div className="attachment-email-actions">
+            {mail.html && mail.text && <MyButton size="sm" kind="ghost" renderIcon={plainText ? Icons.Email : Icons.FileText}
+              onClick={() => setPlainText(value => !value)}>
+              {plainText ? uiText("Formatierte Ansicht", "Formatted view") : uiText("Nur Text", "Plain text")}
+            </MyButton>}
+            <a className="attachment-email-original" href={downloadUrl} target="_blank" rel="noopener noreferrer">
+              <Icons.Download size={16} aria-hidden="true" />{uiText("Original herunterladen", "Download original")}
+            </a>
+          </div>
+        </div>
+        <div className="attachment-email-sender">
+          <span className="attachment-email-avatar" aria-hidden="true"><Icons.Email size={20} /></span>
+          <div className="attachment-email-addresses">
+            <p className="attachment-email-from"><span className="sr-only">{uiText("Von: ", "From: ")}</span>{mail.from || "–"}</p>
+            <dl>
+              <dt>{uiText("An", "To")}</dt><dd>{mail.to || "–"}</dd>
+              {mail.cc && <><dt>{uiText("Kopie", "Cc")}</dt><dd>{mail.cc}</dd></>}
+            </dl>
+          </div>
+          {mail.date && <time dateTime={date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined}>
+            {date && !Number.isNaN(date.getTime()) ? date.toLocaleString(currentLocaleTag(), { dateStyle: "medium", timeStyle: "short" }) : mail.date}
+          </time>}
+        </div>
+        {!!attachments.length && <section className="attachment-email-attachments" aria-label={uiText("Anhänge", "Attachments")}>
+          <h3>{uiText(`Anhänge (${attachments.length})`, `Attachments (${attachments.length})`)}</h3>
+          <EmailAttachments attachments={attachments} />
+        </section>}
+        {!!inlineImages.length && <details className="attachment-email-inline-images">
+          <summary>{uiText(`Eingebettete Bilder (${inlineImages.length})`, `Embedded images (${inlineImages.length})`)}</summary>
+          <EmailAttachments attachments={inlineImages} />
         </details>}
-      </div>
+      </header>
+      {!!mail.blockedImages && !plainText && <div className="attachment-email-privacy">
+        <Icons.Lock size={14} aria-hidden="true" />{uiText("Externe Bilder sind blockiert.", "External images are blocked.")}
+      </div>}
 
       {/* No scripts or same-origin access, even if a future sanitizer change misses something. */}
       <iframe className="attachment-email-body" title={uiText("Nachricht", "Message")}
         sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer"
-        srcDoc={emailPreviewDocument(body)} />
+        srcDoc={document} />
     </>}
   </div>;
 }

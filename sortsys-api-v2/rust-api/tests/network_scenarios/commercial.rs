@@ -363,7 +363,7 @@ async fn contractor_workflows_preserve_native_contracts_and_project_invariants()
         Some(token),
     )
     .await;
-    let adopt = json!({"projectId":legacy["id"],"title":"Legacy contract","orderXml":"<GAEB>Original</GAEB>","offerXml":"<GAEB>Prices</GAEB>","netAmount":"1000.00"});
+    let adopt = json!({"projectId":legacy["id"],"title":"Legacy contract","sourcePhase":"86","sourceFileName":"Original.x86","sourceXml":"<GAEB>Original</GAEB>","offerXml":"<GAEB>Prices</GAEB>","netAmount":"1000.00"});
     let adopted = rpc
         .mutation("commercial.cases.adoptContract", adopt.clone(), Some(token))
         .await;
@@ -392,6 +392,66 @@ async fn contractor_workflows_preserve_native_contracts_and_project_invariants()
         )
         .await;
     assert_eq!(costs["totalCosts"]["offers"], 950.0);
+    for (phase, purpose) in [
+        ("84", "offer"),
+        ("85", "alternative"),
+        ("87", "confirmation"),
+    ] {
+        let project = rpc
+            .mutation(
+                "projects.create",
+                json!({"title":format!("Existing X{phase}")}),
+                Some(token),
+            )
+            .await;
+        let original = format!("<GAEB><!--Original {phase}--><vendor>unmodified</vendor></GAEB>");
+        let reference = "<GAEB>Original scope</GAEB>";
+        let input = json!({
+            "projectId":project["id"], "title":format!("Contract X{phase}"),
+            "sourcePhase":phase, "sourceFileName":format!("Accepted.x{phase}"), "sourceXml":original,
+            "offerXml":if phase == "84" { None } else { Some("<GAEB>Price snapshot</GAEB>") },
+            "referenceXml":if phase == "84" { Some(reference) } else { None }, "netAmount":"1500.00"
+        });
+        let created = rpc
+            .mutation("commercial.cases.adoptContract", input, Some(token))
+            .await;
+        let detail = rpc
+            .query(
+                "commercial.cases.get",
+                json!({"id":created["id"]}),
+                Some(token),
+            )
+            .await;
+        assert_eq!(detail["case"]["existingContract"], true);
+        assert_eq!(detail["case"]["status"], "accepted");
+        let documents = detail["documents"].as_array().unwrap();
+        assert_eq!(documents.len(), 2);
+        assert!(!documents.iter().any(|doc| doc["phase"] == "86"));
+        let source = documents.iter().find(|doc| doc["phase"] == phase).unwrap();
+        assert_eq!(source["purpose"], purpose);
+        assert_eq!(source["readOnly"], true);
+        assert_eq!(source["fileName"], format!("Accepted.x{phase}"));
+        let source_content = rpc
+            .query(
+                "commercial.documents.get",
+                json!({"caseId":created["id"],"id":source["id"]}),
+                Some(token),
+            )
+            .await;
+        assert_eq!(source_content["xml"], original);
+        let offer = documents.iter().find(|doc| doc["phase"] == "84").unwrap();
+        let loaded = rpc
+            .query(
+                "commercial.documents.get",
+                json!({"caseId":created["id"],"id":offer["id"]}),
+                Some(token),
+            )
+            .await;
+        assert_eq!(
+            loaded["referenceXml"],
+            if phase == "84" { reference } else { &original }
+        );
+    }
     let snapshots: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM commercial_document_snapshots")
         .fetch_one(&fixture.tenant_pool)
         .await

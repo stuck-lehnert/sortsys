@@ -17,7 +17,7 @@ async fn login(rpc: &RpcClient, fixture: &Fixture, password: &str) -> String {
         .to_owned()
 }
 
-async fn wait_for_user_lock(pool: &PgPool) {
+pub(super) async fn wait_for_user_lock(pool: &PgPool) {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
             let waiting: bool = sqlx::query_scalar(

@@ -1,6 +1,7 @@
 import { escapeXml } from "./document";
 import { createGaebXml } from "./templates";
 import { MAX_GAEB_BYTES } from "./types";
+import { decimal as scaledDecimal, decimalString, itemAmount } from "./decimal";
 
 // Fixed-width records and GAEB 2000 objects follow the examples published in
 // BVBS / MWM's "Das Freie GAEB Buch", sections 1.4, 1.5 and 3.1/3.2.
@@ -10,13 +11,16 @@ type Entry = {
   oz: string;
   title: string;
   description: string;
-  qty: string;
+  qty?: string;
+  price?: string;
+  amount?: string;
   unit: string;
   flags?: string;
   indexValue?: string;
   children: Entry[];
 };
 type Legacy = {
+  phase: "83" | "84" | "85" | "86" | "87";
   title: string;
   project: string;
   currency: string;
@@ -32,10 +36,24 @@ const node = (kind: Entry["kind"], oz: string): Entry => ({
   oz,
   title: "",
   description: "",
-  qty: "0.000",
   unit: "",
   children: [],
 });
+function legacyPhase(value: string): Legacy["phase"] {
+  if (!["83", "84", "85", "86", "87"].includes(value))
+    throw new Error("legacy-gaeb-phase");
+  return value as Legacy["phase"];
+}
+function price(value: string, scale: number, implied = false): string | undefined {
+  value = value.trim().replace(/,/g, ".");
+  if (!value) return undefined;
+  if (implied) {
+    if (!/^-?\d{1,13}$/.test(value)) return fail();
+    return decimalString(BigInt(value), scale);
+  }
+  if (!new RegExp(`^-?\\d{1,13}(?:\\.\\d{0,${scale}})?$`).test(value)) return fail();
+  return decimalString(scaledDecimal(value.replace(/\.$/, ""), scale), scale);
+}
 const decimal = (value: string, implied = false) => {
   value = value.trim().replace(/,/g, ".");
   if (!value) return "0.000";
@@ -64,11 +82,12 @@ function gaeb90(text: string): Legacy {
     return fail();
   const header = lines.find((line) => line.startsWith("00"));
   if (!header) return fail();
-  if (header.slice(10, 12) !== "83") throw new Error("Expected X83");
+  const phase = legacyPhase(header.slice(10, 12));
   const mask = header.slice(62, 71).trim().replace(/0+$/, "");
   if (!/^(?:1+)?(?:2+)?(?:3+)?(?:4+)?P+I?$/.test(mask)) return fail();
   const levels = mask.match(/1+|2+|3+|4+|P+/g)!;
   const output: Legacy = {
+    phase,
     title: "",
     project: "",
     currency: "EUR",
@@ -77,6 +96,7 @@ function gaeb90(text: string): Legacy {
     entries: [],
   };
   const groups = new Map<string, Entry>();
+  const positions = new Map<string, Entry>();
   let current: Entry | undefined;
   const path = (raw: string, group: boolean) => {
     const parts: string[] = [];
@@ -126,6 +146,21 @@ function gaeb90(text: string): Legacy {
       current.unit = line.slice(34, 38).trim();
       current.flags = line.slice(11, 14);
       parent(parts.slice(0, -1)).push(current);
+      positions.set(raw, current);
+    } else if (type === "22" || type === "23") {
+      const raw = line.slice(2, 11);
+      current = positions.get(raw);
+      if (!current) {
+        const parts = path(raw, false);
+        current = node("item", parts.at(-1)!);
+        current.indexValue = output.index
+          ? raw.slice(output.lengths.reduce((a, b) => a + b, 0)).trim()
+          : "";
+        positions.set(raw, current);
+        parent(parts.slice(0, -1)).push(current);
+      }
+      current.price = price(line.slice(12, 23), 3, true);
+      current.amount = price(line.slice(24, 36), 2, true);
     } else if (type === "25" && current?.kind === "item")
       current.title += (current.title ? " " : "") + line.slice(2, 72).trim();
     else if (type === "26" && current)
@@ -256,7 +291,7 @@ function gaeb2000(text: string): Legacy {
     lv = child(award, "LV"),
     info = child(lv, "LVInfo");
   if (!gaeb || !award || !lv || !info) return fail();
-  if (value(award, "DP") !== "83") throw new Error("Expected X83");
+  const phase = legacyPhase(value(award, "DP"));
   const breakdown = info.children.filter(
     (c) => c.name.toLowerCase() === "lvglied",
   );
@@ -272,6 +307,7 @@ function gaeb2000(text: string): Legacy {
     return fail();
   const project = child(gaeb, "PrjInfo");
   const output: Legacy = {
+    phase,
     title: value(info, "Bez") || value(info, "Name"),
     project: value(project, "Bez") || value(project, "Name"),
     currency: value(child(award, "VergabeInfo"), "Wae") || "EUR",
@@ -299,8 +335,11 @@ function gaeb2000(text: string): Legacy {
         result.description = rtf(value(description, "Langtext"));
         if (isGroup) result.children = entries(c, level + 1);
         else {
-          result.qty = decimal(value(c, "Menge"));
+          const quantity = value(c, "Menge");
+          result.qty = quantity ? decimal(quantity) : phase === "84" ? undefined : "0.000";
           result.unit = value(c, "ME");
+          result.price = price(value(c, "EP"), 3);
+          result.amount = price(value(c, "GB"), 2);
         }
         return result;
       });
@@ -308,7 +347,7 @@ function gaeb2000(text: string): Legacy {
   output.entries = entries(lv, 0);
   return output;
 }
-function project(input: Legacy, bytes: Uint8Array, fileName: string): string {
+function project(input: Legacy, bytes: Uint8Array, fileName: string, phase = input.phase): string {
   if (!["EUR", "EURO"].includes(input.currency.toUpperCase()))
     throw new Error("workflow-currency");
   let next = 0,
@@ -318,6 +357,10 @@ function project(input: Legacy, bytes: Uint8Array, fileName: string): string {
       .split(/\r\n|\n|\r/)
       .map((line) => `<p><span>${escapeXml(line)}</span></p>`)
       .join("");
+  const total = (nodes: Entry[]): bigint => nodes.reduce((sum, entry) =>
+    sum + (entry.kind === "group" ? total(entry.children) : entry.flags?.[1] === "E" ? 0n : scaledDecimal(
+      entry.amount ?? (entry.qty !== undefined && entry.price !== undefined ? itemAmount(entry.qty, entry.price) : "0"), 2,
+    )), 0n);
   const entries = (nodes: Entry[]): string => {
     let body = "",
       inItems = false;
@@ -328,7 +371,7 @@ function project(input: Legacy, bytes: Uint8Array, fileName: string): string {
           body += "</Itemlist>";
           inItems = false;
         }
-        body += `<BoQCtgy ID="${id}" RNoPart="${escapeXml(entry.oz)}"><LblTx><p><span style="font-weight:bold">${escapeXml(entry.title)}</span></p>${entry.description ? text(entry.description) : ""}</LblTx><BoQBody>${entries(entry.children)}</BoQBody></BoQCtgy>`;
+        body += `<BoQCtgy ID="${id}" RNoPart="${escapeXml(entry.oz)}">${phase === "84" ? "" : `<LblTx><p><span style="font-weight:bold">${escapeXml(entry.title)}</span></p>${entry.description ? text(entry.description) : ""}</LblTx>`}<BoQBody>${entries(entry.children)}</BoQBody>${phase === "83" ? "" : `<Totals><Total>${decimalString(total(entry.children), 2)}</Total></Totals>`}</BoQCtgy>`;
       } else {
         items++;
         if (!inItems) {
@@ -340,7 +383,10 @@ function project(input: Legacy, bytes: Uint8Array, fileName: string): string {
         const flags = entry.flags ?? "NNN";
         if (!/^[N ][NEM ][N ]$/.test(flags))
           throw new Error("legacy-gaeb-pricing");
-        body += `<Item ID="${id}" RNoPart="${escapeXml(part)}"${index ? ` RNoIndex="${escapeXml(index)}"` : ""}>${flags[1] === "E" || flags[1] === "M" ? `<Provis>${flags[1] === "E" ? "WithoutTotal" : "WithTotal"}</Provis>` : ""}<Qty>${entry.qty}</Qty><QU>${escapeXml(entry.unit)}</QU><Description><CompleteText><DetailTxt><Text>${text(entry.description)}</Text></DetailTxt><OutlineText><OutlTxt><TextOutlTxt><p><span style="font-weight:bold">${escapeXml(entry.title)}</span></p></TextOutlTxt></OutlTxt></OutlineText></CompleteText></Description></Item>`;
+        if (phase === "84" && /[EM]/.test(flags)) throw new Error("legacy-gaeb-pricing");
+        if (phase !== "83" && entry.price === undefined) throw new Error("legacy-gaeb-pricing");
+        const amount = entry.amount ?? (entry.qty !== undefined && entry.price !== undefined ? itemAmount(entry.qty, entry.price) : undefined);
+        body += `<Item ID="${id}" RNoPart="${escapeXml(part)}"${index ? ` RNoIndex="${escapeXml(index)}"` : ""}>${phase !== "84" && (flags[1] === "E" || flags[1] === "M") ? `<Provis>${flags[1] === "E" ? "WithoutTotal" : "WithTotal"}</Provis>` : ""}${entry.qty === undefined ? "" : `<Qty>${entry.qty}</Qty>`}${phase === "84" ? "" : `<QU>${escapeXml(entry.unit)}</QU>`}${phase === "83" ? "" : `<UP>${entry.price}</UP>${amount === undefined ? "" : `<IT>${amount}</IT>`}`}${phase === "84" ? "" : `<Description><CompleteText><DetailTxt><Text>${text(entry.description)}</Text></DetailTxt><OutlineText><OutlTxt><TextOutlTxt><p><span style="font-weight:bold">${escapeXml(entry.title)}</span></p></TextOutlTxt></OutlTxt></OutlineText></CompleteText></Description>`}</Item>`;
       }
     }
     return body + (inItems ? "</Itemlist>" : "");
@@ -357,10 +403,17 @@ function project(input: Legacy, bytes: Uint8Array, fileName: string): string {
     (input.index
       ? "<BoQBkdn><Type>Index</Type><Length>1</Length><Num>No</Num></BoQBkdn>"
       : "");
-  let base = createGaebXml("83", input.title || fileName);
+  let base = createGaebXml(phase, input.title || fileName);
   base = base
     .replace(/<BoQBkdn>[\s\S]*?<\/BoQBkdn>/, bkdn)
     .replace("<BoQBody/>", `<BoQBody>${body}</BoQBody>`);
+  if (phase !== "83") {
+    const allAmountsKnown = (nodes: Entry[]): boolean => nodes.every((entry) => entry.kind === "group"
+      ? allAmountsKnown(entry.children)
+      : entry.amount !== undefined || (entry.qty !== undefined && entry.price !== undefined));
+    if (allAmountsKnown(input.entries))
+      base = base.replace("</BoQInfo>", `<Totals><Total>${decimalString(total(input.entries), 2)}</Total></Totals></BoQInfo>`);
+  }
   if (input.project)
     base = base.replace(
       "<Award>",
@@ -384,7 +437,7 @@ const CP850 =
 export function readGaebInput(
   bytes: Uint8Array,
   fileName: string,
-): { xml: string; fileName: string; format: "xml" | "gaeb90" | "gaeb2000" } {
+): { xml: string; fileName: string; format: "xml" | "gaeb90" | "gaeb2000"; referenceXml?: string } {
   if (bytes.length > MAX_GAEB_BYTES) throw new Error("document-too-large");
   let source: string;
   try {
@@ -419,9 +472,13 @@ export function readGaebInput(
     format === "gaeb90"
       ? gaeb90(source.replace(/^\uFEFF/, ""))
       : gaeb2000(source.replace(/^\uFEFF/, ""));
+  const hasScope = (entries: Entry[]): boolean => entries.every((entry) => entry.kind === "group"
+    ? hasScope(entry.children)
+    : entry.qty !== undefined && !!entry.unit);
   return {
     xml: project(parsed, bytes, fileName),
-    fileName: fileName.replace(/\.(?:[dpx]83|xml)$/i, "") + ".x83",
+    fileName: fileName.replace(/\.(?:[dpx]8[3-7]|xml)$/i, "") + `.x${parsed.phase}`,
     format,
+    referenceXml: parsed.phase === "84" && hasScope(parsed.entries) ? project(parsed, bytes, fileName, "83") : undefined,
   };
 }

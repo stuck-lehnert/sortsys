@@ -1,7 +1,8 @@
 import PostalMime, { type Address } from "postal-mime";
 import MsgReaderModule from "@kenjiuno/msgreader";
-import { sanitizeEmailHtml } from "./emailSanitizer";
-import { decode } from "./msgTextEncoding";
+import { renderEmailHtml } from "./emailSanitizer";
+import { emailContentId, MAX_INLINE_IMAGE_BYTES, rasterImageType } from "./emailImages";
+import { decodeMsgHtml, supportedMsgEncoding } from "./msgTextEncoding";
 import { decompressMsgRtf, rtfToText } from "./msgRtf";
 
 export const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
@@ -22,6 +23,7 @@ export type EmailAttachment = {
   mimeType: string;
   contentId: string | null;
   content: ArrayBuffer;
+  inline?: boolean;
 };
 
 export type EmailPreview = {
@@ -33,6 +35,7 @@ export type EmailPreview = {
   text: string;
   html: string;
   attachments: EmailAttachment[];
+  blockedImages: number;
 };
 
 function addresses(values: Address[] = []): string {
@@ -83,15 +86,17 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
         contentId: attachment.contentId ?? null,
         content: bytes(attachment.content),
       })),
+      blockedImages: 0,
     };
   } else {
     let reader = new MsgReader(bytesIn);
     reader.parserConfig = { ansiEncoding: "windows-1252" };
     let mail = reader.getFileData();
     if (mail.error || mail.dataType !== "msg") throw new Error("invalid-email");
-    if (mail.messageCodepage && mail.messageCodepage !== 1252) {
+    const messageEncoding = mail.messageCodepage ? supportedMsgEncoding(String(mail.messageCodepage)) : null;
+    if (messageEncoding && messageEncoding !== "windows-1252") {
       reader = new MsgReader(bytesIn);
-      reader.parserConfig = { ansiEncoding: String(mail.messageCodepage) };
+      reader.parserConfig = { ansiEncoding: messageEncoding };
       mail = reader.getFileData();
     }
     if (mail.error || mail.dataType !== "msg") throw new Error("invalid-email");
@@ -106,7 +111,7 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
       ? /charset\s*=\s*["']?([a-z0-9_-]+)/i.exec(new TextDecoder().decode(mail.html.subarray(0, 4096)))?.[1]
       : undefined;
     const html = mail.bodyHtml ?? (mail.html
-      ? decode(mail.html, mail.internetCodepage ? String(mail.internetCodepage) : htmlCharset ?? "utf-8")
+      ? decodeMsgHtml(mail.html, mail.internetCodepage, htmlCharset)
       : "");
     const transport = mail.headers ? await PostalMime.parse(mail.headers + "\r\n\r\n", {
       maxHeadersSize: 256 * 1024,
@@ -129,6 +134,7 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
           content: new Uint8Array(extracted.content).buffer,
         };
       }),
+      blockedImages: 0,
     };
   }
 
@@ -140,29 +146,29 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
   let imageBytes = 0;
   for (const attachment of result.attachments) {
     if (!attachment.contentId || !isSafeInlineImage(attachment)) continue;
+    if (imageBytes + attachment.content.byteLength > MAX_INLINE_IMAGE_BYTES) continue;
     imageBytes += attachment.content.byteLength;
-    if (imageBytes > 8 * 1024 * 1024) break;
     const raw = new Uint8Array(attachment.content);
     let binary = "";
     for (let offset = 0; offset < raw.length; offset += 8192) {
       binary += String.fromCharCode(...raw.subarray(offset, offset + 8192));
     }
-    images.set(attachment.contentId.replace(/^<|>$/g, ""), `data:${attachment.mimeType};base64,${btoa(binary)}`);
+    const id = emailContentId(attachment.contentId);
+    // Duplicate Content-IDs are ambiguous; retain the first embedded resource.
+    if (!images.has(id)) images.set(id, `data:${rasterImageType(attachment.content)};base64,${btoa(binary)}`);
   }
 
-  result.html = sanitizeEmailHtml(result.html, images);
+  const rendered = renderEmailHtml(result.html, images);
+  result.html = rendered.html;
+  result.blockedImages = rendered.blockedImages;
+  for (const attachment of result.attachments) {
+    attachment.inline = !!attachment.contentId && rendered.inlineImageIds.has(emailContentId(attachment.contentId)) && isSafeInlineImage(attachment);
+  }
   return result;
 }
 
 // SVG and HTML are deliberately excluded, including files mislabeled as PNG.
 export function isSafeInlineImage(attachment: EmailAttachment): boolean {
-  const data = new Uint8Array(attachment.content);
-  const starts = (...signature: number[]) => signature.every((value, index) => data[index] === value);
-  switch (attachment.mimeType.toLowerCase()) {
-    case "image/png": return starts(137, 80, 78, 71, 13, 10, 26, 10);
-    case "image/jpeg": return starts(255, 216, 255);
-    case "image/gif": return starts(71, 73, 70, 56) && (data[4] === 55 || data[4] === 57) && data[5] === 97;
-    case "image/webp": return starts(82, 73, 70, 70) && data[8] === 87 && data[9] === 69 && data[10] === 66 && data[11] === 80;
-    default: return false;
-  }
+  const type = rasterImageType(attachment.content);
+  return !!type && [type, "application/octet-stream"].includes(attachment.mimeType.toLowerCase());
 }

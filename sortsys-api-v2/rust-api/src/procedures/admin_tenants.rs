@@ -109,7 +109,7 @@ async fn login(state: &AppState, input: AdminLoginInput) -> RpcResult<AdminLogin
 
     sleep(MIN_LOGIN_TIME.saturating_sub(started.elapsed())).await;
 
-    token
+    token?
         .map(|token| AdminLoginOutput { token })
         .ok_or_else(|| RpcError::new(ErrorCode::Unauthorized, "Login failed").with_http_code(401))
 }
