@@ -15,15 +15,16 @@ export default function OffersPage({
   const modals = useMyModals();
   const [refresh, setRefresh] = useState(0);
   const opened = useRef(false);
+  const session = useSessionInfo();
+  const canCreate = session.canCreate("commercial");
   useEffect(() => {
-    if (openCreateOnMount && !opened.current) {
+    if (openCreateOnMount && canCreate && !opened.current) {
       opened.current = true;
       showCreateOfferModal(modals, {
         onClosed: () => setRefresh((value) => value + 1),
       });
     }
-  }, [openCreateOnMount]);
-  const session = useSessionInfo();
+  }, [openCreateOnMount, canCreate, modals]);
   const title = uiText("Angebote", "Offers");
   useTitle(() => title, [title]);
   return (
@@ -31,7 +32,7 @@ export default function OffersPage({
       <MyHeader
         title={uiText("Angebote", "Offers")}
         actions={
-          session.canDo("manage:projects") && (
+          canCreate && (
             <Button
               onClick={() =>
                 showCreateOfferModal(modals, {

@@ -1,11 +1,13 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   Select,
   SelectItem,
   useNotifications,
 } from "@sortsys/react-components";
 import { MyForm, type MyPublicFormContext } from "./MyForm";
-import { client } from "~/lib/client";
+import { client, organizationSettings } from "~/lib/client";
+import { MyButton } from "./MyButton";
+import { OrganizationEditConflict } from "~/lib/data/organization";
 import { uiText } from "~/lib/i18n";
 import {
   previewInvoiceNumbers,
@@ -22,6 +24,10 @@ export function InvoiceNumberingForm() {
   const [start, setStart] = useState("1");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const edit = useRef<Awaited<ReturnType<typeof organizationSettings.numbering>> | null>(null);
+  const loadSequence = useRef(0);
+  const [conflict, setConflict] = useState(false);
+  const [formVersion, setFormVersion] = useState(0);
   const options: Array<{
     id: InvoiceNumberingScheme;
     label: string;
@@ -80,12 +86,11 @@ export function InvoiceNumberingForm() {
     { date: new Date(), projectId: EXAMPLE_PROJECT_ID },
   );
   async function load(context: MyPublicFormContext) {
-    const [config, error] = await client.query(
-      "settings.invoiceNumbering.get",
-      undefined,
-      { strategy: "network-first" },
-    );
-    if (error || !config) throw error ?? new Error("load-failed");
+    const sequence = ++loadSequence.current;
+    const opened = await organizationSettings.numbering();
+    if (sequence !== loadSequence.current) return;
+    edit.current = opened;
+    const config = opened.value;
     setScheme(config.scheme);
     setStart(config.startNumber);
     context.setValues({ startNumber: config.startNumber });
@@ -96,11 +101,8 @@ export function InvoiceNumberingForm() {
     if (!startNumber) return;
     setSaving(true);
     try {
-      const [, error] = await client.mutate("settings.invoiceNumbering.set", {
-        scheme,
-        startNumber,
-      });
-      if (error) throw error;
+      if (!edit.current) throw new Error("load-failed");
+      await edit.current.save({ scheme, startNumber });
       await client.invalidate("settings.invoiceNumbering.get");
       notifications.success({
         title: uiText(
@@ -108,12 +110,13 @@ export function InvoiceNumberingForm() {
           "Invoice numbering saved",
         ),
       });
-    } finally {
+    } catch (error) { if (error instanceof OrganizationEditConflict) setConflict(true); throw error; }
+    finally {
       setSaving(false);
     }
   }
   return (
-    <MyForm className="max-w-none gap-6" notifyLoaded={load} onSubmit={save}>
+    <><MyForm key={formVersion} className="max-w-none gap-6" notifyLoaded={load} onSubmit={save}>
       <div className="grid items-start gap-4 md:grid-cols-[minmax(0,28rem)_16rem]">
         <Select
           value={scheme}
@@ -214,5 +217,8 @@ export function InvoiceNumberingForm() {
       </section>
       <MyForm.SubmitButton>{uiText("Speichern", "Save")}</MyForm.SubmitButton>
     </MyForm>
+    {conflict && <MyButton kind="secondary" onClick={() => {
+      ++loadSequence.current; edit.current = null; setLoaded(false); setConflict(false); setFormVersion(value => value + 1);
+    }}>{uiText("Aktuellen Stand laden", "Load current settings")}</MyButton>}</>
   );
 }

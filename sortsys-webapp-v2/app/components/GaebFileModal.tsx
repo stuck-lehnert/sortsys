@@ -4,8 +4,10 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { Button, Loading, Modal } from "@sortsys/react-components";
 import {
@@ -21,10 +23,11 @@ import {
 } from "@sortsys/gaeb";
 import "@sortsys/gaeb/styles.css";
 import { useCommercialDialogFrame } from "./CommercialDialogFrame";
-import { client, API_ENDPOINT, reportClientError } from "~/lib/client";
+import { client, projectFiles, API_ENDPOINT, reportClientError } from "~/lib/client";
 import { uiText, useI18n } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import type { CommercialDetail } from "~/lib/commercial";
+import { isWriteConflict } from "~/lib/data/atomicWrites";
 
 export type GaebSavedRevision = {
   id: string;
@@ -77,7 +80,15 @@ export default function GaebFileModal({
 }: Props) {
   const { locale } = useI18n();
   const frame = useCommercialDialogFrame();
-  const [session, setSession] = useState<Session | null>(null);
+  const context = useSyncExternalStore(projectFiles.listenEditorContext, projectFiles.editorContext, projectFiles.editorContext);
+  const [opened, setOpened] = useState<{ context: AbortSignal; session: Session; resource: string } | null>(null);
+  const resource = caseId ? `commercial:${caseId}:${documentId}` : `project:${projectId}:${fileId}`;
+  const requested = useRef({ context, resource }); requested.current = { context, resource };
+  const assertCurrent = useCallback(() => {
+    context.throwIfAborted();
+    if (requested.current.context !== context || requested.current.resource !== resource) throw new DOMException("Aborted", "AbortError");
+  }, [context, resource]);
+  const session = opened?.context === context && opened.resource === resource && !context.aborted ? opened.session : null;
   const [failure, setFailure] = useState("");
   const [retry, setRetry] = useState(0);
   const view = useGaebViewPreferences(retry);
@@ -96,9 +107,10 @@ export default function GaebFileModal({
   onSavedRef.current = onSaved;
   const onCaseRef = useRef(onCaseChange);
   onCaseRef.current = onCaseChange;
-  const [sharedFields] = useState(() => new SharedFields());
+  const sharedFields = useMemo(() => new SharedFields(), [context, resource]);
   useEffect(() => () => sharedFields.destroy(), [sharedFields]);
   const loadCurrent = useCallback(async (): Promise<Session> => {
+    assertCurrent();
     const [value, error] =
       caseId && documentId
         ? await client.query(
@@ -111,24 +123,26 @@ export default function GaebFileModal({
             { projectId: projectId!, fileId: fileId! },
             { strategy: "network-only" },
           );
+    assertCurrent();
     if (error || !value) throw error ?? new Error("load-failed");
     if (!latest.current || value.version >= latest.current.version) {
       sharedFields.acknowledge(value.xml, value.fileName);
       latest.current = value;
     }
     return value;
-  }, [projectId, fileId, caseId, documentId]);
+  }, [projectId, fileId, caseId, documentId, assertCurrent, sharedFields]);
   useEffect(() => {
     let active = true;
-    setSession(null);
+    setOpened(null);
     setFailure("");
     setRemoteXml(undefined);
     setDirty(false);
+    setCollaborators([]);
     latest.current = null;
     void loadCurrent()
       .then((value) => {
         if (active) {
-          setSession(value);
+          setOpened({ context, session: value, resource });
           setCanEdit(value.canEdit);
           setReferenceXml(value.referenceXml ?? undefined);
         }
@@ -148,6 +162,31 @@ export default function GaebFileModal({
   }, [loadCurrent, retry]);
   useEffect(() => {
     if (!session) return;
+    if (!session.livePath && caseId && documentId) {
+      let active = true;
+      const subscription = client.streamQuery("commercial.cases.get", { id: caseId }).subscribe(([detail, error]) => {
+        if (error) { setConnectionStatus("offline"); return; }
+        if (detail) onCaseRef.current?.(detail);
+        void loadCurrent().then(value => {
+          if (!active) return;
+          setConnectionStatus("online"); setRemoteXml(value.xml); setCanEdit(value.canEdit); setReferenceXml(value.referenceXml ?? undefined);
+        }).catch(() => { if (active) setConnectionStatus("offline"); });
+      });
+      return () => { active = false; subscription.unsubscribe(); };
+    }
+    // Private file snapshots use the application's ciphertext-change channel.
+    // Never connect the former plaintext XML socket or store local XML drafts.
+    if (!session.livePath && projectId && fileId) {
+      let active = true;
+      const subscription = client.streamQuery("projects.files.list", { projectId }, { strategy: "network-only" }).subscribe(([, error]) => {
+        if (error) { setConnectionStatus("offline"); return; }
+        void loadCurrent().then(value => {
+          if (!active) return;
+          setConnectionStatus("online"); setRemoteXml(value.xml); setCanEdit(value.canEdit);
+        }).catch(() => { if (active) setConnectionStatus("offline"); });
+      });
+      return () => { active = false; subscription.unsubscribe(); };
+    }
     const connection = connectXmlLive({
       initial: session,
       load: loadCurrent,
@@ -200,6 +239,7 @@ export default function GaebFileModal({
   const save = useCallback(
     async (source: string, base: string) => {
       for (let attempt = 0; attempt < 5; attempt++) {
+        assertCurrent();
         const current = latest.current;
         if (!current) throw new Error("save-failed");
         const merged = mergeGaebDocuments(
@@ -229,6 +269,7 @@ export default function GaebFileModal({
                 version: current.version,
                 xml: merged,
               });
+        assertCurrent();
         if (value && !error) {
           const saved = { ...current, xml: merged, version: value.version };
           if (!latest.current || value.version >= latest.current.version)
@@ -245,7 +286,7 @@ export default function GaebFileModal({
           });
           return merged;
         }
-        if (!error?.message.includes("changed in another editor"))
+        if (!isWriteConflict(error) && !error?.message.includes("changed in another editor"))
           throw error ?? new Error("save-failed");
         await loadCurrent();
       }

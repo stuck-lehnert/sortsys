@@ -65,7 +65,7 @@ async fn xml_live_message(socket: &mut LiveSocket, kind: &str) -> Value {
         panic!("Live socket closed before {kind}");
     })
     .await
-    .expect("Live document message timed out")
+    .unwrap_or_else(|_| panic!("Live document message {kind} timed out"))
 }
 
 #[path = "network_scenarios/billing.rs"]
@@ -78,12 +78,16 @@ mod documents;
 mod login_limits;
 #[path = "network_scenarios/openrouter.rs"]
 mod openrouter;
+#[path = "network_scenarios/quack.rs"]
+mod quack;
 #[path = "network_scenarios/replicas.rs"]
 mod replicas;
 #[path = "network_scenarios/security.rs"]
 mod security;
 #[path = "network_scenarios/seed_documents.rs"]
 mod seed_documents;
+#[path = "network_scenarios/zerotrust.rs"]
+mod zerotrust;
 
 async fn exercise_browser_xml_files(rpc: &RpcClient, project_id: &str, token: &str) -> String {
     let mut first = String::new();
@@ -2224,6 +2228,68 @@ async fn project_files_and_tenant_logo_use_real_postgres_and_s3() {
         .unwrap();
     assert!(saved_bytes.status().is_success());
     assert_eq!(saved_bytes.bytes().await.unwrap().as_ref(), document_bytes);
+
+    // Tokens issued before enrollment must not keep plaintext editor paths
+    // alive. In particular, reject a callback before it can overwrite S3; a
+    // later SQL trigger would leave the object corrupted despite the rollback.
+    sqlx::query("UPDATE __zerotrust_state SET phase='enrolling' WHERE singleton")
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    let source_request_token = encode(
+        &Header::new(Algorithm::HS256),
+        &json!({ "payload": { "url": source_url } }),
+        &EncodingKey::from_secret(onlyoffice_secret.as_bytes()),
+    )
+    .unwrap();
+    assert_eq!(
+        rpc.http
+            .get(source_url)
+            .bearer_auth(source_request_token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
+    let mut rejected_save = force_save_payload.clone();
+    rejected_save["url"] = listed_file["downloadUrl"].clone();
+    let rejected_token = encode(
+        &Header::new(Algorithm::HS256),
+        &json!({ "payload": rejected_save }),
+        &EncodingKey::from_secret(onlyoffice_secret.as_bytes()),
+    )
+    .unwrap();
+    let rejected = rpc
+        .http
+        .post(callback_url)
+        .bearer_auth(rejected_token)
+        .json(&rejected_save)
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(rejected["error"], 1);
+    let unchanged = rpc
+        .http
+        .get(saved_file["downloadUrl"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(
+        unchanged.as_ref(),
+        document_bytes,
+        "a rejected plaintext callback overwrote the stored document"
+    );
+    sqlx::query("UPDATE __zerotrust_state SET phase='unenrolled' WHERE singleton")
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
 
     let final_save_payload = json!({
         "key": document_key,

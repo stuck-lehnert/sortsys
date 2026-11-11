@@ -23,6 +23,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let listener = tokio::net::TcpListener::bind(address).await?;
+    state
+        .live_llm
+        .bind_listener(&state.config, listener.local_addr()?)
+        .await?;
 
     let (backup_stop, backup_stop_receiver) = tokio::sync::watch::channel(false);
     let backup_task = state

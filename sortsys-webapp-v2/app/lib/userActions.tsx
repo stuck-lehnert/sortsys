@@ -136,7 +136,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         ),
         group: "work",
         icon: Icons.Project,
-        requiredRole: "manage:projects",
+        available: sessionInfo.canCreate("commercial"),
         run: () => showCreateOfferModal(modals),
       },
       {
@@ -154,7 +154,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Neues Material oder Produkt anlegen."),
         group: "create",
         icon: Icons.Product,
-        requiredRole: "manage:products",
+        available: sessionInfo.canCreate("products"),
         run: () => showCreateProductModal(modals),
       },
       {
@@ -163,7 +163,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Neuen Produkt-Händler anlegen."),
         group: "create",
         icon: Icons.ProductVendor,
-        requiredRole: "manage:productVendors",
+        available: sessionInfo.canCreate("vendors"),
         run: () => showCreateProductVendorModal(modals),
       },
       {
@@ -181,7 +181,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Neuen Kundenstamm anlegen."),
         group: "create",
         icon: Icons.Customer,
-        requiredRole: "manage:customers",
+        available: sessionInfo.canCreate("customers"),
         run: () => showCreateCustomerModal(modals),
       },
       {
@@ -190,7 +190,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Neue Kontaktperson anlegen."),
         group: "create",
         icon: Icons.Contact,
-        requiredRole: "manage:contacts",
+        available: sessionInfo.canCreate("contacts"),
         run: () => showCreateContactModal(modals),
       },
       {

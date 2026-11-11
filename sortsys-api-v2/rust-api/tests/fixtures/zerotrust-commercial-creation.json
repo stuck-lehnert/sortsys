@@ -1,0 +1,82 @@
+{
+  "authority": "ownttrOyphDw3ONG7yOGlcbGGzp99lnQA2kpQl9U2eQ",
+  "definition": {
+    "tenant": "test",
+    "id": "commercial:abc:master-data",
+    "scope": "commercial:abc",
+    "facet": "master-data",
+    "generation": "1",
+    "policyVersion": "1",
+    "envelopes": [
+      {
+        "tenant": "test",
+        "purpose": "area-key",
+        "object": "commercial:abc:master-data",
+        "generation": "1",
+        "recipient": "user:1",
+        "author": "creator:user:2:1",
+        "format": "sortsys-hpke-v1",
+        "enc": "46kYNI9nCzlGk-7halkpBlhkSlAldlMrrKcNNpUKCTo",
+        "ciphertext": "5I6Qw_YlXB3bcMYkNKic0NJ_YWf3OWpvSK_2G6IY0pzgQP0-HKMtRciZO6zIp0g5",
+        "signature": "AyFMAzG8sH5WiJKnGyvt2cvZ9qWJvDEOBrZ2YpWQ33Li7LBn2ZfB7myZ7QjXX795-YhRxxL7eVxj9U2bBnK4Cw"
+      },
+      {
+        "tenant": "test",
+        "purpose": "area-key",
+        "object": "commercial:abc:master-data",
+        "generation": "1",
+        "recipient": "user:2",
+        "author": "creator:user:2:1",
+        "format": "sortsys-hpke-v1",
+        "enc": "RjIE0v5OrTVjAevLqctlJWFCC38_wrDRPIChIlbs9kY",
+        "ciphertext": "3l7urjMlGjLNmiek72gBOtW0KX7QnosAKrYSu_oQPpG4CHuyuWPrNz6NNH96LWXM",
+        "signature": "0wyjNk45oyu2-KGIolkvEPM-paXsDe0RI-GKSwCGqWFYrEU8FZDg3ahCcZPs4xj_dahKvMxBcGyaIg87gI8xBg"
+      }
+    ],
+    "recoveryEnvelope": {
+      "tenant": "test",
+      "purpose": "area-key",
+      "object": "commercial:abc:master-data",
+      "generation": "1",
+      "recipient": "recovery:1",
+      "author": "creator:user:2:1",
+      "format": "sortsys-hpke-v1",
+      "enc": "iUGwISDzYWUWfgXRQoAT3OZI9smeLxj00-TPVC2B1AM",
+      "ciphertext": "R__Hzq62uKh2ttJAInmlElSJvfMe2LzeEnQBULCc7LY5xgROjrsy7hrPkAi50yiM",
+      "signature": "z3QOa7YvyG-lk-vC_G6I4LVzIkREHRblvrR89fMhM2gzaRh-7Dj5GpAlxFIx4qaFOzwxWHi52ZrOpN6_ics8Ag"
+    },
+    "creation": {
+      "tenant": "test",
+      "id": "commercial:abc:master-data",
+      "scope": "commercial:abc",
+      "facet": "master-data",
+      "capability": {
+        "tenant": "test",
+        "id": "create_test",
+        "generation": "1",
+        "namespace": "commercial",
+        "creator": {
+          "tenant": "test",
+          "generation": "1",
+          "user": "user:2",
+          "encryptionKey": "-MkHfQv3FF3MuJA1sNir310ighHtFFq5meb5On6GqDU",
+          "signingKey": "N04Pa8D0r8CbgVCyibCccgwIAVWZdAWZ_Fx51NB8P4s",
+          "signature": "6HYOanLrb7CptIpL_u3yD_7Rzzv131PXXTaglbyDg2FjtW7pIrKE6rKpT7aDn1RIfDugviBNpLu1dBQjGxmKDA"
+        },
+        "readers": [
+          {
+            "tenant": "test",
+            "generation": "1",
+            "user": "user:1",
+            "encryptionKey": "C3zP8Vn9-6yQ9R4VKaFRrW6kfW9z5ZxLj5C3RoCE5iI",
+            "signingKey": "qCk8gP-CmbhecF8nfxsC8puKVpF6-bT85VfIPJ1Ucfg",
+            "signature": "oPuEmBE8GXiSIv5ZSbLOvToCKuW-f0FC40ME3xrKvDAKk_V-oCvuEhFxD7Rd1CDPT5V776wykFAmwhglT1zxAQ"
+          }
+        ],
+        "signature": "qYn8kNRmJa1qmbnIENOEN-0edm8q8r_726ek71jBpkPGKj_uqB6F_9RtMtZ_GflJIvYUQWche7JA8wDD3YJSCg"
+      },
+      "signature": "aW9zKwraKeribWZ0i0gsI9NQFJ82ZpAGOx80kTM0ykFJZzRzN-qkjvrjxzbnBCLXBZEGKJAn2n3VLhGpLuC0BQ"
+    },
+    "proof": "FgkQv-VK5KNSGMo5RsrAhZVSMtZ9V7v67cUMK5-cCzD1vPBOYZ72AnI2o33Zs_DNHz4aoX8SDAbWabIurGZBCQ"
+  }
+}

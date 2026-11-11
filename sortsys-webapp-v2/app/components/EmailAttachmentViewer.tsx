@@ -1,3 +1,4 @@
+import { fetchFileResource, useFileResourceContext } from "~/lib/fileResources";
 import { useEffect, useMemo, useState } from "react";
 import type { EmailAttachment, EmailPreview } from "~/lib/emailPreview";
 import { emailPreviewDocument, escapeEmailHtml } from "~/lib/emailSanitizer";
@@ -31,7 +32,7 @@ function EmailAttachments({ attachments }: { attachments: EmailAttachment[] }) {
 }
 
 async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBuffer> {
-  const response = await fetch(url, { signal, credentials: "omit" });
+  const response = await fetchFileResource(url, { signal });
   if (!response.ok || !response.body) throw new Error("email-download-failed");
   if (Number(response.headers.get("content-length")) > MAX_EMAIL_BYTES) throw new Error("email-too-large");
   const reader = response.body.getReader();
@@ -39,6 +40,7 @@ async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBu
   let size = 0;
   try {
     while (true) {
+      signal.throwIfAborted();
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
@@ -48,6 +50,7 @@ async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBu
   } finally {
     await reader.cancel();
   }
+  signal.throwIfAborted();
   const bytes = new Uint8Array(size);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
@@ -57,16 +60,20 @@ async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBu
 export default function EmailAttachmentViewer({ url, format }: {
   url: string; format: "eml" | "msg";
 }) {
-  const [mail, setMail] = useState<EmailPreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const context = useFileResourceContext(url);
+  const [state, setState] = useState<{ url: string; format: string; context: AbortSignal | null; mail: EmailPreview | null; error: string | null } | null>(null);
+  const current = state?.url === url && state.format === format && state.context === context && !context?.aborted ? state : null;
+  const mail = current?.mail ?? null, error = current?.error ?? null;
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     const abort = new AbortController();
     let worker: Worker | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    setMail(null);
-    setError(null);
+    setState(null);
+    const cancel = () => { abort.abort(); worker?.terminate(); clearTimeout(timeout); };
+    context?.addEventListener("abort", cancel, { once: true });
+    if (context?.aborted) cancel();
 
     void (async () => {
       const bytes = await readEmailBytes(url, abort.signal);
@@ -83,13 +90,13 @@ export default function EmailAttachmentViewer({ url, format }: {
         worker!.onerror = () => reject(new Error("invalid-email"));
         worker!.postMessage({ bytes, format }, [bytes]);
       });
-      if (!abort.signal.aborted) setMail(parsed);
+      if (!abort.signal.aborted) setState({ url, format, context, mail: parsed, error: null });
     })().catch(cause => {
-      if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "invalid-email");
+      if (!abort.signal.aborted) setState({ url, format, context, mail: null, error: cause instanceof Error ? cause.message : "invalid-email" });
     }).finally(() => { worker?.terminate(); clearTimeout(timeout); });
 
-    return () => { abort.abort(); worker?.terminate(); clearTimeout(timeout); };
-  }, [url, format, retry]);
+    return () => { context?.removeEventListener("abort", cancel); cancel(); };
+  }, [url, format, retry, context]);
 
   const date = mail?.date ? new Date(mail.date) : null;
   const locale = currentLocaleTag();

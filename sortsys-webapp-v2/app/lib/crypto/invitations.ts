@@ -1,0 +1,214 @@
+import type { Client, QueryResult } from "@sortsys/v2-client";
+import { ACTIONS, InvalidProtectedData, allows, base64, certifyIdentity, claimInvitation, createDomain, createInvitation, frame, hpke, invitationApprovalFrame, invitationClaimHash, openBox, policy, policyFrame, readInvitationLink, record, sealBox, sign, sized, verify, verifyDomain, verifyInvitation, verifyInvitationClaim, verifyTrustHistory } from "@sortsys/zerotrust";
+import type { InvitationLink, Rule } from "@sortsys/zerotrust";
+import { unlockedAccount, trustedHistory, updateAccountPins, registerInvitedPassword, signIn } from "./session";
+import { finishAccessChanges } from "./permissions";
+import { openAuthority } from "./setup";
+import { privateLlmCollection } from "../data/privateLlm";
+import { preferenceCollection } from "../data/preferenceData";
+import { provisionOwnedCollections } from "../data/prepareCollections";
+import { PRODUCT_COLLECTION } from "../data/products";
+import { protectedCollection, required } from "../data/protectedObjects";
+import { commitProtectedWrites } from "../data/atomicWrites";
+import { MASTER_DATA_AREAS, MASTER_DATA_FIELDS, managedAccess, type ManagedAccess } from "./accessProfiles";
+import { MEMBER_ORGANIZATION_AREAS } from "../data/organizationData";
+
+export type InvitationAccess = ManagedAccess;
+export type AdminInvitation = { format: "sortsys-admin-invitation-v1"; link: InvitationLink; access: InvitationAccess };
+export type PendingInvitation = AdminInvitation & { entry: QueryResult<"zerotrust.invitations.list">[number] | null };
+const PREFIX = "enrolment:";
+function access(input: unknown): InvitationAccess {
+  return managedAccess(input);
+}
+function savedInvitation(input: unknown): AdminInvitation {
+  const data = record(input, ["format", "link", "access"]);
+  if (data.format !== "sortsys-admin-invitation-v1") throw new InvalidProtectedData();
+  return { format: data.format, link: readInvitationLink(data.link), access: access(data.access) };
+}
+async function admin(client: Client, signal: AbortSignal) {
+  const account = unlockedAccount(); if (!account) throw new InvalidProtectedData();
+  const live = () => { signal.throwIfAborted(); if (unlockedAccount() !== account) throw new InvalidProtectedData(); };
+  live(); const session = await required(client.query("auth.sessionInfo", undefined, { strategy: "network-only" })); live();
+  if (!session.roles.includes(":admin")) throw new InvalidProtectedData();
+  const history = await trustedHistory(client), status = await required(client.query("zerotrust.status", undefined, { strategy: "network-only" })); live();
+  const authority = await openAuthority(client, status.profile); live();
+  return { account, session, history, authority, live };
+}
+export async function invitationMembers(client: Client, signal: AbortSignal) {
+  const context = await admin(client, signal), result: QueryResult<"zerotrust.members.list">["rows"] = [];
+  let after: string | null = null;
+  do {
+    const page: QueryResult<"zerotrust.members.list"> = await required(client.query("zerotrust.members.list", { after }, { strategy: "network-only" })); context.live();
+    if (page.after && page.after === after || result.length + page.rows.length > 10000) throw new InvalidProtectedData();
+    result.push(...page.rows); after = page.after;
+  } while (after);
+  return result.filter(member => member.id !== context.session.user.id);
+}
+export async function administratorInvitations(client: Client, signal: AbortSignal): Promise<PendingInvitation[]> {
+  const context = await admin(client, signal);
+  const collection = await protectedCollection(client, { ...privateLlmCollection(`user:${context.session.user.id}`), prefix: PREFIX }, signal);
+  try {
+    const objects = await collection.read(), published = await required(client.query("zerotrust.invitations.list", undefined, { strategy: "network-only" })); context.live();
+    return await Promise.all(objects.map(async object => {
+      const saved = savedInvitation(object.value), signed = saved.link.invitation;
+      if (object.envelope.object !== PREFIX + signed.id || signed.tenant !== context.account.tenant) throw new InvalidProtectedData();
+      await verifyInvitation(signed, context.history.authority(signed.generation), saved.link.secret);
+      const entry = published.find(entry => entry.invitation.id === signed.id) ?? null;
+      if (entry && entry.invitation.signature !== signed.signature) throw new InvalidProtectedData();
+      return { ...saved, entry };
+    }));
+  } finally { collection.close(); }
+}
+export async function createMemberInvitation(client: Client, member: { id: string; username: string }, permissions: InvitationAccess, signal: AbortSignal): Promise<AdminInvitation> {
+  const context = await admin(client, signal), selected = access(permissions);
+  const draft = await createInvitation({ tenant: context.account.tenant, user: `user:${member.id}`, username: member.username,
+    generation: context.history.current.generation, validUntil: (BigInt(Math.floor(Date.now() / 1000)) + 6n * 86400n).toString() }, context.authority);
+  const saved: AdminInvitation = { format: "sortsys-admin-invitation-v1", link: { ...draft, recoverySigningKey: context.history.current.recoverySigningKey }, access: selected };
+  const collection = await protectedCollection(client, { ...privateLlmCollection(`user:${context.session.user.id}`), prefix: PREFIX }, signal);
+  try {
+    await collection.read(); context.live();
+    const packet = await collection.packet(PREFIX + draft.invitation.id, saved);
+    await commitProtectedWrites(client, [{ packets: [packet], head: { domain: privateLlmCollection(`user:${context.session.user.id}`).domain, sequence: collection.snapshot() },
+      async verify() { return (await collection.read()).find(object => object.envelope.object === packet.envelope.object)?.envelope.signature === packet.envelope.signature; }, close() { collection.close(); } }], signal);
+  } finally { collection.close(); }
+  await publishMemberInvitation(client, saved, signal); return saved;
+}
+export async function publishMemberInvitation(client: Client, saved: AdminInvitation, signal: AbortSignal) {
+  const context = await admin(client, signal);
+  if (saved.link.invitation.generation !== context.history.current.generation) throw new InvalidProtectedData();
+  await verifyInvitation(saved.link.invitation, context.history.authority(context.history.current.generation), saved.link.secret); context.live();
+  await required(client.mutate("zerotrust.invitations.create", saved.link.invitation)); context.live();
+}
+export function memberInvitationUrl(saved: AdminInvitation, origin: string): string {
+  const result = new URL("/auth/invitation", origin);
+  result.hash = base64(new TextEncoder().encode(JSON.stringify(saved.link)));
+  return result.href;
+}
+export async function joinMemberInvitation(client: Client, input: InvitationLink, signal: AbortSignal) {
+  const link = readInvitationLink(input), account = unlockedAccount(); if (!account) throw new InvalidProtectedData();
+  const live = () => { signal.throwIfAborted(); if (account !== unlockedAccount()) throw new InvalidProtectedData(); };
+  live();
+  const session = await required(client.query("auth.sessionInfo", undefined, { strategy: "network-only" })); live();
+  if (account.tenant !== link.invitation.tenant || account.username !== link.invitation.username || `user:${session.user.id}` !== link.invitation.user) throw new InvalidProtectedData();
+  const opened = await required(client.query("zerotrust.invitations.get", { id: link.invitation.id }, { strategy: "network-only" })); live();
+  if (opened.entry.invitation.signature !== link.invitation.signature || BigInt(link.invitation.validUntil) <= BigInt(Math.floor(Date.now() / 1000))) throw new InvalidProtectedData();
+  const history = await verifyTrustHistory(opened.history, { tenant: account.tenant, generation: link.invitation.generation, recoverySigningKey: link.recoverySigningKey });
+  if (history.current.generation !== link.invitation.generation) throw new InvalidProtectedData();
+  await verifyInvitation(link.invitation, history.authority(history.current.generation), link.secret); live();
+  if (account.pins.recoveryGeneration || account.pins.recoverySigningKey) {
+    await verifyTrustHistory(opened.history, { tenant: account.tenant, generation: account.pins.recoveryGeneration!, recoverySigningKey: account.pins.recoverySigningKey! });
+  }
+  const pins = { ...account.pins, recoveryGeneration: history.current.generation, recoverySigningKey: history.current.recoverySigningKey };
+  // Pin the administrator-provided trust anchor in the existing password vault.
+  // This changes the account revision, so create the join proof afterwards.
+  if (JSON.stringify(pins) !== JSON.stringify(account.pins)) {
+    await updateAccountPins(client, pins); signal.throwIfAborted();
+    return joinMemberInvitation(client, link, signal);
+  }
+  if (opened.entry.accepted) { await client.invalidate("zerotrust.status"); return; }
+  const vault = await required(client.query("auth.opaque.vault", undefined, { strategy: "network-only" })); live();
+  const claim = await claimInvitation(link.invitation, link.secret, account.identity, vault.revision); live();
+  await required(client.mutate("zerotrust.invitations.join", claim)); live();
+}
+
+export async function approveMemberInvitation(client: Client, id: string, signal: AbortSignal): Promise<void> {
+  const context = await admin(client, signal);
+  const saved = (await administratorInvitations(client, signal)).find(value => value.link.invitation.id === id);
+  if (!saved?.entry?.claim || saved.entry.revoked || saved.link.invitation.generation !== context.history.current.generation
+    || BigInt(saved.link.invitation.validUntil) <= BigInt(Math.floor(Date.now() / 1000))) throw new InvalidProtectedData();
+  const signed = saved.link.invitation, claim = await verifyInvitationClaim(saved.entry.claim, signed, saved.link.secret); context.live();
+  const claimHash = await invitationClaimHash(claim, signed);
+  const certificate = await certifyIdentity({ tenant: signed.tenant, generation: signed.generation, user: signed.user,
+    encryptionKey: claim.encryptionKey, signingKey: claim.signingKey }, context.authority);
+  const proof = await sign(context.authority, invitationApprovalFrame(signed, claimHash)); context.live();
+  await required(client.mutate("zerotrust.invitations.approve", { id, claimHash, certificate, proof })); context.live();
+  await grantInvitationAccess(client, context, saved, certificate, signal);
+  await finishAccessChanges(client, signal); context.live();
+  const completed = await sign(context.authority, frame("sortsys/invitation-complete/v1", [context.account.tenant, id, context.history.current.generation, claimHash])); context.live();
+  await required(client.mutate("zerotrust.invitations.complete", { id, claimHash, proof: completed })); context.live();
+}
+
+async function grantInvitationAccess(client: Client, context: Awaited<ReturnType<typeof admin>>, saved: AdminInvitation,
+  recipient: { user: string; encryptionKey: string; signingKey: string }, signal: AbortSignal) {
+  const preferences = preferenceCollection(recipient.user);
+  await provisionOwnedCollections(client, `user:${context.session.user.id}`, [preferences], signal); context.live();
+  const current = record(await required(client.query("zerotrust.policy.get", undefined, { strategy: "network-only" })), ["tenant", "version", "rules", "signature"]);
+  const { signature, ...unsigned } = current, permissions = policy(unsigned);
+  if (typeof signature !== "string") throw new InvalidProtectedData();
+  await verify(context.history.authority(context.history.current.generation), signature, policyFrame(permissions)); context.live();
+  const personal = privateLlmCollection(recipient.user);
+  const requested: Rule[] = [], rules = [...permissions.rules];
+  const granted: (typeof PRODUCT_COLLECTION)[] = [];
+  requested.push({ subject: recipient.user, scope: preferences.scope, facet: preferences.facet, effect: "allow", actions: [...ACTIONS] });
+  granted.push(preferences);
+  for (const area of MEMBER_ORGANIZATION_AREAS) {
+    requested.push({ subject: recipient.user, scope: area.scope, facet: area.facet, effect: "allow", actions: ["read"] });
+    granted.push(area);
+  }
+  for (const key of MASTER_DATA_FIELDS) if (saved.access[key] !== "none") {
+    const area = MASTER_DATA_AREAS[key];
+    requested.push({ subject: recipient.user, scope: area.scope, facet: area.facet, effect: "allow", actions: saved.access[key] === "write" ? ["read", "create", "update", "delete"] : ["read"] }); granted.push(area);
+  }
+  if (saved.access.assistant) requested.push({ subject: recipient.user, scope: personal.scope, facet: personal.facet, effect: "allow", actions: [...ACTIONS] });
+  // Invitations add explicit grants. Existing rights and explicit denials need
+  // their own change-and-rotation workflow and must not be silently removed.
+  for (const rule of requested) {
+    if (permissions.rules.some(previous => previous.subject === rule.subject && previous.scope === rule.scope && previous.facet === rule.facet
+      && previous.effect === "deny" && previous.actions.some(action => rule.actions.includes(action)))) throw new InvalidProtectedData();
+    if (!rule.actions.every(action => allows(permissions, { tenant: permissions.tenant, version: permissions.version, subjects: [recipient.user], scope: rule.scope, facet: rule.facet, action }))) rules.push(rule);
+  }
+  let policyVersion = permissions.version;
+  if (JSON.stringify(rules) !== JSON.stringify(permissions.rules)) {
+    policyVersion = (BigInt(policyVersion) + 1n).toString();
+    await required(client.mutate("zerotrust.policy.replace", { tenant: permissions.tenant, version: policyVersion, rules,
+      signature: await sign(context.authority, policyFrame({ tenant: permissions.tenant, version: policyVersion, rules })) })); context.live();
+  }
+  const known = await required(client.query("zerotrust.domains.list", undefined, { strategy: "network-only" })); context.live();
+  for (const area of granted) {
+    const definition = known.find(domain => domain.id === area.domain); if (!definition) throw new InvalidProtectedData();
+    if (BigInt(definition.generation) > 10000n) throw new InvalidProtectedData();
+    // Existing objects can reference every historical key generation.
+    for (let number = 1n; number <= BigInt(definition.generation); number++) {
+      signal.throwIfAborted(); const generation = number.toString();
+      await verifyDomain(await required(client.query("zerotrust.domains.get", { domain: area.domain, generation }, { strategy: "network-only" })),
+        { tenant: context.account.tenant, id: area.domain, scope: area.scope, facet: area.facet, generation }, context.history.authority);
+      const box = await required(client.query("zerotrust.keys.get", { domain: area.domain, generation }, { strategy: "network-only" })); context.live();
+      const authorGeneration = box.author.match(/^authority:([1-9]\d*)$/)?.[1]; if (!authorGeneration) throw new InvalidProtectedData();
+      const raw = await openBox(box, { tenant: context.account.tenant, purpose: "area-key", object: area.domain, generation,
+        recipient: `user:${context.session.user.id}`, author: box.author }, context.account.identity.encryptionKey.privateKey, context.history.authority(authorGeneration));
+      try {
+        const envelope = await sealBox({ tenant: context.account.tenant, purpose: "area-key", object: area.domain, generation,
+          recipient: recipient.user, author: `authority:${context.history.current.generation}` }, raw, await hpke.kem.deserializePublicKey(sized(recipient.encryptionKey, 32)), context.authority);
+        context.live(); await required(client.mutate("zerotrust.keys.grant", { domain: area.domain, generation, envelope })); context.live();
+      } finally { raw.fill(0); }
+    }
+  }
+  if (saved.access.assistant && !known.some(domain => domain.id === personal.domain)) {
+    const { definition } = await createDomain({ tenant: context.account.tenant, id: personal.domain, scope: personal.scope, facet: personal.facet,
+      generation: "1", policyVersion, authorityGeneration: context.history.current.generation, authorityKey: context.authority,
+      recovery: { encryptionKey: context.history.current.recoveryEncryptionKey, signingKey: context.history.current.recoverySigningKey }, readers: [{ subject: recipient.user, identity: recipient }] });
+    context.live(); await required(client.mutate("zerotrust.domains.put", definition)); context.live();
+  }
+}
+export async function revokeMemberInvitation(client: Client, id: string, signal: AbortSignal) {
+  const context = await admin(client, signal);
+  const proof = await sign(context.authority, frame("sortsys/invitation-revoke/v1", [context.account.tenant, id, context.history.current.generation])); context.live();
+  await required(client.mutate("zerotrust.invitations.revoke", { id, proof })); context.live();
+}
+
+/** Verify the link-provided trust anchor before any password operation. */
+export async function inspectMemberInvitation(client: Client, input: InvitationLink, signal: AbortSignal): Promise<{ enrolled: boolean }> {
+  const link = readInvitationLink(input); signal.throwIfAborted();
+  const opened = await required(client.query("auth.opaque.invitation", { tenant: link.invitation.tenant, id: link.invitation.id }, { strategy: "network-only" })); signal.throwIfAborted();
+  if (opened.invitation.signature !== link.invitation.signature || BigInt(link.invitation.validUntil) <= BigInt(Math.floor(Date.now() / 1000))) throw new InvalidProtectedData();
+  const history = await verifyTrustHistory(opened.history, { tenant: link.invitation.tenant, generation: link.invitation.generation, recoverySigningKey: link.recoverySigningKey });
+  if (history.current.generation !== link.invitation.generation) throw new InvalidProtectedData();
+  await verifyInvitation(link.invitation, history.authority(history.current.generation), link.secret); signal.throwIfAborted();
+  return { enrolled: opened.enrolled };
+}
+export async function signInMemberInvitation(client: Client, input: InvitationLink, password: string, signal: AbortSignal) {
+  const state = await inspectMemberInvitation(client, input, signal);
+  if (state.enrolled) await signIn(client, { tenant: input.invitation.tenant, username: input.invitation.username, password }, { opaqueOnly: true });
+  else await registerInvitedPassword(client, input, password, signal);
+  signal.throwIfAborted();
+}

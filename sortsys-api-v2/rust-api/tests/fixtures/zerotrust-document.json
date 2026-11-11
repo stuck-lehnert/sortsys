@@ -1,0 +1,33 @@
+{
+  "publicKey": "Md6-VdN8cidosTcTHKpghwgLLgtguUvXhdFFdc-kmLw",
+  "head": {
+    "tenant": "tenant-test",
+    "scope": "commercial:123",
+    "id": "456",
+    "version": "7",
+    "previous": "",
+    "generation": "2",
+    "policyVersion": "3",
+    "author": "user:12",
+    "modifiedMicros": "1794309133123456",
+    "readOnly": false,
+    "locked": false,
+    "parts": [
+      {
+        "facet": "scope",
+        "object": "commercial:123:scope:document:456:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:manifest",
+        "hash": "HULit7yNjBr4-OA7T64l8fxnchpqKM4M3PHLpU8P6OY",
+        "keys": [
+          {
+            "facet": "scope",
+            "generation": "4"
+          }
+        ]
+      }
+    ],
+    "format": "sortsys-document-head-v1",
+    "signature": "NLTgCdTasM5j1p_SkyIPn0EHmIoVkDJcvVNKY8gX3nrqOUZ5ZI6ueZnGI3fxa7_CGaAQoBjjBkD3EuX0ecJyAg"
+  },
+  "frame": "AAAAGHNvcnRzeXMvZG9jdW1lbnQtaGVhZC92MQAAAAt0ZW5hbnQtdGVzdAAAAA5jb21tZXJjaWFsOjEyMwAAAAM0NTYAAAABNwAAAAAAAAABMgAAAAEzAAAAB3VzZXI6MTIAAAAQMTc5NDMwOTEzMzEyMzQ1NgAAAAVmYWxzZQAAAAVmYWxzZQAAAAExAAAAK0g1dWhnUURzZDlxMGRYNG04ZlUzbWc5cGRESXZoVlhFUFhuem1fWms2Tkk",
+  "hash": "jnfeo4PiaBF14yJveSQFvIbP02H6i0WX-qE5l21_Ui0"
+}

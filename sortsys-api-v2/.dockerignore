@@ -21,5 +21,7 @@
 **/playwright-report
 **/test-results
 **/*.log
+**/*.duckdb
+**/*.duckdb.wal
 **/*.tsbuildinfo
 **/.DS_Store

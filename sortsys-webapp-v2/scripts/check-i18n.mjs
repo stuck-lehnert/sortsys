@@ -30,6 +30,8 @@ const EXCLUDED = [
 ];
 const GERMAN_UI_WORDS = /\b(der|die|das|den|dem|des|ein|eine|einen|einem|einer|kein|keine|keinen|nicht|und|oder|für|fur|mit|ohne|wird|wurde|werden|kann|konnte|bitte|muss|müssen|darf|soll|ist|sind|hat|haben|aus|auf|zur|zum|von|bei|bis|als|jetzt|noch|bereits|ungültig|gelöscht|gespeichert|auswählen|hinzufügen|entfernen|bearbeiten|anzeigen|ausblenden|schließen|öffnen|abbrechen|bestätigen|fehler|passwort|benutzer|projekt|datenbank|eintrag|einträge|stunden|auswahl|anhänge|übersicht|aktivität|urlaub|inventur|inventiert|werkzeug|lieferschein|regiebericht|bautagesbericht|kosten|zeitraum|datum|unterschrift|beschreibung|arbeit|arbeitszeit|foto|fotos|datei|dateien|kunde|kontakt|händler|vorgesetzter|erstellt|aktualisiert|geladen|laden|fehlgeschlagen|nummer|kennzahl|wert|letzte|letzter|verantwortlicher|zeile|seiten|zurück|weiter|speichern|löschen|erstellen|kommentar|gesperrt|beantragt|untergebene|keine|nur|freies|freien)\b/i;
 const TECHNICAL_GERMAN_LITERALS = /^(projekt|datei-)$/i;
+// Stable reference prefixes are identifiers, independent of the UI language.
+const REFERENCE_PREFIXES = new Set(["AUF"]);
 const failures = [];
 
 function walk(target) {
@@ -135,7 +137,7 @@ for (const file of walk(ROOT)) {
         ? node.head.text + node.templateSpans.map(span => span.literal.text).join("")
         : node.text;
 
-      if (GERMAN_UI_WORDS.test(value) && !TECHNICAL_GERMAN_LITERALS.test(value)) {
+      if (GERMAN_UI_WORDS.test(value) && !TECHNICAL_GERMAN_LITERALS.test(value) && !REFERENCE_PREFIXES.has(value)) {
         report(file, sourceFile, node, "German runtime string outside uiText: " + JSON.stringify(value.slice(0, 120)));
       }
     }

@@ -11,10 +11,13 @@ pub struct Config {
     pub job_runner_token: Arc<str>,
     pub llm_encryption_key: Option<Arc<[u8]>>,
     pub llm_mcp_url: Option<Arc<str>>,
+    pub llm_live_internal_url: Option<Arc<str>>,
     pub onlyoffice: Option<OnlyOfficeConfig>,
+    pub office_origin: Option<Arc<str>>,
     pub drawio: Option<DrawioConfig>,
     pub production: bool,
     pub automatic_backups_enabled: bool,
+    pub quack: Option<crate::quack_store::QuackConfig>,
 }
 
 #[derive(Clone)]
@@ -50,10 +53,22 @@ impl Config {
         let llm_mcp_url = optional("LLM_MCP_URL")
             .filter(|value| !value.is_empty())
             .map(Arc::from);
+        let llm_live_internal_url = optional("LLM_LIVE_INTERNAL_URL")
+            .filter(|value| !value.is_empty())
+            .map(|value| crate::llm::live::validate_endpoint(&value).map(Arc::from))
+            .transpose()
+            .map_err(|_| ConfigError::InvalidLiveEndpoint)?;
         let automatic_backups_enabled =
             parse_automatic_backups_enabled(optional("AUTO_BACKUPS_ENABLED").as_deref())?;
         let onlyoffice = onlyoffice_config()?;
+        let office_origin = optional("OFFICE_PUBLIC_ORIGIN")
+            .filter(|value| !value.is_empty())
+            .map(validate_office_origin)
+            .transpose()?
+            .map(Arc::from);
         let drawio = drawio_config()?;
+        let quack =
+            crate::quack_store::QuackConfig::from_env().map_err(|_| ConfigError::InvalidDuckDb)?;
 
         Ok(Self {
             port,
@@ -63,10 +78,13 @@ impl Config {
             job_runner_token: Arc::from(job_runner_token),
             llm_encryption_key,
             llm_mcp_url,
+            llm_live_internal_url,
             onlyoffice,
+            office_origin,
             drawio,
             production,
             automatic_backups_enabled,
+            quack,
         })
     }
 }
@@ -153,13 +171,29 @@ fn is_absolute_http_url(value: &str) -> bool {
         .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
 }
 
+fn validate_office_origin(value: String) -> Result<String, ConfigError> {
+    let origin = url::Url::parse(&value).map_err(|_| ConfigError::InvalidOfficeOrigin)?;
+    let loopback = matches!(origin.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if origin.host_str().is_none()
+        || origin.username() != ""
+        || origin.password().is_some()
+        || origin.path() != "/"
+        || origin.query().is_some()
+        || origin.fragment().is_some()
+        || !(origin.scheme() == "https" || loopback && origin.scheme() == "http")
+    {
+        return Err(ConfigError::InvalidOfficeOrigin);
+    }
+    Ok(origin.origin().ascii_serialization())
+}
+
 fn required(name: &'static str) -> Result<String, ConfigError> {
     optional(name)
         .filter(|value| !value.is_empty())
         .ok_or(ConfigError::Missing(name))
 }
 
-fn optional(name: &str) -> Option<String> {
+pub(crate) fn optional(name: &str) -> Option<String> {
     env::var(name)
         .ok()
         .or_else(|| fs::read_to_string(format!("/run/secrets/SORTSYS_API_V2_{name}")).ok())
@@ -168,6 +202,16 @@ fn optional(name: &str) -> Option<String> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    #[error(
+        "OFFICE_PUBLIC_ORIGIN must be a separate HTTPS origin (HTTP is allowed only on loopback)"
+    )]
+    InvalidOfficeOrigin,
+    #[error(
+        "LLM_LIVE_INTERNAL_URL must identify the root of this API instance without credentials or query parameters"
+    )]
+    InvalidLiveEndpoint,
+    #[error("invalid DuckDB service configuration")]
+    InvalidDuckDb,
     #[error("AUTO_BACKUPS_ENABLED must be true or false")]
     InvalidAutomaticBackupsEnabled,
     #[error("missing environment variable or secret for {0}")]
@@ -194,6 +238,30 @@ mod tests {
         assert!(!parse_automatic_backups_enabled(Some("false")).unwrap());
         assert!(parse_automatic_backups_enabled(Some("")).is_err());
         assert!(parse_automatic_backups_enabled(Some("yes")).is_err());
+    }
+
+    #[test]
+    fn private_office_requires_an_origin_without_credentials_or_paths() {
+        for valid in [
+            "https://office.example.test",
+            "http://localhost:29400",
+            "http://127.0.0.1:29400",
+        ] {
+            assert_eq!(
+                super::validate_office_origin(valid.to_owned()).unwrap(),
+                valid
+            );
+        }
+        for invalid in [
+            "/office",
+            "https://office.example.test/integration/",
+            "http://office.example.test",
+            "https://user:secret@office.example.test",
+            "https://office.example.test?token=value",
+            "https://office.example.test/#key",
+        ] {
+            assert!(super::validate_office_origin(invalid.to_owned()).is_err());
+        }
     }
 
     #[test]

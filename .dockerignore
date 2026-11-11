@@ -10,6 +10,8 @@ sortsys-api-v2/**
 !sortsys-react-components/**
 !sortsys-gaeb/
 !sortsys-gaeb/**
+!sortsys-zerotrust/
+!sortsys-zerotrust/**
 !sortsys-webapp-v2/
 !sortsys-webapp-v2/**
 

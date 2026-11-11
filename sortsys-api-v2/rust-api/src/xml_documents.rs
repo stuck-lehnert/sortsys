@@ -27,6 +27,27 @@ const XML_MIME_TYPE: &str = "application/xml";
 const MAX_XML_SIZE: usize = 20 * 1024 * 1024;
 
 pub async fn request_body_limit(mut request: Request, next: Next) -> Response {
+    // Ciphertexts expand through base64; this remains a bounded opaque payload.
+    if request.method() == axum::http::Method::POST
+        && request
+            .uri()
+            .path()
+            .trim_start_matches('/')
+            .split(',')
+            .any(|p| {
+                matches!(
+                    p,
+                    "zerotrust.objects.save"
+                        | "zerotrust.objects.stage"
+                        | "zerotrust.objects.batch"
+                        | "zerotrust.domains.put"
+                        | "zerotrust.recovery.begin"
+                )
+            })
+    {
+        DefaultBodyLimit::max(32 * 1024 * 1024).apply(&mut request);
+        return next.run(request).await;
+    }
     // Native X31 documents can contain embedded attachments. Allow the document
     // plus JSON string escaping; retain Axum's default for other RPC requests.
     if request.method() == axum::http::Method::POST
@@ -573,5 +594,47 @@ mod title_tests {
             ))
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod body_limit_tests {
+    use axum::{
+        Json, Router,
+        body::Body,
+        http::{Request, StatusCode},
+        routing::post,
+    };
+    use serde_json::Value;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn encrypted_batches_accept_base64_expansion_without_raising_ordinary_rpc_limits() {
+        async fn accept(Json(_value): Json<Value>) -> StatusCode {
+            StatusCode::OK
+        }
+        let app = Router::new()
+            .route("/zerotrust.objects.batch", post(accept))
+            .route("/ordinary", post(accept))
+            .layer(axum::middleware::from_fn(super::request_body_limit));
+        let body = serde_json::json!({"ciphertext":"x".repeat(3 * 1024 * 1024)}).to_string();
+        for (path, expected) in [
+            ("/zerotrust.objects.batch", StatusCode::OK),
+            ("/ordinary", StatusCode::PAYLOAD_TOO_LARGE),
+        ] {
+            let result = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.clone()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.status(), expected);
+        }
     }
 }

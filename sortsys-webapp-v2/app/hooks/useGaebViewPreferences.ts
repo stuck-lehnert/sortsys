@@ -1,33 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_GAEB_VIEW, type GaebViewPreferences } from "@sortsys/gaeb";
-import { client } from "~/lib/client";
+import { client, projectFiles } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
+import { useProtectedDataContext } from "./useProtectedDataContext";
 
-/** Settings are user-scoped on the server; no tenant/user data leaks through a global browser key. */
+type PendingView = { context: AbortSignal; value: GaebViewPreferences };
+/** Preferences outlive the dialog in encrypted storage. Pending saves stay
+ * bound to the account that edited them, including during dialog cleanup. */
 export function useGaebViewPreferences(retry: number) {
+  const context = useProtectedDataContext();
+  const loadedContext = useRef<AbortSignal | null>(null);
   const [preferences, setPreferences] = useState<GaebViewPreferences | null>(
     null,
   );
   const [error, setError] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
-  const latest = useRef<GaebViewPreferences | undefined>(undefined);
-  const pending = useRef<GaebViewPreferences | undefined>(undefined);
+  const latest = useRef<PendingView | undefined>(undefined);
+  const pending = useRef<PendingView | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const queue = useRef(Promise.resolve());
   const flush = useCallback(() => {
     clearTimeout(timer.current);
-    const value = pending.current;
-    if (!value) return queue.current;
+    const entry = pending.current;
+    if (!entry || entry.context !== context) return queue.current;
     pending.current = undefined;
+    const active = () => !context.aborted && projectFiles.context() === context;
+    if (!active()) return queue.current;
     queue.current = queue.current
       .then(async () => {
+        if (!active()) return;
         const [, failure] = await client.mutate(
           "personalization.gaebView.set",
-          value,
+          entry.value,
         );
+        if (!active()) return;
         if (failure) {
-          if (latest.current !== value) return;
-          pending.current ??= value;
+          if (latest.current !== entry) return;
+          pending.current ??= entry;
           setError(
             uiText(
               "Die Ansichtseinstellungen konnten nicht gespeichert werden.",
@@ -37,18 +46,23 @@ export function useGaebViewPreferences(retry: number) {
         } else setError("");
       })
       .catch(() => {
-        if (latest.current === value) pending.current ??= value;
+        if (active() && latest.current === entry) {
+          pending.current ??= entry;
+          setError(uiText("Die Ansichtseinstellungen konnten nicht gespeichert werden.", "View preferences could not be saved."));
+        }
       });
     return queue.current;
-  }, []);
+  }, [context]);
   useEffect(() => {
     let active = true;
+    setPreferences(null); setError(""); latest.current = undefined; pending.current = undefined;
     void client
       .query("personalization.gaebView.get", undefined, {
         strategy: "network-first",
       })
       .then(([value, failure]) => {
-        if (!active) return;
+        if (!active || context.aborted || projectFiles.context() !== context) return;
+        loadedContext.current = context;
         setPreferences(value ?? DEFAULT_GAEB_VIEW);
         setError(
           failure
@@ -63,7 +77,7 @@ export function useGaebViewPreferences(retry: number) {
       active = false;
       void flush();
     };
-  }, [retry, reloadTick, flush]);
+  }, [retry, reloadTick, flush, context]);
   useEffect(() => {
     const online = () => void flush();
     window.addEventListener("online", online);
@@ -71,16 +85,17 @@ export function useGaebViewPreferences(retry: number) {
   }, [flush]);
   const change = useCallback(
     (next: GaebViewPreferences) => {
-      latest.current = next;
-      pending.current = next;
+      if (context.aborted || projectFiles.context() !== context) return;
+      latest.current = { context, value: next };
+      pending.current = latest.current;
       clearTimeout(timer.current);
       timer.current = setTimeout(() => void flush(), 300);
     },
-    [flush],
+    [flush, context],
   );
   return {
-    preferences,
-    error,
+    preferences: loadedContext.current === context && !context.aborted ? preferences : null,
+    error: loadedContext.current === context && !context.aborted ? error : "",
     change,
     flush,
     reload: () => setReloadTick((value) => value + 1),

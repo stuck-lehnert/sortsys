@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -214,6 +214,8 @@ async fn download_source_inner(
     validate_outbox_token(configuration, headers, None)?;
     let claims: FileSessionClaims = decode_session_claims(configuration, token)?;
 
+    let permit = crate::zerotrust::guard_legacy_tenant(state, &claims.tenant).await?;
+
     crate::audit::user(&claims.tenant, claims.user_id, String::new());
     let pool = state
         .tenants
@@ -259,7 +261,13 @@ async fn download_source_inner(
         return Err(payload_too_large());
     }
 
-    let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
+    // Hold the shared cutover permit until the download finishes or is
+    // cancelled. Setup must not overtake an already admitted source stream.
+    let stream = futures_util::stream::unfold(
+        (upstream.bytes_stream(), permit),
+        |(mut stream, permit)| async move { stream.next().await.map(|chunk| (chunk, (stream, permit))) },
+    );
+    let mut response = Response::new(Body::from_stream(stream));
     *response.status_mut() = StatusCode::OK;
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -341,6 +349,10 @@ async fn save_callback_inner(
         .tenant_pool(&claims.tenant)
         .await
         .map_err(internal)?;
+
+    // Refuse old save sessions before downloading or overwriting any S3 object.
+    // SQL triggers alone would run only after the plaintext upload.
+    let _permit = crate::zerotrust::guard_legacy_tenant(state, &claims.tenant).await?;
 
     if !current_user_has_file_access(&pool, &claims, true).await? {
         return Err(forbidden("Project-file editing access has been revoked"));

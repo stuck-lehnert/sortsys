@@ -99,6 +99,14 @@ pub(crate) async fn reserve(
 }
 
 impl LoginAttempt {
+    pub(crate) fn reservation(&self) -> (&[u8], DateTime<Utc>) {
+        (&self.key, self.expires_at)
+    }
+
+    pub(crate) fn resume(key: Vec<u8>, expires_at: DateTime<Utc>) -> Self {
+        Self { key, expires_at }
+    }
+
     pub(crate) async fn succeeded(self, pool: &PgPool) {
         // Return only this successful attempt's reservation. Never erase other
         // failures, or refund an old request into a newly started window.

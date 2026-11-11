@@ -1,3 +1,5 @@
+import { llmActivity } from "./llmActivity";
+
 export type ChatSubmission = {
   content: string;
   existingMessageIds: string[];
@@ -14,6 +16,7 @@ export type ChatRequest<T> = {
 export function createChatRequests<T>() {
   const requests = new Map<string, ChatRequest<T>>();
   const listeners = new Set<() => void>();
+  const controllers = new Map<string, AbortController>();
   let session = 0;
 
   function notify() {
@@ -40,13 +43,15 @@ export function createChatRequests<T>() {
     },
     clear() {
       session += 1;
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
       requests.clear();
       notify();
     },
     async start(
       chatId: string,
       submission: ChatSubmission | null,
-      send: () => Promise<T>,
+      send: (signal: AbortSignal) => Promise<T>,
     ) {
       if (requests.get(chatId)?.pending) {
         return;
@@ -59,16 +64,18 @@ export function createChatRequests<T>() {
         error: null,
       };
       requests.set(chatId, request);
+      const controller = new AbortController(); controllers.set(chatId, controller);
       notify();
 
       let data: T | null = null;
       let error: string | null = null;
 
       try {
-        data = await send();
+        data = await llmActivity.run("chat", chatId, signal => send(signal), controller.signal);
       } catch (cause) {
         error = cause instanceof Error ? cause.message : String(cause);
       }
+      if (controllers.get(chatId) === controller) controllers.delete(chatId);
 
       // Logout or a replacement request must discard late responses.
       if (requests.get(chatId) !== request) {

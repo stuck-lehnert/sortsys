@@ -724,6 +724,7 @@ export function showPriceImportModal(
   documentType: DocumentScanResult["documentType"],
 ) {
   const controller: PriceImportController = { current: null };
+  let attempt: { input: string; requestId: string } | null = null;
 
   modals.showDefault({
     content: () => (
@@ -790,12 +791,15 @@ export function showPriceImportModal(
         };
       });
 
-      const [saved, saveError] = await client.mutate("products.priceImports.apply", {
+      const input = {
         vendorId: state.vendorId,
         effectiveAt: new Date(`${state.effectiveDate}T12:00:00`),
         isRealPurchase: state.isRealPurchase,
         rows: preparedRows,
-      });
+      };
+      const serialized = JSON.stringify(input);
+      if (!attempt || attempt.input !== serialized) attempt = { input: serialized, requestId: crypto.randomUUID() };
+      const [saved, saveError] = await client.mutate("products.priceImports.apply", { ...input, requestId: attempt.requestId });
       if (saveError) throw saveError;
       if (!saved) return;
 

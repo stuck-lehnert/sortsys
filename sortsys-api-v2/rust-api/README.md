@@ -15,6 +15,7 @@ Migrationen aus und verteilt Hintergrundaufträge über WebSockets.
 | `src/auth.rs` und `src/webauthn.rs` | Sitzungen, Rechte, Passwörter und Passkeys |
 | `src/managed_db.rs` | Lebenszyklus und Sicherungen von Mandantendatenbanken |
 | `src/object_storage.rs` | S3-kompatibler Objektspeicher |
+| `src/quack_store/` | Gemeinsamer DuckDB-Dienst für verschlüsselte Inhalte und dessen API-Anbindung |
 | `src/job_runners.rs` | internes WebSocket-Protokoll der Hintergrunddienste |
 | `src/seed.rs` | nachvollziehbare Entwicklungs- und Testdaten |
 | `migrations/` | geordnete PostgreSQL-Mandantenmigrationen |
@@ -23,6 +24,10 @@ Migrationen aus und verteilt Hintergrundaufträge über WebSockets.
 ## Starten und prüfen
 
 Aus `sortsys-api-v2` ausführen:
+
+Direkte Rust-Befehle benötigen die native DuckDB-2.0-Bibliothek. Die
+[Anleitung zum Datendienst](duckdb/README.md#entwicklung-und-prüfungen)
+beschreibt die Installation unter Linux. Die Container bringen sie mit.
 
 ```bash
 cargo run --package sortsys-api --bin sortsys-api
@@ -34,7 +39,7 @@ cargo clippy --package sortsys-api --all-targets -- -D warnings
 Der direkte Start benötigt `PG_MASTER_DSN`, `JWT_SECRET` und `ADMIN_HASH`, produktiv
 zusätzlich `JOB_RUNNER_TOKEN`. Die [Workspace-Konfiguration](../README.md#laufzeitkonfiguration)
 beschreibt alle Variablen. `scripts/dev` im Hauptverzeichnis liefert sie und
-startet PostgreSQL und MinIO mit.
+startet PostgreSQL, DuckDB und MinIO mit.
 
 ## Migrationen und API-Typen
 
@@ -58,7 +63,7 @@ Unit-Tests ergänzen die Netzwerkprüfungen. Aus dem Hauptverzeichnis:
 ./scripts/test-api
 ```
 
-Der Befehl startet temporäre PostgreSQL- und MinIO-Instanzen, API und zwei
+Der Befehl startet temporäre PostgreSQL-, DuckDB- und MinIO-Instanzen, API und zwei
 Hintergrunddienste und prüft Protokoll, Mandantendatenbanken, Dateien und
 Sicherungen über das Netzwerk.
 

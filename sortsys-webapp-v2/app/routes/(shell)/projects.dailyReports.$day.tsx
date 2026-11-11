@@ -1,3 +1,5 @@
+import { projectFiles as privateProjectFiles } from "~/lib/client";
+import { inspectProjectFile } from "~/lib/fileInspection";
 import { uiText } from "~/lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
@@ -206,35 +208,13 @@ export default function DailyProjectReportDetailPage() {
           throw new Error(uiText(`${file.name} ist kein Bild.`, `${file.name} is not an image.`));
         }
 
-        const [uploadData, createErr] = await client.mutate('projects.files.createUpload', {
-          projectId: report.projectId,
-          fileName: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: Number.isFinite(file.size) ? file.size : null,
-        });
-        if (createErr || !uploadData) throw createErr ?? new Error(uiText("Upload konnte nicht vorbereitet werden."));
-
-        const uploadRes = await fetch(uploadData.uploadUrl, {
-          method: uploadData.uploadMethod,
-          headers: uploadData.uploadHeaders,
-          body: file,
-        });
-        if (!uploadRes.ok) {
-          throw new Error(uiText(`Foto-Upload fehlgeschlagen (${uploadRes.status})`, `Photo-Upload failed (${uploadRes.status})`));
-        }
-
-        const etag = uploadRes.headers.get('etag');
-        const [, completeErr] = await client.mutate('projects.files.completeUpload', {
-          projectId: report.projectId,
-          fileId: uploadData.fileId,
-          etag,
-        });
-        if (completeErr) throw completeErr;
+        const fileId = await privateProjectFiles.upload({ projectId: report.projectId, name: file.name,
+          mime: file.type || "application/octet-stream", blob: file, inspect: () => inspectProjectFile(file) });
 
         const [, attachErr] = await client.mutate('projects.dailyReports.photos.add', {
           projectId: report.projectId,
           day: dayKey,
-          fileId: uploadData.fileId,
+          fileId,
         });
         if (attachErr) throw attachErr;
       }

@@ -1,17 +1,23 @@
 import { Tile, useNotifications } from "@sortsys/react-components";
+import { useRef, useState } from "react";
 import { MyForm, type MyPublicFormContext } from "~/components/MyForm";
-import { client } from "~/lib/client";
+import { MyButton } from "./MyButton";
+import { client, organizationSettings } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
+import { OrganizationEditConflict } from "~/lib/data/organization";
 
 export function OrganizationDetailsForm() {
   const notifications = useNotifications();
+  const edit = useRef<Awaited<ReturnType<typeof organizationSettings.profile>> | null>(null);
+  const loadSequence = useRef(0);
+  const [conflict, setConflict] = useState(false);
+  const [formVersion, setFormVersion] = useState(0);
   async function load(context: MyPublicFormContext) {
-    const [profile, error] = await client.query(
-      "settings.organization.get",
-      undefined,
-      { strategy: "network-first" },
-    );
-    if (error || !profile) throw error ?? new Error("load-failed");
+    const sequence = ++loadSequence.current;
+    const opened = await organizationSettings.profile();
+    if (sequence !== loadSequence.current) return;
+    edit.current = opened;
+    const profile = opened.value;
     context.setValues({
       companyName: profile.companyName ?? "",
       streetAddress: profile.address?.streetAddress ?? "",
@@ -33,11 +39,9 @@ export function OrganizationDetailsForm() {
           country: value("country") || null,
         }
       : null;
-    const [, error] = await client.mutate("settings.organization.set", {
-      companyName: value("companyName"),
-      address,
-    });
-    if (error) throw error;
+    if (!edit.current) throw new Error("load-failed");
+    try { await edit.current.save({ companyName: value("companyName"), address }); }
+    catch (error) { if (error instanceof OrganizationEditConflict) setConflict(true); throw error; }
     await client.invalidate("auth.sessionInfo");
     await client.invalidate("settings.organization.get");
     notifications.success({
@@ -47,6 +51,7 @@ export function OrganizationDetailsForm() {
   return (
     <Tile className="space-y-4">
       <MyForm
+        key={formVersion}
         className="max-w-none space-y-4"
         notifyLoaded={load}
         onSubmit={save}
@@ -67,6 +72,9 @@ export function OrganizationDetailsForm() {
         </div>
         <MyForm.SubmitButton>{uiText("Speichern", "Save")}</MyForm.SubmitButton>
       </MyForm>
+      {conflict && <MyButton kind="secondary" onClick={() => {
+        ++loadSequence.current; edit.current = null; setConflict(false); setFormVersion(value => value + 1);
+      }}>{uiText("Aktuellen Stand laden", "Load current settings")}</MyButton>}
     </Tile>
   );
 }

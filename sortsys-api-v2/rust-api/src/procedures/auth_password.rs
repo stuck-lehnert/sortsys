@@ -49,6 +49,21 @@ async fn set_password(
         return Err(forbidden());
     }
 
+    let pool = state
+        .tenants
+        .tenant_pool(&auth.tenant)
+        .await
+        .map_err(internal)?;
+    let enrolled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_accounts a JOIN users u ON u.id=a.user_id WHERE u.username=$1)")
+        .bind(&input.username).fetch_one(&pool).await.map_err(internal)?;
+    if enrolled {
+        return Err(RpcError::new(
+            ErrorCode::Conflict,
+            "Protected accounts require client-side password changes",
+        )
+        .with_http_code(409));
+    }
+
     // Bcrypt is CPU-intensive, so hashing must not occupy a Tokio worker.
     let password = input.password;
     let password_hash = tokio::task::spawn_blocking(move || hash(password, PASSWORD_COST))
@@ -56,11 +71,6 @@ async fn set_password(
         .map_err(internal)?
         .map_err(internal)?;
 
-    let pool = state
-        .tenants
-        .tenant_pool(&auth.tenant)
-        .await
-        .map_err(internal)?;
     let mut transaction = pool.begin().await.map_err(internal)?;
     let user_id =
         sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE username = $1 FOR UPDATE")
@@ -69,6 +79,21 @@ async fn set_password(
             .await
             .map_err(internal)?
             .ok_or_else(not_found)?;
+    // Recheck after locking: a concurrent OPAQUE enrollment may have completed
+    // while bcrypt ran. A normal admin reset must never replace that account.
+    let enrolled: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_accounts WHERE user_id=$1)")
+            .bind(user_id)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal)?;
+    if enrolled {
+        return Err(RpcError::new(
+            ErrorCode::Conflict,
+            "Protected accounts require client-side password changes",
+        )
+        .with_http_code(409));
+    }
     let session_id = auth.session.id.parse::<i64>().map_err(internal)?;
     // Hashing or waiting for the target's lock may have overlapped a password
     // reset. Recheck the caller after the lock, using a fresh statement snapshot.

@@ -75,7 +75,7 @@ initialize_master_database() {
 start_s3() {
   record s3
 }
-start_onlyoffice() {
+start_private_office() {
   for ((attempt = 0; attempt < 200; attempt++)); do
     if [ -f "$DEV_TEST_ROOT/core-ready" ]; then
       record office-ready
@@ -104,8 +104,12 @@ start_webapp_container() {
   test -f "$DEV_TEST_ROOT/client"
   record webapp
 }
+start_duckdb_container() {
+  test -f "$DEV_TEST_ROOT/api-image"
+  record duckdb
+}
 start_api_container() {
-  for dependency in postgres master s3 api-image; do
+  for dependency in postgres master s3 api-image duckdb; do
     test -f "$DEV_TEST_ROOT/$dependency"
   done
 
@@ -132,7 +136,7 @@ wait
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stderr, /diagrams\.net.*unavailable/i);
-    assert.match(result.stdout, /Euro-Office.*ready/i);
+    assert.match(result.stdout, /Office.*ready/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -233,8 +237,8 @@ wait_for_editor_ready office http://127.0.0.1/healthcheck Euro-Office 20
   assert.doesNotMatch(result.stdout, /^exec /m);
 });
 
-test("Office initialization failure prevents editor creation and probing", () => {
-  const definition = developmentFunction("start_onlyoffice");
+test("Office build failure prevents editor creation and probing", () => {
+  const definition = developmentFunction("start_private_office");
   const variables = [...new Set(definition.match(/\bDEV_[A-Z0-9_]+\b/g))];
   const environment = {
     ...Object.fromEntries(variables.map((key) => [key, key])),
@@ -248,7 +252,7 @@ CONTAINER_RUNTIME=record_runtime
 ensure_network() {
   return 0
 }
-prepare_onlyoffice_storage() {
+build_private_office_image() {
   return 23
 }
 record_runtime() {
@@ -257,7 +261,7 @@ record_runtime() {
 wait_for_editor_ready() {
   echo "Health check must not run" >&2
 }
-if start_onlyoffice; then
+if start_private_office; then
   echo "Initialization failure must propagate" >&2
   exit 99
 fi
@@ -269,7 +273,20 @@ fi
   assert.doesNotMatch(result.stderr, /must not run|failure must propagate/);
 });
 
-for (const name of ["start_onlyoffice", "start_drawio"]) {
+test("private Office readiness uses its own Node probe instead of requiring curl", () => {
+  const result = runShell(`
+${developmentFunction("wait_for_editor_ready")}
+DEV_OFFICE_CONTAINER=office
+CONTAINER_RUNTIME=record_runtime
+container_is_running() { return 0; }
+record_runtime() { test "$*" = "exec office node /opt/sortsys-office/run.cjs --health"; }
+sleep() { exit 99; }
+wait_for_editor_ready office "" Office 20
+`);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+for (const name of ["start_private_office", "start_drawio"]) {
   test(`${name} stops probing when container creation fails`, () => {
     const definition = developmentFunction(name);
     const variables = [...new Set(definition.match(/\bDEV_[A-Z0-9_]+\b/g))];
@@ -286,7 +303,7 @@ runtime_mount_suffix=""
 ensure_network() {
   return 0
 }
-prepare_onlyoffice_storage() {
+build_private_office_image() {
   return 0
 }
 record_runtime() {

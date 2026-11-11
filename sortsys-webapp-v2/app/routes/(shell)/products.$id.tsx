@@ -93,7 +93,7 @@ export default function ProductDetailPage() {
                 {
                   label: uiText("Preis verzeichnen"),
                   renderIcon: Icons.PriceRecord,
-                  hideIf: !sessionInfo.canDo("manage:productPriceRecords"),
+                  hideIf: !sessionInfo.canCreate("prices"),
                   onClick: () =>
                     showCreateProductPriceRecordModal(modals, product),
                 },

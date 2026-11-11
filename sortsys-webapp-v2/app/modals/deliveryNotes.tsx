@@ -5,10 +5,11 @@ import { MyCallout } from "~/components/MyCallout";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
-import { client } from "~/lib/client";
+import { client, contentAccess } from "~/lib/client";
 import { productTitle } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProductTile, SmallProjectTile } from "~/lib/tiles";
@@ -48,8 +49,10 @@ export function showCreateDeliveryNoteModal(
   modals: MyModalsInterface,
   prefill?: DeliveryNotePrefill,
 ) {
+  let submission: { key: string; requestId: string } | null = null;
   modals.showForm({
     content: ({ context }) => {
+      const session = useSessionInfo();
       const initialRecordValues = useRef<Record<string, DeliveryNotePrefill["records"][number]>>({}).current;
       const initialSpecialRecordValues = useRef<Record<string, DeliveryNotePrefill["specialRecords"][number]>>({}).current;
 
@@ -74,6 +77,9 @@ export function showCreateDeliveryNoteModal(
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
       const createEntityAction = useCreateEntityAction(modals);
       const forceUpdate = useForceUpdate();
+      const projectId = context.field("project")?.getValue()?.[0]?.id;
+      const canSeePrices = !!projectId && session.canAccess(`project:${projectId}`, "procurement", "read");
+      const canWritePrices = !!projectId && session.canAccess(`project:${projectId}`, "procurement", "create");
 
       return (
         <>
@@ -87,6 +93,7 @@ export function showCreateDeliveryNoteModal(
           ))}
 
           <MyForm.MultiSelect
+            onValueChange={forceUpdate}
             name="project"
             labelText={uiText("Projekt")}
             minSelectedItems={1}
@@ -271,6 +278,7 @@ export function showCreateDeliveryNoteModal(
                     <MyForm.Input
                       required
                       name={prefix + "name"}
+                      suffix={<RemoveSpecialRecord onRemove={() => setSpecialRecordIds(ids => ids.filter(current => current !== id))} />}
                       labelText={uiText("Bezeichnung")}
                       focusOnMount={autoFocusFieldName === prefix + "name"}
                     />
@@ -294,28 +302,13 @@ export function showCreateDeliveryNoteModal(
                         />
                       </div>
 
-                      <div className="min-w-0 basis-1/3 flex-1">
+                      <div className={canSeePrices ? "min-w-0 basis-1/3 flex-1" : "hidden"}>
                         <MyForm.Input
                           name={prefix + "pricePerUnit"}
                           labelText={uiText("Preis pro Einheit")}
+                          disabled={!canWritePrices}
                           type="number"
                           rules={[MyForm.Input.rules.num]}
-                          suffix={
-                            <MyButton
-                              kind="ghost"
-                              size="sm"
-                              className="ss-input-suffix-btn"
-                              title={uiText("Sonderposten entfernen")}
-                              aria-label={uiText("Sonderposten entfernen")}
-                              onClick={() =>
-                                setSpecialRecordIds((ids) =>
-                                  ids.filter((currentId) => currentId !== id),
-                                )
-                              }
-                            >
-                              <Icons.Delete />
-                            </MyButton>
-                          }
                         />
                       </div>
                     </div>
@@ -456,13 +449,14 @@ export function showCreateDeliveryNoteModal(
         });
       });
 
-      const [data, error] = await client.mutate("deliveryNotes.create", {
-        projectId,
-        effectiveTimestamp: values.deliveryDate ?? null,
-        records,
-        specialRecords,
-        comment: String(values.comment ?? "").trim() || null,
-      });
+      const access = await contentAccess.read();
+      const mayWritePrices = access?.can(`project:${projectId}`, "procurement", "create") === true;
+      const input = { projectId, effectiveTimestamp: values.deliveryDate ?? null, records,
+        specialRecords: specialRecords.map(row => ({ ...row, pricePerUnit: mayWritePrices ? row.pricePerUnit : null })),
+        comment: String(values.comment ?? "").trim() || null };
+      const key = JSON.stringify(input);
+      if (!submission || submission.key !== key) submission = { key, requestId: crypto.randomUUID() };
+      const [data, error] = await client.mutate("deliveryNotes.create", { ...input, requestId: submission.requestId });
 
       if (error) throw error;
       if (!data) return;
@@ -481,6 +475,9 @@ export function showCreateDeliveryNoteModal(
 export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: DeliveryNote) {
   modals.showForm({
     content: ({ context }) => {
+      const session = useSessionInfo();
+      const canSeePrices = session.canAccess(`project:${note.projectId}`, "procurement", "read");
+      const canWritePrices = session.canAccess(`project:${note.projectId}`, "procurement", "update");
       const [recordIds, setRecordIds] = useState<string[]>([]);
       const [specialRecordIds, setSpecialRecordIds] = useState<string[]>([]);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
@@ -678,6 +675,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                       <MyForm.Input
                         required
                         name={`specialRecord:${id}:name`}
+                      suffix={<RemoveSpecialRecord onRemove={() => setSpecialRecordIds(ids => ids.filter(current => current !== id))} />}
                         labelText={uiText("Bezeichnung")}
                         focusOnMount={
                           autoFocusFieldName === `specialRecord:${id}:name`
@@ -704,28 +702,13 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                         />
                       </div>
 
-                      <div className="min-w-0 basis-1/3 flex-1">
+                      <div className={canSeePrices ? "min-w-0 basis-1/3 flex-1" : "hidden"}>
                         <MyForm.Input
                           name={`specialRecord:${id}:pricePerUnit`}
                           labelText={uiText("Preis pro Einheit")}
+                          disabled={!canWritePrices}
                           type="number"
                           rules={[MyForm.Input.rules.num]}
-                          suffix={
-                            <MyButton
-                              kind="ghost"
-                              size="sm"
-                              className="ss-input-suffix-btn"
-                              title={uiText("Sonderposten entfernen")}
-                              aria-label={uiText("Sonderposten entfernen")}
-                              onClick={() => {
-                                setSpecialRecordIds((ids) =>
-                                  ids.filter((_id) => _id !== id),
-                                );
-                              }}
-                            >
-                              <Icons.Delete />
-                            </MyButton>
-                          }
                         />
                       </div>
                     </div>
@@ -799,7 +782,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
 
               const specialRecordIdList: string[] = [];
               note.specialRecords?.forEach((record) => {
-                const id = generateId();
+                const id = record.id;
                 specialRecordIdList.push(id);
                 initialSpecialRecordValues[id] = {
                   name: record.name,
@@ -823,6 +806,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
       if (!projectId) return;
 
       const records: {
+        id?: string;
         productId: string;
         quantity: number;
         unit: string;
@@ -830,10 +814,11 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
       }[] = [];
 
       const specialRecords: {
+        id?: string;
         name: string;
         unit: string;
         amount: number;
-        pricePerUnit: number | null;
+        pricePerUnit?: number | null;
       }[] = [];
 
       const recordIds = new Set<string>();
@@ -867,9 +852,11 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           inBaseUnits *= product.otherUnits[unit];
         }
 
-        records.push({ productId: product.id, quantity: inBaseUnits, unit });
+        records.push({ ...(note.records.some(record => record.id === id) ? { id } : {}), productId: product.id, quantity: inBaseUnits, unit });
       });
 
+      const access = await contentAccess.read();
+      const mayWritePrices = access?.can(`project:${note.projectId}`, "procurement", "update") === true;
       specialRecordIds.forEach(id => {
         const name = values[`specialRecord:${id}:name`];
         if (!name) throw new Error();
@@ -889,15 +876,18 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
         }
 
         specialRecords.push({
+          ...(note.specialRecords.some(record => record.id === id) ? { id } : {}),
           name,
           unit,
           amount,
-          pricePerUnit,
+          ...(mayWritePrices ? { pricePerUnit } : {}),
         });
       });
 
       const [data, err] = await client.mutate('deliveryNotes.update', {
         id: note.id,
+        expectedRevision: note.revision,
+        expectedPriceRevision: note.priceRevision,
         data: {
           projectId,
           records,
@@ -955,4 +945,8 @@ export function showDeleteDeliveryNoteModal(modals: MyModalsInterface, note: Del
       primaryButtonText: uiText("Löschen"),
     }),
   });
+}
+
+function RemoveSpecialRecord({ onRemove }: { onRemove: () => void }) {
+  return <MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={onRemove}><Icons.Delete /></MyButton>;
 }

@@ -21,7 +21,9 @@ Die vollständige Umgebung samt Diensten und Beispielmandant im Hauptverzeichnis
 ```
 
 Die folgenden Rust-Befehle aus `sortsys-api-v2` ausführen. Die Toolchain steht
-in der [CI](../.github/workflows/ci.yml):
+in der [CI](../.github/workflows/ci.yml). Außerhalb der Container wird die
+[native DuckDB-Bibliothek](rust-api/duckdb/README.md#entwicklung-und-prüfungen)
+benötigt:
 
 ```bash
 cargo fmt --all -- --check
@@ -29,7 +31,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Die Integrationsprüfung verwendet echte PostgreSQL- und S3-kompatible Dienste:
+Die Integrationsprüfung verwendet echte PostgreSQL-, DuckDB- und S3-kompatible Dienste:
 
 ```bash
 ../scripts/test-api

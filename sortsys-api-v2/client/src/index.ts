@@ -17,6 +17,20 @@ import { concat, from, Observable, Subject } from "rxjs";
  */
 export type CacheMode = "cache-first" | "cache-only" | "network-first" | "network-only";
 
+// Cancelling one consumer must not cancel other operations in the same HTTP
+// batch. A mutation already sent may still commit; only its late client-side
+// result and authentication/cache side effects are discarded here.
+function withRequestSignal<T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return request();
+  let abort: () => void = () => {};
+  return new Promise<T>((resolve, reject) => {
+    abort = () => reject(signal.reason ?? new DOMException("Request cancelled", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    else request().then(resolve, reject);
+  }).finally(() => signal.removeEventListener("abort", abort));
+}
+
 function stableStringify(value: unknown) {
   function normalize(x: unknown): unknown {
     if (x === null || typeof x !== "object") return x;
@@ -102,7 +116,8 @@ export interface Client {
    * - different fetch strategies (`cache-first`, `cache-only`, `network-first`, `network-only`)
    *   ("first" refers to trying that specific source of information first, then the other)
    * - request deduplication (equal network requests that fall within a short shared time window
-   *   are deduplicated, i.e. executed once and share the result)
+   *   are deduplicated, i.e. executed once and share the result; `network-only`
+   *   shares pending requests only and never reuses a completed response)
    */
   query<
     PathT extends QueryPaths,
@@ -143,7 +158,7 @@ export interface Client {
   >(
     path: PathT,
     input: MutateInput<PathT>,
-    opts?: {},
+    opts?: { signal?: AbortSignal },
   ): Promise<[MutateOutput<PathT>, null] | [null, Error]>;
 
   /**
@@ -156,7 +171,7 @@ export interface Client {
   mutateDynamic(
     path: string,
     input: unknown,
-    opts?: {},
+    opts?: { signal?: AbortSignal },
   ): Promise<[unknown, null] | [null, Error]>;
 
   /**
@@ -306,20 +321,28 @@ export function createClient(endpoint: string, realm: string, opts?: {
     await Promise.all(deletions);
   }
 
-  const _pendingRequests: Record<string, Promise<any>> = {};
-  function _dedupeRequest<T>(cacheKey: string, fn: () => Promise<T>) {
-    if (cacheKey in _pendingRequests) return _pendingRequests[cacheKey] as Promise<T>;
+  const _pendingRequests: Record<string, { promise: Promise<any>; settled: boolean }> = {};
+  function _dedupeRequest<T>(cacheKey: string, fn: () => Promise<T>, fresh = false) {
+    const known = _pendingRequests[cacheKey];
+    if (known && (!fresh || !known.settled)) return known.promise as Promise<T>;
 
-    const promise = fn().finally(() => {
-      setTimeout(() => {
-        if (_pendingRequests[cacheKey] === promise) {
-          delete _pendingRequests[cacheKey];
-        }
-      }, 250);
+    const request = { promise: fn(), settled: false };
+    const clear = () => { if (_pendingRequests[cacheKey] === request) delete _pendingRequests[cacheKey]; };
+    request.promise = request.promise.then(value => {
+      request.settled = true;
+      // Network-only may share an outstanding request, never an already
+      // completed policy, key or object response from another point in time.
+      if (fresh) clear(); else setTimeout(clear, 250);
+      return value;
+    }, error => {
+      // A denial must not outlive certification or a permission change on
+      // another API client. Deduplicate failures only while actually pending.
+      clear();
+      throw error;
     });
 
-    _pendingRequests[cacheKey] = promise;
-    return promise;
+    _pendingRequests[cacheKey] = request;
+    return request.promise;
   }
 
   async function _lookup(cacheKey: string) {
@@ -355,11 +378,9 @@ export function createClient(endpoint: string, realm: string, opts?: {
   }
 
   const _authState$ = new Subject<void>();
-  let _lastAuthState = !!bearerToken;
   function _notifyAuthStateListeners() {
-    const current = !!bearerToken;
-    if (current === _lastAuthState) return;
-    _lastAuthState = current;
+    // setToken already ignores identical tokens. Replacing one authenticated
+    // session with another must also discard the prior user's private state.
     _authState$.next();
   }
 
@@ -381,7 +402,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
         const requestAuthScope = _authScope();
 
         try {
-          return [(await _dedupeRequest(cacheKey, () => rpc.query(path, input))) ?? null, null];
+          return [(await _dedupeRequest(cacheKey, () => rpc.query(path, input), _strategy === "network-only")) ?? null, null];
         } catch (e) {
           if (e instanceof RpcClientError) {
             _autoLogoutOnAuthError(e, requestAuthScope);
@@ -521,7 +542,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
         const requestAuthScope = _authScope();
 
         try {
-          return [(await _dedupeRequest(cacheKey, () => rpc.query(path, input))) ?? null, null];
+          return [(await _dedupeRequest(cacheKey, () => rpc.query(path, input), opts?.strategy === "network-only")) ?? null, null];
         } catch (e) {
           if (e instanceof RpcClientError) {
             _autoLogoutOnAuthError(e, requestAuthScope);
@@ -600,11 +621,19 @@ export function createClient(endpoint: string, realm: string, opts?: {
       const requestAuthScope = _authScope();
 
       try {
-        const data = await rpc.mutation<unknown>(path, input);
+        const data = await withRequestSignal(() => rpc.mutation<unknown>(path, input), opts?.signal);
+        opts?.signal?.throwIfAborted();
 
         // Authentication mutations must update the token before invalidating auth
         // queries. Those invalidations can immediately refetch auth.sessionInfo.
-        if (path === 'auth.login' || path === 'auth.passkeys.login') {
+        if (path === 'zerotrust.policy.replace' || path === 'zerotrust.domains.put' || path === 'zerotrust.identities.certify' || path === 'zerotrust.keys.grant' || path === 'zerotrust.invitations.approve' || path === 'zerotrust.invitations.complete') {
+          // Permission and key changes also invalidate completed request
+          // deduplication, including a previously denied key response.
+          for (const affected of ['zerotrust.status', 'zerotrust.trust.history', 'zerotrust.identities.list', 'zerotrust.policy.get', 'zerotrust.domains.list', 'zerotrust.domains.get', 'zerotrust.keys.get', 'zerotrust.objects.list', 'zerotrust.objects.get']) {
+            await client.invalidate(affected);
+          }
+        }
+        if (path === 'auth.login' || path === 'auth.passkeys.login' || path === 'auth.opaque.loginFinish' || path === 'auth.opaque.invitationFinish') {
           const token = (data as { token?: unknown })?.token;
           if (typeof token === 'string' && token) client.setToken(token);
         } else if (path === 'auth.logout') {

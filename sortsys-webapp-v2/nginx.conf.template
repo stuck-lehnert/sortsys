@@ -6,11 +6,6 @@ map $http_upgrade $connection_upgrade {
   '' close;
 }
 
-map $request_uri $onlyoffice_request_uri {
-  ~^/office(?<office_request_path>/.*)$ $office_request_path;
-  default $request_uri;
-}
-
 map $http_x_forwarded_proto $forwarded_proto {
   default $http_x_forwarded_proto;
   '' $scheme;
@@ -19,11 +14,6 @@ map $http_x_forwarded_proto $forwarded_proto {
 map $http_x_forwarded_host $forwarded_host {
   default $http_x_forwarded_host;
   '' $http_host;
-}
-
-map $forwarded_proto $onlyoffice_content_security_policy {
-  ~*^https(?:,|$) "upgrade-insecure-requests";
-  default "";
 }
 
 server {
@@ -52,35 +42,25 @@ server {
   }
     absolute_redirect off;
 
-  location = /office {
-    return 308 /office/;
-  }
-
-  location /office/ {
-    set $onlyoffice_upstream ${ONLYOFFICE_UPSTREAM};
-    proxy_pass $onlyoffice_upstream$onlyoffice_request_uri;
-    proxy_connect_timeout 2s;
-    proxy_http_version 1.1;
-    proxy_set_header X-Forwarded-Host $forwarded_host/office;
-    proxy_set_header X-Forwarded-Proto $forwarded_proto;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-
-    # ONLYOFFICE may still emit an http:// cache URL behind chained TLS proxies.
-    # Upgrade those editor requests in secure browser contexts without affecting local HTTP.
-    add_header Content-Security-Policy $onlyoffice_content_security_policy always;
-    proxy_buffering off;
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
+  # The private Office editor has separate origins and never uses this proxy.
+  location ~ ^/office(?:/|$) {
+    return 403;
   }
 
   location = /drawio {
     return 308 /drawio/;
   }
 
+  # diagrams.net supplies static editor assets. Never forward document data to
+  # its export/proxy/import or cloud integration servlets.
+  location ~ ^/drawio/(?:proxy|export|i|service|log|github2|gitlab|google|microsoft|dropbox)(?:/|$) {
+    return 403;
+  }
+
   location /drawio/ {
+    limit_except GET HEAD {
+      deny all;
+    }
     # The official image serves its web application at /drawio. Preserve that
     # path instead of stripping it while proxying.
     set $drawio_upstream ${DRAWIO_UPSTREAM};
@@ -97,6 +77,8 @@ server {
     proxy_buffering off;
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; form-action 'none'; base-uri 'self'" always;
+    add_header Referrer-Policy "no-referrer" always;
   }
 
   location /pdfjs/ {

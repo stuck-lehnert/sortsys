@@ -15,6 +15,7 @@ ignore_files=(
   sortsys-api-v2/.dockerignore
   sortsys-v2-job_runner/.dockerignore
   sortsys-webapp-v2/.dockerignore
+  sortsys-office/.dockerignore
 )
 
 for index in "${!ignore_files[@]}"; do
@@ -77,6 +78,12 @@ for index in "${!ignore_files[@]}"; do
 
   if [[ $index -eq 1 ]]; then
     retained+=(seed-assets/grundriss-erdgeschoss.dwg seed-assets/baubesprechung.msg seed-assets/manifest.json)
+  fi
+
+  if [[ $index -eq 4 ]]; then
+    retained=(config.cjs infra.cjs origins.cjs patch-office.cjs run.cjs README.md)
+    canaries+=(local-credentials.cjs)
+    printf 'private-test-canary\n' >"$context/local-credentials.cjs"
   fi
 
   if [[ $index -eq 0 ]]; then

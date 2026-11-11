@@ -11,6 +11,7 @@ use axum::{
     routing::get,
 };
 use chrono::{DateTime, Utc};
+use futures_util::StreamExt;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -206,6 +207,7 @@ async fn download_source_inner(
     validate_outbox_token(configuration, headers)?;
     let claims: ExportSessionClaims = decode_claims(configuration, token)?;
     ensure_user_is_active(state, &claims).await?;
+    let permit = crate::zerotrust::guard_legacy_tenant(state, &claims.tenant).await?;
 
     let storage = object_storage::tenant_config(&state.tenants, &claims.tenant, true)
         .await?
@@ -240,7 +242,11 @@ async fn download_source_inner(
         return Err(payload_too_large());
     }
 
-    let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
+    let stream = futures_util::stream::unfold(
+        (upstream.bytes_stream(), permit),
+        |(mut stream, permit)| async move { stream.next().await.map(|chunk| (chunk, (stream, permit))) },
+    );
+    let mut response = Response::new(Body::from_stream(stream));
     *response.status_mut() = StatusCode::OK;
     response.headers_mut().insert(
         header::CONTENT_TYPE,

@@ -1,8 +1,8 @@
 # Lokale Entwicklung
 
 Mit dem [Schnellstart](../README.md#entwicklung) steht eine vollständige Umgebung
-bereit: PostgreSQL, MinIO, API, zwei Hintergrunddienste, Webapp, Euro-Office und
-diagrams.net. Euro-Office und diagrams.net starten unabhängig von API und Webapp
+bereit: PostgreSQL, DuckDB-Dienst, MinIO, API, zwei Hintergrunddienste, Webapp,
+Office-Dienst und diagrams.net. Die Editoren starten unabhängig von API und Webapp
 und können erst später verfügbar sein.
 
 ## Dienste
@@ -13,12 +13,13 @@ und können erst später verfügbar sein.
 | API | <http://127.0.0.1:3000> |
 | PostgreSQL | `127.0.0.1:32532` |
 | MinIO | <http://127.0.0.1:39100> |
-| Euro-Office | <http://127.0.0.1:39180> |
+| Office | <http://127.0.0.1:39180> |
+| Office-Sandbox | <http://127.0.0.1:39182> |
 | diagrams.net | <http://127.0.0.1:39181> |
 
 Ports und Images lassen sich über die `DEV_*`-Variablen am Anfang von
-[`scripts/dev`](../scripts/dev) anpassen. `CONTAINER_RUNTIME=docker` beziehungsweise
-`podman` wählt die Container-Laufzeit ausdrücklich aus.
+[`scripts/dev`](../scripts/dev) anpassen. Das Skript verwendet Podman, wenn es
+verfügbar ist, andernfalls Docker.
 
 ## Daten und Protokolle
 
@@ -26,7 +27,11 @@ Jeder Start erstellt die Entwicklungsdatenbanken neu. Dienstdaten und
 Abhängigkeits-Caches liegen im ignorierten Verzeichnis `.dev-data/`. Beim Beenden
 werden die Container entfernt und diese Ordner erhalten. Beim nächsten Start
 werden die Entwicklungsdatenbanken trotzdem zurückgesetzt. Vorhandene
-Editordatenbanken bleiben erhalten.
+Office-Sitzungsstände bleiben unter `.dev-data/private-office/` erhalten. Der
+Office-Dienst wird aus `sortsys-office/` gebaut; die beiden Editor-Origins und
+die Webapp-Origin müssen verschieden sein. Die API erhält nur die öffentliche
+Editoradresse. Ein klassischer Dokumentserver mit Klartext-Callbacks startet
+nicht mehr.
 
 Dienstprotokolle zeigt `docker logs -f sortsys-dev-api` beziehungsweise der
 entsprechende Podman-Befehl. Bei fehlgeschlagenem API-Start bleiben der Container

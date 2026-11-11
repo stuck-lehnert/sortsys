@@ -32,6 +32,9 @@ jobs:
           - image: webapp
             context: .
             file: ./sortsys-webapp-v2/Dockerfile
+          - image: office
+            context: ./sortsys-office
+            file: ./sortsys-office/Dockerfile
     steps:
       - uses: actions/checkout@v7
       - name: Select image tags

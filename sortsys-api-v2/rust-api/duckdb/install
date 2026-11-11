@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+destination="${1:?usage: install DESTINATION [amd64|arm64]}"
+architecture="${2:-$(uname -m)}"
+case "$architecture" in
+  aarch64|arm64)
+    platform=linux_arm64
+    library_sha=c60eecf91143ca6bbac55c4f4d40dc22520488b0ac257c86e0fe9a2b451cf2b7
+    httpfs_sha=53f7aea1a0448ea62ef9b63f95da37c5766070084f14f14110e275e76382e7b2
+    quack_sha=f3e30e7533f53e2b935ec29b59f87cb26ec3afaacb9880e9072426a6d16ced9e
+    ;;
+  x86_64|amd64)
+    platform=linux_amd64
+    library_sha=993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1
+    httpfs_sha=77e6c429aa04f25da7962572f12b19113e0ce46080fa1365ad66017aadcdb68d
+    quack_sha=9c893bd543ec2c5253d0c47d5614f90a1bfa1791c735dc6bbcea4e8bd3811a97
+    ;;
+  *) echo "DuckDB server builds support Linux amd64 and arm64" >&2; exit 1 ;;
+esac
+
+download_dir="$(mktemp -d)"
+trap 'rm -rf "$download_dir"' EXIT
+mkdir -p "$destination"
+curl --fail --location --retry 3 --silent --show-error \
+  "https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-shared-libs-linux-${platform#linux_}.tar.gz" \
+  -o "$download_dir/library.tar.gz"
+printf '%s  %s\n' "$library_sha" "$download_dir/library.tar.gz" | sha256sum --check --status
+tar -xzf "$download_dir/library.tar.gz" -C "$destination"
+
+extensions="$destination/extensions/v2.0.0/$platform"
+mkdir -p "$extensions"
+for extension in httpfs quack; do
+  curl --fail --location --retry 3 --silent --show-error \
+    "https://extensions.duckdb.org/v2.0.0/$platform/$extension.duckdb_extension.gz" \
+    -o "$download_dir/$extension.gz"
+  gzip -dc "$download_dir/$extension.gz" > "$extensions/$extension.duckdb_extension"
+done
+printf '%s  %s\n' "$httpfs_sha" "$extensions/httpfs.duckdb_extension" "$quack_sha" "$extensions/quack.duckdb_extension" | sha256sum --check --status
+# DuckDB additionally verifies the publisher signatures when loading extensions.

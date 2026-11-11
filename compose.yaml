@@ -16,33 +16,56 @@ services:
       start_period: 10s
     stop_grace_period: 1m
 
-  onlyoffice:
-    # Keep the service and API variable names for DocsAPI compatibility.
-    image: ${ONLYOFFICE_IMAGE:-ghcr.io/euro-office/documentserver:latest@sha256:39c4cdad8c335d05ea5653926e1fc3a69da006d9c1729936b2b4193140cd2962}
+  duckdb:
+    build:
+      context: ./sortsys-api-v2
+      dockerfile: Dockerfile
+    command: ["/usr/local/bin/sortsys-duckdb"]
     restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
     environment:
-      JWT_ENABLED: "true"
-      JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
-      JWT_HEADER: Authorization
-      JWT_IN_BODY: "false"
-      # Source downloads and save callbacks use the internal API network.
-      ALLOW_PRIVATE_IP_ADDRESS: "true"
-      EXAMPLE_ENABLED: "false"
+      DUCKDB_SERVICE_TOKEN: ${SERVICE_BASE64_64_DUCKDB}
+      DUCKDB_DATA_DIRECTORY: /var/lib/sortsys-duckdb
     expose:
-      - "80"
+      - "9494"
+      - "9495"
     volumes:
-      - euro-office-data:/var/www/euro-office/Data
-      - euro-office-state:/var/lib/euro-office/documentserver
-      - euro-office-database:/var/lib/postgresql
-      - euro-office-logs:/var/log/euro-office/documentserver
+      - duckdb-data:/var/lib/sortsys-duckdb
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/healthcheck"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 90s
-    shm_size: "2gb"
+      test: ["CMD", "/usr/local/bin/sortsys-duckdb", "--health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     stop_grace_period: 1m
+
+  office:
+    build:
+      context: ./sortsys-office
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+    environment:
+      OFFICE_PUBLIC_ORIGIN: ${OFFICE_PUBLIC_ORIGIN}
+      OFFICE_SANDBOX_ORIGIN: ${OFFICE_SANDBOX_ORIGIN}
+      SORTSYS_PUBLIC_ORIGIN: ${SORTSYS_PUBLIC_ORIGIN}
+    expose:
+      - "8080"
+    volumes:
+      - private-office-data:/var/lib/sortsys-office
+    stop_grace_period: 20s
 
   drawio:
     image: ${DRAWIO_IMAGE:-jgraph/drawio:32.6.9}
@@ -75,25 +98,30 @@ services:
     networks:
       - default
       - jobs
+      - data
     environment:
       NODE_ENV: production
       PORT: "3000"
       AUTO_BACKUPS_ENABLED: ${AUTO_BACKUPS_ENABLED:-true}
       PG_MASTER_DSN: postgresql://${POSTGRES_USER:-sortsys}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/${POSTGRES_DB:-sortsys}
       JWT_SECRET: ${SERVICE_BASE64_64_JWT}
+      DUCKDB_QUACK_URI: quack:duckdb:9494
+      DUCKDB_CONTROL_URL: http://duckdb:9495
+      DUCKDB_SERVICE_TOKEN: ${SERVICE_BASE64_64_DUCKDB}
+      DUCKDB_QUACK_DISABLE_SSL: "true"
       ADMIN_HASH: ${ADMIN_HASH:?Set ADMIN_HASH to a bcrypt hash for the global administrator}
       JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
       LLM_ENCRYPTION_KEY: ${SERVICE_BASE64_64_LLM}
       LLM_MCP_URL: ${LLM_MCP_URL:-}
-      ONLYOFFICE_PUBLIC_URL: /office
-      ONLYOFFICE_INTERNAL_URL: http://onlyoffice
-      ONLYOFFICE_CALLBACK_URL: http://api:3000/internal/onlyoffice/callback
-      ONLYOFFICE_JWT_SECRET: ${SERVICE_BASE64_64_ONLYOFFICE}
+      LLM_LIVE_INTERNAL_URL: ${LLM_LIVE_INTERNAL_URL:-}
+      OFFICE_PUBLIC_ORIGIN: ${OFFICE_PUBLIC_ORIGIN}
       DRAWIO_PUBLIC_URL: /drawio
     expose:
       - "3000"
     depends_on:
       postgres:
+        condition: service_healthy
+      duckdb:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/ping"]
@@ -153,7 +181,6 @@ services:
     environment:
       SERVICE_URL_WEBAPP_80: /
       API_UPSTREAM: http://api:3000
-      ONLYOFFICE_UPSTREAM: http://onlyoffice
       DRAWIO_UPSTREAM: http://drawio:8080
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-64m}
     expose:
@@ -171,10 +198,10 @@ services:
 networks:
   default:
   jobs:
+  data:
+    internal: true
 
 volumes:
+  private-office-data:
   postgres-data:
-  euro-office-data:
-  euro-office-state:
-  euro-office-database:
-  euro-office-logs:
+  duckdb-data:

@@ -87,7 +87,7 @@ export default function ToolDetailPage() {
                         {
                             label: sessionInfo.canDo("manage:toolTrackings") ? uiText("Umbuchen") : uiText("Umbuchungsanfrage"),
                             renderIcon: Icons.Transfer,
-                            hideIf: !activeTracking || !(sessionInfo.canDo('manage:toolTrackings') || sessionInfo.user.id === activeTracking.id),
+                            hideIf: !activeTracking || !(sessionInfo.canDo('manage:toolTrackings') || sessionInfo.user.id === activeTracking.responsibleUserId || sessionInfo.user.id === activeTracking.startedByUserId),
                             onClick: () => showToolTransferModal(modals, {
                                 tool, tracking: activeTracking!,
                                 isRequest: !sessionInfo.canDo('manage:toolTrackings'),

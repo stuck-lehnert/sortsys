@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!config.cjs
+!infra.cjs
+!origins.cjs
+!patch-office.cjs
+!run.cjs
+!README.md

@@ -389,7 +389,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "deliveryNotes.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | { productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | { name: string; unit: string; amount: number; pricePerUnit: null | number; comment?: undefined | null | string; }[]; }",
+        input_ts: "{ requestId?: string; projectId: string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | { productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | { name: string; unit: string; amount: number; pricePerUnit: null | number; comment?: undefined | null | string; }[]; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
@@ -402,18 +402,18 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "deliveryNotes.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; } | { autoId: unknown; }",
-        output_ts: "{ id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; }",
+        output_ts: "{ revision?: string; priceRevision?: string; id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; }",
     },
     RawContractSpec {
         path: "deliveryNotes.list",
         kind: ProcedureKind::Query,
         input_ts: "{ projectId?: undefined | null | string; createdByUserId?: undefined | null | string; }",
-        output_ts: "{ id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; }[]",
+        output_ts: "{ revision?: string; priceRevision?: string; id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; }[]",
     },
     RawContractSpec {
         path: "deliveryNotes.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; data: { projectId?: undefined | null | string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | null | { productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | null | { name: string; unit: string; amount: number; pricePerUnit: null | number; comment?: undefined | null | string; }[]; }; }",
+        input_ts: "{ expectedRevision?: string; expectedPriceRevision?: string; id: string; data: { projectId?: undefined | null | string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | null | { id?: string; productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | null | { id?: string; name: string; unit: string; amount: number; pricePerUnit?: null | number; comment?: undefined | null | string; }[]; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {

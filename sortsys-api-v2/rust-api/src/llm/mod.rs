@@ -1,6 +1,7 @@
 //! LLM configuration, provider access, MCP transport, and safe data tools.
 
 mod documents;
+pub mod live;
 mod provider;
 mod schema;
 
@@ -12,7 +13,7 @@ use aes_gcm::{
 };
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -1131,6 +1132,7 @@ fn is_user_facing_procedure(path: &str) -> bool {
         "llm.",
         "passkeys.",
         "personalization.",
+        "zerotrust.",
     ]
     .iter()
     .any(|prefix| path.starts_with(prefix))
@@ -1910,9 +1912,13 @@ fn mcp_tool_result(result: RpcResult<Value>) -> RpcResult<Value> {
 
 async fn handle_mcp(
     State(state): State<Arc<AppState>>,
+    Query(parameters): Query<std::collections::HashMap<String, String>>,
     headers: HeaderMap,
     Json(request): Json<McpRequest>,
 ) -> Response {
+    if let Some(route) = parameters.get("live") {
+        return live::handle_mcp(state, headers, request, route).await;
+    }
     let id = request.id.clone().unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
@@ -1946,6 +1952,18 @@ async fn handle_mcp(
             };
 
             return (status, Json(mcp_error(id, -32000, &error.message))).into_response();
+        }
+    };
+    // Legacy tools query SQL directly rather than through the RPC guard. They
+    // must not become a plaintext fallback after encryption setup/cutover.
+    let _legacy_permit = match crate::zerotrust::guard_legacy_tenant(&state, &auth.tenant).await {
+        Ok(permit) => permit,
+        Err(error) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(mcp_error(id, -32000, &error.message)),
+            )
+                .into_response();
         }
     };
 
@@ -1992,6 +2010,12 @@ async fn handle_mcp(
                     .get("arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
+                // The registry acquires the same cutover fence itself. Retaining
+                // this outer slot would recursively exhaust handler admission.
+                // Direct SQL tools keep the permit for their whole operation.
+                if name == "sortsys_query" {
+                    drop(_legacy_permit);
+                }
                 let output = execute_mcp_tool(&state, &auth, scope, name, arguments).await;
 
                 mcp_tool_result(output)

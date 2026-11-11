@@ -1,3 +1,7 @@
+import { FileResourceImage } from "~/components/FileResourceImage";
+import { downloadFileResource, fetchFileResource, useFileResource } from "~/lib/fileResources";
+import { inspectProjectFile } from "~/lib/fileInspection";
+import { projectFiles as privateProjectFiles } from "~/lib/client";
 import { Loading, Select, SelectItem } from "@sortsys/react-components";
 import { Button as UIAction } from "@sortsys/react-components";
 import { Input as UIInput } from "@heroui/react";
@@ -5,7 +9,7 @@ import { uiText } from "~/lib/i18n";
 import { Modal, useNotifications } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
 import { DrawioEditor } from "~/components/DrawioEditor";
-import { OnlyOfficeEditor } from "~/components/OnlyOfficeEditor";
+import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { ZoomableImage } from "~/components/ZoomableImage";
 import {
@@ -89,12 +93,6 @@ type ProjectFileEntry = {
   downloadExpiresAt?: Date | null;
   downloadAttachmentUrl?: string | null;
   downloadAttachmentExpiresAt?: Date | null;
-};
-
-type OnlyOfficeSession = {
-  apiUrl: string;
-  canEdit: boolean;
-  config: Record<string, unknown>;
 };
 
 type DrawioSession = {
@@ -205,11 +203,6 @@ export default function ProjectFilesPage() {
   const [activePreviewFileId, setActivePreviewFileId] = useState<string | null>(
     null,
   );
-  const [officeSession, setOfficeSession] = useState<OnlyOfficeSession | null>(
-    null,
-  );
-  const [officeError, setOfficeError] = useState<string | null>(null);
-  const [officeLoading, setOfficeLoading] = useState(false);
   const [activeDrawioFileId, setActiveDrawioFileId] = useState<string | null>(
     null,
   );
@@ -244,7 +237,6 @@ export default function ProjectFilesPage() {
     setActiveDrawioFileId(null);
     setActiveGaebFileId(null);
     setActiveFallbackFileId(null);
-    setOfficeSession(null);
     setDrawioSession(null);
   };
   const closeFileLocation = useCallback(() => {
@@ -381,7 +373,6 @@ export default function ProjectFilesPage() {
     if (attachments.some((entry) => entry.id === activeOfficeFileId)) return;
 
     setActiveOfficeFileId(null);
-    setOfficeSession(null);
   }, [activeOfficeFileId, attachments]);
   useEffect(() => {
     if (
@@ -404,10 +395,14 @@ export default function ProjectFilesPage() {
   const attachmentDownloadUrl = (file: ProjectFileEntry) =>
     file.downloadAttachmentUrl || file.downloadUrl || null;
 
-  const activeDwgDownloadUrl = activeDwgFile
+  const activeImageResource = useFileResource(activeImage?.downloadUrl);
+  const activeVideoResource = useFileResource(activeVideo?.downloadUrl || activeVideo?.downloadAttachmentUrl);
+  const activeDwgSource = activeDwgFile
     ? activeDwgFile.downloadUrl || activeDwgFile.downloadAttachmentUrl || null
     : null;
 
+  const activeDwgResource = useFileResource(activeDwgSource);
+  const activeDwgDownloadUrl = activeDwgResource.url;
   const activeDwgDocument = useMemo<PlanDocument | null>(() => {
     if (!activeDwgFile || !activeDwgDownloadUrl) return null;
 
@@ -460,39 +455,10 @@ export default function ProjectFilesPage() {
     closeFileLocation();
   };
 
-  const openOfficeEditor = async (file: ProjectFileEntry) => {
-    const request = ++editorRequest.current;
-    setActiveOfficeFileId(file.id);
-    setOfficeSession(null);
-    setOfficeError(null);
-    setOfficeLoading(true);
-
-    const [session, error] = await client.query("projects.files.officeConfig", {
-      fileId: file.id,
-      projectId: project.id,
-    });
-
-    if (request !== editorRequest.current) return;
-    setOfficeLoading(false);
-
-    if (error || !session) {
-      setOfficeError(
-        error?.message ??
-          uiText(
-            "Das Dokument konnte nicht geöffnet werden.",
-            "The document could not be opened.",
-          ),
-      );
-      return;
-    }
-
-    setOfficeSession(session);
-  };
+  const openOfficeEditor = (file: ProjectFileEntry) => { setActiveOfficeFileId(file.id); };
 
   const closeOfficeEditor = useCallback(() => {
     setActiveOfficeFileId(null);
-    setOfficeSession(null);
-    setOfficeError(null);
     closeFileLocation();
 
     void client.invalidate("projects.files.list");
@@ -676,53 +642,8 @@ export default function ProjectFilesPage() {
   }, [activeImageIndex, imageFiles.length]);
 
   async function uploadProjectFile(file: File, folderId: string | null) {
-    const [uploadData, createError] = await client.mutate(
-      "projects.files.createUpload",
-      {
-        projectId: project.id,
-        folderId,
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: Number.isFinite(file.size) ? file.size : null,
-      },
-    );
-    if (createError || !uploadData) {
-      throw (
-        createError ??
-        new Error(
-          uiText(
-            "Upload konnte nicht vorbereitet werden.",
-            "Upload could not be prepared.",
-          ),
-        )
-      );
-    }
-
-    const response = await fetch(uploadData.uploadUrl, {
-      method: uploadData.uploadMethod,
-      headers: uploadData.uploadHeaders,
-      body: file,
-    });
-    if (!response.ok) {
-      throw new Error(
-        uiText(
-          `Datei-Upload fehlgeschlagen (${response.status})`,
-          `File upload failed (${response.status})`,
-        ),
-      );
-    }
-
-    const [, completeError] = await client.mutate(
-      "projects.files.completeUpload",
-      {
-        projectId: project.id,
-        fileId: uploadData.fileId,
-        etag: response.headers.get("etag"),
-      },
-    );
-    if (completeError) throw completeError;
-
-    return uploadData.fileId;
+    return privateProjectFiles.upload({ projectId: project.id, folderId, name: file.name,
+      mime: file.type || "application/octet-stream", blob: file, inspect: () => inspectProjectFile(file) });
   }
 
   async function uploadSelectedFiles(
@@ -1271,12 +1192,16 @@ export default function ProjectFilesPage() {
     }
   }
 
+  async function downloadResource(url: string, name: string) {
+    try { await downloadFileResource(url, name); }
+    catch { notifications.danger({ title: uiText("Download fehlgeschlagen", "Download failed"), content: uiText("Die Datei konnte nicht geladen werden.", "The file could not be loaded.") }); }
+  }
   function downloadBrowserFile(file: ProjectFileBrowserFile) {
     const attachment = attachments.find(
       (candidate) => candidate.id === file.id,
     );
     const url = attachment ? attachmentDownloadUrl(attachment) : null;
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    if (url) void downloadResource(url, file.fileName);
   }
 
   async function downloadSelectedAsZip() {
@@ -1307,7 +1232,7 @@ export default function ProjectFilesPage() {
         const url = attachmentDownloadUrl(file);
         if (!url) continue;
 
-        const response = await fetch(url);
+        const response = await fetchFileResource(url);
         if (!response.ok) {
           throw new Error(
             uiText(
@@ -1588,7 +1513,7 @@ export default function ProjectFilesPage() {
                   className="project-files-image-tile"
                 >
                   {imageCardUrl(image) ? (
-                    <img
+                    <FileResourceImage
                       src={imageCardUrl(image) ?? undefined}
                       alt={image.fileName}
                       className="block size-full object-cover"
@@ -1795,6 +1720,7 @@ export default function ProjectFilesPage() {
                         activePreviewFile.downloadAttachmentUrl)!
                     }
                     downloadUrl={attachmentDownloadUrl(activePreviewFile)!}
+                    fileName={activePreviewFile.fileName}
                   />
                 ) : (
                   <EmailAttachmentViewer
@@ -1829,11 +1755,7 @@ export default function ProjectFilesPage() {
         <Modal
           open
           passiveModal
-          modalHeading={
-            officeSession?.canEdit
-              ? uiText("Dokument bearbeiten", "Edit document")
-              : uiText("Dokument ansehen", "View document")
-          }
+          modalHeading={uiText("Dokument", "Document")}
           modalLabel={activeOfficeFile.fileName}
           closeButtonLabel={uiText("Schließen", "Close")}
           onRequestClose={closeOfficeEditor}
@@ -1842,28 +1764,7 @@ export default function ProjectFilesPage() {
           data-fullwidth="true"
           className="project-files-office-modal"
         >
-          {officeLoading && (
-            <div className="project-files-office-status">
-              {uiText("Dokument wird geöffnet …", "Opening document …")}
-            </div>
-          )}
-
-          {!!officeError && (
-            <div className="project-files-office-status">
-              <MyCallout icon={Icons.Deny} color="red">
-                {officeError}
-              </MyCallout>
-            </div>
-          )}
-
-          {!!officeSession && (
-            <OnlyOfficeEditor
-              apiUrl={officeSession.apiUrl}
-              config={officeSession.config}
-              onError={setOfficeError}
-              onRequestClose={closeOfficeEditor}
-            />
-          )}
+          <ProtectedOfficeEditor projectId={project.id} fileId={activeOfficeFile.id} />
         </Modal>
       )}
 
@@ -1893,19 +1794,6 @@ export default function ProjectFilesPage() {
               <MyDropdown
                 items={[
                   {
-                    label: uiText("Original öffnen"),
-                    renderIcon: Icons.Search,
-                    hideIf: !activeDwgFile.downloadUrl,
-                    onClick: () => {
-                      if (!activeDwgFile.downloadUrl) return;
-                      window.open(
-                        activeDwgFile.downloadUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    },
-                  },
-                  {
                     label: uiText("Herunterladen"),
                     renderIcon: Icons.Download,
                     hideIf:
@@ -1916,11 +1804,7 @@ export default function ProjectFilesPage() {
                         activeDwgFile.downloadAttachmentUrl ||
                         activeDwgFile.downloadUrl;
                       if (!attachmentUrl) return;
-                      window.open(
-                        attachmentUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
+                      void downloadResource(attachmentUrl, activeDwgFile.fileName);
                     },
                   },
                 ]}
@@ -1928,7 +1812,7 @@ export default function ProjectFilesPage() {
             </div>
 
             <div className="project-files-dwg-canvas">
-              {activeDwgDocument ? (
+              {activeDwgResource.loading ? <Loading active description={uiText("Datei wird geöffnet …", "Opening file…")} /> : activeDwgDocument ? (
                 <PlanViewer document={activeDwgDocument} defaultUnit="m" />
               ) : (
                 <MyCallout icon={Icons.Info} color="amber">
@@ -1968,19 +1852,6 @@ export default function ProjectFilesPage() {
               <MyDropdown
                 items={[
                   {
-                    label: uiText("Original öffnen", "Open original"),
-                    renderIcon: Icons.Search,
-                    hideIf: !activeVideo.downloadUrl,
-                    onClick: () => {
-                      if (!activeVideo.downloadUrl) return;
-                      window.open(
-                        activeVideo.downloadUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    },
-                  },
-                  {
                     label: uiText("Herunterladen", "Download"),
                     renderIcon: Icons.Download,
                     hideIf:
@@ -1991,7 +1862,7 @@ export default function ProjectFilesPage() {
                         activeVideo.downloadAttachmentUrl ||
                         activeVideo.downloadUrl;
                       if (url)
-                        window.open(url, "_blank", "noopener,noreferrer");
+                        void downloadResource(url, activeVideo.fileName);
                     },
                   },
                 ]}
@@ -1999,7 +1870,7 @@ export default function ProjectFilesPage() {
             </div>
 
             <div className="project-files-video-stage">
-              {videoError ? (
+              {activeVideoResource.loading ? <Loading active description={uiText("Datei wird geöffnet …", "Opening file…")} /> : videoError ? (
                 <MyCallout icon={Icons.Deny} color="red">
                   {videoError}
                 </MyCallout>
@@ -2021,9 +1892,7 @@ export default function ProjectFilesPage() {
                 >
                   <source
                     src={
-                      activeVideo.downloadUrl ||
-                      activeVideo.downloadAttachmentUrl ||
-                      undefined
+                      activeVideoResource.url || undefined
                     }
                     type={
                       activeVideo.mimeType
@@ -2068,19 +1937,6 @@ export default function ProjectFilesPage() {
               <MyDropdown
                 items={[
                   {
-                    label: uiText("Original öffnen", "Open original"),
-                    renderIcon: Icons.Search,
-                    hideIf: !activeImage.downloadUrl,
-                    onClick: () => {
-                      if (!activeImage.downloadUrl) return;
-                      window.open(
-                        activeImage.downloadUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    },
-                  },
-                  {
                     label: uiText("Herunterladen", "Download"),
                     renderIcon: Icons.Download,
                     hideIf:
@@ -2091,16 +1947,16 @@ export default function ProjectFilesPage() {
                         activeImage.downloadAttachmentUrl ||
                         activeImage.downloadUrl;
                       if (url)
-                        window.open(url, "_blank", "noopener,noreferrer");
+                        void downloadResource(url, activeImage.fileName);
                     },
                   },
                 ]}
               />
             </div>
 
-            {activeImage.downloadUrl ? (
+            {activeImageResource.loading ? <Loading active description={uiText("Datei wird geöffnet …", "Opening file…")} /> : activeImageResource.url ? (
               <ZoomableImage
-                src={activeImage.downloadUrl}
+                src={activeImageResource.url}
                 alt={activeImage.fileName}
                 hasMultipleImages={imageFiles.length > 1}
                 onPrevious={showPreviousImage}

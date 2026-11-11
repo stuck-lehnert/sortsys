@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "Checking coordinated runtime versions"
+node ./scripts/generate-browser-schema.mjs --check
 node ./scripts/check-runtime-versions.mjs
 node --test ./scripts/check-runtime-versions.test.mjs
 
@@ -26,9 +27,7 @@ echo
 echo "Checking development startup, storage and LLM environment loading"
 node --test \
   ./scripts/dev-startup.test.mjs \
-  ./scripts/dev-images.test.mjs \
-  ./scripts/dev-office-init.test.mjs \
-  ./scripts/dev-office-start.test.mjs
+  ./scripts/dev-images.test.mjs
 bun test ./scripts/dev-storage.test.mjs ./scripts/dev-llm.test.mjs
 
 echo
@@ -77,6 +76,15 @@ echo "Checking the standalone GAEB editor suite"
   bun run build
 )
 
+echo "Checking client-side encryption and recovery"
+(
+  cd sortsys-zerotrust
+  bun install --frozen-lockfile
+  bun run typecheck
+  bun test
+  bun run build
+)
+
 echo
 echo "Running webapp checks"
 (
@@ -102,6 +110,8 @@ echo "Running webapp checks"
   bun run test:pdf
   bun run test:regie-list
   bun run test:invoice-numbering
+  bun test app/lib/data/*.test.mjs
+  bun test app/lib/crypto/*.test.mjs app/lib/errorTelemetry.test.mjs
   bun run build
 
   if [ "${CI:-}" = "true" ]; then

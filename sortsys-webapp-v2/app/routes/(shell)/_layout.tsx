@@ -72,7 +72,7 @@ export default Authenticated(function () {
   const lastVisitKeyRef = useRef<string | null>(null);
   const canViewProjects = sessionInfo.canDo("view:projects");
   const canViewRegieReports = sessionInfo.canDo("view:regieReports");
-  const canSearchDocuments = sessionInfo.supportsProjectFiles();
+  const canSearchDocuments = sessionInfo.supportsProjectFiles() && sessionInfo.canSearchProjectFiles();
   const canViewTools = sessionInfo.canDo("view:tools");
   const canViewUsers = sessionInfo.canDo("view:users");
   const canViewProducts =
@@ -313,7 +313,7 @@ export default Authenticated(function () {
               isPathActive("/vacations")
             }
           >
-            {canViewProjects && <MySideNavLink icon={Icons.DocumentAdd} href="/offers" title={uiText("Angebote", "Offers")} />}
+            {sessionInfo.canSeeOffers() && <MySideNavLink icon={Icons.DocumentAdd} href="/offers" title={uiText("Angebote", "Offers")} />}
             {canViewProjects && (
               <MySideNavLink
                 icon={Icons.Project}

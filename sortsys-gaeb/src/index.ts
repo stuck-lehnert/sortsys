@@ -10,6 +10,8 @@ export {
   type GaebPhase,
 } from "./core/types";
 export { validateGaebInBrowser } from "./core/validationClient";
+export { browserGaebXml, type GaebXmlProcessor } from "./core/privacyClient";
+export type { GaebXmlPartition, GaebXmlLayout, GaebXmlFragment, GaebContentFacet, GaebPrivateFacet } from "./core/privacy";
 export { type GaebLocale } from "./messages";
 export { GAEB_DOCUMENT_TYPES, gaebDocumentName } from "./documentTypes";
 export { mergeGaebXml } from "./core/merge";

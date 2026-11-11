@@ -29,6 +29,7 @@ export function GaebPositionSearch({
     }
     setLoading(true);
     setFailed(false);
+    setItems([]);
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
@@ -45,6 +46,7 @@ export function GaebPositionSearch({
         if (active) {
           setFailed(true);
           setLoading(false);
+          setItems([]);
         }
       }
     };

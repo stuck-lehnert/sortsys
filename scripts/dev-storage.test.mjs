@@ -20,10 +20,7 @@ const folders = [
   "go-modules",
   "webapp-dependencies",
   "dwgviewer-dependencies",
-  "euro-office/data",
-  "euro-office/state",
-  "euro-office/database",
-  "euro-office/logs",
+  "private-office",
 ];
 
 function developmentFunction(name) {
@@ -38,8 +35,8 @@ function developmentFunction(name) {
 
 function runStorageFunctions(root, suffix, names) {
   const capture = join(root, "runtime-arguments");
-  const dependencies = names.includes("start_onlyoffice")
-    ? ["prepare_onlyoffice_storage"]
+  const dependencies = names.includes("start_private_office")
+    ? ["build_private_office_image"]
     : [];
   const definitions = [...dependencies, ...names]
     .map(developmentFunction)
@@ -132,54 +129,21 @@ for (const suffix of ["", ":z"]) {
         "prepare_development_directories",
         "start_postgres",
         "start_s3",
-        "start_onlyoffice",
+        "start_private_office",
         "start_job_runner_containers",
         "start_webapp_container",
       ]);
-      const initialization = calls.find((call) =>
-        call.includes("DEV_ONLYOFFICE_INIT_CONTAINER"),
-      );
-      assert.ok(initialization, "Office storage is initialized before startup");
-      assert.ok(initialization.includes("--rm"));
-      assert.equal(
-        initialization[initialization.indexOf("--network") + 1],
-        "none",
-      );
-      assert.equal(initialization.at(-2), "DEV_ONLYOFFICE_IMAGE");
-      assert.equal(initialization.at(-1), "/sortsys-dev-office-init");
-      const initializationMounts = initialization.filter(
-        (argument, index) => initialization[index - 1] === "-v",
-      );
-      const helperOptions = suffix ? `ro,${suffix.slice(1)}` : "ro";
-
-      assert.deepEqual(initializationMounts, [
-        `${root}/scripts/dev-office-init:/sortsys-dev-office-init:${helperOptions}`,
-        ...["data", "state", "database", "logs"].map(
-          (name) =>
-            `${root}/.dev-data/euro-office/${name}:/sortsys-dev-office/${name}${suffix}`,
-        ),
-      ]);
-
-      const runs = calls.filter(
-        (call) => call[0] === "run" && call !== initialization,
-      );
-      const office = runs.find((call) =>
-        call.includes("DEV_ONLYOFFICE_CONTAINER"),
-      );
-      assert.ok(
-        office && !office.includes("--rm"),
-        "Office failure logs survive exit",
-      );
-      assert.ok(calls.indexOf(initialization) < calls.indexOf(office));
-      assert.equal(office[office.indexOf("--entrypoint") + 1], "sh");
-      assert.equal(office.at(-2), "DEV_ONLYOFFICE_IMAGE");
-      assert.equal(office.at(-1), "/sortsys-dev-office-start");
-      const startupMount = [
-        `${root}/scripts/dev-office-start`,
-        "/sortsys-dev-office-start",
-        helperOptions,
-      ].join(":");
-      assert.ok(office.includes(startupMount));
+      const build = calls.find(call => call[0] === "build");
+      assert.ok(build, "Private Office is built before startup");
+      const runs = calls.filter(call => call[0] === "run");
+      const office = runs.find(call => call.includes("DEV_OFFICE_CONTAINER"));
+      assert.ok(office && !office.includes("--rm"), "Office failure logs survive exit");
+      assert.ok(calls.indexOf(build) < calls.indexOf(office));
+      assert.equal(office.at(-1), "DEV_OFFICE_IMAGE");
+      assert.ok(office.includes("--read-only"));
+      assert.ok(office.includes("OFFICE_PUBLIC_ORIGIN=DEV_OFFICE_PUBLIC_ORIGIN"));
+      assert.ok(office.includes("OFFICE_SANDBOX_ORIGIN=DEV_OFFICE_SANDBOX_ORIGIN"));
+      assert.ok(office.includes("SORTSYS_PUBLIC_ORIGIN=DEV_SORTSYS_PUBLIC_ORIGIN"));
 
       const mounts = runs.flatMap((call) =>
         call.filter((argument, index) => call[index - 1] === "-v"),
@@ -191,10 +155,7 @@ for (const suffix of ["", ":z"]) {
         ["go-modules", "/tmp/go"],
         ["webapp-dependencies", "/workspace/sortsys-webapp-v2/node_modules"],
         ["dwgviewer-dependencies", "/workspace/sortsys-dwgviewer/node_modules"],
-        ["euro-office/data", "/var/www/euro-office/Data"],
-        ["euro-office/state", "/var/lib/euro-office/documentserver"],
-        ["euro-office/database", "/var/lib/postgresql"],
-        ["euro-office/logs", "/var/log/euro-office/documentserver"],
+        ["private-office", "/var/lib/sortsys-office"],
       ]);
 
       assert.equal(
@@ -216,16 +177,15 @@ for (const suffix of ["", ":z"]) {
         mounts.every(
           (mount) =>
             mount.startsWith(`${root}/.dev-data/`) ||
-            mount === `${root}:/workspace${suffix}` ||
-            mount === startupMount,
+            mount === `${root}:/workspace${suffix}`,
         ),
-        "only local data, workspace and the read-only Office startup script are mounted",
+        "only local data and workspace are mounted",
       );
 
       if (suffix) {
         assert.ok(
           mounts.every(
-            (mount) => mount === startupMount || mount.endsWith(suffix),
+            (mount) => mount.endsWith(suffix),
           ),
         );
       }

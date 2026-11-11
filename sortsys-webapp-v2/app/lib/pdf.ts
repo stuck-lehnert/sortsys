@@ -1,5 +1,6 @@
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { client } from "~/lib/client";
+import { fetchFileResource } from "~/lib/fileResources";
 import { formatDate } from "~/lib/format";
 import { buildPdfLayoutPreamble, PDF_TYPOGRAPHY, typstString, wrapPdfDocument, type PdfDocumentLayout } from "./pdfLayout";
 import { PDF_FONT_FAMILY, PDF_FONT_URLS } from './pdfFonts';
@@ -228,7 +229,7 @@ async function cleanupTenantLogoShadow($typst: any, shadowPath: string | null) {
 }
 
 async function fetchPdfImageBytes(image: PdfImage) {
-  const response = await fetch(image.url);
+  const response = await fetchFileResource(image.url);
   if (!response.ok) return null;
 
   const arrayBuffer = await response.arrayBuffer();

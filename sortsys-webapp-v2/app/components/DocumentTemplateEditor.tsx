@@ -4,7 +4,10 @@ import { DEFAULT_GAEB_TEMPLATE } from "@sortsys/gaeb";
 import { MyCallout } from "./MyCallout";
 import PdfAttachmentViewer from "./PdfAttachmentViewer";
 import { TypstCodeEditor, type TypstEditorHandle } from "./TypstCodeEditor";
-import { client } from "~/lib/client";
+import { client, templateAssets } from "~/lib/client";
+import { InvalidProtectedData } from "@sortsys/zerotrust";
+import { isWriteConflict } from "~/lib/data/atomicWrites";
+import { unlockedAccount } from "~/lib/crypto/session";
 import { uiText, useI18n } from "~/lib/i18n";
 import {
   loadPrintContext,
@@ -12,10 +15,13 @@ import {
   renderGaebPdf,
   type TemplateAsset,
 } from "~/lib/gaebPrint";
-import { useSessionInfo } from "~/hooks/useSessionInfo";
+function editingIdentity(): string | null {
+  const account = unlockedAccount();
+  return account ? JSON.stringify([account.tenant, account.username, account.vault.signingKey, account.vault.encryptionKey]) : null;
+}
+type SuspendedDraft = { identity: string; source: string; savedSource: string; revision: string };
 export default function DocumentTemplateEditor() {
   const { locale } = useI18n();
-  const session = useSessionInfo();
   const [context, setContext] =
     useState<Awaited<ReturnType<typeof loadPrintContext>>>();
   const [source, setSource] = useState(DEFAULT_GAEB_TEMPLATE);
@@ -26,26 +32,47 @@ export default function DocumentTemplateEditor() {
   const [previewError, setPreviewError] = useState("");
   const [compiling, setCompiling] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stale, setStale] = useState(false);
   const [retry, setRetry] = useState(0);
   const [deleting, setDeleting] = useState<TemplateAsset | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const editor = useRef<TypstEditorHandle>(null);
   const previewUrl = useRef("");
+  const suspendedDraft = useRef<SuspendedDraft | null>(null);
+  const working = useRef({ identity: editingIdentity(), source, savedSource, revision: context?.template.revision });
+  working.current = { identity: editingIdentity(), source, savedSource, revision: context?.template.revision };
+  const current = (epoch: AbortSignal) => !epoch.aborted && templateAssets.context() === epoch;
+  useEffect(() => templateAssets.listenContext(() => {
+    const identity = editingIdentity(), previous = working.current;
+    if (!identity || previous.identity !== identity) suspendedDraft.current = null;
+    else if (!suspendedDraft.current && previous.revision && previous.source !== previous.savedSource) {
+      suspendedDraft.current = { identity, source: previous.source, savedSource: previous.savedSource, revision: previous.revision };
+    }
+    setContext(undefined); setSource(DEFAULT_GAEB_TEMPLATE); setSavedSource(DEFAULT_GAEB_TEMPLATE);
+    setCompiledSource(""); setPreview(""); setError(""); setPreviewError(""); setDeleting(null); setBusy(false); setCompiling(false); setStale(false);
+    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); previewUrl.current = "";
+    setRetry(value => value + 1);
+  }), []);
   useEffect(() => {
     let active = true;
+    const epoch = templateAssets.context();
     void loadPrintContext()
       .then((value) => {
-        if (active) {
-          setContext(value);
+        if (active && current(epoch)) {
           const text = value.template.source ?? DEFAULT_GAEB_TEMPLATE;
-          setSource(text);
-          setSavedSource(text);
+          const draft = suspendedDraft.current; suspendedDraft.current = null;
+          if (draft && draft.identity === editingIdentity() && draft.source !== text) {
+            setContext({ ...value, template: { ...value.template, revision: draft.revision } });
+            setSource(draft.source); setSavedSource(draft.savedSource);
+          } else { setContext(value); setSource(text); setSavedSource(text); }
           setError("");
         }
       })
       .catch((cause) => {
-        if (active)
+        if (active && current(epoch)) {
+          suspendedDraft.current = null; setSource(DEFAULT_GAEB_TEMPLATE); setSavedSource(DEFAULT_GAEB_TEMPLATE);
           setError(cause instanceof Error ? cause.message : String(cause));
+        }
       });
     return () => {
       active = false;
@@ -53,6 +80,7 @@ export default function DocumentTemplateEditor() {
   }, [retry]);
   useEffect(() => {
     if (!context) return;
+    const epoch = templateAssets.context();
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setCompiling(true);
@@ -67,7 +95,7 @@ export default function DocumentTemplateEditor() {
         controller.signal,
       )
         .then((bytes) => {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted || !current(epoch)) return;
           const url = URL.createObjectURL(
             new Blob([new Uint8Array(bytes)], { type: "application/pdf" }),
           );
@@ -79,13 +107,13 @@ export default function DocumentTemplateEditor() {
           setPreviewError("");
         })
         .catch((cause) => {
-          if (!controller.signal.aborted)
+          if (!controller.signal.aborted && current(epoch))
             setPreviewError(
               cause instanceof Error ? cause.message : String(cause),
             );
         })
         .finally(() => {
-          if (!controller.signal.aborted) setCompiling(false);
+          if (!controller.signal.aborted && current(epoch)) setCompiling(false);
         });
     }, 500);
     return () => {
@@ -101,6 +129,7 @@ export default function DocumentTemplateEditor() {
   );
   async function save() {
     if (!context || busy) return;
+    const epoch = templateAssets.context();
     setBusy(true);
     setError("");
     const text = source;
@@ -116,6 +145,7 @@ export default function DocumentTemplateEditor() {
           context,
         );
       }
+      if (!current(epoch)) return;
       const [saved, failure] = await client.mutate(
         "settings.documentTemplate.set",
         {
@@ -123,6 +153,7 @@ export default function DocumentTemplateEditor() {
           expectedRevision: context.template.revision,
         },
       );
+      if (!current(epoch)) return;
       if (failure || !saved) throw failure ?? new Error("save-failed");
       setContext((previous) =>
         previous
@@ -138,77 +169,27 @@ export default function DocumentTemplateEditor() {
       );
       setSavedSource(text);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (current(epoch)) { setError(cause instanceof Error ? cause.message : String(cause)); if (isWriteConflict(cause)) setStale(true); }
     } finally {
-      setBusy(false);
+      if (current(epoch)) setBusy(false);
     }
   }
   async function upload(asset: File) {
-    setBusy(true);
-    setError("");
-    let id: string | undefined;
+    const epoch = templateAssets.context(); setBusy(true); setError("");
     try {
-      const types: Record<string, string> = {
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        webp: "image/webp",
-        gif: "image/gif",
-        svg: "image/svg+xml",
-        pdf: "application/pdf",
-      };
-      const mimeType = types[asset.name.split(".").at(-1)?.toLowerCase() ?? ""];
-      if (!mimeType || asset.size > 20 * 1024 * 1024)
-        throw new Error(
-          uiText(
-            "Bitte ein Bild oder PDF mit höchstens 20 MiB auswählen.",
-            "Choose an image or PDF up to 20 MiB.",
-          ),
-        );
-      const [created, failure] = await client.mutate(
-        "settings.documentTemplate.assets.createUpload",
-        { name: asset.name, mimeType, sizeBytes: asset.size },
-      );
-      if (failure || !created) throw failure ?? new Error("upload-failed");
-      id = created.id;
-      const response = await fetch(created.uploadUrl, {
-        method: created.uploadMethod,
-        headers: created.uploadHeaders,
-        body: asset,
-      });
-      if (!response.ok)
-        throw new Error(
-          uiText(
-            "Die Datei konnte nicht hochgeladen werden.",
-            "The file could not be uploaded.",
-          ),
-        );
-      const [, completeFailure] = await client.mutate(
-        "settings.documentTemplate.assets.completeUpload",
-        { id },
-      );
-      if (completeFailure) throw completeFailure;
+      await templateAssets.upload(asset); if (!current(epoch)) return;
       await client.invalidate("settings.documentTemplate.get");
-      const next = await loadPrintContext();
-      setContext((previous) =>
-        previous
-          ? {
-              ...previous,
-              organization: next.organization,
-              template: { ...previous.template, assets: next.template.assets },
-            }
-          : next,
-      );
+      const next = await loadPrintContext(); if (!current(epoch)) return;
+      setContext(previous => previous ? { ...previous, organization: next.organization, template: { ...previous.template, assets: next.template.assets } } : next);
     } catch (cause) {
-      if (id)
-        await client.mutate("settings.documentTemplate.assets.delete", { id });
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
+      if (current(epoch)) setError(cause instanceof InvalidProtectedData
+        ? uiText("Die Datei ist ungültig oder enthält externe Verweise. Bitte ein eigenständiges Bild oder PDF auswählen.", "The file is invalid or contains external references. Choose a self-contained image or PDF.")
+        : cause instanceof Error ? cause.message : String(cause));
+    } finally { if (current(epoch)) setBusy(false); }
   }
   async function remove() {
     if (!deleting) return;
+    const epoch = templateAssets.context();
     setBusy(true);
     setError("");
     try {
@@ -216,9 +197,10 @@ export default function DocumentTemplateEditor() {
         "settings.documentTemplate.assets.delete",
         { id: deleting.id },
       );
+      if (!current(epoch)) return;
       if (failure) throw failure;
       await client.invalidate("settings.documentTemplate.get");
-      const next = await loadPrintContext();
+      const next = await loadPrintContext(); if (!current(epoch)) return;
       setContext((previous) =>
         previous
           ? {
@@ -230,9 +212,9 @@ export default function DocumentTemplateEditor() {
       );
       setDeleting(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (current(epoch)) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setBusy(false);
+      if (current(epoch)) setBusy(false);
     }
   }
   if (!context)
@@ -283,7 +265,7 @@ export default function DocumentTemplateEditor() {
         </Button>
         <Button
           kind="ghost"
-          disabled={busy || !session.supportsProjectFiles()}
+          disabled={busy}
           onClick={() => file.current?.click()}
         >
           {uiText("Bild oder PDF hinzufügen", "Add image or PDF")}
@@ -314,6 +296,9 @@ export default function DocumentTemplateEditor() {
           )}
         >
           {error}
+          {stale && <Button kind="secondary" onClick={() => { setStale(false); setRetry(value => value + 1); }}>
+            {uiText("Veröffentlichte Vorlage laden", "Load published template")}
+          </Button>}
         </MyCallout>
       )}
       {previewError && (

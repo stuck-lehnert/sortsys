@@ -28,7 +28,9 @@ COPY --from=api-client-builder /app/sortsys-api-v2/client/dist /app/sortsys-api-
 COPY --from=api-client-builder /app/sortsys-api-v2/client/package.json /app/sortsys-api-v2/client/package.json
 COPY sortsys-react-components /app/sortsys-react-components
 COPY sortsys-gaeb /app/sortsys-gaeb
+COPY sortsys-zerotrust /app/sortsys-zerotrust
 RUN npm --prefix /app/sortsys-gaeb ci
+RUN npm --prefix /app/sortsys-zerotrust ci
 RUN npm ci
 COPY sortsys-dwgviewer/ /app/sortsys-dwgviewer/
 COPY --from=dwg-wasm-builder /out/ /app/sortsys-dwgviewer/src/dwg/wasm/
@@ -44,11 +46,10 @@ COPY sortsys-webapp-v2/nginx.conf /etc/nginx/nginx.conf
 USER nginx
 
 ENV API_UPSTREAM=http://api:3000 \
-    ONLYOFFICE_UPSTREAM=http://onlyoffice \
     DRAWIO_UPSTREAM=http://drawio:8080 \
     CLIENT_MAX_BODY_SIZE=64m \
     NGINX_ENVSUBST_OUTPUT_DIR=/tmp \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
-    NGINX_ENVSUBST_FILTER=^(API_UPSTREAM|ONLYOFFICE_UPSTREAM|DRAWIO_UPSTREAM|CLIENT_MAX_BODY_SIZE|NGINX_LOCAL_RESOLVERS)$
+    NGINX_ENVSUBST_FILTER=^(API_UPSTREAM|DRAWIO_UPSTREAM|CLIENT_MAX_BODY_SIZE|NGINX_LOCAL_RESOLVERS)$
 
 EXPOSE 80

@@ -2,6 +2,11 @@ import { createClient, type Client } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
 import { uiText } from "./i18n";
 import { BUILD_REVISION } from "./buildInfo";
+import { lockCryptoSession, signIn } from "./crypto/session";
+import { technicalErrorReport } from "./errorTelemetry";
+import { createBusinessClient } from "./data/businessClient";
+import { ramCache } from "./data/ramCache";
+import { llmActivity } from "./llmActivity";
 
 const HOST = (() => {
   if (typeof window !== 'object') return '';
@@ -19,7 +24,15 @@ export const API_ENDPOINT = HOST;
 
 const baseClient = createClient(HOST, "webapp", {
   revision: BUILD_REVISION,
+  cache: ramCache(),
 });
+const businessClient = createBusinessClient(baseClient, { endpoint: HOST, realtime: true });
+
+export const projectFiles = businessClient.files;
+export const gaebDocuments = businessClient.documents;
+export const organizationSettings = businessClient.organization;
+export const templateAssets = businessClient.templates;
+export const contentAccess = businessClient.access;
 
 type ClientErrorReportInput = {
   level?: 'error' | 'warning';
@@ -41,7 +54,7 @@ function browserPath() {
 }
 
 function reportKey(input: ClientErrorReportInput) {
-  return [input.source, input.message, input.path ?? browserPath() ?? ''].join('\n');
+  return JSON.stringify(technicalErrorReport({ ...input, path: input.path ?? browserPath() }, BUILD_REVISION));
 }
 
 export async function reportClientError(input: ClientErrorReportInput) {
@@ -56,15 +69,7 @@ export async function reportClientError(input: ClientErrorReportInput) {
 
   reportingError = true;
   try {
-    await baseClient.mutate('errorReports.report', {
-      level: input.level ?? 'error',
-      source: input.source,
-      message: input.message.slice(0, 4000),
-      stack: input.stack ?? null,
-      path: input.path ?? browserPath(),
-      componentStack: input.componentStack ?? null,
-      metadata: input.metadata ?? null,
-    });
+    await baseClient.mutate('errorReports.report', technicalErrorReport({ ...input, path: input.path ?? browserPath() }, BUILD_REVISION));
   } catch {
     // reporting must never break user flow.
   } finally {
@@ -82,9 +87,11 @@ function errorStack(err: unknown) {
 }
 
 export const client: Client = {
-  ...baseClient,
+  ...businessClient,
+  login: input => signIn(baseClient, input),
+  logout: async () => { try { await lockCryptoSession(true); } finally { await baseClient.logout(); } },
   query: (async (path: any, input: any, opts: any) => {
-    const result = await baseClient.query(path, input, opts);
+    const result = await businessClient.query(path, input, opts);
     const err = result[1];
     if (err) {
       void reportClientError({
@@ -97,7 +104,7 @@ export const client: Client = {
     return result;
   }) as Client['query'],
   queryDynamic: async (path, input, opts) => {
-    const result = await baseClient.queryDynamic(path, input, opts);
+    const result = await businessClient.queryDynamic(path, input, opts);
     const err = result[1];
     if (err) {
       void reportClientError({
@@ -111,7 +118,7 @@ export const client: Client = {
   },
   streamQuery: ((path: any, input: any, opts: any) => {
     return new Observable((subscriber) => {
-      const subscription = baseClient.streamQuery(path, input, opts).subscribe({
+      const subscription = businessClient.streamQuery(path, input, opts).subscribe({
         next(value) {
           const err = value[1];
           if (err) {
@@ -142,7 +149,7 @@ export const client: Client = {
     });
   }) as Client['streamQuery'],
   mutate: (async (path: any, input: any, opts: any) => {
-    const result = await baseClient.mutate(path, input, opts);
+    const result = await businessClient.mutate(path, input, opts);
     const err = result[1];
     const expectedDocumentConflict = ['projects.files.xmlSave', 'commercial.documents.save'].includes(path) && err?.message.includes('changed in another editor');
     if (err && path !== 'errorReports.report' && !expectedDocumentConflict) {
@@ -156,7 +163,7 @@ export const client: Client = {
     return result;
   }) as Client['mutate'],
   mutateDynamic: async (path, input, opts) => {
-    const result = await baseClient.mutateDynamic(path, input, opts);
+    const result = await businessClient.mutateDynamic(path, input, opts);
     const err = result[1];
     if (err && path !== 'errorReports.report') {
       void reportClientError({
@@ -169,3 +176,8 @@ export const client: Client = {
     return result;
   },
 };
+
+baseClient.listenAuthState(() => {
+  llmActivity.cancelAll();
+  if (!baseClient.loggedIn()) void lockCryptoSession(true);
+});

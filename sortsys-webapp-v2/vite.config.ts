@@ -51,6 +51,8 @@ export default defineConfig({
       "react-stately",
     ],
     alias: [
+      { find: /^@sortsys\/zerotrust\/worker$/, replacement: fileURLToPath(new URL("../sortsys-zerotrust/src/opaqueWorker.ts", import.meta.url)) },
+      { find: /^@sortsys\/zerotrust$/, replacement: fileURLToPath(new URL("../sortsys-zerotrust/src/index.ts", import.meta.url)) },
       {
         find: /^@sortsys\/react-components\/notifications$/,
         replacement: fileURLToPath(

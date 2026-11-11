@@ -63,6 +63,23 @@ mod tests {
             assert!(!sql.trim().is_empty());
             previous = name;
         }
-        assert_eq!(MIGRATIONS.len(), 54);
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut files: Vec<String> = std::fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "sql"))
+            .map(|path| path.file_stem().unwrap().to_str().unwrap().to_owned())
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            MIGRATIONS.iter().map(|(name, _)| *name).collect::<Vec<_>>()
+        );
+        for (name, sql) in MIGRATIONS {
+            assert_eq!(
+                std::fs::read_to_string(directory.join(format!("{name}.sql"))).unwrap(),
+                *sql
+            );
+        }
     }
 }

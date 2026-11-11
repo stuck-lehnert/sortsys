@@ -1099,6 +1099,7 @@ export function Modal({
   closeButtonLabel = "Schließen",
   shouldSubmitOnEnter = true,
   passiveModal,
+  preventClose = false,
   edgeToEdge = false,
   size = "lg",
   placement = "auto",
@@ -1114,7 +1115,7 @@ export function Modal({
   const isFullWidth = fullWidth === true || fullWidth === "true";
   const isFullScreen = Boolean(edgeToEdge) && isFullHeight && isFullWidth;
   const hasPrimaryAction = typeof onRequestSubmit === "function";
-  const closeTrigger = (
+  const closeTrigger = preventClose ? null : (
     <HeroModal.CloseTrigger
       aria-label={closeButtonLabel}
       className={
@@ -1130,9 +1131,11 @@ export function Modal({
     <DialogFieldsContext.Provider value={true}>
       <HeroModal.Backdrop
         {...props}
+        isDismissable={preventClose ? false : props.isDismissable}
+        isKeyboardDismissDisabled={preventClose || props.isKeyboardDismissDisabled}
         isOpen={Boolean(open)}
         onOpenChange={(next) => {
-          if (!next) {
+          if (!next && !preventClose) {
             onRequestClose?.();
           }
         }}
@@ -1273,7 +1276,7 @@ export function Modal({
                 <HeroModal.Footer>
                   <Button
                     kind="secondary"
-                    disabled={secondaryButtonDisabled}
+                    disabled={preventClose || secondaryButtonDisabled}
                     onClick={() => onRequestClose?.()}
                   >
                     {secondaryButtonText}

@@ -11,6 +11,89 @@ function success(data: unknown) {
   }]));
 }
 
+test("an already aborted mutation sends no request", async () => {
+  let calls = 0;
+  const client = createClient("https://api.example.test", "aborted-mutation", {
+    cache: memoryCache().cache, fetch: (async (_input: string | URL | Request) => { calls++; return success({ success: true }); }) as typeof globalThis.fetch,
+  });
+  const controller = new AbortController(); controller.abort();
+  const [value, error] = await client.mutateDynamic("test.mutation", {}, { signal: controller.signal });
+  expect(value).toBeNull(); expect(error?.name).toBe("AbortError"); expect(calls).toBe(0);
+});
+
+test("cancelled login results cannot replace auth state or cancel a peer in the same batch", async () => {
+  let entered: () => void = () => {}, release: (response: Response) => void = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const response = new Promise<Response>(resolve => { release = resolve; });
+  const client = createClient("https://api.example.test", "cancelled-login", { cache: memoryCache().cache,
+    fetch: (async (_input: string | URL | Request) => { entered(); return response; }) as typeof globalThis.fetch,
+  });
+  const controller = new AbortController();
+  const login = client.mutate("auth.login", { tenant: "test", username: "owner", password: "synthetic" }, { signal: controller.signal });
+  const peer = client.mutateDynamic("test.peer", {});
+  await started; controller.abort();
+  expect((await login)[1]?.name).toBe("AbortError");
+  release(new Response(JSON.stringify([
+    { result: { data: superjson.serialize({ token: "must-not-be-installed" }) } },
+    { result: { data: superjson.serialize({ success: true }) } },
+  ])));
+  expect(await peer).toEqual([{ success: true }, null]);
+  expect(client.loggedIn()).toBe(false);
+});
+
+test("a signed policy change invalidates an immediately preceding denied key response", async () => {
+  let granted = false, reads = 0;
+  const client = createClient("https://api.example.test", "policy-key-change", { cache: memoryCache().cache,
+    fetch: (async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/zerotrust.policy.replace") { granted = true; return success({ success: true }); }
+      expect(path).toBe("/zerotrust.keys.get"); reads++;
+      if (granted) return success({ ciphertext: "encrypted-key-box" });
+      return new Response(JSON.stringify([{ error: superjson.serialize({ message: "Forbidden", code: -32003, data: { code: "FORBIDDEN", httpCode: 403 } }) }]));
+    }) as typeof globalThis.fetch,
+  });
+  const input = { domain: "private-test", generation: "1" };
+  expect((await client.query("zerotrust.keys.get", input, { strategy: "network-only" }))[1]?.code).toBe("FORBIDDEN");
+  await client.mutateDynamic("zerotrust.policy.replace", {});
+  expect(await client.queryDynamic("zerotrust.keys.get", input, { strategy: "network-only" })).toEqual([{ ciphertext: "encrypted-key-box" }, null]);
+  expect(reads).toBe(2);
+});
+
+test("network-only reuses pending work but never a completed success, including another strategy's response", async () => {
+  let reads = 0, version = 1;
+  let release: (() => void) | null = null;
+  const client = createClient("https://api.example.test", "fresh-policy", { cache: memoryCache().cache,
+    fetch: (async (_input: string | URL | Request) => { reads++; if (release) await new Promise<void>(resolve => { release = resolve; }); return success({ version }); }) as typeof globalThis.fetch,
+  });
+  expect((await client.queryDynamic("zerotrust.policy.get", undefined))[0]).toEqual({ version: 1 });
+  version = 2;
+  expect((await client.queryDynamic("zerotrust.policy.get", undefined, { strategy: "network-only" }))[0]).toEqual({ version: 2 });
+  version = 3;
+  expect((await client.queryDynamic("zerotrust.policy.get", undefined, { strategy: "network-only" }))[0]).toEqual({ version: 3 });
+  expect(reads).toBe(3);
+  release = () => {};
+  const first = client.queryDynamic("zerotrust.policy.get", undefined, { strategy: "network-only" });
+  const second = client.queryDynamic("zerotrust.policy.get", undefined, { strategy: "network-only" });
+  while (reads < 4) await new Promise(resolve => setTimeout(resolve, 1));
+  release!();
+  expect(await first).toEqual([{ version: 3 }, null]);
+  expect(await second).toEqual([{ version: 3 }, null]);
+  expect(reads).toBe(4);
+});
+
+test("a completed denial is not reused when another client has just approved access", async () => {
+  let reads = 0;
+  const client = createClient("https://api.example.test", "fresh-certificate", { cache: memoryCache().cache,
+    fetch: (async (_input: string | URL | Request) => {
+      if (++reads > 1) return success({ permitted: true });
+      return new Response(JSON.stringify([{ error: superjson.serialize({ message: "Forbidden", code: -32003, data: { code: "FORBIDDEN", httpCode: 403 } }) }]));
+    }) as typeof globalThis.fetch,
+  });
+  expect((await client.queryDynamic("zerotrust.policy.get", undefined, { strategy: "network-only" }))[1]?.code).toBe("FORBIDDEN");
+  expect(await client.queryDynamic("zerotrust.policy.get", undefined, { strategy: "network-only" })).toEqual([{ permitted: true }, null]);
+  expect(reads).toBe(2);
+});
+
 function unauthorized(path: string) {
   return new Response(JSON.stringify([{
     error: superjson.serialize({
@@ -177,13 +260,15 @@ test("token state and listeners are independent of the transport", () => {
   expect(client.loggedIn()).toBe(false);
   client.setToken("secret");
   expect(client.loggedIn()).toBe(true);
+  client.setToken("replacement-session");
+  client.setToken("replacement-session");
   client.setToken(null);
   expect(client.loggedIn()).toBe(false);
-  expect(states).toEqual([true, false]);
+  expect(states).toEqual([true, true, false]);
 
   unsubscribe();
   client.setToken("secret");
-  expect(states).toEqual([true, false]);
+  expect(states).toEqual([true, true, false]);
 });
 
 test("dynamic calls use the normal authenticated transport", async () => {
@@ -261,7 +346,8 @@ test("stream queries accept bigint input in cache keys and on the wire", async (
   expect(wireInput).toEqual({ query: "Brandschutz", limit: 50n });
 });
 
-test("login isolates pending anonymous queries and authenticates sessionInfo", async () => {
+for (const method of ["password", "opaque"] as const) {
+test(`${method} login isolates pending anonymous queries and authenticates sessionInfo`, async () => {
   let finishAnonymousRequest: (() => void) | undefined;
   const requests: Array<{ path: string; authorization: string | null }> = [];
 
@@ -270,7 +356,7 @@ test("login isolates pending anonymous queries and authenticates sessionInfo", a
     const authorization = new Headers(init?.headers).get("authorization");
     requests.push({ path: url.pathname, authorization });
 
-    if (url.pathname === "/auth.login") {
+    if (url.pathname === (method === "password" ? "/auth.login" : "/auth.opaque.loginFinish")) {
       return success({ token: "new-session-token" });
     }
 
@@ -294,11 +380,15 @@ test("login isolates pending anonymous queries and authenticates sessionInfo", a
   await Promise.resolve();
   await Promise.resolve();
 
-  await client.login({
+  if (method === "password") await client.login({
     username: "john.doe",
     tenant: "test",
     password: "123456",
   });
+  else {
+    const [, error] = await client.mutate("auth.opaque.loginFinish", { exchange: "test-exchange", finishLoginRequest: "test-proof" });
+    expect(error).toBeNull();
+  }
 
   const [sessionInfo, sessionError] = await client.query("auth.sessionInfo", undefined, {
     strategy: "network-only",
@@ -317,6 +407,7 @@ test("login isolates pending anonymous queries and authenticates sessionInfo", a
 
   expect(client.loggedIn()).toBe(true);
 });
+}
 
 test("realms keep cache entries separate in a shared cache", async () => {
   const { cache, values } = memoryCache();

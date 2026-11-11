@@ -29,7 +29,6 @@ import {
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { createChatRequests } from "~/lib/chatRequests";
-import { prepareProposalInput } from "~/lib/llmProposalInput";
 import type { ProjectFileTarget } from "~/lib/projectFileLinks";
 import { Icons } from "~/lib/icons";
 import {
@@ -52,10 +51,7 @@ type ProposedOperation = {
   input: Record<string, unknown>;
   description: string;
 };
-
-type ProposalExecutionResult = NonNullable<
-  MutateInput<'llm.proposals.review'>['executionResults']
->[number];
+type ProposalExecutionResult = NonNullable<MutateInput<'llm.proposals.review'>['executionResults']>[number];
 
 type ProposalLink = {
   href: string;
@@ -665,12 +661,12 @@ export default function LlmPage() {
     }
 
     const chatId = targetChatId;
-    void chatRequests.start(chatId, submission, async () => {
+    void chatRequests.start(chatId, submission, async signal => {
       const [updated, sendError] = await client.mutate('llm.messages.send', {
         chatId,
         content: normalizedMessage,
         locale,
-      });
+      }, { signal });
 
       void client.invalidate('llm.chats.list');
 
@@ -788,62 +784,15 @@ export default function LlmPage() {
 
     const chatId = selectedId;
     const isCurrentSession = chatRequests.sessionGuard();
-    const operations = proposal.operations as unknown as ProposedOperation[];
-    const executionResults: ProposalExecutionResult[] = [];
-    let executableInputs: Record<string, unknown>[];
-
-    try {
-      executableInputs = operations.map(
-        (operation) =>
-          prepareProposalInput(operation.input) as Record<string, unknown>,
-      );
-    } catch {
-      setError(
-        uiText(
-          "Der Vorschlag enthält ein ungültiges Datum.",
-          "The proposal contains an invalid date.",
-        ),
-      );
-      return;
-    }
-
     setPending(proposal.id);
     setError(null);
-
-    // Every operation uses the current user's client and therefore the current
-    // bearer token and ordinary mutation permission checks.
-    for (const [index, operation] of operations.entries()) {
-      const [output, operationError] = await client.mutateDynamic(
-        operation.path,
-        executableInputs[index],
-      );
-
-      if (!isCurrentSession()) {
-        return;
-      }
-
-      if (operationError) {
-        setPending(null);
-        setError(operation.description + ": " + operationError.message);
-        return;
-      }
-
-      executionResults.push({
-        path: operation.path,
-        output: output as ProposalExecutionResult["output"],
-      });
-    }
-
-    setPending(null);
-
-    await chatRequests.start(chatId, null, async () => {
+    await chatRequests.start(chatId, null, async signal => {
       const [, reviewError] = await client.mutate("llm.proposals.review", {
         proposalId: proposal.id,
         decision: "accept",
         comment: null,
-        executionResults,
         continueConversation: true,
-      });
+      }, { signal });
 
       if (reviewError) {
         throw reviewError;
@@ -869,6 +818,7 @@ export default function LlmPage() {
 
       return updated;
     });
+    if (isCurrentSession() && mountedRef.current) setPending(null);
   }
 
   function renderPendingProposal(proposal: Proposal) {

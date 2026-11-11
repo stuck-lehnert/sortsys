@@ -194,6 +194,8 @@ pub fn register_contract(mut builder: ProcedureRegistryBuilder) -> ProcedureRegi
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ApplyPriceImportInput {
+    #[ts(optional)]
+    request_id: Option<String>,
     vendor_id: Id,
     #[ts(type = "Date")]
     effective_at: DateTime<Utc>,
@@ -1011,6 +1013,15 @@ async fn apply_price_import(
     context: &RequestContext,
     input: ApplyPriceImportInput,
 ) -> RpcResult<ApplyPriceImportResult> {
+    if input.request_id.as_ref().is_some_and(|id| {
+        id.len() < 16
+            || id.len() > 80
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+    }) {
+        return Err(bad_request("invalid import request identifier"));
+    }
     let (auth, pool) = authorized_pool(state, context, "view:productPriceRecords").await?;
 
     if input.rows.is_empty() || input.rows.len() > 20_000 {

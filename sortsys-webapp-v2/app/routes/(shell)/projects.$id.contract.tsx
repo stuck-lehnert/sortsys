@@ -52,7 +52,7 @@ export default function ProjectContractPage() {
       <MyHeader
         title={uiText("Auftrag & Leistungen", "Contract & work")}
         actions={
-          session.canDo("manage:projects") &&
+          session.canCreate("commercial") &&
           !project.finishedAt && (
             <MyDropdown
               icon={Icons.Plus}
@@ -108,7 +108,7 @@ export default function ProjectContractPage() {
         }
       />
       {hasContract === false &&
-        session.canDo("manage:projects") &&
+        session.canCreate("commercial") &&
         !project.finishedAt && (
           <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-default p-4">
             <p className="min-w-0 flex-1 text-sm">

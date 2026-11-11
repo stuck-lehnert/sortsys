@@ -22,28 +22,30 @@ speichert die konfigurierten `SERVICE_*`-Geheimnisse. `ADMIN_HASH` muss als
 bcrypt-Hash des globalen Administratorpassworts angegeben werden. Als literalen
 Wert markieren, damit `$`-Zeichen erhalten bleiben.
 
-Weise `webapp` eine öffentliche HTTPS-Domain zu. Sie vermittelt die API und die
-Editorpfade `/office/` und `/drawio/`. Dokumentenserver-Ports bleiben intern.
-Die Startbereitschaft von Euro-Office und diagrams.net blockiert die Kernanwendung nicht.
+`webapp` benötigt eine öffentliche HTTPS-Domain. Sie vermittelt die API und den
+Editorpfad `/drawio/`. Für den Office-Dienst werden zwei weitere HTTPS-Origins
+auf dessen Port `8080` geroutet: `OFFICE_PUBLIC_ORIGIN` und
+`OFFICE_SANDBOX_ORIGIN`. `SORTSYS_PUBLIC_ORIGIN` nennt die einbettende Webapp.
+Alle drei Origins müssen verschieden sein. Die Startbereitschaft der Editoren
+blockiert die Kernanwendung nicht.
 
-## Editor-Geheimnisse und Aktualisierungen
+## Office-Dokumente und Sitzungsstände
 
-Euro-Offices `JWT_SECRET` und `ONLYOFFICE_JWT_SECRET` der API müssen übereinstimmen.
-Beide verwenden `SERVICE_BASE64_64_ONLYOFFICE`, getrennt vom API-Sitzungsgeheimnis
-`SERVICE_BASE64_64_JWT`. Für lokales Compose ist ein zufälliges Editor-Geheimnis
-mit mindestens 32 Zeichen erforderlich. Vor einem Wechsel aktive Dokumente
-speichern und schließen.
+Der Dienst `office` stellt die Browsereditoren und den Abgleich verschlüsselter
+Sitzungen bereit. Dokumente werden im Browser entschlüsselt und konvertiert.
+Quell-Downloads und Klartext-Speichercallbacks an einen Dokumentserver sind in
+diesem Ablauf ausgeschlossen. Der [Editorleitfaden](editoren-ohne-klartextserver.md)
+beschreibt geprüfte Funktionen und noch offene Fälle.
 
-Der Dienstname `onlyoffice` und die Variablen `ONLYOFFICE_*` bezeichnen die
-kompatible DocsAPI-Anbindung von Euro-Office. `ONLYOFFICE_IMAGE` überschreibt das
-festgelegte Standardimage. Anforderungen an Ressourcen und persistente Pfade
-beschreibt die [Installationsanleitung des Herstellers](https://euro-office.github.io/documentation/installation/docker/).
+Das Volume `private-office-data` enthält verschlüsselte Bearbeitungsstände und
+gehört zur Sicherung. Gemeinsame Projektdateien behalten ihre Räume nach einem
+Dienstneustart. Eine ungespeicherte Excel-Exportansicht verwendet dagegen einen
+temporären Raum und wird erst beim Herunterladen als lokale Datei übernommen.
 
-Beim Umstieg einer älteren ONLYOFFICE-Installation aktive Dokumente speichern und
-schließen sowie Konfiguration und Volumes sichern. Euro-Office verwendet eigene
-`euro-office-*`-Volumes; alte Editor-Caches und Datenbanken werden nicht migriert.
-Mandantendokumente bleiben in S3. Die bisherigen Volume-Zuordnungen für eine
-Rückkehr zur alten Installation aufbewahren.
+Die Ablösung entfernt den bisherigen Dokumentserver aus Compose und
+Entwicklungsskript. Vorhandene Klartextkopien in dessen `euro-office-*`-Volumes
+und in Betreiberbackups werden durch den neuen Dienst nicht nachträglich
+verschlüsselt. Ihre Bereinigung gehört zur abschließenden Bestandsumstellung.
 
 ## Laufzeitanforderungen
 
@@ -61,9 +63,11 @@ einem Load Balancer gilt [Skalierung und Zusammenarbeit](../sortsys-api-v2/READM
 ## Veröffentlichungen und Rückkehr zu älteren Ständen
 
 Der [Veröffentlichungsablauf](../.github/BRANCHES.md) stellt API-, Hintergrunddienst-
-und Webapp-Images bereit. `ghcr-compose.yaml` verwendet standardmäßig `latest`.
-Für reproduzierbare Installationen `SORTSYS_API_IMAGE`, `SORTSYS_JOBRUNNER_IMAGE`
-und `SORTSYS_WEBAPP_IMAGE` auf denselben Stand festlegen, bevorzugt per Digest.
+und Webapp-Images sowie das Office-Image bereit. `ghcr-compose.yaml` verwendet
+standardmäßig `latest`. Für reproduzierbare Installationen `SORTSYS_API_IMAGE`,
+`SORTSYS_JOBRUNNER_IMAGE`,
+`SORTSYS_WEBAPP_IMAGE` und `SORTSYS_OFFICE_IMAGE` auf denselben Stand festlegen,
+bevorzugt per Digest.
 
 Persistente Daten vor Aktualisierungen sichern. Volumes beim Image-Wechsel
 behalten; `compose down --volumes` löscht Daten. Größere Datenbankversionswechsel

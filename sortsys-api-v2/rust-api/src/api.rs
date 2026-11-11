@@ -20,7 +20,12 @@ use crate::{
 const MIN_LOGIN_TIME: Duration = Duration::from_secs(3);
 
 pub fn registry(state: Arc<AppState>) -> ProcedureRegistry {
+    let gate = Arc::clone(&state);
     let builder = ProcedureRegistryBuilder::default()
+        .with_request_guard(move |path, context| {
+            let state = Arc::clone(&gate);
+            async move { crate::zerotrust::guard_legacy_request(&state, &path, &context).await }
+        })
         .query("ping", |_ctx: RequestContext, _input: ()| async move {
             Ok("pong".to_owned())
         });

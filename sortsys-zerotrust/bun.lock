@@ -1,0 +1,47 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@sortsys/zerotrust",
+      "dependencies": {
+        "@scure/bip39": "^2.0.0",
+        "@serenity-kit/opaque": "^1.0.0",
+        "hpke-js": "^1.6.0",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.4",
+        "typescript": "^5.9.3",
+      },
+    },
+  },
+  "packages": {
+    "@hpke/chacha20poly1305": ["@hpke/chacha20poly1305@1.8.1", "", { "dependencies": { "@hpke/common": "^1.13.0" } }, "sha512-EqIpqvybIQrdMMbVcrF9cr6q8PZWbKQ60428iZyESjGO8j9jJCsILNHaCyWWBwnJYAKT8nZko5sNIkIXmlHsuw=="],
+
+    "@hpke/common": ["@hpke/common@1.13.0", "", {}, "sha512-PqaJR89RWJQmt/WOGuBLrcrtXtEMbWu91XIbxDjKDTDgKvqvhlxOzQ9BAf9a0Q+yqqbTtQ0pK6KUyVi2WMehbA=="],
+
+    "@hpke/core": ["@hpke/core@1.10.1", "", { "dependencies": { "@hpke/common": "^1.13.0" } }, "sha512-VZOk0rHC4vPsbW/fIRz7Q2IviSl0+9dRhP9yi/PmkKVKjj4vZDs1ufkN47twBFLZmiw37YFtTqBrxKAI7dlOrg=="],
+
+    "@hpke/dhkem-x25519": ["@hpke/dhkem-x25519@1.8.1", "", { "dependencies": { "@hpke/common": "^1.13.0" } }, "sha512-bAshBoHmVKJY8MQdl09E8dRsfPUfWwniqCOCAOAN6IlUZzpZFI/QG6hAXqIQpu/XNDPSl0tXYBocq4423whXpg=="],
+
+    "@hpke/dhkem-x448": ["@hpke/dhkem-x448@1.8.1", "", { "dependencies": { "@hpke/common": "^1.13.0" } }, "sha512-gsrEQHJUKmN1TfenktFAnZozFs1fUYnHGa4xbggJHIf2sn5gTPDNZfmmJWvat6Kom4aBRWzldyAogtEg6jsXwA=="],
+
+    "@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
+
+    "@scure/bip39": ["@scure/bip39@2.4.0", "", { "dependencies": { "@noble/hashes": "2.4.0" } }, "sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA=="],
+
+    "@serenity-kit/opaque": ["@serenity-kit/opaque@1.1.0", "", { "bin": { "opaque": "bin/index.js" } }, "sha512-Y6v/+hRMn0MdMEk5+/ArM0vPIiFfFEbdTZc7oAx+cWyvGODGezAQ/sMjXBVogf7NsS9z9EV0Ve5paZCVULuedw=="],
+
+    "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
+
+    "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
+
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
+
+    "hpke-js": ["hpke-js@1.8.1", "", { "dependencies": { "@hpke/chacha20poly1305": "^1.8.0", "@hpke/common": "^1.13.0", "@hpke/core": "^1.10.1", "@hpke/dhkem-x25519": "^1.8.1", "@hpke/dhkem-x448": "^1.8.1" } }, "sha512-xwG8uJnfs58gDPiBRpgv7A5kG6uN4uydW5VPa2/lYgbRp+sR1Jbfud3y7B3T+SY56s/6QOBhyFNnG4Qn3PxhJg=="],
+
+    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+
+    "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
+  }
+}

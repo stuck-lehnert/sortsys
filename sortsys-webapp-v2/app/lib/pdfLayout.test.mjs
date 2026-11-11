@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { typstString, wrapPdfDocument } from './pdfLayout.ts';
 import { PDF_FONT_FAMILY, PDF_FONT_URLS } from './pdfFonts.ts';
 
-mock.module('./client', () => ({ client: { query: async () => [null, null] } }));
+mock.module('./client', () => ({
+  client: { query: async () => [null, null] },
+  gaebDocuments: { blob() { throw new Error('Document storage is not used by these PDF builders'); } },
+  projectFiles: { blob() { throw new Error('File storage is not used by these PDF builders'); } },
+}));
 const { buildPdfBatchDocument, buildPdfProductSection, renderStructuredPdf } = await import('./pdf.ts');
 const { buildRegieReportPdfDocument } = await import('./regieReportPdf.ts');
 const { buildTablePdfDocument } = await import('./pdfTableExport.ts');

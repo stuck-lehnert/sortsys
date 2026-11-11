@@ -8,7 +8,9 @@ import {
   GaebDocument,
   type GaebLocale,
 } from "@sortsys/gaeb";
-import { client } from "./client";
+import { client, templateAssets } from "./client";
+import { readTemplateResource } from "./data/printTemplateData";
+import { renderPrintSvg, validatePrintAssetBytes } from "./data/printAssetBytes";
 import { uiText } from "./i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
@@ -16,7 +18,20 @@ import release from "../../vendor/pdfjs/release.json";
 export type DocumentTemplate = QueryResult<"settings.documentTemplate.get">;
 export type TemplateAsset = DocumentTemplate["assets"][number];
 type PreparedAsset = { paths: string[]; files: Record<string, Uint8Array> };
-const cache = new Map<string, Promise<PreparedAsset>>();
+type AssetEntry = { promise: Promise<PreparedAsset>; value?: PreparedAsset; users: number };
+const cache = new Map<string, AssetEntry>();
+function erase(prepared: PreparedAsset) { for (const bytes of new Set(Object.values(prepared.files))) bytes.fill(0); }
+function trimCache() {
+  let size = [...cache.values()].reduce((sum, entry) => sum + (entry.value ? [...new Set(Object.values(entry.value.files))].reduce((size, bytes) => size + bytes.byteLength, 0) : 0), 0);
+  for (const [key, entry] of cache) {
+    if (cache.size <= 40 && size <= 128 * 1024 * 1024) break;
+    if (!entry.users && entry.value) {
+      size -= [...new Set(Object.values(entry.value.files))].reduce((sum, bytes) => sum + bytes.byteLength, 0);
+      cache.delete(key); erase(entry.value);
+    }
+  }
+}
+templateAssets.listenContext(() => { for (const entry of cache.values()) if (entry.value) erase(entry.value); cache.clear(); });
 async function png(canvas: HTMLCanvasElement) {
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
@@ -27,145 +42,108 @@ async function png(canvas: HTMLCanvasElement) {
   );
   return new Uint8Array(await blob.arrayBuffer());
 }
-async function prepareAsset(asset: TemplateAsset): Promise<PreparedAsset> {
-  if (!asset.downloadUrl)
-    throw new Error(
-      uiText(
-        "Die Vorlagendatei ist nicht verfügbar.",
-        "The template asset is unavailable.",
-      ),
-    );
-  const response = await fetch(asset.downloadUrl);
-  if (!response.ok)
-    throw new Error(
-      uiText(
-        "Die Vorlagendatei konnte nicht geladen werden.",
-        "The template asset could not be loaded.",
-      ),
-    );
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length > 20 * 1024 * 1024)
-    throw new Error(
-      uiText(
-        "Die Vorlagendatei ist zu groß.",
-        "The template asset is too large.",
-      ),
-    );
-  const files: Record<string, Uint8Array> = {},
-    paths: string[] = [];
-  const add = (data: Uint8Array) => {
-    const path = `/assets/${asset.id}/${paths.length + 1}.png`;
-    paths.push(path);
-    files[path] = data;
-  };
-  if (asset.mimeType === "application/pdf") {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
-    const base = `${import.meta.env.BASE_URL}pdfjs/${release.version}/web/`;
-    const task = pdfjs.getDocument({
-      data: bytes,
-      enableXfa: false,
-      standardFontDataUrl: base + "standard_fonts/",
-      cMapUrl: base + "cmaps/",
-      cMapPacked: true,
-      wasmUrl: base + "wasm/",
-    });
-    const document = await task.promise;
-    try {
-      if (document.numPages > 100)
-        throw new Error(
-          uiText(
-            "PDF-Vorlagen dürfen höchstens 100 Seiten haben.",
-            "PDF template assets may contain at most 100 pages.",
-          ),
-        );
-      let total = 0;
-      for (let index = 1; index <= document.numPages; index++) {
-        const page = await document.getPage(index),
-          original = page.getViewport({ scale: 1 });
-        const viewport = page.getViewport({
-          scale: Math.min(
-            2,
-            Math.sqrt(8_000_000 / (original.width * original.height)),
-          ),
-        });
-        const canvas = window.document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        const context = canvas.getContext("2d");
-        if (!context) throw new Error("Canvas unavailable");
-        await page.render({ canvas, canvasContext: context, viewport }).promise;
-        const data = await png(canvas);
-        total += data.length;
-        if (total > 128 * 1024 * 1024)
-          throw new Error(
-            uiText(
-              "Die PDF-Bilder benötigen zu viel Speicher.",
-              "Rendered PDF pages require too much memory.",
-            ),
-          );
-        add(data);
-        canvas.width = canvas.height = 0;
-        page.cleanup();
-      }
-    } finally {
-      await task.destroy();
+async function prepareAsset(asset: TemplateAsset, signal: AbortSignal): Promise<PreparedAsset> {
+  signal.throwIfAborted();
+  if (!asset.downloadUrl) throw new Error(uiText("Die Vorlagendatei ist nicht verfügbar.", "The template asset is unavailable."));
+  const resource = readTemplateResource(asset.downloadUrl);
+  if (resource.id !== asset.id) throw new Error("Invalid template asset binding");
+  const original = await templateAssets.blob(resource.id, resource.version, signal);
+  signal.throwIfAborted();
+  if (original.size !== asset.sizeBytes || original.type !== asset.mimeType) throw new Error("Invalid template asset metadata");
+  const bytes = new Uint8Array(await original.arrayBuffer());
+  const files: Record<string, Uint8Array> = {}, paths: string[] = [];
+  let complete = false;
+  const add = (data: Uint8Array) => { const path = `/assets/${asset.id}/${paths.length + 1}.png`; paths.push(path); files[path] = data; };
+  try {
+    validatePrintAssetBytes(asset.mimeType, bytes); signal.throwIfAborted();
+    if (asset.mimeType === "application/pdf") {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+      const base = `${import.meta.env.BASE_URL}pdfjs/${release.version}/web/`;
+      const task = pdfjs.getDocument({ data: bytes, enableXfa: false,
+        standardFontDataUrl: base + "standard_fonts/", cMapUrl: base + "cmaps/", cMapPacked: true, wasmUrl: base + "wasm/" });
+      const abort = () => { void task.destroy().catch(() => undefined); };
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        signal.throwIfAborted(); const pdf = await task.promise; signal.throwIfAborted();
+        if (pdf.numPages > 100) throw new Error(uiText("PDF-Vorlagen dürfen höchstens 100 Seiten haben.", "PDF template assets may contain at most 100 pages."));
+        let total = 0;
+        for (let index = 1; index <= pdf.numPages; index++) {
+          signal.throwIfAborted();
+          const page = await pdf.getPage(index), size = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({ scale: Math.min(2, Math.sqrt(8_000_000 / (size.width * size.height))) });
+          const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+          try {
+            const context = canvas.getContext("2d"); if (!context) throw new Error("Canvas unavailable");
+            await page.render({ canvas, canvasContext: context, viewport, annotationMode: pdfjs.AnnotationMode.DISABLE }).promise; signal.throwIfAborted();
+            const data = await png(canvas); signal.throwIfAborted(); total += data.length;
+            if (total > 128 * 1024 * 1024) { data.fill(0); throw new Error(uiText("Die PDF-Bilder benötigen zu viel Speicher.", "Rendered PDF pages require too much memory.")); }
+            add(data);
+          } finally { canvas.width = canvas.height = 0; page.cleanup(); }
+        }
+      } finally { signal.removeEventListener("abort", abort); await task.destroy().catch(() => undefined); }
+    } else {
+      const rendered = asset.mimeType === "image/svg+xml" ? new Blob([renderPrintSvg(bytes)], { type: asset.mimeType }) : original;
+      const url = URL.createObjectURL(rendered), image = new Image();
+      const abort = () => { image.src = ""; };
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        signal.throwIfAborted(); image.src = url; await image.decode(); signal.throwIfAborted();
+        const scale = Math.min(1, Math.sqrt(8_000_000 / (image.naturalWidth * image.naturalHeight)));
+        const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        try {
+          const context = canvas.getContext("2d"); if (!context) throw new Error("Canvas unavailable");
+          context.drawImage(image, 0, 0, canvas.width, canvas.height); add(await png(canvas)); signal.throwIfAborted();
+          files[`/assets/${asset.name}`] = files[paths[0]!]!;
+        } finally { canvas.width = canvas.height = 0; }
+      } finally { signal.removeEventListener("abort", abort); URL.revokeObjectURL(url); image.src = ""; }
     }
-  } else {
-    const url = URL.createObjectURL(
-      new Blob([bytes], { type: asset.mimeType }),
-    );
-    try {
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-      const scale = Math.min(
-        1,
-        Math.sqrt(8_000_000 / (image.naturalWidth * image.naturalHeight)),
-      );
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas unavailable");
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      add(await png(canvas));
-      files[`/assets/${asset.name}`] = files[paths[0]];
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    signal.throwIfAborted(); complete = true; return { paths, files };
+  } finally {
+    try { bytes.fill(0); } catch { /* PDF.js transfers its input to the worker. */ }
+    if (!complete) erase({ paths, files });
   }
-  return { paths, files };
 }
-export async function prepareTemplateAssets(assets: TemplateAsset[]) {
-  const paths: Record<string, string[]> = {},
-    files: Record<string, Uint8Array> = {};
-  for (const asset of assets) {
-    let pending = cache.get(asset.id);
-    if (!pending) {
-      pending = prepareAsset(asset).catch((error) => {
-        cache.delete(asset.id);
-        throw error;
-      });
-      if (cache.size > 40) cache.clear();
-      cache.set(asset.id, pending);
+export async function prepareTemplateAssets(assets: TemplateAsset[], cancellation?: AbortSignal) {
+  const context = templateAssets.context(), active = cancellation ? AbortSignal.any([context, cancellation]) : context;
+  const paths: Record<string, string[]> = {}, files: Record<string, Uint8Array> = {};
+  let allocated = 0;
+  const dispose = () => { erase({ paths: [], files }); context.removeEventListener("abort", dispose); };
+  context.addEventListener("abort", dispose, { once: true });
+  try {
+    active.throwIfAborted();
+    for (const asset of assets) {
+      const key = JSON.stringify([asset.id, asset.downloadUrl, asset.name, asset.mimeType, asset.sizeBytes]);
+      let entry = cache.get(key);
+      if (!entry) {
+        const created: AssetEntry = { promise: Promise.resolve({ paths: [], files: {} }), users: 0 };
+        created.promise = prepareAsset(asset, context).then(prepared => {
+          if (context.aborted || context !== templateAssets.context()) { erase(prepared); throw new DOMException("Aborted", "AbortError"); }
+          created.value = prepared; return prepared;
+        }).catch(error => { if (cache.get(key) === created) cache.delete(key); throw error; });
+        entry = created; cache.set(key, created);
+      }
+      entry.users++;
+      try {
+        const prepared = await entry.promise; active.throwIfAborted();
+        paths[asset.name] = [...prepared.paths];
+        const copies = new Map<Uint8Array, Uint8Array>();
+        for (const [path, bytes] of Object.entries(prepared.files)) {
+          let copy = copies.get(bytes);
+          if (!copy) {
+            allocated += bytes.byteLength;
+            if (allocated > 128 * 1024 * 1024) throw new Error(uiText("Die Vorlagendateien benötigen zu viel Speicher.", "Template assets require too much memory."));
+            copy = new Uint8Array(bytes); copies.set(bytes, copy);
+          }
+          files[path] = copy;
+        }
+      } finally { entry.users--; trimCache(); }
     }
-    const prepared = await pending;
-    paths[asset.name] = prepared.paths;
-    Object.assign(files, prepared.files);
-  }
-  const buffers = new Set(Object.values(files));
-  if (
-    [...buffers].reduce((total, bytes) => total + bytes.byteLength, 0) >
-    128 * 1024 * 1024
-  )
-    throw new Error(
-      uiText(
-        "Die Vorlagendateien benötigen zu viel Speicher.",
-        "Template assets require too much memory.",
-      ),
-    );
-  return { paths, files };
+    active.throwIfAborted();
+    if ([...new Set(Object.values(files))].reduce((total, bytes) => total + bytes.byteLength, 0) > 128 * 1024 * 1024)
+      throw new Error(uiText("Die Vorlagendateien benötigen zu viel Speicher.", "Template assets require too much memory."));
+    return { paths, files, context: active, dispose };
+  } catch (error) { dispose(); throw error; }
 }
 export async function loadPrintContext() {
   const [[template, error], [organization, profileError]] = await Promise.all([
@@ -192,7 +170,8 @@ export async function renderGaebPdf(
   },
   signal?: AbortSignal,
 ) {
-  const assets = await prepareTemplateAssets(context.template.assets);
+  const assets = await prepareTemplateAssets(context.template.assets, signal);
+  try {
   const address = context.organization.address;
   const sender = {
     name: context.organization.companyName ?? "",
@@ -211,11 +190,13 @@ export async function renderGaebPdf(
     projectTitle: context.projectTitle,
     documentKind: context.documentKind,
   });
-  return compileTypst(
+  const result = await compileTypst(
     code,
     { ...assets.files, ...gaebEmbeddedImageFiles(xml, referenceXml) },
-    signal,
+    assets.context,
   );
+  assets.context.throwIfAborted(); return result;
+  } finally { assets.dispose(); }
 }
 export async function exportGaebPdf(
   xml: string,

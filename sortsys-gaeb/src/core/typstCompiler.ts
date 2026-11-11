@@ -43,20 +43,22 @@ export function compileTypst(
     });
     await setup;
     signal?.throwIfAborted();
-    const paths: string[] = [];
+    const compiler = await api.getCompiler();
     try {
+      await api.resetShadow();
       for (const [path, bytes] of Object.entries(assets)) {
+        signal?.throwIfAborted();
         await api.mapShadow(path, bytes);
-        paths.push(path);
       }
-      const compiler = await api.getCompiler();
       await compiler.reset();
+      signal?.throwIfAborted();
       compiler.addSource("/sortsys-document.typ", source);
       const result = await compiler.compile({
         mainFilePath: "/sortsys-document.typ",
         format: CompileFormatEnum.pdf,
         diagnostics: "unix",
       });
+      signal?.throwIfAborted();
       if (!result.result?.length)
         throw new Error(
           result.diagnostics?.join("\n") ||
@@ -64,7 +66,8 @@ export function compileTypst(
         );
       return result.result;
     } finally {
-      for (const path of paths) await api.unmapShadow(path);
+      try { await api.resetShadow(); }
+      finally { await compiler.reset(); }
     }
   });
   queue = task.then(

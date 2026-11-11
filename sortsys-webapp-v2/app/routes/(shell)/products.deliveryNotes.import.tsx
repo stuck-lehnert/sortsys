@@ -1,12 +1,15 @@
 import { Button as UIAction } from "@sortsys/react-components";
 import type { MutateResult, QueryResult } from "@sortsys/v2-client";
 import { Heading, Tile } from "@sortsys/react-components";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyHeader } from "~/components/MyHeader";
 import { useMyModals } from "~/hooks/useMyModals";
-import { client } from "~/lib/client";
+import { API_ENDPOINT, client } from "~/lib/client";
+import { readSelectedDocuments } from "~/lib/data/imports";
+import { importMime } from "~/lib/importFiles";
+import { processImport } from "~/lib/importProcessing";
 import { uiText, useI18n } from "~/lib/i18n";
 import { Icons } from "~/lib/icons";
 import {
@@ -19,7 +22,7 @@ import type { Route } from "./+types/products.deliveryNotes.import";
 type ScanResult = MutateResult<"deliveryNotes.scan.complete">;
 type DeliveryNoteScanResult = NonNullable<ScanResult["deliveryNote"]>;
 type ScanEntry = QueryResult<"deliveryNotes.scan.list">[number];
-type UploadPhase = "idle" | "uploading" | "starting";
+type ProcessingPhase = "idle" | "processing";
 
 const scanMimeTypes = new Set([
   "application/pdf",
@@ -31,13 +34,7 @@ const scanMimeTypes = new Set([
 const maxScanBytes = 20 * 1024 * 1024;
 const maxScanFiles = 20;
 const maxScanTotalBytes = 100 * 1024 * 1024;
-const xlsxMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-function scanMimeType(file: File) {
-  if (file.type) return file.type;
-
-  return file.name.toLocaleLowerCase().endsWith(".xlsx") ? xlsxMimeType : "";
-}
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: uiText("Einlesen", "Import") }];
@@ -95,50 +92,28 @@ export default function ImportDeliveryNotePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [phase, setPhase] = useState<UploadPhase>("idle");
+  const [phase, setPhase] = useState<ProcessingPhase>("idle");
   const [history, setHistory] = useState<ScanEntry[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [openingScanId, setOpeningScanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const isUploading = phase !== "idle";
-  const hasActiveScans = history?.some(
-    scan => scan.state === "queued" || scan.state === "ocr" || scan.state === "matching",
-  ) ?? true;
-
-  const refreshHistory = useCallback(async () => {
-    const [scans, scansError] = await client.query(
-      "deliveryNotes.scan.list",
-      undefined,
-      { strategy: "network-only" },
-    );
-
-    if (scansError) {
-      setHistoryError(scansError.message);
-      return;
-    }
-
-    setHistory(scans ?? []);
-    setHistoryError(null);
-  }, []);
+  const isProcessing = phase !== "idle";
 
   useEffect(() => {
-    void refreshHistory();
-
-    const interval = window.setInterval(
-      () => void refreshHistory(),
-      hasActiveScans ? 2_000 : 15_000,
-    );
-
-    return () => window.clearInterval(interval);
-  }, [hasActiveScans, refreshHistory]);
+    const subscription = client.streamQuery("deliveryNotes.scan.list", undefined, { strategy: "network-only" }).subscribe(([scans, error]) => {
+      if (error) setHistoryError(error.message);
+      else { setHistory(scans ?? []); setHistoryError(null); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   function selectFiles(selected: Iterable<File>) {
-    if (isUploading) return;
+    if (isProcessing) return;
 
     const additions = Array.from(selected);
     if (additions.length === 0) return;
 
-    if (additions.some(file => !scanMimeTypes.has(scanMimeType(file)))) {
+    if (additions.some(file => !scanMimeTypes.has(importMime(file)))) {
       setError(uiText(
         "Erlaubt sind PDF-, XLSX-, JPG-, PNG- und WebP-Dateien.",
         "PDF, XLSX, JPG, PNG, and WebP files are allowed.",
@@ -186,7 +161,7 @@ export default function ImportDeliveryNotePage() {
   }
 
   function openFilePicker(input: HTMLInputElement | null) {
-    if (!input || isUploading) return;
+    if (!input || isProcessing) return;
 
     // Choosing the same file again must still trigger the input event.
     input.value = "";
@@ -288,71 +263,22 @@ export default function ImportDeliveryNotePage() {
     }
   }
 
-  async function uploadFile(file: File) {
-    const fileName = file.name || "document-photo.jpg";
-    const mimeType = scanMimeType(file);
-    const [upload, uploadError] = await client.mutate(
-      "deliveryNotes.scan.createUpload",
-      {
-        fileName,
-        mimeType,
-        sizeBytes: file.size,
-      },
-    );
-    if (uploadError) throw uploadError;
-    if (!upload) throw new Error(uiText(
-      "Upload konnte nicht vorbereitet werden.",
-      "Could not prepare upload.",
-    ));
-
-    const response = await fetch(upload.uploadUrl, {
-      method: "PUT",
-      headers: { "content-type": mimeType },
-      body: file,
-    });
-    if (!response.ok) {
-      throw new Error(uiText(
-        `„${fileName}“ konnte nicht hochgeladen werden.`,
-        `Could not upload “${fileName}”.`,
-      ));
-    }
-
-    return {
-      objectKey: upload.objectKey,
-      fileName,
-      mimeType,
-      sizeBytes: file.size,
-    };
-  }
-
   async function parseFiles() {
-    if (files.length === 0 || isUploading) return;
+    if (files.length === 0 || isProcessing) return;
 
     setError(null);
-    setPhase("uploading");
+    setPhase("processing");
 
     try {
-      const documents = await Promise.all(files.map(uploadFile));
-      setPhase("starting");
-
-      const [scan, startError] = await client.mutate(
-        "deliveryNotes.scan.start",
-        { documents },
-      );
-      if (startError) throw startError;
-      if (!scan) throw new Error(uiText(
-        "Der Scan konnte nicht gestartet werden.",
-        "Could not start the scan.",
-      ));
+      await processImport((signal, progress) => readSelectedDocuments(client, API_ENDPOINT, files, signal, progress));
 
       setFiles([]);
-      await refreshHistory();
     } catch (cause) {
       setError(cause instanceof Error
         ? cause.message
         : uiText(
-            "Das Dokument konnte nicht hochgeladen werden.",
-            "Could not upload the document.",
+            "Das Dokument konnte nicht eingelesen werden.",
+            "Could not read the document.",
           ));
     } finally {
       setPhase("idle");
@@ -424,7 +350,7 @@ export default function ImportDeliveryNotePage() {
                     <UIAction
                       kind="ghost"
                       type="button"
-                      disabled={isUploading}
+                      disabled={isProcessing}
                       aria-label={uiText(
                         `${file.name} entfernen`,
                         `Remove ${file.name}`,
@@ -456,7 +382,7 @@ export default function ImportDeliveryNotePage() {
             <MyButton
               kind={files.length ? "ghost" : "secondary"}
               renderIcon={Icons.Upload}
-              disabled={isUploading}
+              disabled={isProcessing}
               onClick={() => openFilePicker(fileInputRef.current)}
             >
               {files.length
@@ -466,7 +392,7 @@ export default function ImportDeliveryNotePage() {
             <MyButton
               kind={files.length ? "ghost" : "secondary"}
               renderIcon={Icons.Camera}
-              disabled={isUploading}
+              disabled={isProcessing}
               onClick={() => openFilePicker(cameraInputRef.current)}
             >
               {uiText("Foto aufnehmen", "Take photo")}
@@ -476,16 +402,14 @@ export default function ImportDeliveryNotePage() {
 
         {!!files.length && (
           <div className="delivery-scan-start">
-            {isUploading && (
+            {isProcessing && (
               <span className="light">
-                {phase === "uploading"
-                  ? uiText("Dateien werden hochgeladen …", "Uploading files …")
-                  : uiText("Scan wird gestartet …", "Starting scan …")}
+                {uiText("Dokumente werden verarbeitet …", "Processing documents…")}
               </span>
             )}
             <MyButton
               renderIcon={Icons.DeliveryNote}
-              loading={isUploading}
+              loading={isProcessing}
               onClick={() => void parseFiles()}
             >
               {uiText("Einlesen", "Scan")}

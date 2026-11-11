@@ -12,10 +12,11 @@ DEV_ENV_FILE="${DEV_ENV_FILE:-$ROOT_DIR/.env}"
 DEV_NETWORK="sortsys-dev-network"
 DEV_PG_CONTAINER="sortsys-dev-postgres"
 DEV_S3_CONTAINER="sortsys-dev-s3"
-DEV_ONLYOFFICE_CONTAINER="sortsys-dev-onlyoffice"
-DEV_ONLYOFFICE_INIT_CONTAINER="sortsys-dev-onlyoffice-init"
+DEV_OFFICE_CONTAINER="sortsys-dev-office"
 DEV_DRAWIO_CONTAINER="sortsys-dev-drawio"
 DEV_API_CONTAINER="sortsys-dev-api"
+DEV_DUCKDB_CONTAINER="sortsys-dev-duckdb"
+DEV_DUCKDB_TOKEN="${DEV_DUCKDB_TOKEN:-sortsys-development-duckdb-token-not-for-production}"
 DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
 DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
 DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
@@ -23,21 +24,18 @@ DEV_DATA_DIR="$ROOT_DIR/.dev-data"
 DEV_PRESERVE_FAILED_API=false
 DEV_POSTGRES_DATA_DIR="$DEV_DATA_DIR/postgres"
 DEV_S3_DATA_DIR="$DEV_DATA_DIR/s3"
+DEV_DUCKDB_DATA_DIR="$DEV_DATA_DIR/duckdb"
 DEV_GO_BUILD_CACHE_DIR="$DEV_DATA_DIR/go-build"
 DEV_GO_MODULE_CACHE_DIR="$DEV_DATA_DIR/go-modules"
 DEV_WEBAPP_DEPS_DIR="$DEV_DATA_DIR/webapp-dependencies"
 DEV_DWG_DEPS_DIR="$DEV_DATA_DIR/dwgviewer-dependencies"
 DEV_GAEB_DEPS_DIR="$DEV_DATA_DIR/gaeb-dependencies"
-DEV_ONLYOFFICE_DATA_DIR="$DEV_DATA_DIR/euro-office/data"
-DEV_ONLYOFFICE_STATE_DIR="$DEV_DATA_DIR/euro-office/state"
-DEV_ONLYOFFICE_DATABASE_DIR="$DEV_DATA_DIR/euro-office/database"
-DEV_ONLYOFFICE_LOGS_DIR="$DEV_DATA_DIR/euro-office/logs"
+DEV_OFFICE_DATA_DIR="$DEV_DATA_DIR/private-office"
 
 DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-$(sortsys_container_image dev-postgres)}"
 DEV_S3_IMAGE="${DEV_S3_IMAGE:-$(sortsys_s3_image)}"
 DEV_S3_IMAGE_FALLBACK="${DEV_S3_IMAGE_FALLBACK:-}"
-# Euro-Office implements the existing DocsAPI protocol and environment contract.
-DEV_ONLYOFFICE_IMAGE="${DEV_ONLYOFFICE_IMAGE:-$(sortsys_container_image onlyoffice)}"
+DEV_OFFICE_IMAGE="${DEV_OFFICE_IMAGE:-localhost/sortsys-private-office:dev}"
 DEV_DRAWIO_IMAGE="${DEV_DRAWIO_IMAGE:-$(sortsys_container_image drawio)}"
 DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-$(sortsys_container_image bun)}"
 DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-$(sortsys_container_image rust)}"
@@ -51,8 +49,11 @@ DEV_API_PORT="${DEV_API_PORT:-3000}"
 DEV_WEBAPP_PORT="${DEV_WEBAPP_PORT:-5173}"
 DEV_PG_PORT="${DEV_PG_PORT:-32532}"
 DEV_S3_PORT="${DEV_S3_PORT:-39100}"
-DEV_ONLYOFFICE_PORT="${DEV_ONLYOFFICE_PORT:-39180}"
-DEV_ONLYOFFICE_PUBLIC_URL="${DEV_ONLYOFFICE_PUBLIC_URL:-http://127.0.0.1:${DEV_ONLYOFFICE_PORT}}"
+DEV_OFFICE_PORT="${DEV_OFFICE_PORT:-39180}"
+DEV_OFFICE_SANDBOX_PORT="${DEV_OFFICE_SANDBOX_PORT:-39182}"
+DEV_OFFICE_PUBLIC_ORIGIN="${DEV_OFFICE_PUBLIC_ORIGIN:-http://127.0.0.1:${DEV_OFFICE_PORT}}"
+DEV_OFFICE_SANDBOX_ORIGIN="${DEV_OFFICE_SANDBOX_ORIGIN:-http://127.0.0.1:${DEV_OFFICE_SANDBOX_PORT}}"
+DEV_SORTSYS_PUBLIC_ORIGIN="${DEV_SORTSYS_PUBLIC_ORIGIN:-http://127.0.0.1:${DEV_WEBAPP_PORT}}"
 DEV_DRAWIO_PORT="${DEV_DRAWIO_PORT:-39181}"
 DEV_DRAWIO_PUBLIC_URL="${DEV_DRAWIO_PUBLIC_URL:-http://127.0.0.1:${DEV_DRAWIO_PORT}}"
 DEV_S3_PUBLIC_BASE_URL="${DEV_S3_PUBLIC_BASE_URL:-http://127.0.0.1:${DEV_S3_PORT}}"
@@ -65,16 +66,6 @@ DEV_PG_ADMIN_PASSWORD="${TEST_PG_PASSWORD:-dev-postgres}"
 DEV_JOB_RUNNER_TOKEN="${DEV_JOB_RUNNER_TOKEN:-dev-job-runner-token}"
 DEV_JWT_SECRET="${DEV_JWT_SECRET:-dev-jwt-secret}"
 DEV_LLM_ENCRYPTION_KEY="${DEV_LLM_ENCRYPTION_KEY:-dev-llm-encryption-key}"
-# Keep the document-server secret separate from the API session secret.
-DEV_ONLYOFFICE_JWT_SECRET="${DEV_ONLYOFFICE_JWT_SECRET:-$(
-  od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
-)}"
-
-if [ "${#DEV_ONLYOFFICE_JWT_SECRET}" -lt 32 ]; then
-  echo "DEV_ONLYOFFICE_JWT_SECRET must contain at least 32 characters" >&2
-  exit 1
-fi
-
 # Development global-admin password: 123456
 DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$A20B6GFXZPxMInilSMwRy.q3tixzPl9Bq0tgyrCvNAHUQI2BHqlPa}"
 
@@ -85,7 +76,7 @@ DEV_TEST_DATABASE_USER="${DEV_TEST_DATABASE_USER:-live_sortsys_api_test_app}"
 DEV_LIVE_POSTGRES_HOST_NAME="${DEV_LIVE_POSTGRES_HOST_NAME:-dev-local-postgres}"
 
 DEV_OPTIONAL_EDITOR_CONTAINERS=(
-  "$DEV_ONLYOFFICE_CONTAINER"
+  "$DEV_OFFICE_CONTAINER"
   "$DEV_DRAWIO_CONTAINER"
 )
 
@@ -93,6 +84,7 @@ DEV_SERVICE_CONTAINERS=(
   "$DEV_PG_CONTAINER"
   "$DEV_S3_CONTAINER"
   "$DEV_API_CONTAINER"
+  "$DEV_DUCKDB_CONTAINER"
   "$DEV_WEBAPP_CONTAINER"
   "${DEV_JOB_RUNNER_CONTAINERS[0]}"
   "${DEV_JOB_RUNNER_CONTAINERS[1]}"
@@ -103,7 +95,6 @@ DEV_SERVICE_CONTAINERS=(
 DEV_ALL_CONTAINERS=(
   "${DEV_SERVICE_CONTAINERS[@]}"
   "${DEV_OPTIONAL_EDITOR_CONTAINERS[@]}"
-  "$DEV_ONLYOFFICE_INIT_CONTAINER"
   "$DEV_CLIENT_BUILD_CONTAINER"
 )
 
@@ -243,15 +234,13 @@ prepare_development_directories() {
   mkdir -p \
     "$DEV_POSTGRES_DATA_DIR" \
     "$DEV_S3_DATA_DIR" \
+    "$DEV_DUCKDB_DATA_DIR" \
     "$DEV_GO_BUILD_CACHE_DIR" \
     "$DEV_GO_MODULE_CACHE_DIR" \
     "$DEV_WEBAPP_DEPS_DIR" \
     "$DEV_DWG_DEPS_DIR" \
     "$DEV_GAEB_DEPS_DIR" \
-    "$DEV_ONLYOFFICE_DATA_DIR" \
-    "$DEV_ONLYOFFICE_STATE_DIR" \
-    "$DEV_ONLYOFFICE_DATABASE_DIR" \
-    "$DEV_ONLYOFFICE_LOGS_DIR"
+    "$DEV_OFFICE_DATA_DIR"
 }
 
 cleanup_containers() {
@@ -387,9 +376,11 @@ wait_for_editor_ready() {
       break
     fi
 
-    if "$CONTAINER_RUNTIME" exec "$container_name" \
-      curl --fail --silent --connect-timeout 2 --max-time "$probe_timeout" \
-        "$url" >/dev/null 2>&1; then
+    local probe=(curl --fail --silent --connect-timeout 2 --max-time "$probe_timeout" "$url")
+    if [ "$container_name" = "${DEV_OFFICE_CONTAINER:-}" ]; then
+      probe=(node /opt/sortsys-office/run.cjs --health)
+    fi
+    if "$CONTAINER_RUNTIME" exec "$container_name" "${probe[@]}" >/dev/null 2>&1; then
       return 0
     fi
 
@@ -500,14 +491,13 @@ initialize_master_database() {
 prepare_images() {
   local images=(
     "$DEV_POSTGRES_IMAGE"
-    "$DEV_ONLYOFFICE_IMAGE"
     "$DEV_DRAWIO_IMAGE"
     "$DEV_BUN_IMAGE"
     "$DEV_RUST_IMAGE"
     "$DEV_NODE_IMAGE"
     "$DEV_GO_IMAGE"
   )
-  local labels=("PostgreSQL" "Euro-Office" "diagrams.net" "Bun" "Rust" "Node.js" "Go")
+  local labels=("PostgreSQL" "diagrams.net" "Bun" "Rust" "Node.js" "Go")
   local pids=()
   local failed=0
   local image
@@ -621,66 +611,33 @@ start_s3() {
   return 1
 }
 
-prepare_onlyoffice_storage() {
-  local helper_mount_options="ro"
-
-  if [ -n "$runtime_mount_suffix" ]; then
-    helper_mount_options+=",${runtime_mount_suffix#:}"
-  fi
-
-  echo "Initializing local Euro-Office storage from the pinned image"
-
-  "$CONTAINER_RUNTIME" run --rm \
-    --name "$DEV_ONLYOFFICE_INIT_CONTAINER" \
-    "${runtime_pull_args[@]}" \
-    --network none \
-    --entrypoint bash \
-    -v "${SCRIPT_DIR}/dev-office-init:/sortsys-dev-office-init:${helper_mount_options}" \
-    -v "${DEV_ONLYOFFICE_DATA_DIR}:/sortsys-dev-office/data${runtime_mount_suffix}" \
-    -v "${DEV_ONLYOFFICE_STATE_DIR}:/sortsys-dev-office/state${runtime_mount_suffix}" \
-    -v "${DEV_ONLYOFFICE_DATABASE_DIR}:/sortsys-dev-office/database${runtime_mount_suffix}" \
-    -v "${DEV_ONLYOFFICE_LOGS_DIR}:/sortsys-dev-office/logs${runtime_mount_suffix}" \
-    "$DEV_ONLYOFFICE_IMAGE" /sortsys-dev-office-init
+build_private_office_image() {
+  local load_args=()
+  if [ "$CONTAINER_RUNTIME" = docker ]; then load_args=(--load); fi
+  "$CONTAINER_RUNTIME" build "${load_args[@]}" -t "$DEV_OFFICE_IMAGE" "$ROOT_DIR/sortsys-office"
 }
 
-start_onlyoffice() {
-  local startup_mount_options="ro"
-
-  if [ -n "$runtime_mount_suffix" ]; then
-    startup_mount_options+=",${runtime_mount_suffix#:}"
-  fi
-
-  echo "Starting development Euro-Office on port ${DEV_ONLYOFFICE_PORT}"
-
+start_private_office() {
+  echo "Starting development private Office on ports ${DEV_OFFICE_PORT} and ${DEV_OFFICE_SANDBOX_PORT}"
   ensure_network || return 1
-  prepare_onlyoffice_storage || return 1
-
-  # Keep a stopped editor until normal cleanup so startup diagnostics survive.
-  # Document Server fetches API document/callback URLs on the isolated network.
+  build_private_office_image || return 1
   if ! "$CONTAINER_RUNTIME" run -d \
-    --name "$DEV_ONLYOFFICE_CONTAINER" \
+    --name "$DEV_OFFICE_CONTAINER" \
     "${runtime_pull_args[@]}" \
     --network "$DEV_NETWORK" \
-    --shm-size=2g \
-    --entrypoint sh \
-    -p "${DEV_ONLYOFFICE_PORT}:80" \
-    -e JWT_ENABLED="true" \
-    -e JWT_SECRET="$DEV_ONLYOFFICE_JWT_SECRET" \
-    -e JWT_HEADER="Authorization" \
-    -e JWT_IN_BODY="false" \
-    -e ALLOW_PRIVATE_IP_ADDRESS="true" \
-    -e EXAMPLE_ENABLED="false" \
-    -v "${SCRIPT_DIR}/dev-office-start:/sortsys-dev-office-start:${startup_mount_options}" \
-    -v "${DEV_ONLYOFFICE_DATA_DIR}:/var/www/euro-office/Data${runtime_mount_suffix}" \
-    -v "${DEV_ONLYOFFICE_STATE_DIR}:/var/lib/euro-office/documentserver${runtime_mount_suffix}" \
-    -v "${DEV_ONLYOFFICE_DATABASE_DIR}:/var/lib/postgresql${runtime_mount_suffix}" \
-    -v "${DEV_ONLYOFFICE_LOGS_DIR}:/var/log/euro-office/documentserver${runtime_mount_suffix}" \
-    "$DEV_ONLYOFFICE_IMAGE" /sortsys-dev-office-start >/dev/null; then
+    --user "$(id -u):$(id -g)" \
+    --read-only --init --cap-drop ALL --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
+    -p "127.0.0.1:${DEV_OFFICE_PORT}:8080" \
+    -p "127.0.0.1:${DEV_OFFICE_SANDBOX_PORT}:8080" \
+    -e OFFICE_PUBLIC_ORIGIN="$DEV_OFFICE_PUBLIC_ORIGIN" \
+    -e OFFICE_SANDBOX_ORIGIN="$DEV_OFFICE_SANDBOX_ORIGIN" \
+    -e SORTSYS_PUBLIC_ORIGIN="$DEV_SORTSYS_PUBLIC_ORIGIN" \
+    -v "${DEV_OFFICE_DATA_DIR}:/var/lib/sortsys-office${runtime_mount_suffix}" \
+    "$DEV_OFFICE_IMAGE" >/dev/null; then
     return 1
   fi
-
-  wait_for_editor_ready "$DEV_ONLYOFFICE_CONTAINER" \
-    http://127.0.0.1/healthcheck "Euro-Office" 300
+  wait_for_editor_ready "$DEV_OFFICE_CONTAINER" "" "Office" 180
 }
 
 start_drawio() {
@@ -737,6 +694,35 @@ build_api_development_image() {
     "$SERVER_DIR" >/dev/null
 }
 
+start_duckdb_container() {
+  echo "Starting shared development DuckDB service"
+  "$CONTAINER_RUNTIME" run -d \
+    --name "$DEV_DUCKDB_CONTAINER" \
+    "${runtime_pull_args[@]}" \
+    "${runtime_user_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$DEV_NETWORK" \
+    -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
+    -v "${DEV_DUCKDB_DATA_DIR}:/data${runtime_mount_suffix}" \
+    -w /workspace/sortsys-api-v2 \
+    -e DUCKDB_SERVICE_TOKEN="$DEV_DUCKDB_TOKEN" \
+    -e DUCKDB_DATA_DIRECTORY=/data \
+    "$DEV_API_IMAGE" \
+    cargo run --package sortsys-api --bin sortsys_duckdb >/dev/null
+  for ((attempt=1; attempt<=240; attempt++)); do
+    if ! container_is_running "$DEV_DUCKDB_CONTAINER"; then
+      "$CONTAINER_RUNTIME" logs "$DEV_DUCKDB_CONTAINER" >&2 || true
+      return 1
+    fi
+    if "$CONTAINER_RUNTIME" exec "$DEV_DUCKDB_CONTAINER" /workspace/sortsys-api-v2/target/debug/sortsys_duckdb --health >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "DuckDB startup timed out; inspect ${DEV_DUCKDB_CONTAINER}" >&2
+  return 1
+}
+
 start_api_container() {
   local pg_master_dsn
 
@@ -759,11 +745,12 @@ start_api_container() {
     -e PORT="$DEV_API_PORT" \
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$DEV_JWT_SECRET" \
+    -e DUCKDB_QUACK_URI="quack:${DEV_DUCKDB_CONTAINER}:9494" \
+    -e DUCKDB_CONTROL_URL="http://${DEV_DUCKDB_CONTAINER}:9495" \
+    -e DUCKDB_SERVICE_TOKEN="$DEV_DUCKDB_TOKEN" \
+    -e DUCKDB_QUACK_DISABLE_SSL="true" \
     -e LLM_ENCRYPTION_KEY="$DEV_LLM_ENCRYPTION_KEY" \
-    -e ONLYOFFICE_PUBLIC_URL="$DEV_ONLYOFFICE_PUBLIC_URL" \
-    -e ONLYOFFICE_INTERNAL_URL="http://${DEV_ONLYOFFICE_CONTAINER}" \
-    -e ONLYOFFICE_CALLBACK_URL="http://${DEV_API_CONTAINER}:${DEV_API_PORT}/internal/onlyoffice/callback" \
-    -e ONLYOFFICE_JWT_SECRET="$DEV_ONLYOFFICE_JWT_SECRET" \
+    -e OFFICE_PUBLIC_ORIGIN="$DEV_OFFICE_PUBLIC_ORIGIN" \
     -e DRAWIO_PUBLIC_URL="$DEV_DRAWIO_PUBLIC_URL" \
     -e ADMIN_HASH="$DEV_ADMIN_HASH" \
     -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
@@ -1079,7 +1066,7 @@ start_postgres &
 postgres_pid="$!"
 start_s3 &
 s3_pid="$!"
-start_optional_editor "Euro-Office" start_onlyoffice &
+start_optional_editor "Office" start_private_office &
 start_optional_editor "diagrams.net" start_drawio &
 build_api_development_image &
 api_image_pid="$!"
@@ -1098,6 +1085,7 @@ wait_for_startup_step "$s3_pid" "S3"
 wait_for_startup_step "$api_image_pid" "API development image build"
 wait_for_startup_step "$job_runner_image_pid" "Job runner development image build"
 
+start_duckdb_container
 start_api_container
 start_job_runner_containers
 
@@ -1112,7 +1100,7 @@ echo "- Webapp:   http://127.0.0.1:${DEV_WEBAPP_PORT}"
 echo "- Postgres: 127.0.0.1:${DEV_PG_PORT}"
 echo "- MasterDB: ${DEV_MASTER_DATABASE_NAME}"
 echo "- S3:       http://127.0.0.1:${DEV_S3_PORT}"
-echo "- Euro-Office: ${DEV_ONLYOFFICE_PUBLIC_URL}"
+echo "- Office: ${DEV_OFFICE_PUBLIC_ORIGIN}"
 echo "- diagrams.net: ${DEV_DRAWIO_PUBLIC_URL}"
 echo
 echo "Use '${CONTAINER_RUNTIME} logs -f <container>' to inspect logs."

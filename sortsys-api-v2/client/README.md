@@ -48,6 +48,10 @@ Pfade, Eingaben und Ergebnisse von `query` und `mutate` kommen aus
 `cache-first` und `cache-only`. Tokens werden als Bearer-Header angehängt;
 `restoreSession()` stellt Browsersitzungen wieder her.
 
+`network-only` teilt nur noch laufende identische Anfragen. Sobald eine Antwort
+eingetroffen ist, fragt der nächste Aufruf den Server erneut. Das gilt auch,
+wenn zuvor eine andere Cache-Strategie dieselbe Anfrage abgeschlossen hat.
+
 ## Tests
 
 ```bash

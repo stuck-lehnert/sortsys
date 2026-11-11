@@ -34,6 +34,7 @@ import { NotFound } from "./_404";
 const DocumentTemplateEditor = lazy(
   () => import("~/components/DocumentTemplateEditor"),
 );
+const OrganizationEncryption = lazy(() => import("~/components/OrganizationEncryption"));
 
 const ALLOWED_LOGO_MIME_TYPES = [
   "image/png",
@@ -97,6 +98,7 @@ function OrganizationAdministration() {
   const [search, setSearch] = useSearchParams();
   const tabs = [
     { id: "organization", label: uiText("Stammdaten", "Company details") },
+    { id: "security", label: uiText("Datenschutz", "Data protection") },
     { id: "invoices", label: uiText("Rechnungsnummern", "Invoice numbers") },
     {
       id: "templates",
@@ -349,6 +351,9 @@ function OrganizationAdministration() {
           className={selected === "organization" ? "pt-4" : "hidden"}
         >
           <OrganizationDetailsForm />
+        </HeroTabs.Panel>
+        <HeroTabs.Panel id="security" shouldForceMount className={selected === "security" ? "pt-4" : "hidden"}>
+          {visited.has("security") && <Suspense fallback={<Loading active description={uiText("Lädt …", "Loading…")} />}><OrganizationEncryption /></Suspense>}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="invoices"

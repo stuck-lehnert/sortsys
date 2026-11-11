@@ -157,7 +157,6 @@ ${developmentFunction("wait_for_startup_step")}
 ${developmentFunction("prepare_images")}
 CONTAINER_RUNTIME=record_runtime
 DEV_POSTGRES_IMAGE=postgres
-DEV_ONLYOFFICE_IMAGE=office
 DEV_DRAWIO_IMAGE=drawio
 DEV_BUN_IMAGE=bun
 DEV_RUST_IMAGE=rust

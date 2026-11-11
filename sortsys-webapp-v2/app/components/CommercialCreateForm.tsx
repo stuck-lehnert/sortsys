@@ -43,7 +43,7 @@ export function CommercialCreateForm({
     setError("");
     let id = createdId;
     try {
-      if (!session.canDo("manage:projects")) throw new Error("forbidden");
+      if (!session.canCreate("commercial")) throw new Error("forbidden");
       if (!id) {
         const [value, error] = await client.mutate("commercial.cases.create", {
           kind,

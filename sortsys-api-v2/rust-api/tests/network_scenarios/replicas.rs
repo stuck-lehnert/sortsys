@@ -94,6 +94,16 @@ async fn independent_replicas_share_initialization_edits_presence_and_committed_
         .await["id"]
         .clone();
     let file=first.mutation("commercial.documents.create",json!({"caseId":case,"purpose":"inquiry","fileName":"replica.x83","xml":"<GAEB/>","readOnly":false}),Some(token)).await["id"].clone();
+    // More simultaneous requests than pool connections must not deadlock in
+    // cutover permits before the actual business handlers can acquire a slot.
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        futures_util::future::join_all(
+            (0..8).map(|_| first.query("commercial.cases.get", json!({"id":case}), Some(token))),
+        ),
+    )
+    .await
+    .expect("concurrent legacy requests exhausted their own pool");
     let input = json!({"caseId":case,"id":file});
     let content = first
         .query("commercial.documents.get", input.clone(), Some(token))
@@ -366,7 +376,7 @@ async fn concurrent_tenant_migrations_are_atomic_and_applied_once() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(count, 54);
+    assert_eq!(count, 60);
     // Notifications emitted in a failed transaction must not reach subscribers.
     let mut listener = sqlx::postgres::PgListener::connect(postgres_url.as_str())
         .await

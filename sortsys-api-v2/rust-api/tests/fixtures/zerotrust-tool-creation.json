@@ -1,0 +1,169 @@
+{
+  "notice": "Öffentliche synthetische Browser-Testvektoren ohne private Schlüssel oder Recovery-Phrase.",
+  "vectors": [
+    {
+      "authority": "bRZTewrWXKlLT0HQh6hYH7dw4fKSp9C_sm71jOlE6XI",
+      "definition": {
+        "tenant": "test",
+        "id": "tool:abc:master-data",
+        "scope": "tool:abc",
+        "facet": "master-data",
+        "generation": "1",
+        "policyVersion": "1",
+        "envelopes": [
+          {
+            "tenant": "test",
+            "purpose": "area-key",
+            "object": "tool:abc:master-data",
+            "generation": "1",
+            "recipient": "user:1",
+            "author": "creator:user:2:1",
+            "format": "sortsys-hpke-v1",
+            "enc": "E6LHGCvVMgOXwIdW0Z5jh-zSGkozrWEIZueQ5C1SnSc",
+            "ciphertext": "o3PDzoPtTGUFKwubuTaOziHu1MZdWECEvQV_uMD-ymy76eSMD6DnZ0Kq43Wzoe8U",
+            "signature": "vFFKmmFAy_q2bI8isLVsoqD4YQvWSuCUufpHWcngre_pvXJr8ecExpqtsX5TEPMjrjScL18Ym9Jr7_cZXUMFAg"
+          },
+          {
+            "tenant": "test",
+            "purpose": "area-key",
+            "object": "tool:abc:master-data",
+            "generation": "1",
+            "recipient": "user:2",
+            "author": "creator:user:2:1",
+            "format": "sortsys-hpke-v1",
+            "enc": "PnQrg2BqZWEOqPLHl54CEmi0wStLcb_PutcFPRpdeRE",
+            "ciphertext": "Qlb6RwMwXCzEEVev_TJXmf2c-WotrYq48anuKpvBskcDsK-DjArZUVOZ-FVi9Z2M",
+            "signature": "JOQdXvQUwKksRpvmoXnv8DicjTTYajYpn272iGc77ftzlG3UV3_R6cQ7xsnxmFtSoWrdtUoXnl_Zh8CQuOHGDA"
+          }
+        ],
+        "recoveryEnvelope": {
+          "tenant": "test",
+          "purpose": "area-key",
+          "object": "tool:abc:master-data",
+          "generation": "1",
+          "recipient": "recovery:1",
+          "author": "creator:user:2:1",
+          "format": "sortsys-hpke-v1",
+          "enc": "3-L9LN-oCIH8dQEBjElidNJbmaSOVyrXkdKLpQiiCDc",
+          "ciphertext": "UlyzBMwxVBK5bsC77MdIejVfAko9_tvBU3Dq8SjMf_2bB4Zevqu0ZXuoq5LgnBG4",
+          "signature": "1DKMN9W4kIq0uJTBM5DFE5A4-MMwW6q69Z_4MUstz0PmVOyLgMiRhvMFFm-7e0j9tX5bdtrCv9x-agl3eeosCQ"
+        },
+        "creation": {
+          "tenant": "test",
+          "id": "tool:abc:master-data",
+          "scope": "tool:abc",
+          "facet": "master-data",
+          "capability": {
+            "tenant": "test",
+            "id": "create_test",
+            "generation": "1",
+            "namespace": "tool",
+            "creator": {
+              "tenant": "test",
+              "generation": "1",
+              "user": "user:2",
+              "encryptionKey": "cMKVkrmIe88t0iXe5odu-kqSnsGTti6DmBDota6hsmk",
+              "signingKey": "BnBKkrXRVFfP2tulE0UabbqR9xfTeJ5UBpejXathD-c",
+              "signature": "hUnsaCJTeyh3WjEehZjk1gaUClx1edAz5HxRVcnfNEZMzNAfI5_cfGfGEk4-qcnvwam4yWcSe4bm76poVJUoAA"
+            },
+            "readers": [
+              {
+                "tenant": "test",
+                "generation": "1",
+                "user": "user:1",
+                "encryptionKey": "OtsN0NMakjYvAsg_ALaqHNt8DHbCZ-_GaZ7PayQDvwI",
+                "signingKey": "ZSQEQKjwDERv1Ctm5kIvvuR_5wGtjPualficqWPUV_4",
+                "signature": "ek5HStsM35FCT8mQtB-mqzjnDN9iqQ9kB3u7qUZaRl5FfE8lSTMk2xiJOQImyye6kkEenBThf6wRXJOoytbmBQ"
+              }
+            ],
+            "signature": "YwzWFcJVcLup4-pB4a82lh0DbcleYS1kIExecaRJMSl4aY49nFm-sYZ4bWxsvVLZlN3AV5asjieI9oS9UiMEAw"
+          },
+          "signature": "ANM-NpvyfXSWp0yTLNky673iP-hm_-6-zN7CvYIewJLh85Rpuip0tB7o7auu-jXl8iuZYu7A8bYWrwUzUiVkDQ"
+        },
+        "proof": "L9nydtcgTONfWIN6JXFo18UNDgdVW7oTvadTCU-GkqM-VDvblOSJLvQREDE7-U1Pg_v0V7ZYneH0_QMiwlJMBQ"
+      }
+    },
+    {
+      "authority": "jpAGehN7alw7O8o3HE5148mLSZsyqs-Fzo3QYrnSDLc",
+      "definition": {
+        "tenant": "test",
+        "id": "tool-tracking:abc:master-data",
+        "scope": "tool-tracking:abc",
+        "facet": "master-data",
+        "generation": "1",
+        "policyVersion": "1",
+        "envelopes": [
+          {
+            "tenant": "test",
+            "purpose": "area-key",
+            "object": "tool-tracking:abc:master-data",
+            "generation": "1",
+            "recipient": "user:1",
+            "author": "creator:user:2:1",
+            "format": "sortsys-hpke-v1",
+            "enc": "f7Vcz2jRUbi1Pe6pe0OGTZjaMBm666stm64Eu0xRC10",
+            "ciphertext": "ptQ595tdzxD5JEcAmAYJJSv2WUNE0d9E9lKQKxBum7cyOBbFJzbmvKqeWcsbcWSS",
+            "signature": "U0WRIHmJvcaPNCbBW-RUp0VQm6MNU5zFRYnMI2fG-TZkCRuPLM94TPW635d08gh15ugYDLlCAYmPXl5lj4SaCw"
+          },
+          {
+            "tenant": "test",
+            "purpose": "area-key",
+            "object": "tool-tracking:abc:master-data",
+            "generation": "1",
+            "recipient": "user:2",
+            "author": "creator:user:2:1",
+            "format": "sortsys-hpke-v1",
+            "enc": "gMjk6tb7B-maIWv8FRAA5G3M_6iiYJra968tXtiPwUw",
+            "ciphertext": "yBxCMXx6Nj3u2PY2-JDZJ8OxLL9tNP5HW3Z99iT7JP6y7Wnt6btg-Y6CudZmgdCd",
+            "signature": "k0uzjlJdkB-H6jrcWi-4olvM-tgoZSlIQAnGLreGds-QBG2cBvMfsv0qTkC7lheoS5p4OgmfDKu7fDGObxTZAA"
+          }
+        ],
+        "recoveryEnvelope": {
+          "tenant": "test",
+          "purpose": "area-key",
+          "object": "tool-tracking:abc:master-data",
+          "generation": "1",
+          "recipient": "recovery:1",
+          "author": "creator:user:2:1",
+          "format": "sortsys-hpke-v1",
+          "enc": "WD-OttzH-tWIvZR0evuH8N2mhsGCeBYetc92bA4u6Eo",
+          "ciphertext": "Joc8a7mAOSqIeE3RlDyfP2kK8ZLAvwlB4Us4QyS3z0YV_WvdJmx_YOvWI9cI0JJT",
+          "signature": "3w0Zetz_FV64N7UsCKMzYO6JQry_ZK0D-w2jUlpHD1J947Whmw6cXcHYyQaQdA7xXLY5gED3t6Whyobw1fe2DQ"
+        },
+        "creation": {
+          "tenant": "test",
+          "id": "tool-tracking:abc:master-data",
+          "scope": "tool-tracking:abc",
+          "facet": "master-data",
+          "capability": {
+            "tenant": "test",
+            "id": "create_test",
+            "generation": "1",
+            "namespace": "tool-tracking",
+            "creator": {
+              "tenant": "test",
+              "generation": "1",
+              "user": "user:2",
+              "encryptionKey": "XKvwOvvnC7-u5jtbPYcF2JGj_Vh8PN-VsLZlHhJZRW8",
+              "signingKey": "aDHRfIoy2J6bqscfX8WQ5NKTKy5THz7_xmMwrLc8kKI",
+              "signature": "HdVCyFEJT6vXyfjyu4lNWaPttyWCRRyBSf8U0Pvjn1fPGT8EHvMoILgXBYumHk2_1cgQX58JdzXbBbfvwImpAA"
+            },
+            "readers": [
+              {
+                "tenant": "test",
+                "generation": "1",
+                "user": "user:1",
+                "encryptionKey": "QxNtl7oymMGiKSfjSPSwr2kBzoHFwVo5bOL_58KXqVo",
+                "signingKey": "5FKt6DjKcFxHZTHR120inT4hWrWVlTedzB-xx1GWW8k",
+                "signature": "UNwjc51rDpP9YXkZLvHNgcnXiABKS0HEFdyl_UGIVbEZ2faYuwX2L4TK-f4UcXCH8oRUmK1goPYx26kqJiKMAQ"
+              }
+            ],
+            "signature": "nRGPcMPra4O8hWwSNgz6OuLvKSlhAIebGBfFlEMRDzAURraUu1dhkh47-jmgT8A_6Sg6ZAO2m9dUSkGepZS7DA"
+          },
+          "signature": "dAuwxHeY_6no16CsVpYeXlr0H6ZdzUl0qHfpBkj8LJbZVkaGJ89DA6QY1yzA7M1mSWb8g5Q2BaHVudJFMFyLCQ"
+        },
+        "proof": "sUVKMz5SmgQMt3Nr_kyC06xw-u1VSNYa41YbXnv65W_Os_pC3ZZ0YBVzFRXNu7ehELDs8O4BZloNm1bD3rmTAw"
+      }
+    }
+  ]
+}

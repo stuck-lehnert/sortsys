@@ -10,6 +10,7 @@ import { Icons } from "~/lib/icons";
 import { getPasskeyCredential } from "~/lib/passkeys";
 import { MyCallout } from "~/components/MyCallout";
 import { loginErrorMessage } from "~/lib/loginError";
+import { Link } from "react-router";
 
 export function meta({}: Route.MetaArgs) {
     return [
@@ -100,6 +101,7 @@ export default Unauthenticated(function () {
           </MyCallout>
         )}
       </MyForm>
+      <Link to="/auth/recovery">{uiText("Mandant wiederherstellen", "Recover tenant")}</Link>
     </AuthLayout>
   );
 });

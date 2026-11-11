@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+runtime="${CONTAINER_RUNTIME:-docker}"
+image="${TEST_OFFICE_IMAGE:-localhost/sortsys-private-office:test}"
+container="sortsys-test-private-office-$$-$RANDOM"
+volume="${container}-data"
+cleanup() {
+  result=$?
+  if [ "$result" != 0 ]; then "$runtime" logs --tail 60 "$container" 2>/dev/null || true; fi
+  "$runtime" rm -f "$container" >/dev/null 2>&1 || true
+  "$runtime" volume rm "$volume" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+if [ -z "${TEST_OFFICE_IMAGE:-}" ]; then
+  load=(); if [ "$runtime" = docker ]; then load=(--load); fi
+  "$runtime" build "${load[@]}" -t "$image" "$root/sortsys-office"
+fi
+read -r main_port sandbox_port app_port < <(python3 - <<'PY'
+import socket
+with socket.socket() as main, socket.socket() as sandbox, socket.socket() as app:
+    main.bind(('127.0.0.1', 0)); sandbox.bind(('127.0.0.1', 0)); app.bind(('127.0.0.1', 0))
+    print(main.getsockname()[1], sandbox.getsockname()[1], app.getsockname()[1])
+PY
+)
+main_origin="http://127.0.0.1:$main_port"
+"$runtime" volume create "$volume" >/dev/null
+"$runtime" run -d --name "$container" --read-only --init --cap-drop ALL --security-opt no-new-privileges \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
+  -v "$volume:/var/lib/sortsys-office" \
+  -p "127.0.0.1:$main_port:8080" -p "127.0.0.1:$sandbox_port:8080" \
+  -e "OFFICE_PUBLIC_ORIGIN=$main_origin" -e "OFFICE_SANDBOX_ORIGIN=http://127.0.0.1:$sandbox_port" \
+  -e "SORTSYS_PUBLIC_ORIGIN=http://127.0.0.1:$app_port" "$image" >/dev/null
+for attempt in $(seq 1 90); do
+  status="$("$runtime" inspect -f '{{.State.Health.Status}}' "$container")"
+  if [ "$status" = healthy ]; then break; fi
+  if [ "$attempt" = 90 ] || [ "$("$runtime" inspect -f '{{.State.Running}}' "$container")" != true ]; then
+    "$runtime" logs --tail 50 "$container"; exit 1
+  fi
+  sleep 1
+done
+cd "$root/sortsys-webapp-v2"
+SORTSYS_DISPOSABLE_OFFICE_TEST=1 SORTSYS_OFFICE_TEST_ORIGIN="$main_origin" SORTSYS_OFFICE_APP_PORT="$app_port" \
+  SORTSYS_OFFICE_TEST_CONTAINER="$container" SORTSYS_OFFICE_TEST_RUNTIME="$runtime" bun scripts/test-live-office.ts

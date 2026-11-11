@@ -47,6 +47,8 @@ und die Übernahme von `predeploy` nach `deploy`.
 
 Verarbeitung erfolgt nach Möglichkeit im Browser. Die API übernimmt Speicherung,
 Berechtigungen und Vorgänge, die einen verbindlichen gemeinsamen Datenstand benötigen.
+Der [Architekturentwurf zur Verschlüsselung](docs/verschluesselung-und-berechtigungen.md)
+beschreibt die geplante Absicherung vertraulicher Inhalte bei abgestuften Zugriffsrechten.
 
 ## Bereitstellung
 

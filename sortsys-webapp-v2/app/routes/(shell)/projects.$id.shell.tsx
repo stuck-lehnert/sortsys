@@ -58,7 +58,7 @@ export default function ProjectDetailShell() {
   );
 
   useShortcut("Control+e", (e) => {
-    if (!project || !sessionInfo.canDo("manage:projects")) return;
+    if (!project || !sessionInfo.canAccess(`project:${id}`, "master-data", "update")) return;
     e.preventDefault();
     showModifyProjectModal(modals, project);
   });
@@ -70,7 +70,7 @@ export default function ProjectDetailShell() {
     {
       path: `/projects/${id}`,
       label: uiText("Übersicht"),
-      hideIf: !sessionInfo.canDo("view:tools"),
+      hideIf: !sessionInfo.canAccess(`project:${id}`, "master-data", "read"),
     },
     {
       path: `/projects/${id}/contract`,
@@ -80,7 +80,7 @@ export default function ProjectDetailShell() {
     {
       path: `/projects/${id}/files`,
       label: uiText("Anhänge"),
-      hideIf: !supportsProjectFiles,
+      hideIf: !supportsProjectFiles || !sessionInfo.canAccess(`project:${id}`, "attachment", "read"),
     },
     {
       path: `/projects/${id}/costs`,
@@ -129,7 +129,7 @@ export default function ProjectDetailShell() {
                 label: uiText("Abschließen"),
                 renderIcon: Icons.Finish,
                 hideIf:
-                  !!project.finishedAt || !sessionInfo.canDo("manage:projects"),
+                  !!project.finishedAt || !sessionInfo.canAccess(`project:${id}`, "master-data", "update"),
                 onClick: async () => {
                   const [, actionErr] = await client.mutate("projects.finish", {
                     id: project.id,
@@ -141,7 +141,7 @@ export default function ProjectDetailShell() {
                 label: uiText("Fortsetzen"),
                 renderIcon: Icons.Resume,
                 hideIf:
-                  !project.finishedAt || !sessionInfo.canDo("manage:projects"),
+                  !project.finishedAt || !sessionInfo.canAccess(`project:${id}`, "master-data", "update"),
                 onClick: async () => {
                   const [, actionErr] = await client.mutate("projects.resume", {
                     id: project.id,
@@ -152,7 +152,7 @@ export default function ProjectDetailShell() {
               {
                 label: uiText("Bearbeiten"),
                 renderIcon: Icons.Edit,
-                hideIf: !sessionInfo.canDo("manage:projects"),
+                hideIf: !sessionInfo.canAccess(`project:${id}`, "master-data", "update"),
                 onClick: () => showModifyProjectModal(modals, project),
               },
               {
@@ -165,7 +165,7 @@ export default function ProjectDetailShell() {
               {
                 label: uiText("Vermerk erstellen"),
                 renderIcon: Icons.Plus,
-                hideIf: !isOverviewTab || !sessionInfo.canDo("manage:projects"),
+                hideIf: !isOverviewTab || !sessionInfo.canAccess(`project:${id}`, "master-data", "update"),
                 onClick: () =>
                   showRemarkFormModal({
                     modals,
@@ -176,14 +176,14 @@ export default function ProjectDetailShell() {
               {
                 label: uiText("Nachtragsangebot", "Variation offer"),
                 renderIcon: Icons.PriceRecord,
-                hideIf: !isCostsTab || !sessionInfo.canDo("manage:projects"),
+                hideIf: !isCostsTab || !sessionInfo.canAccess(`project:${id}`, "master-data", "update"),
                 onClick: () =>
                   navigate(`/projects/${id}/contract?new=variation`),
               },
               {
                 label: uiText("Rechnungssumme"),
                 renderIcon: Icons.DeliveryNote,
-                hideIf: !isCostsTab || !sessionInfo.canDo("manage:projects"),
+                hideIf: !isCostsTab || !sessionInfo.canAccess(`project:${id}`, "master-data", "update"),
                 onClick: () => showCreateProjectInvoiceModal(modals, project),
               },
               {
@@ -245,7 +245,7 @@ export default function ProjectDetailShell() {
               {
                 label: uiText("Löschen"),
                 renderIcon: Icons.Delete,
-                hideIf: !sessionInfo.canDo("delete:projects"),
+                hideIf: !sessionInfo.canAccess(`project:${id}`, "master-data", "delete"),
                 onClick: () => showDeleteProjectModal(modals, project),
               },
             ]}

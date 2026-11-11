@@ -1,0 +1,23 @@
+[
+  {
+    "ecosystem": "Native",
+    "name": "DuckDB",
+    "version": "2.0.0",
+    "license": "MIT",
+    "source": "https://github.com/duckdb/duckdb/tree/v2.0.0"
+  },
+  {
+    "ecosystem": "Native",
+    "name": "DuckDB httpfs",
+    "version": "77392a7207",
+    "license": "MIT",
+    "source": "https://github.com/duckdb/duckdb-httpfs/tree/77392a7207"
+  },
+  {
+    "ecosystem": "Native",
+    "name": "DuckDB Quack",
+    "version": "f96420ed46",
+    "license": "MIT",
+    "source": "https://github.com/duckdb/duckdb-quack/tree/f96420ed46"
+  }
+]

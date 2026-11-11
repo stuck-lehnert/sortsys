@@ -29,6 +29,9 @@ use crate::{
 
 type HandlerFuture = Pin<Box<dyn Future<Output = RpcResult<Value>> + Send>>;
 type Handler = dyn Fn(RequestContext, Value) -> HandlerFuture + Send + Sync;
+pub type RequestPermit = Box<dyn Send>;
+type GuardFuture = Pin<Box<dyn Future<Output = RpcResult<RequestPermit>> + Send>>;
+type RequestGuard = dyn Fn(String, RequestContext) -> GuardFuture + Send + Sync;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcedureKind {
@@ -166,9 +169,24 @@ impl ProcedureRegistry {
 pub struct ProcedureRegistryBuilder {
     procedures: BTreeMap<String, Procedure>,
     declarations: BTreeMap<String, String>,
+    guard: Option<Arc<RequestGuard>>,
 }
 
 impl ProcedureRegistryBuilder {
+    /// The permit remains alive through the entire handler, including input
+    /// decoding. A database-backed permit can therefore serialize a cutover
+    /// with requests that were already running on another API instance.
+    pub fn with_request_guard<F, Fut>(mut self, guard: F) -> Self
+    where
+        F: Fn(String, RequestContext) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<RequestPermit>> + Send + 'static,
+    {
+        self.guard = Some(Arc::new(move |path, context| {
+            Box::pin(guard(path, context))
+        }));
+        self
+    }
+
     pub fn raw_stub(mut self, spec: &RawContractSpec) -> Self {
         let path = spec.path.to_owned();
         let error_path = path.clone();
@@ -341,8 +359,28 @@ impl ProcedureRegistryBuilder {
     }
 
     pub fn build(self) -> ProcedureRegistry {
+        let procedures = self
+            .procedures
+            .into_iter()
+            .map(|(path, mut procedure)| {
+                if let Some(guard) = self.guard.clone() {
+                    let handler = procedure.handler;
+                    let guarded_path = path.clone();
+                    procedure.handler = Arc::new(move |context, input| {
+                        let guard = Arc::clone(&guard);
+                        let handler = Arc::clone(&handler);
+                        let path = guarded_path.clone();
+                        Box::pin(async move {
+                            let _permit = guard(path, context.clone()).await?;
+                            handler(context, input).await
+                        })
+                    });
+                }
+                (path, procedure)
+            })
+            .collect();
         ProcedureRegistry {
-            procedures: Arc::new(self.procedures),
+            procedures: Arc::new(procedures),
             declarations: Arc::new(self.declarations),
         }
     }

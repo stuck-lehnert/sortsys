@@ -12,6 +12,8 @@ export default [
   ]),
 
   route("auth/login", "routes/auth/login.tsx"),
+  route("auth/recovery", "routes/auth/recovery.tsx"),
+  route("auth/invitation", "routes/auth/invitation.tsx"),
 
   route(null, "routes/(shell)/_layout.tsx", [
     index("routes/(shell)/index.tsx"),

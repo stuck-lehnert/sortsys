@@ -129,20 +129,25 @@ def assert_static_routes(get):
     for path in ["/assets/missing.js", "/pdfjs/missing.mjs"]:
         assert get(path)[0] == 404, path
 
-    for path in ["/office", "/drawio"]:
+    for path in ["/drawio"]:
         status, headers, _ = get(path)
         assert status == 308 and headers["Location"] == path + "/", path
 
 
 def assert_proxy_routes(get):
+    for path in ["/office", "/office/", "/office/echo", "/office/echo?document=private-test-data"]:
+        assert get(path)[0] == 403, path
+    for service in ["proxy", "export", "i", "service", "log", "github2", "gitlab", "google", "microsoft", "dropbox"]:
+        assert get(f"/drawio/{service}?document=private-test-data")[0] == 403, service
+    assert get("/drawio/index.html", method="POST")[0] == 403
+    headers = get("/drawio/echo")[1]
+    policy = headers["Content-Security-Policy"]
+    assert "form-action 'none'" in policy and "object-src 'none'" in policy
+    assert "connect-src 'self' blob:" in policy
+    assert headers["Referrer-Policy"] == "no-referrer"
     paths = [
         ("/api/v2/echo", "/echo"),
-        ("/office/echo", "/echo"),
         ("/drawio/echo", "/drawio/echo"),
-        (
-            "/office/echo%2Fpart?name=M%C3%BCller&next=%2Fa",
-            "/echo%2Fpart?name=M%C3%BCller&next=%2Fa",
-        ),
         ("/drawio/echo%2Fpart?next=%2Fa", "/drawio/echo%2Fpart?next=%2Fa"),
     ]
 
@@ -156,11 +161,7 @@ def assert_proxy_routes(get):
         assert echo["path"] == forwarded, echo
         assert echo["headers"]["X-Forwarded-Proto"] == "https", path
 
-        if path.startswith("/office/"):
-            assert echo["headers"]["X-Forwarded-Host"] == "example.test/office"
-            assert headers["Content-Security-Policy"] == "upgrade-insecure-requests"
-
-    for path in ["/api/v2/echo", "/office/echo", "/drawio/echo"]:
+    for path in ["/api/v2/echo", "/drawio/echo"]:
         status, _, body = get(path, {"Upgrade": "websocket", "Connection": "Upgrade"})
         assert status == 200, (path, status, body)
         echo = json.loads(body)
@@ -188,26 +189,26 @@ def assert_editor_recovery(get, dns):
     assert_static_routes(get)
     assert get("/api/v2/echo")[0] == 200
 
-    for path in ["/office/echo", "/drawio/echo"]:
+    for path in ["/drawio/echo"]:
         assert get(path)[0] == 502, path
 
     # Allow the real production resolver's five-second negative cache to expire.
     # No reload occurs: requests must trigger a fresh DNS query and reach HTTP.
-    dns.records.update({"office.test": "127.0.0.1", "drawio.test": "127.0.0.1"})
+    dns.records.update({"drawio.test": "127.0.0.1"})
 
-    for path in ["/office/echo", "/drawio/echo"]:
+    for path in ["/drawio/echo"]:
         wait_for_backend(get, path, "127.0.0.1")
 
     assert_proxy_routes(get)
 
     # A restarted container may have a different IP. Test positive-cache expiry
     # too, keeping the exact same proxy process and backend port.
-    dns.records.update({"office.test": "127.0.0.2", "drawio.test": "127.0.0.2"})
+    dns.records.update({"drawio.test": "127.0.0.2"})
 
-    for path in ["/office/echo", "/drawio/echo"]:
+    for path in ["/drawio/echo"]:
         wait_for_backend(get, path, "127.0.0.2")
 
-    for name in ["office.test", "drawio.test"]:
+    for name in ["drawio.test"]:
         answers = {address for query, kind, address in dns.queries if query == name and kind == 1}
         assert answers == {None, "127.0.0.1", "127.0.0.2"}, (name, dns.queries)
 
@@ -225,7 +226,6 @@ def exercise_configuration(repo, root, command, mime_types, backend, dns):
     (html / "sw.js").write_text("// smoke service worker")
     values = {
         "API_UPSTREAM": f"http://127.0.0.1:{backend.server_port}",
-        "ONLYOFFICE_UPSTREAM": f"http://office.test:{backend.server_port}",
         "DRAWIO_UPSTREAM": f"http://drawio.test:{backend.server_port}",
         "CLIENT_MAX_BODY_SIZE": "64m",
         "NGINX_LOCAL_RESOLVERS": f"127.0.0.1:{dns.server_address[1]}",
@@ -276,10 +276,10 @@ def exercise_configuration(repo, root, command, mime_types, backend, dns):
             try:
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
-                def get(path, headers=None):
+                def get(path, headers=None, method="GET"):
                     assert process.poll() is None, "Nginx exited before request"
                     request = urllib.request.Request(
-                        f"http://127.0.0.1:{port}" + path, headers=headers or {}
+                        f"http://127.0.0.1:{port}" + path, headers=headers or {}, method=method
                     )
 
                     try:

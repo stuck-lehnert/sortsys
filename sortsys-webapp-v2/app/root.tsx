@@ -27,8 +27,9 @@ import type { Route } from "./+types/root";
 import { useEffect, useState, type ReactNode } from "react";
 import { client, reportClientError } from "./lib/client";
 import { SessionInfoProvider } from "./hooks/useSessionInfo";
+import { CryptoUnlocked } from "./components/CryptoUnlocked";
+import { LLMActivityHost } from "./components/LLMActivityHost";
 import { Loading, NotificationProvider } from "@sortsys/react-components";
-import { useForceUpdate } from "./hooks/useForceUpdate";
 import { MyModalsProvider } from "./hooks/useMyModals";
 import { useTheme } from "./hooks/useTheme";
 import { I18nProvider, uiText, useI18n } from "./lib/i18n";
@@ -158,7 +159,7 @@ function ClientErrorReporter(): undefined {
 function AppContent() {
   const { setLocale, t } = useI18n();
   const [restored, setRestored] = useState(false);
-  const forceUpdate = useForceUpdate();
+  const [authVersion, setAuthVersion] = useState(0);
   const location = useLocation();
   const isGlobalAdminSpace = location.pathname.startsWith("/__admin");
 
@@ -170,9 +171,9 @@ function AppContent() {
     () =>
       client.listenAuthState(() => {
         if (!client.loggedIn()) setLocale("de");
-        forceUpdate();
+        setAuthVersion(version => version + 1);
       }),
-    [forceUpdate, setLocale],
+    [setLocale],
   );
 
   if (!restored) {
@@ -187,13 +188,13 @@ function AppContent() {
     );
   }
 
-  if (isGlobalAdminSpace) return <_AppInner />;
+  if (isGlobalAdminSpace || location.pathname === "/auth/recovery" || location.pathname === "/auth/invitation") return <_AppInner />;
 
   if (!client.loggedIn()) return <_AppInner />;
 
   return (
-    <SessionInfoProvider>
-      <_AppInner />
+    <SessionInfoProvider key={authVersion}>
+      <CryptoUnlocked><_AppInner /></CryptoUnlocked>
     </SessionInfoProvider>
   );
 }
@@ -215,6 +216,7 @@ export default function App() {
   return (
     <I18nProvider>
       <AppNotificationProvider>
+        <LLMActivityHost />
         <AppContent />
       </AppNotificationProvider>
     </I18nProvider>
@@ -274,6 +276,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   return (
     <main className="grid min-h-dvh place-items-center bg-background p-4">
+      <LLMActivityHost />
       <Card className="w-full max-w-2xl gap-4 p-6" role="alert">
         {isRouteErrorResponse(error) && (
           <div className="text-sm font-medium text-muted">{error.status}</div>

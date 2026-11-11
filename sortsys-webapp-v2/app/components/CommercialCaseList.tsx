@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { combineLatest, type Subscription } from "rxjs";
+import { useProtectedDataContext } from "~/hooks/useProtectedDataContext";
 import { useMyModals } from "~/hooks/useMyModals";
 import { showCommercialWorkspace } from "~/modals/commercial";
 import {
@@ -30,60 +32,36 @@ export function CommercialCaseList({
   refresh?: number;
 }) {
   const modals = useMyModals();
+  const context = useProtectedDataContext();
   const [revision, setRevision] = useState(0);
-  const [rows, setRows] = useState<CommercialCase[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(true);
-  const [more, setMore] = useState(false);
-  const [error, setError] = useState("");
-  const generation = useRef(0);
-  const previousFilter = useRef<string | undefined>(undefined);
   const filterKey = JSON.stringify([projectId, kind, search, status]);
-  const load = async (offset: number, epoch: number, count = 50) => {
-    setBusy(true);
-    setError("");
-    const pages = await Promise.all(
-      Array.from({ length: Math.ceil(count / 50) }, (_, index) =>
-        client.query(
-          "commercial.cases.list",
-          {
-            projectId: projectId ?? null,
-            kind: kind === "offer" && !projectId ? "sales" : (kind ?? null),
-            status: status || null,
-            search: search.trim() || null,
-            limit: 50n,
-            offset: BigInt(offset + index * 50),
-          },
-          { strategy: "network-only" },
-        ),
-      ),
-    );
-    if (epoch !== generation.current) return;
-    const error = pages.find(([, error]) => error)?.[1];
-    if (error) setError(commercialError(error));
-    else {
-      const values = pages.flatMap(([values]) => values ?? []);
-      setRows((previous) => (offset ? [...previous, ...values] : values));
-      setMore(pages.at(-1)?.[0]?.length === 50);
-    }
-    setBusy(false);
-  };
+  const [pagination, setPagination] = useState({ filter: filterKey, pages: 1 });
+  const count = pagination.filter === filterKey ? pagination.pages : 1;
+  const [state, setState] = useState<{ context: AbortSignal; filter: string; pages: number; rows: CommercialCase[]; more: boolean; error: string } | null>(null);
+  const current = state?.context === context && state.filter === filterKey && !context.aborted ? state : null;
+  const rows = current?.rows ?? [], more = current?.more ?? false, error = current?.error ?? "", busy = !current || current.pages !== count;
   useEffect(() => {
-    const epoch = ++generation.current;
-    setBusy(true);
-    const sameFilter = previousFilter.current === filterKey;
-    previousFilter.current = filterKey;
-    if (!sameFilter) setRows([]);
-    const timer = setTimeout(
-      () => void load(0, epoch, sameFilter ? Math.max(50, rows.length) : 50),
-      150,
-    );
+    let active = true, subscription: Subscription | undefined;
+    const timer = setTimeout(() => {
+      subscription = combineLatest(Array.from({ length: count }, (_, index) => client.streamQuery("commercial.cases.list", {
+        projectId: projectId ?? null, kind: kind === "offer" && !projectId ? "sales" : (kind ?? null),
+        status: status || null, search: search.trim() || null, limit: 50n, offset: BigInt(index * 50),
+      }))).subscribe(pages => {
+        if (!active || context.aborted) return;
+        const error = pages.find(([, error]) => error)?.[1];
+        const seen = new Set<string>();
+        const rows = error ? [] : pages.flatMap(([values]) => values ?? []).filter(row => {
+          if (seen.has(row.id)) return false; seen.add(row.id); return true;
+        });
+        setState({ context, filter: filterKey, pages: count, rows, more: !error && pages.at(-1)?.[0]?.length === 50, error: error ? commercialError(error) : "" });
+      });
+    }, 150);
     return () => {
-      clearTimeout(timer);
-      generation.current++;
+      active = false; clearTimeout(timer); subscription?.unsubscribe();
     };
-  }, [projectId, kind, search, status, refresh, revision]);
+  }, [context, filterKey, count, refresh, revision]);
   return (
     <div
       className="flex min-w-0 flex-col gap-4"
@@ -147,7 +125,7 @@ export function CommercialCaseList({
           {error}
           <Button
             kind="ghost"
-            onClick={() => void load(rows.length, generation.current)}
+            onClick={() => setRevision(value => value + 1)}
           >
             {uiText("Erneut versuchen", "Try again")}
           </Button>
@@ -221,7 +199,7 @@ export function CommercialCaseList({
           <Button
             kind="secondary"
             loading={busy}
-            onClick={() => void load(rows.length, generation.current)}
+            onClick={() => setPagination({ filter: filterKey, pages: count + 1 })}
           >
             {uiText("Mehr anzeigen", "Show more")}
           </Button>

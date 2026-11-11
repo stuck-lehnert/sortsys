@@ -21,28 +21,28 @@ export function useCreateEntityAction(modals: MyModalsInterface) {
   const sessionInfo = useSessionInfo();
 
   return {
-    contact: sessionInfo.canDo('manage:contacts')
+    contact: sessionInfo.canCreate('contacts')
       ? createAction<Contact>(uiText('Kontakt erstellen'), (query, select) => showCreateContactModal(modals, {
         initialQuery: query,
         onCreated: select,
       }))
       : undefined,
 
-    customer: sessionInfo.canDo('manage:customers')
+    customer: sessionInfo.canCreate('customers')
       ? createAction<Customer>(uiText('Kunde erstellen'), (query, select) => showCreateCustomerModal(modals, {
         initialQuery: query,
         onCreated: select,
       }))
       : undefined,
 
-    product: sessionInfo.canDo('manage:products')
+    product: sessionInfo.canCreate('products')
       ? createAction<Product>(uiText('Produkt erstellen'), (query, select) => showCreateProductModal(modals, {
         initialQuery: query,
         onCreated: select,
       }))
       : undefined,
 
-    productVendor: sessionInfo.canDo('manage:productVendors')
+    productVendor: sessionInfo.canCreate('vendors')
       ? createAction<ProductVendor>(uiText("Händler erstellen"), (query, select) => showCreateProductVendorModal(modals, {
         initialQuery: query,
         onCreated: select,
@@ -52,7 +52,7 @@ export function useCreateEntityAction(modals: MyModalsInterface) {
     // New projects are created from accepted offers, not inline in unrelated forms.
     project: undefined as MyMultiSelectCreateAction<Project> | undefined,
 
-    tool: sessionInfo.canDo('manage:tools')
+    tool: sessionInfo.canCreate('tool')
       ? createAction<Tool>(uiText('Werkzeug erstellen'), (query, select) => showCreateToolModal(modals, {
         initialQuery: query,
         onCreated: select,

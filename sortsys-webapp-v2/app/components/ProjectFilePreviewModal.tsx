@@ -1,10 +1,12 @@
+import { downloadFileResource, useFileResource } from "~/lib/fileResources";
 import type { QueryResult } from "@sortsys/v2-client";
-import { Loading, Modal } from "@sortsys/react-components";
+import { Loading, Modal, useNotifications } from "@sortsys/react-components";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { from } from "rxjs";
 import { DrawioEditor } from "~/components/DrawioEditor";
 import { MyCallout } from "~/components/MyCallout";
-import { OnlyOfficeEditor } from "~/components/OnlyOfficeEditor";
+import { MyButton } from "~/components/MyButton";
+import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { ZoomableImage } from "~/components/ZoomableImage";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -28,9 +30,7 @@ const PlanViewer = lazy(() =>
 );
 
 type ProjectFile = QueryResult<"projects.files.list">[number];
-type EditorSession =
-  | { kind: "office"; value: QueryResult<"projects.files.officeConfig"> }
-  | { kind: "drawio"; value: QueryResult<"projects.files.drawioConfig"> };
+type EditorSession = { kind: "drawio"; value: QueryResult<"projects.files.drawioConfig"> };
 
 function PreviewLoading() {
   return (
@@ -55,6 +55,10 @@ function FileEditor({
   kind: "office" | "drawio";
   onClose: () => void;
 }) {
+  return kind === "office" ? <ProtectedOfficeEditor projectId={projectId} fileId={file.id} />
+    : <DiagramFileEditor file={file} projectId={projectId} onClose={onClose} />;
+}
+function DiagramFileEditor({ file, projectId, onClose }: { file: ProjectFile; projectId: string; onClose: () => void }) {
   const [session, setSession] = useState<EditorSession | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,29 +69,7 @@ function FileEditor({
       try {
         const input = { projectId, fileId: file.id };
 
-        if (kind === "office") {
-          const [value, failure] = await client.query(
-            "projects.files.officeConfig",
-            input,
-            { strategy: "network-only" },
-          );
-
-          if (failure || !value) {
-            throw (
-              failure ??
-              new Error(
-                uiText(
-                  "Das Dokument konnte nicht geöffnet werden.",
-                  "The document could not be opened.",
-                ),
-              )
-            );
-          }
-
-          if (active) {
-            setSession({ kind, value });
-          }
-        } else {
+        {
           const [value, failure] = await client.query(
             "projects.files.drawioConfig",
             input,
@@ -107,7 +89,7 @@ function FileEditor({
           }
 
           if (active) {
-            setSession({ kind, value });
+            setSession({ kind: "drawio", value });
           }
         }
       } catch (failure) {
@@ -129,7 +111,7 @@ function FileEditor({
     return () => {
       active = false;
     };
-  }, [projectId, file.id, kind]);
+  }, [projectId, file.id]);
 
   const saveDrawio = useCallback(
     async (xml: string, version: bigint) => {
@@ -168,14 +150,6 @@ function FileEditor({
         </div>
       )}
       {!session && !error && <PreviewLoading />}
-      {session?.kind === "office" && (
-        <OnlyOfficeEditor
-          apiUrl={session.value.apiUrl}
-          config={session.value.config}
-          onError={setError}
-          onRequestClose={onClose}
-        />
-      )}
       {session?.kind === "drawio" && (
         <DrawioEditor
           editorUrl={session.value.editorUrl}
@@ -202,7 +176,9 @@ function FilePreview({
   onClose: () => void;
 }) {
   const kind = projectFilePreviewKind(file);
-  const url = file.downloadUrl || file.downloadAttachmentUrl;
+  const source = file.downloadUrl || file.downloadAttachmentUrl;
+  const resource = useFileResource(["image", "video", "dwg"].includes(kind ?? "") ? source : null);
+  const url = ["image", "video", "dwg"].includes(kind ?? "") ? resource.url : source;
   const [videoError, setVideoError] = useState(false);
 
   if (kind === "office" || kind === "drawio") {
@@ -216,6 +192,7 @@ function FilePreview({
     );
   }
 
+  if (resource.loading) return <PreviewLoading />;
   if (!url) {
     return (
       <div className="project-files-office-status" role="alert">
@@ -232,7 +209,7 @@ function FilePreview({
   const downloadUrl = file.downloadAttachmentUrl || url;
 
   if (kind === "pdf") {
-    return <PdfAttachmentViewer url={url} downloadUrl={downloadUrl} />;
+    return <PdfAttachmentViewer url={url} downloadUrl={downloadUrl} fileName={file.fileName} />;
   }
 
   if (kind === "eml" || kind === "msg") {
@@ -320,6 +297,7 @@ export default function ProjectFilePreviewModal({
 }) {
   const session = useSessionInfo();
   const supported = session.supportsProjectFiles();
+  const notifications = useNotifications();
 
   const [files, failure] = useClientStream(
     () =>
@@ -367,14 +345,14 @@ export default function ProjectFilePreviewModal({
     >
       {downloadUrl && kind !== "pdf" && kind !== "eml" && kind !== "msg" && (
         <div className="chat-file-preview__toolbar">
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            download
-          >
+          <MyButton kind="tertiary" size="sm" onClick={() => {
+            void downloadFileResource(downloadUrl, file!.fileName).catch(() => notifications.danger({
+              title: uiText("Download fehlgeschlagen", "Download failed"),
+              content: uiText("Die Datei konnte nicht geladen werden.", "The file could not be loaded."),
+            }));
+          }}>
             {uiText("Herunterladen", "Download")}
-          </a>
+          </MyButton>
         </div>
       )}
       <div className="chat-file-preview__body">

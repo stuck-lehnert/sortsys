@@ -176,6 +176,19 @@ pub async fn complete(
     )?;
     let scope = McpScope::Chat(chat_id);
     let token = state.auth.issue_mcp_token(auth, scope).map_err(internal)?;
+    complete_live(configuration, turns, locale, &url, &token, scope).await
+}
+
+/// The live caller supplies a request-bound authenticated MCP endpoint; no
+/// chat row, prompt or response is written by this transport.
+pub(super) async fn complete_live(
+    configuration: &ProviderConfiguration,
+    turns: &[ChatTurn],
+    locale: &str,
+    url: &str,
+    token: &str,
+    scope: McpScope,
+) -> RpcResult<Completion> {
     let prompt = runtime_system_prompt(locale);
     let messages = turns
         .iter()
@@ -184,7 +197,7 @@ pub async fn complete(
 
     let (content, usage) = match configuration.provider.as_str() {
         "openai" => {
-            let body = openai_mcp_body(configuration, messages, &prompt, &url, &token, scope);
+            let body = openai_mcp_body(configuration, messages, &prompt, url, token, scope);
             let value = openai_mcp_request(configuration, &body)
                 .await
                 .map_err(ProviderError::into_rpc)?;
@@ -193,7 +206,7 @@ pub async fn complete(
             (content, responses_usage(&value))
         }
         "anthropic" => {
-            let body = anthropic_mcp_body(configuration, messages, &prompt, &url, &token, scope);
+            let body = anthropic_mcp_body(configuration, messages, &prompt, url, token, scope);
             let (value, usage) = anthropic_mcp_request(configuration, body)
                 .await
                 .map_err(ProviderError::into_rpc)?;
@@ -202,7 +215,7 @@ pub async fn complete(
 
             (content, usage)
         }
-        "openrouter" => openrouter::complete(configuration, messages, &prompt, &url, &token, scope)
+        "openrouter" => openrouter::complete(configuration, messages, &prompt, url, token, scope)
             .await
             .map_err(ProviderError::into_rpc)?,
         _ => unreachable!("MCP provider was validated"),
@@ -271,9 +284,9 @@ physical unit stated in the document as baseUnit. Never choose Sack or Palette a
 a weight or volume per package is stated. Describe each printed conversion as
 {unit, quantity, inUnit}, meaning 1 unit = quantity inUnit. For example, 1 Sack = 30 kg and
 1 Palette = 40 Sack become [{"unit":"Sack","quantity":30,"inUnit":"kg"},
-{"unit":"Palette","quantity":40,"inUnit":"Sack"}]. The server derives 1200 kg per
+{"unit":"Palette","quantity":40,"inUnit":"Sack"}]. The application derives 1200 kg per
 Palette. Search the catalogue for every row, preferably with parallel tool calls. Prices and
-quantities must describe the unit printed in the document; the server converts them to the
+quantities must describe the unit printed in the document; the application converts them to the
 catalogue or proposed base unit. pricePerUnit is always the discounted net unit price,
 not a list price, gross price, or line total. Apply each line's stated percentage or fixed
 discount before returning pricePerUnit. If both an undiscounted price and a final discounted
@@ -313,16 +326,6 @@ pub async fn parse_document_scan(
     configuration: &ProviderConfiguration,
     input: DocumentScanInput,
 ) -> RpcResult<ScanCompletion> {
-    require_image_input_model(
-        &ProviderAccountConfiguration {
-            provider: configuration.provider.clone(),
-            base_url: configuration.base_url.clone(),
-            api_key: configuration.api_key.clone(),
-        },
-        &configuration.model,
-    )
-    .await?;
-
     let url = require_mcp_url(
         state.config.llm_mcp_url.as_deref(),
         &configuration.provider,
@@ -332,12 +335,31 @@ pub async fn parse_document_scan(
         .auth
         .issue_mcp_token(auth, McpScope::DocumentImport)
         .map_err(internal)?;
-    let prompt = scan_prompt(&auth.user.locale);
+    parse_document_live(configuration, input, &auth.user.locale, &url, &token).await
+}
+
+pub(super) async fn parse_document_live(
+    configuration: &ProviderConfiguration,
+    input: DocumentScanInput,
+    locale: &str,
+    url: &str,
+    token: &str,
+) -> RpcResult<ScanCompletion> {
+    require_image_input_model(
+        &ProviderAccountConfiguration {
+            provider: configuration.provider.clone(),
+            base_url: configuration.base_url.clone(),
+            api_key: configuration.api_key.clone(),
+        },
+        &configuration.model,
+    )
+    .await?;
+    let prompt = scan_prompt(locale);
 
     match configuration.provider.as_str() {
-        "openai" => openai_scan(configuration, &input, &prompt, &url, &token).await,
-        "anthropic" => anthropic_scan(configuration, &input, &prompt, &url, &token).await,
-        "openrouter" => openrouter::scan(configuration, &input, &prompt, &url, &token).await,
+        "openai" => openai_scan(configuration, &input, &prompt, url, token).await,
+        "anthropic" => anthropic_scan(configuration, &input, &prompt, url, token).await,
+        "openrouter" => openrouter::scan(configuration, &input, &prompt, url, token).await,
         _ => unreachable!("MCP provider was validated"),
     }
 }

@@ -58,9 +58,7 @@ if (args[0] === 'inspect') {
 }
 
 if (args[0] === 'logs') {
-  console.log('API: http://127.0.0.1:9000');
-  console.log('sortsys deploy upgrade fixture ready');
-  console.log('sortsys Rust API listening');
+  console.log(['API: http://127.0.0.1:9000', 'sortsys deploy upgrade fixture ready', 'sortsys Rust API listening', 'DuckDB datastore is ready'].join(String.fromCharCode(10)));
 }
 
 if (process.env.FAIL_UPGRADE === 'true' && args[0] === 'exec' &&

@@ -1432,7 +1432,7 @@ struct ChangeProposal {
     review_comment: Option<String>,
     #[ts(type = "Date")]
     created_at: DateTime<Utc>,
-    #[ts(type = "Date")]
+    #[ts(type = "Date | null")]
     reviewed_at: Option<DateTime<Utc>>,
 }
 

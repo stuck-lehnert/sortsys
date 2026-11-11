@@ -4,6 +4,7 @@ import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
 import { toolTitle, userFullName } from "~/lib/format";
@@ -121,8 +122,13 @@ export function showCreateToolModal(modals: MyModalsInterface, options: CreateTo
 }
 
 export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
+  let mayEditCosts = () => false;
   modals.showForm({
-    content: ({ context }) => <>
+    content: ({ context }) => {
+      const session = useSessionInfo(), scope = `tool:${tool.id}`;
+      mayEditCosts = () => session.canAccess(scope, "procurement", "update");
+      const readCosts = session.canAccess(scope, "procurement", "read");
+      return <>
       <MyForm.Select
         name="status" labelText={uiText("Status")}
         getOptions={() => [
@@ -163,25 +169,28 @@ export function showModifyToolModal(modals: MyModalsInterface, tool: Tool) {
       <MyForm.Input name="label" labelText={uiText("Modell")} />
       <p className="light">{uiText("Modellbezeichnung oder ergänzende Typangabe.")}</p>
 
-      <MyDivider />
-
-      <MyForm.Input
+      {readCosts && <><MyDivider />
+      <MyForm.Input disabled={!mayEditCosts()}
         name="purchasePrice" labelText={uiText("Kaufpreis (EUR)")}
         type="number" rules={[MyForm.Input.rules.posnum]}
       />
 
-      <MyForm.Input
+      <MyForm.Input disabled={!mayEditCosts()}
         name="usageCostPerDay" labelText={uiText("Nutzungskosten pro Tag (EUR)")}
         type="number" rules={[MyForm.Input.rules.posnum]}
       />
       <p className="light">{uiText("Tagessatz für interne Kostenberechnungen und Berichte.")}</p>
+      </>}
 
       <NotifyLoaded onLoad={() => context.setValues({
         ...tool, status: tool.status ?? 'none',
       })} />
-    </>,
+    </>;
+    },
     onSubmit: async ({ hide, context, navigate, pathname }) => {
       const values = context.getValues();
+
+      if (!mayEditCosts()) { delete values.purchasePrice; delete values.usageCostPerDay; }
 
       if (values.purchasePrice) {
         values.purchasePrice = parseFloatCustom(values.purchasePrice);

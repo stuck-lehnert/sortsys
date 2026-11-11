@@ -217,4 +217,36 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "261106210000_distributed_document_sessions",
         include_str!("../migrations/261106210000_distributed_document_sessions.sql"),
     ),
+    (
+        "261108090000_zerotrust",
+        include_str!("../migrations/261108090000_zerotrust.sql"),
+    ),
+    (
+        "261109130000_zerotrust_invitations",
+        include_str!("../migrations/261109130000_zerotrust_invitations.sql"),
+    ),
+    (
+        "261109190000_zerotrust_creation",
+        include_str!("../migrations/261109190000_zerotrust_creation.sql"),
+    ),
+    (
+        "261109210000_zerotrust_file_chunks",
+        include_str!("../migrations/261109210000_zerotrust_file_chunks.sql"),
+    ),
+    (
+        "261110110000_zerotrust_commercial_creation",
+        include_str!("../migrations/261110110000_zerotrust_commercial_creation.sql"),
+    ),
+    (
+        "261110120000_zerotrust_document_heads",
+        include_str!("../migrations/261110120000_zerotrust_document_heads.sql"),
+    ),
+    (
+        "261111120000_zerotrust_stock_references",
+        include_str!("../migrations/261111120000_zerotrust_stock_references.sql"),
+    ),
+    (
+        "261111160000_zerotrust_delivery_registry",
+        include_str!("../migrations/261111160000_zerotrust_delivery_registry.sql"),
+    ),
 ];

@@ -1,0 +1,83 @@
+{
+  "notice": "Public synthetic browser protocol vector; no private keys or recovery phrase.",
+  "authority": "dY9YFcxOtLUPICiK-3CC4aKmgK-dHQ9r0xZEKk4SM-Q",
+  "definition": {
+    "tenant": "test",
+    "id": "project:abc:master-data",
+    "scope": "project:abc",
+    "facet": "master-data",
+    "generation": "1",
+    "policyVersion": "1",
+    "envelopes": [
+      {
+        "tenant": "test",
+        "purpose": "area-key",
+        "object": "project:abc:master-data",
+        "generation": "1",
+        "recipient": "user:1",
+        "author": "creator:user:2:1",
+        "format": "sortsys-hpke-v1",
+        "enc": "4FQrEBj5XqcbEdVfJpV7AhEMg8AFKk8VYLOnuQI8LDw",
+        "ciphertext": "CjdBZEe4eZb4HQBUn_myCKaCqHRuwmjfh3g6sm0R7aMnd2iJmrw8BopqsN632Dpp",
+        "signature": "ycP1AAMOuoLN18PTghZivXAeHezh1B-QauEdlsJwEos3ydjwDgMKOaAHd_9rsdkOu9rVXG33LiTS9birK8wHAg"
+      },
+      {
+        "tenant": "test",
+        "purpose": "area-key",
+        "object": "project:abc:master-data",
+        "generation": "1",
+        "recipient": "user:2",
+        "author": "creator:user:2:1",
+        "format": "sortsys-hpke-v1",
+        "enc": "XeC38OZHiw9vQfcXP0qvOKycjlrFJyFFl2m82JYI3Tw",
+        "ciphertext": "Co9tT3Y1dPplKj8jWNl1OQHzTxSBeaCE8ImuuMHQGjEBL_3zxkyvnUGMl6Fudsp7",
+        "signature": "rldFmn_RR_r9DfqNuoVrb7zJ2stSUE24HWO6cKk1iuS1r7WXHYLQWtkIxFQs_QwSEbqEEzYq9a7QWwS3WwF8Dg"
+      }
+    ],
+    "recoveryEnvelope": {
+      "tenant": "test",
+      "purpose": "area-key",
+      "object": "project:abc:master-data",
+      "generation": "1",
+      "recipient": "recovery:1",
+      "author": "creator:user:2:1",
+      "format": "sortsys-hpke-v1",
+      "enc": "1WIBW2O_E1VOOc8s8rAXMNl1d9JCmQy36dwbtKUfkE0",
+      "ciphertext": "kjoHAFyppx4PscFiBf5aBWAUjZWONizM2GQi8LHh_I-9pRoP4PVXgtDcsb3XjevS",
+      "signature": "tkKfosVu5fP5ZloZ_FF0KiRclAlq98ivhQdvwbbtNIM0MCSXPJgAwdf2QFX8f83Dcq3gxZ3-zVtGKdBshVZ_Bg"
+    },
+    "creation": {
+      "tenant": "test",
+      "id": "project:abc:master-data",
+      "scope": "project:abc",
+      "facet": "master-data",
+      "capability": {
+        "tenant": "test",
+        "id": "create_test",
+        "generation": "1",
+        "namespace": "project",
+        "creator": {
+          "tenant": "test",
+          "generation": "1",
+          "user": "user:2",
+          "encryptionKey": "ywpct-zFhKolWdVewxqds23qiBBYvDXP4bDVBX-xxhk",
+          "signingKey": "YYakaHmvAtQAnGpmM__5ZB6oS0psuolIAL7lPCVkTmc",
+          "signature": "25NyAaGbtwtnPpe8dZOH00Jp5mpSWkvjxwCz42ZLw35k6BLw_QYii2YqqVd6jMkKrDevrVECGHQcJtMtEhTIBQ"
+        },
+        "readers": [
+          {
+            "tenant": "test",
+            "generation": "1",
+            "user": "user:1",
+            "encryptionKey": "o8fqnBFOW2A-2iZ7NSOeQq5JfRTU9U9PFG0ICfy8XF8",
+            "signingKey": "Uha5-V00BohmBLvSjBADdxGjMeFjRLACEzeynlDYdQM",
+            "signature": "cEPN_3X7gD-L2bp1vNyY-4tHQCJmNbToWGtsvzbAm-v5LaYYydOnum9QA0229nEa6fISOQljkGfU3OipJ87RAg"
+          }
+        ],
+        "signature": "9MRHR2kmk8cziAjnSAExdgo-oEajbpXNSw8VztkgotH8Q4VpfZTjvAQKbhrSSHry8kE43evUz5HYJ3vRqcdGCg"
+      },
+      "signature": "VDmCF4brSJLWO02879O0WM8AbyOR7K0EhTSfP596P3MrcC1-KXU0u4Z3NKI0sSIp7zb0zVmonLJ6ZCOH5hnQDQ"
+    },
+    "proof": "RWMMeF5SMtL7VHPr2Qj-h3piveGpfGilJpTwyvZozSM6QWGFZ2PTRY6o2k4nClx1WtoDcLWFlskInNWCATsgBQ"
+  }
+}

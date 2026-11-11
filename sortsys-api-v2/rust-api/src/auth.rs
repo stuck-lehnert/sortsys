@@ -177,7 +177,8 @@ impl AuthService {
             let pool = self.tenants.tenant_pool(tenant).await.ok()?;
             let user = sqlx::query_as::<_, LoginUser>(
                 "SELECT id, password FROM users \
-             WHERE username = $1 AND (deactivated_at IS NULL OR deactivated_at > NOW())",
+             WHERE username = $1 AND (deactivated_at IS NULL OR deactivated_at > NOW()) \
+               AND NOT EXISTS(SELECT 1 FROM __zerotrust_accounts a WHERE a.user_id=users.id)",
             )
             .bind(username)
             .fetch_optional(&pool)

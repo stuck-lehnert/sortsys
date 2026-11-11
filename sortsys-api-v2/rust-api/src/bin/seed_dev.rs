@@ -10,6 +10,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         return Ok(());
     }
     let state = AppState::connect(Config::from_env()?).await?;
+    if args.len() == 1 {
+        let tenant = std::env::var("DEV_TEST_TENANT_NAME").unwrap_or_else(|_| "test".to_owned());
+        if state.tenants.tenant(&tenant).await?.is_some() {
+            let pool = state.tenants.tenant_pool(&tenant).await?;
+            let phase: String =
+                sqlx::query_scalar("SELECT phase FROM __zerotrust_state WHERE singleton")
+                    .fetch_one(&pool)
+                    .await?;
+            if phase != "unenrolled" {
+                println!(
+                    "Development tenant already uses protected data; preserving existing records"
+                );
+                state.tenants.close().await;
+                return Ok(());
+            }
+        }
+    }
     if args.len() == 2 && args[1] == "--extend-native-documents" {
         let tenant = std::env::var("DEV_TEST_TENANT_NAME").unwrap_or_else(|_| "test".to_owned());
         let pool = state.tenants.tenant_pool(&tenant).await?;

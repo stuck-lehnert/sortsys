@@ -1,0 +1,130 @@
+[
+  {
+    "path": "duckdb/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/LICENSE"
+  },
+  {
+    "path": "duckdb/extension/tpch/dbgen/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/extension/tpch/dbgen/LICENSE"
+  },
+  {
+    "path": "duckdb/src/include/duckdb/storage/compression/alp/algorithm/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/src/include/duckdb/storage/compression/alp/algorithm/LICENSE"
+  },
+  {
+    "path": "duckdb/src/include/duckdb/storage/compression/alprd/algorithm/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/src/include/duckdb/storage/compression/alprd/algorithm/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/brotli/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/brotli/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/concurrentqueue/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/concurrentqueue/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/fast_float/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/fast_float/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/fastpforlib/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/fastpforlib/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/fmt/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/fmt/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/fsst/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/fsst/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/httplib/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/httplib/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/hyperloglog/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/hyperloglog/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/jaro_winkler/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/jaro_winkler/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/jemalloc/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/jemalloc/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/lz4/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/lz4/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/mbedtls/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/mbedtls/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/miniz/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/miniz/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/parquet/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/parquet/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/pcg/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/pcg/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/pdqsort/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/pdqsort/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/re2/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/re2/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/ska_sort/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/ska_sort/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/skiplist/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/skiplist/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/snappy/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/snappy/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/tdigest/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/tdigest/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/thrift/thrift/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/thrift/thrift/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/utf8proc/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/utf8proc/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/vergesort/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/vergesort/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/yyjson/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/yyjson/LICENSE"
+  },
+  {
+    "path": "duckdb/third_party/zstd/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb/v2.0.0/third_party/zstd/LICENSE"
+  },
+  {
+    "path": "httpfs/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb-httpfs/77392a7207/LICENSE"
+  },
+  {
+    "path": "quack/LICENSE",
+    "source": "https://raw.githubusercontent.com/duckdb/duckdb-quack/f96420ed46/LICENSE"
+  }
+]

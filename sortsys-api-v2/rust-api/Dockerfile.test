@@ -2,6 +2,10 @@ ARG RUST_IMAGE=docker.io/library/rust:1.99-bookworm
 
 FROM docker.io/library/postgres:17-bookworm AS postgres-client
 
+FROM ${RUST_IMAGE} AS duckdb
+COPY rust-api/duckdb/install /tmp/install-duckdb
+RUN bash /tmp/install-duckdb /opt/duckdb
+
 FROM ${RUST_IMAGE}
 
 RUN rustup component add rustfmt clippy \
@@ -15,6 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Managed backup scenarios call the same PostgreSQL 17 tools as production.
 COPY --from=postgres-client /usr/lib/*-linux-gnu/libpq.so.5.18 /usr/local/lib/libpq.so.5
+COPY --from=duckdb /opt/duckdb /opt/duckdb
+COPY rust-api/duckdb/licenses /usr/local/share/licenses/sortsys-duckdb
+ENV DUCKDB_LIB_DIR=/opt/duckdb DUCKDB_INCLUDE_DIR=/opt/duckdb DUCKDB_EXTENSION_DIRECTORY=/opt/duckdb/extensions
+RUN ln -s /opt/duckdb/libduckdb.so /usr/local/lib/libduckdb.so
 RUN multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" \
     && rm -f "/usr/lib/${multiarch}/libpq.so.5" \
     && cp /usr/local/lib/libpq.so.5 "/usr/lib/${multiarch}/libpq.so.5" \

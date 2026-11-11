@@ -9,7 +9,7 @@ use sqlx::{
     ConnectOptions, PgPool, Row,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Tenant {
@@ -34,6 +34,8 @@ pub struct AccessOptions {
 pub struct TenantStore {
     master: PgPool,
     pools: Arc<Mutex<HashMap<String, PgPool>>>,
+    legacy_requests: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+    legacy_llm_requests: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
 }
 
 impl TenantStore {
@@ -55,11 +57,46 @@ impl TenantStore {
         Ok(Self {
             master,
             pools: Arc::new(Mutex::new(HashMap::new())),
+            legacy_requests: Arc::new(Mutex::new(HashMap::new())),
+            legacy_llm_requests: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
     pub fn master(&self) -> &PgPool {
         &self.master
+    }
+
+    /// Legacy requests retain a database lock throughout external side effects.
+    /// Reserve pool capacity for their handlers instead of allowing a batch to
+    /// occupy all five connections with permits while every handler waits.
+    pub async fn legacy_request_slot(&self, tenant: &str) -> OwnedSemaphorePermit {
+        let limit = self
+            .legacy_requests
+            .lock()
+            .await
+            .entry(tenant.to_owned())
+            .or_insert_with(|| Arc::new(Semaphore::new(2)))
+            .clone();
+        limit
+            .acquire_owned()
+            .await
+            .expect("legacy limit stays open")
+    }
+
+    /// A provider call retains its cutover lock while MCP calls back into the
+    /// API. Its admission must leave ordinary handler slots available.
+    pub async fn legacy_llm_request_slot(&self, tenant: &str) -> OwnedSemaphorePermit {
+        let limit = self
+            .legacy_llm_requests
+            .lock()
+            .await
+            .entry(tenant.to_owned())
+            .or_insert_with(|| Arc::new(Semaphore::new(1)))
+            .clone();
+        limit
+            .acquire_owned()
+            .await
+            .expect("legacy LLM limit stays open")
     }
 
     pub async fn tenant(&self, name: &str) -> Result<Option<Tenant>, DatabaseError> {
@@ -395,11 +432,16 @@ async fn ensure_master_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::raw_sql(include_str!("../schema/master_entity_changes.sql"))
         .execute(&mut *transaction)
         .await?;
+    sqlx::raw_sql(include_str!("../schema/master_zerotrust.sql"))
+        .execute(&mut *transaction)
+        .await?;
     transaction.commit().await
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
+    #[error("invalid encrypted datastore configuration")]
+    InvalidCipherStore,
     #[error(transparent)]
     Sql(#[from] sqlx::Error),
     #[error(transparent)]
@@ -418,4 +460,41 @@ pub enum DatabaseError {
     InvalidManagedDatabaseId(String),
     #[error("managed PostgreSQL database {0} does not exist")]
     ManagedDatabaseNotFound(i64),
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_waiting_legacy_provider_leaves_capacity_for_its_mcp_callbacks() {
+        let store = TenantStore {
+            master: PgPoolOptions::new()
+                .connect_lazy("postgres://localhost/admission_test")
+                .unwrap(),
+            pools: Arc::new(Mutex::new(HashMap::new())),
+            legacy_requests: Arc::new(Mutex::new(HashMap::new())),
+            legacy_llm_requests: Arc::new(Mutex::new(HashMap::new())),
+        };
+        let provider = store.legacy_llm_request_slot("test").await;
+        let callback = store.legacy_request_slot("test").await;
+        let query = store.legacy_request_slot("test").await;
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(10),
+                store.legacy_llm_request_slot("test")
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), store.legacy_request_slot("test"))
+                .await
+                .is_err()
+        );
+        drop(callback);
+        let next = store.clone().legacy_request_slot("test").await;
+        drop((provider, query, next));
+        let _provider = store.legacy_llm_request_slot("test").await;
+    }
 }

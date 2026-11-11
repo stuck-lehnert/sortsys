@@ -1,0 +1,22 @@
+{
+  "name": "@sortsys/zerotrust",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": { ".": "./src/index.ts", "./worker": "./src/opaqueWorker.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "bun build ./src/index.ts --target browser --outdir dist"
+  },
+  "dependencies": {
+    "@scure/bip39": "^2.0.0",
+    "@serenity-kit/opaque": "^1.0.0",
+    "hpke-js": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^5.9.3"
+  }
+}

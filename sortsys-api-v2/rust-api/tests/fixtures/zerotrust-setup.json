@@ -1,0 +1,232 @@
+{
+  "notice": "Public synthetic protocol interoperability vector. No production data or usable account credentials.",
+  "owner": {
+    "encryptionKey": "6qDgncnXG98REAz1_4W4CRHV8gyaqoViDQrJ_2re9FE",
+    "signingKey": "wM6n5Lex5uObuaqWQvbTnNwz7_EDi-bpeEGbrK0cirE"
+  },
+  "setup": {
+    "authority": {
+      "tenant": "test",
+      "generation": "1",
+      "recoveryEncryptionKey": "fEe1cX2CTUPlA81YJ2mrv8nZURRBcEWdHRKMa50aBWk",
+      "recoverySigningKey": "z75h9BnvQjTSvle7P544lmaA6NoIw_oAdDAbjmZWUAA",
+      "authoritySigningKey": "9Vf9LY5DP5Ep79UOir0e54PKe5H-pCeiia3js22JcwM",
+      "signature": "ofl-_1yU2sRV_8hdJUy-OWMeNeDWGnRB9G4SfUzzq1b6SEbbwRne-q17PMNigQs1gvx-g--WoNqH7MXRgxZLDQ"
+    },
+    "owner": {
+      "tenant": "test",
+      "generation": "1",
+      "user": "user:interop",
+      "encryptionKey": "6qDgncnXG98REAz1_4W4CRHV8gyaqoViDQrJ_2re9FE",
+      "signingKey": "wM6n5Lex5uObuaqWQvbTnNwz7_EDi-bpeEGbrK0cirE",
+      "signature": "BLGvobu7BVc2Zkl2wKWkRExOMmelFAsFt6sErJJPQvkWvXDpOrwraJoYTUnVRHH0bUzkczke7t1clM70pm86BA"
+    },
+    "authorityEnvelope": {
+      "tenant": "test",
+      "purpose": "authority-key",
+      "object": "authority:1",
+      "generation": "1",
+      "recipient": "user:interop",
+      "author": "authority:1",
+      "format": "sortsys-hpke-v1",
+      "enc": "rpFfohrsyz-dR2WaFGeXom_NJa9d9iKo4nuwEWlM_zI",
+      "ciphertext": "fKhs86-FxO5zto3nNGlWnfReD3pLN6m-h0XBjEkKuTd3gqSRO5_Di41GQEJABmWFUiBxCADXI-zX8odPO80b9g",
+      "signature": "8Z3npCTSBBZI48o3dc7HWj8ulg4-ca62BMdqpMNPJYAp-fWnDDxSKfCfT_YNH02bn7Lc3q-wXYU2Dgd5COAYAg"
+    },
+    "catalog": {
+      "tenant": "test",
+      "purpose": "recovery-catalog",
+      "object": "catalog",
+      "generation": "1",
+      "recipient": "recovery:1",
+      "author": "authority:1",
+      "format": "sortsys-hpke-v1",
+      "enc": "Q80PvGqbpfAQUMD-G86fBjyxGBp8vLt72BtJcqGGPi8",
+      "ciphertext": "oZYDfSZZoq3FlGw97K9qsOWUGjo20dI6AG1orjqXQ51zEJNW1ivKf7xiMirFlZO8QSF5P9EXiXmlXdish6kBaEeX",
+      "signature": "lTXO8la2z65sefiuqG29s8gzev4Ccbv2zQvi93Oys7W1-XABaus6SGpQg2TczXqYTh_9RE7Je_BRb-A6HJEvCA"
+    },
+    "policy": {
+      "tenant": "test",
+      "version": "1",
+      "rules": [
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "scope",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "contract-quantities",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "measurement",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "offer-prices",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "calculation",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "procurement",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "billing",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "master-data",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "personnel",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        },
+        {
+          "subject": "user:interop",
+          "scope": "tenant:test",
+          "facet": "attachment",
+          "actions": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "grant"
+          ],
+          "effect": "allow"
+        }
+      ],
+      "signature": "Si-Da4f_a-5TvUgobL-g6hklbubJflV_tiz2MYmmH60uFn8PMeyGwY8CLjnyvaoWfpwWftTK4rYnhv9KJ5VoAQ"
+    },
+    "proof": "fJ315s6VDysA61YvFSeRVLm-itqJlUXBei6JDps-oi8xOrGA1ydG0xYVzrWIHXI0DgUGk9OcPkQhGQYkYCvMCg"
+  },
+  "domain": {
+    "tenant": "test",
+    "id": "domain:interop",
+    "scope": "tenant:test",
+    "facet": "measurement",
+    "generation": "1",
+    "policyVersion": "1",
+    "envelopes": [
+      {
+        "tenant": "test",
+        "purpose": "area-key",
+        "object": "domain:interop",
+        "generation": "1",
+        "recipient": "user:interop",
+        "author": "authority:1",
+        "format": "sortsys-hpke-v1",
+        "enc": "8Kn03kVYmf641Jo3at_i-ZCPclgyIzbw5O5GZMuNgRY",
+        "ciphertext": "CcW7rNRbgud6mPnt0ypOYLAf7UTp5bNFH9tT4ClT6ca7uv73GaUkjSmMeD1Eh4DL",
+        "signature": "9DW28XlUHZ-MltPbz3ktak0wzHQoBJwqlZw3N_cDzdN07q4eI-Mhp8s50Moo1c_AbJy3B-V9_Pgaslksw7otCw"
+      }
+    ],
+    "recoveryEnvelope": {
+      "tenant": "test",
+      "purpose": "area-key",
+      "object": "domain:interop",
+      "generation": "1",
+      "recipient": "recovery:1",
+      "author": "authority:1",
+      "format": "sortsys-hpke-v1",
+      "enc": "Vx10zSj2Zem7aBPQlG6poU3olOqxtoiDxfW3iYEKWGU",
+      "ciphertext": "K8ZdqfLnvaVA8Zfo0C-0v-XxZ-SFSlMUABkIu1yUAQtdMrmdWSa2xV8U-2MSD5FS",
+      "signature": "t0K12OTOWe189lb2r1nG9qfybLEELiKkx1ou5LwOXAasHKJ4gh8ig_5KReqbrIqBvHnfEqeZ6P8hWWprsmfXAA"
+    },
+    "proof": "23VUw9qxA_45wa0_FDsIRgUMI4hKcAP8QKhL-f2WSSD_dO7-Pvs-deOX42e6thQvB4ppU9gRFGjYijeL9t8PDg"
+  }
+}

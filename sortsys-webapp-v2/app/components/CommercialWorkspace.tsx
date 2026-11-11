@@ -479,9 +479,13 @@ export default function CommercialWorkspace({
       }
       const source = ["offer", "supplier_offer"].includes(purpose)
         ? inquiry
+        : purpose === "order"
+          ? offer
         : purpose === "supplier_confirmation"
           ? order
           : undefined;
+      const replacing = ["offer", "supplier_offer"].includes(purpose) ? undefined : detail?.documents.find(document => document.purpose === purpose);
+      const previous = replacing ? await loadCommercialDocument(item.id, replacing.id) : undefined;
       const reference = source
         ? await loadCommercialDocument(item.id, source.id)
         : undefined;
@@ -497,6 +501,8 @@ export default function CommercialWorkspace({
           : undefined,
         sourceDocumentId: source?.id,
         sourceVersion: source?.version,
+        replaceDocumentId: replacing?.id,
+        expectedVersion: previous?.version,
       });
       setActiveId(result.id);
       setSupplier("");
@@ -511,10 +517,8 @@ export default function CommercialWorkspace({
         { strategy: "network-only" },
       );
       if (error || !value) throw error ?? new Error("download-failed");
-      const anchor = window.document.createElement("a");
-      anchor.href = value.url;
-      anchor.download = value.fileName;
-      anchor.click();
+      const { downloadFileResource } = await import("~/lib/fileResources");
+      await downloadFileResource(value.url, value.fileName);
     });
   if (!detail) {
     const pending = error ? (

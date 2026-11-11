@@ -8,7 +8,7 @@ mod admin_tenants;
 mod admin_users;
 mod auth_password;
 mod client_scripts;
-mod common;
+pub(crate) mod common;
 mod contacts;
 mod customers;
 mod delivery_notes;
@@ -55,6 +55,8 @@ pub fn register(
     builder: ProcedureRegistryBuilder,
     state: Arc<AppState>,
 ) -> ProcedureRegistryBuilder {
+    let builder = crate::zerotrust::register(builder, Arc::clone(&state));
+    let builder = crate::llm::live::register(builder, Arc::clone(&state));
     let builder = admin_databases::register(builder, Arc::clone(&state));
     let builder = admin_backups::register(builder, Arc::clone(&state));
     let builder = admin_tenants::register(builder, Arc::clone(&state));
@@ -136,6 +138,8 @@ pub fn register(
 }
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    let builder = crate::zerotrust::register_contract(builder);
+    let builder = crate::llm::live::register_contract(builder);
     let builder = settings::register_contract(builder);
     let builder = document_templates::register_contract(builder);
     let builder = commercial::register_contract(builder);

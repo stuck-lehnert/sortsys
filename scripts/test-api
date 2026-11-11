@@ -30,6 +30,8 @@ TEST_API_CONTAINER="${TEST_API_CONTAINER:-sortsys-test-api-api-${TEST_RUN_SUFFIX
 TEST_JOB_RUNNER_1_CONTAINER="${TEST_JOB_RUNNER_1_CONTAINER:-sortsys-test-api-job-runner-1-${TEST_RUN_SUFFIX}}"
 TEST_JOB_RUNNER_2_CONTAINER="${TEST_JOB_RUNNER_2_CONTAINER:-sortsys-test-api-job-runner-2-${TEST_RUN_SUFFIX}}"
 TEST_JOB_RUNNER_CONTAINERS=("$TEST_JOB_RUNNER_1_CONTAINER" "$TEST_JOB_RUNNER_2_CONTAINER")
+TEST_DUCKDB_CONTAINER="${TEST_DUCKDB_CONTAINER:-sortsys-test-api-duckdb-${TEST_RUN_SUFFIX}}"
+TEST_DUCKDB_TOKEN="sortsys-disposable-duckdb-service-token-not-a-secret"
 
 TEST_POSTGRES_IMAGE="${TEST_POSTGRES_IMAGE:-$(sortsys_container_image test-postgres)}"
 TEST_S3_IMAGE="${TEST_S3_IMAGE:-$(sortsys_s3_image)}"
@@ -71,6 +73,7 @@ TEST_ALL_CONTAINERS=(
   "$TEST_PG_CONTAINER"
   "$TEST_S3_CONTAINER"
   "$TEST_API_CONTAINER"
+  "$TEST_DUCKDB_CONTAINER"
   "${TEST_JOB_RUNNER_CONTAINERS[0]}"
   "${TEST_JOB_RUNNER_CONTAINERS[1]}"
 )
@@ -411,6 +414,7 @@ start_infra() {
   fi
 
   echo "Starting PostgreSQL test container on port ${TEST_PG_PORT}"
+  # Isolated scenarios retain tenant pools briefly and also start replica pools.
   "$CONTAINER_RUNTIME" run -d \
     --name "$TEST_PG_CONTAINER" \
     "${runtime_pull_args[@]}" \
@@ -418,7 +422,7 @@ start_infra() {
     -p "${TEST_PG_PORT}:5432" \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
     -e PG_HOST_AUTH_METHOD=trust \
-    "$TEST_POSTGRES_IMAGE" >/dev/null
+    "$TEST_POSTGRES_IMAGE" -c max_connections=256 >/dev/null
 
   echo "Waiting for PostgreSQL readiness"
   for ((i = 1; i <= 120; i++)); do
@@ -517,6 +521,10 @@ start_api_container() {
     -e TEST_API_BASE_URL="http://127.0.0.1:3000" \
     -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$TEST_JWT_SECRET" \
+    -e DUCKDB_QUACK_URI="quack:${TEST_DUCKDB_CONTAINER}:9494" \
+    -e DUCKDB_CONTROL_URL="http://${TEST_DUCKDB_CONTAINER}:9495" \
+    -e DUCKDB_SERVICE_TOKEN="$TEST_DUCKDB_TOKEN" \
+    -e DUCKDB_QUACK_DISABLE_SSL="true" \
     -e LLM_ENCRYPTION_KEY="$TEST_LLM_ENCRYPTION_KEY" \
     -e LLM_MCP_URL="http://127.0.0.1:3000/internal/llm/mcp" \
     -e ONLYOFFICE_PUBLIC_URL="http://${TEST_S3_CONTAINER}:9000" \
@@ -599,6 +607,44 @@ check_test_connectivity() {
   return 1
 }
 
+start_duckdb_container() {
+  echo "Starting shared DuckDB test service"
+  "$CONTAINER_RUNTIME" create \
+    --name "$TEST_DUCKDB_CONTAINER" \
+    "${runtime_pull_args[@]}" \
+    "${runtime_user_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$TEST_NETWORK" \
+    -v "${TEST_CARGO_TARGET_DIR}:/sortsys-api-v2/target${runtime_mount_suffix}" \
+    -v "${TEST_CARGO_REGISTRY_DIR}:/usr/local/cargo/registry${runtime_mount_suffix}" \
+    -w /sortsys-api-v2 \
+    -e DUCKDB_SERVICE_TOKEN="$TEST_DUCKDB_TOKEN" \
+    -e DUCKDB_DATA_DIRECTORY=/tmp/sortsys-duckdb-data \
+    "$TEST_API_TEST_IMAGE" \
+    cargo run --locked --package sortsys-api --bin sortsys_duckdb >/dev/null
+  copy_api_workspace_into_container "$TEST_DUCKDB_CONTAINER"
+  "$CONTAINER_RUNTIME" start "$TEST_DUCKDB_CONTAINER" >/dev/null
+  wait_for_container_log "$TEST_DUCKDB_CONTAINER" 'DuckDB datastore is ready' DuckDB "$TEST_API_START_TIMEOUT"
+}
+
+restart_duckdb_and_check_persistence() {
+  echo "Checking DuckDB persistence after restarting the independent service"
+  "$CONTAINER_RUNTIME" restart "$TEST_DUCKDB_CONTAINER" >/dev/null
+  local ready=false
+  for ((attempt=1; attempt<=60; attempt++)); do
+    if "$CONTAINER_RUNTIME" exec "$TEST_DUCKDB_CONTAINER" /sortsys-api-v2/target/debug/sortsys_duckdb --health >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" != true ]; then
+    echo "DuckDB did not become ready after restart" >&2
+    return 1
+  fi
+  api_exec cargo test --test network_scenarios quack::persisted_ciphertexts_survive_service_restart -- --ignored
+}
+
 start_job_runner_containers() {
   echo "Starting job runner test containers"
   for idx in "${!TEST_JOB_RUNNER_CONTAINERS[@]}"; do
@@ -653,7 +699,10 @@ run_api_tests() {
   # can exercise admin.login instead of forging an administrator JWT.
   export TEST_ADMIN_PASSWORD
   api_exec cargo fmt --all --check
-  api_exec cargo test --workspace
+  # Scenarios create independent databases and API replicas. Bound their
+  # concurrency to the disposable PostgreSQL connection budget, not host CPUs.
+  api_exec cargo test --workspace -- --test-threads=4
+  restart_duckdb_and_check_persistence
   api_exec cargo clippy --workspace --all-targets -- -D warnings
   api_exec cargo run --quiet --bin generate_contract -- --check
 
@@ -666,6 +715,33 @@ run_api_tests() {
     -w /workspace/sortsys-api-v2/client \
     "$TEST_BUN_IMAGE" \
     sh -lc 'set -e; bun install; bun x tsc -p tsconfig.json --noEmit; bun test; bun run build'
+
+  echo "Checking browser-side encryption migration and recovery against the live API"
+  # The ordinary scenarios own separate tenants; prepare the disposable main
+  # tenant explicitly instead of assuming that API startup seeds user accounts.
+  api_exec cargo run --locked --package sortsys-api --bin seed_dev
+  # A separate process owns the browser socket. MCP enters through the first
+  # API, so both routing and one-time admission exercise independent states.
+  "$CONTAINER_RUNTIME" exec -d -e PORT=3001 "$TEST_API_CONTAINER" sh -c \
+    'exec /sortsys-api-v2/target/debug/sortsys-api > /tmp/llm-replica.log 2>&1'
+  api_exec timeout 30 sh -c 'until curl -fsS http://127.0.0.1:3001/ping >/dev/null 2>&1; do sleep 1; done'
+  "$CONTAINER_RUNTIME" run --rm \
+    "${runtime_pull_args[@]}" \
+    "${runtime_user_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$TEST_NETWORK" \
+    -v "${ROOT_DIR}:/workspace/sortsys${runtime_mount_suffix}" \
+    -w /workspace/sortsys/sortsys-webapp-v2 \
+    -e SORTSYS_DISPOSABLE_MIGRATION_TEST=1 \
+    -e SORTSYS_MIGRATION_TEST_PG_DSN="postgres://postgres:${TEST_PG_PASSWORD}@${TEST_PG_CONTAINER}:5432/${TEST_MANAGED_DATABASE_NAME}" \
+    -e SORTSYS_MIGRATION_TEST_MASTER_DSN="postgres://postgres:${TEST_PG_PASSWORD}@${TEST_PG_CONTAINER}:5432/${TEST_MASTER_DATABASE_NAME}" \
+    -e SORTSYS_MIGRATION_TEST_API="http://${TEST_API_CONTAINER}:3000" \
+    -e SORTSYS_MIGRATION_TEST_TENANT="$TEST_LIVE_TENANT_NAME" \
+    -e SORTSYS_LLM_TEST_OWNER="http://${TEST_API_CONTAINER}:3001" \
+    -e SORTSYS_LLM_TEST_PEER="http://${TEST_API_CONTAINER}:3001" \
+    -e TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
+    "$TEST_BUN_IMAGE" \
+    sh -lc 'set -e; cd ../sortsys-zerotrust; bun install --frozen-lockfile; cd ../sortsys-webapp-v2; bun install --frozen-lockfile; bun scripts/test-live-migration.ts'
 }
 
 on_exit() {
@@ -709,6 +785,7 @@ if [ -n "$TEST_UPGRADE_FROM_DIR" ]; then
 fi
 
 start_job_runner_containers
+start_duckdb_container
 run_api_tests
 
 echo

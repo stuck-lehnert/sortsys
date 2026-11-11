@@ -163,9 +163,13 @@ function goLicenses(moduleDirectory) {
 const clientNpm = npmLicenses(join(root, "sortsys-webapp-v2/package-lock.json"));
 const dwgNpm = npmLicenses(join(root, "sortsys-dwgviewer/package-lock.json"));
 const gaebNpm = npmLicenses(join(root, "sortsys-gaeb/package-lock.json"));
+const cryptoNpm = npmLicenses(join(root, "sortsys-zerotrust/package-lock.json"));
 const inventory = {
   server: {
-    api: cargoLicenses(join(root, "sortsys-api-v2/Cargo.toml")),
+    api: deduplicate([
+      ...cargoLicenses(join(root, "sortsys-api-v2/Cargo.toml")),
+      ...JSON.parse(readFileSync(join(root, "sortsys-api-v2/rust-api/duckdb/components.json"), "utf8")),
+    ]),
     jobRunner: goLicenses(join(root, "sortsys-v2-job_runner")),
   },
   client: {
@@ -173,6 +177,7 @@ const inventory = {
       ...clientNpm,
       ...dwgNpm,
       ...gaebNpm,
+      ...cryptoNpm,
       ...JSON.parse(readFileSync(join(root, "sortsys-webapp-v2/vendor/font-licenses.json"), "utf8")),
       ...cargoLicenses(join(root, "sortsys-dwgviewer/lib/Cargo.toml")),
     ]),

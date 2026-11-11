@@ -4,7 +4,7 @@ import { YAML } from "bun";
 import { test } from "bun:test";
 
 const root = new URL("../", import.meta.url);
-const applications = ["api", "job-runner", "webapp"];
+const applications = ["api", "job-runner", "webapp", "office"];
 const filenames = ["compose.yaml", "ghcr-compose.yaml"];
 
 function read(filename) {
@@ -48,10 +48,24 @@ for (const filename of filenames) {
     assert.equal(shareNetwork(services, "postgres", "api"), true);
   });
 
+  test(`${filename}: the shared DuckDB service is reachable only by API replicas`,()=>{
+    const service=services.duckdb;
+    assert.deepEqual(service.networks,["data"]);
+    assert.equal(compose.networks.data.internal,true);
+    assert.equal(shareNetwork(services,"duckdb","api"),true);
+    for(const name of ["postgres","webapp","job-runner","office","drawio"]) assert.equal(shareNetwork(services,"duckdb",name),false,name);
+    assert.deepEqual(service.command,["/usr/local/bin/sortsys-duckdb"]);
+    assert.deepEqual(service.cap_drop,["ALL"]);
+    assert.deepEqual(service.security_opt,["no-new-privileges:true"]);
+    assert.equal(service.init,true);
+    assert.equal(service.environment.DUCKDB_SERVICE_TOKEN,services.api.environment.DUCKDB_SERVICE_TOKEN);
+    assert.deepEqual(service.volumes,["duckdb-data:/var/lib/sortsys-duckdb"]);
+  });
+
   test(`${filename}: runner connectivity is limited to the API and outbound services`, () => {
     assert.equal(shareNetwork(services, "job-runner", "api"), true);
 
-    for (const name of ["postgres", "webapp", "onlyoffice", "drawio"]) {
+    for (const name of ["postgres", "webapp", "office", "drawio"]) {
       assert.equal(shareNetwork(services, "job-runner", name), false, name);
     }
 
@@ -65,12 +79,12 @@ for (const filename of filenames) {
     }
   });
 
-  test(`${filename}: editor proxying and callbacks remain on a shared network`, () => {
+  test(`${filename}: editor assets remain reachable alongside the webapp`, () => {
     for (const pair of [
       ["webapp", "api"],
-      ["webapp", "onlyoffice"],
+      ["webapp", "office"],
       ["webapp", "drawio"],
-      ["api", "onlyoffice"],
+      ["api", "office"],
     ]) {
       assert.equal(shareNetwork(services, ...pair), true, pair.join(" -> "));
     }
@@ -281,7 +295,6 @@ test("nginx only renders proxy and resolver values into its writable configurati
 
   for (const name of [
     "API_UPSTREAM",
-    "ONLYOFFICE_UPSTREAM",
     "DRAWIO_UPSTREAM",
     "CLIENT_MAX_BODY_SIZE",
     "NGINX_LOCAL_RESOLVERS",
@@ -370,7 +383,7 @@ test("branch pushes run tests once and only successful predeploy tests can promo
   );
 });
 
-test("deploy builds and publishes the three applications directly from their Dockerfiles", () => {
+test("deploy builds and publishes the applications and private Office service from their Dockerfiles", () => {
   const workflow = YAML.parse(read(".github/workflows/publish-containers.yml"));
   assert.deepEqual(workflow.on, {
     push: { branches: ["deploy"] },
@@ -381,11 +394,11 @@ test("deploy builds and publishes the three applications directly from their Doc
   const matrix = workflow.jobs.publish.strategy.matrix.include;
   assert.deepEqual(
     matrix.map((entry) => entry.image),
-    ["api", "jobrunner", "webapp"],
+    ["api", "jobrunner", "webapp", "office"],
   );
   for (const entry of matrix)
     assert.ok(
-      read(entry.file).startsWith("FROM") || read(entry.file).startsWith("ARG"),
+      /^(?:FROM|ARG) /m.test(read(entry.file)),
     );
   const build = workflow.jobs.publish.steps.find((step) =>
     step.uses?.startsWith("docker/build-push-action@"),
@@ -408,11 +421,12 @@ for (const file of ["compose.yaml", "ghcr-compose.yaml"]) {
 
     assert.deepEqual(services.api.depends_on, {
       postgres: { condition: "service_healthy" },
+      duckdb: { condition: "service_healthy" },
     });
     assert.deepEqual(services.webapp.depends_on, {
       api: { condition: "service_healthy" },
     });
-    assert.ok(services.onlyoffice.healthcheck);
+    assert.match(read("sortsys-office/Dockerfile"), /HEALTHCHECK.*run\.cjs.*--health/);
     assert.ok(services.drawio.healthcheck);
   });
 }

@@ -50,6 +50,12 @@ export function DrawioEditor(props: {
     url.searchParams.set("spin", "1");
     url.searchParams.set("ui", "min");
     url.searchParams.set("libraries", "1");
+    // Keep rendering, image export and diagram content in the browser. This
+    // also disables cloud connectors and the server-side export fallback.
+    url.searchParams.set("stealth", "1");
+    url.searchParams.set("lockdown", "1");
+    url.searchParams.set("plugins", "0");
+    url.searchParams.set("browser", "0");
     url.searchParams.set("lang", locale === "en" ? "en" : "de");
     url.searchParams.set("noExitBtn", "1");
 
