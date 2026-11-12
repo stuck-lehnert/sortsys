@@ -5,9 +5,23 @@ export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=4096}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${SORTSYS_CI_LOGGED:-}" != "1" ]; then
+  log=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sortsys-ci.XXXXXX")
+  set +e
+  SORTSYS_CI_LOGGED=1 "$ROOT_DIR/scripts/ci" "$@" 2>&1 | tee "$log"
+  statuses=("${PIPESTATUS[@]}")
+  set -e
+  status=${statuses[0]}
+  if [ "$status" -eq 0 ]; then status=${statuses[1]}; fi
+  if [ "$status" -ne 0 ]; then
+    node ./scripts/report-ci-failure.mjs "$log" || echo "::warning::Could not summarize CI failure"
+  fi
+  exit "$status"
+fi
+
 echo "Checking coordinated runtime versions"
 node ./scripts/check-runtime-versions.mjs
-node --test ./scripts/check-runtime-versions.test.mjs
+node --test ./scripts/check-runtime-versions.test.mjs ./scripts/report-ci-failure.test.mjs
 
 echo "Checking branch promotion and API test orchestration"
 node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs \
