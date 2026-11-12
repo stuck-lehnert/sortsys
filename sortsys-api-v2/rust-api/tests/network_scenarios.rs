@@ -72,6 +72,8 @@ async fn xml_live_message(socket: &mut LiveSocket, kind: &str) -> Value {
 mod billing;
 #[path = "network_scenarios/commercial.rs"]
 mod commercial;
+#[path = "network_scenarios/offer_workflows.rs"]
+mod offer_workflows;
 #[path = "network_scenarios/documents.rs"]
 mod documents;
 #[path = "network_scenarios/login_limits.rs"]

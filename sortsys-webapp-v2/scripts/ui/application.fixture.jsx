@@ -45,6 +45,7 @@ import OrganizationSettingsPage from "../../app/routes/(shell)/settings.organiza
 import AdminPage from "../../app/routes/(shell)/admin";
 import DeploymentsPage from "../../app/routes/(shell)/deployments";
 import ProjectFilesPage from "../../app/routes/(shell)/projects.$id.files";
+import ProjectsPage from "../../app/routes/(shell)/projects.index";
 
 import OffersPage from "../../app/routes/(shell)/offers.index";
 import NewOfferPage from "../../app/routes/(shell)/offers.new";
@@ -189,6 +190,7 @@ export function ApplicationFixture() {
               <Route path="/fixtures/forms" element={<FormEntrypoints />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/deployments" element={<DeploymentsPage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id" element={<ProjectFixture />}>
                 <Route path="files/:fileId?" element={<ProjectFilesPage />} />
                 <Route path="contract" element={<ContractPage />} />

@@ -36,6 +36,8 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type LlmUseCase = "chat" | "documentImport";
 
+export type OfferNumberingScheme = "sequential" | "dateSeparated" | "dateCompact";
+
 export type ParseScanInput = { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };
 
 export type Position = { id: string, shortText: string, description: string, unit: string, sourceFile: string, };
@@ -142,6 +144,7 @@ export type QueryInputs = {
   "settings.documentTemplate.get": void;
   "settings.global.get": { key: string; };
   "settings.invoiceNumbering.get": void;
+  "settings.offerNumbering.get": void;
   "settings.organization.get": void;
   "settings.publicGlobal.get": { key: string; };
   "settings.tenantLogo.get": void;
@@ -245,6 +248,7 @@ export type QueryOutputs = {
   "settings.documentTemplate.get": { source: string | null, revision: string, assets: Array<Asset>, };
   "settings.global.get": { key: string; name: any; };
   "settings.invoiceNumbering.get": { scheme: InvoiceNumberingScheme, startNumber: string, };
+  "settings.offerNumbering.get": { scheme: OfferNumberingScheme, startNumber: string, };
   "settings.organization.get": { companyName: string | null, address: Address | null, };
   "settings.publicGlobal.get": { key: string; name: any; };
   "settings.tenantLogo.get": { status: "none" | "processing" | "failed" | "queued" | "ready" | "uploading"; mimeType: null | string; fileName: null | string; width: null | number; height: null | number; downloadUrl: null | string; downloadExpiresAt: null | Date; error: null | string; };
@@ -310,6 +314,7 @@ export type MutationInputs = {
   "commercial.cases.adoptContract": { projectId: Id, title: string, sourceXml: string, sourcePhase: '84'|'85'|'86'|'87', sourceFileName: string, offerXml: string | null, referenceXml: string | null, netAmount: string, };
   "commercial.cases.create": { kind: string, title: string, projectId?: Id | null, parentCaseId?: Id | null, customerId?: Id | null, counterpartyName?: string | null, scopeItemIds: Array<string>, billingBasis?: string | null, vatRate?: string | null, };
   "commercial.cases.createProject": { id: Id, };
+  "commercial.cases.delete": { id: Id, };
   "commercial.cases.transition": { id: Id, expectedStatus: string, status: string, selectedOfferDocumentId?: Id | null, awardedItemIds?: Array<string> | null, };
   "commercial.cases.update": { id: Id, title: string, customerId: Id | null, counterpartyName: string | null, validUntil: string | null, notes: string | null, };
   "commercial.documents.create": { caseId: Id, purpose: string, fileName: string, xml: string, readOnly: boolean, netAmount?: string | null, partnerName?: string | null, sourceDocumentId?: Id | null, sourceVersion?: bigint | null, replaceDocumentId?: Id | null, expectedVersion?: bigint | null, };
@@ -405,6 +410,7 @@ export type MutationInputs = {
   "settings.global.set": { key: string; name: any; };
   "settings.invoiceNumbering.set": { scheme: InvoiceNumberingScheme, startNumber: string, };
   "settings.language.set": { locale: "de" | "en"; };
+  "settings.offerNumbering.set": { scheme: OfferNumberingScheme, startNumber: string, };
   "settings.organization.set": { companyName: string | null, address: Address | null, };
   "settings.publicGlobal.delete": { key: string; };
   "settings.publicGlobal.set": { key: string; name: any; };
@@ -482,6 +488,7 @@ export type MutationOutputs = {
   "commercial.cases.adoptContract": { id: Id, };
   "commercial.cases.create": { id: Id, };
   "commercial.cases.createProject": { id: Id, };
+  "commercial.cases.delete": { success: true, };
   "commercial.cases.transition": { success: true, };
   "commercial.cases.update": { success: true, };
   "commercial.documents.create": { id: Id, };
@@ -577,6 +584,7 @@ export type MutationOutputs = {
   "settings.global.set": { success: true; };
   "settings.invoiceNumbering.set": { success: true, };
   "settings.language.set": { success: true; };
+  "settings.offerNumbering.set": { success: true, };
   "settings.organization.set": { success: true, };
   "settings.publicGlobal.delete": { success: true; };
   "settings.publicGlobal.set": { success: true; };

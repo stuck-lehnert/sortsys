@@ -217,4 +217,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "261106210000_distributed_document_sessions",
         include_str!("../migrations/261106210000_distributed_document_sessions.sql"),
     ),
+    (
+        "261111160000_commercial_offer_numbering",
+        include_str!("../migrations/261111160000_commercial_offer_numbering.sql"),
+    ),
 ];

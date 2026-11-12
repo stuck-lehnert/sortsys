@@ -63,6 +63,6 @@ mod tests {
             assert!(!sql.trim().is_empty());
             previous = name;
         }
-        assert_eq!(MIGRATIONS.len(), 54);
+        assert_eq!(MIGRATIONS.len(), 55);
     }
 }

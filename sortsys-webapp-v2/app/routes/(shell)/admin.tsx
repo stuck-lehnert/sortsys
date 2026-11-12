@@ -1,7 +1,7 @@
 import { Tabs as HeroTabs } from "@heroui/react";
 import { Tabs, Tab, TabList } from "@sortsys/react-components";
 import { useSearchParams } from "react-router";
-import { InvoiceNumberingForm } from "~/components/InvoiceNumberingForm";
+import { InvoiceNumberingForm, OfferNumberingForm } from "~/components/InvoiceNumberingForm";
 import { OrganizationDetailsForm } from "~/components/OrganizationDetailsForm";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import {
@@ -98,6 +98,7 @@ function OrganizationAdministration() {
   const tabs = [
     { id: "organization", label: uiText("Stammdaten", "Company details") },
     { id: "invoices", label: uiText("Rechnungsnummern", "Invoice numbers") },
+    { id: "offers", label: uiText("Angebotsnummern", "Offer numbers") },
     {
       id: "templates",
       label: uiText("Dokumentvorlagen", "Document templates"),
@@ -356,6 +357,13 @@ function OrganizationAdministration() {
           className={selected === "invoices" ? "pt-4" : "hidden"}
         >
           <InvoiceNumberingForm />
+        </HeroTabs.Panel>
+        <HeroTabs.Panel
+          id="offers"
+          shouldForceMount
+          className={selected === "offers" ? "pt-4" : "hidden"}
+        >
+          <OfferNumberingForm />
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="templates"

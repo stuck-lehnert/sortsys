@@ -1,4 +1,5 @@
 import { showCreateOfferModal } from "~/modals/commercial";
+import { showCreateProjectModal } from "~/modals/projects";
 import { uiText } from "~/lib/i18n";
 import { useMemo } from "react";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -126,6 +127,15 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         icon: Icons.RegieReport,
         requiredRole: "manage:regieReports",
         run: () => showCreateRegieReportModal(modals),
+      },
+      {
+        id: "projects.create",
+        label: uiText("Projekt erstellen"),
+        description: uiText("Projekt direkt ohne vorheriges Angebot anlegen.", "Create a project directly without a prior offer."),
+        group: "create",
+        icon: Icons.Project,
+        requiredRole: "manage:projects",
+        run: () => showCreateProjectModal(modals),
       },
       {
         id: "offers.create",

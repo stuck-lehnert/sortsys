@@ -94,6 +94,7 @@ function createWorkflowApi() {
   };
   let documentTemplate = { source: null, revision: "0", assets: [] };
   let invoiceNumbering = { scheme: "sequential", startNumber: "1" };
+  let offerNumbering = { scheme: "sequential", startNumber: "1" };
   const failures = new Map();
   const injectedErrors = new Set();
   const responses = new Map();
@@ -249,6 +250,11 @@ function createWorkflowApi() {
         return invoiceNumbering;
       case "settings.invoiceNumbering.set":
         invoiceNumbering = input;
+        return { success: true };
+      case "settings.offerNumbering.get":
+        return offerNumbering;
+      case "settings.offerNumbering.set":
+        offerNumbering = input;
         return { success: true };
       case "settings.organization.get":
         return {
@@ -6938,3 +6944,73 @@ test("editing the document designation updates the workflow heading and overview
     0,
   );
 });
+
+test("direct project creation opens and submits without any offer workflow", async () => {
+  api.respond("projects.list", []);
+  api.respond("projects.create", { id: "project-direct" });
+  await openApplication("/projects", "en");
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Create project", exact: true });
+  await dialog.getByRole("textbox", { name: /^Title/ }).fill("Direct project without offer");
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await page.waitForURL(/\/projects\/project-direct/);
+  assert.equal(api.requests.filter(({ path }) => path === "projects.create").length, 1);
+  assert.equal(api.requests.some(({ path }) => path.startsWith("commercial.")), false);
+});
+
+test("offer deletion requires explicit confirmation and refreshes the overview", async () => {
+  const state = await createOfferInEditor("Offer to remove");
+  const id = [...state.cases.keys()][0];
+  api.respond("commercial.cases.delete", ({ id }) => {
+    state.cases.delete(id);
+    return { success: true };
+  });
+  const editor = page.getByRole("dialog", { name: "Offer", exact: true });
+  await editor.getByRole("button", { name: "Delete offer", exact: true }).click();
+  let confirmation = page.getByRole("dialog", { name: "Delete offer?", exact: true });
+  await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(api.requests.some(({ path }) => path === "commercial.cases.delete"), false);
+  assert.ok(state.cases.has(id));
+  await editor.getByRole("button", { name: "Delete offer", exact: true }).click();
+  confirmation = page.getByRole("dialog", { name: "Delete offer?", exact: true });
+  await confirmation.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await page.getByText("No offers yet. Start with a work inquiry or your own offer.", { exact: true }).waitFor();
+  assert.equal(state.cases.size, 0);
+  assert.equal(api.requests.filter(({ path }) => path === "commercial.cases.delete").length, 1);
+});
+
+for (const locale of ["de", "en"]) {
+  test(`organization offer numbering supports three project-independent schemes in ${locale}`, async () => {
+    await openApplication("/admin?tab=offers", locale);
+    const scheme = page.getByRole("button", { name: locale === "de" ? /Angebotsnummer-Schema/ : /Offer numbering scheme/ });
+    await scheme.and(page.locator(":enabled")).waitFor();
+    const choices = locale === "de"
+      ? ["Global fortlaufend", "Datumsbasiert mit Trennzeichen", "Datumsbasiert kompakt"]
+      : ["Global sequence", "Date with separators", "Compact date"];
+    const start = page.getByRole("textbox", { name: locale === "de" ? /^Globale Startnummer/ : /^Global starting number/ });
+    const preview = page.getByRole("status", { name: locale === "de" ? "Beispiel-Angebotsnummern" : "Example offer numbers", exact: true });
+    for (const [index, choice] of choices.entries()) {
+      await scheme.click();
+      assert.equal(await page.getByRole("option").count(), 3);
+      await page.getByRole("option", { name: choice, exact: true }).click();
+      await start.fill("5368");
+      const numbers = await preview.locator("code").allTextContents();
+      assert.equal(numbers.length, 5);
+      assert.match(numbers[0], [/^5368$/, /^\d{2}-\d{2}-\d{2}-5368$/, /^\d{6}5368$/][index]);
+      const prefix = numbers[0].slice(0, -4);
+      assert.deepEqual(numbers, Array.from({ length: 5 }, (_, offset) => `${prefix}${5368 + offset}`));
+    }
+    await start.fill("9007199254740993");
+    assert.equal(await preview.locator("li").count(), 5);
+    assert.ok((await preview.textContent()).includes("9007199254740993"));
+    await page.getByRole("button", { name: locale === "de" ? "Speichern" : "Save", exact: true }).filter({ visible: true }).click();
+    await page.getByText(locale === "de" ? "Angebotsnummern gespeichert" : "Offer numbering saved", { exact: true }).waitFor();
+    const save = api.requests.find(({ path }) => path === "settings.offerNumbering.set");
+    assert.deepEqual(save.input, { scheme: "dateCompact", startNumber: "9007199254740993" });
+    assert.equal(api.requests.some(({ path }) => path === "settings.invoiceNumbering.set"), false);
+    await page.reload();
+    await scheme.and(page.locator(":enabled")).waitFor();
+    assert.equal(await start.inputValue(), "9007199254740993");
+    assert.ok((await scheme.innerText()).includes(choices[2]));
+  });
+}

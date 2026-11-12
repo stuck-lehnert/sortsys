@@ -903,6 +903,24 @@ export default function CommercialWorkspace({
           onReviewed: setReviewed,
         }}
         actions={{
+          deleteOffer: async () => {
+            if (busy) return false;
+            setBusy(true);
+            setError("");
+            try {
+              const [, error] = await client.mutate("commercial.cases.delete", { id: current.id });
+              if (error) throw error;
+              await client.invalidate("commercial.cases.list");
+              await client.invalidate("commercial.cases.get");
+              onClose();
+              return true;
+            } catch (error) {
+              setError(commercialError(error));
+              return false;
+            } finally {
+              setBusy(false);
+            }
+          },
           startPricing: () => void deriveOffer(),
           createAlternative: () =>
             void run(async () => {

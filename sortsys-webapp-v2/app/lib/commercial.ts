@@ -98,6 +98,22 @@ export function commercialError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   const known: Array<[string, string]> = [
     [
+      "linked to a project",
+      uiText("Dieses Angebot ist bereits mit einem Projekt verknüpft und kann nicht gelöscht werden.", "This offer is already linked to a project and cannot be deleted."),
+    ],
+    [
+      "dependent workflows or documents",
+      uiText("Dieses Angebot wird von weiteren Vorgängen oder Dokumenten benötigt. Lösche gegebenenfalls zuerst die abhängigen Nebenangebote.", "This offer is required by other workflows or documents. Delete dependent alternative offers first if needed."),
+    ],
+    [
+      "Only standalone offers",
+      uiText("Nur eigenständige Haupt- und Nebenangebote können gelöscht werden.", "Only standalone main and alternative offers can be deleted."),
+    ],
+    [
+      "Offer counter is exhausted",
+      uiText("Der Angebotsnummernbereich ist ausgeschöpft. Bitte die Nummerierung in der Verwaltung prüfen.", "The offer number range is exhausted. Review numbering in administration."),
+    ],
+    [
       "contract-reference-mismatch",
       uiText(
         "Leistungsverzeichnis und Preisdatei müssen dieselben Positionen und Mengen enthalten.",

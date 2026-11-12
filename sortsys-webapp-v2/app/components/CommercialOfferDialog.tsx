@@ -19,6 +19,7 @@ import RecentlyViewed from "@carbon/icons-react/es/RecentlyViewed";
 import Edit from "@carbon/icons-react/es/Edit";
 import Checkmark from "@carbon/icons-react/es/Checkmark";
 import Close from "@carbon/icons-react/es/Close";
+import TrashCan from "@carbon/icons-react/es/TrashCan";
 import { useCommercialDialogFrame } from "./CommercialDialogFrame";
 import { MyCallout } from "./MyCallout";
 import { MyTable } from "./MyTable";
@@ -36,6 +37,7 @@ import {
 
 const GaebWorkspace = lazy(() => import("./GaebFileModal"));
 type Actions = {
+  deleteOffer: () => Promise<boolean>;
   startPricing: () => void;
   createAlternative: () => void;
   openDocument: (id: string) => void;
@@ -87,6 +89,7 @@ export function CommercialOfferDialog({
   const frame = useCommercialDialogFrame();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const current = detail.case;
   const inquiry = detail.documents
     .filter((doc) => doc.purpose === "inquiry")
@@ -135,6 +138,9 @@ export function CommercialOfferDialog({
   );
   const toolbar = (
     <>
+      <span className="min-w-0 break-all text-sm">
+        {uiText("Angebotsnummer", "Offer number")}: <code>{current.reference}</code>
+      </span>
       {canManage &&
         current.kind !== "alternative" &&
         (offer || inquiry) &&
@@ -324,10 +330,45 @@ export function CommercialOfferDialog({
         label={uiText("Vorgangsverlauf", "Workflow history")}
         onClick={() => setHistoryOpen(true)}
       />
+      {canManage && ["offer", "alternative"].includes(current.kind) && (
+        <EditorIconButton
+          showLabel
+          icon={TrashCan}
+          label={uiText("Angebot löschen", "Delete offer")}
+          disabled={busy}
+          onClick={() => setDeleteOpen(true)}
+        />
+      )}
     </>
   );
   return (
     <>
+      <Modal
+        open={deleteOpen}
+        danger
+        modalHeading={uiText("Angebot löschen?", "Delete offer?")}
+        primaryButtonText={uiText("Endgültig löschen", "Delete permanently")}
+        secondaryButtonText={uiText("Abbrechen", "Cancel")}
+        primaryButtonDisabled={busy || !!current.projectId}
+        primaryButtonLoading={busy}
+        secondaryButtonDisabled={busy}
+        shouldSubmitOnEnter={false}
+        onRequestClose={() => { if (!busy) setDeleteOpen(false); }}
+        onRequestSubmit={async () => {
+          await actions.deleteOffer();
+          setDeleteOpen(false);
+        }}
+      >
+        <p>{current.reference} · {current.title}</p>
+        <p>{uiText(
+          "Das Angebot einschließlich seiner Dokumente und Versionen wird unwiderruflich gelöscht. Die Angebotsnummer wird nicht erneut vergeben. Nicht gespeicherte Änderungen werden verworfen.",
+          "The offer, including its documents and revisions, will be permanently deleted. Its number will not be reused. Unsaved changes will be discarded.",
+        )}</p>
+        <p>{uiText(
+          "Angebote mit einem verknüpften Projekt oder abhängigen Vorgängen und Dokumenten können nicht gelöscht werden. Entferne gegebenenfalls zuerst die abhängigen Nebenangebote.",
+          "Offers linked to a project or dependent workflows and documents cannot be deleted. Delete dependent alternative offers first if needed.",
+        )}</p>
+      </Modal>
       {active ? (
         <Suspense
           fallback={

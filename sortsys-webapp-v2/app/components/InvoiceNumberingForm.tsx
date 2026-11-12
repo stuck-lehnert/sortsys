@@ -13,9 +13,20 @@ import {
   projectNumberFromId,
   type InvoiceNumberingScheme,
 } from "~/lib/invoiceNumbering";
+import { previewOfferNumbers } from "~/lib/offerNumbering";
 
 const EXAMPLE_PROJECT_ID = 238427n.toString(32);
 export function InvoiceNumberingForm() {
+  return <DocumentNumberingForm kind="invoice" />;
+}
+
+export function OfferNumberingForm() {
+  return <DocumentNumberingForm kind="offer" />;
+}
+
+function DocumentNumberingForm({ kind }: { kind: "invoice" | "offer" }) {
+  const isOffer = kind === "offer";
+  const query = isOffer ? "settings.offerNumbering.get" : "settings.invoiceNumbering.get";
   const notifications = useNotifications();
   const previewId = useId();
   const [scheme, setScheme] = useState<InvoiceNumberingScheme>("sequential");
@@ -31,8 +42,8 @@ export function InvoiceNumberingForm() {
       id: "sequential",
       label: uiText("Global fortlaufend", "Global sequence"),
       description: uiText(
-        "Ein gemeinsamer Zähler für alle Rechnungen.",
-        "One shared counter for all invoices.",
+        isOffer ? "Ein eigener gemeinsamer Zähler für alle Haupt- und Nebenangebote." : "Ein gemeinsamer Zähler für alle Rechnungen.",
+        isOffer ? "One separate shared counter for all main and alternative offers." : "One shared counter for all invoices.",
       ),
     },
     {
@@ -74,14 +85,18 @@ export function InvoiceNumberingForm() {
       ),
     },
   ];
-  const selectedOption = options.find((option) => option.id === scheme)!;
-  const examples = previewInvoiceNumbers(
+  const availableOptions = isOffer
+    ? options.filter((option) => !option.id.startsWith("project"))
+    : options;
+  const selectedOption = availableOptions.find((option) => option.id === scheme)!;
+  const offerScheme = scheme === "dateSeparated" || scheme === "dateCompact" ? scheme : "sequential";
+  const examples = isOffer ? previewOfferNumbers({ scheme: offerScheme, startNumber: start }, new Date()) : previewInvoiceNumbers(
     { scheme, startNumber: start },
     { date: new Date(), projectId: EXAMPLE_PROJECT_ID },
   );
   async function load(context: MyPublicFormContext) {
     const [config, error] = await client.query(
-      "settings.invoiceNumbering.get",
+      query,
       undefined,
       { strategy: "network-first" },
     );
@@ -96,16 +111,18 @@ export function InvoiceNumberingForm() {
     if (!startNumber) return;
     setSaving(true);
     try {
-      const [, error] = await client.mutate("settings.invoiceNumbering.set", {
-        scheme,
-        startNumber,
-      });
+      const [, error] = isOffer
+        ? await client.mutate("settings.offerNumbering.set", {
+            scheme: offerScheme,
+            startNumber,
+          })
+        : await client.mutate("settings.invoiceNumbering.set", { scheme, startNumber });
       if (error) throw error;
-      await client.invalidate("settings.invoiceNumbering.get");
+      await client.invalidate(query);
       notifications.success({
         title: uiText(
-          "Rechnungsnummern gespeichert",
-          "Invoice numbering saved",
+          isOffer ? "Angebotsnummern gespeichert" : "Rechnungsnummern gespeichert",
+          isOffer ? "Offer numbering saved" : "Invoice numbering saved",
         ),
       });
     } finally {
@@ -118,19 +135,19 @@ export function InvoiceNumberingForm() {
         <Select
           value={scheme}
           onChange={(event: { target: { value: string } }) => {
-            const selected = options.find(
+            const selected = availableOptions.find(
               (option) => option.id === event.target.value,
             );
             if (selected) setScheme(selected.id);
           }}
           disabled={!loaded || saving}
           labelText={uiText(
-            "Rechnungsnummer-Schema",
-            "Invoice numbering scheme",
+            isOffer ? "Angebotsnummer-Schema" : "Rechnungsnummer-Schema",
+            isOffer ? "Offer numbering scheme" : "Invoice numbering scheme",
           )}
           aria-describedby={`${previewId}-description`}
         >
-          {options.map((option) => (
+          {availableOptions.map((option) => (
             <SelectItem key={option.id} value={option.id} text={option.label} />
           ))}
         </Select>
@@ -182,8 +199,8 @@ export function InvoiceNumberingForm() {
           role="status"
           aria-live="polite"
           aria-label={uiText(
-            "Beispiel-Rechnungsnummern",
-            "Example invoice numbers",
+            isOffer ? "Beispiel-Angebotsnummern" : "Beispiel-Rechnungsnummern",
+            isOffer ? "Example offer numbers" : "Example invoice numbers",
           )}
         >
           {examples.length ? (
@@ -212,6 +229,14 @@ export function InvoiceNumberingForm() {
           )}
         </div>
       </section>
+      {isOffer && (
+        <p className="max-w-prose text-sm text-muted">
+          {uiText(
+            "Neue Angebotsnummern werden beim Erstellen vergeben. Bestehende Nummern bleiben erhalten. Datumsangaben verwenden den UTC-Kalendertag. Der Zähler läuft unabhängig von Rechnungen weiter; bereits vergebene Nummern werden auch nach dem Löschen nicht erneut verwendet. Die Vorschau zeigt Beispiele ab der Startnummer, nicht den aktuellen Zählerstand.",
+            "New offer numbers are assigned on creation. Existing numbers stay unchanged. Dates use the UTC calendar day. The counter is independent of invoices; assigned numbers are not reused after deletion. The preview shows examples from the starting number, not the current counter.",
+          )}
+        </p>
+      )}
       <MyForm.SubmitButton>{uiText("Speichern", "Save")}</MyForm.SubmitButton>
     </MyForm>
   );

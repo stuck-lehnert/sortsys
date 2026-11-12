@@ -8,6 +8,7 @@ import { showCreateProductModal } from "~/modals/products";
 import { showCreateProductVendorModal } from "~/modals/productVendors";
 import { showCreateToolModal } from "~/modals/tools";
 import { showCreateUserModal } from "~/modals/users";
+import { showCreateProjectModal } from "~/modals/projects";
 import type { Contact, Customer, Product, ProductVendor, Project, Tool, User } from "~/type-helpers";
 
 function createAction<T>(label: string, run: (query: string, select: (item: T) => void) => void): MyMultiSelectCreateAction<T> {
@@ -49,8 +50,12 @@ export function useCreateEntityAction(modals: MyModalsInterface) {
       }))
       : undefined,
 
-    // New projects are created from accepted offers, not inline in unrelated forms.
-    project: undefined as MyMultiSelectCreateAction<Project> | undefined,
+    project: sessionInfo.canDo('manage:projects')
+      ? createAction<Project>(uiText('Projekt erstellen'), (query, select) => showCreateProjectModal(modals, {
+        initialQuery: query,
+        onCreated: select,
+      }))
+      : undefined,
 
     tool: sessionInfo.canDo('manage:tools')
       ? createAction<Tool>(uiText('Werkzeug erstellen'), (query, select) => showCreateToolModal(modals, {

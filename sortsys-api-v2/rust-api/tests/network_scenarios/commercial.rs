@@ -41,6 +41,253 @@ async fn transition(rpc: &RpcClient, token: &str, id: &Value, from: &str, to: &s
 }
 
 #[tokio::test]
+async fn offer_numbering_settings_and_sales_creation_are_durable_and_independent() {
+    let Some(environment) = TestEnvironment::from_env() else {
+        return;
+    };
+    let fixture = Fixture::create(&environment).await;
+    let rpc = RpcClient::new(environment.api_base_url.clone());
+    let login = rpc.mutation("auth.login", json!({"tenant":fixture.tenant,"username":fixture.admin_username,"password":fixture.admin_password}), None).await;
+    let token = login["token"].as_str().unwrap();
+    let default = json!({"scheme":"sequential","startNumber":"1"});
+    assert_eq!(
+        rpc.query("settings.offerNumbering.get", Value::Null, Some(token))
+            .await,
+        default
+    );
+    for (procedure, method, input) in [
+        ("settings.offerNumbering.get", Method::GET, Value::Null),
+        ("settings.offerNumbering.set", Method::POST, default.clone()),
+    ] {
+        rpc.expect_error(procedure, method, input, None, "UNAUTHORIZED")
+            .await;
+    }
+    for invalid in ["0", "-1", "+1", "1.5", "1e3", "9223372036854775808", ""] {
+        rpc.expect_error(
+            "settings.offerNumbering.set",
+            Method::POST,
+            json!({"scheme":"sequential","startNumber":invalid}),
+            Some(token),
+            "BAD_REQUEST",
+        )
+        .await;
+    }
+    for scheme in ["projectLocal", "projectGlobal", "unknown"] {
+        rpc.expect_error(
+            "settings.offerNumbering.set",
+            Method::POST,
+            json!({"scheme":scheme,"startNumber":"1"}),
+            Some(token),
+            "BAD_REQUEST",
+        )
+        .await;
+    }
+    sqlx::query("INSERT INTO users(username,first_name,password,deactivated_at) VALUES('numbering.reader','Reader',$1,NULL)")
+        .bind(hash("Reader-Password-123!", 4).unwrap()).execute(&fixture.tenant_pool).await.unwrap();
+    let reader = rpc.mutation("auth.login", json!({"tenant":fixture.tenant,"username":"numbering.reader","password":"Reader-Password-123!"}), None).await;
+    for (procedure, method, input) in [
+        ("settings.offerNumbering.get", Method::GET, Value::Null),
+        ("settings.offerNumbering.set", Method::POST, default.clone()),
+    ] {
+        rpc.expect_error(
+            procedure,
+            method,
+            input,
+            reader["token"].as_str(),
+            "FORBIDDEN",
+        )
+        .await;
+    }
+
+    let legacy: i64 = sqlx::query_scalar("INSERT INTO commercial_cases(reference,kind,title) VALUES('ANG-2026-000123','offer','Historical') RETURNING id")
+        .fetch_one(&fixture.tenant_pool).await.unwrap();
+    let main = create_case(&rpc, token, json!({"kind":"offer","title":"Main offer"})).await;
+    let alternative = create_case(
+        &rpc,
+        token,
+        json!({"kind":"alternative","title":"Alternative","parentCaseId":main}),
+    )
+    .await;
+    for (id, reference) in [(&main, "1"), (&alternative, "2")] {
+        let detail = rpc
+            .query("commercial.cases.get", json!({"id":id}), Some(token))
+            .await;
+        assert_eq!(detail["case"]["reference"], reference);
+    }
+    // Deletion must not release a number; the numbering registry has no case FK.
+    let alternative_id = Id::decode(alternative.as_str().unwrap()).unwrap().0;
+    sqlx::query("DELETE FROM commercial_case_events WHERE case_id=$1")
+        .bind(alternative_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM commercial_cases WHERE id=$1")
+        .bind(alternative_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    // This passes request validation but fails its customer FK after allocation.
+    // The next successful creation must reuse the rolled-back allocation.
+    rpc.expect_error(
+        "commercial.cases.create",
+        Method::POST,
+        json!({"kind":"offer","title":"Invalid customer","customerId":Id(i64::MAX).encode()}),
+        Some(token),
+        "INTERNAL_SERVER_ERROR",
+    )
+    .await;
+    let next = create_case(&rpc, token, json!({"kind":"offer","title":"Next offer"})).await;
+    assert_eq!(
+        rpc.query("commercial.cases.get", json!({"id":next}), Some(token))
+            .await["case"]["reference"],
+        "3"
+    );
+
+    rpc.mutation(
+        "settings.offerNumbering.set",
+        json!({"scheme":"dateSeparated","startNumber":" 00040 "}),
+        Some(token),
+    )
+    .await;
+    assert_eq!(
+        rpc.query("settings.offerNumbering.get", Value::Null, Some(token))
+            .await,
+        json!({"scheme":"dateSeparated","startNumber":"40"})
+    );
+    let dated = create_case(&rpc, token, json!({"kind":"offer","title":"Dated offer"})).await;
+    let date_prefix = chrono::Utc::now().format("%y-%m-%d").to_string();
+    assert_eq!(
+        rpc.query("commercial.cases.get", json!({"id":dated}), Some(token))
+            .await["case"]["reference"],
+        format!("{date_prefix}-40")
+    );
+    rpc.mutation(
+        "settings.offerNumbering.set",
+        json!({"scheme":"dateCompact","startNumber":"1"}),
+        Some(token),
+    )
+    .await;
+    let compact = create_case(
+        &rpc,
+        token,
+        json!({"kind":"alternative","title":"Dated alternative","parentCaseId":main}),
+    )
+    .await;
+    let compact_number = format!("{}41", chrono::Utc::now().format("%y%m%d"));
+    assert_eq!(
+        rpc.query("commercial.cases.get", json!({"id":compact}), Some(token))
+            .await["case"]["reference"],
+        compact_number
+    );
+    let compact_id = Id::decode(compact.as_str().unwrap()).unwrap().0;
+    sqlx::query("DELETE FROM commercial_case_events WHERE case_id=$1")
+        .bind(compact_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM commercial_cases WHERE id=$1")
+        .bind(compact_id)
+        .execute(&fixture.tenant_pool)
+        .await
+        .unwrap();
+    rpc.mutation(
+        "settings.offerNumbering.set",
+        json!({"scheme":"sequential","startNumber":compact_number}),
+        Some(token),
+    )
+    .await;
+    let expected_start = compact_number.parse::<i64>().unwrap() + 1;
+    let parallel = futures_util::future::join_all((0..16).map(|n| {
+        let rpc = &rpc;
+        async move {
+            create_case(
+                rpc,
+                token,
+                json!({"kind":"offer","title":format!("Concurrent {n}")}),
+            )
+            .await
+        }
+    }))
+    .await;
+    let mut references = Vec::new();
+    for id in parallel {
+        references.push(
+            rpc.query("commercial.cases.get", json!({"id":id}), Some(token))
+                .await["case"]["reference"]
+                .as_str()
+                .unwrap()
+                .parse::<i64>()
+                .unwrap(),
+        );
+    }
+    references.sort_unstable();
+    assert_eq!(
+        references,
+        (expected_start..expected_start + 16).collect::<Vec<_>>()
+    );
+
+    // Sales allocations neither use the legacy commercial sequence nor touch
+    // invoice numbering. Non-sales workflows retain their existing references.
+    let project: i64 =
+        sqlx::query_scalar("INSERT INTO projects(title) VALUES('Existing project') RETURNING id")
+            .fetch_one(&fixture.tenant_pool)
+            .await
+            .unwrap();
+    let variation = create_case(
+        &rpc,
+        token,
+        json!({"kind":"variation","title":"Variation","projectId":Id(project).encode()}),
+    )
+    .await;
+    assert_eq!(
+        rpc.query("commercial.cases.get", json!({"id":variation}), Some(token))
+            .await["case"]["reference"],
+        format!("NTR-{}-000001", chrono::Utc::now().format("%Y"))
+    );
+    assert_eq!(
+        rpc.query("settings.invoiceNumbering.get", Value::Null, Some(token))
+            .await,
+        default
+    );
+    assert_eq!(
+        rpc.query(
+            "commercial.cases.get",
+            json!({"id":Id(legacy).encode()}),
+            Some(token)
+        )
+        .await["case"]["reference"],
+        "ANG-2026-000123"
+    );
+    assert_eq!(
+        rpc.query("commercial.cases.get", json!({"id":main}), Some(token))
+            .await["case"]["reference"],
+        "1"
+    );
+    rpc.mutation(
+        "settings.offerNumbering.set",
+        json!({"scheme":"sequential","startNumber":"9223372036854775807"}),
+        Some(token),
+    )
+    .await;
+    assert_eq!(
+        rpc.query("settings.offerNumbering.get", Value::Null, Some(token))
+            .await["startNumber"],
+        "9223372036854775807"
+    );
+    let other = Fixture::create(&environment).await;
+    let other_login = rpc.mutation("auth.login", json!({"tenant":other.tenant,"username":other.admin_username,"password":other.admin_password}), None).await;
+    assert_eq!(
+        rpc.query(
+            "settings.offerNumbering.get",
+            Value::Null,
+            other_login["token"].as_str()
+        )
+        .await,
+        default
+    );
+}
+
+#[tokio::test]
 async fn contractor_workflows_preserve_native_contracts_and_project_invariants() {
     let Some(environment) = TestEnvironment::from_env() else {
         return;

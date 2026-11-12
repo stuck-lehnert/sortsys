@@ -173,6 +173,11 @@ export function CommercialCaseList({
           })
         }
         columns={[
+          ...(kind === "offer" ? [{
+            label: uiText("Angebotsnummer", "Offer number"),
+            render: (row: CommercialCase) => row.reference,
+            sortKey: (row: CommercialCase) => row.reference,
+          }] : []),
           {
             label: uiText("Vorgang", "Workflow"),
             render: (row) => (

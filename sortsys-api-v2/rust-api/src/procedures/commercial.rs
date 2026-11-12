@@ -1,4 +1,7 @@
 //! Contractor sales, changes, subcontract packages and measured-work workflows.
+#[path = "commercial_offer_numbering.rs"]
+mod offer_numbering;
+
 use super::common::{authorized_pool, bad_request, internal, not_found, trim_required};
 use crate::{
     AppState,
@@ -253,8 +256,14 @@ async fn create_case(
     }
     let invoice = super::commercial_billing::is_invoice(&input.kind);
     let basis = basis.to_owned();
-    let id:Id=sqlx::query_scalar("INSERT INTO commercial_cases(reference,kind,title,project_id,parent_case_id,customer_id,counterparty_name,scope_item_ids,created_by_user_id) VALUES($1||'-'||TO_CHAR(NOW(),'YYYY')||'-'||LPAD(nextval('commercial_case_number_seq')::text,6,'0'),$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id")
-      .bind(prefix).bind(input.kind).bind(input.title).bind(input.project_id).bind(input.parent_case_id).bind(input.customer_id).bind(input.counterparty_name.map(|v|v.trim().chars().take(127).collect::<String>())).bind(serde_json::json!(input.scope_item_ids)).bind(actor).fetch_one(&mut *tx).await.map_err(internal)?;
+    let reference = if matches!(input.kind.as_str(), "offer" | "alternative") {
+        offer_numbering::allocate_number(&mut tx, Utc::now().date_naive()).await?
+    } else {
+        sqlx::query_scalar("SELECT $1||'-'||TO_CHAR(NOW(),'YYYY')||'-'||LPAD(nextval('commercial_case_number_seq')::text,6,'0')")
+            .bind(prefix).fetch_one(&mut *tx).await.map_err(internal)?
+    };
+    let id:Id=sqlx::query_scalar("INSERT INTO commercial_cases(reference,kind,title,project_id,parent_case_id,customer_id,counterparty_name,scope_item_ids,created_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id")
+      .bind(reference).bind(input.kind).bind(input.title).bind(input.project_id).bind(input.parent_case_id).bind(input.customer_id).bind(input.counterparty_name.map(|v|v.trim().chars().take(127).collect::<String>())).bind(serde_json::json!(input.scope_item_ids)).bind(actor).fetch_one(&mut *tx).await.map_err(internal)?;
     if invoice {
         sqlx::query("INSERT INTO commercial_invoice_details(case_id,basis,vat_rate) VALUES($1,$2,$3::numeric)").bind(id).bind(basis).bind(input.vat_rate.unwrap_or_else(||"19.00".to_owned())).execute(&mut *tx).await.map_err(internal)?;
     }
@@ -625,8 +634,8 @@ struct DocumentCheck {
 }
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CaseInput {
-    id: Id,
+pub(crate) struct CaseInput {
+    pub(crate) id: Id,
 }
 #[derive(Serialize, TS)]
 struct CreatedId {

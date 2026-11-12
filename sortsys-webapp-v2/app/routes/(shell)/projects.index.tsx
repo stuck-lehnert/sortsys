@@ -7,12 +7,15 @@ import { useNavigate } from "react-router";
 import { formatAddress } from "~/lib/format";
 import { addressUrl } from "~/lib/utils";
 import { Icons } from "~/lib/icons";
-import { OperationalTag } from "@sortsys/react-components";
+import { Button, OperationalTag } from "@sortsys/react-components";
 import { MyLink } from "~/components/MyLink";
 import { SmallProjectTile } from "~/lib/tiles";
 import { useBoolUrlParam } from "~/hooks/useUrlParam";
 import { TableExportActions } from "~/components/TableExportActions";
 import { MyHeader } from "~/components/MyHeader";
+import { useMyModals } from "~/hooks/useMyModals";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { showCreateProjectModal } from "~/modals/projects";
 
 export function meta({ }: Route.MetaArgs) {
   return [
@@ -22,6 +25,8 @@ export function meta({ }: Route.MetaArgs) {
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const modals = useMyModals();
+  const session = useSessionInfo();
 
   const [finishedOnly, setFinishedOnly] = useBoolUrlParam('finished');
   const [projects, projectsError] = useClientStream(() => client.streamQuery('projects.list', {
@@ -34,6 +39,11 @@ export default function ProjectsPage() {
         title={uiText("Projekte")}
         actions={
           <div className="list-page-actions">
+            {session.canDo("manage:projects") && (
+              <Button onClick={() => showCreateProjectModal(modals)}>
+                {uiText("Projekt erstellen")}
+              </Button>
+            )}
             {!finishedOnly ? (
               <OperationalTag
                 renderIcon={Icons.Resume}

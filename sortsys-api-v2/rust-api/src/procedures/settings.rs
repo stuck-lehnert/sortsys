@@ -58,6 +58,77 @@ impl Default for InvoiceNumbering {
     }
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum OfferNumberingScheme {
+    Sequential,
+    DateSeparated,
+    DateCompact,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfferNumbering {
+    pub scheme: OfferNumberingScheme,
+    // Decimal strings retain exact counters across JSON and JavaScript.
+    pub start_number: String,
+}
+
+impl Default for OfferNumbering {
+    fn default() -> Self {
+        Self {
+            scheme: OfferNumberingScheme::Sequential,
+            start_number: "1".to_owned(),
+        }
+    }
+}
+
+fn normalize_offer_start_number(raw: &str) -> RpcResult<String> {
+    let raw = raw.trim();
+    if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(bad_request("startNumber must be a positive integer"));
+    }
+    if raw.len() > 19 {
+        return Err(bad_request("startNumber is out of range"));
+    }
+    let start = raw
+        .parse::<i64>()
+        .map_err(|_| bad_request("startNumber is out of range"))?;
+    if start < 1 {
+        return Err(bad_request("startNumber must be a positive integer"));
+    }
+    Ok(start.to_string())
+}
+
+async fn get_offer_numbering(
+    state: &AppState,
+    context: &RequestContext,
+) -> RpcResult<OfferNumbering> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+    ensure_admin(&auth)?;
+    let config: Option<Json<OfferNumbering>> = sqlx::query_scalar(
+        "SELECT name FROM global_settings WHERE key = 'organization.offerNumbering'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(internal)?
+    .flatten();
+    Ok(config.map(|value| value.0).unwrap_or_default())
+}
+
+async fn set_offer_numbering(
+    state: &AppState,
+    context: &RequestContext,
+    mut input: OfferNumbering,
+) -> RpcResult<Success> {
+    let (auth, pool) = authenticated_pool(state, context).await?;
+    ensure_admin(&auth)?;
+    input.start_number = normalize_offer_start_number(&input.start_number)?;
+    sqlx::query("INSERT INTO global_settings (key, name) VALUES ('organization.offerNumbering', $1) ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name")
+        .bind(Json(input)).execute(&pool).await.map_err(internal)?;
+    Ok(Success { success: true })
+}
+
 async fn get_invoice_numbering(
     state: &AppState,
     context: &RequestContext,
@@ -106,6 +177,8 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
         .mutation_stub::<Organization, Success>("settings.organization.set")
         .query_stub::<(), InvoiceNumbering>("settings.invoiceNumbering.get")
         .mutation_stub::<InvoiceNumbering, Success>("settings.invoiceNumbering.set")
+        .query_stub::<(), OfferNumbering>("settings.offerNumbering.get")
+        .mutation_stub::<OfferNumbering, Success>("settings.offerNumbering.set")
 }
 
 async fn get_organization(state: &AppState, context: &RequestContext) -> RpcResult<Organization> {
@@ -165,6 +238,17 @@ pub fn register(
     mut builder: ProcedureRegistryBuilder,
     state: Arc<AppState>,
 ) -> ProcedureRegistryBuilder {
+    let get_offer_numbering_state = Arc::clone(&state);
+    builder = builder.query("settings.offerNumbering.get", move |context, _input: ()| {
+        let state = Arc::clone(&get_offer_numbering_state);
+        async move { get_offer_numbering(&state, &context).await }
+    });
+    let set_offer_numbering_state = Arc::clone(&state);
+    builder = builder.mutation("settings.offerNumbering.set", move |context, input| {
+        let state = Arc::clone(&set_offer_numbering_state);
+        async move { set_offer_numbering(&state, &context, input).await }
+    });
+
     let get_numbering_state = Arc::clone(&state);
     builder = builder.query(
         "settings.invoiceNumbering.get",
@@ -949,11 +1033,74 @@ mod tests {
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
-    use super::{CostDeleteInput, CostSetInput};
+    use super::{CostDeleteInput, CostSetInput, OfferNumbering, normalize_offer_start_number};
     use crate::{
         api::Success,
         rpc::{ProcedureRegistry, http_router},
     };
+
+    #[test]
+    fn offer_numbering_validates_exact_positive_i64_strings() {
+        for (input, expected) in [
+            ("1", "1"),
+            (" 00042 ", "42"),
+            ("9007199254740993", "9007199254740993"),
+            ("9223372036854775807", "9223372036854775807"),
+        ] {
+            assert_eq!(normalize_offer_start_number(input).unwrap(), expected);
+        }
+        for invalid in [
+            "",
+            " ",
+            "0",
+            "-1",
+            "+1",
+            "1.5",
+            "1e3",
+            "１",
+            "1 2",
+            "9223372036854775808",
+            "10000000000000000000",
+        ] {
+            assert!(normalize_offer_start_number(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn offer_numbering_contract_has_only_project_independent_schemes() {
+        assert_eq!(
+            serde_json::to_value(OfferNumbering::default()).unwrap(),
+            json!({"scheme":"sequential", "startNumber":"1"})
+        );
+        for scheme in ["sequential", "dateSeparated", "dateCompact"] {
+            assert!(
+                serde_json::from_value::<OfferNumbering>(
+                    json!({"scheme":scheme,"startNumber":"9007199254740993"})
+                )
+                .is_ok()
+            );
+        }
+        for scheme in ["projectLocal", "projectGlobal", "unknown"] {
+            assert!(
+                serde_json::from_value::<OfferNumbering>(
+                    json!({"scheme":scheme,"startNumber":"1"})
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            serde_json::from_value::<OfferNumbering>(
+                json!({"scheme":"sequential","startNumber":1})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<OfferNumbering>(
+                json!({"scheme":"sequential","startNumber":"1","projectId":"1"})
+            )
+            .is_err()
+        );
+    }
 
     fn cost_payload(effective_at: Value) -> Value {
         json!({

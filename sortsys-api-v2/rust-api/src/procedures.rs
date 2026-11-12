@@ -26,6 +26,7 @@ pub(crate) use project_costs::overview_for_authenticated_user as project_cost_ov
 pub(crate) mod commercial;
 pub(crate) mod commercial_billing;
 pub(crate) mod commercial_documents;
+mod commercial_deletion;
 mod document_templates;
 mod gaeb_positions;
 mod projects;
@@ -113,6 +114,7 @@ pub fn register(
     let builder = products::register(builder, Arc::clone(&state));
     let builder = projects::register(builder, Arc::clone(&state));
     let builder = commercial::register(builder, Arc::clone(&state));
+    let builder = commercial_deletion::register(builder, Arc::clone(&state));
     let builder = commercial_billing::register(builder, Arc::clone(&state));
     let builder = commercial_documents::register(builder, Arc::clone(&state));
     let builder = gaeb_positions::register(builder, Arc::clone(&state));
@@ -139,6 +141,7 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = settings::register_contract(builder);
     let builder = document_templates::register_contract(builder);
     let builder = commercial::register_contract(builder);
+    let builder = commercial_deletion::register_contract(builder);
     let builder = commercial_billing::register_contract(builder);
     let builder = commercial_documents::register_contract(builder);
     let builder = gaeb_positions::register_contract(builder);

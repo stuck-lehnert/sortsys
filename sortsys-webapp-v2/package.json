@@ -27,6 +27,7 @@
     "test:i18n": "bun test app/lib/i18n.test.mjs app/lib/loginError.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:invoice-numbering": "bun test app/lib/invoiceNumbering.test.mjs",
+    "test:offer-numbering": "node --experimental-strip-types --test app/lib/offerNumbering.test.mjs",
     "test:regie-list": "bun test app/lib/regieReportList.test.mjs",
     "preview:pdf": "bun scripts/preview-pdfs.mjs",
     "test:error-boundary": "node --test scripts/errorBoundary.test.mjs",
