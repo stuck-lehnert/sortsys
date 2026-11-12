@@ -12,6 +12,16 @@ test("failure annotations retain the final diagnostic and limit large logs", () 
   assert.ok(!annotation.includes("old"));
   assert.ok(annotation.endsWith("%0AFINAL FAILURE\n"));
   assert.ok(Buffer.byteLength(annotation) < 49000);
+  for (const command of annotation.trimEnd().split("\n")) {
+    const message = command.split("::").at(-1);
+    assert.ok(message.length <= 3100);
+  }
+});
+
+test("container cleanup output cannot hide the failed check", () => {
+  const annotation = failureAnnotation("error: real cause\nscripts/test-api failed. Container logs:\n" + "container output\n".repeat(1000));
+  assert.match(annotation, /error: real cause/);
+  assert.ok(!annotation.includes("container output"));
 });
 
 test("failure annotations explain empty logs", () => {
