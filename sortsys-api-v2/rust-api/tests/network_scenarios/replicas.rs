@@ -3,6 +3,9 @@ use super::*;
 use std::sync::Arc;
 use yrs::{Doc, GetString, Text, Transact, Update, updates::decoder::Decode};
 
+#[path = "../../src/migrations_generated.rs"]
+mod embedded_migrations;
+
 async fn replica(state: Arc<AppState>) -> (RpcClient, tokio::task::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -362,11 +365,15 @@ async fn concurrent_tenant_migrations_are_atomic_and_applied_once() {
     for task in tasks {
         task.await.unwrap().unwrap();
     }
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM __migrations")
-        .fetch_one(&pool)
+    let applied: Vec<String> = sqlx::query_scalar("SELECT name FROM __migrations ORDER BY name")
+        .fetch_all(&pool)
         .await
         .unwrap();
-    assert_eq!(count, 54);
+    let expected: Vec<&str> = embedded_migrations::MIGRATIONS
+        .iter()
+        .map(|(name, _)| *name)
+        .collect();
+    assert_eq!(applied, expected);
     // Notifications emitted in a failed transaction must not reach subscribers.
     let mut listener = sqlx::postgres::PgListener::connect(postgres_url.as_str())
         .await
