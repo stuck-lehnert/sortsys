@@ -55,7 +55,7 @@
     "isbot": "^5.2.2",
     "jszip": "^3.10.2",
     "monaco-editor": "^0.57.0",
-    "parse5": "8.1.0",
+    "parse5": "8.1.1",
     "pdfjs-dist": "6.5.438",
     "postal-mime": "4.2.0",
     "react": "^19.3.1",
@@ -74,7 +74,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "playwright": "1.64.1",
-    "tailwindcss": "4.3.4",
+    "tailwindcss": "4.3.5",
     "typescript": "^5.9.2",
     "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0"
