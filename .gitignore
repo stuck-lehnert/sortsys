@@ -3,4 +3,5 @@ testdata/
 .DS_Store
 .env
 .dev-data/
+node_modules
 sortsys-react-components/node_modules/

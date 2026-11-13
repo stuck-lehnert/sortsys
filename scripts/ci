@@ -21,7 +21,7 @@ fi
 
 echo "Checking coordinated runtime versions"
 node ./scripts/check-runtime-versions.mjs
-node --test ./scripts/check-runtime-versions.test.mjs ./scripts/report-ci-failure.test.mjs
+node --test ./scripts/check-runtime-versions.test.mjs ./scripts/report-ci-failure.test.mjs ./scripts/local-build-artifacts.test.mjs
 
 echo "Checking branch promotion and API test orchestration"
 node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs \
