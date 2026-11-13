@@ -4716,7 +4716,7 @@ test(
         width: node.getBoundingClientRect().width,
       })),
     );
-    assert.equal(tabs.length, 6);
+    assert.equal(tabs.length, 7);
     assert.ok(
       tabs.every((tab) => tab.width < 250 && tab.x + tab.width <= 1600),
       JSON.stringify(tabs),
