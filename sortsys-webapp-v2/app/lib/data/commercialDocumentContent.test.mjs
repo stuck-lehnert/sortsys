@@ -49,6 +49,43 @@ test("opening one document requests only its own facets and origin proofs", asyn
   }
 });
 
+test("verified immutable parts are reused within one live store without exposing mutable cached contents", async () => {
+  const scope = commercialCollection("a", "scope");
+  const fixture = await protectedTenant([first, scope]);
+  const store = await commercialDocumentStore(
+    fixture.client,
+    first.scope,
+    new AbortController().signal,
+  );
+  try {
+    const part = await store.stage("3", "scope", {
+      description: "Originaler Text",
+    });
+    const [original, parallel] = await Promise.all([
+      store.read(part),
+      store.read(part),
+    ]);
+    const reads = fixture.calls.filter(
+      (call) => call.path === "zerotrust.objects.get",
+    ).length;
+    expect(reads).toBe(2);
+    expect(parallel).not.toBe(original);
+    original.description = "Geänderter Rückgabewert";
+    expect(parallel).toEqual({ description: "Originaler Text" });
+    expect(await store.read(part)).toEqual({ description: "Originaler Text" });
+    expect(
+      fixture.calls.filter((call) => call.path === "zerotrust.objects.get"),
+    ).toHaveLength(reads);
+    await expect(
+      store.read({ ...part, hash: part.hash + "changed" }),
+    ).rejects.toThrow();
+    store.close();
+    await expect(store.read(part)).rejects.toThrow();
+  } finally {
+    store.close();
+  }
+});
+
 test("document scopes share one verified inventory and keep independent lifetimes", async () => {
   const fixture = await protectedTenant([first, second]);
   const query = fixture.client.query;

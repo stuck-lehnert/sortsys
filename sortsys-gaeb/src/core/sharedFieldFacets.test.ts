@@ -71,6 +71,41 @@ function initialize(state: SharedFields) {
   );
 }
 
+test("fields registered before acknowledgement send one initialization candidate each and retry after disconnecting", () => {
+  const state = new SharedFields();
+  state.enableFacets();
+  const messages: Record<string, unknown>[] = [];
+  const registered = new Map<string, EditorField>();
+  const send = (message: Record<string, unknown>) => messages.push(message);
+  try {
+    state.connectFacet("scope", send, true, "same-document");
+    for (let index = 0; index < 100; index++) {
+      const key = `item-${index}:text:0`;
+      registered.set(key, {
+        key,
+        facet: "scope",
+        value: `Position ${index}`,
+        multiline: true,
+        editable: true,
+        label: "Beschreibung",
+        commit() {},
+      });
+      state.register(registered);
+    }
+    const candidates = () =>
+      messages.filter((message) => message.type === "initialize");
+    assert.equal(candidates().length, 100);
+    assert.equal(new Set(candidates().map((message) => message.key)).size, 100);
+    state.register(registered);
+    assert.equal(candidates().length, 100);
+    state.disconnectFacet("scope");
+    state.connectFacet("scope", send, true, "same-document");
+    assert.equal(candidates().length, 200);
+  } finally {
+    state.destroy();
+  }
+});
+
 test("independent facet connections keep their own write rights and survive another channel disconnecting", () => {
   const state = peer();
   const textMessages: Record<string, unknown>[] = [];

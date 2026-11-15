@@ -54,6 +54,8 @@ import { mapConcurrent } from "./runtime/concurrentReads";
 // layers and the one outer JSON/base64 envelope. No plaintext content hashes.
 const CHUNK = 256 * 1024;
 const MAX_BYTES = 128 * 1024 * 1024;
+const MAX_CACHED_PART_BYTES = 1024 * 1024;
+const MAX_CACHED_PARTS = 16;
 type OpenCollection = ReturnType<
   Awaited<ReturnType<typeof protectedCollections>>
 >;
@@ -171,6 +173,10 @@ function openDocumentStore(
   });
   live();
   const stores = new Map<CommercialFacet, OpenCollection>();
+  // Signed part references point to immutable ciphertext. Reuse only small
+  // verified JSON values within this store, returning a separate copy to each
+  // caller. Closing the store discards both cached and pending reads.
+  const cachedParts = new Map<string, Promise<unknown>>();
   const initialized = new Set<CommercialFacet>();
   function collection(facet: CommercialFacet) {
     live();
@@ -365,6 +371,34 @@ function openDocumentStore(
   }
   async function read(part: DocumentPart): Promise<unknown> {
     live();
+    const binding = structuredClone(part);
+    const key = JSON.stringify(binding);
+    let pending = cachedParts.get(key);
+    if (!pending) {
+      if (cachedParts.size >= MAX_CACHED_PARTS) {
+        cachedParts.delete(cachedParts.keys().next().value!);
+      }
+      const loaded: Promise<unknown> = readPart(binding).then(
+        (result) => {
+          if (!result.cacheable && cachedParts.get(key) === loaded) {
+            cachedParts.delete(key);
+          }
+          return result.value;
+        },
+        (error) => {
+          if (cachedParts.get(key) === loaded) cachedParts.delete(key);
+          throw error;
+        },
+      );
+      cachedParts.set(key, loaded);
+      pending = loaded;
+    }
+    const value = await pending;
+    live();
+    return structuredClone(value);
+  }
+  async function readPart(part: DocumentPart) {
+    live();
     const binding = documentBlob(part.object);
     if (
       !binding ||
@@ -469,7 +503,10 @@ function openDocumentStore(
         }
       }
       live();
-      return JSON.parse(utf8(output));
+      return {
+        value: JSON.parse(utf8(output)) as unknown,
+        cacheable: m.size <= MAX_CACHED_PART_BYTES,
+      };
     } finally {
       output.fill(0);
     }
@@ -756,6 +793,7 @@ function openDocumentStore(
     close() {
       closed = true;
       initialized.clear();
+      cachedParts.clear();
       for (const store of stores.values()) {
         store.close();
       }

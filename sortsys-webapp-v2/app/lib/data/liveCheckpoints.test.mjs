@@ -4,6 +4,7 @@ import {
   certifyIdentity,
   createIdentity,
   digest,
+  DOCUMENT_FACETS,
   publicIdentity,
   signLiveCheckpoint,
   signPolicy,
@@ -11,11 +12,110 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
-import { prepareLivePublication } from "./liveCheckpoints";
+import {
+  prepareDocumentLivePublications,
+  prepareLivePublication,
+} from "./liveCheckpoints";
+import { createDocumentHeadFixture } from "./testing/documentHeads.mjs";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import { commercialCollection, COMMERCIAL_FACETS } from "./commercialAreas";
 
 afterEach(() => lockCryptoSession());
+
+test("one document batches checkpoint preparation under shared public proofs and rejects any stale channel", async () => {
+  const fixture = await createDocumentHeadFixture();
+  const head = await fixture.head();
+  const query = fixture.tenant.client.query;
+  const calls = [];
+  let active = 0;
+  let maximum = 0;
+  let stale;
+  fixture.tenant.client.query = async (path, input, options) => {
+    calls.push(path);
+    if (path !== "zerotrust.documents.messages.state")
+      return query(path, input, options);
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active--;
+    return [
+      { current: input.facet === stale ? "11" : "10", checkpoint: null },
+      null,
+    ];
+  };
+  const positions = Object.fromEntries(
+    DOCUMENT_FACETS.map((facet) => [facet, "10"]),
+  );
+  const prepare = () =>
+    prepareDocumentLivePublications(
+      fixture.tenant.client,
+      head,
+      head,
+      new AbortController().signal,
+      positions,
+    );
+  const publications = await prepare();
+  expect(publications).toHaveLength(DOCUMENT_FACETS.length);
+  expect(
+    calls.filter((path) => path === "zerotrust.trust.history"),
+  ).toHaveLength(1);
+  expect(calls.filter((path) => path === "zerotrust.policy.get")).toHaveLength(
+    1,
+  );
+  expect(maximum).toBeGreaterThan(1);
+  expect(maximum).toBeLessThanOrEqual(4);
+  for (const publication of publications) {
+    expect(
+      await verifyLiveCheckpoint(
+        publication.checkpoint,
+        {
+          tenant: "test",
+          scope: head.scope,
+          document: head.id,
+          facet: publication.checkpoint.facet,
+        },
+        fixture.tenant.identity.signingKey.publicKey,
+      ),
+    ).toEqual(publication.checkpoint);
+  }
+  stale = "billing";
+  await expect(prepare()).rejects.toBeInstanceOf(ProtectedWriteConflict);
+  expect(active).toBe(0);
+  stale = undefined;
+  let release;
+  let entered;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const before = fixture.tenant.client.query;
+  fixture.tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.trust.history") {
+      entered();
+      await held;
+    }
+    return before(path, input, options);
+  };
+  const pending = prepare();
+  const unexpected = pending.then(
+    () => {
+      throw new Error("Preparation completed before its held history check");
+    },
+    (error) => {
+      throw error;
+    },
+  );
+  try {
+    await Promise.race([started, unexpected]);
+    await lockCryptoSession();
+  } finally {
+    release();
+  }
+  await expect(pending).rejects.toThrow();
+  expect(active).toBe(0);
+});
 
 async function fixture(facet = "opaque") {
   const tenant = await protectedTenant(

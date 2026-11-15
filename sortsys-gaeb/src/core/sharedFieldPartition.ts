@@ -107,6 +107,7 @@ export class SharedFieldPartition {
   private frozen = false;
   private selection: LiveSelection = { field: null };
   private commonBaselines = new Map<string, string>();
+  private initializing = new Set<string>();
   private send: ((message: Record<string, unknown>) => void) | undefined;
   constructor(private readonly allowsField?: (key: string) => boolean) {
     this.observeUpdates();
@@ -178,6 +179,7 @@ export class SharedFieldPartition {
   }
   private newSession() {
     this.online = false;
+    this.initializing.clear();
     // Carry text drafts, not identifiers from a room which no longer exists.
     // An unseen external replacement remains subject to the native merge.
     for (const [key, field] of this.fields) {
@@ -208,6 +210,7 @@ export class SharedFieldPartition {
   }
   disconnect() {
     this.online = false;
+    this.initializing.clear();
   }
   /** A final signed file is authoritative; historical room text cannot overlay
    * it. The host retains a conflicting local draft before freezing this state. */
@@ -298,15 +301,27 @@ export class SharedFieldPartition {
     }
   }
   private initialize() {
-    if (!this.online || !this.writable) {
+    const send = this.send;
+    if (!this.online || !this.writable || !send) {
       return;
     }
     const fields = [...this.fields]
-      .filter(([key, field]) => field.editable && !this.has(key))
+      .filter(
+        ([key, field]) =>
+          field.editable && !this.has(key) && !this.initializing.has(key),
+      )
       .map(([key, field]) => ({ key, value: field.baseline }));
     // Keep individual websocket messages bounded even for large specifications.
     for (const field of fields) {
-      this.send?.({ type: "initialize", ...field });
+      // Registering more canvas fields must not repeatedly enqueue candidates
+      // whose first messages are still waiting for acknowledgement.
+      this.initializing.add(field.key);
+      try {
+        send({ type: "initialize", ...field });
+      } catch (error) {
+        this.initializing.delete(field.key);
+        throw error;
+      }
     }
   }
   private nativeValue(
@@ -827,6 +842,7 @@ export class SharedFieldPartition {
     this.send = undefined;
     this.native = undefined;
     this.fields.clear();
+    this.initializing.clear();
     this.commonBaselines.clear();
     this.selection = { field: null };
     this.listeners.clear();

@@ -23,6 +23,7 @@ import {
   createObjectAuthorVerifier,
   type AuthorRequirement,
 } from "../crypto/objectAuthors";
+import { mapConcurrent } from "./runtime/concurrentReads";
 
 export type LivePublication = {
   checkpoint: LiveCheckpoint;
@@ -50,28 +51,62 @@ export async function prepareDocumentLivePublications(
   if (!previous) {
     return [];
   }
-  const publications: LivePublication[] = [];
-  for (const facet of DOCUMENT_FACETS) {
-    const target = await documentPartTarget(head, facet);
-    const previousTarget = await documentPartTarget(previous, facet);
-    const sequence = positions[facet];
-    const unchanged = target === previousTarget;
-    if (unchanged && sequence === undefined && !head.locked && !head.readOnly) {
-      continue;
-    }
-    const publication = await prepareLivePublication(
-      client,
-      { scope: head.scope, document: head.id, facet },
-      target,
-      previousTarget,
-      signal,
-      { sequence },
-    );
-    if (publication) {
-      publications.push(publication);
-    }
-  }
-  return publications;
+  let pendingContext: ReturnType<typeof publicationContext> | undefined;
+  const context = () => {
+    pendingContext ??= publicationContext(client, signal);
+    return pendingContext;
+  };
+  const publications = await mapConcurrent(
+    DOCUMENT_FACETS,
+    4,
+    async (facet) => {
+      const target = await documentPartTarget(head, facet);
+      const previousTarget = await documentPartTarget(previous, facet);
+      const sequence = positions[facet];
+      const unchanged = target === previousTarget;
+      if (
+        unchanged &&
+        sequence === undefined &&
+        !head.locked &&
+        !head.readOnly
+      ) {
+        return null;
+      }
+      return prepareWithContext(
+        client,
+        { scope: head.scope, document: head.id, facet },
+        target,
+        previousTarget,
+        signal,
+        { sequence },
+        context,
+      );
+    },
+  );
+  return publications.filter((publication) => publication !== null);
+}
+
+async function publicationContext(client: Client, signal: AbortSignal) {
+  const account = unlockedAccount();
+  if (!account) throw new InvalidProtectedData();
+  const live = () => {
+    signal.throwIfAborted();
+    if (unlockedAccount() !== account) throw new InvalidProtectedData();
+  };
+  live();
+  const history = await trustedHistory(client);
+  live();
+  const { permissions: policy } = await readVerifiedPolicy(client, {
+    account,
+    history,
+    live,
+  });
+  const author = createObjectAuthorVerifier(
+    client,
+    { account, history, live },
+    policy,
+  );
+  return { account, history, policy, author, live };
 }
 
 /** Bind the acknowledged CRDT position to the exact encrypted native target.
@@ -84,6 +119,26 @@ export async function prepareLivePublication(
   previousTarget: string | undefined,
   signal: AbortSignal,
   options: { sequence?: string; preserve?: boolean } = {},
+): Promise<LivePublication | null> {
+  return prepareWithContext(
+    client,
+    input,
+    target,
+    previousTarget,
+    signal,
+    options,
+    () => publicationContext(client, signal),
+  );
+}
+
+async function prepareWithContext(
+  client: Client,
+  input: DocumentChannel,
+  target: string,
+  previousTarget: string | undefined,
+  signal: AbortSignal,
+  options: { sequence?: string; preserve?: boolean },
+  context: () => ReturnType<typeof publicationContext>,
 ): Promise<LivePublication | null> {
   if (!previousTarget) {
     return null;
@@ -99,7 +154,6 @@ export async function prepareLivePublication(
       throw new InvalidProtectedData();
     }
   };
-  const history = await trustedHistory(client);
   const state = await required(
     client.query("zerotrust.documents.messages.state", room, {
       strategy: "network-only",
@@ -116,16 +170,9 @@ export async function prepareLivePublication(
   if (state.current === "0" && !state.checkpoint) {
     return null;
   }
-  const { permissions: policy } = await readVerifiedPolicy(client, {
-    account,
-    history,
-    live,
-  });
-  const author = createObjectAuthorVerifier(
-    client,
-    { account, history, live },
-    policy,
-  );
+  const { history, policy, author, live: contextLive } = await context();
+  live();
+  contextLive();
   const facets = documentChannelKeys(room);
   const requirements: AuthorRequirement[] = facets.map((facet) => ({
     facet,
