@@ -590,6 +590,29 @@ export function createProtectedCommercial(
     additional: PreparedWrites[] = [],
     publications: DocumentPublication[] = [],
   ) {
+    const onlyDocuments =
+      publications.length > 0 &&
+      additional.length === 0 &&
+      changes.every(
+        (change) =>
+          change.facets.length === 0 && (change.extra?.length ?? 0) === 0,
+      );
+    if (onlyDocuments) {
+      // read()/afterStaging() already verified these snapshots. Publishing a
+      // document without changing business rows only needs their existing CAS
+      // guards; another read/write preparation would reopen the same collections.
+      const guards = [
+        ...external,
+        ...changes.flatMap(({ snapshot }) =>
+          [...snapshot.parts.values()].map((part) => part.head),
+        ),
+      ];
+      await commitProtectedWrites(client, [], signal, guards, {
+        documents: publications,
+      });
+      live();
+      return;
+    }
     const requests: DataRequest[] = changes.flatMap(
       ({ snapshot, extra = [] }) => [
         ...[...snapshot.parts.values()].map((part) => part.request),

@@ -253,6 +253,22 @@ test("unchanged native targets can reuse a checked receipt but cannot conceal la
     ),
   ).rejects.toBeInstanceOf(ProtectedWriteConflict);
   current.state.current = "8";
+  const sessionsBefore = current.tenant.calls.filter(
+    (call) => call.path === "auth.sessionInfo",
+  ).length;
+  expect(
+    await prepareLivePublication(
+      current.tenant.client,
+      current.room,
+      current.target,
+      current.target,
+      signal,
+      { sequence: "8" },
+    ),
+  ).toBeNull();
+  expect(
+    current.tenant.calls.filter((call) => call.path === "auth.sessionInfo"),
+  ).toHaveLength(sessionsBefore);
   expect(
     await prepareLivePublication(
       current.tenant.client,

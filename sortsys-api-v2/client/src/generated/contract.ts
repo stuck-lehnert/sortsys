@@ -154,6 +154,8 @@ export type ProposalExecutionResult = { path: string, output: JsonValue, };
 
 export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "deepseek" | "custom";
 
+export type Read = { room: Room, after: string, };
+
 export type RecoveryCatalogAccess = { tenant: string, generation: string, challengeId: string, challenge: string, targetGeneration: string, object: string, hash: string, action: CatalogAction, };
 
 export type RecoveryInventoryItem = { "kind": "domain", "value": DomainInfo } | { "kind": "key", "value": DomainDefinition };
@@ -315,6 +317,7 @@ export type QueryInputs = {
   "zerotrust.deliveryNotes.references": { objects: Array<string>, };
   "zerotrust.documents.get": { id: string, scope?: string, version?: string, };
   "zerotrust.documents.history": { scope: string, id: string, before: string, };
+  "zerotrust.documents.messages.pages": { selections: Array<Read>, };
   "zerotrust.documents.messages.read": { room: Room, after: string, };
   "zerotrust.documents.messages.state": { scope: string, document: string, facet: string, };
   "zerotrust.domains.get": { domain: string, generation: string, };
@@ -455,6 +458,7 @@ export type QueryOutputs = {
   "zerotrust.deliveryNotes.references": Array<{ object: string, allocation: DeliveryAllocation, }>;
   "zerotrust.documents.get": { format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, } | null;
   "zerotrust.documents.history": Array<{ format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, }>;
+  "zerotrust.documents.messages.pages": Array<{ messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, }>;
   "zerotrust.documents.messages.read": { messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, };
   "zerotrust.documents.messages.state": { current: string, checkpoint: LiveCheckpoint | null, };
   "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };

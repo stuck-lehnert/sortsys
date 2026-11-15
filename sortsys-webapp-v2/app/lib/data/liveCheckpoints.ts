@@ -222,6 +222,15 @@ async function prepareWithContext(
     // caller incorporated messages arriving after its snapshot.
     return null;
   }
+  if (
+    target === previousTarget &&
+    state.checkpoint &&
+    covered === state.current
+  ) {
+    // A verified receipt already covers this exact native part and cursor.
+    // A second editor need not sign and confirm the same state again.
+    return null;
+  }
   if (options.sequence !== undefined) {
     covered = options.sequence;
   } else if (!options.preserve && covered !== state.current) {

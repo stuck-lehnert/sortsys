@@ -30,6 +30,19 @@ export async function createGaebLiveFixture() {
   const queryOriginal = tenant.client.query;
   const mutateOriginal = tenant.client.mutate;
   tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.documents.messages.pages") {
+      const pages = [];
+      for (const selection of input.selections) {
+        const [page, error] = await tenant.client.query(
+          "zerotrust.documents.messages.read",
+          selection,
+          options,
+        );
+        if (error) return [null, error];
+        pages.push(page);
+      }
+      return [pages, null];
+    }
     await state.beforeQuery(path, input);
     if (path !== "zerotrust.documents.messages.read") {
       return queryOriginal(path, input, options);

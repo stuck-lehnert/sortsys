@@ -114,7 +114,7 @@ test("optional proof absence does not block stamping; a partial outage can yield
     await timestampEvidenceAttempt(f.client, signal, {
       stamp: async (root) => pending(root),
     }),
-  ).toBe(true);
+  ).toBe("submitted");
   expect(f.finishes.length).toBe(1);
   expect(f.finishes[0].proof).toBeString();
   const checked = await checkTimestampEvidence(
@@ -139,7 +139,7 @@ test("outage sends null as retry-only and retains every earlier proof and immuta
         throw new Error("Calendar down");
       },
     }),
-  ).toBe(false);
+  ).toBe("deferred");
   expect(f.finishes[0].proof).toBeNull();
   expect(f.evidence.proofs).toEqual(proofs);
   expect(f.evidence.target).toEqual(original.target);
@@ -167,6 +167,45 @@ test("forged target, ciphertext and unrelated proof never get submitted to a cal
     });
     expect(sent).toBe(false);
     expect(f.finishes[0].proof).toBeNull();
+  }
+});
+test("an unchanged pending calendar proof preserves evidence and defers further work", async () => {
+  const f = await fixture();
+  const proof = base64(pending(sized(f.evidence.target.digest, 32)));
+  f.evidence.proofs.push(proof);
+  expect(
+    await timestampEvidenceAttempt(f.client, new AbortController().signal, {
+      upgrade: async (bytes) => bytes,
+    }),
+  ).toBe("deferred");
+  expect(f.evidence.proofs).toEqual([proof]);
+  expect(f.finishes[0].proof).toBeString();
+});
+
+test("an empty timestamp queue can wake for a newly published document", async () => {
+  const f = await fixture();
+  const controller = new AbortController();
+  let attempts = 0;
+  let started;
+  const ready = new Promise((resolve) => {
+    started = resolve;
+  });
+  const stop = startTimestampEvidence(f.client, controller.signal, {
+    intervalMs: 60_000,
+    attempt: async () => {
+      attempts++;
+      started();
+      return "empty";
+    },
+  });
+  try {
+    await ready;
+    announceDataChanges(f.client, new Set(["commercial:2:scope"]));
+    await Bun.sleep(1100);
+    expect(attempts).toBe(2);
+  } finally {
+    controller.abort();
+    stop();
   }
 });
 test("even an injected calendar adapter cannot replace the signed packet root", async () => {
@@ -223,7 +262,7 @@ test("denied work and missing work produce no calendar traffic", async () => {
     await timestampEvidenceAttempt(f.client, new AbortController().signal, {
       stamp,
     }),
-  ).toBe(false);
+  ).toBe("empty");
   f.client.mutate = async () => [null, new Error("forbidden")];
   await expect(
     timestampEvidenceAttempt(f.client, new AbortController().signal, { stamp }),
@@ -244,7 +283,7 @@ test("the background runner serializes attempts and stops when its account close
       peak = Math.max(peak, running);
       await Bun.sleep(5);
       running--;
-      return false;
+      return "empty";
     },
   });
   await Bun.sleep(15);
@@ -287,6 +326,12 @@ test("a calendar outage pauses queued records after one safely released attempt"
     expect(f.finishes).toHaveLength(1);
     expect(f.finishes[0].proof).toBeNull();
     expect(f.evidence.proofs).toEqual([]);
+    for (let index = 0; index < 10; index++) {
+      announceDataChanges(f.client, new Set(["commercial:2:scope"]));
+    }
+    await Bun.sleep(1100);
+    expect(calendarCalls).toBe(1);
+    expect(f.finishes).toHaveLength(1);
   } finally {
     controller.abort();
     stop();

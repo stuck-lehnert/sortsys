@@ -1,0 +1,130 @@
+import {
+  RpcClientError,
+  type Client,
+  type QueryInput,
+  type QueryResult,
+} from "@sortsys/v2-client";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
+import { required } from "./protectedObjects";
+import { mapConcurrent } from "./runtime/concurrentReads";
+
+type Selection =
+  QueryInput<"zerotrust.documents.messages.pages">["selections"][number];
+type Page = QueryResult<"zerotrust.documents.messages.pages">[number];
+type Request = {
+  selection: Selection;
+  live(): void;
+  resolve(page: Page): void;
+  reject(error: unknown): void;
+};
+type Queue = { pending: Request[]; running: boolean; scheduled: boolean };
+const queues = new WeakMap<Client, WeakMap<object, Queue>>();
+
+async function pages(
+  client: Client,
+  requests: readonly Request[],
+): Promise<Page[]> {
+  for (const request of requests) request.live();
+  let result: Page[];
+  try {
+    result = await required(
+      client.query(
+        "zerotrust.documents.messages.pages",
+        {
+          selections: requests.map((request) => request.selection),
+        },
+        { strategy: "network-only" },
+      ),
+    );
+  } catch (error) {
+    if (
+      !(error instanceof RpcClientError) ||
+      error.data?.httpCode !== 413 ||
+      requests.length === 1
+    ) {
+      throw error;
+    }
+    // Split only a response-budget rejection. Authorization and snapshot
+    // failures must invalidate the original read rather than return partial data.
+    const middle = Math.ceil(requests.length / 2);
+    const left = await pages(client, requests.slice(0, middle));
+    const right = await pages(client, requests.slice(middle));
+    return [...left, ...right];
+  }
+  if (!Array.isArray(result) || result.length !== requests.length) {
+    throw new InvalidProtectedData();
+  }
+  for (const request of requests) request.live();
+  return result;
+}
+
+async function drain(client: Client, queue: Queue) {
+  queue.running = true;
+  try {
+    while (queue.pending.length > 0) {
+      const current = queue.pending.splice(0, 16).filter((request) => {
+        try {
+          request.live();
+          return true;
+        } catch (error) {
+          request.reject(error);
+          return false;
+        }
+      });
+      const batches: Request[][] = [];
+      for (let offset = 0; offset < current.length; offset += 4) {
+        batches.push(current.slice(offset, offset + 4));
+      }
+      await mapConcurrent(batches, 4, async (batch) => {
+        try {
+          const result = await pages(client, batch);
+          const copies = result.map((page) => structuredClone(page));
+          for (const [index, request] of batch.entries()) {
+            request.resolve(copies[index]!);
+          }
+        } catch (error) {
+          for (const request of batch) request.reject(error);
+        }
+      });
+    }
+  } finally {
+    queue.running = false;
+  }
+}
+
+/** Channels share one authorization snapshot without sharing their cursors or
+ * decrypted state. Each caller checks its original account before and after IO. */
+export function readDocumentMessagePage(
+  client: Client,
+  selection: Selection,
+  live: () => void,
+  identity: object = client,
+): Promise<Page> {
+  let contexts = queues.get(client);
+  if (!contexts) {
+    contexts = new WeakMap();
+    queues.set(client, contexts);
+  }
+  let queue = contexts.get(identity);
+  if (!queue) {
+    queue = { pending: [], running: false, scheduled: false };
+    contexts.set(identity, queue);
+  }
+  const current = queue;
+  return new Promise((resolve, reject) => {
+    current.pending.push({
+      selection: structuredClone(selection),
+      live,
+      resolve,
+      reject,
+    });
+    if (current.running || current.scheduled) return;
+    current.scheduled = true;
+    // WebSocket hints arrive in separate event tasks. A small window groups
+    // their channel reads as well as synchronously requested flushes.
+    setTimeout(() => {
+      current.scheduled = false;
+      void drain(client, current);
+    }, 4);
+  });
+}

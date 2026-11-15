@@ -19,6 +19,7 @@ import { unlockedAccount } from "../crypto/session";
 import { commercialCollection } from "./commercialAreas";
 import { fileCollection } from "./projectFileData";
 import { protectedCollections, required } from "./protectedObjects";
+import { readDocumentMessagePage } from "./documentMessagePages";
 
 type Message =
   QueryResult<"zerotrust.documents.messages.read">["messages"][number];
@@ -270,12 +271,11 @@ export async function openDocumentMessages(
     open,
     async read(after = "0") {
       live();
-      const page = await required(
-        client.query(
-          "zerotrust.documents.messages.read",
-          { room, after },
-          { strategy: "network-only" },
-        ),
+      const page = await readDocumentMessagePage(
+        client,
+        { room, after },
+        live,
+        account,
       );
       live();
       return page;

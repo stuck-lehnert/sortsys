@@ -119,6 +119,40 @@ export async function testDocumentMessages(
       document: document.id,
       facet: "scope" as const,
     };
+    const selections = [
+      { room, after: "0" },
+      { room: { ...room, facet: "billing" }, after: "0" },
+    ];
+    const emptyPages = await required(
+      peer.query("zerotrust.documents.messages.pages", { selections }),
+    );
+    assert.equal(emptyPages.length, 2);
+    for (const page of emptyPages) {
+      assert.deepEqual(page, {
+        messages: [],
+        presence: [],
+        after: "0",
+        more: false,
+      });
+    }
+    for (const invalid of [
+      [],
+      Array.from({ length: 5 }, () => selections[0]),
+      [selections[0], { room, after: "-1" }],
+      [selections[0], { room: { ...room, document: "1" }, after: "0" }],
+    ]) {
+      const [data, error] = await peer.query(
+        "zerotrust.documents.messages.pages",
+        {
+          selections: invalid,
+        },
+      );
+      assert.equal(data, null);
+      assert.ok(
+        error,
+        "An invalid or inaccessible channel must reject the entire batch",
+      );
+    }
     const initialDocument = await required(
       business.query("commercial.documents.get", {
         caseId: offer.id,

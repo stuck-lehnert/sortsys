@@ -127,8 +127,10 @@ export async function checkTimestampEvidence(
   return { target, packet, proof: data };
 }
 
-/** Only explicit production mounting enables calendar traffic. Return whether
- * evidence was submitted successfully so an outage pauses the background queue.
+export type TimestampAttempt = "submitted" | "empty" | "deferred";
+
+/** Only explicit production mounting enables calendar traffic. Distinguish an
+ * empty queue from unavailable evidence so only an outage backs off new hints.
  * Failed or cancelled attempts never change source data or existing proofs. */
 export async function timestampEvidenceAttempt(
   client: Client,
@@ -137,7 +139,7 @@ export async function timestampEvidenceAttempt(
     stamp?: typeof stampOtsDigest;
     upgrade?: typeof upgradeOtsProof;
   } = {},
-): Promise<boolean> {
+): Promise<TimestampAttempt> {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
   const live = () => {
@@ -153,8 +155,9 @@ export async function timestampEvidenceAttempt(
   );
   live();
   if (error) throw error;
-  if (!work) return false;
+  if (!work) return "empty";
   let proof: string | null = null;
+  let previousProof: string | null = null;
   try {
     const checked = await checkTimestampEvidence(
       client,
@@ -165,6 +168,7 @@ export async function timestampEvidenceAttempt(
     live();
     const digest = sized(checked.target.digest, 32);
     let bytes = checked.proof;
+    if (bytes) previousProof = base64(bytes);
     if (bytes)
       bytes = await (options.upgrade ?? upgradeOtsProof)(bytes, digest, {
         signal,
@@ -185,7 +189,8 @@ export async function timestampEvidenceAttempt(
   );
   live();
   if (failure) throw failure;
-  return proof !== null;
+  if (proof === null || proof === previousProof) return "deferred";
+  return "submitted";
 }
 
 /** One bounded sequential runner per mounted account. Existing document events
@@ -202,6 +207,8 @@ export function startTimestampEvidence(
   let stopped = false;
   let running = false;
   let requested = false;
+  let retryNotBefore = 0;
+  const retryInterval = options.intervalMs ?? 15 * 60_000;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const active = () =>
     !stopped &&
@@ -211,8 +218,12 @@ export function startTimestampEvidence(
     client.loggedIn();
   function schedule(delay: number) {
     if (!active()) return;
+    if (running) {
+      requested = true;
+      return;
+    }
     clearTimeout(timer);
-    timer = setTimeout(wake, delay);
+    timer = setTimeout(wake, Math.max(delay, retryNotBefore - Date.now()));
   }
   function wake() {
     if (!active()) return;
@@ -225,18 +236,25 @@ export function startTimestampEvidence(
     requested = false;
     void (async () => {
       // Avoid monopolizing the network when an account sees many old records.
-      for (let index = 0; index < 8 && active(); index++)
-        if (
-          !(await (options.attempt ?? timestampEvidenceAttempt)(client, signal))
-        )
+      for (let index = 0; index < 8 && active(); index++) {
+        const result = await (options.attempt ?? timestampEvidenceAttempt)(
+          client,
+          signal,
+        );
+        if (result === "deferred") {
+          retryNotBefore = Date.now() + retryInterval;
           return;
+        }
+        if (result === "empty") return;
+      }
       requested = true;
     })()
-      .catch(() => undefined)
+      .catch(() => {
+        retryNotBefore = Date.now() + retryInterval;
+      })
       .finally(() => {
         running = false;
-        if (active())
-          schedule(requested ? 1000 : (options.intervalMs ?? 15 * 60_000));
+        if (active()) schedule(requested ? 1000 : retryInterval);
       });
   }
   const stopChanges = listenDataChanges(client, (domains) => {

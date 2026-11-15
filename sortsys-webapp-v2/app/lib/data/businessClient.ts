@@ -203,6 +203,7 @@ const CRYPTO_QUERIES = new Set([
   "zerotrust.documents.get",
   "zerotrust.documents.history",
   "zerotrust.documents.messages.read",
+  "zerotrust.documents.messages.pages",
   "zerotrust.documents.messages.state",
   "zerotrust.editors.config",
   "zerotrust.setup.backup.status",

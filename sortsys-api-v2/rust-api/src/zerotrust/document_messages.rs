@@ -102,6 +102,24 @@ struct Read {
     room: Room,
     after: String,
 }
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct ReadBatch {
+    selections: Vec<Read>,
+}
+impl ReadBatch {
+    fn domains(&self) -> RpcResult<Vec<String>> {
+        if self.selections.is_empty() || self.selections.len() > 4 {
+            return Err(invalid());
+        }
+        let mut domains = std::collections::BTreeSet::new();
+        for selection in &self.selections {
+            super::live_checkpoints::position(&selection.after)?;
+            domains.extend(selection.room.access_domains()?);
+        }
+        Ok(domains.into_iter().collect())
+    }
+}
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct Message {
@@ -149,4 +167,44 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
     builder
         .mutation_stub::<Post, Success>("zerotrust.documents.messages.post")
         .query_stub::<Read, Page>("zerotrust.documents.messages.read")
+        .query_stub::<ReadBatch, Vec<Page>>("zerotrust.documents.messages.pages")
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+
+    fn batch(count: usize) -> ReadBatch {
+        ReadBatch {
+            selections: (0..count)
+                .map(|index| Read {
+                    room: Room {
+                        scope: "commercial:2".into(),
+                        document: "3".into(),
+                        facet: "scope".into(),
+                    },
+                    after: index.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn message_batches_bound_work_and_validate_every_room_and_cursor() {
+        assert!(batch(0).domains().is_err());
+        assert!(batch(5).domains().is_err());
+        assert_eq!(
+            batch(4).domains().unwrap(),
+            vec!["commercial:2:master-data", "commercial:2:scope"]
+        );
+        let mut invalid_cursor = batch(4);
+        invalid_cursor.selections[3].after = "-1".into();
+        assert!(invalid_cursor.domains().is_err());
+        let mut invalid_room = batch(4);
+        invalid_room.selections[3].room.facet = "master-data".into();
+        assert!(invalid_room.domains().is_err());
+        let mut invalid_document = batch(4);
+        invalid_document.selections[3].room.document = "0".into();
+        assert!(invalid_document.domains().is_err());
+    }
 }

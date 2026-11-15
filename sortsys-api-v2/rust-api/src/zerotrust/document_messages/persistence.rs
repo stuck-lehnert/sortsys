@@ -339,9 +339,42 @@ async fn post(service: &AuthService, request: &RequestContext, input: Post) -> R
 }
 
 async fn read(service: &AuthService, request: &RequestContext, input: Read) -> RpcResult<Page> {
-    let after = super::super::live_checkpoints::position(&input.after)?;
     let mut context = context(service, request, &input.room).await?;
-    authorize(&mut context, &input.room, false).await?;
+    let page = read_page(&mut context, input).await?;
+    context.transaction.validate().await?;
+    Ok(page)
+}
+
+async fn read_pages(
+    service: &AuthService,
+    request: &RequestContext,
+    input: ReadBatch,
+) -> RpcResult<Vec<Page>> {
+    let domains = input.domains()?;
+    let mut context = metadata_context_for_domains(service, request, Some(&domains)).await?;
+    let mut pages = Vec::with_capacity(input.selections.len());
+    let mut bytes = 0usize;
+    for selection in input.selections {
+        let page = read_page(&mut context, selection).await?;
+        bytes += serde_json::to_vec(&page).map_err(internal)?.len();
+        if bytes > 8 * 1024 * 1024 {
+            return Err(crate::error::RpcError::new(
+                ErrorCode::BadRequest,
+                "Encrypted channel batch exceeds the response limit",
+            )
+            .with_http_code(413));
+        }
+        pages.push(page);
+    }
+    // All channel reads share authorization and snapshot guards. A conflict or
+    // denied channel discards the entire batch before any page is returned.
+    context.transaction.validate().await?;
+    Ok(pages)
+}
+
+async fn read_page(context: &mut MetadataContext, input: Read) -> RpcResult<Page> {
+    let after = super::super::live_checkpoints::position(&input.after)?;
+    authorize(context, &input.room, false).await?;
     let page = context
         .transaction
         .scan_with_limit::<StoredMessage>(
@@ -391,7 +424,6 @@ async fn read(service: &AuthService, request: &RequestContext, input: Read) -> R
         }
         presence_after = page.after;
     }
-    context.transaction.validate().await?;
     Ok(Page {
         messages,
         presence,
@@ -405,14 +437,19 @@ pub(in crate::zerotrust) fn register(
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
     let writer = Arc::clone(&service);
+    let reader = Arc::clone(&service);
     builder
         .mutation("zerotrust.documents.messages.post", move |ctx, input| {
             let service = Arc::clone(&writer);
             async move { post(&service, &ctx, input).await }
         })
         .query("zerotrust.documents.messages.read", move |ctx, input| {
-            let service = Arc::clone(&service);
+            let service = Arc::clone(&reader);
             async move { read(&service, &ctx, input).await }
+        })
+        .query("zerotrust.documents.messages.pages", move |ctx, input| {
+            let service = Arc::clone(&service);
+            async move { read_pages(&service, &ctx, input).await }
         })
 }
 
