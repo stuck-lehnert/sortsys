@@ -4,7 +4,12 @@ export function decimal(value: string, scale: number, digits = 18): bigint {
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized))
     throw new Error("invalid-decimal");
   const negative = normalized.startsWith("-");
-  const [whole, fraction = ""] = normalized.replace(/^[+-]/, "").split(".");
+  const [whole, fractionalDigits = ""] = normalized
+    .replace(/^[+-]/, "")
+    .split(".");
+  // XSD fractionDigits constrains the value, so 24.000 still fits scale 2.
+  // Only redundant zeros may disappear; significant digits are never rounded.
+  const fraction = fractionalDigits.replace(/0+$/, "");
   if (
     fraction.length > scale ||
     whole!.replace(/^0+/, "").length > digits - scale
