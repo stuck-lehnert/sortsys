@@ -1,0 +1,15 @@
+[package]
+name = "independent-research-application"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[[bin]]
+name = "portable-consumer"
+path = "main.rs"
+
+[dependencies]
+sortsys-zerotrust = { path = "../framework" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

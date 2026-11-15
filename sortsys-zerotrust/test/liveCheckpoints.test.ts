@@ -1,0 +1,133 @@
+import { expect, test } from "bun:test";
+import native from "../../sortsys-api-v2/rust-api/tests/fixtures/zerotrust-live-channels.json";
+import {
+  bytes,
+  createIdentity,
+  digest,
+  liveCheckpoint,
+  liveCheckpointFrame,
+  base64,
+  importSigningKey,
+  liveSequence,
+  signLiveCheckpoint,
+  verifyLiveCheckpoint,
+} from "../src/sortsys";
+
+async function signedCheckpoint() {
+  const signer = await createIdentity();
+  const room = {
+    tenant: "test",
+    scope: "commercial:2",
+    document: "3",
+    facet: "scope" as const,
+  };
+  const checkpoint = await signLiveCheckpoint(
+    {
+      ...room,
+      sequence: "9007199254740993",
+      covered: "9007199254740992",
+      target: await digest(bytes("exact signed encrypted native publication")),
+      generation: "1",
+      policyVersion: "2",
+      author: "user:1",
+    },
+    signer.signingKey.privateKey,
+  );
+  return { signer, room, checkpoint };
+}
+
+test("a live checkpoint binds the exact native target, room, position and writer", async () => {
+  const { signer, room, checkpoint } = await signedCheckpoint();
+  expect(
+    await verifyLiveCheckpoint(checkpoint, room, signer.signingKey.publicKey),
+  ).toEqual(checkpoint);
+
+  const changes = [
+    { target: await digest(bytes("different native publication")) },
+    { sequence: "9007199254740994" },
+    { covered: "9007199254740991" },
+    { author: "user:2" },
+    { generation: "2" },
+    { policyVersion: "3" },
+    { scope: "project:2" },
+    { document: "4" },
+    { tenant: "other" },
+    { facet: "billing" },
+  ];
+  for (const change of changes) {
+    await expect(
+      verifyLiveCheckpoint(
+        { ...checkpoint, ...change },
+        room,
+        signer.signingKey.publicKey,
+      ),
+    ).rejects.toThrow();
+  }
+  const stranger = await createIdentity();
+  await expect(
+    verifyLiveCheckpoint(checkpoint, room, stranger.signingKey.publicKey),
+  ).rejects.toThrow();
+});
+
+test("checkpoint parsing rejects ambiguous positions, unsupported fields and impossible coverage", async () => {
+  const { checkpoint } = await signedCheckpoint();
+  for (const position of [
+    null,
+    0,
+    "",
+    "-1",
+    "00",
+    "01",
+    "1.0",
+    "9223372036854775808",
+  ]) {
+    expect(() => liveSequence(position)).toThrow();
+  }
+  for (const position of [
+    "0",
+    "1",
+    "9007199254740993",
+    "9223372036854775807",
+  ]) {
+    expect(() => liveSequence(position)).not.toThrow();
+  }
+  for (const change of [
+    { covered: "9007199254740994" },
+    { target: "not-a-digest" },
+    { scope: "project:02" },
+    { document: "0" },
+    { author: "group:1" },
+    { optional: null },
+  ]) {
+    expect(() => liveCheckpoint({ ...checkpoint, ...change })).toThrow();
+  }
+});
+
+test("an empty room can confirm its native target without inventing a text edit", async () => {
+  const { signer, room, checkpoint } = await signedCheckpoint();
+  const empty = await signLiveCheckpoint(
+    { ...checkpoint, sequence: "0", covered: "0" },
+    signer.signingKey.privateKey,
+  );
+  expect(
+    await verifyLiveCheckpoint(empty, room, signer.signingKey.publicKey),
+  ).toEqual(empty);
+});
+
+test("the native checkpoint vector preserves its signature, channel and exact large counters", async () => {
+  const checkpoint = liveCheckpoint(native.checkpoint);
+  expect(base64(liveCheckpointFrame(checkpoint))).toBe(native.frame);
+  const signer = await importSigningKey(native.publicKey);
+  expect(
+    await verifyLiveCheckpoint(
+      checkpoint,
+      {
+        tenant: checkpoint.tenant,
+        scope: checkpoint.scope,
+        document: checkpoint.document,
+        facet: checkpoint.facet,
+      },
+      signer,
+    ),
+  ).toEqual(checkpoint);
+});

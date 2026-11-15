@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { base64, bytes, createDomain, createIdentity, LegacyRows, legacyPart, migrationReceiptFrame, migrationStartFrame, publicIdentity, sign, signingPair, verify, verifyDomain } from "../src";
-import type { LegacyPart, MigrationReceipt } from "../src";
+import { base64, bytes, createDomain, createIdentity, LegacyRows, legacyPart, migrationReceiptFrame, migrationStartFrame, publicIdentity, sign, signingPair, verify, verifyDomain } from "../src/sortsys";
+import type { LegacyPart, MigrationReceipt } from "../src/sortsys";
 
 const common={tenant:"test",migration:"mig:test",schema:"a".repeat(64),table:"global_settings"};
 function part(input:Partial<LegacyPart>={}):LegacyPart {

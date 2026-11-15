@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { allows, areaKey, base64, bytes, certifyCreationCapability, certifyIdentity, CREATION_FACETS, createDelegatedDomain, createIdentity, createOrigin,
-  creationRules, decryptObject, domainBoxSigner, encryptObject, importSigningKey, openBox, prepareRecovery, publicIdentity, verifyCreationOrigin, verifyDomain } from "../src";
+import { allows, areaKey, base64, bytes, certifyCreationCapability, certifyIdentity, CREATION_FACETS, PROJECT_MODULE_FACETS, creationFacets, creationResource, createDelegatedDomain, createIdentity, createOrigin,
+  creationRules, decryptObject, domainBoxSigner, encryptObject, importSigningKey, openBox, prepareRecovery, publicIdentity, verifyCreationOrigin, verifyDomain } from "../src/sortsys";
 import { recoveryFixture } from "./support/recoveryFixture";
 
 import { creationFixture } from "./support/creationFixture";
@@ -51,12 +51,12 @@ test("a project's attachment area has an independent facet-bound creation proof"
 });
 
 test("new project delivery quantities have their own creation proof and cannot use the procurement key", async () => {
-  const f = await creationFixture(), scope = "project:abc", facet = "contract-quantities" as const;
-  const origin = await createOrigin({ ...f.origin, id: `${scope}:${facet}`, facet }, f.creator.signingKey.privateKey);
+  const f = await creationFixture(), scope = "project:abc:delivery-notes", facet = "master-data" as const;
+  const origin = await createOrigin({ ...f.origin, id: `${scope}:${facet}`, scope, facet, parent: f.origin }, f.creator.signingKey.privateKey);
   const quantities = await createDelegatedDomain({ origin, creatorKey: f.creator.signingKey.privateKey, policyVersion: "1",
     recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } });
   await verifyDomain(quantities.definition, { tenant: "test", id: `${scope}:${facet}`, scope, facet, generation: "1" }, () => f.authorityKey.publicKey);
-  const procurement = await createDelegatedDomain({ origin: await createOrigin({ ...f.origin, id: `${scope}:procurement`, facet: "procurement" }, f.creator.signingKey.privateKey),
+  const procurement = await createDelegatedDomain({ origin: await createOrigin({ ...f.origin, id: `${scope}:procurement`, scope, facet: "procurement", parent: f.origin }, f.creator.signingKey.privateKey),
     creatorKey: f.creator.signingKey.privateKey, policyVersion: "1", recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } });
   const context = { tenant: "test", scope, facet, object: "delivery-note:abc:1", generation: "1", revision: "1", policyVersion: "1", author: "user:2" };
   const value = await encryptObject(context, bytes("Liefermenge 2,375"), quantities.key, f.creator.signingKey.privateKey);
@@ -87,6 +87,50 @@ test("commercial creation is independent from project creation and each price or
   ]) await expect(verifyCreationOrigin(changed, authority)).rejects.toThrow();
 });
 
+test("project modules bind their original parent and use independent content keys", async () => {
+  const f = await creationFixture(), authority = () => f.authorityKey.publicKey, opened: { scope: string; facet: import("../src/sortsys").Facet; key: CryptoKey; definition: import("../src/sortsys").DomainDefinition }[] = [];
+  for (const [module, facets] of Object.entries(PROJECT_MODULE_FACETS)) {
+    const scope = `project:abc:${module}`;
+    expect(creationResource(scope)).toEqual({ namespace: "project", id: "abc", module: module as import("../src/sortsys").ProjectModule });
+    expect(creationFacets(scope)).toEqual(facets);
+    for (const facet of facets) {
+      const origin = await createOrigin({ ...f.origin, id: `${scope}:${facet}`, scope, facet, parent: f.origin }, f.creator.signingKey.privateKey);
+      const created = await createDelegatedDomain({ origin, creatorKey: f.creator.signingKey.privateKey, policyVersion: "1", recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } });
+      await verifyDomain(created.definition, { tenant: "test", id: `${scope}:${facet}`, scope, facet, generation: "1" }, authority);
+      expect(creationRules(origin).every(rule => rule.scope === scope && rule.facet === facet)).toBe(true);
+      expect(allows({ tenant: "test", version: "1", rules: creationRules(origin) }, { tenant: "test", version: "1", subjects: ["user:2"], scope: "project:abc", facet: "master-data", action: "read" })).toBe(false);
+      opened.push({ ...created, scope, facet });
+    }
+  }
+  for (const item of opened) {
+    const context = { tenant: "test", scope: item.scope, facet: item.facet, object: "report:1", revision: "1", generation: "1", policyVersion: "1", author: "user:2" };
+    const encrypted = await encryptObject(context, bytes("isolated report"), item.key, f.creator.signingKey.privateKey);
+    for (const other of opened.filter(other => other !== item)) await expect(decryptObject(encrypted, context, other.key, f.creator.signingKey.publicKey)).rejects.toThrow();
+    await expect(decryptObject(encrypted, context, f.key, f.creator.signingKey.publicKey)).rejects.toThrow();
+  }
+});
+
+test("module proofs reject absent, substituted, nested, foreign-creator and foreign-generation parents", async () => {
+  const f = await creationFixture(), authority = () => f.authorityKey.publicKey;
+  const scope = "project:abc:daily-reports", input = { ...f.origin, id: `${scope}:master-data`, scope, parent: f.origin };
+  const signed = await createOrigin(input, f.creator.signingKey.privateKey);
+  await verifyCreationOrigin(signed, authority);
+  for (const change of [
+    { ...signed, parent: undefined }, { ...signed, parent: { ...f.origin, parent: f.origin } },
+    { ...signed, parent: { ...f.origin, scope: "project:def", id: "project:def:master-data" } },
+    { ...signed, parent: { ...f.origin, facet: "attachment", id: "project:abc:attachment" } },
+    { ...signed, parent: { ...f.origin, capability: { ...f.origin.capability, generation: "2" } } },
+    { ...signed, parent: { ...f.origin, capability: { ...f.origin.capability, creator: f.setup.owner } } },
+    { ...signed, parent: { ...f.origin, signature: base64(new Uint8Array(64)) } },
+    { ...signed, scope: "project:abc:regie-reports", id: "project:abc:regie-reports:master-data" },
+    { ...f.origin, parent: f.origin },
+  ]) await expect(verifyCreationOrigin(change, authority)).rejects.toThrow();
+  for (const scope of ["project:abc:unknown", "project:abc:daily-reports:extra", "commercial:abc:daily-reports", "project:0abc:daily-reports"])
+    expect(creationResource(scope)).toBeNull();
+  for (const facet of ["personnel", "calculation", "contract-quantities"] as const)
+    await expect(createOrigin({ ...f.origin, facet, id: `project:abc:${facet}` }, f.creator.signingKey.privateKey)).rejects.toThrow();
+});
+
 test("tool and tracking creation cannot grant project access, other records or unrelated facets", async () => {
   for (const namespace of ["tool", "tool-tracking"] as const) {
     const f = await creationFixture(namespace), authority = () => f.authorityKey.publicKey;
@@ -111,9 +155,16 @@ for (const namespace of ["project", "commercial", "tool", "tool-tracking"] as co
   const capability = await certifyCreationCapability({ tenant: "test", generation: "1", id: "create_test", namespace, creator: member, readers: [f.setup.owner] }, f.authorityKey.privateKey);
   const origin = await createOrigin({ tenant: "test", id: `${namespace}:abc:master-data`, scope: `${namespace}:abc`, facet: "master-data", capability }, creator.signingKey.privateKey);
   const { definition, key } = await createDelegatedDomain({ origin, creatorKey: creator.signingKey.privateKey, policyVersion: "1", recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } });
-  const source = { ...f.source, domains: [...f.source.domains, { id: definition.id, scope: definition.scope, facet: definition.facet, generation: "1" }],
-    keys: [...f.source.keys, definition.recoveryEnvelope], createdDomains: [definition] };
+  const definitions = [definition];
+  if (namespace === "project") for (const [module, facets] of Object.entries(PROJECT_MODULE_FACETS)) for (const facet of facets) {
+    const scope = `project:abc:${module}`;
+    const part = await createOrigin({ ...origin, id: `${scope}:${facet}`, scope, facet, parent: origin }, creator.signingKey.privateKey);
+    definitions.push((await createDelegatedDomain({ origin: part, creatorKey: creator.signingKey.privateKey, policyVersion: "1", recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } })).definition);
+  }
+  const source = { ...f.source, domains: [...f.source.domains, ...definitions.map(part => ({ id: part.id, scope: part.scope, facet: part.facet, generation: "1" }))],
+    keys: [...f.source.keys, ...definitions.map(part => part.recoveryEnvelope)], createdDomains: definitions };
   const { plan, identity } = await prepareRecovery({ oldPhrase: f.phrase, newPhrase: f.newPhrase, password: f.password, source, register: f.register });
+  for (const part of definitions) expect(plan.oldKeyEnvelopes.some(box => box.object === part.id)).toBe(true);
   const archived = plan.oldKeyEnvelopes.find(box => box.object === definition.id)!;
   const raw = await openBox(archived, { tenant: "test", purpose: "area-key", object: definition.id, generation: "1", recipient: plan.transition.nextAdministrator, author: "authority:2" }, identity.encryptionKey.privateKey, await importSigningKey(plan.nextSetup.authority.authoritySigningKey));
   const context = { tenant: "test", scope: definition.scope, facet: "master-data" as const, object: definition.scope, revision: "1", generation: "1", policyVersion: "1", author: "user:2" };

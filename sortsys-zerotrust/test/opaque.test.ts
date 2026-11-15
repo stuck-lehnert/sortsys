@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { server } from "@serenity-kit/opaque";
-import { createAccountVault, createIdentity, finishOpaqueLogin, finishOpaqueRegistration, opaqueIdentifiers, opaqueReady, openAccountVault, publicIdentity, rewrapAccountVault, startOpaqueLogin, startOpaqueRegistration } from "../src";
+import { createAccountVault, createIdentity, finishOpaqueLogin, finishOpaqueRegistration, opaqueIdentifiers, opaqueReady, openAccountVault, publicIdentity, rewrapAccountVault, startOpaqueLogin, startOpaqueRegistration } from "../src/sortsys";
 
 test("OPAQUE authenticates without sending a password and unlocks the same client vault", async () => {
   await opaqueReady;

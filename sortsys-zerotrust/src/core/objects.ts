@@ -1,0 +1,246 @@
+import {
+  base64,
+  frame,
+  identifier,
+  InvalidProtectedData,
+  randomSecret,
+  record,
+  revision,
+  sized,
+  unbase64,
+} from "../encoding";
+import { sign, verify } from "../identity";
+import { facetVocabulary } from "./vocabulary";
+
+export const TOMBSTONE_FORMAT = "sortsys-object-tombstone-v1";
+
+export type ObjectContext<F extends string = string> = {
+  tenant: string;
+  scope: string;
+  facet: F;
+  object: string;
+  revision: string;
+  generation: string;
+  policyVersion: string;
+  author: string;
+};
+
+export type EncryptedObject<F extends string = string> = ObjectContext<F> & {
+  format: "sortsys-object-v1" | typeof TOMBSTONE_FORMAT;
+  nonce: string;
+  ciphertext: string;
+  wrappedKey: string;
+  signature: string;
+};
+
+const contextKeys = [
+  "tenant",
+  "scope",
+  "facet",
+  "object",
+  "revision",
+  "generation",
+  "policyVersion",
+  "author",
+] as const;
+const envelopeKeys = [
+  ...contextKeys,
+  "format",
+  "nonce",
+  "ciphertext",
+  "wrappedKey",
+  "signature",
+];
+const MAX_CONTENT_BYTES = 16 * 1024 * 1024;
+
+/** A codec owns its immutable facet vocabulary; no process-wide configuration. */
+export function createObjectCodec<const F extends string>(
+  facets: readonly F[],
+) {
+  const allowedFacets = facetVocabulary(facets);
+  function objectContext(value: unknown): ObjectContext<F> {
+    const obj = record(value, contextKeys);
+    for (const key of ["tenant", "scope", "object", "author"] as const) {
+      identifier(obj[key]);
+    }
+    for (const key of ["revision", "generation", "policyVersion"] as const) {
+      revision(obj[key]);
+    }
+    if (!allowedFacets.has(obj.facet as string)) {
+      throw new InvalidProtectedData();
+    }
+    return { ...obj } as ObjectContext<F>;
+  }
+
+  function contextFrame(context: ObjectContext<F>): Uint8Array<ArrayBuffer> {
+    objectContext(context);
+    return frame(
+      "sortsys/object-context/v1",
+      contextKeys.map((key) => context[key]),
+    );
+  }
+
+  function objectFrame(value: EncryptedObject<F>): Uint8Array<ArrayBuffer> {
+    return frame("sortsys/object/v1", [
+      ...contextKeys.map((key) => value[key]),
+      value.format,
+      value.nonce,
+      value.ciphertext,
+      value.wrappedKey,
+    ]);
+  }
+
+  function encryptedObject(value: unknown): EncryptedObject<F> {
+    const obj = record(value, envelopeKeys);
+    objectContext(
+      Object.fromEntries(contextKeys.map((key) => [key, obj[key]])),
+    );
+    if (obj.format !== "sortsys-object-v1" && obj.format !== TOMBSTONE_FORMAT) {
+      throw new InvalidProtectedData();
+    }
+    for (
+      const key of ["nonce", "ciphertext", "wrappedKey", "signature"] as const
+    ) {
+      if (typeof obj[key] !== "string") throw new InvalidProtectedData();
+    }
+    sized(obj.nonce as string, 12);
+    sized(obj.wrappedKey as string, 40);
+    sized(obj.signature as string, 64);
+    const ciphertext = unbase64(
+      obj.ciphertext as string,
+      MAX_CONTENT_BYTES + 16,
+    );
+    if (
+      ciphertext.length < 16 ||
+      obj.format === TOMBSTONE_FORMAT &&
+        (ciphertext.length !== 16 || obj.revision === "1")
+    ) throw new InvalidProtectedData();
+    return { ...obj } as EncryptedObject<F>;
+  }
+
+  async function encryptObject(
+    context: ObjectContext<F>,
+    plaintext: Uint8Array<ArrayBuffer>,
+    key: CryptoKey,
+    author: CryptoKey,
+  ): Promise<EncryptedObject<F>> {
+    return sealObject(context, plaintext, key, author, "sortsys-object-v1");
+  }
+
+  /** A deletion carries an authenticated empty body. Its format is already bound
+   * by the object signature, so it cannot be relabelled as an ordinary update. */
+  async function encryptTombstone(
+    context: ObjectContext<F>,
+    key: CryptoKey,
+    author: CryptoKey,
+  ): Promise<EncryptedObject<F>> {
+    objectContext(context);
+    if (context.revision === "1") throw new InvalidProtectedData();
+    return sealObject(
+      context,
+      new Uint8Array(0),
+      key,
+      author,
+      TOMBSTONE_FORMAT,
+    );
+  }
+  async function sealObject(
+    context: ObjectContext<F>,
+    plaintext: Uint8Array<ArrayBuffer>,
+    key: CryptoKey,
+    author: CryptoKey,
+    format: EncryptedObject<F>["format"],
+  ): Promise<EncryptedObject<F>> {
+    if (plaintext.length > MAX_CONTENT_BYTES) throw new InvalidProtectedData();
+    objectContext(context);
+    const raw = randomSecret();
+    try {
+      const dataKey = await crypto.subtle.importKey(
+        "raw",
+        raw,
+        "AES-GCM",
+        true,
+        ["encrypt", "decrypt"],
+      );
+      const nonce = crypto.getRandomValues(new Uint8Array(12));
+      const [ciphertext, wrappedKey] = await Promise.all([
+        crypto.subtle.encrypt(
+          {
+            name: "AES-GCM",
+            iv: nonce,
+            additionalData: contextFrame(context),
+            tagLength: 128,
+          },
+          dataKey,
+          plaintext,
+        ),
+        crypto.subtle.wrapKey("raw", dataKey, key, "AES-KW"),
+      ]);
+      const obj: EncryptedObject<F> = {
+        ...context,
+        format,
+        nonce: base64(nonce),
+        ciphertext: base64(ciphertext),
+        wrappedKey: base64(wrappedKey),
+        signature: "",
+      };
+      obj.signature = await sign(author, objectFrame(obj));
+      return obj;
+    } finally {
+      raw.fill(0);
+    }
+  }
+
+  async function decryptObject(
+    input: unknown,
+    expected: ObjectContext<F>,
+    key: CryptoKey,
+    author: CryptoKey,
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    try {
+      const obj = encryptedObject(input);
+      objectContext(expected);
+      if (contextKeys.some((name) => obj[name] !== expected[name])) {
+        throw new InvalidProtectedData();
+      }
+      await verify(author, obj.signature, objectFrame(obj));
+      const dataKey = await crypto.subtle.unwrapKey(
+        "raw",
+        sized(obj.wrappedKey, 40),
+        key,
+        "AES-KW",
+        "AES-GCM",
+        false,
+        ["decrypt"],
+      );
+      return new Uint8Array(
+        await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: sized(obj.nonce, 12),
+            additionalData: contextFrame(expected),
+            tagLength: 128,
+          },
+          dataKey,
+          unbase64(obj.ciphertext, MAX_CONTENT_BYTES + 16),
+        ),
+      );
+    } catch {
+      throw new InvalidProtectedData();
+    }
+  }
+
+  return Object.freeze({
+    objectContext,
+    contextFrame,
+    objectFrame,
+    encryptedObject,
+    encryptObject,
+    encryptTombstone,
+    decryptObject,
+  });
+}
+
+export type ObjectCodec<F extends string> = ReturnType<
+  typeof createObjectCodec<F>
+>;

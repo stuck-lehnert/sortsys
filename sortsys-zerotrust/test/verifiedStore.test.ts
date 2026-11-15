@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { areaKey, bytes, createIdentity, encryptObject, InvalidProtectedData, record, VerifiedStore } from "../src";
+import { areaKey, bytes, createIdentity, encryptObject, InvalidProtectedData, record, VerifiedStore } from "../src/sortsys";
 
 test("a correctly signed invalid business value is quarantined, preserving the last valid version", async () => {
   const identity = await createIdentity();

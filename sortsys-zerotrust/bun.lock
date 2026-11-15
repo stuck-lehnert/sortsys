@@ -5,6 +5,7 @@
     "": {
       "name": "@sortsys/zerotrust",
       "dependencies": {
+        "@noble/hashes": "2.4.0",
         "@scure/bip39": "^2.0.0",
         "@serenity-kit/opaque": "^1.0.0",
         "hpke-js": "^1.6.0",

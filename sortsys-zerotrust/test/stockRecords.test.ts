@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { areaKey, bytes, createIdentity, digest, encryptObject, InvalidProtectedData, objectFrame, randomSecret, signedPacketFrame,
-  signStockDeletion, signStockReferences, stockBinding, stockKind, stockReferences, verifyStockDeletion, verifyStockReferences } from "../src";
+  signStockDeletion, signStockReferences, stockBinding, stockKind, stockReferences, verifyStockDeletion, verifyStockReferences } from "../src/sortsys";
 
 async function fixture() {
   const identity = await createIdentity(), key = await areaKey(randomSecret());

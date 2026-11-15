@@ -1,5 +1,27 @@
 import { expect, test } from "bun:test";
-import { areaKey, base64, createDomain, createIdentity, createRecoveryPhrase, createTenantSetup, domainFrame, importSigningKey, openBox, publicIdentity, sign, signingPair, tenantSetupFrame, verify, verifyAuthority, verifyDomain, verifyTenantSetup } from "../src";
+import { areaKey, base64, createDomain, createIdentity, createRecoveryPhrase, createTenantSetup, domainFrame, importSigningKey, openBox, publicIdentity, sign, signPolicy, signingPair, tenantSetupFrame, verify, verifyAuthority, verifyDomain, verifyPolicy, verifyTenantSetup } from "../src/sortsys";
+
+test("policy suspension cannot be stripped, changed or introduced without a new authority signature", async () => {
+  const authority = await signingPair(), expected = { tenant: "test", authority: authority.publicKey };
+  const signed = await signPolicy({ tenant: "test", version: "8", rules: [], suspended: ["user:1"] }, authority.privateKey);
+  expect((await verifyPolicy(signed, expected)).permissions.suspended).toEqual(["user:1"]);
+  const { suspended, ...stripped } = signed;
+  await expect(verifyPolicy(stripped, expected)).rejects.toThrow();
+  await expect(verifyPolicy({ ...signed, suspended: [] }, expected)).rejects.toThrow();
+  const original = await signPolicy({ tenant: "test", version: "9", rules: [] }, authority.privateKey);
+  await expect(verifyPolicy({ ...original, suspended: [] }, expected)).rejects.toThrow();
+});
+
+test("policy verification binds an exact schema and tenant to the pinned authority", async () => {
+  const authority = await signingPair(), other = await signingPair();
+  const permissions = { tenant: "test", version: "7", rules: [{ subject: "user:1", scope: "project:123", facet: "measurement" as const, effect: "allow" as const, actions: ["read" as const] }] };
+  const signed = await signPolicy(permissions, authority.privateKey), expected = { tenant: "test", authority: authority.publicKey };
+  expect(await verifyPolicy(signed, expected)).toEqual({ permissions, signature: signed.signature });
+  const foreign = await signPolicy({ ...permissions, tenant: "other" }, authority.privateKey);
+  for (const candidate of [foreign, { ...signed, version: "8" }, { ...signed, rules: [] }, { ...signed, extra: true }, { ...signed, signature: null },
+    await signPolicy(permissions, other.privateKey)]) await expect(verifyPolicy(candidate, expected)).rejects.toThrow();
+  await expect(verifyPolicy(signed, { ...expected, authority: other.publicKey })).rejects.toThrow();
+});
 
 test("a database-supplied recovery or authority replacement cannot bypass a pinned recovery root", async () => {
   const owner = await createIdentity();

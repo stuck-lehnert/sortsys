@@ -1,5 +1,5 @@
-import { certifyCreationCapability, certifyIdentity, createDelegatedDomain, createIdentity, createOrigin, createRecoveryPhrase, createTenantSetup, publicIdentity } from "../../src";
-import type { CreationNamespace } from "../../src";
+import { certifyCreationCapability, certifyIdentity, createDelegatedDomain, createIdentity, createOrigin, createRecoveryPhrase, createTenantSetup, publicIdentity } from "../../src/sortsys";
+import type { CreationNamespace } from "../../src/sortsys";
 
 export async function creationFixture(namespace: CreationNamespace = "project") {
   const owner = await createIdentity(), creator = await createIdentity();

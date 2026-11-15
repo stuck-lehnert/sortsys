@@ -1,6 +1,7 @@
 import { generateMnemonic, mnemonicToEntropy } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { base64, frame, identifier, InvalidProtectedData, record, revision, sized } from "./encoding";
+import { validatePageToken } from "./snapshotPages";
 import { deriveSecret, hpke, publicIdentity, sign, signingPair } from "./identity";
 import type { PrivateIdentity, PublicIdentity } from "./identity";
 
@@ -79,4 +80,30 @@ export async function recoveryPublicKeys(phrase: string, tenant: string, generat
 
 export async function publicSigningKey(key: CryptoKey): Promise<string> {
   return base64(await crypto.subtle.exportKey("raw", key));
+}
+
+export type RecoveryPageAccess = {
+  tenant: string;
+  generation: string;
+  challengeId: string;
+  challenge: string;
+  snapshot: string;
+  after: string | null;
+};
+
+export function recoveryPageFrame(input: RecoveryPageAccess): Uint8Array<ArrayBuffer> {
+  identifier(input.tenant);
+  revision(input.generation);
+  identifier(input.challengeId);
+  sized(input.challenge, 32);
+  validatePageToken(input.snapshot);
+  if (input.after !== null) validatePageToken(input.after);
+  return frame("sortsys/recovery-page/v1", [
+    input.tenant,
+    input.generation,
+    input.challengeId,
+    input.challenge,
+    input.snapshot,
+    input.after ?? "",
+  ]);
 }

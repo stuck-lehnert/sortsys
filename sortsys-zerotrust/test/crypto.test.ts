@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { areaKey, base64, bytes, createIdentity, createRecoveryPhrase, decryptObject, encryptObject, fingerprint, frame, importSigningKey, InvalidProtectedData, normalizeRecoveryPhrase, openBox, publicIdentity, randomSecret, recoveryIdentity, sealBox, unbase64, utf8, verify } from "../src";
-import type { BoxContext, ObjectContext } from "../src";
+import { areaKey, base64, bytes, createIdentity, createRecoveryPhrase, decryptObject, encryptObject, fingerprint, frame, importSigningKey, InvalidProtectedData, normalizeRecoveryPhrase, openBox, publicIdentity, randomSecret, recoveryIdentity, sealBox, unbase64, utf8, verify } from "../src/sortsys";
+import type { BoxContext, ObjectContext } from "../src/sortsys";
 
 const object: ObjectContext = { tenant: "test", scope: "project:123", facet: "calculation", object: "line:456", revision: "1", generation: "1", policyVersion: "1", author: "user:1" };
 

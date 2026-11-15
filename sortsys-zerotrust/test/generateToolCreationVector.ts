@@ -1,4 +1,4 @@
-import { publicSigningKey } from "../src";
+import { publicSigningKey } from "../src/sortsys";
 import { creationFixture } from "./support/creationFixture";
 
 const vectors = [];

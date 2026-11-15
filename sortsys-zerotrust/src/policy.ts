@@ -1,46 +1,75 @@
-import { identifier, InvalidProtectedData, record, revision } from "./encoding";
-import { FACETS } from "./objects";
-import type { Facet } from "./objects";
+import { InvalidProtectedData } from "./encoding";
+import { absenceDomain } from "./absenceRecords";
+import { type Facet, FACETS } from "./objects";
+import { createPolicyCodec } from "./core/policy";
+import type {
+  Policy as CorePolicy,
+  Rule as CoreRule,
+  SignedPolicy as CoreSignedPolicy,
+} from "./core/policy";
 
-export const ACTIONS = ["read", "create", "update", "delete", "approve", "grant"] as const;
-export type Action = typeof ACTIONS[number];
-export type Rule = {
-  subject: string;
-  scope: string;
-  facet: Facet;
-  actions: Action[];
-  effect: "allow" | "deny";
-};
-export type Policy = { tenant: string; version: string; rules: Rule[] };
+export { type Action, ACTIONS } from "./core/policy";
+export type Rule = CoreRule<Facet, "absence-default">;
+export type Policy = CorePolicy<Facet, "absence-default">;
+export type SignedPolicy = CoreSignedPolicy<Facet, "absence-default">;
 
-export function policy(input: unknown): Policy {
-  const obj = record(input, ["tenant", "version", "rules"]);
-  identifier(obj.tenant);
-  revision(obj.version);
-  if (!Array.isArray(obj.rules) || obj.rules.length > 10_000) throw new InvalidProtectedData();
-  const rules = obj.rules.map(value => {
-    const rule = record(value, ["subject", "scope", "facet", "actions", "effect"]);
-    identifier(rule.subject);
-    identifier(rule.scope);
-    if (!FACETS.includes(rule.facet as Facet) || !["allow", "deny"].includes(rule.effect as string)
-      || !Array.isArray(rule.actions) || !rule.actions.length || rule.actions.length > ACTIONS.length
-      || rule.actions.some(action => !ACTIONS.includes(action)) || new Set(rule.actions).size !== rule.actions.length) {
+function validateSuspendedSubject(subject: string): void {
+  if (!/^user:[1-9a-v][0-9a-v]{0,12}$/.test(subject)) {
+    throw new InvalidProtectedData();
+  }
+  let id = 0n;
+  for (const digit of subject.slice(5)) {
+    id = id * 32n + BigInt(parseInt(digit, 32));
+  }
+  if (id > 9223372036854775807n) throw new InvalidProtectedData();
+}
+
+function validateRuleOrigin(rule: Rule): void {
+  if (
+    rule.origin !== "absence-default" || rule.effect !== "allow" ||
+    !rule.subject.startsWith("user:")
+  ) {
+    throw new InvalidProtectedData();
+  }
+  if (!absenceDomain(`absence:${rule.subject.slice(5)}:master-data`)) {
+    throw new InvalidProtectedData();
+  }
+  const personnel = /^personnel:([^:]+)$/.exec(rule.scope);
+  const readsPersonnel = personnel && rule.facet === "scope" &&
+    rule.actions.every((action) => action === "read");
+  if (readsPersonnel) {
+    if (!absenceDomain(`absence:${personnel[1]}:master-data`)) {
       throw new InvalidProtectedData();
     }
-    return { ...rule, actions: [...rule.actions] } as Rule;
-  });
-  return { tenant: obj.tenant, version: obj.version, rules };
+    return;
+  }
+  if (!absenceDomain(`${rule.scope}:${rule.facet}`)) {
+    throw new InvalidProtectedData();
+  }
+  let permittedActions: readonly string[] = ["read", "approve"];
+  if (rule.facet === "master-data") {
+    permittedActions = ["read", "create", "delete"];
+  }
+  if (rule.actions.some((action) => !permittedActions.includes(action))) {
+    throw new InvalidProtectedData();
+  }
 }
 
-/** Scope inheritance must be resolved into signed rules, never guessed from UI parentage. */
-export function allows(input: Policy, request: { tenant: string; version: string; subjects: readonly string[]; scope: string; facet: Facet; action: Action }): boolean {
-  const current = policy(input);
-  if (current.tenant !== request.tenant || current.version !== request.version) return false;
-  let allowed = false;
-  for (const rule of current.rules) {
-    if (!request.subjects.includes(rule.subject) || rule.scope !== request.scope || rule.facet !== request.facet || !rule.actions.includes(request.action)) continue;
-    if (rule.effect === "deny") return false;
-    allowed = true;
-  }
-  return allowed;
-}
+export const sortsysPolicyCodec = createPolicyCodec<Facet, "absence-default">(
+  FACETS,
+  {
+    validateRuleOrigin,
+    validateSuspendedSubject,
+  },
+);
+
+export const {
+  policy,
+  compilePolicy,
+  compileReadership,
+  allows,
+  policyFrame,
+  signPolicy,
+  signPolicyTransaction,
+  verifyPolicy,
+} = sortsysPolicyCodec;
