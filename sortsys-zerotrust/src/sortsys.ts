@@ -1,5 +1,6 @@
 export * from "./encoding";
 export * from "./identity";
+export * from "./publicProofs";
 export * from "./objects";
 export * from "./boxes";
 export * from "./recovery";

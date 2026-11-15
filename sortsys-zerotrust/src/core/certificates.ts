@@ -6,7 +6,8 @@ import {
   revision,
   sized,
 } from "../encoding";
-import { importSigningKey, sign, verify } from "../identity";
+import { importSigningKey, sign } from "../identity";
+import { verifyPublicProof as verify } from "../publicProofs";
 import type { PublicIdentity } from "../identity";
 
 export type AuthorityCertificate = {

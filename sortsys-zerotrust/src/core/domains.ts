@@ -1,7 +1,6 @@
 import { boxFrame, sealBox, sealedBox } from "../boxes";
 import type { SealedBox } from "../boxes";
 import {
-  digest,
   frame,
   identifier,
   InvalidProtectedData,
@@ -11,7 +10,11 @@ import {
   signedPacketFrame,
   sized,
 } from "../encoding";
-import { areaKey, hpke, sign, verify } from "../identity";
+import { areaKey, hpke, sign } from "../identity";
+import {
+  publicProofDigest as digest,
+  verifyPublicProof as verify,
+} from "../publicProofs";
 import type { PublicIdentity } from "../identity";
 
 import { facetVocabulary } from "./vocabulary";
@@ -26,19 +29,21 @@ export type DomainCreation<F extends string = string> = {
 
 /** The application certifies delegated creation. The core binds its proof to
  * the exact domain and never interprets roles, namespaces or resource IDs. */
-export type DomainCreationCodec<F extends string, C extends DomainCreation<F>> =
-  {
-    parse: (input: unknown) => C;
-    verify: (
-      input: unknown,
-      authority: (generation: string) => CryptoKey,
-    ) => Promise<C>;
-    frame: (origin: C) => Promise<Uint8Array<ArrayBuffer>>;
-    author: (origin: C) => string;
-    authorityGeneration: (origin: C) => string;
-    signer: (origin: C) => Promise<CryptoKey>;
-    readers: (origin: C) => { subject: string; identity: PublicIdentity }[];
-  };
+export type DomainCreationCodec<
+  F extends string,
+  C extends DomainCreation<F>,
+> = {
+  parse: (input: unknown) => C;
+  verify: (
+    input: unknown,
+    authority: (generation: string) => CryptoKey,
+  ) => Promise<C>;
+  frame: (origin: C) => Promise<Uint8Array<ArrayBuffer>>;
+  author: (origin: C) => string;
+  authorityGeneration: (origin: C) => string;
+  signer: (origin: C) => Promise<CryptoKey>;
+  readers: (origin: C) => { subject: string; identity: PublicIdentity }[];
+};
 
 export type DomainDefinition<
   F extends string = string,
@@ -59,14 +64,10 @@ export type DomainDefinition<
 export function createDomainCodec<
   const F extends string,
   C extends DomainCreation<F> = never,
->(
-  facets: readonly F[],
-  creation?: DomainCreationCodec<F, C>,
-) {
+>(facets: readonly F[], creation?: DomainCreationCodec<F, C>) {
   const allowedFacets = facetVocabulary(facets);
-  const configuredCreation = creation === undefined
-    ? undefined
-    : Object.freeze({ ...creation });
+  const configuredCreation =
+    creation === undefined ? undefined : Object.freeze({ ...creation });
   function requiredCreation(): DomainCreationCodec<F, C> {
     if (!configuredCreation) throw new InvalidProtectedData();
     return configuredCreation;
@@ -101,9 +102,13 @@ export function createDomainCodec<
         ? [...keys, "creation"]
         : keys,
     );
-    for (
-      const key of ["tenant", "id", "scope", "facet", "generation"] as const
-    ) {
+    for (const key of [
+      "tenant",
+      "id",
+      "scope",
+      "facet",
+      "generation",
+    ] as const) {
       if (raw[key] !== expected[key]) {
         throw new InvalidProtectedData();
       }
@@ -112,9 +117,10 @@ export function createDomainCodec<
       throw new InvalidProtectedData();
     }
     const recoveryEnvelope = sealedBox(raw.recoveryEnvelope);
-    const origin = raw.creation === undefined
-      ? undefined
-      : await requiredCreation().verify(raw.creation, authority);
+    const origin =
+      raw.creation === undefined
+        ? undefined
+        : await requiredCreation().verify(raw.creation, authority);
     if (
       origin &&
       (origin.tenant !== expected.tenant ||
@@ -125,8 +131,9 @@ export function createDomainCodec<
     ) {
       throw new InvalidProtectedData();
     }
-    let rootGeneration = recoveryEnvelope.author.match(/^authority:([1-9]\d*)$/)
-      ?.[1];
+    let rootGeneration = recoveryEnvelope.author.match(
+      /^authority:([1-9]\d*)$/,
+    )?.[1];
     if (origin !== undefined) {
       rootGeneration = requiredCreation().authorityGeneration(origin);
     }
@@ -178,7 +185,7 @@ export function createDomainCodec<
     }
     const hashes = await Promise.all(
       [...input.envelopes, input.recoveryEnvelope].map((box) =>
-        digest(signedPacketFrame(boxFrame(box), box.signature))
+        digest(signedPacketFrame(boxFrame(box), box.signature)),
       ),
     );
     return domainFrameFromHashes(input, hashes);
@@ -278,9 +285,9 @@ export function createDomainCodec<
     const raw = randomSecret();
     try {
       const readers = new Map(
-        requiredCreation().readers(origin).map(
-          (reader) => [reader.subject, reader.identity],
-        ),
+        requiredCreation()
+          .readers(origin)
+          .map((reader) => [reader.subject, reader.identity]),
       );
       const author = requiredCreation().author(origin);
       const envelopes = await Promise.all(
@@ -301,7 +308,7 @@ export function createDomainCodec<
                 sized(reader.encryptionKey, 32),
               ),
               input.creatorKey,
-            )
+            ),
           ),
       );
       const recoveryEnvelope = await sealBox(
@@ -310,9 +317,9 @@ export function createDomainCodec<
           purpose: "area-key",
           object: origin.id,
           generation: "1",
-          recipient: `recovery:${
-            requiredCreation().authorityGeneration(origin)
-          }`,
+          recipient: `recovery:${requiredCreation().authorityGeneration(
+            origin,
+          )}`,
           author,
         },
         raw,
@@ -359,7 +366,7 @@ export function createDomainCodec<
     const raw = randomSecret();
     try {
       const readers = [...input.readers].sort((a, b) =>
-        compareIdentifiers(a.subject, b.subject)
+        compareIdentifiers(a.subject, b.subject),
       );
       const envelopes = await Promise.all(
         readers.map(async (reader) =>
@@ -377,7 +384,7 @@ export function createDomainCodec<
               sized(reader.identity.encryptionKey, 32),
             ),
             input.authorityKey,
-          )
+          ),
         ),
       );
       const recoveryEnvelope = await sealBox(
@@ -427,8 +434,10 @@ export function createDomainCodec<
   });
 }
 
-export type DomainCodec<F extends string, C extends DomainCreation<F> = never> =
-  ReturnType<typeof createDomainCodec<F, C>>;
+export type DomainCodec<
+  F extends string,
+  C extends DomainCreation<F> = never,
+> = ReturnType<typeof createDomainCodec<F, C>>;
 
 function compareIdentifiers(first: string, second: string): number {
   if (first < second) return -1;

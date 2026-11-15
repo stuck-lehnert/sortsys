@@ -77,6 +77,25 @@ geprüft werden. Ohne diese Erweiterung werden Regeln mit `origin` abgelehnt.
 Benutzerkennungsformats. Dieselben fachlichen Beschränkungen müssen auch auf
 der Serverseite gelten.
 
+## Wiederholte öffentliche Nachweise
+
+Zertifikate, Rechteregeln und Schlüsselumschläge enthalten öffentliche Metadaten
+beziehungsweise verschlüsselte Schlüssel. Der Kern verwendet dafür
+`verifyPublicProof`: Identische Signaturprüfungen teilen sich einen auf 4.096
+Einträge begrenzten Speicher. Jeder Eintrag bindet den tatsächlichen
+Prüfschlüssel, die Signatur und den SHA-256-Wert der vollständigen signierten
+Bytes. Ungültige Nachweise werden nicht gespeichert. Große Nachrichten werden
+weiterhin direkt von WebCrypto geprüft.
+
+Das ersetzt keine Kontextprüfung. Mandant, Generation, aktuelle Rechte und
+Widerrufe müssen auch bei einer bereits bekannten Signatur geprüft werden.
+Für entschlüsselte Geschäftsinhalte bleibt `verify` zuständig; deren Signaturen
+und Inhaltsprüfsummen gehören nicht in diesen öffentlichen Speicher.
+`createPublicProofVerifier({ capacity })` erstellt einen eigenen Prüfer mit
+`verify` und `clear`; mit `capacity: 0` ist die Wiederverwendung ausgeschaltet.
+`publicProofDigest` erzeugt dieselben SHA-256-Werte wie `digest` und vermeidet
+bei kleinen öffentlichen Rahmen zusätzliche WebCrypto-Aufrufe.
+
 ## Lokale Inhaltsprüfung
 
 `VerifiedStore<T>` verbindet einen Inhaltsbereich mit einem anwendungseigenen

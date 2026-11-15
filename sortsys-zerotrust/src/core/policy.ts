@@ -6,7 +6,8 @@ import {
   record,
   revision,
 } from "../encoding";
-import { sign, verify } from "../identity";
+import { sign } from "../identity";
+import { verifyPublicProof as verify } from "../publicProofs";
 import {
   type PolicyTransaction,
   policyTransaction,

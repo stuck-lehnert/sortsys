@@ -1,6 +1,7 @@
 export * from "./encoding";
 export * from "./anchors";
 export * from "./identity";
+export * from "./publicProofs";
 export * from "./boxes";
 export * from "./recovery";
 export * from "./vault";
