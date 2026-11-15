@@ -7,12 +7,14 @@ import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
+import { remarkCollection } from "~/lib/data/remarkData";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import type { Remark } from "~/type-helpers";
 
-type RemarkResourceType = 'project' | 'customer' | 'tool' | 'contact';
+type RemarkResourceType = "project" | "customer" | "tool" | "contact";
 
 export function showRemarkFormModal(props: {
   modals: ReturnType<typeof useMyModals>;
@@ -39,23 +41,32 @@ export function showRemarkFormModal(props: {
       </>
     ),
     onSubmit: async ({ context, hide }) => {
-      const body = `${context.getValues().body ?? ''}`.trim();
+      const body = `${context.getValues().body ?? ""}`.trim();
       const [data, err] = remark
-        ? await client.mutate('remarks.update', { id: remark.id, body })
-        : await client.mutate('remarks.create', { resourceType, resourceId, body });
+        ? await client.mutate("remarks.update", { id: remark.id, body })
+        : await client.mutate("remarks.create", {
+            resourceType,
+            resourceId,
+            body,
+          });
       if (err) throw err;
       if (!data) return;
       hide();
     },
     modalProps: () => ({
       noFullscreen: true,
-      modalHeading: remark ? uiText("Vermerk bearbeiten") : uiText("Vermerk erstellen"),
+      modalHeading: remark
+        ? uiText("Vermerk bearbeiten")
+        : uiText("Vermerk erstellen"),
       primaryButtonText: remark ? uiText("Speichern") : uiText("Erstellen"),
     }),
   });
 }
 
-function showDeleteRemarkModal(modals: ReturnType<typeof useMyModals>, remark: Remark) {
+function showDeleteRemarkModal(
+  modals: ReturnType<typeof useMyModals>,
+  remark: Remark,
+) {
   modals.showForm({
     content: () => (
       <>
@@ -72,7 +83,9 @@ function showDeleteRemarkModal(modals: ReturnType<typeof useMyModals>, remark: R
       </>
     ),
     onSubmit: async ({ hide }) => {
-      const [data, err] = await client.mutate('remarks.delete', { id: remark.id });
+      const [data, err] = await client.mutate("remarks.delete", {
+        id: remark.id,
+      });
       if (err) throw err;
       if (!data) return;
       hide();
@@ -86,22 +99,33 @@ function showDeleteRemarkModal(modals: ReturnType<typeof useMyModals>, remark: R
   });
 }
 
-export function Remarks({ resourceType, resourceId, canManage }: {
+export function Remarks({
+  resourceType,
+  resourceId,
+}: {
   resourceType: RemarkResourceType;
   resourceId: string;
-  canManage: boolean;
 }) {
   const modals = useMyModals();
-  const [remarks, err] = useClientStream(() => client.streamQuery('remarks.list', { resourceType, resourceId }), [resourceType, resourceId]);
+  const session = useSessionInfo();
+  const area = remarkCollection({ resourceType, resourceId });
+  const canRead = session.canAccess(area.scope, area.facet, "read");
+  const canCreate = session.canAccess(area.scope, area.facet, "create");
+  const canUpdate = session.canAccess(area.scope, area.facet, "update");
+  const canDelete = session.canAccess(area.scope, area.facet, "delete");
+  const [remarks, err] = useClientStream(
+    () => client.streamQuery("remarks.list", { resourceType, resourceId }),
+    [resourceType, resourceId],
+  );
   const rows = remarks ?? [];
 
-  if (!rows.length && !err) return null;
+  if (!canRead || (!rows.length && !err && !canCreate)) return null;
 
   return (
     <section className="space-y-1 pb-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold">{uiText("Vermerke")}</h3>
-        {canManage && (
+        {canCreate && (
           <MyButton
             kind="secondary"
             size="sm"
@@ -142,7 +166,7 @@ export function Remarks({ resourceType, resourceId, canManage }: {
                 >
                   {formatDate(remark.createdAt, "long")}
                 </time>
-                {canManage && (
+                {(canUpdate || canDelete) && (
                   <div className="absolute right-1 top-1">
                     <MyDropdown
                       size="sm"
@@ -150,6 +174,7 @@ export function Remarks({ resourceType, resourceId, canManage }: {
                       items={[
                         {
                           label: uiText("Bearbeiten"),
+                          hideIf: !canUpdate,
                           renderIcon: Icons.Edit,
                           onClick: () =>
                             showRemarkFormModal({
@@ -161,6 +186,7 @@ export function Remarks({ resourceType, resourceId, canManage }: {
                         },
                         {
                           label: uiText("Löschen"),
+                          hideIf: !canDelete,
                           renderIcon: Icons.Delete,
                           onClick: () => showDeleteRemarkModal(modals, remark),
                         },

@@ -36,6 +36,31 @@ type MyModal = {
 
 const MyModalsContext = createContext<MyModalsInterface>(null as any);
 
+function actionErrorMessage(error: unknown) {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : uiText(
+        "Die Aktion konnte nicht ausgeführt werden.",
+        "The action could not be completed.",
+      );
+}
+
+function ModalActionError({ message }: { message: string | null }) {
+  const element = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (message) element.current?.focus();
+  }, [message]);
+  return message ? (
+    <div ref={element} role="alert" tabIndex={-1}>
+      <MyCallout
+        kind="error"
+        title={uiText("Aktion fehlgeschlagen", "Action failed")}
+        subtitle={message}
+      />
+    </div>
+  ) : null;
+}
+
 export function useMyModals() {
   return useContext(MyModalsContext);
 }
@@ -108,7 +133,6 @@ export interface MyModalsInterface {
         | "open"
         | "onRequestClose"
         | "isFullWidth"
-        | "primaryButtonDisabled"
         | "secondaryButtonText"
         | "secondaryButtonDisabled"
       > & {
@@ -244,14 +268,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
                 try {
                   await submitAction();
                 } catch (error) {
-                  setActionError(
-                    error instanceof Error && error.message.trim()
-                      ? error.message
-                      : uiText(
-                          "Die Aktion konnte nicht ausgeführt werden.",
-                          "The action could not be completed.",
-                        ),
-                  );
+                  setActionError(actionErrorMessage(error));
                 }
               })
           : undefined;
@@ -282,13 +299,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
             primaryButtonLoading={loading()}
             onRequestSubmit={onRequestSubmit}
           >
-            {!!actionError && (
-              <MyCallout
-                kind="error"
-                title={uiText("Aktion fehlgeschlagen", "Action failed")}
-                subtitle={actionError}
-              />
-            )}
+            <ModalActionError message={actionError} />
 
             {content}
           </Modal>
@@ -297,14 +308,15 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     },
 
     showForm: (props, options) => {
-      const _MyModal: MyModal["render"] = ({ hide, visible }) => {
+      const _MyModal = ({
+        hide,
+        visible,
+        submissionError,
+      }: Parameters<MyModal["render"]>[0] & {
+        submissionError: string | null;
+      }) => {
         const context = MyForm.$useContext();
         const fieldCount = useFormFieldCount();
-        const onRequestSubmit =
-          typeof props.onSubmit === "function"
-            ? () => context.submit()
-            : undefined;
-
         const content = props.content({ hide, context });
 
         const {
@@ -313,6 +325,13 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
           primaryButtonText,
           ...modalProps
         } = props.modalProps?.({ hide, context }) ?? {};
+        const onRequestSubmit =
+          typeof props.onSubmit === "function"
+            ? () => {
+                if (!context.loading() && !modalProps.primaryButtonDisabled)
+                  context.submit();
+              }
+            : undefined;
 
         const fullscreen = fieldCount >= 4 || (useFullscreen && !noFullscreen);
         const dataProps = fullscreen
@@ -328,18 +347,19 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
             {...dataProps}
             open={visible}
             onRequestClose={hide}
-            // primaryButtonDisabled={context.loading()}
             secondaryButtonText={uiText("Abbrechen")}
             onRequestSubmit={onRequestSubmit}
             closeButtonLabel={uiText("Abbrechen")}
             // shouldSubmitOnEnter
-            primaryButtonDisabled={context.loading()}
+            primaryButtonDisabled={
+              context.loading() || modalProps.primaryButtonDisabled
+            }
             primaryButtonLoading={context.loading()}
             primaryButtonText={primaryButtonText}
-            // primaryButtonDisabled={!noFullscreen || context.loading()}
             // primaryButtonText={!!noFullscreen && primaryButtonText}
           >
             <div className="space-y-2 my-container">
+              <ModalActionError message={submissionError} />
               {content}
 
               {/*!noFullscreen && <>
@@ -354,12 +374,22 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
       _interface.show(({ id, visible, hide, replace, setLocation }) => {
         const navigate = useNavigate();
         const pathname = useLocation().pathname;
+        const [submissionError, setSubmissionError] = useState<string | null>(
+          null,
+        );
 
         return (
           <MyForm
-            onSubmit={(context) =>
-              props.onSubmit({ hide, context, navigate, pathname })
-            }
+            onSubmit={async (context) => {
+              if (props.modalProps?.({ hide, context }).primaryButtonDisabled)
+                return;
+              setSubmissionError(null);
+              try {
+                await props.onSubmit({ hide, context, navigate, pathname });
+              } catch (error) {
+                setSubmissionError(actionErrorMessage(error));
+              }
+            }}
           >
             <_MyModal
               id={id}
@@ -367,6 +397,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
               replace={replace}
               visible={visible}
               setLocation={setLocation}
+              submissionError={submissionError}
             />
           </MyForm>
         );

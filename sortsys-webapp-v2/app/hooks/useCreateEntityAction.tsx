@@ -8,9 +8,20 @@ import { showCreateProductModal } from "~/modals/products";
 import { showCreateProductVendorModal } from "~/modals/productVendors";
 import { showCreateToolModal } from "~/modals/tools";
 import { showCreateUserModal } from "~/modals/users";
-import type { Contact, Customer, Product, ProductVendor, Project, Tool, User } from "~/type-helpers";
+import type {
+  Contact,
+  Customer,
+  Product,
+  ProductVendor,
+  Project,
+  Tool,
+  User,
+} from "~/type-helpers";
 
-function createAction<T>(label: string, run: (query: string, select: (item: T) => void) => void): MyMultiSelectCreateAction<T> {
+function createAction<T>(
+  label: string,
+  run: (query: string, select: (item: T) => void) => void,
+): MyMultiSelectCreateAction<T> {
   return {
     label: ({ query }) => `${label}: ${query}`,
     onCreate: ({ query, select }) => run(query, select),
@@ -21,49 +32,63 @@ export function useCreateEntityAction(modals: MyModalsInterface) {
   const sessionInfo = useSessionInfo();
 
   return {
-    contact: sessionInfo.canCreate('contacts')
-      ? createAction<Contact>(uiText('Kontakt erstellen'), (query, select) => showCreateContactModal(modals, {
-        initialQuery: query,
-        onCreated: select,
-      }))
+    contact: sessionInfo.canCreate("contacts")
+      ? createAction<Contact>(uiText("Kontakt erstellen"), (query, select) =>
+          showCreateContactModal(modals, {
+            initialQuery: query,
+            onCreated: select,
+          }),
+        )
       : undefined,
 
-    customer: sessionInfo.canCreate('customers')
-      ? createAction<Customer>(uiText('Kunde erstellen'), (query, select) => showCreateCustomerModal(modals, {
-        initialQuery: query,
-        onCreated: select,
-      }))
+    customer: sessionInfo.canCreate("customers")
+      ? createAction<Customer>(uiText("Kunde erstellen"), (query, select) =>
+          showCreateCustomerModal(modals, {
+            initialQuery: query,
+            onCreated: select,
+          }),
+        )
       : undefined,
 
-    product: sessionInfo.canCreate('products')
-      ? createAction<Product>(uiText('Produkt erstellen'), (query, select) => showCreateProductModal(modals, {
-        initialQuery: query,
-        onCreated: select,
-      }))
+    product: sessionInfo.canCreate("products")
+      ? createAction<Product>(uiText("Produkt erstellen"), (query, select) =>
+          showCreateProductModal(modals, {
+            initialQuery: query,
+            onCreated: select,
+          }),
+        )
       : undefined,
 
-    productVendor: sessionInfo.canCreate('vendors')
-      ? createAction<ProductVendor>(uiText("Händler erstellen"), (query, select) => showCreateProductVendorModal(modals, {
-        initialQuery: query,
-        onCreated: select,
-      }))
+    productVendor: sessionInfo.canCreate("vendors")
+      ? createAction<ProductVendor>(
+          uiText("Händler erstellen"),
+          (query, select) =>
+            showCreateProductVendorModal(modals, {
+              initialQuery: query,
+              onCreated: select,
+            }),
+        )
       : undefined,
 
     // New projects are created from accepted offers, not inline in unrelated forms.
     project: undefined as MyMultiSelectCreateAction<Project> | undefined,
 
-    tool: sessionInfo.canCreate('tool')
-      ? createAction<Tool>(uiText('Werkzeug erstellen'), (query, select) => showCreateToolModal(modals, {
-        initialQuery: query,
-        onCreated: select,
-      }))
+    tool: sessionInfo.canCreate("tool")
+      ? createAction<Tool>(uiText("Werkzeug erstellen"), (query, select) =>
+          showCreateToolModal(modals, {
+            initialQuery: query,
+            onCreated: select,
+          }),
+        )
       : undefined,
 
-    user: sessionInfo.canDo('manage:users')
-      ? createAction<User>(uiText('Benutzer erstellen'), (query, select) => showCreateUserModal(modals, {
-        initialQuery: query,
-        onCreated: select,
-      }))
+    user: sessionInfo.canCreateAccount()
+      ? createAction<User>(uiText("Benutzer erstellen"), (query, select) =>
+          showCreateUserModal(modals, {
+            initialQuery: query,
+            onCreated: select,
+          }),
+        )
       : undefined,
   };
 }

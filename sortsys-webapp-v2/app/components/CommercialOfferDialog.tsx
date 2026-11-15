@@ -1,3 +1,4 @@
+import { TimestampEvidenceButton } from "./TimestampEvidenceButton";
 import {
   lazy,
   Suspense,
@@ -257,9 +258,7 @@ export function CommercialOfferDialog({
               doc.purpose === "offer"
                 ? uiText("Kalkulation öffnen", "Open pricing")
                 : doc.purpose === "inquiry"
-                  ? canManage && draft && !doc.readOnly
-                    ? uiText("Leistungsumfang bearbeiten", "Edit scope of work")
-                    : uiText("Leistungsumfang ansehen", "View scope of work")
+                  ? uiText("Leistungsumfang öffnen", "Open scope of work")
                   : doc.purpose === "order"
                     ? uiText("Kundenauftrag ansehen", "View customer order")
                     : doc.purpose === "confirmation"
@@ -318,6 +317,19 @@ export function CommercialOfferDialog({
           onClick={actions.withdraw}
         />
       )}
+      {active?.readOnly && (
+        <TimestampEvidenceButton
+          ribbon
+          entries={[
+            {
+              scope: `commercial:${current.id}`,
+              object: active.id,
+              revision: active.version.toString(),
+              title: purposeLabel(active, current.kind),
+            },
+          ]}
+        />
+      )}
       <EditorIconButton
         showLabel
         icon={RecentlyViewed}
@@ -351,7 +363,6 @@ export function CommercialOfferDialog({
                   : uiText("Angebot", "Offer")
             }
             editable={
-              canManage &&
               editableDocument(current, active) &&
               !(sourceStale && active.purpose === "offer")
             }

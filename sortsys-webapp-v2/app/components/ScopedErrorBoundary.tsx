@@ -20,21 +20,17 @@ export function ScopedErrorBoundary({
   return (
     <ErrorBoundary
       resetKeys={resetKey === undefined ? [] : [resetKey]}
-      onError={(error, info) => {
-        const message = error instanceof Error
-          ? error.message || error.name
-          : String(error || uiText("Unbekannter Fehler", "Unknown error"));
-
+      onError={() => {
         void reportClientError({
           source: "react.scopedErrorBoundary",
-          message,
-          stack: error instanceof Error ? error.stack ?? null : null,
-          componentStack: info.componentStack,
-          metadata: { scope },
         });
       }}
       fallbackRender={({ resetErrorBoundary }) => (
-        <section className="scoped-error-boundary" role="alert">
+        <section
+          className="scoped-error-boundary"
+          data-error-scope={scope}
+          role="alert"
+        >
           <MyCallout icon={Icons.Deny} color="red">
             <div className="scoped-error-boundary__content">
               <strong>
@@ -51,11 +47,7 @@ export function ScopedErrorBoundary({
                 )}
               </span>
 
-              <MyButton
-                kind="secondary"
-                size="sm"
-                onClick={resetErrorBoundary}
-              >
+              <MyButton kind="secondary" size="sm" onClick={resetErrorBoundary}>
                 {uiText("Erneut versuchen", "Try again")}
               </MyButton>
             </div>

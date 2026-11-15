@@ -7,46 +7,34 @@ import { client } from "~/lib/client";
 import { useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { Icons } from "~/lib/icons";
-import { getPasskeyCredential } from "~/lib/passkeys";
+import { signInWithPasskey } from "~/lib/crypto/passkeys";
 import { MyCallout } from "~/components/MyCallout";
 import { loginErrorMessage } from "~/lib/loginError";
 import { Link } from "react-router";
 
 export function meta({}: Route.MetaArgs) {
-    return [
-        { title: uiText("Anmelden") },
-    ];
+  return [{ title: uiText("Anmelden") }];
 }
 
 export default Unauthenticated(function () {
-    const [passkeyLoading, setPasskeyLoading] = useState(false);
-    const [passkeyErr, setPasskeyErr] = useState<string | null>(null);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyErr, setPasskeyErr] = useState<string | null>(null);
 
-    async function passkeyLogin() {
-        setPasskeyErr(null);
-        setPasskeyLoading(true);
-        try {
-            const [begin, beginErr] = await client.mutate('auth.passkeys.loginOptions', undefined);
-            if (beginErr) throw beginErr;
-            if (!begin) throw new Error(uiText("Passkey-Anmeldung konnte nicht gestartet werden."));
-
-            const credential = await getPasskeyCredential(begin.options);
-            const [login, loginErr] = await client.mutate('auth.passkeys.login', {
-                challengeToken: begin.challengeToken,
-                credential,
-            });
-            if (loginErr) throw loginErr;
-            if (!login?.token) throw new Error(uiText("Passkey-Anmeldung fehlgeschlagen."));
-
-            client.setToken(login.token);
-        } catch (err) {
-            setPasskeyErr((err as Error)?.message || uiText('Passkey-Anmeldung fehlgeschlagen.'));
-        } finally {
-            setPasskeyLoading(false);
-        }
+  async function passkeyLogin() {
+    setPasskeyErr(null);
+    setPasskeyLoading(true);
+    try {
+      await signInWithPasskey(client);
+    } catch (err) {
+      setPasskeyErr(
+        (err as Error)?.message || uiText("Passkey-Anmeldung fehlgeschlagen."),
+      );
+    } finally {
+      setPasskeyLoading(false);
     }
+  }
 
-    return (
+  return (
     <AuthLayout title={uiText("Anmelden")}>
       <MyForm
         className="max-w-none"
@@ -101,7 +89,9 @@ export default Unauthenticated(function () {
           </MyCallout>
         )}
       </MyForm>
-      <Link to="/auth/recovery">{uiText("Mandant wiederherstellen", "Recover tenant")}</Link>
+      <Link to="/auth/recovery">
+        {uiText("Mandant wiederherstellen", "Recover tenant")}
+      </Link>
     </AuthLayout>
   );
 });

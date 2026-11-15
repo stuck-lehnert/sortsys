@@ -10,7 +10,8 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { createPasskeyCredential, isPasskeySupported } from "~/lib/passkeys";
+import { isPasskeySupported } from "~/lib/passkeys";
+import { registerPasskey } from "~/lib/crypto/passkeys";
 import type { Route } from "./+types/settings.passkeys";
 
 type Passkey = {
@@ -64,30 +65,20 @@ export default function PasskeySettingsPage() {
         const label = `${context.getValues().label ?? ""}`.trim();
 
         try {
-          const [begin, beginErr] = await client.mutate(
-            "auth.passkeys.registerOptions",
-            undefined,
-          );
-          if (beginErr) throw beginErr;
-          if (!begin) {
-            throw new Error(uiText("Passkey-Registrierung konnte nicht gestartet werden."));
-          }
-
-          const credential = await createPasskeyCredential(begin.options);
-          const [, finishErr] = await client.mutate("auth.passkeys.register", {
-            challengeToken: begin.challengeToken,
-            label,
-            credential,
-          });
-          if (finishErr) throw finishErr;
+          await registerPasskey(client, label);
         } catch (err) {
-          setError((err as Error)?.message || uiText("Passkey konnte nicht gespeichert werden."));
+          setError(
+            (err as Error)?.message ||
+              uiText("Passkey konnte nicht gespeichert werden."),
+          );
           hide();
           return;
         }
 
-        setReloadCounter(value => value + 1);
-        notifications.success({ title: uiText("Passkey gespeichert", "Passkey saved") });
+        setReloadCounter((value) => value + 1);
+        notifications.success({
+          title: uiText("Passkey gespeichert", "Passkey saved"),
+        });
         hide();
       },
     });
@@ -116,13 +107,17 @@ export default function PasskeySettingsPage() {
           id: passkey.id,
         });
         if (err) {
-          setError(err.message || uiText("Passkey konnte nicht entfernt werden."));
+          setError(
+            err.message || uiText("Passkey konnte nicht entfernt werden."),
+          );
           hide();
           return;
         }
 
-        setReloadCounter(value => value + 1);
-        notifications.success({ title: uiText("Passkey entfernt", "Passkey removed") });
+        setReloadCounter((value) => value + 1);
+        notifications.success({
+          title: uiText("Passkey entfernt", "Passkey removed"),
+        });
         hide();
       },
     });

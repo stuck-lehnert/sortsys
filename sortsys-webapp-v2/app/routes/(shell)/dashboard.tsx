@@ -30,11 +30,10 @@ import {
 import { Link } from "react-router";
 import { Icons, type Icon } from "~/lib/icons";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { useDashboardPins } from "~/hooks/useDashboardPins";
 
 export function meta({}: Route.MetaArgs) {
-  return [
-    { title: uiText("Dashboard") },
-  ];
+  return [{ title: uiText("Dashboard") }];
 }
 
 type ActionHistoryItem = {
@@ -48,23 +47,27 @@ type VisitHistoryItem = {
   visitedAt: Date;
 };
 
-type ActivityItem = QueryResult<'personalization.activity.list'>[number];
+type ActivityItem = QueryResult<"personalization.activity.list">[number];
 
 const COLLAPSED_ACTIVITY_COUNT = 6;
 const ACTIVITY_PAGE_SIZE = 25;
 
-type PinnedVisit = Pick<VisitHistoryItem, 'path' | 'title' | 'visitedAt'>;
+type PinnedVisit = Pick<VisitHistoryItem, "path" | "title" | "visitedAt">;
 
 function normalizeLlmPath(path: string) {
-  return path.replace(/^\/assistant(?=\/|[?#]|$)/, '/llm');
+  return path.replace(/^\/assistant(?=\/|[?#]|$)/, "/llm");
 }
 
-function pickQuickActions(actions: UserAction[], history: ActionHistoryItem[] | null | undefined) {
-  const actionById = new Map(actions.map(action => [action.id, action]));
+function pickQuickActions(
+  actions: UserAction[],
+  history: ActionHistoryItem[] | null | undefined,
+) {
+  const actionById = new Map(actions.map((action) => [action.id, action]));
   const stats = new Map<string, { count: number; lastUsedAt: number }>();
 
-  (history ?? []).forEach(item => {
-    const actionId = item.actionId === 'projects.create' ? 'offers.create' : item.actionId;
+  (history ?? []).forEach((item) => {
+    const actionId =
+      item.actionId === "projects.create" ? "offers.create" : item.actionId;
     if (!actionById.has(actionId)) return;
     const previous = stats.get(actionId) ?? { count: 0, lastUsedAt: 0 };
     stats.set(actionId, {
@@ -74,13 +77,15 @@ function pickQuickActions(actions: UserAction[], history: ActionHistoryItem[] | 
   });
 
   const ranked = [...stats.entries()]
-    .sort((a, b) => (b[1].count - a[1].count) || (b[1].lastUsedAt - a[1].lastUsedAt))
+    .sort(
+      (a, b) => b[1].count - a[1].count || b[1].lastUsedAt - a[1].lastUsedAt,
+    )
     .map(([id]) => actionById.get(id)!)
     .slice(0, 6);
 
   if (ranked.length >= 4) return ranked;
 
-  const fallback = actions.filter(action => !ranked.includes(action));
+  const fallback = actions.filter((action) => !ranked.includes(action));
   return [...ranked, ...fallback].slice(0, 6);
 }
 
@@ -88,9 +93,9 @@ function uniqueRecentVisits(visits: VisitHistoryItem[] | null | undefined) {
   const seen = new Set<string>();
 
   return (visits ?? [])
-    .map(visit => ({ ...visit, path: normalizeLlmPath(visit.path) }))
-    .filter(visit => {
-      if (visit.path === '/dashboard' || seen.has(visit.path)) return false;
+    .map((visit) => ({ ...visit, path: normalizeLlmPath(visit.path) }))
+    .filter((visit) => {
+      if (visit.path === "/dashboard" || seen.has(visit.path)) return false;
 
       seen.add(visit.path);
       return true;
@@ -98,44 +103,43 @@ function uniqueRecentVisits(visits: VisitHistoryItem[] | null | undefined) {
     .slice(0, 8);
 }
 
-function readPinnedVisits(storageKey: string): PinnedVisit[] {
-  if (typeof window !== 'object') return [];
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(item => item && typeof item.path === 'string')
-      .map(item => ({
-        path: normalizeLlmPath(item.path),
-        title: typeof item.title === 'string' ? item.title : null,
-        visitedAt: item.visitedAt ? new Date(item.visitedAt) : new Date(),
-      }))
-      .slice(0, 12);
-  } catch {
-    return [];
-  }
-}
-
 function groupActivity(activity: ActivityItem[] | null | undefined) {
-  const groups = new Map<string, { key: string; label: string; href: string | null; items: ActivityItem[] }>();
+  const groups = new Map<
+    string,
+    { key: string; label: string; href: string | null; items: ActivityItem[] }
+  >();
 
-  (activity ?? []).forEach(item => {
-    let key = 'other';
-    let label = uiText('Weitere Änderungen', 'Other changes');
+  (activity ?? []).forEach((item) => {
+    let key = "other";
+    let label = uiText("Weitere Änderungen", "Other changes");
     let href: string | null = null;
 
-    if (item.resourceType === 'project') {
+    if (item.resourceType === "project") {
       key = `project:${item.resourceId}`;
-      label = uiText(`Projekt: ${item.resourceTitle || activityTitle(item)}`, `Project: ${item.resourceTitle || activityTitle(item)}`);
-      href = item.action === 'deleted' && item.entityTable === 'projects' ? null : `/projects/${item.resourceId}`;
-    } else if (item.resourceType === 'customer') {
+      label = uiText(
+        `Projekt: ${item.resourceTitle || activityTitle(item)}`,
+        `Project: ${item.resourceTitle || activityTitle(item)}`,
+      );
+      href =
+        item.action === "deleted" && item.entityTable === "projects"
+          ? null
+          : `/projects/${item.resourceId}`;
+    } else if (item.resourceType === "customer") {
       key = `customer:${item.resourceId}`;
-      label = uiText(`Kunde: ${item.resourceTitle || activityTitle(item)}`, `Customer: ${item.resourceTitle || activityTitle(item)}`);
-      href = item.action === 'deleted' && item.entityTable === 'customers' ? null : `/customers/${item.resourceId}`;
+      label = uiText(
+        `Kunde: ${item.resourceTitle || activityTitle(item)}`,
+        `Customer: ${item.resourceTitle || activityTitle(item)}`,
+      );
+      href =
+        item.action === "deleted" && item.entityTable === "customers"
+          ? null
+          : `/customers/${item.resourceId}`;
     } else if (item.contextId) {
       key = `project:${item.contextId}`;
-      label = uiText(`Projekt: ${item.contextTitle || item.contextId}`, `Project: ${item.contextTitle || item.contextId}`);
+      label = uiText(
+        `Projekt: ${item.contextTitle || item.contextId}`,
+        `Project: ${item.contextTitle || item.contextId}`,
+      );
       href = `/projects/${item.contextId}`;
     }
 
@@ -148,29 +152,54 @@ function groupActivity(activity: ActivityItem[] | null | undefined) {
 
 function formatTimestamp(value: Date) {
   return value.toLocaleString(currentLocaleTag(), {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
-const ACTIVITY_META: Record<ActivityItem['resourceType'], { icon: Icon; href: (item: ActivityItem) => string | null }> = {
-  project: { icon: Icons.Project, href: item => `/projects/${item.resourceId}` },
-  tool: { icon: Icons.Tool, href: item => `/tools/${item.resourceId}` },
-  user: { icon: Icons.User, href: item => `/users/${item.resourceId}` },
-  customer: { icon: Icons.Customer, href: item => `/customers/${item.resourceId}` },
-  contact: { icon: Icons.Contact, href: item => `/contacts/${item.resourceId}` },
-  product: { icon: Icons.Product, href: item => `/products/${item.resourceId}` },
-  productVendor: { icon: Icons.ProductVendor, href: item => `/products/vendors/${item.resourceId}` },
-  deliveryNote: { icon: Icons.DeliveryNote, href: item => `/products/deliveryNotes/${item.resourceId}` },
-  regieReport: { icon: Icons.RegieReport, href: item => `/regieReports/${item.resourceId}` },
+const ACTIVITY_META: Record<
+  ActivityItem["resourceType"],
+  { icon: Icon; href: (item: ActivityItem) => string | null }
+> = {
+  project: {
+    icon: Icons.Project,
+    href: (item) => `/projects/${item.resourceId}`,
+  },
+  tool: { icon: Icons.Tool, href: (item) => `/tools/${item.resourceId}` },
+  user: { icon: Icons.User, href: (item) => `/users/${item.resourceId}` },
+  customer: {
+    icon: Icons.Customer,
+    href: (item) => `/customers/${item.resourceId}`,
+  },
+  contact: {
+    icon: Icons.Contact,
+    href: (item) => `/contacts/${item.resourceId}`,
+  },
+  product: {
+    icon: Icons.Product,
+    href: (item) => `/products/${item.resourceId}`,
+  },
+  productVendor: {
+    icon: Icons.ProductVendor,
+    href: (item) => `/products/vendors/${item.resourceId}`,
+  },
+  deliveryNote: {
+    icon: Icons.DeliveryNote,
+    href: (item) => `/products/deliveryNotes/${item.resourceId}`,
+  },
+  regieReport: {
+    icon: Icons.RegieReport,
+    href: (item) => `/regieReports/${item.resourceId}`,
+  },
   dailyProjectReport: {
     icon: Icons.DailyReport,
-    href: item => item.contextId && item.contextDate
-      ? `/projects/${item.contextId}/dailyReports/${dailyReportDayKey(item.contextDate)}`
-      : null,
+    href: (item) =>
+      item.contextId && item.contextDate
+        ? `/projects/${item.contextId}/dailyReports/${dailyReportDayKey(item.contextDate)}`
+        : null,
   },
 };
 
@@ -178,24 +207,29 @@ export default function DashboardPage() {
   const { locale } = useI18n();
   const sessionInfo = useSessionInfo();
   const { visibleActions, runAction } = useUserActions();
-  const pinnedVisitsStorageKey = useMemo(() => {
-    const tenant = typeof window === 'object'
-      ? window.localStorage.getItem('sortsys.tenant')?.trim() || 'default'
-      : 'default';
-
-    return `webapp::dashboard.pinnedVisits:${tenant}:${sessionInfo.user.id}`;
-  }, [sessionInfo.user.id]);
-  const [pinnedVisits, setPinnedVisits] = useState<PinnedVisit[]>(() => readPinnedVisits(pinnedVisitsStorageKey));
-  const [draggedPinnedPath, setDraggedPinnedPath] = useState<string | null>(null);
-  const [dragOverPinnedPath, setDragOverPinnedPath] = useState<string | null>(null);
-  const [actionHistory] = useClientStream<ActionHistoryItem[] | null, any>(() => {
-    return client.streamQuery('personalization.actions.list', { limit: 100 });
+  const pins = useDashboardPins(),
+    pinnedVisits = pins.rows;
+  const pinnedVisitsAccount = `${sessionInfo.user.id}/${sessionInfo.session.id}`;
+  const [draggedPinnedPath, setDraggedPinnedPath] = useState<string | null>(
+    null,
+  );
+  const [dragOverPinnedPath, setDragOverPinnedPath] = useState<string | null>(
+    null,
+  );
+  const [actionHistory] = useClientStream<
+    ActionHistoryItem[] | null,
+    any
+  >(() => {
+    return client.streamQuery("personalization.actions.list", { limit: 100 });
   }, []);
   const [visitHistory] = useClientStream<VisitHistoryItem[] | null, any>(() => {
-    return client.streamQuery('personalization.visits.list', { limit: 30 });
+    return client.streamQuery("personalization.visits.list", { limit: 30 });
   }, []);
-  const [activity, activityError] = useClientStream<ActivityItem[] | null, any>(() => {
-    return client.streamQuery('personalization.activity.list', {
+  const [activity, activityError] = useClientStream<
+    ActivityItem[] | null,
+    any
+  >(() => {
+    return client.streamQuery("personalization.activity.list", {
       limit: ACTIVITY_PAGE_SIZE,
       latestPerResource: true,
     });
@@ -205,7 +239,7 @@ export default function DashboardPage() {
   const activityRef = useRef<HTMLDivElement>(null);
   const activityHistory = useMemo(
     () => createActivityHistory(activity ?? [], ACTIVITY_PAGE_SIZE),
-    [activity, pinnedVisitsStorageKey],
+    [activity, pinnedVisitsAccount],
   );
   const activityState = useSyncExternalStore(
     activityHistory.subscribe,
@@ -217,7 +251,10 @@ export default function DashboardPage() {
     return pickQuickActions(visibleActions, actionHistory);
   }, [visibleActions, actionHistory]);
 
-  const recentVisits = useMemo(() => uniqueRecentVisits(visitHistory), [visitHistory, locale]);
+  const recentVisits = useMemo(
+    () => uniqueRecentVisits(visitHistory),
+    [visitHistory, locale],
+  );
   const groupedActivity = useMemo(() => {
     const visible = showAllActivity
       ? activityState.items
@@ -227,35 +264,36 @@ export default function DashboardPage() {
   }, [activityState.items, showAllActivity, locale]);
 
   useEffect(() => {
-    if (typeof window !== 'object') return;
-    window.localStorage.setItem(pinnedVisitsStorageKey, JSON.stringify(pinnedVisits));
-  }, [pinnedVisits, pinnedVisitsStorageKey]);
-
-  useEffect(() => {
     setShowAllActivity(false);
-  }, [pinnedVisitsStorageKey]);
+  }, [pinnedVisitsAccount]);
 
   function toggleActivityDetails() {
-    const scrollBack = showAllActivity
-      && (activityRef.current?.getBoundingClientRect().top ?? 0) < 0;
+    const scrollBack =
+      showAllActivity &&
+      (activityRef.current?.getBoundingClientRect().top ?? 0) < 0;
 
-    setShowAllActivity(value => !value);
+    setShowAllActivity((value) => !value);
 
     if (scrollBack) {
-      requestAnimationFrame(() => activityRef.current?.scrollIntoView({ block: 'start' }));
+      requestAnimationFrame(() =>
+        activityRef.current?.scrollIntoView({ block: "start" }),
+      );
     }
   }
 
   async function loadOlderActivity() {
-    await activityHistory.loadOlder(async cursor => {
-      const [page, error] = await client.query('personalization.activity.list', {
-        limit: ACTIVITY_PAGE_SIZE,
-        latestPerResource: true,
-        cursor,
-      });
+    await activityHistory.loadOlder(async (cursor) => {
+      const [page, error] = await client.query(
+        "personalization.activity.list",
+        {
+          limit: ACTIVITY_PAGE_SIZE,
+          latestPerResource: true,
+          cursor,
+        },
+      );
 
       if (error || !page) {
-        throw error ?? new Error('Activity page is missing');
+        throw error ?? new Error("Activity page is missing");
       }
 
       return page;
@@ -263,46 +301,29 @@ export default function DashboardPage() {
   }
 
   function isPinned(path: string) {
-    return pinnedVisits.some(item => item.path === path);
+    return pinnedVisits.some((item) => item.path === path);
   }
 
   function pinVisit(visit: PinnedVisit) {
-    setPinnedVisits(current => [visit, ...current.filter(item => item.path !== visit.path)].slice(0, 12));
+    void pins.pin(visit);
   }
-
   function unpinVisit(path: string) {
-    setPinnedVisits(current => current.filter(item => item.path !== path));
+    void pins.unpin(path);
   }
-
-  function movePinnedVisit(draggedPath: string, targetPath: string, insertAfter = false) {
-    if (draggedPath === targetPath) return;
-
-    setPinnedVisits(current => {
-      const fromIndex = current.findIndex(item => item.path === draggedPath);
-      if (fromIndex < 0) return current;
-
-      const next = [...current];
-      const [moved] = next.splice(fromIndex, 1);
-      const targetIndex = next.findIndex(item => item.path === targetPath);
-      if (!moved || targetIndex < 0) return current;
-
-      next.splice(insertAfter ? targetIndex + 1 : targetIndex, 0, moved);
-      return next;
-    });
+  function movePinnedVisit(
+    draggedPath: string,
+    targetPath: string,
+    insertAfter = false,
+  ) {
+    if (draggedPath !== targetPath)
+      void pins.move({
+        path: draggedPath,
+        target: targetPath,
+        after: insertAfter,
+      });
   }
-
   function movePinnedVisitByOffset(path: string, offset: number) {
-    setPinnedVisits(current => {
-      const index = current.findIndex(item => item.path === path);
-      const nextIndex = Math.max(0, Math.min(current.length - 1, index + offset));
-      if (index < 0 || index === nextIndex) return current;
-
-      const next = [...current];
-      const [moved] = next.splice(index, 1);
-      if (!moved) return current;
-      next.splice(nextIndex, 0, moved);
-      return next;
-    });
+    void pins.move({ path, offset });
   }
 
   function pinnedDropAfter(event: DragEvent<HTMLDivElement>) {
@@ -454,6 +475,14 @@ export default function DashboardPage() {
   return (
     <>
       <MyHeader title={uiText("Dashboard")} />
+      {pins.error && (
+        <MyCallout kind="error">
+          {uiText(
+            "Fixierte Einträge konnten nicht geladen oder gespeichert werden.",
+            "Pinned entries could not be loaded or saved.",
+          )}
+        </MyCallout>
+      )}
 
       {!!pinnedVisits.length && (
         <Tile className="dashboard-pinned-visits min-w-0 gap-1 p-2">

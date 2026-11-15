@@ -26,8 +26,10 @@ import {
   ProposalEntityReference,
   proposalEntityKind,
 } from "~/components/ProposalEntityReference";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useClientStream } from "~/hooks/useClientStream";
-import { client } from "~/lib/client";
+import { useProtectedState } from "~/hooks/useProtectedState";
+import { client, protectedContent } from "~/lib/client";
 import { createChatRequests } from "~/lib/chatRequests";
 import type { ProjectFileTarget } from "~/lib/projectFileLinks";
 import { Icons } from "~/lib/icons";
@@ -39,19 +41,19 @@ import {
 import { uiText, useI18n, type Locale, type TranslationKey } from "~/lib/i18n";
 
 export function meta() {
-  return [
-    { title: uiText("LLM") },
-  ];
+  return [{ title: uiText("LLM") }];
 }
 
-type ChatDetail = QueryResult<'llm.chats.get'>;
-type Proposal = ChatDetail['proposals'][number];
+type ChatDetail = QueryResult<"llm.chats.get">;
+type Proposal = ChatDetail["proposals"][number];
 type ProposedOperation = {
   path: string;
   input: Record<string, unknown>;
   description: string;
 };
-type ProposalExecutionResult = NonNullable<MutateInput<'llm.proposals.review'>['executionResults']>[number];
+type ProposalExecutionResult = NonNullable<
+  MutateInput<"llm.proposals.review">["executionResults"]
+>[number];
 
 type ProposalLink = {
   href: string;
@@ -62,19 +64,21 @@ type Translate = (key: TranslationKey) => string;
 
 const chatRequests = createChatRequests<ChatDetail>();
 client.listenAuthState(() => chatRequests.clear());
+protectedContent.listenContext(() => chatRequests.clear());
+const EMPTY_REVIEW_COMMENTS: Record<string, string> = {};
 
 const DATE_FIELDS = new Set([
-  'day',
-  'effectiveAt',
-  'effectiveTimestamp',
-  'from',
-  'orderReceivedAt',
-  'timestamp',
-  'to',
+  "day",
+  "effectiveAt",
+  "effectiveTimestamp",
+  "from",
+  "orderReceivedAt",
+  "timestamp",
+  "to",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function formatProposalValue(
@@ -84,8 +88,9 @@ function formatProposalValue(
   field: string,
   value: unknown,
 ): string | null {
-  if (value === null || value === undefined) return t('common.notSet');
-  if (typeof value === 'boolean') return value ? t('common.yes') : t('common.no');
+  if (value === null || value === undefined) return t("common.notSet");
+  if (typeof value === "boolean")
+    return value ? t("common.yes") : t("common.no");
 
   if (value instanceof Date) {
     return new Intl.DateTimeFormat(localeTag, {
@@ -94,27 +99,27 @@ function formatProposalValue(
     }).format(value);
   }
 
-  if (typeof value === 'number') {
-    if (field === 'relativeFactor') {
+  if (typeof value === "number") {
+    if (field === "relativeFactor") {
       return new Intl.NumberFormat(localeTag, {
-        style: 'percent',
+        style: "percent",
         maximumFractionDigits: 2,
       }).format(value);
     }
 
-    if (field === 'constant') {
+    if (field === "constant") {
       return new Intl.NumberFormat(localeTag, {
-        style: 'currency',
-        currency: 'EUR',
+        style: "currency",
+        currency: "EUR",
       }).format(value);
     }
 
     return new Intl.NumberFormat(localeTag).format(value);
   }
 
-  if (typeof value === 'string') {
-    if (field === 'effectiveAt' && value.toLowerCase() === 'now') {
-      return t('proposal.immediately');
+  if (typeof value === "string") {
+    if (field === "effectiveAt" && value.toLowerCase() === "now") {
+      return t("proposal.immediately");
     }
 
     const translated = proposalValueLabel(locale, value);
@@ -125,8 +130,8 @@ function formatProposalValue(
 
       if (!Number.isNaN(parsed.valueOf())) {
         return new Intl.DateTimeFormat(localeTag, {
-          dateStyle: 'medium',
-          ...(value.includes('T') ? { timeStyle: 'short' as const } : {}),
+          dateStyle: "medium",
+          ...(value.includes("T") ? { timeStyle: "short" as const } : {}),
         }).format(parsed);
       }
     }
@@ -149,15 +154,16 @@ function ProposalValue({
   value: unknown;
 }) {
   const { locale, localeTag, t } = useI18n();
-  const kind = typeof value === 'string'
-    ? proposalEntityKind(field, operationPath, rootInput)
-    : null;
+  const kind =
+    typeof value === "string"
+      ? proposalEntityKind(field, operationPath, rootInput)
+      : null;
 
-  if (kind && typeof value === 'string') {
+  if (kind && typeof value === "string") {
     return <ProposalEntityReference id={value} kind={kind} />;
   }
 
-  if (typeof value === 'string' && (field === 'id' || field.endsWith('Id'))) {
+  if (typeof value === "string" && (field === "id" || field.endsWith("Id"))) {
     return <span>{t("proposal.existingEntry")}</span>;
   }
 
@@ -183,7 +189,8 @@ function ProposalValue({
     );
   }
 
-  if (isRecord(value)) return (
+  if (isRecord(value))
+    return (
       <ProposalFields
         input={value}
         nested
@@ -243,73 +250,92 @@ function executionLink(
   t: Translate,
 ): ProposalLink | null {
   const output = isRecord(result?.output) ? result.output : {};
-  const outputId = typeof output.id === 'string' ? output.id : null;
-  const inputId = typeof operation.input.id === 'string' ? operation.input.id : null;
+  const outputId = typeof output.id === "string" ? output.id : null;
+  const inputId =
+    typeof operation.input.id === "string" ? operation.input.id : null;
   const id = outputId ?? inputId;
 
-  if (operation.path.startsWith('projects.costs.entries.')) {
+  if (operation.path.startsWith("projects.costs.entries.")) {
     const projectId = operation.input.projectId;
-    return typeof projectId === 'string'
-      ? { href: `/projects/${projectId}/costs`, label: t("proposal.openProjectCosts") }
+    return typeof projectId === "string"
+      ? {
+          href: `/projects/${projectId}/costs`,
+          label: t("proposal.openProjectCosts"),
+        }
       : null;
   }
 
-  if (operation.path.startsWith('projects.dailyReports.')) {
+  if (operation.path.startsWith("projects.dailyReports.")) {
     const projectId = operation.input.projectId;
-    return typeof projectId === 'string'
-      ? { href: `/projects/${projectId}/dailyReports`, label: t("proposal.openDailyReports") }
+    return typeof projectId === "string"
+      ? {
+          href: `/projects/${projectId}/dailyReports`,
+          label: t("proposal.openDailyReports"),
+        }
       : null;
   }
 
-  if (operation.path.startsWith('projects.deployments.')) {
-    return { href: '/deployments', label: t("proposal.openDeployments") };
+  if (operation.path.startsWith("projects.deployments.")) {
+    return { href: "/deployments", label: t("proposal.openDeployments") };
   }
 
-  if (operation.path === 'tools.inventories.create') {
+  if (operation.path === "tools.inventories.create") {
     const toolId = operation.input.toolId;
 
-    return typeof toolId === 'string'
+    return typeof toolId === "string"
       ? { href: `/tools/${toolId}`, label: t("proposal.openTool") }
-      : { href: '/inventories', label: t("proposal.openInventory") };
+      : { href: "/inventories", label: t("proposal.openInventory") };
   }
 
-  if (operation.path === 'users.vacations.create') {
-    return { href: '/vacations', label: t("proposal.openVacations") };
+  if (operation.path === "users.vacations.create") {
+    return { href: "/vacations", label: t("proposal.openVacations") };
   }
 
-  if (operation.path.startsWith('products.priceRecords.')) {
+  if (operation.path.startsWith("products.priceRecords.")) {
     const productId = operation.input.productId;
 
-    return typeof productId === 'string'
+    return typeof productId === "string"
       ? { href: `/products/${productId}`, label: t("proposal.openProduct") }
       : null;
   }
 
   const routes: Record<string, { prefix: string; label: TranslationKey }> = {
-    contacts: { prefix: '/contacts', label: "proposal.openContact" },
-    customers: { prefix: '/customers', label: "proposal.openCustomer" },
-    deliveryNotes: { prefix: '/products/deliveryNotes', label: "proposal.openDeliveryNote" },
-    products: { prefix: '/products', label: "proposal.openProduct" },
-    projects: { prefix: '/projects', label: "proposal.openProject" },
-    regieReports: { prefix: '/regieReports', label: "proposal.openRegieReport" },
-    tools: { prefix: '/tools', label: "proposal.openTool" },
+    contacts: { prefix: "/contacts", label: "proposal.openContact" },
+    customers: { prefix: "/customers", label: "proposal.openCustomer" },
+    deliveryNotes: {
+      prefix: "/products/deliveryNotes",
+      label: "proposal.openDeliveryNote",
+    },
+    products: { prefix: "/products", label: "proposal.openProduct" },
+    projects: { prefix: "/projects", label: "proposal.openProject" },
+    regieReports: {
+      prefix: "/regieReports",
+      label: "proposal.openRegieReport",
+    },
+    tools: { prefix: "/tools", label: "proposal.openTool" },
   };
-  const resource = operation.path.split('.')[0];
+  const resource = operation.path.split(".")[0];
   const route = routes[resource];
 
-  return route && id ? { href: `${route.prefix}/${id}`, label: t(route.label) } : null;
+  return route && id
+    ? { href: `${route.prefix}/${id}`, label: t(route.label) }
+    : null;
 }
 
 function AcceptedProposal({ proposal }: { proposal: Proposal }) {
   const { locale, t } = useI18n();
+  const hasExecutionResults = proposal.executionResults !== null;
   const operations = proposal.operations as unknown as ProposedOperation[];
   const executionResults = (proposal.executionResults ??
     []) as unknown as ProposalExecutionResult[];
-  const links = operations
-    .map((operation, index) =>
-      executionLink(operation, executionResults[index], t),
-    )
-    .filter((link): link is ProposalLink => link !== null);
+  let links: ProposalLink[] = [];
+  if (hasExecutionResults) {
+    links = operations
+      .map((operation, index) =>
+        executionLink(operation, executionResults[index], t),
+      )
+      .filter((link): link is ProposalLink => link !== null);
+  }
 
   return (
     <Card
@@ -321,6 +347,15 @@ function AcceptedProposal({ proposal }: { proposal: Proposal }) {
         {proposal.title}
       </Heading>
       <p>{proposal.summary}</p>
+
+      {!hasExecutionResults && (
+        <p>
+          {uiText(
+            "Im bisherigen Verlauf wurde dieser Vorschlag angenommen. Ein Ausführungsnachweis ist nicht gespeichert.",
+            "This proposal was accepted in the previous history. No execution record was saved.",
+          )}
+        </p>
+      )}
 
       <ol>
         {operations.map((operation, index) => (
@@ -339,7 +374,9 @@ function AcceptedProposal({ proposal }: { proposal: Proposal }) {
 
             <div className="assistant-proposal-input min-w-0 space-y-2">
               <span className="assistant-proposal-input-label block text-xs font-medium text-muted">
-                {t("proposal.appliedData")}
+                {hasExecutionResults
+                  ? t("proposal.appliedData")
+                  : uiText("Vorgeschlagene Daten", "Proposed data")}
               </span>
               <ProposalFields
                 input={operation.input}
@@ -377,15 +414,16 @@ function AcceptedProposal({ proposal }: { proposal: Proposal }) {
   );
 }
 
-function DeclinedProposal({ proposal }: { proposal: Proposal }) {
+function ReviewedProposal({ proposal }: { proposal: Proposal }) {
   const { locale, t } = useI18n();
+  const revisionRequested = proposal.status === "revision_requested";
   const operations = proposal.operations as unknown as ProposedOperation[];
 
   return (
     <Card
       variant="secondary"
       role="article"
-      className="assistant-proposal min-w-0 gap-4 is-declined"
+      className={`assistant-proposal min-w-0 gap-4 ${revisionRequested ? "is-revision-requested" : "is-declined"}`}
     >
       <Heading level={4} noMargin>
         {proposal.title}
@@ -422,8 +460,17 @@ function DeclinedProposal({ proposal }: { proposal: Proposal }) {
 
       <div className="assistant-proposal-declined flex items-center gap-2 text-muted">
         <Icons.Deny size={20} aria-hidden="true" />
-        <strong>{t("proposal.declined")}</strong>
+        <strong>
+          {revisionRequested
+            ? uiText("Überarbeitung angefordert", "Revision requested")
+            : t("proposal.declined")}
+        </strong>
       </div>
+      {proposal.reviewComment && (
+        <blockquote className="whitespace-pre-wrap border-l-2 border-separator pl-3 text-sm">
+          {proposal.reviewComment}
+        </blockquote>
+      )}
     </Card>
   );
 }
@@ -433,17 +480,27 @@ export default function LlmPage() {
   const navigate = useNavigate();
   const { chatId } = useParams();
   const selectedId = chatId ?? null;
+  const session = useSessionInfo();
+  const privateScope = `assistant:user:${session.user.id}`;
+  const canCreate = session.canAccess(privateScope, "master-data", "create");
+  const canReview = session.canAccess(privateScope, "master-data", "update");
+  const canSend = canCreate && canReview;
   const [status, statusErr] = useClientStream(
-    () => client.streamQuery('llm.status', undefined, { strategy: 'network-first' }),
+    () =>
+      client.streamQuery("llm.status", undefined, {
+        strategy: "network-first",
+      }),
     [],
   );
-  const [detail, setDetail] = useState<ChatDetail | null>(null);
-  const [content, setContent] = useState('');
+  const [detail, setDetail, contentContext] =
+    useProtectedState<ChatDetail | null>(null);
+  const [content, setContent] = useProtectedState("");
   const [isStartingNewChat, setIsStartingNewChat] = useState(false);
-  const [previewTarget, setPreviewTarget] = useState<ProjectFileTarget | null>(null);
+  const [previewTarget, setPreviewTarget] =
+    useProtectedState<ProjectFileTarget | null>(null);
   const closeFilePreview = useCallback(() => {
     setPreviewTarget(null);
-  }, []);
+  }, [setPreviewTarget]);
 
   useEffect(() => {
     setPreviewTarget(null);
@@ -459,17 +516,19 @@ export default function LlmPage() {
     () => null,
   );
   const submittedMessage = request?.pending ? request.submission : null;
-  const [revisionComments, setRevisionComments] = useState<
-    Record<string, string>
-  >({});
+  const [revisionComments, setRevisionComments] = useProtectedState(
+    EMPTY_REVIEW_COMMENTS,
+  );
   const acceptLabelId = useId();
   const revisionBusyRef = useRef<string | null>(null);
   const [revisionProposalId, setRevisionProposalId] = useState<string | null>(
     null,
   );
-  const [revisionError, setRevisionError] = useState<string | null>(null);
+  const [revisionError, setRevisionError] = useProtectedState<string | null>(
+    null,
+  );
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useProtectedState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef(selectedId);
   const detailChatIdRef = useRef<string | null>(null);
@@ -495,7 +554,7 @@ export default function LlmPage() {
     if (!selectedId) {
       setIsStartingNewChat(false);
     }
-  }, [selectedId]);
+  }, [selectedId, contentContext]);
 
   useEffect(
     () =>
@@ -527,9 +586,9 @@ export default function LlmPage() {
 
     async function refresh() {
       const [data, err] = await client.query(
-        'llm.chats.get',
+        "llm.chats.get",
         { chatId: currentChatId },
-        { strategy: 'network-only' },
+        { strategy: "network-only" },
       );
 
       if (cancelled) {
@@ -554,7 +613,7 @@ export default function LlmPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [selectedId, request]);
+  }, [selectedId, request, contentContext]);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -562,33 +621,32 @@ export default function LlmPage() {
 
     transcript.scrollTo({
       top: transcript.scrollHeight,
-      behavior: 'smooth',
+      behavior: "smooth",
     });
   }, [detail?.messages.length, submittedMessage, pending]);
 
-  const visibleProposals = useMemo(
-    () => detail?.proposals.filter(proposal => (
-      proposal.status === 'pending'
-      || proposal.status === 'accepted'
-      || proposal.status === 'declined'
-    )) ?? [],
-    [detail],
-  );
+  const visibleProposals = useMemo(() => detail?.proposals ?? [], [detail]);
   const revisionProposal = visibleProposals.find(
     (proposal) =>
       proposal.id === revisionProposalId && proposal.status === "pending",
   );
   const unattachedProposals = useMemo(
-    () => visibleProposals.filter(proposal => proposal.assistantMessageId === null),
+    () =>
+      visibleProposals.filter(
+        (proposal) => proposal.assistantMessageId === null,
+      ),
     [visibleProposals],
   );
-  const submittedMessageIsPersisted = !!submittedMessage && !!detail?.messages.some(message => (
-    message.role === 'user'
-    && message.content === submittedMessage.content
-    && !submittedMessage.existingMessageIds.includes(message.id)
-  ));
+  const submittedMessageIsPersisted =
+    !!submittedMessage &&
+    !!detail?.messages.some(
+      (message) =>
+        message.role === "user" &&
+        message.content === submittedMessage.content &&
+        !submittedMessage.existingMessageIds.includes(message.id),
+    );
   const hasMessages = !!detail?.messages.length || !!submittedMessage;
-  const isSending = pending === 'send' || !!request?.pending;
+  const isSending = pending === "send" || !!request?.pending;
 
   async function loadChat(chatId: string) {
     // A fast review can finish while the initial query is still deduplicated.
@@ -613,35 +671,37 @@ export default function LlmPage() {
   }
 
   function beginNewChat() {
+    if (!canCreate) return;
     // Keep the composer inactive until the new-chat route commits.
     setIsStartingNewChat(true);
-    void navigate('/llm');
+    void navigate("/llm");
     setDetail(null);
-    setContent('');
+    setContent("");
     setError(null);
   }
 
   async function sendMessage(message = content) {
     const normalizedMessage = message.trim();
 
-    if (!normalizedMessage || isSending || isStartingNewChat) {
+    if (!normalizedMessage || !canSend || isSending || isStartingNewChat) {
       return;
     }
 
-    setPending('send');
+    setPending("send");
     setError(null);
-    setContent('');
+    setContent("");
 
     const submission = {
       content: normalizedMessage,
-      existingMessageIds: detail?.messages.map(existingMessage => existingMessage.id) ?? [],
+      existingMessageIds:
+        detail?.messages.map((existingMessage) => existingMessage.id) ?? [],
     };
     const isCurrentSession = chatRequests.sessionGuard();
     const originChatId = selectedId;
     let targetChatId = selectedId;
 
     if (!targetChatId) {
-      const [chat, createError] = await client.mutate('llm.chats.create', {});
+      const [chat, createError] = await client.mutate("llm.chats.create", {});
 
       if (!isCurrentSession()) {
         return;
@@ -661,14 +721,18 @@ export default function LlmPage() {
     }
 
     const chatId = targetChatId;
-    void chatRequests.start(chatId, submission, async signal => {
-      const [updated, sendError] = await client.mutate('llm.messages.send', {
-        chatId,
-        content: normalizedMessage,
-        locale,
-      }, { signal });
+    void chatRequests.start(chatId, submission, async (signal) => {
+      const [updated, sendError] = await client.mutate(
+        "llm.messages.send",
+        {
+          chatId,
+          content: normalizedMessage,
+          locale,
+        },
+        { signal },
+      );
 
-      void client.invalidate('llm.chats.list');
+      void client.invalidate("llm.chats.list");
 
       if (sendError) {
         throw sendError;
@@ -685,11 +749,16 @@ export default function LlmPage() {
       }
     }
 
-    void client.invalidate('llm.chats.list');
+    void client.invalidate("llm.chats.list");
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    )
+      return;
 
     event.preventDefault();
     void sendMessage();
@@ -697,9 +766,9 @@ export default function LlmPage() {
 
   async function decline(proposal: Proposal) {
     setPending(proposal.id);
-    const [, reviewError] = await client.mutate('llm.proposals.review', {
+    const [, reviewError] = await client.mutate("llm.proposals.review", {
       proposalId: proposal.id,
-      decision: 'decline',
+      decision: "decline",
       comment: null,
     });
     setPending(null);
@@ -786,13 +855,17 @@ export default function LlmPage() {
     const isCurrentSession = chatRequests.sessionGuard();
     setPending(proposal.id);
     setError(null);
-    await chatRequests.start(chatId, null, async signal => {
-      const [, reviewError] = await client.mutate("llm.proposals.review", {
-        proposalId: proposal.id,
-        decision: "accept",
-        comment: null,
-        continueConversation: true,
-      }, { signal });
+    await chatRequests.start(chatId, null, async (signal) => {
+      const [, reviewError] = await client.mutate(
+        "llm.proposals.review",
+        {
+          proposalId: proposal.id,
+          decision: "accept",
+          comment: null,
+          continueConversation: true,
+        },
+        { signal },
+      );
 
       if (reviewError) {
         throw reviewError;
@@ -869,14 +942,14 @@ export default function LlmPage() {
             className="bg-success text-success-foreground hover:bg-success/90"
             aria-labelledby={acceptLabelId}
             loading={pending === proposal.id}
-            disabled={isSending || pending !== null}
+            disabled={!canReview || isSending || pending !== null}
             onClick={() => void accept(proposal)}
           >
             {t("proposal.accept")}
           </MyButton>
           <MyButton
             kind="secondary"
-            disabled={isSending || pending !== null}
+            disabled={!canReview || isSending || pending !== null}
             onClick={() => {
               setRevisionError(null);
               setRevisionProposalId(proposal.id);
@@ -887,7 +960,7 @@ export default function LlmPage() {
           <MyButton
             kind="danger"
             className="bg-red-700 text-white hover:bg-red-800"
-            disabled={isSending || pending !== null}
+            disabled={!canReview || isSending || pending !== null}
             onClick={() => void decline(proposal)}
           >
             {t("proposal.decline")}
@@ -898,28 +971,24 @@ export default function LlmPage() {
   }
 
   function renderProposal(proposal: Proposal) {
-    if (proposal.status === 'accepted') {
+    if (proposal.status === "accepted") {
       return <AcceptedProposal key={proposal.id} proposal={proposal} />;
     }
-    if (proposal.status === 'declined') {
-      return <DeclinedProposal key={proposal.id} proposal={proposal} />;
+    if (
+      proposal.status === "declined" ||
+      proposal.status === "revision_requested"
+    ) {
+      return <ReviewedProposal key={proposal.id} proposal={proposal} />;
     }
 
     return renderPendingProposal(proposal);
   }
 
+  let unavailableReason: string | null = null;
   if (status && !status.available) {
-    const reason = !status.hasRole
-      ? t("llm.missingRole")
-      : !status.tenantEnabled
-        ? t("llm.tenantDisabled")
-        : t("llm.providerMissing");
-
-    return (
-      <MyCallout icon={Icons.Info} color="blue">
-        {reason}
-      </MyCallout>
-    );
+    if (!status.hasRole) unavailableReason = t("llm.missingRole");
+    else if (!status.tenantEnabled) unavailableReason = t("llm.tenantDisabled");
+    else unavailableReason = t("llm.providerMissing");
   }
 
   return (
@@ -947,7 +1016,7 @@ export default function LlmPage() {
               kind="ghost"
               size="sm"
               renderIcon={Icons.Create}
-              disabled={isSending || isStartingNewChat}
+              disabled={!canCreate || isSending || isStartingNewChat}
               onClick={beginNewChat}
             >
               {t("llm.newChat")}
@@ -955,6 +1024,11 @@ export default function LlmPage() {
           )}
         </header>
 
+        {unavailableReason && (
+          <MyCallout icon={Icons.Info} color="blue">
+            {unavailableReason}
+          </MyCallout>
+        )}
         {!!statusErr && (
           <MyCallout icon={Icons.Deny} color="red">
             {statusErr.message}
@@ -1075,7 +1149,9 @@ export default function LlmPage() {
               aria-label={t("llm.message")}
               placeholder={t("llm.placeholder")}
               value={content}
-              disabled={isSending || isStartingNewChat || !status?.available}
+              disabled={
+                !canSend || isSending || isStartingNewChat || !status?.available
+              }
               rows={2}
               onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
                 setContent(event.currentTarget.value);
@@ -1088,6 +1164,7 @@ export default function LlmPage() {
               aria-label={t("llm.send")}
               title={t("llm.send")}
               disabled={
+                !canSend ||
                 isSending ||
                 isStartingNewChat ||
                 !status?.available ||

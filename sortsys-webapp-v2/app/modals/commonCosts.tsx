@@ -6,38 +6,54 @@ import { MyTable } from "~/components/MyTable";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
-import { client } from "~/lib/client";
+import { client, commonCostSettings } from "~/lib/client";
+import { Loading } from "@sortsys/react-components";
+import { MyCallout } from "~/components/MyCallout";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { formatCurrency, formatDate, formatNumber } from "~/lib/format";
 import { dailyReportDayKey } from "~/lib/tiles";
 import { parseFloatCustom } from "~/lib/utils";
 
-const COMMON_COST_TYPES = ['fgk', 'mgk', 'ngk'] as const;
+const COMMON_COST_TYPES = ["fgk", "mgk", "ngk"] as const;
 type CommonCostType = (typeof COMMON_COST_TYPES)[number];
 
 function commonCostLabel(type: CommonCostType) {
-  if (type === 'fgk') return 'LKG';
-  if (type === 'mgk') return 'MGK';
-  return 'NUGK';
+  if (type === "fgk") return "LKG";
+  if (type === "mgk") return "MGK";
+  return "NUGK";
 }
 
 function commonCostDescription(type: CommonCostType) {
-  if (type === 'fgk') return uiText('Lohngemeinkosten (interne Arbeitszeit)');
-  if (type === 'mgk') return 'Materialgemeinkosten (Lieferscheine: Produkte + Sonderposten)';
-  return uiText('Nachunternehmergemeinkosten (SUB-Arbeitszeit)');
+  if (type === "fgk") return uiText("Lohngemeinkosten (interne Arbeitszeit)");
+  if (type === "mgk")
+    return "Materialgemeinkosten (Lieferscheine: Produkte + Sonderposten)";
+  return uiText("Nachunternehmergemeinkosten (SUB-Arbeitszeit)");
 }
 
 export function showManageCommonCostsModal(modals: MyModalsInterface) {
+  // Each dialog owns this readiness value. The content and button props are
+  // evaluated in the same render; no synthetic business-data field is needed.
+  let readyToSave = false;
   modals.showForm({
     content: ({ context }) => {
-      const [settings] = useClientStream(() => {
-        return client.streamQuery('settings.costs.get', undefined);
+      const [settings, error] = useClientStream(() => {
+        return client.streamQuery("settings.costs.get", undefined);
       }, []);
 
       const [initialized, setInitialized] = useState(false);
+      const session = useSessionInfo();
+      const writable =
+        session.canAccess("organization", "calculation", "create") ||
+        session.canAccess("organization", "calculation", "update");
+
+      readyToSave = initialized && !!settings && !error && writable;
 
       useEffect(() => {
+        if (!settings || error) {
+          setInitialized(false);
+          return;
+        }
         if (initialized) return;
-        if (!settings) return;
 
         context.setValues({
           fgkRelativeFactor: (settings.fgk?.relativeFactor ?? 0) * 100,
@@ -51,9 +67,28 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
         });
 
         setInitialized(true);
-      }, [settings, initialized]);
+      }, [settings, error, initialized]);
 
       const history = settings?.history ?? [];
+      if (error)
+        return (
+          <MyCallout color="red">
+            {uiText(
+              "Die Gemeinkosten konnten nicht geladen werden.",
+              "Overhead rates could not be loaded.",
+            )}
+          </MyCallout>
+        );
+      if (!settings)
+        return (
+          <Loading
+            active
+            description={uiText(
+              "Gemeinkosten werden geladen …",
+              "Loading overhead rates…",
+            )}
+          />
+        );
 
       return (
         <>
@@ -70,6 +105,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
           <MyForm.DateInput
             required
             name="effectiveAt"
+            disabled={!writable}
             labelText={uiText("Gültig ab")}
           />
 
@@ -88,6 +124,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
                 <MyForm.Input
                   required
                   name={`${key}RelativeFactor`}
+                  disabled={!writable}
                   labelText={uiText("Relativer Faktor in % (z.B. 20)")}
                   type="number"
                   rules={[MyForm.Input.rules.posnum]}
@@ -96,6 +133,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
                 <MyForm.Input
                   required
                   name={`${key}Constant`}
+                  disabled={!writable}
                   labelText={uiText("Konstante (EUR)")}
                   type="number"
                   rules={[MyForm.Input.rules.num]}
@@ -154,8 +192,17 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
     },
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
+      if (!readyToSave)
+        throw new Error(
+          uiText(
+            "Die Gemeinkosten sind nicht zur Bearbeitung freigegeben.",
+            "Overhead rates are not available for editing.",
+          ),
+        );
 
-      const effectiveAtInput = values.effectiveAt ? new Date(values.effectiveAt) : null;
+      const effectiveAtInput = values.effectiveAt
+        ? new Date(values.effectiveAt)
+        : null;
       if (!effectiveAtInput || isNaN(effectiveAtInput.getTime())) {
         throw new Error(uiText("Ungültiges Datum"));
       }
@@ -163,44 +210,45 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
 
       const parseValue = (name: string) => {
         const value = parseFloatCustom(values[name]);
-        if (isNaN(value)) throw new Error(uiText(`Ungültiger Zahlenwert: ${name}`, `Invalid number: ${name}`));
+        if (isNaN(value))
+          throw new Error(
+            uiText(`Ungültiger Zahlenwert: ${name}`, `Invalid number: ${name}`),
+          );
         return value;
       };
 
-      const payloadByType: Record<CommonCostType, {
-        relativeFactor: number;
-        constant: number;
-      }> = {
+      const payloadByType: Record<
+        CommonCostType,
+        {
+          relativeFactor: number;
+          constant: number;
+        }
+      > = {
         fgk: {
-          relativeFactor: parseValue('fgkRelativeFactor') / 100,
-          constant: parseValue('fgkConstant'),
+          relativeFactor: parseValue("fgkRelativeFactor") / 100,
+          constant: parseValue("fgkConstant"),
         },
         mgk: {
-          relativeFactor: parseValue('mgkRelativeFactor') / 100,
-          constant: parseValue('mgkConstant'),
+          relativeFactor: parseValue("mgkRelativeFactor") / 100,
+          constant: parseValue("mgkConstant"),
         },
         ngk: {
-          relativeFactor: parseValue('ngkRelativeFactor') / 100,
-          constant: parseValue('ngkConstant'),
+          relativeFactor: parseValue("ngkRelativeFactor") / 100,
+          constant: parseValue("ngkConstant"),
         },
       };
 
-      for (const type of COMMON_COST_TYPES) {
-        const payload = payloadByType[type];
-
-        const [data, err] = await client.mutate('settings.costs.set', {
+      await commonCostSettings.save(
+        COMMON_COST_TYPES.map((type) => ({
           type,
           effectiveAt,
-          relativeFactor: payload.relativeFactor,
-          constant: payload.constant,
-        });
-        if (err) throw err;
-        if (!data) return;
-      }
+          ...payloadByType[type],
+        })),
+      );
 
       await Promise.all([
-        client.invalidateCascading('projects.costs.get'),
-        client.invalidateCascading('settings.costs.get'),
+        client.invalidateCascading("projects.costs.get"),
+        client.invalidateCascading("settings.costs.get"),
       ]);
 
       hide();
@@ -208,6 +256,7 @@ export function showManageCommonCostsModal(modals: MyModalsInterface) {
     modalProps: () => ({
       modalHeading: uiText("Gemeinkosten verwalten"),
       primaryButtonText: uiText("Speichern"),
+      primaryButtonDisabled: !readyToSave,
     }),
   });
 }

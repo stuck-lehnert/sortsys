@@ -44,9 +44,9 @@ const { requireConfirmation } = await import('sortsys-popups');
 const { log } = await import('sortsys-log');
 
 const confirmed = await requireConfirmation({
-  title: ${JSON.stringify(uiText('Skript ausführen', 'Run script'))},
-  content: ${JSON.stringify(uiText('<p>Aktuelle Sitzung laden?</p>', '<p>Load the current session?</p>'))},
-  buttonText: ${JSON.stringify(uiText('Laden', 'Load'))},
+  title: ${JSON.stringify(uiText("Skript ausführen", "Run script"))},
+  content: ${JSON.stringify(uiText("<p>Aktuelle Sitzung laden?</p>", "<p>Load the current session?</p>"))},
+  buttonText: ${JSON.stringify(uiText("Laden", "Load"))},
 });
 
 if (confirmed) {
@@ -57,25 +57,26 @@ if (confirmed) {
 `;
 
 export function meta() {
-  return [
-    { title: uiText("Client-Skripte") },
-  ];
+  return [{ title: uiText("Client-Skripte") }];
 }
 
 export default function ClientScriptsPage() {
   const sessionInfo = useSessionInfo();
   const modals = useMyModals();
   const notifications = useNotifications();
-  const canView = sessionInfo.canDo('view:clientScripts');
-  const canManage = sessionInfo.canDo('manage:clientScripts');
-  const canDelete = sessionInfo.canDo('delete:clientScripts');
+  const canView = sessionInfo.canDo("view:clientScripts");
+  const canManage = sessionInfo.canDo("manage:clientScripts");
+  const canCreate = sessionInfo.canCreate("clientScripts");
+  const canDelete = sessionInfo.canDo("delete:clientScripts");
   const [isScriptRunning, runScript, scriptLogs] = useClientScriptRunner();
 
   const [scripts, setScripts] = useState<ClientScriptSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loadedScript, setLoadedScript] = useState<ClientScriptDetail | null>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [loadedScript, setLoadedScript] = useState<ClientScriptDetail | null>(
+    null,
+  );
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [code, setCode] = useState(DEFAULT_SCRIPT);
   const [isLoading, setIsLoading] = useState(false);
@@ -93,16 +94,20 @@ export default function ClientScriptsPage() {
   const isMetadataDirty = useMemo(() => {
     if (isDraft) return false;
     if (!loadedScript) return false;
-    return loadedScript.name !== name.trim()
-      || (loadedScript.description ?? '') !== description
-      || loadedScript.enabled !== enabled;
+    return (
+      loadedScript.name !== name.trim() ||
+      (loadedScript.description ?? "") !== description ||
+      loadedScript.enabled !== enabled
+    );
   }, [isDraft, loadedScript, name, description, enabled]);
 
   async function loadScripts(selectId?: string | null) {
     setIsLoading(true);
     setError(null);
     try {
-      const [data, err] = await client.query('clientScripts.list', { includeDisabled: true });
+      const [data, err] = await client.query("clientScripts.list", {
+        includeDisabled: true,
+      });
       if (err) throw err;
       const rows = (data ?? []) as ClientScriptSummary[];
       setScripts(rows);
@@ -110,7 +115,10 @@ export default function ClientScriptsPage() {
         setSelectedId(selectId);
       }
     } catch (err) {
-      setError((err as Error)?.message || uiText('Client-Skripte konnten nicht geladen werden.'));
+      setError(
+        (err as Error)?.message ||
+          uiText("Client-Skripte konnten nicht geladen werden."),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -121,8 +129,8 @@ export default function ClientScriptsPage() {
     setLoadedScript(null);
 
     if (!id) {
-      setName('');
-      setDescription('');
+      setName("");
+      setDescription("");
       setEnabled(true);
       setCode(DEFAULT_SCRIPT);
       return;
@@ -132,9 +140,9 @@ export default function ClientScriptsPage() {
     setError(null);
     try {
       const [data, err] = await client.query(
-        'clientScripts.get',
+        "clientScripts.get",
         { id },
-        { strategy: 'network-first' },
+        { strategy: "network-first" },
       );
 
       if (request !== detailRequest.current) {
@@ -152,12 +160,15 @@ export default function ClientScriptsPage() {
       const script = data as ClientScriptDetail;
       setLoadedScript(script);
       setName(script.name);
-      setDescription(script.description ?? '');
+      setDescription(script.description ?? "");
       setEnabled(script.enabled);
       setCode(script.code);
     } catch (err) {
       if (request === detailRequest.current) {
-        setError((err as Error)?.message || uiText('Client-Skript konnte nicht geladen werden.'));
+        setError(
+          (err as Error)?.message ||
+            uiText("Client-Skript konnte nicht geladen werden."),
+        );
       }
     } finally {
       if (request === detailRequest.current) {
@@ -181,41 +192,59 @@ export default function ClientScriptsPage() {
   }, [selectedId, canView]);
 
   function newScript() {
+    if (!canCreate) return;
     setError(null);
 
     modals.showForm({
       content: () => (
-        <MyForm.Input
-          required
-          name="name"
-          labelText={uiText("Name")}
-          autoFocus
-        />
+        <>
+          <MyForm.Input
+            required
+            name="name"
+            labelText={uiText("Name")}
+            autoFocus
+          />
+          {!canManage && (
+            <MyForm.Input
+              name="code"
+              textArea
+              labelText={uiText("Code", "Code")}
+            />
+          )}
+        </>
       ),
       onSubmit: async ({ context, hide }) => {
-        const trimmedName = `${context.getValues().name ?? ''}`.trim();
+        const trimmedName = `${context.getValues().name ?? ""}`.trim();
         if (!trimmedName) return;
 
         setIsSaving(true);
         setError(null);
         try {
-          const [data, err] = await client.mutate('clientScripts.create', {
+          const [data, err] = await client.mutate("clientScripts.create", {
             name: trimmedName,
             description: null,
             enabled: true,
-            code: DEFAULT_SCRIPT,
+            code: canManage
+              ? DEFAULT_SCRIPT
+              : `${context.getValues().code ?? ""}`,
           });
           if (err) throw err;
-          if (!data) throw new Error(uiText("Skript konnte nicht erstellt werden."));
+          if (!data)
+            throw new Error(uiText("Skript konnte nicht erstellt werden."));
 
           const script = data as ClientScriptDetail;
           hide();
-          notifications.success({ title: uiText("Skript erstellt", "Script created") });
+          notifications.success({
+            title: uiText("Skript erstellt", "Script created"),
+          });
           await loadScripts(script.id);
           await loadScript(script.id);
-          setEditMode(true);
+          setEditMode(canManage);
         } catch (err) {
-          setError((err as Error)?.message || uiText('Skript konnte nicht erstellt werden.'));
+          setError(
+            (err as Error)?.message ||
+              uiText("Skript konnte nicht erstellt werden."),
+          );
           throw err;
         } finally {
           setIsSaving(false);
@@ -233,14 +262,14 @@ export default function ClientScriptsPage() {
     if (!canManage || !selectedId) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError('Name fehlt.');
+      setError("Name fehlt.");
       return;
     }
 
     setIsSaving(true);
     setError(null);
     try {
-      const [data, err] = await client.mutate('clientScripts.update', {
+      const [data, err] = await client.mutate("clientScripts.update", {
         id: selectedId,
         data: {
           name: trimmedName,
@@ -249,25 +278,33 @@ export default function ClientScriptsPage() {
         },
       });
       if (err) throw err;
-      if (!data) throw new Error(uiText("Skript konnte nicht gespeichert werden."));
+      if (!data)
+        throw new Error(uiText("Skript konnte nicht gespeichert werden."));
 
       const script = data as ClientScriptDetail;
-      notifications.success({ title: uiText("Skript gespeichert", "Script saved") });
-      setLoadedScript(current => current?.id === script.id
-        ? {
-          ...current,
-          name: script.name,
-          description: script.description,
-          enabled: script.enabled,
-          modifiedAt: script.modifiedAt,
-        }
-        : script);
+      notifications.success({
+        title: uiText("Skript gespeichert", "Script saved"),
+      });
+      setLoadedScript((current) =>
+        current?.id === script.id
+          ? {
+              ...current,
+              name: script.name,
+              description: script.description,
+              enabled: script.enabled,
+              modifiedAt: script.modifiedAt,
+            }
+          : script,
+      );
       setName(script.name);
-      setDescription(script.description ?? '');
+      setDescription(script.description ?? "");
       setEnabled(script.enabled);
       await loadScripts(script.id);
     } catch (err) {
-      setError((err as Error)?.message || uiText('Skript konnte nicht gespeichert werden.'));
+      setError(
+        (err as Error)?.message ||
+          uiText("Skript konnte nicht gespeichert werden."),
+      );
     } finally {
       setIsSaving(false);
     }
@@ -279,36 +316,49 @@ export default function ClientScriptsPage() {
     setIsSaving(true);
     setError(null);
     try {
-      const [data, err] = await client.mutate('clientScripts.update', {
+      const [data, err] = await client.mutate("clientScripts.update", {
         id: selectedId,
         data: {
           code,
         },
       });
       if (err) throw err;
-      if (!data) throw new Error(uiText("Skript konnte nicht gespeichert werden."));
+      if (!data)
+        throw new Error(uiText("Skript konnte nicht gespeichert werden."));
 
       const script = data as ClientScriptDetail;
-      notifications.success({ title: uiText("Skript gespeichert", "Script saved") });
-      setLoadedScript(current => current?.id === script.id
-        ? { ...current, code: script.code, modifiedAt: script.modifiedAt }
-        : script);
+      notifications.success({
+        title: uiText("Skript gespeichert", "Script saved"),
+      });
+      setLoadedScript((current) =>
+        current?.id === script.id
+          ? { ...current, code: script.code, modifiedAt: script.modifiedAt }
+          : script,
+      );
       setCode(script.code);
       await loadScripts(script.id);
     } catch (err) {
-      setError((err as Error)?.message || uiText('Skript konnte nicht gespeichert werden.'));
+      setError(
+        (err as Error)?.message ||
+          uiText("Skript konnte nicht gespeichert werden."),
+      );
     } finally {
       setIsSaving(false);
     }
   }
 
-  useShortcut('Control+s', e => {
-    if (!editMode) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isCodeDirty || isLoading || isSaving || !selectedId || !canManage) return;
-    void saveCode();
-  }, { disableTextInputs: false });
+  useShortcut(
+    "Control+s",
+    (e) => {
+      if (!editMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isCodeDirty || isLoading || isSaving || !selectedId || !canManage)
+        return;
+      void saveCode();
+    },
+    { disableTextInputs: false },
+  );
 
   async function deleteScript() {
     if (!canDelete || !selectedId || !loadedScript) return;
@@ -344,13 +394,23 @@ export default function ClientScriptsPage() {
     setIsSaving(true);
     setError(null);
     try {
-      const [, err] = await client.mutate('clientScripts.delete', { id: selectedId });
+      const [, err] = await client.mutate("clientScripts.delete", {
+        id: selectedId,
+      });
       if (err) throw err;
-      notifications.success({ title: uiText("Skript gelöscht", "Script deleted") });
+      notifications.success({
+        title: uiText("Skript gelöscht", "Script deleted"),
+      });
       await loadScripts(null);
       setSelectedId(null);
     } catch (err) {
-      setError((err as Error)?.message || uiText('Skript konnte nicht gelöscht werden.', 'Script could not be deleted.'));
+      setError(
+        (err as Error)?.message ||
+          uiText(
+            "Skript konnte nicht gelöscht werden.",
+            "Script could not be deleted.",
+          ),
+      );
     } finally {
       setIsSaving(false);
     }
@@ -365,18 +425,19 @@ export default function ClientScriptsPage() {
     try {
       const result = await runScript(code);
       if (!result.ok) {
-        setError(result.error?.message || uiText('Skript fehlgeschlagen.'));
+        setError(result.error?.message || uiText("Skript fehlgeschlagen."));
         return;
       }
     } catch (err) {
-      setError((err as Error)?.message || uiText('Skript fehlgeschlagen.'));
+      setError((err as Error)?.message || uiText("Skript fehlgeschlagen."));
     }
   }
 
   if (!canView) return <NotFound reason="pageNotFound" />;
 
   if (editMode && selectedId && loadedScript?.id === selectedId) {
-    const canRunCurrentScript = !isScriptRunning && !!code.trim() && (enabled || isDraft);
+    const canRunCurrentScript =
+      !isScriptRunning && !!code.trim() && (enabled || isDraft);
 
     return (
       <div
@@ -455,7 +516,7 @@ export default function ClientScriptsPage() {
             <h3 className="text-xl leading-snug font-semibold">
               {uiText("Skripte")}
             </h3>
-            {canManage && (
+            {canCreate && (
               <MyButton size="sm" renderIcon={Icons.Plus} onClick={newScript}>
                 {uiText("Neu")}
               </MyButton>

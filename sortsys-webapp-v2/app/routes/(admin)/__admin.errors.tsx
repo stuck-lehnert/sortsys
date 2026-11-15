@@ -2,13 +2,16 @@ import { currentLocaleTag, uiText } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { Modal } from "@sortsys/react-components";
 import { useMemo, useState } from "react";
-import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
 import { adminClient } from "~/lib/adminClient";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
+import { MyHeader } from "~/components/MyHeader";
+import { AttrList } from "~/components/AttrList";
+import { MyButton } from "~/components/MyButton";
+import Renew from "@carbon/icons-react/es/Renew";
 
 type ErrorReport = QueryResult<"admin.errors.list">[number];
 
@@ -41,6 +44,24 @@ export default function GlobalAdminErrorsPage() {
 
   return (
     <>
+      <MyHeader
+        title={uiText("Technische Fehler", "Technical errors")}
+        actions={
+          <MyButton
+            kind="secondary"
+            renderIcon={Renew}
+            onClick={() => adminClient.invalidate("admin.errors.list")}
+          >
+            {uiText("Aktualisieren", "Refresh")}
+          </MyButton>
+        }
+      />
+      <p className="mb-4 text-sm text-muted">
+        {uiText(
+          "Die letzten technischen Meldungen. Dokumentinhalte und Stacktraces werden nicht übertragen.",
+          "Recent technical reports. Document contents and stack traces are not transmitted.",
+        )}
+      </p>
       {!!err && (
         <MyCallout icon={Icons.Deny} color="red">
           {uiText("Fehlerberichte konnten nicht geladen werden:")} {err.message}
@@ -67,17 +88,14 @@ export default function GlobalAdminErrorsPage() {
             sortKey: (row) => row.source,
           },
           {
-            label: uiText("Meldung"),
-            render: (row) => (
-              <MyButton
-                kind="ghost"
-                size="sm"
-                onClick={() => setSelectedId(row.id)}
-              >
-                {row.message}
-              </MyButton>
-            ),
-            sortKey: (row) => row.message,
+            label: uiText("Bereich", "Area"),
+            render: (row) => row.path ?? "/",
+            sortKey: (row) => row.path ?? "/",
+          },
+          {
+            label: uiText("HTTP-Status", "HTTP status"),
+            render: (row) => row.metadata.status ?? "–",
+            sortKey: (row) => row.metadata.status ?? 0,
           },
           {
             label: uiText("Benutzer"),
@@ -94,38 +112,40 @@ export default function GlobalAdminErrorsPage() {
           open
           passiveModal
           noFullscreen
-          modalHeading={selected.message}
+          modalHeading={uiText("Technische Meldung", "Technical report")}
           closeButtonLabel={uiText("Schließen", "Close")}
           onRequestClose={() => setSelectedId(null)}
         >
-          <div className="min-w-0 space-y-3">
-            <div className="light break-words">
-              {selected.tenant} · {selected.source} ·{" "}
-              {formatTimestamp(selected.createdAt)}
-              {!!selected.path && <> · {selected.path}</>}
-            </div>
-            {!!selected.stack && (
-              <pre className="overflow-x-auto" tabIndex={0}>
-                <code>{selected.stack}</code>
-              </pre>
-            )}
-            {!!selected.componentStack && (
-              <pre className="overflow-x-auto" tabIndex={0}>
-                <code>{selected.componentStack}</code>
-              </pre>
-            )}
-            {!!selected.metadata && (
-              <pre className="overflow-x-auto" tabIndex={0}>
-                <code>{JSON.stringify(selected.metadata, null, 2)}</code>
-              </pre>
-            )}
-            {!!selected.userAgent && (
-              <div className="light break-words">
-                {uiText("User-Agent: ")}
-                {selected.userAgent}
-              </div>
-            )}
-          </div>
+          <AttrList>
+            <AttrList.Attr
+              name={uiText("Zeit", "Time")}
+              value={formatTimestamp(selected.createdAt)}
+            />
+            <AttrList.Attr
+              name={uiText("Mandant", "Tenant")}
+              value={selected.tenant}
+            />
+            <AttrList.Attr
+              name={uiText("Benutzer", "User")}
+              value={selected.username}
+            />
+            <AttrList.Attr
+              name={uiText("Quelle", "Source")}
+              value={selected.source}
+            />
+            <AttrList.Attr
+              name={uiText("Bereich", "Area")}
+              value={selected.path ?? "/"}
+            />
+            <AttrList.Attr
+              name={uiText("HTTP-Status", "HTTP status")}
+              value={selected.metadata.status ?? "–"}
+            />
+            <AttrList.Attr
+              name={uiText("Build", "Build")}
+              value={<code>{selected.metadata.revision}</code>}
+            />
+          </AttrList>
         </Modal>
       )}
     </>

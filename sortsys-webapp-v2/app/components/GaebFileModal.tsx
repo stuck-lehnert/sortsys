@@ -23,11 +23,22 @@ import {
 } from "@sortsys/gaeb";
 import "@sortsys/gaeb/styles.css";
 import { useCommercialDialogFrame } from "./CommercialDialogFrame";
-import { client, projectFiles, API_ENDPOINT, reportClientError } from "~/lib/client";
+import {
+  client,
+  projectFiles,
+  gaebDocuments,
+  API_ENDPOINT,
+  reportClientError,
+} from "~/lib/client";
+import { errorHttpStatus } from "~/lib/errorTelemetry";
 import { uiText, useI18n } from "~/lib/i18n";
-import type { QueryResult } from "@sortsys/v2-client";
 import type { CommercialDetail } from "~/lib/commercial";
 import { isWriteConflict } from "~/lib/data/atomicWrites";
+import type { connectProtectedGaebLive } from "~/lib/data/gaebLive";
+import type {
+  DocumentEditorSession,
+  DocumentContentView,
+} from "~/lib/data/documentEditor";
 
 export type GaebSavedRevision = {
   id: string;
@@ -36,9 +47,7 @@ export type GaebSavedRevision = {
   title?: string;
 };
 
-type Session = QueryResult<"projects.files.xmlContent"> & {
-  referenceXml?: string | null;
-};
+type Session = DocumentEditorSession;
 export type GaebWorkspaceHandle = {
   save: () => Promise<boolean>;
   requestClose: () => Promise<void>;
@@ -80,63 +89,155 @@ export default function GaebFileModal({
 }: Props) {
   const { locale } = useI18n();
   const frame = useCommercialDialogFrame();
-  const context = useSyncExternalStore(projectFiles.listenEditorContext, projectFiles.editorContext, projectFiles.editorContext);
-  const [opened, setOpened] = useState<{ context: AbortSignal; session: Session; resource: string } | null>(null);
-  const resource = caseId ? `commercial:${caseId}:${documentId}` : `project:${projectId}:${fileId}`;
-  const requested = useRef({ context, resource }); requested.current = { context, resource };
+  const context = useSyncExternalStore(
+    projectFiles.listenEditorContext,
+    projectFiles.editorContext,
+    projectFiles.editorContext,
+  );
+  const [opened, setOpened] = useState<{
+    context: AbortSignal;
+    session: Session;
+    resource: string;
+  } | null>(null);
+  const resource = caseId
+    ? `commercial:${caseId}:${documentId}`
+    : `project:${projectId}:${fileId}`;
+  const requested = useRef({ context, resource });
+  requested.current = { context, resource };
   const assertCurrent = useCallback(() => {
     context.throwIfAborted();
-    if (requested.current.context !== context || requested.current.resource !== resource) throw new DOMException("Aborted", "AbortError");
+    if (
+      requested.current.context !== context ||
+      requested.current.resource !== resource
+    ) {
+      throw new DOMException("Aborted", "AbortError");
+    }
   }, [context, resource]);
-  const session = opened?.context === context && opened.resource === resource && !context.aborted ? opened.session : null;
+  const session =
+    opened?.context === context &&
+    opened.resource === resource &&
+    !context.aborted
+      ? opened.session
+      : null;
   const [failure, setFailure] = useState("");
   const [retry, setRetry] = useState(0);
   const view = useGaebViewPreferences(retry);
   const [dirty, setDirty] = useState(false);
   const [discard, setDiscard] = useState(false);
+  const [frozenDraft, setFrozenDraft] = useState<{
+    xml: string;
+    fileName: string;
+    partial: boolean;
+  } | null>(null);
   const [canEdit, setCanEdit] = useState(false);
+  const [contentView, setContentView] = useState<
+    DocumentContentView | undefined
+  >();
   const [referenceXml, setReferenceXml] = useState<string>();
   const latest = useRef<Session | null>(null);
-  const editor = useRef<{ save: () => Promise<boolean> }>(null);
-  const live = useRef<ReturnType<typeof connectXmlLive> | null>(null);
+  const editor = useRef<{
+    save: () => Promise<boolean>;
+    snapshot?: () => string | undefined;
+  }>(null);
+  const live = useRef<
+    | ReturnType<typeof connectXmlLive>
+    | ReturnType<typeof connectProtectedGaebLive>
+    | null
+  >(null);
   const [remoteXml, setRemoteXml] = useState<string>();
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting");
+  const [collaborationWarning, setCollaborationWarning] = useState(false);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
   const onCaseRef = useRef(onCaseChange);
   onCaseRef.current = onCaseChange;
-  const sharedFields = useMemo(() => new SharedFields(), [context, resource]);
+  const sharedFields = useMemo(
+    () => new SharedFields(documentKind),
+    [context, resource, documentKind],
+  );
   useEffect(() => () => sharedFields.destroy(), [sharedFields]);
   const loadCurrent = useCallback(async (): Promise<Session> => {
     assertCurrent();
-    const [value, error] =
-      caseId && documentId
-        ? await client.query(
-            "commercial.documents.get",
-            { caseId, id: documentId },
-            { strategy: "network-only" },
-          )
-        : await client.query(
-            "projects.files.xmlContent",
-            { projectId: projectId!, fileId: fileId! },
-            { strategy: "network-only" },
-          );
+    let value: Session | null;
+    if (caseId && documentId) {
+      value = await gaebDocuments.open(caseId, documentId, context);
+    } else {
+      const [result, error] = await client.query(
+        "projects.files.xmlContent",
+        { projectId: projectId!, fileId: fileId! },
+        { strategy: "network-only" },
+      );
+      if (error) {
+        throw error;
+      }
+      value = result;
+    }
     assertCurrent();
-    if (error || !value) throw error ?? new Error("load-failed");
+    if (!value) {
+      throw new Error("load-failed");
+    }
     if (!latest.current || value.version >= latest.current.version) {
-      sharedFields.acknowledge(value.xml, value.fileName);
+      const previous = latest.current;
+      if (value.frozen) {
+        if (previous && !previous.frozen) {
+          const draft =
+            editor.current?.snapshot?.() ??
+            sharedFields.project(previous.xml, previous.fileName);
+          let unpublished = draft !== previous.xml;
+          if (unpublished) {
+            try {
+              unpublished =
+                mergeGaebDocuments(
+                  previous.xml,
+                  draft,
+                  value.xml,
+                  value.fileName,
+                ) !== value.xml;
+            } catch {
+              // Keep a conflicting local draft separately from the final file.
+            }
+          }
+          if (unpublished) {
+            setFrozenDraft({
+              xml: draft,
+              fileName: previous.fileName,
+              partial: previous.contentView?.access.complete === false,
+            });
+          }
+        }
+        live.current?.close();
+        live.current = null;
+        sharedFields.freeze(value.xml, value.fileName);
+        if (!previous?.frozen || previous.version !== value.version) {
+          setOpened({ context, session: value, resource });
+        }
+      } else {
+        sharedFields.acknowledge(value.xml, value.fileName);
+      }
       latest.current = value;
+      setContentView(value.contentView);
     }
     return value;
-  }, [projectId, fileId, caseId, documentId, assertCurrent, sharedFields]);
+  }, [
+    projectId,
+    fileId,
+    caseId,
+    documentId,
+    assertCurrent,
+    sharedFields,
+    context,
+    resource,
+  ]);
   useEffect(() => {
     let active = true;
     setOpened(null);
+    setContentView(undefined);
     setFailure("");
     setRemoteXml(undefined);
     setDirty(false);
+    setFrozenDraft(null);
     setCollaborators([]);
     latest.current = null;
     void loadCurrent()
@@ -148,44 +249,106 @@ export default function GaebFileModal({
         }
       })
       .catch(() => {
-        if (active)
+        if (active) {
           setFailure(
             uiText(
               "Die Datei konnte nicht geöffnet werden.",
               "The file could not be opened.",
             ),
           );
+        }
       });
     return () => {
       active = false;
     };
   }, [loadCurrent, retry]);
   useEffect(() => {
-    if (!session) return;
-    if (!session.livePath && caseId && documentId) {
-      let active = true;
-      const subscription = client.streamQuery("commercial.cases.get", { id: caseId }).subscribe(([detail, error]) => {
-        if (error) { setConnectionStatus("offline"); return; }
-        if (detail) onCaseRef.current?.(detail);
-        void loadCurrent().then(value => {
-          if (!active) return;
-          setConnectionStatus("online"); setRemoteXml(value.xml); setCanEdit(value.canEdit); setReferenceXml(value.referenceXml ?? undefined);
-        }).catch(() => { if (active) setConnectionStatus("offline"); });
-      });
-      return () => { active = false; subscription.unsubscribe(); };
+    if (!session) {
+      return;
     }
-    // Private file snapshots use the application's ciphertext-change channel.
-    // Never connect the former plaintext XML socket or store local XML drafts.
-    if (!session.livePath && projectId && fileId) {
+    if (!session.livePath) {
       let active = true;
-      const subscription = client.streamQuery("projects.files.list", { projectId }, { strategy: "network-only" }).subscribe(([, error]) => {
-        if (error) { setConnectionStatus("offline"); return; }
-        void loadCurrent().then(value => {
-          if (!active) return;
-          setConnectionStatus("online"); setRemoteXml(value.xml); setCanEdit(value.canEdit);
-        }).catch(() => { if (active) setConnectionStatus("offline"); });
-      });
-      return () => { active = false; subscription.unsubscribe(); };
+      setCollaborationWarning(false);
+      const lifetime = new AbortController();
+      void gaebDocuments
+        .live({
+          room: {
+            scope: caseId ? `commercial:${caseId}` : `project:${projectId}`,
+            document: documentId ?? fileId!,
+          },
+          initial: session,
+          readableFacets: session.contentView?.access.readable,
+          sharedFields,
+          signal: AbortSignal.any([context, lifetime.signal]),
+          onParticipants: setCollaborators,
+          onStatus: setConnectionStatus,
+          onRejectedMessage() {
+            if (active) {
+              setCollaborationWarning(true);
+            }
+          },
+        })
+        .then((connection) => {
+          if (!active) {
+            connection.close();
+          } else {
+            live.current = connection;
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setConnectionStatus("offline");
+          }
+        });
+      const changed = () => {
+        void loadCurrent()
+          .then((value) => {
+            if (!active) {
+              return;
+            }
+            setRemoteXml(value.xml);
+            setCanEdit(value.canEdit);
+            setReferenceXml(value.referenceXml ?? undefined);
+          })
+          .catch(() => {
+            if (active) {
+              setConnectionStatus("offline");
+            }
+          });
+      };
+      const subscription = caseId
+        ? client
+            .streamQuery("commercial.cases.get", { id: caseId })
+            .subscribe(([detail, error]) => {
+              if (error) {
+                setConnectionStatus("offline");
+                return;
+              }
+              if (detail) {
+                onCaseRef.current?.(detail);
+              }
+              changed();
+            })
+        : client
+            .streamQuery(
+              "projects.files.list",
+              { projectId: projectId! },
+              { strategy: "network-only" },
+            )
+            .subscribe(([, error]) => {
+              if (error) {
+                setConnectionStatus("offline");
+              } else {
+                changed();
+              }
+            });
+      return () => {
+        active = false;
+        subscription.unsubscribe();
+        live.current?.close();
+        live.current = null;
+        lifetime.abort();
+      };
     }
     const connection = connectXmlLive({
       initial: session,
@@ -213,8 +376,9 @@ export default function GaebFileModal({
           !detail.case ||
           !Array.isArray(detail.documents) ||
           detail.case.id !== caseId
-        )
+        ) {
           return;
+        }
         const documents = detail.documents.map((document) => ({
           ...document,
           version: BigInt(document.version),
@@ -235,25 +399,43 @@ export default function GaebFileModal({
       connection.close();
       live.current = null;
     };
-  }, [session, loadCurrent]);
+  }, [session, loadCurrent, sharedFields, context]);
   const save = useCallback(
     async (source: string, base: string) => {
       for (let attempt = 0; attempt < 5; attempt++) {
+        const liveProgress = await live.current?.flush();
+        const liveSequence =
+          typeof liveProgress === "string" ? liveProgress : undefined;
+        const livePositions =
+          typeof liveProgress === "object" ? liveProgress : undefined;
         assertCurrent();
         const current = latest.current;
-        if (!current) throw new Error("save-failed");
+        if (!current) {
+          throw new Error("save-failed");
+        }
         const merged = mergeGaebDocuments(
           sharedFields.project(base, current.fileName),
           sharedFields.project(source, current.fileName),
           sharedFields.project(current.xml, current.fileName),
           current.fileName,
         );
-        if (merged !== source) {
-          const document = new GaebDocument(merged, current.fileName);
-          if (!(await validateGaebInBrowser(merged, document.identity)).valid)
+        if (
+          merged !== source &&
+          current.contentView &&
+          !current.contentView.access.complete
+        ) {
+          if (!(await current.contentView.validate(merged, context)).valid) {
             throw new Error("merge-conflict");
+          }
+        } else if (merged !== source) {
+          const document = new GaebDocument(merged, current.fileName);
+          if (!(await validateGaebInBrowser(merged, document.identity)).valid) {
+            throw new Error("merge-conflict");
+          }
         }
-        if (merged === current.xml) return merged;
+        if (merged === current.xml && liveProgress === undefined) {
+          return merged;
+        }
         const [value, error] =
           caseId && documentId
             ? await client.mutate("commercial.documents.save", {
@@ -261,33 +443,55 @@ export default function GaebFileModal({
                 id: documentId,
                 version: current.version,
                 xml: merged,
-                netAmount: gaebNetAmount(merged),
+                netAmount:
+                  current.contentView &&
+                  !(
+                    current.contentView.access.pricingSupported ??
+                    current.contentView.access.complete
+                  )
+                    ? undefined
+                    : gaebNetAmount(merged, current.referenceXml ?? undefined),
+                liveSequence,
+                livePositions,
               })
             : await client.mutate("projects.files.xmlSave", {
                 projectId: projectId!,
                 fileId: fileId!,
                 version: current.version,
                 xml: merged,
+                liveSequence,
               });
         assertCurrent();
         if (value && !error) {
           const saved = { ...current, xml: merged, version: value.version };
-          if (!latest.current || value.version >= latest.current.version)
+          if (!latest.current || value.version >= latest.current.version) {
             latest.current = saved;
+          }
           live.current?.saved(saved);
           sharedFields.acknowledge(merged, current.fileName);
           setRemoteXml(latest.current!.xml);
           onSavedRef.current?.({
             id: documentId ?? fileId!,
             version: value.version,
-            netAmount: gaebNetAmount(merged),
+            netAmount:
+              current.contentView &&
+              !(
+                current.contentView.access.pricingSupported ??
+                current.contentView.access.complete
+              )
+                ? null
+                : gaebNetAmount(merged, current.referenceXml ?? undefined),
             title: new GaebDocument(merged, current.fileName)
               .explicitDocumentTitle,
           });
           return merged;
         }
-        if (!isWriteConflict(error) && !error?.message.includes("changed in another editor"))
+        if (
+          !isWriteConflict(error) &&
+          !error?.message.includes("changed in another editor")
+        ) {
           throw error ?? new Error("save-failed");
+        }
         await loadCurrent();
       }
       throw new Error("save-conflict");
@@ -303,15 +507,49 @@ export default function GaebFileModal({
   }));
   const close = () => {
     onClose?.();
-    if (caseId) void client.invalidate("commercial.cases.list");
+    if (caseId) {
+      void client.invalidate("commercial.cases.list");
+    }
     void client.invalidate(
       caseId ? "commercial.cases.get" : "projects.files.list",
     );
   };
   const requestClose = async () => {
     await view.flush();
-    if (!dirty || (await editor.current?.save())) close();
-    else setDiscard(true);
+    if (frozenDraft) {
+      setDiscard(true);
+      return;
+    }
+    const saved = editor.current ? await editor.current.save() : !dirty;
+    if (saved) {
+      close();
+    } else {
+      setDiscard(true);
+    }
+  };
+  const downloadFrozenDraft = () => {
+    if (!frozenDraft) return;
+    assertCurrent();
+    const data = frozenDraft.partial
+      ? JSON.stringify(
+          {
+            format: "sortsys-gaeb-view-draft-v1",
+            fileName: frozenDraft.fileName,
+            xml: frozenDraft.xml,
+          },
+          null,
+          2,
+        )
+      : frozenDraft.xml;
+    const type = frozenDraft.partial ? "application/json" : "application/xml";
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = frozenDraft.partial
+      ? `${frozenDraft.fileName}.teilansicht.json`
+      : frozenDraft.fileName;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
   const content = failure ? (
     <div className="gaeb-empty" role="alert">
@@ -328,11 +566,12 @@ export default function GaebFileModal({
           { query },
           { strategy: "network-only" },
         );
-        if (error || !result)
+        if (error || !result) {
           throw error ?? new Error("position-search-failed");
+        }
         return result;
       }}
-      key={`${caseId ?? projectId}:${documentId ?? fileId}`}
+      key={`${resource}:${session.frozen ? session.version.toString() : "editable"}`}
       xml={session.xml}
       viewPreferences={view.preferences}
       onViewPreferencesChange={view.change}
@@ -350,6 +589,31 @@ export default function GaebFileModal({
       workflowNotice={
         <>
           {workflowNotice}
+          {collaborationWarning && (
+            <MyCallout
+              kind="warning"
+              title={uiText("Gemeinsame Bearbeitung", "Collaboration")}
+            >
+              {uiText(
+                "Eine nicht prüfbare gemeinsame Änderung wurde verworfen. Die übrigen Änderungen bleiben bearbeitbar.",
+                "An unverifiable shared change was discarded. The remaining changes can still be edited.",
+              )}
+            </MyCallout>
+          )}
+          {frozenDraft && (
+            <MyCallout
+              kind="warning"
+              title={uiText("Dokument abgeschlossen", "Document finalized")}
+            >
+              {uiText(
+                "Das Dokument wurde inzwischen abgeschlossen. Noch nicht übernommene lokale Änderungen bleiben als separater Entwurf verfügbar.",
+                "The document has been finalized. Local changes which were not included remain available as a separate draft.",
+              )}
+              <Button kind="ghost" size="sm" onClick={downloadFrozenDraft}>
+                {uiText("Entwurf herunterladen", "Download draft")}
+              </Button>
+            </MyCallout>
+          )}
           {view.error && (
             <MyCallout
               kind="warning"
@@ -383,6 +647,8 @@ export default function GaebFileModal({
       }
       fileName={session.fileName}
       canEdit={canEdit && editable !== false}
+      contentView={contentView}
+      documentKind={documentKind}
       locale={locale === "en" ? "en" : "de"}
       onSave={save}
       onSaveError={(error, stage) => {
@@ -390,17 +656,7 @@ export default function GaebFileModal({
           level:
             stage === "drafts" || stage === "validation" ? "warning" : "error",
           source: "gaeb.autosave",
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-          metadata: {
-            stage,
-            caseId,
-            documentId,
-            projectId,
-            fileId,
-            version: String(latest.current?.version),
-            versionType: typeof latest.current?.version,
-          },
+          status: errorHttpStatus(error),
         });
       }}
       onDirtyChange={setDirty}
@@ -452,23 +708,39 @@ export default function GaebFileModal({
       <Modal
         open={discard}
         passiveModal
-        modalHeading={uiText(
-          "Speichern noch nicht abgeschlossen",
-          "Saving has not completed",
-        )}
+        modalHeading={
+          frozenDraft
+            ? uiText("Lokalen Entwurf sichern", "Keep the local draft")
+            : uiText(
+                "Speichern noch nicht abgeschlossen",
+                "Saving has not completed",
+              )
+        }
         onRequestClose={() => setDiscard(false)}
         closeButtonLabel={uiText("Schließen", "Close")}
       >
         <p>
-          {uiText(
-            "Deine Änderungen konnten noch nicht automatisch gespeichert werden. Du kannst weiterarbeiten und es wird erneut versucht.",
-            "Your changes could not be saved automatically yet. You can continue editing while autosave retries.",
-          )}
+          {frozenDraft
+            ? uiText(
+                "Der nicht übernommene Entwurf ist nur in diesem geöffneten Dialog verfügbar. Vor dem Schließen kann er heruntergeladen oder verworfen werden.",
+                "The unpublished draft is available only in this open dialog. Download it or discard it before closing.",
+              )
+            : uiText(
+                "Deine Änderungen konnten noch nicht automatisch gespeichert werden. Du kannst weiterarbeiten und es wird erneut versucht.",
+                "Your changes could not be saved automatically yet. You can continue editing while autosave retries.",
+              )}
         </p>
         <div className="flex flex-wrap justify-end gap-2 pt-4">
           <Button kind="ghost" onClick={() => setDiscard(false)}>
-            {uiText("Weiter bearbeiten", "Continue editing")}
+            {frozenDraft
+              ? uiText("Zurück zum Dokument", "Back to document")
+              : uiText("Weiter bearbeiten", "Continue editing")}
           </Button>
+          {frozenDraft && (
+            <Button onClick={downloadFrozenDraft}>
+              {uiText("Entwurf herunterladen", "Download draft")}
+            </Button>
+          )}
           <Button kind="danger" onClick={close}>
             {uiText("Verwerfen", "Discard")}
           </Button>

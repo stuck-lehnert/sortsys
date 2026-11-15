@@ -53,93 +53,163 @@ export default function DailyProjectReportDetailPage() {
 
   const [report, err] = useClientStream(() => {
     if (!id || !dayKey) return of([null, null]);
-    return client.streamQuery('projects.dailyReports.get', { projectId: id, day: dayKey });
+    return client.streamQuery("projects.dailyReports.get", {
+      projectId: id,
+      day: dayKey,
+    });
   }, [id, dayKey]);
 
-  useTitle(() => report ? uiText(`Bautagesbericht ${formatDate(report.day)}`, `Daily report ${formatDate(report.day)}`) : null, [report?.day]);
+  useTitle(
+    () =>
+      report
+        ? uiText(
+            `Bautagesbericht ${formatDate(report.day)}`,
+            `Daily report ${formatDate(report.day)}`,
+          )
+        : null,
+    [report?.day],
+  );
 
-  async function exportDailyReportToPdf(target: BlobTarget = 'open') {
+  async function exportDailyReportToPdf(target: BlobTarget = "open") {
     const currentReport = report;
     if (!currentReport) return;
-    const pdfWindow = target === 'open' ? window.open('', '_blank') : null;
+    const pdfWindow = target === "open" ? window.open("", "_blank") : null;
 
     setPdfExportErr(null);
     setIsPdfExporting(true);
 
     try {
-      const [project] = await client.query('projects.get', { id: currentReport.projectId }, { strategy: 'cache-first' });
+      const [project] = await client.query(
+        "projects.get",
+        { id: currentReport.projectId },
+        { strategy: "cache-first" },
+      );
 
-      const userIds = [...new Set(currentReport.workHours.map((entry) => entry.userId).filter(Boolean))] as string[];
-      const userEntries = await Promise.all(userIds.map(async (userId) => {
-        const [user] = await client.query('users.get', { id: userId }, { strategy: 'cache-first' });
-        return [userId, user ?? null] as const;
-      }));
+      const userIds = [
+        ...new Set(
+          currentReport.workHours.map((entry) => entry.userId).filter(Boolean),
+        ),
+      ] as string[];
+      const userEntries = await Promise.all(
+        userIds.map(async (userId) => {
+          const [user] = await client.query(
+            "users.get",
+            { id: userId },
+            { strategy: "cache-first" },
+          );
+          return [userId, user ?? null] as const;
+        }),
+      );
       const userMap = new Map(userEntries);
 
-      const sortedWorkHours = [...currentReport.workHours].sort((left, right) => {
-        const leftLabel = left.userId ? (userMap.get(left.userId) ? userFullName(userMap.get(left.userId)!) : left.userId) : 'Unbekannt';
-        const rightLabel = right.userId ? (userMap.get(right.userId) ? userFullName(userMap.get(right.userId)!) : right.userId) : 'Unbekannt';
-        return leftLabel.localeCompare(rightLabel, 'de', { sensitivity: 'base' });
-      });
+      const sortedWorkHours = [...currentReport.workHours].sort(
+        (left, right) => {
+          const leftLabel = left.userId
+            ? userMap.get(left.userId)
+              ? userFullName(userMap.get(left.userId)!)
+              : left.userId
+            : "Unbekannt";
+          const rightLabel = right.userId
+            ? userMap.get(right.userId)
+              ? userFullName(userMap.get(right.userId)!)
+              : right.userId
+            : "Unbekannt";
+          return leftLabel.localeCompare(rightLabel, "de", {
+            sensitivity: "base",
+          });
+        },
+      );
 
       const workHourRows = sortedWorkHours.map((entry) => {
         const user = entry.userId ? userMap.get(entry.userId) : null;
         return [
-          user ? userFullName(user) : 'Unbekannt',
+          user ? userFullName(user) : "Unbekannt",
           formatPdfNumber(entry.hours),
         ];
       });
 
-      const totalHours = currentReport.workHours.reduce((sum, entry) => sum + Number(entry.hours ?? 0), 0);
+      const totalHours = currentReport.workHours.reduce(
+        (sum, entry) => sum + Number(entry.hours ?? 0),
+        0,
+      );
 
-      const summaryRows: PdfTableSection['rows'] = [
-        [uiText('Projekt'), project?.title ?? 'Unbekannt'],
-        ['Tag', formatDate(currentReport.day, 'long')],
-        [uiText('Gesamtstunden', 'Total hours'), { value: `${formatPdfNumber(totalHours)} h`, bold: true }],
+      const summaryRows: PdfTableSection["rows"] = [
+        [uiText("Projekt"), project?.title ?? "Unbekannt"],
+        ["Tag", formatDate(currentReport.day, "long")],
+        [
+          uiText("Gesamtstunden", "Total hours"),
+          { value: `${formatPdfNumber(totalHours)} h`, bold: true },
+        ],
       ];
 
       const sections: PdfTableSection[] = [
         {
           title: uiText("Zusammenfassung"),
-          columns: [uiText('Kennzahl'), uiText('Wert')],
+          columns: [uiText("Kennzahl"), uiText("Wert")],
           rows: summaryRows,
-          presentation: 'summary',
+          presentation: "summary",
           withHeader: false,
-          align: ['left', 'left'],
-          columnWidths: ['1fr', '2fr'],
+          align: ["left", "left"],
+          columnWidths: ["1fr", "2fr"],
         },
       ];
 
       if (currentReport.summary?.trim()) {
-        sections.push({ title: uiText('Beschreibung der Arbeiten'), columns: [''], rows: [[currentReport.summary]], withHeader: false });
+        sections.push({
+          title: uiText("Beschreibung der Arbeiten"),
+          columns: [""],
+          rows: [[currentReport.summary]],
+          withHeader: false,
+        });
       }
 
       if (workHourRows.length > 0) {
         sections.push({
           title: uiText("Arbeitszeit"),
-          columns: ['Mitarbeiter', uiText('Stunden')],
+          columns: ["Mitarbeiter", uiText("Stunden")],
           rows: workHourRows,
-          totalRows: [[uiText('Gesamt', 'Total'), formatPdfNumber(totalHours)]],
-          align: ['left', 'right'],
-          columnWidths: ['2fr', '1fr'],
+          totalRows: [[uiText("Gesamt", "Total"), formatPdfNumber(totalHours)]],
+          align: ["left", "right"],
+          columnWidths: ["2fr", "1fr"],
         });
       }
 
-      if (currentReport.weather && Object.values(currentReport.weather).some(value => value != null && value !== '')) {
+      if (
+        currentReport.weather &&
+        Object.values(currentReport.weather).some(
+          (value) => value != null && value !== "",
+        )
+      ) {
         const weatherRows: string[][] = [];
-        if (currentReport.weather.summary) weatherRows.push([uiText('Beschreibung'), currentReport.weather.summary]);
-        if (typeof currentReport.weather.temperatureC === 'number') weatherRows.push(['Temperatur', `${formatNumber(currentReport.weather.temperatureC)} °C`]);
-        if (typeof currentReport.weather.precipitationMm === 'number') weatherRows.push(['Niederschlag', `${formatNumber(currentReport.weather.precipitationMm)} mm`]);
-        if (typeof currentReport.weather.windKph === 'number') weatherRows.push(['Wind', `${formatNumber(currentReport.weather.windKph)} km/h`]);
+        if (currentReport.weather.summary)
+          weatherRows.push([
+            uiText("Beschreibung"),
+            currentReport.weather.summary,
+          ]);
+        if (typeof currentReport.weather.temperatureC === "number")
+          weatherRows.push([
+            "Temperatur",
+            `${formatNumber(currentReport.weather.temperatureC)} °C`,
+          ]);
+        if (typeof currentReport.weather.precipitationMm === "number")
+          weatherRows.push([
+            "Niederschlag",
+            `${formatNumber(currentReport.weather.precipitationMm)} mm`,
+          ]);
+        if (typeof currentReport.weather.windKph === "number")
+          weatherRows.push([
+            "Wind",
+            `${formatNumber(currentReport.weather.windKph)} km/h`,
+          ]);
 
         if (weatherRows.length > 0) {
           sections.push({
             title: uiText("Wetter"),
-            columns: ['Feld', uiText('Wert')],
+            columns: ["Feld", uiText("Wert")],
             rows: weatherRows,
             withHeader: false,
-            align: ['left', 'left'],
-            columnWidths: ['1fr', '2fr'],
+            align: ["left", "left"],
+            columnWidths: ["1fr", "2fr"],
           });
         }
       }
@@ -148,21 +218,30 @@ export default function DailyProjectReportDetailPage() {
         .map((photo, index) => ({
           title: uiText(`Foto ${index + 1}`, `Photo ${index + 1}`),
           caption: `${photo.fileName} · ${formatDate(photo.createdAt)}`,
-          url: photo.downloadUrl || photo.previewUrl || photo.thumbnailUrl || '',
+          url:
+            photo.downloadUrl || photo.previewUrl || photo.thumbnailUrl || "",
           fileName: photo.fileName,
           mimeType: photo.mimeType,
         }))
-        .filter(image => !!image.url);
+        .filter((image) => !!image.url);
       const imageSections: PdfImageSection[] = photoImages.length
-        ? [{
-          title: uiText("Fotos"),
-          subtitle: uiText(`${photoImages.length} ${photoImages.length === 1 ? "Foto" : "Fotos"} zum Bautagesbericht`, `${photoImages.length} ${photoImages.length === 1 ? "photo" : "photos"} for the daily report`),
-          images: photoImages,
-        }]
+        ? [
+            {
+              title: uiText("Fotos"),
+              subtitle: uiText(
+                `${photoImages.length} ${photoImages.length === 1 ? "Foto" : "Fotos"} zum Bautagesbericht`,
+                `${photoImages.length} ${photoImages.length === 1 ? "photo" : "photos"} for the daily report`,
+              ),
+              images: photoImages,
+            },
+          ]
         : [];
 
       const pdfData = await renderStructuredPdf({
-        title: uiText(`Bautagesbericht ${formatDate(currentReport.day, 'long')}`, `Daily report ${formatDate(currentReport.day, 'long')}`),
+        title: uiText(
+          `Bautagesbericht ${formatDate(currentReport.day, "long")}`,
+          `Daily report ${formatDate(currentReport.day, "long")}`,
+        ),
         reportLabel: uiText("Bautagesbericht"),
         showReportLabel: false,
         sections,
@@ -170,32 +249,65 @@ export default function DailyProjectReportDetailPage() {
         emptyMessage: uiText("Keine Daten zum Bautagesbericht verfügbar."),
       });
 
-      const safeSuffix = currentReport.day.toISOString().slice(0, 10).replace(/[^\w\-]+/g, '-');
-      const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      deliverBlob(blob, uiText(`Bautagesbericht-${safeSuffix}.pdf`, `Daily report-${safeSuffix}.pdf`), target, pdfWindow);
+      const safeSuffix = currentReport.day
+        .toISOString()
+        .slice(0, 10)
+        .replace(/[^\w\-]+/g, "-");
+      const blob = new Blob([pdfData] as any, { type: "application/pdf" });
+      deliverBlob(
+        blob,
+        uiText(
+          `Bautagesbericht-${safeSuffix}.pdf`,
+          `Daily report-${safeSuffix}.pdf`,
+        ),
+        target,
+        pdfWindow,
+      );
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
+      setPdfExportErr(
+        (err as Error)?.message ||
+          uiText("Unbekannter Fehler beim PDF-Export."),
+      );
     } finally {
       setIsPdfExporting(false);
     }
   }
 
-  useShortcut('Control+e', e => {
-    if (!report || !sessionInfo.canDo('manage:dailyProjectReports')) return;
+  useShortcut("Control+e", (e) => {
+    if (
+      !report ||
+      !sessionInfo.canAccess(
+        `project:${id}:daily-reports`,
+        "master-data",
+        "update",
+      )
+    )
+      return;
     e.preventDefault();
     showModifyDailyProjectReportModal(modals, report);
   });
 
-  useShortcut('Control+p', e => {
-    if (!report || !sessionInfo.canDo('view:dailyProjectReports')) return;
+  useShortcut("Control+p", (e) => {
+    if (!report || !sessionInfo.canDo("view:dailyProjectReports")) return;
     e.preventDefault();
     if (isPdfExporting) return;
-    void exportDailyReportToPdf('open');
+    void exportDailyReportToPdf("open");
   });
 
   async function uploadDailyReportPhotos(fileList: FileList | null) {
-    if (!fileList?.length || !report || !dayKey) return;
+    if (
+      !fileList?.length ||
+      !report ||
+      !dayKey ||
+      !sessionInfo.canAccess(
+        `project:${id}:daily-reports`,
+        "master-data",
+        "update",
+      ) ||
+      !sessionInfo.canAccess(`project:${id}`, "attachment", "create")
+    )
+      return;
     if (isPhotoUploading) return;
 
     setPhotoErr(null);
@@ -204,31 +316,47 @@ export default function DailyProjectReportDetailPage() {
     try {
       const files = Array.from(fileList);
       for (const file of files) {
-        if (!file.type.toLowerCase().startsWith('image/')) {
-          throw new Error(uiText(`${file.name} ist kein Bild.`, `${file.name} is not an image.`));
+        if (!file.type.toLowerCase().startsWith("image/")) {
+          throw new Error(
+            uiText(
+              `${file.name} ist kein Bild.`,
+              `${file.name} is not an image.`,
+            ),
+          );
         }
 
-        const fileId = await privateProjectFiles.upload({ projectId: report.projectId, name: file.name,
-          mime: file.type || "application/octet-stream", blob: file, inspect: () => inspectProjectFile(file) });
-
-        const [, attachErr] = await client.mutate('projects.dailyReports.photos.add', {
+        const fileId = await privateProjectFiles.upload({
           projectId: report.projectId,
-          day: dayKey,
-          fileId,
+          name: file.name,
+          mime: file.type || "application/octet-stream",
+          blob: file,
+          inspect: () => inspectProjectFile(file),
         });
+
+        const [, attachErr] = await client.mutate(
+          "projects.dailyReports.photos.add",
+          {
+            projectId: report.projectId,
+            day: dayKey,
+            fileId,
+          },
+        );
         if (attachErr) throw attachErr;
       }
 
       await Promise.all([
-        client.invalidate('projects.dailyReports.get'),
-        client.invalidate('projects.dailyReports.list'),
-        client.invalidate('projects.files.list'),
+        client.invalidate("projects.dailyReports.get"),
+        client.invalidate("projects.dailyReports.list"),
+        client.invalidate("projects.files.list"),
       ]);
     } catch (err) {
-      setPhotoErr((err as Error)?.message || uiText('Fotos konnten nicht hochgeladen werden.'));
+      setPhotoErr(
+        (err as Error)?.message ||
+          uiText("Fotos konnten nicht hochgeladen werden."),
+      );
     } finally {
       setIsPhotoUploading(false);
-      if (photoInputRef.current) photoInputRef.current.value = '';
+      if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
 
@@ -240,19 +368,24 @@ export default function DailyProjectReportDetailPage() {
     setRemovingPhotoId(fileId);
 
     try {
-      const [, err] = await client.mutate('projects.dailyReports.photos.remove', {
-        projectId: report.projectId,
-        day: dayKey,
-        fileId,
-      });
+      const [, err] = await client.mutate(
+        "projects.dailyReports.photos.remove",
+        {
+          projectId: report.projectId,
+          day: dayKey,
+          fileId,
+        },
+      );
       if (err) throw err;
 
       await Promise.all([
-        client.invalidate('projects.dailyReports.get'),
-        client.invalidate('projects.dailyReports.list'),
+        client.invalidate("projects.dailyReports.get"),
+        client.invalidate("projects.dailyReports.list"),
       ]);
     } catch (err) {
-      setPhotoErr((err as Error)?.message || uiText('Foto konnte nicht entfernt werden.'));
+      setPhotoErr(
+        (err as Error)?.message || uiText("Foto konnte nicht entfernt werden."),
+      );
     } finally {
       setRemovingPhotoId(null);
     }
@@ -261,9 +394,16 @@ export default function DailyProjectReportDetailPage() {
   if (err) return <NotFound reason="resourceNotFound" />;
   if (!report) return;
 
-  const hasWeather = !!report.weather && !!Object.values(report.weather).find(v => !!v);
+  const hasWeather =
+    !!report.weather && !!Object.values(report.weather).find((v) => !!v);
   const photos = report.photos ?? [];
-  const canManagePhotos = sessionInfo.supportsProjectFiles() && sessionInfo.canDo('manage:dailyProjectReports');
+  const canManagePhotos =
+    sessionInfo.supportsProjectFiles() &&
+    sessionInfo.canAccess(
+      `project:${id}:daily-reports`,
+      "master-data",
+      "update",
+    );
 
   return (
     <>
@@ -295,21 +435,35 @@ export default function DailyProjectReportDetailPage() {
                   ? uiText("Fotos werden hochgeladen...")
                   : uiText("Fotos hinzufügen"),
                 renderIcon: Icons.Create,
-                hideIf: !canManagePhotos,
+                hideIf:
+                  !canManagePhotos ||
+                  !sessionInfo.canAccess(
+                    `project:${id}`,
+                    "attachment",
+                    "create",
+                  ),
                 disabled: isPhotoUploading,
                 onClick: () => photoInputRef.current?.click(),
               },
               {
                 label: uiText("Bearbeiten"),
                 renderIcon: Icons.Edit,
-                hideIf: !sessionInfo.canDo("manage:dailyProjectReports"),
+                hideIf: !sessionInfo.canAccess(
+                  `project:${id}:daily-reports`,
+                  "master-data",
+                  "update",
+                ),
                 onClick: () =>
                   showModifyDailyProjectReportModal(modals, report),
               },
               {
                 label: uiText("Löschen"),
                 renderIcon: Icons.Delete,
-                hideIf: !sessionInfo.canDo("delete:dailyProjectReports"),
+                hideIf: !sessionInfo.canAccess(
+                  `project:${id}:daily-reports`,
+                  "master-data",
+                  "delete",
+                ),
                 onClick: () =>
                   showDeleteDailyProjectReportModal(modals, report),
               },

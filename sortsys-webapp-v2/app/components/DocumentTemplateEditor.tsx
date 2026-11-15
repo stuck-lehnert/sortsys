@@ -5,7 +5,7 @@ import { MyCallout } from "./MyCallout";
 import PdfAttachmentViewer from "./PdfAttachmentViewer";
 import { TypstCodeEditor, type TypstEditorHandle } from "./TypstCodeEditor";
 import { client, templateAssets } from "~/lib/client";
-import { InvalidProtectedData } from "@sortsys/zerotrust";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { isWriteConflict } from "~/lib/data/atomicWrites";
 import { unlockedAccount } from "~/lib/crypto/session";
 import { uiText, useI18n } from "~/lib/i18n";
@@ -17,9 +17,21 @@ import {
 } from "~/lib/gaebPrint";
 function editingIdentity(): string | null {
   const account = unlockedAccount();
-  return account ? JSON.stringify([account.tenant, account.username, account.vault.signingKey, account.vault.encryptionKey]) : null;
+  return account
+    ? JSON.stringify([
+        account.tenant,
+        account.username,
+        account.vault.signingKey,
+        account.vault.encryptionKey,
+      ])
+    : null;
 }
-type SuspendedDraft = { identity: string; source: string; savedSource: string; revision: string };
+type SuspendedDraft = {
+  identity: string;
+  source: string;
+  savedSource: string;
+  revision: string;
+};
 export default function DocumentTemplateEditor() {
   const { locale } = useI18n();
   const [context, setContext] =
@@ -39,20 +51,56 @@ export default function DocumentTemplateEditor() {
   const editor = useRef<TypstEditorHandle>(null);
   const previewUrl = useRef("");
   const suspendedDraft = useRef<SuspendedDraft | null>(null);
-  const working = useRef({ identity: editingIdentity(), source, savedSource, revision: context?.template.revision });
-  working.current = { identity: editingIdentity(), source, savedSource, revision: context?.template.revision };
-  const current = (epoch: AbortSignal) => !epoch.aborted && templateAssets.context() === epoch;
-  useEffect(() => templateAssets.listenContext(() => {
-    const identity = editingIdentity(), previous = working.current;
-    if (!identity || previous.identity !== identity) suspendedDraft.current = null;
-    else if (!suspendedDraft.current && previous.revision && previous.source !== previous.savedSource) {
-      suspendedDraft.current = { identity, source: previous.source, savedSource: previous.savedSource, revision: previous.revision };
-    }
-    setContext(undefined); setSource(DEFAULT_GAEB_TEMPLATE); setSavedSource(DEFAULT_GAEB_TEMPLATE);
-    setCompiledSource(""); setPreview(""); setError(""); setPreviewError(""); setDeleting(null); setBusy(false); setCompiling(false); setStale(false);
-    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); previewUrl.current = "";
-    setRetry(value => value + 1);
-  }), []);
+  const working = useRef({
+    identity: editingIdentity(),
+    source,
+    savedSource,
+    revision: context?.template.revision,
+  });
+  working.current = {
+    identity: editingIdentity(),
+    source,
+    savedSource,
+    revision: context?.template.revision,
+  };
+  const current = (epoch: AbortSignal) =>
+    !epoch.aborted && templateAssets.context() === epoch;
+  useEffect(
+    () =>
+      templateAssets.listenContext(() => {
+        const identity = editingIdentity(),
+          previous = working.current;
+        if (!identity || previous.identity !== identity)
+          suspendedDraft.current = null;
+        else if (
+          !suspendedDraft.current &&
+          previous.revision &&
+          previous.source !== previous.savedSource
+        ) {
+          suspendedDraft.current = {
+            identity,
+            source: previous.source,
+            savedSource: previous.savedSource,
+            revision: previous.revision,
+          };
+        }
+        setContext(undefined);
+        setSource(DEFAULT_GAEB_TEMPLATE);
+        setSavedSource(DEFAULT_GAEB_TEMPLATE);
+        setCompiledSource("");
+        setPreview("");
+        setError("");
+        setPreviewError("");
+        setDeleting(null);
+        setBusy(false);
+        setCompiling(false);
+        setStale(false);
+        if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+        previewUrl.current = "";
+        setRetry((value) => value + 1);
+      }),
+    [],
+  );
   useEffect(() => {
     let active = true;
     const epoch = templateAssets.context();
@@ -60,17 +108,32 @@ export default function DocumentTemplateEditor() {
       .then((value) => {
         if (active && current(epoch)) {
           const text = value.template.source ?? DEFAULT_GAEB_TEMPLATE;
-          const draft = suspendedDraft.current; suspendedDraft.current = null;
-          if (draft && draft.identity === editingIdentity() && draft.source !== text) {
-            setContext({ ...value, template: { ...value.template, revision: draft.revision } });
-            setSource(draft.source); setSavedSource(draft.savedSource);
-          } else { setContext(value); setSource(text); setSavedSource(text); }
+          const draft = suspendedDraft.current;
+          suspendedDraft.current = null;
+          if (
+            draft &&
+            draft.identity === editingIdentity() &&
+            draft.source !== text
+          ) {
+            setContext({
+              ...value,
+              template: { ...value.template, revision: draft.revision },
+            });
+            setSource(draft.source);
+            setSavedSource(draft.savedSource);
+          } else {
+            setContext(value);
+            setSource(text);
+            setSavedSource(text);
+          }
           setError("");
         }
       })
       .catch((cause) => {
         if (active && current(epoch)) {
-          suspendedDraft.current = null; setSource(DEFAULT_GAEB_TEMPLATE); setSavedSource(DEFAULT_GAEB_TEMPLATE);
+          suspendedDraft.current = null;
+          setSource(DEFAULT_GAEB_TEMPLATE);
+          setSavedSource(DEFAULT_GAEB_TEMPLATE);
           setError(cause instanceof Error ? cause.message : String(cause));
         }
       });
@@ -169,23 +232,48 @@ export default function DocumentTemplateEditor() {
       );
       setSavedSource(text);
     } catch (cause) {
-      if (current(epoch)) { setError(cause instanceof Error ? cause.message : String(cause)); if (isWriteConflict(cause)) setStale(true); }
+      if (current(epoch)) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        if (isWriteConflict(cause)) setStale(true);
+      }
     } finally {
       if (current(epoch)) setBusy(false);
     }
   }
   async function upload(asset: File) {
-    const epoch = templateAssets.context(); setBusy(true); setError("");
+    const epoch = templateAssets.context();
+    setBusy(true);
+    setError("");
     try {
-      await templateAssets.upload(asset); if (!current(epoch)) return;
+      await templateAssets.upload(asset);
+      if (!current(epoch)) return;
       await client.invalidate("settings.documentTemplate.get");
-      const next = await loadPrintContext(); if (!current(epoch)) return;
-      setContext(previous => previous ? { ...previous, organization: next.organization, template: { ...previous.template, assets: next.template.assets } } : next);
+      const next = await loadPrintContext();
+      if (!current(epoch)) return;
+      setContext((previous) =>
+        previous
+          ? {
+              ...previous,
+              organization: next.organization,
+              template: { ...previous.template, assets: next.template.assets },
+            }
+          : next,
+      );
     } catch (cause) {
-      if (current(epoch)) setError(cause instanceof InvalidProtectedData
-        ? uiText("Die Datei ist ungültig oder enthält externe Verweise. Bitte ein eigenständiges Bild oder PDF auswählen.", "The file is invalid or contains external references. Choose a self-contained image or PDF.")
-        : cause instanceof Error ? cause.message : String(cause));
-    } finally { if (current(epoch)) setBusy(false); }
+      if (current(epoch))
+        setError(
+          cause instanceof InvalidProtectedData
+            ? uiText(
+                "Die Datei ist ungültig oder enthält externe Verweise. Bitte ein eigenständiges Bild oder PDF auswählen.",
+                "The file is invalid or contains external references. Choose a self-contained image or PDF.",
+              )
+            : cause instanceof Error
+              ? cause.message
+              : String(cause),
+        );
+    } finally {
+      if (current(epoch)) setBusy(false);
+    }
   }
   async function remove() {
     if (!deleting) return;
@@ -200,7 +288,8 @@ export default function DocumentTemplateEditor() {
       if (!current(epoch)) return;
       if (failure) throw failure;
       await client.invalidate("settings.documentTemplate.get");
-      const next = await loadPrintContext(); if (!current(epoch)) return;
+      const next = await loadPrintContext();
+      if (!current(epoch)) return;
       setContext((previous) =>
         previous
           ? {
@@ -212,7 +301,8 @@ export default function DocumentTemplateEditor() {
       );
       setDeleting(null);
     } catch (cause) {
-      if (current(epoch)) setError(cause instanceof Error ? cause.message : String(cause));
+      if (current(epoch))
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (current(epoch)) setBusy(false);
     }
@@ -296,9 +386,20 @@ export default function DocumentTemplateEditor() {
           )}
         >
           {error}
-          {stale && <Button kind="secondary" onClick={() => { setStale(false); setRetry(value => value + 1); }}>
-            {uiText("Veröffentlichte Vorlage laden", "Load published template")}
-          </Button>}
+          {stale && (
+            <Button
+              kind="secondary"
+              onClick={() => {
+                setStale(false);
+                setRetry((value) => value + 1);
+              }}
+            >
+              {uiText(
+                "Veröffentlichte Vorlage laden",
+                "Load published template",
+              )}
+            </Button>
+          )}
         </MyCallout>
       )}
       {previewError && (

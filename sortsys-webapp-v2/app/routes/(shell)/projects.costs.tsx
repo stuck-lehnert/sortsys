@@ -17,18 +17,9 @@ import { Icons } from "~/lib/icons";
 import { useEffect, useMemo } from "react";
 import { TableExportActions } from "~/components/TableExportActions";
 import { EXCEL_CURRENCY_NUM_FMT, EXCEL_PERCENT_NUM_FMT } from "~/lib/xlsx";
+import type { QueryResult } from "@sortsys/v2-client";
 
-type ProjectCostsOverviewRow = {
-  projectId: string;
-  title: string;
-  costs: number;
-  offersTotal: number;
-  invoicesTotal: number;
-  gainOrLoss: number | null;
-  hasInvoices: boolean;
-  finishedAt: Date | null;
-  responsibleProjectLeaderUserId: string | null;
-};
+type ProjectCostsOverviewRow = QueryResult<"projects.costs.overview">[number];
 
 type ProjectCostStatusFilter = "active" | "finished" | "all";
 
@@ -57,23 +48,29 @@ export function meta() {
   return [{ title: uiText("Kostenübersicht") }];
 }
 
-function hasNumberData(value: number | null | undefined) {
-  return Math.abs(Number(value ?? 0)) > 0.000001;
+function hasNumberData(value: number | null | undefined): value is number {
+  return typeof value === "number" && Math.abs(value) > 0.000001;
+}
+function costCurrency(value: number | null) {
+  return value === null ? "–" : formatCurrency(value);
 }
 
-function formatGainOrLossPercentage(value: number, invoicesTotal: number) {
+function formatGainOrLossPercentage(
+  value: number,
+  invoicesTotal: number | null,
+) {
   if (!hasNumberData(invoicesTotal)) return null;
   return formatPercent((value / Math.abs(invoicesTotal)) * 100);
 }
 
-function formatGainOrLoss(value: number | null, invoicesTotal: number) {
+function formatGainOrLoss(value: number | null, invoicesTotal: number | null) {
   if (value == null) return "-";
   const percentage = formatGainOrLossPercentage(value, invoicesTotal);
   const amount = formatCurrency(value);
   return `${percentage ? `(${percentage}) ` : ""}${amount}`;
 }
 
-function renderGainOrLoss(value: number | null, invoicesTotal: number) {
+function renderGainOrLoss(value: number | null, invoicesTotal: number | null) {
   if (value == null) return "-";
   return (
     <span style={{ color: gainOrLossColor(value), fontWeight: 700 }}>
@@ -197,9 +194,14 @@ export default function ProjectCostsOverviewPage() {
             {
               header: uiText("Kosten"),
               value: (row) => row.costs,
-              format: (value) => formatCurrency(Number(value)),
+              format: (value) =>
+                value == null ? "–" : formatCurrency(Number(value)),
               excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
               align: "right",
+            },
+            {
+              header: uiText("Hinweis", "Note"),
+              value: (row) => row.accessError ?? null,
             },
             {
               header: uiText("Gewinn/Verlust (absolut)"),
@@ -223,14 +225,16 @@ export default function ProjectCostsOverviewPage() {
             {
               header: uiText("Angebotssummen"),
               value: (row) => row.offersTotal,
-              format: (value) => formatCurrency(Number(value)),
+              format: (value) =>
+                value == null ? "–" : formatCurrency(Number(value)),
               excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
               align: "right",
             },
             {
               header: uiText("Rechnungssummen"),
               value: (row) => row.invoicesTotal,
-              format: (value) => formatCurrency(Number(value)),
+              format: (value) =>
+                value == null ? "–" : formatCurrency(Number(value)),
               excelNumberFormat: EXCEL_CURRENCY_NUM_FMT,
               align: "right",
             },
@@ -310,9 +314,14 @@ export default function ProjectCostsOverviewPage() {
           {
             label: uiText("Projekt"),
             render: (row) => (
-              <MyLink to={`/projects/${row.projectId}/costs`}>
-                {row.title}
-              </MyLink>
+              <div>
+                <MyLink to={`/projects/${row.projectId}/costs`}>
+                  {row.title}
+                </MyLink>
+                {row.accessError && (
+                  <p className="text-sm text-muted">{row.accessError}</p>
+                )}
+              </div>
             ),
             sortKey: (row) => row.title.toLowerCase(),
           },
@@ -339,8 +348,8 @@ export default function ProjectCostsOverviewPage() {
           },
           {
             label: uiText("Kosten"),
-            render: (row) => formatCurrency(row.costs),
-            sortKey: (row) => row.costs,
+            render: (row) => costCurrency(row.costs),
+            sortKey: (row) => row.costs ?? Number.NEGATIVE_INFINITY,
           },
           {
             label: uiText("Gewinn/Verlust"),
@@ -350,13 +359,13 @@ export default function ProjectCostsOverviewPage() {
           },
           {
             label: uiText("Angebotssummen"),
-            render: (row) => formatCurrency(row.offersTotal),
-            sortKey: (row) => row.offersTotal,
+            render: (row) => costCurrency(row.offersTotal),
+            sortKey: (row) => row.offersTotal ?? Number.NEGATIVE_INFINITY,
           },
           {
             label: uiText("Rechnungssummen"),
-            render: (row) => formatCurrency(row.invoicesTotal),
-            sortKey: (row) => row.invoicesTotal,
+            render: (row) => costCurrency(row.invoicesTotal),
+            sortKey: (row) => row.invoicesTotal ?? Number.NEGATIVE_INFINITY,
           },
         ]}
         loadMore={{}}

@@ -1,3 +1,4 @@
+import { TimestampEvidenceButton } from "./TimestampEvidenceButton";
 import { useMyModals } from "~/hooks/useMyModals";
 import { showCommercialWorkspace } from "~/modals/commercial";
 import Document from "@carbon/icons-react/es/Document";
@@ -43,6 +44,8 @@ import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
+import { invoiceActionAccess } from "~/lib/crypto/invoiceAccess";
+import { newProductRowId, publicId } from "~/lib/data/products";
 import { uiText } from "~/lib/i18n";
 import {
   commercialError,
@@ -84,6 +87,10 @@ export default function CommercialWorkspace({
     new Date().toISOString().slice(0, 10),
   );
   const [paymentReference, setPaymentReference] = useState("");
+  const paymentOperation = useRef<string | null>(null);
+  useEffect(() => {
+    paymentOperation.current = null;
+  }, [caseId]);
   const session = useSessionInfo();
   const [detail, setDetail] = useState<CommercialDetail>();
   const detailRef = useRef(detail);
@@ -130,11 +137,14 @@ export default function CommercialWorkspace({
     if (generation !== requestGeneration.current) return value;
     setDetail(value);
     const adoptedSource = value.case.existingContract
-      ? value.documents.find((doc) =>
-          ["84", "85", "86", "87"].includes(doc.phase) &&
-          (!doc.sourceDocumentId || value.documents.some((parent) =>
-            parent.id === doc.sourceDocumentId && parent.phase === "83",
-          )),
+      ? value.documents.find(
+          (doc) =>
+            ["84", "85", "86", "87"].includes(doc.phase) &&
+            (!doc.sourceDocumentId ||
+              value.documents.some(
+                (parent) =>
+                  parent.id === doc.sourceDocumentId && parent.phase === "83",
+              )),
         )
       : undefined;
     setActiveId((previous) =>
@@ -428,8 +438,8 @@ export default function CommercialWorkspace({
         expectedVersion: existing?.version,
         netAmount: documentAmount(xml),
       });
-      const ids = new GaebDocument(xml, "order.x86").items.map((entry) =>
-        entry.element.getAttribute("ID")!,
+      const ids = new GaebDocument(xml, "order.x86").items.map(
+        (entry) => entry.element.getAttribute("ID")!,
       );
       await transition("awarded", {
         selectedOfferDocumentId: candidate,
@@ -481,11 +491,15 @@ export default function CommercialWorkspace({
         ? inquiry
         : purpose === "order"
           ? offer
-        : purpose === "supplier_confirmation"
-          ? order
-          : undefined;
-      const replacing = ["offer", "supplier_offer"].includes(purpose) ? undefined : detail?.documents.find(document => document.purpose === purpose);
-      const previous = replacing ? await loadCommercialDocument(item.id, replacing.id) : undefined;
+          : purpose === "supplier_confirmation"
+            ? order
+            : undefined;
+      const replacing = ["offer", "supplier_offer"].includes(purpose)
+        ? undefined
+        : detail?.documents.find((document) => document.purpose === purpose);
+      const previous = replacing
+        ? await loadCommercialDocument(item.id, replacing.id)
+        : undefined;
       const reference = source
         ? await loadCommercialDocument(item.id, source.id)
         : undefined;
@@ -562,6 +576,8 @@ export default function CommercialWorkspace({
   }
   const current = detail.case;
   const editable = detail.canManage;
+  const { canReadInvoice, canRecordPayment, canIssueInvoice } =
+    invoiceActionAccess(current, editable, session.canAccess);
   const sourceStale =
     !!offer &&
     (offer.sourceVersion !== offer.sourceCurrentVersion ||
@@ -571,7 +587,7 @@ export default function CommercialWorkspace({
       <Modal
         open={paymentOpen}
         passiveModal
-        modalHeading={uiText("Zahlungseingang erfassen", "Record payment")}
+        modalHeading={uiText("Zahlungseingänge", "Payments")}
         onRequestClose={() => !busy && setPaymentOpen(false)}
         closeButtonLabel={uiText("Schließen", "Close")}
       >
@@ -580,6 +596,8 @@ export default function CommercialWorkspace({
             className="flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault();
+              if (!canRecordPayment) return;
+              paymentOperation.current ??= publicId(newProductRowId());
               void run(async () => {
                 const [_, error] = await client.mutate(
                   "commercial.invoices.recordPayment",
@@ -588,9 +606,11 @@ export default function CommercialWorkspace({
                     amount: paymentAmount.replace(",", "."),
                     paidOn: paymentDate,
                     reference: paymentReference,
+                    operationId: paymentOperation.current!,
                   },
                 );
                 if (error) throw error;
+                paymentOperation.current = null;
                 setPaymentOpen(false);
                 setPaymentAmount("");
               });
@@ -609,6 +629,7 @@ export default function CommercialWorkspace({
               labelText={uiText("Betrag (€)", "Amount (€)")}
               required
               inputMode="decimal"
+              disabled={!canRecordPayment}
               value={paymentAmount}
               onChange={(e: { target: { value: string } }) =>
                 setPaymentAmount(e.target.value)
@@ -616,6 +637,7 @@ export default function CommercialWorkspace({
             />
             <TextInput
               type="date"
+              disabled={!canRecordPayment}
               labelText={uiText("Zahlungsdatum", "Payment date")}
               required
               value={paymentDate}
@@ -626,6 +648,7 @@ export default function CommercialWorkspace({
             />
             <TextInput
               labelText={uiText("Verwendungszweck", "Reference")}
+              disabled={!canRecordPayment}
               value={paymentReference}
               maxLength={255}
               onChange={(e: { target: { value: string } }) =>
@@ -641,7 +664,7 @@ export default function CommercialWorkspace({
             <Button
               type="submit"
               loading={busy}
-              disabled={current.status === "paid"}
+              disabled={!canRecordPayment || current.status === "paid"}
             >
               {uiText("Zahlung erfassen", "Record payment")}
             </Button>
@@ -1005,7 +1028,7 @@ export default function CommercialWorkspace({
   }
   const toolbar = (
     <>
-      {editable && invoiceKind && current.status === "draft" && (
+      {canIssueInvoice && invoiceKind && current.status === "draft" && (
         <EditorIconButton
           showLabel
           icon={DocumentExport}
@@ -1022,14 +1045,14 @@ export default function CommercialWorkspace({
           }
         />
       )}
-      {editable &&
+      {canReadInvoice &&
         invoiceKind &&
         ["sent", "partially_paid", "paid"].includes(current.status) && (
           <EditorIconButton
             showLabel
             icon={Checkmark}
             label={
-              current.status === "paid"
+              current.status === "paid" || !canRecordPayment
                 ? uiText("Zahlungen ansehen", "View payments")
                 : uiText("Zahlungseingang", "Record payment")
             }
@@ -1193,6 +1216,19 @@ export default function CommercialWorkspace({
           onClick={() => void download(active)}
         />
       )}
+      {active?.readOnly && (
+        <TimestampEvidenceButton
+          ribbon
+          entries={[
+            {
+              scope: `commercial:${current.id}`,
+              object: active.id,
+              revision: active.version.toString(),
+              title: purposeLabel(active, current.kind),
+            },
+          ]}
+        />
+      )}
       <EditorIconButton
         showLabel
         icon={RecentlyViewed}
@@ -1230,7 +1266,7 @@ export default function CommercialWorkspace({
             documentTitle={current.title}
             projectTitle={current.projectTitle ?? undefined}
             documentKind={current.kind}
-            editable={editable && editableDocument(current, active)}
+            editable={editableDocument(current, active)}
             workspaceRef={workspace}
             onClose={() => {
               if (!busy) onClose();

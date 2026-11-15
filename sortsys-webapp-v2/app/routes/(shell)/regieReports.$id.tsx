@@ -41,11 +41,15 @@ import {
   weekdayIndexInIsoWeek,
 } from "~/lib/week";
 
-function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
-  const normalizedBaseUnit = `${baseUnit ?? ''}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ''}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return '-';
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ''}`;
+function formatBaseQuantity(
+  baseQuantity: number,
+  baseUnit: string,
+  displayUnit: string,
+) {
+  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
+  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
+  if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
+  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
 }
 
 export default function RegieReportDetailPage() {
@@ -56,21 +60,48 @@ export default function RegieReportDetailPage() {
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [pdfExportErr, setPdfExportErr] = useState<string | null>(null);
 
-  const [report, err] = useClientStream(() => client.streamQuery('regieReports.get', { id: id! }), [id]);
+  const [report, err] = useClientStream(
+    () => client.streamQuery("regieReports.get", { id: id! }),
+    [id],
+  );
 
-  useTitle(() => report ? uiText(`Regiebericht ${isoWeekLabel(new Date(report.day))}`, `Time-and-material report ${isoWeekLabel(new Date(report.day))}`) : null, [report?.day]);
+  useTitle(
+    () =>
+      report
+        ? uiText(
+            `Regiebericht ${isoWeekLabel(new Date(report.day))}`,
+            `Time-and-material report ${isoWeekLabel(new Date(report.day))}`,
+          )
+        : null,
+    [report?.day],
+  );
 
-  useShortcut('Control+e', e => {
-    if (!report || !sessionInfo.canDo('manage:regieReports')) return;
+  useShortcut("Control+e", (e) => {
+    if (
+      !report ||
+      !(
+        sessionInfo.canAccess(
+          `project:${report.projectId}:regie-reports`,
+          "master-data",
+          "update",
+        ) ||
+        sessionInfo.canAccess(
+          `project:${report.projectId}:regie-reports`,
+          "personnel",
+          "update",
+        )
+      )
+    )
+      return;
     e.preventDefault();
     showModifyRegieReportModal(modals, report);
   });
 
-  useShortcut('Control+p', e => {
-    if (!report || !sessionInfo.canDo('view:regieReports')) return;
+  useShortcut("Control+p", (e) => {
+    if (!report || !sessionInfo.canDo("view:regieReports")) return;
     e.preventDefault();
     if (isPdfExporting) return;
-    void exportRegieReportToPdf('open');
+    void exportRegieReportToPdf("open");
   });
 
   if (err) return <NotFound reason="resourceNotFound" />;
@@ -79,44 +110,81 @@ export default function RegieReportDetailPage() {
   const weekStart = startOfIsoWeek(new Date(report.day));
   const weekEnd = dayInIsoWeek(weekStart, WEEKDAY_NAMES.length - 1);
 
-  async function exportRegieReportToPdf(target: BlobTarget = 'open') {
+  async function exportRegieReportToPdf(target: BlobTarget = "open") {
     const currentReport = report;
     if (!currentReport) return;
-    const pdfWindow = target === 'open' ? window.open('', '_blank') : null;
+    const pdfWindow = target === "open" ? window.open("", "_blank") : null;
 
     setPdfExportErr(null);
     setIsPdfExporting(true);
 
     try {
-      const [project] = await client.query('projects.get', { id: currentReport.projectId }, { strategy: 'cache-first' });
+      const [project] = await client.query(
+        "projects.get",
+        { id: currentReport.projectId },
+        { strategy: "cache-first" },
+      );
 
-      const productIds = [...new Set(currentReport.products.map((record) => record.productId))];
-      const productEntries = await Promise.all(productIds.map(async (productId) => {
-        const [product] = await client.query('products.get', { id: productId }, { strategy: 'cache-first' });
-        return [productId, product ?? null] as const;
-      }));
+      const productIds = [
+        ...new Set(currentReport.products.map((record) => record.productId)),
+      ];
+      const productEntries = await Promise.all(
+        productIds.map(async (productId) => {
+          const [product] = await client.query(
+            "products.get",
+            { id: productId },
+            { strategy: "cache-first" },
+          );
+          return [productId, product ?? null] as const;
+        }),
+      );
       const productMap = new Map(productEntries);
 
-      const userIds = [...new Set(currentReport.workHours.map((record) => record.userId).filter(Boolean))] as string[];
-      const userEntries = await Promise.all(userIds.map(async (userId) => {
-        const [user] = await client.query('users.get', { id: userId }, { strategy: 'cache-first' });
-        return [userId, user ?? null] as const;
-      }));
+      const userIds = [
+        ...new Set(
+          currentReport.workHours
+            .map((record) => record.userId)
+            .filter(Boolean),
+        ),
+      ] as string[];
+      const userEntries = await Promise.all(
+        userIds.map(async (userId) => {
+          const [user] = await client.query(
+            "users.get",
+            { id: userId },
+            { strategy: "cache-first" },
+          );
+          return [userId, user ?? null] as const;
+        }),
+      );
       const userMap = new Map(userEntries);
 
-      const pdfData = await renderStructuredPdf(buildRegieReportPdfDocument({
-        report: currentReport,
-        projectTitle: project?.title ?? 'Unbekannt',
-        productsById: productMap,
-        usersById: userMap,
-      }));
+      const pdfData = await renderStructuredPdf(
+        buildRegieReportPdfDocument({
+          report: currentReport,
+          projectTitle: project?.title ?? "Unbekannt",
+          productsById: productMap,
+          usersById: userMap,
+        }),
+      );
 
-      const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
-      const safeSuffix = `${currentReport.autoId}`.replace(/[^\w\-]+/g, '-');
-      deliverBlob(blob, uiText(`Regiebericht-${safeSuffix}.pdf`, `Time-and-material report-${safeSuffix}.pdf`), target, pdfWindow);
+      const blob = new Blob([pdfData] as any, { type: "application/pdf" });
+      const safeSuffix = `${currentReport.autoId}`.replace(/[^\w\-]+/g, "-");
+      deliverBlob(
+        blob,
+        uiText(
+          `Regiebericht-${safeSuffix}.pdf`,
+          `Time-and-material report-${safeSuffix}.pdf`,
+        ),
+        target,
+        pdfWindow,
+      );
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
+      setPdfExportErr(
+        (err as Error)?.message ||
+          uiText("Unbekannter Fehler beim PDF-Export."),
+      );
     } finally {
       setIsPdfExporting(false);
     }
@@ -289,6 +357,13 @@ export default function RegieReportDetailPage() {
                     };
                   };
 
+                  if (report.workHoursAvailable === false) {
+                    addSectionTitle(uiText("Arbeitszeit"));
+                    addTable(
+                      [uiText("Status")],
+                      [[uiText("Nicht freigegeben", "Not shared")]],
+                    );
+                  }
                   const hoursByUser = new Map<
                     string,
                     { name: string; values: number[] }
@@ -432,13 +507,28 @@ export default function RegieReportDetailPage() {
               {
                 label: uiText("Bearbeiten"),
                 renderIcon: Icons.Edit,
-                hideIf: !sessionInfo.canDo("manage:regieReports"),
+                hideIf: !(
+                  sessionInfo.canAccess(
+                    `project:${report.projectId}:regie-reports`,
+                    "master-data",
+                    "update",
+                  ) ||
+                  sessionInfo.canAccess(
+                    `project:${report.projectId}:regie-reports`,
+                    "personnel",
+                    "update",
+                  )
+                ),
                 onClick: () => showModifyRegieReportModal(modals, report),
               },
               {
                 label: uiText("Löschen"),
                 renderIcon: Icons.Delete,
-                hideIf: !sessionInfo.canDo("delete:regieReports"),
+                hideIf: !sessionInfo.canAccess(
+                  `project:${report.projectId}:regie-reports`,
+                  "master-data",
+                  "delete",
+                ),
                 onClick: () => showDeleteRegieReportModal(modals, report),
               },
             ]}
@@ -495,6 +585,7 @@ export default function RegieReportDetailPage() {
             value={
               <Awaited
                 promise={async () => {
+                  if (!report.createdByUserId) return "—";
                   const [user] = await client.query(
                     "users.get",
                     { id: report.createdByUserId },
@@ -515,6 +606,14 @@ export default function RegieReportDetailPage() {
 
       <MyDivider />
 
+      {report.workHoursAvailable === false && (
+        <p>
+          {uiText(
+            "Arbeitszeiten nicht freigegeben",
+            "Work hours are not shared",
+          )}
+        </p>
+      )}
       {!!report.workHours.length && (
         <MyExpandable title={uiText("Arbeitszeit")}>
           <MyTable

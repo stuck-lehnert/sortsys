@@ -14,13 +14,17 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
-import { adminClient, logoutGlobalAdmin, restoreAdminSession } from "~/lib/adminClient";
+import {
+  adminClient,
+  logoutGlobalAdmin,
+  restoreAdminSession,
+} from "~/lib/adminClient";
 import { Icons } from "~/lib/icons";
 import { nowrap } from "~/lib/primitives";
 
 const tabs = [
   { path: "/__admin/tenants", label: uiText("Mandanten") },
-  { path: "/__admin/databases", label: uiText("Datenbanken") },
+  { path: "/__admin/databases", label: uiText("Datenspeicher", "Datastore") },
   { path: "/__admin/errors", label: uiText("Fehler") },
   { path: "/__admin/llm", label: uiText("LLM") },
 ];
@@ -47,13 +51,20 @@ export default function GlobalAdminLayout() {
 
   const selectedIndex = Math.max(
     0,
-    tabs.findIndex(tab => location.pathname.startsWith(tab.path)),
+    tabs.findIndex((tab) => location.pathname.startsWith(tab.path)),
   );
 
   return (
     <>
       <Header aria-label={uiText("sortsys Global Admin")}>
-        <HeaderName as={Link} to="/__admin/tenants" prefix="" className={nowrap()}>{uiText("sortsys Admin")}</HeaderName>
+        <HeaderName
+          as={Link}
+          to="/__admin/tenants"
+          prefix=""
+          className={nowrap()}
+        >
+          {uiText("sortsys Admin")}
+        </HeaderName>
 
         <HeaderGlobalBar>
           <HeaderGlobalAction
@@ -78,11 +89,16 @@ export default function GlobalAdminLayout() {
           }}
         >
           <TabList>
-            {tabs.map(tab => <Tab key={tab.path}>{tab.label}</Tab>)}
+            {tabs.map((tab) => (
+              <Tab key={tab.path}>{tab.label}</Tab>
+            ))}
           </TabList>
         </Tabs>
 
-        <ScopedErrorBoundary scope="global-admin.content" resetKey={location.pathname}>
+        <ScopedErrorBoundary
+          scope="global-admin.content"
+          resetKey={location.pathname}
+        >
           <Outlet />
         </ScopedErrorBoundary>
       </Content>

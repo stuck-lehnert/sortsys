@@ -100,47 +100,22 @@ function _AppInner() {
   );
 }
 
-function serializeUnknownError(error: unknown) {
-  if (error instanceof Error) {
-    return {
-      message: error.message || error.name || uiText("Unbekannter Fehler"),
-      stack: error.stack ?? null,
-    };
-  }
-
-  return {
-    message: `${error || uiText("Unbekannter Fehler")}`,
-    stack: null,
-  };
-}
-
 function ClientErrorReporter(): undefined {
   const location = useLocation();
 
   useEffect(() => {
     if (typeof window !== "object") return;
 
-    const onError = (event: ErrorEvent) => {
-      const serialized = serializeUnknownError(event.error ?? event.message);
+    const onError = () => {
       void reportClientError({
         source: "window.error",
-        message: serialized.message,
-        stack: serialized.stack,
         path: `${window.location.pathname}${window.location.search}${window.location.hash}`,
-        metadata: {
-          fileName: event.filename || null,
-          line: event.lineno || null,
-          column: event.colno || null,
-        },
       });
     };
 
-    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const serialized = serializeUnknownError(event.reason);
+    const onUnhandledRejection = () => {
       void reportClientError({
         source: "window.unhandledrejection",
-        message: serialized.message,
-        stack: serialized.stack,
         path: `${window.location.pathname}${window.location.search}${window.location.hash}`,
       });
     };
@@ -171,7 +146,7 @@ function AppContent() {
     () =>
       client.listenAuthState(() => {
         if (!client.loggedIn()) setLocale("de");
-        setAuthVersion(version => version + 1);
+        setAuthVersion((version) => version + 1);
       }),
     [setLocale],
   );
@@ -188,13 +163,20 @@ function AppContent() {
     );
   }
 
-  if (isGlobalAdminSpace || location.pathname === "/auth/recovery" || location.pathname === "/auth/invitation") return <_AppInner />;
+  if (
+    isGlobalAdminSpace ||
+    location.pathname === "/auth/recovery" ||
+    location.pathname === "/auth/invitation"
+  )
+    return <_AppInner />;
 
   if (!client.loggedIn()) return <_AppInner />;
 
   return (
     <SessionInfoProvider key={authVersion}>
-      <CryptoUnlocked><_AppInner /></CryptoUnlocked>
+      <CryptoUnlocked>
+        <_AppInner />
+      </CryptoUnlocked>
     </SessionInfoProvider>
   );
 }
@@ -252,21 +234,17 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     if (isRouteErrorResponse(error)) {
       void reportClientError({
         source: "react-router.errorBoundary",
-        message: `${error.status} ${error.statusText}`.trim(),
         path:
           typeof window === "object"
             ? `${window.location.pathname}${window.location.search}${window.location.hash}`
             : null,
-        metadata: { status: error.status, data: error.data },
+        status: error.status,
       });
       return;
     }
 
-    const serialized = serializeUnknownError(error);
     void reportClientError({
       source: "react-router.errorBoundary",
-      message: serialized.message,
-      stack: serialized.stack,
       path:
         typeof window === "object"
           ? `${window.location.pathname}${window.location.search}${window.location.hash}`

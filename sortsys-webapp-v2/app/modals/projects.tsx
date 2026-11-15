@@ -17,6 +17,7 @@ import {
   SmallUserTile,
 } from "~/lib/tiles";
 import { generateId, parseFloatCustom } from "~/lib/utils";
+import { newProductRowId, publicId } from "~/lib/data/products";
 import {
   projectContactsEqual,
   type ProjectContactSelection,
@@ -32,23 +33,32 @@ type CreateProjectModalOptions = {
 function projectContactPayload(values: Record<string, any>) {
   const rowIds = new Set<string>();
 
-  Object.keys(values).forEach(key => {
-    if (!key.startsWith('projectContact:')) return;
-    rowIds.add(key.split(':')[1]!);
+  Object.keys(values).forEach((key) => {
+    if (!key.startsWith("projectContact:")) return;
+    rowIds.add(key.split(":")[1]!);
   });
 
-  return [...rowIds].map(id => {
-    const contact = values[`projectContact:${id}:contact`]?.[0] as ProjectContactFormContact | undefined;
-    if (!contact?.id) return null;
+  return [...rowIds]
+    .map((id) => {
+      const contact = values[`projectContact:${id}:contact`]?.[0] as
+        | ProjectContactFormContact
+        | undefined;
+      if (!contact?.id) return null;
 
-    return {
-      contactId: contact.id,
-      label: `${values[`projectContact:${id}:label`] ?? ''}`.trim() || null,
-    };
-  }).filter(Boolean) as { contactId: string; label: string | null }[];
+      return {
+        contactId: contact.id,
+        label: `${values[`projectContact:${id}:label`] ?? ""}`.trim() || null,
+      };
+    })
+    .filter(Boolean) as { contactId: string; label: string | null }[];
 }
 
-function ProjectContactsFormFields({ context, modals, projectId, onLoaded }: {
+function ProjectContactsFormFields({
+  context,
+  modals,
+  projectId,
+  onLoaded,
+}: {
   context: MyPublicFormContext;
   modals: MyModalsInterface;
   projectId?: string;
@@ -56,8 +66,12 @@ function ProjectContactsFormFields({ context, modals, projectId, onLoaded }: {
 }) {
   const createEntityAction = useCreateEntityAction(modals);
   const [rowIds, setRowIds] = useState<string[]>([]);
-  const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
-  const initialValues = useRef<Record<string, { contact: ProjectContactFormContact; label: string | null }>>({}).current;
+  const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(
+    null,
+  );
+  const initialValues = useRef<
+    Record<string, { contact: ProjectContactFormContact; label: string | null }>
+  >({}).current;
 
   return (
     <>
@@ -174,7 +188,10 @@ function ProjectContactsFormFields({ context, modals, projectId, onLoaded }: {
   );
 }
 
-export function showCreateProjectModal(modals: MyModalsInterface, options: CreateProjectModalOptions = {}) {
+export function showCreateProjectModal(
+  modals: MyModalsInterface,
+  options: CreateProjectModalOptions = {},
+) {
   modals.showForm({
     content: ({ context }) => {
       const createEntityAction = useCreateEntityAction(modals);
@@ -256,11 +273,12 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
 
       processFormAddress(values);
 
-      const [data, err] = await client.mutate('projects.create', {
+      const [data, err] = await client.mutate("projects.create", {
         title: values.title,
         address: values.address,
         customerId: values.customer.at(0)?.id ?? null,
-        responsibleProjectLeaderUserId: values.responsibleProjectLeader?.at(0)?.id ?? null,
+        responsibleProjectLeaderUserId:
+          values.responsibleProjectLeader?.at(0)?.id ?? null,
         orderReceivedAt: values.orderReceivedAt ?? null,
       });
 
@@ -268,13 +286,18 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
       if (!data) return;
 
       const projectContacts = projectContactPayload(values);
-      if (projectContacts.length) await client.mutate('projects.contacts.set', {
-        projectId: data.id,
-        contacts: projectContacts,
-      });
+      if (projectContacts.length)
+        await client.mutate("projects.contacts.set", {
+          projectId: data.id,
+          contacts: projectContacts,
+        });
 
       if (options.onCreated) {
-        const [created, loadErr] = await client.query('projects.get', { id: data.id }, { strategy: 'network-first' });
+        const [created, loadErr] = await client.query(
+          "projects.get",
+          { id: data.id },
+          { strategy: "network-first" },
+        );
         if (loadErr) throw loadErr;
         if (created) await options.onCreated(created);
         hide();
@@ -291,7 +314,10 @@ export function showCreateProjectModal(modals: MyModalsInterface, options: Creat
   });
 }
 
-export function showModifyProjectModal(modals: MyModalsInterface, project: Project) {
+export function showModifyProjectModal(
+  modals: MyModalsInterface,
+  project: Project,
+) {
   let initialProjectContacts: ProjectContactSelection[] | null = null;
 
   modals.showForm({
@@ -407,16 +433,22 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
 
       const contacts = projectContactPayload(values);
       if (initialProjectContacts === null && contacts.length) {
-        throw new Error(uiText("Die Ansprechpartner sind noch nicht geladen. Bitte erneut versuchen.", "Contacts have not loaded. Please try again."));
+        throw new Error(
+          uiText(
+            "Die Ansprechpartner sind noch nicht geladen. Bitte erneut versuchen.",
+            "Contacts have not loaded. Please try again.",
+          ),
+        );
       }
 
-      const [data, err] = await client.mutate('projects.update', {
+      const [data, err] = await client.mutate("projects.update", {
         id: project.id,
         data: {
           title: values.title,
           address: values.address,
           customerId: values.customer.at(0)?.id ?? null,
-          responsibleProjectLeaderUserId: values.responsibleProjectLeader?.at(0)?.id ?? null,
+          responsibleProjectLeaderUserId:
+            values.responsibleProjectLeader?.at(0)?.id ?? null,
           orderReceivedAt: values.orderReceivedAt ?? null,
         },
       });
@@ -426,8 +458,11 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
 
       // A title-only edit must not overwrite contacts changed by another user.
       // If loading failed, leave those unknown relationships untouched.
-      if (initialProjectContacts !== null && !projectContactsEqual(initialProjectContacts, contacts)) {
-        const [, contactsError] = await client.mutate('projects.contacts.set', {
+      if (
+        initialProjectContacts !== null &&
+        !projectContactsEqual(initialProjectContacts, contacts)
+      ) {
+        const [, contactsError] = await client.mutate("projects.contacts.set", {
           projectId: project.id,
           contacts,
         });
@@ -444,7 +479,10 @@ export function showModifyProjectModal(modals: MyModalsInterface, project: Proje
   });
 }
 
-export function showDeleteProjectModal(modals: MyModalsInterface, project: Project) {
+export function showDeleteProjectModal(
+  modals: MyModalsInterface,
+  project: Project,
+) {
   modals.showForm({
     content: () => (
       <>
@@ -464,11 +502,13 @@ export function showDeleteProjectModal(modals: MyModalsInterface, project: Proje
       </>
     ),
     onSubmit: async ({ hide, pathname, navigate }) => {
-      const [data, err] = await client.mutate('projects.delete', { id: project.id });
+      const [data, err] = await client.mutate("projects.delete", {
+        id: project.id,
+      });
       if (err) throw err;
       if (!data) return;
 
-      if (pathname === `/projects/${project.id}`) navigate('/projects');
+      if (pathname === `/projects/${project.id}`) navigate("/projects");
       hide();
     },
     modalProps: () => ({
@@ -481,7 +521,10 @@ export function showDeleteProjectModal(modals: MyModalsInterface, project: Proje
   });
 }
 
-export function showCreateProjectInterruptionModal(modals: MyModalsInterface, project: Project) {
+export function showCreateProjectInterruptionModal(
+  modals: MyModalsInterface,
+  project: Project,
+) {
   modals.showForm({
     content: ({ context }) => (
       <>
@@ -518,18 +561,22 @@ export function showCreateProjectInterruptionModal(modals: MyModalsInterface, pr
       const from = parseDateValue(values.from);
       const to = parseDateValue(values.to);
       if (!from || !to) throw new Error(uiText("Datum ist ungültig."));
-      if (from.getTime() > to.getTime()) throw new Error(uiText("Von muss vor Bis liegen."));
+      if (from.getTime() > to.getTime())
+        throw new Error(uiText("Von muss vor Bis liegen."));
 
-      const reason = `${values.reason ?? ''}`.trim();
+      const reason = `${values.reason ?? ""}`.trim();
       if (!reason) throw new Error(uiText("Grund fehlt."));
 
-      const [data, err] = await client.mutate('projects.unavailability.create', {
-        projectId: project.id,
-        from,
-        to,
-        reason,
-        note: `${values.note ?? ''}`.trim() || null,
-      });
+      const [data, err] = await client.mutate(
+        "projects.unavailability.create",
+        {
+          projectId: project.id,
+          from,
+          to,
+          reason,
+          note: `${values.note ?? ""}`.trim() || null,
+        },
+      );
       if (err) throw err;
       if (!data) return;
 
@@ -551,12 +598,13 @@ function startOfDay(date: Date) {
 }
 
 function parseDateValue(value: unknown) {
-  const date = value instanceof Date ? new Date(value) : new Date(`${value ?? ''}`);
+  const date =
+    value instanceof Date ? new Date(value) : new Date(`${value ?? ""}`);
   if (isNaN(date.getTime())) return null;
   return startOfDay(date);
 }
 
-type ProjectFinancialEntryType = 'offer' | 'invoice';
+type ProjectFinancialEntryType = "offer" | "invoice";
 
 export type ProjectFinancialEntry = {
   commercialCaseId?: string | null;
@@ -569,13 +617,16 @@ export type ProjectFinancialEntry = {
   createdByUserId: string | null;
 };
 
-const financialEntryConfig: Record<ProjectFinancialEntryType, {
-  createHeading: string;
-  editHeading: string;
-  deleteHeading: string;
-  deleteNoun: string;
-  label: string;
-}> = {
+const financialEntryConfig: Record<
+  ProjectFinancialEntryType,
+  {
+    createHeading: string;
+    editHeading: string;
+    deleteHeading: string;
+    deleteNoun: string;
+    label: string;
+  }
+> = {
   offer: {
     createHeading: uiText("Angebotssumme erfassen", "Record quotation total"),
     editHeading: uiText("Angebotssumme bearbeiten", "Edit quotation total"),
@@ -592,8 +643,13 @@ const financialEntryConfig: Record<ProjectFinancialEntryType, {
   },
 };
 
-function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project: Project, type: ProjectFinancialEntryType) {
+function showCreateProjectFinancialEntryModal(
+  modals: MyModalsInterface,
+  project: Project,
+  type: ProjectFinancialEntryType,
+) {
   const config = financialEntryConfig[type];
+  const operationId = publicId(newProductRowId());
 
   modals.showForm({
     content: () => (
@@ -618,7 +674,8 @@ function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project
       const amount = parseFloatCustom(values.amount);
       if (!Number.isFinite(amount) || amount <= 0) return;
 
-      const [data, err] = await client.mutate('projects.costs.entries.create', {
+      const [data, err] = await client.mutate("projects.costs.entries.create", {
+        operationId,
         projectId: project.id,
         type,
         amount,
@@ -628,7 +685,7 @@ function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project
       if (err) throw err;
       if (!data) return;
 
-      await client.invalidateCascading('projects.costs.get');
+      await client.invalidateCascading("projects.costs.get");
 
       hide();
     },
@@ -641,12 +698,18 @@ function showCreateProjectFinancialEntryModal(modals: MyModalsInterface, project
   });
 }
 
-export function showCreateProjectOfferModal(modals: MyModalsInterface, project: Project) {
-  showCreateProjectFinancialEntryModal(modals, project, 'offer');
+export function showCreateProjectOfferModal(
+  modals: MyModalsInterface,
+  project: Project,
+) {
+  showCreateProjectFinancialEntryModal(modals, project, "offer");
 }
 
-export function showCreateProjectInvoiceModal(modals: MyModalsInterface, project: Project) {
-  showCreateProjectFinancialEntryModal(modals, project, 'invoice');
+export function showCreateProjectInvoiceModal(
+  modals: MyModalsInterface,
+  project: Project,
+) {
+  showCreateProjectFinancialEntryModal(modals, project, "invoice");
 }
 
 export function showModifyProjectFinancialEntryModal(
@@ -688,7 +751,7 @@ export function showModifyProjectFinancialEntryModal(
       const amount = parseFloatCustom(values.amount);
       if (!Number.isFinite(amount) || amount <= 0) return;
 
-      const [data, err] = await client.mutate('projects.costs.entries.update', {
+      const [data, err] = await client.mutate("projects.costs.entries.update", {
         projectId: project.id,
         id: entry.id,
         data: {
@@ -700,7 +763,7 @@ export function showModifyProjectFinancialEntryModal(
       if (err) throw err;
       if (!data) return;
 
-      await client.invalidateCascading('projects.costs.get');
+      await client.invalidateCascading("projects.costs.get");
 
       hide();
     },
@@ -747,7 +810,7 @@ export function showDeleteProjectFinancialEntryModal(
       primaryButtonText: uiText("Löschen"),
     }),
     onPrimaryAction: async ({ hide }) => {
-      const [data, err] = await client.mutate('projects.costs.entries.delete', {
+      const [data, err] = await client.mutate("projects.costs.entries.delete", {
         projectId: project.id,
         id: entry.id,
       });
@@ -755,7 +818,7 @@ export function showDeleteProjectFinancialEntryModal(
       if (err) throw err;
       if (!data) return;
 
-      await client.invalidateCascading('projects.costs.get');
+      await client.invalidateCascading("projects.costs.get");
 
       hide();
     },

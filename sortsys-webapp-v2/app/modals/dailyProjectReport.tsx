@@ -6,7 +6,8 @@ import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
-import { client } from "~/lib/client";
+import { client, contentAccess } from "~/lib/client";
+import { permittedReportHours } from "~/lib/dailyReportHours";
 import {
   formatAddress,
   formatDate,
@@ -29,18 +30,34 @@ import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
 import { openExcelExport } from "~/lib/officeExports";
 import type { DailyProjectReport, Project, User } from "~/type-helpers";
 
+async function hoursForProject<T extends { costPerHour?: number | null }>(
+  projectId: string,
+  hours: readonly T[],
+  costRevision?: string,
+) {
+  const access = await contentAccess.read();
+  return permittedReportHours(
+    hours,
+    !!access?.can(
+      `project:${projectId}:daily-reports`,
+      "calculation",
+      costRevision && costRevision !== "0" ? "update" : "create",
+    ),
+  );
+}
+
 const WEEKDAY_NAMES = [
-  'Montag',
-  'Dienstag',
-  'Mittwoch',
-  'Donnerstag',
-  'Freitag',
-  'Samstag',
-  'Sonntag',
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+  "Sonntag",
 ] as const;
 
 const WEEKDAY_SHORT_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
-type WeeklyExportFormat = 'excel' | 'pdf';
+type WeeklyExportFormat = "excel" | "pdf";
 
 function startOfWeek(date: Date) {
   const result = new Date(date);
@@ -68,15 +85,24 @@ function isoWeekNumber(date: Date) {
   const firstDay = (firstThursday.getDay() + 6) % 7;
   firstThursday.setDate(firstThursday.getDate() + 3 - firstDay);
 
-  return 1 + Math.round((value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  return (
+    1 +
+    Math.round(
+      (value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    )
+  );
 }
 
 function sanitizeWorksheetName(value: string) {
-  const cleaned = value.replace(/[:\\/?*\[\]]/g, ' ').trim();
-  return (cleaned || 'Sheet').slice(0, 31);
+  const cleaned = value.replace(/[:\\/?*\[\]]/g, " ").trim();
+  return (cleaned || "Sheet").slice(0, 31);
 }
 
-function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<string>) {
+function addUniqueWorksheet(
+  workbook: any,
+  baseName: string,
+  usedNames: Set<string>,
+) {
   let candidate = sanitizeWorksheetName(baseName);
   if (!usedNames.has(candidate)) {
     usedNames.add(candidate);
@@ -86,7 +112,9 @@ function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<stri
   let index = 2;
   while (true) {
     const suffix = ` (${index})`;
-    const truncated = sanitizeWorksheetName(candidate.slice(0, Math.max(1, 31 - suffix.length)) + suffix);
+    const truncated = sanitizeWorksheetName(
+      candidate.slice(0, Math.max(1, 31 - suffix.length)) + suffix,
+    );
     if (!usedNames.has(truncated)) {
       usedNames.add(truncated);
       return workbook.addWorksheet(truncated);
@@ -97,14 +125,16 @@ function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<stri
 }
 
 function formatWeeklyPresence(value: number) {
-  return Number(value ?? 0) > 0 ? 'X' : '-';
+  return Number(value ?? 0) > 0 ? "X" : "-";
 }
 
 export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
   modals.showForm({
     content: ({ context }) => {
       const [workHourIds, setWorkHourIds] = useState<string[]>([]);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<
+        string | null
+      >(null);
       const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
@@ -314,17 +344,17 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
         userId?: string | null;
         hours: number;
         costPerHour: number | null;
-        contractType: User['contractType'];
+        contractType: User["contractType"];
       }[] = [];
 
       const workHourIds = new Set<string>();
-      Object.keys(values).forEach(key => {
-        if (!key.startsWith('workHour:')) return;
-        const [, id] = key.split(':');
+      Object.keys(values).forEach((key) => {
+        if (!key.startsWith("workHour:")) return;
+        const [, id] = key.split(":");
         workHourIds.add(id);
       });
 
-      workHourIds.forEach(id => {
+      workHourIds.forEach((id) => {
         const user = values[`workHour:${id}:user`]?.at(0) ?? null;
 
         const hours = parseFloatCustom(values[`workHour:${id}:hours`]);
@@ -334,27 +364,32 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
           userId: user?.id ?? null,
           hours,
           costPerHour: user?.costPerHour ?? null,
-          contractType: user?.contractType ?? 'external',
+          contractType: user?.contractType ?? "external",
         });
       });
 
-      const [data, err] = await client.mutate('projects.dailyReports.create', {
+      const [data, err] = await client.mutate("projects.dailyReports.create", {
         projectId,
         day,
-        summary: `${values.summary ?? ''}`.trim() || null,
+        summary: `${values.summary ?? ""}`.trim() || null,
         weather: {
           summary: values.weatherSummary,
-          temperatureC: values.temperatureC ? parseFloatCustom(values.temperatureC) : null,
-          precipitationMm: values.precipitationMm ? parseFloatCustom(values.precipitationMm) : null,
+          temperatureC: values.temperatureC
+            ? parseFloatCustom(values.temperatureC)
+            : null,
+          precipitationMm: values.precipitationMm
+            ? parseFloatCustom(values.precipitationMm)
+            : null,
           windKph: values.windKph ? parseFloatCustom(values.windKph) : null,
         },
-        workHours,
+        workHours: await hoursForProject(projectId, workHours),
       });
 
       if (err) throw err;
       if (!data) return;
 
-      if (pathname !== `/projects/${projectId}`) navigate(`/projects/${projectId}`);
+      if (pathname !== `/projects/${projectId}`)
+        navigate(`/projects/${projectId}`);
       hide();
     },
     modalProps: () => ({
@@ -365,31 +400,48 @@ export function showCreateDailyProjectReportModal(modals: MyModalsInterface) {
   });
 }
 
-export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterface) {
+export function showCreateWeeklyDailyProjectReportModal(
+  modals: MyModalsInterface,
+) {
   modals.showForm({
     content: ({ context }) => {
-      const [workHourIdsByDay, setWorkHourIdsByDay] = useState<Record<number, string[]>>(() => {
-        return Object.fromEntries(WEEKDAY_NAMES.map((_, dayIndex) => [dayIndex, []])) as Record<number, string[]>;
+      const [workHourIdsByDay, setWorkHourIdsByDay] = useState<
+        Record<number, string[]>
+      >(() => {
+        return Object.fromEntries(
+          WEEKDAY_NAMES.map((_, dayIndex) => [dayIndex, []]),
+        ) as Record<number, string[]>;
       });
-      const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>(() => {
-        return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex).filter(isDefaultReportDay);
-      });
+      const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>(
+        () => {
+          return WEEKDAY_NAMES.map((_, dayIndex) => dayIndex).filter(
+            isDefaultReportDay,
+          );
+        },
+      );
       const [pendingCopiedValues, setPendingCopiedValues] = useState<{
         id: string;
         values: Record<string, unknown>;
       } | null>(null);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<
+        string | null
+      >(null);
       const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
       const selectedDaySet = new Set(selectedDayIndexes);
 
       function copyWorkHoursFromPreviousDay(dayIndex: number) {
-        if (dayIndex <= 0 || (workHourIdsByDay[dayIndex]?.length ?? 0) > 0) return;
+        if (dayIndex <= 0 || (workHourIdsByDay[dayIndex]?.length ?? 0) > 0)
+          return;
 
         const previousDayIndex = dayIndex - 1;
         const previousWorkHourIds = workHourIdsByDay[previousDayIndex] ?? [];
-        if (!selectedDaySet.has(previousDayIndex) || !previousWorkHourIds.length) return;
+        if (
+          !selectedDaySet.has(previousDayIndex) ||
+          !previousWorkHourIds.length
+        )
+          return;
 
         const currentValues = context.getValues();
         const copiedValues: Record<string, unknown> = {};
@@ -398,8 +450,10 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           const sourcePrefix = `day:${previousDayIndex}:workHour:${sourceId}`;
           const targetPrefix = `day:${dayIndex}:workHour:${targetId}`;
 
-          copiedValues[`${targetPrefix}:user`] = currentValues[`${sourcePrefix}:user`] ?? [];
-          copiedValues[`${targetPrefix}:hours`] = currentValues[`${sourcePrefix}:hours`] ?? null;
+          copiedValues[`${targetPrefix}:user`] =
+            currentValues[`${sourcePrefix}:user`] ?? [];
+          copiedValues[`${targetPrefix}:hours`] =
+            currentValues[`${sourcePrefix}:hours`] ?? null;
 
           return targetId;
         });
@@ -730,9 +784,9 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
       const projectId = values.project[0]?.id;
       if (!projectId) return;
 
-      const selectedDayIndexes = WEEKDAY_NAMES
-        .map((_, dayIndex) => dayIndex)
-        .filter((dayIndex) => !!values[`enabledDay:${dayIndex}`]);
+      const selectedDayIndexes = WEEKDAY_NAMES.map(
+        (_, dayIndex) => dayIndex,
+      ).filter((dayIndex) => !!values[`enabledDay:${dayIndex}`]);
       if (!selectedDayIndexes.length) {
         throw new Error(uiText("Bitte mindestens einen Tag auswählen"));
       }
@@ -747,10 +801,16 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 
       const parseNumber = (fieldName: string, dayLabel: string) => {
         const raw = values[fieldName];
-        if (`${raw ?? ''}`.trim() === '') return null;
+        if (`${raw ?? ""}`.trim() === "") return null;
 
         const parsed = parseFloatCustom(raw);
-        if (isNaN(parsed)) throw new Error(uiText(`${dayLabel}: Ungültiger Zahlenwert`, `${dayLabel}: Invalid number`));
+        if (isNaN(parsed))
+          throw new Error(
+            uiText(
+              `${dayLabel}: Ungültiger Zahlenwert`,
+              `${dayLabel}: Invalid number`,
+            ),
+          );
         return parsed;
       };
 
@@ -768,7 +828,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           userId?: string | null;
           hours: number;
           costPerHour: number | null;
-          contractType: User['contractType'];
+          contractType: User["contractType"];
         }[];
       }[] = [];
 
@@ -777,16 +837,23 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 
         const dayLabel = WEEKDAY_NAMES[dayIndex];
 
-        const summary = `${values[`day:${dayIndex}:summary`] ?? ''}`.trim();
-        const weatherSummary = `${values[`day:${dayIndex}:weatherSummary`] ?? ''}`.trim();
-        const temperatureC = parseNumber(`day:${dayIndex}:temperatureC`, dayLabel);
-        const precipitationMm = parseNumber(`day:${dayIndex}:precipitationMm`, dayLabel);
+        const summary = `${values[`day:${dayIndex}:summary`] ?? ""}`.trim();
+        const weatherSummary =
+          `${values[`day:${dayIndex}:weatherSummary`] ?? ""}`.trim();
+        const temperatureC = parseNumber(
+          `day:${dayIndex}:temperatureC`,
+          dayLabel,
+        );
+        const precipitationMm = parseNumber(
+          `day:${dayIndex}:precipitationMm`,
+          dayLabel,
+        );
         const windKph = parseNumber(`day:${dayIndex}:windKph`, dayLabel);
 
         const workHourIds = new Set<string>();
-        Object.keys(values).forEach(key => {
+        Object.keys(values).forEach((key) => {
           if (!key.startsWith(`day:${dayIndex}:workHour:`)) return;
-          const [, , , id] = key.split(':');
+          const [, , , id] = key.split(":");
           if (!id) return;
           workHourIds.add(id);
         });
@@ -795,15 +862,23 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           userId?: string | null;
           hours: number;
           costPerHour: number | null;
-          contractType: User['contractType'];
+          contractType: User["contractType"];
         }[] = [];
-        workHourIds.forEach(id => {
-          const user = values[`day:${dayIndex}:workHour:${id}:user`]?.at(0) ?? null;
+        workHourIds.forEach((id) => {
+          const user =
+            values[`day:${dayIndex}:workHour:${id}:user`]?.at(0) ?? null;
           if (!user?.id) throw new Error(`${dayLabel}: Mitarbeiter fehlt`);
 
-          const hours = parseFloatCustom(values[`day:${dayIndex}:workHour:${id}:hours`]);
+          const hours = parseFloatCustom(
+            values[`day:${dayIndex}:workHour:${id}:hours`],
+          );
           if (isNaN(hours) || hours < 0 || hours > 10) {
-            throw new Error(uiText(`${dayLabel}: Stunden müssen zwischen 0 und 10 liegen`, `${dayLabel}: Hours must be between 0 and 10`));
+            throw new Error(
+              uiText(
+                `${dayLabel}: Stunden müssen zwischen 0 und 10 liegen`,
+                `${dayLabel}: Hours must be between 0 and 10`,
+              ),
+            );
           }
 
           workHours.push({
@@ -822,11 +897,22 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
           windKph !== null ||
           !!workHours.length;
         if (!hasInput) continue;
-        if (!workHours.length) throw new Error(uiText(`${dayLabel}: Mindestens eine Arbeitszeit erforderlich`, `${dayLabel}: At least one time entry is required`));
+        if (!workHours.length)
+          throw new Error(
+            uiText(
+              `${dayLabel}: Mindestens eine Arbeitszeit erforderlich`,
+              `${dayLabel}: At least one time entry is required`,
+            ),
+          );
 
         const day = dayInWeek(weekStart, dayIndex);
         if (day.getTime() > today.getTime()) {
-          throw new Error(uiText(`${dayLabel}: Datum darf nicht in der Zukunft liegen`, `${dayLabel}: Date cannot be in the future`));
+          throw new Error(
+            uiText(
+              `${dayLabel}: Datum darf nicht in der Zukunft liegen`,
+              `${dayLabel}: Date cannot be in the future`,
+            ),
+          );
         }
 
         const hasWeather =
@@ -851,32 +937,48 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
         });
       }
 
-      if (!records.length) throw new Error(uiText("Bitte mindestens einen Tagesbericht ausfüllen"));
+      if (!records.length)
+        throw new Error(
+          uiText("Bitte mindestens einen Tagesbericht ausfüllen"),
+        );
 
       const weekEnd = dayInWeek(weekStart, WEEKDAY_NAMES.length - 1);
-      const [existingReports, existingReportsErr] = await client.query('projects.dailyReports.list', {
-        projectId,
-        from: dailyReportDayKey(weekStart),
-        to: dailyReportDayKey(weekEnd),
-      });
+      const [existingReports, existingReportsErr] = await client.query(
+        "projects.dailyReports.list",
+        {
+          projectId,
+          from: dailyReportDayKey(weekStart),
+          to: dailyReportDayKey(weekEnd),
+        },
+      );
       if (existingReportsErr) throw existingReportsErr;
 
-      const existingDays = new Set((existingReports ?? []).map(report => dailyReportDayKey(report.day)));
+      const existingDays = new Set(
+        (existingReports ?? []).map((report) => dailyReportDayKey(report.day)),
+      );
       const duplicateDays = records
-        .filter(record => existingDays.has(record.day))
-        .map(record => record.dayLabel);
+        .filter((record) => existingDays.has(record.day))
+        .map((record) => record.dayLabel);
       if (duplicateDays.length) {
-        throw new Error(uiText(`Es existieren bereits Bautagesberichte für: ${duplicateDays.join(', ')}`, `Daily reports already exist for: ${duplicateDays.join(', ')}`));
+        throw new Error(
+          uiText(
+            `Es existieren bereits Bautagesberichte für: ${duplicateDays.join(", ")}`,
+            `Daily reports already exist for: ${duplicateDays.join(", ")}`,
+          ),
+        );
       }
 
       for (const record of records) {
-        const [data, err] = await client.mutate('projects.dailyReports.create', {
-          projectId,
-          day: record.day,
-          summary: record.summary,
-          weather: record.weather,
-          workHours: record.workHours,
-        });
+        const [data, err] = await client.mutate(
+          "projects.dailyReports.create",
+          {
+            projectId,
+            day: record.day,
+            summary: record.summary,
+            weather: record.weather,
+            workHours: await hoursForProject(projectId, record.workHours),
+          },
+        );
 
         if (err) throw err;
         if (!data) return;
@@ -897,7 +999,7 @@ export function showCreateWeeklyDailyProjectReportModal(modals: MyModalsInterfac
 export function showExportWeeklyDailyProjectReportsModal(
   modals: MyModalsInterface,
   project: Project,
-  format: WeeklyExportFormat = 'excel',
+  format: WeeklyExportFormat = "excel",
 ) {
   modals.showForm({
     content: () => (
@@ -920,38 +1022,56 @@ export function showExportWeeklyDailyProjectReportsModal(
     ),
     onSubmit: async ({ hide, context }) => {
       const hideHours = !!context.getValues().hideHours;
-      const [reports, reportsErr] = await client.query('projects.dailyReports.list', {
-        projectId: project.id,
-        limit: 10000,
-        offset: 0,
-      });
+      const [reports, reportsErr] = await client.query(
+        "projects.dailyReports.list",
+        {
+          projectId: project.id,
+          limit: 10000,
+          offset: 0,
+        },
+      );
       if (reportsErr) throw reportsErr;
 
-      const reportList = (reports ?? [])
-        .slice()
-        .sort((left, right) => {
-          const dayDiff = new Date(left.day).getTime() - new Date(right.day).getTime();
-          if (dayDiff !== 0) return dayDiff;
-          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
-        });
+      const reportList = (reports ?? []).slice().sort((left, right) => {
+        const dayDiff =
+          new Date(left.day).getTime() - new Date(right.day).getTime();
+        if (dayDiff !== 0) return dayDiff;
+        return (
+          new Date(left.createdAt).getTime() -
+          new Date(right.createdAt).getTime()
+        );
+      });
 
       if (!reportList.length) {
-        throw new Error(uiText("Für dieses Projekt sind keine Bautagesberichte vorhanden"));
+        throw new Error(
+          uiText("Für dieses Projekt sind keine Bautagesberichte vorhanden"),
+        );
       }
 
-      const userIds = [...new Set(
-        reportList
-          .flatMap((report) => report.workHours)
-          .map((entry) => entry.userId)
-          .filter(Boolean),
-      )] as string[];
-      const userEntries = await Promise.all(userIds.map(async (userId) => {
-        const [user] = await client.query('users.get', { id: userId }, { strategy: 'cache-first' });
-        return [userId, user ?? null] as const;
-      }));
+      const userIds = [
+        ...new Set(
+          reportList
+            .flatMap((report) => report.workHours)
+            .map((entry) => entry.userId)
+            .filter(Boolean),
+        ),
+      ] as string[];
+      const userEntries = await Promise.all(
+        userIds.map(async (userId) => {
+          const [user] = await client.query(
+            "users.get",
+            { id: userId },
+            { strategy: "cache-first" },
+          );
+          return [userId, user ?? null] as const;
+        }),
+      );
       const usersById = new Map(userEntries);
 
-      const weeksByStart = new Map<string, { weekStart: Date; reports: DailyProjectReport[] }>();
+      const weeksByStart = new Map<
+        string,
+        { weekStart: Date; reports: DailyProjectReport[] }
+      >();
       reportList.forEach((report) => {
         const day = new Date(report.day);
         day.setHours(0, 0, 0, 0);
@@ -963,27 +1083,37 @@ export function showExportWeeklyDailyProjectReportsModal(
       });
 
       const weeklyExports = Array.from(weeksByStart.values())
-        .sort((left, right) => left.weekStart.getTime() - right.weekStart.getTime())
+        .sort(
+          (left, right) => left.weekStart.getTime() - right.weekStart.getTime(),
+        )
         .map(({ weekStart, reports: weekReports }) => {
           const orderedWeekReports = weekReports
             .slice()
-            .sort((left, right) => new Date(left.day).getTime() - new Date(right.day).getTime());
+            .sort(
+              (left, right) =>
+                new Date(left.day).getTime() - new Date(right.day).getTime(),
+            );
 
           const weekEnd = dayInWeek(weekStart, WEEKDAY_NAMES.length - 1);
           const weekNumber = isoWeekNumber(weekStart);
 
-          const hoursByUser = new Map<string, { name: string; values: number[] }>();
+          const hoursByUser = new Map<
+            string,
+            { name: string; values: number[] }
+          >();
           orderedWeekReports.forEach((report) => {
             const day = new Date(report.day);
             day.setHours(0, 0, 0, 0);
 
-            const dayIndex = Math.floor((day.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+            const dayIndex = Math.floor(
+              (day.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000),
+            );
             if (dayIndex < 0 || dayIndex >= WEEKDAY_NAMES.length) return;
 
             report.workHours.forEach((entry) => {
-              const key = entry.userId ?? '__unknown__';
+              const key = entry.userId ?? "__unknown__";
               const user = entry.userId ? usersById.get(entry.userId) : null;
-              const name = user ? userFullName(user) : 'Unbekannt';
+              const name = user ? userFullName(user) : "Unbekannt";
 
               const current = hoursByUser.get(key) ?? {
                 name,
@@ -995,75 +1125,144 @@ export function showExportWeeklyDailyProjectReportsModal(
             });
           });
 
-          const workerRows = Array.from(hoursByUser.values())
-            .sort((left, right) => left.name.localeCompare(right.name, 'de'));
+          const workerRows = Array.from(hoursByUser.values()).sort(
+            (left, right) => left.name.localeCompare(right.name, "de"),
+          );
 
           const reportSummaryByDay = new Map<number, string[]>();
           orderedWeekReports.forEach((report) => {
             const day = new Date(report.day);
             day.setHours(0, 0, 0, 0);
 
-            const dayIndex = Math.floor((day.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+            const dayIndex = Math.floor(
+              (day.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000),
+            );
             if (dayIndex < 0 || dayIndex >= WEEKDAY_NAMES.length) return;
 
             const summaries = reportSummaryByDay.get(dayIndex) ?? [];
-            const summary = `${report.summary ?? ''}`.trim();
+            const summary = `${report.summary ?? ""}`.trim();
             if (summary) summaries.push(summary);
             reportSummaryByDay.set(dayIndex, summaries);
           });
-          const enteredDayIndexes = Array.from(reportSummaryByDay.keys()).sort((left, right) => left - right);
+          const enteredDayIndexes = Array.from(reportSummaryByDay.keys()).sort(
+            (left, right) => left - right,
+          );
 
-          const summaryRows: PdfTableSection['rows'] = [
-            [uiText('Projekt'), project.title],
-            ['Kalenderwoche', `KW ${weekNumber}`],
-            [uiText('Zeitraum'), uiText(`${formatDate(weekStart, 'long')} bis ${formatDate(weekEnd, 'long')}`, `${formatDate(weekStart, 'long')} to ${formatDate(weekEnd, 'long')}`)],
-            [uiText('Berichtstage', 'Reported days'), { value: `${orderedWeekReports.length}`, emphasis: hideHours ? 'primary' : 'secondary' }],
+          const summaryRows: PdfTableSection["rows"] = [
+            [uiText("Projekt"), project.title],
+            ["Kalenderwoche", `KW ${weekNumber}`],
+            [
+              uiText("Zeitraum"),
+              uiText(
+                `${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`,
+                `${formatDate(weekStart, "long")} to ${formatDate(weekEnd, "long")}`,
+              ),
+            ],
+            [
+              uiText("Berichtstage", "Reported days"),
+              {
+                value: `${orderedWeekReports.length}`,
+                emphasis: hideHours ? "primary" : "secondary",
+              },
+            ],
           ];
           if (project.address) {
-            summaryRows.splice(1, 0, ['Anschrift', formatAddress(project.address)]);
+            summaryRows.splice(1, 0, [
+              "Anschrift",
+              formatAddress(project.address),
+            ]);
           }
 
           const totalHours = workerRows.reduce((sum, row) => {
-            return sum + row.values.reduce((acc, value) => acc + Number(value ?? 0), 0);
+            return (
+              sum +
+              row.values.reduce((acc, value) => acc + Number(value ?? 0), 0)
+            );
           }, 0);
           if (!hideHours) {
-            summaryRows.push([uiText('Gesamtstunden', 'Total hours'), { value: `${formatPdfNumber(totalHours)} h`, bold: true }]);
+            summaryRows.push([
+              uiText("Gesamtstunden", "Total hours"),
+              { value: `${formatPdfNumber(totalHours)} h`, bold: true },
+            ]);
           }
 
           const sections: PdfTableSection[] = [
             {
               title: uiText("Zusammenfassung"),
-              columns: [uiText('Kennzahl'), uiText('Wert')],
+              columns: [uiText("Kennzahl"), uiText("Wert")],
               rows: summaryRows,
-              presentation: 'summary',
+              presentation: "summary",
               withHeader: false,
-              align: ['left', 'left'],
-              columnWidths: ['1fr', '2fr'],
+              align: ["left", "left"],
+              columnWidths: ["1fr", "2fr"],
             },
           ];
 
           if (workerRows.length > 0) {
             const workerColumns = hideHours
-              ? ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES]
-              : ['Mitarbeiter', ...WEEKDAY_SHORT_NAMES, 'Gesamt'];
+              ? ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES]
+              : ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES, "Gesamt"];
             const workerAlign = hideHours
-              ? ['left' as const, ...WEEKDAY_SHORT_NAMES.map(() => 'center' as const)]
-              : ['left' as const, ...WEEKDAY_SHORT_NAMES.map(() => 'right' as const), 'right' as const];
+              ? [
+                  "left" as const,
+                  ...WEEKDAY_SHORT_NAMES.map(() => "center" as const),
+                ]
+              : [
+                  "left" as const,
+                  ...WEEKDAY_SHORT_NAMES.map(() => "right" as const),
+                  "right" as const,
+                ];
             const workerColumnWidths = hideHours
-              ? ['2.6fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.65fr')]
-              : ['2.6fr', ...WEEKDAY_SHORT_NAMES.map(() => '0.65fr'), '0.9fr'];
+              ? ["2.6fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.65fr")]
+              : ["2.6fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.65fr"), "0.9fr"];
 
             sections.push({
-              title: hideHours ? uiText("Anwesenheit je Mitarbeiter und Tag") : uiText("Arbeitszeit je Mitarbeiter und Tag"),
+              title: hideHours
+                ? uiText("Anwesenheit je Mitarbeiter und Tag")
+                : uiText("Arbeitszeit je Mitarbeiter und Tag"),
               columns: workerColumns,
               subtitle: hideHours
-                ? uiText("X bedeutet erfasste Anwesenheit; – bedeutet keine erfasste Arbeitszeit.", "X means recorded attendance; – means no recorded working time.")
-                : uiText("Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.", "All times in hours; – means no recorded working time."),
-              totalRows: hideHours ? undefined : [[uiText("Gesamt", "Total"), ...WEEKDAY_SHORT_NAMES.map((_, index) => formatPdfNumber(workerRows.reduce((sum, row) => sum + row.values[index], 0))), formatPdfNumber(totalHours)]],
+                ? uiText(
+                    "X bedeutet erfasste Anwesenheit; – bedeutet keine erfasste Arbeitszeit.",
+                    "X means recorded attendance; – means no recorded working time.",
+                  )
+                : uiText(
+                    "Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.",
+                    "All times in hours; – means no recorded working time.",
+                  ),
+              totalRows: hideHours
+                ? undefined
+                : [
+                    [
+                      uiText("Gesamt", "Total"),
+                      ...WEEKDAY_SHORT_NAMES.map((_, index) =>
+                        formatPdfNumber(
+                          workerRows.reduce(
+                            (sum, row) => sum + row.values[index],
+                            0,
+                          ),
+                        ),
+                      ),
+                      formatPdfNumber(totalHours),
+                    ],
+                  ],
               rows: workerRows.map((row) => {
-                const total = row.values.reduce((sum, value) => sum + Number(value ?? 0), 0);
-                if (hideHours) return [row.name, ...row.values.map(value => formatWeeklyPresence(value))];
-                return [row.name, ...row.values.map(value => value === 0 ? '-' : formatPdfNumber(value)), formatPdfNumber(total)];
+                const total = row.values.reduce(
+                  (sum, value) => sum + Number(value ?? 0),
+                  0,
+                );
+                if (hideHours)
+                  return [
+                    row.name,
+                    ...row.values.map((value) => formatWeeklyPresence(value)),
+                  ];
+                return [
+                  row.name,
+                  ...row.values.map((value) =>
+                    value === 0 ? "-" : formatPdfNumber(value),
+                  ),
+                  formatPdfNumber(total),
+                ];
               }),
               align: workerAlign,
               columnWidths: workerColumnWidths,
@@ -1073,18 +1272,23 @@ export function showExportWeeklyDailyProjectReportsModal(
           const workDescriptionRows = enteredDayIndexes.map((dayIndex) => {
             const weekday = WEEKDAY_NAMES[dayIndex]!;
             const dayDate = dayInWeek(weekStart, dayIndex);
-            const summaries = (reportSummaryByDay.get(dayIndex) ?? []).join(' / ').trim();
-            return [`${weekday}, ${formatDate(dayDate, 'long')}`, summaries || uiText('Keine Beschreibung')];
+            const summaries = (reportSummaryByDay.get(dayIndex) ?? [])
+              .join(" / ")
+              .trim();
+            return [
+              `${weekday}, ${formatDate(dayDate, "long")}`,
+              summaries || uiText("Keine Beschreibung"),
+            ];
           });
           if (workDescriptionRows.length > 0) {
             sections.push({
               title: uiText("Beschreibung der Arbeiten"),
-              presentation: 'entries',
-              columns: ['Tag', 'Inhalt'],
+              presentation: "entries",
+              columns: ["Tag", "Inhalt"],
               rows: workDescriptionRows,
               withHeader: false,
-              align: ['left', 'left'],
-              columnWidths: ['1.25fr', '2.75fr'],
+              align: ["left", "left"],
+              columnWidths: ["1.25fr", "2.75fr"],
             });
           }
 
@@ -1100,12 +1304,15 @@ export function showExportWeeklyDailyProjectReportsModal(
           };
         });
 
-      const safeTitle = project.title.replace(/[^\w\-]+/g, '-');
+      const safeTitle = project.title.replace(/[^\w\-]+/g, "-");
 
-      if (format === 'pdf') {
+      if (format === "pdf") {
         const documents = weeklyExports.map((weeklyExport) => {
           return {
-            title: uiText(`Bauwochenbericht · KW ${weeklyExport.weekNumber}`, `Weekly site report · Week ${weeklyExport.weekNumber}`),
+            title: uiText(
+              `Bauwochenbericht · KW ${weeklyExport.weekNumber}`,
+              `Weekly site report · Week ${weeklyExport.weekNumber}`,
+            ),
             reportLabel: project.title,
             sections: weeklyExport.sections,
             emptyMessage: uiText("Keine Daten zum Bauwochenbericht verfügbar."),
@@ -1113,16 +1320,16 @@ export function showExportWeeklyDailyProjectReportsModal(
         });
 
         const pdfData = await renderStructuredPdfBatch({ documents });
-        const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
+        const blob = new Blob([pdfData] as any, { type: "application/pdf" });
         deliverBlob(blob, `Bauwochenberichte-${safeTitle}.pdf`);
         hide();
         return;
       }
 
-      const ExcelJS = await import('exceljs');
-      const DECIMAL_ZERO_DASH_NUM_FMT = '#,##0.00;-#,##0.00;-';
+      const ExcelJS = await import("exceljs");
+      const DECIMAL_ZERO_DASH_NUM_FMT = "#,##0.00;-#,##0.00;-";
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'exceljs';
+      wb.creator = "exceljs";
       wb.created = new Date();
 
       const usedWorksheetNames = new Set<string>();
@@ -1133,13 +1340,15 @@ export function showExportWeeklyDailyProjectReportsModal(
 
         const headerLines = [
           uiText(`Projekt: ${project.title}`, `Project: ${project.title}`),
-          project.address ? `Anschrift: ${formatAddress(project.address)}` : null,
+          project.address
+            ? `Anschrift: ${formatAddress(project.address)}`
+            : null,
           `Kalenderwoche: KW ${weeklyExport.weekNumber}`,
           `Wochenbeginn: ${formatDate(weeklyExport.weekStart)}`,
           `Wochenende: ${formatDate(weeklyExport.weekEnd)}`,
         ].filter(Boolean) as string[];
 
-        ws.getCell(1, 1).value = 'Bauwochenbericht';
+        ws.getCell(1, 1).value = "Bauwochenbericht";
         ws.getCell(1, 1).font = { size: 18, bold: true };
         ws.mergeCells(1, 1, 1, 8);
 
@@ -1151,7 +1360,9 @@ export function showExportWeeklyDailyProjectReportsModal(
         });
 
         let cursor = 3 + headerLines.length;
-        ws.getCell(cursor, 1).value = hideHours ? uiText('Anwesenheit je Mitarbeiter und Tag') : uiText('Arbeitszeit je Mitarbeiter und Tag');
+        ws.getCell(cursor, 1).value = hideHours
+          ? uiText("Anwesenheit je Mitarbeiter und Tag")
+          : uiText("Arbeitszeit je Mitarbeiter und Tag");
         ws.getCell(cursor, 1).font = { bold: true, size: 14 };
 
         cursor += 2;
@@ -1159,24 +1370,38 @@ export function showExportWeeklyDailyProjectReportsModal(
         if (weeklyExport.workerRows.length) {
           const tableRows = weeklyExport.workerRows.map((row) => [
             row.name,
-            ...row.values.map((value) => hideHours ? formatWeeklyPresence(value) : value),
+            ...row.values.map((value) =>
+              hideHours ? formatWeeklyPresence(value) : value,
+            ),
           ]);
 
           ws.addTable({
-            name: `WeeklyDailyReports_${dailyReportDayKey(weeklyExport.weekStart).replace(/[^0-9]/g, '')}_${weekIndex + 1}`,
+            name: `WeeklyDailyReports_${dailyReportDayKey(weeklyExport.weekStart).replace(/[^0-9]/g, "")}_${weekIndex + 1}`,
             ref: ws.getCell(cursor, 1).address,
             headerRow: true,
             totalsRow: false,
-            style: { theme: 'TableStyleLight1', showRowStripes: true },
-            columns: [{ name: 'Mitarbeiter' }, ...WEEKDAY_SHORT_NAMES.map((day) => ({ name: day }))],
+            style: { theme: "TableStyleLight1", showRowStripes: true },
+            columns: [
+              { name: "Mitarbeiter" },
+              ...WEEKDAY_SHORT_NAMES.map((day) => ({ name: day })),
+            ],
             rows: tableRows,
           });
 
           if (!hideHours) {
-            for (let rowIndex = 0; rowIndex < weeklyExport.workerRows.length; rowIndex++) {
+            for (
+              let rowIndex = 0;
+              rowIndex < weeklyExport.workerRows.length;
+              rowIndex++
+            ) {
               const row = cursor + 1 + rowIndex;
-              for (let dayIndex = 0; dayIndex < WEEKDAY_SHORT_NAMES.length; dayIndex++) {
-                ws.getCell(row, 2 + dayIndex).numFmt = DECIMAL_ZERO_DASH_NUM_FMT;
+              for (
+                let dayIndex = 0;
+                dayIndex < WEEKDAY_SHORT_NAMES.length;
+                dayIndex++
+              ) {
+                ws.getCell(row, 2 + dayIndex).numFmt =
+                  DECIMAL_ZERO_DASH_NUM_FMT;
               }
             }
           }
@@ -1186,7 +1411,7 @@ export function showExportWeeklyDailyProjectReportsModal(
           cursor += 1;
         }
 
-        ws.getCell(cursor, 1).value = uiText('Beschreibung der Arbeiten');
+        ws.getCell(cursor, 1).value = uiText("Beschreibung der Arbeiten");
         ws.getCell(cursor, 1).font = { bold: true, size: 14 };
 
         cursor += 2;
@@ -1199,13 +1424,19 @@ export function showExportWeeklyDailyProjectReportsModal(
 
           cursor += 1;
 
-          const summary = (weeklyExport.reportSummaryByDay.get(dayIndex) ?? []).join('\n\n').trim() || uiText('Keine Beschreibung');
-          const summaryHeight = Math.max(2, Math.ceil((summary.length / 90) * 3));
+          const summary =
+            (weeklyExport.reportSummaryByDay.get(dayIndex) ?? [])
+              .join("\n\n")
+              .trim() || uiText("Keine Beschreibung");
+          const summaryHeight = Math.max(
+            2,
+            Math.ceil((summary.length / 90) * 3),
+          );
           const summaryEndRow = cursor + summaryHeight - 1;
 
           ws.mergeCells(cursor, 1, summaryEndRow, 8);
           ws.getCell(cursor, 1).value = summary;
-          ws.getCell(cursor, 1).alignment = { wrapText: true, vertical: 'top' };
+          ws.getCell(cursor, 1).alignment = { wrapText: true, vertical: "top" };
 
           for (let row = cursor; row <= summaryEndRow; row++) {
             ws.getRow(row).height = 16;
@@ -1228,36 +1459,53 @@ export function showExportWeeklyDailyProjectReportsModal(
 
       const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
       const blob = new Blob([bytes] as any, {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
 
-      await openExcelExport(modals, blob, uiText(`Bauwochenberichte-${safeTitle}.xlsx`, `Weekly-construction-reports-${safeTitle}.xlsx`));
+      await openExcelExport(
+        modals,
+        blob,
+        uiText(
+          `Bauwochenberichte-${safeTitle}.xlsx`,
+          `Weekly-construction-reports-${safeTitle}.xlsx`,
+        ),
+      );
       hide();
     },
     modalProps: () => ({
       noFullscreen: true,
-      modalHeading: format === 'pdf'
-        ? uiText("Bauwochenberichte als PDF exportieren")
-        : uiText("Bauwochenberichte als Excel exportieren"),
+      modalHeading:
+        format === "pdf"
+          ? uiText("Bauwochenberichte als PDF exportieren")
+          : uiText("Bauwochenberichte als Excel exportieren"),
       modalLabel: project.title,
       primaryButtonText: uiText("Exportieren"),
     }),
   });
 }
 
-export function showModifyDailyProjectReportModal(modals: MyModalsInterface, report: DailyProjectReport) {
-  const initialWorkHourValues: Record<string, {
-    user: User | null;
-    userId: string | null;
-    hours: number;
-    costPerHour: number | null;
-    contractType: User['contractType'];
-  }> = {};
+export function showModifyDailyProjectReportModal(
+  modals: MyModalsInterface,
+  report: DailyProjectReport,
+) {
+  const initialWorkHourValues: Record<
+    string,
+    {
+      id: string;
+      user: User | null;
+      userId: string | null;
+      hours: number;
+      costPerHour: number | null;
+      contractType: User["contractType"];
+    }
+  > = {};
 
   modals.showForm({
     content: ({ context }) => {
       const [workHourIds, setWorkHourIds] = useState<string[]>([]);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+      const [autoFocusFieldName, setAutoFocusFieldName] = useState<
+        string | null
+      >(null);
       const hoursInputs = useRef<Record<string, HTMLInputElement | null>>({});
       const createEntityAction = useCreateEntityAction(modals);
 
@@ -1309,26 +1557,43 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
             return (
               <Fragment key={id}>
                 <div className="flex flex-col gap-2">
-                  <MyForm.MultiSelect
-                    name={`workHour:${id}:user`}
-                    labelText={uiText("Mitarbeiter")}
-                    focusOnMount={autoFocusFieldName === `workHour:${id}:user`}
-                    onValueChange={(selected) => {
-                      focusReportHours(selected, () => hoursInputs.current[id]);
-                    }}
-                    minSelectedItems={1}
-                    maxSelectedItems={1}
-                    getOptions={async ({ query }) => {
-                      const [data, err] = await client.query("users.list", {
-                        search: query,
-                      });
-                      if (err) throw err;
-                      return data ?? [];
-                    }}
-                    renderItem={({ item }) => userFullName(item)}
-                    renderTile={(item) => <SmallUserTile data={item} noLink />}
-                    createAction={createEntityAction.user}
-                  />
+                  {initialWorkHourValues[id] &&
+                  !initialWorkHourValues[id].user ? (
+                    <p>
+                      {uiText("Mitarbeiter")}:{" "}
+                      {initialWorkHourValues[id].userId
+                        ? uiText("Nicht freigegeben", "Not shared")
+                        : uiText("Ohne Zuordnung", "Unassigned")}
+                    </p>
+                  ) : (
+                    <MyForm.MultiSelect
+                      name={`workHour:${id}:user`}
+                      labelText={uiText("Mitarbeiter")}
+                      focusOnMount={
+                        autoFocusFieldName === `workHour:${id}:user`
+                      }
+                      onValueChange={(selected) => {
+                        focusReportHours(
+                          selected,
+                          () => hoursInputs.current[id],
+                        );
+                      }}
+                      minSelectedItems={1}
+                      maxSelectedItems={1}
+                      getOptions={async ({ query }) => {
+                        const [data, err] = await client.query("users.list", {
+                          search: query,
+                        });
+                        if (err) throw err;
+                        return data ?? [];
+                      }}
+                      renderItem={({ item }) => userFullName(item)}
+                      renderTile={(item) => (
+                        <SmallUserTile data={item} noLink />
+                      )}
+                      createAction={createEntityAction.user}
+                    />
+                  )}
 
                   <div className="flex gap-2 items-end">
                     <div className="grow">
@@ -1467,7 +1732,7 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                 const id = generateId();
                 ids.push(id);
 
-                let user: any | null = null;
+                let user: User | null = null;
                 if (record.userId) {
                   const [data] = await client.query(
                     "users.get",
@@ -1478,12 +1743,12 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
                 }
 
                 initialWorkHourValues[id] = {
+                  id: record.id,
                   user,
                   userId: record.userId ?? null,
                   hours: record.hours,
                   costPerHour: record.costPerHour ?? null,
-                  contractType: ((record as any).contractType ??
-                    "external") as User["contractType"],
+                  contractType: record.contractType,
                 };
               }
 
@@ -1500,20 +1765,21 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
       const oldDayKey = dailyReportDayKey(report.day);
 
       const workHours: {
+        id?: string;
         userId?: string | null;
         hours: number;
         costPerHour: number | null;
-        contractType: User['contractType'];
+        contractType: User["contractType"];
       }[] = [];
 
       const workHourIds = new Set<string>();
-      Object.keys(values).forEach(key => {
-        if (!key.startsWith('workHour:')) return;
-        const [, id] = key.split(':');
+      Object.keys(values).forEach((key) => {
+        if (!key.startsWith("workHour:")) return;
+        const [, id] = key.split(":");
         workHourIds.add(id);
       });
 
-      workHourIds.forEach(id => {
+      workHourIds.forEach((id) => {
         const user = values[`workHour:${id}:user`]?.at(0);
         const initial = initialWorkHourValues[id];
 
@@ -1521,36 +1787,50 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
         if (isNaN(hours)) throw new Error();
 
         const initialUserId = initial?.userId ?? null;
-        const currentUserId = user?.id ?? null;
+        const currentUserId =
+          user?.id ?? (initial && !initial.user ? initial.userId : null);
         const userChanged = initialUserId !== currentUserId;
-        const costPerHour = initial && !userChanged
-          ? initial.costPerHour ?? null
-          : user?.costPerHour ?? null;
-        const contractType = initial && !userChanged
-          ? initial.contractType
-          : user?.contractType ?? 'external';
+        const costPerHour =
+          initial && !userChanged
+            ? (initial.costPerHour ?? null)
+            : (user?.costPerHour ?? null);
+        const contractType =
+          initial && !userChanged
+            ? initial.contractType
+            : (user?.contractType ?? "external");
 
         workHours.push({
-          userId: user?.id ?? null,
+          ...(initial ? { id: initial.id } : {}),
+          userId: currentUserId,
           hours,
           costPerHour,
           contractType,
         });
       });
 
-      const [data, err] = await client.mutate('projects.dailyReports.update', {
+      const [data, err] = await client.mutate("projects.dailyReports.update", {
         projectId: report.projectId,
         day: dailyReportDayKey(report.day),
+        expectedRevision: report.revision,
+        expectedCostRevision: report.costRevision,
         data: {
           day: nextDayKey,
-          summary: `${values.summary ?? ''}`.trim() || null,
+          summary: `${values.summary ?? ""}`.trim() || null,
           weather: {
             summary: values.weatherSummary,
-            temperatureC: values.temperatureC ? parseFloatCustom(values.temperatureC) : null,
-            precipitationMm: values.precipitationMm ? parseFloatCustom(values.precipitationMm) : null,
+            temperatureC: values.temperatureC
+              ? parseFloatCustom(values.temperatureC)
+              : null,
+            precipitationMm: values.precipitationMm
+              ? parseFloatCustom(values.precipitationMm)
+              : null,
             windKph: values.windKph ? parseFloatCustom(values.windKph) : null,
           },
-          workHours,
+          workHours: await hoursForProject(
+            report.projectId,
+            workHours,
+            report.costRevision,
+          ),
         },
       });
 
@@ -1559,7 +1839,8 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
 
       const oldDetailPath = `/projects/${report.projectId}/dailyReports/${oldDayKey}`;
       const nextDetailPath = `/projects/${report.projectId}/dailyReports/${nextDayKey}`;
-      if (oldDetailPath !== nextDetailPath && pathname === oldDetailPath) navigate(nextDetailPath);
+      if (oldDetailPath !== nextDetailPath && pathname === oldDetailPath)
+        navigate(nextDetailPath);
       hide();
     },
     modalProps: () => ({
@@ -1571,7 +1852,10 @@ export function showModifyDailyProjectReportModal(modals: MyModalsInterface, rep
   });
 }
 
-export function showDeleteDailyProjectReportModal(modals: MyModalsInterface, report: DailyProjectReport) {
+export function showDeleteDailyProjectReportModal(
+  modals: MyModalsInterface,
+  report: DailyProjectReport,
+) {
   modals.showForm({
     content: () => (
       <>
@@ -1591,7 +1875,7 @@ export function showDeleteDailyProjectReportModal(modals: MyModalsInterface, rep
       </>
     ),
     onSubmit: async ({ hide, pathname, navigate }) => {
-      const [data, err] = await client.mutate('projects.dailyReports.delete', {
+      const [data, err] = await client.mutate("projects.dailyReports.delete", {
         projectId: report.projectId,
         day: dailyReportDayKey(report.day),
       });

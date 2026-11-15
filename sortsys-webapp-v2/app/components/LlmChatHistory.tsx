@@ -3,6 +3,7 @@ import { LoadMore, Loading } from "@sortsys/react-components";
 import type { QueryResult } from "@sortsys/v2-client";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router";
+import { useProtectedState } from "~/hooks/useProtectedState";
 import { useRowWindow } from "~/hooks/useRowWindow";
 import { client } from "~/lib/client";
 import { useI18n } from "~/lib/i18n";
@@ -16,11 +17,10 @@ type HistoryState = {
   error: { message: string } | null;
 };
 
+const EMPTY_HISTORY: HistoryState = { chats: null, error: null };
+
 function useChatHistory() {
-  const [state, setState] = useState<HistoryState>({
-    chats: null,
-    error: null,
-  });
+  const [state, setState, context] = useProtectedState(EMPTY_HISTORY);
 
   useEffect(() => {
     let generation = 0;
@@ -59,7 +59,7 @@ function useChatHistory() {
       subscription?.unsubscribe();
       stopListening();
     };
-  }, []);
+  }, [context, setState]);
 
   function reload() {
     setState((previous) => ({ ...previous, error: null }));

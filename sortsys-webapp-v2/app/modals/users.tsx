@@ -1,6 +1,4 @@
-import { Card } from "@heroui/react";
-import { Button as UIAction } from "@sortsys/react-components";
-import { Input as UIInput } from "@heroui/react";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { uiText } from "~/lib/i18n";
 import { Heading } from "@sortsys/react-components";
 import { useState } from "react";
@@ -14,15 +12,11 @@ import { client } from "~/lib/client";
 import { userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { nowrap } from "~/lib/primitives";
-import {
-  ALL_FINE_GRAINED_ROLES,
-  ROLE_AREAS,
-  ROLE_LEVELS,
-  ROLE_PRESETS,
-} from "~/lib/roleModel";
+import OrganizationInvitations from "~/components/OrganizationInvitations";
 import { parseFloatCustom } from "~/lib/utils";
+import { newProductRowId, publicId } from "~/lib/data/products";
 import { SmallUserTile } from "~/lib/tiles";
-import type { Role, User } from "~/type-helpers";
+import type { User } from "~/type-helpers";
 
 type CreateUserModalOptions = {
   initialQuery?: string;
@@ -30,28 +24,37 @@ type CreateUserModalOptions = {
 };
 
 function splitUserQuery(query: string | undefined) {
-  const parts = `${query ?? ''}`.trim().split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return { firstName: parts[0] ?? '', lastName: '' };
-  return { firstName: parts[0]!, lastName: parts.slice(1).join(' ') };
+  const parts = `${query ?? ""}`.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { firstName: parts[0] ?? "", lastName: "" };
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
 }
 
 function usernameFromQuery(query: string | undefined) {
-  return `${query ?? ''}`.toLowerCase().replaceAll(/[^a-z0-9_.-]+/g, '');
+  return `${query ?? ""}`.toLowerCase().replaceAll(/[^a-z0-9_.-]+/g, "");
 }
 
 function parseVacationDays(value: unknown) {
-  const text = `${value ?? ''}`.trim();
+  const text = `${value ?? ""}`.trim();
   if (!text) return null;
 
   const days = Number(text);
   if (!Number.isInteger(days) || days < 0 || days > 366) {
-    throw new Error(uiText("Urlaubstage müssen eine ganze Zahl zwischen 0 und 366 sein.", "Leave days must be an integer between 0 and 366."));
+    throw new Error(
+      uiText(
+        "Urlaubstage müssen eine ganze Zahl zwischen 0 und 366 sein.",
+        "Leave days must be an integer between 0 and 366.",
+      ),
+    );
   }
 
   return days;
 }
 
-export function showCreateUserModal(modals: MyModalsInterface, options: CreateUserModalOptions = {}) {
+export function showCreateUserModal(
+  modals: MyModalsInterface,
+  options: CreateUserModalOptions = {},
+) {
+  const operationId = publicId(newProductRowId());
   modals.showForm({
     content: ({ context }) => {
       const createEntityAction = useCreateEntityAction(modals);
@@ -150,17 +153,26 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
         if (isNaN(values.costPerHour)) return;
       }
 
-      values.vacationDaysPerYear = parseVacationDays(values.vacationDaysPerYear);
+      values.vacationDaysPerYear = parseVacationDays(
+        values.vacationDaysPerYear,
+      );
       values.supervisorUserId = values.supervisor?.at(0)?.id ?? null;
       delete values.supervisor;
 
-      const [data, err] = await client.mutate('users.create', values as any);
+      const [data, err] = await client.mutate("users.create", {
+        ...values,
+        operationId,
+      } as any);
 
       if (err) throw err;
       if (!data) return;
 
       if (options.onCreated) {
-        const [created, loadErr] = await client.query('users.get', { id: data.id }, { strategy: 'network-first' });
+        const [created, loadErr] = await client.query(
+          "users.get",
+          { id: data.id },
+          { strategy: "network-first" },
+        );
         if (loadErr) throw loadErr;
         if (created) await options.onCreated(created);
         hide();
@@ -178,14 +190,27 @@ export function showCreateUserModal(modals: MyModalsInterface, options: CreateUs
 }
 
 export function showModifyUserModal(modals: MyModalsInterface, user: User) {
+  let mayEditMaster = () => false,
+    mayEditCosts = () => false,
+    mayEditEmployment = () => false,
+    mayEditSupervision = () => false;
   modals.showForm({
     content: ({ context }) => {
-      const createEntityAction = useCreateEntityAction(modals);
+      const createEntityAction = useCreateEntityAction(modals),
+        session = useSessionInfo(),
+        scope = `personnel:${user.id}`;
+      mayEditMaster = () => session.canAccess(scope, "master-data", "update");
+      mayEditCosts = () => session.canAccess(scope, "calculation", "update");
+      mayEditEmployment = () => session.canAccess(scope, "scope", "update");
+      mayEditSupervision = () => session.isAdmin();
+      const readCosts = session.canAccess(scope, "calculation", "read"),
+        readEmployment = session.canAccess(scope, "scope", "read");
 
       return (
         <>
           <MyForm.Input
             required
+            disabled
             name="username"
             labelText={uiText("Anmeldename")}
             rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]}
@@ -195,37 +220,56 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
 
           <MyForm.Input
             required
+            disabled={!mayEditMaster()}
             name="firstName"
             labelText={uiText("Vorname")}
           />
-          <MyForm.Input name="lastName" labelText={uiText("Nachname")} />
+          <MyForm.Input
+            disabled={!mayEditMaster()}
+            name="lastName"
+            labelText={uiText("Nachname")}
+          />
 
           <MyDivider />
 
-          <MyForm.Input name="email" labelText={uiText("E-Mail")} />
-          <MyForm.Input name="phone" labelText={uiText("Telefon")} />
-
-          <MyForm.MultiSelect
-            name="supervisor"
-            labelText={uiText("Vorgesetzter")}
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const [users, err] = await client.query(
-                "users.list",
-                { search: query },
-                { strategy: "cache-first" },
-              );
-              if (err) throw err;
-              return (users ?? []).filter((candidate) => candidate.id !== user.id);
-            }}
-            renderItem={({ item }) => userFullName(item)}
-            renderTile={(item) => <SmallUserTile data={item} noLink />}
-            createAction={createEntityAction.user}
+          <MyForm.Input
+            disabled={!mayEditMaster()}
+            name="email"
+            labelText={uiText("E-Mail")}
           />
+          <MyForm.Input
+            disabled={!mayEditMaster()}
+            name="phone"
+            labelText={uiText("Telefon")}
+          />
+
+          {readEmployment && (
+            <MyForm.MultiSelect
+              disabled={!mayEditEmployment() || !mayEditSupervision()}
+              name="supervisor"
+              labelText={uiText("Vorgesetzter")}
+              maxSelectedItems={1}
+              getOptions={async ({ query }) => {
+                const [users, err] = await client.query(
+                  "users.list",
+                  { search: query },
+                  { strategy: "cache-first" },
+                );
+                if (err) throw err;
+                return (users ?? []).filter(
+                  (candidate) => candidate.id !== user.id,
+                );
+              }}
+              renderItem={({ item }) => userFullName(item)}
+              renderTile={(item) => <SmallUserTile data={item} noLink />}
+              createAction={createEntityAction.user}
+            />
+          )}
 
           <MyDivider />
 
           <MyForm.Select
+            disabled={!mayEditMaster() || !mayEditSupervision()}
             name="contractType"
             labelText={uiText("Vertrag")}
             getOptions={() => [
@@ -236,27 +280,36 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
             buildOption={({ id, text }) => ({ value: id, text })}
           />
 
-          <MyForm.Input
-            name="costPerHour"
-            labelText={uiText("Kosten pro Stunde (EUR)")}
-            type="number"
-            rules={[MyForm.Input.rules.num]}
-          />
+          {readCosts && (
+            <MyForm.Input
+              disabled={!mayEditCosts()}
+              name="costPerHour"
+              labelText={uiText("Kosten pro Stunde (EUR)")}
+              type="number"
+              rules={[MyForm.Input.rules.num]}
+            />
+          )}
 
-          <MyForm.Input
-            name="vacationDaysPerYear"
-            labelText={uiText("Urlaubstage pro Jahr", "Leave days per year")}
-            type="number"
-            min={0}
-            max={366}
-            rules={[MyForm.Input.rules.int]}
-          />
+          {readEmployment && (
+            <MyForm.Input
+              disabled={!mayEditEmployment()}
+              name="vacationDaysPerYear"
+              labelText={uiText("Urlaubstage pro Jahr", "Leave days per year")}
+              type="number"
+              min={0}
+              max={366}
+              rules={[MyForm.Input.rules.int]}
+            />
+          )}
 
           <NotifyLoaded
             onLoad={() => {
               context.setValues({ ...user, supervisor: [] });
 
-              const supervisorUserId = (user as any).supervisorUserId;
+              const supervisorUserId =
+                readEmployment && "supervisorUserId" in user
+                  ? user.supervisorUserId
+                  : null;
               if (!supervisorUserId) return;
               client
                 .query(
@@ -276,21 +329,40 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
     onSubmit: async ({ context, hide, navigate }) => {
       const values = context.getValues();
 
-      values.username = values.username.toLowerCase();
-
-      if (!values.costPerHour) values.costPerHour = null;
+      if (!mayEditMaster())
+        for (const field of [
+          "username",
+          "firstName",
+          "lastName",
+          "email",
+          "phone",
+          "contractType",
+        ])
+          delete values[field];
+      else if (values.username) values.username = values.username.toLowerCase();
+      if (!mayEditCosts()) delete values.costPerHour;
+      else if (!values.costPerHour) values.costPerHour = null;
       else {
         values.costPerHour = parseFloatCustom(values.costPerHour);
         if (isNaN(values.costPerHour)) return;
       }
-
-      values.vacationDaysPerYear = parseVacationDays(values.vacationDaysPerYear);
-      values.supervisorUserId = values.supervisor?.at(0)?.id ?? null;
+      if (mayEditEmployment()) {
+        values.vacationDaysPerYear = parseVacationDays(
+          values.vacationDaysPerYear,
+        );
+        if (mayEditSupervision())
+          values.supervisorUserId = values.supervisor?.at(0)?.id ?? null;
+        else delete values.supervisorUserId;
+      } else {
+        delete values.vacationDaysPerYear;
+        delete values.supervisorUserId;
+      }
+      if (!mayEditSupervision()) delete values.contractType;
       delete values.supervisor;
 
-      const [data, err] = await client.mutate('users.update', {
+      const [data, err] = await client.mutate("users.update", {
         id: user.id,
-        data: values as any
+        data: values as any,
       });
 
       if (err) throw err;
@@ -306,14 +378,22 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
   });
 }
 
-export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User, supervisor?: User | null) {
+export function showSetUserSupervisorModal(
+  modals: MyModalsInterface,
+  user: User,
+  supervisor?: User | null,
+) {
+  let permitted = false;
   modals.showForm({
     content: ({ context }) => {
-      const createEntityAction = useCreateEntityAction(modals);
+      const createEntityAction = useCreateEntityAction(modals),
+        session = useSessionInfo();
+      permitted = session.isAdmin();
 
       return (
         <>
           <MyForm.MultiSelect
+            disabled={!permitted}
             required
             name="supervisor"
             labelText={uiText("Vorgesetzter")}
@@ -325,7 +405,9 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
                 { strategy: "cache-first" },
               );
               if (err) throw err;
-              return (users ?? []).filter((candidate) => candidate.id !== user.id);
+              return (users ?? []).filter(
+                (candidate) => candidate.id !== user.id,
+              );
             }}
             renderItem={({ item }) => userFullName(item)}
             renderTile={(item) => <SmallUserTile data={item} noLink />}
@@ -357,11 +439,18 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
       );
     },
     onSubmit: async ({ context, hide }) => {
+      if (!permitted)
+        throw new Error(
+          uiText(
+            "Die Vorgesetztenzuordnung kann nur in der Verwaltung geändert werden.",
+            "Supervisor assignments require administration access.",
+          ),
+        );
       const values = context.getValues();
       const supervisorUserId = values.supervisor?.at(0)?.id;
       if (!supervisorUserId) return;
 
-      const [data, err] = await client.mutate('users.update', {
+      const [data, err] = await client.mutate("users.update", {
         id: user.id,
         data: { supervisorUserId } as any,
       });
@@ -375,43 +464,6 @@ export function showSetUserSupervisorModal(modals: MyModalsInterface, user: User
       modalHeading: uiText("Vorgesetzten setzen"),
       modalLabel: userFullName(user),
       primaryButtonText: uiText("Speichern"),
-    }),
-  });
-}
-
-export function showDeleteUserModal(modals: MyModalsInterface, user: User) {
-  modals.showForm({
-    content: () => (
-      <>
-        <p className="light">
-          {uiText(
-            "Alle mit diesem Benutzer in Verbindung stehenden Daten werden damit ebenfalls gelöscht.",
-          )}{" "}
-          <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
-        </p>
-        <MyForm.Checkbox
-          required
-          name="_understood"
-          labelText={uiText(
-            "Ich habe verstanden, dass diese Aktion nicht rückgängig gemacht werden kann.",
-          )}
-        />
-      </>
-    ),
-    onSubmit: async ({ hide, pathname, navigate }) => {
-      const [data, err] = await client.mutate('users.delete', { id: user.id });
-      if (err) throw err;
-      if (!data) return;
-
-      if (pathname === `/users/${user.id}`) navigate('/users');
-      hide();
-    },
-    modalProps: () => ({
-      danger: true,
-      noFullscreen: true,
-      modalHeading: uiText("Benutzer löschen"),
-      modalLabel: userFullName(user),
-      primaryButtonText: uiText("Löschen"),
     }),
   });
 }
@@ -432,7 +484,9 @@ export function showDeactivateUserModal(modals: MyModalsInterface, user: User) {
       </>
     ),
     onSubmit: async ({ hide }) => {
-      const [data, err] = await client.mutate('users.deactivate', { id: user.id });
+      const [data, err] = await client.mutate("users.deactivate", {
+        id: user.id,
+      });
       if (err) throw err;
       if (!data) return;
       hide();
@@ -447,7 +501,10 @@ export function showDeactivateUserModal(modals: MyModalsInterface, user: User) {
   });
 }
 
-export function showSetUserPasswordModal(modals: MyModalsInterface, user: User) {
+export function showChangeOwnPasswordModal(
+  modals: MyModalsInterface,
+  user: User,
+) {
   modals.showForm({
     content: ({ context }) => (
       <>
@@ -498,7 +555,7 @@ export function showSetUserPasswordModal(modals: MyModalsInterface, user: User) 
       const { password } = context.getValues();
       if (!password) return;
 
-      const [data, err] = await client.mutate('auth.setPassword', {
+      const [data, err] = await client.mutate("auth.setPassword", {
         username: user.username,
         password,
       });
@@ -509,349 +566,21 @@ export function showSetUserPasswordModal(modals: MyModalsInterface, user: User) 
       hide();
     },
     modalProps: () => ({
-      modalHeading: uiText("Passwort setzen"),
+      modalHeading: uiText("Passwort ändern", "Change password"),
       modalLabel: userFullName(user),
-      primaryButtonText: uiText("Passwort setzen"),
+      primaryButtonText: uiText("Passwort ändern", "Change password"),
     }),
-  })
+  });
 }
 
-export function showSetUserRolesModal(modals: MyModalsInterface, user: User) {
-  function expandRolesForUi(roles: readonly Role[]) {
-    const expanded = new Set<Role>(roles);
-    roles.forEach(role => {
-      if (!role.startsWith('manage:')) return;
-      const viewRole = `view:${role.substring('manage:'.length)}` as Role;
-      if (ALL_FINE_GRAINED_ROLES.includes(viewRole)) expanded.add(viewRole);
-    });
-    return expanded;
-  }
-
-  function roleLabel(role: Role) {
-    if (role === ':admin') return 'Administrator';
-    if (role === ':llm') return 'LLM';
-
-    for (const area of ROLE_AREAS) {
-      for (const level of ROLE_LEVELS) {
-        if (area.roles[level.id] === role) return `${area.label}: ${level.label}`;
-      }
-    }
-
-    return role;
-  }
-
-  function selectedRolesFromValues(values: Record<string, any>) {
-    const selected = new Set<Role>();
-    ALL_FINE_GRAINED_ROLES.forEach(role => {
-      if (values[role]) selected.add(role);
-    });
-
-    ROLE_AREAS.forEach(area => {
-      const viewRole = area.roles.view;
-      const manageRole = area.roles.manage;
-      if (viewRole && manageRole && selected.has(manageRole)) selected.add(viewRole);
-    });
-
-    return selected;
-  }
-
-  function roleDiff(before: Set<Role> | null, after: Set<Role>) {
-    if (!before) return { added: [] as Role[], removed: [] as Role[] };
-    return {
-      added: [...after].filter(role => !before.has(role)),
-      removed: [...before].filter(role => !after.has(role)),
-    };
-  }
-
-  function summarizeRoles(roles: Iterable<Role>) {
-    return [...roles].map(role => roleLabel(role)).sort((a, b) => a.localeCompare(b, 'de'));
-  }
-
-  function setRoleValues(context: any, roles: readonly Role[]) {
-    const expandedRoles = expandRolesForUi(roles);
-    context.setValues(Object.fromEntries(
-      ALL_FINE_GRAINED_ROLES.map(role => [role, expandedRoles.has(role)]),
-    ));
-  }
-
-  modals.showForm({
-    content: ({ context }) => {
-      const [initialRoles, setInitialRoles] = useState<Set<Role> | null>(null);
-      const [roleSearch, setRoleSearch] = useState('');
-      const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
-      const [, setVersion] = useState(0);
-      const refresh = () => setVersion(version => version + 1);
-
-      const applyRoles = (roles: readonly Role[]) => {
-        setRoleValues(context, roles);
-        refresh();
-      };
-
-      const currentRoles = selectedRolesFromValues(context.getValues());
-      const diff = roleDiff(initialRoles, currentRoles);
-      const normalizedSearch = roleSearch.trim().toLowerCase();
-      const visibleAreas = ROLE_AREAS.filter(area => {
-        if (!normalizedSearch) return true;
-        const haystack = [
-          area.label,
-          area.description,
-          ...Object.values(area.roles).map(role => role ? `${role} ${roleLabel(role)}` : ''),
-        ].join(' ').toLowerCase();
-        return haystack.includes(normalizedSearch);
-      });
-
-      return (
-        <>
-          <Heading level={3}>{uiText("Vorlagen")}</Heading>
-          <div
-            className={[
-              "role-preset-grid",
-              "grid gap-3 sm:grid-cols-2 lg:grid-cols-3",
-            ].join(" ")}
-          >
-            {ROLE_PRESETS.map((preset) => {
-              const presetRoles = expandRolesForUi(preset.roles);
-              const isFulfilled =
-                currentRoles.has(":admin") ||
-                [...presetRoles].every((role) => currentRoles.has(role));
-              return (
-                <UIAction
-                  kind="ghost"
-                  key={preset.id}
-                  type="button"
-                  className={[
-                    "role-preset-card h-auto min-h-20 flex-col items-start gap-1",
-                    "whitespace-normal rounded-xl border p-3 text-left",
-                    "[&_b]:text-sm [&_span]:text-xs [&_span]:font-normal [&_span]:text-muted",
-                    isFulfilled
-                      ? "role-preset-card--fulfilled border-success/40 bg-success-soft text-success"
-                      : "border-separator bg-surface hover:bg-default",
-                  ].join(" ")}
-                  onClick={() => applyRoles(preset.roles)}
-                >
-                  <b>{preset.label}</b>
-                  <span>{preset.description}</span>
-                </UIAction>
-              );
-            })}
-          </div>
-
-          <MyDivider />
-
-          <div
-            className={[
-              "role-tools-grid",
-              "grid items-start gap-4 md:grid-cols-2",
-            ].join(" ")}
-          >
-            <div>
-              <label className="ss-label" htmlFor="role-search-input">
-                {uiText("Rechte suchen")}
-              </label>
-              <UIInput
-                variant="secondary"
-                id="role-search-input"
-                className="ss-input"
-                value={roleSearch}
-                onChange={(event) => setRoleSearch(event.target.value)}
-                placeholder={uiText("z.B. Projekte, löschen, Urlaub")}
-              />
-            </div>
-
-            <MyForm.MultiSelect
-              name="_copyUser"
-              labelText={uiText("Rechte von Benutzer kopieren")}
-              maxSelectedItems={1}
-              getOptions={async ({ query }) => {
-                const [users, err] = await client.query(
-                  "users.list",
-                  { search: query },
-                  { strategy: "cache-first" },
-                );
-                if (err) throw err;
-                return (users ?? []).filter(
-                  (candidate) => candidate.id !== user.id,
-                );
-              }}
-              renderItem={({ item }) => userFullName(item)}
-              renderTile={(item) => <SmallUserTile data={item} noLink />}
-              onValueChange={(selected) => {
-                const source = selected.at(0);
-                if (!source) return;
-                client
-                  .query(
-                    "users.roles.get",
-                    { userId: source.id },
-                    { strategy: "network-first" },
-                  )
-                  .then(([roles, err]) => {
-                    if (err || !roles) return;
-                    setCopiedFrom(userFullName(source));
-                    applyRoles(roles);
-                  });
-              }}
-            />
-          </div>
-
-          {!!copiedFrom && (
-            <p className="light">
-              {uiText("Kopiert von: ")}
-              {copiedFrom}
-            </p>
-          )}
-
-          <div
-            className={[
-              "role-admin-row",
-              "flex flex-wrap items-start justify-between gap-4",
-            ].join(" ")}
-          >
-            <div>
-              <MyForm.Checkbox
-                name=":admin"
-                labelText={uiText(
-                  "Administrator: alle Rechte, inklusive Rollen und Organisation",
-                )}
-                onValueChange={refresh}
-              />
-              <MyForm.Checkbox
-                name=":llm"
-                labelText={uiText("LLM verwenden")}
-                onValueChange={refresh}
-              />
-            </div>
-            <MyButton
-              kind="ghost"
-              renderIcon={Icons.Reset}
-              onClick={() => applyRoles([])}
-            >
-              {uiText("Alle Rechte entfernen")}
-            </MyButton>
-          </div>
-
-          <Card
-            variant="secondary"
-            className={["role-diff-panel", "gap-3 p-4 text-sm"].join(" ")}
-          >
-            <b>{uiText("Änderungen vor dem Speichern")}</b>
-            {!initialRoles ? (
-              <span className="light">
-                {uiText("Rechte werden geladen ...")}
-              </span>
-            ) : !diff.added.length && !diff.removed.length ? (
-              <span className="light">{uiText("Keine Änderungen.")}</span>
-            ) : (
-              <div
-                className={[
-                  "role-diff-columns",
-                  "grid gap-3 md:grid-cols-2 [&>div]:space-y-1 [&_span]:block [&_span]:text-muted",
-                ].join(" ")}
-              >
-                <div>
-                  <b>{uiText("Neu")}</b>
-                  <span>
-                    {diff.added.length
-                      ? summarizeRoles(diff.added).join(", ")
-                      : "-"}
-                  </span>
-                </div>
-                <div>
-                  <b>{uiText("Entfernt")}</b>
-                  <span>
-                    {diff.removed.length
-                      ? summarizeRoles(diff.removed).join(", ")
-                      : "-"}
-                  </span>
-                </div>
-              </div>
-            )}
-          </Card>
-
-          <MyDivider />
-
-          <div
-            className={[
-              "role-area-grid",
-              "grid items-start gap-4 lg:grid-cols-2",
-            ].join(" ")}
-          >
-            {visibleAreas.map((area) => (
-              <Card
-                variant="secondary"
-                key={area.key}
-                className={["role-area-card", "min-w-0 gap-4 p-4"].join(" ")}
-              >
-                <div>
-                  <h3
-                    className={[nowrap(), "text-xl leading-snug font-semibold"]
-                      .filter(Boolean)
-                      .join(" ")}
-                  >
-                    {area.label}
-                  </h3>
-                  <p className="light">{area.description}</p>
-                </div>
-
-                <div className={["role-area-levels", "space-y-3"].join(" ")}>
-                  {ROLE_LEVELS.map((level) => {
-                    const role = area.roles[level.id];
-                    if (!role) return null;
-                    return (
-                      <MyForm.Checkbox
-                        key={role}
-                        name={role}
-                        labelText={
-                          <span title={level.description}>{level.label}</span>
-                        }
-                        onValueChange={refresh}
-                      />
-                    );
-                  })}
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {!visibleAreas.length && (
-            <p className="light">{uiText("Keine Rechte passen zur Suche.")}</p>
-          )}
-
-          <NotifyLoaded
-            onLoad={async () => {
-              const [roles, err] = await client.query("users.roles.get", {
-                userId: user.id,
-              });
-              if (err || !roles) return;
-              const expanded = expandRolesForUi(roles);
-              setInitialRoles(expanded);
-              setRoleValues(context, roles);
-              refresh();
-            }}
-          />
-        </>
-      );
-    },
-    onSubmit: async ({ context, hide }) => {
-      const values = context.getValues();
-      const selectedRoles = selectedRolesFromValues(values);
-      const assignments = Object.fromEntries(
-        ALL_FINE_GRAINED_ROLES.map(role => [role, selectedRoles.has(role)]),
-      );
-
-      const [data, err] = await client.mutate('users.roles.set', {
-        userId: user.id,
-        assignments: assignments as any,
-      } as any);
-
-      if (err) throw err;
-      if (!data) return;
-
-      hide();
-    },
+export function showUserAccessModal(modals: MyModalsInterface, user: User) {
+  return modals.showDefault({
+    content: () => <OrganizationInvitations memberId={user.id} />,
+    onPrimaryAction: ({ hide }) => hide(),
     modalProps: () => ({
-      modalHeading: uiText("Rollen setzen"),
+      modalHeading: uiText("Berechtigungen verwalten", "Manage permissions"),
       modalLabel: userFullName(user),
-      primaryButtonText: uiText("Speichern"),
+      primaryButtonText: uiText("Schließen", "Close"),
     }),
   });
 }

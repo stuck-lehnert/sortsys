@@ -1,24 +1,18 @@
 import { Tabs as HeroTabs } from "@heroui/react";
 import { Tabs, Tab, TabList } from "@sortsys/react-components";
 import { useSearchParams } from "react-router";
+import { EMPTY } from "rxjs";
 import { InvoiceNumberingForm } from "~/components/InvoiceNumberingForm";
+import { OrganizationLogoSettings } from "~/components/OrganizationLogoSettings";
 import { OrganizationDetailsForm } from "~/components/OrganizationDetailsForm";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import {
   Heading,
   Tile,
   Loading,
-  useNotifications,
+  InlineLoading,
 } from "@sortsys/react-components";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyForm } from "~/components/MyForm";
@@ -34,52 +28,13 @@ import { NotFound } from "./_404";
 const DocumentTemplateEditor = lazy(
   () => import("~/components/DocumentTemplateEditor"),
 );
-const OrganizationEncryption = lazy(() => import("~/components/OrganizationEncryption"));
-
-const ALLOWED_LOGO_MIME_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-] as const;
-
-type TenantLogoStatus =
-  "none" | "uploading" | "queued" | "processing" | "ready" | "failed";
-
-type TenantLogoData = {
-  status: TenantLogoStatus;
-  downloadUrl: string | null;
-  error: string | null;
-};
+const OrganizationEncryption = lazy(
+  () => import("~/components/OrganizationEncryption"),
+);
 
 type DefaultSupervisorData = {
   userId: string | null;
 };
-
-function tenantLogoStatusLabel(status: TenantLogoStatus) {
-  if (status === "none")
-    return uiText("Kein Logo hinterlegt", "No logo configured");
-  if (status === "uploading") return uiText("Upload läuft", "Uploading");
-  if (status === "queued") return uiText("In Warteschlange", "Queued");
-  if (status === "processing") return uiText("Wird verarbeitet", "Processing");
-  if (status === "ready") return uiText("Bereit", "Ready");
-  return uiText("Fehlgeschlagen");
-}
-
-function normalizeTenantLogoUploadMimeType(file: File) {
-  const rawType = `${file.type ?? ""}`.trim().toLowerCase();
-  if (rawType === "image/jpg") return "image/jpeg";
-  if ((ALLOWED_LOGO_MIME_TYPES as readonly string[]).includes(rawType)) {
-    return rawType as (typeof ALLOWED_LOGO_MIME_TYPES)[number];
-  }
-
-  const lowerName = `${file.name ?? ""}`.trim().toLowerCase();
-  if (lowerName.endsWith(".png")) return "image/png";
-  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg"))
-    return "image/jpeg";
-  if (lowerName.endsWith(".webp")) return "image/webp";
-
-  return null;
-}
 
 export function meta() {
   return [{ title: uiText("Organisation") }];
@@ -93,7 +48,6 @@ export default function AdminPage() {
 
 function OrganizationAdministration() {
   const sessionInfo = useSessionInfo();
-  const notifications = useNotifications();
   const isAdmin = sessionInfo.isAdmin();
   const [search, setSearch] = useSearchParams();
   const tabs = [
@@ -117,36 +71,36 @@ function OrganizationAdministration() {
       previous.has(selected) ? previous : new Set([...previous, selected]),
     );
   }, [selected]);
-  const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [logoErr, setLogoErr] = useState<string | null>(null);
   const [defaultSupervisorErr, setDefaultSupervisorErr] = useState<
     string | null
   >(null);
-  const [tenantLogo, setTenantLogo] = useState<TenantLogoData | null>(null);
-  const [isLogoLoading, setIsLogoLoading] = useState(false);
-  const [isLogoUploading, setIsLogoUploading] = useState(false);
   const [isDefaultSupervisorClearing, setIsDefaultSupervisorClearing] =
     useState(false);
+  const staffRequested = selected === "staff" || visited.has("staff");
+  const usageRequested = selected === "usage" || visited.has("usage");
 
-  const [users] = useClientStream(
-    () => client.streamQuery("users.list", {}),
-    [],
+  const [users, usersError] = useClientStream(
+    () => (staffRequested ? client.streamQuery("users.list", {}) : EMPTY),
+    [staffRequested],
   );
-  const [defaultSupervisor] = useClientStream<
+  const [defaultSupervisor, defaultSupervisorLoadError] = useClientStream<
     DefaultSupervisorData | null,
-    any
+    Error | null
   >(() => {
+    if (!staffRequested) return EMPTY;
     return client.streamQuery("users.supervisors.getDefault", undefined, {
       strategy: "cache-first",
     });
-  }, []);
+  }, [staffRequested]);
   const [llmUsage, llmUsageErr] = useClientStream(
     () =>
-      client.streamQuery("llm.admin.usage", undefined, {
-        strategy: "network-first",
-      }),
-    [],
+      usageRequested
+        ? client.streamQuery("llm.admin.usage", undefined, {
+            strategy: "network-first",
+          })
+        : EMPTY,
+    [usageRequested],
   );
 
   const defaultSupervisorUser = useMemo(() => {
@@ -156,135 +110,6 @@ function OrganizationAdministration() {
       ) ?? null
     );
   }, [users, defaultSupervisor?.userId]);
-
-  const refreshTenantLogo = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      if (!isAdmin) return null;
-
-      if (!opts?.silent) setIsLogoLoading(true);
-
-      try {
-        const [logoData, loadErr] = await client.query(
-          "settings.tenantLogo.get",
-          undefined,
-          {
-            strategy: "network-first",
-          },
-        );
-
-        if (loadErr) {
-          if (!opts?.silent) {
-            setLogoErr(
-              loadErr.message ||
-                uiText("Organisationslogo konnte nicht geladen werden."),
-            );
-          }
-          return null;
-        }
-
-        setTenantLogo((logoData ?? null) as TenantLogoData | null);
-        if (!opts?.silent) setLogoErr(null);
-        return (logoData ?? null) as TenantLogoData | null;
-      } finally {
-        if (!opts?.silent) setIsLogoLoading(false);
-      }
-    },
-    [isAdmin],
-  );
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    void refreshTenantLogo();
-  }, [refreshTenantLogo, isAdmin]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    const status = tenantLogo?.status;
-    if (!status || !["uploading", "queued", "processing"].includes(status))
-      return;
-
-    const intervalId = window.setInterval(() => {
-      void refreshTenantLogo({ silent: true });
-    }, 2200);
-
-    return () => window.clearInterval(intervalId);
-  }, [refreshTenantLogo, isAdmin, tenantLogo?.status]);
-
-  async function uploadTenantLogo(file: File | null | undefined) {
-    if (!file) return;
-
-    setLogoErr(null);
-    setIsLogoUploading(true);
-
-    try {
-      const mimeType = normalizeTenantLogoUploadMimeType(file);
-      if (!mimeType) {
-        throw new Error(
-          uiText(
-            "Ungültiges Dateiformat. Erlaubt sind PNG, JPG/JPEG und WEBP.",
-          ),
-        );
-      }
-
-      const [createData, createErr] = await client.mutate(
-        "settings.tenantLogo.createUpload",
-        {
-          fileName: file.name,
-          mimeType,
-          sizeBytes: Number.isFinite(file.size) ? file.size : null,
-        },
-      );
-      if (createErr || !createData) {
-        throw (
-          createErr ??
-          new Error(uiText("Logo-Upload konnte nicht vorbereitet werden."))
-        );
-      }
-
-      const uploadResponse = await fetch(createData.uploadUrl, {
-        method: createData.uploadMethod,
-        headers: createData.uploadHeaders,
-        body: file,
-      });
-      if (!uploadResponse.ok) {
-        throw new Error(
-          uiText(
-            `Logo-Upload fehlgeschlagen (${uploadResponse.status})`,
-            `Logo-Upload failed (${uploadResponse.status})`,
-          ),
-        );
-      }
-
-      const etag = uploadResponse.headers.get("etag");
-      const [, completeErr] = await client.mutate(
-        "settings.tenantLogo.completeUpload",
-        {
-          generationId: createData.generationId,
-          etag: etag ?? undefined,
-        },
-      );
-      if (completeErr) throw completeErr;
-
-      const updated = await refreshTenantLogo();
-      if (updated?.status === "ready") {
-        notifications.success({
-          title: uiText(
-            "Organisationslogo aktualisiert",
-            "Organization logo updated",
-          ),
-        });
-      }
-    } catch (err) {
-      setLogoErr(
-        (err as Error)?.message || uiText("Logo-Upload fehlgeschlagen."),
-      );
-    } finally {
-      setIsLogoUploading(false);
-      if (logoFileInputRef.current) {
-        logoFileInputRef.current.value = "";
-      }
-    }
-  }
 
   async function invalidateDefaultSupervisor() {
     await Promise.all([
@@ -316,8 +141,6 @@ function OrganizationAdministration() {
   if (!isAdmin) {
     return <NotFound reason="pageNotFound" />;
   }
-
-  const logoStatus = (tenantLogo?.status ?? "none") as TenantLogoStatus;
 
   return (
     <div className="w-full min-w-0 space-y-6">
@@ -352,8 +175,20 @@ function OrganizationAdministration() {
         >
           <OrganizationDetailsForm />
         </HeroTabs.Panel>
-        <HeroTabs.Panel id="security" shouldForceMount className={selected === "security" ? "pt-4" : "hidden"}>
-          {visited.has("security") && <Suspense fallback={<Loading active description={uiText("Lädt …", "Loading…")} />}><OrganizationEncryption /></Suspense>}
+        <HeroTabs.Panel
+          id="security"
+          shouldForceMount
+          className={selected === "security" ? "pt-4" : "hidden"}
+        >
+          {visited.has("security") && (
+            <Suspense
+              fallback={
+                <Loading active description={uiText("Lädt …", "Loading…")} />
+              }
+            >
+              <OrganizationEncryption />
+            </Suspense>
+          )}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="invoices"
@@ -388,69 +223,7 @@ function OrganizationAdministration() {
           shouldForceMount
           className={selected === "logo" ? "pt-4" : "hidden"}
         >
-          <Tile className="space-y-2">
-            <input
-              ref={logoFileInputRef}
-              type="file"
-              accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(event) => {
-                void uploadTenantLogo(event.target.files?.[0] ?? null);
-              }}
-            />
-
-            {!!logoErr && (
-              <MyCallout icon={Icons.Deny} color="red">
-                {logoErr}
-              </MyCallout>
-            )}
-
-            {tenantLogo?.status === "failed" && !!tenantLogo.error && (
-              <MyCallout icon={Icons.Deny} color="red">
-                {tenantLogo.error}
-              </MyCallout>
-            )}
-
-            {["uploading", "queued", "processing"].includes(logoStatus) && (
-              <p className="light">{tenantLogoStatusLabel(logoStatus)}</p>
-            )}
-
-            <MyButton
-              renderIcon={Icons.Create}
-              loading={isLogoUploading}
-              disabled={isLogoLoading}
-              onClick={() => logoFileInputRef.current?.click()}
-            >
-              {uiText("Logo hochladen")}
-            </MyButton>
-
-            {tenantLogo?.status === "ready" && !!tenantLogo.downloadUrl ? (
-              <div
-                style={{
-                  maxWidth: 360,
-                  border: "1px solid #d9e1ea",
-                  borderRadius: 6,
-                  padding: 12,
-                  background: "#fff",
-                }}
-              >
-                <img
-                  src={tenantLogo.downloadUrl}
-                  alt={uiText("Organisationslogo")}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    maxHeight: 120,
-                    objectFit: "contain",
-                  }}
-                />
-              </div>
-            ) : (
-              <p className="light">
-                {uiText("Noch kein Organisationslogo verfügbar.")}
-              </p>
-            )}
-          </Tile>
+          {visited.has("logo") && <OrganizationLogoSettings />}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="staff"
@@ -458,76 +231,95 @@ function OrganizationAdministration() {
           className={selected === "staff" ? "pt-4" : "hidden"}
         >
           <Tile className="space-y-2">
-            {!!defaultSupervisorErr && (
+            {!!(
+              defaultSupervisorErr ||
+              defaultSupervisorLoadError ||
+              usersError
+            ) && (
               <MyCallout icon={Icons.Deny} color="red">
-                {defaultSupervisorErr}
+                {defaultSupervisorErr ??
+                  defaultSupervisorLoadError?.message ??
+                  usersError?.message}
               </MyCallout>
             )}
 
-            <MyForm
-              key={defaultSupervisor?.userId ?? "none"}
-              className="max-w-none p-0"
-              notifyLoaded={(context) => {
-                if (defaultSupervisorUser)
-                  context.setValues({ supervisor: [defaultSupervisorUser] });
-              }}
-              onSubmit={async (context) => {
-                setDefaultSupervisorErr(null);
-                const values = context.getValues();
-                const userId = values.supervisor?.at(0)?.id;
-                if (!userId) return;
-
-                const [updated, err] = await client.mutate(
-                  "users.supervisors.setDefault",
-                  { userId },
-                );
-                if (err) {
-                  setDefaultSupervisorErr(
-                    err.message ||
-                      uiText(
-                        "Standard-Vorgesetzter konnte nicht gespeichert werden.",
-                      ),
-                  );
-                  return;
-                }
-                if (!updated) return;
-                await invalidateDefaultSupervisor();
-              }}
-            >
-              <MyForm.MultiSelect
-                required
-                name="supervisor"
-                labelText={uiText("Standard-Vorgesetzter")}
-                maxSelectedItems={1}
-                getOptions={async ({ query }) => {
-                  const needle = query.trim().toLowerCase();
-                  return ((users ?? []) as User[]).filter((user) => {
-                    if (!needle) return true;
-                    return userFullName(user).toLowerCase().includes(needle);
-                  });
+            {staffRequested &&
+              (!users || !defaultSupervisor) &&
+              !usersError &&
+              !defaultSupervisorLoadError && (
+                <InlineLoading
+                  description={uiText(
+                    "Personalangaben laden",
+                    "Loading staff details",
+                  )}
+                />
+              )}
+            {!!users && !!defaultSupervisor && (
+              <MyForm
+                key={defaultSupervisor?.userId ?? "none"}
+                className="max-w-none p-0"
+                notifyLoaded={(context) => {
+                  if (defaultSupervisorUser)
+                    context.setValues({ supervisor: [defaultSupervisorUser] });
                 }}
-                renderItem={({ item }) => userFullName(item)}
-                renderTile={(item) => <SmallUserTile data={item} noLink />}
-              />
+                onSubmit={async (context) => {
+                  setDefaultSupervisorErr(null);
+                  const values = context.getValues();
+                  const userId = values.supervisor?.at(0)?.id;
+                  if (!userId) return;
 
-              <div className="flex gap-2 flex-wrap">
-                <MyForm.SubmitButton>
-                  {uiText("Standard speichern")}
-                </MyForm.SubmitButton>
-                {!!defaultSupervisor?.userId && (
-                  <MyButton
-                    kind="ghost"
-                    renderIcon={Icons.Reset}
-                    loading={isDefaultSupervisorClearing}
-                    onClick={() => {
-                      void clearDefaultSupervisor();
-                    }}
-                  >
-                    {uiText("Standard entfernen")}
-                  </MyButton>
-                )}
-              </div>
-            </MyForm>
+                  const [updated, err] = await client.mutate(
+                    "users.supervisors.setDefault",
+                    { userId },
+                  );
+                  if (err) {
+                    setDefaultSupervisorErr(
+                      err.message ||
+                        uiText(
+                          "Standard-Vorgesetzter konnte nicht gespeichert werden.",
+                        ),
+                    );
+                    return;
+                  }
+                  if (!updated) return;
+                  await invalidateDefaultSupervisor();
+                }}
+              >
+                <MyForm.MultiSelect
+                  required
+                  name="supervisor"
+                  labelText={uiText("Standard-Vorgesetzter")}
+                  maxSelectedItems={1}
+                  getOptions={async ({ query }) => {
+                    const needle = query.trim().toLowerCase();
+                    return ((users ?? []) as User[]).filter((user) => {
+                      if (!needle) return true;
+                      return userFullName(user).toLowerCase().includes(needle);
+                    });
+                  }}
+                  renderItem={({ item }) => userFullName(item)}
+                  renderTile={(item) => <SmallUserTile data={item} noLink />}
+                />
+
+                <div className="flex gap-2 flex-wrap">
+                  <MyForm.SubmitButton>
+                    {uiText("Standard speichern")}
+                  </MyForm.SubmitButton>
+                  {!!defaultSupervisor?.userId && (
+                    <MyButton
+                      kind="ghost"
+                      renderIcon={Icons.Reset}
+                      loading={isDefaultSupervisorClearing}
+                      onClick={() => {
+                        void clearDefaultSupervisor();
+                      }}
+                    >
+                      {uiText("Standard entfernen")}
+                    </MyButton>
+                  )}
+                </div>
+              </MyForm>
+            )}
           </Tile>
         </HeroTabs.Panel>
         <HeroTabs.Panel

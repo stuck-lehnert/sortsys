@@ -1,3 +1,4 @@
+import { TimestampEvidenceButton } from "~/components/TimestampEvidenceButton";
 import { uiText } from "~/lib/i18n";
 import type { Route } from "./+types/vacations";
 import { MyButton } from "~/components/MyButton";
@@ -17,8 +18,8 @@ import { useMemo, useState } from "react";
 import { TableExportActions } from "~/components/TableExportActions";
 import { showCreateAbsenceModal } from "~/modals/absences";
 
-type AbsenceType = 'vacation' | 'other';
-type VacationStatus = 'requested' | 'approved' | 'denied';
+type AbsenceType = "vacation" | "other";
+type VacationStatus = "requested" | "approved" | "denied";
 
 type VacationUsage = {
   year: number;
@@ -30,6 +31,7 @@ type VacationUsage = {
 
 type VacationRow = {
   id: string;
+  revision?: string;
   userId: string;
   from: Date;
   to: Date;
@@ -50,43 +52,50 @@ type VacationRow = {
 };
 
 export function meta({}: Route.MetaArgs) {
-  return [
-    { title: uiText("Abwesenheiten", "Absences") },
-  ];
+  return [{ title: uiText("Abwesenheiten", "Absences") }];
 }
 
 export default function VacationsPage() {
   const modals = useMyModals();
   const sessionInfo = useSessionInfo();
-  const canManageVacations = sessionInfo.canDo('manage:userVacations' as any);
-  const canViewUsers = sessionInfo.canDo('view:users');
+  const canManageVacations = sessionInfo.canDo("manage:userVacations");
+  const canViewUsers = sessionInfo.canDo("view:users");
   const createAbsenceLabel = canManageVacations
-    ? uiText('Abwesenheit eintragen', 'Add absence')
-    : uiText('Abwesenheit beantragen', 'Request absence');
+    ? uiText("Abwesenheit eintragen", "Add absence")
+    : uiText("Abwesenheit beantragen", "Request absence");
 
   const [reloadCounter, setReloadCounter] = useState(0);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [vacations, err] = useClientStream<VacationRow[] | null, any>(() => {
-    return client.streamQuery('users.vacations.list', {}, { strategy: 'cache-first' });
+    return client.streamQuery(
+      "users.vacations.list",
+      {},
+      { strategy: "cache-first" },
+    );
   }, [reloadCounter]);
-  const [users, usersError] = useClientStream(() => client.streamQuery('users.list', {
-    includeArchived: canViewUsers ? true : undefined,
-  }), [canViewUsers]);
+  const [users, usersError] = useClientStream(
+    () =>
+      client.streamQuery("users.list", {
+        includeArchived: canViewUsers ? true : undefined,
+      }),
+    [canViewUsers],
+  );
 
   const userMap = useMemo(() => {
     const map = new Map<string, User>();
-    (users ?? []).forEach(user => map.set(user.id, user));
+    (users ?? []).forEach((user) => map.set(user.id, user));
     map.set(sessionInfo.user.id, sessionInfo.user as User);
     return map;
   }, [sessionInfo.user, users]);
 
-  const rows = (vacations ?? []).map(row => ({ ...row, id: row.id }));
+  const rows = (vacations ?? []).map((row) => ({ ...row, id: row.id }));
 
-  const reload = () => setReloadCounter(value => value + 1);
+  const reload = () => setReloadCounter((value) => value + 1);
 
   function showAbsenceForm() {
+    if (!sessionInfo.canCreate("absence")) return;
     showCreateAbsenceModal(modals, {
       users: users ?? [],
       currentUser: sessionInfo.user as User,
@@ -95,7 +104,7 @@ export default function VacationsPage() {
     });
   }
 
-  useShortcut('Control+n', e => {
+  useShortcut("Control+n", (e) => {
     e.preventDefault();
     showAbsenceForm();
   });
@@ -112,9 +121,13 @@ export default function VacationsPage() {
         />
       ),
       onSubmit: async ({ context, hide }) => {
-        const reason = `${context.getValues().reason ?? ''}`.trim();
+        const reason = `${context.getValues().reason ?? ""}`.trim();
         if (!reason) throw new Error(uiText("Ablehnungsgrund fehlt."));
-        const [result, denyErr] = await client.mutate('users.vacations.deny', { id: vacation.id, reason });
+        const [result, denyErr] = await client.mutate("users.vacations.deny", {
+          id: vacation.id,
+          expectedRevision: vacation.revision,
+          reason,
+        });
         if (denyErr) throw denyErr;
         if (!result) return;
         reload();
@@ -129,7 +142,10 @@ export default function VacationsPage() {
     });
   }
 
-  async function runVacationAction(actionName: string, action: () => Promise<void>) {
+  async function runVacationAction(
+    actionName: string,
+    action: () => Promise<void>,
+  ) {
     setPendingAction(actionName);
     setActionError(null);
 
@@ -137,7 +153,11 @@ export default function VacationsPage() {
       await action();
       return true;
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : uiText("Die Aktion ist fehlgeschlagen.", "The action failed."));
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : uiText("Die Aktion ist fehlgeschlagen.", "The action failed."),
+      );
       return false;
     } finally {
       setPendingAction(null);
@@ -146,9 +166,13 @@ export default function VacationsPage() {
 
   function showApproveModal(vacation: VacationRow) {
     const user = userMap.get(vacation.userId);
-    const missingAllowance = vacation.vacationUsage.some(usage => usage.allowanceDays === null);
-    const exceededAllowance = vacation.vacationUsage.find(usage =>
-      usage.remainingAfterApproval !== null && usage.remainingAfterApproval < 0
+    const missingAllowance = vacation.vacationUsage.some(
+      (usage) => usage.allowanceDays === null,
+    );
+    const exceededAllowance = vacation.vacationUsage.find(
+      (usage) =>
+        usage.remainingAfterApproval !== null &&
+        usage.remainingAfterApproval < 0,
     );
 
     modals.showDefault({
@@ -212,11 +236,17 @@ export default function VacationsPage() {
         </div>
       ),
       onPrimaryAction: async ({ hide }) => {
-        const ok = await runVacationAction(`approve:${vacation.id}`, async () => {
-          const [result, approveErr] = await client.mutate('users.vacations.approve', { id: vacation.id });
-          if (approveErr) throw approveErr;
-          if (result) reload();
-        });
+        const ok = await runVacationAction(
+          `approve:${vacation.id}`,
+          async () => {
+            const [result, approveErr] = await client.mutate(
+              "users.vacations.approve",
+              { id: vacation.id, expectedRevision: vacation.revision },
+            );
+            if (approveErr) throw approveErr;
+            if (result) reload();
+          },
+        );
 
         if (ok) hide();
       },
@@ -244,11 +274,17 @@ export default function VacationsPage() {
         </p>
       ),
       onPrimaryAction: async ({ hide }) => {
-        const ok = await runVacationAction(`delete:${vacation.id}`, async () => {
-          const [result, deleteErr] = await client.mutate('users.vacations.delete', { id: vacation.id });
-          if (deleteErr) throw deleteErr;
-          if (result) reload();
-        });
+        const ok = await runVacationAction(
+          `delete:${vacation.id}`,
+          async () => {
+            const [result, deleteErr] = await client.mutate(
+              "users.vacations.delete",
+              { id: vacation.id, expectedRevision: vacation.revision },
+            );
+            if (deleteErr) throw deleteErr;
+            if (result) reload();
+          },
+        );
 
         if (ok) hide();
       },
@@ -312,6 +348,7 @@ export default function VacationsPage() {
             <MyButton
               renderIcon={Icons.Plus}
               onClick={showAbsenceForm}
+              disabled={!sessionInfo.canCreate("absence")}
               aria-label={createAbsenceLabel}
               title={createAbsenceLabel}
             />
@@ -392,6 +429,26 @@ export default function VacationsPage() {
             label: uiText("Aktionen"),
             render: (row) => (
               <div className="flex gap-1 flex-wrap">
+                <TimestampEvidenceButton
+                  entries={[
+                    {
+                      scope: `absence:${row.userId}`,
+                      object: `absence:${row.userId}:request:${row.id}`,
+                      revision: "1",
+                      title: uiText("Antrag", "Request"),
+                    },
+                    ...(row.status === "requested"
+                      ? []
+                      : [
+                          {
+                            scope: `absence:${row.userId}`,
+                            object: `absence:${row.userId}:decision:${row.id}`,
+                            revision: "1",
+                            title: uiText("Entscheidung", "Decision"),
+                          },
+                        ]),
+                  ]}
+                />
                 {row.canApprove && (
                   <MyButton
                     size="sm"
@@ -438,19 +495,19 @@ export default function VacationsPage() {
 }
 
 function absenceTypeLabel(type: AbsenceType) {
-  return type === 'vacation'
-    ? uiText('Urlaub', 'Leave')
-    : uiText('Sonstige Abwesenheit', 'Other absence');
+  return type === "vacation"
+    ? uiText("Urlaub", "Leave")
+    : uiText("Sonstige Abwesenheit", "Other absence");
 }
 
-function absenceLabel(absence: Pick<VacationRow, 'type' | 'label'>) {
-  return absence.type === 'vacation'
-    ? absenceTypeLabel('vacation')
-    : absence.label?.trim() || absenceTypeLabel('other');
+function absenceLabel(absence: Pick<VacationRow, "type" | "label">) {
+  return absence.type === "vacation"
+    ? absenceTypeLabel("vacation")
+    : absence.label?.trim() || absenceTypeLabel("other");
 }
 
 function vacationStatusLabel(status: VacationStatus) {
-  if (status === 'approved') return uiText('Freigegeben', 'Approved');
-  if (status === 'denied') return uiText('Abgelehnt', 'Denied');
-  return uiText('Beantragt');
+  if (status === "approved") return uiText("Freigegeben", "Approved");
+  if (status === "denied") return uiText("Abgelehnt", "Denied");
+  return uiText("Beantragt");
 }

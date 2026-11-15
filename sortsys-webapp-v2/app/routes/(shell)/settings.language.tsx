@@ -13,12 +13,13 @@ export default function LanguageSettingsPage() {
 
   async function saveLanguage(context: MyPublicFormContext) {
     const value = context.getValues().locale;
-    if (value !== 'de' && value !== 'en') return;
+    if (value !== "de" && value !== "en") return;
 
-    const [, error] = await client.mutate('settings.language.set', { locale: value });
+    const [, error] = await client.mutate("settings.language.set", {
+      locale: value,
+    });
     if (error) throw error;
 
-    await client.invalidate('auth.sessionInfo');
     setLocale(value);
     notifications.success({
       title: uiText("Die Sprache wurde gespeichert", "Language saved"),
@@ -35,6 +36,7 @@ export default function LanguageSettingsPage() {
         <MyForm.Select
           name="locale"
           labelText={t("language.label")}
+          getOptionsDeps={[locale]}
           getOptions={() => [
             { id: "de", label: t("language.de") },
             { id: "en", label: t("language.en") },

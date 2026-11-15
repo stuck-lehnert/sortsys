@@ -4,6 +4,7 @@ import { useOutletContext } from "react-router";
 import { AttrList } from "~/components/AttrList";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
+import { Loading } from "@sortsys/react-components";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyLink } from "~/components/MyLink";
 import { MyTable, type MyTableColumn } from "~/components/MyTable";
@@ -141,9 +142,17 @@ export default function ProjectDetailCosts() {
   const { project } = useOutletContext<{ project: Project }>();
   const modals = useMyModals();
   const sessionInfo = useSessionInfo();
-  const canManageProjectFinancialEntries = sessionInfo.canDo("manage:projects");
+  const financialAccess = (
+    type: ProjectFinancialEntry["type"],
+    action: "update" | "delete",
+  ) =>
+    sessionInfo.canAccess(
+      `project:${project.id}`,
+      type === "offer" ? "offer-prices" : "billing",
+      action,
+    );
 
-  const [costs] = useClientStream(
+  const [costs, costsError] = useClientStream(
     () => client.streamQuery("projects.costs.get", { projectId: project.id }),
     [project.id],
   );
@@ -157,7 +166,30 @@ export default function ProjectDetailCosts() {
     void exportCostsToPdf("overall", "open");
   });
 
-  if (!costs) return;
+  if (costsError)
+    return (
+      <div className="space-y-3">
+        <MyCallout color="red">{costsError.message}</MyCallout>
+        <MyButton
+          kind="tertiary"
+          onClick={() => void client.invalidateCascading("projects.costs.get")}
+        >
+          {uiText("Erneut versuchen", "Try again")}
+        </MyButton>
+      </div>
+    );
+  if (!costs)
+    return (
+      <div className="flex min-h-40 items-center justify-center">
+        <Loading
+          active
+          description={uiText(
+            "Projektkosten werden geladen …",
+            "Loading project costs…",
+          )}
+        />
+      </div>
+    );
 
   const offers: ProjectFinancialEntry[] = costs.offers ?? [];
   const invoices: ProjectFinancialEntry[] = costs.invoices ?? [];
@@ -1148,7 +1180,14 @@ export default function ProjectDetailCosts() {
       },
     ];
 
-    if (canManageProjectFinancialEntries) {
+    if (
+      entries.some(
+        (entry) =>
+          entry.commercialCaseId ||
+          financialAccess(entry.type, "update") ||
+          financialAccess(entry.type, "delete"),
+      )
+    ) {
       columns.push({
         label: uiText("Aktionen"),
         render: (row: ProjectFinancialEntry) =>
@@ -1167,6 +1206,7 @@ export default function ProjectDetailCosts() {
               <MyButton
                 size="sm"
                 kind="ghost"
+                disabled={!financialAccess(row.type, "update")}
                 aria-label={uiText("Bearbeiten")}
                 title={uiText("Bearbeiten")}
                 onClick={() =>
@@ -1179,6 +1219,7 @@ export default function ProjectDetailCosts() {
               <MyButton
                 size="sm"
                 kind="danger--tertiary"
+                disabled={!financialAccess(row.type, "delete")}
                 aria-label={uiText("Löschen")}
                 title={uiText("Löschen")}
                 onClick={() =>
