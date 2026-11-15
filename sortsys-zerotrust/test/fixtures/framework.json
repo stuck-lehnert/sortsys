@@ -1,0 +1,103 @@
+{
+  "notice": "Public synthetic browser protocol vector; no private keys or real business data.",
+  "signer": {
+    "encryptionKey": "khI7fEbQK5JEf9sa7ORbRZDDHG2CcyoO6feQZ6vPYAI",
+    "signingKey": "SVmAnlCqYlxbb7A1BSgQjsNwHopPhU-iqy3iN6ibPKQ"
+  },
+  "object": {
+    "tenant": "practice:alpha",
+    "scope": "patient:ada",
+    "facet": "patient-notes",
+    "object": "note:1",
+    "revision": "1",
+    "generation": "1",
+    "policyVersion": "1",
+    "author": "doctor:lee",
+    "format": "sortsys-object-v1",
+    "nonce": "5K7QVNbNrZ6vdQj3",
+    "ciphertext": "aE_LEXVnU9NOhN9Xo3FYsA4TMv-Cgj-VvVyeq9Y5WgER",
+    "wrappedKey": "afQ2JMLvi3N3wNXGPhH2538Q009d0wOAMWrysTdihvDqf8STBA7Pcw",
+    "signature": "aGrF3ck58rQ71dn8ToMKkBxYVsZYX8y4t-chnf6iS1Esjd3aK_c4ummb5XcNLdkgnz8QL6qPgoErDJg6JlRlBA"
+  },
+  "policy": {
+    "tenant": "practice:alpha",
+    "version": "1",
+    "rules": [
+      {
+        "subject": "doctor:lee",
+        "scope": "patient:ada",
+        "facet": "patient-notes",
+        "actions": [
+          "read",
+          "update"
+        ],
+        "effect": "allow"
+      }
+    ],
+    "suspended": [
+      "doctor:suspended"
+    ],
+    "signature": "ZPLcvosoeOrA-mrX2MoxyzNtpJlLBfdbc4aNQU4jUcN6vuRWZLXnqibvxEcKwqNEXJnInwxN7ZxwBog8eT40Aw"
+  },
+  "transition": {
+    "tenant": "practice:alpha",
+    "generation": "1",
+    "operation": "recovery:example",
+    "challenge": "YncGLBouAocQ5xCsbJxPk2D3KZ9yD_gBbbewE9eAX4w",
+    "catalogVersion": "1",
+    "catalogHash": "16vP3twZFtjFo5RO2uhzk0Q0BZYGN_G5pAJWs4BonkQ",
+    "previousAuthorityCertificateHash": "PqSnLseIesYuSowqm9GgVlwMtkOrScyLqHAaxXIHjhI",
+    "nextRecoveryEncryptionKey": "5Z9VE19WGEdl7re8_f3d5noSLRntHOO76DwlS_7Et3Y",
+    "nextRecoverySigningKey": "cWFvNiGGjiJaU7jL5r-px-qxixutJzhCjz-s8GcUKiQ",
+    "nextAuthoritySigningKey": "xbEmi7JKRZRAZAEt9ZZP-51pbZQUeSlnSIJ6tixiBr0",
+    "nextAdministrator": "doctor:lee",
+    "nextAdministratorBundleHash": "9M-53caDQr-4fOUUEfKrzfSklZpDYvcXIob6BVr4DVg"
+  },
+  "transitionSignature": "uuFZp0nBJY7NOJFjgj2xvZV_L1somKslYJZMVPw_KX8QNnJIcuIuEN7NhOr37TmBbCIpyS9fAYrxl_NXzIS6Cg",
+  "pageAccess": {
+    "tenant": "practice:alpha",
+    "generation": "1",
+    "challengeId": "recovery:example",
+    "challenge": "zJ7Wsg_EJsGPlPr6WApmGmXsCJJd2inL6EGsZAIESac",
+    "snapshot": "1.2.3",
+    "after": "opaque:cursor"
+  },
+  "pageSignature": "wilGxpqpHktS9oX8NdeH5fBxqbGXu8GeQtgmZN1hf8qrTuNEtmthxUMqAGOj6r9ZS1rNlNv3tWTVMGreAU-_Dw",
+  "fileReceipt": {
+    "tenant": "practice:alpha",
+    "migration": "migration:practice",
+    "generation": "1",
+    "source": "source:scan",
+    "bytes": "262151",
+    "object": "archive:scan",
+    "revision": "1",
+    "ciphertextHash": "nKqEv7p0VBUhG3xQYlrkDyPdtfTENDXXWC-lgsXoZ-4",
+    "blocks": [
+      {
+        "id": "block:scan:0",
+        "hash": "DQ9aGQTK-jpxLxKwj__RufYWqGuBeBXAw-9lKsI7X6k"
+      },
+      {
+        "id": "block:scan:1",
+        "hash": "vnrHRxaTkSSxqYTwqV_GLy7dGCiR2Fbaa1DaRggPsEA"
+      }
+    ],
+    "author": "doctor:lee",
+    "proof": "nq0fHzB4GYP_CnPX4IVhWMt78e0V4QuT6SmPvcw1wPExaY8zg0UWxm_cPkEAsAPeW2Bftg4OOHQMugCNF_ktDg"
+  },
+  "permanent": {
+    "tenant": "practice:alpha",
+    "scope": "patient:ada",
+    "facet": "patient-notes",
+    "object": "immutable:patient:ada:patient-notes:record:visit_1",
+    "revision": "1",
+    "generation": "1",
+    "policyVersion": "1",
+    "author": "doctor:lee",
+    "format": "sortsys-object-v1",
+    "nonce": "rDIRhiu2Kj9VU-3w",
+    "ciphertext": "CE4V-xVYsrxVEXhE792V8D9vac3CGgaC53Z8jfitZF9xKlQtfHJeXRCn",
+    "wrappedKey": "0gA2dpdf2OLkcbjfIBgBbnnc0b3z-9icIw8wvc2quET4b2bxhFtpgA",
+    "signature": "SXG9KMscBGu4AoG_7McMIOtzGtcN0b9vlMqKC3XF6ttgFMv0JcH3cQ3ddBnZP0Eyr4zZQ7sJYs0fPO1-PRyeBg"
+  }
+}

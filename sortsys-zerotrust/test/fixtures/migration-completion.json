@@ -1,0 +1,39 @@
+{
+  "identity": {
+    "encryptionKey": "XP6Qjex_pfqrl_5sdLU1Efz87szMp7ukszIm045CzDQ",
+    "signingKey": "O1AluTNsRL9jgf2pcO76D7N-Zy-2Ps4Kh9nL1jDOg-g"
+  },
+  "entries": [
+    {
+      "kind": "blob",
+      "id": "asset:1",
+      "revision": "0",
+      "hash": "L7OdcOawVN2dP_gxClunDWhA0hLltwLYAhojLU90Ook"
+    },
+    {
+      "kind": "record",
+      "id": "patient:1",
+      "revision": "9223372036854775807",
+      "hash": "89Noht4Ol0RMq7Tpo6B4JMMKoBYdRY-03CljKn201T4"
+    }
+  ],
+  "seal": {
+    "tenant": "practice:alpha",
+    "migration": "migration:1",
+    "schema": "schema:custom:1",
+    "generation": "3",
+    "policyVersion": "17",
+    "catalogVersion": "9",
+    "source": {
+      "count": "2",
+      "hash": "bDgKxdJgQNvOWmgeM0nqbxrY_AX622hFvBG4-sHXlTk"
+    },
+    "target": {
+      "count": "0",
+      "hash": "Tgh1CDlQGywjJggNzewrUCaEV29vQmGB7lOSY1E5v_s"
+    },
+    "author": "doctor:lee",
+    "proof": "xuBkfdxq16Me1FAqhFN9hnZ3lgGUwQ8toStAhq--WLpbnjgRs9QTCYvoVUjIvS5lGnfwskhWgLl-hPxxaQ_sBQ"
+  },
+  "frame": "AAAAG3plcm90cnVzdC9taWdyYXRpb24tc2VhbC92MQAAAA5wcmFjdGljZTphbHBoYQAAAAttaWdyYXRpb246MQAAAA9zY2hlbWE6Y3VzdG9tOjEAAAABMwAAAAIxNwAAAAE5AAAAATIAAAArYkRnS3hkSmdRTnZPV21nZU0wbnFieHJZX0FYNjIyaEZ2Qkc0LXNIWGxUawAAAAEwAAAAK1RnaDFDRGxRR3l3akpnZ056ZXdyVUNhRVYyOXZRbUdCN2xPU1kxRTV2X3MAAAAKZG9jdG9yOmxlZQ"
+}

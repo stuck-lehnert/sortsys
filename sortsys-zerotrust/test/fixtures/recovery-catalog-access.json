@@ -1,0 +1,15 @@
+{
+  "access": {
+    "tenant": "laboratory:alpha",
+    "generation": "2",
+    "targetGeneration": "3",
+    "challengeId": "challenge:7",
+    "challenge": "ERERERERERERERERERERERERERERERERERERERERERE",
+    "object": "catalog-page:synthetic-42",
+    "hash": "FxcXFxcXFxcXFxcXFxcXFxcXFxcXFxcXFxcXFxcXFxc",
+    "action": "write"
+  },
+  "signingKey": "XFwEmdR8styUw-XZr-NscRGG88SyXbjWGNWZONZ-xQQ",
+  "frame": "AAAAJHplcm90cnVzdC9yZWNvdmVyeS1jYXRhbG9nLWFjY2Vzcy92MQAAABBsYWJvcmF0b3J5OmFscGhhAAAAATIAAAALY2hhbGxlbmdlOjcAAAArRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRQAAAAEzAAAAGWNhdGFsb2ctcGFnZTpzeW50aGV0aWMtNDIAAAArRnhjWEZ4Y1hGeGNYRnhjWEZ4Y1hGeGNYRnhjWEZ4Y1hGeGNYRnhjWEZ4YwAAAAV3cml0ZQ",
+  "proof": "ecrxbRt51fRTaTSTiUkh6SZTweagubWSP2k2RD3ZcsDePOVXHzJ0kTi-DwDsI5A1nMHBsDD4qMGl3RvyIzADDw"
+}

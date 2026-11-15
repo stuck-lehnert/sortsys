@@ -1,0 +1,8 @@
+{
+  "record": {
+    "collection": "encrypted-records",
+    "key": "offer:4711"
+  },
+  "value": "{\"ciphertext\":\"ä / 日本語\",\"locked\":true}",
+  "fingerprint": "iB5vMgr9FjGpbfIIt2E_ZxDEYcYnd0_TFTVMtmbnehM"
+}

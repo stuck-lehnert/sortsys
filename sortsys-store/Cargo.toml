@@ -1,0 +1,34 @@
+[package]
+name = "sortsys-store"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "AGPL-3.0-only"
+
+[workspace]
+
+[[bin]]
+name = "sortsys-duckdb"
+path = "src/main.rs"
+
+[dependencies]
+sortsys-zerotrust = { path = "../sortsys-zerotrust" }
+axum = { version = "0.8", features = ["http1", "json", "tokio"] }
+base64 = "0.23"
+duckdb = { version = "~1.20000.1", default-features = false }
+getrandom = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+url = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

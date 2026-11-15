@@ -1,0 +1,16 @@
+{
+  "first": {
+    "format": "zt-record-anchor-v1",
+    "revision": "1",
+    "predecessor": null,
+    "payload": "public certificate: 1 / ä"
+  },
+  "second": {
+    "format": "zt-record-anchor-v1",
+    "revision": "2",
+    "predecessor": "8dy4qEnkMMz5vXVtjlWSqte-uRuLefjFGk_X5JHAJ3s",
+    "payload": "public certificate: 2 / 日本語"
+  },
+  "firstFingerprint": "8dy4qEnkMMz5vXVtjlWSqte-uRuLefjFGk_X5JHAJ3s",
+  "secondFingerprint": "25x4HczWZm9_pC-nL7Z2jd9_iJCtdWOEfW4Fl4jni7U"
+}

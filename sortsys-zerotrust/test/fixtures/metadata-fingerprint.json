@@ -1,0 +1,35 @@
+{
+  "batch": {
+    "operation": "transaction:17",
+    "checks": [
+      {
+        "record": { "collection": "profiles", "key": "member:17" },
+        "version": "9223372036854775807"
+      },
+      {
+        "record": { "collection": "profiles", "key": "member:18" },
+        "version": null
+      }
+    ],
+    "collections": [{ "collection": "profiles", "version": "0" }],
+    "puts": [
+      {
+        "record": { "collection": "profiles", "key": "member:17" },
+        "value": "{\"name\":\"Maßprüfung 🏗️\",\"count\":592.375}"
+      }
+    ],
+    "deletes": [{ "collection": "profiles", "key": "member:18" }],
+    "hints": [{ "channel": "objects", "value": "{\"domain\":\"profiles\"}" }],
+    "journal": [
+      {
+        "stream": "profiles",
+        "id": "change:17",
+        "object": "member:17",
+        "occurredMicros": "1794700000123456",
+        "order": "9223372036854775806",
+        "value": "receipt"
+      }
+    ]
+  },
+  "fingerprint": "b2c4b687ec4b7128046a4097a01e87abf03ab3fd74bfa4fe06800d1fcd907f94"
+}

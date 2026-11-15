@@ -1,0 +1,27 @@
+{
+  "notice": "Public synthetic test credentials, OPAQUE server setup, account and signed PRF wrapper. No private account key, password export key or PRF output is retained. Never use these credentials in production.",
+  "password": "SyntheticPasskeyAccount-261113",
+  "opaqueServerSetup": "U8-8tAN1m0ycrqrCSPHwi_U51-bsO16ry1F2NOwJlYyagl9A9e0YvdJXs181_uzRtuhz9Ml41EbpGifktLnr0fmqSFhToNW1hvTI6MxFC9bEKe6zf46ghAsKPWA4q1kHEDmUWduyJi0eebM-_11TC4v-ITBeA71XE4AjLk-s-Ds",
+  "registrationRecord": "QKIvFbforeH5lilmHTFViK6wiXhuwHXSrAYZKHAhqw5q1vpRI7B0WtWJW46AbiR4ssbJe46jEK8fqUACbNjJxf09evjsBpLg9mmfw3skRG5RVHaR_x_Va7T1HoKAFA36SauOcEalETKI_WsM-xAUFfGlRr9gaCyRBVuAhj2gnj-Iu5sxF1DkhKA_45vT_a839uokGABCK5wS3PECF5RSSz__Zfsx7p0IK_4oYXVjJi6UQSveioLLuNW0qNU1g7kL",
+  "account": {
+    "tenant": "test",
+    "username": "john.doe",
+    "encryptionKey": "tu42QhMUYxWZZ6w6ehQuW7CH5cTvpIWbIKxCwlt9ok4",
+    "signingKey": "3g4WKl7v79KkGUM1gFTFDTtHdnQz6R8ysqjLN7OH0Oc",
+    "format": "sortsys-account-v1",
+    "nonce": "nvuCp9e2i_JFjNp4",
+    "ciphertext": "Hyk9J3ffKial0svJ96ZYZif1sSxmBuziI-0NzsZppXarFhqjab0aYk5a2FuYo0JCOnZSoJtO_euZltojokSKP4LtuN6_k58of-BvOuGKLd420T6CTWHaBOqPhv4Iohw3rTQS_o0vBNSOFROPJOn1tVgT8FaUZz9F4yEMnVrC40ZxIzjPxlLE8qu55514_XWkJ6Z4HXUE85TxNCSVjHLpGDflmdUqFzVhY0g8ClW4ytfi-OO3WCdq",
+    "wrappedKey": "ahPBQK93mZKrrcwn6mqE2oE7HSulIWgnxhYn4AgHXKeYMgqy56rSZQ"
+  },
+  "packet": {
+    "tenant": "test",
+    "username": "john.doe",
+    "encryptionKey": "tu42QhMUYxWZZ6w6ehQuW7CH5cTvpIWbIKxCwlt9ok4",
+    "signingKey": "3g4WKl7v79KkGUM1gFTFDTtHdnQz6R8ysqjLN7OH0Oc",
+    "rpId": "example.test",
+    "credentialId": "eVdkeoyXTPuSD_Q9TRo62zEOghiRskc9DLgHq5KZF-s",
+    "format": "sortsys-passkey-vault-v1",
+    "wrappedKey": "ug8vIHN-arUeQGT0_5Y58BCSJ-434jfgaxcH07G_HlOnglXglcZfjA",
+    "signature": "6loRk7b_9BazrdE0jastQ6Bi0J1111RxSxck-tpN0VR3tWw25M-HQwmKAfNa2vGBJyb466Ok6aybQWe1Llc-AA"
+  }
+}

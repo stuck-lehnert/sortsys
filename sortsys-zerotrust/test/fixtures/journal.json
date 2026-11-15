@@ -1,0 +1,31 @@
+{
+  "valid": [
+    {
+      "stream": "project:1:billing",
+      "id": "invoice:17",
+      "object": "invoice:17",
+      "occurredMicros": "1794657600123456",
+      "order": null,
+      "value": "opaque:Änderung"
+    },
+    {
+      "stream": "project:1:billing",
+      "id": "imported:17",
+      "object": "invoice:17",
+      "occurredMicros": "-62135596800000000",
+      "order": "9223372036854775807",
+      "value": "opaque:historical"
+    }
+  ],
+  "invalid": [
+    { "field": "occurredMicros", "value": "01794657600123456" },
+    { "field": "occurredMicros", "value": "253402300800000000" },
+    { "field": "occurredMicros", "value": "-62135596800000001" },
+    { "field": "occurredMicros", "value": "+1" },
+    { "field": "order", "value": "0" },
+    { "field": "order", "value": "9223372036854775808" },
+    { "field": "stream", "value": "project 1" },
+    { "field": "object", "value": "-invoice:1" },
+    { "field": "extra", "value": "unexpected" }
+  ]
+}
