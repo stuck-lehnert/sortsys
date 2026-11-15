@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use sortsys_api::{AppState, app_with_state, backup_scheduler, config::Config};
+use sortsys_api::standalone::{self, Config};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -16,48 +16,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env()?;
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.port);
-    let state = AppState::connect(config).await?;
-    let backfill_state = state.clone();
-    tokio::spawn(async move {
-        sortsys_api::backfill_pdf_text_extraction_jobs(&backfill_state).await;
-    });
-
     let listener = tokio::net::TcpListener::bind(address).await?;
-    state
-        .live_llm
-        .bind_listener(&state.config, listener.local_addr()?)
+    let bound = listener.local_addr()?;
+    let app = standalone::connect_at(&config, bound).await?;
+    tracing::info!(address = %bound, "sortsys encrypted API listening");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await?;
-
-    let (backup_stop, backup_stop_receiver) = tokio::sync::watch::channel(false);
-    let backup_task = state
-        .config
-        .automatic_backups_enabled
-        .then(|| tokio::spawn(backup_scheduler::run(state.clone(), backup_stop_receiver)));
-    let graceful_backup_stop = backup_stop.clone();
-
-    if !state.config.automatic_backups_enabled {
-        tracing::info!("automatic database backup scheduler disabled by AUTO_BACKUPS_ENABLED");
-    }
-
-    tracing::info!(%address, "sortsys Rust API listening");
-    let server_result = axum::serve(listener, app_with_state(state.clone()))
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            let _ = graceful_backup_stop.send(true);
-        })
-        .await;
-
-    let _ = backup_stop.send(true);
-    let backup_result = if let Some(task) = backup_task {
-        task.await
-    } else {
-        Ok(())
-    };
-
-    state.tenants.close().await;
-
-    server_result?;
-    backup_result?;
 
     Ok(())
 }

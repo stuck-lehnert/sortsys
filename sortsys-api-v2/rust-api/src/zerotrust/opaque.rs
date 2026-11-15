@@ -12,18 +12,23 @@ use opaque_ke::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{FromRow, PgPool};
 use ts_rs::TS;
 
 use super::crypto::{self, AccountVault, decode, encode, invalid, random_id};
 use crate::{
-    AppState,
     api::Success,
     auth_limits,
+    control::{Repository, accounts, key},
     error::{ErrorCode, RpcError, RpcResult},
-    procedures::common::{authenticated_pool, forbidden, internal},
+    error::{forbidden, internal},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
+
+#[cfg(test)]
+mod store_tests;
+
+mod invited;
+mod owner;
 
 struct Suite;
 impl CipherSuite for Suite {
@@ -222,69 +227,71 @@ struct VaultUpdateInput {
     proof: String,
 }
 
-pub(super) fn register(
+pub(crate) fn register_account_auth(
     builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
+    service: Arc<crate::auth::AuthService>,
 ) -> ProcedureRegistryBuilder {
-    let invitation_start = Arc::clone(&state);
-    let invitation_finish = Arc::clone(&state);
-    let mode_state = Arc::clone(&state);
-    let begin = Arc::clone(&state);
-    let finish = Arc::clone(&state);
-    let login = Arc::clone(&state);
-    let vault_read = Arc::clone(&state);
-    let vault_update = Arc::clone(&state);
+    let builder = owner::register(builder, Arc::clone(&service));
+    let builder = invited::register(builder, Arc::clone(&service));
+    let vault_read = Arc::clone(&service);
+    let vault_update = Arc::clone(&service);
+    let begin = Arc::clone(&service);
+    let finish = Arc::clone(&service);
+    let login = Arc::clone(&service);
     builder
-        .mutation("auth.opaque.invitationStart", move |_, input: InvitationStartInput| {
-            let state = Arc::clone(&invitation_start);
-            async move { invited_start(&state, input).await }
-        })
-        .mutation("auth.opaque.invitationFinish", move |ctx, input: InvitationFinishInput| {
-            let state = Arc::clone(&invitation_finish);
-            async move { invited_finish(&state, &ctx, input).await }
-        })
         .query("auth.opaque.vault", move |ctx, _: ()| {
-            let state = Arc::clone(&vault_read);
-            async move { account_vault(&state, &ctx).await }
+            let service = Arc::clone(&vault_read);
+            async move { account_vault(&service, &ctx).await }
         })
-        .mutation("auth.opaque.vaultUpdate", move |ctx, input: VaultUpdateInput| {
-            let state = Arc::clone(&vault_update);
-            async move { update_vault(&state, &ctx, input).await }
+        .mutation(
+            "auth.opaque.vaultUpdate",
+            move |ctx, input: VaultUpdateInput| {
+                let service = Arc::clone(&vault_update);
+                async move { update_vault(&service, &ctx, input).await }
+            },
+        )
+        .query("auth.opaque.mode", move |_, input: ModeInput| async move {
+            normalize(&input.tenant, &input.username)?;
+            Ok(ModeOutput { opaque: true })
         })
-        .query("auth.opaque.mode", move |_, input: ModeInput| {
-            let state = Arc::clone(&mode_state);
-            async move {
-                let (tenant, username) = normalize(&input.tenant, &input.username)?;
-                let Ok(pool) = state.tenants.tenant_pool(&tenant).await else { return Ok(ModeOutput { opaque: false }); };
-                let opaque = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_accounts a JOIN users u ON u.id=a.user_id WHERE u.username=$1) OR EXISTS(SELECT 1 FROM __zerotrust_state WHERE singleton AND phase='active')")
-                    .bind(username).fetch_one(&pool).await.map_err(internal)?;
-                Ok(ModeOutput { opaque })
-            }
-        })
-        .mutation("auth.opaque.enrollStart", move |ctx, input: EnrollmentStartInput| {
-            let state = Arc::clone(&begin);
-            async move { enroll_start(&state, &ctx, input).await }
-        })
-        .mutation("auth.opaque.enrollFinish", move |ctx, input: EnrollmentFinishInput| {
-            let state = Arc::clone(&finish);
-            async move { enroll_finish(&state, &ctx, input).await }
-        })
-        .mutation("auth.opaque.loginStart", move |_, input: LoginStartInput| {
-            let state = Arc::clone(&login);
-            async move {
-                let started = Instant::now();
-                let result = login_start(&state, input).await;
-                tokio::time::sleep(Duration::from_secs(3).saturating_sub(started.elapsed())).await;
-                result
-            }
-        })
-        .mutation("auth.opaque.loginFinish", move |ctx, input: LoginFinishInput| {
-            let state = Arc::clone(&state);
-            async move { login_finish(&state, &ctx, input).await }
-        })
+        .mutation(
+            "auth.opaque.enrollStart",
+            move |ctx, input: EnrollmentStartInput| {
+                let service = Arc::clone(&begin);
+                async move { enroll_start(&service, &ctx, input).await }
+            },
+        )
+        .mutation(
+            "auth.opaque.enrollFinish",
+            move |ctx, input: EnrollmentFinishInput| {
+                let service = Arc::clone(&finish);
+                async move { enroll_finish(&service, &ctx, input).await }
+            },
+        )
+        .mutation(
+            "auth.opaque.loginStart",
+            move |_, input: LoginStartInput| {
+                let service = Arc::clone(&login);
+                async move {
+                    let started = Instant::now();
+                    let result = login_start(&service, input).await;
+                    tokio::time::sleep(Duration::from_secs(3).saturating_sub(started.elapsed()))
+                        .await;
+                    result
+                }
+            },
+        )
+        .mutation(
+            "auth.opaque.loginFinish",
+            move |ctx, input: LoginFinishInput| {
+                let service = Arc::clone(&service);
+                async move { login_finish(&service, &ctx, input).await }
+            },
+        )
 }
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    let builder = owner::register_contract(builder);
     builder
         .mutation_stub::<InvitationStartInput, EnrollmentStartOutput>("auth.opaque.invitationStart")
         .mutation_stub::<InvitationFinishInput, LoginFinishOutput>("auth.opaque.invitationFinish")
@@ -297,83 +304,68 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .mutation_stub::<LoginFinishInput, LoginFinishOutput>("auth.opaque.loginFinish")
 }
 
-async fn account_vault(state: &AppState, ctx: &RequestContext) -> RpcResult<VaultOutput> {
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let (revision, vault): (i64, Value) =
-        sqlx::query_as("SELECT revision,account_vault FROM __zerotrust_accounts WHERE user_id=$1")
-            .bind(auth.user.id.parse::<i64>().map_err(internal)?)
-            .fetch_optional(&pool)
-            .await
-            .map_err(internal)?
-            .ok_or_else(forbidden)?;
-    let vault: AccountVault = serde_json::from_value(vault).map_err(|_| invalid())?;
-    vault.validate()?;
-    if vault.tenant != auth.tenant || vault.username != auth.user.username {
-        return Err(forbidden());
-    }
-    Ok(VaultOutput {
-        revision: revision.to_string(),
-        vault,
-    })
+async fn account_vault(
+    service: &crate::auth::AuthService,
+    ctx: &RequestContext,
+) -> RpcResult<VaultOutput> {
+    let auth = service.authenticate(&ctx.headers).await?;
+    let repository = service.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let (account, _) = accounts::checked_session(&mut transaction, &auth).await?;
+    account.credential()?.vault.validate()?;
+    let output = VaultOutput {
+        revision: account.credential()?.revision.to_string(),
+        vault: account.credential()?.vault.clone(),
+    };
+    transaction.validate().await?;
+    Ok(output)
 }
 
 async fn update_vault(
-    state: &AppState,
+    service: &crate::auth::AuthService,
     ctx: &RequestContext,
     input: VaultUpdateInput,
 ) -> RpcResult<Success> {
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let revision = crypto::revision(&input.revision)?;
+    let auth = service.authenticate(&ctx.headers).await?;
+    crypto::revision(&input.revision)?;
     input.vault.validate()?;
     if input.vault.tenant != auth.tenant || input.vault.username != auth.user.username {
         return Err(forbidden());
     }
-    let user = auth.user.id.parse::<i64>().map_err(internal)?;
-    let session = auth.session.id.parse::<i64>().map_err(internal)?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
-        .bind(user)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(internal)?;
-    let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_sessions WHERE id=$1 AND user_id=$2 AND expires_at>statement_timestamp())")
-        .bind(session).bind(user).fetch_one(&mut *tx).await.map_err(internal)?;
-    if !active {
-        return Err(denied());
+    let repository = service.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let (mut account, _) = accounts::checked_session(&mut transaction, &auth).await?;
+    if account.credential()?.revision.to_string() != input.revision {
+        return Err(crate::control::conflict());
     }
-    let (current, signing_key, encryption_key): (i64, Vec<u8>, Vec<u8>) = sqlx::query_as(
-        "SELECT revision,signing_key,encryption_key FROM __zerotrust_accounts WHERE user_id=$1 FOR UPDATE",
-    ).bind(user).fetch_optional(&mut *tx).await.map_err(internal)?.ok_or_else(forbidden)?;
-    if current != revision {
-        return Err(RpcError::new(ErrorCode::Conflict, "Account state changed").with_http_code(409));
-    }
-    if crypto::sized::<32>(&input.vault.signing_key)?.as_slice() != signing_key
-        || crypto::sized::<32>(&input.vault.encryption_key)?.as_slice() != encryption_key
+    if account.credential()?.vault.signing_key != input.vault.signing_key
+        || account.credential()?.vault.encryption_key != input.vault.encryption_key
     {
         return Err(forbidden());
     }
     crypto::verify(
-        &signing_key,
+        &crypto::sized::<32>(&account.credential()?.vault.signing_key)?,
         &input.proof,
         &crypto::frame(
             "sortsys/account-vault-update/v1",
             &[
                 &auth.tenant,
-                &auth.user.username,
+                &account.username,
                 &input.revision,
                 &encode(&Sha256::digest(input.vault.frame())),
             ],
         ),
     )?;
-    sqlx::query(
-        "UPDATE __zerotrust_accounts SET account_vault=$2,revision=revision+1 WHERE user_id=$1",
-    )
-    .bind(user)
-    .bind(serde_json::to_value(input.vault).map_err(internal)?)
-    .execute(&mut *tx)
-    .await
-    .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
+    account.credential_mut()?.vault = input.vault;
+    account.credential_mut()?.revision = account
+        .credential()?
+        .revision
+        .checked_add(1)
+        .ok_or_else(crate::control::unavailable)?;
+    transaction
+        .put_protected(accounts::account_key(account.id), &account)
+        .await?;
+    transaction.commit().await?;
     Ok(Success { success: true })
 }
 
@@ -389,28 +381,14 @@ fn denied() -> RpcError {
     RpcError::new(ErrorCode::Unauthorized, "Login failed").with_http_code(401)
 }
 
-async fn setup(pool: &PgPool) -> RpcResult<ServerSetup<Suite>> {
-    if let Some(stored) =
-        sqlx::query_scalar::<_, Vec<u8>>("SELECT server_setup FROM __opaque_setup WHERE singleton")
-            .fetch_optional(pool)
-            .await
-            .map_err(internal)?
-    {
-        return ServerSetup::deserialize(&stored).map_err(|_| internal("Invalid OPAQUE setup"));
-    }
-    let value = ServerSetup::<Suite>::new(&mut OsRng).serialize().to_vec();
-    sqlx::query("INSERT INTO __opaque_setup(singleton,server_setup) VALUES(TRUE,$1) ON CONFLICT(singleton) DO NOTHING")
-        .bind(value).execute(pool).await.map_err(internal)?;
-    let stored: Vec<u8> =
-        sqlx::query_scalar("SELECT server_setup FROM __opaque_setup WHERE singleton")
-            .fetch_one(pool)
-            .await
-            .map_err(internal)?;
-    ServerSetup::deserialize(&stored).map_err(|_| internal("Invalid OPAQUE setup"))
+fn rejected_login(reason: &'static str) -> RpcError {
+    // Deliberately omit identities, challenges, credentials and vault contents.
+    tracing::debug!(reason, "OPAQUE login rejected");
+    denied()
 }
 
 pub(super) async fn recovery_registration(
-    pool: &PgPool,
+    repository: &Repository,
     tenant: &str,
     username: &str,
     request: &str,
@@ -418,9 +396,12 @@ pub(super) async fn recovery_registration(
     let request =
         RegistrationRequest::<Suite>::deserialize(&decode(request, 128)?).map_err(|_| invalid())?;
     let credential = format!("{tenant}/{username}");
-    let response =
-        ServerRegistration::<Suite>::start(&setup(pool).await?, request, credential.as_bytes())
-            .map_err(|_| invalid())?;
+    let response = ServerRegistration::<Suite>::start(
+        &store_setup(repository).await?,
+        request,
+        credential.as_bytes(),
+    )
+    .map_err(|_| invalid())?;
     Ok(encode(&response.message.serialize()))
 }
 
@@ -430,72 +411,186 @@ pub(super) fn validate_registration(record: &str) -> RpcResult<Vec<u8>> {
     Ok(record)
 }
 
-async fn cleanup(pool: &PgPool) {
-    let _ = sqlx::query("WITH old AS (SELECT id FROM __opaque_exchanges WHERE expires_at < now() ORDER BY expires_at LIMIT 128 FOR UPDATE SKIP LOCKED) DELETE FROM __opaque_exchanges e USING old WHERE e.id=old.id")
-        .execute(pool).await;
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoreTicket {
+    purpose: String,
+    tenant: Option<String>,
+    id: String,
+    exp: usize,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredExchange<T> {
+    expires_at: DateTime<Utc>,
+    payload: T,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LoginExchange {
+    tenant: String,
+    username: String,
+    state: String,
+    user_id: Option<i64>,
+    credential_revision: Option<u64>,
+    account_epoch: Option<u64>,
+    tenant_epoch: Option<u64>,
+    attempt_key: Vec<u8>,
+    attempt_expires_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EnrollmentExchange {
+    user_id: i64,
+    session_id: i64,
+    credential_revision: u64,
+    account_epoch: u64,
+    tenant_epoch: u64,
+}
+
+async fn store_setup(repository: &Repository) -> RpcResult<ServerSetup<Suite>> {
+    let key = key("opaque-setup", "current");
+    for _ in 0..8 {
+        let mut transaction = repository.transaction()?;
+        if let Some(value) = transaction.read::<String>(key.clone()).await? {
+            return ServerSetup::deserialize(&decode(&value, 4096)?)
+                .map_err(|_| crate::control::unavailable());
+        }
+        let setup = ServerSetup::<Suite>::new(&mut OsRng);
+        transaction
+            .put(key.clone(), &encode(&setup.serialize()))
+            .await?;
+        match transaction.commit().await {
+            Ok(_) => return Ok(setup),
+            Err(error) if error.code == ErrorCode::Conflict => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(crate::control::conflict())
+}
+
+async fn store_exchange<T: Serialize>(
+    service: &crate::auth::AuthService,
+    repository: &Repository,
+    tenant: Option<String>,
+    purpose: &str,
+    payload: T,
+) -> RpcResult<String> {
+    let id = random_id()?;
+    let expires_at = Utc::now() + chrono::Duration::minutes(2);
+    let stored = StoredExchange {
+        expires_at,
+        payload,
+    };
+    let mut transaction = repository.transaction()?;
+    let record = key(purpose, &id);
+    if transaction.read::<Value>(record.clone()).await?.is_some() {
+        return Err(crate::control::conflict());
+    }
+    transaction
+        .put_expiring(record, &stored, expires_at)
+        .await?;
+    transaction.commit().await?;
+    let _ = tokio::time::timeout(Duration::from_millis(500), repository.cleanup_expired()).await;
+    service.issue_challenge_token(&StoreTicket {
+        purpose: purpose.into(),
+        tenant,
+        id,
+        exp: expires_at.timestamp() as usize,
+    })
+}
+
+fn read_store_ticket(
+    service: &crate::auth::AuthService,
+    token: &str,
+    purpose: &str,
+) -> RpcResult<StoreTicket> {
+    if token.len() > 4096 {
+        return Err(denied());
+    }
+    let ticket: StoreTicket = service
+        .verify_challenge_token(token)
+        .map_err(|_| denied())?;
+    if ticket.purpose != purpose {
+        return Err(denied());
+    }
+    crypto::identifier(&ticket.id)?;
+    Ok(ticket)
+}
+
+async fn take_store_exchange<T: serde::de::DeserializeOwned>(
+    service: &crate::auth::AuthService,
+    token: &str,
+    purpose: &str,
+) -> RpcResult<T> {
+    let ticket = read_store_ticket(service, token, purpose)?;
+    let repository = match &ticket.tenant {
+        Some(tenant) => service.records()?.tenant(tenant)?,
+        None => service.records()?.clone(),
+    };
+    let mut transaction = repository.transaction()?;
+    let record = key(purpose, &ticket.id);
+    let stored: StoredExchange<T> = transaction.read(record.clone()).await?.ok_or_else(denied)?;
+    if stored.expires_at <= Utc::now() {
+        return Err(denied());
+    }
+    transaction.delete(record).await?;
+    transaction.commit().await.map_err(|_| denied())?;
+    Ok(stored.payload)
 }
 
 async fn enroll_start(
-    state: &AppState,
+    service: &crate::auth::AuthService,
     ctx: &RequestContext,
     input: EnrollmentStartInput,
 ) -> RpcResult<EnrollmentStartOutput> {
     let _admission = auth_limits::admit_login()?;
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let user: i64 = auth.user.id.parse().map_err(internal)?;
+    let auth = service.authenticate(&ctx.headers).await?;
+    let repository = service.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let (account, tenant) = accounts::checked_session(&mut transaction, &auth).await?;
     let registration =
         RegistrationRequest::<Suite>::deserialize(&decode(&input.registration_request, 128)?)
             .map_err(|_| invalid())?;
-    let id = format!("{}/{}", auth.tenant, auth.user.username);
+    let credential_id = format!("{}/{}", auth.tenant, account.username);
     let response = ServerRegistration::<Suite>::start(
-        &setup(state.tenants.master()).await?,
+        &store_setup(&repository).await?,
         registration,
-        id.as_bytes(),
+        credential_id.as_bytes(),
     )
     .map_err(|_| invalid())?;
-    let revision: Option<i64> =
-        sqlx::query_scalar("SELECT revision FROM __zerotrust_accounts WHERE user_id=$1")
-            .bind(user)
-            .fetch_optional(&pool)
-            .await
-            .map_err(internal)?;
-    let exchange = random_id()?;
-    sqlx::query("INSERT INTO __opaque_exchanges(id,tenant,username,kind,account_revision,user_id,session_id) VALUES($1,$2,$3,'register',$4,$5,$6)")
-        .bind(&exchange).bind(&auth.tenant).bind(&auth.user.username).bind(revision).bind(user).bind(auth.session.id.parse::<i64>().map_err(internal)?)
-        .execute(state.tenants.master()).await.map_err(internal)?;
-    cleanup(state.tenants.master()).await;
+    let payload = EnrollmentExchange {
+        user_id: account.id,
+        session_id: auth.session.id.parse().map_err(|_| denied())?,
+        credential_revision: account.credential()?.revision,
+        account_epoch: account.epoch,
+        tenant_epoch: tenant.epoch,
+    };
+    let exchange = store_exchange(
+        service,
+        &repository,
+        Some(auth.tenant.clone()),
+        "opaque-enroll",
+        payload,
+    )
+    .await?;
     Ok(EnrollmentStartOutput {
         exchange,
         registration_response: encode(&response.message.serialize()),
         tenant: auth.tenant,
-        username: auth.user.username,
+        username: account.username,
     })
 }
 
-#[derive(FromRow)]
-struct Exchange {
-    tenant: String,
-    username: String,
-    server_state: Option<Vec<u8>>,
-    account_revision: Option<i64>,
-    user_id: Option<i64>,
-    session_id: Option<i64>,
-    attempt_key: Option<Vec<u8>>,
-    attempt_expires_at: Option<DateTime<Utc>>,
-}
-
-async fn take_exchange(state: &AppState, id: &str, kind: &str) -> RpcResult<Exchange> {
-    crypto::identifier(id)?;
-    sqlx::query_as::<_, Exchange>("DELETE FROM __opaque_exchanges WHERE id=$1 AND kind=$2 AND expires_at>now() RETURNING tenant,username,server_state,account_revision,user_id,session_id,attempt_key,attempt_expires_at")
-        .bind(id).bind(kind).fetch_optional(state.tenants.master()).await.map_err(internal)?.ok_or_else(denied)
-}
-
 async fn enroll_finish(
-    state: &AppState,
+    service: &crate::auth::AuthService,
     ctx: &RequestContext,
     input: EnrollmentFinishInput,
 ) -> RpcResult<Success> {
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
+    let auth = service.authenticate(&ctx.headers).await?;
     input.vault.validate()?;
     if input.vault.tenant != auth.tenant || input.vault.username != auth.user.username {
         return Err(forbidden());
@@ -506,125 +601,169 @@ async fn enroll_finish(
     let password_record = ServerRegistration::<Suite>::finish(upload)
         .serialize()
         .to_vec();
-    let exchange = take_exchange(state, &input.exchange, "register").await?;
-    let user_id: i64 = auth.user.id.parse().map_err(internal)?;
-    let session_id: i64 = auth.session.id.parse().map_err(internal)?;
-    if exchange.tenant != auth.tenant
-        || exchange.user_id != Some(user_id)
-        || exchange.session_id != Some(session_id)
+    let exchange: EnrollmentExchange =
+        take_store_exchange(service, &input.exchange, "opaque-enroll").await?;
+    let session_id: i64 = auth.session.id.parse().map_err(|_| denied())?;
+    let repository = service.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let (mut account, tenant) = accounts::checked_session(&mut transaction, &auth).await?;
+    if exchange.user_id != account.id
+        || exchange.session_id != session_id
+        || exchange.credential_revision != account.credential()?.revision
+        || exchange.account_epoch != account.epoch
+        || exchange.tenant_epoch != tenant.epoch
+    {
+        return Err(denied());
+    }
+    let current = &account.credential()?.vault;
+    if current.signing_key != input.vault.signing_key
+        || current.encryption_key != input.vault.encryption_key
     {
         return Err(forbidden());
     }
-    let mut tx = pool.begin().await.map_err(internal)?;
-    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
-        .bind(user_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(internal)?;
-    let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_sessions WHERE id=$1 AND user_id=$2 AND expires_at>now())")
-        .bind(session_id).bind(user_id).fetch_one(&mut *tx).await.map_err(internal)?;
-    if !active {
-        return Err(denied());
-    }
-    let current: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
-        "SELECT revision,signing_key,encryption_key FROM __zerotrust_accounts WHERE user_id=$1",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(internal)?;
-    if current.as_ref().map(|value| value.0) != exchange.account_revision {
-        return Err(denied());
-    }
-    if let Some((_, key, encryption_key)) = current {
-        if key != crypto::sized::<32>(&input.vault.signing_key)?
-            || encryption_key != crypto::sized::<32>(&input.vault.encryption_key)?
-        {
-            return Err(forbidden());
-        }
-        let record_hash = encode(&Sha256::digest(&password_record));
-        let vault_hash = encode(&Sha256::digest(input.vault.frame()));
-        crypto::verify(
-            &key,
-            input
-                .previous_identity_proof
-                .as_deref()
-                .ok_or_else(forbidden)?,
-            &crypto::frame(
-                "sortsys/account-enroll/v1",
-                &[
-                    &auth.tenant,
-                    &auth.user.username,
-                    &input.exchange,
-                    &record_hash,
-                    &vault_hash,
-                ],
-            ),
-        )?;
-    }
-    let vault = serde_json::to_value(&input.vault).map_err(internal)?;
-    sqlx::query("INSERT INTO __zerotrust_accounts(user_id,opaque_record,account_vault,encryption_key,signing_key,identity_certificate) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(user_id) DO UPDATE SET opaque_record=EXCLUDED.opaque_record,account_vault=EXCLUDED.account_vault,encryption_key=EXCLUDED.encryption_key,signing_key=EXCLUDED.signing_key,revision=__zerotrust_accounts.revision+1")
-        .bind(user_id).bind(password_record).bind(vault).bind(crypto::sized::<32>(&input.vault.encryption_key)?.to_vec()).bind(crypto::sized::<32>(&input.vault.signing_key)?.to_vec()).bind(json!({"format":"pending"}))
-        .execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query("UPDATE users SET password=NULL WHERE id=$1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(internal)?;
-    crate::auth::expire_user_sessions(&mut tx, user_id, Some(session_id))
-        .await
-        .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
+    crypto::verify(
+        &crypto::sized::<32>(&current.signing_key)?,
+        input
+            .previous_identity_proof
+            .as_deref()
+            .ok_or_else(forbidden)?,
+        &crypto::frame(
+            "sortsys/account-enroll/v1",
+            &[
+                &auth.tenant,
+                &account.username,
+                &input.exchange,
+                &encode(&Sha256::digest(&password_record)),
+                &encode(&Sha256::digest(input.vault.frame())),
+            ],
+        ),
+    )?;
+    account.credential_mut()?.record = encode(&password_record);
+    account.credential_mut()?.vault = input.vault;
+    account.credential_mut()?.revision = account
+        .credential()?
+        .revision
+        .checked_add(1)
+        .ok_or_else(crate::control::unavailable)?;
+    account.epoch = account
+        .epoch
+        .checked_add(1)
+        .ok_or_else(crate::control::unavailable)?;
+    transaction
+        .put_protected(accounts::account_key(account.id), &account)
+        .await?;
+    // Keep only the self-changing session; all others retain the old epoch.
+    let mut session: accounts::Session = transaction
+        .read(accounts::session_key(session_id))
+        .await?
+        .ok_or_else(denied)?;
+    session.account_epoch = account.epoch;
+    transaction
+        .put_expiring(
+            accounts::session_key(session_id),
+            &session,
+            session.expires_at,
+        )
+        .await?;
+    transaction.commit().await?;
     Ok(Success { success: true })
 }
 
-async fn login_start(state: &AppState, input: LoginStartInput) -> RpcResult<LoginStartOutput> {
+async fn login_start(
+    service: &crate::auth::AuthService,
+    input: LoginStartInput,
+) -> RpcResult<LoginStartOutput> {
     let _admission = auth_limits::admit_login()?;
     let (tenant, username) = normalize(&input.tenant, &input.username)?;
-    let attempt = auth_limits::reserve(
-        state.tenants.master(),
-        &state.config.jwt_secret,
-        "user",
-        &[&tenant, &username],
-    )
-    .await?;
+    let attempt = service.reserve_login("user", &[&tenant, &username]).await?;
     let request =
         CredentialRequest::<Suite>::deserialize(&decode(&input.start_login_request, 1024)?)
             .map_err(|_| invalid())?;
-    let pool = state
-        .tenants
-        .tenant_pool(&tenant)
-        .await
-        .map_err(|_| denied())?;
-    let account: Option<(i64,i64,Vec<u8>)> = sqlx::query_as("SELECT a.user_id,a.revision,a.opaque_record FROM __zerotrust_accounts a JOIN users u ON u.id=a.user_id WHERE u.username=$1 AND (u.deactivated_at IS NULL OR u.deactivated_at>now())")
-        .bind(&username).fetch_optional(&pool).await.map_err(internal)?;
+    let known = service
+        .records()?
+        .read::<Value>(key("tenants", &tenant))
+        .await?
+        .value
+        .is_some();
+    let repository = if known {
+        service.records()?.tenant(&tenant)?
+    } else {
+        service.records()?.clone()
+    };
+    let mut transaction = repository.transaction()?;
+    let status: Option<accounts::TenantStatus> = if known {
+        transaction.read(accounts::tenant_key()).await?
+    } else {
+        None
+    };
+    let username_record: Option<accounts::Username> = if known {
+        transaction.read(key("usernames", &username)).await?
+    } else {
+        None
+    };
+    let account: Option<accounts::Account> = match username_record {
+        Some(user) => {
+            transaction
+                .read(accounts::account_key(user.user_id))
+                .await?
+        }
+        None => None,
+    };
+    let now = Utc::now();
+    let account = account.filter(|account| {
+        account.username == username
+            && account.active(now)
+            && status.as_ref().is_some_and(|status| status.available(now))
+    });
     let registered = account
         .as_ref()
-        .map(|row| ServerRegistration::<Suite>::deserialize(&row.2))
-        .transpose()
-        .map_err(|_| internal("Invalid OPAQUE registration"))?;
-    let id = format!("{tenant}/{username}");
+        .map(|account| {
+            let bytes = decode(&account.credential()?.record, 4096)?;
+            ServerRegistration::<Suite>::deserialize(&bytes)
+                .map_err(|_| crate::control::unavailable())
+        })
+        .transpose()?;
+    let credential_id = format!("{tenant}/{username}");
     let response = ServerLogin::<Suite>::start(
         &mut OsRng,
-        &setup(state.tenants.master()).await?,
+        &store_setup(&repository).await?,
         registered,
         request,
-        id.as_bytes(),
+        credential_id.as_bytes(),
         ServerLoginParameters {
             context: None,
             identifiers: Identifiers {
-                client: Some(id.as_bytes()),
+                client: Some(credential_id.as_bytes()),
                 server: Some(b"sortsys/opaque/v1"),
             },
         },
     )
     .map_err(|_| denied())?;
-    let exchange = random_id()?;
-    let (attempt_key, attempt_expires) = attempt.reservation();
-    sqlx::query("INSERT INTO __opaque_exchanges(id,tenant,username,kind,server_state,account_revision,user_id,attempt_key,attempt_expires_at) VALUES($1,$2,$3,'login',$4,$5,$6,$7,$8)")
-        .bind(&exchange).bind(&tenant).bind(&username).bind(response.state.serialize().to_vec()).bind(account.as_ref().map(|row| row.1)).bind(account.as_ref().map(|row| row.0)).bind(attempt_key).bind(attempt_expires)
-        .execute(state.tenants.master()).await.map_err(internal)?;
-    cleanup(state.tenants.master()).await;
+    let (attempt_key, attempt_expires_at) = attempt.reservation();
+    let payload = LoginExchange {
+        tenant: tenant.clone(),
+        username,
+        state: encode(&response.state.serialize()),
+        user_id: account.as_ref().map(|account| account.id),
+        credential_revision: account.as_ref().and_then(|account| {
+            account
+                .credential
+                .as_ref()
+                .map(|credential| credential.revision)
+        }),
+        account_epoch: account.as_ref().map(|account| account.epoch),
+        tenant_epoch: status.map(|status| status.epoch),
+        attempt_key: attempt_key.to_vec(),
+        attempt_expires_at,
+    };
+    let exchange = store_exchange(
+        service,
+        &repository,
+        known.then_some(tenant),
+        "opaque-login",
+        payload,
+    )
+    .await?;
     Ok(LoginStartOutput {
         exchange,
         login_response: encode(&response.message.serialize()),
@@ -632,280 +771,88 @@ async fn login_start(state: &AppState, input: LoginStartInput) -> RpcResult<Logi
 }
 
 async fn login_finish(
-    state: &AppState,
+    service: &crate::auth::AuthService,
     ctx: &RequestContext,
     input: LoginFinishInput,
 ) -> RpcResult<LoginFinishOutput> {
     let _admission = auth_limits::admit_login()?;
     let finalization =
         CredentialFinalization::<Suite>::deserialize(&decode(&input.finish_login_request, 512)?)
-            .map_err(|_| denied())?;
-    let exchange = take_exchange(state, &input.exchange, "login").await?;
-    let server =
-        ServerLogin::<Suite>::deserialize(exchange.server_state.as_deref().ok_or_else(denied)?)
-            .map_err(|_| denied())?;
-    let id = format!("{}/{}", exchange.tenant, exchange.username);
+            .map_err(|_| rejected_login("message-format"))?;
+    let exchange: LoginExchange =
+        take_store_exchange(service, &input.exchange, "opaque-login").await?;
+    let server = ServerLogin::<Suite>::deserialize(&decode(&exchange.state, 4096)?)
+        .map_err(|_| rejected_login("exchange-state"))?;
+    let credential_id = format!("{}/{}", exchange.tenant, exchange.username);
     server
         .finish(
             finalization,
             ServerLoginParameters {
                 context: None,
                 identifiers: Identifiers {
-                    client: Some(id.as_bytes()),
+                    client: Some(credential_id.as_bytes()),
                     server: Some(b"sortsys/opaque/v1"),
                 },
             },
         )
-        .map_err(|_| denied())?;
-    let user = exchange.user_id.ok_or_else(denied)?;
-    let pool = state
-        .tenants
-        .tenant_pool(&exchange.tenant)
-        .await
-        .map_err(|_| denied())?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let valid: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND (deactivated_at IS NULL OR deactivated_at>now()) FOR SHARE")
-        .bind(user).fetch_optional(&mut *tx).await.map_err(internal)?;
-    if valid.is_none() {
-        return Err(denied());
-    }
-    let vault: Option<Value> = sqlx::query_scalar(
-        "SELECT account_vault FROM __zerotrust_accounts WHERE user_id=$1 AND revision=$2",
-    )
-    .bind(user)
-    .bind(exchange.account_revision)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(internal)?;
-    let vault: AccountVault =
-        serde_json::from_value(vault.ok_or_else(denied)?).map_err(|_| invalid())?;
-    let user_agent = ctx
-        .headers
-        .get("user-agent")
-        .and_then(|value| value.to_str().ok());
-    let address = ctx
-        .headers
-        .get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .map(str::trim);
-    let session: i64 = sqlx::query_scalar(
-        "INSERT INTO user_sessions(user_id,inet_addr,user_agent) VALUES($1,$2,$3) RETURNING id",
-    )
-    .bind(user)
-    .bind(address)
-    .bind(user_agent)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
-    if let (Some(key), Some(expires)) = (exchange.attempt_key, exchange.attempt_expires_at) {
-        auth_limits::LoginAttempt::resume(key, expires)
-            .succeeded(state.tenants.master())
-            .await;
-    }
-    let token = state
-        .auth
-        .issue_user_token(&exchange.tenant, &session.to_string())
-        .map_err(internal)?;
-    Ok(LoginFinishOutput {
-        token,
-        tenant: exchange.tenant,
-        username: exchange.username,
-        vault,
-    })
-}
-
-async fn invited_start(
-    state: &AppState,
-    input: InvitationStartInput,
-) -> RpcResult<EnrollmentStartOutput> {
-    let _admission = auth_limits::admit_login()?;
-    crypto::identifier(&input.tenant)?;
-    crypto::identifier(&input.invitation)?;
-    let attempt = auth_limits::reserve(
-        state.tenants.master(),
-        &state.config.jwt_secret,
-        "invitation",
-        &[&input.tenant, &input.invitation],
-    )
-    .await?;
-    let pool = state
-        .tenants
-        .tenant_pool(&input.tenant)
-        .await
-        .map_err(|_| denied())?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let (invitation, user) = super::invitations::registration_invitation(
-        &mut tx,
-        state.tenants.master(),
-        &input.tenant,
-        &input.invitation,
-    )
-    .await?;
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_accounts WHERE user_id=$1)")
-            .bind(user)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(internal)?;
-    if exists {
-        return Err(denied());
-    }
-    let response = recovery_registration(
-        state.tenants.master(),
-        &input.tenant,
-        &invitation.username,
-        &input.registration_request,
-    )
-    .await?;
-    let exchange = random_id()?;
-    let (attempt_key, attempt_expires) = attempt.reservation();
-    sqlx::query("INSERT INTO __opaque_exchanges(id,tenant,username,kind,server_state,user_id,attempt_key,attempt_expires_at) VALUES($1,$2,$3,'register',$4,$5,$6,$7)")
-        .bind(&exchange).bind(&input.tenant).bind(&invitation.username).bind(serde_json::to_vec(&invitation).map_err(internal)?)
-        .bind(user).bind(attempt_key).bind(attempt_expires).execute(state.tenants.master()).await.map_err(internal)?;
-    cleanup(state.tenants.master()).await;
-    Ok(EnrollmentStartOutput {
-        exchange,
-        registration_response: response,
-        tenant: input.tenant,
-        username: invitation.username,
-    })
-}
-
-async fn invited_finish(
-    state: &AppState,
-    ctx: &RequestContext,
-    input: InvitationFinishInput,
-) -> RpcResult<LoginFinishOutput> {
-    let _admission = auth_limits::admit_login()?;
-    input.vault.validate()?;
-    let record = validate_registration(&input.registration_record)?;
-    let exchange = take_exchange(state, &input.exchange, "register").await?;
-    if exchange.session_id.is_some() || exchange.account_revision.is_some() {
-        return Err(denied());
-    }
-    let invitation: super::invitations::Invitation =
-        serde_json::from_slice(exchange.server_state.as_deref().ok_or_else(denied)?)
-            .map_err(|_| denied())?;
-    if input.vault.tenant != exchange.tenant || input.vault.username != exchange.username {
-        return Err(denied());
-    }
-    let pool = state
-        .tenants
-        .tenant_pool(&exchange.tenant)
-        .await
-        .map_err(|_| denied())?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let (current, user) = super::invitations::registration_invitation(
-        &mut tx,
-        state.tenants.master(),
-        &exchange.tenant,
-        &invitation.id,
-    )
-    .await?;
-    if current.signature != invitation.signature
-        || exchange.user_id != Some(user)
-        || current.username != exchange.username
-    {
-        return Err(denied());
-    }
-    // Every registration path locks the user first, so independent replicas
-    // cannot race a new invitation into replacing an existing password vault.
-    sqlx::query("SELECT id FROM users WHERE id=$1 AND deactivated_at IS NULL FOR UPDATE")
-        .bind(user)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(internal)?
+        .map_err(|_| rejected_login("client-proof"))?;
+    let user = exchange
+        .user_id
+        .ok_or_else(|| rejected_login("unknown-account"))?;
+    let repository = service.records()?.tenant(&exchange.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let account: accounts::Account = transaction
+        .read(accounts::account_key(user))
+        .await?
         .ok_or_else(denied)?;
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_accounts WHERE user_id=$1)")
-            .bind(user)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(internal)?;
-    if exists
-        || input.claim.revision != "1"
-        || input.claim.encryption_key != input.vault.encryption_key
-        || input.claim.signing_key != input.vault.signing_key
+    let status: accounts::TenantStatus = transaction
+        .read(accounts::tenant_key())
+        .await?
+        .ok_or_else(denied)?;
+    let username: accounts::Username = transaction
+        .read(key("usernames", &exchange.username))
+        .await?
+        .ok_or_else(denied)?;
+    let now = Utc::now();
+    if !account.active(now)
+        || !status.available(now)
+        || username.user_id != user
+        || account.username != exchange.username
+        || Some(account.credential()?.revision) != exchange.credential_revision
+        || Some(account.epoch) != exchange.account_epoch
+        || Some(status.epoch) != exchange.tenant_epoch
+    {
+        return Err(rejected_login("account-changed"));
+    }
+    account.credential()?.vault.validate()?;
+    if account.credential()?.vault.tenant != exchange.tenant
+        || account.credential()?.vault.username != account.username
     {
         return Err(denied());
     }
-    crypto::verify(
-        &crypto::sized::<32>(&input.claim.signing_key)?,
-        &input.claim.proof,
-        &input.claim.frame(&current)?,
-    )?;
-    let claim_hash = input.claim.hash(&current)?;
-    crypto::verify(
-        &crypto::sized::<32>(&input.vault.signing_key)?,
-        &input.proof,
-        &crypto::frame(
-            "sortsys/invitation-registration/v1",
-            &[
-                &exchange.tenant,
-                &exchange.username,
-                &current.id,
-                &current.generation,
-                &current.signature,
-                &input.exchange,
-                &encode(&Sha256::digest(&record)),
-                &encode(&Sha256::digest(input.vault.frame())),
-                &claim_hash,
-            ],
-        ),
-    )?;
-    sqlx::query("INSERT INTO __zerotrust_accounts(user_id,opaque_record,account_vault,encryption_key,signing_key,identity_certificate) VALUES($1,$2,$3,$4,$5,$6)")
-        .bind(user).bind(record).bind(serde_json::to_value(&input.vault).map_err(internal)?)
-        .bind(crypto::sized::<32>(&input.vault.encryption_key)?.to_vec()).bind(crypto::sized::<32>(&input.vault.signing_key)?.to_vec())
-        .bind(json!({"format":"pending"})).execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query("UPDATE __zerotrust_invitations SET claim=$2 WHERE id=$1")
-        .bind(&current.id)
-        .bind(serde_json::to_value(&input.claim).map_err(internal)?)
-        .execute(&mut *tx)
-        .await
-        .map_err(internal)?;
-    sqlx::query("UPDATE users SET password=NULL WHERE id=$1")
-        .bind(user)
-        .execute(&mut *tx)
-        .await
-        .map_err(internal)?;
-    crate::auth::expire_user_sessions(&mut tx, user, None)
-        .await
-        .map_err(internal)?;
-    let user_agent = ctx
-        .headers
-        .get("user-agent")
-        .and_then(|value| value.to_str().ok());
     let address = ctx
         .headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(',').next())
         .map(str::trim);
-    let session: i64 = sqlx::query_scalar(
-        "INSERT INTO user_sessions(user_id,inet_addr,user_agent) VALUES($1,$2,$3) RETURNING id",
-    )
-    .bind(user)
-    .bind(address)
-    .bind(user_agent)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
-    if let (Some(key), Some(expires)) = (exchange.attempt_key, exchange.attempt_expires_at) {
-        auth_limits::LoginAttempt::resume(key, expires)
-            .succeeded(state.tenants.master())
-            .await;
-    }
-    let token = state
-        .auth
-        .issue_user_token(&exchange.tenant, &session.to_string())
+    let user_agent = ctx
+        .headers
+        .get("user-agent")
+        .and_then(|value| value.to_str().ok());
+    let session =
+        accounts::new_session(&mut transaction, &account, &status, address, user_agent).await?;
+    transaction.commit().await?;
+    auth_limits::LoginAttempt::resume(exchange.attempt_key, exchange.attempt_expires_at)
+        .succeeded(service.records()?)
+        .await;
+    let token = service
+        .issue_user_token(&exchange.tenant, &session.id.to_string())
         .map_err(internal)?;
     Ok(LoginFinishOutput {
         token,
         tenant: exchange.tenant,
         username: exchange.username,
-        vault: input.vault,
+        vault: account.credential()?.vault.clone(),
     })
 }

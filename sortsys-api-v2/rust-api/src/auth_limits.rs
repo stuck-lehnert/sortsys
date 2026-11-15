@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use sqlx::PgPool;
+
+use crate::control::{Repository, key};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, SemaphorePermit};
 
 use crate::error::{ErrorCode, RpcError, RpcResult};
@@ -52,50 +54,64 @@ pub(crate) struct LoginAttempt {
     expires_at: DateTime<Utc>,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Counter {
+    attempts: u32,
+    expires_at: DateTime<Utc>,
+}
+
+fn encoded_key(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+async fn reserve_shared(repository: &Repository, account: &[u8]) -> RpcResult<DateTime<Utc>> {
+    let account = encoded_key(account);
+    let record = key("login-attempts", &account);
+    for _ in 0..16 {
+        let mut transaction = repository.transaction()?;
+        let current: Option<Counter> = transaction.read(record.clone()).await?;
+        let now = Utc::now();
+        let next = match current {
+            Some(current) if current.expires_at > now => {
+                if current.attempts >= 10 {
+                    return Err(throttled());
+                }
+                Counter {
+                    attempts: current.attempts + 1,
+                    ..current
+                }
+            }
+            _ => Counter {
+                attempts: 1,
+                expires_at: now + chrono::Duration::minutes(15),
+            },
+        };
+        let expires_at = next.expires_at;
+        transaction
+            .put_expiring(record.clone(), &next, expires_at)
+            .await?;
+        match transaction.commit().await {
+            Ok(_) => return Ok(expires_at),
+            Err(error) if error.code == ErrorCode::Conflict => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(throttled())
+}
+
 pub(crate) async fn reserve(
-    pool: &PgPool,
+    repository: &Repository,
     secret: &[u8],
     scope: &str,
     parts: &[&str],
 ) -> RpcResult<LoginAttempt> {
     let key = account_key(secret, scope, parts);
-    // PostgreSQL serializes competing upserts on this key, including requests
-    // received by another replica. Rejected attempts never extend the window.
-    let query = sqlx::query_scalar::<_, DateTime<Utc>>(
-        "INSERT INTO __login_attempts (account_key, attempts, expires_at) \
-         VALUES ($1, 1, statement_timestamp() + INTERVAL '15 minutes') \
-         ON CONFLICT (account_key) DO UPDATE SET \
-           attempts = CASE WHEN __login_attempts.expires_at <= statement_timestamp() \
-             THEN 1 ELSE __login_attempts.attempts + 1 END, \
-           expires_at = CASE WHEN __login_attempts.expires_at <= statement_timestamp() \
-             THEN statement_timestamp() + INTERVAL '15 minutes' ELSE __login_attempts.expires_at END \
-         WHERE __login_attempts.expires_at <= statement_timestamp() OR __login_attempts.attempts < 10 \
-         RETURNING expires_at",
-    ).bind(&key).fetch_optional(pool);
-    let expires_at = tokio::time::timeout(Duration::from_secs(2), query)
+    let expires_at = tokio::time::timeout(Duration::from_secs(2), reserve_shared(repository, &key))
         .await
-        .map_err(|_| unavailable())?
-        .map_err(|error| {
-            tracing::warn!(%error, "login admission database unavailable");
-            unavailable()
-        })?;
-
-    // Separate, short transaction: cleanup cannot deadlock an admission upsert
-    // by holding locks on other account keys. SKIP LOCKED also works across replicas.
-    let cleanup = sqlx::query(
-        "WITH expired AS (SELECT account_key FROM __login_attempts \
-           WHERE expires_at <= statement_timestamp() ORDER BY expires_at \
-           LIMIT 128 FOR UPDATE SKIP LOCKED) \
-         DELETE FROM __login_attempts AS attempt USING expired \
-         WHERE attempt.account_key = expired.account_key",
-    )
-    .execute(pool);
-    let _ = tokio::time::timeout(Duration::from_millis(500), cleanup).await;
-
-    Ok(LoginAttempt {
-        key,
-        expires_at: expires_at.ok_or_else(throttled)?,
-    })
+        .map_err(|_| unavailable())??;
+    let _ = tokio::time::timeout(Duration::from_millis(500), repository.cleanup_expired()).await;
+    Ok(LoginAttempt { key, expires_at })
 }
 
 impl LoginAttempt {
@@ -107,17 +123,31 @@ impl LoginAttempt {
         Self { key, expires_at }
     }
 
-    pub(crate) async fn succeeded(self, pool: &PgPool) {
-        // Return only this successful attempt's reservation. Never erase other
-        // failures, or refund an old request into a newly started window.
-        let refund = sqlx::query(
-            "UPDATE __login_attempts SET attempts = GREATEST(0, attempts - 1) \
-             WHERE account_key = $1 AND expires_at = $2",
-        )
-        .bind(self.key)
-        .bind(self.expires_at)
-        .execute(pool);
-        let _ = tokio::time::timeout(Duration::from_secs(1), refund).await;
+    async fn refund(self, repository: &Repository) -> RpcResult<()> {
+        let record = key("login-attempts", &encoded_key(&self.key));
+        for _ in 0..8 {
+            let mut transaction = repository.transaction()?;
+            let Some(mut counter) = transaction.read::<Counter>(record.clone()).await? else {
+                return Ok(());
+            };
+            if counter.expires_at != self.expires_at || counter.attempts == 0 {
+                return Ok(());
+            }
+            counter.attempts -= 1;
+            transaction
+                .put_expiring(record.clone(), &counter, counter.expires_at)
+                .await?;
+            match transaction.commit().await {
+                Ok(_) => return Ok(()),
+                Err(error) if error.code == ErrorCode::Conflict => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn succeeded(self, repository: &Repository) {
+        let _ = tokio::time::timeout(Duration::from_secs(1), self.refund(repository)).await;
     }
 }
 

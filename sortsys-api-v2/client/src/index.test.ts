@@ -11,6 +11,83 @@ function success(data: unknown) {
   }]));
 }
 
+for (const path of [
+  "auth.login",
+  "auth.passkeys.login",
+  "auth.opaque.loginFinish",
+  "auth.logout",
+]) {
+  test(`a late ${path} response cannot replace a newer session`, async () => {
+    let entered: () => void = () => {};
+    let release: (response: Response) => void = () => {};
+    const started = new Promise<void>(resolve => {
+      entered = resolve;
+    });
+    const response = new Promise<Response>(resolve => {
+      release = resolve;
+    });
+    const authorizations: (string | null)[] = [];
+    const client = createClient("https://api.example.test", `late-${path}`, {
+      cache: memoryCache().cache,
+      fetch: (async (input: string | URL | Request, options?: RequestInit) => {
+        if (new URL(String(input)).pathname === "/auth.sessionInfo") {
+          authorizations.push(new Headers(options?.headers).get("Authorization"));
+          return success({ user: { id: "new-user" } });
+        }
+        entered();
+        return response;
+      }) as typeof globalThis.fetch,
+    });
+    client.setToken("previous-session");
+    const pending = client.mutateDynamic(path, {});
+    await started;
+    client.setToken("new-session");
+    if (path === "auth.logout") {
+      release(success({ success: true }));
+    } else {
+      release(success({ token: "stale-session" }));
+    }
+    const [value, error] = await pending;
+    expect(value).toBeNull();
+    expect(error?.name).toBe("AbortError");
+    expect(client.loggedIn()).toBe(true);
+    await client.query("auth.sessionInfo", undefined, { strategy: "network-only" });
+    expect(authorizations).toEqual(["Bearer new-session"]);
+  });
+}
+
+test("logout cannot clear a session established while its response was pending", async () => {
+  let entered: () => void = () => {};
+  let release: (response: Response) => void = () => {};
+  const started = new Promise<void>(resolve => {
+    entered = resolve;
+  });
+  const response = new Promise<Response>(resolve => {
+    release = resolve;
+  });
+  const authorizations: (string | null)[] = [];
+  const client = createClient("https://api.example.test", "logout-session-boundary", {
+    cache: memoryCache().cache,
+    fetch: (async (input: string | URL | Request, options?: RequestInit) => {
+      if (new URL(String(input)).pathname === "/auth.sessionInfo") {
+        authorizations.push(new Headers(options?.headers).get("Authorization"));
+        return success({ user: { id: "new-user" } });
+      }
+      entered();
+      return response;
+    }) as typeof globalThis.fetch,
+  });
+  client.setToken("previous-session");
+  const pending = client.logout();
+  await started;
+  client.setToken("new-session");
+  release(success({ success: true }));
+  await pending;
+  expect(client.loggedIn()).toBe(true);
+  await client.query("auth.sessionInfo", undefined, { strategy: "network-only" });
+  expect(authorizations).toEqual(["Bearer new-session"]);
+});
+
 test("an already aborted mutation sends no request", async () => {
   let calls = 0;
   const client = createClient("https://api.example.test", "aborted-mutation", {
@@ -527,4 +604,41 @@ test("client realms must be unambiguous", () => {
   expect(() => createClient("https://api.example.test", "  ")).toThrow();
   expect(() => createClient("https://api.example.test", "webapp::admin")).toThrow();
   expect(() => createClient("https://api.example.test", "webapp", { revision: "bad/revision" })).toThrow();
+});
+
+test("binary resources keep credentials at the API and reject unsafe paths", async () => {
+  const requests: Array<{ path: string; options: RequestInit }> = [];
+  const client = createClient("https://api.example.test/api/v2/", "binary-resources", {
+    fetch: (async (path, options) => {
+      requests.push({ path: String(path), options: options ?? {} });
+      return new Response("encrypted database");
+    }) as typeof globalThis.fetch,
+  });
+  client.setToken("operator-session");
+  const response = await client.resource("/operator/snapshots/tenant/operation");
+  expect(await response.text()).toBe("encrypted database");
+  expect(requests[0]!.path).toBe("https://api.example.test/api/v2/operator/snapshots/tenant/operation");
+  expect(new Headers(requests[0]!.options.headers).get("Authorization")).toBe("Bearer operator-session");
+  expect(requests[0]!.options.redirect).toBe("error");
+  expect(requests[0]!.options.credentials).toBe("omit");
+  expect(requests[0]!.options.cache).toBe("no-store");
+  for (const path of ["https://other.test/file", "//other.test/file", "/../file", "/%2e%2e/file", "/file?token=x", "/file#fragment", "/file\\other"]) {
+    await expect(client.resource(path)).rejects.toThrow("Invalid API resource path");
+  }
+  expect(requests).toHaveLength(1);
+});
+
+test("a binary response arriving after an account change is cancelled", async () => {
+  let release: (response: Response) => void = () => {};
+  const pending = new Promise<Response>((resolve) => { release = resolve; });
+  let cancelled = false;
+  const client = createClient("https://api.example.test", "late-resource", {
+    fetch: (() => pending) as unknown as typeof globalThis.fetch,
+  });
+  client.setToken("previous-session");
+  const resource = client.resource("/operator/snapshots/tenant/operation");
+  client.setToken("next-session");
+  release(new Response(new ReadableStream({ cancel() { cancelled = true; } })));
+  await expect(resource).rejects.toMatchObject({ name: "AbortError" });
+  expect(cancelled).toBe(true);
 });

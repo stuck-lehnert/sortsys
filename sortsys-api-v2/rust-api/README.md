@@ -1,72 +1,19 @@
 # sortsys-api
 
-Das Rust-Backend verarbeitet typisierte, gebündelte RPC-Aufrufe. Es verwaltet
-Mandantendatenbanken, Benutzer und Passkeys, signiert Speicherzugriffe, führt
-Migrationen aus und verteilt Hintergrundaufträge über WebSockets.
+Die Rust-Crate stellt die unabhängige API für den verschlüsselten Mandantenbetrieb
+bereit. Der Browser verarbeitet Geschäftsinhalte; die API prüft Sitzungen,
+signierte Berechtigungen und atomare Änderungen im gemeinsamen DuckDB-Dienst.
 
-## Orientierung im Code
+`src/standalone.rs` enthält die Laufzeitkonfiguration und registriert die
+verfügbaren Endpunkte. `src/control.rs` verbindet Metadatenänderungen mit ihren
+Vergleichsbedingungen. `src/zerotrust/` setzt die anwendungsspezifischen Regeln
+auf dem gemeinsamen Framework um. `src/contracts/` beschreibt die lokal im
+Browser ausgeführten Fachoperationen. PostgreSQL-Treiber, SQL-Prozeduren und
+frühere Migrationsquellen gehören nicht zu dieser Crate.
 
-| Pfad | Zuständigkeit |
-| --- | --- |
-| `src/main.rs` | Prozessstart und HTTP-Listener |
-| `src/api.rs` | Prozedurregistrierung und Metadaten des erzeugten Vertrags |
-| `src/rpc.rs` | HTTP-Bündelung, SuperJSON-kompatible Werte und Fehlerantworten |
-| `src/procedures/` | fachliche Validierung und Datenbankzugriffe |
-| `src/auth.rs` und `src/webauthn.rs` | Sitzungen, Rechte, Passwörter und Passkeys |
-| `src/managed_db.rs` | Lebenszyklus und Sicherungen von Mandantendatenbanken |
-| `src/object_storage.rs` | S3-kompatibler Objektspeicher |
-| `src/quack_store/` | Gemeinsamer DuckDB-Dienst für verschlüsselte Inhalte und dessen API-Anbindung |
-| `src/job_runners.rs` | internes WebSocket-Protokoll der Hintergrunddienste |
-| `src/seed.rs` | nachvollziehbare Entwicklungs- und Testdaten |
-| `migrations/` | geordnete PostgreSQL-Mandantenmigrationen |
-| `tests/network_scenarios.rs` | vollständige RPC-Abläufe mit laufenden Diensten |
-
-## Starten und prüfen
-
-Aus `sortsys-api-v2` ausführen:
-
-Direkte Rust-Befehle benötigen die native DuckDB-2.0-Bibliothek. Die
-[Anleitung zum Datendienst](duckdb/README.md#entwicklung-und-prüfungen)
-beschreibt die Installation unter Linux. Die Container bringen sie mit.
-
-```bash
-cargo run --package sortsys-api --bin sortsys-api
-cargo test --package sortsys-api
-cargo fmt --all -- --check
-cargo clippy --package sortsys-api --all-targets -- -D warnings
-```
-
-Der direkte Start benötigt `PG_MASTER_DSN`, `JWT_SECRET` und `ADMIN_HASH`, produktiv
-zusätzlich `JOB_RUNNER_TOKEN`. Die [Workspace-Konfiguration](../README.md#laufzeitkonfiguration)
-beschreibt alle Variablen. `scripts/dev` im Hauptverzeichnis liefert sie und
-startet PostgreSQL, DuckDB und MinIO mit.
-
-## Migrationen und API-Typen
-
-Migrationen sind im Programm enthalten und werden in Dateinamensreihenfolge
-angewandt. Schemaänderungen als neue SQL-Dateien hinzufügen; möglicherweise
-bereits angewandte Migrationen nicht umschreiben.
-
-Der TypeScript-Vertrag entsteht aus `api::contract_registry()`:
-
-```bash
-cargo run --package sortsys-api --bin generate_contract
-```
-
-Bei geänderten Prozedurverträgen `client/src/generated/contract.ts` mit einchecken.
-
-## Integrationstests
-
-Unit-Tests ergänzen die Netzwerkprüfungen. Aus dem Hauptverzeichnis:
-
-```bash
-./scripts/test-api
-```
-
-Der Befehl startet temporäre PostgreSQL-, DuckDB- und MinIO-Instanzen, API und zwei
-Hintergrunddienste und prüft Protokoll, Mandantendatenbanken, Dateien und
-Sicherungen über das Netzwerk.
-
-## Lizenz
+[Konfiguration, Containerstart und Prüfungen](../README.md) stehen im
+Workspace-README. Für lokale Entwicklung ist `scripts/dev` im Hauptverzeichnis
+vorgesehen. `scripts/test-api` prüft den unabhängigen Aufbau in einem temporären
+Container, einschließlich Browser-Kryptografie und mehrerer API-Instanzen.
 
 Für diese Crate gilt die [GNU Affero General Public License v3.0 only](../LICENSE).

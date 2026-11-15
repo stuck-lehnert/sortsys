@@ -2,10 +2,11 @@
 //! Routing proofs select a concrete API peer without putting context on a bus.
 
 mod mcp;
+mod persistence;
 mod socket;
 
 use crate::{
-    AppState,
+    auth::AuthService,
     auth::{AuthResult, McpScope},
     error::{ErrorCode, RpcError, RpcResult},
     ids::Id,
@@ -29,6 +30,26 @@ use std::{
 };
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use ts_rs::TS;
+
+pub(crate) struct Runtime {
+    pub auth: Arc<AuthService>,
+    pub live_llm: Arc<Hub>,
+    pub settings: Arc<super::control::Settings>,
+    pub events: Arc<crate::zerotrust::events::Hub>,
+}
+impl Runtime {
+    pub(crate) fn new(
+        auth: Arc<AuthService>,
+        settings: Arc<super::control::Settings>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            auth,
+            live_llm: Arc::new(Hub::default()),
+            settings,
+            events: Arc::new(crate::zerotrust::events::Hub::default()),
+        })
+    }
+}
 
 pub const WS_PATH: &str = "/llm/live";
 const WIRE_LIMIT: usize = 2 * 1024 * 1024;
@@ -190,24 +211,26 @@ impl Default for Hub {
     }
 }
 impl Hub {
-    /// Called after binding, also by tests with a real ephemeral listening port.
-    pub async fn bind_listener(
+    pub(crate) async fn bind_to(
         &self,
-        config: &crate::config::Config,
+        configured: Option<&str>,
+        store_url: Option<&str>,
         address: SocketAddr,
     ) -> RpcResult<()> {
-        let endpoint = if let Some(configured) = &config.llm_live_internal_url {
+        let endpoint = if let Some(configured) = configured {
             validate_endpoint(configured)?
         } else {
             let ip = if address.ip().is_unspecified() {
-                use std::str::FromStr;
-                let pg = sqlx::postgres::PgConnectOptions::from_str(&config.master_dsn)
+                let target = reqwest::Url::parse(store_url.ok_or_else(unavailable)?)
                     .map_err(|_| unavailable())?;
-                let peer = tokio::net::lookup_host((pg.get_host(), pg.get_port()))
-                    .await
-                    .map_err(|_| unavailable())?
-                    .next()
-                    .ok_or_else(unavailable)?;
+                let peer = tokio::net::lookup_host((
+                    target.host_str().ok_or_else(unavailable)?,
+                    target.port_or_known_default().ok_or_else(unavailable)?,
+                ))
+                .await
+                .map_err(|_| unavailable())?
+                .next()
+                .ok_or_else(unavailable)?;
                 let socket = tokio::net::UdpSocket::bind(if peer.is_ipv6() {
                     "[::]:0"
                 } else {
@@ -224,7 +247,7 @@ impl Hub {
         };
         self.endpoint.set(endpoint).map_err(|_| unavailable())
     }
-    fn owner(&self, state: &AppState, ticket: &Ticket) -> RpcResult<String> {
+    fn owner(&self, state: &Runtime, ticket: &Ticket) -> RpcResult<String> {
         state.auth.issue_challenge_token(&Owner {
             purpose: "llm-live-owner-v1".into(),
             run: ticket.run.clone(),
@@ -256,10 +279,24 @@ pub(crate) fn validate_endpoint(value: &str) -> RpcResult<String> {
     Ok(url.as_str().trim_end_matches('/').into())
 }
 
-pub fn router(state: Arc<AppState>) -> Router {
-    Router::new().route(WS_PATH, get(upgrade)).with_state(state)
+pub(crate) fn router_native(state: Arc<Runtime>) -> Router {
+    Router::new()
+        .route(WS_PATH, get(upgrade))
+        .route("/internal/llm/mcp", axum::routing::post(native_mcp))
+        .with_state(state)
 }
-async fn upgrade(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> Response {
+async fn native_mcp(
+    State(state): State<Arc<Runtime>>,
+    axum::extract::Query(parameters): axum::extract::Query<HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
+    axum::Json(request): axum::Json<super::McpRequest>,
+) -> Response {
+    let Some(route) = parameters.get("live") else {
+        return axum::http::StatusCode::FORBIDDEN.into_response();
+    };
+    mcp::handle(state, headers, request, route).await
+}
+async fn upgrade(State(state): State<Arc<Runtime>>, ws: WebSocketUpgrade) -> Response {
     let Ok(slot) = Arc::clone(&state.live_llm.sockets).try_acquire_owned() else {
         return axum::http::StatusCode::TOO_MANY_REQUESTS.into_response();
     };
@@ -272,9 +309,9 @@ async fn upgrade(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> Re
         })
 }
 
-pub(crate) fn register(
+pub(crate) fn register_native(
     builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
+    state: Arc<Runtime>,
 ) -> ProcedureRegistryBuilder {
     builder.mutation("zerotrust.llm.open", move |ctx, input: OpenInput| {
         let state = Arc::clone(&state);
@@ -285,13 +322,13 @@ pub(crate) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
     builder.mutation_stub::<OpenInput, OpenOutput>("zerotrust.llm.open")
 }
 async fn open(
-    state: &AppState,
+    state: &Runtime,
     context: &RequestContext,
     mut input: OpenInput,
 ) -> RpcResult<OpenOutput> {
     let auth = state.auth.authenticate(&context.headers).await?;
     authorize(state, &auth, input.kind).await?;
-    let (subject, generation) = crate::zerotrust::live_identity(state, &auth).await?;
+    let (subject, generation) = crate::zerotrust::live_identity(&state.auth, &auth).await?;
     for (paths, kind) in [
         (&mut input.queries, ProcedureKind::Query),
         (&mut input.mutations, ProcedureKind::Mutation),
@@ -335,17 +372,19 @@ async fn open(
         generation,
     })
 }
-async fn authorize(state: &AppState, auth: &AuthResult, kind: LiveKind) -> RpcResult<()> {
-    match kind {
-        LiveKind::Chat => {
-            super::ensure_user_access(state, auth).await?;
-        }
-        LiveKind::DocumentImport => {
-            super::ensure_scan_access(state, auth).await?;
-            if !auth.can_do("manage:deliveryNotes") || !auth.can_do("view:products") {
-                return Err(forbidden());
-            }
-        }
+async fn authorize(state: &Runtime, auth: &AuthResult, kind: LiveKind) -> RpcResult<()> {
+    persistence::authorize(&state.auth, auth, kind).await?;
+    let use_case = match kind {
+        LiveKind::Chat => super::CHAT_USE_CASE,
+        LiveKind::DocumentImport => super::DOCUMENT_IMPORT_USE_CASE,
+    };
+    let configuration = super::control::configuration(&state.auth, &state.settings, use_case)
+        .await?
+        .ok_or_else(unavailable)?;
+    if !super::provider::supports_mcp(&configuration.provider)
+        || configuration.provider != "openrouter" && state.settings.mcp_url.is_none()
+    {
+        return Err(unavailable());
     }
     Ok(())
 }
@@ -376,8 +415,6 @@ fn unavailable() -> RpcError {
 fn busy() -> RpcError {
     RpcError::new(ErrorCode::TooManyRequests, "Too many live LLM requests")
 }
-
-pub(super) use mcp::handle as handle_mcp;
 
 #[cfg(test)]
 mod tests {

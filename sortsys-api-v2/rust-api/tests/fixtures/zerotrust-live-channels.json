@@ -1,0 +1,23 @@
+{
+  "targets": {
+    "scope": "J9zXn7Zo7m9w43ueaGWH274O9IXVWHUGNTtdsLnwQP4",
+    "billing": "JRYla-Ki9plnKdtdJYIdp4RrAgOKyqodh7K9d8XMLIU",
+    "opaque": "R68MG5DWw62VrBAP9Eup3dd7CBmYIY0vYEheWV9Vmtw"
+  },
+  "checkpoint": {
+    "tenant": "tenant-test",
+    "scope": "commercial:123",
+    "document": "456",
+    "facet": "scope",
+    "sequence": "9007199254740993",
+    "covered": "9007199254740992",
+    "target": "J9zXn7Zo7m9w43ueaGWH274O9IXVWHUGNTtdsLnwQP4",
+    "generation": "2",
+    "policyVersion": "3",
+    "author": "user:12",
+    "format": "sortsys-live-checkpoint-v2",
+    "signature": "8asBU9XmT4GZjP_2TiSIEQltyVoR359biMOqxKsOnYc4w8AUDVv5f9e4vp_rbPBY3fbtys60SfE5BqNfC-LlDg"
+  },
+  "frame": "AAAAGnNvcnRzeXMvbGl2ZS1jaGVja3BvaW50L3YyAAAAC3RlbmFudC10ZXN0AAAADmNvbW1lcmNpYWw6MTIzAAAAAzQ1NgAAAAVzY29wZQAAABA5MDA3MTk5MjU0NzQwOTkzAAAAEDkwMDcxOTkyNTQ3NDA5OTIAAAArSjl6WG43Wm83bTl3NDN1ZWFHV0gyNzRPOUlYVldIVUdOVHRkc0xud1FQNAAAAAEyAAAAATMAAAAHdXNlcjoxMg",
+  "publicKey": "m6FDh3HESKesRp3K4kAq15RBhQLzDjeVLeILY-qD61s"
+}

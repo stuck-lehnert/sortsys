@@ -51,6 +51,8 @@ struct Registration {
     hub: Arc<Hub>,
     run: String,
     session: Arc<Session>,
+    auth: Arc<AuthService>,
+    tenant: String,
 }
 impl Drop for Registration {
     fn drop(&mut self) {
@@ -58,10 +60,16 @@ impl Drop for Registration {
             sessions.remove(&self.run);
         }
         self.session.close();
+        let auth = Arc::clone(&self.auth);
+        let tenant = self.tenant.clone();
+        let run = self.run.clone();
+        tokio::spawn(async move {
+            let _ = persistence::release(&auth, &tenant, &run).await;
+        });
     }
 }
 
-pub(super) async fn serve(mut socket: WebSocket, state: Arc<AppState>) -> RpcResult<()> {
+pub(super) async fn serve(mut socket: WebSocket, state: Arc<Runtime>) -> RpcResult<()> {
     let mut stage = "admission";
     let result = serve_inner(&mut socket, &state, &mut stage).await;
     if let Err(error) = &result {
@@ -79,7 +87,7 @@ pub(super) async fn serve(mut socket: WebSocket, state: Arc<AppState>) -> RpcRes
 
 async fn serve_inner(
     socket: &mut WebSocket,
-    state: &Arc<AppState>,
+    state: &Arc<Runtime>,
     stage: &mut &'static str,
 ) -> RpcResult<()> {
     let admission: Admission = tokio::time::timeout(Duration::from_secs(5), receive(socket))
@@ -94,7 +102,7 @@ async fn serve_inner(
     authorize(state, &auth, ticket.kind).await?;
     *stage = "proof";
     crate::zerotrust::verify_live_identity(
-        state,
+        &state.auth,
         &auth,
         &ticket.generation,
         &admission.ticket,
@@ -105,16 +113,7 @@ async fn serve_inner(
         .try_acquire_owned()
         .map_err(|_| busy())?;
     *stage = "admission_metadata";
-    let admitted = sqlx::query("INSERT INTO __llm_live_admissions(nonce,tenant,session_id,expires_at) VALUES($1,$2,$3,to_timestamp($4)) ON CONFLICT DO NOTHING")
-        .bind(&ticket.run).bind(&ticket.tenant).bind(ticket.session.parse::<i64>().map_err(|_| forbidden())?)
-        .bind(ticket.exp as f64).execute(state.tenants.master()).await.map_err(|_| unavailable())?;
-    if admitted.rows_affected() != 1 {
-        return Err(forbidden());
-    }
-    sqlx::query("DELETE FROM __llm_live_admissions WHERE expires_at < NOW() - INTERVAL '1 minute'")
-        .execute(state.tenants.master())
-        .await
-        .map_err(|_| unavailable())?;
+    persistence::admit(&state.auth, &auth, &ticket).await?;
     let owner = state.live_llm.owner(state, &ticket)?;
     let (outgoing, mut calls) = mpsc::channel(8);
     let session = Arc::new(Session {
@@ -133,7 +132,22 @@ async fn serve_inner(
         hub: Arc::clone(&state.live_llm),
         run: ticket.run.clone(),
         session: Arc::clone(&session),
+        auth: Arc::clone(&state.auth),
+        tenant: ticket.tenant.clone(),
     };
+    let mut domains = vec![format!("assistant:{}:master-data", ticket.subject)];
+    if ticket.kind == LiveKind::DocumentImport {
+        domains.push("catalog:products:master-data".into());
+    }
+    let mut access = state
+        .events
+        .watch_access(
+            &ticket.tenant,
+            state.auth.records()?.tenant(&ticket.tenant)?,
+            ticket.subject.clone(),
+            domains,
+        )
+        .await?;
     send(socket, json!({"type":"ready"})).await?;
     let operation = async {
         *stage = "preparation";
@@ -141,12 +155,26 @@ async fn serve_inner(
         *stage = "provider_setup";
         let auth = authenticate(state, &ticket).await?;
         authorize(state, &auth, ticket.kind).await?;
-        if crate::zerotrust::live_identity(state, &auth).await?.1 != ticket.generation {
+        if crate::zerotrust::live_identity(&state.auth, &auth).await?.1 != ticket.generation {
             return Err(forbidden());
         }
         let configuration = match ticket.kind {
-            LiveKind::Chat => super::super::load_configuration(state).await?,
-            LiveKind::DocumentImport => super::super::load_scan_configuration(state).await?,
+            LiveKind::Chat => {
+                super::super::control::configuration(
+                    &state.auth,
+                    &state.settings,
+                    super::super::CHAT_USE_CASE,
+                )
+                .await?
+            }
+            LiveKind::DocumentImport => {
+                super::super::control::configuration(
+                    &state.auth,
+                    &state.settings,
+                    super::super::DOCUMENT_IMPORT_USE_CASE,
+                )
+                .await?
+            }
         }
         .ok_or_else(unavailable)?;
         let scope = ticket.scope()?;
@@ -154,7 +182,7 @@ async fn serve_inner(
             .auth
             .issue_mcp_token(&auth, scope)
             .map_err(|_| unavailable())?;
-        let base_url = match &state.config.llm_mcp_url {
+        let base_url = match &state.settings.mcp_url {
             Some(url) => url.to_string(),
             None if configuration.provider == "openrouter" => format!(
                 "{}/internal/llm/mcp",
@@ -219,34 +247,46 @@ async fn serve_inner(
             Ok(result) => result,
             Err(error) => {
                 tracing::debug!(code = error.code.name(), "Live model transport failed");
-                record(
-                    state,
-                    &auth,
-                    ticket.kind,
-                    &configuration,
-                    &TokenUsage::default(),
-                    true,
-                )
-                .await?;
+                record(state, &ticket, &configuration, &TokenUsage::default(), true).await?;
                 return Err(unavailable());
             }
         };
         *stage = "usage";
+        record(state, &ticket, &configuration, &usage, false).await?;
         let current = authenticate(state, &ticket).await?;
-        authorize(state, &current, ticket.kind).await?;
-        if crate::zerotrust::live_identity(state, &current).await?.1 != ticket.generation {
+        persistence::authorize_completion(&state.auth, &current, ticket.kind).await?;
+        if crate::zerotrust::live_identity(&state.auth, &current)
+            .await?
+            .1
+            != ticket.generation
+        {
             return Err(forbidden());
         }
-        record(state, &auth, ticket.kind, &configuration, &usage, false).await?;
         send(socket, json!({"type":"complete","content":content,"usage":{
             "inputTokens":usage.input_tokens,"outputTokens":usage.output_tokens,"totalTokens":usage.total_tokens}})).await
     };
-    tokio::time::timeout(Duration::from_secs(REQUEST_SECONDS), operation)
+    let guarded = async {
+        tokio::pin!(operation);
+        loop {
+            tokio::select! {
+                result = &mut operation => return result,
+                changed = access.changed() => {
+                    changed?;
+                    let current = authenticate(state, &ticket).await?;
+                    persistence::authorize_completion(&state.auth, &current, ticket.kind).await?;
+                    if crate::zerotrust::live_identity(&state.auth, &current).await?.1 != ticket.generation {
+                        return Err(forbidden());
+                    }
+                }
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(REQUEST_SECONDS), guarded)
         .await
         .map_err(|_| unavailable())?
 }
 
-async fn authenticate(state: &AppState, ticket: &Ticket) -> RpcResult<AuthResult> {
+async fn authenticate(state: &Runtime, ticket: &Ticket) -> RpcResult<AuthResult> {
     let token = state
         .auth
         .issue_user_token(&ticket.tenant, &ticket.session)
@@ -397,18 +437,11 @@ async fn send(socket: &mut WebSocket, value: Value) -> RpcResult<()> {
         .map_err(|_| unavailable())
 }
 async fn record(
-    state: &AppState,
-    auth: &AuthResult,
-    kind: LiveKind,
+    state: &Runtime,
+    ticket: &Ticket,
     configuration: &super::super::ProviderConfiguration,
     usage: &TokenUsage,
     failed: bool,
 ) -> RpcResult<()> {
-    sqlx::query("INSERT INTO __llm_usage(tenant_name,user_id,purpose,provider,model,input_tokens,output_tokens,total_tokens,status,error) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
-        .bind(&auth.tenant).bind(auth.user.id.parse::<i64>().map_err(|_| forbidden())?)
-        .bind(if kind == LiveKind::Chat { "chat" } else { "delivery_note_scan" }).bind(&configuration.provider).bind(&configuration.model)
-        .bind(usage.input_tokens.max(0)).bind(usage.output_tokens.max(0)).bind(usage.total_tokens.max(0))
-        .bind(if failed { "failed" } else { "succeeded" }).bind(if failed { Some("request_failed") } else { None })
-        .execute(state.tenants.master()).await.map_err(|_| unavailable())?;
-    Ok(())
+    persistence::record(&state.auth, ticket, configuration, usage, failed).await
 }

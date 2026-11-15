@@ -1,4 +1,4 @@
-//! SuperJSON metadata encoding for Date values in RPC responses.
+//! SuperJSON metadata for dates and explicitly typed integer fields.
 
 use std::sync::LazyLock;
 
@@ -128,7 +128,9 @@ pub fn encode(value: Value) -> Value {
 }
 
 pub fn encode_with_undefined(value: Value, undefined_paths: Vec<String>) -> Value {
+    let mut value = value;
     let mut metadata = Map::new();
+    extract_bigint_metadata(&mut value, "", &mut metadata);
     collect_date_metadata(&value, "", &mut metadata);
     for path in undefined_paths {
         metadata.insert(path, json!(["undefined"]));
@@ -144,6 +146,88 @@ pub fn encode_with_undefined(value: Value, undefined_paths: Vec<String>) -> Valu
                 "v": 1,
             },
         })
+    }
+}
+
+fn extract_bigint_metadata(value: &mut Value, path: &str, metadata: &mut Map<String, Value>) {
+    if value.get("$rpcType").and_then(Value::as_str) == Some("bigint")
+        && value.as_object().is_some_and(|fields| fields.len() == 2)
+        && let Some(text) = value.get("value").and_then(Value::as_str)
+        && text
+            .parse::<i64>()
+            .is_ok_and(|number| number.to_string() == text)
+    {
+        *value = Value::String(text.into());
+        metadata.insert(path.into(), json!(["bigint"]));
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for (index, value) in values.iter_mut().enumerate() {
+                extract_bigint_metadata(value, &join_path(path, &index.to_string()), metadata);
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                extract_bigint_metadata(value, &join_path(path, key), metadata);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Opt-in serde fields preserve integer precision through the JSON value used
+/// by the RPC registry. Ordinary JSON numbers retain their existing encoding.
+pub mod bigint {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Tagged {
+        #[serde(rename = "$rpcType")]
+        kind: String,
+        value: String,
+    }
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Encoded {
+        Number(i64),
+        Tagged(Tagged),
+    }
+    pub fn serialize<S: Serializer>(value: &i64, serializer: S) -> Result<S::Ok, S::Error> {
+        Tagged {
+            kind: "bigint".into(),
+            value: value.to_string(),
+        }
+        .serialize(serializer)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+        match Encoded::deserialize(deserializer)? {
+            Encoded::Number(value) => Ok(value),
+            Encoded::Tagged(tagged) => {
+                let value = tagged.value.parse::<i64>().map_err(D::Error::custom)?;
+                if tagged.kind != "bigint" || value.to_string() != tagged.value {
+                    return Err(D::Error::custom("Invalid integer encoding"));
+                }
+                Ok(value)
+            }
+        }
+    }
+}
+
+pub mod optional_bigint {
+    use serde::{Deserialize, Deserializer, Serializer};
+    #[derive(Deserialize)]
+    struct Integer(#[serde(with = "super::bigint")] i64);
+    pub fn serialize<S: Serializer>(value: &Option<i64>, serializer: S) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(value) => super::bigint::serialize(value, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<i64>, D::Error> {
+        Ok(Option::<Integer>::deserialize(deserializer)?.map(|value| value.0))
     }
 }
 
@@ -176,6 +260,41 @@ fn join_path(parent: &str, child: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn typed_integers_round_trip_without_losing_precision_or_changing_numbers() {
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct Counts {
+            #[serde(with = "super::bigint")]
+            total: i64,
+            #[serde(with = "super::optional_bigint")]
+            quota: Option<i64>,
+            pages: u32,
+        }
+        for quota in [None, Some(i64::MIN), Some(42)] {
+            let counts = Counts {
+                total: i64::MAX,
+                quota,
+                pages: 3,
+            };
+            let stored = serde_json::to_value(&counts).unwrap();
+            assert_eq!(
+                serde_json::from_value::<Counts>(stored.clone()).unwrap(),
+                counts
+            );
+            let wire = super::encode(stored);
+            assert_eq!(wire["json"]["total"], i64::MAX.to_string());
+            assert_eq!(
+                wire["meta"]["values"]["total"],
+                serde_json::json!(["bigint"])
+            );
+            assert_eq!(wire["json"]["pages"], 3);
+            assert!(wire["meta"]["values"].get("pages").is_none());
+            assert_eq!(
+                serde_json::from_value::<Counts>(super::decode(wire)).unwrap(),
+                counts
+            );
+        }
+    }
     use serde_json::json;
 
     use super::{decode, encode};

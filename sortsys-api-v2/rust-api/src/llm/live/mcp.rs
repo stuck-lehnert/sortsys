@@ -7,14 +7,14 @@ use futures_util::StreamExt;
 use serde_json::json;
 
 pub(in crate::llm) async fn handle(
-    state: Arc<AppState>,
+    state: Arc<Runtime>,
     headers: HeaderMap,
     request: super::super::McpRequest,
     route: &str,
 ) -> Response {
     let id = request.id.clone().unwrap_or(Value::Null);
     let checked = async {
-        super::super::validate_mcp_headers(&headers, state.config.llm_mcp_url.as_deref())?;
+        super::super::validate_mcp_headers(&headers, state.settings.mcp_url.as_deref())?;
         let (auth, scope) = state.auth.authenticate_mcp(&headers).await?;
         let owner: Owner = state.auth.verify_challenge_token(route)?;
         if owner.purpose != "llm-live-owner-v1"
@@ -34,7 +34,7 @@ pub(in crate::llm) async fn handle(
             return Err(forbidden());
         }
         authorize(&state, &auth, owner.kind).await?;
-        if crate::zerotrust::live_identity(&state, &auth).await?.1 != owner.generation {
+        if crate::zerotrust::live_identity(&state.auth, &auth).await?.1 != owner.generation {
             return Err(forbidden());
         }
         Ok((owner, auth, scope))

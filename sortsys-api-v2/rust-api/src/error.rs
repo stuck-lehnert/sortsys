@@ -6,6 +6,36 @@ use crate::superjson;
 
 pub type RpcResult<T> = Result<T, RpcError>;
 
+pub fn bad_request(message: impl Into<String>) -> RpcError {
+    RpcError::new(ErrorCode::BadRequest, message).with_http_code(400)
+}
+
+pub fn forbidden() -> RpcError {
+    RpcError::new(ErrorCode::Forbidden, "Forbidden").with_http_code(403)
+}
+
+pub fn not_found() -> RpcError {
+    RpcError::new(ErrorCode::NotFound, "Not found").with_http_code(404)
+}
+
+pub fn conflict() -> RpcError {
+    RpcError::new(ErrorCode::Conflict, "Conflict").with_http_code(409)
+}
+
+pub fn internal(error: impl std::fmt::Display) -> RpcError {
+    RpcError::new(ErrorCode::InternalServerError, error.to_string()).with_http_code(500)
+}
+
+impl From<sortsys_zerotrust::Error> for RpcError {
+    fn from(error: sortsys_zerotrust::Error) -> Self {
+        match error {
+            sortsys_zerotrust::Error::InvalidProtectedData => {
+                Self::new(ErrorCode::BadRequest, "Invalid protected data")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     ParseError,
@@ -66,6 +96,7 @@ pub struct RpcError {
     pub path: Option<String>,
     pub http_code: Option<u16>,
     pub validation_errors: Option<Value>,
+    pub(crate) retry_snapshot_query: bool,
 }
 
 impl RpcError {
@@ -76,6 +107,7 @@ impl RpcError {
             path: None,
             http_code: None,
             validation_errors: None,
+            retry_snapshot_query: false,
         }
     }
 
@@ -86,6 +118,13 @@ impl RpcError {
 
     pub fn with_http_code(mut self, http_code: u16) -> Self {
         self.http_code = Some(http_code);
+        self
+    }
+
+    /// Only read handlers may repeat after an optimistic snapshot race.
+    /// This marker is internal and is never accepted from an RPC request.
+    pub(crate) fn retryable_snapshot(mut self) -> Self {
+        self.retry_snapshot_query = true;
         self
     }
 

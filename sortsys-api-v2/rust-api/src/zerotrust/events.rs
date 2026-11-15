@@ -1,15 +1,15 @@
-//! Public change hints only. One PostgreSQL listener per active tenant and API
-//! process fans out committed notifications; document values never enter it.
+//! Public change hints only. One shared-store subscription per active tenant
+//! and API process fans out committed hints; document values never enter it.
 use super::{
-    access::security,
+    access::metadata_security,
     crypto::{encode, frame, random_id, verify},
+    document_messages::Room,
     wire::{Action, Effect},
 };
 use crate::{
-    AppState,
     auth::AuthResult,
     error::{ErrorCode, RpcError, RpcResult},
-    procedures::common::{forbidden, internal},
+    error::{forbidden, internal},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
 use axum::{
@@ -25,10 +25,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{
-    PgPool,
-    postgres::{PgListener, PgPoolOptions},
-};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Weak},
@@ -45,6 +41,7 @@ enum Event {
     Access,
     Account(String),
     Resync,
+    DocumentMessage(Room),
 }
 struct Channel {
     outgoing: broadcast::Sender<Event>,
@@ -53,6 +50,28 @@ struct Channel {
 struct Subscription {
     _channel: Arc<Channel>,
     incoming: broadcast::Receiver<Event>,
+}
+
+pub(crate) struct AccessSubscription {
+    subscription: Subscription,
+    subject: String,
+    domains: HashSet<String>,
+}
+impl AccessSubscription {
+    /// A lagged stream requires a fresh authorization check as well. Document
+    /// and object hints do not wake unrelated live model requests.
+    pub(crate) async fn changed(&mut self) -> RpcResult<()> {
+        loop {
+            match self.subscription.incoming.recv().await {
+                Ok(Event::Access | Event::Resync) => return Ok(()),
+                Ok(Event::Account(subject)) if subject == self.subject => return Ok(()),
+                Ok(Event::Domain(domain)) if self.domains.contains(&domain) => return Ok(()),
+                Err(broadcast::error::RecvError::Lagged(_)) => return Ok(()),
+                Err(broadcast::error::RecvError::Closed) => return Err(unavailable()),
+                _ => {}
+            }
+        }
+    }
 }
 pub struct Hub {
     tenants: Mutex<HashMap<String, Weak<Channel>>>,
@@ -69,7 +88,26 @@ impl Default for Hub {
     }
 }
 impl Hub {
-    async fn subscribe(&self, tenant: &str, source: &PgPool) -> RpcResult<Subscription> {
+    pub(crate) async fn watch_access(
+        &self,
+        tenant: &str,
+        source: crate::control::Repository,
+        subject: String,
+        domains: Vec<String>,
+    ) -> RpcResult<AccessSubscription> {
+        let subscription = self.subscribe(tenant, source).await?;
+        Ok(AccessSubscription {
+            subscription,
+            subject,
+            domains: domains.into_iter().collect(),
+        })
+    }
+
+    async fn subscribe(
+        &self,
+        tenant: &str,
+        source: crate::control::Repository,
+    ) -> RpcResult<Subscription> {
         let mut tenants = self.tenants.lock().await;
         tenants.retain(|_, value| value.strong_count() > 0);
         if let Some(channel) = tenants.get(tenant).and_then(Weak::upgrade) {
@@ -81,12 +119,9 @@ impl Hub {
         let slot = Arc::clone(&self.listeners)
             .try_acquire_owned()
             .map_err(|_| unavailable())?;
-        // A dedicated connection leaves the ordinary five-slot request pool free.
-        let pool = PgPoolOptions::new()
-            .max_connections(1)
-            .min_connections(0)
-            .connect_lazy_with((*source.connect_options()).clone());
-        let listener = connect(&pool).await?;
+        // Establish the durable cursor before the caller takes its access
+        // baseline. Every later commit is replayable, including during admission.
+        let mut cursor = source.changes(None, 0).await?.head;
         let (outgoing, incoming) = broadcast::channel(64);
         let (stop, mut stopped) = watch::channel(());
         let channel = Arc::new(Channel {
@@ -96,44 +131,58 @@ impl Hub {
         tenants.insert(tenant.to_owned(), Arc::downgrade(&channel));
         tokio::spawn(async move {
             let _slot = slot;
-            let mut current = Some(listener);
             loop {
-                let mut listener = match current.take() {
-                    Some(listener) => listener,
-                    None => {
-                        let next = tokio::select! { _ = stopped.changed() => break, value = connect(&pool) => value };
-                        match next {
-                            Ok(listener) => {
-                                let _ = outgoing.send(Event::Resync);
-                                listener
-                            }
-                            Err(_) => {
-                                tokio::select! { _ = stopped.changed() => break, _ = tokio::time::sleep(Duration::from_secs(1)) => {} };
-                                continue;
-                            }
+                let page = tokio::select! {
+                    _ = stopped.changed() => break,
+                    result = source.changes(Some(cursor.clone()), 25_000) => result,
+                };
+                let page = match page {
+                    Ok(page) => page,
+                    Err(_) => {
+                        let _ = outgoing.send(Event::Resync);
+                        tokio::select! {
+                            _ = stopped.changed() => break,
+                            _ = tokio::time::sleep(Duration::from_secs(1)) => continue,
                         }
                     }
                 };
-                loop {
-                    let next = tokio::select! { _ = stopped.changed() => break, value = listener.try_recv() => value };
-                    match next {
-                        Ok(Some(notification)) => {
-                            if let Some(event) = parse(notification.payload()) {
-                                let _ = outgoing.send(event);
-                            }
+                let (Ok(durable_head), Ok(observed_head)) =
+                    (page.head.parse::<u64>(), cursor.parse::<u64>())
+                else {
+                    let _ = outgoing.send(Event::Resync);
+                    break;
+                };
+                if durable_head < observed_head {
+                    cursor = page.head;
+                    let _ = outgoing.send(Event::Resync);
+                    continue;
+                }
+                if page.events.is_empty() && page.head != cursor {
+                    // A replaced/pruned journal requires a full resync. Never
+                    // spin on a durable head that has no replayable entries.
+                    cursor = page.head;
+                    let _ = outgoing.send(Event::Resync);
+                    continue;
+                }
+                for event in page.events {
+                    cursor = event.revision;
+                    // Session/credential epochs are public control records.
+                    // Their changes must revoke sockets even without a UI hint.
+                    if event.changed.iter().any(|record| {
+                        matches!(
+                            record.collection.as_str(),
+                            "accounts" | "sessions" | "tenant-status" | "crypto-root"
+                        )
+                    }) {
+                        let _ = outgoing.send(Event::Access);
+                    }
+                    for hint in event.hints {
+                        if let Some(event) = parse_hint(&hint.channel, &hint.value) {
+                            let _ = outgoing.send(event);
                         }
-                        Ok(None) => {
-                            let _ = outgoing.send(Event::Resync);
-                        }
-                        Err(_) => break,
                     }
                 }
-                drop(listener);
-                if stopped.has_changed().is_err() {
-                    break;
-                }
             }
-            pool.close().await;
         });
         Ok(Subscription {
             _channel: channel,
@@ -141,15 +190,33 @@ impl Hub {
         })
     }
 }
-async fn connect(pool: &PgPool) -> RpcResult<PgListener> {
-    tokio::time::timeout(Duration::from_secs(3), async {
-        let mut listener = PgListener::connect_with(pool).await?;
-        listener.listen("sortsys_zerotrust").await?;
-        Ok::<_, sqlx::Error>(listener)
-    })
-    .await
-    .map_err(|_| unavailable())?
-    .map_err(|_| unavailable())
+fn parse_hint(channel: &str, input: &str) -> Option<Event> {
+    if input.len() > 8000 {
+        return None;
+    }
+    let data: Value = serde_json::from_str(input).ok()?;
+    match channel {
+        "access" => Some(Event::Access),
+        "account" => Some(Event::Account(data.get("subject")?.as_str()?.to_owned())),
+        "domain" => {
+            let domain = data.get("domain")?.as_str()?;
+            super::crypto::identifier(domain).ok()?;
+            Some(Event::Domain(domain.to_owned()))
+        }
+        "object" => {
+            let domain = data.get("domain")?.as_str()?;
+            super::crypto::identifier(domain).ok()?;
+            let sequence = super::crypto::revision(data.get("sequence")?.as_str()?).ok()?;
+            Some(Event::Objects(domain.to_owned(), sequence))
+        }
+        "document-message" => {
+            let mut data = data;
+            data.as_object_mut()?
+                .insert("kind".into(), Value::String(channel.into()));
+            parse(&data.to_string())
+        }
+        _ => None,
+    }
 }
 fn parse(input: &str) -> Option<Event> {
     if input.len() > 8000 {
@@ -157,6 +224,21 @@ fn parse(input: &str) -> Option<Event> {
     }
     let data: Value = serde_json::from_str(input).ok()?;
     match data.get("kind")?.as_str()? {
+        "document-message" => {
+            let scope = data.get("scope")?.as_str()?;
+            let document = data.get("document")?.as_str()?;
+            let facet = data.get("facet")?.as_str()?;
+            let channel = data.get("channel")?.as_str()?;
+            let room = Room {
+                scope: scope.into(),
+                document: document.into(),
+                facet: channel.into(),
+            };
+            if room.outer().ok()?.name() != facet {
+                return None;
+            }
+            Some(Event::DocumentMessage(room))
+        }
         "object" => {
             let domain = data.get("domain")?.as_str()?;
             super::crypto::identifier(domain).ok()?;
@@ -168,7 +250,7 @@ fn parse(input: &str) -> Option<Event> {
             super::crypto::identifier(domain).ok()?;
             Some(Event::Domain(domain.to_owned()))
         }
-        "policy" | "recovery" => Some(Event::Access),
+        "policy" | "recovery" | "activation" => Some(Event::Access),
         "account" => Some(Event::Account(data.get("user")?.as_str()?.to_owned())),
         _ => None,
     }
@@ -215,17 +297,17 @@ struct Snapshot {
     signing_key: Vec<u8>,
 }
 
-pub(super) fn register(
+pub(crate) fn register_metadata(
     builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
+    service: Arc<crate::auth::AuthService>,
 ) -> ProcedureRegistryBuilder {
     builder.mutation(
         "zerotrust.events.open",
         move |ctx: RequestContext, _: ()| {
-            let state = Arc::clone(&state);
+            let service = Arc::clone(&service);
             async move {
-                let auth = state.auth.authenticate(&ctx.headers).await?;
-                let snapshot = snapshot(&state, &auth).await?;
+                let auth = service.authenticate(&ctx.headers).await?;
+                let snapshot = snapshot(&service, &auth).await?;
                 let ticket = Ticket {
                     purpose: "encrypted-events-v1".into(),
                     tenant: auth.tenant,
@@ -236,7 +318,7 @@ pub(super) fn register(
                     exp: (chrono::Utc::now().timestamp() + 60) as u64,
                 };
                 Ok(Open {
-                    ticket: state.auth.issue_challenge_token(&ticket)?,
+                    ticket: service.issue_challenge_token(&ticket)?,
                     subject: snapshot.subject,
                     generation: snapshot.generation,
                 })
@@ -247,10 +329,22 @@ pub(super) fn register(
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder.mutation_stub::<(), Open>("zerotrust.events.open")
 }
-pub fn router(state: Arc<AppState>) -> Router {
-    Router::new().route(WS_PATH, get(upgrade)).with_state(state)
+
+#[derive(Clone)]
+struct EventService {
+    auth: Arc<crate::auth::AuthService>,
+    encrypted_events: Arc<Hub>,
 }
-async fn upgrade(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> Response {
+pub(crate) fn router_metadata(auth: Arc<crate::auth::AuthService>, hub: Arc<Hub>) -> Router {
+    let service = Arc::new(EventService {
+        auth,
+        encrypted_events: hub,
+    });
+    Router::new()
+        .route(WS_PATH, get(upgrade))
+        .with_state(service)
+}
+async fn upgrade(State(state): State<Arc<EventService>>, ws: WebSocketUpgrade) -> Response {
     let Ok(slot) = Arc::clone(&state.encrypted_events.sockets).try_acquire_owned() else {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
@@ -267,7 +361,7 @@ async fn upgrade(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> Re
             let _ = socket.send(Message::Close(None)).await;
         })
 }
-async fn authenticate(state: &AppState, ticket: &Ticket) -> RpcResult<AuthResult> {
+async fn authenticate(state: &EventService, ticket: &Ticket) -> RpcResult<AuthResult> {
     let token = state
         .auth
         .issue_user_token(&ticket.tenant, &ticket.session)
@@ -304,6 +398,13 @@ fn capabilities(
     subject: &str,
     inherited: &[super::wire::Rule],
 ) -> HashMap<[u8; 32], u8> {
+    if policy
+        .suspended
+        .as_ref()
+        .is_some_and(|members| members.iter().any(|member| member == subject))
+    {
+        return HashMap::new();
+    }
     let mut allowed = HashMap::new();
     let mut denied = HashMap::new();
     for rule in policy.rules.iter().chain(inherited) {
@@ -339,35 +440,26 @@ impl Snapshot {
             || self.roles.iter().any(|role| !next.roles.contains(role))
     }
 }
-async fn snapshot(state: &AppState, auth: &AuthResult) -> RpcResult<Snapshot> {
-    let pool = state
-        .tenants
-        .tenant_pool(&auth.tenant)
-        .await
-        .map_err(internal)?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let guard = security(&mut tx, state.tenants.master(), auth, false).await?;
-    let domains: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT id,scope,facet FROM __zerotrust_domains ORDER BY id LIMIT 2001")
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(internal)?;
-    if domains.len() > 2000 {
-        return Err(unavailable());
-    }
+async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcResult<Snapshot> {
+    let repository = service.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let guard = metadata_security(&mut transaction, auth).await?;
+    let domains = super::objects::metadata_catalog(&mut transaction).await?;
     // Hash scope/facet pairs and combine action bits once. The small retained
     // masks distinguish revocation from an added right without rescanning rules.
     let capabilities = capabilities(&guard.policy, &guard.subject, &guard.inherited);
     let allowed = domains
         .into_iter()
-        .filter_map(|(id, scope, facet)| {
-            (capabilities
-                .get(&scope_key(&scope, &facet))
+        .filter_map(|area| {
+            let actions = capabilities
+                .get(&scope_key(&area.scope, area.facet.name()))
                 .copied()
-                .unwrap_or(0)
-                & 1
-                != 0)
-                .then_some(id)
+                .unwrap_or(0);
+            if actions & action_bit(Action::Read) == 0 {
+                None
+            } else {
+                Some(area.id)
+            }
         })
         .collect();
     let mut roles = auth.roles.clone();
@@ -380,6 +472,7 @@ async fn snapshot(state: &AppState, auth: &AuthResult) -> RpcResult<Snapshot> {
     let fingerprint = encode(&Sha256::digest(
         serde_json::to_vec(&(rights, &roles)).map_err(internal)?,
     ));
+    transaction.validate().await?;
     Ok(Snapshot {
         subject: guard.subject,
         generation: guard.root.generation.to_string(),
@@ -400,7 +493,7 @@ async fn send(socket: &mut WebSocket, value: Value) -> RpcResult<()> {
     .map_err(|_| unavailable())?
     .map_err(|_| unavailable())
 }
-async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
+async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<()> {
     let nonce = random_id()?;
     send(socket, json!({"type":"challenge","nonce":nonce})).await?;
     let admission = tokio::time::timeout(Duration::from_secs(5), socket.recv())
@@ -419,7 +512,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
         return Err(forbidden());
     }
     let auth = authenticate(state, &ticket).await?;
-    let identity = snapshot(state, &auth).await?;
+    let identity = snapshot(&state.auth, &auth).await?;
     if identity.subject != ticket.subject || identity.generation != ticket.generation {
         return Err(forbidden());
     }
@@ -437,18 +530,14 @@ async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
             ],
         ),
     )?;
-    let pool = state
-        .tenants
-        .tenant_pool(&ticket.tenant)
-        .await
-        .map_err(internal)?;
+    let repository = state.auth.records()?.tenant(&ticket.tenant)?;
     let mut subscription = state
         .encrypted_events
-        .subscribe(&ticket.tenant, &pool)
+        .subscribe(&ticket.tenant, repository)
         .await?;
-    // LISTEN is established before this baseline. Commits during admission are
-    // either included here or remain queued, including policy/key changes.
-    let mut current = snapshot(state, &authenticate(state, &ticket).await?).await?;
+    // The durable change cursor is established before this baseline. Commits
+    // during admission are either included here or remain queued.
+    let mut current = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
     if current.generation != ticket.generation {
         return Err(forbidden());
     }
@@ -461,15 +550,38 @@ async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
     heartbeat.tick().await;
     loop {
         let event = tokio::select! {
-            input = socket.recv() => { match input { Some(Ok(Message::Pong(_))) => continue, Some(Ok(Message::Ping(value))) => { socket.send(Message::Pong(value)).await.map_err(|_| unavailable())?; continue; }, _ => return Ok(()) } }
+            input = socket.recv() => {
+                match input {
+                    Some(Ok(Message::Pong(_))) => continue,
+                    Some(Ok(Message::Ping(value))) => {
+                        socket.send(Message::Pong(value)).await.map_err(|_| unavailable())?;
+                        continue;
+                    }
+                    _ => return Ok(()),
+                }
+            }
             _ = heartbeat.tick() => {
-                let next = snapshot(state, &authenticate(state, &ticket).await?).await?;
-                if next.generation != ticket.generation { return Err(forbidden()); }
-                let changed = next.version != current.version || next.allowed != current.allowed || next.fingerprint != current.fingerprint;
+                let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
+                if next.generation != ticket.generation {
+                    return Err(forbidden());
+                }
+                let changed = next.version != current.version
+                    || next.allowed != current.allowed
+                    || next.fingerprint != current.fingerprint;
                 let reset = current.loses_to(&next);
                 current = next;
-                if changed { send(socket, json!({"type":"changed","reset":reset,"all":true,"control":true,"domains":{},"fingerprint":current.fingerprint})).await?; }
-                socket.send(Message::Ping(Vec::new().into())).await.map_err(|_| unavailable())?; continue;
+                if changed {
+                    send(socket, json!({
+                        "type": "changed",
+                        "reset": reset,
+                        "all": true,
+                        "control": true,
+                        "domains": {},
+                        "fingerprint": current.fingerprint,
+                    })).await?;
+                }
+                socket.send(Message::Ping(Vec::new().into())).await.map_err(|_| unavailable())?;
+                continue;
             }
             value = subscription.incoming.recv() => value,
         };
@@ -477,7 +589,11 @@ async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
         let mut all = false;
         let mut refresh = false;
         let mut domains = HashMap::<String, Option<i64>>::new();
+        let mut document_messages = HashSet::new();
         let mut fold = |event: Event| match event {
+            Event::DocumentMessage(room) => {
+                document_messages.insert(room);
+            }
             Event::Access | Event::Resync => {
                 all = true;
                 refresh = true;
@@ -517,7 +633,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
         }
         let mut reset = false;
         if refresh {
-            let next = snapshot(state, &authenticate(state, &ticket).await?).await?;
+            let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
             reset = current.loses_to(&next);
             current = next;
             if current.generation != ticket.generation {
@@ -536,24 +652,20 @@ async fn serve(socket: &mut WebSocket, state: &Arc<AppState>) -> RpcResult<()> {
             )
             .await?;
         }
+        for room in document_messages {
+            let outer = room.outer()?;
+            if current
+                .allowed
+                .contains(&format!("{}:{}", room.scope, outer.name()))
+            {
+                send(
+                    socket,
+                    json!({"type":"document-message","scope":room.scope,"document":room.document,"facet":room.facet}),
+                )
+                .await?;
+            }
+        }
     }
-}
-
-pub(super) async fn notify_account(tx: &mut sqlx::PgConnection, user: &str) -> RpcResult<()> {
-    sqlx::query("SELECT pg_notify('sortsys_zerotrust',$1)")
-        .bind(json!({"kind":"account","user":user}).to_string())
-        .execute(tx)
-        .await
-        .map_err(internal)?;
-    Ok(())
-}
-pub(super) async fn notify_domain(tx: &mut sqlx::PgConnection, domain: &str) -> RpcResult<()> {
-    sqlx::query("SELECT pg_notify('sortsys_zerotrust',$1)")
-        .bind(json!({"kind":"domain","domain":domain}).to_string())
-        .execute(tx)
-        .await
-        .map_err(internal)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -609,5 +721,26 @@ mod tests {
             parse(r#"{"kind":"policy","version":"3"}"#),
             Some(Event::Access)
         ));
+        assert!(matches!(
+            parse(r#"{"kind":"activation"}"#),
+            Some(Event::Access)
+        ));
+    }
+
+    #[test]
+    fn document_notifications_bind_the_channel_to_its_required_outer_key() {
+        let hint = json!({"kind":"document-message","scope":"commercial:2","document":"3","facet":"billing","channel":"billing"});
+        assert!(
+            matches!(parse(&hint.to_string()), Some(Event::DocumentMessage(room)) if room.facet == "billing")
+        );
+        let mut changed = hint.clone();
+        changed["facet"] = "scope".into();
+        assert!(parse(&changed.to_string()).is_none());
+        changed["channel"] = "opaque".into();
+        assert!(
+            matches!(parse(&changed.to_string()), Some(Event::DocumentMessage(room)) if room.facet == "opaque")
+        );
+        changed["scope"] = "project:2".into();
+        assert!(parse(&changed.to_string()).is_none());
     }
 }

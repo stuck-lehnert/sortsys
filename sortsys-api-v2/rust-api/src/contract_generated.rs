@@ -3,90 +3,6 @@ use crate::rpc::{ProcedureKind, RawContractSpec};
 // Extracted once from the final legacy router type graph; maintained by the Rust API.
 pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
-        path: "admin.databases.backups.createNow",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ databaseId: string; kind?: undefined | \"manual\" | \"auto\"; }",
-        output_ts: "{ id: string; databaseId: string; kind: \"manual\" | \"auto\"; state: \"processing\" | \"uploaded\" | \"failed\"; objectKey: null | string; sizeBytes: null | number; error: null | string; createdAt: Date; completedAt: null | Date; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.backups.downloadUrl",
-        kind: ProcedureKind::Query,
-        input_ts: "{ backupId: string; expiresInSec?: undefined | number; }",
-        output_ts: "{ backup: { id: string; databaseId: string; kind: \"manual\" | \"auto\"; state: \"processing\" | \"uploaded\" | \"failed\"; objectKey: null | string; sizeBytes: null | number; error: null | string; createdAt: Date; completedAt: null | Date; }; downloadUrl: string; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.backups.list",
-        kind: ProcedureKind::Query,
-        input_ts: "{ databaseId: string; includeFailed?: undefined | false | true; }",
-        output_ts: "{ id: string; databaseId: string; kind: \"manual\" | \"auto\"; state: \"processing\" | \"uploaded\" | \"failed\"; objectKey: null | string; sizeBytes: null | number; error: null | string; createdAt: Date; completedAt: null | Date; }[]",
-    },
-    RawContractSpec {
-        path: "admin.databases.backups.restore",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ backupId: string; targetDatabaseId?: undefined | null | string; }",
-        output_ts: "{ backupId: string; targetDatabaseId: string; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.backups.upload",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ databaseId: string; fileName: string; fileBase64: string; }",
-        output_ts: "{ id: string; databaseId: string; kind: \"manual\" | \"auto\"; state: \"processing\" | \"uploaded\" | \"failed\"; objectKey: null | string; sizeBytes: null | number; error: null | string; createdAt: Date; completedAt: null | Date; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.create",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ hostId: string; name: string; username?: undefined | null | string; retentionDaily?: undefined | number; retentionWeekly?: undefined | number; retentionMonthly?: undefined | number; retentionYearly?: undefined | number; }",
-        output_ts: "{ id: string; hostId: string; name: string; username: string; password: string; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.forkFromBackup",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ backupId: string; name: string; hostId?: undefined | null | string; username?: undefined | null | string; retentionDaily?: undefined | null | number; retentionWeekly?: undefined | null | number; retentionMonthly?: undefined | null | number; retentionYearly?: undefined | null | number; }",
-        output_ts: "{ id: string; hostId: string; name: string; username: string; password: string; restoredFromBackupId: string; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.hosts.create",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ name: string; connectionDetails: { host: string; adminUsername: string; adminPassword: string; port?: undefined | number; adminDatabase?: undefined | string; }; backupDetails?: undefined | { enabled?: undefined | false | true; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; publicBaseUrl?: undefined | null | string; forcePathStyle?: undefined | false | true; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; keyPrefix?: undefined | null | string; }; }",
-        output_ts: "{ id: string; name: string; connectionDetails: { host: string; port: number; adminDatabase: string; adminUsername: string; adminPassword: string; }; backupDetails: { enabled: boolean; forcePathStyle: boolean; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; publicBaseUrl?: undefined | null | string; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; keyPrefix?: undefined | null | string; }; createdAt: Date; updatedAt: Date; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.hosts.delete",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ hostId: string; }",
-        output_ts: "{ success: true; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.hosts.list",
-        kind: ProcedureKind::Query,
-        input_ts: "void",
-        output_ts: "{ id: string; name: string; connectionDetails: { host: string; port: number; adminDatabase: string; adminUsername: string; adminPassword: string; }; backupDetails: { enabled: boolean; forcePathStyle: boolean; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; publicBaseUrl?: undefined | null | string; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; keyPrefix?: undefined | null | string; }; createdAt: Date; updatedAt: Date; }[]",
-    },
-    RawContractSpec {
-        path: "admin.databases.hosts.update",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ hostId: string; data: { name?: undefined | null | string; connectionDetails?: undefined | null | { host: string; adminUsername: string; adminPassword: string; port?: undefined | number; adminDatabase?: undefined | string; }; backupDetails?: undefined | null | { enabled?: undefined | false | true; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; publicBaseUrl?: undefined | null | string; forcePathStyle?: undefined | false | true; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; keyPrefix?: undefined | null | string; }; }; }",
-        output_ts: "{ id: string; name: string; connectionDetails: { host: string; port: number; adminDatabase: string; adminUsername: string; adminPassword: string; }; backupDetails: { enabled: boolean; forcePathStyle: boolean; bucket?: undefined | null | string; region?: undefined | null | string; endpoint?: undefined | null | string; publicBaseUrl?: undefined | null | string; accessKeyId?: undefined | null | string; secretAccessKey?: undefined | null | string; sessionToken?: undefined | null | string; keyPrefix?: undefined | null | string; }; createdAt: Date; updatedAt: Date; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.list",
-        kind: ProcedureKind::Query,
-        input_ts: "void",
-        output_ts: "{ id: string; hostId: string; hostName: string; name: string; username: string; retentionDaily: number; retentionWeekly: number; retentionMonthly: number; retentionYearly: number; createdAt: Date; updatedAt: Date; }[]",
-    },
-    RawContractSpec {
-        path: "admin.databases.rotateCredentials",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ databaseId: string; }",
-        output_ts: "{ id: string; username: string; password: string; }",
-    },
-    RawContractSpec {
-        path: "admin.databases.updateRetention",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ databaseId: string; data: { retentionDaily: number; retentionWeekly: number; retentionMonthly: number; retentionYearly: number; }; }",
-        output_ts: "{ id: string; retentionDaily: number; retentionWeekly: number; retentionMonthly: number; retentionYearly: number; }",
-    },
-    RawContractSpec {
         path: "admin.errors.list",
         kind: ProcedureKind::Query,
         input_ts: "undefined | void | { tenant?: undefined | null | string; limit?: undefined | number; }",
@@ -207,46 +123,10 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
-        path: "auth.passkeys.delete",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
-        output_ts: "{ success: true; }",
-    },
-    RawContractSpec {
-        path: "auth.passkeys.list",
-        kind: ProcedureKind::Query,
-        input_ts: "void",
-        output_ts: "{ id: string; label: string; createdAt: Date; lastUsedAt: null | Date; }[]",
-    },
-    RawContractSpec {
-        path: "auth.passkeys.login",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ challengeToken: string; credential: { id: string; rawId: string; type: \"public-key\"; response: { clientDataJSON: string; authenticatorData: string; signature: string; userHandle?: undefined | null | string; }; }; }",
-        output_ts: "{ token: string; }",
-    },
-    RawContractSpec {
-        path: "auth.passkeys.loginOptions",
-        kind: ProcedureKind::Mutation,
-        input_ts: "undefined | void | { tenant: string; username: string; }",
-        output_ts: "{ challengeToken: string; options: { challenge: string; rpId: string; allowCredentials: { id: string; type: \"public-key\"; transports?: undefined | string[]; }[]; timeout: number; userVerification: \"required\"; }; }",
-    },
-    RawContractSpec {
-        path: "auth.passkeys.register",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ challengeToken: string; label: string; credential: { id: string; rawId: string; type: \"public-key\"; response: { clientDataJSON: string; attestationObject: string; }; transports?: undefined | string[]; }; }",
-        output_ts: "{ success: true; }",
-    },
-    RawContractSpec {
-        path: "auth.passkeys.registerOptions",
-        kind: ProcedureKind::Mutation,
-        input_ts: "void",
-        output_ts: "{ challengeToken: string; options: { challenge: string; rp: { name: string; id: string; }; user: { id: string; name: string; displayName: string; }; pubKeyCredParams: { type: \"public-key\"; alg: number; }[]; timeout: number; attestation: \"none\"; authenticatorSelection: { residentKey: \"required\"; requireResidentKey: true; userVerification: \"required\"; }; excludeCredentials: { id: string; type: \"public-key\"; transports?: undefined | string[]; }[]; }; }",
-    },
-    RawContractSpec {
         path: "auth.sessionInfo",
         kind: ProcedureKind::Query,
         input_ts: "void",
-        output_ts: "{ user: { id: string; username: string; salutation: null | string; firstName: string; lastName: null | string; contractType: \"internal\" | \"external\" | \"subcontractor\"; phone: null | string; email: null | string; locale: \"de\" | \"en\"; }; session: { id: string; inetAddr: null | string; userAgent: null | string; createdAt: Date; expiresAt: Date; }; roles: (\":admin\" | \":llm\" | \"view:users\" | \"manage:users\" | \"delete:users\" | \"view:projects\" | \"manage:projects\" | \"delete:projects\" | \"view:projectDeployments\" | \"manage:projectDeployments\" | \"delete:projectDeployments\" | \"view:userVacations\" | \"manage:userVacations\" | \"delete:userVacations\" | \"view:tools\" | \"manage:tools\" | \"delete:tools\" | \"view:toolTrackings\" | \"manage:toolTrackings\" | \"delete:toolTrackings\" | \"view:toolInventories\" | \"manage:toolInventories\" | \"delete:toolInventories\" | \"view:products\" | \"manage:products\" | \"delete:products\" | \"view:deliveryNotes\" | \"manage:deliveryNotes\" | \"delete:deliveryNotes\" | \"view:productVendors\" | \"manage:productVendors\" | \"delete:productVendors\" | \"view:productPriceRecords\" | \"manage:productPriceRecords\" | \"delete:productPriceRecords\" | \"view:customers\" | \"manage:customers\" | \"delete:customers\" | \"view:contacts\" | \"manage:contacts\" | \"delete:contacts\" | \"view:dailyProjectReports\" | \"manage:dailyProjectReports\" | \"delete:dailyProjectReports\" | \"view:regieReports\" | \"manage:regieReports\" | \"delete:regieReports\" | \"view:clientScripts\" | \"manage:clientScripts\" | \"delete:clientScripts\")[]; tenant: { companyName: null | string; objectStorageEnabled: boolean; }; }",
+        output_ts: "{ user: { id: string; username: string; locale: \"de\" | \"en\"; }; session: { id: string; inetAddr: null | string; userAgent: null | string; createdAt: Date; expiresAt: Date; }; roles: (\":admin\" | \":llm\" | \"view:users\" | \"manage:users\" | \"delete:users\" | \"view:projects\" | \"manage:projects\" | \"delete:projects\" | \"view:projectDeployments\" | \"manage:projectDeployments\" | \"delete:projectDeployments\" | \"view:userVacations\" | \"manage:userVacations\" | \"delete:userVacations\" | \"view:tools\" | \"manage:tools\" | \"delete:tools\" | \"view:toolTrackings\" | \"manage:toolTrackings\" | \"delete:toolTrackings\" | \"view:toolInventories\" | \"manage:toolInventories\" | \"delete:toolInventories\" | \"view:products\" | \"manage:products\" | \"delete:products\" | \"view:deliveryNotes\" | \"manage:deliveryNotes\" | \"delete:deliveryNotes\" | \"view:productVendors\" | \"manage:productVendors\" | \"delete:productVendors\" | \"view:productPriceRecords\" | \"manage:productPriceRecords\" | \"delete:productPriceRecords\" | \"view:customers\" | \"manage:customers\" | \"delete:customers\" | \"view:contacts\" | \"manage:contacts\" | \"delete:contacts\" | \"view:dailyProjectReports\" | \"manage:dailyProjectReports\" | \"delete:dailyProjectReports\" | \"view:regieReports\" | \"manage:regieReports\" | \"delete:regieReports\" | \"view:clientScripts\" | \"manage:clientScripts\" | \"delete:clientScripts\")[]; tenant: { companyName: null | string; objectStorageEnabled: boolean; }; }",
     },
     RawContractSpec {
         path: "auth.setPassword",
@@ -611,7 +491,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.costs.entries.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; type: \"offer\" | \"invoice\"; amount: number; comment?: undefined | null | string; }",
+        input_ts: "{ projectId: string; operationId?: undefined | null | string; type: \"offer\" | \"invoice\"; amount: number; comment?: undefined | null | string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -636,13 +516,13 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "projects.costs.get",
         kind: ProcedureKind::Query,
         input_ts: "{ projectId: string; from?: unknown; to?: unknown; }",
-        output_ts: "{ offers: { id: string; projectId: string; type: \"offer\" | \"invoice\"; amount: number; comment: null | string; createdByUserId: null | string; createdAt: Date; }[]; invoices: { id: string; projectId: string; type: \"offer\" | \"invoice\"; amount: number; comment: null | string; createdByUserId: null | string; createdAt: Date; }[]; deliveryNotes: { noteId: string; autoId: number; effectiveTimestamp: Date; totalCost: number; }[]; products: { productId: string; quantity: number; totalCost: number; priceRecord: null | { id: string; productId: string; vendorId: null | string; timestamp: Date; price: number; isRealPurchase: boolean; comment: null | string; }; }[]; specialRecords: { id: string; noteId: string; noteAutoId: number; effectiveTimestamp: Date; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; totalCost: number; }[]; workHours: { id: string; userId: null | string; day: Date; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; totalCost: number; }[]; subcontractorWorkHours: { id: string; userId: null | string; day: Date; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; totalCost: number; }[]; toolTrackings: { id: string; toolId: string; responsibleUserId: null | string; startedByUserId: null | string; endedByUserId: null | string; toolUsageCostPerDay: null | number; comment: null | string; startedAt: Date; endedAt: null | Date; deadlineAt: null | Date; totalCost: number; }[]; commonCosts: { fgk: { baseCost: number; overheadCost: number; totalCost: number; }; mgk: { baseCost: number; overheadCost: number; totalCost: number; }; ngk: { baseCost: number; overheadCost: number; totalCost: number; }; overallOverhead: number; }; totalCosts: { offers: number; invoices: number; deliveryNotes: number; products: number; specialRecords: number; workHours: number; subcontractorWorkHours: number; toolTrackings: number; overall: number; }; }",
+        output_ts: "{ offers: { id: string; projectId: string; type: \"offer\" | \"invoice\"; amount: number; comment: null | string; createdByUserId: null | string; createdAt: Date; commercialCaseId: null | string; }[]; invoices: { id: string; projectId: string; type: \"offer\" | \"invoice\"; amount: number; comment: null | string; createdByUserId: null | string; createdAt: Date; commercialCaseId: null | string; }[]; deliveryNotes: { noteId: string; autoId: number; effectiveTimestamp: Date; totalCost: number; }[]; products: { productId: string; quantity: number; totalCost: number; priceRecord: null | { id: string; productId: string; vendorId: null | string; timestamp: Date; price: number; isRealPurchase: boolean; comment: null | string; }; }[]; specialRecords: { id: string; noteId: string; noteAutoId: number; effectiveTimestamp: Date; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; totalCost: number; }[]; workHours: { id: string; userId: null | string; day: Date; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; totalCost: number; }[]; subcontractorWorkHours: { id: string; userId: null | string; day: Date; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; totalCost: number; }[]; toolTrackings: { id: string; toolId: string; responsibleUserId: null | string; startedByUserId: null | string; endedByUserId: null | string; toolUsageCostPerDay: null | number; comment: null | string; startedAt: Date; endedAt: null | Date; deadlineAt: null | Date; totalCost: number; }[]; commonCosts: { fgk: { baseCost: number; overheadCost: number; totalCost: number; }; mgk: { baseCost: number; overheadCost: number; totalCost: number; }; ngk: { baseCost: number; overheadCost: number; totalCost: number; }; overallOverhead: number; }; totalCosts: { offers: number; invoices: number; deliveryNotes: number; products: number; specialRecords: number; workHours: number; subcontractorWorkHours: number; toolTrackings: number; overall: number; }; }",
     },
     RawContractSpec {
         path: "projects.costs.overview",
         kind: ProcedureKind::Query,
         input_ts: "undefined | void | { status?: undefined | \"finished\" | \"active\" | \"all\"; closingYear?: undefined | null | number; responsibleProjectLeaderUserId?: undefined | null | string; }",
-        output_ts: "{ projectId: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; costs: number; offersTotal: number; invoicesTotal: number; gainOrLoss: null | number; hasInvoices: boolean; finishedAt: null | Date; responsibleProjectLeaderUserId: null | string; }[]",
+        output_ts: "{ projectId: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; costs: null | number; offersTotal: null | number; invoicesTotal: null | number; gainOrLoss: null | number; hasInvoices: null | boolean; accessError?: null | string; finishedAt: null | Date; responsibleProjectLeaderUserId: null | string; }[]",
     },
     RawContractSpec {
         path: "projects.create",
@@ -653,7 +533,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.dailyReports.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; day: unknown; summary?: undefined | null | string; weather?: undefined | null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; workHours?: undefined | { hours: number; costPerHour: null | number; userId?: undefined | null | string; contractType?: undefined | null | \"internal\" | \"external\" | \"subcontractor\"; }[]; }",
+        input_ts: "{ projectId: string; day: unknown; summary?: undefined | null | string; weather?: undefined | null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; workHours?: undefined | { hours: number; costPerHour?: null | number; userId?: undefined | null | string; contractType?: undefined | null | \"internal\" | \"external\" | \"subcontractor\"; }[]; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -666,13 +546,13 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "projects.dailyReports.get",
         kind: ProcedureKind::Query,
         input_ts: "{ projectId: string; day: unknown; }",
-        output_ts: "{ id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: \"file\" | \"image\"; sizeBytes: null | number; status: \"uploaded\" | \"pending\"; thumbnailStatus: \"none\" | \"processing\" | \"failed\" | \"queued\" | \"ready\"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }",
+        output_ts: "{ revision?: string; costRevision?: string; id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: \"file\" | \"image\"; sizeBytes: null | number; status: \"uploaded\" | \"pending\"; thumbnailStatus: \"none\" | \"processing\" | \"failed\" | \"queued\" | \"ready\"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }",
     },
     RawContractSpec {
         path: "projects.dailyReports.list",
         kind: ProcedureKind::Query,
         input_ts: "{ projectId?: undefined | null | string; from?: unknown; to?: unknown; limit?: undefined | number; offset?: undefined | number; }",
-        output_ts: "{ id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: \"file\" | \"image\"; sizeBytes: null | number; status: \"uploaded\" | \"pending\"; thumbnailStatus: \"none\" | \"processing\" | \"failed\" | \"queued\" | \"ready\"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }[]",
+        output_ts: "{ revision?: string; costRevision?: string; id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: \"internal\" | \"external\" | \"subcontractor\"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: \"file\" | \"image\"; sizeBytes: null | number; status: \"uploaded\" | \"pending\"; thumbnailStatus: \"none\" | \"processing\" | \"failed\" | \"queued\" | \"ready\"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }[]",
     },
     RawContractSpec {
         path: "projects.dailyReports.photos.add",
@@ -689,7 +569,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.dailyReports.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; day: unknown; data: { day?: unknown; summary?: undefined | null | string; weather?: undefined | null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; workHours?: undefined | null | { hours: number; costPerHour: null | number; userId?: undefined | null | string; contractType?: undefined | null | \"internal\" | \"external\" | \"subcontractor\"; }[]; }; }",
+        input_ts: "{ expectedRevision?: string; expectedCostRevision?: string; projectId: string; day: unknown; data: { day?: unknown; summary?: undefined | null | string; weather?: undefined | null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; workHours?: undefined | null | { id?: string; hours: number; costPerHour?: null | number; userId?: undefined | null | string; contractType?: undefined | null | \"internal\" | \"external\" | \"subcontractor\"; }[]; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -701,25 +581,25 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.deployments.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; userId: string; from: unknown; to: unknown; note?: undefined | null | string; }",
+        input_ts: "{ operationId?: string; projectId: string; userId: string; from: unknown; to: unknown; note?: undefined | null | string; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
         path: "projects.deployments.delete",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
+        input_ts: "{ expectedRevision?: string; id: string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
         path: "projects.deployments.list",
         kind: ProcedureKind::Query,
         input_ts: "{ from: unknown; to: unknown; since?: unknown; projectId?: undefined | null | string; userId?: undefined | null | string; }",
-        output_ts: "{ id: string; projectId: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[]",
+        output_ts: "{ revision?: string; id: string; projectId: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[]",
     },
     RawContractSpec {
         path: "projects.deployments.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; data: { projectId?: undefined | null | string; userId?: undefined | null | string; from?: unknown; to?: unknown; note?: undefined | null | string; }; }",
+        input_ts: "{ expectedRevision?: string; id: string; data: { projectId?: undefined | null | string; userId?: undefined | null | string; from?: unknown; to?: unknown; note?: undefined | null | string; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -778,25 +658,25 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.unavailability.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; from: unknown; to: unknown; reason: string; note?: undefined | null | string; }",
+        input_ts: "{ operationId?: string; projectId: string; from: unknown; to: unknown; reason: string; note?: undefined | null | string; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
         path: "projects.unavailability.delete",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
+        input_ts: "{ expectedRevision?: string; id: string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
         path: "projects.unavailability.list",
         kind: ProcedureKind::Query,
         input_ts: "{ from?: unknown; to?: unknown; projectId?: undefined | null | string; }",
-        output_ts: "{ id: string; projectId: string; from: Date; to: Date; reason: string; note: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[]",
+        output_ts: "{ revision?: string; id: string; projectId: string; from: Date; to: Date; reason: string; note: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; }[]",
     },
     RawContractSpec {
         path: "projects.unavailability.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; data: { projectId?: undefined | null | string; from?: unknown; to?: unknown; reason?: undefined | null | string; note?: undefined | null | string; }; }",
+        input_ts: "{ expectedRevision?: string; id: string; data: { projectId?: undefined | null | string; from?: unknown; to?: unknown; reason?: undefined | null | string; note?: undefined | null | string; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -809,12 +689,12 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "regieReports.costs.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; }",
-        output_ts: "{ reportId: string; totalCost: number; products: { recordId: string; productId: string; quantity: number; priceRecord: null | { id: string; productId: string; vendorId: null | string; timestamp: Date; price: number; isRealPurchase: boolean; comment: null | string; }; }[]; specialRecords: { recordId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { recordId: string; userId: null | string; day: Date; hours: number; }[]; }",
+        output_ts: "{ workHoursAvailable?: boolean; reportId: string; totalCost: number; products: { recordId: string; productId: string; quantity: number; priceRecord: null | { id: string; productId: string; vendorId: null | string; timestamp: Date; price: number; isRealPurchase: boolean; comment: null | string; }; }[]; specialRecords: { recordId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { recordId: string; userId: null | string; day: Date; hours: number; }[]; }",
     },
     RawContractSpec {
         path: "regieReports.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ projectId: string; day: string; summary?: undefined | null | string; products?: undefined | { productId: string; quantity: number; comment?: undefined | null | string; }[]; specialRecords?: undefined | { name: string; unit: string; amount: number; comment?: undefined | null | string; }[]; workHours?: undefined | { day: string; hours: number; userId?: undefined | null | string; }[]; }",
+        input_ts: "{ operationId?: string; projectId: string; day: string; summary?: undefined | null | string; products?: undefined | { productId: string; quantity: number; comment?: undefined | null | string; }[]; specialRecords?: undefined | { name: string; unit: string; amount: number; comment?: undefined | null | string; }[]; workHours?: undefined | { day: string; hours: number; userId?: undefined | null | string; }[]; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
@@ -827,18 +707,18 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "regieReports.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; }",
-        output_ts: "{ id: string; projectId: string; day: Date; summary: null | string; createdByUserId: string; createdAt: Date; autoId: number; products: { id: string; reportId: string; productId: string; quantity: number; comment: null | string; }[]; specialRecords: { id: string; reportId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { id: string; reportId: string; userId: null | string; day: Date; hours: number; }[]; }",
+        output_ts: "{ revision?: string; hoursRevision?: string; workHoursAvailable?: boolean; id: string; projectId: string; day: Date; summary: null | string; createdByUserId: null | string; createdAt: Date; autoId: number; products: { id: string; reportId: string; productId: string; quantity: number; comment: null | string; }[]; specialRecords: { id: string; reportId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { id: string; reportId: string; userId: null | string; day: Date; hours: number; }[]; }",
     },
     RawContractSpec {
         path: "regieReports.list",
         kind: ProcedureKind::Query,
         input_ts: "{ projectId?: undefined | null | string; dayFrom?: undefined | string; dayTo?: undefined | string; limit?: undefined | number; offset?: undefined | number; }",
-        output_ts: "{ id: string; projectId: string; day: Date; summary: null | string; createdByUserId: string; createdAt: Date; autoId: number; products: { id: string; reportId: string; productId: string; quantity: number; comment: null | string; }[]; specialRecords: { id: string; reportId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { id: string; reportId: string; userId: null | string; day: Date; hours: number; }[]; }[]",
+        output_ts: "{ revision?: string; hoursRevision?: string; workHoursAvailable?: boolean; id: string; projectId: string; day: Date; summary: null | string; createdByUserId: null | string; createdAt: Date; autoId: number; products: { id: string; reportId: string; productId: string; quantity: number; comment: null | string; }[]; specialRecords: { id: string; reportId: string; name: string; unit: string; amount: number; comment: null | string; }[]; workHours: { id: string; reportId: string; userId: null | string; day: Date; hours: number; }[]; }[]",
     },
     RawContractSpec {
         path: "regieReports.update",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; data: { day?: undefined | string; summary?: undefined | null | string; products?: undefined | null | { productId: string; quantity: number; comment?: undefined | null | string; }[]; specialRecords?: undefined | null | { name: string; unit: string; amount: number; comment?: undefined | null | string; }[]; workHours?: undefined | null | { day: string; hours: number; userId?: undefined | null | string; }[]; }; }",
+        input_ts: "{ expectedRevision?: string; expectedHoursRevision?: string; id: string; data: { day?: undefined | string; summary?: undefined | null | string; products?: undefined | null | { id?: string; productId: string; quantity: number; comment?: undefined | null | string; }[]; specialRecords?: undefined | null | { id?: string; name: string; unit: string; amount: number; comment?: undefined | null | string; }[]; workHours?: undefined | null | { id?: string; day: string; hours: number; userId?: undefined | null | string; }[]; }; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
@@ -1102,7 +982,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "users.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ username: string; firstName: string; lastName?: undefined | null | string; email?: undefined | null | string; phone?: undefined | null | string; contractType?: undefined | \"internal\" | \"external\" | \"subcontractor\"; costPerHour?: undefined | null | number; vacationDaysPerYear?: undefined | null | number; supervisorUserId?: undefined | null | string; }",
+        input_ts: "{ operationId?: undefined | string; username: string; firstName: string; lastName?: undefined | null | string; email?: undefined | null | string; phone?: undefined | null | string; contractType?: undefined | \"internal\" | \"external\" | \"subcontractor\"; costPerHour?: undefined | null | number; vacationDaysPerYear?: undefined | null | number; supervisorUserId?: undefined | null | string; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
@@ -1174,31 +1054,31 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "users.vacations.approve",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
+        input_ts: "{ id: string; expectedRevision?: undefined | string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
         path: "users.vacations.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ from: unknown; to: unknown; userId?: undefined | null | string; type?: undefined | \"vacation\" | \"other\"; label?: undefined | null | string; note?: undefined | null | string; }",
+        input_ts: "{ operationId?: undefined | string; from: unknown; to: unknown; userId?: undefined | null | string; type?: undefined | \"vacation\" | \"other\"; label?: undefined | null | string; note?: undefined | null | string; }",
         output_ts: "{ id: string; status: \"denied\" | \"requested\" | \"approved\"; }",
     },
     RawContractSpec {
         path: "users.vacations.delete",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
+        input_ts: "{ id: string; expectedRevision?: undefined | string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
         path: "users.vacations.deny",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; reason: string; }",
+        input_ts: "{ id: string; expectedRevision?: undefined | string; reason: string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {
         path: "users.vacations.list",
         kind: ProcedureKind::Query,
         input_ts: "{ from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; }",
-        output_ts: "{ id: string; userId: string; from: Date; to: Date; type: \"vacation\" | \"other\"; label: null | string; status: \"denied\" | \"requested\" | \"approved\"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[]",
+        output_ts: "{ id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: \"vacation\" | \"other\"; label: null | string; status: \"denied\" | \"requested\" | \"approved\"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[]",
     },
 ];

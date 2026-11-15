@@ -1,0 +1,2 @@
+# Diese Datei prüft den bytegetreuen Erhalt von BOM und CRLF.
+7103.xml -text whitespace=cr-at-eol

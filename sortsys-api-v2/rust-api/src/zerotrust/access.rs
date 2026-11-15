@@ -1,25 +1,12 @@
-use sqlx::{FromRow, PgConnection, PgPool};
-
 use super::{
-    crypto::{invalid, sized},
-    wire::{Action, AuthorityCertificate, Facet, IdentityCertificate, Rule, SignedPolicy},
+    crypto::sized,
+    wire::{Action, Facet, IdentityCertificate, Rule, SignedPolicy},
 };
-use crate::{
-    auth::AuthResult,
-    error::RpcResult,
-    ids::Id,
-    procedures::common::{forbidden, internal},
-};
+use crate::{auth::AuthResult, error::RpcResult, error::forbidden, ids::Id};
 
-#[derive(FromRow)]
 pub(super) struct Root {
-    pub phase: String,
     pub generation: i64,
     pub policy_version: i64,
-    pub catalog_version: i64,
-    pub authority_key: Option<Vec<u8>>,
-    pub recovery_encryption_key: Option<Vec<u8>>,
-    pub recovery_signing_key: Option<Vec<u8>>,
 }
 pub(super) struct Security {
     pub root: Root,
@@ -37,129 +24,152 @@ impl Security {
     }
 }
 
-/// Pending accounts use this only while accepting a signed invitation.
-pub(super) async fn tenant_root(
-    tx: &mut PgConnection,
-    master: &PgPool,
+/// Load the public authorization context from the same tenant file as the
+/// account and ciphertext references. Every observation participates in CAS.
+pub(super) async fn metadata_security(
+    transaction: &mut crate::control::Transaction,
     auth: &AuthResult,
-    exclusive: bool,
-) -> RpcResult<(Root, Vec<u8>)> {
-    let (root, authority) = current_root(tx, master, &auth.tenant, exclusive).await?;
-    // Authentication may have happened before waiting on the state lock.
-    let current:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND u.id=$2 AND u.deactivated_at IS NULL AND s.expires_at>statement_timestamp() AND ($3=FALSE OR EXISTS(SELECT 1 FROM user_role_assignments r WHERE r.user_id=u.id AND r.role_name=':admin')))")
-        .bind(auth.session.id.parse::<i64>().map_err(internal)?).bind(auth.user.id.parse::<i64>().map_err(internal)?).bind(auth.is_admin()).fetch_one(&mut *tx).await.map_err(internal)?;
-    if !current {
-        return Err(forbidden());
-    }
-    Ok((root, authority))
-}
-
-/// Public authority metadata. This never grants access to protected objects.
-pub(super) async fn current_root(
-    tx: &mut PgConnection,
-    master: &PgPool,
-    tenant: &str,
-    exclusive: bool,
-) -> RpcResult<(Root, Vec<u8>)> {
-    let query = if exclusive {
-        "SELECT phase,generation,policy_version,catalog_version,authority_key,recovery_encryption_key,recovery_signing_key FROM __zerotrust_state WHERE singleton FOR UPDATE"
-    } else {
-        "SELECT phase,generation,policy_version,catalog_version,authority_key,recovery_encryption_key,recovery_signing_key FROM __zerotrust_state WHERE singleton FOR SHARE"
-    };
-    let root = sqlx::query_as::<_, Root>(query)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(internal)?;
-    if !["enrolling", "active"].contains(&root.phase.as_str()) {
-        return Err(forbidden());
-    }
-    let head: Option<i64> =
-        sqlx::query_scalar("SELECT generation FROM __zerotrust_recovery_heads WHERE tenant=$1")
-            .bind(tenant)
-            .fetch_optional(master)
-            .await
-            .map_err(internal)?;
-    if head != Some(root.generation) {
-        return Err(forbidden());
-    }
-    let authority = root.authority_key.clone().ok_or_else(forbidden)?;
-    let certificate: serde_json::Value =
-        sqlx::query_scalar("SELECT certificate FROM __zerotrust_authorities WHERE generation=$1")
-            .bind(root.generation)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(internal)?;
-    let certificate: AuthorityCertificate =
-        serde_json::from_value(certificate).map_err(|_| invalid())?;
-    certificate.verify()?;
-    if certificate.tenant != tenant
-        || certificate.generation != root.generation.to_string()
-        || sized::<32>(&certificate.authority_signing_key)?.as_slice() != authority
-        || Some(sized::<32>(&certificate.recovery_signing_key)?.to_vec())
-            != root.recovery_signing_key
-        || Some(sized::<32>(&certificate.recovery_encryption_key)?.to_vec())
-            != root.recovery_encryption_key
-    {
-        return Err(forbidden());
-    }
-    Ok((root, authority))
-}
-
-pub(super) async fn security(
-    tx: &mut PgConnection,
-    master: &PgPool,
-    auth: &AuthResult,
-    exclusive: bool,
 ) -> RpcResult<Security> {
-    let (root, authority) = tenant_root(tx, master, auth, exclusive).await?;
-    let user = auth.user.id.parse::<i64>().map_err(internal)?;
-    let subject = format!("user:{}", Id(user).encode());
-    let (signing_key,encryption_key,certificate):(Vec<u8>,Vec<u8>,serde_json::Value)=sqlx::query_as("SELECT signing_key,encryption_key,identity_certificate FROM __zerotrust_accounts WHERE user_id=$1")
-        .bind(user).fetch_optional(&mut *tx).await.map_err(internal)?.ok_or_else(forbidden)?;
-    let certificate: IdentityCertificate =
-        serde_json::from_value(certificate).map_err(|_| forbidden())?;
-    certificate.verify(&authority)?;
-    if certificate.tenant != auth.tenant
-        || certificate.generation != root.generation.to_string()
-        || certificate.user != subject
-        || sized::<32>(&certificate.signing_key)?.as_slice() != signing_key
-        || sized::<32>(&certificate.encryption_key)?.as_slice() != encryption_key
+    metadata_security_for_domains(transaction, auth, None).await
+}
+
+pub(super) async fn metadata_security_for_domains(
+    transaction: &mut crate::control::Transaction,
+    auth: &AuthResult,
+    domains: Option<&[String]>,
+) -> RpcResult<Security> {
+    use crate::control::{accounts, key};
+    let (account, _) = accounts::checked_session(transaction, auth).await?;
+    let stored = super::setup::metadata_root(transaction, &auth.tenant).await?;
+    let certificate = &stored.profile.authority;
+    let generation = super::crypto::revision(&certificate.generation)?;
+    let authority = sized::<32>(&certificate.authority_signing_key)?.to_vec();
+    let mut records = vec![key("policies", &stored.policy_version)];
+    if let Some(domains) = domains {
+        let origins = format!("created-areas-{generation}");
+        for domain in domains {
+            records.push(key(&origins, domain));
+            records.push(key("domains", domain));
+        }
+    }
+    transaction.prefetch(records).await?;
+    let subject = format!("user:{}", Id(account.id).encode());
+    let identity: IdentityCertificate =
+        serde_json::from_value(account.credential()?.certificate.clone())
+            .map_err(|_| forbidden())?;
+    identity.verify(&authority)?;
+    if identity.tenant != auth.tenant
+        || identity.user != subject
+        || identity.generation != certificate.generation
+        || identity.signing_key != account.credential()?.vault.signing_key
+        || identity.encryption_key != account.credential()?.vault.encryption_key
     {
         return Err(forbidden());
     }
-    let policy: serde_json::Value = sqlx::query_scalar(
-        "SELECT policy FROM __zerotrust_policies WHERE version=$1 AND generation=$2",
-    )
-    .bind(root.policy_version)
-    .bind(root.generation)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(internal)?;
-    let policy: SignedPolicy = serde_json::from_value(policy).map_err(|_| invalid())?;
+    let policy: SignedPolicy = transaction
+        .read(key("policies", &stored.policy_version))
+        .await?
+        .ok_or_else(forbidden)?;
     policy.verify(&authority)?;
-    if policy.tenant != auth.tenant || policy.version != root.policy_version.to_string() {
+    if policy.tenant != auth.tenant
+        || policy.version != stored.policy_version
+        || policy
+            .suspended
+            .as_ref()
+            .is_some_and(|members| members.contains(&subject))
+    {
         return Err(forbidden());
     }
-    let origins = super::creation::origins(
-        tx,
-        &auth.tenant,
-        root.generation,
+    let origins = super::creation::metadata_origins(
+        transaction,
+        auth,
+        generation,
         &authority,
         &subject,
-        auth.is_admin(),
+        &policy,
+        domains,
     )
     .await?;
     let inherited = origins
         .iter()
         .flat_map(super::creation::CreationOrigin::rules)
         .collect();
+    sized::<32>(&certificate.recovery_encryption_key)?;
+    sized::<32>(&certificate.recovery_signing_key)?;
     Ok(Security {
-        root,
+        root: Root {
+            generation,
+            policy_version: super::crypto::revision(&stored.policy_version)?,
+        },
         policy,
         subject,
-        signing_key,
+        signing_key: sized::<32>(&identity.signing_key)?.to_vec(),
         authority,
         origins,
         inherited,
     })
+}
+
+pub(super) struct MetadataContext {
+    pub auth: AuthResult,
+    pub transaction: crate::control::Transaction,
+    pub repository: crate::control::Repository,
+    pub security: Security,
+}
+
+/// Resolve an object's public domain inside the transaction that will also
+/// authorize it. The lookup is not a read permission; callers must authorize
+/// before returning data or publishing a change.
+pub(super) struct MetadataRequest {
+    pub auth: AuthResult,
+    pub transaction: crate::control::Transaction,
+    pub repository: crate::control::Repository,
+}
+
+impl MetadataRequest {
+    pub async fn open(
+        service: &crate::auth::AuthService,
+        request: &crate::rpc::RequestContext,
+    ) -> RpcResult<Self> {
+        let auth = service.authenticate(&request.headers).await?;
+        let repository = service.records()?.tenant(&auth.tenant)?;
+        let transaction = repository.transaction()?;
+        Ok(Self {
+            auth,
+            transaction,
+            repository,
+        })
+    }
+
+    pub async fn authorize(mut self, domains: Option<&[String]>) -> RpcResult<MetadataContext> {
+        let security =
+            metadata_security_for_domains(&mut self.transaction, &self.auth, domains).await?;
+        Ok(MetadataContext {
+            auth: self.auth,
+            transaction: self.transaction,
+            repository: self.repository,
+            security,
+        })
+    }
+}
+
+pub(super) async fn metadata_context(
+    service: &crate::auth::AuthService,
+    request: &crate::rpc::RequestContext,
+) -> RpcResult<MetadataContext> {
+    metadata_context_for_domains(service, request, None).await
+}
+
+/// High frequency operations need only the creation grants for their own
+/// domains. The current session, authority and policy are still checked and
+/// included in the transaction's read set on every request.
+pub(super) async fn metadata_context_for_domains(
+    service: &crate::auth::AuthService,
+    request: &crate::rpc::RequestContext,
+    domains: Option<&[String]>,
+) -> RpcResult<MetadataContext> {
+    MetadataRequest::open(service, request)
+        .await?
+        .authorize(domains)
+        .await
 }

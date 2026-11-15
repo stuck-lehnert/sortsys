@@ -216,6 +216,12 @@ export interface Client {
 
   loggedIn(): boolean;
 
+  /** GET a binary resource on this API with the current realm's credentials.
+   * Paths must be absolute pathnames without traversal, query or origin.
+   * Redirects are refused so bearer tokens never follow a download elsewhere.
+   */
+  resource(path: string, options?: { signal?: AbortSignal }): Promise<Response>;
+
   restoreSession(): Promise<void>;
   clearCache(): Promise<void>;
 }
@@ -282,6 +288,12 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
   function _authScope() {
     return bearerToken ? stableHash(bearerToken) : 'anonymous';
+  }
+
+  function _assertAuthToken(expectedToken: string | null) {
+    if (expectedToken !== bearerToken) {
+      throw new DOMException("Authentication changed during the request", "AbortError");
+    }
   }
 
   function _cacheKey(path: string, params?: any) {
@@ -619,10 +631,12 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
     async mutateDynamic(path, input, opts) {
       const requestAuthScope = _authScope();
+      const requestToken = bearerToken;
 
       try {
         const data = await withRequestSignal(() => rpc.mutation<unknown>(path, input), opts?.signal);
         opts?.signal?.throwIfAborted();
+        _assertAuthToken(requestToken);
 
         // Authentication mutations must update the token before invalidating auth
         // queries. Those invalidations can immediately refetch auth.sessionInfo.
@@ -633,12 +647,14 @@ export function createClient(endpoint: string, realm: string, opts?: {
             await client.invalidate(affected);
           }
         }
-        if (path === 'auth.login' || path === 'auth.passkeys.login' || path === 'auth.opaque.loginFinish' || path === 'auth.opaque.invitationFinish') {
+        _assertAuthToken(requestToken);
+        if (path === 'auth.login' || path === 'auth.passkeys.login' || path === 'auth.opaque.loginFinish' || path === 'auth.opaque.invitationFinish' || path === 'auth.owner.finish') {
           const token = (data as { token?: unknown })?.token;
           if (typeof token === 'string' && token) client.setToken(token);
         } else if (path === 'auth.logout') {
           client.setToken(null);
         }
+        const resultToken = bearerToken;
         await client.invalidateCascading(path);
         // Entity history is shared by the dashboard and entity timelines rather
         // than living under the mutated entity's query namespace.
@@ -646,6 +662,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
           || /^auth\.(password|passkeys)\./.test(path)) {
           await client.invalidate('personalization.activity.list');
         }
+        _assertAuthToken(resultToken);
         return [data, null];
       } catch (e) {
         _autoLogoutOnAuthError(e, requestAuthScope);
@@ -659,7 +676,31 @@ export function createClient(endpoint: string, realm: string, opts?: {
       if (err) throw err;
       if (!data) throw new Error('Login failed: missing response payload');
 
-      client.setToken(data.token);
+      // mutate owns the authenticated transition. Installing it a second time
+      // here could overwrite a newer session after this await resumes.
+    },
+
+    async resource(path, options) {
+      if (!/^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(path)) {
+        throw new Error("Invalid API resource path");
+      }
+      const requestToken = bearerToken;
+      const response = await (opts?.fetch ?? globalThis.fetch)(
+        `${endpoint.replace(/\/+$/, "")}${path}`,
+        {
+          method: "GET",
+          headers: requestToken ? { Authorization: `Bearer ${requestToken}` } : {},
+          credentials: "omit",
+          redirect: "error",
+          cache: "no-store",
+          signal: options?.signal,
+        },
+      );
+      if (bearerToken !== requestToken) {
+        await response.body?.cancel();
+        _assertAuthToken(requestToken);
+      }
+      return response;
     },
 
     setToken(token) {
@@ -676,7 +717,9 @@ export function createClient(endpoint: string, realm: string, opts?: {
     },
 
     async logout() {
+      const logoutToken = bearerToken;
       await _clearRealmCache();
+      if (bearerToken !== logoutToken) return;
 
       if (!bearerToken) {
         client.setToken(null);
@@ -685,7 +728,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
       await client.mutate('auth.logout', undefined).catch(() => {});
 
-      client.setToken(null);
+      if (bearerToken === logoutToken) client.setToken(null);
     },
 
     listenAuthState: (listener: () => void): (() => void) => {

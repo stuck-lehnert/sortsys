@@ -1,30 +1,25 @@
 use super::{
-    crypto::{encode, frame, invalid, sized, verify},
+    crypto::{frame, invalid, sized, verify},
     wire::{
         Action, AuthorityCertificate, Effect, Facet, IdentityCertificate, SealedBox, SignedPolicy,
     },
 };
 use crate::{
-    AppState,
     api::Success,
-    error::{ErrorCode, RpcError, RpcResult},
+    auth::AuthService,
+    control::{Repository, Transaction, accounts, key},
+    error::{RpcResult, forbidden, internal},
     ids::Id,
-    procedures::common::{authenticated_pool, forbidden, internal},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use std::sync::Arc;
 use ts_rs::TS;
 
-fn conflict(message: &'static str) -> RpcError {
-    RpcError::new(ErrorCode::Conflict, message).with_http_code(409)
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::crypto::encode;
     use super::*;
 
     #[test]
@@ -113,10 +108,11 @@ struct Status {
     account_enrolled: bool,
     account_certified: bool,
     access_ready: bool,
+    can_initialize: bool,
+    initialization: Option<super::initialization::Completion>,
     profile: Option<SetupInput>,
 }
 
-#[derive(sqlx::FromRow)]
 struct AccountCertification {
     identity_certificate: Value,
     encryption_key: Vec<u8>,
@@ -143,42 +139,259 @@ impl AccountCertification {
     }
 }
 
-pub(super) fn register(
-    builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
-) -> ProcedureRegistryBuilder {
-    let status = Arc::clone(&state);
-    builder.query("zerotrust.status",move|ctx,_input:()|{
-        let state=Arc::clone(&status);
-        async move {
-            let (auth,pool)=authenticated_pool(&state,&ctx).await?;
-            let user: i64 = auth.user.id.parse().map_err(internal)?;
-            let (phase,generation,policy,catalog,profile):(String,i64,i64,i64,Option<Value>)=sqlx::query_as("SELECT phase,generation,policy_version,catalog_version,protected_profile FROM __zerotrust_state WHERE singleton")
-                .fetch_one(&pool).await.map_err(internal)?;
-            let enrolled:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_accounts WHERE user_id=$1)").bind(user).fetch_one(&pool).await.map_err(internal)?;
-            let certificate:Option<AccountCertification>=sqlx::query_as("SELECT a.identity_certificate,a.encryption_key,a.signing_key,s.authority_key FROM __zerotrust_accounts a CROSS JOIN __zerotrust_state s WHERE a.user_id=$1 AND s.singleton").bind(user).fetch_optional(&pool).await.map_err(internal)?;
-            let certified=certificate.is_some_and(|value|value.valid(&auth.tenant,&format!("user:{}",Id(user).encode()),generation));
-            let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_invitations WHERE user_id=$1 AND generation=$2 AND accepted_at IS NOT NULL AND completed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM __zerotrust_invitations WHERE user_id=$1 AND generation=$2 AND completed_at IS NOT NULL)").bind(user).bind(generation).fetch_one(&pool).await.map_err(internal)?;
-            Ok(Status{tenant:auth.tenant,phase,generation:generation.to_string(),policy_version:policy.to_string(),catalog_version:catalog.to_string(),account_enrolled:enrolled,account_certified:certified,access_ready:certified && !waiting,profile:profile.map(serde_json::from_value).transpose().map_err(internal)?})
-        }
-    }).mutation("zerotrust.setup",move|ctx,input:SetupInput|{
-        let state=Arc::clone(&state);
-        async move{setup(&state,&ctx,input).await}
-    })
-}
-pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    builder
-        .query_stub::<(), Status>("zerotrust.status")
-        .mutation_stub::<SetupInput, Success>("zerotrust.setup")
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct RootState {
+    pub policy_version: String,
+    pub catalog_version: String,
+    pub profile: SetupInput,
 }
 
-pub(super) fn packet_hash(message: Vec<u8>, signature: &str) -> RpcResult<String> {
-    sized::<64>(signature)?;
-    Ok(encode(&Sha256::digest(frame(
-        "sortsys/signed-packet/v1",
-        &[&encode(&message), signature],
-    ))))
+pub(super) fn root_key() -> sortsys_zerotrust::metadata::RecordKey {
+    key("crypto-root", "current")
 }
+pub(super) fn identity_history_key(
+    certificate: &IdentityCertificate,
+) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
+    super::crypto::identifier(&certificate.user)?;
+    let generation = super::crypto::revision(&certificate.generation)?;
+    Ok(key(
+        "identity-history",
+        &format!("{generation:020}:{}", certificate.user),
+    ))
+}
+
+pub(crate) fn register_root_queries(
+    builder: ProcedureRegistryBuilder,
+    service: Arc<AuthService>,
+) -> ProcedureRegistryBuilder {
+    let history_service = Arc::clone(&service);
+    let builder = builder.query("zerotrust.trust.history", move |ctx, _: ()| {
+        let service = Arc::clone(&history_service);
+        async move { history(&service, &ctx).await }
+    });
+    let status_service = Arc::clone(&service);
+    builder
+        .query("zerotrust.status", move |ctx, _: ()| {
+            let service = Arc::clone(&status_service);
+            async move {
+                let auth = service.authenticate(&ctx.headers).await?;
+                let repository = service.records()?.tenant(&auth.tenant)?;
+                let mut transaction = repository.transaction()?;
+                let (account, _) = accounts::checked_session(&mut transaction, &auth).await?;
+                let root = metadata_root(&mut transaction, &auth.tenant).await?;
+                let generation = super::crypto::revision(&root.profile.authority.generation)?;
+                let certified = AccountCertification {
+                    identity_certificate: account.credential()?.certificate.clone(),
+                    encryption_key: sized::<32>(&account.credential()?.vault.encryption_key)?
+                        .to_vec(),
+                    signing_key: sized::<32>(&account.credential()?.vault.signing_key)?.to_vec(),
+                    authority_key: Some(
+                        sized::<32>(&root.profile.authority.authority_signing_key)?.to_vec(),
+                    ),
+                }
+                .valid(
+                    &auth.tenant,
+                    &format!("user:{}", Id(account.id).encode()),
+                    generation,
+                );
+                root.profile.authority.verify()?;
+                if root.profile.authority.tenant != auth.tenant {
+                    return Err(forbidden());
+                }
+                let initialization = super::initialization::completed(
+                    &mut transaction,
+                    &root.profile.authority.generation,
+                )
+                .await?;
+                let can_initialize = auth.is_admin()
+                    && root.profile.owner.user == format!("user:{}", Id(account.id).encode());
+                let status = Status {
+                    tenant: auth.tenant,
+                    phase: "active".into(),
+                    generation: generation.to_string(),
+                    policy_version: root.policy_version,
+                    catalog_version: root.catalog_version,
+                    account_enrolled: true,
+                    account_certified: certified,
+                    access_ready: certified,
+                    can_initialize,
+                    initialization,
+                    profile: Some(root.profile),
+                };
+                transaction.validate().await?;
+                Ok(status)
+            }
+        })
+        .mutation("zerotrust.setup", move |ctx, input: SetupInput| {
+            let service = Arc::clone(&service);
+            async move {
+                // Initial ownership is created atomically by auth.owner.finish.
+                // This endpoint can acknowledge that exact state but cannot reset
+                // keys if a setup field was deleted or nulled afterwards.
+                let auth = service.authenticate(&ctx.headers).await?;
+                let repository = service.records()?.tenant(&auth.tenant)?;
+                let mut transaction = repository.transaction()?;
+                accounts::checked_session(&mut transaction, &auth).await?;
+                let root = metadata_root(&mut transaction, &auth.tenant).await?;
+                if serde_json::to_value(root.profile).map_err(internal)?
+                    != serde_json::to_value(input).map_err(internal)?
+                {
+                    return Err(forbidden());
+                }
+                transaction.validate().await?;
+                Ok(Success { success: true })
+            }
+        })
+}
+
+pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    super::initialization::register_contract(
+        builder
+            .query_stub::<(), super::objects::TrustHistory>("zerotrust.trust.history")
+            .query_stub::<(), Status>("zerotrust.status")
+            .mutation_stub::<SetupInput, Success>("zerotrust.setup"),
+    )
+}
+
+pub(super) async fn install_initial(
+    transaction: &mut Transaction,
+    input: &SetupInput,
+) -> RpcResult<()> {
+    if transaction.read::<RootState>(root_key()).await?.is_some() {
+        return Err(forbidden());
+    }
+    write_root(
+        transaction,
+        &RootState {
+            policy_version: "1".into(),
+            catalog_version: "1".into(),
+            profile: input.clone(),
+        },
+    )
+    .await?;
+    transaction.anchor("authority", &input.authority).await?;
+    transaction
+        .put_protected(key("policies", "1"), &input.policy)
+        .await?;
+    transaction
+        .put_protected(key("policy-generations", "1"), &"1")
+        .await?;
+    transaction
+        .put(key("domain-inventory", "current"), &0u32)
+        .await?;
+    transaction
+        .put_protected(
+            key("authority-history", "00000000000000000001"),
+            &super::objects::AuthorityHistory {
+                certificate: input.authority.clone(),
+                transition: None,
+            },
+        )
+        .await?;
+    transaction
+        .put_protected(identity_history_key(&input.owner)?, &input.owner)
+        .await
+}
+
+pub(super) async fn public_root(system: &Repository, tenant: &str) -> RpcResult<RootState> {
+    let repository = crate::control::tenants::published_repository(system, tenant).await?;
+    crate::control::read_snapshot(|| async {
+        let mut transaction = repository.transaction()?;
+        let root = metadata_root(&mut transaction, tenant).await?;
+        transaction.validate().await?;
+        Ok(root)
+    })
+    .await
+}
+
+pub(super) async fn metadata_root(
+    transaction: &mut Transaction,
+    tenant: &str,
+) -> RpcResult<RootState> {
+    use sortsys_zerotrust::anchors::ANCHOR_COLLECTION;
+    transaction
+        .prefetch(vec![
+            root_key(),
+            key(ANCHOR_COLLECTION, "authority"),
+            key(ANCHOR_COLLECTION, "security"),
+        ])
+        .await?;
+    let root: RootState = transaction.read(root_key()).await?.ok_or_else(forbidden)?;
+    root.profile.authority.verify()?;
+    if root.profile.authority.tenant != tenant {
+        return Err(forbidden());
+    }
+    validate_anchor(transaction, &root).await?;
+    Ok(root)
+}
+
+fn root_fingerprint(root: &RootState) -> RpcResult<String> {
+    let value = serde_json::to_string(root).map_err(internal)?;
+    Ok(crate::control::fingerprint(&value))
+}
+
+pub(super) async fn write_root(transaction: &mut Transaction, root: &RootState) -> RpcResult<()> {
+    transaction.put(root_key(), root).await?;
+    transaction
+        .anchor("security", &root_fingerprint(root)?)
+        .await?;
+    transaction
+        .protect_records("security-record", &[root_key()])
+        .await
+}
+
+async fn validate_anchor(transaction: &mut Transaction, root: &RootState) -> RpcResult<()> {
+    use sortsys_zerotrust::anchors::{ANCHOR_COLLECTION, RecordAnchor};
+    let anchor: RecordAnchor = transaction
+        .read(key(ANCHOR_COLLECTION, "authority"))
+        .await?
+        .ok_or_else(forbidden)?;
+    anchor.validate()?;
+    if anchor.revision != root.profile.authority.generation
+        || anchor.payload != serde_json::to_string(&root.profile.authority).map_err(internal)?
+    {
+        return Err(forbidden());
+    }
+    let security: RecordAnchor = transaction
+        .read(key(ANCHOR_COLLECTION, "security"))
+        .await?
+        .ok_or_else(forbidden)?;
+    security.validate()?;
+    if security.payload != serde_json::to_string(&root_fingerprint(root)?).map_err(internal)? {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+pub(super) async fn metadata_history(
+    transaction: &mut Transaction,
+) -> RpcResult<super::objects::TrustHistory> {
+    let authorities = transaction
+        .all::<super::objects::AuthorityHistory>("authority-history", 10000)
+        .await?;
+    let identities = transaction
+        .all::<IdentityCertificate>("identity-history", 10000)
+        .await?;
+    Ok(super::objects::TrustHistory {
+        authorities,
+        identities,
+    })
+}
+
+pub(super) async fn history(
+    service: &AuthService,
+    context: &RequestContext,
+) -> RpcResult<super::objects::TrustHistory> {
+    let auth = service.authenticate(&context.headers).await?;
+    let repository = service.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    super::access::metadata_security(&mut transaction, &auth).await?;
+    let history = metadata_history(&mut transaction).await?;
+    transaction.validate().await?;
+    Ok(history)
+}
+
+pub(super) use super::crypto::packet_hash;
 impl SetupInput {
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
         let hashes = [
@@ -195,7 +408,7 @@ impl SetupInput {
         fields.extend(hashes.iter().map(String::as_str));
         Ok(frame("sortsys/tenant-setup/v1", &fields))
     }
-    fn validate(
+    pub(super) fn validate(
         &self,
         tenant: &str,
         subject: &str,
@@ -294,76 +507,4 @@ impl SetupInput {
         }
         verify(signing_key, &self.proof, &self.frame()?)
     }
-}
-
-async fn setup(state: &AppState, ctx: &RequestContext, input: SetupInput) -> RpcResult<Success> {
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    if !auth.is_admin() {
-        return Err(forbidden());
-    }
-    let user_id = auth.user.id.parse::<i64>().map_err(internal)?;
-    let subject = format!("user:{}", Id(user_id).encode());
-    let profile = serde_json::to_value(&input).map_err(internal)?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    super::lock_cutover(&mut tx, true).await?;
-    let (phase, previous): (String, Option<Value>) = sqlx::query_as(
-        "SELECT phase,protected_profile FROM __zerotrust_state WHERE singleton FOR UPDATE",
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(internal)?;
-    let account: Option<(Vec<u8>, Vec<u8>)> = sqlx::query_as(
-        "SELECT encryption_key,signing_key FROM __zerotrust_accounts WHERE user_id=$1",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(internal)?;
-    let (encryption_key, signing_key) =
-        account.ok_or_else(|| conflict("OPAQUE enrollment is required before tenant setup"))?;
-    input.validate(&auth.tenant, &subject, &encryption_key, &signing_key)?;
-    if phase != "unenrolled" && !(phase == "enrolling" && previous.as_ref() == Some(&profile)) {
-        return Err(conflict("Tenant keys have already been initialized"));
-    }
-    let session_id = auth.session.id.parse::<i64>().map_err(internal)?;
-    let current:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_sessions s JOIN user_role_assignments r ON r.user_id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at>now() AND r.role_name=':admin')")
-        .bind(session_id).bind(user_id).fetch_one(&mut *tx).await.map_err(internal)?;
-    if !current {
-        return Err(forbidden());
-    }
-    sqlx::query("UPDATE __zerotrust_state SET phase='enrolling',authority_key=$1,recovery_encryption_key=$2,recovery_signing_key=$3,protected_profile=$4,updated_at=now() WHERE singleton")
-        .bind(sized::<32>(&input.authority.authority_signing_key)?.to_vec()).bind(sized::<32>(&input.authority.recovery_encryption_key)?.to_vec()).bind(sized::<32>(&input.authority.recovery_signing_key)?.to_vec()).bind(&profile)
-        .execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query("INSERT INTO __zerotrust_policies(version,generation,policy,signature) VALUES(1,1,$1,$2) ON CONFLICT(version) DO NOTHING")
-        .bind(serde_json::to_value(&input.policy).map_err(internal)?).bind(sized::<64>(&input.policy.signature)?.to_vec()).execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query("UPDATE __zerotrust_accounts SET identity_certificate=$1 WHERE user_id=$2")
-        .bind(serde_json::to_value(&input.owner).map_err(internal)?)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(internal)?;
-    sqlx::query("INSERT INTO __zerotrust_authorities(generation,certificate) VALUES(1,$1) ON CONFLICT(generation) DO NOTHING")
-        .bind(serde_json::to_value(&input.authority).map_err(internal)?)
-        .execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query("INSERT INTO __zerotrust_identity_history(subject,generation,signing_key,certificate) VALUES($1,1,$2,$3) ON CONFLICT DO NOTHING")
-        .bind(&subject).bind(&signing_key).bind(serde_json::to_value(&input.owner).map_err(internal)?)
-        .execute(&mut *tx).await.map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
-    sync_initial_head(state.tenants.master(), &input).await?;
-    Ok(Success { success: true })
-}
-async fn sync_initial_head(master: &PgPool, input: &SetupInput) -> RpcResult<()> {
-    sqlx::query("INSERT INTO __zerotrust_recovery_heads(tenant,generation,catalog_version,recovery_encryption_key,recovery_signing_key,authority_key,certificate,phase,catalog) VALUES($1,1,1,$2,$3,$4,$5,'enrolling',$6) ON CONFLICT(tenant) DO NOTHING")
-        .bind(&input.authority.tenant).bind(sized::<32>(&input.authority.recovery_encryption_key)?.to_vec()).bind(sized::<32>(&input.authority.recovery_signing_key)?.to_vec()).bind(sized::<32>(&input.authority.authority_signing_key)?.to_vec()).bind(serde_json::to_value(&input.authority).map_err(internal)?).bind(serde_json::to_value(&input.catalog).map_err(internal)?)
-        .execute(master).await.map_err(internal)?;
-    let (generation,encryption,signing,authority):(i64,Vec<u8>,Vec<u8>,Vec<u8>)=sqlx::query_as("SELECT generation,recovery_encryption_key,recovery_signing_key,authority_key FROM __zerotrust_recovery_heads WHERE tenant=$1")
-        .bind(&input.authority.tenant).fetch_one(master).await.map_err(internal)?;
-    if generation != 1
-        || encryption != sized::<32>(&input.authority.recovery_encryption_key)?
-        || signing != sized::<32>(&input.authority.recovery_signing_key)?
-        || authority != sized::<32>(&input.authority.authority_signing_key)?
-    {
-        return Err(conflict("Recovery keys have already changed"));
-    }
-    Ok(())
 }

@@ -1,0 +1,13 @@
+ARG RUST_IMAGE=docker.io/library/rust:1.99-bookworm
+FROM ${RUST_IMAGE} AS duckdb
+COPY rust-api/duckdb/install /tmp/install-duckdb
+RUN bash /tmp/install-duckdb /opt/duckdb
+
+FROM ${RUST_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=duckdb /opt/duckdb /opt/duckdb
+COPY rust-api/duckdb/licenses /usr/local/share/licenses/sortsys-duckdb
+ENV DUCKDB_LIB_DIR=/opt/duckdb DUCKDB_INCLUDE_DIR=/opt/duckdb DUCKDB_EXTENSION_DIRECTORY=/opt/duckdb/extensions
+RUN ln -s /opt/duckdb/libduckdb.so /usr/local/lib/libduckdb.so && ldconfig
+WORKDIR /workspace/sortsys-api-v2

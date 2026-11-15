@@ -29,7 +29,24 @@ use crate::{
 
 type HandlerFuture = Pin<Box<dyn Future<Output = RpcResult<Value>> + Send>>;
 type Handler = dyn Fn(RequestContext, Value) -> HandlerFuture + Send + Sync;
-pub type RequestPermit = Box<dyn Send>;
+pub type RequestPermit = Box<dyn std::any::Any + Send>;
+tokio::task_local! {
+    static REQUEST_PERMIT: RequestPermit;
+}
+
+/// Copy a typed lease into work that must outlive its admitted RPC handler.
+/// Batches have one task-local scope per call, so leases cannot cross calls.
+#[cfg(test)]
+pub(crate) fn request_permit<T: Clone + Send + 'static>() -> Option<T> {
+    REQUEST_PERMIT
+        .try_with(|permit| permit.downcast_ref::<T>().cloned())
+        .ok()
+        .flatten()
+}
+
+pub(crate) async fn with_request_permit<F: Future>(permit: RequestPermit, work: F) -> F::Output {
+    REQUEST_PERMIT.scope(permit, work).await
+}
 type GuardFuture = Pin<Box<dyn Future<Output = RpcResult<RequestPermit>> + Send>>;
 type RequestGuard = dyn Fn(String, RequestContext) -> GuardFuture + Send + Sync;
 
@@ -43,7 +60,7 @@ impl ProcedureKind {
     fn accepts(self, method: &Method) -> bool {
         matches!(
             (self, method),
-            (Self::Query, &Method::GET) | (Self::Mutation, &Method::POST)
+            (Self::Query, &Method::GET | &Method::POST) | (Self::Mutation, &Method::POST)
         )
     }
 
@@ -69,6 +86,15 @@ struct Procedure {
     handler: Arc<Handler>,
     input_ts: String,
     output_ts: String,
+}
+
+impl Procedure {
+    async fn invoke(&self, context: RequestContext, input: Value) -> RpcResult<Value> {
+        if self.kind == ProcedureKind::Mutation {
+            return (self.handler)(context, input).await;
+        }
+        crate::control::read_snapshot(|| (self.handler)(context.clone(), input.clone())).await
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +134,7 @@ impl ProcedureRegistry {
         output
     }
 
+    #[cfg(test)]
     pub(crate) async fn execute_query(
         &self,
         path: &str,
@@ -127,7 +154,8 @@ impl ProcedureRegistry {
             .at_path(path));
         }
 
-        (procedure.handler)(context, input)
+        procedure
+            .invoke(context, input)
             .await
             .map_err(|error| error.at_path_if_missing(path))
     }
@@ -152,9 +180,7 @@ impl ProcedureRegistry {
             .into_wire();
         }
 
-        // Batches run concurrently within one HTTP task: each procedure needs
-        // its own actor scope rather than sharing the middleware's scope.
-        match crate::audit::scope((procedure.handler)(context, input)).await {
+        match procedure.invoke(context, input).await {
             Ok(output) => json!({
                 "result": {
                     "data": superjson::encode(output),
@@ -174,8 +200,7 @@ pub struct ProcedureRegistryBuilder {
 
 impl ProcedureRegistryBuilder {
     /// The permit remains alive through the entire handler, including input
-    /// decoding. A database-backed permit can therefore serialize a cutover
-    /// with requests that were already running on another API instance.
+    /// decoding, so an admitted request retains the resources reserved by its guard.
     pub fn with_request_guard<F, Fut>(mut self, guard: F) -> Self
     where
         F: Fn(String, RequestContext) -> Fut + Send + Sync + 'static,
@@ -371,8 +396,8 @@ impl ProcedureRegistryBuilder {
                         let handler = Arc::clone(&handler);
                         let path = guarded_path.clone();
                         Box::pin(async move {
-                            let _permit = guard(path, context.clone()).await?;
-                            handler(context, input).await
+                            let permit = guard(path, context.clone()).await?;
+                            with_request_permit(permit, handler(context, input)).await
                         })
                     });
                 }
@@ -502,7 +527,150 @@ mod tests {
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
-    use crate::{app, registry};
+    #[tokio::test]
+    async fn snapshot_read_retries_recheck_permissions_and_never_repeat_writes() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&attempts);
+        let read = super::ProcedureRegistry::builder()
+            .query("snapshot", move |_, _: ()| {
+                let counter = Arc::clone(&counter);
+                async move {
+                    if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                        return Err(crate::control::conflict());
+                    }
+                    Err::<(), _>(crate::error::RpcError::new(
+                        crate::error::ErrorCode::Forbidden,
+                        "Access revoked",
+                    ))
+                }
+            })
+            .build();
+        let context = super::RequestContext {
+            headers: Default::default(),
+        };
+        let error = read
+            .execute_query("snapshot", context.clone(), Value::Null)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, crate::error::ErrorCode::Forbidden);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+
+        attempts.store(0, Ordering::SeqCst);
+        let counter = Arc::clone(&attempts);
+        let write = super::ProcedureRegistry::builder()
+            .mutation("write", move |_, _: ()| {
+                let counter = Arc::clone(&counter);
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    Err::<(), _>(crate::control::conflict())
+                }
+            })
+            .build();
+        let result = write
+            .call(
+                "write".into(),
+                axum::http::Method::POST,
+                context,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(result["error"]["json"]["data"]["code"], "CONFLICT");
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn snapshot_read_retries_are_bounded_and_ignore_ordinary_conflicts() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        for transient in [false, true] {
+            let attempts = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&attempts);
+            let registry = super::ProcedureRegistry::builder()
+                .query("snapshot", move |_, _: ()| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        let error = if transient {
+                            crate::control::conflict()
+                        } else {
+                            crate::error::RpcError::new(
+                                crate::error::ErrorCode::Conflict,
+                                "Stale document version",
+                            )
+                        };
+                        Err::<(), _>(error)
+                    }
+                })
+                .build();
+            let context = super::RequestContext {
+                headers: Default::default(),
+            };
+            assert!(
+                registry
+                    .execute_query("snapshot", context, Value::Null)
+                    .await
+                    .is_err()
+            );
+            let expected = if transient { 4 } else { 1 };
+            assert_eq!(attempts.load(Ordering::SeqCst), expected);
+        }
+    }
+
+    fn registry() -> super::ProcedureRegistry {
+        super::ProcedureRegistry::builder()
+            .query("ping", |_: super::RequestContext, _: ()| async {
+                Ok("pong".to_owned())
+            })
+            .build()
+    }
+
+    fn app() -> axum::Router {
+        super::http_router(registry())
+    }
+
+    #[tokio::test]
+    #[allow(
+        clippy::async_yields_async,
+        reason = "The test observes the background task after its request scope has ended"
+    )]
+    async fn typed_request_leases_remain_owned_by_background_work_and_isolated_between_calls() {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+        #[derive(Clone)]
+        struct Lease(Arc<String>);
+        let first = Arc::new("first".to_owned());
+        let second = Arc::new("second".to_owned());
+        let released = Arc::new(Notify::new());
+        let release = Arc::clone(&released);
+        let expected_first = Arc::clone(&first);
+        let first_work =
+            super::with_request_permit(Box::new(Lease(Arc::clone(&first))), async move {
+                let lease = super::request_permit::<Lease>().unwrap();
+                assert_eq!(*lease.0, "first");
+                tokio::spawn(async move {
+                    assert!(super::request_permit::<Lease>().is_none());
+                    release.notified().await;
+                    assert_eq!(*lease.0, "first");
+                })
+            });
+        let second_work = super::with_request_permit(Box::new(Lease(Arc::clone(&second))), async {
+            tokio::task::yield_now().await;
+            assert_eq!(*super::request_permit::<Lease>().unwrap().0, "second");
+        });
+        let (worker, ()) = tokio::join!(first_work, second_work);
+        assert!(super::request_permit::<Lease>().is_none());
+        assert_eq!(Arc::strong_count(&expected_first), 3);
+        assert_eq!(Arc::strong_count(&second), 1);
+        released.notify_one();
+        worker.await.unwrap();
+        assert_eq!(Arc::strong_count(&expected_first), 2);
+    }
 
     #[tokio::test]
     async fn batched_ping_matches_the_current_wire_contract() {
@@ -527,6 +695,86 @@ mod tests {
                 { "result": { "data": { "json": "pong" } } },
             ]),
         );
+    }
+
+    #[tokio::test]
+    async fn queries_accept_large_json_bodies_without_changing_the_wire_contract() {
+        let router = super::http_router(
+            super::ProcedureRegistry::builder()
+                .query("echo", |_: super::RequestContext, input: Value| async {
+                    Ok(input)
+                })
+                .build(),
+        );
+        let first = json!({ "text": "Aufmaß / Fenster ".repeat(1000), "version": "7" });
+        let second = json!({ "text": "Angebot", "version": "8" });
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/echo,echo?batch=1")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({ "0": { "json": first }, "1": { "json": second } }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            body,
+            json!([
+                { "result": { "data": { "json": first } } },
+                { "result": { "data": { "json": second } } },
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn mutations_reject_get_and_queries_still_reject_other_methods() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let router = super::http_router(
+            super::ProcedureRegistry::builder()
+                .query("read", |_: super::RequestContext, _: ()| async { Ok(()) })
+                .mutation("write", move |_: super::RequestContext, _: ()| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                })
+                .build(),
+        );
+        for (method, path) in [("GET", "write"), ("PUT", "read"), ("DELETE", "read")] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(format!("/{path}?batch=1"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"0":{"json":null}}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let body: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                body[0]["error"]["json"]["data"]["code"],
+                "METHOD_NOT_SUPPORTED"
+            );
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

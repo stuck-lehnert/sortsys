@@ -12,8 +12,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::{
-    AppState,
-    auth::{AuthResult, McpScope},
+    auth::McpScope,
     error::{ErrorCode, RpcError, RpcResult},
 };
 
@@ -161,24 +160,6 @@ pub struct Completion {
     pub transport: &'static str,
 }
 
-pub async fn complete(
-    state: &AppState,
-    auth: &AuthResult,
-    chat_id: i64,
-    configuration: &ProviderConfiguration,
-    turns: &[ChatTurn],
-    locale: &str,
-) -> RpcResult<Completion> {
-    let url = require_mcp_url(
-        state.config.llm_mcp_url.as_deref(),
-        &configuration.provider,
-        state.config.port,
-    )?;
-    let scope = McpScope::Chat(chat_id);
-    let token = state.auth.issue_mcp_token(auth, scope).map_err(internal)?;
-    complete_live(configuration, turns, locale, &url, &token, scope).await
-}
-
 /// The live caller supplies a request-bound authenticated MCP endpoint; no
 /// chat row, prompt or response is written by this transport.
 pub(super) async fn complete_live(
@@ -318,24 +299,6 @@ fn scan_input_text(input: &DocumentScanInput, original_attached: bool, prompt: &
     format!(
         "{prompt}\n\nFile names: {file_names}\nLocal OCR method: {ocr_method}\nLocal OCR confidence: {ocr_confidence:.3}\nOriginal attached: {original_attached}\n\n<ocr-transcript>\n{ocr_text}\n</ocr-transcript>"
     )
-}
-
-pub async fn parse_document_scan(
-    state: &AppState,
-    auth: &AuthResult,
-    configuration: &ProviderConfiguration,
-    input: DocumentScanInput,
-) -> RpcResult<ScanCompletion> {
-    let url = require_mcp_url(
-        state.config.llm_mcp_url.as_deref(),
-        &configuration.provider,
-        state.config.port,
-    )?;
-    let token = state
-        .auth
-        .issue_mcp_token(auth, McpScope::DocumentImport)
-        .map_err(internal)?;
-    parse_document_live(configuration, input, &auth.user.locale, &url, &token).await
 }
 
 pub(super) async fn parse_document_live(
@@ -500,90 +463,6 @@ async fn anthropic_scan(
     Ok(ScanCompletion { content, usage })
 }
 
-pub(super) async fn scan_product_search(
-    state: &AppState,
-    auth: &AuthResult,
-    arguments: Value,
-) -> RpcResult<Value> {
-    let query = arguments
-        .get("query")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_i64)
-        .unwrap_or(12)
-        .clamp(1, 25);
-
-    let result = search_scan_products(state, auth, query, limit).await?;
-    if result["records"]
-        .as_array()
-        .is_some_and(|records| !records.is_empty())
-    {
-        return Ok(result);
-    }
-
-    // Supplier rows often contain packaging and abbreviations that defeat a
-    // full-text AND query. Retry distinctive fragments before reporting no match.
-    for fragment in scan_search_fragments(query).into_iter().take(4) {
-        let result = search_scan_products(state, auth, &fragment, limit).await?;
-        if result["records"]
-            .as_array()
-            .is_some_and(|records| !records.is_empty())
-        {
-            return Ok(result);
-        }
-    }
-
-    Ok(result)
-}
-
-async fn search_scan_products(
-    state: &AppState,
-    auth: &AuthResult,
-    query: &str,
-    limit: i64,
-) -> RpcResult<Value> {
-    super::search_records(
-        state,
-        auth,
-        json!({
-            "resource": "products",
-            "query": query,
-            "limit": limit
-        }),
-    )
-    .await
-}
-
-fn scan_search_fragments(query: &str) -> Vec<String> {
-    let mut fragments = query
-        .split(|character: char| !character.is_alphanumeric())
-        .filter(|part| part.chars().count() >= 4)
-        .filter(|part| {
-            !matches!(
-                part.to_ascii_lowercase().as_str(),
-                "sack"
-                    | "palette"
-                    | "pal"
-                    | "stück"
-                    | "stueck"
-                    | "packung"
-                    | "gebinde"
-                    | "karton"
-                    | "preis"
-                    | "netto"
-            )
-        })
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-
-    fragments.sort_by_key(|part| std::cmp::Reverse(part.chars().count()));
-    fragments.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-    fragments
-}
-
 pub(super) fn scan_tool_definition() -> Value {
     json!({
         "name": "sortsys_search_products",
@@ -677,11 +556,6 @@ fn scan_result_schema() -> Value {
 
 pub(super) fn supports_mcp(provider: &str) -> bool {
     mcp_endpoint::supports_mcp(provider)
-}
-
-fn require_mcp_url(configured: Option<&str>, provider: &str, port: u16) -> RpcResult<String> {
-    mcp_endpoint::resolve(configured, provider, port)
-        .map_err(|message| RpcError::new(ErrorCode::PreconditionFailed, message))
 }
 
 fn openai_mcp_body(
@@ -1044,7 +918,6 @@ mod tests {
     use super::{
         OPENAI_SCAN_MAX_OUTPUT_TOKENS, ProviderConfiguration, SCAN_MAX_OUTPUT_TOKENS,
         default_provider_base_url, endpoint, model_options, responses_text, scan_prompt,
-        scan_search_fragments,
     };
 
     #[test]
@@ -1119,19 +992,6 @@ mod tests {
     }
 
     #[test]
-    fn scan_search_retries_distinctive_supplier_fragments() {
-        let fragments = scan_search_fragments("KNAUF-ANSETZB.-PERLFIX A 30 KG (1 PAL. = 40 SACK)");
-
-        assert!(
-            fragments
-                .iter()
-                .take(4)
-                .any(|fragment| fragment == "PERLFIX")
-        );
-        assert!(!fragments.iter().any(|fragment| fragment == "SACK"));
-    }
-
-    #[test]
     fn scan_output_limits_leave_room_for_structured_price_sections() {
         assert_eq!(OPENAI_SCAN_MAX_OUTPUT_TOKENS, 65_536);
         assert_eq!(SCAN_MAX_OUTPUT_TOKENS, 65_536);
@@ -1174,30 +1034,6 @@ mod tests {
             model: "test-model".to_owned(),
             base_url: None,
             api_key: "offline-provider-fixture".to_owned(),
-        }
-    }
-
-    #[test]
-    fn every_llm_use_case_requires_a_supported_mcp_transport() {
-        for provider in ["openai", "anthropic"] {
-            assert!(super::require_mcp_url(None, provider, 3000).is_err());
-            assert!(super::require_mcp_url(Some("  "), provider, 3000).is_err());
-            assert!(
-                super::require_mcp_url(Some("https://sortsys.test/mcp"), provider, 3000).is_ok()
-            );
-        }
-
-        assert_eq!(
-            super::require_mcp_url(None, "openrouter", 3000).unwrap(),
-            "http://127.0.0.1:3000/internal/llm/mcp",
-        );
-
-        for provider in ["meta", "deepseek", "custom", "unknown"] {
-            let error = super::require_mcp_url(Some("https://sortsys.test/mcp"), provider, 3000)
-                .unwrap_err();
-
-            assert_eq!(error.code, crate::error::ErrorCode::PreconditionFailed);
-            assert!(error.message.contains("MCP transport"));
         }
     }
 

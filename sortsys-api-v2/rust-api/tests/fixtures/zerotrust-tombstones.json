@@ -1,0 +1,34 @@
+{
+  "notice": "Public synthetic browser protocol vector; no private keys or recovery phrase.",
+  "signer": "ecpOGvNWKO-k8zdAdolvuGEmrpG9Z6IQf_29YGwb4UU",
+  "initial": {
+    "tenant": "test",
+    "scope": "project:2:daily-reports",
+    "facet": "master-data",
+    "object": "daily-report:2:3",
+    "revision": "1",
+    "generation": "1",
+    "policyVersion": "1",
+    "author": "user:1",
+    "format": "sortsys-object-v1",
+    "nonce": "QP5ki6ec6PAimDJu",
+    "ciphertext": "pegSz5H4nyjl6z7TGhiz-AW_zzxCVV6fi6Wy4NyvCxNj0YWhdKhyKa2fsQ",
+    "wrappedKey": "zzh4zzPrpHPLXYnk8QQD3_klRoXu1sjAOV_nbrDdu2MAKhrgCgwiSw",
+    "signature": "35Derk1XUQYdCY_D9cgLeLtu8LiFgq5iRjTzvDeoWcO4HWS7KZSAh1aPfMZcbWGwsp-UQVfIo8fXwRZnidXeDw"
+  },
+  "deleted": {
+    "tenant": "test",
+    "scope": "project:2:daily-reports",
+    "facet": "master-data",
+    "object": "daily-report:2:3",
+    "revision": "2",
+    "generation": "1",
+    "policyVersion": "1",
+    "author": "user:1",
+    "format": "sortsys-object-tombstone-v1",
+    "nonce": "WR1vhGRuRcZ6qrq0",
+    "ciphertext": "OwyHk64wQ4so_RzD8YBlCQ",
+    "wrappedKey": "kez061pLKGM9Ev9puSfhQDYOacP_uMOJbHcKj-tzjy1zGXo0Vrm2ww",
+    "signature": "W-6WC3o93KgFWXCWGHH14CGfgjWHK43n_Pg5yByK-CrUHHfc4kMl7Y8f3SnP68L5jIwz1Jy4gTiZfQNK15M1AA"
+  }
+}

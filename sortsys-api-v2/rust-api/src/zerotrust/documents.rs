@@ -1,25 +1,22 @@
 //! Signed public document revision vectors. Payloads stay encrypted in Quack.
 use super::{
-    access::{Security, security},
     crypto::{encode, frame, identifier, invalid, revision, sized, verify},
-    objects::{conflict, packet_hash, read_envelope},
+    objects::{conflict, packet_hash},
     wire::{Action, Facet},
 };
 use crate::{
-    AppState,
     error::RpcResult,
+    error::{forbidden, internal},
     ids::Id,
-    procedures::common::{authenticated_pool, forbidden, internal},
-    rpc::{ProcedureRegistryBuilder, RequestContext},
+    rpc::ProcedureRegistryBuilder,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlx::PgConnection;
 use std::{collections::BTreeSet, sync::Arc};
 use ts_rs::TS;
 
-const CONTENT_FACETS: [&str; 9] = [
+pub(super) const CONTENT_FACETS: [&str; 9] = [
     "scope",
     "contract-quantities",
     "measurement",
@@ -228,6 +225,30 @@ impl DocumentHead {
     pub fn hash(&self) -> RpcResult<String> {
         packet_hash(self.frame()?, &self.signature)
     }
+    pub(super) fn part_target(&self, facet: &str) -> RpcResult<String> {
+        self.frame()?;
+        if !CONTENT_FACETS.contains(&facet) {
+            return Err(invalid());
+        }
+        let mut fields = vec![
+            self.tenant.as_str(),
+            self.scope.as_str(),
+            self.id.as_str(),
+            facet,
+        ];
+        if let Some(part) = self.parts.iter().find(|part| part.facet == facet) {
+            fields.extend(["present", part.object.as_str(), part.hash.as_str()]);
+            for key in &part.keys {
+                fields.extend([key.facet.name(), key.generation.as_str()]);
+            }
+        } else {
+            fields.push("absent");
+        }
+        Ok(encode(&Sha256::digest(frame(
+            "sortsys/document-part-target/v1",
+            &fields,
+        ))))
+    }
     pub fn domains(&self) -> Vec<String> {
         let mut keys = BTreeSet::from([format!("{}:master-data", self.scope)]);
         for part in &self.parts {
@@ -247,129 +268,182 @@ struct GetInput {
     #[ts(optional)]
     version: Option<String>,
 }
-pub(super) fn register(
-    builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
-) -> ProcedureRegistryBuilder {
-    builder.query("zerotrust.documents.get", move |ctx, input: GetInput| {
-        let state = Arc::clone(&state);
-        async move { get(&state, &ctx, input).await }
-    })
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct HistoryInput {
+    scope: String,
+    id: String,
+    before: String,
 }
+
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    builder.query_stub::<GetInput, Option<DocumentHead>>("zerotrust.documents.get")
+    builder
+        .query_stub::<GetInput, Option<DocumentHead>>("zerotrust.documents.get")
+        .query_stub::<HistoryInput, Vec<DocumentHead>>("zerotrust.documents.history")
 }
-async fn get(
-    state: &AppState,
-    ctx: &RequestContext,
-    input: GetInput,
-) -> RpcResult<Option<DocumentHead>> {
-    checked_id(&input.id)?;
-    if let Some(scope) = &input.scope {
-        checked_id(scope.strip_prefix("commercial:").ok_or_else(invalid)?)?;
-    }
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-    let version = input.version.as_ref().map(|v| revision(v)).transpose()?;
-    let value: Option<(String, Value)> =
-        sqlx::query_as("SELECT d.scope, CASE WHEN $2::bigint IS NULL THEN d.head ELSE history.head END FROM __zerotrust_documents d LEFT JOIN __zerotrust_document_history history ON history.id=d.id AND history.version=$2 WHERE d.id=$1 AND ($2::bigint IS NULL OR history.id IS NOT NULL)")
-            .bind(input.id).bind(version)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(internal)?;
-    match value {
-        Some((scope, head))
-            if input
-                .scope
-                .as_ref()
-                .is_none_or(|expected| expected == &scope)
-                && guard.allows(&guard.subject, &scope, Facet::MasterData, Action::Read) =>
-        {
-            Ok(Some(serde_json::from_value(head).map_err(|_| invalid())?))
-        }
-        Some(_) => Err(forbidden()),
-        None => Ok(None),
-    }
+
+fn metadata_history_key(
+    id: &str,
+    version: &str,
+) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
+    Ok(crate::control::key(
+        "document-history",
+        &format!("{id}:{:020}", revision(version)?),
+    ))
 }
-pub(super) async fn lock(tx: &mut PgConnection, heads: &[DocumentHead]) -> RpcResult<()> {
-    let mut ids = BTreeSet::new();
-    for head in heads {
-        head.frame()?;
-        if !ids.insert(&head.id) {
-            return Err(invalid());
-        }
-    }
-    for id in ids {
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(format!("sortsys:zerotrust:document:{id}"))
-            .execute(&mut *tx)
-            .await
-            .map_err(internal)?;
-    }
-    Ok(())
+pub(crate) fn register_metadata(
+    builder: ProcedureRegistryBuilder,
+    service: Arc<crate::auth::AuthService>,
+) -> ProcedureRegistryBuilder {
+    let get = Arc::clone(&service);
+    builder
+        .query("zerotrust.documents.get", move |ctx, input: GetInput| {
+            let service = Arc::clone(&get);
+            async move {
+                checked_id(&input.id)?;
+                let mut request = super::access::MetadataRequest::open(&service, &ctx).await?;
+                let current: Option<DocumentHead> = request
+                    .transaction
+                    .read(crate::control::key("documents", &input.id))
+                    .await?;
+                let domains = current
+                    .as_ref()
+                    .map(|head| format!("{}:master-data", head.scope))
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let mut context = request.authorize(Some(&domains)).await?;
+                let Some(current) = current else {
+                    context.transaction.validate().await?;
+                    return Ok(None);
+                };
+                if input
+                    .scope
+                    .as_ref()
+                    .is_some_and(|scope| scope != &current.scope)
+                    || !context.security.allows(
+                        &context.security.subject,
+                        &current.scope,
+                        Facet::MasterData,
+                        Action::Read,
+                    )
+                {
+                    return Err(forbidden());
+                }
+                let result: Option<DocumentHead> = if let Some(version) = input.version {
+                    context
+                        .transaction
+                        .read(metadata_history_key(&input.id, &version)?)
+                        .await?
+                } else {
+                    Some(current)
+                };
+                if let Some(head) = &result {
+                    head.frame()?;
+                    if head.tenant != context.auth.tenant || head.id != input.id {
+                        return Err(invalid());
+                    }
+                }
+                context.transaction.validate().await?;
+                Ok(result)
+            }
+        })
+        .query(
+            "zerotrust.documents.history",
+            move |ctx, input: HistoryInput| {
+                let service = Arc::clone(&service);
+                async move {
+                    checked_id(&input.id)?;
+                    let before = revision(&input.before)?;
+                    let domains = [format!("{}:master-data", input.scope)];
+                    let mut context =
+                        super::access::metadata_context_for_domains(&service, &ctx, Some(&domains))
+                            .await?;
+                    let current: DocumentHead = context
+                        .transaction
+                        .read(crate::control::key("documents", &input.id))
+                        .await?
+                        .ok_or_else(forbidden)?;
+                    if current.scope != input.scope
+                        || !context.security.allows(
+                            &context.security.subject,
+                            &current.scope,
+                            Facet::MasterData,
+                            Action::Read,
+                        )
+                    {
+                        return Err(forbidden());
+                    }
+                    let latest = revision(&current.version)?.min(before - 1);
+                    let mut keys = Vec::new();
+                    for index in 0..32 {
+                        if latest - index > 0 {
+                            keys.push(metadata_history_key(
+                                &input.id,
+                                &(latest - index).to_string(),
+                            )?);
+                        }
+                    }
+                    let result = context
+                        .transaction
+                        .many::<DocumentHead>(keys)
+                        .await?
+                        .into_iter()
+                        .map(|value| value.ok_or_else(invalid))
+                        .collect::<RpcResult<Vec<_>>>()?;
+                    context.transaction.validate().await?;
+                    Ok(result)
+                }
+            },
+        )
 }
-pub(super) async fn commit(
-    state: &AppState,
-    tx: &mut PgConnection,
-    guard: &Security,
-    tenant: &str,
+
+pub(super) async fn metadata_commit(
+    context: &mut super::access::MetadataContext,
     head: &DocumentHead,
     metadata_changed: bool,
-) -> RpcResult<()> {
-    if head.tenant != tenant
+) -> RpcResult<bool> {
+    use crate::control::key;
+    let guard = &context.security;
+    if head.tenant != context.auth.tenant
         || head.author != guard.subject
         || revision(&head.generation)? != guard.root.generation
-        || revision(&head.policy_version)? != guard.root.policy_version
+        || head.policy_version != guard.policy.version
     {
         return Err(conflict());
     }
     verify(&guard.signing_key, &head.signature, &head.frame()?)?;
-    let hash = head.hash()?;
     if !guard.allows(&guard.subject, &head.scope, Facet::MasterData, Action::Read) {
         return Err(forbidden());
     }
-    let saved: Option<(String, i64, String, Value)> = sqlx::query_as(
-        "SELECT scope,version,hash,head FROM __zerotrust_documents WHERE id=$1 FOR UPDATE",
-    )
-    .bind(&head.id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(internal)?;
-    if let Some((scope, _, known, value)) = &saved {
-        if scope != &head.scope {
+    let previous: Option<DocumentHead> =
+        context.transaction.read(key("documents", &head.id)).await?;
+    if let Some(old) = &previous {
+        if old.scope != head.scope {
             return Err(forbidden());
         }
-        if known == &hash && value == &serde_json::to_value(head).map_err(internal)? {
-            return Ok(());
+        if serde_json::to_value(old).map_err(internal)?
+            == serde_json::to_value(head).map_err(internal)?
+        {
+            return Ok(false);
         }
+        if old.locked
+            || old.read_only && !head.read_only
+            || revision(&old.version)?.checked_add(1) != Some(revision(&head.version)?)
+            || old.hash()? != head.previous
+        {
+            return Err(conflict());
+        }
+    } else if !head.previous.is_empty()
+        || head.version != "1"
+        || !guard.allows(
+            &guard.subject,
+            &head.scope,
+            Facet::MasterData,
+            Action::Update,
+        )
+    {
+        return Err(forbidden());
     }
-    let previous = match &saved {
-        Some((_, version, hash, value)) => {
-            let old: DocumentHead = serde_json::from_value(value.clone()).map_err(|_| invalid())?;
-            if old.locked
-                || old.read_only && !head.read_only
-                || version.checked_add(1) != Some(revision(&head.version)?)
-                || hash != &head.previous
-            {
-                return Err(conflict());
-            }
-            Some(old)
-        }
-        None => {
-            if !head.previous.is_empty()
-                || !guard.allows(
-                    &guard.subject,
-                    &head.scope,
-                    Facet::MasterData,
-                    Action::Update,
-                )
-            {
-                return Err(forbidden());
-            }
-            None
-        }
-    };
     if !metadata_changed
         && previous.as_ref().is_some_and(|old| {
             old.parts == head.parts && old.locked == head.locked && old.read_only == head.read_only
@@ -388,20 +462,18 @@ pub(super) async fn commit(
         return Err(forbidden());
     }
     for old in previous.as_ref().into_iter().flat_map(|head| &head.parts) {
-        if !head.parts.iter().any(|p| p.facet == old.facet) {
+        if !head.parts.iter().any(|part| part.facet == old.facet) {
             return Err(invalid());
         }
     }
-    let mut notifications = BTreeSet::from([format!("{}:scope", head.scope)]);
     for part in &head.parts {
         let old = previous
             .as_ref()
-            .and_then(|head| head.parts.iter().find(|p| p.facet == part.facet));
+            .and_then(|head| head.parts.iter().find(|old| old.facet == part.facet));
         if old == Some(part) {
             continue;
         }
         for key in &part.keys {
-            notifications.insert(format!("{}:{}", head.scope, key.facet.name()));
             let action = if part.facet == "opaque" || old.is_some() {
                 Action::Update
             } else {
@@ -412,31 +484,33 @@ pub(super) async fn commit(
             {
                 return Err(forbidden());
             }
-            let current:Option<(i64,bool)>=sqlx::query_as("SELECT generation,rotation_required FROM __zerotrust_domains WHERE id=$1 AND scope=$2 AND facet=$3")
-                .bind(format!("{}:{}",head.scope,key.facet.name())).bind(&head.scope).bind(key.facet.name()).fetch_optional(&mut *tx).await.map_err(internal)?;
-            if current != Some((revision(&key.generation)?, false)) {
+            let area = super::objects::metadata_current_domain(
+                &mut context.transaction,
+                guard,
+                &format!("{}:{}", head.scope, key.facet.name()),
+            )
+            .await?;
+            if area.scope != head.scope
+                || area.facet != key.facet
+                || area.generation != key.generation
+            {
                 return Err(conflict());
             }
         }
-        let value: Option<(String, Value)> = sqlx::query_as(
-            "SELECT domain_id,envelope FROM __zerotrust_objects WHERE id=$1 AND deleted_at IS NULL",
-        )
-        .bind(&part.object)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(internal)?;
-        let Some((domain, reference)) = value else {
-            return Err(invalid());
-        };
+        let record = super::objects::metadata_object(&mut context.transaction, &part.object)
+            .await?
+            .filter(|record| !record.deleted)
+            .ok_or_else(invalid)?;
         let owner = if part.facet == "opaque" {
             "scope"
         } else {
             &part.facet
         };
-        if domain != format!("{}:{owner}", head.scope) {
+        if record.domain != format!("{}:{owner}", head.scope) {
             return Err(invalid());
         }
-        let envelope = read_envelope(state, tenant, reference).await?;
+        let envelope =
+            super::objects::metadata_read(&context.repository, &record.reference).await?;
         if envelope.object != part.object
             || envelope.scope != head.scope
             || envelope.facet.name() != owner
@@ -449,39 +523,58 @@ pub(super) async fn commit(
             return Err(invalid());
         }
     }
-    let value = serde_json::to_value(head).map_err(internal)?;
-    sqlx::query("INSERT INTO __zerotrust_documents(id,scope,version,hash,head) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET version=EXCLUDED.version,hash=EXCLUDED.hash,head=EXCLUDED.head")
-        .bind(&head.id).bind(&head.scope).bind(revision(&head.version)?).bind(&hash).bind(&value).execute(&mut *tx).await.map_err(internal)?;
-    sqlx::query(
-        "INSERT INTO __zerotrust_document_history(id,version,hash,head) VALUES($1,$2,$3,$4)",
-    )
-    .bind(&head.id)
-    .bind(revision(&head.version)?)
-    .bind(hash)
-    .bind(value)
-    .execute(&mut *tx)
-    .await
-    .map_err(internal)?;
-    let sequence: i64 =
-        sqlx::query_scalar("SELECT nextval(pg_get_serial_sequence('__zerotrust_changes','seq'))")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(internal)?;
-    for domain in notifications {
-        sqlx::query("UPDATE __zerotrust_domains SET head_sequence=$1 WHERE id=$2")
-            .bind(sequence)
-            .bind(&domain)
-            .execute(&mut *tx)
-            .await
-            .map_err(internal)?;
-        sqlx::query("SELECT pg_notify('sortsys_zerotrust',$1)").bind(serde_json::json!({"kind":"object","seq":sequence.to_string(),"id":format!("document:{}",head.id),"domain":domain}).to_string()).execute(&mut *tx).await.map_err(internal)?;
+    let historical = metadata_history_key(&head.id, &head.version)?;
+    if context
+        .transaction
+        .read::<Value>(historical.clone())
+        .await?
+        .is_some()
+    {
+        return Err(conflict());
     }
-    Ok(())
+    let current = key("documents", &head.id);
+    context.transaction.put(current.clone(), head).await?;
+    context.transaction.put(historical.clone(), head).await?;
+    super::timestamps::metadata_record_document(
+        &mut context.transaction,
+        head,
+        &[current, historical],
+    )
+    .await?;
+    Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn part_receipt_targets_match_browser_vectors() {
+        let document: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/zerotrust-document.json"))
+                .unwrap();
+        let channel: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/zerotrust-live-channels.json"
+        ))
+        .unwrap();
+        let head: DocumentHead = serde_json::from_value(document["head"].clone()).unwrap();
+        for facet in ["scope", "billing", "opaque"] {
+            assert_eq!(head.part_target(facet).unwrap(), channel["targets"][facet]);
+        }
+        let mut metadata = head.clone();
+        metadata.version = "8".into();
+        metadata.read_only = true;
+        metadata.locked = true;
+        assert_eq!(
+            head.part_target("scope").unwrap(),
+            metadata.part_target("scope").unwrap()
+        );
+        metadata.parts[0].keys[0].generation = "5".into();
+        assert_ne!(
+            head.part_target("scope").unwrap(),
+            metadata.part_target("scope").unwrap()
+        );
+    }
 
     #[test]
     fn browser_document_vector_has_identical_native_frame_and_hash() {

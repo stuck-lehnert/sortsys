@@ -1,15 +1,23 @@
-# The root context is used by the webapp's cross-package build.
+# Application and datastore images share monorepo packages.
 **
 !sortsys-api-v2/
 sortsys-api-v2/**
 !sortsys-api-v2/client/
 !sortsys-api-v2/client/**
+!sortsys-api-v2/Cargo.toml
+!sortsys-api-v2/Cargo.lock
+!sortsys-api-v2/rust-api/
+!sortsys-api-v2/rust-api/**
+!sortsys-api-v2/seed-assets/
+!sortsys-api-v2/seed-assets/**
 !sortsys-dwgviewer/
 !sortsys-dwgviewer/**
 !sortsys-react-components/
 !sortsys-react-components/**
 !sortsys-gaeb/
 !sortsys-gaeb/**
+!sortsys-store/
+!sortsys-store/**
 !sortsys-zerotrust/
 !sortsys-zerotrust/**
 !sortsys-webapp-v2/

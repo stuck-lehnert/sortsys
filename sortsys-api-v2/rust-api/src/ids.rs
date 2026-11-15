@@ -1,7 +1,6 @@
 //! Public base-32 identifiers and their serde/TypeScript representation.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
-use sqlx::Type;
 use ts_rs::TS;
 
 const RADIX: i64 = 32;
@@ -9,8 +8,7 @@ const RADIX: i64 = 32;
 /// Database identifier represented as the lowercase base-32 string used by the
 /// existing HTTP API. Keeping the conversion at the serde boundary prevents
 /// database decimal IDs from leaking onto the wire.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, TS)]
-#[sqlx(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TS)]
 #[ts(type = "string")]
 pub struct Id(pub i64);
 

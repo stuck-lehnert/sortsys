@@ -1,0 +1,62 @@
+[
+  {
+    "id": 7103,
+    "caseId": 7103,
+    "phase": "89",
+    "purpose": "invoice",
+    "fileName": "NATIVE-7103.x89",
+    "version": 4,
+    "readOnly": true,
+    "asset": "7103.xml"
+  },
+  {
+    "id": 7104,
+    "caseId": 7104,
+    "phase": "84",
+    "purpose": "offer",
+    "fileName": "Hauptangebot-Fenster.x84",
+    "version": 1,
+    "readOnly": true,
+    "asset": "7104.xml"
+  },
+  {
+    "id": 7201,
+    "caseId": 7201,
+    "phase": "84",
+    "purpose": "offer",
+    "fileName": "Hauptangebot-Abrechnung.x84",
+    "version": 2,
+    "readOnly": true,
+    "asset": "7201.xml"
+  },
+  {
+    "id": 7202,
+    "caseId": 7202,
+    "phase": "89",
+    "purpose": "invoice",
+    "fileName": "00007201-16.x89",
+    "version": 2,
+    "readOnly": true,
+    "asset": "7202.xml"
+  },
+  {
+    "id": 7203,
+    "caseId": 7203,
+    "phase": "89",
+    "purpose": "invoice",
+    "fileName": "00007201-17.x89",
+    "version": 1,
+    "readOnly": true,
+    "asset": "7203.xml"
+  },
+  {
+    "id": 7204,
+    "caseId": 7204,
+    "phase": "89",
+    "purpose": "invoice",
+    "fileName": "Schlussrechnungsentwurf.x89",
+    "version": 3,
+    "readOnly": false,
+    "asset": "7204.xml"
+  }
+]

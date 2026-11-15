@@ -1,22 +1,20 @@
 //! Signed public relationships enforce stock lifecycle rules without price keys.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::PgConnection;
 use std::{collections::BTreeSet, sync::Arc};
 use ts_rs::TS;
 
 use super::{
-    access::{Security, security},
+    access::Security,
     crypto::{frame, identifier, invalid, revision, sized, verify},
-    objects::{conflict, domain_lock, packet_hash, read_envelope},
+    objects::{conflict, packet_hash},
     wire::{Action, EncryptedObject, Facet},
 };
 use crate::{
-    AppState,
     api::Success,
     error::RpcResult,
+    error::{forbidden, internal, not_found},
     ids::Id,
-    procedures::common::{authenticated_pool, forbidden, internal, not_found},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
 
@@ -199,19 +197,6 @@ impl StockDeletion {
     }
 }
 
-/// Take these locks even on a price-only edit; deletion and rebinding on other
-/// API replicas must participate in the same deterministic lock order.
-pub(super) fn reference_domains(reference: &StockReferences) -> RpcResult<Vec<String>> {
-    reference.frame()?;
-    let mut domains = vec![reference.domain.clone()];
-    if reference.product.is_some() {
-        domains.push(StockKind::Product.domain().into());
-    }
-    if reference.vendor.is_some() {
-        domains.push(StockKind::Vendor.domain().into());
-    }
-    Ok(domains)
-}
 pub(super) fn verify_references(
     guard: &Security,
     tenant: &str,
@@ -247,55 +232,6 @@ pub(super) fn verify_references(
     }
     Ok(())
 }
-pub(super) async fn save_references(
-    tx: &mut PgConnection,
-    guard: &Security,
-    tenant: &str,
-    domain: &str,
-    envelope: &EncryptedObject,
-    reference: Option<&StockReferences>,
-    written: bool,
-) -> RpcResult<()> {
-    verify_references(guard, tenant, domain, envelope, reference)?;
-    save_verified_references(tx, reference, written).await
-}
-pub(super) async fn save_verified_references(
-    tx: &mut PgConnection,
-    reference: Option<&StockReferences>,
-    written: bool,
-) -> RpcResult<()> {
-    let Some(reference) = reference else {
-        return Ok(());
-    };
-    let definition = serde_json::to_value(reference).map_err(internal)?;
-    if !written {
-        let previous: Option<Value> = sqlx::query_scalar(
-            "SELECT definition FROM __zerotrust_stock_references WHERE object_id=$1",
-        )
-        .bind(&reference.object)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(internal)?;
-        if previous != Some(definition) {
-            return Err(conflict());
-        }
-        return Ok(());
-    }
-    sqlx::query("INSERT INTO __zerotrust_stock_references(object_id,kind,product_object_id,vendor_object_id,definition) VALUES($1,$2,$3,$4,$5) ON CONFLICT(object_id) DO UPDATE SET product_object_id=EXCLUDED.product_object_id,vendor_object_id=EXCLUDED.vendor_object_id,definition=EXCLUDED.definition")
-        .bind(&reference.object).bind(reference.kind.name()).bind(&reference.product).bind(&reference.vendor).bind(definition).execute(tx).await.map_err(internal)?;
-    Ok(())
-}
-pub(super) async fn validate_references(
-    tx: &mut PgConnection,
-    objects: &[String],
-) -> RpcResult<()> {
-    let invalid_reference: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM __zerotrust_stock_references r WHERE r.object_id=ANY($1) AND r.kind='price' AND (NOT EXISTS(SELECT 1 FROM __zerotrust_stock_references p JOIN __zerotrust_objects o ON o.id=p.object_id WHERE p.object_id=r.product_object_id AND p.kind='product' AND o.deleted_at IS NULL) OR (r.vendor_object_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM __zerotrust_stock_references v JOIN __zerotrust_objects o ON o.id=v.object_id WHERE v.object_id=r.vendor_object_id AND v.kind='vendor' AND o.deleted_at IS NULL))))")
-        .bind(objects).fetch_one(tx).await.map_err(internal)?;
-    if invalid_reference {
-        return Err(conflict());
-    }
-    Ok(())
-}
 
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -322,32 +258,6 @@ struct DeletionState {
     references: StockReferences,
 }
 
-pub(super) fn register(
-    builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
-) -> ProcedureRegistryBuilder {
-    let references = Arc::clone(&state);
-    let deleted = Arc::clone(&state);
-    builder
-        .query(
-            "zerotrust.stock.references",
-            move |ctx, input: ObjectsInput| {
-                let state = Arc::clone(&references);
-                async move { references_for(&state, &ctx, input).await }
-            },
-        )
-        .query("zerotrust.stock.deleted", move |ctx, input: ObjectInput| {
-            let state = Arc::clone(&deleted);
-            async move { deletion_for(&state, &ctx, input).await }
-        })
-        .mutation(
-            "zerotrust.stock.delete",
-            move |ctx, input: StockDeletion| {
-                let state = Arc::clone(&state);
-                async move { delete(&state, &ctx, input).await }
-            },
-        )
-}
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .query_stub::<ObjectsInput, Vec<ReferenceState>>("zerotrust.stock.references")
@@ -362,160 +272,386 @@ fn authorize(guard: &Security, kind: StockKind, action: Action) -> RpcResult<()>
     }
     Ok(())
 }
-async fn references_for(
-    state: &AppState,
-    ctx: &RequestContext,
-    input: ObjectsInput,
-) -> RpcResult<Vec<ReferenceState>> {
-    if input.objects.is_empty()
-        || input.objects.len() > 64
-        || input.objects.iter().collect::<BTreeSet<_>>().len() != input.objects.len()
+pub(super) async fn metadata_save_references(
+    transaction: &mut crate::control::Transaction,
+    guard: &Security,
+    input: &super::objects::SaveInput,
+    written: bool,
+) -> RpcResult<()> {
+    verify_references(
+        guard,
+        &guard.policy.tenant,
+        &input.domain,
+        &input.envelope,
+        input.references.as_ref(),
+    )?;
+    let Some(reference) = &input.references else {
+        return Ok(());
+    };
+    let record = crate::control::key("stock-references", &reference.object);
+    if !written {
+        let previous: Value = transaction.read(record).await?.ok_or_else(conflict)?;
+        if previous != serde_json::to_value(reference).map_err(internal)? {
+            return Err(conflict());
+        }
+    } else {
+        transaction.put(record, reference).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn metadata_validate_references(
+    transaction: &mut crate::control::Transaction,
+    inputs: &[super::objects::SaveInput],
+) -> RpcResult<()> {
+    for input in inputs {
+        let Some(reference) = input
+            .references
+            .as_ref()
+            .filter(|reference| reference.kind == StockKind::Price)
+        else {
+            continue;
+        };
+        for (target, expected) in [
+            (reference.product.as_ref(), StockKind::Product),
+            (reference.vendor.as_ref(), StockKind::Vendor),
+        ] {
+            let Some(target) = target else {
+                continue;
+            };
+            let record: StockReferences = transaction
+                .read(crate::control::key("stock-references", target))
+                .await?
+                .ok_or_else(conflict)?;
+            let object = super::objects::metadata_object(transaction, target)
+                .await?
+                .ok_or_else(conflict)?;
+            check_reference_record(&record, &object)?;
+            if record.kind != expected || object.deleted || object.tombstone {
+                return Err(conflict());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_reference_record(
+    reference: &StockReferences,
+    record: &super::objects::ObjectRecord,
+) -> RpcResult<()> {
+    reference.frame()?;
+    if reference.object != record.object
+        || reference.domain != record.domain
+        || reference.revision != record.revision
     {
         return Err(invalid());
     }
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-    let mut domains = BTreeSet::new();
-    for object in &input.objects {
-        let kind = kind(object)?.ok_or_else(invalid)?;
-        authorize(&guard, kind, Action::Read)?;
-        domains.insert(kind.domain());
-        if kind == StockKind::Price {
-            domains.insert(StockKind::Vendor.domain());
+    Ok(())
+}
+
+/// Product deletion also hides its price revisions. The durable product head
+/// controls visibility; deleting optional proof records cannot resurrect them.
+pub(super) async fn metadata_apply_visibility(
+    transaction: &mut crate::control::Transaction,
+    records: &mut [super::objects::ObjectRecord],
+) -> RpcResult<()> {
+    let mut positions = Vec::new();
+    let mut keys = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        if !record.deleted && kind(&record.object)? == Some(StockKind::Price) {
+            positions.push(index);
+            keys.push(crate::control::key("stock-references", &record.object));
         }
     }
-    for domain in domains {
-        domain_lock(&mut tx, domain, false).await?;
+    let references = transaction.many::<StockReferences>(keys).await?;
+    let mut products = Vec::new();
+    for (index, reference) in positions.iter().zip(references) {
+        let reference = reference.ok_or_else(conflict)?;
+        check_reference_record(&reference, &records[*index])?;
+        if reference.kind != StockKind::Price {
+            return Err(invalid());
+        }
+        let product = reference.product.ok_or_else(invalid)?;
+        products.push((
+            product.clone(),
+            super::objects::metadata_record_key(StockKind::Product.domain(), &product),
+        ));
     }
-    let rows: Vec<(String, Value, Option<Value>)> = sqlx::query_as("SELECT r.object_id,r.definition,d.definition FROM __zerotrust_stock_references r JOIN __zerotrust_objects o ON o.id=r.object_id LEFT JOIN __zerotrust_stock_deletions d ON d.object_id=r.vendor_object_id WHERE r.object_id=ANY($1) AND o.deleted_at IS NULL")
-        .bind(&input.objects).fetch_all(&mut *tx).await.map_err(internal)?;
-    if rows.len() != input.objects.len() {
-        return Err(conflict());
+    let parents = transaction
+        .many::<super::objects::ObjectRecord>(products.iter().map(|(_, key)| key.clone()).collect())
+        .await?;
+    for ((index, (product, _)), parent) in positions.into_iter().zip(products).zip(parents) {
+        let parent = parent.ok_or_else(conflict)?;
+        if parent.object != product || parent.domain != StockKind::Product.domain() {
+            return Err(invalid());
+        }
+        records[index].deleted = parent.deleted || parent.tombstone;
     }
-    let mut rows = rows
-        .into_iter()
-        .map(|(id, reference, deleted)| (id, (reference, deleted)))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let mut result = Vec::new();
-    for object in input.objects {
-        let (reference, deleted) = rows.remove(&object).ok_or_else(conflict)?;
-        result.push(ReferenceState {
-            object,
-            references: serde_json::from_value(reference).map_err(internal)?,
-            vendor_deletion: deleted
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(internal)?,
-        });
-    }
-    Ok(result)
+    Ok(())
 }
-async fn deletion_for(
-    state: &AppState,
-    ctx: &RequestContext,
-    input: ObjectInput,
-) -> RpcResult<Option<DeletionState>> {
-    let kind = kind(&input.object)?.ok_or_else(invalid)?;
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-    authorize(&guard, kind, Action::Read)?;
-    domain_lock(&mut tx, kind.domain(), false).await?;
-    let row: Option<(Value, Value)> = sqlx::query_as("SELECT d.definition,r.definition FROM __zerotrust_stock_deletions d JOIN __zerotrust_stock_references r ON r.object_id=d.object_id WHERE d.object_id=$1")
-        .bind(&input.object).fetch_optional(&mut *tx).await.map_err(internal)?;
-    row.map(|(deletion, references)| {
-        Ok(DeletionState {
-            object: input.object,
-            deletion: serde_json::from_value(deletion).map_err(internal)?,
-            references: serde_json::from_value(references).map_err(internal)?,
+
+async fn metadata_deletion(
+    transaction: &mut crate::control::Transaction,
+    object: &str,
+) -> RpcResult<Option<StockDeletion>> {
+    use crate::control::key;
+    let Some(record) = super::objects::metadata_raw_object(transaction, object).await? else {
+        return Ok(None);
+    };
+    let root = if record.deleted {
+        object.to_owned()
+    } else if kind(object)? == Some(StockKind::Price) {
+        let reference: StockReferences = transaction
+            .read(key("stock-references", object))
+            .await?
+            .ok_or_else(invalid)?;
+        check_reference_record(&reference, &record)?;
+        let product = reference.product.ok_or_else(invalid)?;
+        let parent = super::objects::metadata_raw_object(transaction, &product)
+            .await?
+            .ok_or_else(invalid)?;
+        if !parent.deleted {
+            return Ok(None);
+        }
+        product
+    } else {
+        return Ok(None);
+    };
+    let deletion: StockDeletion = transaction
+        .read(key("stock-deletions", &root))
+        .await?
+        .ok_or_else(invalid)?;
+    deletion.frame()?;
+    if deletion.object != root || Some(deletion.kind) != kind(&root)? {
+        return Err(invalid());
+    }
+    Ok(Some(deletion))
+}
+
+pub(crate) fn register_metadata(
+    builder: ProcedureRegistryBuilder,
+    service: Arc<crate::auth::AuthService>,
+) -> ProcedureRegistryBuilder {
+    let references = Arc::clone(&service);
+    let deleted = Arc::clone(&service);
+    builder
+        .query(
+            "zerotrust.stock.references",
+            move |ctx, input: ObjectsInput| {
+                let service = Arc::clone(&references);
+                async move {
+                    use crate::control::key;
+                    if input.objects.is_empty()
+                        || input.objects.len() > 64
+                        || input.objects.iter().collect::<BTreeSet<_>>().len()
+                            != input.objects.len()
+                    {
+                        return Err(invalid());
+                    }
+                    let mut context = super::access::metadata_context(&service, &ctx).await?;
+                    let mut object_keys = Vec::new();
+                    for object in &input.objects {
+                        let kind = kind(object)?.ok_or_else(invalid)?;
+                        authorize(&context.security, kind, Action::Read)?;
+                        object_keys
+                            .push(super::objects::metadata_record_key(kind.domain(), object));
+                    }
+                    let rows = context
+                        .transaction
+                        .many::<super::objects::ObjectRecord>(object_keys)
+                        .await?;
+                    let mut rows = rows
+                        .into_iter()
+                        .map(|row| row.ok_or_else(conflict))
+                        .collect::<RpcResult<Vec<_>>>()?;
+                    metadata_apply_visibility(&mut context.transaction, &mut rows).await?;
+                    if rows
+                        .iter()
+                        .zip(&input.objects)
+                        .any(|(row, object)| row.deleted || row.tombstone || row.object != *object)
+                    {
+                        return Err(conflict());
+                    }
+                    let definitions = context
+                        .transaction
+                        .many::<StockReferences>(
+                            input
+                                .objects
+                                .iter()
+                                .map(|object| key("stock-references", object))
+                                .collect(),
+                        )
+                        .await?;
+                    let mut result = Vec::new();
+                    for ((object, definition), record) in
+                        input.objects.into_iter().zip(definitions).zip(rows)
+                    {
+                        let definition = definition.ok_or_else(conflict)?;
+                        check_reference_record(&definition, &record)?;
+                        let vendor_deletion = if let Some(vendor) = &definition.vendor {
+                            metadata_deletion(&mut context.transaction, vendor).await?
+                        } else {
+                            None
+                        };
+                        result.push(ReferenceState {
+                            object,
+                            references: definition,
+                            vendor_deletion,
+                        });
+                    }
+                    context.transaction.validate().await?;
+                    Ok(result)
+                }
+            },
+        )
+        .query("zerotrust.stock.deleted", move |ctx, input: ObjectInput| {
+            let service = Arc::clone(&deleted);
+            async move {
+                let mut context = super::access::metadata_context(&service, &ctx).await?;
+                let kind = kind(&input.object)?.ok_or_else(invalid)?;
+                authorize(&context.security, kind, Action::Read)?;
+                let deletion = metadata_deletion(&mut context.transaction, &input.object).await?;
+                let result = if let Some(deletion) = deletion {
+                    let references: StockReferences = context
+                        .transaction
+                        .read(crate::control::key("stock-references", &input.object))
+                        .await?
+                        .ok_or_else(invalid)?;
+                    let record = super::objects::metadata_raw_object(
+                        &mut context.transaction,
+                        &input.object,
+                    )
+                    .await?
+                    .ok_or_else(invalid)?;
+                    check_reference_record(&references, &record)?;
+                    Some(DeletionState {
+                        object: input.object,
+                        deletion,
+                        references,
+                    })
+                } else {
+                    None
+                };
+                context.transaction.validate().await?;
+                Ok(result)
+            }
         })
-    })
-    .transpose()
+        .mutation(
+            "zerotrust.stock.delete",
+            move |ctx, input: StockDeletion| {
+                let service = Arc::clone(&service);
+                async move { metadata_delete(&service, &ctx, input).await }
+            },
+        )
 }
-async fn delete(
-    state: &AppState,
-    ctx: &RequestContext,
+
+async fn metadata_delete(
+    service: &crate::auth::AuthService,
+    request: &RequestContext,
     input: StockDeletion,
 ) -> RpcResult<Success> {
+    use crate::control::key;
     let message = input.frame()?;
-    let (auth, pool) = authenticated_pool(state, ctx).await?;
-    let mut tx = pool.begin().await.map_err(internal)?;
-    let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-    authorize(&guard, input.kind, Action::Delete)?;
+    let mut context = super::access::metadata_context(service, request).await?;
+    let guard = &context.security;
+    authorize(guard, input.kind, Action::Delete)?;
     verify(&guard.signing_key, &input.signature, &message)?;
-    if input.tenant != auth.tenant
+    if input.tenant != context.auth.tenant
         || input.author != guard.subject
         || revision(&input.authority_generation)? != guard.root.generation
-        || revision(&input.policy_version)? != guard.root.policy_version
+        || input.policy_version != guard.policy.version
     {
         return Err(conflict());
     }
+    let mut record = super::objects::metadata_object(&mut context.transaction, &input.object)
+        .await?
+        .ok_or_else(not_found)?;
+    let proof_key = key("stock-deletions", &input.object);
+    if let Some(previous) = context
+        .transaction
+        .read::<StockDeletion>(proof_key.clone())
+        .await?
+    {
+        if serde_json::to_value(previous).map_err(internal)?
+            != serde_json::to_value(&input).map_err(internal)?
+            || !record.deleted
+        {
+            return Err(conflict());
+        }
+        context.transaction.validate().await?;
+        return Ok(Success { success: true });
+    }
+    if record.deleted || record.domain != input.domain || record.revision != input.revision {
+        return Err(conflict());
+    }
+    let envelope = super::objects::metadata_read(&context.repository, &record.reference).await?;
+    if packet_hash(envelope.frame()?, &envelope.signature)? != input.envelope_hash {
+        return Err(conflict());
+    }
+    let reference: StockReferences = context
+        .transaction
+        .read(key("stock-references", &input.object))
+        .await?
+        .ok_or_else(conflict)?;
+    check_reference_record(&reference, &record)?;
+    if reference.kind != input.kind || reference.envelope_hash != input.envelope_hash {
+        return Err(conflict());
+    }
+    record.deleted = true;
+    let event_id = format!("deletion:{}", input.signature);
+    let event = super::objects::ChangeRecord {
+        object: record.clone(),
+        previous: None,
+        publication: event_id.clone(),
+        occurred_micros: chrono::Utc::now().timestamp_micros().to_string(),
+        deletion: Some(serde_json::to_value(&input).map_err(internal)?),
+        references: Some(serde_json::to_value(&reference).map_err(internal)?),
+        migration_origin: None,
+    };
+    context.transaction.append(
+        &input.domain,
+        &event_id,
+        &input.object,
+        &event.occurred_micros,
+        None,
+        &event,
+    )?;
+    context
+        .transaction
+        .put(key("object-deletions", &input.object), &event_id)
+        .await?;
+    context.transaction.put(proof_key, &input).await?;
+    context
+        .transaction
+        .put(
+            super::objects::metadata_record_key(&input.domain, &input.object),
+            &record,
+        )
+        .await?;
     let mut domains = BTreeSet::from([input.kind.domain()]);
     if input.kind != StockKind::Price {
         domains.insert(StockKind::Price.domain());
     }
-    for domain in &domains {
-        domain_lock(&mut tx, domain, true).await?;
-    }
-    let definition = serde_json::to_value(&input).map_err(internal)?;
-    let old: Option<Value> =
-        sqlx::query_scalar("SELECT definition FROM __zerotrust_stock_deletions WHERE object_id=$1")
-            .bind(&input.object)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(internal)?;
-    if let Some(old) = old {
-        return if old == definition {
-            Ok(Success { success: true })
-        } else {
-            Err(conflict())
-        };
-    }
-    let row: Option<(String, i64, Value, bool)> = sqlx::query_as("SELECT domain_id,revision,envelope,deleted_at IS NOT NULL FROM __zerotrust_objects WHERE id=$1 FOR UPDATE")
-        .bind(&input.object).fetch_optional(&mut *tx).await.map_err(internal)?;
-    let (domain, version, reference, deleted) = row.ok_or_else(not_found)?;
-    if deleted || domain != input.domain || version != revision(&input.revision)? {
-        return Err(conflict());
-    }
-    let envelope = read_envelope(state, &auth.tenant, reference).await?;
-    if packet_hash(envelope.frame()?, &envelope.signature)? != input.envelope_hash {
-        return Err(conflict());
-    }
-    let registered: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM __zerotrust_stock_references WHERE object_id=$1 AND kind=$2)",
-    )
-    .bind(&input.object)
-    .bind(input.kind.name())
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(internal)?;
-    if !registered {
-        return Err(conflict());
-    }
-    let mut affected = vec![input.object.clone()];
-    if input.kind == StockKind::Product {
-        let children: Vec<String> = sqlx::query_scalar("SELECT r.object_id FROM __zerotrust_stock_references r JOIN __zerotrust_objects o ON o.id=r.object_id WHERE r.product_object_id=$1 AND r.kind='price' AND o.deleted_at IS NULL ORDER BY r.object_id").bind(&input.object).fetch_all(&mut *tx).await.map_err(internal)?;
-        affected.extend(children);
-    }
-    for object in &affected {
-        sqlx::query("INSERT INTO __zerotrust_stock_deletions(object_id,root_object_id,definition) VALUES($1,$2,$3)").bind(object).bind(&input.object).bind(&definition).execute(&mut *tx).await.map_err(internal)?;
-    }
-    sqlx::query(
-        "UPDATE __zerotrust_objects SET deleted_at=now(),updated_at=now() WHERE id=ANY($1)",
-    )
-    .bind(&affected)
-    .execute(&mut *tx)
-    .await
-    .map_err(internal)?;
-    // Invalidation heads use the same sequence as ordinary object commits.
-    // Notifications contain no prices, descriptions, relationship lists or keys.
     for domain in domains {
-        let seq: i64 = sqlx::query_scalar("UPDATE __zerotrust_domains SET head_sequence=nextval(pg_get_serial_sequence('__zerotrust_changes','seq')) WHERE id=$1 RETURNING head_sequence").bind(domain).fetch_optional(&mut *tx).await.map_err(internal)?.unwrap_or(0);
-        if seq > 0 {
-            sqlx::query("SELECT pg_notify('sortsys_zerotrust',$1)").bind(serde_json::json!({"kind":"object","seq":seq.to_string(),"id":input.object,"domain":domain}).to_string()).execute(&mut *tx).await.map_err(internal)?;
+        if let Some(mut area) = context
+            .transaction
+            .read::<super::objects::DomainRecord>(key("domains", domain))
+            .await?
+        {
+            area.sequence = revision(&area.sequence)?
+                .checked_add(1)
+                .ok_or_else(conflict)?
+                .to_string();
+            context
+                .transaction
+                .put(key("domains", domain), &area)
+                .await?;
+            context.transaction.notify(
+                "object",
+                &serde_json::json!({"domain": domain, "sequence": area.sequence}),
+            )?;
         }
     }
-    tx.commit().await.map_err(internal)?;
+    context.transaction.commit().await?;
     Ok(Success { success: true })
 }

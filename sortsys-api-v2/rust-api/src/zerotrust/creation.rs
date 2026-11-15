@@ -1,25 +1,17 @@
 //! Public, certified creation authority. No private tenant key is delegated.
 use super::{
-    access::{Security, security},
     crypto::{frame, invalid, revision, sized, verify},
     objects::packet_hash,
     wire::{Action, Effect, Facet, IdentityCertificate, Rule},
 };
 use crate::{
-    AppState,
-    api::Success,
-    error::RpcResult,
-    ids::Id,
-    procedures::common::{authenticated_pool, forbidden, internal},
-    rpc::{ProcedureRegistryBuilder, RequestContext},
+    api::Success, error::RpcResult, error::internal, ids::Id, rpc::ProcedureRegistryBuilder,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlx::PgConnection;
 use std::{
     collections::HashSet,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Mutex, OnceLock},
 };
 use ts_rs::TS;
 
@@ -97,50 +89,118 @@ pub(super) struct CreationOrigin {
     pub facet: Facet,
     pub capability: CreationCapability,
     pub signature: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub parent: Option<CreationParent>,
+}
+#[derive(Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct CreationParent {
+    pub tenant: String,
+    pub id: String,
+    pub scope: String,
+    pub facet: Facet,
+    pub capability: CreationCapability,
+    pub signature: String,
+}
+impl CreationParent {
+    fn origin(&self) -> CreationOrigin {
+        CreationOrigin {
+            tenant: self.tenant.clone(),
+            id: self.id.clone(),
+            scope: self.scope.clone(),
+            facet: self.facet,
+            capability: self.capability.clone(),
+            signature: self.signature.clone(),
+            parent: None,
+        }
+    }
+}
+pub(super) fn project_module_facets(module: &str) -> Option<&'static [Facet]> {
+    match module {
+        "delivery-notes" => Some(&[Facet::MasterData, Facet::Procurement]),
+        "daily-reports" => Some(&[Facet::MasterData, Facet::Calculation]),
+        "regie-reports" => Some(&[Facet::MasterData, Facet::Personnel]),
+        "planning" => Some(&[Facet::MasterData]),
+        "tool-usage" => Some(&[Facet::MasterData, Facet::Procurement]),
+        _ => None,
+    }
 }
 impl CreationOrigin {
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
         let prefix = format!("{}:", self.capability.namespace);
-        let token = self.scope.strip_prefix(&prefix).ok_or_else(invalid)?;
+        let resource = self.scope.strip_prefix(&prefix).ok_or_else(invalid)?;
+        let mut parts = resource.split(':');
+        let token = parts.next().ok_or_else(invalid)?;
+        let module = parts.next();
+        if parts.next().is_some() || module.is_some() && self.capability.namespace != "project" {
+            return Err(invalid());
+        }
         let id = Id::decode(token).map_err(|_| invalid())?;
-        let allowed_facet = match self.capability.namespace.as_str() {
-            "project" => matches!(
-                self.facet,
-                Facet::MasterData
-                    | Facet::Attachment
-                    | Facet::OfferPrices
-                    | Facet::Procurement
-                    | Facet::ContractQuantities
-            ),
-            "commercial" => COMMERCIAL_FACETS.contains(&self.facet),
-            "tool" => matches!(
-                self.facet,
-                Facet::MasterData | Facet::Procurement | Facet::Measurement
-            ),
-            "tool-tracking" => matches!(
-                self.facet,
-                Facet::MasterData | Facet::Procurement | Facet::Scope
-            ),
-            _ => false,
+        let allowed_facet = if let Some(module) = module {
+            project_module_facets(module).is_some_and(|facets| facets.contains(&self.facet))
+        } else {
+            match self.capability.namespace.as_str() {
+                "project" => matches!(
+                    self.facet,
+                    Facet::MasterData
+                        | Facet::Attachment
+                        | Facet::OfferPrices
+                        | Facet::Procurement
+                        | Facet::Billing
+                ),
+                "commercial" => COMMERCIAL_FACETS.contains(&self.facet),
+                "tool" => matches!(
+                    self.facet,
+                    Facet::MasterData | Facet::Procurement | Facet::Measurement
+                ),
+                "tool-tracking" => matches!(
+                    self.facet,
+                    Facet::MasterData | Facet::Procurement | Facet::Scope
+                ),
+                _ => false,
+            }
         };
         if id.0 <= 0
             || id.encode() != token
             || self.tenant != self.capability.tenant
             || !allowed_facet
             || self.id != format!("{}:{}", self.scope, self.facet.name())
+            || module.is_some() != self.parent.is_some()
         {
             return Err(invalid());
         }
         let hash = packet_hash(self.capability.frame()?, &self.capability.signature)?;
+        let mut fields = vec![
+            self.tenant.clone(),
+            self.id.clone(),
+            self.scope.clone(),
+            self.facet.name().to_owned(),
+            hash,
+        ];
+        if let Some(parent) = &self.parent {
+            let origin = parent.origin();
+            if parent.tenant != self.tenant
+                || parent.scope != format!("project:{token}")
+                || parent.id != format!("{}:master-data", parent.scope)
+                || parent.facet != Facet::MasterData
+                || parent.capability.generation != self.capability.generation
+                || parent.capability.creator.user != self.capability.creator.user
+                || parent.capability.creator.signing_key != self.capability.creator.signing_key
+                || parent.capability.creator.encryption_key
+                    != self.capability.creator.encryption_key
+            {
+                return Err(invalid());
+            }
+            fields.push(packet_hash(origin.frame()?, &parent.signature)?);
+        }
         Ok(frame(
-            "sortsys/created-area/v1",
-            &[
-                &self.tenant,
-                &self.id,
-                &self.scope,
-                self.facet.name(),
-                &hash,
-            ],
+            if self.parent.is_some() {
+                "sortsys/created-area/v2"
+            } else {
+                "sortsys/created-area/v1"
+            },
+            &fields.iter().map(String::as_str).collect::<Vec<_>>(),
         ))
     }
     pub fn author(&self) -> String {
@@ -162,6 +222,9 @@ impl CreationOrigin {
             return Ok(());
         }
         self.capability.verify(authority)?;
+        if let Some(parent) = &self.parent {
+            parent.origin().verify(authority)?;
+        }
         verify(
             &sized::<32>(&self.capability.creator.signing_key)?,
             &self.signature,
@@ -182,6 +245,7 @@ impl CreationOrigin {
         subjects
             .into_iter()
             .map(|subject| Rule {
+                origin: None,
                 subject,
                 scope: self.scope.clone(),
                 facet: self.facet,
@@ -191,70 +255,75 @@ impl CreationOrigin {
             .collect()
     }
 }
-pub(super) async fn origins(
-    tx: &mut PgConnection,
-    tenant: &str,
+
+pub(super) async fn metadata_origins(
+    transaction: &mut crate::control::Transaction,
+    auth: &crate::auth::AuthResult,
     generation: i64,
     authority: &[u8],
     subject: &str,
-    admin: bool,
+    policy: &super::wire::SignedPolicy,
+    domains: Option<&[String]>,
 ) -> RpcResult<Vec<CreationOrigin>> {
-    let rows:Vec<(String,Value)>=sqlx::query_as("SELECT domain_id,origin FROM __zerotrust_created_areas WHERE root_generation=$1 AND ($2 OR creator=$3 OR $3=ANY(readers)) ORDER BY domain_id LIMIT 2001")
-        .bind(generation).bind(admin).bind(subject).fetch_all(tx).await.map_err(internal)?;
-    if rows.len() > 2000 {
-        return Err(invalid());
-    }
-    rows.into_iter()
-        .map(|(id, value)| {
-            let origin: CreationOrigin = serde_json::from_value(value).map_err(|_| invalid())?;
-            if origin.id != id
-                || origin.tenant != tenant
-                || origin.capability.generation != generation.to_string()
-            {
-                return Err(invalid());
+    let collection = format!("created-areas-{generation}");
+    let origins = if let Some(domains) = domains {
+        let keys = domains
+            .iter()
+            .map(|domain| crate::control::key(&collection, domain))
+            .collect();
+        let origins = transaction.many::<CreationOrigin>(keys).await?;
+        let mut selected = Vec::new();
+        for (domain, origin) in domains.iter().zip(origins) {
+            if let Some(origin) = origin {
+                if origin.id != *domain {
+                    return Err(invalid());
+                }
+                selected.push(origin);
             }
-            origin.verify(authority)?;
-            Ok(origin)
-        })
-        .collect()
+        }
+        selected
+    } else {
+        transaction.all::<CreationOrigin>(&collection, 2000).await?
+    };
+    let mut visible = Vec::new();
+    for origin in origins {
+        if origin.tenant != auth.tenant || origin.capability.generation != generation.to_string() {
+            return Err(invalid());
+        }
+        origin.verify(authority)?;
+        let original_participant = origin.capability.creator.user == subject
+            || origin
+                .capability
+                .readers
+                .iter()
+                .any(|reader| reader.user == subject);
+        let currently_shared = policy.allows(
+            subject,
+            &origin.scope,
+            origin.facet,
+            super::wire::Action::Read,
+        );
+        // A later recipient needs the same public creation proof as the
+        // original participants to derive the area's complete writer set.
+        if auth.is_admin() || original_participant || currently_shared {
+            visible.push(origin);
+        }
+    }
+    Ok(visible)
 }
-pub(super) async fn check_member(
-    tx: &mut PgConnection,
-    member: &IdentityCertificate,
-    guard: &Security,
-) -> RpcResult<()> {
-    member.verify(&guard.authority)?;
-    if member.tenant != guard.policy.tenant
-        || member.generation != guard.root.generation.to_string()
-    {
-        return Err(forbidden());
-    }
-    let user = Id::decode(member.user.strip_prefix("user:").ok_or_else(invalid)?)
-        .map_err(|_| invalid())?;
-    let current:Option<(Vec<u8>,Vec<u8>)>=sqlx::query_as("SELECT a.encryption_key,a.signing_key FROM __zerotrust_accounts a JOIN users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.deactivated_at IS NULL")
-        .bind(user).fetch_optional(tx).await.map_err(internal)?;
-    if current
-        != Some((
-            sized::<32>(&member.encryption_key)?.to_vec(),
-            sized::<32>(&member.signing_key)?.to_vec(),
-        ))
-    {
-        return Err(forbidden());
-    }
-    Ok(())
+
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub(super) struct OriginInput {
+    pub domain: String,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-struct OriginInput {
-    domain: String,
-}
-#[derive(Deserialize, TS)]
-#[serde(deny_unknown_fields)]
-struct CapabilityInput {
+pub(super) struct CapabilityInput {
     #[ts(type = "'project'|'commercial'|'tool'|'tool-tracking'")]
-    namespace: String,
+    pub namespace: String,
 }
-fn creation_scope(namespace: &str) -> RpcResult<&'static str> {
+pub(super) fn creation_scope(namespace: &str) -> RpcResult<&'static str> {
     match namespace {
         "project" => Ok("create:project"),
         "commercial" => Ok("create:commercial"),
@@ -263,75 +332,7 @@ fn creation_scope(namespace: &str) -> RpcResult<&'static str> {
         _ => Err(invalid()),
     }
 }
-pub(super) fn register(
-    mut builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
-) -> ProcedureRegistryBuilder {
-    let list = Arc::clone(&state);
-    builder = builder.query("zerotrust.creations.list", move |ctx, _: ()| {
-        let state = Arc::clone(&list);
-        async move {
-            let (auth, pool) = authenticated_pool(&state, &ctx).await?;
-            let mut tx = pool.begin().await.map_err(internal)?;
-            Ok(security(&mut tx, state.tenants.master(), &auth, false)
-                .await?
-                .origins)
-        }
-    });
-    let get = Arc::clone(&state);
-    builder = builder.query(
-        "zerotrust.creations.origin",
-        move |ctx, input: OriginInput| {
-            let state = Arc::clone(&get);
-            async move {
-                let (auth, pool) = authenticated_pool(&state, &ctx).await?;
-                let mut tx = pool.begin().await.map_err(internal)?;
-                let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-                let area: Option<(String, String)> =
-                    sqlx::query_as("SELECT scope,facet FROM __zerotrust_domains WHERE id=$1")
-                        .bind(&input.domain)
-                        .fetch_optional(&mut *tx)
-                        .await
-                        .map_err(internal)?;
-                let (scope, facet) = area.ok_or_else(forbidden)?;
-                let facet: Facet =
-                    serde_json::from_value(Value::String(facet)).map_err(|_| invalid())?;
-                if !auth.is_admin() && !guard.allows(&guard.subject, &scope, facet, Action::Read) {
-                    return Err(forbidden());
-                }
-                Ok(guard
-                    .origins
-                    .into_iter()
-                    .find(|origin| origin.id == input.domain))
-            }
-        },
-    );
-    let cap = Arc::clone(&state);
-    builder=builder.query("zerotrust.creations.capability",move|ctx,input:CapabilityInput| {let state=Arc::clone(&cap);async move {
-        let scope=creation_scope(&input.namespace)?;
-        let(auth,pool)=authenticated_pool(&state,&ctx).await?;let mut tx=pool.begin().await.map_err(internal)?;
-        let guard=security(&mut tx,state.tenants.master(),&auth,false).await?;
-        if !guard.policy.allows(&guard.subject,scope,Facet::MasterData,Action::Create) {return Ok(None);}
-        let value:Option<Value>=sqlx::query_scalar("SELECT capability FROM __zerotrust_creation_capabilities WHERE user_id=$1 AND generation=$2 AND namespace=$3")
-            .bind(auth.user.id.parse::<i64>().map_err(internal)?).bind(guard.root.generation).bind(&input.namespace).fetch_optional(&mut *tx).await.map_err(internal)?;
-        let Some(value)=value else {return Ok(None)};
-        let cap:CreationCapability=serde_json::from_value(value).map_err(|_|invalid())?;cap.verify(&guard.authority)?;
-        if cap.tenant!=auth.tenant || cap.creator.user!=guard.subject || cap.generation!=guard.root.generation.to_string() || cap.namespace!=input.namespace {return Err(forbidden());}
-        check_member(&mut tx,&cap.creator,&guard).await?; Ok(Some(cap))
-    }});
-    builder.mutation("zerotrust.creations.grant",move|ctx:RequestContext,input:CreationCapability| {let state=Arc::clone(&state);async move {
-        let(auth,pool)=authenticated_pool(&state,&ctx).await?;if !auth.is_admin() {return Err(forbidden());}
-        let mut tx=pool.begin().await.map_err(internal)?;let guard=security(&mut tx,state.tenants.master(),&auth,true).await?;
-        input.verify(&guard.authority)?;
-        if input.tenant!=auth.tenant || input.generation!=guard.root.generation.to_string() {return Err(invalid());}
-        for member in std::iter::once(&input.creator).chain(&input.readers) {check_member(&mut tx,member,&guard).await?;}
-        let user=Id::decode(input.creator.user.strip_prefix("user:").ok_or_else(invalid)?).map_err(|_|invalid())?;
-        sqlx::query("INSERT INTO __zerotrust_creation_capabilities(user_id,namespace,generation,capability) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,namespace) DO UPDATE SET generation=EXCLUDED.generation,capability=EXCLUDED.capability")
-            .bind(user).bind(&input.namespace).bind(guard.root.generation).bind(serde_json::to_value(&input).map_err(internal)?).execute(&mut *tx).await.map_err(internal)?;
-        sqlx::query("SELECT pg_notify('sortsys_zerotrust',$1)").bind(serde_json::json!({"kind":"policy","version":guard.root.policy_version.to_string()}).to_string()).execute(&mut *tx).await.map_err(internal)?;
-        tx.commit().await.map_err(internal)?; Ok(Success{success:true})
-    }})
-}
+
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .query_stub::<(), Vec<CreationOrigin>>("zerotrust.creations.list")
@@ -342,6 +343,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
     #[test]
     fn browser_tool_creation_proofs_bind_each_resource_without_expanding_other_capabilities() {
         let input: serde_json::Value = serde_json::from_str(include_str!(
@@ -377,6 +379,76 @@ mod tests {
     }
     use super::*;
     use crate::zerotrust::objects::DomainDefinition;
+
+    #[test]
+    fn browser_project_modules_bind_root_creator_and_isolate_each_business_area() {
+        let source: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/zerotrust-project-modules.json"
+        ))
+        .unwrap();
+        let authority = sized::<32>(source["authority"].as_str().unwrap()).unwrap();
+        let root: DomainDefinition = serde_json::from_value(source["root"].clone()).unwrap();
+        let definitions = source["definitions"].as_array().unwrap();
+        assert_eq!(definitions.len(), 9);
+        for entry in definitions {
+            let definition: DomainDefinition = serde_json::from_value(entry.clone()).unwrap();
+            let origin = definition.creation.as_ref().unwrap();
+            origin.verify(&authority).unwrap();
+            let creator = sized::<32>(&origin.capability.creator.signing_key).unwrap();
+            verify(&creator, &definition.proof, &definition.frame().unwrap()).unwrap();
+            assert_eq!(
+                serde_json::to_value(origin.parent.as_ref().unwrap()).unwrap(),
+                serde_json::to_value(root.creation.as_ref().unwrap()).unwrap()
+            );
+            assert!(
+                origin
+                    .rules()
+                    .iter()
+                    .all(|rule| rule.scope == origin.scope && rule.facet == origin.facet)
+            );
+            for change in [
+                "missing",
+                "project",
+                "creator",
+                "generation",
+                "facet",
+                "signature",
+                "module",
+            ] {
+                let mut changed = origin.clone();
+                match change {
+                    "missing" => changed.parent = None,
+                    "project" => {
+                        let parent = changed.parent.as_mut().unwrap();
+                        parent.scope = "project:def".into();
+                        parent.id = "project:def:master-data".into();
+                    }
+                    "creator" => {
+                        changed.parent.as_mut().unwrap().capability.creator.user = "user:3".into()
+                    }
+                    "generation" => {
+                        changed.parent.as_mut().unwrap().capability.generation = "2".into()
+                    }
+                    "facet" => changed.parent.as_mut().unwrap().facet = Facet::Attachment,
+                    "signature" => {
+                        changed.parent.as_mut().unwrap().signature =
+                            super::super::crypto::encode(&[0; 64])
+                    }
+                    _ => {
+                        changed.scope = "project:abc:unknown".into();
+                        changed.id = format!("{}:{}", changed.scope, changed.facet.name());
+                    }
+                }
+                assert!(changed.verify(&authority).is_err(), "{change}");
+            }
+            let mut nested = serde_json::to_value(origin).unwrap();
+            nested["parent"]["parent"] = source["root"]["creation"].clone();
+            assert!(serde_json::from_value::<CreationOrigin>(nested).is_err());
+        }
+        let mut root = root.creation.unwrap();
+        root.parent = serde_json::from_value(definitions[0]["creation"]["parent"].clone()).unwrap();
+        assert!(root.frame().is_err());
+    }
 
     #[test]
     fn browser_creation_proof_binds_certified_members_and_the_fresh_project() {
@@ -455,7 +527,7 @@ mod tests {
                         | Facet::Attachment
                         | Facet::OfferPrices
                         | Facet::Procurement
-                        | Facet::ContractQuantities
+                        | Facet::Billing
                 )
             );
         }

@@ -1,104 +1,54 @@
 //! Shared request and response types used by multiple procedure modules.
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tokio::time::sleep;
+use serde::Serialize;
 use ts_rs::TS;
 
 use crate::{
-    AppState,
+    auth::AuthUser,
     error::{ErrorCode, RpcError},
     ids::Id,
     rpc::{ProcedureRegistry, ProcedureRegistryBuilder, RequestContext},
 };
 
-const MIN_LOGIN_TIME: Duration = Duration::from_secs(3);
-
-pub fn registry(state: Arc<AppState>) -> ProcedureRegistry {
-    let gate = Arc::clone(&state);
-    let builder = ProcedureRegistryBuilder::default()
-        .with_request_guard(move |path, context| {
-            let state = Arc::clone(&gate);
-            async move { crate::zerotrust::guard_legacy_request(&state, &path, &context).await }
-        })
-        .query("ping", |_ctx: RequestContext, _input: ()| async move {
-            Ok("pong".to_owned())
-        });
-    let builder = register_auth(builder, Arc::clone(&state));
-    crate::procedures::register(builder, state).build()
-}
-
 pub fn contract_registry() -> ProcedureRegistry {
     let builder = crate::contract_generated::FULL_CONTRACT
         .iter()
-        .filter(|spec| spec.path != "personalization.activity.list")
+        .filter(|spec| {
+            spec.path != "personalization.activity.list"
+                && spec.path != "admin.login"
+                && spec.path != "errorReports.report"
+                && spec.path != "admin.errors.list"
+                && !spec.path.starts_with("admin.tenants.")
+        })
         .fold(ProcedureRegistryBuilder::default(), |builder, spec| {
             builder.raw_stub(spec)
         });
 
-    crate::procedures::register_contract(builder).build()
+    crate::contracts::register_contract(builder).build()
 }
 
-fn register_auth(
+pub(crate) fn register_session_auth(
     builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
+    service: Arc<crate::auth::AuthService>,
 ) -> ProcedureRegistryBuilder {
-    let login_state = Arc::clone(&state);
-    let logout_state = Arc::clone(&state);
-    let check_state = Arc::clone(&state);
-    let session_state = Arc::clone(&state);
-
+    let logout_state = Arc::clone(&service);
+    let check_state = Arc::clone(&service);
+    let session_state = Arc::clone(&service);
     builder
-        .mutation(
-            "auth.login",
-            move |ctx: RequestContext, input: LoginInput| {
-                let state = Arc::clone(&login_state);
-                async move {
-                    let started = Instant::now();
-                    let user_agent = ctx
-                        .headers
-                        .get("user-agent")
-                        .and_then(|value| value.to_str().ok());
-                    let inet_addr = ctx
-                        .headers
-                        .get("x-forwarded-for")
-                        .and_then(|value| value.to_str().ok())
-                        .and_then(|value| value.split(',').next())
-                        .map(str::trim);
-                    let token = state
-                        .auth
-                        .login(
-                            input.tenant.trim(),
-                            input.username.trim(),
-                            input.password.trim(),
-                            user_agent,
-                            inet_addr,
-                        )
-                        .await;
-                    sleep(MIN_LOGIN_TIME.saturating_sub(started.elapsed())).await;
-                    token?
-                        .map(|token| LoginOutput { token })
-                        .ok_or_else(|| unauthorized("Login failed"))
-                }
-            },
-        )
         .mutation("auth.logout", move |ctx: RequestContext, _input: ()| {
             let state = Arc::clone(&logout_state);
             async move {
-                let auth = state.auth.authenticate(&ctx.headers).await?;
-                state.auth.logout(&auth).await?;
+                let auth = state.authenticate(&ctx.headers).await?;
+                state.logout(&auth).await?;
                 Ok(Success { success: true })
             }
         })
         .query("auth.check", move |ctx: RequestContext, _input: ()| {
             let state = Arc::clone(&check_state);
             async move {
-                state.auth.authenticate(&ctx.headers).await?;
+                state.authenticate(&ctx.headers).await?;
                 Ok(Success { success: true })
             }
         })
@@ -107,36 +57,11 @@ fn register_auth(
             move |ctx: RequestContext, _input: ()| {
                 let state = Arc::clone(&session_state);
                 async move {
-                    let auth = state.auth.authenticate(&ctx.headers).await?;
-                    let tenant = state
-                        .tenants
-                        .tenant(&auth.tenant)
-                        .await
-                        .map_err(|error| {
-                            RpcError::new(ErrorCode::InternalServerError, error.to_string())
-                        })?
-                        .ok_or_else(|| unauthorized("Unauthorized"))?;
-                    let company_name = tenant
-                        .contact_details
-                        .get("companyName")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned);
-                    let object_storage_enabled = tenant
-                        .connection_details
-                        .pointer("/objectStorage/enabled")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
+                    let auth = state.authenticate(&ctx.headers).await?;
                     Ok(SessionInfo {
-                        user: SessionInfoUser {
+                        user: AuthUser {
                             id: wire_id(&auth.user.id)?,
-                            username: auth.user.username,
-                            salutation: auth.user.salutation,
-                            first_name: auth.user.first_name,
-                            last_name: auth.user.last_name,
-                            contract_type: auth.user.contract_type,
-                            phone: auth.user.phone,
-                            email: auth.user.email,
-                            locale: auth.user.locale,
+                            ..auth.user
                         },
                         session: SessionInfoSession {
                             id: wire_id(&auth.session.id)?,
@@ -147,8 +72,8 @@ fn register_auth(
                         },
                         roles: auth.roles,
                         tenant: SessionInfoTenant {
-                            company_name,
-                            object_storage_enabled,
+                            company_name: None,
+                            object_storage_enabled: true,
                         },
                     })
                 }
@@ -164,23 +89,6 @@ fn wire_id(value: &str) -> Result<String, RpcError> {
         .map_err(|error| RpcError::new(ErrorCode::InternalServerError, error.to_string()))
 }
 
-fn unauthorized(message: &str) -> RpcError {
-    RpcError::new(ErrorCode::Unauthorized, message).with_http_code(401)
-}
-
-#[derive(Debug, Deserialize, TS)]
-#[serde(deny_unknown_fields)]
-struct LoginInput {
-    tenant: String,
-    username: String,
-    password: String,
-}
-
-#[derive(Debug, Serialize, TS)]
-struct LoginOutput {
-    token: String,
-}
-
 #[derive(Debug, Serialize, TS)]
 pub(crate) struct Success {
     #[ts(type = "true")]
@@ -190,26 +98,10 @@ pub(crate) struct Success {
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct SessionInfo {
-    user: SessionInfoUser,
+    user: AuthUser,
     session: SessionInfoSession,
     roles: Vec<String>,
     tenant: SessionInfoTenant,
-}
-
-#[derive(Debug, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-struct SessionInfoUser {
-    id: String,
-    username: String,
-    salutation: Option<String>,
-    first_name: String,
-    last_name: Option<String>,
-    #[ts(type = "\"internal\" | \"external\" | \"subcontractor\"")]
-    contract_type: String,
-    phone: Option<String>,
-    email: Option<String>,
-    #[ts(type = "\"de\" | \"en\"")]
-    locale: String,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -229,4 +121,17 @@ struct SessionInfoSession {
 struct SessionInfoTenant {
     company_name: Option<String>,
     object_storage_enabled: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn client_contract_exposes_new_setup_without_live_sql_source_endpoints() {
+        let contract = super::contract_registry().typescript_contract();
+        assert!(contract.contains("\"auth.owner.finish\""));
+        assert!(contract.contains("\"zerotrust.setup.backup.complete\""));
+        assert!(!contract.contains("\"zerotrust.migration."));
+        assert!(contract.contains("\"admin.storage.snapshots.create\""));
+        assert!(!contract.contains("\"admin.databases."));
+    }
 }

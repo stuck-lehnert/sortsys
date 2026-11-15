@@ -33,10 +33,6 @@ pub fn json_schema(source: &str) -> Result<Value, String> {
     Ok(Parser::parse(source)?.to_json_schema())
 }
 
-pub fn validate(source: &str, value: &Value) -> Result<(), String> {
-    Parser::parse(source)?.validate("input", value)
-}
-
 struct Parser<'a> {
     source: &'a str,
     offset: usize,
@@ -289,48 +285,6 @@ impl ContractType {
             Self::Union(members) => union_json_schema(members),
         }
     }
-
-    fn validate(&self, path: &str, value: &Value) -> Result<(), String> {
-        match self {
-            Self::Any | Self::Undefined => Ok(()),
-            Self::Null if value.is_null() => Ok(()),
-            Self::Null => Err(format!("{path} must be null")),
-            Self::Boolean if value.is_boolean() => Ok(()),
-            Self::Boolean => Err(format!("{path} must be a boolean")),
-            Self::Number if value.is_number() => Ok(()),
-            Self::Number => Err(format!("{path} must be a number")),
-            Self::String if value.is_string() => Ok(()),
-            Self::String => Err(format!("{path} must be a string")),
-            Self::Date if value.is_string() => Ok(()),
-            Self::Date => Err(format!("{path} must be an ISO 8601 timestamp string")),
-            Self::Literal(expected) if value == expected => Ok(()),
-            Self::Literal(expected) => Err(format!("{path} must equal {expected}")),
-            Self::Array(items) => {
-                let values = value
-                    .as_array()
-                    .ok_or_else(|| format!("{path} must be an array"))?;
-
-                for (index, value) in values.iter().enumerate() {
-                    items.validate(&format!("{path}[{index}]"), value)?;
-                }
-
-                Ok(())
-            }
-            Self::Record(values) => {
-                let object = value
-                    .as_object()
-                    .ok_or_else(|| format!("{path} must be an object"))?;
-
-                for (key, value) in object {
-                    values.validate(&format!("{path}.{key}"), value)?;
-                }
-
-                Ok(())
-            }
-            Self::Object(fields) => validate_object(fields, path, value),
-            Self::Union(members) => validate_union(members, path, value),
-        }
-    }
 }
 
 fn object_json_schema(fields: &[Field]) -> Value {
@@ -372,54 +326,6 @@ fn union_json_schema(members: &[ContractType]) -> Value {
     }
 }
 
-fn validate_object(fields: &[Field], path: &str, value: &Value) -> Result<(), String> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| format!("{path} must be an object"))?;
-
-    for key in object.keys() {
-        if !fields.iter().any(|field| field.name == *key) {
-            let expected = fields
-                .iter()
-                .map(|field| format!("`{}`", field.name))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            return Err(format!(
-                "{path} contains unknown field `{key}`; expected one of {expected}"
-            ));
-        }
-    }
-
-    for field in fields {
-        if let Some(value) = object.get(&field.name) {
-            field
-                .value_type
-                .validate(&format!("{path}.{}", field.name), value)?;
-        } else if !field.optional {
-            return Err(format!("{path} is missing required field `{}`", field.name));
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_union(members: &[ContractType], path: &str, value: &Value) -> Result<(), String> {
-    let mut most_relevant_error = None;
-
-    for member in members
-        .iter()
-        .filter(|member| !matches!(member, ContractType::Undefined))
-    {
-        match member.validate(path, value) {
-            Ok(()) => return Ok(()),
-            Err(error) => most_relevant_error = Some(error),
-        }
-    }
-
-    Err(most_relevant_error.unwrap_or_else(|| format!("{path} has an unsupported value")))
-}
-
 fn is_date_field(name: &str) -> bool {
     matches!(
         name,
@@ -431,7 +337,7 @@ fn is_date_field(name: &str) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::{json_schema, validate};
+    use super::json_schema;
 
     #[test]
     fn nested_objects_remain_objects_in_json_schema() {
@@ -449,21 +355,6 @@ mod tests {
             schema["properties"]["address"]["anyOf"][1]["required"],
             json!(["city", "streetAddress"])
         );
-    }
-
-    #[test]
-    fn validation_rejects_flattened_addresses_and_unknown_fields() {
-        let source = "{ title: string; address?: undefined | null | { city: string; streetAddress: string; }; }";
-
-        let flattened = validate(
-            source,
-            &json!({ "title": "Projekt", "address": "Musterstraße 42" }),
-        )
-        .unwrap_err();
-        assert_eq!(flattened, "input.address must be an object");
-
-        let unknown = validate(source, &json!({ "name": "Projekt" })).unwrap_err();
-        assert!(unknown.contains("unknown field `name`"));
     }
 
     #[test]

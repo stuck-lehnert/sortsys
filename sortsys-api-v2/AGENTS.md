@@ -1,33 +1,28 @@
 ## Purpose
-`sortsys-api-v2` is a Rust service with a small first-party TypeScript client. The former TypeScript server and its migration sources have been removed. The API is still incomplete, so preserve protocol compatibility and document missing procedures.
+`sortsys-api-v2` provides the independent encrypted API and the first-party TypeScript transport. Business plaintext belongs to the browser. A previous PostgreSQL backup is an input to new-tenant setup, never a running database dependency or rolling upgrade source.
 
-## Architecture overview
-- **Entry point:** `rust-api/src/main.rs` validates configuration, connects the master database, binds Axum, and handles graceful shutdown.
-- **Transport:** `rust-api/src/rpc.rs` implements the established batched RPC wire format, SuperJSON envelopes, typed procedure registration, and TypeScript contract generation.
-- **Data layer:** `rust-api/src/database.rs` owns master/tenant pools. SQL schema history lives only in `rust-api/migrations/` and is applied by `rust-api/src/migrations.rs`.
-- **Authentication:** `rust-api/src/auth.rs` implements JWT sessions and role checks. Public identifiers use the base-32 codec in `rust-api/src/ids.rs`.
-- **Client:** `client/src/rpc.ts` is the framework-independent batch transport; `client/src/generated/contract.ts` is generated from the Rust registry.
+## Architecture
+- `rust-api/src/main.rs` reads `standalone::Config`, connects the DuckDB service and starts Axum. It does not connect `AppState`, run PostgreSQL migrations, seed old tables or start persistent plaintext jobs.
+- `rust-api/src/standalone.rs` assembles the production router. Native integration tests use this same router. Add a handler only after it uses the independent persistence boundary; do not fall back to an old procedure.
+- `rust-api/src/control.rs` manages typed metadata reads, collection snapshots and atomic compare-and-swap transactions. All API replicas use the shared `sortsys-store` service; only that service opens tenant files.
+- `rust-api/src/zerotrust/` validates public cryptographic proofs, permissions and immutable references. Authentication, rights and business changes must be checked in the same transaction. Do not validate decrypted business contents at the API.
+- `sortsys-zerotrust` supplies the reusable Rust and TypeScript cryptographic framework. Keep application-specific concepts outside its generic core.
+- `rust-api/src/rpc.rs` owns batching, SuperJSON envelopes, registration and contract generation. The browser's business facade implements many typed business operations locally; a generated type alone does not register a server handler.
+- `rust-api/src/transport.rs` owns shared wire values and patch serialization. `rust-api/src/contracts/` describes the browser's typed business facade without registering plaintext server handlers. Preserve one Rust identity for shared values.
+- `rust-api/src/operator.rs` registers the independent operator controls. Keep these metadata operations separate from the business contract stubs.
+- There is no `AppState`, SQL procedure tree or PostgreSQL migration source. Do not reintroduce them. The browser's logical row model is maintained in `sortsys-webapp-v2/schema/business.json`; `scripts/generate-browser-schema.mjs` derives its fingerprint and generated browser copy without a database.
 
-## Configuration & environment
-- Required variables are `JWT_SECRET`, `PG_MASTER_DSN`, and `ADMIN_HASH`; `PORT` defaults to `3000`. Production also requires `JOB_RUNNER_TOKEN`.
-- Each value can alternatively be read from `/run/secrets/SORTSYS_API_V2_<NAME>`.
-- The service listens on `0.0.0.0:{PORT}`. Terminate TLS upstream.
+## Runtime configuration
+`JWT_SECRET` (at least 32 bytes), a bcrypt `ADMIN_HASH`, `DUCKDB_QUACK_URI`, `DUCKDB_CONTROL_URL` and `DUCKDB_SERVICE_TOKEN` are required. `PORT` defaults to `3000`. API settings can be read from `/run/secrets/SORTSYS_API_V2_<NAME>`; datastore connection settings use `/run/secrets/SORTSYS_STORE_<NAME>`.
+
+The process listens on `0.0.0.0:{PORT}`. Terminate TLS upstream. Never add a provider-controlled password reset or tenant decryption key.
 
 ## Verification
-- **Rust:** `cargo fmt --all --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.
-- **Contract:** `cargo run --bin generate_contract -- --check`.
-- **Client:** `cd client && bunx tsc -p tsconfig.json --noEmit && bun test src/rpc.test.ts && bun run build`.
-- **Combined:** run `./scripts/test-api` from the repository root.
-- **Container:** `docker build -t sortsys-api-v2 ./sortsys-api-v2`.
+- Rust: `cargo fmt --all --check`, `cargo test --workspace --lib`, `cargo clippy --workspace --all-targets -- -D warnings`.
+- Contract, from this directory: `cargo run --bin generate_contract -- --check`.
+- Client: `cd client && bunx tsc -p tsconfig.json --noEmit && bun test src/rpc.test.ts && bun run build`.
+- Containerized suite: `scripts/test-api` from the monorepo root builds an isolated Rust/DuckDB/Bun/Node test image, copies a source snapshot without secrets, runs crate/client/native checks and removes its container. Logs remain at the reported path. It never starts PostgreSQL or upgrades an archived deployment.
+- Native integration: `scripts/test-native-auth` from the monorepo root starts its own disposable DuckDB service and independent API instances. It requires the pinned DuckDB library/extensions, Rust and Bun, but no PostgreSQL process or development stack. `SORTSYS_NATIVE_AUTH_TEST_FILTER` can select a named test under `zerotrust::opaque::store_tests::`; an empty selection is an error.
+- Container: from the monorepo root, `docker build -f sortsys-api-v2/Dockerfile -t sortsys-api-v2 .`.
 
-## Folder responsibilities
-- `rust-api/src/`: server, transport, authentication, database, and procedures.
-- `rust-api/migrations/`: authoritative SQL migrations. Add new timestamped SQL files and register them in `migrations_generated.rs`.
-- `client/`: independently built TypeScript client package.
-- `scripts/`: client-side operational utilities only; no server implementation belongs here.
-
-## Workflow reminders
-- Do not restore the removed TypeScript server or introduce an external RPC framework dependency.
-- Only the procedures present in `client/src/generated/contract.ts` are currently supported.
-- Regenerate and commit the client contract whenever procedure types change.
-- Run the combined verification before merging.
+Keep tests meaningful: check the real browser cryptography and production handlers, concurrent replicas, denied access and atomic failure. Do not substitute a mock business service for the persistence path being tested. Run suitable checks before describing a path as working.

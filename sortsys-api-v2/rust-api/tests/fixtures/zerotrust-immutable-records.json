@@ -1,0 +1,542 @@
+{
+  "signer": "XNs7FYlQ2jTXyR2oKS3bJR8Q4fj3u2ByYQTAp9kG0kM",
+  "cases": [
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:financial-invoice:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "8yXgUv6tqusBtIAn",
+        "ciphertext": "9_U1MANWLDgW6VP-ksPwZ8jD",
+        "wrappedKey": "9dvHmBCePUmFPVah0gEL9TaOGIO_W26f0XNtx8-aPe1q5ZHfb1Gapg",
+        "signature": "dTZGn_SfbCI00rdWcxxopZI7xQ8DDgOkAO2ce2wLzsJ1K7pE26LXx27gK5UaX78iiUFbIsWcpFw0bx4mxbj9Bw"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-billing",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:billing:financial-invoice:3",
+        "revision": "1",
+        "signature": "dTZGn_SfbCI00rdWcxxopZI7xQ8DDgOkAO2ce2wLzsJ1K7pE26LXx27gK5UaX78iiUFbIsWcpFw0bx4mxbj9Bw",
+        "digest": "kdKUHHvda2AN0p-n7PTkHqN_zJ9cdIx0Sp8qbAM5XxQ"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "scope",
+        "object": "immutable:project:2:scope:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "lkGCnYRXcZXKoJc7",
+        "ciphertext": "29Hyzbb7oo8dAw0W4zA17VVt",
+        "wrappedKey": "wCsXpHqQ9JRYDzJDXbMqWo1z2Z5jvqS-Hk2q__LjHzrZ1jXPZncGGA",
+        "signature": "NHwIeI3njtzBaecTDLZPeit8MTmJ0RAYP5lqe76XaZpdhAYiLNr7UpsBv0WhWszWNH53bfXJWCTLQTdC8H4eDw"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-scope",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:scope:record:3",
+        "revision": "1",
+        "signature": "NHwIeI3njtzBaecTDLZPeit8MTmJ0RAYP5lqe76XaZpdhAYiLNr7UpsBv0WhWszWNH53bfXJWCTLQTdC8H4eDw",
+        "digest": "IY66VuTwFdBriSGSTdFQ7FljfU8tqorbTN1xberI9ZY"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "contract-quantities",
+        "object": "immutable:project:2:contract-quantities:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "gHdfkpvPBjMHi7vK",
+        "ciphertext": "3qAghst63BDj5DVc8v7IEMlZ",
+        "wrappedKey": "UuI8hfMG8y2dHfn8Sll5q1guOOiRIHlbPkag2AEJMqmjea7p-aTi0g",
+        "signature": "WToKOlmz9oX_XcjGQFVdi_sORlSh5pomWDlvih5a_4DWqa1REWWpX6tY_AApl_aYnNSI4-uhADl0MWumqE3IAw"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-contract-quantities",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:contract-quantities:record:3",
+        "revision": "1",
+        "signature": "WToKOlmz9oX_XcjGQFVdi_sORlSh5pomWDlvih5a_4DWqa1REWWpX6tY_AApl_aYnNSI4-uhADl0MWumqE3IAw",
+        "digest": "nDcSLEi-35Wlvs9hDVPa-4ybOs40uymeBTabss5uA8M"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "measurement",
+        "object": "immutable:project:2:measurement:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "sn1S0ltfUadgFcan",
+        "ciphertext": "Qcp1PgEJrsL_nbeq3e9bsABz",
+        "wrappedKey": "yefZdguOKvB4ZND8k1qJI4sHksWZMhyAjvM2HtuxxqnFKCBk-2DBaw",
+        "signature": "vKT9dhSwQxoxgt5gBO_6cjuwJgetIX5z4ramwHnQWPJMrYH1Pd7yBs4fviTBNQST6lRwqwuit0tcpPSoVHS2Bg"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-measurement",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:measurement:record:3",
+        "revision": "1",
+        "signature": "vKT9dhSwQxoxgt5gBO_6cjuwJgetIX5z4ramwHnQWPJMrYH1Pd7yBs4fviTBNQST6lRwqwuit0tcpPSoVHS2Bg",
+        "digest": "ACUiu0rzA8_u7CGSmuCBmrSLH2qpmCef51as31HPseA"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "offer-prices",
+        "object": "immutable:project:2:offer-prices:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "95wJi0gyXWpenlYn",
+        "ciphertext": "X2H5WpeZAtvzEfN85R6L2Y6F",
+        "wrappedKey": "1aG69-Snezoeu058-RuKWKnFG6z6-JuRT49P29mJfp6vPUbI9lIibw",
+        "signature": "zQEuxR_1rCNuNZmrGXT5dYBcMZMlzHSGeM7nntJFcq74HTYdhMpOEIYEw8y-GdUhQYAn4rT1-f7RYgEQrbgiDg"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-offer-prices",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:offer-prices:record:3",
+        "revision": "1",
+        "signature": "zQEuxR_1rCNuNZmrGXT5dYBcMZMlzHSGeM7nntJFcq74HTYdhMpOEIYEw8y-GdUhQYAn4rT1-f7RYgEQrbgiDg",
+        "digest": "1On6i8F2c0QkOw4keLn6lHYBdtz8-_HUTDqH07RULQc"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "calculation",
+        "object": "immutable:project:2:calculation:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "a1oQ0bDGe19yy4Bp",
+        "ciphertext": "7rSnrtdUg7rEve1F1JWQ4_P_",
+        "wrappedKey": "cL6DItFbwu4IZVM3Jnx7nQAB5AYJnTzvrnqzR66v-vuOgkQL_tezRw",
+        "signature": "uT4U3X0yHUgFAzfc-un2p0NEopN2FbwJD1UTi3yIjoH0SbwWE2BBQHF39tiRAy1fRJDq_vOpvg2Mr8a5WDjtDg"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-calculation",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:calculation:record:3",
+        "revision": "1",
+        "signature": "uT4U3X0yHUgFAzfc-un2p0NEopN2FbwJD1UTi3yIjoH0SbwWE2BBQHF39tiRAy1fRJDq_vOpvg2Mr8a5WDjtDg",
+        "digest": "QjecslTQwhQVRAXKgCYmNByBNg8TKxu0mtL1krYaiU0"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "procurement",
+        "object": "immutable:project:2:procurement:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "NwVnFJMl7W5Sb7UA",
+        "ciphertext": "V4HRdzvrhQcKK6emeCOOH9J3",
+        "wrappedKey": "AVaSbaqAcv7FSXJ7mXDlnBn7Ny2VejWC095ZSY_Ed_jvk4K8Hl-s8g",
+        "signature": "3facV8IjcbF3xZCjk8hc6j4jX5_VpzGSFxNvNXEVPbU7VOz8Lfetzxt2CaWlq2DZuqd1W0KUCbev9yjJS8TlAA"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-procurement",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:procurement:record:3",
+        "revision": "1",
+        "signature": "3facV8IjcbF3xZCjk8hc6j4jX5_VpzGSFxNvNXEVPbU7VOz8Lfetzxt2CaWlq2DZuqd1W0KUCbev9yjJS8TlAA",
+        "digest": "Or3XHZ7PAGJLT04pkkthLKlUk1_4s3SlZ8oUpVo3RR4"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "ghNpAY6DaHSDsL74",
+        "ciphertext": "q0OnTJd30wSdJqSLIiHUylUS",
+        "wrappedKey": "-AMFZvGdwtjWL_SbrYS9H_tuENU_ubN1zeuWYKJv2viciRIzGApbPw",
+        "signature": "jzj2Kk4GtYq0ijyd7H_6QNZh1VB2u5HD_2529YSM-RoHYyDb4p5KWXTIEGwtVpBgN6g_tTySFw5gj10K2IonAg"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-billing",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:billing:record:3",
+        "revision": "1",
+        "signature": "jzj2Kk4GtYq0ijyd7H_6QNZh1VB2u5HD_2529YSM-RoHYyDb4p5KWXTIEGwtVpBgN6g_tTySFw5gj10K2IonAg",
+        "digest": "gy4OOQOBrnG114sddi6t1ZKYj_6AEYLWhvHQLorw4Vw"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "master-data",
+        "object": "immutable:project:2:master-data:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "5pK0NEhbINxFr6dh",
+        "ciphertext": "OV77zWFGYRQzrKpwv-gyqdgx",
+        "wrappedKey": "DbjBbqGufG4BexPjoMTgGVhjz3V-Nxbo7jS9MVQFwqmVCXgRP0x3gg",
+        "signature": "qvEh98dCn_qwWOO8pTPUeanxGvynsbxXI0UjHn_dqjBJgMKw5TP_InaP62mbHLlLxY6AFwKH7vursZ_NWN-yDA"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-master-data",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:master-data:record:3",
+        "revision": "1",
+        "signature": "qvEh98dCn_qwWOO8pTPUeanxGvynsbxXI0UjHn_dqjBJgMKw5TP_InaP62mbHLlLxY6AFwKH7vursZ_NWN-yDA",
+        "digest": "jpRPy_eJImF1vIOeL9aC4wQiw9f3OvJOWAWAkSHGC3U"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "personnel",
+        "object": "immutable:project:2:personnel:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "wQi8JxJspsw9KKNn",
+        "ciphertext": "lyqhIVbchh7m9o0hZjI3wFbs",
+        "wrappedKey": "9mS5jcHNTn17aepJjVuGeHiIdFSuaj8YtCez_JpEi2w1FChljkzdCA",
+        "signature": "SWYjID5Jtd1ALal1pR6Yt5H3l4JrYZrgWol-5f-x78jJ5rydx-zrr2y5yATjdpZzwyCeWPOvv1FK5g_CiUZKDA"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-personnel",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:personnel:record:3",
+        "revision": "1",
+        "signature": "SWYjID5Jtd1ALal1pR6Yt5H3l4JrYZrgWol-5f-x78jJ5rydx-zrr2y5yATjdpZzwyCeWPOvv1FK5g_CiUZKDA",
+        "digest": "_MCtxTsXrMAxULnElTk8Fqm5vCqOelmPNgX6emQwZmc"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "attachment",
+        "object": "immutable:project:2:attachment:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "Ms-qaYdAOWuVC2vB",
+        "ciphertext": "KgMpjLdxOaJTHplY68pY7bi-",
+        "wrappedKey": "vzH0HCFljF9rGYIeEwJnivgxciLlvS-rFx5D5VK8AeVz6EKKuKC3Gg",
+        "signature": "ryoH-HXfjPuG8uYUWFXk0u8qE9LiaeFM7z4Whcj79B3eNTmm8XYDk7a-7_-s176lJ1ifGjfrsZrXu1reSsk8DA"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-attachment",
+        "tenant": "test",
+        "scope": "project:2",
+        "object": "immutable:project:2:attachment:record:3",
+        "revision": "1",
+        "signature": "ryoH-HXfjPuG8uYUWFXk0u8qE9LiaeFM7z4Whcj79B3eNTmm8XYDk7a-7_-s176lJ1ifGjfrsZrXu1reSsk8DA",
+        "digest": "Bju4KXj4B3f0-vWMUFYmGsFpZQr5BUnviPmojG-YhGE"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "organization",
+        "facet": "billing",
+        "object": "immutable:organization:billing:invoice-number:operation_3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "ulCAVKbG9tNePukJ",
+        "ciphertext": "RB-5BOrJZ9CKR-rd3jmKBsET",
+        "wrappedKey": "eqVPMTeBD19LjrjfRc_8vRP0J7gQVtvGVzq2ZvoEPkkcoT4PsP4ntQ",
+        "signature": "CBjzPpeMUGFbVruY7piVtZMjW2uRR18la5u_CIC-ceQJyEaPBOTyx-uQCOkyWLMLBmuWxz7UDNBxHZeRydR6DQ"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-billing",
+        "tenant": "test",
+        "scope": "organization",
+        "object": "immutable:organization:billing:invoice-number:operation_3",
+        "revision": "1",
+        "signature": "CBjzPpeMUGFbVruY7piVtZMjW2uRR18la5u_CIC-ceQJyEaPBOTyx-uQCOkyWLMLBmuWxz7UDNBxHZeRydR6DQ",
+        "digest": "cRU_oTYPpVeXvACcO1Ue43-xZCzFGKYRBCk0jJHqlKc"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "master-data",
+        "object": "immutable:absence:2:master-data:record:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "YRnDoKcts_W7OjO2",
+        "ciphertext": "7FkCyu5KY4G2ZFHVL3ARiCyB",
+        "wrappedKey": "Ot2qtbFi36w-s5zAv1ABAqpac7w9-kaMn2xoN1fKvXZTRhaRKMeXeA",
+        "signature": "dyXpCtBNgbcTlj8lKMLlQQzMZfamo3ssrz7TqU--fQcyk__9V6T7UlmSmJmEDlWtWJFy0e40LY7A5j16lkbwBA"
+      },
+      "action": "create",
+      "permanent": true,
+      "target": {
+        "format": "sortsys-timestamp-target-v1",
+        "kind": "immutable-master-data",
+        "tenant": "test",
+        "scope": "absence:2",
+        "object": "immutable:absence:2:master-data:record:3",
+        "revision": "1",
+        "signature": "dyXpCtBNgbcTlj8lKMLlQQzMZfamo3ssrz7TqU--fQcyk__9V6T7UlmSmJmEDlWtWJFy0e40LY7A5j16lkbwBA",
+        "digest": "xj4rVQ0R2DALmo7NX9FMP5uZ9-v-pvNBypMilTczXMg"
+      }
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "ordinary-record",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "8YsDenAG4wCKBxsu",
+        "ciphertext": "FlODgCqmaKpgKuFmjJGB5HP3",
+        "wrappedKey": "JoVB134o7yvE9yv4f9RCPfmkXEJ7Eh4gr-Aq4HttMcSKoXLV9g91fg",
+        "signature": "-SdhL10je5kGMfdhZi0cYup8excEKvpDmb_91QDgTCTCMR5SJXzHEFGjUreI1bx5uU6jECVioZu-U6LnBM3yDw"
+      },
+      "action": "create",
+      "permanent": false,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:4",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:financial-invoice:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "5RHHXYjhHjB0z-by",
+        "ciphertext": "Meik3yU6zmlXyVNKgP-RbZ_A",
+        "wrappedKey": "DoxkNE74_W55Sy8eW8A-q3y3awKJRFHG6O1IxmNuD94gqOmcOsexZg",
+        "signature": "s34Bfs7px6AqF81lT7UdjOIG7iedpfypS70M1PySHjTnNKDVb70yn2m6BgIkzpA257kCMPbjVg8-hcVjofWxDA"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "master-data",
+        "object": "immutable:project:2:billing:financial-invoice:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "vQhszIi5Jgr7EhAN",
+        "ciphertext": "7VW_1aJ5J25rHJmybZ77PeA1",
+        "wrappedKey": "KG4b1aEliIPZgWIPZOy2YmBTUJ4FmmSaHGqOYDRM7_VcYoMz7EhJpw",
+        "signature": "RMBHPB7pfm-ZD934ehn6C3NCgVFSS8XhA92s6RrejqkSscuxF_Xa46L1nHh2qmPJx_ZwuJd-yZjkmuyE2a2WAA"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:financial-invoice:3:extra",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "iRcCi4xLC4Nko0Pu",
+        "ciphertext": "3Mtk2yp-_gByyKTeB2MzyZQO",
+        "wrappedKey": "tJt-i4DLMkRrarYY6U2JDMMLxAX5aiiOympl8zVu09Wt9LW-lhdq0Q",
+        "signature": "PfKTgFZeUXuOujTUAB2MGmvuTzEJBa7iwr4qapuWaGxvVjv5WzC1jZh68xvOIVPodikfDjD5NTzfui5XKd8xDg"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:Invoice:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "dPzwSa1gxQ6FW73V",
+        "ciphertext": "jf3e5p_Oz17CaltG1QJL9OoM",
+        "wrappedKey": "A4Z3qxWUh0sktND_PWkzTguQIcFgfhmCv1itTcXsYQklOzs7t14WQQ",
+        "signature": "HIbxjWQqa3l1jCt68LpaFfGpSLE4W-H7rIcZblscXm7r69NK9rej8YG9Ouy0Y7Yp6kfNyyd-iBN1k1EqwbN7BQ"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:invoice:",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "uoSTnaAt48SEUJeY",
+        "ciphertext": "Xlye45G-_wYsfbDE9YMPLDAl",
+        "wrappedKey": "GH_nt-FjUNYm4uKepqaIbYPCH8EjbTc8giY10PfHSg8PpHsb6Q_tbQ",
+        "signature": "1SkfU0nF2rYJosPURO3MDL2dGJ-0fp23FvC0z9h4Ip65dm8BszXRfIY-h_8XrGucgeCjOT89sGKfXOQFpJKVAA"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:financial-invoice:3",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "87_z34LudO6zdEDM",
+        "ciphertext": "24sIKuJlTugfaKGItcwSElUw",
+        "wrappedKey": "hgQqfZ8ISIZzDMyOUgTFq4y-a8fvGq9uKH57PUYtCoZoZGizX52JNA",
+        "signature": "adZjRzBeaPaRSINfNKBfTcIrrP5amuX76VNo1RJGlYrkPRnSWQ0AQ5vn-cRXeV875cNGQNyo_qjAAOs78OAGDA"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "project:2",
+        "facet": "billing",
+        "object": "immutable:project:2:billing:financial-invoice:3",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-tombstone-v1",
+        "nonce": "zFEtU6p_COm_6Cu7",
+        "ciphertext": "S1gvBSpBLDAgI6Z785jOAg",
+        "wrappedKey": "YNmk5nb9auIASwL6iEYhmjZtgIcr0-kiSL1CwgfJJIv_krTyikpzzA",
+        "signature": "nrYbuGnpoC7PngZerIjyIVLBFFvlx1RN4WLy-_38YuQJgRADlxJnO3XzTf_v1vmjhanTyqwN6AQljxmCvyxQBQ"
+      },
+      "action": null,
+      "permanent": null,
+      "target": null
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::crypto::{decode, encode, frame, identifier, invalid, revision, sized, verify};
+#[cfg(test)]
+use super::crypto::sized;
+use super::crypto::{invalid, verify};
 use crate::error::RpcResult;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -19,6 +21,19 @@ pub(super) enum Facet {
     Attachment,
 }
 impl Facet {
+    pub const ALL: [Self; 10] = [
+        Self::Scope,
+        Self::ContractQuantities,
+        Self::Measurement,
+        Self::OfferPrices,
+        Self::Calculation,
+        Self::Procurement,
+        Self::Billing,
+        Self::MasterData,
+        Self::Personnel,
+        Self::Attachment,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Scope => "scope",
@@ -35,35 +50,13 @@ impl Facet {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
-#[serde(rename_all = "lowercase")]
-pub(super) enum Action {
-    Read,
-    Create,
-    Update,
-    Delete,
-    Approve,
-    Grant,
-}
-impl Action {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Read => "read",
-            Self::Create => "create",
-            Self::Update => "update",
-            Self::Delete => "delete",
-            Self::Approve => "approve",
-            Self::Grant => "grant",
-        }
+impl AsRef<str> for Facet {
+    fn as_ref(&self) -> &str {
+        self.name()
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
-#[serde(rename_all = "lowercase")]
-pub(super) enum Effect {
-    Allow,
-    Deny,
-}
+pub(super) use sortsys_zerotrust::policy::{Action, Effect};
 
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -73,7 +66,18 @@ pub(super) struct Rule {
     pub facet: Facet,
     pub actions: Vec<Action>,
     pub effect: Effect,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub origin: Option<RuleOrigin>,
 }
+
+#[derive(Clone, Copy, Deserialize, Serialize, TS)]
+pub(super) enum RuleOrigin {
+    #[serde(rename = "absence-default")]
+    AbsenceDefault,
+}
+
+pub(super) use sortsys_zerotrust::policy::PolicyTransaction;
 
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -81,53 +85,103 @@ pub(super) struct SignedPolicy {
     pub tenant: String,
     pub version: String,
     pub rules: Vec<Rule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub suspended: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub transaction: Option<PolicyTransaction>,
     pub signature: String,
 }
-impl SignedPolicy {
-    pub fn frame(&self) -> RpcResult<Vec<u8>> {
-        identifier(&self.tenant)?;
-        revision(&self.version)?;
-        if self.rules.len() > 10_000 {
-            return Err(invalid());
+impl Rule {
+    fn as_protocol(&self) -> sortsys_zerotrust::policy::RuleRef<'_> {
+        sortsys_zerotrust::policy::RuleRef {
+            subject: &self.subject,
+            scope: &self.scope,
+            facet: self.facet.name(),
+            actions: &self.actions,
+            effect: self.effect,
+            origin: self.origin.map(|origin| match origin {
+                RuleOrigin::AbsenceDefault => "absence-default",
+            }),
         }
-        let mut fields = vec![self.tenant.clone(), self.version.clone()];
-        for rule in &self.rules {
-            identifier(&rule.subject)?;
-            identifier(&rule.scope)?;
-            if rule.actions.is_empty()
-                || rule.actions.len() > 6
-                || rule
-                    .actions
-                    .iter()
-                    .enumerate()
-                    .any(|(i, a)| rule.actions[..i].contains(a))
-            {
+    }
+
+    fn validate_application_origin(&self) -> RpcResult<()> {
+        if self.origin.is_none() {
+            return Ok(());
+        }
+        let subject = self.subject.strip_prefix("user:").ok_or_else(invalid)?;
+        let personnel_read = self.facet == Facet::Scope
+            && self.actions.iter().all(|action| *action == Action::Read)
+            && self.scope.starts_with("personnel:");
+        let scope_prefix = if personnel_read {
+            "personnel:"
+        } else {
+            "absence:"
+        };
+        let target = self.scope.strip_prefix(scope_prefix).ok_or_else(invalid)?;
+        for value in [subject, target] {
+            let id = crate::ids::Id::decode(value).map_err(|_| invalid())?;
+            if id.0 <= 0 || id.encode() != value {
                 return Err(invalid());
             }
-            let mut parts = vec![
-                rule.subject.as_str(),
-                rule.scope.as_str(),
-                rule.facet.name(),
-                if rule.effect == Effect::Allow {
-                    "allow"
-                } else {
-                    "deny"
-                },
-            ];
-            parts.extend(rule.actions.iter().map(|action| action.name()));
-            fields.push(encode(&frame("sortsys/rule/v1", &parts)));
         }
-        Ok(frame(
-            "sortsys/policy/v1",
-            &fields.iter().map(String::as_str).collect::<Vec<_>>(),
-        ))
+        if self.effect != Effect::Allow {
+            return Err(invalid());
+        }
+        for action in &self.actions {
+            let permitted = match self.facet {
+                Facet::MasterData => {
+                    matches!(action, Action::Read | Action::Create | Action::Delete)
+                }
+                Facet::Personnel => matches!(action, Action::Read | Action::Approve),
+                Facet::Scope => personnel_read,
+                _ => false,
+            };
+            if !permitted {
+                return Err(invalid());
+            }
+        }
+        Ok(())
     }
+}
+
+impl SignedPolicy {
+    fn as_protocol(&self) -> sortsys_zerotrust::policy::PolicyRef<'_> {
+        sortsys_zerotrust::policy::PolicyRef {
+            tenant: &self.tenant,
+            version: &self.version,
+            rules: self.rules.iter().map(Rule::as_protocol).collect(),
+            suspended: self.suspended.as_deref(),
+            transaction: self.transaction.as_ref(),
+        }
+    }
+
+    pub fn frame(&self) -> RpcResult<Vec<u8>> {
+        if let Some(subjects) = &self.suspended {
+            for subject in subjects {
+                let value = subject.strip_prefix("user:").ok_or_else(invalid)?;
+                let id = crate::ids::Id::decode(value).map_err(|_| invalid())?;
+                if id.0 <= 0 || id.encode() != value {
+                    return Err(invalid());
+                }
+            }
+        }
+        for rule in &self.rules {
+            rule.validate_application_origin()?;
+        }
+        self.as_protocol().frame().map_err(Into::into)
+    }
+
     pub fn verify(&self, key: &[u8]) -> RpcResult<()> {
         verify(key, &self.signature, &self.frame()?)
     }
+
     pub fn allows(&self, subject: &str, scope: &str, facet: Facet, action: Action) -> bool {
         self.allows_with(&[], subject, scope, facet, action)
     }
+
     pub fn allows_with(
         &self,
         inherited: &[Rule],
@@ -136,206 +190,56 @@ impl SignedPolicy {
         facet: Facet,
         action: Action,
     ) -> bool {
-        let mut allowed = false;
-        for rule in self.rules.iter().chain(inherited) {
-            if rule.subject != subject
-                || rule.scope != scope
-                || rule.facet != facet
-                || !rule.actions.contains(&action)
-            {
-                continue;
-            }
-            if rule.effect == Effect::Deny {
-                return false;
-            }
-            allowed = true;
-        }
-        allowed
-    }
-}
-
-#[derive(Clone, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct AuthorityCertificate {
-    pub tenant: String,
-    pub generation: String,
-    pub recovery_encryption_key: String,
-    pub recovery_signing_key: String,
-    pub authority_signing_key: String,
-    pub signature: String,
-}
-impl AuthorityCertificate {
-    pub fn frame(&self) -> RpcResult<Vec<u8>> {
-        identifier(&self.tenant)?;
-        revision(&self.generation)?;
-        sized::<32>(&self.recovery_encryption_key)?;
-        sized::<32>(&self.recovery_signing_key)?;
-        sized::<32>(&self.authority_signing_key)?;
-        Ok(frame(
-            "sortsys/authority/v1",
-            &[
-                &self.tenant,
-                &self.generation,
-                &self.recovery_encryption_key,
-                &self.recovery_signing_key,
-                &self.authority_signing_key,
-            ],
-        ))
-    }
-    pub fn verify(&self) -> RpcResult<()> {
-        verify(
-            &sized::<32>(&self.recovery_signing_key)?,
-            &self.signature,
-            &self.frame()?,
+        sortsys_zerotrust::policy::allows(
+            self.rules.iter().chain(inherited).map(Rule::as_protocol),
+            self.suspended.as_deref(),
+            sortsys_zerotrust::policy::PermissionRequest {
+                subject,
+                scope,
+                facet: facet.name(),
+                action,
+            },
         )
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct IdentityCertificate {
-    pub tenant: String,
-    pub generation: String,
-    pub user: String,
-    pub encryption_key: String,
-    pub signing_key: String,
-    pub signature: String,
-}
-impl IdentityCertificate {
-    pub fn frame(&self) -> RpcResult<Vec<u8>> {
-        identifier(&self.tenant)?;
-        identifier(&self.user)?;
-        revision(&self.generation)?;
-        sized::<32>(&self.encryption_key)?;
-        sized::<32>(&self.signing_key)?;
-        Ok(frame(
-            "sortsys/identity-certificate/v1",
-            &[
-                &self.tenant,
-                &self.generation,
-                &self.user,
-                &self.encryption_key,
-                &self.signing_key,
-            ],
-        ))
-    }
-    pub fn verify(&self, key: &[u8]) -> RpcResult<()> {
-        verify(key, &self.signature, &self.frame()?)
-    }
-}
+pub(super) use sortsys_zerotrust::protocol::{
+    AuthorityCertificate, IdentityCertificate, SealedBox,
+};
 
-#[derive(Clone, Deserialize, Serialize, TS)]
-#[serde(deny_unknown_fields)]
-pub(super) struct SealedBox {
-    pub tenant: String,
-    pub purpose: String,
-    pub object: String,
-    pub generation: String,
-    pub recipient: String,
-    pub author: String,
-    pub format: String,
-    pub enc: String,
-    pub ciphertext: String,
-    pub signature: String,
-}
-impl SealedBox {
-    pub fn frame(&self) -> RpcResult<Vec<u8>> {
-        identifier(&self.tenant)?;
-        identifier(&self.object)?;
-        identifier(&self.recipient)?;
-        identifier(&self.author)?;
-        revision(&self.generation)?;
-        if self.format != "sortsys-hpke-v1"
-            || ![
-                "area-key",
-                "authority-key",
-                "recovery-catalog",
-                "validation-request",
-                "validation-result",
-                "search-request",
-                "search-result",
-                "live-llm-context",
-            ]
-            .contains(&self.purpose.as_str())
-        {
-            return Err(invalid());
-        }
-        sized::<32>(&self.enc)?;
-        if decode(&self.ciphertext, 32 * 1024 * 1024 + 16)?.len() < 16 {
-            return Err(invalid());
-        }
-        Ok(frame(
-            "sortsys/hpke/v1",
-            &[
-                &self.tenant,
-                &self.purpose,
-                &self.object,
-                &self.generation,
-                &self.recipient,
-                &self.author,
-                &self.format,
-                &self.enc,
-                &self.ciphertext,
-            ],
-        ))
-    }
-    pub fn verify(&self, key: &[u8]) -> RpcResult<()> {
-        verify(key, &self.signature, &self.frame()?)
-    }
-}
+pub(super) type EncryptedObject = sortsys_zerotrust::protocol::EncryptedObject<Facet>;
 
-#[derive(Clone, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct EncryptedObject {
-    pub tenant: String,
-    pub scope: String,
-    pub facet: Facet,
-    pub object: String,
-    pub revision: String,
-    pub generation: String,
-    pub policy_version: String,
-    pub author: String,
-    pub format: String,
-    pub nonce: String,
-    pub ciphertext: String,
-    pub wrapped_key: String,
-    pub signature: String,
-}
-impl EncryptedObject {
-    pub fn frame(&self) -> RpcResult<Vec<u8>> {
-        for value in [&self.tenant, &self.scope, &self.object, &self.author] {
-            identifier(value)?;
-        }
-        for value in [&self.revision, &self.generation, &self.policy_version] {
-            revision(value)?;
-        }
-        if self.format != "sortsys-object-v1" {
-            return Err(invalid());
-        }
-        sized::<12>(&self.nonce)?;
-        sized::<40>(&self.wrapped_key)?;
-        if decode(&self.ciphertext, 16 * 1024 * 1024 + 16)?.len() < 16 {
-            return Err(invalid());
-        }
-        Ok(frame(
-            "sortsys/object/v1",
-            &[
-                &self.tenant,
-                &self.scope,
-                self.facet.name(),
-                &self.object,
-                &self.revision,
-                &self.generation,
-                &self.policy_version,
-                &self.author,
-                &self.format,
-                &self.nonce,
-                &self.ciphertext,
-                &self.wrapped_key,
-            ],
+#[cfg(test)]
+mod object_tombstone_tests {
+    use super::*;
+    #[test]
+    fn browser_tombstones_are_signed_empty_bodies_and_cannot_be_relabelled() {
+        let value: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/zerotrust-tombstones.json"
         ))
-    }
-    pub fn verify(&self, key: &[u8]) -> RpcResult<()> {
-        verify(key, &self.signature, &self.frame()?)
+        .unwrap();
+        let key = sized::<32>(value["signer"].as_str().unwrap()).unwrap();
+        let initial: EncryptedObject = serde_json::from_value(value["initial"].clone()).unwrap();
+        let deleted: EncryptedObject = serde_json::from_value(value["deleted"].clone()).unwrap();
+        initial.verify(&key).unwrap();
+        deleted.verify(&key).unwrap();
+        assert!(!initial.is_tombstone());
+        assert!(deleted.is_tombstone());
+        let mut changed = deleted.clone();
+        changed.format = "sortsys-object-v1".into();
+        assert!(changed.verify(&key).is_err());
+        let mut changed = initial;
+        changed.format = "sortsys-object-tombstone-v1".into();
+        changed.revision = "2".into();
+        assert!(
+            changed.frame().is_err(),
+            "A deletion cannot carry an arbitrary encrypted payload"
+        );
+        let mut changed = deleted.clone();
+        changed.revision = "1".into();
+        assert!(changed.frame().is_err());
+        let mut changed = deleted;
+        changed.ciphertext = super::super::crypto::encode(&[0; 17]);
+        assert!(changed.frame().is_err());
     }
 }

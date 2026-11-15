@@ -1,0 +1,136 @@
+{
+  "notice": "Public synthetic protocol vectors; no private keys or recovery phrase.",
+  "signer": "zibocuXJ1im5JdgpEN6HflMlWoGUU-IKuzdsHkdoBtM",
+  "previous": {
+    "tenant": "test",
+    "version": "3",
+    "rules": [],
+    "signature": "QxfWnYLxu9fTgpsutHLGBqevComU6k-9VeAQHEDedvSc09NU6-xQmgpXzbD-5Bg7FYZbpqZVDDMmFdaMzHKJBg"
+  },
+  "policies": [
+    {
+      "tenant": "test",
+      "version": "4",
+      "rules": [
+        {
+          "subject": "user:1",
+          "scope": "absence:2",
+          "facet": "personnel",
+          "effect": "allow",
+          "actions": [
+            "read",
+            "approve"
+          ],
+          "origin": "absence-default"
+        }
+      ],
+      "transaction": {
+        "author": "user:1",
+        "previousSignature": "QxfWnYLxu9fTgpsutHLGBqevComU6k-9VeAQHEDedvSc09NU6-xQmgpXzbD-5Bg7FYZbpqZVDDMmFdaMzHKJBg",
+        "packets": [
+          "k09KLdHYxTIz--iKLQHY82Fsd4Bt5J1MS4indw25zYHXyxJuBQl7tQ8LtuyOnPC-VeiqY_J9tHAYiUKOeesbCA"
+        ],
+        "heads": [
+          {
+            "domain": "personnel:2:scope",
+            "sequence": "8"
+          }
+        ]
+      },
+      "signature": "bVtqT_SiVVr3GXnrCLuxmMFIKu2bq2I4mb85cFP1sWaZTUUb7xV-NEL6xX5NE_UjGfm8q4R5hdImOIPK_GMdDw"
+    },
+    {
+      "tenant": "test",
+      "version": "4",
+      "rules": [
+        {
+          "subject": "user:1",
+          "scope": "absence:2",
+          "facet": "personnel",
+          "effect": "allow",
+          "actions": [
+            "read",
+            "approve"
+          ],
+          "origin": "absence-default"
+        }
+      ],
+      "suspended": [],
+      "transaction": {
+        "author": "user:1",
+        "previousSignature": "QxfWnYLxu9fTgpsutHLGBqevComU6k-9VeAQHEDedvSc09NU6-xQmgpXzbD-5Bg7FYZbpqZVDDMmFdaMzHKJBg",
+        "packets": [
+          "k09KLdHYxTIz--iKLQHY82Fsd4Bt5J1MS4indw25zYHXyxJuBQl7tQ8LtuyOnPC-VeiqY_J9tHAYiUKOeesbCA"
+        ],
+        "heads": [
+          {
+            "domain": "personnel:2:scope",
+            "sequence": "8"
+          }
+        ]
+      },
+      "signature": "GV9PlgV7v6mXBZThoFphQehuhXzv3FCnon54XweuDwTJ78ibkGHGH-aYRAGRB_KHXOILNRu9iK21x3luInd1CA"
+    },
+    {
+      "tenant": "test",
+      "version": "4",
+      "rules": [
+        {
+          "subject": "user:1",
+          "scope": "absence:2",
+          "facet": "personnel",
+          "effect": "allow",
+          "actions": [
+            "read",
+            "approve"
+          ],
+          "origin": "absence-default"
+        }
+      ],
+      "suspended": [
+        "user:3"
+      ],
+      "transaction": {
+        "author": "user:1",
+        "previousSignature": "QxfWnYLxu9fTgpsutHLGBqevComU6k-9VeAQHEDedvSc09NU6-xQmgpXzbD-5Bg7FYZbpqZVDDMmFdaMzHKJBg",
+        "packets": [
+          "k09KLdHYxTIz--iKLQHY82Fsd4Bt5J1MS4indw25zYHXyxJuBQl7tQ8LtuyOnPC-VeiqY_J9tHAYiUKOeesbCA"
+        ],
+        "heads": [
+          {
+            "domain": "personnel:2:scope",
+            "sequence": "8"
+          }
+        ]
+      },
+      "signature": "cTdk_u3CkTscELePgf7-K1CYVHcTOCXsYTRfQo7jPftdXmacrXrx8fl9ls_fPSv5PxtkbT5O63fxzjnSGsDcCw"
+    }
+  ],
+  "objects": [
+    {
+      "domain": "personnel:2:scope",
+      "messageId": "synthetic-command",
+      "envelope": {
+        "tenant": "test",
+        "scope": "personnel:2",
+        "facet": "scope",
+        "object": "personnel:2:scope:record",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "3",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "fNAI0WsSIwG1FKOz",
+        "ciphertext": "bc3jNUcyDlxasF9D83Itk6Lh",
+        "wrappedKey": "5MqgVPOp0rcEzCbHj_jd0X3ldU3wREU0GyGun2NjWgeF7ofpiVB2Ag",
+        "signature": "k09KLdHYxTIz--iKLQHY82Fsd4Bt5J1MS4indw25zYHXyxJuBQl7tQ8LtuyOnPC-VeiqY_J9tHAYiUKOeesbCA"
+      }
+    }
+  ],
+  "heads": [
+    {
+      "domain": "personnel:2:scope",
+      "sequence": "8"
+    }
+  ]
+}

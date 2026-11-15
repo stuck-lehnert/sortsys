@@ -1,18 +1,19 @@
-//! Immutable ciphertext blocks; contents, names and manifests remain private.
+//! Immutable ciphertext blocks. File names, contents and manifests stay private.
 use super::{
-    access::security,
+    access::metadata_context,
     crypto::{identifier, invalid},
-    objects::{envelope_reference, persist_envelope, read_envelope},
+    objects::{conflict, persistence, registry},
     wire::{Action, EncryptedObject, Facet},
 };
 use crate::{
-    AppState,
     api::Success,
-    procedures::common::{authenticated_pool, forbidden, internal, not_found},
-    rpc::ProcedureRegistryBuilder,
+    auth::AuthService,
+    control::key,
+    error::RpcResult,
+    error::{forbidden, internal, not_found},
+    rpc::{ProcedureRegistryBuilder, RequestContext},
 };
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use ts_rs::TS;
 
@@ -28,75 +29,157 @@ struct Get {
     domain: String,
     id: String,
 }
+#[derive(Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ChunkRecord {
+    domain: String,
+    reference: String,
+}
 
-fn chunk_prefix(domain: &str, scope: &str) -> crate::error::RpcResult<String> {
-    let namespace = if scope == "organization" && domain == "organization:attachment" {
-        "organization"
-    } else {
-        scope.strip_prefix("project:").ok_or_else(invalid)?
-    };
-    Ok(format!("file-data:{namespace}:"))
+fn chunk_prefix(domain: &str, scope: &str) -> RpcResult<String> {
+    if scope.starts_with("backup:") {
+        super::bootstrap::validate_context(scope)?;
+        if domain != format!("{scope}:attachment") {
+            return Err(invalid());
+        }
+        return Ok(format!("file-data:{scope}:"));
+    }
+    if scope == "organization" && domain == "organization:attachment" {
+        return Ok("file-data:organization:".into());
+    }
+    let project = scope.strip_prefix("project:").ok_or_else(invalid)?;
+    identifier(project)?;
+    if domain != format!("project:{project}:attachment") {
+        return Err(invalid());
+    }
+    Ok(format!("file-data:{project}:"))
 }
 
 pub(super) fn register(
     builder: ProcedureRegistryBuilder,
-    state: Arc<AppState>,
+    service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
-    let put = Arc::clone(&state);
-    builder.mutation("zerotrust.fileChunks.put", move |ctx, input: Put| {
-        let state = Arc::clone(&put);
-        async move {
-            identifier(&input.domain)?;
-            let (auth, pool) = authenticated_pool(&state, &ctx).await?;
-            let mut tx = pool.begin().await.map_err(internal)?;
-            let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-            let area: Option<(String, String, i64, bool)> = sqlx::query_as("SELECT scope,facet,generation,rotation_required FROM __zerotrust_domains WHERE id=$1")
-                .bind(&input.domain).fetch_optional(&mut *tx).await.map_err(internal)?;
-            let (scope, facet, generation, rotating) = area.ok_or_else(forbidden)?;
-            let prefix = chunk_prefix(&input.domain, &scope)?;
-            let envelope = &input.envelope;
-            if facet != Facet::Attachment.name() || envelope.facet != Facet::Attachment || envelope.scope != scope
-                || envelope.tenant != auth.tenant || envelope.author != guard.subject || envelope.revision != "1"
-                || !envelope.object.starts_with(&prefix) || envelope.ciphertext.len() > 1024 * 1024
-                || !guard.allows(&guard.subject, &scope, Facet::Attachment, Action::Read)
-                || !(guard.allows(&guard.subject, &scope, Facet::Attachment, Action::Create) || guard.allows(&guard.subject, &scope, Facet::Attachment, Action::Update)) { return Err(forbidden()); }
-            envelope.verify(&guard.signing_key)?;
-            // Independent replicas serialize immutable publication by ID. This
-            // staging write deliberately does not advance the metadata head.
-            sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))").bind(format!("sortsys:file-chunk:{}", envelope.object)).execute(&mut *tx).await.map_err(internal)?;
-            let reference = envelope_reference(envelope)?;
-            let previous: Option<(String, Value)> = sqlx::query_as("SELECT domain_id,envelope FROM __zerotrust_file_chunks WHERE id=$1")
-                .bind(&envelope.object).fetch_optional(&mut *tx).await.map_err(internal)?;
-            if let Some(old) = previous {
-                if old != (input.domain, reference) { return Err(super::objects::conflict()); }
-                return Ok(Success { success: true });
-            }
-            if rotating || envelope.generation != generation.to_string() || envelope.policy_version != guard.root.policy_version.to_string() { return Err(super::objects::conflict()); }
-            persist_envelope(&state, &auth.tenant, envelope).await?;
-            sqlx::query("INSERT INTO __zerotrust_file_chunks(id,domain_id,envelope) VALUES($1,$2,$3)")
-                .bind(&envelope.object).bind(&input.domain).bind(reference).execute(&mut *tx).await.map_err(internal)?;
-            tx.commit().await.map_err(internal)?;
-            Ok(Success { success: true })
-        }
-    }).query("zerotrust.fileChunks.get", move |ctx, input: Get| {
-        let state = Arc::clone(&state);
-        async move {
-            identifier(&input.domain)?; identifier(&input.id)?;
-            let (auth, pool) = authenticated_pool(&state, &ctx).await?;
-            let mut tx = pool.begin().await.map_err(internal)?;
-            let guard = security(&mut tx, state.tenants.master(), &auth, false).await?;
-            let scope: Option<String> = sqlx::query_scalar("SELECT scope FROM __zerotrust_domains WHERE id=$1 AND facet='attachment'")
-                .bind(&input.domain).fetch_optional(&mut *tx).await.map_err(internal)?;
-            let scope = scope.ok_or_else(forbidden)?;
-            if !guard.allows(&guard.subject, &scope, Facet::Attachment, Action::Read) { return Err(forbidden()); }
-            let reference: Value = sqlx::query_scalar("SELECT envelope FROM __zerotrust_file_chunks WHERE id=$1 AND domain_id=$2")
-                .bind(&input.id).bind(&input.domain).fetch_optional(&mut *tx).await.map_err(internal)?.ok_or_else(not_found)?;
-            let envelope = read_envelope(&state, &auth.tenant, reference).await?;
-            if envelope.tenant != auth.tenant || envelope.scope != scope || envelope.facet != Facet::Attachment || envelope.object != input.id || envelope.revision != "1" { return Err(invalid()); }
-            Ok(envelope)
-        }
-    })
+    let put = Arc::clone(&service);
+    builder
+        .mutation("zerotrust.fileChunks.put", move |ctx, input: Put| {
+            let service = Arc::clone(&put);
+            async move { put_chunk(&service, &ctx, input).await }
+        })
+        .query("zerotrust.fileChunks.get", move |ctx, input: Get| {
+            let service = Arc::clone(&service);
+            async move { get_chunk(&service, &ctx, input).await }
+        })
 }
+
+async fn put_chunk(service: &AuthService, ctx: &RequestContext, input: Put) -> RpcResult<Success> {
+    let mut context = metadata_context(service, ctx).await?;
+    let area = registry::domain(&mut context.transaction, &input.domain).await?;
+    let envelope = &input.envelope;
+    let prefix = chunk_prefix(&input.domain, &area.scope)?;
+    let can_read = context.security.allows(
+        &context.security.subject,
+        &area.scope,
+        Facet::Attachment,
+        Action::Read,
+    );
+    let can_write = [Action::Create, Action::Update].into_iter().any(|action| {
+        context.security.allows(
+            &context.security.subject,
+            &area.scope,
+            Facet::Attachment,
+            action,
+        )
+    });
+    if area.facet != Facet::Attachment
+        || envelope.facet != Facet::Attachment
+        || envelope.scope != area.scope
+        || envelope.tenant != context.auth.tenant
+        || envelope.author != context.security.subject
+        || envelope.revision != "1"
+        || !envelope.object.starts_with(&prefix)
+        || envelope.ciphertext.len() > 1024 * 1024
+        || !can_read
+        || !can_write
+    {
+        return Err(forbidden());
+    }
+    envelope.verify(&context.security.signing_key)?;
+    let encoded = serde_json::to_string(envelope).map_err(internal)?;
+    let record = ChunkRecord {
+        domain: input.domain,
+        reference: crate::quack_store::content_id(&encoded),
+    };
+    let record_key = key("file-chunks", &envelope.object);
+    if let Some(previous) = context
+        .transaction
+        .read::<ChunkRecord>(record_key.clone())
+        .await?
+    {
+        if previous != record {
+            return Err(conflict());
+        }
+        context.transaction.validate().await?;
+        return Ok(Success { success: true });
+    }
+    super::bootstrap::check_archive_write(&mut context, &area.scope, &envelope.revision).await?;
+    let mut rotation = registry::RotationChecks::new(&context.security);
+    if envelope.generation != area.generation
+        || envelope.policy_version != context.security.policy.version
+        || rotation
+            .required(&mut context.transaction, &context.security, &area)
+            .await?
+    {
+        return Err(conflict());
+    }
+    // The content write is immutable. Publication and all permission reads are
+    // guarded together; a rejected CAS can leave only an unreachable block.
+    context.repository.put_ciphertext(encoded).await?;
+    context.transaction.put(record_key, &record).await?;
+    context.transaction.commit().await?;
+    Ok(Success { success: true })
+}
+
+async fn get_chunk(
+    service: &AuthService,
+    ctx: &RequestContext,
+    input: Get,
+) -> RpcResult<EncryptedObject> {
+    identifier(&input.id)?;
+    let mut context = metadata_context(service, ctx).await?;
+    let area = registry::domain(&mut context.transaction, &input.domain).await?;
+    let prefix = chunk_prefix(&input.domain, &area.scope)?;
+    if area.facet != Facet::Attachment
+        || !input.id.starts_with(&prefix)
+        || !context.security.allows(
+            &context.security.subject,
+            &area.scope,
+            Facet::Attachment,
+            Action::Read,
+        )
+    {
+        return Err(forbidden());
+    }
+    let record: ChunkRecord = context
+        .transaction
+        .read(key("file-chunks", &input.id))
+        .await?
+        .ok_or_else(not_found)?;
+    if record.domain != input.domain {
+        return Err(not_found());
+    }
+    let envelope = persistence::read(&context.repository, &record.reference).await?;
+    if envelope.tenant != context.auth.tenant
+        || envelope.scope != area.scope
+        || envelope.facet != Facet::Attachment
+        || envelope.object != input.id
+        || envelope.revision != "1"
+    {
+        return Err(invalid());
+    }
+    context.transaction.validate().await?;
+    Ok(envelope)
+}
+
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .mutation_stub::<Put, Success>("zerotrust.fileChunks.put")

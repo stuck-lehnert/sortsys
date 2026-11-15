@@ -1,0 +1,168 @@
+{
+  "notice": "Public synthetic protocol vectors; no private keys or recovery phrase.",
+  "signer": "VV-WLTtnyEXHGqJVuiL2On0doOe7Ft1GVcNaqBwB7X4",
+  "cases": [
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "master-data",
+        "object": "absence:2:request:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "gOozhqIsGxNdsSI5",
+        "ciphertext": "LggsRmKyNZHJXH3wehBQeUfxcZwjC8R5bET58x2byr4912I19Q",
+        "wrappedKey": "w0Ik_-jR1g-_Q08vhDdCv4ilzBo5L9IJz4MeKRPWp0KF6y9s65oYQA",
+        "signature": "uEsNhAfwo7qsj0YAua6UinPgzTkGGSDJJ7NRwNFcRyKklfvi_rDKF1vs8pN7xtY-Zc9672U3ytg2VSLcWzfrAQ"
+      },
+      "action": "create"
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "personnel",
+        "object": "absence:2:decision:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "uTTWZPyd27uWHcwh",
+        "ciphertext": "Eyzczc2gY8q6zOMjMj43RvsacEpxHjC_jSpRn6dD_KSsIfHKo0w",
+        "wrappedKey": "3BqxDNUEvIPP-BbjuIzLho_uO3G0e46HGvrdrIF1tlwoHp2zlHMg7A",
+        "signature": "8qE1HsujfyBVojAevRFzkw7AZ_8zANSM5CxgBvOHoIRm4UL1acTaBN0xQGFNrlepLr5OmQw10rJ0DYKzR3gYCg"
+      },
+      "action": "approve"
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "master-data",
+        "object": "absence:2:request:3",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-tombstone-v1",
+        "nonce": "Khhw3KDXArzANudt",
+        "ciphertext": "iZ3ip_8yfEu1EbfisK49Dw",
+        "wrappedKey": "KTrTvVDHp_ev_iGMENmg-lmaJvqKYZTqg6pT5gluDCfFb7LCjhOYXQ",
+        "signature": "fRpTc6O56giG28eoCJLNT6uOcXH_D-o05R5OmfvVGXVZpf0KwI-9_hdOuoLApKl5bbmfp_cCWsWUmPz46dH-Bg"
+      },
+      "action": "delete"
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "master-data",
+        "object": "absence:2:request:3",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "3gW_Jwl5zLduTSOm",
+        "ciphertext": "PdVskmZ1gP7uETAUFKSMYs9P",
+        "wrappedKey": "oSobdVZhoxSXYfGWC24JMMKC5fM0mqa-svKntXPVld1Qc4pIwXM7Ng",
+        "signature": "r-_LmPC5MaTvLNC-EzqXPP61bu2T7mn55Tb1f-PMJINEInUEzDdrhVZEdV7OJHXhoIwAlrvK-SY_GtnDglKACw"
+      },
+      "action": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "personnel",
+        "object": "absence:2:decision:3",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "x4MWBudYnACZvWHf",
+        "ciphertext": "R0VqXWsneTgX-GYrsxSxuiNL",
+        "wrappedKey": "LwHZLhRE8GRkUgvCjVlTGqm0gNR4NabKQoAXEluWha4UEqkKZOIeIA",
+        "signature": "Fe-iveF6jh5W4_37dZUNGR3xnVRLg0AJRLMr5IYnuolWQMWaBQYvFyk3bXGWD2GtMhKV2Aiu8b3aRANMfyLODA"
+      },
+      "action": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:4",
+        "facet": "personnel",
+        "object": "absence:2:decision:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "yP4Btatf_hNKiSUf",
+        "ciphertext": "jdIO5EZeOVQoiKE2e60fPPFo",
+        "wrappedKey": "kdgt_-JbEmV72THa6FnFS8O5YlIJlJ0lCBQiTDtqE_0KIoO0DRhftA",
+        "signature": "PeWzH690WphcMn8XVNB8T-76KoFIhgKtexlwrtQ4ZjnJLw1KzSN1n64eq30CWi6KedwXOI9NwGHP6yc6Hq4NAw"
+      },
+      "action": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "master-data",
+        "object": "absence:2:decision:3",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "b6S8m3RCHYsMgtq9",
+        "ciphertext": "OHhcthW5WNxRaS3mjkp8Nzng",
+        "wrappedKey": "jmdU_PLZMxbTDcxJbyZpL3joIw5eJh-v-v0feSgjlIqCzWftMh1B_A",
+        "signature": "QMDPY_US5Utjz2c_bbMAnNLeJnObo1YHyC0lPNEPVksz3m4t9tliCHLFAEdeoqRgP-MWMb0XGRktyC4NhUfGCA"
+      },
+      "action": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "master-data",
+        "object": "absence:2:request:3:extra",
+        "revision": "1",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-v1",
+        "nonce": "ZKHy6511FfiXZynD",
+        "ciphertext": "Xg2Q6Fbiu5vL_ylM9loc1V2C",
+        "wrappedKey": "u4u0SsL6TcGh6LNKFls9Tx6uXDl2LyoskxhptxMvUyUu_Mrnkhcx8Q",
+        "signature": "aWtVWXzSzwzl7css_eHCcwm6OwbVieL9pKRrr24Eq4cS6wgOmu_N7jWKo2ouFe4esA6tcWYha--rxEWc0NU2Dw"
+      },
+      "action": null
+    },
+    {
+      "envelope": {
+        "tenant": "test",
+        "scope": "absence:2",
+        "facet": "personnel",
+        "object": "absence:2:decision:3",
+        "revision": "2",
+        "generation": "1",
+        "policyVersion": "1",
+        "author": "user:1",
+        "format": "sortsys-object-tombstone-v1",
+        "nonce": "vv7_9giXINj_vihJ",
+        "ciphertext": "ah3qPHhPGblE7WUXLN6vKg",
+        "wrappedKey": "keEn8Q4DS45gdueR4p2XhhbR3wDRfvkfzol3G9AgNhF-Fw6MxvFbqg",
+        "signature": "S0ZgISrxm2QxFk4gkNQ30AsM65dlttmBB-Z4HBYWIQ0Mryk5bYM7SgHPGErLAOVuTl6RYhXJMv1tWMARif8qDQ"
+      },
+      "action": null
+    }
+  ]
+}

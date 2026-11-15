@@ -9,37 +9,17 @@ use axum::http::HeaderMap;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sqlx::{FromRow, PgConnection};
 use ts_rs::TS;
 
 use crate::{
     auth_limits,
-    config::Config,
-    database::TenantStore,
+    control::{Repository, accounts, key},
     error::{ErrorCode, RpcError, RpcResult},
 };
 
 const USER_TOKEN_TTL_SECONDS: usize = 30 * 24 * 60 * 60;
 const ADMIN_TOKEN_TTL_SECONDS: usize = 2 * 60 * 60;
 const MCP_TOKEN_TTL_SECONDS: usize = 10 * 60;
-
-/// Call in the transaction that changes the user's password, after locking the
-/// user row. Keeping the caller's session is only appropriate for a self-change.
-pub(crate) async fn expire_user_sessions(
-    connection: &mut PgConnection,
-    user_id: i64,
-    keep_session: Option<i64>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE user_sessions SET expires_at = NOW() \
-         WHERE user_id = $1 AND ($2::bigint IS NULL OR id <> $2) AND expires_at > NOW()",
-    )
-    .bind(user_id)
-    .bind(keep_session)
-    .execute(connection)
-    .await?;
-    Ok(())
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum McpScope {
@@ -61,7 +41,7 @@ impl McpScope {
 
 #[derive(Clone)]
 pub struct AuthService {
-    tenants: TenantStore,
+    records: Option<Repository>,
     jwt_secret: Arc<[u8]>,
     admin_hash: Arc<str>,
 }
@@ -75,20 +55,15 @@ pub struct AuthResult {
     pub roles: Vec<String>,
 }
 
+/// Authentication carries technical account identity only. Personnel fields
+/// belong to the browser's encrypted profile, including in audit labels.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthUser {
     pub id: String,
     pub username: String,
-    pub salutation: Option<String>,
-    pub first_name: String,
-    pub last_name: Option<String>,
-    pub phone: Option<String>,
-    pub email: Option<String>,
     #[ts(type = "\"de\" | \"en\"")]
     pub locale: String,
-    #[ts(type = "\"internal\" | \"external\" | \"subcontractor\"")]
-    pub contract_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -121,117 +96,30 @@ impl AuthResult {
 }
 
 impl AuthService {
-    pub fn new(config: &Config, tenants: TenantStore) -> Self {
+    pub(crate) fn from_credentials(
+        jwt_secret: Arc<[u8]>,
+        admin_hash: Arc<str>,
+        records: Option<Repository>,
+    ) -> Self {
         Self {
-            tenants,
-            jwt_secret: Arc::clone(&config.jwt_secret),
-            admin_hash: Arc::clone(&config.admin_hash),
+            records,
+            jwt_secret,
+            admin_hash,
         }
     }
 
-    pub async fn login(
-        &self,
-        tenant: &str,
-        username: &str,
-        password: &str,
-        user_agent: Option<&str>,
-        inet_addr: Option<&str>,
-    ) -> RpcResult<Option<String>> {
-        let tenant = tenant.trim().to_lowercase();
-        let username = username.trim().to_lowercase();
-        if tenant.is_empty()
-            || username.is_empty()
-            || password.is_empty()
-            || tenant.chars().count() > 127
-            || username.chars().count() > 63
-            || password.len() > 2_000
-        {
-            return Ok(None);
-        }
-        let _admission = auth_limits::admit_login()?;
-        let attempt = auth_limits::reserve(
-            self.tenants.master(),
-            &self.jwt_secret,
-            "user",
-            &[&tenant, &username],
-        )
-        .await?;
-        let token = self
-            .login_user(&tenant, &username, password, user_agent, inet_addr)
-            .await?;
-        if token.is_some() {
-            attempt.succeeded(self.tenants.master()).await;
-        }
-        Ok(token)
+    pub(crate) fn records(&self) -> RpcResult<&Repository> {
+        self.records
+            .as_ref()
+            .ok_or_else(crate::control::unavailable)
     }
 
-    async fn login_user(
+    pub(crate) async fn reserve_login(
         &self,
-        tenant: &str,
-        username: &str,
-        password: &str,
-        user_agent: Option<&str>,
-        inet_addr: Option<&str>,
-    ) -> RpcResult<Option<String>> {
-        let credentials = async {
-            let pool = self.tenants.tenant_pool(tenant).await.ok()?;
-            let user = sqlx::query_as::<_, LoginUser>(
-                "SELECT id, password FROM users \
-             WHERE username = $1 AND (deactivated_at IS NULL OR deactivated_at > NOW()) \
-               AND NOT EXISTS(SELECT 1 FROM __zerotrust_accounts a WHERE a.user_id=users.id)",
-            )
-            .bind(username)
-            .fetch_optional(&pool)
-            .await
-            .ok()??;
-            Some((pool, user.id, user.password?))
-        }
-        .await;
-        // Unknown accounts check the same capacity gate. Overload responses
-        // must not reveal whether a submitted user name exists.
-        let permit = auth_limits::password_slot().await?;
-        let Some((pool, user_id, password_hash)) = credentials else {
-            return Ok(None);
-        };
-        let verified_hash = password_hash.clone();
-        let matches =
-            auth_limits::verify_password(password.to_owned(), password_hash, permit).await?;
-        if !matches {
-            return Ok(None);
-        }
-
-        // Serialize session creation with password changes. A verification that
-        // started before a reset must not recreate a session with the old hash.
-        let Ok(mut transaction) = pool.begin().await else {
-            return Ok(None);
-        };
-        let Ok(Some(_)) = sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM users WHERE id = $1 AND password = $2 \
-             AND (deactivated_at IS NULL OR deactivated_at > NOW()) FOR SHARE",
-        )
-        .bind(user_id)
-        .bind(verified_hash)
-        .fetch_optional(&mut *transaction)
-        .await
-        else {
-            return Ok(None);
-        };
-        let Ok(session_id) = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO user_sessions (user_id, inet_addr, user_agent) \
-             VALUES ($1, $2, $3) RETURNING id",
-        )
-        .bind(user_id)
-        .bind(inet_addr)
-        .bind(user_agent)
-        .fetch_one(&mut *transaction)
-        .await
-        else {
-            return Ok(None);
-        };
-        if transaction.commit().await.is_err() {
-            return Ok(None);
-        }
-        Ok(self.issue_user_token(tenant, &session_id.to_string()).ok())
+        scope: &str,
+        parts: &[&str],
+    ) -> RpcResult<auth_limits::LoginAttempt> {
+        auth_limits::reserve(self.records()?, &self.jwt_secret, scope, parts).await
     }
 
     pub(crate) fn issue_challenge_token<T: Serialize>(&self, claims: &T) -> RpcResult<String> {
@@ -276,12 +164,12 @@ impl AuthService {
             None => ("admin-global", vec![]),
         };
         let attempt =
-            auth_limits::reserve(self.tenants.master(), &self.jwt_secret, scope, &parts).await?;
+            auth_limits::reserve(self.records()?, &self.jwt_secret, scope, &parts).await?;
         let token = self
             .login_administrator(password, tenant.as_deref())
             .await?;
         if token.is_some() {
-            attempt.succeeded(self.tenants.master()).await;
+            attempt.succeeded(self.records()?).await;
         }
         Ok(token)
     }
@@ -291,17 +179,18 @@ impl AuthService {
         password: &str,
         tenant: Option<&str>,
     ) -> RpcResult<Option<String>> {
-        let password_hash = match tenant {
-            Some(name) => match self.tenants.tenant(name).await {
-                Ok(Some(tenant)) => Some(tenant.admin_hash),
-                _ => None,
-            },
-            None => Some(self.admin_hash.to_string()),
-        };
+        if let Some(name) = tenant {
+            let present = self
+                .records()?
+                .read::<serde_json::Value>(key("tenants", name))
+                .await?
+                .value;
+            if present.is_none() {
+                return Ok(None);
+            }
+        }
         let permit = auth_limits::password_slot().await?;
-        let Some(password_hash) = password_hash else {
-            return Ok(None);
-        };
+        let password_hash = self.admin_hash.to_string();
         let matches =
             auth_limits::verify_password(password.to_owned(), password_hash, permit).await?;
         if !matches {
@@ -343,61 +232,8 @@ impl AuthService {
         let session_id: i64 = session_id
             .parse()
             .map_err(|_| unauthorized("Provided JWT token does not seem to be valid"))?;
-        let pool =
-            self.tenants.tenant_pool(&tenant).await.map_err(|error| {
-                RpcError::new(ErrorCode::InternalServerError, error.to_string())
-            })?;
-        let row = sqlx::query_as::<_, AuthRow>(
-            "SELECT u.id AS user_id, u.username, u.salutation, u.first_name, u.last_name, \
-                    u.phone, u.email, u.ui_locale, u.contract_type, session.id AS session_id, \
-                    session.inet_addr, session.user_agent, session.created_at, session.expires_at, \
-                    ARRAY_REMOVE(ARRAY_AGG(ura.role_name), NULL) AS roles \
-             FROM user_sessions session \
-             JOIN users u ON u.id = session.user_id \
-             LEFT JOIN user_role_assignments ura ON ura.user_id = session.user_id \
-             WHERE session.id = $1 AND u.deactivated_at IS NULL \
-               AND session.created_at < NOW() AND session.expires_at > NOW() \
-             GROUP BY session.id, u.id",
-        )
-        .bind(session_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|error| RpcError::new(ErrorCode::InternalServerError, error.to_string()))?
-        .ok_or_else(|| unauthorized("Session closed, deleted, expired or user deactivated"))?;
-
-        crate::audit::user(
-            &tenant,
-            row.user_id,
-            [Some(row.first_name.as_str()), row.last_name.as_deref()]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" "),
-        );
-
-        Ok(AuthResult {
-            tenant,
-            user: AuthUser {
-                id: row.user_id.to_string(),
-                username: row.username,
-                salutation: row.salutation,
-                first_name: row.first_name,
-                last_name: row.last_name,
-                phone: row.phone,
-                email: row.email,
-                locale: row.ui_locale,
-                contract_type: row.contract_type,
-            },
-            session: AuthSession {
-                id: row.session_id.to_string(),
-                user_id: row.user_id.to_string(),
-                inet_addr: row.inet_addr,
-                user_agent: row.user_agent,
-                created_at: row.created_at,
-                expires_at: row.expires_at,
-            },
-            roles: row.roles,
-        })
+        let identity = accounts::session_identity(self.records()?, &tenant, session_id).await?;
+        Ok(identity)
     }
 
     pub async fn authenticate_admin(&self, headers: &HeaderMap) -> RpcResult<String> {
@@ -407,39 +243,60 @@ impl AuthService {
             .admin_for
             .ok_or_else(|| unauthorized("Provided JWT token does not seem to be valid"))?;
         if admin_for != "+all" {
-            let tenant = self
-                .tenants
-                .tenant(&admin_for)
-                .await
-                .map_err(|error| RpcError::new(ErrorCode::InternalServerError, error.to_string()))?
-                .ok_or_else(|| unauthorized("Tenant does no longer exist"))?;
-            if tenant.deleted_at.is_some_and(|at| at < Utc::now()) {
+            let repository = self.records()?.tenant(&admin_for)?;
+            let status = repository
+                .read::<accounts::TenantStatus>(accounts::tenant_key())
+                .await?
+                .value
+                .ok_or_else(|| unauthorized("Tenant no longer exists"))?;
+            if status.deleted_at.is_some_and(|at| at <= Utc::now()) {
                 return Err(unauthorized("Tenant got deleted"));
             }
         }
-        crate::audit::admin(&admin_for);
         Ok(admin_for)
     }
 
+    /// Infrastructure-wide controls must not accept a tenant-scoped operator
+    /// or an ordinary tenant administrator merely because both are called admin.
+    pub(crate) async fn require_global_operator(&self, headers: &HeaderMap) -> RpcResult<()> {
+        if self.authenticate_admin(headers).await? != "+all" {
+            return Err(
+                RpcError::new(ErrorCode::Forbidden, "Global operator access required")
+                    .with_http_code(403),
+            );
+        }
+        Ok(())
+    }
+
     pub async fn logout(&self, auth: &AuthResult) -> RpcResult<()> {
-        let pool = self
-            .tenants
-            .tenant_pool(&auth.tenant)
-            .await
-            .map_err(|error| RpcError::new(ErrorCode::InternalServerError, error.to_string()))?;
+        let repository = self.records()?.tenant(&auth.tenant)?;
         let id: i64 = auth
             .session
             .id
             .parse()
-            .map_err(|error: std::num::ParseIntError| {
-                RpcError::new(ErrorCode::InternalServerError, error.to_string())
-            })?;
-        sqlx::query("UPDATE user_sessions SET expires_at = NOW() WHERE id = $1")
-            .bind(id)
-            .execute(&pool)
-            .await
-            .map_err(|error| RpcError::new(ErrorCode::InternalServerError, error.to_string()))?;
-        Ok(())
+            .map_err(|_| unauthorized("Invalid session"))?;
+        for _ in 0..8 {
+            let mut transaction = repository.transaction()?;
+            let Some(mut session) = transaction
+                .read::<accounts::Session>(accounts::session_key(id))
+                .await?
+            else {
+                return Ok(());
+            };
+            if session.user_id.to_string() != auth.user.id {
+                return Err(unauthorized("Invalid session"));
+            }
+            session.expires_at = Utc::now();
+            transaction
+                .put_expiring(accounts::session_key(id), &session, session.expires_at)
+                .await?;
+            match transaction.commit().await {
+                Ok(_) => return Ok(()),
+                Err(error) if error.code == ErrorCode::Conflict => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(crate::control::conflict())
     }
 
     pub(crate) fn issue_user_token(
@@ -458,27 +315,6 @@ impl AuthService {
                 chat_id: None,
                 iat: now,
                 exp: now + USER_TOKEN_TTL_SECONDS,
-            },
-            &EncodingKey::from_secret(&self.jwt_secret),
-        )
-    }
-
-    pub(crate) fn issue_internal_user_token(
-        &self,
-        auth: &AuthResult,
-    ) -> jsonwebtoken::errors::Result<String> {
-        let now = unix_time();
-
-        encode(
-            &Header::new(Algorithm::HS512),
-            &Claims {
-                tenant: Some(auth.tenant.clone()),
-                session_id: Some(auth.session.id.clone()),
-                admin_for: None,
-                purpose: None,
-                chat_id: None,
-                iat: now,
-                exp: now + MCP_TOKEN_TTL_SECONDS,
             },
             &EncodingKey::from_secret(&self.jwt_secret),
         )
@@ -581,35 +417,23 @@ struct Claims {
     exp: usize,
 }
 
-#[derive(FromRow)]
-struct LoginUser {
-    id: i64,
-    password: Option<String>,
-}
-
-#[derive(FromRow)]
-struct AuthRow {
-    user_id: i64,
-    username: String,
-    salutation: Option<String>,
-    first_name: String,
-    last_name: Option<String>,
-    phone: Option<String>,
-    email: Option<String>,
-    ui_locale: String,
-    contract_type: String,
-    session_id: i64,
-    inet_addr: Option<String>,
-    user_agent: Option<String>,
-    created_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-    roles: Vec<String>,
-}
-
 #[cfg(test)]
 mod tests {
-    use super::McpScope;
+    use super::{AuthUser, McpScope};
     use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+
+    #[test]
+    fn authentication_identity_serializes_no_personnel_fields() {
+        let user = AuthUser {
+            id: "4".to_owned(),
+            username: "anna.muster".to_owned(),
+            locale: "de".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_value(user).unwrap(),
+            serde_json::json!({"id":"4","username":"anna.muster","locale":"de"})
+        );
+    }
     use serde::{Deserialize, Serialize};
 
     #[test]
