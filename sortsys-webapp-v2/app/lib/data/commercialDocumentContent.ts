@@ -48,6 +48,7 @@ import {
   prepareDocumentLivePublications,
 } from "./liveCheckpoints";
 import { createDocumentHeadVerifier } from "../crypto/documentHeads";
+import { mapConcurrent } from "./runtime/concurrentReads";
 
 // Chunks stay below the signed object limit even after nine binary encryption
 // layers and the one outer JSON/base64 envelope. No plaintext content hashes.
@@ -98,7 +99,7 @@ export async function commercialDocumentStore(
   scope: string,
   signal: AbortSignal,
 ) {
-  return (await commercialDocumentStores(client, signal))(scope);
+  return (await commercialDocumentStores(client, signal, [scope]))(scope);
 }
 
 /** A list can inspect many documents under one verified access snapshot.
@@ -107,6 +108,7 @@ export async function commercialDocumentStore(
 export async function commercialDocumentStores(
   client: Client,
   signal: AbortSignal,
+  selectedScopes?: readonly string[],
 ) {
   const account = unlockedAccount();
   if (!account) {
@@ -118,7 +120,14 @@ export async function commercialDocumentStores(
       throw new InvalidProtectedData();
     }
   };
-  const open = await protectedCollections(client, signal);
+  const selectedDomains = selectedScopes?.flatMap((scope) => {
+    const area = commercialDomain(`${scope}:master-data`);
+    if (!area) throw new InvalidProtectedData();
+    return COMMERCIAL_FACETS.map(
+      (facet) => commercialCollection(area.id, facet).domain,
+    );
+  });
+  const open = await protectedCollections(client, signal, selectedDomains);
   live();
   const areas = open.areas((domain) => {
     const part = commercialDomain(domain);
@@ -510,19 +519,26 @@ function openDocumentStore(
     ) {
       // Always validate a caller-supplied vector before using its object paths.
       const h = await verifier.check(value);
-      const layout = (await read(
-        h.parts.find((part) => part.facet === "scope")!,
-      )) as GaebXmlLayout;
+      const selected = h.parts.filter(
+        (part) => part.facet === "scope" || (!scopeOnly && readable(part)),
+      );
+      const contents = await mapConcurrent(selected, 4, async (part) => ({
+        part,
+        value: await read(part),
+      }));
+      let layout: GaebXmlLayout | undefined;
       const fragments = new Map<GaebPrivateFacet, GaebXmlFragment[]>();
-      for (const part of h.parts) {
-        if (!scopeOnly && part.facet !== "scope" && readable(part)) {
-          const value = await read(part);
+      for (const { part, value } of contents) {
+        if (part.facet === "scope") {
+          layout = value as GaebXmlLayout;
+        } else {
           if (!Array.isArray(value)) {
             throw new InvalidProtectedData();
           }
           fragments.set(part.facet, value as GaebXmlFragment[]);
         }
       }
+      if (!layout) throw new InvalidProtectedData();
       const rendered = await processor.render(layout, fragments, signal);
       live();
       const readableFacets = DOCUMENT_FACETS.filter((facet) => {

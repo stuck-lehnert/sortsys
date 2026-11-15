@@ -2,6 +2,7 @@ import {
   RpcClientError,
   type Client,
   type MutateInput,
+  type QueryInput,
   type QueryResult,
 } from "@sortsys/v2-client";
 import {
@@ -98,8 +99,9 @@ export async function protectedCollection(
 export async function protectedCollections(
   client: Client,
   signal: AbortSignal,
+  selectedDomains?: readonly string[],
 ) {
-  const context = await collectionContext(client, signal);
+  const context = await collectionContext(client, signal, selectedDomains);
   function live() {
     if (signal.aborted || unlockedAccount() !== context.account)
       throw new InvalidProtectedData();
@@ -211,14 +213,16 @@ export async function protectedCollections(
 async function collectionContext(
   client: Client,
   signal: AbortSignal,
-  selectedDomain?: string,
+  selection?: string | readonly string[],
 ) {
+  let options: QueryInput<"zerotrust.access.snapshot"> = {};
+  if (typeof selection === "string") {
+    options = { domain: selection };
+  } else if (selection !== undefined) {
+    options = { domains: [...selection] };
+  }
   const { account, history, subject, rootPolicy, permissions, domains, live } =
-    await verifiedAccessContext(
-      client,
-      signal,
-      selectedDomain ? { domain: selectedDomain } : {},
-    );
+    await verifiedAccessContext(client, signal, options);
   const author = createObjectAuthorVerifier(
     client,
     { account, history, live },

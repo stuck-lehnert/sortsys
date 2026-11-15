@@ -284,10 +284,23 @@ async fn check_member(
 /// same visibility and key-rotation checks, inside their caller's transaction.
 async fn list_domains(
     context: &mut super::super::access::MetadataContext,
-    selected: Option<&str>,
+    selected: Option<&[String]>,
 ) -> RpcResult<Vec<DomainInfo>> {
-    let areas = if let Some(id) = selected {
-        vec![domain(&mut context.transaction, id).await?]
+    let areas = if let Some(ids) = selected {
+        let records = context
+            .transaction
+            .many::<DomainRecord>(ids.iter().map(|id| key("domains", id)).collect())
+            .await?;
+        let mut areas = Vec::new();
+        for (id, record) in ids.iter().zip(records) {
+            if let Some(record) = record {
+                if record.id != *id {
+                    return Err(invalid());
+                }
+                areas.push(record);
+            }
+        }
+        areas
     } else {
         context
             .transaction
@@ -339,10 +352,7 @@ pub(in crate::zerotrust) fn register(
             move |ctx, input: AccessInput| {
                 let service = Arc::clone(&access_snapshot);
                 async move {
-                    let selected = input.domain.as_ref().map(std::slice::from_ref);
-                    if let Some(domain) = &input.domain {
-                        identifier(domain)?;
-                    }
+                    let selected = input.selected_domains()?;
                     let mut context =
                         metadata_context_for_domains(&service, &ctx, selected).await?;
                     if let Some(id) = &input.domain {
@@ -361,7 +371,7 @@ pub(in crate::zerotrust) fn register(
                     let history =
                         super::super::setup::metadata_history(&mut context.transaction).await?;
                     let domains = if input.include_domains.unwrap_or(true) {
-                        list_domains(&mut context, input.domain.as_deref()).await?
+                        list_domains(&mut context, selected).await?
                     } else {
                         Vec::new()
                     };

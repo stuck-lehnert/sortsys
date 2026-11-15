@@ -307,7 +307,7 @@ export type QueryInputs = {
   "users.roles.list": void;
   "users.supervisors.getDefault": void;
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
-  "zerotrust.access.snapshot": { domain?: string, includeDomains?: boolean, };
+  "zerotrust.access.snapshot": { domain?: string, domains?: Array<string>, includeDomains?: boolean, };
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', };
   "zerotrust.creations.list": void;
   "zerotrust.creations.origin": { domain: string, };

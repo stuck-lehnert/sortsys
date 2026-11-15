@@ -1,8 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
 import { ACTIONS } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
-import { commercialCollection } from "./commercialAreas";
-import { commercialDocumentStores } from "./commercialDocumentContent";
+import { COMMERCIAL_FACETS, commercialCollection } from "./commercialAreas";
+import {
+  commercialDocumentStore,
+  commercialDocumentStores,
+} from "./commercialDocumentContent";
 import { protectedCollections } from "./protectedObjects";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
@@ -10,6 +13,41 @@ afterEach(() => lockCryptoSession());
 
 const first = commercialCollection("a", "master-data");
 const second = commercialCollection("b", "master-data");
+
+test("opening one document requests only its own facets and origin proofs", async () => {
+  const fixture = await protectedTenant([first, second]);
+  const store = await commercialDocumentStore(
+    fixture.client,
+    first.scope,
+    new AbortController().signal,
+  );
+  try {
+    expect(
+      fixture.calls.filter((call) => call.path === "zerotrust.access.snapshot"),
+    ).toEqual([
+      {
+        path: "zerotrust.access.snapshot",
+        input: {
+          domains: COMMERCIAL_FACETS.map(
+            (facet) => commercialCollection("a", facet).domain,
+          ),
+        },
+      },
+    ]);
+    expect(
+      fixture.calls.some((call) => call.path === "zerotrust.creations.list"),
+    ).toBe(false);
+    const origins = fixture.calls.filter(
+      (call) => call.path === "zerotrust.creations.origin",
+    );
+    expect(origins).toHaveLength(COMMERCIAL_FACETS.length);
+    expect(
+      origins.every((call) => call.input.domain.startsWith(`${first.scope}:`)),
+    ).toBe(true);
+  } finally {
+    store.close();
+  }
+});
 
 test("document scopes share one verified inventory and keep independent lifetimes", async () => {
   const fixture = await protectedTenant([first, second]);

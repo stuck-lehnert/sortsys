@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryInput } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
 import { unlockedAccount, verifyAccountHistory } from "./session";
@@ -11,7 +11,7 @@ import { verifyCreatedAccess } from "./createdAccess";
 export async function verifiedAccessContext(
   client: Client,
   signal: AbortSignal,
-  options: { domain?: string; includeDomains?: boolean } = {},
+  options: QueryInput<"zerotrust.access.snapshot"> = {},
 ) {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
@@ -38,6 +38,23 @@ export async function verifiedAccessContext(
   if (input.username !== account.username) throw new InvalidProtectedData();
   if (typeof input.subject !== "string" || !Array.isArray(input.domains))
     throw new InvalidProtectedData();
+  let selected: ReadonlySet<string> | undefined;
+  if (options.domain !== undefined) {
+    selected = new Set([options.domain]);
+  } else if (options.domains !== undefined) {
+    selected = new Set(options.domains);
+  }
+  const returned = new Set<string>();
+  for (const domain of input.domains) {
+    if (
+      typeof domain.id !== "string" ||
+      returned.has(domain.id) ||
+      (selected && !selected.has(domain.id)) ||
+      options.includeDomains === false
+    )
+      throw new InvalidProtectedData();
+    returned.add(domain.id);
+  }
   const history = await verifyAccountHistory(input.history, account);
   live();
   const identity = history.identityCertificate(input.subject);
@@ -56,7 +73,7 @@ export async function verifiedAccessContext(
     rootPolicy,
     history,
     signal,
-    options.domain,
+    selected,
   );
   live();
   return {

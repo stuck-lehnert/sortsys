@@ -12,20 +12,22 @@ export async function accessSnapshotFixture(client, input = {}) {
   const history = await read("zerotrust.trust.history");
   const policy = await read("zerotrust.policy.get");
   let origins;
-  if (input.domain) {
-    const scope = input.domain.slice(0, input.domain.lastIndexOf(":"));
-    origins = creationResource(scope)
-      ? [
-          await read("zerotrust.creations.origin", { domain: input.domain }),
-        ].filter(Boolean)
-      : [];
+  const selected = input.domain ? [input.domain] : input.domains;
+  if (selected) {
+    origins = [];
+    for (const domain of selected) {
+      const scope = domain.slice(0, domain.lastIndexOf(":"));
+      if (!creationResource(scope)) continue;
+      const origin = await read("zerotrust.creations.origin", { domain });
+      if (origin) origins.push(origin);
+    }
   } else {
     origins = await read("zerotrust.creations.list");
   }
   let domains =
     input.includeDomains === false ? [] : await read("zerotrust.domains.list");
-  if (input.domain)
-    domains = domains.filter((domain) => domain.id === input.domain);
+  if (selected)
+    domains = domains.filter((domain) => selected.includes(domain.id));
   return [
     {
       subject: `user:${session.user.id}`,

@@ -5,7 +5,7 @@ import {
   creationResource,
 } from "@sortsys/zerotrust/sortsys";
 import { creationFixture } from "../../../../sortsys-zerotrust/test/support/creationFixture";
-import { createdAccess } from "./createdAccess";
+import { createdAccess, verifyCreatedAccess } from "./createdAccess";
 
 test("point reads verify certified creation rights for every declared resource namespace and retain root denials", async () => {
   for (const namespace of Object.keys(CREATION_FACETS)) {
@@ -107,4 +107,50 @@ test("unrelated catalogues and invalid resource identifiers cannot trigger or ac
     "__proto__:abc",
   ])
     expect(creationResource(scope)).toBeNull();
+});
+
+test("a selected batch accepts only unique creation proofs for the requested domains", async () => {
+  const fixture = await creationFixture("commercial");
+  const policy = { tenant: "test", version: "1", rules: [] };
+  const history = {
+    authority: () => fixture.authorityKey.publicKey,
+    current: { generation: "1" },
+  };
+  const signal = new AbortController().signal;
+  const selected = new Set([fixture.origin.id]);
+  const verified = await verifyCreatedAccess(
+    [fixture.origin],
+    policy,
+    history,
+    signal,
+    selected,
+  );
+  expect(
+    allows(verified, {
+      tenant: "test",
+      version: "1",
+      subjects: ["user:2"],
+      scope: fixture.origin.scope,
+      facet: "master-data",
+      action: "read",
+    }),
+  ).toBe(true);
+  await expect(
+    verifyCreatedAccess(
+      [fixture.origin, fixture.origin],
+      policy,
+      history,
+      signal,
+      selected,
+    ),
+  ).rejects.toThrow();
+  await expect(
+    verifyCreatedAccess(
+      [fixture.origin],
+      policy,
+      history,
+      signal,
+      new Set(["commercial:def:master-data"]),
+    ),
+  ).rejects.toThrow();
 });

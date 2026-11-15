@@ -224,7 +224,65 @@ struct AccessInput {
     domain: Option<String>,
     #[serde(default)]
     #[ts(optional)]
+    domains: Option<Vec<String>>,
+    #[serde(default)]
+    #[ts(optional)]
     include_domains: Option<bool>,
+}
+
+impl AccessInput {
+    fn selected_domains(&self) -> RpcResult<Option<&[String]>> {
+        if self.domain.is_some() && self.domains.is_some() {
+            return Err(invalid());
+        }
+        let selected = if let Some(domain) = &self.domain {
+            Some(std::slice::from_ref(domain))
+        } else {
+            self.domains.as_deref()
+        };
+        if let Some(domains) = selected {
+            if domains.is_empty() || domains.len() > 16 {
+                return Err(invalid());
+            }
+            let mut unique = std::collections::HashSet::new();
+            for domain in domains {
+                identifier(domain)?;
+                if !unique.insert(domain) {
+                    return Err(invalid());
+                }
+            }
+        }
+        Ok(selected)
+    }
+}
+
+#[cfg(test)]
+mod access_selection_tests {
+    use super::AccessInput;
+    use serde_json::json;
+
+    #[test]
+    fn access_selections_are_unambiguous_unique_and_bounded() {
+        for input in [
+            json!({"domains": []}),
+            json!({"domain": "catalog:products:master-data", "domains": ["catalog:products:master-data"]}),
+            json!({"domains": ["catalog:products:master-data", "catalog:products:master-data"]}),
+            json!({"domains": ["invalid domain"]}),
+            json!({"domains": (0..17).map(|index| format!("testing:{index}:master-data")).collect::<Vec<_>>()}),
+        ] {
+            let selection: AccessInput = serde_json::from_value(input).unwrap();
+            assert!(selection.selected_domains().is_err());
+        }
+        let all: AccessInput = serde_json::from_value(json!({})).unwrap();
+        assert!(all.selected_domains().unwrap().is_none());
+        let domains = (0..16)
+            .map(|index| format!("testing:{index}:master-data"))
+            .collect::<Vec<_>>();
+        let selected: AccessInput = serde_json::from_value(json!({"domains": domains})).unwrap();
+        assert_eq!(selected.selected_domains().unwrap().unwrap(), domains);
+        let single: AccessInput = serde_json::from_value(json!({"domain": domains[0]})).unwrap();
+        assert_eq!(single.selected_domains().unwrap().unwrap(), &domains[..1]);
+    }
 }
 
 #[derive(Serialize, TS)]

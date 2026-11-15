@@ -77,3 +77,36 @@ test("account replacement during concurrent metadata loading cannot return a lat
     ),
   ).toBe(false);
 });
+
+test("selected inventories reject unrelated or duplicate domains before requesting content keys", async () => {
+  const fixture = await protectedTenant([area]);
+  const query = fixture.client.query;
+  let substitution;
+  fixture.client.query = async (path, input) => {
+    const result = await query(path, input);
+    if (path !== "zerotrust.access.snapshot" || result[1]) return result;
+    const value = structuredClone(result[0]);
+    if (substitution === "duplicate") {
+      value.domains.push(value.domains[0]);
+    } else if (substitution === "foreign") {
+      value.domains.push({
+        ...value.domains[0],
+        id: "testing:foreign:master-data",
+      });
+    }
+    return [value, null];
+  };
+  const signal = new AbortController().signal;
+  const valid = await protectedCollections(fixture.client, signal, [
+    area.domain,
+  ]);
+  expect(valid.readable(area)).toBe(true);
+  for (substitution of ["duplicate", "foreign"]) {
+    await expect(
+      protectedCollections(fixture.client, signal, [area.domain]),
+    ).rejects.toThrow();
+  }
+  expect(fixture.calls.some((call) => call.path === "zerotrust.keys.get")).toBe(
+    false,
+  );
+});

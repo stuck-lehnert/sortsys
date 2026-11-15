@@ -39,6 +39,29 @@ export async function exerciseBatchedReads(
   );
   assert.deepEqual(menuAccess.domains, []);
   assert.deepEqual(menuAccess.policy, policy);
+  const selectedDomains = [area.domain, "testing:missing:master-data"];
+  const selectedAccess = await required(
+    peer.query("zerotrust.access.snapshot", { domains: selectedDomains }),
+  );
+  assert.deepEqual(selectedAccess.domains, narrowAccess.domains);
+  assert.deepEqual(selectedAccess.origins, narrowAccess.origins);
+  const selected = await protectedCollections(client, signal, selectedDomains);
+  assert.equal(selected.readable(area), true);
+  for (const input of [
+    { domains: [] },
+    { domains: [area.domain, area.domain] },
+    {
+      domains: Array.from(
+        { length: 17 },
+        (_, index) => `testing:missing${index}:master-data`,
+      ),
+    },
+    { domain: area.domain, domains: [area.domain] },
+  ]) {
+    const [value, error] = await peer.query("zerotrust.access.snapshot", input);
+    assert.equal(value, null);
+    assert.ok(error);
+  }
   for (const substitute of [
     "subject",
     "username",

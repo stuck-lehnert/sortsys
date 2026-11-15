@@ -52,12 +52,13 @@ export async function verifyCreatedAccess(
   permissions: Policy,
   history: Awaited<ReturnType<typeof trustedHistory>>,
   signal: AbortSignal,
-  domain?: string,
+  domains?: string | ReadonlySet<string>,
 ): Promise<Policy> {
   if (!Array.isArray(origins)) throw new InvalidProtectedData();
   signal.throwIfAborted();
   if (origins.length === 0) return permissions;
   const inherited = [];
+  const seen = new Set<string>();
   for (const input of origins) {
     signal.throwIfAborted();
     if (input === null) continue;
@@ -65,9 +66,12 @@ export async function verifyCreatedAccess(
     if (
       origin.tenant !== permissions.tenant ||
       origin.capability.generation !== history.current.generation ||
-      (domain && origin.id !== domain)
+      seen.has(origin.id) ||
+      (typeof domains === "string" && origin.id !== domains) ||
+      (typeof domains === "object" && !domains.has(origin.id))
     )
       throw new InvalidProtectedData();
+    seen.add(origin.id);
     inherited.push(...creationRules(origin));
   }
   signal.throwIfAborted();

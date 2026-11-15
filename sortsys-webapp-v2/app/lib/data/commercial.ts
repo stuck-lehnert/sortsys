@@ -452,6 +452,7 @@ export function createProtectedCommercial(
             current,
             id,
             true,
+            store,
           );
           const materialized = await materializedContent(
             store,
@@ -718,6 +719,7 @@ export function createProtectedCommercial(
     current: ReturnType<typeof wireCommercialCase>,
     id: string,
     forEditor: boolean,
+    currentStore?: DocumentStore,
   ) {
     let referenceXml: string | null = null;
     let referencePartition: GaebXmlPartition | undefined;
@@ -736,7 +738,17 @@ export function createProtectedCommercial(
       visited.add(sourceId);
       let sourceHead: DocumentHead;
       try {
-        sourceHead = await documentHead(sourceId);
+        const belongsToCurrentCase = basis.values.some(
+          (row) =>
+            row.table === "commercial_documents" && row.values.id === source,
+        );
+        if (currentStore && belongsToCurrentCase) {
+          const head = await currentStore.head(sourceId);
+          if (!head) throw new InvalidProtectedData();
+          sourceHead = head;
+        } else {
+          sourceHead = await documentHead(sourceId);
+        }
       } catch (error) {
         // A separately shared measurement may refer to an unreadable order.
         // Only an explicit access denial omits that optional reference;
@@ -751,7 +763,10 @@ export function createProtectedCommercial(
         throw error;
       }
       const sourceCase = sourceHead.scope.slice(11);
-      const referenceRows = (await read(sourceCase)).values;
+      const referenceRows =
+        currentStore && sourceCase === basis.id
+          ? basis.values
+          : (await read(sourceCase)).values;
       const reference = documentRow(referenceRows, sourceId);
       const other = wireCommercialCase(referenceRows);
       if (sourceCurrent === null) sourceCurrent = sourceHead.version;
@@ -771,11 +786,18 @@ export function createProtectedCommercial(
         ) {
           break;
         }
-        const related = await commercialDocumentStore(
-          client,
-          sourceHead.scope,
-          signal,
-        );
+        const sharesCurrentStore =
+          currentStore !== undefined && sourceCase === basis.id;
+        let related: DocumentStore;
+        if (sharesCurrentStore) {
+          related = currentStore;
+        } else {
+          related = await commercialDocumentStore(
+            client,
+            sourceHead.scope,
+            signal,
+          );
+        }
         try {
           let referenceHead = sourceHead;
           if (sourceVersion !== null && sourceVersion !== sourceHead.version) {
@@ -799,7 +821,7 @@ export function createProtectedCommercial(
             fragments: [...contents.fragments.values()].flat(),
           };
         } finally {
-          related.close();
+          if (!sharesCurrentStore) related.close();
         }
         break;
       }
@@ -904,6 +926,7 @@ export function createProtectedCommercial(
             current,
             id,
             true,
+            store,
           );
           content = await materializedContent(
             store,
@@ -954,6 +977,7 @@ export function createProtectedCommercial(
         current,
         id,
         forEditor,
+        store,
       );
       const referenceXml = reference.xml;
       content = await materializedContent(
