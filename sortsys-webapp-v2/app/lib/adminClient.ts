@@ -1,18 +1,8 @@
+import { browserApiEndpoint } from "./apiEndpoint";
 import { createClient } from "@sortsys/v2-client";
 import { BUILD_REVISION } from "./buildInfo";
 
-const HOST = (() => {
-  if (typeof window !== "object") return "";
-
-  const useDevHost = import.meta.env.DEV || window.location.hostname === "127.0.0.1";
-
-  if (useDevHost) {
-    const loc = window.location;
-    return `${loc.protocol}//${loc.hostname}:3000`;
-  }
-
-  return "/api/v2";
-})();
+const HOST = browserApiEndpoint();
 
 export const adminClient = createClient(HOST, "global-admin", {
   revision: BUILD_REVISION,

@@ -1,67 +1,71 @@
+import { browserApiEndpoint } from "./apiEndpoint";
 import { createClient, type Client } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
-import { uiText } from "./i18n";
 import { BUILD_REVISION } from "./buildInfo";
 import { lockCryptoSession, signIn } from "./crypto/session";
-import { technicalErrorReport } from "./errorTelemetry";
+import {
+  errorHttpStatus,
+  technicalErrorReport,
+  type TechnicalErrorContext,
+} from "./errorTelemetry";
 import { createBusinessClient } from "./data/businessClient";
 import { ramCache } from "./data/ramCache";
 import { llmActivity } from "./llmActivity";
 
-const HOST = (() => {
-  if (typeof window !== 'object') return '';
-
-  const useDevHost = import.meta.env.DEV || window.location.hostname === '127.0.0.1';
-  
-  if (useDevHost) {
-    const loc = window.location;
-    return `${loc.protocol}//${loc.hostname}:3000`;
-  }
-
-  return '/api/v2';
-})();
+const HOST = browserApiEndpoint();
 export const API_ENDPOINT = HOST;
 
 const baseClient = createClient(HOST, "webapp", {
   revision: BUILD_REVISION,
   cache: ramCache(),
+  cacheable: (path) => !path.startsWith("zerotrust."),
 });
-const businessClient = createBusinessClient(baseClient, { endpoint: HOST, realtime: true });
+const businessClient = createBusinessClient(baseClient, {
+  endpoint: HOST,
+  realtime: true,
+});
 
 export const projectFiles = businessClient.files;
 export const gaebDocuments = businessClient.documents;
 export const organizationSettings = businessClient.organization;
+export const organizationLogo = businessClient.logo;
+export const protectedContent = businessClient.context;
 export const templateAssets = businessClient.templates;
 export const contentAccess = businessClient.access;
+export const dashboardPreferences = businessClient.dashboard;
+export const commonCostSettings = businessClient.commonCosts;
 
-type ClientErrorReportInput = {
-  level?: 'error' | 'warning';
-  source: string;
-  message: string;
-  stack?: string | null;
-  path?: string | null;
-  componentStack?: string | null;
-  metadata?: Record<string, unknown> | null;
-};
+export function startAutomaticTimestampEvidence(
+  signal: AbortSignal,
+): () => void {
+  let stop: (() => void) | undefined;
+  void import("./crypto/timestampEvidence")
+    .then((module) => {
+      if (!signal.aborted)
+        stop = module.startTimestampEvidence(baseClient, signal);
+    })
+    .catch(() => undefined);
+  return () => stop?.();
+}
 
 let reportingError = false;
-let lastReportKey = '';
+let lastReportKey = "";
 let lastReportAt = 0;
 
 function browserPath() {
-  if (typeof window !== 'object') return null;
+  if (typeof window !== "object") return null;
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
-function reportKey(input: ClientErrorReportInput) {
-  return JSON.stringify(technicalErrorReport({ ...input, path: input.path ?? browserPath() }, BUILD_REVISION));
-}
-
-export async function reportClientError(input: ClientErrorReportInput) {
+export async function reportClientError(input: TechnicalErrorContext) {
   if (reportingError) return;
   if (!baseClient.loggedIn()) return;
 
-  const key = reportKey(input);
+  const report = technicalErrorReport(
+    { ...input, path: input.path ?? browserPath() },
+    BUILD_REVISION,
+  );
+  const key = JSON.stringify(report);
   const now = Date.now();
   if (key === lastReportKey && now - lastReportAt < 5000) return;
   lastReportKey = key;
@@ -69,7 +73,7 @@ export async function reportClientError(input: ClientErrorReportInput) {
 
   reportingError = true;
   try {
-    await baseClient.mutate('errorReports.report', technicalErrorReport({ ...input, path: input.path ?? browserPath() }, BUILD_REVISION));
+    await baseClient.mutate("errorReports.report", report);
   } catch {
     // reporting must never break user flow.
   } finally {
@@ -77,100 +81,89 @@ export async function reportClientError(input: ClientErrorReportInput) {
   }
 }
 
-function errorMessage(err: unknown) {
-  if (err instanceof Error) return err.message;
-  return `${err || uiText('Unbekannter Fehler')}`;
-}
-
-function errorStack(err: unknown) {
-  return err instanceof Error ? err.stack ?? null : null;
-}
-
 export const client: Client = {
   ...businessClient,
-  login: input => signIn(baseClient, input),
-  logout: async () => { try { await lockCryptoSession(true); } finally { await baseClient.logout(); } },
+  login: (input) => signIn(baseClient, input),
+  logout: async () => {
+    try {
+      await lockCryptoSession(true);
+    } finally {
+      await baseClient.logout();
+    }
+  },
   query: (async (path: any, input: any, opts: any) => {
     const result = await businessClient.query(path, input, opts);
     const err = result[1];
     if (err) {
       void reportClientError({
-        source: 'client.query',
-        message: errorMessage(err),
-        stack: errorStack(err),
-        metadata: { trpcPath: path },
+        source: "client.query",
+        status: errorHttpStatus(err),
       });
     }
     return result;
-  }) as Client['query'],
+  }) as Client["query"],
   queryDynamic: async (path, input, opts) => {
     const result = await businessClient.queryDynamic(path, input, opts);
     const err = result[1];
     if (err) {
       void reportClientError({
-        source: 'client.queryDynamic',
-        message: errorMessage(err),
-        stack: errorStack(err),
-        metadata: { trpcPath: path },
+        source: "client.queryDynamic",
+        status: errorHttpStatus(err),
       });
     }
     return result;
   },
   streamQuery: ((path: any, input: any, opts: any) => {
     return new Observable((subscriber) => {
-      const subscription = businessClient.streamQuery(path, input, opts).subscribe({
-        next(value) {
-          const err = value[1];
-          if (err) {
+      const subscription = businessClient
+        .streamQuery(path, input, opts)
+        .subscribe({
+          next(value) {
+            const err = value[1];
+            if (err) {
+              void reportClientError({
+                source: "client.streamQuery",
+                status: errorHttpStatus(err),
+              });
+            }
+            subscriber.next(value);
+          },
+          error(err) {
             void reportClientError({
-              source: 'client.streamQuery',
-              message: errorMessage(err),
-              stack: errorStack(err),
-              metadata: { trpcPath: path },
+              source: "client.streamQuery",
+              status: errorHttpStatus(err),
             });
-          }
-          subscriber.next(value);
-        },
-        error(err) {
-          void reportClientError({
-            source: 'client.streamQuery',
-            message: errorMessage(err),
-            stack: errorStack(err),
-            metadata: { trpcPath: path },
-          });
-          subscriber.error(err);
-        },
-        complete() {
-          subscriber.complete();
-        },
-      });
+            subscriber.error(err);
+          },
+          complete() {
+            subscriber.complete();
+          },
+        });
 
       return () => subscription.unsubscribe();
     });
-  }) as Client['streamQuery'],
+  }) as Client["streamQuery"],
   mutate: (async (path: any, input: any, opts: any) => {
     const result = await businessClient.mutate(path, input, opts);
     const err = result[1];
-    const expectedDocumentConflict = ['projects.files.xmlSave', 'commercial.documents.save'].includes(path) && err?.message.includes('changed in another editor');
-    if (err && path !== 'errorReports.report' && !expectedDocumentConflict) {
+    const expectedDocumentConflict =
+      ["projects.files.xmlSave", "commercial.documents.save"].includes(path) &&
+      err?.message.includes("changed in another editor");
+    if (err && path !== "errorReports.report" && !expectedDocumentConflict) {
       void reportClientError({
-        source: 'client.mutate',
-        message: errorMessage(err),
-        stack: errorStack(err),
-        metadata: { trpcPath: path },
+        source: "client.mutate",
+        status: errorHttpStatus(err),
       });
     }
     return result;
-  }) as Client['mutate'],
+  }) as Client["mutate"],
   mutateDynamic: async (path, input, opts) => {
     const result = await businessClient.mutateDynamic(path, input, opts);
     const err = result[1];
-    if (err && path !== 'errorReports.report') {
+    if (err && path !== "errorReports.report") {
       void reportClientError({
-        source: 'client.mutateDynamic',
-        message: errorMessage(err),
-        stack: errorStack(err),
-        metadata: { trpcPath: path },
+        source: "client.mutateDynamic",
+        status: errorHttpStatus(err),
       });
     }
     return result;

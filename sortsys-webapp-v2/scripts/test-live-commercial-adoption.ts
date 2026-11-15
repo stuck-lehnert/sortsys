@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createClient, type Client, type MutateInput } from "@sortsys/v2-client";
 import type { GaebXmlProcessor } from "@sortsys/gaeb";
 import { readGaebInput } from "../../sortsys-gaeb/src/core/legacy";
-import { acceptVault, signIn, unlockedAccount } from "../app/lib/crypto/session";
+import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { commercialCollection } from "../app/lib/data/commercialAreas";
 import type { DuckDriver } from "../app/lib/data/database";
@@ -30,7 +30,7 @@ function legacyInput(kind: "d" | "p") {
 }
 export async function testContractAdoption(client: Client, driver: () => Promise<DuckDriver>, processor: GaebXmlProcessor, customerId: string, password: string) {
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "adoption-peer"), signal = new AbortController().signal;
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVault(owner.exportKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   let lose = false, race: (() => Promise<void>) | null = null; const requests: { path: string; input: unknown }[] = [];
   const observed: Client = { ...client, query: ((path, input, options) => { requests.push({ path, input }); return client.query(path, input, options); }) as Client["query"],
     mutate: (async (path, input, options) => {

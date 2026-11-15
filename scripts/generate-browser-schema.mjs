@@ -1,27 +1,57 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
-const manifest = await readFile(new URL("sortsys-api-v2/rust-api/src/migrations_generated.rs", root), "utf8");
-const files = [...manifest.matchAll(/include_str!\("\.\.\/migrations\/([^"/]+\.sql)"\)/g)].map(match => match[1]);
-if (!files.length || new Set(files).size !== files.length) throw new Error("Invalid migration manifest");
-const hash = createHash("sha256");
-hash.update("sortsys/browser-schema/v2\0").update(await readFile(new URL("sortsys-api-v2/rust-api/schema/browser_catalog.sql", root))).update("\0");
-for (const file of files) {
-  // Authentication/key persistence stays in the API. Business schema remains
-  // derived from the same authoritative SQL files; never maintain a copy by hand.
-  if (/^\d{12}_zerotrust(?:_|\.sql$)/.test(file)) continue;
-  hash.update(file).update("\0").update(await readFile(new URL(`sortsys-api-v2/rust-api/migrations/${file}`, root))).update("\0");
-}
-const schema = JSON.parse(await readFile(new URL("sortsys-api-v2/rust-api/schema/business.generated.json", root), "utf8"));
-if (schema.format !== "sortsys-browser-schema-v2" || schema.fingerprint !== hash.digest("hex")) {
-  throw new Error("Business schema is stale. Run generate_browser_schema against an isolated PostgreSQL test instance, then node scripts/generate-browser-schema.mjs");
-}
-const output = JSON.stringify(schema, null, 2) + "\n";
-const destination = new URL("sortsys-webapp-v2/app/generated/browser-schema.generated.json", root);
-if (process.argv.includes("--check")) {
-  if (await readFile(destination, "utf8").catch(() => "") !== output) {
-    throw new Error("Browser schema is stale. Run node scripts/generate-browser-schema.mjs");
+const source = new URL("sortsys-webapp-v2/schema/business.json", root);
+const destination = new URL(
+  "sortsys-webapp-v2/app/generated/browser-schema.generated.json",
+  root,
+);
+const model = JSON.parse(await readFile(source, "utf8"));
+
+assert.equal(model.format, "sortsys-browser-schema-v2");
+assert.ok(model.enums && typeof model.enums === "object");
+assert.ok(Array.isArray(model.tables) && model.tables.length > 0);
+assert.ok(!Object.hasOwn(model, "fingerprint"));
+
+function assertDistinctNames(values, label) {
+  const names = new Set();
+  for (const value of values) {
+    assert.match(value.name, /^[a-z_][a-z_0-9]*$/, label);
+    assert.ok(!names.has(value.name), `${label}: ${value.name} is duplicated`);
+    names.add(value.name);
   }
-} else { await writeFile(destination, output); }
+  return names;
+}
+
+assertDistinctNames(model.tables, "Business table");
+for (const table of model.tables) {
+  const columns = assertDistinctNames(table.columns, `Columns in ${table.name}`);
+  assert.ok(table.constraints.some(constraint => constraint.kind === "p"));
+  for (const constraint of table.constraints) {
+    for (const column of constraint.columns) {
+      assert.ok(columns.has(column), `${table.name}: unknown column ${column}`);
+    }
+  }
+}
+
+// The browser's logical model is authoritative. A schema change no longer
+// requires starting a PostgreSQL instance or replaying former migrations.
+const fingerprint = createHash("sha256")
+  .update("sortsys/browser-schema/v2\0")
+  .update(JSON.stringify(model))
+  .digest("hex");
+const output = JSON.stringify({ ...model, fingerprint }, null, 2) + "\n";
+
+if (process.argv.includes("--check")) {
+  const current = await readFile(destination, "utf8").catch(() => "");
+  assert.equal(
+    current,
+    output,
+    "Browser schema is stale. Run node scripts/generate-browser-schema.mjs",
+  );
+} else {
+  await writeFile(destination, output);
+}

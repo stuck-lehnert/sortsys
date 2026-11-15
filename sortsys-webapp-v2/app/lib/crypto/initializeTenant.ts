@@ -1,0 +1,271 @@
+import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
+import {
+  base64,
+  certifyCreationCapability,
+  creationScope,
+  frame,
+  InvalidProtectedData,
+  randomSecret,
+  sign,
+  verify,
+} from "@sortsys/zerotrust/sortsys";
+import type { DuckDriver } from "../data/database";
+import { provisionOwnedCollections } from "../data/prepareCollections";
+import { protectedCollection, required } from "../data/protectedObjects";
+import {
+  organizationArea,
+  organizationObject,
+  organizationPayload,
+} from "../data/organizationData";
+import { initializeDeliveryRegistry } from "../data/deliveryRegistry";
+import { TOOL_INDEX, TOOL_INDEX_MODEL } from "../data/toolData";
+import { createProtectedPersonnel } from "../data/personnel";
+import { PERSONNEL_FACETS, personnelCollection } from "../data/personnelData";
+import { openAuthority } from "./setup";
+import { trustedHistory, unlockedAccount } from "./session";
+import { readVerifiedPolicy, publishVerifiedPolicy } from "./policy";
+import { readInitializationSource } from "./initializationSource";
+import { uiText } from "../i18n";
+import {
+  initialOwnerCollections,
+  OWNER_CREATION_NAMESPACES,
+} from "./initializationAreas";
+
+type Completion = MutateInput<"zerotrust.setup.complete">;
+type Status = QueryResult<"zerotrust.status">;
+
+export function initializationFrame(
+  input: Omit<Completion, "signature">,
+): Uint8Array<ArrayBuffer> {
+  return frame("sortsys/tenant-initialized/v1", [
+    input.tenant,
+    input.generation,
+    input.subject,
+    input.policyVersion,
+    String(input.domains.length),
+    ...input.domains,
+    String(input.objects.length),
+    ...input.objects,
+  ]);
+}
+
+export async function verifyTenantInitialized(
+  client: Client,
+  status: Status,
+): Promise<boolean> {
+  const completion = status.initialization;
+  if (!completion) return false;
+  const account = unlockedAccount();
+  if (
+    !account ||
+    completion.tenant !== account.tenant ||
+    status.tenant !== account.tenant
+  )
+    throw new InvalidProtectedData();
+  const history = await trustedHistory(client);
+  if (
+    completion.generation !== status.generation ||
+    status.generation !== history.current.generation
+  ) {
+    throw new InvalidProtectedData();
+  }
+  await verify(
+    history.authority(completion.generation),
+    completion.signature,
+    initializationFrame(completion),
+  );
+  return true;
+}
+
+/** New tenants start here. No old server, source tables or migration phase is involved. */
+export async function initializeTenant(
+  client: Client,
+  signal: AbortSignal,
+  driver?: () => Promise<DuckDriver>,
+): Promise<Completion> {
+  const account = unlockedAccount();
+  if (!account) throw new InvalidProtectedData();
+  const live = () => {
+    signal.throwIfAborted();
+    if (unlockedAccount() !== account) throw new InvalidProtectedData();
+  };
+  live();
+  const status = await required(
+    client.query("zerotrust.status", undefined, { strategy: "network-only" }),
+  );
+  if (await verifyTenantInitialized(client, status))
+    return status.initialization!;
+  if (!status.canInitialize || !status.profile)
+    throw new InvalidProtectedData();
+  const session = await required(
+    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+  );
+  const subject = `user:${session.user.id}`;
+  if (
+    !session.roles.includes(":admin") ||
+    status.profile.owner.user !== subject
+  )
+    throw new InvalidProtectedData();
+  const history = await trustedHistory(client);
+  const authority = await openAuthority(client, status.profile);
+  if (history.current.context !== undefined) {
+    const source = await readInitializationSource(client, signal);
+    live();
+    if (!source?.completion)
+      throw new Error(
+        uiText(
+          "Die gewählte Sicherung muss vor dem Abschluss der Einrichtung vollständig übernommen werden.",
+          "The selected backup must be fully adopted before setup can be completed.",
+        ),
+      );
+  }
+  const collections = initialOwnerCollections(session.user.id);
+  await provisionOwnedCollections(client, subject, collections, signal);
+  live();
+  for (const [kind, value] of [
+    ["profile", { companyName: null, address: null }],
+    ["numbering", { scheme: "sequential", startNumber: "1" }],
+  ] as const) {
+    const id = organizationObject(kind);
+    const area = await protectedCollection(
+      client,
+      organizationArea(kind),
+      signal,
+    );
+    try {
+      const existing = await area.read(id);
+      if (existing.length) {
+        if (existing.length !== 1) throw new InvalidProtectedData();
+        organizationPayload(existing[0]!.value, id, kind);
+      } else {
+        const packet = await area.packet(id, {
+          format: "sortsys-organization-v1",
+          kind,
+          value,
+        });
+        await area.write([packet]);
+      }
+    } finally {
+      area.close();
+    }
+    live();
+  }
+  const personnel = createProtectedPersonnel(client, signal, driver);
+  try {
+    await personnel.query("users.get", { id: session.user.id });
+  } finally {
+    personnel.close();
+  }
+  const tools = await protectedCollection(client, TOOL_INDEX, signal);
+  try {
+    const existing = await tools.read(TOOL_INDEX.prefix);
+    if (existing.length > 1) throw new InvalidProtectedData();
+    if (existing.length === 1) {
+      TOOL_INDEX_MODEL.decode(
+        existing[0]!.value,
+        TOOL_INDEX.prefix,
+        TOOL_INDEX,
+      );
+    } else {
+      const packet = await tools.packet(TOOL_INDEX.prefix, {
+        format: "sortsys-tool-index-v1",
+        entries: [],
+      });
+      await tools.write([packet]);
+    }
+  } finally {
+    tools.close();
+  }
+  live();
+  const policyContext = { account, history, authority, live };
+  const { permissions } = await readVerifiedPolicy(client, policyContext);
+  const missingCreationRules = OWNER_CREATION_NAMESPACES.filter(
+    (namespace) =>
+      !permissions.rules.some(
+        (rule) =>
+          rule.subject === subject &&
+          rule.scope === creationScope(namespace) &&
+          rule.facet === "master-data" &&
+          rule.effect === "allow" &&
+          rule.actions.includes("create"),
+      ),
+  );
+  if (missingCreationRules.length) {
+    await publishVerifiedPolicy(client, policyContext, {
+      ...permissions,
+      version: (BigInt(permissions.version) + 1n).toString(),
+      rules: [
+        ...permissions.rules,
+        ...missingCreationRules.map((namespace) => ({
+          subject,
+          scope: creationScope(namespace),
+          facet: "master-data" as const,
+          effect: "allow" as const,
+          actions: ["create" as const],
+        })),
+      ],
+    });
+  }
+  for (const namespace of OWNER_CREATION_NAMESPACES) {
+    const [existing, error] = await client.query(
+      "zerotrust.creations.capability",
+      { namespace },
+      { strategy: "network-only" },
+    );
+    if (error) throw error;
+    if (!existing) {
+      const capability = await certifyCreationCapability(
+        {
+          tenant: account.tenant,
+          id: `create_${base64(randomSecret())}`,
+          generation: history.current.generation,
+          namespace,
+          creator: status.profile.owner,
+          readers: [status.profile.owner],
+        },
+        authority,
+      );
+      await required(client.mutate("zerotrust.creations.grant", capability));
+    }
+    live();
+  }
+  await initializeDeliveryRegistry(client, signal);
+  live();
+  const current = await required(
+    client.query("zerotrust.policy.get", undefined, {
+      strategy: "network-only",
+    }),
+  );
+  const completion = {
+    tenant: account.tenant,
+    generation: history.current.generation,
+    subject,
+    policyVersion: current.version,
+    domains: collections.map((area) => area.domain).sort(),
+    objects: [
+      organizationObject("profile"),
+      organizationObject("numbering"),
+      TOOL_INDEX.prefix,
+      ...PERSONNEL_FACETS.map(
+        (facet) => personnelCollection(session.user.id, facet).prefix,
+      ),
+    ].sort(),
+  };
+  const signature = await sign(authority, initializationFrame(completion));
+  let failure: unknown;
+  try {
+    await required(
+      client.mutate("zerotrust.setup.complete", { ...completion, signature }),
+    );
+  } catch (error) {
+    failure = error;
+  }
+  live();
+  const saved = await required(
+    client.query("zerotrust.status", undefined, { strategy: "network-only" }),
+  );
+  if (!(await verifyTenantInitialized(client, saved)))
+    throw failure ?? new InvalidProtectedData();
+  await client.invalidate("zerotrust.status");
+  return saved.initialization!;
+}

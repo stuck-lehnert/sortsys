@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
-import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, randomSecret, signStockDeletion, stockBinding, verifyDomain } from "@sortsys/zerotrust";
+import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, randomSecret, signStockDeletion, stockBinding, verifyDomain } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { prepareVendors } from "../app/lib/data/migrateVendors";
@@ -8,7 +8,7 @@ import { newProductRowId, PRICE_COLLECTION, pricePayload, PRODUCT_COLLECTION, pu
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import { VENDOR_COLLECTION } from "../app/lib/data/vendorData";
 import { effectivePrice, stockEnvelopeHash } from "../app/lib/data/stockObjects";
-import { acceptVault, trustedHistory, type UnlockedAccount } from "../app/lib/crypto/session";
+import { acceptVaultWithKey, trustedHistory, type UnlockedAccount } from "../app/lib/crypto/session";
 import { changeMemberAccess, memberAccess } from "../app/lib/crypto/permissions";
 
 export async function capturedStock(client: Client) {
@@ -36,13 +36,15 @@ async function assertNativeReadonlyPrice(client: Client, account: UnlockedAccoun
     const key = await areaKey(raw); raw.fill(0);
     // Bypass all facade and packet() permission checks. A reader knows the
     // encryption key and can create a valid signature with its own identity.
-    // Only the API's signed-policy check may reject these fresh envelopes.
+    // The API must reject publication; the common read path must also reject
+    // these authentic forgeries if an operator inserts them behind its back.
     for (const value of [existing.value, { format: "sortsys-product-price-v1", price: null }]) {
       const plain = bytes(JSON.stringify(value));
       try {
         const envelope = await encryptObject({ tenant: account.tenant, scope: PRICE_COLLECTION.scope, facet: PRICE_COLLECTION.facet, object: objectId,
           revision: (BigInt(existing.envelope.revision) + 1n).toString(), generation: authorization.keyGeneration,
           policyVersion: authorization.policyVersion, author: subject }, plain, key, account.identity.signingKey.privateKey);
+        await assert.rejects(() => collection.open(envelope, objectId), "A valid reader signature must not authorize a forged private record at the receiving client");
         const [, denied] = await client.mutate("zerotrust.objects.batch", { objects: [{ domain: PRICE_COLLECTION.domain, messageId: `msg_${base64(randomSecret())}`, envelope }],
           heads: [{ domain: PRICE_COLLECTION.domain, sequence: collection.snapshot() }] });
         assert.ok(denied && "code" in denied); assert.equal(denied.code, "FORBIDDEN", "A fully signed reader write must be denied by the API, not just the client");
@@ -181,7 +183,7 @@ export async function testProtectedStock(client: Client, source: BusinessDatabas
 }
 
 export async function testStockPermissions(ownerClient: Client, peer: Client, owner: UnlockedAccount, member: UnlockedAccount, driver: () => Promise<DuckDriver>, signal: AbortSignal) {
-  await acceptVault(owner.exportKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   const subject = `user:${(await required(peer.query("auth.sessionInfo", undefined))).user.id}`, previous = (await memberAccess(ownerClient, subject, signal))!;
   const keys: string[] = [], observed: Client = { ...peer, query: ((path, input, options) => {
     if (path === "zerotrust.keys.get") keys.push((input as { domain: string }).domain);
@@ -203,7 +205,7 @@ export async function testStockPermissions(ownerClient: Client, peer: Client, ow
   root.dispose();
   try {
     await changeMemberAccess(ownerClient, subject, { ...previous, catalogue: "none", vendors: "read", prices: "none" }, signal);
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     let business = createBusinessClient(observed, { productDriver: driver });
     try {
       const suppliers = await required(business.query("products.vendors.list", { search: "thermisch Anschluss" })); assert.equal(suppliers.length, 1);
@@ -212,43 +214,43 @@ export async function testStockPermissions(ownerClient: Client, peer: Client, ow
       assert.ok(keys.includes(VENDOR_COLLECTION.domain)); assert.ok(!keys.includes(PRICE_COLLECTION.domain));
       assert.ok(!keys.includes("catalog:products:master-data"));
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeMemberAccess(ownerClient, subject, { ...previous, catalogue: "none", vendors: "write", prices: "none" }, signal);
-    await acceptVault(member.exportKey, member.vault, false); keys.length = 0;
+    await acceptVaultWithKey(member.dataKey, member.vault, false); keys.length = 0;
     business = createBusinessClient(observed, { productDriver: driver });
     try {
       await required(business.mutate("products.vendors.delete", { id: deleteVendor.id }));
       await required(business.mutate("products.vendors.delete", { id: deleteVendor.id }));
       assert.ok(!keys.includes(PRICE_COLLECTION.domain)); assert.ok(!keys.includes("catalog:products:master-data"));
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     assert.deepEqual(await required(ownerClient.query("zerotrust.objects.get", { id: PRICE_COLLECTION.prefix + unlinkPrice.id })), unlinkEnvelope, "Removing a supplier does not rewrite or decrypt its prices");
     await changeMemberAccess(ownerClient, subject, { ...previous, catalogue: "none", vendors: "none", prices: "write" }, signal);
-    await acceptVault(member.exportKey, member.vault, false); keys.length = 0;
+    await acceptVaultWithKey(member.dataKey, member.vault, false); keys.length = 0;
     business = createBusinessClient(observed, { productDriver: driver });
     try {
       assert.equal((await required(business.query("products.priceRecords.list", {}))).find(row => row.id === unlinkPrice.id)!.vendorId, null);
       await required(business.mutate("products.priceRecords.update", { id: unlinkPrice.id, data: { comment: "Preis nach Lieferantenlöschung weiter bearbeitet" } }));
       assert.ok(!keys.includes(VENDOR_COLLECTION.domain)); assert.ok(!keys.includes("catalog:products:master-data"));
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeMemberAccess(ownerClient, subject, { ...previous, catalogue: "write", vendors: "none", prices: "none" }, signal);
-    await acceptVault(member.exportKey, member.vault, false); keys.length = 0;
+    await acceptVaultWithKey(member.dataKey, member.vault, false); keys.length = 0;
     business = createBusinessClient(observed, { productDriver: driver });
     try {
       await required(business.mutate("products.delete", { id: deleteProduct.id }));
       assert.ok(!keys.includes(PRICE_COLLECTION.domain)); assert.ok(!keys.includes(VENDOR_COLLECTION.domain));
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     const checked = createBusinessClient(ownerClient, { productDriver: driver });
     try {
       assert.ok(!(await required(checked.query("products.priceRecords.list", {}))).some(row => row.id === cascadePrice.id));
       assert.equal((await required(checked.query("products.priceRecords.list", {}))).find(row => row.id === unlinkPrice.id)!.price, 4321.125);
       assert.equal((await required(checked.query("products.priceRecords.list", {}))).find(row => row.id === historicalPrice.id)!.vendorId, null);
     } finally { checked.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeMemberAccess(ownerClient, subject, { ...previous, catalogue: "none", vendors: "none", prices: "write" }, signal);
-    await acceptVault(member.exportKey, member.vault, false); keys.length = 0;
+    await acceptVaultWithKey(member.dataKey, member.vault, false); keys.length = 0;
     business = createBusinessClient(observed, { productDriver: driver });
     try {
       assert.ok((await required(business.query("products.priceRecords.list", {}))).some(row => row.id === price.id));
@@ -260,9 +262,9 @@ export async function testStockPermissions(ownerClient: Client, peer: Client, ow
       assert.ok((await business.query("products.vendors.list", {}))[1]);
       assert.ok(!keys.includes(VENDOR_COLLECTION.domain)); assert.ok(!keys.includes("catalog:products:master-data"));
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeMemberAccess(ownerClient, subject, { ...previous, vendors: "write", prices: "read" }, signal);
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     business = createBusinessClient(observed, { productDriver: driver });
     try {
       const made = await required(business.mutate("products.vendors.create", { name: "Lieferant des freigegebenen Mitarbeiters", description: "Eigene verschlüsselte Bearbeitung" }));
@@ -276,7 +278,7 @@ export async function testStockPermissions(ownerClient: Client, peer: Client, ow
       assert.ok((await required(business.query("products.priceRecords.list", {}))).some(row => row.id === price.id && row.price === 22345.6789));
     } finally { business.dispose(); }
   } finally {
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeMemberAccess(ownerClient, subject, previous, signal);
   }
   console.log("Ordinary supplier/price permissions verified: separate supplier-only readers, price-only edits without catalogue keys, guarded new references, member supplier edits, revoked writes and native FORBIDDEN for fresh correctly encrypted/signed reader envelopes bypassing every client guard.");

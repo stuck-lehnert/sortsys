@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import type { Client } from "@sortsys/v2-client";
-import { acceptVault, type UnlockedAccount } from "../app/lib/crypto/session";
+import { acceptVaultWithKey, type UnlockedAccount } from "../app/lib/crypto/session";
 import { changeCommercialAccess } from "../app/lib/crypto/permissions";
 import { commercialCollection } from "../app/lib/data/commercialAreas";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { DuckDriver } from "../app/lib/data/database";
 import { required } from "../app/lib/data/protectedObjects";
-import { gaebTestProcessor } from "./test-live-gaeb";
+import { cliGaebProcessor as gaebTestProcessor } from "./lib/gaebProcessor";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
 
 /** Run before low-level area-admission tests deliberately create non-business
@@ -23,10 +23,10 @@ export async function testPositionPermissions(ownerClient: Client, memberClient:
     return memberClient.query(path, input, options);
   }) as Client["query"] };
   async function search(query: string) {
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     const business = createBusinessClient(observed, { productDriver: driver, gaebProcessor: gaebTestProcessor });
     try { return await required(business.query("gaeb.positions.search", { query })); }
-    finally { business.dispose(); await acceptVault(owner.exportKey, owner.vault, false); }
+    finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   }
   try {
     id = (await required(ownerBusiness.mutate("commercial.cases.create", { kind: "offer", title: "Positionsfreigabe Mitarbeiter", scopeItemIds: [] }))).id;
@@ -65,11 +65,11 @@ export async function testPositionPermissions(ownerClient: Client, memberClient:
       xml: gaebWorkflowXml("83").replaceAll("Fensterlaibung", "Erneutpositionsfreigegeben"), readOnly: true, replaceDocumentId: document, expectedVersion: 1n }));
     const scopeGeneration = (await required(ownerClient.query("zerotrust.domains.list", undefined, { strategy: "network-only" })))
       .find(domain => domain.id === commercialCollection(id, "scope").domain)!.generation;
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     try {
       assert.ok((await memberClient.query("zerotrust.keys.get", { domain: commercialCollection(id, "scope").domain, generation: scopeGeneration }, { strategy: "network-only" }))[1]);
       assert.ok((await memberClient.query("zerotrust.keys.get", { domain: commercialCollection(id, "offer-prices").domain, generation: "1" }, { strategy: "network-only" }))[0]);
-    } finally { await acceptVault(owner.exportKey, owner.vault, false); }
+    } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
     stage = "historical scope regrant and latest member search";
     await changeCommercialAccess(ownerClient, subject, id, "scope", "read", signal);
     const restored = await search("Erneutpositionsfreigegeben");

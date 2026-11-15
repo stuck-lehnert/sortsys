@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { Client, QueryResult } from "@sortsys/v2-client";
-import { base64, bytes } from "@sortsys/zerotrust";
+import { base64, bytes } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { preparePrintTemplates } from "../app/lib/data/migratePrintTemplates";

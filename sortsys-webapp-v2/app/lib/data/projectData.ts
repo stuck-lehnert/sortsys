@@ -1,80 +1,189 @@
 import type { QueryResult } from "@sortsys/v2-client";
-import { InvalidProtectedData, record } from "@sortsys/zerotrust";
-import { addressId, addressText, normalizeAddress, partialAddressRecord } from "./addressBook";
+import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import {
+  addressId,
+  addressText,
+  normalizeAddress,
+  partialAddressRecord,
+} from "./addressBook";
 import { publicId } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import type { Collection } from "./protectedObjects";
 import { defineDataModel } from "./runtime/model";
+import { projectFacetArea, projectFacetDomain } from "./projectScope";
 
 export type Project = QueryResult<"projects.get">;
-export type ProjectPayload = { format: "sortsys-project-v1"; project: BusinessRow | null; contacts: BusinessRow[] };
-export const PROJECT_MODEL = defineDataModel({ name: "projects", decode(value: unknown, object: string, area: Collection) {
-  const id = projectDomainId(area.domain); if (!id) throw new InvalidProtectedData(); return projectPayload(value, object, id);
-}, externalReferences: ["users", "customers", "contacts"] });
-export const PROJECT_QUERIES = new Set(["projects.list", "projects.get", "projects.contacts.list", "contacts.projects.list"]);
-export const PROJECT_MUTATIONS = new Set(["projects.create", "projects.update", "projects.finish", "projects.resume", "projects.delete", "projects.contacts.add", "projects.contacts.set", "projects.contacts.remove"]);
+export type ProjectPayload = {
+  format: "sortsys-project-v1";
+  project: BusinessRow | null;
+  contacts: BusinessRow[];
+};
+export const PROJECT_MODEL = defineDataModel({
+  name: "projects",
+  decode(value: unknown, object: string, area: Collection) {
+    const id = projectDomainId(area.domain);
+    if (!id) throw new InvalidProtectedData();
+    return projectPayload(value, object, id);
+  },
+  externalReferences: ["users", "customers", "contacts"],
+});
+export const PROJECT_QUERIES = new Set([
+  "projects.list",
+  "projects.get",
+  "projects.contacts.list",
+  "contacts.projects.list",
+]);
+export const PROJECT_MUTATIONS = new Set([
+  "projects.create",
+  "projects.update",
+  "projects.finish",
+  "projects.resume",
+  "projects.delete",
+  "projects.contacts.add",
+  "projects.contacts.set",
+  "projects.contacts.remove",
+]);
 export function projectCollection(id: string): Collection {
-  addressId(id); const scope = `project:${id}`;
-  return { domain: `${scope}:master-data`, scope, facet: "master-data", prefix: scope };
+  return { ...projectFacetArea(id, "master-data"), prefix: `project:${id}` };
 }
 export function projectDomainId(domain: string): string | null {
-  const match = /^project:([1-9a-v][0-9a-v]{0,12}):master-data$/.exec(domain);
-  if (!match) return null;
-  addressId(match[1]); return match[1];
+  const part = projectFacetDomain(domain);
+  return part?.facet === "master-data" ? part.id : null;
 }
-export function projectPayload(input: unknown, object: string, id: string): ProjectPayload {
+
+export function projectPayload(
+  input: unknown,
+  object: string,
+  id: string,
+): ProjectPayload {
   const source = record(input, ["format", "project", "contacts"]);
-  if (object !== projectCollection(id).prefix || source.format !== "sortsys-project-v1" || !Array.isArray(source.contacts) || source.contacts.length > 10000) throw new InvalidProtectedData();
+  if (
+    object !== projectCollection(id).prefix ||
+    source.format !== "sortsys-project-v1" ||
+    !Array.isArray(source.contacts) ||
+    source.contacts.length > 10000
+  )
+    throw new InvalidProtectedData();
   if (source.project === null) {
     if (source.contacts.length) throw new InvalidProtectedData();
     return { format: source.format, project: null, contacts: [] };
   }
-  const project = decodeBusinessRow(source.project), row = project.values;
-  if (project.table !== "projects" || publicId(row.id) !== id) throw new InvalidProtectedData();
+  const project = decodeBusinessRow(source.project),
+    row = project.values;
+  if (project.table !== "projects" || publicId(row.id) !== id)
+    throw new InvalidProtectedData();
   addressText(row.title, true, 127);
-  normalizeAddress(row.address === null ? null : JSON.parse(row.address as string));
-  for (const key of ["customer_id", "created_by_user_id", "responsible_project_leader_user_id"]) if (row[key] !== null) addressId(publicId(row[key]));
+  normalizeAddress(
+    row.address === null ? null : JSON.parse(row.address as string),
+  );
+  for (const key of [
+    "customer_id",
+    "created_by_user_id",
+    "responsible_project_leader_user_id",
+  ])
+    if (row[key] !== null) addressId(publicId(row[key]));
   const seen = new Set<string>();
-  const contacts = source.contacts.map(input => {
-    const link = decodeBusinessRow(input);
-    if (link.table !== "project_contacts" || link.values.project_id !== row.id) throw new InvalidProtectedData();
-    const contact = publicId(link.values.contact_id); addressId(contact); addressText(link.values.label, false, 127);
-    if (seen.has(contact)) throw new InvalidProtectedData(); seen.add(contact); return link;
-  }).sort((a, b) => (a.values.contact_id as string).localeCompare(b.values.contact_id as string));
+  const contacts = source.contacts
+    .map((input) => {
+      const link = decodeBusinessRow(input);
+      if (
+        link.table !== "project_contacts" ||
+        link.values.project_id !== row.id
+      )
+        throw new InvalidProtectedData();
+      const contact = publicId(link.values.contact_id);
+      addressId(contact);
+      addressText(link.values.label, false, 127);
+      if (seen.has(contact)) throw new InvalidProtectedData();
+      seen.add(contact);
+      return link;
+    })
+    .sort((a, b) =>
+      (a.values.contact_id as string).localeCompare(
+        b.values.contact_id as string,
+      ),
+    );
   return { format: source.format, project, contacts };
 }
-const FIELDS = { title: "title", address: "address", customerId: "customer_id", responsibleProjectLeaderUserId: "responsible_project_leader_user_id", orderReceivedAt: "order_received_at" };
-export function projectChanges(input: unknown, creating: boolean): Record<string, unknown> {
-  const source = partialAddressRecord(input, Object.keys(FIELDS)), values: Record<string, unknown> = {};
+const FIELDS = {
+  title: "title",
+  address: "address",
+  customerId: "customer_id",
+  responsibleProjectLeaderUserId: "responsible_project_leader_user_id",
+  orderReceivedAt: "order_received_at",
+};
+export function projectChanges(
+  input: unknown,
+  creating: boolean,
+): Record<string, unknown> {
+  const source = partialAddressRecord(input, Object.keys(FIELDS)),
+    values: Record<string, unknown> = {};
   for (const [key, column] of Object.entries(FIELDS)) {
     if (!creating && source[key] === undefined) continue;
     const value = source[key];
     if (key === "title") values[column] = addressText(value, true, 127);
-    else if (key === "address") values[column] = value == null ? null : JSON.stringify(normalizeAddress(value));
+    else if (key === "address")
+      values[column] =
+        value == null ? null : JSON.stringify(normalizeAddress(value));
     else if (key === "orderReceivedAt") {
       if (value == null) values[column] = null;
-      else if (value instanceof Date && Number.isFinite(value.getTime())) values[column] = value.toISOString();
-      else if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
-        && Number.isFinite(Date.parse(value)) && new Date(value.slice(0, 10)).toISOString().slice(0, 10) === value.slice(0, 10)) values[column] = value;
+      else if (value instanceof Date && Number.isFinite(value.getTime()))
+        values[column] = value.toISOString();
+      else if (
+        typeof value === "string" &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+          value,
+        ) &&
+        Number.isFinite(Date.parse(value)) &&
+        new Date(value.slice(0, 10)).toISOString().slice(0, 10) ===
+          value.slice(0, 10)
+      )
+        values[column] = value;
       else throw new InvalidProtectedData();
     } else values[column] = value == null ? null : addressId(value);
   }
-  if (!creating && !Object.keys(values).length) throw new InvalidProtectedData();
+  if (!creating && !Object.keys(values).length)
+    throw new InvalidProtectedData();
   return values;
 }
 export function wireProject(payload: ProjectPayload): Project {
   if (!payload.project) throw new InvalidProtectedData();
   const p = payload.project.values;
-  return { id: publicId(p.id), title: p.title as string, address: p.address === null ? null : JSON.parse(p.address as string),
-    customerId: p.customer_id === null ? null : publicId(p.customer_id), createdByUserId: p.created_by_user_id === null ? null : publicId(p.created_by_user_id),
-    responsibleProjectLeaderUserId: p.responsible_project_leader_user_id === null ? null : publicId(p.responsible_project_leader_user_id),
-    orderReceivedAt: p.order_received_at === null ? null : new Date(p.order_received_at as string),
-    finishedAt: p.finished_at === null ? null : new Date(p.finished_at as string), createdAt: new Date(p.created_at as string), modifiedAt: new Date(p.modified_at as string) };
+  return {
+    id: publicId(p.id),
+    title: p.title as string,
+    address: p.address === null ? null : JSON.parse(p.address as string),
+    customerId: p.customer_id === null ? null : publicId(p.customer_id),
+    createdByUserId:
+      p.created_by_user_id === null ? null : publicId(p.created_by_user_id),
+    responsibleProjectLeaderUserId:
+      p.responsible_project_leader_user_id === null
+        ? null
+        : publicId(p.responsible_project_leader_user_id),
+    orderReceivedAt:
+      p.order_received_at === null
+        ? null
+        : new Date(p.order_received_at as string),
+    finishedAt:
+      p.finished_at === null ? null : new Date(p.finished_at as string),
+    createdAt: new Date(p.created_at as string),
+    modifiedAt: new Date(p.modified_at as string),
+  };
 }
 export function projectMatches(value: Project, search: unknown): boolean {
-  if (search != null && typeof search !== "string") throw new InvalidProtectedData();
-  const terms = (search as string | null | undefined)?.trim().toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
-  if ((search as string | null | undefined)?.trim() && !terms.length) return false;
-  const words = [value.title, ...Object.values(value.address ?? {})].join(" ").toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
-  return terms.every(term => words.some(word => word.startsWith(term)));
+  if (search != null && typeof search !== "string")
+    throw new InvalidProtectedData();
+  const terms =
+    (search as string | null | undefined)
+      ?.trim()
+      .toLowerCase()
+      .match(/[\p{L}\p{N}_]+/gu) ?? [];
+  if ((search as string | null | undefined)?.trim() && !terms.length)
+    return false;
+  const words =
+    [value.title, ...Object.values(value.address ?? {})]
+      .join(" ")
+      .toLowerCase()
+      .match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return terms.every((term) => words.some((word) => word.startsWith(term)));
 }

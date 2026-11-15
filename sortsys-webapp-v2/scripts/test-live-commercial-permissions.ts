@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { Client } from "@sortsys/v2-client";
-import { areaKey, decryptObject, domainBoxSigner, openBox, verifyDomain } from "@sortsys/zerotrust";
-import { acceptVault, trustedHistory, type UnlockedAccount } from "../app/lib/crypto/session";
+import { areaKey, decryptObject, domainBoxSigner, openBox, verifyDomain } from "@sortsys/zerotrust/sortsys";
+import { acceptVaultWithKey, trustedHistory, type UnlockedAccount } from "../app/lib/crypto/session";
 import { changeCommercialAccess, changeCommercialCreation, changeProjectCreation, memberCommercialCreation } from "../app/lib/crypto/permissions";
 import { COMMERCIAL_FACETS, commercialCollection } from "../app/lib/data/commercialAreas";
 import { createResourceArea } from "../app/lib/data/createProjectArea";
@@ -16,13 +16,13 @@ export async function testCommercialPermissions(ownerClient: Client, memberClien
   const ownerId = (await required(ownerClient.query("auth.sessionInfo", undefined))).user.id;
   const id = publicId(newProductRowId()), master = commercialCollection(id, "master-data"), prices = commercialCollection(id, "offer-prices"), scope = commercialCollection(id, "scope");
   assert.equal(await memberCommercialCreation(ownerClient, subject, signal), false);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   try { await assert.rejects(() => createResourceArea(memberClient, master, "commercial", signal)); }
-  finally { await acceptVault(owner.exportKey, owner.vault, false); }
+  finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   await changeProjectCreation(ownerClient, subject, true, signal);
   await changeCommercialCreation(ownerClient, subject, true, signal);
   assert.equal(await memberCommercialCreation(ownerClient, subject, signal), true);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   let oldPriceKey: CryptoKey;
   try {
     const projectCapability = await required(memberClient.query("zerotrust.creations.capability", { namespace: "project" }, { strategy: "network-only" }));
@@ -49,28 +49,28 @@ export async function testCommercialPermissions(ownerClient: Client, memberClien
     const box = await required(memberClient.query("zerotrust.keys.get", { domain: prices.domain, generation: "1" }));
     const raw = await openBox(box, { tenant: member.tenant, purpose: "area-key", object: prices.domain, generation: "1", recipient: subject, author: box.author }, member.identity.encryptionKey.privateKey, await domainBoxSigner(definition, box, history.authority));
     try { oldPriceKey = await areaKey(raw); } finally { raw.fill(0); }
-  } finally { await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   for (const facet of COMMERCIAL_FACETS) {
     const collection = await protectedCollection(ownerClient, commercialCollection(id, facet), signal);
     try { assert.equal((await collection.read()).length, 1, "The mandatory administrator must be able to open each independently keyed facet"); }
     finally { collection.close(); }
   }
   await changeProjectCreation(ownerClient, subject, false, signal);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   try {
     assert.equal((await memberClient.query("zerotrust.creations.capability", { namespace: "project" }, { strategy: "network-only" }))[0], null);
     assert.ok((await memberClient.query("zerotrust.creations.capability", { namespace: "commercial" }, { strategy: "network-only" }))[0]);
     await createResourceArea(memberClient, commercialCollection(publicId(newProductRowId()), "master-data"), "commercial", signal);
-  } finally { await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   await changeCommercialAccess(ownerClient, subject, id, "offer-prices", "read", signal);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   try {
     const collection = await protectedCollection(memberClient, prices, signal);
     try {
       const objects = await collection.read(); assert.equal(objects.length, 1);
       await assert.rejects(() => collection.packet(objects[0]!.envelope.object, { value: "Denied update" }, objects[0]!.envelope));
     } finally { collection.close(); }
-  } finally { await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   await changeCommercialAccess(ownerClient, subject, id, "offer-prices", "none", signal);
   const collection = await protectedCollection(ownerClient, prices, signal);
   try {
@@ -81,7 +81,7 @@ export async function testCommercialPermissions(ownerClient: Client, memberClien
     await assert.rejects(() => decryptObject(packet.envelope, context, oldPriceKey!, owner.identity.signingKey.publicKey));
   } finally { collection.close(); }
   await changeCommercialCreation(ownerClient, subject, false, signal);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   try {
     await assert.rejects(() => createResourceArea(memberClient, commercialCollection(publicId(newProductRowId()), "master-data"), "commercial", signal));
     assert.ok((await memberClient.query("zerotrust.keys.get", { domain: prices.domain, generation: "2" }))[1]);
@@ -90,7 +90,7 @@ export async function testCommercialPermissions(ownerClient: Client, memberClien
       const original = (await collection.read())[0]!;
       await collection.write([await collection.packet(original.envelope.object, { format: "sortsys-commercial-permission-test-v1", facet: "scope", value: "Scope remains editable" }, original.envelope)]);
     } finally { collection.close(); }
-  } finally { await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   console.log("Commercial area admission verified: independent project/commercial capabilities, mandatory readers, isolated facet keys, price downgrade/revocation and retained scope editing.");
   await testCommercialCaseAccess(ownerClient, memberClient, owner, member, driver, signal);
 }

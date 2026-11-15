@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { Client, QueryResult } from "@sortsys/v2-client";
-import { allows, createDomain, policy, publicIdentity, record, signPolicy } from "@sortsys/zerotrust";
+import { allows, createDomain, policy, publicIdentity, record, signPolicy } from "@sortsys/zerotrust/sortsys";
 import { openAuthority } from "../app/lib/crypto/setup";
 import { trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";

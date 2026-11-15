@@ -1,0 +1,151 @@
+import { afterEach, expect, test } from "bun:test";
+import { lockCryptoSession } from "../crypto/session";
+import { COMMERCIAL_FACETS, commercialCollection } from "./commercialAreas";
+import {
+  documentMessageObject,
+  openDocumentMessages,
+} from "./documentMessages";
+import { protectedTenant } from "./testing/protectedTenant.mjs";
+
+afterEach(() => lockCryptoSession());
+
+async function fixture(readOnlyFacet) {
+  const tenant = await protectedTenant(
+    COMMERCIAL_FACETS.map((facet) => commercialCollection("4", facet)),
+    (area) => (area.facet === readOnlyFacet ? ["read"] : ["read", "update"]),
+  );
+  let last;
+  tenant.client.mutate = async (path, input) => {
+    if (path !== "zerotrust.documents.messages.post")
+      throw new Error(`Unexpected mutation: ${path}`);
+    // Simulate a dishonest store, so the reader's cryptographic author check
+    // must reject updates signed by a certified reader without edit rights.
+    last = { ...structuredClone(input), sequence: "1" };
+    delete last.room;
+    return [{ success: true }, null];
+  };
+  const messages = await openDocumentMessages(
+    tenant.client,
+    { scope: "commercial:4", document: "5", facet: "opaque" },
+    new AbortController().signal,
+  );
+  return { messages, last: () => last };
+}
+
+test("every live encryption layer checks the author's signed update permission, not just their identity", async () => {
+  const session = await fixture("billing");
+  try {
+    expect(session.messages.canWrite).toBe(false);
+    await session.messages.post("update", { data: "Geheimer Text 827491" });
+    await expect(session.messages.open(session.last())).rejects.toThrow(
+      "Die geschützten Daten konnten nicht geprüft werden.",
+    );
+    await session.messages.post("presence", { selection: { field: null } });
+    expect((await session.messages.open(session.last())).value).toEqual({
+      selection: { field: null },
+    });
+  } finally {
+    session.messages.close();
+  }
+});
+
+test("a scope-only member exchanges text without obtaining or querying financial keys", async () => {
+  const area = commercialCollection("4", "scope");
+  const tenant = await protectedTenant([area]);
+  const room = { scope: area.scope, document: "5", facet: "scope" };
+  let stored;
+  tenant.client.mutate = async (_path, packet) => {
+    stored = { ...packet, sequence: "1" };
+    return [{ success: true }, null];
+  };
+  const text = await openDocumentMessages(
+    tenant.client,
+    room,
+    new AbortController().signal,
+  );
+  try {
+    expect(text.canWrite).toBe(true);
+    await text.post("update", {
+      facet: "scope",
+      data: "Vertraulicher Text 572918",
+    });
+    expect((await text.open(stored)).value.data).toBe(
+      "Vertraulicher Text 572918",
+    );
+    const domains = tenant.calls
+      .filter((call) => call.path === "zerotrust.keys.get")
+      .map((call) => call.input.domain);
+    expect(domains.length).toBeGreaterThan(0);
+    expect(new Set(domains)).toEqual(new Set([area.domain]));
+    expect(JSON.stringify(stored)).not.toContain("Vertraulicher Text 572918");
+  } finally {
+    text.close();
+  }
+});
+
+test("the same retry key cannot rebind ciphertext to another content channel", async () => {
+  const tenant = await protectedTenant(
+    COMMERCIAL_FACETS.map((facet) => commercialCollection("4", facet)),
+  );
+  let stored;
+  tenant.client.mutate = async (_path, packet) => {
+    stored = { ...packet, sequence: "1" };
+    return [{ success: true }, null];
+  };
+  const room = { scope: "commercial:4", document: "5", facet: "billing" };
+  const signal = new AbortController().signal;
+  const billing = await openDocumentMessages(tenant.client, room, signal);
+  const scope = await openDocumentMessages(
+    tenant.client,
+    { ...room, facet: "scope" },
+    signal,
+  );
+  try {
+    await billing.post("update", { facet: "billing", data: "Preis 912.53" });
+    await expect(scope.open(stored)).rejects.toThrow();
+    const billingId = documentMessageObject(room, "update", stored.key);
+    const scopeId = documentMessageObject(
+      { ...room, facet: "scope" },
+      "update",
+      stored.key,
+    );
+    expect(scopeId).not.toBe(billingId);
+    expect((await billing.open(stored)).value.data).toBe("Preis 912.53");
+  } finally {
+    billing.close();
+    scope.close();
+  }
+});
+
+test("live packets bind room, purpose, author and ciphertext before exposing their contents", async () => {
+  const session = await fixture();
+  try {
+    await session.messages.post("update", {
+      data: "Vertraulicher Inhalt 892461",
+    });
+    const original = session.last();
+    expect((await session.messages.open(original)).value.data).toBe(
+      "Vertraulicher Inhalt 892461",
+    );
+    for (const alter of [
+      (message) => {
+        message.kind = "presence";
+      },
+      (message) => {
+        message.envelope.author = "user:2";
+      },
+      (message) => {
+        message.envelope.signature = "A".repeat(86);
+      },
+      (message) => {
+        message.authorityGeneration = "2";
+      },
+    ]) {
+      const modified = structuredClone(original);
+      alter(modified);
+      await expect(session.messages.open(modified)).rejects.toThrow();
+    }
+  } finally {
+    session.messages.close();
+  }
+});

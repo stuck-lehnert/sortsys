@@ -52,6 +52,7 @@ export default defineConfig({
     ],
     alias: [
       { find: /^@sortsys\/zerotrust\/worker$/, replacement: fileURLToPath(new URL("../sortsys-zerotrust/src/opaqueWorker.ts", import.meta.url)) },
+      { find: /^@sortsys\/zerotrust\/sortsys$/, replacement: fileURLToPath(new URL("../sortsys-zerotrust/src/sortsys.ts", import.meta.url)) },
       { find: /^@sortsys\/zerotrust$/, replacement: fileURLToPath(new URL("../sortsys-zerotrust/src/index.ts", import.meta.url)) },
       {
         find: /^@sortsys\/react-components\/notifications$/,
@@ -108,6 +109,8 @@ export default defineConfig({
         dwgviewerSource,
         fileURLToPath(new URL("../sortsys-gaeb", import.meta.url)),
         fileURLToPath(new URL("../sortsys-react-components", import.meta.url)),
+        fileURLToPath(new URL("../sortsys-zerotrust", import.meta.url)),
+        fileURLToPath(new URL("../sortsys-api-v2/client", import.meta.url)),
       ],
     },
   },

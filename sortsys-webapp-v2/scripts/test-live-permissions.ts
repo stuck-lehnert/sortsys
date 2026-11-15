@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { SQL } from "bun";
 import type { Client, MutateInput } from "@sortsys/v2-client";
-import { areaKey, decryptObject, openBox } from "@sortsys/zerotrust";
-import { acceptVault, trustedHistory } from "../app/lib/crypto/session";
+import { areaKey, decryptObject, openBox } from "@sortsys/zerotrust/sortsys";
+import { acceptVaultWithKey, trustedHistory } from "../app/lib/crypto/session";
 import type { UnlockedAccount } from "../app/lib/crypto/session";
 import { changeMemberAccess, finishAccessChanges, memberAccess } from "../app/lib/crypto/permissions";
 import { createBusinessClient } from "../app/lib/data/businessClient";
@@ -16,18 +16,49 @@ import type { DuckDriver } from "../app/lib/data/database";
 import { CUSTOMER_COLLECTION, CONTACT_COLLECTION, type AddressPayload } from "../app/lib/data/addressBook";
 import { testProjectPermissions } from "./test-live-project-permissions";
 
+export async function testPolicyWriteConfirmation(ownerClient: Client, subject: string, signal: AbortSignal) {
+  const previous = await memberAccess(ownerClient, subject, signal); assert.ok(previous);
+  const original = await required(ownerClient.query("zerotrust.policy.get", undefined, { strategy: "network-only" }));
+  const domains = await required(ownerClient.query("zerotrust.domains.list", undefined, { strategy: "network-only" }));
+  let discarded = 0, rotations = 0;
+  const falseAcknowledgement: Client = { ...ownerClient, mutate: ((path, input, options) => {
+    if (path === "zerotrust.policy.replace") { discarded++; return Promise.resolve([{ success: true }, null]); }
+    if (path === "zerotrust.domains.put") rotations++;
+    return ownerClient.mutate(path, input, options);
+  }) as Client["mutate"] };
+  const requested = { ...previous, catalogue: previous.catalogue === "none" ? "read" as const : "none" as const };
+  await assert.rejects(() => changeMemberAccess(falseAcknowledgement, subject, requested, signal), "A fabricated success cannot acknowledge a grant or revocation");
+  assert.equal(discarded, 1); assert.equal(rotations, 0);
+  assert.equal((await required(ownerClient.query("zerotrust.policy.get", undefined, { strategy: "network-only" }))).signature, original.signature);
+  assert.deepEqual(await memberAccess(ownerClient, subject, signal), previous);
+  assert.deepEqual(await required(ownerClient.query("zerotrust.domains.list", undefined, { strategy: "network-only" })), domains);
+
+  let lost = false;
+  const lostAcknowledgement: Client = { ...ownerClient, mutate: (async (path, input, options) => {
+    const result = await ownerClient.mutate(path, input, options);
+    if (path === "zerotrust.policy.replace" && !result[1] && !lost) { lost = true; return [null, new Error("Synthetic lost policy reply")]; }
+    return result;
+  }) as Client["mutate"] };
+  try {
+    const changed = { ...previous, catalogue: previous.catalogue === "write" ? "read" as const : "write" as const };
+    await changeMemberAccess(lostAcknowledgement, subject, changed, signal); assert.equal(lost, true);
+    assert.deepEqual(await memberAccess(ownerClient, subject, signal), changed);
+  } finally { await changeMemberAccess(ownerClient, subject, previous, signal); }
+  console.log("Policy publication verified: a false success changes neither grants nor key generations; an actually committed replacement survives a lost reply.");
+}
+
 export async function testLiveAccessChanges(ownerClient: Client, memberClient: Client, owner: UnlockedAccount, member: UnlockedAccount,
   driver: () => Promise<DuckDriver>, signal: AbortSignal): Promise<string> {
   const session = await required(memberClient.query("auth.sessionInfo", undefined, { strategy: "network-only" })), subject = `user:${session.user.id}`;
   const personal = privateLlmCollection(subject), canary = "Neuer Katalogstand nach dem Entzug des Lesezugriffs";
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   const trust = await trustedHistory(memberClient);
   const before = (await required(memberClient.query("zerotrust.domains.list", undefined, { strategy: "network-only" }))).find(domain => domain.id === PRODUCT_COLLECTION.domain)!;
   const box = await required(memberClient.query("zerotrust.keys.get", { domain: before.id, generation: before.generation }, { strategy: "network-only" }));
   const raw = await openBox(box, { tenant: member.tenant, purpose: "area-key", object: before.id, generation: before.generation,
     recipient: subject, author: box.author }, member.identity.encryptionKey.privateKey, trust.authority(box.author.split(":")[1]!));
   const oldKey = await areaKey(raw); raw.fill(0);
-  await acceptVault(owner.exportKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   const ownerSession = await required(ownerClient.query("auth.sessionInfo", undefined, { strategy: "network-only" }));
   const ownerArea = privateLlmCollection(`user:${ownerSession.user.id}`), own = await protectedCollection(ownerClient, ownerArea, signal);
   let privatePacket: MutateInput<"zerotrust.objects.save">, privateHead: string;
@@ -37,7 +68,7 @@ export async function testLiveAccessChanges(ownerClient: Client, memberClient: C
     privatePacket = await own.packet(`assistant:chat:${id}`, { format: "sortsys-assistant-v1", kind: "chat", id, value: { text: privateCanary } });
     privateHead = own.snapshot();
   } finally { own.close(); }
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   const control = new AbortController(), hints: EncryptedChange[] = [];
   const observer = watchEncryptedEvents(memberClient, process.env.SORTSYS_LLM_TEST_PEER!, event => hints.push(event), control.signal);
   const dsn = process.env.SORTSYS_MIGRATION_TEST_PG_DSN;
@@ -52,7 +83,7 @@ export async function testLiveAccessChanges(ownerClient: Client, memberClient: C
     await until(() => hints.some(event => Object.hasOwn(event.domains, PRODUCT_COLLECTION.domain)), "permitted event control");
     assert.equal(hints.some(event => Object.hasOwn(event.domains, ownerArea.domain)), false);
     assert.equal(JSON.stringify(hints).includes(privateCanary), false);
-  } finally { control.abort(); await observer; await pg.close(); await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { control.abort(); await observer; await pg.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   assert.deepEqual(await memberAccess(ownerClient, subject, signal), { catalogue: "read", customers: "none", contacts: "none", vendors: "none", prices: "none", assistant: true });
   let interrupted = false;
   const failing: Client = { ...ownerClient, mutate: ((path, input, options) => {
@@ -96,14 +127,14 @@ export async function testLiveAccessChanges(ownerClient: Client, memberClient: C
   }) as Client["mutate"] };
   await changeMemberAccess(lostAcknowledgement, subject, { catalogue: "write", customers: "none", contacts: "none", vendors: "none", prices: "none", assistant: true }, signal);
   assert.equal(lost, true);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   const business = createBusinessClient(memberClient, { openProducts: (client, cancellation) => openProtectedProducts(client, cancellation, driver) });
   try {
     assert.equal((await required(business.query("products.get", { id: productId })))!.name, canary);
     await required(business.mutate("products.update", { id: productId, data: { description: "Nach erneuter Freigabe bearbeitet" } }));
     assert.equal((await required(business.query("llm.chats.list", undefined))).length, 1, "Re-enabled personal history retains its historical key");
     await required(business.mutate("llm.chats.create", { title: "Nach erneuter Freigabe" }));
-  } finally { business.dispose(); await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   await testDirectoryGrants(ownerClient, memberClient, owner, member, driver, signal);
   await testProjectPermissions(ownerClient, memberClient, owner, member, driver, signal);
   console.log("Access changes verified: interrupted revocation freezes writes, resumes key rotation, excludes removed readers cryptographically, and restores history and editing after regrant with a lost policy acknowledgement.");
@@ -115,7 +146,7 @@ async function testDirectoryGrants(ownerClient: Client, memberClient: Client, ow
   const preserved = { vendors: "none" as const, catalogue: "write" as const, prices: "none" as const, assistant: true };
   for (const access of [{ customers: "read", contacts: "none" }, { customers: "none", contacts: "read" }] as const) {
     await changeMemberAccess(ownerClient, `user:${subject}`, { ...preserved, ...access }, signal);
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     const keys: string[] = [], observed: Client = { ...memberClient, query: ((path, input, options) => {
       if (path === "zerotrust.keys.get") keys.push((input as { domain: string }).domain); return memberClient.query(path, input, options);
     }) as Client["query"] };
@@ -127,10 +158,10 @@ async function testDirectoryGrants(ownerClient: Client, memberClient: Client, ow
       assert.equal(keys.includes((denied === "customers" ? CUSTOMER_COLLECTION : CONTACT_COLLECTION).domain), false);
       assert.ok((await business.mutate("customers.create", { name: "Must stay denied" }))[1]);
       assert.ok((await business.mutate("contacts.create", { firstName: "Must stay denied" }))[1]);
-    } finally { business.dispose(); await acceptVault(owner.exportKey, owner.vault, false); }
+    } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   }
   await changeMemberAccess(ownerClient, `user:${subject}`, { ...preserved, customers: "write", contacts: "none" }, signal);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   const customerArea = await protectedCollection(memberClient, CUSTOMER_COLLECTION, signal);
   try {
     const existing = (await customerArea.read()).find(item => (item.value as AddressPayload).row)!;
@@ -139,9 +170,9 @@ async function testDirectoryGrants(ownerClient: Client, memberClient: Client, ow
       { domain: CUSTOMER_COLLECTION.domain, sequence: customerArea.snapshot() }, { domain: CONTACT_COLLECTION.domain, sequence: "0" },
     ] });
     assert.ok(error, "A read guard cannot reference an area without current read permission");
-  } finally { customerArea.close(); await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { customerArea.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   await changeMemberAccess(ownerClient, `user:${subject}`, { ...preserved, customers: "write", contacts: "read" }, signal);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   const linking = createBusinessClient(memberClient, { productDriver: driver });
   try {
     const contact = (await required(linking.query("contacts.list", {})))[0]!;
@@ -150,15 +181,15 @@ async function testDirectoryGrants(ownerClient: Client, memberClient: Client, ow
     assert.equal((await required(linking.query("customers.contacts.list", { customerId: customer.id })))[0]!.id, contact.id,
       "A reference guard requires contact read permission, not contact write permission");
     assert.ok((await linking.mutate("contacts.update", { id: contact.id, data: { firstName: "Must stay denied" } }))[1]);
-  } finally { linking.dispose(); await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { linking.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   await changeMemberAccess(ownerClient, `user:${subject}`, { ...preserved, customers: "write", contacts: "write" }, signal);
-  await acceptVault(member.exportKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
   const business = createBusinessClient(memberClient, { productDriver: driver });
   try {
     const customer = await required(business.mutate("customers.create", { name: "Kunde mit gezielter Schreibfreigabe" }));
     const contact = await required(business.mutate("contacts.create", { firstName: "Freigegebener Ansprechpartner" }));
     await required(business.mutate("customers.contacts.add", { customerId: customer.id, contactId: contact.id }));
     assert.equal((await required(business.query("customers.contacts.list", { customerId: customer.id })))[0]!.id, contact.id);
-  } finally { business.dispose(); await acceptVault(owner.exportKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
   console.log("Directory grants verified: customer-only/contact-only readers, denied writes and unreadable read guards, historical keys after regrant, and certified member CRUD/relationships.");
 }

@@ -5,34 +5,115 @@ import JSZip from "jszip";
 import ExcelJS from "exceljs";
 import { chromium, type BrowserContext, type Request } from "playwright";
 
-if (process.env.SORTSYS_DISPOSABLE_OFFICE_TEST !== "1") throw new Error("A disposable Office test installation is required");
+if (process.env.SORTSYS_DISPOSABLE_OFFICE_TEST !== "1")
+  throw new Error("A disposable Office test installation is required");
 const origin = process.env.SORTSYS_OFFICE_TEST_ORIGIN;
 if (!origin || !/^http:\/\/(?:127\.0\.0\.1|localhost):[0-9]+$/.test(origin)) {
   throw new Error("An explicit loopback Office test origin is required");
 }
-const bundle = await build({ entrypoints: [new URL("../app/lib/cryptpadBridge.ts", import.meta.url).pathname], target: "browser", format: "esm" });
+const bundle = await build({
+  entrypoints: [
+    new URL("../app/lib/cryptpadBridge.ts", import.meta.url).pathname,
+    new URL("../app/lib/officeDraft.ts", import.meta.url).pathname,
+  ],
+  target: "browser",
+  format: "esm",
+});
 assert.equal(bundle.success, true);
-const javascript = await bundle.outputs[0]!.text();
+const javascript = await bundle.outputs
+  .find((output) => output.path.endsWith("cryptpadBridge.js"))!
+  .text();
+const draftJavascript = await bundle.outputs
+  .find((output) => output.path.endsWith("officeDraft.js"))!
+  .text();
 const initial = "SORTSYS_PRIVATE_OFFICE_TEST_20261109";
 const edit = "_EDITED_IN_BROWSER";
 const peerEdit = "_SECOND_COLLABORATOR";
+const unconfirmedDraft = "_UNCONFIRMED_DRAFT_FOR_REKEY";
+const oldRoomEdit = "_OLD_ROOM_AFTER_REKEY";
 const zip = new JSZip();
-zip.file("[Content_Types].xml", `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
-zip.file("_rels/.rels", `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
-zip.file("word/document.xml", `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${initial}</w:t></w:r></w:p><w:p><w:r><w:t>Zusammenarbeit</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`);
-const original = await zip.generateAsync({ type: "uint8array", compression: "STORE" });
-const html = `<!doctype html><html><body style="margin:0"><iframe id="editor" style="width:100vw;height:100vh;border:0"></iframe><script type="module">
-import {openCryptPad} from '/bridge.js';
-window.officeTest={ready:false,errors:0,saved:[],session:null};
-window.startOffice=(bytes,origin,settings={})=>{window.officeTest.bridge=openCryptPad({iframe:document.getElementById('editor'),editorOrigin:origin,document:new Blob([new Uint8Array(bytes)]),fileName:settings.fileName||'Proof.docx',application:settings.application||'doc',locale:'de',canEdit:settings.canEdit!==false,accessKey:settings.accessKey,viewKey:settings.viewKey,
-publishSession:async(previous,session)=>{window.officeTest.session=session;return session;},
-save:async(blob)=>{window.officeTest.saved.push(Array.from(new Uint8Array(await blob.arrayBuffer())));},
-onReady:()=>window.officeTest.ready=true,onError:()=>window.officeTest.errors++});};
+zip.file(
+  "[Content_Types].xml",
+  `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+);
+zip.file(
+  "_rels/.rels",
+  `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+);
+zip.file(
+  "word/document.xml",
+  `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${initial}</w:t></w:r></w:p><w:p><w:r><w:t>Zusammenarbeit</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`,
+);
+const original = await zip.generateAsync({
+  type: "uint8array",
+  compression: "STORE",
+});
+const html = `<!doctype html>
+<html><body style="margin:0">
+<iframe id="editor" style="width:100vw;height:100vh;border:0"></iframe>
+<script type="module">
+import { openCryptPad } from '/bridge.js';
+import { readOfficeDraft } from '/draft.js';
+window.officeTest = {
+  ready: false, errors: 0, saved: [], session: null, holdSaves: false, pending: [],
+};
+window.recoverOfficeDraft = async (bytes, origin, viewKey) => {
+  const recovered = await readOfficeDraft({
+    iframe: document.getElementById('editor'),
+    editorOrigin: origin,
+    document: new Blob([new Uint8Array(bytes)]),
+    fileName: 'Proof.docx',
+    application: 'doc',
+    locale: 'de',
+    viewKey,
+    signal: new AbortController().signal,
+  });
+  return Array.from(new Uint8Array(await recovered.arrayBuffer()));
+};
+window.startOffice = (bytes, origin, settings = {}) => {
+  window.officeTest.bridge = openCryptPad({
+    iframe: document.getElementById('editor'),
+    editorOrigin: origin,
+    document: new Blob([new Uint8Array(bytes)]),
+    fileName: settings.fileName || 'Proof.docx',
+    application: settings.application || 'doc',
+    locale: 'de',
+    canEdit: settings.canEdit !== false,
+    accessKey: settings.accessKey,
+    viewKey: settings.viewKey,
+    publishSession: async (previous, session) => {
+      window.officeTest.session = session;
+      return session;
+    },
+    save: async blob => {
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      if (window.officeTest.holdSaves) {
+        window.officeTest.pending.push(bytes);
+        return new Promise(() => {});
+      }
+      window.officeTest.saved.push(bytes);
+    },
+    onReady: () => { window.officeTest.ready = true; },
+    onError: () => { window.officeTest.errors++; },
+  });
+};
 </script></body></html>`;
-const server = serve({ hostname: "127.0.0.1", port: Number(process.env.SORTSYS_OFFICE_APP_PORT ?? 0), fetch(request) {
-  const script = new URL(request.url).pathname === "/bridge.js";
-  return new Response(script ? javascript : html, { headers: { "content-type": script ? "application/javascript" : "text/html" } });
-} });
+const server = serve({
+  hostname: "127.0.0.1",
+  port: Number(process.env.SORTSYS_OFFICE_APP_PORT ?? 0),
+  fetch(request) {
+    const path = new URL(request.url).pathname;
+    const script = path === "/bridge.js" || path === "/draft.js";
+    let content = html;
+    if (path === "/bridge.js") content = javascript;
+    else if (path === "/draft.js") content = draftJavascript;
+    return new Response(content, {
+      headers: {
+        "content-type": script ? "application/javascript" : "text/html",
+      },
+    });
+  },
+});
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
   browser = await chromium.launch();
@@ -40,14 +121,37 @@ try {
   const page = await context.newPage();
   const diagnostics: string[] = [];
   const observePage = (page: import("playwright").Page, label: string) => {
-    page.on("pageerror", error => diagnostics.push(`${label}: ${error.message}`));
-    page.on("console", message => { if (message.type() === "error") diagnostics.push(`${label}: ${message.text().slice(0, 500)}`); });
-    page.on("requestfailed", request => diagnostics.push(`${label}: ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`));
+    page.on("pageerror", (error) =>
+      diagnostics.push(`${label}: ${error.message}`),
+    );
+    page.on("console", (message) => {
+      if (message.type() === "error")
+        diagnostics.push(`${label}: ${message.text().slice(0, 500)}`);
+    });
+    page.on("requestfailed", (request) =>
+      diagnostics.push(
+        `${label}: ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`,
+      ),
+    );
   };
-  page.on("console", message => { if (message.type() === "error") diagnostics.push(message.text().slice(0, 500)); });
-  page.on("pageerror", error => diagnostics.push((error.stack ?? error.message).slice(0, 1200)));
-  page.on("requestfailed", request => diagnostics.push(`${new URL(request.url()).pathname}: ${request.failure()?.errorText}`));
-  page.on("response", response => { if (response.status() >= 400) diagnostics.push(`${new URL(response.url()).pathname}: HTTP ${response.status()}`); });
+  page.on("console", (message) => {
+    if (message.type() === "error")
+      diagnostics.push(message.text().slice(0, 500));
+  });
+  page.on("pageerror", (error) =>
+    diagnostics.push((error.stack ?? error.message).slice(0, 1200)),
+  );
+  page.on("requestfailed", (request) =>
+    diagnostics.push(
+      `${new URL(request.url()).pathname}: ${request.failure()?.errorText}`,
+    ),
+  );
+  page.on("response", (response) => {
+    if (response.status() >= 400)
+      diagnostics.push(
+        `${new URL(response.url()).pathname}: HTTP ${response.status()}`,
+      );
+  });
   const forbidden: string[] = [];
   const leaks: string[] = [];
   const sentUrls: string[] = [];
@@ -55,96 +159,377 @@ try {
   const observeRequest = (request: Request) => {
     const url = new URL(request.url());
     sentUrls.push(request.url());
-    if (/\/ooapidl|\/oosave|\/ConvertService|\/coauthoring\/CommandService/.test(url.pathname)) forbidden.push(url.pathname);
+    if (
+      /\/ooapidl|\/oosave|\/ConvertService|\/coauthoring\/CommandService/.test(
+        url.pathname,
+      )
+    )
+      forbidden.push(url.pathname);
     const body = request.postDataBuffer();
-    for (const text of [initial, edit, peerEdit, "Proof.docx", "MENGEN_PRIVATE_OFFICE", "Mengen.xlsx"]) {
-      if (url.search.includes(text) || body?.includes(Buffer.from(text)) || body?.includes(Buffer.from(text, "utf16le"))) leaks.push(url.pathname);
+    for (const text of [
+      initial,
+      edit,
+      peerEdit,
+      unconfirmedDraft,
+      oldRoomEdit,
+      "Proof.docx",
+      "MENGEN_PRIVATE_OFFICE",
+      "Mengen.xlsx",
+    ]) {
+      if (
+        url.search.includes(text) ||
+        body?.includes(Buffer.from(text)) ||
+        body?.includes(Buffer.from(text, "utf16le"))
+      )
+        leaks.push(url.pathname);
     }
     if (url.pathname.startsWith("/upload-blob/") && body) {
-      const packet = JSON.parse(body.toString()), encrypted = Buffer.from(packet.chunk, "base64"); uploads++;
-      for (const text of [initial, edit, peerEdit]) if (encrypted.includes(Buffer.from(text)) || encrypted.includes(Buffer.from(text, "utf16le"))) leaks.push("decrypted-looking-upload");
+      const packet = JSON.parse(body.toString()),
+        encrypted = Buffer.from(packet.chunk, "base64");
+      uploads++;
+      for (const text of [
+        initial,
+        edit,
+        peerEdit,
+        unconfirmedDraft,
+        oldRoomEdit,
+      ])
+        if (
+          encrypted.includes(Buffer.from(text)) ||
+          encrypted.includes(Buffer.from(text, "utf16le"))
+        )
+          leaks.push("decrypted-looking-upload");
     }
   };
   context.on("request", observeRequest);
   const auxiliaries: BrowserContext[] = [];
   const documentText = async (bytes: number[]) => {
     const saved = await JSZip.loadAsync(new Uint8Array(bytes));
-    return (await saved.file("word/document.xml")!.async("string")).replace(/<[^>]*>/g, "");
+    return (await saved.file("word/document.xml")!.async("string")).replace(
+      /<[^>]*>/g,
+      "",
+    );
   };
+  async function assertPrivateBrowserStorage(
+    context: BrowserContext,
+    capabilities: string[] = [],
+  ) {
+    const stored = JSON.stringify(
+      await context.storageState({ indexedDB: true, opfs: true }),
+    );
+    const secrets = [
+      initial,
+      edit,
+      peerEdit,
+      unconfirmedDraft,
+      oldRoomEdit,
+      "Proof.docx",
+      "MENGEN_PRIVATE_OFFICE",
+      "Mengen.xlsx",
+    ];
+    for (const capability of capabilities) {
+      secrets.push(capability, capability.split("/").filter(Boolean).at(-1)!);
+    }
+    for (const secret of secrets) {
+      assert.ok(
+        !stored.includes(secret),
+        "Private document contents or room capabilities persisted in browser storage",
+      );
+    }
+  }
   try {
     await page.goto(server.url.href);
     await page.waitForFunction(() => typeof window.startOffice === "function");
-    await page.evaluate(({ bytes, origin }) => window.startOffice(bytes, origin), { bytes: Array.from(original), origin });
-    await page.waitForFunction(() => window.officeTest.ready || window.officeTest.errors > 0, undefined, { timeout: 120000 });
-    assert.equal(await page.evaluate(() => window.officeTest.errors), 0, "The real editor reported a startup error");
-    await page.waitForFunction(() => window.officeTest.saved.length > 0, undefined, { timeout: 30000 });
+    await page.evaluate(
+      ({ bytes, origin }) => window.startOffice(bytes, origin),
+      { bytes: Array.from(original), origin },
+    );
+    await page.waitForFunction(
+      () => window.officeTest.ready || window.officeTest.errors > 0,
+      undefined,
+      { timeout: 120000 },
+    );
+    assert.equal(
+      await page.evaluate(() => window.officeTest.errors),
+      0,
+      "The real editor reported a startup error",
+    );
+    await page.waitForFunction(
+      () => window.officeTest.saved.length > 0,
+      undefined,
+      { timeout: 30000 },
+    );
     const previous = await page.evaluate(() => window.officeTest.saved.length);
-    const frame = page.frames().find(frame => frame.url().includes("/documenteditor/main/"));
+    const frame = page
+      .frames()
+      .find((frame) => frame.url().includes("/documenteditor/main/"));
     assert.ok(frame, "The real browser editor must be loaded");
     await frame.locator("#area_id").press("Control+End");
     await page.keyboard.type(edit);
-    await page.waitForFunction(count => window.officeTest.saved.length > count, previous, { timeout: 30000 });
-    const result = await page.evaluate(() => ({ errors: window.officeTest.errors, bytes: window.officeTest.saved.at(-1)!, session: window.officeTest.session! }));
+    await page.waitForFunction(
+      (count) => window.officeTest.saved.length > count,
+      previous,
+      { timeout: 30000 },
+    );
+    const result = await page.evaluate(() => ({
+      errors: window.officeTest.errors,
+      bytes: window.officeTest.saved.at(-1)!,
+      session: window.officeTest.session!,
+    }));
     assert.equal(result.errors, 0);
     const text = await documentText(result.bytes);
-    assert.ok(text.includes(initial), "The original text must survive conversion");
-    assert.ok(text.includes(edit), "The keyboard edit must reach the autosaved DOCX");
+    assert.ok(
+      text.includes(initial),
+      "The original text must survive conversion",
+    );
+    assert.ok(
+      text.includes(edit),
+      "The keyboard edit must reach the autosaved DOCX",
+    );
     console.log("Office proof: original DOCX and keyboard autosave verified");
     // Office locks the paragraph currently being edited. Move the first
     // collaborator to the other paragraph before the peer edits the last one.
     await frame.locator("#area_id").press("Control+Home");
     await page.screenshot({ path: "/tmp/sortsys-private-office-real.png" });
-    const peerContext = await browser.newContext(); auxiliaries.push(peerContext); peerContext.on("request", observeRequest);
-    const peer = await peerContext.newPage(); await peer.goto(server.url.href);
+    const peerContext = await browser.newContext();
+    auxiliaries.push(peerContext);
+    peerContext.on("request", observeRequest);
+    const peer = await peerContext.newPage();
+    await peer.goto(server.url.href);
     observePage(peer, "Peer");
     await peer.waitForFunction(() => typeof window.startOffice === "function");
-    await peer.evaluate(({ bytes, origin, keys }) => window.startOffice(bytes, origin, { accessKey: keys.editKey, viewKey: keys.viewKey }), { bytes: Array.from(original), origin, keys: result.session });
-    await peer.waitForFunction(() => window.officeTest.ready || window.officeTest.errors > 0, undefined, { timeout: 120000 });
+    await peer.evaluate(
+      ({ bytes, origin, keys }) =>
+        window.startOffice(bytes, origin, {
+          accessKey: keys.editKey,
+          viewKey: keys.viewKey,
+        }),
+      { bytes: Array.from(original), origin, keys: result.session },
+    );
+    await peer.waitForFunction(
+      () => window.officeTest.ready || window.officeTest.errors > 0,
+      undefined,
+      { timeout: 120000 },
+    );
     assert.equal(await peer.evaluate(() => window.officeTest.errors), 0);
-    const peerFrame = peer.frames().find(frame => frame.url().includes("/documenteditor/main/")); assert.ok(peerFrame);
+    const peerFrame = peer
+      .frames()
+      .find((frame) => frame.url().includes("/documenteditor/main/"));
+    assert.ok(peerFrame);
     // Readiness is announced before the upstream history patch is applied.
     // Confirm that conversion already includes the first collaborator's edit
     // before sending keys into the newly loaded canvas.
-    const caughtUp = await peer.evaluate(async () => Array.from(new Uint8Array(await (await window.officeTest.bridge!.export("docx")).arrayBuffer())));
-    assert.ok((await documentText(caughtUp)).includes(edit), "The peer must receive the shared history before editing");
+    const caughtUp = await peer.evaluate(async () =>
+      Array.from(
+        new Uint8Array(
+          await (await window.officeTest.bridge!.export("docx")).arrayBuffer(),
+        ),
+      ),
+    );
+    assert.ok(
+      (await documentText(caughtUp)).includes(edit),
+      "The peer must receive the shared history before editing",
+    );
     await peer.bringToFront();
     await peerFrame.locator("#area_id").press("Control+End");
     await peerFrame.locator("#area_id").pressSequentially(peerEdit);
     let merged = false;
     const deadline = Date.now() + 45000;
     while (!merged && Date.now() < deadline) {
-      const documents = (await Promise.all([page, peer].map(editor => editor.evaluate(() => window.officeTest.saved)))).flat();
+      const documents = (
+        await Promise.all(
+          [page, peer].map((editor) =>
+            editor.evaluate(() => window.officeTest.saved),
+          ),
+        )
+      ).flat();
       for (const bytes of documents) {
         const text = await documentText(bytes);
-        if (text.includes(initial) && text.includes(edit) && text.includes(peerEdit)) { merged = true; break; }
+        if (
+          text.includes(initial) &&
+          text.includes(edit) &&
+          text.includes(peerEdit)
+        ) {
+          merged = true;
+          break;
+        }
       }
-      if (!merged) await new Promise(resolve => setTimeout(resolve, 250));
+      if (!merged) await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (!merged) {
       for (const [index, editor] of [page, peer].entries()) {
-        const state = await editor.evaluate(() => ({ errors: window.officeTest.errors, saved: window.officeTest.saved }));
-        console.error("Synthetic collaboration state", index, { errors: state.errors, saved: state.saved.length,
-          documents: await Promise.all(state.saved.slice(-3).map(documentText)) });
+        const state = await editor.evaluate(() => ({
+          errors: window.officeTest.errors,
+          saved: window.officeTest.saved,
+        }));
+        console.error("Synthetic collaboration state", index, {
+          errors: state.errors,
+          saved: state.saved.length,
+          documents: await Promise.all(state.saved.slice(-3).map(documentText)),
+        });
       }
       await peer.screenshot({ path: "/tmp/sortsys-private-office-peer.png" });
     }
-    assert.equal(merged, true, "Two independent browser contexts must preserve each other's edits in the same room");
+    assert.equal(
+      merged,
+      true,
+      "Two independent browser contexts must preserve each other's edits in the same room",
+    );
     console.log("Office proof: both collaborator edits merged");
+    await assertPrivateBrowserStorage(peerContext, [
+      result.session.editKey,
+      result.session.viewKey,
+    ]);
     await peerContext.close();
-    const readerContext = await browser.newContext(); auxiliaries.push(readerContext); readerContext.on("request", observeRequest);
-    const reader = await readerContext.newPage(); await reader.goto(server.url.href);
+    const readerContext = await browser.newContext();
+    auxiliaries.push(readerContext);
+    readerContext.on("request", observeRequest);
+    const reader = await readerContext.newPage();
+    await reader.goto(server.url.href);
     observePage(reader, "Reader");
-    await reader.waitForFunction(() => typeof window.startOffice === "function");
-    await reader.evaluate(({ bytes, origin, key }) => window.startOffice(bytes, origin, { canEdit: false, accessKey: key, viewKey: key }), { bytes: Array.from(original), origin, key: result.session.viewKey });
-    await reader.waitForFunction(() => window.officeTest.ready || window.officeTest.errors > 0, undefined, { timeout: 120000 });
+    await reader.waitForFunction(
+      () => typeof window.startOffice === "function",
+    );
+    await reader.evaluate(
+      ({ bytes, origin, key }) =>
+        window.startOffice(bytes, origin, {
+          canEdit: false,
+          accessKey: key,
+          viewKey: key,
+        }),
+      { bytes: Array.from(original), origin, key: result.session.viewKey },
+    );
+    await reader.waitForFunction(
+      () => window.officeTest.ready || window.officeTest.errors > 0,
+      undefined,
+      { timeout: 120000 },
+    );
     assert.equal(await reader.evaluate(() => window.officeTest.errors), 0);
-    const viewed = await reader.evaluate(async () => Array.from(new Uint8Array(await (await window.officeTest.bridge!.export("docx")).arrayBuffer())));
+    const viewed = await reader.evaluate(async () =>
+      Array.from(
+        new Uint8Array(
+          await (await window.officeTest.bridge!.export("docx")).arrayBuffer(),
+        ),
+      ),
+    );
     const viewedText = await documentText(viewed);
-    assert.ok(viewedText.includes(edit) && viewedText.includes(peerEdit), "A view capability must open the shared edited document, not just the supplied original");
-    assert.equal(await reader.evaluate(() => window.officeTest.saved.length), 0);
+    assert.ok(
+      viewedText.includes(edit) && viewedText.includes(peerEdit),
+      "A view capability must open the shared edited document, not just the supplied original",
+    );
+    assert.equal(
+      await reader.evaluate(() => window.officeTest.saved.length),
+      0,
+    );
     assert.equal(await reader.evaluate(() => window.officeTest.session), null);
     console.log("Office proof: shared read-only DOCX export verified");
-    await readerContext.close(); await context.close();
+    const savedBeforeDraft = await page.evaluate(() => {
+      window.officeTest.holdSaves = true;
+      return window.officeTest.saved.length;
+    });
+    await page.bringToFront();
+    await frame.locator("#area_id").press("Control+End");
+    await frame.locator("#area_id").pressSequentially(unconfirmedDraft);
+    async function exportedText(editor: import("playwright").Page) {
+      return documentText(
+        await editor.evaluate(async () =>
+          Array.from(
+            new Uint8Array(
+              await (
+                await window.officeTest.bridge!.export("docx")
+              ).arrayBuffer(),
+            ),
+          ),
+        ),
+      );
+    }
+    async function waitForSharedText(text: string) {
+      const deadline = Date.now() + 30000;
+      while (!(await exportedText(reader)).includes(text)) {
+        assert.ok(
+          Date.now() < deadline,
+          "The encrypted room must receive the edit",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+    await waitForSharedText(unconfirmedDraft);
+    const recoveryContext = await browser.newContext();
+    auxiliaries.push(recoveryContext);
+    recoveryContext.on("request", observeRequest);
+    const recoveryPage = await recoveryContext.newPage();
+    observePage(recoveryPage, "Draft recovery");
+    await recoveryPage.goto(server.url.href);
+    await recoveryPage.waitForFunction(
+      () => typeof window.recoverOfficeDraft === "function",
+    );
+    const recoveredDraft = await recoveryPage.evaluate(
+      ({ bytes, origin, key }) => window.recoverOfficeDraft(bytes, origin, key),
+      { bytes: Array.from(original), origin, key: result.session.viewKey },
+    );
+    const recoveredText = await documentText(recoveredDraft);
+    assert.ok(
+      recoveredText.includes(initial) &&
+        recoveredText.includes(edit) &&
+        recoveredText.includes(peerEdit) &&
+        recoveredText.includes(unconfirmedDraft),
+    );
+    assert.equal(
+      await page.evaluate(() => window.officeTest.saved.length),
+      savedBeforeDraft,
+      "Recovery must read the shared draft even though no newer file was confirmed",
+    );
+    const replacementContext = await browser.newContext();
+    auxiliaries.push(replacementContext);
+    replacementContext.on("request", observeRequest);
+    const replacement = await replacementContext.newPage();
+    observePage(replacement, "Replacement room");
+    await replacement.goto(server.url.href);
+    await replacement.waitForFunction(
+      () => typeof window.startOffice === "function",
+    );
+    await replacement.evaluate(
+      ({ bytes, origin }) => window.startOffice(bytes, origin),
+      { bytes: recoveredDraft, origin },
+    );
+    await replacement.waitForFunction(
+      () => window.officeTest.ready || window.officeTest.errors > 0,
+      undefined,
+      { timeout: 120000 },
+    );
+    assert.equal(await replacement.evaluate(() => window.officeTest.errors), 0);
+    const replacementRoom = await replacement.evaluate(
+      () => window.officeTest.session!,
+    );
+    assert.notEqual(replacementRoom.editKey, result.session.editKey);
+    assert.notEqual(replacementRoom.viewKey, result.session.viewKey);
+    assert.ok((await exportedText(replacement)).includes(unconfirmedDraft));
+    await page.bringToFront();
+    await frame.locator("#area_id").pressSequentially(oldRoomEdit);
+    await waitForSharedText(oldRoomEdit);
+    assert.ok(
+      !(await exportedText(replacement)).includes(oldRoomEdit),
+      "Later writes through the revoked old capability must not enter the replacement room",
+    );
+    await assertPrivateBrowserStorage(replacementContext, [
+      replacementRoom.editKey,
+      replacementRoom.viewKey,
+    ]);
+    await assertPrivateBrowserStorage(recoveryContext, [
+      result.session.viewKey,
+    ]);
+    await assertPrivateBrowserStorage(readerContext, [result.session.viewKey]);
+    await assertPrivateBrowserStorage(context, [
+      result.session.editKey,
+      result.session.viewKey,
+    ]);
+    await replacementContext.close();
+    await recoveryContext.close();
+    console.log(
+      "Office proof: unconfirmed shared draft transferred through a view capability into a fresh room; later old-room edits stay excluded",
+    );
+    await readerContext.close();
+    await context.close();
     const container = process.env.SORTSYS_OFFICE_TEST_CONTAINER;
     if (container) {
       const runtime = process.env.SORTSYS_OFFICE_TEST_RUNTIME;
@@ -153,79 +538,241 @@ try {
       assert.equal(spawnSync([runtime, "restart", container]).exitCode, 0);
       let healthy = false;
       for (let attempt = 0; attempt < 90; attempt++) {
-        const status = spawnSync([runtime, "inspect", "-f", "{{.State.Health.Status}}", container]);
-        if (status.exitCode === 0 && status.stdout.toString().trim() === "healthy") { healthy = true; break; }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const status = spawnSync([
+          runtime,
+          "inspect",
+          "-f",
+          "{{.State.Health.Status}}",
+          container,
+        ]);
+        if (
+          status.exitCode === 0 &&
+          status.stdout.toString().trim() === "healthy"
+        ) {
+          healthy = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-      assert.equal(healthy, true, "The disposable Office service must recover after restart");
-      const resumedContext = await browser.newContext(); auxiliaries.push(resumedContext); resumedContext.on("request", observeRequest);
-      const resumed = await resumedContext.newPage(); observePage(resumed, "Reconnected reader"); await resumed.goto(server.url.href);
-      await resumed.waitForFunction(() => typeof window.startOffice === "function");
-      await resumed.evaluate(({ bytes, origin, key }) => window.startOffice(bytes, origin, { canEdit: false, accessKey: key, viewKey: key }), { bytes: Array.from(original), origin, key: result.session.viewKey });
-      await resumed.waitForFunction(() => window.officeTest.ready || window.officeTest.errors > 0, undefined, { timeout: 120000 });
+      assert.equal(
+        healthy,
+        true,
+        "The disposable Office service must recover after restart",
+      );
+      const resumedContext = await browser.newContext();
+      auxiliaries.push(resumedContext);
+      resumedContext.on("request", observeRequest);
+      const resumed = await resumedContext.newPage();
+      observePage(resumed, "Reconnected reader");
+      await resumed.goto(server.url.href);
+      await resumed.waitForFunction(
+        () => typeof window.startOffice === "function",
+      );
+      await resumed.evaluate(
+        ({ bytes, origin, key }) =>
+          window.startOffice(bytes, origin, {
+            canEdit: false,
+            accessKey: key,
+            viewKey: key,
+          }),
+        { bytes: Array.from(original), origin, key: result.session.viewKey },
+      );
+      await resumed.waitForFunction(
+        () => window.officeTest.ready || window.officeTest.errors > 0,
+        undefined,
+        { timeout: 120000 },
+      );
       assert.equal(await resumed.evaluate(() => window.officeTest.errors), 0);
-      const restored = await resumed.evaluate(async () => Array.from(new Uint8Array(await (await window.officeTest.bridge!.export("docx")).arrayBuffer())));
+      const restored = await resumed.evaluate(async () =>
+        Array.from(
+          new Uint8Array(
+            await (
+              await window.officeTest.bridge!.export("docx")
+            ).arrayBuffer(),
+          ),
+        ),
+      );
       const restoredText = await documentText(restored);
-      assert.ok(restoredText.includes(initial) && restoredText.includes(edit) && restoredText.includes(peerEdit), "Room ciphertext must survive closing every client and restarting the service");
+      assert.ok(
+        restoredText.includes(initial) &&
+          restoredText.includes(edit) &&
+          restoredText.includes(peerEdit),
+        "Room ciphertext must survive closing every client and restarting the service",
+      );
       await resumedContext.close();
-      console.log("Office proof: shared room restored after every client closed and the service restarted");
+      console.log(
+        "Office proof: shared room restored after every client closed and the service restarted",
+      );
     }
-    const workbook = new ExcelJS.Workbook(), sheet = workbook.addWorksheet("Mengen");
-    sheet.getCell("A1").value = "MENGEN_PRIVATE_OFFICE"; sheet.getCell("A1").font = { bold: true };
-    sheet.getCell("B2").value = 5.375; sheet.getCell("C2").value = 2.834;
-    sheet.getCell("D2").value = { formula: "B2*C2", result: 15.23275 }; sheet.getCell("D2").numFmt = '0.000" m²"';
-    sheet.getCell("E3").value = 592; sheet.getCell("E3").numFmt = '#,##0.00" €"';
+    const workbook = new ExcelJS.Workbook(),
+      sheet = workbook.addWorksheet("Mengen");
+    sheet.getCell("A1").value = "MENGEN_PRIVATE_OFFICE";
+    sheet.getCell("A1").font = { bold: true };
+    sheet.getCell("B2").value = 5.375;
+    sheet.getCell("C2").value = 2.834;
+    sheet.getCell("D2").value = { formula: "B2*C2", result: 15.23275 };
+    sheet.getCell("D2").numFmt = '0.000" m²"';
+    sheet.getCell("E3").value = 592;
+    sheet.getCell("E3").numFmt = '#,##0.00" €"';
     sheet.headerFooter.oddHeader = "&CProjektübersicht";
-    const image = workbook.addImage({ base64: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGNwKDiAFTEMLQkA0tVcAZtsCF8AAAAASUVORK5CYII=", extension: "png" });
+    const image = workbook.addImage({
+      base64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGNwKDiAFTEMLQkA0tVcAZtsCF8AAAAASUVORK5CYII=",
+      extension: "png",
+    });
     sheet.addImage(image, "A5:B7");
-    const spreadsheet = Array.from(new Uint8Array(await workbook.xlsx.writeBuffer()));
-    const sheetContext = await browser.newContext(); auxiliaries.push(sheetContext); sheetContext.on("request", observeRequest);
-    const sheetPage = await sheetContext.newPage(); await sheetPage.goto(server.url.href);
+    const spreadsheet = Array.from(
+      new Uint8Array(await workbook.xlsx.writeBuffer()),
+    );
+    const sheetContext = await browser.newContext();
+    auxiliaries.push(sheetContext);
+    sheetContext.on("request", observeRequest);
+    const sheetPage = await sheetContext.newPage();
+    await sheetPage.goto(server.url.href);
     observePage(sheetPage, "Sheet");
-    await sheetPage.waitForFunction(() => typeof window.startOffice === "function");
-    await sheetPage.evaluate(({ bytes, origin }) => window.startOffice(bytes, origin, { fileName: "Mengen.xlsx", application: "sheet" }), { bytes: spreadsheet, origin });
-    await sheetPage.waitForFunction(() => window.officeTest.ready || window.officeTest.errors > 0, undefined, { timeout: 120000 });
+    await sheetPage.waitForFunction(
+      () => typeof window.startOffice === "function",
+    );
+    await sheetPage.evaluate(
+      ({ bytes, origin }) =>
+        window.startOffice(bytes, origin, {
+          fileName: "Mengen.xlsx",
+          application: "sheet",
+        }),
+      { bytes: spreadsheet, origin },
+    );
+    await sheetPage.waitForFunction(
+      () => window.officeTest.ready || window.officeTest.errors > 0,
+      undefined,
+      { timeout: 120000 },
+    );
     assert.equal(await sheetPage.evaluate(() => window.officeTest.errors), 0);
     console.log("Office proof: spreadsheet editor ready");
-    const exportedSheet = await sheetPage.evaluate(async () => Array.from(new Uint8Array(await (await window.officeTest.bridge!.export("xlsx")).arrayBuffer())));
-    const converted = new ExcelJS.Workbook(); await converted.xlsx.load(new Uint8Array(exportedSheet) as unknown as Parameters<typeof converted.xlsx.load>[0]);
-    const convertedSheet = converted.getWorksheet("Mengen")!; assert.ok(convertedSheet);
+    const exportedSheet = await sheetPage.evaluate(async () =>
+      Array.from(
+        new Uint8Array(
+          await (await window.officeTest.bridge!.export("xlsx")).arrayBuffer(),
+        ),
+      ),
+    );
+    const converted = new ExcelJS.Workbook();
+    await converted.xlsx.load(
+      new Uint8Array(exportedSheet) as unknown as Parameters<
+        typeof converted.xlsx.load
+      >[0],
+    );
+    const convertedSheet = converted.getWorksheet("Mengen")!;
+    assert.ok(convertedSheet);
     assert.equal(convertedSheet.getCell("A1").value, "MENGEN_PRIVATE_OFFICE");
     assert.equal(convertedSheet.getCell("A1").font.bold, true);
     assert.equal(convertedSheet.getCell("D2").formula, "B2*C2");
-    assert.ok(Math.abs(Number(convertedSheet.getCell("D2").result) - 15.23275) < 1e-9);
+    assert.ok(
+      Math.abs(Number(convertedSheet.getCell("D2").result) - 15.23275) < 1e-9,
+    );
     assert.ok(convertedSheet.getCell("D2").numFmt.includes("m²"));
     assert.ok(convertedSheet.getCell("E3").numFmt.includes("€"));
-    assert.ok(convertedSheet.headerFooter.oddHeader?.includes("Projektübersicht"));
+    assert.ok(
+      convertedSheet.headerFooter.oddHeader?.includes("Projektübersicht"),
+    );
     assert.equal(convertedSheet.getImages().length, 1);
-    console.log("Office proof: spreadsheet formula, style, header and image round-trip verified");
-    const pdf = await sheetPage.evaluate(async () => Array.from(new Uint8Array(await (await window.officeTest.bridge!.export("pdf")).arrayBuffer())));
+    console.log(
+      "Office proof: spreadsheet formula, style, header and image round-trip verified",
+    );
+    const pdf = await sheetPage.evaluate(async () =>
+      Array.from(
+        new Uint8Array(
+          await (await window.officeTest.bridge!.export("pdf")).arrayBuffer(),
+        ),
+      ),
+    );
     assert.equal(Buffer.from(pdf).subarray(0, 5).toString(), "%PDF-");
-    assert.ok(uploads > 0, "The real encrypted-block upload route must be exercised");
-    for (const route of ["/ooapidl?url=https://invalid.example/", "/oosave", "/ConvertService.ashx", "/proxy"]) {
-      assert.equal((await fetch(origin + route)).status, 403, "Plaintext server routes must be blocked");
+    assert.ok(
+      uploads > 0,
+      "The real encrypted-block upload route must be exercised",
+    );
+    for (const route of [
+      "/ooapidl?url=https://invalid.example/",
+      "/oosave",
+      "/ConvertService.ashx",
+      "/proxy",
+    ]) {
+      assert.equal(
+        (await fetch(origin + route)).status,
+        403,
+        "Plaintext server routes must be blocked",
+      );
     }
-    const policy = (await fetch(origin + "/integration/")).headers.get("content-security-policy")!;
+    const policy = (await fetch(origin + "/integration/")).headers.get(
+      "content-security-policy",
+    )!;
     assert.ok(policy.includes(`frame-ancestors ${server.url.origin} `));
     assert.ok(policy.includes("default-src 'none'"));
     assert.deepEqual(forbidden, []);
     assert.deepEqual(leaks, []);
-    for (const key of [result.session.editKey, result.session.viewKey]) {
-      assert.ok(sentUrls.every(url => !url.includes(key) && !url.includes(encodeURIComponent(key))), "An editor capability appeared in an HTTP URL");
+    await assertPrivateBrowserStorage(sheetContext);
+    for (const key of [
+      result.session.editKey,
+      result.session.viewKey,
+      replacementRoom.editKey,
+      replacementRoom.viewKey,
+    ]) {
+      assert.ok(
+        sentUrls.every(
+          (url) => !url.includes(key) && !url.includes(encodeURIComponent(key)),
+        ),
+        "An editor capability appeared in an HTTP URL",
+      );
     }
-    console.log("Real Office verified: two collaborators, merged DOCX autosave, read-only shared export, XLSX formulas/formats/header/image, local PDF conversion, encrypted-block uploads and blocked plaintext server routes.");
+    console.log(
+      "Real Office verified: two collaborators, merged DOCX autosave, read-only shared export, XLSX formulas/formats/header/image, local PDF conversion, encrypted-block uploads and blocked plaintext server routes.",
+    );
   } catch (error) {
     console.error("Disposable Office diagnostics:", diagnostics.slice(-20));
-    console.error("Disposable Office frames:", page.frames().map(frame => { const url = new URL(frame.url()); return url.origin + url.pathname; }));
+    console.error(
+      "Disposable Office frames:",
+      page.frames().map((frame) => {
+        const url = new URL(frame.url());
+        return url.origin + url.pathname;
+      }),
+    );
     throw error;
-  } finally { for (const auxiliary of auxiliaries) await auxiliary.close(); await context.close(); }
+  } finally {
+    for (const auxiliary of auxiliaries) await auxiliary.close();
+    await context.close();
+  }
 } finally {
-  await browser?.close(); await server.stop(true);
+  await browser?.close();
+  await server.stop(true);
 }
 
 declare global {
   interface Window {
-    startOffice: (bytes: number[], origin: string, settings?: { canEdit?: boolean; accessKey?: string; viewKey?: string; fileName?: string; application?: "doc" | "sheet" | "presentation" }) => void;
-    officeTest: { ready: boolean; errors: number; saved: number[][]; session: { editKey: string; viewKey: string } | null; bridge?: ReturnType<typeof import("../app/lib/cryptpadBridge")["openCryptPad"]> };
+    startOffice: (
+      bytes: number[],
+      origin: string,
+      settings?: {
+        canEdit?: boolean;
+        accessKey?: string;
+        viewKey?: string;
+        fileName?: string;
+        application?: "doc" | "sheet" | "presentation";
+      },
+    ) => void;
+    recoverOfficeDraft: (
+      bytes: number[],
+      origin: string,
+      viewKey: string,
+    ) => Promise<number[]>;
+    officeTest: {
+      ready: boolean;
+      errors: number;
+      saved: number[][];
+      holdSaves: boolean;
+      pending: number[][];
+      session: { editKey: string; viewKey: string } | null;
+      bridge?: ReturnType<
+        (typeof import("../app/lib/cryptpadBridge"))["openCryptPad"]
+      >;
+    };
   }
 }

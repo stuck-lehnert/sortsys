@@ -1,0 +1,364 @@
+import assert from "node:assert/strict";
+import { exerciseNativeAbsences } from "./test-duckdb-absences";
+import {
+  createClient,
+  type Client,
+  type MutateInput,
+} from "@sortsys/v2-client";
+import { base64, randomSecret } from "@sortsys/zerotrust/sortsys";
+import { createBusinessClient } from "../app/lib/data/businessClient";
+import { newProductRowId, publicId } from "../app/lib/data/products";
+import { required } from "../app/lib/data/protectedObjects";
+import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import { acquireDataRuntime } from "../app/lib/data/runtime/session";
+import { preparePrivateLlm } from "../app/lib/data/privateLlm";
+import { provisionOwnedCollections } from "../app/lib/data/prepareCollections";
+import { MEMBER_ORGANIZATION_AREAS } from "../app/lib/data/organizationData";
+import {
+  acceptVaultWithKey,
+  lockCryptoSession,
+  signIn,
+  unlockedAccount,
+} from "../app/lib/crypto/session";
+import {
+  approveMemberInvitation,
+  createMemberInvitation,
+  inspectMemberInvitation,
+  invitationMembers,
+  signInMemberInvitation,
+} from "../app/lib/crypto/invitations";
+
+assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
+const endpoints: unknown = JSON.parse(
+  process.env.SORTSYS_AUTH_TEST_ENDPOINTS ?? "null",
+);
+assert.ok(Array.isArray(endpoints) && endpoints.length === 2);
+for (const endpoint of endpoints) {
+  const url = new URL(endpoint);
+  assert.equal(url.hostname, "127.0.0.1");
+  assert.equal(url.protocol, "http:");
+}
+const signal = new AbortController().signal;
+const password = "New-member-only-knows-this-password-2026!";
+const originalFetch = globalThis.fetch;
+const bodies: string[] = [];
+globalThis.fetch = new Proxy(originalFetch, {
+  apply(target, receiver, args) {
+    const body = args[1]?.body;
+    if (typeof body === "string") bodies.push(body);
+    return Reflect.apply(target, receiver, args).then(
+      async (response: Response) => {
+        const reply = await response.clone().json();
+        for (const item of reply) {
+          if (item.error) {
+            const path = new URL(
+              typeof args[0] === "string" || args[0] instanceof URL
+                ? args[0]
+                : args[0].url,
+            ).pathname;
+            console.log(
+              `Native invitation rejected ${path}: ${item.error.json?.message}`,
+            );
+            if (path === "/zerotrust.keys.get") console.log(body);
+          }
+        }
+        return response;
+      },
+    );
+  },
+});
+const administrator = createClient(
+  endpoints[0],
+  "native-invitation-administrator",
+);
+const newcomer = createClient(endpoints[1], "native-invitation-newcomer");
+const observer = createClient(endpoints[0], "native-invitation-observer");
+let business: ReturnType<typeof createBusinessClient> | null = null;
+try {
+  await signIn(administrator, {
+    tenant: "new-tenant",
+    username: "builder",
+    password: "Only-owner-knows-this-password-2026!",
+  });
+  const owner = unlockedAccount()!;
+  const ownerSession = await required(
+    administrator.query("auth.sessionInfo", undefined),
+  );
+  const subject = `user:${ownerSession.user.id}`;
+  await provisionOwnedCollections(
+    administrator,
+    subject,
+    MEMBER_ORGANIZATION_AREAS,
+    signal,
+  );
+  await preparePrivateLlm(administrator, subject, signal);
+  business = createBusinessClient(administrator, { productDriver: duckDriver });
+  const input = {
+    operationId: publicId(newProductRowId()),
+    username: "native.invited",
+    firstName: "Vertraulicher Profilname 98172",
+    lastName: "Einladung",
+    email: "native-private98172@example.invalid",
+    phone: "091198172",
+    costPerHour: 73.28197,
+    vacationDaysPerYear: 28,
+    contractType: "internal" as const,
+    supervisorUserId: ownerSession.user.id,
+  };
+  console.log("Native invitation: creating personnel profile");
+  const created = await required(business.mutate("users.create", input));
+  assert.equal(created.id, input.operationId);
+  assert.equal(
+    (await required(business.mutate("users.create", input))).id,
+    created.id,
+  );
+  assert.equal(
+    (await invitationMembers(administrator, signal)).find(
+      (member) => member.id === created.id,
+    )?.enrolled,
+    false,
+  );
+  console.log("Native invitation: publishing invitation");
+  const invitation = await createMemberInvitation(
+    administrator,
+    {
+      id: created.id,
+      username: input.username,
+    },
+    {
+      catalogue: "none",
+      customers: "none",
+      contacts: "none",
+      vendors: "none",
+      prices: "none",
+      assistant: true,
+    },
+    signal,
+  );
+  assert.deepEqual(
+    await inspectMemberInvitation(newcomer, invitation.link, signal),
+    { enrolled: false },
+  );
+  console.log("Native invitation: registering independent account");
+  await signInMemberInvitation(newcomer, invitation.link, password, signal);
+  const member = unlockedAccount()!;
+  assert.equal(member.username, input.username);
+  assert.equal(
+    (await required(newcomer.query("zerotrust.status", undefined))).accessReady,
+    false,
+  );
+  assert.ok((await newcomer.query("zerotrust.domains.list", undefined))[1]);
+  // A denied operation clears only that transport's token. Sign in through
+  // ordinary PAKE again; the reserved account can no longer be registered anew.
+  await signIn(newcomer, {
+    tenant: "new-tenant",
+    username: input.username,
+    password,
+  });
+  assert.deepEqual(
+    await inspectMemberInvitation(observer, invitation.link, signal),
+    { enrolled: true },
+  );
+  const pending = await required(
+    newcomer.query("zerotrust.invitations.get", {
+      id: invitation.link.invitation.id,
+    }),
+  );
+  assert.ok(pending.entry.claim);
+  const originalClaim = pending.entry.claim;
+  await required(
+    newcomer.mutate("zerotrust.invitations.join", {
+      ...originalClaim,
+      confirmation: base64(randomSecret()),
+    }),
+  );
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await assert.rejects(
+    () =>
+      approveMemberInvitation(
+        administrator,
+        invitation.link.invitation.id,
+        signal,
+      ),
+    "A valid account signature cannot replace knowledge of the invitation secret",
+  );
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await required(newcomer.mutate("zerotrust.invitations.join", originalClaim));
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  business.dispose();
+  business = null;
+  const lease = acquireDataRuntime(administrator, signal, duckDriver);
+  try {
+    console.log("Native invitation: approving and granting access");
+    await approveMemberInvitation(
+      administrator,
+      invitation.link.invitation.id,
+      signal,
+    );
+    console.log("Native invitation: approving and granting access");
+    await approveMemberInvitation(
+      administrator,
+      invitation.link.invitation.id,
+      signal,
+    );
+  } finally {
+    lease.close();
+  }
+  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  console.log("Native invitation: reading own personnel profile");
+  const reader = createBusinessClient(newcomer, { productDriver: duckDriver });
+  try {
+    const profile = await required(
+      reader.query("users.get", { id: created.id }),
+    );
+    assert.equal(profile.firstName, input.firstName);
+    assert.equal(profile.costPerHour, null);
+    assert.equal(profile.vacationDaysPerYear, 28);
+    assert.equal(
+      (await required(newcomer.query("zerotrust.status", undefined)))
+        .accessReady,
+      true,
+    );
+    assert.ok(
+      (
+        await newcomer.mutate(
+          "zerotrust.invitations.create",
+          invitation.link.invitation,
+        )
+      )[1],
+    );
+  } finally {
+    reader.dispose();
+  }
+  // Reactivation restores the individual grants, but never the old sessions.
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  let accountWriteMode: "normal" | "discard" | "lose-reply" = "normal";
+  let capturedChange: MutateInput<"zerotrust.objects.batch"> | null = null;
+  const lifecycle: Client = {
+    ...administrator,
+    mutate: (async (path, input, options) => {
+      if (
+        path === "zerotrust.objects.batch" &&
+        (input as MutateInput<"zerotrust.objects.batch">).member
+      ) {
+        capturedChange = structuredClone(
+          input as MutateInput<"zerotrust.objects.batch">,
+        );
+        if (accountWriteMode === "discard")
+          return [{ success: true, heads: [] }, null];
+        const reply = await administrator.mutate(path, input, options);
+        if (accountWriteMode === "lose-reply" && !reply[1]) {
+          accountWriteMode = "normal";
+          throw new Error("Lost acknowledgement after atomic account commit");
+        }
+        return reply;
+      }
+      return administrator.mutate(path, input, options);
+    }) as Client["mutate"],
+  };
+  business = createBusinessClient(lifecycle, { productDriver: duckDriver });
+  accountWriteMode = "discard";
+  assert.ok((await business.mutate("users.deactivate", { id: created.id }))[1]);
+  accountWriteMode = "normal";
+  assert.equal(
+    (
+      await required(
+        administrator.query(
+          "zerotrust.members.status",
+          { id: created.id },
+          { strategy: "network-only" },
+        ),
+      )
+    ).deactivatedMicros,
+    null,
+  );
+  const attempted =
+    capturedChange as MutateInput<"zerotrust.objects.batch"> | null;
+  assert.ok(attempted?.member);
+  assert.ok(
+    (
+      await administrator.mutate("zerotrust.objects.batch", {
+        ...attempted,
+        member: { ...attempted.member, action: "activate" },
+      })
+    )[1],
+  );
+  console.log(
+    "Native invitation: deactivating member with a lost acknowledgement",
+  );
+  accountWriteMode = "lose-reply";
+  await required(business.mutate("users.deactivate", { id: created.id }));
+  assert.equal(accountWriteMode, "normal");
+  assert.ok(
+    (
+      await newcomer.query("auth.check", undefined, {
+        strategy: "network-only",
+      })
+    )[1],
+  );
+  await assert.rejects(() =>
+    signIn(observer, {
+      tenant: "new-tenant",
+      username: input.username,
+      password,
+    }),
+  );
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  business.dispose();
+  business = createBusinessClient(administrator, { productDriver: duckDriver });
+  await required(business.mutate("users.archive", { id: created.id }));
+  await required(business.mutate("users.unarchive", { id: created.id }));
+  const inactive = await required(
+    business.query("users.get", { id: created.id }),
+  );
+  assert.ok(inactive.deactivatedAt);
+  assert.equal(inactive.archivedAt, null);
+  await required(business.mutate("users.activate", { id: created.id }));
+  await signIn(observer, {
+    tenant: "new-tenant",
+    username: input.username,
+    password,
+  });
+  assert.equal(
+    (await required(observer.query("zerotrust.status", undefined))).accessReady,
+    true,
+  );
+  await exerciseNativeAbsences(
+    administrator,
+    observer,
+    owner,
+    created.id,
+    endpoints[1],
+  );
+  assert.ok(
+    bodies.length > 20,
+    "The wire observation must cover real RPC requests",
+  );
+  const wire = bodies.join("\n");
+  for (const privateValue of [
+    input.firstName,
+    input.email,
+    input.phone,
+    String(input.costPerHour),
+    "Vertrauliche Abwesenheitsnotiz 927184",
+    "Vertraulicher Ablehnungsgrund 927184",
+    password,
+    invitation.link.secret,
+  ]) {
+    assert.equal(
+      wire.includes(privateValue),
+      false,
+      "Only encrypted profiles and public invitation proofs may reach the API",
+    );
+  }
+  console.log(
+    "Native invitations verified: real personnel creation, reserved accounts, OPAQUE registration, browser-only secret verification, idempotent approval, independent-user private-field isolation and atomic deactivate/archive/reactivate across API replicas.",
+  );
+} finally {
+  business?.dispose();
+  globalThis.fetch = originalFetch;
+  await lockCryptoSession();
+  for (const client of [administrator, newcomer, observer]) {
+    client.setToken(null);
+  }
+}

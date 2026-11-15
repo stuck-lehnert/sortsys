@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
 import { createClient, type Client } from "@sortsys/v2-client";
-import { acceptVault, signIn, unlockedAccount } from "../app/lib/crypto/session";
+import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
 import { prepareTools } from "../app/lib/data/migrateTools";
+import { preparePersonnel } from "../app/lib/data/migratePersonnel";
+import { personnelDomain } from "../app/lib/data/personnelData";
 import { readBusinessRows, publicId } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 import { toolCollection } from "../app/lib/data/toolData";
 
 export async function testProtectedTools(client: Client, source: BusinessDatabase, driver: () => Promise<DuckDriver>, password: string) {
   const signal = new AbortController().signal, owner = unlockedAccount()!, session = await required(client.query("auth.sessionInfo", undefined)), subject = `user:${session.user.id}`;
+  if (!(await required(client.query("zerotrust.domains.list", undefined, { strategy: "network-only" }))).some(domain => personnelDomain(domain.id))) await preparePersonnel(client, source, subject, signal, driver);
   await prepareTools(client, source, subject, signal);
   await prepareTools(client, source, subject, signal);
   const peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "tools-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVault(owner.exportKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   const sent: { path: string; input: unknown }[] = []; let lose = false, falseAck = false, race: (() => Promise<void>) | null = null;
   const observed: Client = { ...client, query: ((path, input, options) => { sent.push({ path, input }); return client.query(path, input, options); }) as Client["query"],
     mutate: (async (path, input, options) => {

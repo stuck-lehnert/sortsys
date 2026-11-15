@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createClient, type Client, type QueryResult } from "@sortsys/v2-client";
-import { acceptVault, signIn, unlockedAccount } from "../app/lib/crypto/session";
+import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { prepareProjects } from "../app/lib/data/migrateProjects";
@@ -14,7 +14,7 @@ export async function testProtectedProjects(client: Client, source: BusinessData
   await prepareProjects(client, source, subject, signal);
   await prepareProjects(client, source, subject, signal);
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "projects-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVault(owner.exportKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   const requests: unknown[] = [], keys: string[] = []; let lose = false, falseAck = false, raceCustomer = false;
   const observed: Client = { ...client, query: ((path, input, options) => {
     requests.push({ path, input }); if (path === "zerotrust.keys.get") keys.push((input as { domain: string }).domain); return client.query(path, input, options);

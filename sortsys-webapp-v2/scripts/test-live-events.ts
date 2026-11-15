@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { SQL } from "bun";
 import { createClient, type Client } from "@sortsys/v2-client";
-import { bytes, digest, frame, sign, signPolicy, policyFrame, verify } from "@sortsys/zerotrust";
-import { acceptVault, signIn, trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
+import { bytes, digest, frame, sign, signPolicy, policyFrame, verify } from "@sortsys/zerotrust/sortsys";
+import { acceptVaultWithKey, signIn, trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
 import { llmActivity } from "../app/lib/llmActivity";
 import { openAuthority } from "../app/lib/crypto/setup";
 import { createBusinessClient } from "../app/lib/data/businessClient";
@@ -242,7 +242,7 @@ export async function testLiveEvents(ownerClient: Client, password: string, driv
     for (const unsubscribe of menuSubscriptions) unsubscribe();
     for (const observer of observers) observer.dispose(); sender.dispose(); globalThis.WebSocket = originalSocket;
     await until(async () => await listeners() === 0, "tenant listener released after last observer");
-    await database.close(); await acceptVault(owner.exportKey, owner.vault, false);
+    await database.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   }
   console.log("Encrypted events verified: cross-instance admission, challenge replay denial, one shared tenant listener, live catalogue/chat/preference/supplier/price updates without business polling or plaintext events, targeted refresh, authorized-work continuity, revocation cancellation and listener cleanup.");
 }

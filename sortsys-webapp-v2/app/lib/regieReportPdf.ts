@@ -1,8 +1,25 @@
 import { uiText } from "~/lib/i18n";
-import { formatDate, formatNumber, regieProductTitle, userFullName } from "~/lib/format";
-import { buildPdfProductSection, formatPdfNumber, type PdfTableSection, type StructuredPdfDocument } from "~/lib/pdf";
+import {
+  formatDate,
+  formatNumber,
+  regieProductTitle,
+  userFullName,
+} from "~/lib/format";
+import {
+  buildPdfProductSection,
+  formatPdfNumber,
+  type PdfTableSection,
+  type StructuredPdfDocument,
+} from "~/lib/pdf";
 import { upmatchUnit } from "~/lib/utils";
-import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
+import {
+  dayInIsoWeek,
+  isoWeekLabel,
+  startOfIsoWeek,
+  WEEKDAY_NAMES,
+  WEEKDAY_SHORT_NAMES,
+  weekdayIndexInIsoWeek,
+} from "~/lib/week";
 import type { Product, RegieReport, User } from "~/type-helpers";
 
 type ProductLookup = Map<string, Product | null | undefined>;
@@ -23,14 +40,18 @@ function productLabel(productsById: ProductLookup, productId: string) {
 
 function formatWeeklyWorkHour(value: number) {
   const numeric = Number(value ?? 0);
-  return numeric === 0 ? '-' : formatPdfNumber(numeric);
+  return numeric === 0 ? "-" : formatPdfNumber(numeric);
 }
 
-function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
-  const normalizedBaseUnit = `${baseUnit ?? ''}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ''}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return '-';
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ''}`;
+function formatBaseQuantity(
+  baseQuantity: number,
+  baseUnit: string,
+  displayUnit: string,
+) {
+  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
+  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
+  if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
+  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
 }
 
 export function buildRegieReportPdfDocument(props: {
@@ -40,7 +61,8 @@ export function buildRegieReportPdfDocument(props: {
   usersById: UserLookup;
   includeSignatures?: boolean;
 }): StructuredPdfDocument {
-  const { report, projectTitle, productsById, usersById, includeSignatures } = props;
+  const { report, projectTitle, productsById, usersById, includeSignatures } =
+    props;
 
   const weekStart = startOfIsoWeek(new Date(report.day));
   const weekEnd = dayInIsoWeek(weekStart, WEEKDAY_NAMES.length - 1);
@@ -61,12 +83,13 @@ export function buildRegieReportPdfDocument(props: {
     hoursByUser.set(key, current);
   });
 
-  const workerRows = Array.from(hoursByUser.values())
-    .sort((left, right) => left.name.localeCompare(right.name, "de", { sensitivity: "base" }));
+  const workerRows = Array.from(hoursByUser.values()).sort((left, right) =>
+    left.name.localeCompare(right.name, "de", { sensitivity: "base" }),
+  );
 
-  const workHourRows = workerRows.map(row => [
+  const workHourRows = workerRows.map((row) => [
     row.name,
-    ...row.values.map(value => formatWeeklyWorkHour(value)),
+    ...row.values.map((value) => formatWeeklyWorkHour(value)),
   ]);
 
   const sortedProducts = [...report.products].sort((left, right) => {
@@ -85,34 +108,52 @@ export function buildRegieReportPdfDocument(props: {
     const baseText = formatBaseQuantity(baseQuantity, baseUnit, unit);
 
     return {
-      number: '',
-      name: product ? regieProductTitle(product) : uiText("Unbekanntes Produkt", "Unknown product"),
+      number: "",
+      name: product
+        ? regieProductTitle(product)
+        : uiText("Unbekanntes Produkt", "Unknown product"),
       quantity: `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`,
       baseQuantity: baseText,
     };
   });
 
-  const sortedSpecialRecords = [...report.specialRecords].sort((left, right) => {
-    return `${left.name ?? ""}`.localeCompare(`${right.name ?? ""}`, "de", { sensitivity: "base" });
-  });
+  const sortedSpecialRecords = [...report.specialRecords].sort(
+    (left, right) => {
+      return `${left.name ?? ""}`.localeCompare(`${right.name ?? ""}`, "de", {
+        sensitivity: "base",
+      });
+    },
+  );
 
   const specialRows = sortedSpecialRecords.map((record) => [
     record.name,
     `${formatNumber(record.amount)} ${record.unit}`,
   ]);
 
-  const summaryRows: PdfTableSection['rows'] = [
+  const summaryRows: PdfTableSection["rows"] = [
     [uiText("Projekt"), projectTitle],
     ["Kalenderwoche", isoWeekLabel(weekStart)],
-    [uiText("Zeitraum"), uiText(`${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`, `${formatDate(weekStart, "long")} to ${formatDate(weekEnd, "long")}`)],
+    [
+      uiText("Zeitraum"),
+      uiText(
+        `${formatDate(weekStart, "long")} bis ${formatDate(weekEnd, "long")}`,
+        `${formatDate(weekStart, "long")} to ${formatDate(weekEnd, "long")}`,
+      ),
+    ],
   ];
+
+  if (report.workHoursAvailable === false)
+    summaryRows.push([
+      uiText("Arbeitszeit"),
+      uiText("Nicht freigegeben", "Not shared"),
+    ]);
 
   const sections: PdfTableSection[] = [
     {
       title: uiText("Zusammenfassung"),
       columns: [uiText("Kennzahl"), uiText("Wert")],
       rows: summaryRows,
-      presentation: 'summary',
+      presentation: "summary",
       withHeader: false,
       align: ["left", "left"],
       columnWidths: ["1fr", "2fr"],
@@ -124,7 +165,10 @@ export function buildRegieReportPdfDocument(props: {
       title: uiText("Arbeitszeit je Mitarbeiter und Tag"),
       columns: ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES],
       rows: workHourRows,
-      subtitle: uiText("Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.", "All times in hours; – means no recorded working time."),
+      subtitle: uiText(
+        "Alle Zeiten in Stunden; – bedeutet keine erfasste Arbeitszeit.",
+        "All times in hours; – means no recorded working time.",
+      ),
       align: ["left", ...WEEKDAY_SHORT_NAMES.map(() => "right" as const)],
       columnWidths: ["2.6fr", ...WEEKDAY_SHORT_NAMES.map(() => "0.65fr")],
     });
@@ -140,7 +184,12 @@ export function buildRegieReportPdfDocument(props: {
   });
 
   if (productRows.length > 0) {
-    sections.push(buildPdfProductSection(productRows, { showPrices: false, showNumbers: false }));
+    sections.push(
+      buildPdfProductSection(productRows, {
+        showPrices: false,
+        showNumbers: false,
+      }),
+    );
   }
 
   if (specialRows.length > 0) {
@@ -154,16 +203,17 @@ export function buildRegieReportPdfDocument(props: {
   }
 
   return {
-    title: uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`),
+    title: uiText(
+      `Regiebericht #${report.autoId}`,
+      `Time-and-material report #${report.autoId}`,
+    ),
     reportLabel: projectTitle,
     showReportLabel: true,
     sections,
     emptyMessage: uiText("Keine Daten zum Regiebericht verfugbar."),
-    signatures: includeSignatures === false
-      ? undefined
-      : [
-          { title: uiText("Bauleiter") },
-          { title: uiText("Bauherr") },
-        ],
+    signatures:
+      includeSignatures === false
+        ? undefined
+        : [{ title: uiText("Bauleiter") }, { title: uiText("Bauherr") }],
   };
 }

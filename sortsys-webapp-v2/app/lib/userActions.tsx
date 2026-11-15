@@ -102,7 +102,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         ),
         group: "work",
         icon: Icons.DailyReport,
-        requiredRole: "manage:dailyProjectReports",
+        available: sessionInfo.canCreate("daily-report"),
         run: () => showCreateDailyProjectReportModal(modals),
       },
       {
@@ -113,7 +113,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         ),
         group: "work",
         icon: Icons.DailyReport,
-        requiredRole: "manage:dailyProjectReports",
+        available: sessionInfo.canCreate("daily-report"),
         run: () => showCreateWeeklyDailyProjectReportModal(modals),
       },
       {
@@ -124,7 +124,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         ),
         group: "work",
         icon: Icons.RegieReport,
-        requiredRole: "manage:regieReports",
+        available: sessionInfo.canCreate("regie-report"),
         run: () => showCreateRegieReportModal(modals),
       },
       {
@@ -172,7 +172,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Neues Benutzerkonto anlegen."),
         group: "create",
         icon: Icons.User,
-        requiredRole: "manage:users",
+        available: sessionInfo.canCreateAccount(),
         run: () => showCreateUserModal(modals),
       },
       {
@@ -225,7 +225,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Globale Zuschläge und Gemeinkosten bearbeiten."),
         group: "admin",
         icon: Icons.PriceRecord,
-        requiredRole: "manage:projects",
+        available: sessionInfo.canAccess("organization", "calculation", "read"),
         run: () => showManageCommonCostsModal(modals),
       },
     ],

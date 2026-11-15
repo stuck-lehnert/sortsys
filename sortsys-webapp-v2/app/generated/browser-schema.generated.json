@@ -1,6 +1,5 @@
 {
   "enums": {},
-  "fingerprint": "a0a236483175a4f1479e8db505407a6f8b167274d7e3b149e72abd0ce185cbde",
   "format": "sortsys-browser-schema-v2",
   "tables": [
     {
@@ -7231,5 +7230,6 @@
       "name": "users",
       "uniqueIndexes": []
     }
-  ]
+  ],
+  "fingerprint": "5d3d5887831cfd65efa91c09df22daeedac632c4c90ea5aa518b7478a17a9394"
 }

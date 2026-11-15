@@ -1,124 +1,426 @@
-import { projectCommercialCollection, projectCommercialDomain } from "../data/projectCommercial";
 import type { Client, QueryResult } from "@sortsys/v2-client";
-import { ACTIONS, allows, base64, certifyCreationCapability, domainBoxSigner, creationScope, randomSecret, InvalidProtectedData, createDomain, identityCertificateFrame, hpke, openBox, sealBox, sized, verifyDomain, policy, policyFrame, record, sign, verify } from "@sortsys/zerotrust";
-import type { CreationNamespace, IdentityCertificate, Policy, Rule } from "@sortsys/zerotrust";
+import {
+  ACTIONS,
+  absenceDomain,
+  allows,
+  base64,
+  certifyCreationCapability,
+  compileReadership,
+  compilePolicy,
+  domainBoxSigner,
+  creationScope,
+  randomSecret,
+  InvalidProtectedData,
+  createDomain,
+  identityCertificateFrame,
+  hpke,
+  openBox,
+  sealBox,
+  sized,
+  verifyDomain,
+  record,
+  verify,
+} from "@sortsys/zerotrust/sortsys";
+import type {
+  CreationNamespace,
+  IdentityCertificate,
+  Policy,
+  Rule,
+} from "@sortsys/zerotrust/sortsys";
 import { createdAccess } from "./createdAccess";
+import { publishVerifiedPolicy, readVerifiedPolicy } from "./policy";
 import { unlockedAccount, trustedHistory } from "./session";
-import { openAuthority } from "./setup";
 import { PRICE_COLLECTION } from "../data/products";
 import { privateLlmCollection } from "../data/privateLlm";
 import { required } from "../data/protectedObjects";
 import type { Collection } from "../data/protectedObjects";
-import { MASTER_DATA_AREAS, MASTER_DATA_FIELDS, managedAccess, type ManagedAccess } from "./accessProfiles";
-import { fileCollection, fileDomainId } from "../data/projectFileData";
-import { projectCollection, projectDomainId } from "../data/projectData";
-import { commercialCollection, commercialDomain, type CommercialFacet } from "../data/commercialAreas";
-import { deliveryCollection, deliveryDomain } from "../data/deliveryNoteData";
+import {
+  MASTER_DATA_AREAS,
+  MASTER_DATA_FIELDS,
+  compileManagedAccess,
+  managedAccess,
+  actionPatch,
+  hasAccess,
+  patchAccessRules,
+  profilePatch,
+  sameAccess,
+  type AccessValue,
+  type ActionPatch,
+  type ManagedAccess,
+} from "./accessProfiles";
+import {
+  commercialCollection,
+  commercialDomain,
+  type CommercialFacet,
+} from "../data/commercialAreas";
+import {
+  projectAccessArea,
+  projectAccessDomain,
+  PROJECT_ACCESS_KEYS,
+  type ProjectAccessKey,
+} from "../data/projectScope";
 import { ORGANIZATION_AREAS } from "../data/organizationData";
 import { preferenceDomain } from "../data/preferenceData";
-import { TOOL_INDEX, toolCollection, toolDomain, type ToolNamespace } from "../data/toolData";
-import type { Facet } from "@sortsys/zerotrust";
+import {
+  TOOL_INDEX,
+  toolCollection,
+  toolDomain,
+  type ToolNamespace,
+} from "../data/toolData";
+import type { Facet } from "@sortsys/zerotrust/sortsys";
+import {
+  PERSONNEL_FACETS,
+  personnelCollection,
+  personnelDomain,
+  type PersonnelFacet,
+} from "../data/personnelData";
+import { administratorContext } from "./administration";
+import { absenceCollection } from "../data/absenceData";
+import { canUseAssistant } from "../data/assistantArea";
 
 export type MemberAccess = ManagedAccess;
 
-async function administrator(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount(); if (!account) throw new InvalidProtectedData();
-  const live = () => { signal.throwIfAborted(); if (unlockedAccount() !== account) throw new InvalidProtectedData(); };
-  live(); const session = await required(client.query("auth.sessionInfo", undefined, { strategy: "network-only" })); live();
-  if (!session.roles.includes(":admin")) throw new InvalidProtectedData();
-  const history = await trustedHistory(client), status = await required(client.query("zerotrust.status", undefined, { strategy: "network-only" })); live();
-  const authority = await openAuthority(client, status.profile); live();
-  const raw = record(await required(client.query("zerotrust.policy.get", undefined, { strategy: "network-only" })), ["tenant", "version", "rules", "signature"]);
-  const { signature, ...unsigned } = raw, permissions = policy(unsigned);
-  if (typeof signature !== "string" || permissions.tenant !== account.tenant) throw new InvalidProtectedData();
-  await verify(history.authority(history.current.generation), signature, policyFrame(permissions)); live();
-  const effective = await createdAccess(client, permissions, history, signal); live();
-  return { account, session, history, authority, permissions, effective, signature, live };
+/** Extend the normal name directory to a new profile. Pending invitations
+ * receive it during approval; costs, HR data and explicit denials stay separate. */
+export async function shareNewPersonnelName(
+  client: Client,
+  person: string,
+  signal: AbortSignal,
+) {
+  const context = await administratorContext(client, signal),
+    area = personnelCollection(person, "master-data");
+  const { permissions } = await readVerifiedPolicy(client, context);
+  let after: string | null = null;
+  const seen = new Set<string>();
+  do {
+    const page: QueryResult<"zerotrust.members.list"> = await required(
+      client.query(
+        "zerotrust.members.list",
+        { after },
+        { strategy: "network-only" },
+      ),
+    );
+    context.live();
+    if (
+      (page.after !== null && page.after === after) ||
+      seen.size + page.rows.length > 10000
+    )
+      throw new InvalidProtectedData();
+    for (const member of page.rows) {
+      if (seen.has(member.id)) throw new InvalidProtectedData();
+      seen.add(member.id);
+      const subject = `user:${member.id}`;
+      if (
+        !member.enrolled ||
+        member.id === context.session.user.id ||
+        // Directory defaults never replace an existing custom grant or denial.
+        permissions.rules.some(
+          (rule) =>
+            rule.subject === subject &&
+            rule.scope === area.scope &&
+            rule.facet === area.facet,
+        )
+      )
+        continue;
+      try {
+        context.history.identityCertificate(subject);
+      } catch {
+        continue;
+      }
+      await changePersonnelAccess(
+        client,
+        subject,
+        person,
+        "master-data",
+        "read",
+        signal,
+      );
+      context.live();
+    }
+    after = page.after;
+  } while (after);
 }
 
-function readers(permissions: Policy, area: Pick<Collection, "scope" | "facet">): Set<string> {
-  const allowed = new Set<string>(), denied = new Set<string>();
-  for (const rule of permissions.rules) if (rule.scope === area.scope && rule.facet === area.facet && rule.actions.includes("read")) {
-    (rule.effect === "deny" ? denied : allowed).add(rule.subject);
-  }
-  for (const subject of denied) allowed.delete(subject);
-  return allowed;
+async function administrator(client: Client, signal: AbortSignal) {
+  const context = await administratorContext(client, signal);
+  const { account, session, history, authority, live } = context;
+  const { permissions } = await readVerifiedPolicy(client, {
+    account,
+    history,
+    live,
+  });
+  const effective = await createdAccess(client, permissions, history, signal);
+  live();
+  return { account, session, history, authority, permissions, effective, live };
+}
+
+function readers(
+  permissions: Policy,
+  area: Pick<Collection, "scope" | "facet">,
+): Set<string> {
+  return new Set(compileReadership(permissions)(area.scope, area.facet));
 }
 
 /** A policy change leaves a durable server-side marker. Resume it using the
  * latest verified policy, without retaining raw keys or requesting a phrase. */
-export async function finishAccessChanges(client: Client, signal: AbortSignal): Promise<void> {
+export async function finishAccessChanges(
+  client: Client,
+  signal: AbortSignal,
+): Promise<void> {
   for (let count = 0; count < 2001; count++) {
     const context = await administrator(client, signal);
-    const domains = await required(client.query("zerotrust.domains.list", undefined, { strategy: "network-only" })); context.live();
-    let pending = domains.find(domain => domain.rotationRequired);
+    const domains = await required(
+      client.query("zerotrust.domains.list", undefined, {
+        strategy: "network-only",
+      }),
+    );
+    context.live();
+    let pending = domains.find((domain) => domain.rotationRequired);
     let initial = false;
     if (!pending) {
       for (const rule of context.permissions.rules) {
-        if (!/^user:[1-9a-v][0-9a-v]{0,12}$/.test(rule.subject) || !rule.scope.startsWith("assistant:")) continue;
+        if (
+          !/^user:[1-9a-v][0-9a-v]{0,12}$/.test(rule.subject) ||
+          !rule.scope.startsWith("assistant:")
+        )
+          continue;
         const personal = privateLlmCollection(rule.subject);
-        if (rule.scope === personal.scope && rule.facet === personal.facet && readers(context.permissions, personal).has(rule.subject)
-          && !domains.some(domain => domain.id === personal.domain)) {
-          pending = { id: personal.domain, scope: personal.scope, facet: personal.facet, generation: "0", rotationRequired: true };
-          initial = true; break;
+        if (
+          rule.scope === personal.scope &&
+          rule.facet === personal.facet &&
+          readers(context.permissions, personal).has(rule.subject) &&
+          !domains.some((domain) => domain.id === personal.domain)
+        ) {
+          pending = {
+            id: personal.domain,
+            scope: personal.scope,
+            facet: personal.facet,
+            generation: "0",
+            rotationRequired: true,
+          };
+          initial = true;
+          break;
         }
       }
     }
-    if (!pending) { await client.invalidate("products.list"); return; }
-    if (!initial) {
-      const current = await required(client.query("zerotrust.domains.get", { domain: pending.id, generation: pending.generation }, { strategy: "network-only" })); context.live();
-      await verifyDomain(current, { tenant: context.account.tenant, id: pending.id, scope: pending.scope, facet: pending.facet as Collection["facet"], generation: pending.generation }, context.history.authority);
+    if (!pending) {
+      await client.invalidate("products.list");
+      return;
     }
-    const allowed = readers(context.effective, { scope: pending.scope, facet: pending.facet as Collection["facet"] });
-    const identities = await required(client.query("zerotrust.identities.list", undefined, { strategy: "network-only" })); context.live();
+    if (!initial) {
+      const current = await required(
+        client.query(
+          "zerotrust.domains.get",
+          { domain: pending.id, generation: pending.generation },
+          { strategy: "network-only" },
+        ),
+      );
+      context.live();
+      await verifyDomain(
+        current,
+        {
+          tenant: context.account.tenant,
+          id: pending.id,
+          scope: pending.scope,
+          facet: pending.facet as Collection["facet"],
+          generation: pending.generation,
+        },
+        context.history.authority,
+      );
+    }
+    const allowed = readers(context.effective, {
+      scope: pending.scope,
+      facet: pending.facet as Collection["facet"],
+    });
+    const identities = await required(
+      client.query("zerotrust.identities.list", undefined, {
+        strategy: "network-only",
+      }),
+    );
+    context.live();
     const recipients: { subject: string; identity: IdentityCertificate }[] = [];
-    let after: string | null = null, members = 0;
+    let after: string | null = null,
+      members = 0;
     do {
-      const page: QueryResult<"zerotrust.members.list"> = await required(client.query("zerotrust.members.list", { after }, { strategy: "network-only" })); context.live();
-      if (page.after && page.after === after || (members += page.rows.length) > 10000) throw new InvalidProtectedData();
+      const page: QueryResult<"zerotrust.members.list"> = await required(
+        client.query(
+          "zerotrust.members.list",
+          { after },
+          { strategy: "network-only" },
+        ),
+      );
+      context.live();
+      if (
+        (page.after && page.after === after) ||
+        (members += page.rows.length) > 10000
+      )
+        throw new InvalidProtectedData();
       for (const member of page.rows) {
-        const subject = `user:${member.id}`; if (!allowed.has(subject)) continue;
-        const identity = identities.find(value => value.subject === subject); if (!identity) throw new InvalidProtectedData();
-        const certificate = record(identity.certificate, ["tenant", "generation", "user", "encryptionKey", "signingKey", "signature"]) as IdentityCertificate;
-        if (certificate.tenant !== context.account.tenant || certificate.generation !== context.history.current.generation || certificate.user !== subject
-          || certificate.encryptionKey !== identity.encryptionKey || certificate.signingKey !== identity.signingKey) throw new InvalidProtectedData();
-        await verify(context.history.authority(certificate.generation), certificate.signature, identityCertificateFrame(certificate)); context.live();
+        const subject = `user:${member.id}`;
+        if (!allowed.has(subject)) continue;
+        const identity = identities.find((value) => value.subject === subject);
+        if (!identity) throw new InvalidProtectedData();
+        const certificate = record(identity.certificate, [
+          "tenant",
+          "generation",
+          "user",
+          "encryptionKey",
+          "signingKey",
+          "signature",
+        ]) as IdentityCertificate;
+        if (
+          certificate.tenant !== context.account.tenant ||
+          certificate.generation !== context.history.current.generation ||
+          certificate.user !== subject ||
+          certificate.encryptionKey !== identity.encryptionKey ||
+          certificate.signingKey !== identity.signingKey
+        )
+          throw new InvalidProtectedData();
+        await verify(
+          context.history.authority(certificate.generation),
+          certificate.signature,
+          identityCertificateFrame(certificate),
+        );
+        context.live();
         recipients.push({ subject, identity: certificate });
       }
       after = page.after;
     } while (after);
-    if (recipients.length && ([...Object.values(MASTER_DATA_AREAS).map(area => area.domain), TOOL_INDEX.domain, PRICE_COLLECTION.domain, ...ORGANIZATION_AREAS.map(area => area.domain)].includes(pending.id) || toolDomain(pending.id) || deliveryDomain(pending.id) || projectDomainId(pending.id) || fileDomainId(pending.id) || projectCommercialDomain(pending.id) || commercialDomain(pending.id) || preferenceDomain(pending.id))) {
+    if (
+      recipients.length &&
+      ([
+        ...Object.values(MASTER_DATA_AREAS).map((area) => area.domain),
+        TOOL_INDEX.domain,
+        PRICE_COLLECTION.domain,
+        ...ORGANIZATION_AREAS.map((area) => area.domain),
+      ].includes(pending.id) ||
+        personnelDomain(pending.id) ||
+        absenceDomain(pending.id) ||
+        toolDomain(pending.id) ||
+        projectAccessDomain(pending.id) ||
+        commercialDomain(pending.id) ||
+        preferenceDomain(pending.id))
+    ) {
       if (BigInt(pending.generation) > 10000n) throw new InvalidProtectedData();
-      for (let generation = 1n; generation <= BigInt(pending.generation); generation++) {
-        const old = await required(client.query("zerotrust.domains.get", { domain: pending.id, generation: generation.toString() }, { strategy: "network-only" })); context.live();
-        const verified = await verifyDomain(old, { tenant: context.account.tenant, id: pending.id, scope: pending.scope, facet: pending.facet as Collection["facet"], generation: generation.toString() }, context.history.authority);
+      for (
+        let generation = 1n;
+        generation <= BigInt(pending.generation);
+        generation++
+      ) {
+        const old = await required(
+          client.query(
+            "zerotrust.domains.get",
+            { domain: pending.id, generation: generation.toString() },
+            { strategy: "network-only" },
+          ),
+        );
+        context.live();
+        const verified = await verifyDomain(
+          old,
+          {
+            tenant: context.account.tenant,
+            id: pending.id,
+            scope: pending.scope,
+            facet: pending.facet as Collection["facet"],
+            generation: generation.toString(),
+          },
+          context.history.authority,
+        );
         if (!old.envelopes.length) continue; // Recovery-only generation had no ordinary writer.
-        const box = await required(client.query("zerotrust.keys.get", { domain: pending.id, generation: generation.toString() }, { strategy: "network-only" })); context.live();
-        const raw = await openBox(box, { tenant: context.account.tenant, purpose: "area-key", object: pending.id, generation: generation.toString(),
-          recipient: `user:${context.session.user.id}`, author: box.author }, context.account.identity.encryptionKey.privateKey, await domainBoxSigner(verified, box, context.history.authority));
+        const missing = recipients.filter(
+          (recipient) =>
+            !old.envelopes.some((box) => box.recipient === recipient.subject),
+        );
+        if (!missing.length) continue;
+        const box = await required(
+          client.query(
+            "zerotrust.keys.get",
+            { domain: pending.id, generation: generation.toString() },
+            { strategy: "network-only" },
+          ),
+        );
+        context.live();
+        const raw = await openBox(
+          box,
+          {
+            tenant: context.account.tenant,
+            purpose: "area-key",
+            object: pending.id,
+            generation: generation.toString(),
+            recipient: `user:${context.session.user.id}`,
+            author: box.author,
+          },
+          context.account.identity.encryptionKey.privateKey,
+          await domainBoxSigner(verified, box, context.history.authority),
+        );
         try {
-          for (const recipient of recipients) {
-            if (recipient.subject === `user:${context.session.user.id}`) continue;
-            const envelope = await sealBox({ tenant: context.account.tenant, purpose: "area-key", object: pending.id, generation: generation.toString(),
-              recipient: recipient.subject, author: `authority:${context.history.current.generation}` }, raw,
-              await hpke.kem.deserializePublicKey(sized(recipient.identity.encryptionKey, 32)), context.authority);
-            context.live(); await required(client.mutate("zerotrust.keys.grant", { domain: pending.id, generation: generation.toString(), envelope })); context.live();
+          for (const recipient of missing) {
+            if (recipient.subject === `user:${context.session.user.id}`)
+              continue;
+            const envelope = await sealBox(
+              {
+                tenant: context.account.tenant,
+                purpose: "area-key",
+                object: pending.id,
+                generation: generation.toString(),
+                recipient: recipient.subject,
+                author: `authority:${context.history.current.generation}`,
+              },
+              raw,
+              await hpke.kem.deserializePublicKey(
+                sized(recipient.identity.encryptionKey, 32),
+              ),
+              context.authority,
+            );
+            context.live();
+            await required(
+              client.mutate("zerotrust.keys.grant", {
+                domain: pending.id,
+                generation: generation.toString(),
+                envelope,
+              }),
+            );
+            context.live();
           }
-        } finally { raw.fill(0); }
+        } finally {
+          raw.fill(0);
+        }
       }
     }
-    const { definition } = await createDomain({ tenant: context.account.tenant, id: pending.id, scope: pending.scope,
-      facet: pending.facet as Collection["facet"], generation: (BigInt(pending.generation) + 1n).toString(), policyVersion: context.permissions.version,
-      authorityGeneration: context.history.current.generation, authorityKey: context.authority,
-      recovery: { encryptionKey: context.history.current.recoveryEncryptionKey, signingKey: context.history.current.recoverySigningKey }, readers: recipients });
+    const { definition } = await createDomain({
+      tenant: context.account.tenant,
+      id: pending.id,
+      scope: pending.scope,
+      facet: pending.facet as Collection["facet"],
+      generation: (BigInt(pending.generation) + 1n).toString(),
+      policyVersion: context.permissions.version,
+      authorityGeneration: context.history.current.generation,
+      authorityKey: context.authority,
+      recovery: {
+        encryptionKey: context.history.current.recoveryEncryptionKey,
+        signingKey: context.history.current.recoverySigningKey,
+      },
+      readers: recipients,
+    });
     context.live();
-    const [, error] = await client.mutate("zerotrust.domains.put", definition); context.live();
+    const [, error] = await client.mutate("zerotrust.domains.put", definition);
+    context.live();
     if (error) {
-      await client.invalidate("zerotrust.domains.list"); await client.invalidate("zerotrust.policy.get");
-      const latest = await required(client.query("zerotrust.domains.list", undefined, { strategy: "network-only" })); context.live();
-      const current = latest.find(domain => domain.id === pending.id);
+      await client.invalidate("zerotrust.domains.list");
+      await client.invalidate("zerotrust.policy.get");
+      const latest = await required(
+        client.query("zerotrust.domains.list", undefined, {
+          strategy: "network-only",
+        }),
+      );
+      context.live();
+      const current = latest.find((domain) => domain.id === pending.id);
       const permissions = await administrator(client, signal);
-      if ((initial ? !current : current?.generation === pending.generation) && permissions.permissions.version === context.permissions.version) throw error;
+      if (
+        (initial ? !current : current?.generation === pending.generation) &&
+        permissions.permissions.version === context.permissions.version
+      )
+        throw error;
       // A concurrent policy or completed rotation requires a fresh definition.
       // Never publish the old recipient set against a changed policy.
     }
@@ -126,163 +428,544 @@ export async function finishAccessChanges(client: Client, signal: AbortSignal): 
   throw new InvalidProtectedData();
 }
 
-export async function memberProjectAccess(client: Client, user: string, signal: AbortSignal, facet: "master-data" | "attachment" | "offer-prices" | "procurement" | "contract-quantities" = "master-data"): Promise<Record<string, "read" | "write">> {
-  if (!["master-data", "attachment", "offer-prices", "procurement", "contract-quantities"].includes(facet) || !await memberAccess(client, user, signal)) throw new InvalidProtectedData();
-  const context = await administrator(client, signal), result: Record<string, "read" | "write"> = {};
-  const ids = new Set(context.effective.rules.filter(rule => rule.subject === user && rule.facet === facet)
-    .map(rule => projectDomainId(`${rule.scope}:master-data`)).filter((id): id is string => id !== null));
-  for (const id of ids) {
-    const area = facet === "master-data" ? projectCollection(id) : facet === "attachment" ? fileCollection(id) : facet === "contract-quantities" ? deliveryCollection(id) : projectCommercialCollection(id, facet);
-    const actions = new Set<Rule["actions"][number]>(), denied = new Set<Rule["actions"][number]>();
-    for (const rule of context.effective.rules) if (rule.subject === user && rule.scope === area.scope && rule.facet === area.facet)
-      for (const action of rule.actions) (rule.effect === "deny" ? denied : actions).add(action);
-    for (const action of denied) actions.delete(action);
-    if (actions.has("read")) result[id] = (["create", "update", "delete"] as const).every(action => actions.has(action)) ? "write" : "read";
+export type ProjectAccessLevels = Partial<
+  Record<ProjectAccessKey, Record<string, AccessValue>>
+>;
+export async function memberAreaAccesses(
+  client: Client,
+  user: string,
+  areas: readonly Collection[],
+  signal: AbortSignal,
+): Promise<AccessValue[]> {
+  const context = await administrator(client, signal);
+  if (!(await certifiedMember(client, user, context)))
+    throw new InvalidProtectedData();
+  const level = compileManagedAccess(context.effective, user);
+  return areas.map((area) => level(area));
+}
+
+export async function memberProjectAccesses(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<ProjectAccessLevels> {
+  if (!(await memberAccess(client, user, signal)))
+    throw new InvalidProtectedData();
+  const context = await administrator(client, signal),
+    result: ProjectAccessLevels = {},
+    level = compileManagedAccess(context.effective, user);
+  for (const rule of context.effective.rules) {
+    if (rule.subject !== user) continue;
+    const part = projectAccessDomain(`${rule.scope}:${rule.facet}`);
+    if (!part) continue;
+    const value = level(projectAccessArea(part.id, part.key));
+    if (value !== "none") (result[part.key] ??= {})[part.id] = value;
   }
   return result;
 }
+export async function memberProjectAccess(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+  facet: ProjectAccessKey = "master-data",
+): Promise<Record<string, AccessValue>> {
+  if (!(PROJECT_ACCESS_KEYS as readonly string[]).includes(facet))
+    throw new InvalidProtectedData();
+  return (await memberProjectAccesses(client, user, signal))[facet] ?? {};
+}
 
-export function memberProjectCreation(client: Client, user: string, signal: AbortSignal): Promise<boolean> {
+export type PersonnelAccessLevels = Record<PersonnelFacet, AccessValue>;
+export const ABSENCE_ACCESS_KEYS = ["requests", "decisions"] as const;
+export type AbsenceAccessLevels = Record<
+  (typeof ABSENCE_ACCESS_KEYS)[number],
+  AccessValue
+>;
+export async function memberAbsenceAccess(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<Record<string, AbsenceAccessLevels>> {
+  if (!(await memberAccess(client, user, signal)))
+    throw new InvalidProtectedData();
+  const context = await administrator(client, signal),
+    level = compileManagedAccess(context.effective, user);
+  const ids = new Set(
+    context.effective.rules
+      .filter((rule) => rule.subject === user)
+      .map((rule) => absenceDomain(`${rule.scope}:${rule.facet}`)?.user)
+      .filter((id): id is string => !!id),
+  );
+  return Object.fromEntries(
+    [...ids].map((id) => [
+      id,
+      {
+        requests: level(absenceCollection(id)),
+        decisions: level(absenceCollection(id, true)),
+      },
+    ]),
+  );
+}
+export async function memberPersonnelAccess(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<Record<string, PersonnelAccessLevels>> {
+  if (!(await memberAccess(client, user, signal)))
+    throw new InvalidProtectedData();
+  const context = await administrator(client, signal),
+    level = compileManagedAccess(context.effective, user);
+  const ids = new Set(
+    context.effective.rules
+      .filter((rule) => rule.subject === user)
+      .map((rule) => personnelDomain(`${rule.scope}:master-data`)?.id)
+      .filter((id): id is string => !!id),
+  );
+  return Object.fromEntries(
+    [...ids].map((id) => [
+      id,
+      Object.fromEntries(
+        PERSONNEL_FACETS.map((facet) => [
+          facet,
+          level(personnelCollection(id, facet)),
+        ]),
+      ) as PersonnelAccessLevels,
+    ]),
+  );
+}
+
+export function memberProjectCreation(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<boolean> {
   return memberCreation(client, user, "project", signal);
 }
-export function memberCommercialCreation(client: Client, user: string, signal: AbortSignal): Promise<boolean> {
+export function memberCommercialCreation(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<boolean> {
   return memberCreation(client, user, "commercial", signal);
 }
-async function memberCreation(client: Client, user: string, namespace: CreationNamespace, signal: AbortSignal): Promise<boolean> {
-  if (!await memberAccess(client, user, signal)) throw new InvalidProtectedData();
+async function memberCreation(
+  client: Client,
+  user: string,
+  namespace: CreationNamespace,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!(await memberAccess(client, user, signal)))
+    throw new InvalidProtectedData();
   const context = await administrator(client, signal);
-  return allows(context.permissions, { tenant: context.account.tenant, version: context.permissions.version,
-    subjects: [user], scope: creationScope(namespace), facet: "master-data", action: "create" });
+  return allows(context.permissions, {
+    tenant: context.account.tenant,
+    version: context.permissions.version,
+    subjects: [user],
+    scope: creationScope(namespace),
+    facet: "master-data",
+    action: "create",
+  });
 }
 
 /** A certified employee gets authority for fresh project areas only. The
  * mandatory administrator receives each new key; no tenant private key leaves
  * this browser, and existing projects keep their independent permissions. */
-export function changeProjectCreation(client: Client, user: string, enabled: boolean, signal: AbortSignal): Promise<void> {
+export function changeProjectCreation(
+  client: Client,
+  user: string,
+  enabled: boolean,
+  signal: AbortSignal,
+): Promise<void> {
   return changeCreation(client, user, enabled, "project", signal);
 }
-export function changeCommercialCreation(client: Client, user: string, enabled: boolean, signal: AbortSignal): Promise<void> {
+export function changeCommercialCreation(
+  client: Client,
+  user: string,
+  enabled: boolean,
+  signal: AbortSignal,
+): Promise<void> {
   return changeCreation(client, user, enabled, "commercial", signal);
 }
-export function changeToolCreation(client: Client, user: string, enabled: boolean, namespace: ToolNamespace, signal: AbortSignal): Promise<void> {
+export function changeToolCreation(
+  client: Client,
+  user: string,
+  enabled: boolean,
+  namespace: ToolNamespace,
+  signal: AbortSignal,
+): Promise<void> {
   return changeCreation(client, user, enabled, namespace, signal);
 }
-export function changeToolAccess(client: Client, user: string, namespace: ToolNamespace, id: string, facet: Facet, access: "none" | "read" | "write", signal: AbortSignal): Promise<void> {
-  return changeAreaAccess(client, user, toolCollection(namespace, id, facet), access, signal);
+export function changeToolAccess(
+  client: Client,
+  user: string,
+  namespace: ToolNamespace,
+  id: string,
+  facet: Facet,
+  access: AccessValue,
+  signal: AbortSignal,
+): Promise<void> {
+  return changeAreaAccess(
+    client,
+    user,
+    toolCollection(namespace, id, facet),
+    access,
+    signal,
+  );
 }
-export function changeToolIndexAccess(client: Client, user: string, access: "none" | "read" | "write", signal: AbortSignal): Promise<void> {
+export function changePersonnelAccess(
+  client: Client,
+  user: string,
+  person: string,
+  facet: PersonnelFacet,
+  access: AccessValue,
+  signal: AbortSignal,
+): Promise<void> {
+  return changeAreaAccess(
+    client,
+    user,
+    personnelCollection(person, facet),
+    access,
+    signal,
+  );
+}
+export function changeToolIndexAccess(
+  client: Client,
+  user: string,
+  access: AccessValue,
+  signal: AbortSignal,
+): Promise<void> {
   return changeAreaAccess(client, user, TOOL_INDEX, access, signal);
 }
-async function changeCreation(client: Client, user: string, enabled: boolean, namespace: CreationNamespace, signal: AbortSignal): Promise<void> {
+async function changeCreation(
+  client: Client,
+  user: string,
+  enabled: boolean,
+  namespace: CreationNamespace,
+  signal: AbortSignal,
+): Promise<void> {
   const scope = creationScope(namespace);
   const context = await administrator(client, signal);
-  if (user === `user:${context.session.user.id}` || typeof enabled !== "boolean" || !await memberAccess(client, user, signal)) throw new InvalidProtectedData();
+  if (
+    user === `user:${context.session.user.id}` ||
+    typeof enabled !== "boolean" ||
+    !(await memberAccess(client, user, signal))
+  )
+    throw new InvalidProtectedData();
   if (enabled) {
-    const identities = await required(client.query("zerotrust.identities.list", undefined, { strategy: "network-only" })); context.live();
+    const identities = await required(
+      client.query("zerotrust.identities.list", undefined, {
+        strategy: "network-only",
+      }),
+    );
+    context.live();
     const certificate = async (subject: string) => {
-      const entry = identities.find(identity => identity.subject === subject); if (!entry) throw new InvalidProtectedData();
-      const cert = record(entry.certificate, ["tenant", "generation", "user", "encryptionKey", "signingKey", "signature"]) as IdentityCertificate;
-      if (cert.tenant !== context.account.tenant || cert.generation !== context.history.current.generation || cert.user !== subject
-        || cert.encryptionKey !== entry.encryptionKey || cert.signingKey !== entry.signingKey) throw new InvalidProtectedData();
-      await verify(context.history.authority(cert.generation), cert.signature, identityCertificateFrame(cert)); return cert;
+      const entry = identities.find((identity) => identity.subject === subject);
+      if (!entry) throw new InvalidProtectedData();
+      const cert = record(entry.certificate, [
+        "tenant",
+        "generation",
+        "user",
+        "encryptionKey",
+        "signingKey",
+        "signature",
+      ]) as IdentityCertificate;
+      if (
+        cert.tenant !== context.account.tenant ||
+        cert.generation !== context.history.current.generation ||
+        cert.user !== subject ||
+        cert.encryptionKey !== entry.encryptionKey ||
+        cert.signingKey !== entry.signingKey
+      )
+        throw new InvalidProtectedData();
+      await verify(
+        context.history.authority(cert.generation),
+        cert.signature,
+        identityCertificateFrame(cert),
+      );
+      return cert;
     };
-    const capability = await certifyCreationCapability({ tenant: context.account.tenant, id: `create_${base64(randomSecret())}`,
-      generation: context.history.current.generation, namespace, creator: await certificate(user),
-      readers: [await certificate(`user:${context.session.user.id}`)] }, context.authority); context.live();
-    await required(client.mutate("zerotrust.creations.grant", capability)); context.live();
+    const capability = await certifyCreationCapability(
+      {
+        tenant: context.account.tenant,
+        id: `create_${base64(randomSecret())}`,
+        generation: context.history.current.generation,
+        namespace,
+        creator: await certificate(user),
+        readers: [await certificate(`user:${context.session.user.id}`)],
+      },
+      context.authority,
+    );
+    context.live();
+    await required(client.mutate("zerotrust.creations.grant", capability));
+    context.live();
   }
-  const rules = context.permissions.rules.filter(rule => rule.subject !== user || rule.scope !== scope || rule.facet !== "master-data");
-  if (enabled) rules.push({ subject: user, scope, facet: "master-data", actions: ["create"], effect: "allow" });
-  const next = { tenant: context.account.tenant, version: (BigInt(context.permissions.version) + 1n).toString(), rules };
-  const signature = await sign(context.authority, policyFrame(next)); context.live();
-  const [, error] = await client.mutate("zerotrust.policy.replace", { ...next, signature }); context.live();
-  if (error) {
-    await client.invalidate("zerotrust.policy.get");
-    if ((await administrator(client, signal)).signature !== signature) throw error;
-  }
+  const rules = context.permissions.rules.filter(
+    (rule) =>
+      rule.subject !== user ||
+      rule.scope !== scope ||
+      rule.facet !== "master-data",
+  );
+  if (enabled)
+    rules.push({
+      subject: user,
+      scope,
+      facet: "master-data",
+      actions: ["create"],
+      effect: "allow",
+    });
+  const next = {
+    ...context.permissions,
+    version: (BigInt(context.permissions.version) + 1n).toString(),
+    rules,
+  };
+  await publishVerifiedPolicy(client, context, next);
 }
 
 /** Change only the selected facet of this project. Other projects, facets
  * and unedited custom profiles retain their own grants. */
-export async function changeProjectAccess(client: Client, user: string, id: string, access: "none" | "read" | "write", signal: AbortSignal, facet: "master-data" | "attachment" | "offer-prices" | "procurement" | "contract-quantities" = "master-data"): Promise<void> {
-  if (!["master-data", "attachment", "offer-prices", "procurement", "contract-quantities"].includes(facet)) throw new InvalidProtectedData();
-  return changeAreaAccess(client, user, facet === "master-data" ? projectCollection(id) : facet === "attachment" ? fileCollection(id) : facet === "contract-quantities" ? deliveryCollection(id) : projectCommercialCollection(id, facet), access, signal);
+export async function changeProjectAccess(
+  client: Client,
+  user: string,
+  id: string,
+  access: AccessValue,
+  signal: AbortSignal,
+  facet: ProjectAccessKey = "master-data",
+): Promise<void> {
+  if (!(PROJECT_ACCESS_KEYS as readonly string[]).includes(facet))
+    throw new InvalidProtectedData();
+  return changeAreaAccess(
+    client,
+    user,
+    projectAccessArea(id, facet),
+    access,
+    signal,
+  );
 }
-export async function changeCommercialAccess(client: Client, user: string, id: string, facet: CommercialFacet, access: "none" | "read" | "write", signal: AbortSignal): Promise<void> {
-  return changeAreaAccess(client, user, commercialCollection(id, facet), access, signal);
+export async function changeCommercialAccess(
+  client: Client,
+  user: string,
+  id: string,
+  facet: CommercialFacet,
+  access: AccessValue,
+  signal: AbortSignal,
+): Promise<void> {
+  return changeAreaAccess(
+    client,
+    user,
+    commercialCollection(id, facet),
+    access,
+    signal,
+  );
 }
-async function changeAreaAccess(client: Client, user: string, area: Collection, access: "none" | "read" | "write", signal: AbortSignal): Promise<void> {
-  const context = await administrator(client, signal), owner = `user:${context.session.user.id}`;
-  if (user === owner || !["none", "read", "write"].includes(access) || !await memberAccess(client, user, signal)) throw new InvalidProtectedData();
-  if (!readers(context.effective, area).has(owner)) throw new InvalidProtectedData();
-  const rules = context.permissions.rules.filter(rule => rule.subject !== user || rule.scope !== area.scope || rule.facet !== area.facet);
-  if (access !== "none") rules.push({ subject: user, scope: area.scope, facet: area.facet, effect: "allow", actions: access === "write" ? ["read", "create", "update", "delete"] : ["read"] });
-  if (access !== "write") rules.push({ subject: user, scope: area.scope, facet: area.facet, effect: "deny", actions: access === "none" ? ["read", "create", "update", "delete"] : ["create", "update", "delete"] });
-  const unsigned = { tenant: context.account.tenant, version: (BigInt(context.permissions.version) + 1n).toString(), rules };
-  const signature = await sign(context.authority, policyFrame(unsigned)); context.live();
-  const [, error] = await client.mutate("zerotrust.policy.replace", { ...unsigned, signature }); context.live();
-  if (error) {
-    await client.invalidate("zerotrust.policy.get"); const latest = await administrator(client, signal);
-    if (latest.signature !== signature) throw error;
+async function changeAreaAccess(
+  client: Client,
+  user: string,
+  area: Collection,
+  access: AccessValue,
+  signal: AbortSignal,
+): Promise<void> {
+  return changeAreaActionAccesses(
+    client,
+    user,
+    [{ area, patch: profilePatch(access) }],
+    signal,
+  );
+}
+export type AreaActionChange = { area: Collection; patch: ActionPatch };
+export async function changeAreaActionAccesses(
+  client: Client,
+  user: string,
+  changes: readonly AreaActionChange[],
+  signal: AbortSignal,
+): Promise<void> {
+  const context = await administrator(client, signal);
+  await publishActionChanges(client, user, changes, context, signal);
+}
+async function publishActionChanges(
+  client: Client,
+  user: string,
+  changes: readonly AreaActionChange[],
+  context: Awaited<ReturnType<typeof administrator>>,
+  signal: AbortSignal,
+  assistant?: boolean,
+): Promise<void> {
+  const owner = `user:${context.session.user.id}`;
+  if (
+    user === owner ||
+    changes.length > 64 ||
+    !(await certifiedMember(client, user, context))
+  )
+    throw new InvalidProtectedData();
+  for (const { area, patch } of changes) {
+    actionPatch(patch);
+    if (!readers(context.effective, area).has(owner))
+      throw new InvalidProtectedData();
+  }
+  let rules = patchAccessRules(context.permissions.rules, user, changes);
+  if (assistant !== undefined) {
+    const personal = privateLlmCollection(user);
+    rules = rules.filter(
+      (rule) =>
+        rule.subject !== user ||
+        rule.scope !== personal.scope ||
+        rule.facet !== personal.facet,
+    );
+    if (assistant)
+      rules.push({
+        subject: user,
+        scope: personal.scope,
+        facet: personal.facet,
+        effect: "allow",
+        actions: [...ACTIONS],
+      });
+  }
+  if (JSON.stringify(rules) !== JSON.stringify(context.permissions.rules)) {
+    await publishVerifiedPolicy(client, context, {
+      ...context.permissions,
+      version: (BigInt(context.permissions.version) + 1n).toString(),
+      rules,
+    });
   }
   await finishAccessChanges(client, signal);
   await client.invalidate("projects.list");
 }
-
-export async function memberAccess(client: Client, user: string, signal: AbortSignal): Promise<MemberAccess | null> {
-  const context = await administrator(client, signal);
-  const identities = await required(client.query("zerotrust.identities.list", undefined, { strategy: "network-only" })); context.live();
-  const identity = identities.find(identity => identity.subject === user);
-  if (!identity) return null;
-  try {
-    const cert = record(identity.certificate, ["tenant", "generation", "user", "encryptionKey", "signingKey", "signature"]) as IdentityCertificate;
-    if (cert.tenant !== context.account.tenant || cert.generation !== context.history.current.generation || cert.user !== user
-      || cert.encryptionKey !== identity.encryptionKey || cert.signingKey !== identity.signingKey) throw new InvalidProtectedData();
-    await verify(context.history.authority(cert.generation), cert.signature, identityCertificateFrame(cert));
-  } catch { return null; }
+async function certifiedMember(
+  client: Client,
+  user: string,
+  context: Awaited<ReturnType<typeof administrator>>,
+): Promise<boolean> {
+  if (!/^user:[1-9a-v][0-9a-v]{0,12}$/.test(user))
+    throw new InvalidProtectedData();
+  const identities = await required(
+    client.query("zerotrust.identities.list", undefined, {
+      strategy: "network-only",
+    }),
+  );
   context.live();
-  const can = (area: Collection, action: Rule["actions"][number]) => {
-    let allowed = false;
-    for (const rule of context.permissions.rules) if (rule.subject === user && rule.scope === area.scope && rule.facet === area.facet && rule.actions.includes(action)) {
-      if (rule.effect === "deny") return false; allowed = true;
-    }
-    return allowed;
+  const identity = identities.find((identity) => identity.subject === user);
+  if (!identity) return false;
+  try {
+    const cert = record(identity.certificate, [
+      "tenant",
+      "generation",
+      "user",
+      "encryptionKey",
+      "signingKey",
+      "signature",
+    ]) as IdentityCertificate;
+    if (
+      cert.tenant !== context.account.tenant ||
+      cert.generation !== context.history.current.generation ||
+      cert.user !== user ||
+      cert.encryptionKey !== identity.encryptionKey ||
+      cert.signingKey !== identity.signingKey
+    )
+      throw new InvalidProtectedData();
+    await verify(
+      context.history.authority(cert.generation),
+      cert.signature,
+      identityCertificateFrame(cert),
+    );
+  } catch {
+    return false;
+  }
+  context.live();
+  return true;
+}
+
+export async function memberAccess(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<MemberAccess | null> {
+  const context = await administrator(client, signal);
+  if (!(await certifiedMember(client, user, context))) return null;
+  const level = compileManagedAccess(context.permissions, user);
+  const permitted = compilePolicy(context.permissions, [user]);
+  return {
+    ...(Object.fromEntries(
+      MASTER_DATA_FIELDS.map((key) => {
+        const area = MASTER_DATA_AREAS[key];
+        return [key, level(area)];
+      }),
+    ) as Pick<ManagedAccess, (typeof MASTER_DATA_FIELDS)[number]>),
+    assistant: canUseAssistant(user, permitted.allows),
   };
-  return { ...Object.fromEntries(MASTER_DATA_FIELDS.map(key => { const area = MASTER_DATA_AREAS[key];
-    return [key, can(area, "read") ? (["create", "update", "delete"] as const).every(action => can(area, action)) ? "write" : "read" : "none"]; })) as Pick<ManagedAccess, typeof MASTER_DATA_FIELDS[number]>,
-    assistant: can(privateLlmCollection(user), "read") };
 }
 
 /** The server freezes affected writes until key redistribution finishes.
  * A lost acknowledgement is checked against the exact signed policy. */
-export async function changeMemberAccess(client: Client, user: string, access: MemberAccess, signal: AbortSignal): Promise<void> {
+export type MemberAccessEdits = {
+  actions: Partial<Record<(typeof MASTER_DATA_FIELDS)[number], ActionPatch>>;
+  assistant?: boolean;
+};
+export async function changeMemberAccess(
+  client: Client,
+  user: string,
+  access: MemberAccess,
+  signal: AbortSignal,
+  edits?: MemberAccessEdits,
+): Promise<void> {
   access = managedAccess(access);
-  const context = await administrator(client, signal);
-  if (user === `user:${context.session.user.id}` || !/^user:[1-9a-v][0-9a-v]{0,12}$/.test(user)
-    || typeof access.assistant !== "boolean") throw new InvalidProtectedData();
-  const previous = await memberAccess(client, user, signal);
-  if (!previous) throw new InvalidProtectedData(); context.live();
-  const owner = `user:${context.session.user.id}`;
-  if (MASTER_DATA_FIELDS.some(key => access[key] !== "none" && !readers(context.permissions, MASTER_DATA_AREAS[key]).has(owner))) throw new InvalidProtectedData();
-  const personal = privateLlmCollection(user), changed = [
-    ...MASTER_DATA_FIELDS.filter(key => access[key] !== previous[key]).map(key => MASTER_DATA_AREAS[key]),
-    ...(access.assistant !== previous.assistant ? [personal] : []),
-  ];
-  // Preserve custom action sets and explicit denials in areas that were not
-  // edited by this form. Other facets are never normalized by these profiles.
-  const rules = context.permissions.rules.filter(rule => rule.subject !== user || !changed.some(area => rule.scope === area.scope && rule.facet === area.facet));
-  for (const key of MASTER_DATA_FIELDS) if (access[key] !== previous[key] && access[key] !== "none") {
-    const area = MASTER_DATA_AREAS[key]; rules.push({ subject: user, scope: area.scope, facet: area.facet, effect: "allow", actions: access[key] === "write" ? ["read", "create", "update", "delete"] : ["read"] });
+  if (edits) {
+    const value = record(edits, [
+      "actions",
+      ...(Object.hasOwn(edits, "assistant") ? ["assistant"] : []),
+    ]);
+    if (
+      Object.hasOwn(value, "assistant") &&
+      typeof value.assistant !== "boolean"
+    )
+      throw new InvalidProtectedData();
+    if (
+      !value.actions ||
+      typeof value.actions !== "object" ||
+      Array.isArray(value.actions)
+    )
+      throw new InvalidProtectedData();
+    const actions = record(value.actions, Object.keys(value.actions));
+    if (
+      Object.keys(actions).some(
+        (key) => !(MASTER_DATA_FIELDS as readonly string[]).includes(key),
+      )
+    )
+      throw new InvalidProtectedData();
+    edits = {
+      actions: Object.fromEntries(
+        Object.entries(actions).map(([key, value]) => [
+          key,
+          actionPatch(value),
+        ]),
+      ),
+      ...(value.assistant !== undefined
+        ? { assistant: value.assistant as boolean }
+        : {}),
+    };
   }
-  if (access.assistant !== previous.assistant && access.assistant) rules.push({ subject: user, scope: personal.scope, facet: personal.facet, effect: "allow", actions: [...ACTIONS] });
-  if (JSON.stringify(rules) !== JSON.stringify(context.permissions.rules)) {
-    const next = { tenant: context.account.tenant, version: (BigInt(context.permissions.version) + 1n).toString(), rules };
-    const signature = await sign(context.authority, policyFrame(next)); context.live();
-    const [, error] = await client.mutate("zerotrust.policy.replace", { ...next, signature }); context.live();
-    if (error) {
-      await client.invalidate("zerotrust.policy.get"); const current = await administrator(client, signal);
-      if (current.signature !== signature) throw error;
-    }
+  const context = await administrator(client, signal),
+    previous = compileManagedAccess(context.permissions, user);
+  const changes = MASTER_DATA_FIELDS.flatMap((key) => {
+    const area = MASTER_DATA_AREAS[key],
+      patch = edits
+        ? edits.actions[key]
+        : sameAccess(access[key], previous(area))
+          ? undefined
+          : profilePatch(access[key]);
+    return patch ? [{ area, patch }] : [];
+  });
+  let assistant: boolean | undefined;
+  if (edits) {
+    assistant = edits.assistant;
+  } else {
+    const permitted = compilePolicy(context.permissions, [user]);
+    const enabled = canUseAssistant(user, permitted.allows);
+    if (access.assistant !== enabled) assistant = access.assistant;
   }
-  await finishAccessChanges(client, signal);
+  return publishActionChanges(
+    client,
+    user,
+    changes,
+    context,
+    signal,
+    assistant,
+  );
 }

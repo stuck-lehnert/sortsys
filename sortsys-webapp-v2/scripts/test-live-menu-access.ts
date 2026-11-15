@@ -3,18 +3,18 @@ import type { Client } from "@sortsys/v2-client";
 import type { DuckDriver } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { required } from "../app/lib/data/protectedObjects";
-import { acceptVault, type UnlockedAccount } from "../app/lib/crypto/session";
+import { acceptVaultWithKey, type UnlockedAccount } from "../app/lib/crypto/session";
 import { changeCommercialCreation, changeMemberAccess, changeProjectCreation, memberAccess, memberCommercialCreation, memberProjectCreation } from "../app/lib/crypto/permissions";
 
 export async function testMenuAccess(ownerClient: Client, peer: Client, owner: UnlockedAccount, member: UnlockedAccount, driver: () => Promise<DuckDriver>, signal: AbortSignal) {
-  await acceptVault(owner.exportKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
   const subject = `user:${(await required(peer.query("auth.sessionInfo", undefined))).user.id}`;
   const previous = (await memberAccess(ownerClient, subject, signal))!, projectCreation = await memberProjectCreation(ownerClient, subject, signal), commercialCreation = await memberCommercialCreation(ownerClient, subject, signal);
   const sent: string[] = [], observed: Client = { ...peer, query: ((path, input, options) => { sent.push(path); return peer.query(path, input, options); }) as Client["query"] };
   try {
     await changeProjectCreation(ownerClient, subject, false, signal); await changeCommercialCreation(ownerClient, subject, false, signal);
     await changeMemberAccess(ownerClient, subject, { ...previous, catalogue: "none", vendors: "read", prices: "write" }, signal);
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     let business = createBusinessClient(observed, { productDriver: driver });
     try {
       const view = await business.access.read(); assert.ok(view);
@@ -23,9 +23,9 @@ export async function testMenuAccess(ownerClient: Client, peer: Client, owner: U
       assert.equal(view.canCreate("project"), false); assert.equal(view.canCreate("commercial"), false);
       assert.ok(sent.every(path => ["auth.sessionInfo", "zerotrust.trust.history", "zerotrust.policy.get", "zerotrust.creations.list"].includes(path)), "Menu decisions do not decrypt or search business data");
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeProjectCreation(ownerClient, subject, true, signal);
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     business = createBusinessClient(peer, { productDriver: driver });
     let projectId = "";
     try {
@@ -37,9 +37,9 @@ export async function testMenuAccess(ownerClient: Client, peer: Client, owner: U
       assert.equal(after.can(`project:${project.id}`, "master-data", "update"), true, "Certified creation origins contribute actual scoped menu rights");
       assert.equal(after.canCreate("commercial"), false);
     } finally { business.dispose(); }
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeProjectCreation(ownerClient, subject, false, signal); await changeCommercialCreation(ownerClient, subject, true, signal);
-    await acceptVault(member.exportKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, false);
     business = createBusinessClient(peer, { productDriver: driver });
     try {
       const view = await business.access.read(); assert.ok(view);
@@ -49,7 +49,7 @@ export async function testMenuAccess(ownerClient: Client, peer: Client, owner: U
       const after = await business.access.read(); assert.ok(after); assert.equal(after.can(`commercial:${made.id}`, "master-data", "update"), true);
     } finally { business.dispose(); }
   } finally {
-    await acceptVault(owner.exportKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
     await changeMemberAccess(ownerClient, subject, previous, signal);
     await changeProjectCreation(ownerClient, subject, projectCreation, signal); await changeCommercialCreation(ownerClient, subject, commercialCreation, signal);
   }

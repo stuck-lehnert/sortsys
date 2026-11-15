@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createClient, type Client, type QueryResult } from "@sortsys/v2-client";
-import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, policy, randomSecret, record, signPolicy, verifyDomain } from "@sortsys/zerotrust";
-import { acceptVault, lockCryptoSession, signIn, trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
+import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, policy, randomSecret, record, signPolicy, verifyDomain } from "@sortsys/zerotrust/sortsys";
+import { acceptVaultWithKey, lockCryptoSession, signIn, trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
 import { commitRecovery, recoveryDraft, recoveryPlan } from "../app/lib/crypto/recovery";
 import { openAuthority } from "../app/lib/crypto/setup";
 import { finishAccessChanges } from "../app/lib/crypto/permissions";
@@ -45,7 +45,7 @@ export async function testProtectedDeliveryNotes(client: Client, source: Busines
   await prepareDeliveryNotes(client, source, subject, signal); await prepareDeliveryNotes(client, source, subject, signal);
   const account = unlockedAccount()!, peerUrl = process.env.SORTSYS_LLM_TEST_PEER!, peer = createClient(peerUrl, "delivery-note-peer");
   await signIn(peer, { tenant: account.tenant, username: account.username, password });
-  await acceptVault(account.exportKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, false);
   const requests: { path: string; input: unknown }[] = [];
   let betweenFacets: (() => Promise<void>) | null = null;
   const observed: Client = { ...client,

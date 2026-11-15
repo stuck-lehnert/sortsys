@@ -1,37 +1,263 @@
 import { expect, test } from "bun:test";
-import { commitProtectedWrites, ProtectedWriteConflict } from "./atomicWrites";
+import {
+  commitProtectedWrites,
+  mergePreparedWrites,
+  ProtectedWriteConflict,
+} from "./atomicWrites";
 
-function group(count) { return { packets: Array.from({ length: count }, (_, id) => ({ domain: "area", messageId: `msg-${id}`, envelope: { object: `item:${id}`, ciphertext: "ciphertext" } })), head: { domain: "area", sequence: "1" }, async verify() { return true; }, close() {} }; }
+test("disjoint changes to one domain retain both verifications and reject overlapping writes or heads", async () => {
+  const first = group(1);
+  const second = group(1);
+  second.packets[0].envelope.object = "item:other";
+  const checked = [];
+  first.verify = async () => {
+    checked.push("first");
+    return true;
+  };
+  second.verify = async () => {
+    checked.push("second");
+    return false;
+  };
+  const merged = mergePreparedWrites([first, second]);
+  expect(merged).toHaveLength(1);
+  expect(merged[0].packets).toHaveLength(2);
+  expect(await merged[0].verify()).toBe(false);
+  expect(checked).toEqual(["first", "second"]);
+  expect(() => mergePreparedWrites([first, first])).toThrow();
+  second.head.sequence = "2";
+  expect(() => mergePreparedWrites([first, second])).toThrow(
+    ProtectedWriteConflict,
+  );
+});
+
+function group(count) {
+  return {
+    packets: Array.from({ length: count }, (_, id) => ({
+      domain: "area",
+      messageId: `msg-${id}`,
+      envelope: { object: `item:${id}`, ciphertext: "ciphertext" },
+    })),
+    head: { domain: "area", sequence: "1" },
+    async verify() {
+      return true;
+    },
+    close() {},
+  };
+}
+
+test("a policy-only publication cannot accept a false successful reply without its durable signed receipt", async () => {
+  const calls = [];
+  const guards = [{ domain: "personnel:2:scope", sequence: "7" }];
+  let accepted = false;
+  const client = {
+    async mutate(path, input) {
+      calls.push({ path, input });
+      return [{ success: true }, null];
+    },
+    async invalidate() {},
+  };
+  const policy = {
+    async bind(packets, heads) {
+      expect(packets).toEqual([]);
+      expect(heads).toEqual(guards);
+      return { signature: "public-test-policy" };
+    },
+    async verify() {
+      return accepted;
+    },
+  };
+  await expect(
+    commitProtectedWrites(client, [], new AbortController().signal, guards, {
+      policy,
+    }),
+  ).rejects.toBeInstanceOf(ProtectedWriteConflict);
+  accepted = true;
+  await commitProtectedWrites(
+    client,
+    [],
+    new AbortController().signal,
+    guards,
+    { policy },
+  );
+  expect(calls.map((call) => call.path)).toEqual([
+    "zerotrust.objects.batch",
+    "zerotrust.objects.batch",
+  ]);
+  expect(calls[0].input.objects).toEqual([]);
+});
+
+test("independent preparations share equal read prerequisites without dropping conflicting snapshots", async () => {
+  const first = group(1);
+  const second = group(1);
+  const sent = [];
+  second.head = { domain: "decision", sequence: "0" };
+  second.packets = second.packets.map((packet) => ({
+    ...packet,
+    domain: "decision",
+  }));
+  const client = {
+    async mutate(path, input) {
+      sent.push(input);
+      return [{ success: true }, null];
+    },
+    async invalidate() {},
+  };
+  const guards = [
+    first.head,
+    second.head,
+    { domain: "profile", sequence: "7" },
+    { domain: "profile", sequence: "7" },
+  ];
+  await commitProtectedWrites(
+    client,
+    [first, second],
+    new AbortController().signal,
+    guards,
+  );
+  expect(sent).toHaveLength(1);
+  expect(sent[0].heads).toEqual([
+    first.head,
+    second.head,
+    { domain: "profile", sequence: "7" },
+  ]);
+  await expect(
+    commitProtectedWrites(
+      client,
+      [first, second],
+      new AbortController().signal,
+      [...guards, { domain: "area", sequence: "2" }],
+    ),
+  ).rejects.toBeInstanceOf(ProtectedWriteConflict);
+  expect(sent).toHaveLength(1);
+  await expect(
+    commitProtectedWrites(client, [first, first], new AbortController().signal),
+  ).rejects.toThrow();
+  expect(sent).toHaveLength(1);
+});
 
 test("large encrypted batches upload bounded parts and publish only once", async () => {
-  const calls = [], source = group(150);
-  const client = { async mutate(path, input) { calls.push({ path, input }); return [path.endsWith(".stage") ? { id: String(calls.length).padStart(64, "0") } : { success: true }, null]; }, async invalidate() {} };
+  const calls = [];
+  const source = group(150);
+  const client = {
+    async mutate(path, input) {
+      calls.push({ path, input });
+      return [
+        path.endsWith(".stage")
+          ? { id: String(calls.length).padStart(64, "0") }
+          : { success: true },
+        null,
+      ];
+    },
+    async invalidate() {},
+  };
   await commitProtectedWrites(client, [source], new AbortController().signal);
-  expect(calls.map(call => call.path)).toEqual(["zerotrust.objects.stage", "zerotrust.objects.stage", "zerotrust.objects.stage", "zerotrust.objects.commit"]);
-  expect(calls.slice(0, 3).map(call => call.input.objects.length)).toEqual([64, 64, 22]);
-  expect(calls[3].input.heads).toEqual([source.head]); expect(calls[3].input.parts).toHaveLength(3);
+  expect(calls.map((call) => call.path)).toEqual([
+    "zerotrust.objects.stage",
+    "zerotrust.objects.stage",
+    "zerotrust.objects.stage",
+    "zerotrust.objects.commit",
+  ]);
+  expect(calls.slice(0, 3).map((call) => call.input.objects.length)).toEqual([
+    64, 64, 22,
+  ]);
+  expect(calls[3].input.heads).toEqual([source.head]);
+  expect(calls[3].input.parts).toHaveLength(3);
 });
 
 test("a failed or cancelled stage never attempts publication", async () => {
   for (const cancel of [false, true]) {
-    const controller = new AbortController(), paths = [], failed = new Error("Stage unavailable");
-    const client = { async mutate(path) { paths.push(path); if (cancel) controller.abort(); return [null, failed]; }, async invalidate() {} };
-    await expect(commitProtectedWrites(client, [group(70)], controller.signal)).rejects.toThrow();
+    const controller = new AbortController();
+    const paths = [];
+    const failed = new Error("Stage unavailable");
+    const client = {
+      async mutate(path) {
+        paths.push(path);
+        if (cancel) controller.abort();
+        return [null, failed];
+      },
+      async invalidate() {},
+    };
+    await expect(
+      commitProtectedWrites(client, [group(70)], controller.signal),
+    ).rejects.toThrow();
     expect(paths).toEqual(["zerotrust.objects.stage"]);
   }
 });
 
 test("a successful commit response still requires checked readback", async () => {
-  const source = group(70); source.verify = async () => false;
-  const client = { async mutate(path) { return [path.endsWith(".stage") ? { id: "a".repeat(64) } : { success: true }, null]; }, async invalidate() {} };
-  await expect(commitProtectedWrites(client, [source], new AbortController().signal)).rejects.toBeInstanceOf(ProtectedWriteConflict);
+  const source = group(70);
+  source.verify = async () => false;
+  const client = {
+    async mutate(path) {
+      return [
+        path.endsWith(".stage") ? { id: "a".repeat(64) } : { success: true },
+        null,
+      ];
+    },
+    async invalidate() {},
+  };
+  await expect(
+    commitProtectedWrites(client, [source], new AbortController().signal),
+  ).rejects.toBeInstanceOf(ProtectedWriteConflict);
 });
 
 test("a rejected publication retains its original conflict when readback has no newly created object", async () => {
-  const conflict = Object.assign(new Error("Concurrent write"), { code: "CONFLICT" }), missing = new Error("Object was never created"), source = group(1);
-  source.verify = async () => { throw missing; };
-  const client = { async mutate() { return [null, conflict]; }, async invalidate() {} };
-  await expect(commitProtectedWrites(client, [source], new AbortController().signal)).rejects.toBe(conflict);
+  const conflict = Object.assign(new Error("Concurrent write"), {
+    code: "CONFLICT",
+  });
+  const missing = new Error("Object was never created");
+  const source = group(1);
+  source.verify = async () => {
+    throw missing;
+  };
+  const client = {
+    async mutate() {
+      return [null, conflict];
+    },
+    async invalidate() {},
+  };
+  await expect(
+    commitProtectedWrites(client, [source], new AbortController().signal),
+  ).rejects.toBe(conflict);
   client.mutate = async () => [{ success: true }, null];
-  await expect(commitProtectedWrites(client, [source], new AbortController().signal)).rejects.toBe(missing);
+  await expect(
+    commitProtectedWrites(client, [source], new AbortController().signal),
+  ).rejects.toBe(missing);
+});
+
+test("account effects and ciphertext require both readbacks, including a thrown lost reply", async () => {
+  const source = group(1);
+  const sent = [];
+  const failure = new Error("Lost combined response");
+  let effect = false;
+  const client = {
+    async mutate(path, input) {
+      sent.push({ path, input });
+      throw failure;
+    },
+    async invalidate() {},
+  };
+  const member = {
+    change: { requestId: "test-change" },
+    async verify() {
+      return effect;
+    },
+  };
+  await expect(
+    commitProtectedWrites(client, [source], new AbortController().signal, [], {
+      member,
+    }),
+  ).rejects.toBe(failure);
+  effect = true;
+  await commitProtectedWrites(
+    client,
+    [source],
+    new AbortController().signal,
+    [],
+    { member },
+  );
+  expect(sent[1].input.member).toEqual(member.change);
+  expect(sent.every((call) => call.path === "zerotrust.objects.batch")).toBe(
+    true,
+  );
 });

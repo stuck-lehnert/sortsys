@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createClient, type Client, type MutateInput } from "@sortsys/v2-client";
-import { record, policy, signPolicy, encryptedObject } from "@sortsys/zerotrust";
-import { acceptVault, signIn, unlockedAccount } from "../app/lib/crypto/session";
+import { record, policy, signPolicy, encryptedObject } from "@sortsys/zerotrust/sortsys";
+import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import { openAuthority } from "../app/lib/crypto/setup";
 import { finishAccessChanges } from "../app/lib/crypto/permissions";
 import { createBusinessClient } from "../app/lib/data/businessClient";
@@ -11,7 +11,7 @@ import { protectedCollection, required } from "../app/lib/data/protectedObjects"
 export async function testDeliveryWrites(client: Client, driver: () => Promise<DuckDriver>, password: string) {
   const account = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "delivery-write-peer");
   await signIn(peer, { tenant: account.tenant, username: account.username, password });
-  await acceptVault(account.exportKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, false);
   const requests: {
     path: string;
     input: unknown;

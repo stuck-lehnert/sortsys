@@ -1,124 +1,63 @@
+import type { MutateInput, MutateOutput } from "@sortsys/v2-client";
+import {
+  createPasskeyCredential as createCredential,
+  getPasskeyCredential as getCredential,
+  PasskeyOperationError,
+  type PasskeyCredentialResult,
+} from "@sortsys/zerotrust";
 import { uiText } from "~/lib/i18n";
-type EncodedCredentialDescriptor = {
-  id: string;
-  type: 'public-key';
-  transports?: string[];
-};
 
-type EncodedCreationOptions = {
-  challenge: string;
-  rp: PublicKeyCredentialRpEntity;
-  user: {
-    id: string;
-    name: string;
-    displayName: string;
-  };
-  pubKeyCredParams: PublicKeyCredentialParameters[];
-  timeout: number;
-  attestation: AttestationConveyancePreference;
-  authenticatorSelection: AuthenticatorSelectionCriteria;
-  excludeCredentials: EncodedCredentialDescriptor[];
-};
+export { isPasskeySupported } from "@sortsys/zerotrust";
 
-type EncodedRequestOptions = {
-  challenge: string;
-  rpId: string;
-  allowCredentials: EncodedCredentialDescriptor[];
-  timeout: number;
-  userVerification: UserVerificationRequirement;
-};
-
-export function isPasskeySupported() {
-  return typeof window === 'object'
-    && typeof PublicKeyCredential !== 'undefined'
-    && !!navigator.credentials?.create
-    && !!navigator.credentials?.get;
+export function createPasskeyCredential(
+  options: MutateOutput<"auth.passkeys.registerOptions">["options"],
+  signal?: AbortSignal,
+): Promise<
+  PasskeyCredentialResult<MutateInput<"auth.passkeys.register">["credential"]>
+> {
+  return localized(() => createCredential(options, signal));
 }
 
-export async function createPasskeyCredential(options: EncodedCreationOptions) {
-  if (!isPasskeySupported()) throw new Error(uiText("Passkeys werden von diesem Browser nicht unterstützt."));
-
-  const credential = await navigator.credentials.create({
-    publicKey: {
-      ...options,
-      challenge: base64UrlToArrayBuffer(options.challenge),
-      user: {
-        ...options.user,
-        id: base64UrlToArrayBuffer(options.user.id),
-      },
-      excludeCredentials: options.excludeCredentials.map(decodeDescriptor),
-    },
-  });
-
-  if (!(credential instanceof PublicKeyCredential)) throw new Error(uiText("Passkey-Erstellung wurde abgebrochen."));
-  const response = credential.response;
-  if (!(response instanceof AuthenticatorAttestationResponse)) throw new Error(uiText("Ungültige Passkey-Antwort."));
-
-  return {
-    id: credential.id,
-    rawId: arrayBufferToBase64Url(credential.rawId),
-    type: credential.type as 'public-key',
-    response: {
-      clientDataJSON: arrayBufferToBase64Url(response.clientDataJSON),
-      attestationObject: arrayBufferToBase64Url(response.attestationObject),
-    },
-    transports: typeof response.getTransports === 'function' ? response.getTransports() : undefined,
-  };
+export function getPasskeyCredential(
+  options: MutateOutput<"auth.passkeys.loginOptions">["options"],
+  signal?: AbortSignal,
+): Promise<
+  PasskeyCredentialResult<MutateInput<"auth.passkeys.login">["credential"]>
+> {
+  return localized(() => getCredential(options, signal));
 }
 
-export async function getPasskeyCredential(options: EncodedRequestOptions) {
-  if (!isPasskeySupported()) throw new Error(uiText("Passkeys werden von diesem Browser nicht unterstützt."));
-
-  const credential = await navigator.credentials.get({
-    publicKey: {
-      ...options,
-      challenge: base64UrlToArrayBuffer(options.challenge),
-      allowCredentials: options.allowCredentials.map(decodeDescriptor),
-    },
-  });
-
-  if (!(credential instanceof PublicKeyCredential)) throw new Error(uiText("Passkey-Anmeldung wurde abgebrochen."));
-  const response = credential.response;
-  if (!(response instanceof AuthenticatorAssertionResponse)) throw new Error(uiText("Ungültige Passkey-Antwort."));
-
-  return {
-    id: credential.id,
-    rawId: arrayBufferToBase64Url(credential.rawId),
-    type: credential.type as 'public-key',
-    response: {
-      clientDataJSON: arrayBufferToBase64Url(response.clientDataJSON),
-      authenticatorData: arrayBufferToBase64Url(response.authenticatorData),
-      signature: arrayBufferToBase64Url(response.signature),
-      userHandle: response.userHandle ? arrayBufferToBase64Url(response.userHandle) : null,
-    },
-  };
-}
-
-function decodeDescriptor(descriptor: EncodedCredentialDescriptor): PublicKeyCredentialDescriptor {
-  return {
-    ...descriptor,
-    id: base64UrlToArrayBuffer(descriptor.id),
-    transports: descriptor.transports as AuthenticatorTransport[] | undefined,
-  };
-}
-
-function base64UrlToArrayBuffer(value: string) {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-  const binary = window.atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-function arrayBufferToBase64Url(value: ArrayBuffer) {
-  const bytes = new Uint8Array(value);
-  let binary = '';
-  bytes.forEach(byte => {
-    binary += String.fromCharCode(byte);
-  });
-  return window.btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+async function localized<T>(perform: () => Promise<T>): Promise<T> {
+  try {
+    return await perform();
+  } catch (error) {
+    if (!(error instanceof PasskeyOperationError)) throw error;
+    switch (error.code) {
+      case "unsupported":
+        throw new Error(
+          uiText(
+            "Passkeys werden von diesem Browser nicht unterstützt.",
+            "Passkeys are not supported by this browser.",
+          ),
+        );
+      case "cancelled":
+        throw new Error(
+          uiText(
+            "Passkey-Vorgang wurde abgebrochen.",
+            "Passkey operation was cancelled.",
+          ),
+        );
+      case "invalid-response":
+        throw new Error(
+          uiText("Ungültige Passkey-Antwort.", "Invalid passkey response."),
+        );
+      case "prf-unavailable":
+        throw new Error(
+          uiText(
+            "Der Passkey konnte nicht eingerichtet werden. Bitte erneut versuchen.",
+            "The passkey could not be configured. Please try again.",
+          ),
+        );
+    }
+  }
 }

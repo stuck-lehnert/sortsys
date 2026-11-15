@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Isolierter DuckDB-/Browser-Anmeldetest ohne PostgreSQL oder Dev-Stack."""
+import contextlib
+import json
+import os
+from pathlib import Path
+import secrets
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+ROOT = Path(__file__).resolve().parent.parent
+API = ROOT / "sortsys-api-v2"
+STORE = ROOT / "sortsys-store/Cargo.toml"
+
+
+def stop(process):
+    if process is None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    if process.poll() is None:
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+
+
+def main():
+    bun = shutil.which(os.environ.get("SORTSYS_NATIVE_BUN", "bun"))
+    if bun is None or shutil.which("cargo") is None:
+        raise RuntimeError("Rust und Bun werden benötigt")
+    if not os.environ.get("DUCKDB_EXTENSION_DIRECTORY"):
+        raise RuntimeError("Die festgelegten DuckDB-Erweiterungen werden benötigt")
+    test_filter = os.environ.get("SORTSYS_NATIVE_AUTH_TEST_FILTER", "zerotrust::opaque::store_tests::")
+    if not test_filter.startswith("zerotrust::opaque::store_tests::"):
+        raise RuntimeError("Der Testfilter muss einen nativen Anmeldetest auswählen")
+    log_directory = Path(os.environ.get("SORTSYS_NATIVE_LOG_DIRECTORY", "/tmp"))
+    log_directory.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="sortsys-native-auth-", dir=log_directory))
+    print(f"Isolierter Anmeldetest: {directory}", flush=True)
+    env = os.environ.copy()
+    env.update({"SORTSYS_DISPOSABLE_AUTH_TEST": "1", "SORTSYS_NATIVE_AUTH_ROOT": str(directory), "SORTSYS_NATIVE_BUN": bun})
+    # Reserve both ports at once; only this service's loopback listeners are used.
+    with contextlib.ExitStack() as stack:
+        ports = [stack.enter_context(socket.socket()) for _ in range(2)]
+        for connection in ports:
+            connection.bind(("127.0.0.1", 0))
+        quack_port, control_port = [connection.getsockname()[1] for connection in ports]
+    env.update({
+        "DUCKDB_QUACK_URI": f"quack:127.0.0.1:{quack_port}",
+        "DUCKDB_CONTROL_URL": f"http://127.0.0.1:{control_port}",
+        "DUCKDB_QUACK_LISTEN": f"127.0.0.1:{quack_port}",
+        "DUCKDB_CONTROL_LISTEN": f"127.0.0.1:{control_port}",
+        "DUCKDB_SERVICE_TOKEN": "sortsys-disposable-" + secrets.token_urlsafe(32),
+        "DUCKDB_QUACK_DISABLE_SSL": "true",
+        "DUCKDB_DATA_DIRECTORY": str(directory / "duckdb"),
+    })
+    service = None
+    tests = None
+    success = False
+    with (directory / "build.log").open("w") as build_log:
+        try:
+            subprocess.run(["cargo", "build", "--manifest-path", str(STORE), "--locked", "--bin", "sortsys-duckdb"], cwd=ROOT, env=env, stdout=build_log, stderr=subprocess.STDOUT, check=True)
+            metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--manifest-path", str(STORE), "--no-deps", "--format-version=1"], cwd=ROOT, env=env))
+            binary = Path(metadata["target_directory"]) / "debug/sortsys-duckdb"
+            with (directory / "store.log").open("w") as store_log, (directory / "tests.log").open("w") as test_log:
+                service = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdout=store_log, stderr=subprocess.STDOUT, start_new_session=True)
+                deadline = time.monotonic() + 25
+                while True:
+                    if service.poll() is not None:
+                        raise RuntimeError("DuckDB-Start fehlgeschlagen; store.log prüfen")
+                    try:
+                        with urllib.request.urlopen(env["DUCKDB_CONTROL_URL"] + "/health", timeout=1) as response:
+                            if response.status == 200:
+                                break
+                    except (OSError, urllib.error.URLError):
+                        pass
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("DuckDB-Start hat das Zeitlimit überschritten")
+                    time.sleep(0.1)
+                tests = subprocess.Popen(["cargo", "test", "--locked", "--lib", test_filter, "--", "--ignored", "--nocapture", "--test-threads=1"], cwd=API, env=env, stdout=test_log, stderr=subprocess.STDOUT, start_new_session=True)
+                if tests.wait() != 0:
+                    raise RuntimeError("Anmeldetest fehlgeschlagen; tests.log prüfen")
+                if "running 0 tests" in (directory / "tests.log").read_text():
+                    raise RuntimeError("Der Testfilter hat keinen Test ausgewählt")
+                success = True
+                print((directory / "tests.log").read_text(), end="", flush=True)
+        finally:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            failures = []
+            for process in [tests, service]:
+                try:
+                    stop(process)
+                except (OSError, subprocess.SubprocessError) as error:
+                    failures.append(str(error))
+            if success and not failures:
+                shutil.rmtree(directory / "duckdb")
+            (directory / "cleanup.json").write_text(json.dumps({"servicesStopped": not failures, "dataKept": not success, "errors": failures}) + "\n")
+            print("Testdienste beendet; Protokolle bleiben erhalten.", flush=True)
+            if failures:
+                raise RuntimeError("Die Testdienste konnten nicht vollständig beendet werden")
+
+
+def interrupt(_signal, _frame):
+    raise KeyboardInterrupt()
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, interrupt)
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

@@ -26,6 +26,7 @@
     "baseUrl": ".",
     "paths": {
       "@sortsys/zerotrust": ["../sortsys-zerotrust/src/index.ts"],
+      "@sortsys/zerotrust/sortsys": ["../sortsys-zerotrust/src/sortsys.ts"],
       "@sortsys/zerotrust/worker": ["../sortsys-zerotrust/src/opaqueWorker.ts"],
       "@sortsys/gaeb": [
         "../sortsys-gaeb/src/index.ts"
