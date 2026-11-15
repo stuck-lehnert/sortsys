@@ -206,7 +206,9 @@ export class RpcBatchClient {
           const envelope = entry.error as Parameters<
             typeof superjson.deserialize
           >[0];
-          const shape = superjson.deserialize<RpcErrorShape>(envelope);
+          const shape = superjson.deserialize<RpcErrorShape>(envelope, {
+            inPlace: true,
+          });
           operation.reject(
             new RpcClientError(shape, { meta: (envelope as any)?.meta }),
           );
@@ -218,7 +220,10 @@ export class RpcBatchClient {
           );
           return;
         }
-        operation.resolve(superjson.deserialize(entry.result.data as any));
+        // response.json() gave this batch sole ownership of the wire value.
+        operation.resolve(
+          superjson.deserialize(entry.result.data as any, { inPlace: true }),
+        );
       });
     } catch (error) {
       const rpcError = RpcClientError.from(error);

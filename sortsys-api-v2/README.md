@@ -78,8 +78,8 @@ Geschäftstabellen vor.
 Ein wartender Änderungsabruf je aktivem Mandanten und API-Instanz verteilt
 bestätigte Hinweise an deren WebSocket-Verbindungen. Ein Rechte- oder Sitzungsentzug
 wird bei weiteren Zugriffen erneut geprüft. Der Load Balancer muss
-WebSocket-Upgrades unterstützen. Die zusätzlichen Dokumentnachrichten und
-laufenden Prüfpunkte werden noch auf diesen Speicherpfad umgestellt.
+WebSocket-Upgrades unterstützen. Auch verschlüsselte Dokumentnachrichten und
+ihre laufenden Prüfpunkte werden über den gemeinsamen Datendienst bestätigt.
 
 ## Container-Image
 

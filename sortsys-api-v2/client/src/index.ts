@@ -8,23 +8,31 @@ import type {
   QueryOutputs,
 } from "./generated/contract";
 import { RpcBatchClient, RpcClientError } from "./rpc";
-import type { Cache } from "./cache"; // <-- your patched cache module (createCache(): Cache)
-import { createCache, isInBrowser } from "./cache"; // adjust path as needed
+import type { Cache } from "./cache";
+import { createCache, isInBrowser } from "./cache";
 import { concat, from, Observable, Subject } from "rxjs";
 
-/**
- * Streaming/caching modes consistent with your REST client.
- */
-export type CacheMode = "cache-first" | "cache-only" | "network-first" | "network-only";
+/** Select the network/cache order for queries and refreshed streams. */
+export type CacheMode =
+  | "cache-first"
+  | "cache-only"
+  | "network-first"
+  | "network-only";
 
 // Cancelling one consumer must not cancel other operations in the same HTTP
 // batch. A mutation already sent may still commit; only its late client-side
 // result and authentication/cache side effects are discarded here.
-function withRequestSignal<T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+function withRequestSignal<T>(
+  request: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   if (!signal) return request();
   let abort: () => void = () => {};
   return new Promise<T>((resolve, reject) => {
-    abort = () => reject(signal.reason ?? new DOMException("Request cancelled", "AbortError"));
+    abort = () =>
+      reject(
+        signal.reason ?? new DOMException("Request cancelled", "AbortError"),
+      );
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
     else request().then(resolve, reject);
@@ -45,7 +53,8 @@ function stableStringify(value: unknown) {
     for (const k of Object.keys(record).sort()) {
       const v = record[k];
       // Match JSON.stringify behavior: omit undefined, functions, symbols
-      if (v === undefined || typeof v === "function" || typeof v === "symbol") continue;
+      if (v === undefined || typeof v === "function" || typeof v === "symbol")
+        continue;
       out[k] = normalize(v);
     }
 
@@ -62,7 +71,6 @@ const _td = new TextDecoder();
 const _te = new TextEncoder();
 const REALM_SEPARATOR = "::";
 
-
 function utf8Bytes(str: string) {
   return _te.encode(str);
 }
@@ -73,9 +81,9 @@ function stableHash(obj: any) {
   const bytes = utf8Bytes(json);
 
   // FNV-1a 64-bit parameters
-  let hash = 0xcbf29ce484222325n;       // offset basis
-  const prime = 0x100000001b3n;         // FNV prime
-  const mask = 0xffffffffffffffffn;     // 64-bit mask
+  let hash = 0xcbf29ce484222325n; // offset basis
+  const prime = 0x100000001b3n; // FNV prime
+  const mask = 0xffffffffffffffffn; // 64-bit mask
 
   for (let i = 0; i < bytes.length; i++) {
     hash ^= BigInt(bytes[i]!);
@@ -94,7 +102,6 @@ function _isAuthError(e: unknown): boolean {
   if (!(e instanceof RpcClientError)) return false;
   return (e as any)?.data?.httpCode === 401;
 }
-
 
 export { RpcClientError } from "./rpc";
 export type QueryPath = Extract<keyof QueryInputs, string>;
@@ -119,9 +126,7 @@ export interface Client {
    *   are deduplicated, i.e. executed once and share the result; `network-only`
    *   shares pending requests only and never reuses a completed response)
    */
-  query<
-    PathT extends QueryPaths,
-  >(
+  query<PathT extends QueryPaths>(
     path: PathT,
     input: QueryInput<PathT>,
     opts?: {
@@ -143,9 +148,7 @@ export interface Client {
     },
   ): Promise<[unknown | null, RpcClientError | null]>;
 
-  streamQuery<
-    PathT extends QueryPaths,
-  >(
+  streamQuery<PathT extends QueryPaths>(
     path: PathT,
     input: QueryInput<PathT>,
     opts?: {
@@ -153,9 +156,7 @@ export interface Client {
     },
   ): Observable<[QueryOutput<PathT> | null, RpcClientError | null]>;
 
-  mutate<
-    PathT extends MutatePaths,
-  >(
+  mutate<PathT extends MutatePaths>(
     path: PathT,
     input: MutateInput<PathT>,
     opts?: { signal?: AbortSignal },
@@ -191,7 +192,7 @@ export interface Client {
    * subsequent requests, until logout() is called. In browsers, the token is also
    * stored in `localStorage`, so that it can be restored using `restoreSession()`.
    */
-  login(input: MutateInput<'auth.login'>): Promise<void>;
+  login(input: MutateInput<"auth.login">): Promise<void>;
 
   /**
    * Set or clear the bearer token used for subsequent requests.
@@ -212,7 +213,7 @@ export interface Client {
    * Listen to auth state changes
    * @returns Unsubscribe function
    */
-  listenAuthState(listener: () => void): (() => void);
+  listenAuthState(listener: () => void): () => void;
 
   loggedIn(): boolean;
 
@@ -226,7 +227,6 @@ export interface Client {
   clearCache(): Promise<void>;
 }
 
-
 /**
  * Usage:
  * ```ts
@@ -236,11 +236,17 @@ export interface Client {
  * await client.mutate("tools.create", input)
  * ```
  */
-export function createClient(endpoint: string, realm: string, opts?: {
-  cache?: Cache;
-  fetch?: typeof globalThis.fetch;
-  revision?: string;
-}): Client {
+export function createClient(
+  endpoint: string,
+  realm: string,
+  opts?: {
+    cache?: Cache;
+    /** Exclude responses that must never be reused or serialized to this cache. */
+    cacheable?: (path: string) => boolean;
+    fetch?: typeof globalThis.fetch;
+    revision?: string;
+  },
+): Client {
   const normalizedRealm = realm.trim();
   if (!normalizedRealm) {
     throw new Error("Client realm must not be empty.");
@@ -260,6 +266,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
   const legacyRpcCachePrefix = `${realmPrefix}rpc:`;
   const tokenStorageKey = `${realmPrefix}token`;
   const cache = opts?.cache ?? createCache();
+  const cacheable = opts?.cacheable ?? (() => true);
 
   // Query response shapes can change between builds. Keep session storage stable,
   // but remove response entries written by older application revisions.
@@ -268,8 +275,8 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
     for (const key of await cache.keys()) {
       const isLegacyEntry = key.startsWith(legacyRpcCachePrefix);
-      const isOtherRevision = key.startsWith(revisionCachePrefix)
-        && !key.startsWith(rpcCachePrefix);
+      const isOtherRevision =
+        key.startsWith(revisionCachePrefix) && !key.startsWith(rpcCachePrefix);
 
       if (isLegacyEntry || isOtherRevision) {
         deletions.push(cache.delete(key));
@@ -283,16 +290,20 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
   const rpc = new RpcBatchClient(endpoint, {
     fetch: opts?.fetch,
-    headers: (): HeadersInit => bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {},
+    headers: (): HeadersInit =>
+      bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {},
   });
 
   function _authScope() {
-    return bearerToken ? stableHash(bearerToken) : 'anonymous';
+    return bearerToken ? stableHash(bearerToken) : "anonymous";
   }
 
   function _assertAuthToken(expectedToken: string | null) {
     if (expectedToken !== bearerToken) {
-      throw new DOMException("Authentication changed during the request", "AbortError");
+      throw new DOMException(
+        "Authentication changed during the request",
+        "AbortError",
+      );
     }
   }
 
@@ -312,7 +323,8 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
   function _scopedCacheKey(key: string) {
     if (key.startsWith(rpcCachePrefix)) return key;
-    if (key.startsWith("rpc:")) return `${revisionCachePrefix}${normalizedRevision}${REALM_SEPARATOR}${key}`;
+    if (key.startsWith("rpc:"))
+      return `${revisionCachePrefix}${normalizedRevision}${REALM_SEPARATOR}${key}`;
 
     return null;
   }
@@ -333,34 +345,52 @@ export function createClient(endpoint: string, realm: string, opts?: {
     await Promise.all(deletions);
   }
 
-  const _pendingRequests: Record<string, { promise: Promise<any>; settled: boolean }> = {};
-  function _dedupeRequest<T>(cacheKey: string, fn: () => Promise<T>, fresh = false) {
+  const _pendingRequests: Record<
+    string,
+    { promise: Promise<any>; settled: boolean }
+  > = {};
+  function _dedupeRequest<T>(
+    cacheKey: string,
+    fn: () => Promise<T>,
+    fresh = false,
+  ) {
     const known = _pendingRequests[cacheKey];
     if (known && (!fresh || !known.settled)) return known.promise as Promise<T>;
 
     const request = { promise: fn(), settled: false };
-    const clear = () => { if (_pendingRequests[cacheKey] === request) delete _pendingRequests[cacheKey]; };
-    request.promise = request.promise.then(value => {
-      request.settled = true;
-      // Network-only may share an outstanding request, never an already
-      // completed policy, key or object response from another point in time.
-      if (fresh) clear(); else setTimeout(clear, 250);
-      return value;
-    }, error => {
-      // A denial must not outlive certification or a permission change on
-      // another API client. Deduplicate failures only while actually pending.
-      clear();
-      throw error;
-    });
+    const clear = () => {
+      if (_pendingRequests[cacheKey] === request)
+        delete _pendingRequests[cacheKey];
+    };
+    request.promise = request.promise.then(
+      (value) => {
+        request.settled = true;
+        // Network-only may share an outstanding request, never an already
+        // completed policy, key or object response from another point in time.
+        if (fresh) clear();
+        else setTimeout(clear, 250);
+        return value;
+      },
+      (error) => {
+        // A denial must not outlive certification or a permission change on
+        // another API client. Deduplicate failures only while actually pending.
+        clear();
+        throw error;
+      },
+    );
 
     _pendingRequests[cacheKey] = request;
     return request.promise;
   }
 
-  async function _lookup(cacheKey: string) {
+  async function _lookup(cacheKey: string, path: string) {
     await staleCacheCleanup;
+    if (!cacheable(path)) {
+      await cache.delete(cacheKey);
+      return null;
+    }
 
-    return cache.getBytes(cacheKey).then(bytes => {
+    return cache.getBytes(cacheKey).then((bytes) => {
       if (!bytes) return null;
 
       try {
@@ -396,17 +426,15 @@ export function createClient(endpoint: string, realm: string, opts?: {
     _authState$.next();
   }
 
-
   const client: Client = Object.freeze<Client>({
     query(path, input, opts) {
-      return client.queryDynamic(path, input, opts) as Promise<[
-        QueryOutput<typeof path> | null,
-        RpcClientError | null,
-      ]>;
+      return client.queryDynamic(path, input, opts) as Promise<
+        [QueryOutput<typeof path> | null, RpcClientError | null]
+      >;
     },
 
     async queryDynamic(path, input, _opts) {
-      const _strategy = _opts?.strategy ?? 'network-first';
+      const _strategy = _opts?.strategy ?? "network-first";
 
       const cacheKey = _cacheKey(path, input);
 
@@ -414,11 +442,19 @@ export function createClient(endpoint: string, realm: string, opts?: {
         const requestAuthScope = _authScope();
 
         try {
-          return [(await _dedupeRequest(cacheKey, () => rpc.query(path, input), _strategy === "network-only")) ?? null, null];
+          const fresh = _strategy === "network-only" || !cacheable(path);
+          return [
+            (await _dedupeRequest(
+              cacheKey,
+              () => rpc.query(path, input),
+              fresh,
+            )) ?? null,
+            null,
+          ];
         } catch (e) {
           if (e instanceof RpcClientError) {
             _autoLogoutOnAuthError(e, requestAuthScope);
-            if ((e as any)?.code === 'ConnectionRefused') return [null, null];
+            if ((e as any)?.code === "ConnectionRefused") return [null, null];
             return [null, e];
           }
 
@@ -426,37 +462,43 @@ export function createClient(endpoint: string, realm: string, opts?: {
         }
       }
 
-      async function _process<T>(payload: [T | null, RpcClientError<any> | null]): Promise<typeof payload> {
+      async function _process<T>(
+        payload: [T | null, RpcClientError<any> | null],
+      ): Promise<typeof payload> {
         const [data, err] = payload;
         if (err || !data) {
-          await cache.delete(cacheKey)
+          await cache.delete(cacheKey);
           return [null, err];
         }
 
+        if (!cacheable(path)) {
+          await cache.delete(cacheKey);
+          return [data, null];
+        }
         const bytes = _te.encode(superjson.stringify(data));
         await cache.setBytes(cacheKey, bytes);
         return [data, null];
       }
 
-      if (_strategy === 'cache-only') {
-        return [await _lookup(cacheKey) as any, null];
+      if (_strategy === "cache-only") {
+        return [(await _lookup(cacheKey, path)) as any, null];
       }
 
-      if (_strategy === 'network-only') {
+      if (_strategy === "network-only") {
         return await _process(await _fetch());
       }
 
-      if (_strategy === 'cache-first') {
-        const data = await _lookup(cacheKey) as any;
+      if (_strategy === "cache-first") {
+        const data = (await _lookup(cacheKey, path)) as any;
         if (data) return [data, null];
         return await _process(await _fetch());
       }
 
-      if (_strategy === 'network-first') {
+      if (_strategy === "network-first") {
         let [data, err] = await _fetch();
         if (data) return await _process([data, null]);
 
-        data = await _lookup(cacheKey);
+        data = await _lookup(cacheKey, path);
         if (data) return [data, null];
         return [null, err];
       }
@@ -546,7 +588,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
     streamQuery(path, input, opts) {
       opts ??= {};
-      opts.strategy ??= 'cache-first';
+      opts.strategy ??= "cache-first";
 
       const cacheKey = _cacheKey(path, input);
 
@@ -554,11 +596,19 @@ export function createClient(endpoint: string, realm: string, opts?: {
         const requestAuthScope = _authScope();
 
         try {
-          return [(await _dedupeRequest(cacheKey, () => rpc.query(path, input), opts?.strategy === "network-only")) ?? null, null];
+          const fresh = opts?.strategy === "network-only" || !cacheable(path);
+          return [
+            (await _dedupeRequest(
+              cacheKey,
+              () => rpc.query(path, input),
+              fresh,
+            )) ?? null,
+            null,
+          ];
         } catch (e) {
           if (e instanceof RpcClientError) {
             _autoLogoutOnAuthError(e, requestAuthScope);
-            if ((e as any)?.code === 'ConnectionRefused') return [null, null];
+            if ((e as any)?.code === "ConnectionRefused") return [null, null];
             return [null, e];
           }
 
@@ -566,13 +616,19 @@ export function createClient(endpoint: string, realm: string, opts?: {
         }
       }
 
-      async function _process<T>(payload: [T | null, RpcClientError<any> | null]): Promise<typeof payload> {
+      async function _process<T>(
+        payload: [T | null, RpcClientError<any> | null],
+      ): Promise<typeof payload> {
         const [data, err] = payload;
         if (err || !data) {
-          await cache.delete(cacheKey)
+          await cache.delete(cacheKey);
           return [null, err];
         }
 
+        if (!cacheable(path)) {
+          await cache.delete(cacheKey);
+          return [data, null];
+        }
         const bytes = _te.encode(superjson.stringify(data));
         await cache.setBytes(cacheKey, bytes);
         return [data, null];
@@ -583,8 +639,8 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
         // Keep a usable cached response on failure; without one, preserve the
         // error instead of emitting an empty result that looks like loading.
-        if (payload[1] && opts?.strategy === 'network-first') {
-          const cached = await _lookup(cacheKey);
+        if (payload[1] && opts?.strategy === "network-first") {
+          const cached = await _lookup(cacheKey, path);
           if (cached !== null) return [cached, null] as typeof payload;
         }
 
@@ -592,10 +648,13 @@ export function createClient(endpoint: string, realm: string, opts?: {
       }
 
       async function* createGenerator() {
-        if (opts!.strategy === 'cache-first' || opts!.strategy === 'cache-only') {
-          const cached = await _lookup(cacheKey);
+        if (
+          opts!.strategy === "cache-first" ||
+          opts!.strategy === "cache-only"
+        ) {
+          const cached = await _lookup(cacheKey, path);
           if (cached) yield [cached, null];
-          if (opts!.strategy === 'cache-only') return;
+          if (opts!.strategy === "cache-only") return;
         }
 
         yield await _networkResult();
@@ -634,47 +693,77 @@ export function createClient(endpoint: string, realm: string, opts?: {
       const requestToken = bearerToken;
 
       try {
-        const data = await withRequestSignal(() => rpc.mutation<unknown>(path, input), opts?.signal);
+        const data = await withRequestSignal(
+          () => rpc.mutation<unknown>(path, input),
+          opts?.signal,
+        );
         opts?.signal?.throwIfAborted();
         _assertAuthToken(requestToken);
 
         // Authentication mutations must update the token before invalidating auth
         // queries. Those invalidations can immediately refetch auth.sessionInfo.
-        if (path === 'zerotrust.policy.replace' || path === 'zerotrust.domains.put' || path === 'zerotrust.identities.certify' || path === 'zerotrust.keys.grant' || path === 'zerotrust.invitations.approve' || path === 'zerotrust.invitations.complete') {
+        if (
+          path === "zerotrust.policy.replace" ||
+          path === "zerotrust.domains.put" ||
+          path === "zerotrust.identities.certify" ||
+          path === "zerotrust.keys.grant" ||
+          path === "zerotrust.invitations.approve" ||
+          path === "zerotrust.invitations.complete"
+        ) {
           // Permission and key changes also invalidate completed request
           // deduplication, including a previously denied key response.
-          for (const affected of ['zerotrust.status', 'zerotrust.trust.history', 'zerotrust.identities.list', 'zerotrust.policy.get', 'zerotrust.domains.list', 'zerotrust.domains.get', 'zerotrust.keys.get', 'zerotrust.objects.list', 'zerotrust.objects.get']) {
+          for (const affected of [
+            "zerotrust.status",
+            "zerotrust.trust.history",
+            "zerotrust.identities.list",
+            "zerotrust.policy.get",
+            "zerotrust.domains.list",
+            "zerotrust.domains.get",
+            "zerotrust.keys.get",
+            "zerotrust.objects.list",
+            "zerotrust.objects.get",
+          ]) {
             await client.invalidate(affected);
           }
         }
         _assertAuthToken(requestToken);
-        if (path === 'auth.login' || path === 'auth.passkeys.login' || path === 'auth.opaque.loginFinish' || path === 'auth.opaque.invitationFinish' || path === 'auth.owner.finish') {
+        if (
+          path === "auth.login" ||
+          path === "auth.passkeys.login" ||
+          path === "auth.opaque.loginFinish" ||
+          path === "auth.opaque.invitationFinish" ||
+          path === "auth.owner.finish"
+        ) {
           const token = (data as { token?: unknown })?.token;
-          if (typeof token === 'string' && token) client.setToken(token);
-        } else if (path === 'auth.logout') {
+          if (typeof token === "string" && token) client.setToken(token);
+        } else if (path === "auth.logout") {
           client.setToken(null);
         }
         const resultToken = bearerToken;
         await client.invalidateCascading(path);
         // Entity history is shared by the dashboard and entity timelines rather
         // than living under the mutated entity's query namespace.
-        if (/^(users|projects|tools|products|customers|contacts|regieReports|settings|remarks)\./.test(path)
-          || /^auth\.(password|passkeys)\./.test(path)) {
-          await client.invalidate('personalization.activity.list');
+        if (
+          /^(users|projects|tools|products|customers|contacts|regieReports|settings|remarks)\./.test(
+            path,
+          ) ||
+          /^auth\.(password|passkeys)\./.test(path)
+        ) {
+          await client.invalidate("personalization.activity.list");
         }
         _assertAuthToken(resultToken);
         return [data, null];
       } catch (e) {
         _autoLogoutOnAuthError(e, requestAuthScope);
-        if (!(e instanceof Error)) return [null, new Error('unexpected error')];
+        if (!(e instanceof Error)) return [null, new Error("unexpected error")];
         return [null, e as Error];
       }
     },
 
     async login(input) {
-      const [data, err] = await client.mutate('auth.login', input);
+      const [data, err] = await client.mutate("auth.login", input);
       if (err) throw err;
-      if (!data) throw new Error('Login failed: missing response payload');
+      if (!data) throw new Error("Login failed: missing response payload");
 
       // mutate owns the authenticated transition. Installing it a second time
       // here could overwrite a newer session after this await resumes.
@@ -689,7 +778,9 @@ export function createClient(endpoint: string, realm: string, opts?: {
         `${endpoint.replace(/\/+$/, "")}${path}`,
         {
           method: "GET",
-          headers: requestToken ? { Authorization: `Bearer ${requestToken}` } : {},
+          headers: requestToken
+            ? { Authorization: `Bearer ${requestToken}` }
+            : {},
           credentials: "omit",
           redirect: "error",
           cache: "no-store",
@@ -708,11 +799,11 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
       bearerToken = token;
 
-      if (isInBrowser() && typeof localStorage !== 'undefined') {
+      if (isInBrowser() && typeof localStorage !== "undefined") {
         if (token) localStorage.setItem(tokenStorageKey, token);
         else localStorage.removeItem(tokenStorageKey);
       }
-      
+
       _notifyAuthStateListeners();
     },
 
@@ -726,7 +817,7 @@ export function createClient(endpoint: string, realm: string, opts?: {
         return;
       }
 
-      await client.mutate('auth.logout', undefined).catch(() => {});
+      await client.mutate("auth.logout", undefined).catch(() => {});
 
       if (bearerToken === logoutToken) client.setToken(null);
     },
@@ -751,10 +842,13 @@ export function createClient(endpoint: string, realm: string, opts?: {
 
     async clearCache() {
       return _clearRealmCache();
-    }
+    },
   });
 
-  function _autoLogoutOnAuthError(err: unknown, requestAuthScope = _authScope()) {
+  function _autoLogoutOnAuthError(
+    err: unknown,
+    requestAuthScope = _authScope(),
+  ) {
     if (!_isAuthError(err)) return;
 
     // A request issued before a login/logout transition must not be allowed to

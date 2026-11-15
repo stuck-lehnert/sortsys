@@ -24,23 +24,17 @@ JavaScript, Typdeklarationen und Paketmetadaten entstehen in `dist/`.
 ```ts
 import { createClient } from "@sortsys/v2-client";
 
-const client = createClient("/api/v2", "webapp");
-
-await client.login({
-  tenant: "example",
-  username: "john.doe",
-  password: "secret",
+const client = createClient("/api/v2", "webapp", {
+  cacheable: (path) => !path.startsWith("zerotrust."),
 });
 
-const [projects, error] = await client.query("projects.list", {});
+const [reply, error] = await client.query("ping", undefined);
 
 if (error) {
   throw error;
 }
 
-await client.mutate("projects.create", {
-  title: "Umbau Büroetage",
-});
+console.log(reply);
 ```
 
 Pfade, Eingaben und Ergebnisse von `query` und `mutate` kommen aus
@@ -51,6 +45,24 @@ Pfade, Eingaben und Ergebnisse von `query` und `mutate` kommen aus
 `network-only` teilt nur noch laufende identische Anfragen. Sobald eine Antwort
 eingetroffen ist, fragt der nächste Aufruf den Server erneut. Das gilt auch,
 wenn zuvor eine andere Cache-Strategie dieselbe Anfrage abgeschlossen hat.
+
+`cacheable` nimmt ausgewählte Pfade vollständig vom Antwortcache aus. Ihre
+Ergebnisse werden weder als Cache-Wert serialisiert noch später als Ersatz für
+eine fehlgeschlagene Anfrage verwendet. Laufende identische Anfragen dürfen
+weiterhin dieselbe Antwort teilen. Die Webapp nutzt dies für Sicherheitsmetadaten,
+die ihre Zugriffsprüfungen stets frisch laden.
+
+Kleine Leseanfragen verwenden GET. Würde die gebündelte URL länger als 6.000
+Zeichen, überträgt der Client die Eingaben als JSON-Body mit POST. Ein Stapel
+enthält höchstens 32 Operationen. Reihenfolge, Datentypen und die beim Aufruf
+geltenden Zugangsdaten bleiben erhalten.
+
+Die Browser-Anmeldung verwendet den
+[OPAQUE-Anmeldeweg der Webapp](../../sortsys-webapp-v2/app/lib/crypto/session.ts).
+Für Geschäftsdaten ergänzt deren
+[Datenfassade](../../sortsys-webapp-v2/app/lib/data/businessClient.ts) den Transport
+um lokale Suche, Inhaltsprüfung und Verschlüsselung. Ein typisierter
+Geschäftspfad registriert keinen Klartext-Endpunkt an der API.
 
 ## Tests
 
