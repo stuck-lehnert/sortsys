@@ -178,16 +178,15 @@ export function buildGaebTypst(
   ];
   const rows: string[] = [];
   for (const entry of doc.outlineEntries) {
-    const context =
-      reference?.entries.find(
-        (candidate) =>
-          candidate.element.getAttribute("ID") ===
-          entry.element.getAttribute("ID"),
-      ) ?? reference?.entries.find((candidate) => candidate.oz === entry.oz);
+    const context = doc.referenceEntry(entry, reference);
     const roots =
       context && ["84", "31"].includes(doc.phase)
         ? reference!.richRoots(context)
         : doc.richRoots(entry);
+    if (context && doc.phase === "84") {
+      const bidComment = doc.child(entry.element, "BidComm");
+      if (bidComment) roots.push(bidComment);
+    }
     const description =
       roots.map((node) => rich(node, images)).join("") || literal(entry.title);
     if (entry.kind === "category") {
@@ -212,9 +211,7 @@ export function buildGaebTypst(
       continue;
     }
     const qty =
-      doc.quantity(entry) ||
-      (context && reference?.quantity(context)) ||
-      "0.000";
+      doc.quantity(entry) || (context && reference?.quantity(context)) || "—";
     const unit =
       doc.value(entry.element, "QU") ||
       (context && reference?.value(context.element, "QU")) ||
@@ -260,13 +257,13 @@ export function buildGaebTypst(
           )
           .join("");
     rows.push(
-      `[${literal(entry.oz)}],[${description}${takeoff}],[${literal(quantity(qty))}],[${literal(unit)}],${priced ? `[${literal(money(doc.unitPrice(entry), true))}],[${literal(money(doc.amount(entry)))}],` : ""}`,
+      `[${literal(entry.oz)}],[${description}${takeoff}],[${literal(quantity(qty))}],[${literal(unit)}],${priced ? `[${literal(money(doc.unitPrice(entry), true))}],[${literal(money(doc.amount(entry, reference)))}],` : ""}`,
     );
   }
   const totals: string[] = [];
   if (priced) {
     const net = gaebNetAmount(xml, referenceXml);
-    const boqInfo = doc.xml.getElementsByTagNameNS(doc.namespace, "BoQInfo")[0];
+    const boqInfo = doc.boqInfo;
     const vat = doc.value(boqInfo && doc.child(boqInfo, "Totals"), "VAT");
     if (invoice) {
       const line = (label: string, amount: string) =>

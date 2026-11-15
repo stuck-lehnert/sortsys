@@ -3,37 +3,67 @@ export { EditorIconButton } from "./components/EditorIconButton";
 export { GaebDocument, type GaebEntry } from "./core/document";
 export { createGaebXml } from "./core/templates";
 export {
-  isGaebFile,
-  gaebFilePhase,
   GAEB_PHASES,
-  MAX_GAEB_BYTES,
+  gaebFilePhase,
   type GaebPhase,
+  isGaebFile,
+  MAX_GAEB_BYTES,
 } from "./core/types";
 export { validateGaebInBrowser } from "./core/validationClient";
 export { browserGaebXml, type GaebXmlProcessor } from "./core/privacyClient";
-export type { GaebXmlPartition, GaebXmlLayout, GaebXmlFragment, GaebContentFacet, GaebPrivateFacet } from "./core/privacy";
+export type { GaebContentAccess } from "./core/contentFacets";
+export type { FinancialAssessment, FinancialView } from "./core/financialView";
+export type { FinancialCalculation } from "./core/financialView";
+export type { GaebEditView, GaebEditViewRequest } from "./core/editView";
+export type {
+  GaebPrintAssessment,
+  GaebPrintReadiness,
+  GaebPrintView,
+  GaebPrintViewRequest,
+} from "./core/printView";
+export { GAEB_CONTENT_FACETS } from "./core/contentFacets";
+export { gaebAmountFacet, gaebQuantityFacet } from "./core/contentFacets";
+export type {
+  InvoiceValidationOptions,
+  IssuedInvoiceReference,
+  ValidatedInvoice,
+} from "./core/invoiceValidation";
+export type {
+  GaebContentFacet,
+  GaebPrivateFacet,
+  GaebXmlFragment,
+  GaebXmlLayout,
+  GaebXmlPartition,
+} from "./core/privacy";
 export { type GaebLocale } from "./messages";
 export { GAEB_DOCUMENT_TYPES, gaebDocumentName } from "./documentTypes";
 export { mergeGaebXml } from "./core/merge";
 export { mergeGaebDocuments } from "./core/mergeDocument";
 export type { Collaborator } from "./canvas/types";
-export { SharedFields, type LiveSelection } from "./core/sharedFields";
 export {
+  initializeSharedField,
+  InvalidSharedUpdate,
+  type LiveSelection,
+  mergeSharedUpdates,
+  type SharedFieldReception,
+  SharedFields,
+} from "./core/sharedFields";
+export {
+  type ConnectionStatus,
   connectXmlLive,
   type LiveSnapshot,
-  type ConnectionStatus,
 } from "./core/live";
 
 export {
-  deriveGaebDocument,
-  gaebNetAmount,
   compareGaebPositions,
   type DerivationOptions,
+  deriveGaebDocument,
+  gaebNetAmount,
 } from "./core/workflows";
 
 export type {
-  GaebPositionSuggestion,
   GaebPositionSearch,
+  GaebPositionSuggestion,
 } from "./core/positionLibrary";
 
 export {
@@ -42,28 +72,28 @@ export {
 } from "./core/viewPreferences";
 
 export {
-  DEFAULT_GAEB_TEMPLATE,
   buildGaebTypst,
   compileTypst,
+  DEFAULT_GAEB_TEMPLATE,
   downloadPdf,
 } from "./core/print";
 
 export {
-  createInvoiceXml,
   type BillingOptions,
+  createInvoiceXml,
   type PreviousInvoice,
 } from "./core/billing";
-export { phaseCanEdit, phaseHasPrices, isTradePhase } from "./core/types";
+export { isTradePhase, phaseCanEdit, phaseHasPrices } from "./core/types";
 
 export {
-  newMeasurement,
   calculateMeasurement,
   evaluateMeasure,
   measureDecimal,
-  rebMeasureRow,
-  rebAddress,
   type Measurement,
   type MeasureShape,
+  newMeasurement,
+  rebAddress,
+  rebMeasureRow,
 } from "./core/takeoff";
 
 export { gaebEmbeddedImageFiles } from "./core/embeddedImages";

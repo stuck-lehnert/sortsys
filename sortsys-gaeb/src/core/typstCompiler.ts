@@ -19,7 +19,9 @@ export function compileTypst(
       const fonts = await Promise.all(
         fontUrls.map(async (url) => {
           const response = await fetch(url);
-          if (!response.ok) throw new Error("PDF font unavailable");
+          if (!response.ok) {
+            throw new Error("PDF font unavailable");
+          }
           return new Uint8Array(await response.arrayBuffer());
         }),
       );
@@ -59,15 +61,19 @@ export function compileTypst(
         diagnostics: "unix",
       });
       signal?.throwIfAborted();
-      if (!result.result?.length)
+      if (!result.result?.length) {
         throw new Error(
           result.diagnostics?.join("\n") ||
             "Typst could not compile the document",
         );
+      }
       return result.result;
     } finally {
-      try { await api.resetShadow(); }
-      finally { await compiler.reset(); }
+      try {
+        await api.resetShadow();
+      } finally {
+        await compiler.reset();
+      }
     }
   });
   queue = task.then(

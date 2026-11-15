@@ -1,0 +1,67 @@
+<GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/200407">
+  <GAEBInfo>
+    <Version>3.1</Version>
+    <VersDate>2009-12</VersDate>
+    <Date>2026-11-13</Date>
+    <ProgSystem>sortsys</ProgSystem>
+    <ProgName>sortsys GAEB</ProgName>
+  </GAEBInfo>
+  <Award>
+    <DP>84</DP>
+    <AwardInfo>
+      <Cur>EUR</Cur>
+    </AwardInfo>
+    <CTR>
+      <Address>
+        <Name1>…</Name1>
+        <Street>…</Street>
+        <PCode>…</PCode>
+        <City>…</City>
+      </Address>
+      <CntryType>EEA</CntryType>
+    </CTR>
+    <BoQ ID="boq">
+      <BoQInfo>
+        <Name>Signiertes Fensteran</Name>
+        <BoQBkdn>
+          <Type>Item</Type>
+          <Length>4</Length>
+          <Num>Yes</Num>
+        </BoQBkdn>
+        <Totals>
+          <Total>30.00</Total>
+        </Totals>
+      </BoQInfo>
+      <BoQBody>
+        <Itemlist>
+          <Item ID="window" RNoPart="0001">
+            <UP>10.000</UP>
+            <IT>30.00</IT>
+          </Item>
+        </Itemlist>
+      </BoQBody>
+    </BoQ>
+  </Award>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+  <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></ds:CanonicalizationMethod>
+  <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"></ds:SignatureMethod>
+  <ds:Reference URI="">
+    <ds:Transforms>
+      <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"></ds:Transform>
+      <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></ds:Transform>
+    </ds:Transforms>
+    <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>
+    <ds:DigestValue>XNkUNgZ+Q8DxZzkjgw4RZJmXfbxxiWXsQRx2yGdKEWo=</ds:DigestValue>
+  </ds:Reference>
+</ds:SignedInfo>
+<ds:SignatureValue>IRElqdx4nZAj1x11XFLJfu8GBd8XOn1Wd957kw8aS2i3F3lo7Qxj9E2/SLUJgyXD2H8arlPWCzBdmdPThMLxPq6+FgovYir4biuzKMACj3GBA9VOZGX7Ih4XUqifAGOwYiZOowreHxLnHo4MH2ny80/RIIya8/YJk62WXVyQOH2BmOaZq84SnMYsGvuPCVxCHGAeXFzqqrMLc+NsIBTvbxmfzV5uptfw//JBWjotEs6h0GSrmGe5gajuW2sRYCXIYa3WmOu+3s8IVFJNfLkQPAqXllyWTOcEJGAHUjuyR9YPJTq1pK5p4LaMBYvMcxyPd27/jkV8cUGlV9rdC/086g==</ds:SignatureValue>
+<ds:KeyInfo>
+  <ds:KeyValue>
+    <ds:RSAKeyValue>
+      <ds:Modulus>r72RWW9jafIHbK69T54eJn/5fp9dH7j2AYuMyOZPtaeTCxdcH6b8KPH1wp0h8Z4f2wdiayOvA58yYjkftZaZJW271oD1KC8ZjlloKBHDzM4bxnpoNJybfVL70FgcyeXFHWnS30EnqzfdunXxiLlPZ7saN1rFWAw2FLv/8pEkju2roLPO7z9I2qdgBR/blt/OjcLvGH8ACD6ZJqltX0vNBliqPBzSh8VWQDCmEaXMsl0GtskyoUcAJL/kT4Ev6oLizTsuL9jO0Iz8R0qY6SzjQ/m61Ch74NPJAMUSRMz9Hm7MIF1CX32a+PY1YEqaLKIknZVGLrrS3vIbz1AXZATLjw==</ds:Modulus>
+      <ds:Exponent>AQAB</ds:Exponent>
+    </ds:RSAKeyValue>
+  </ds:KeyValue>
+</ds:KeyInfo>
+</ds:Signature></GAEB>

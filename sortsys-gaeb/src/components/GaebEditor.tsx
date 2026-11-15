@@ -7,8 +7,8 @@ import Keyboard from "@carbon/icons-react/es/Keyboard";
 import { macKeyboard } from "../canvas/keyboard";
 import {
   DEFAULT_GAEB_VIEW,
-  localGaebView,
   type GaebViewPreferences,
+  localGaebView,
 } from "../core/viewPreferences";
 import {
   useCallback,
@@ -25,24 +25,32 @@ import { GaebRibbon } from "./GaebRibbon";
 import { GaebDocumentSplit } from "./GaebDocumentSplit";
 import FolderAdd from "@carbon/icons-react/es/FolderAdd";
 import View from "@carbon/icons-react/es/View";
-import type { SharedFields, LiveSelection } from "../core/sharedFields";
+import type { LiveSelection, SharedFields } from "../core/sharedFields";
 import {
-  rememberPositions,
-  searchPositions as searchLocalPositions,
   type GaebPositionSearch as PositionSearch,
   type GaebPositionSuggestion,
+  rememberPositions,
+  searchPositions as searchLocalPositions,
 } from "../core/positionLibrary";
 import { migrateRichDrafts } from "../core/richText";
 import { GaebDocument } from "../core/document";
+import type { GaebPrintReadiness } from "../core/printView";
+import {
+  GAEB_CONTENT_FACETS,
+  gaebCanRead,
+  gaebCanWrite,
+  type GaebContentAccess,
+} from "../core/contentFacets";
 import { validateGaebInBrowser } from "../core/validationClient";
 import {
-  phaseCanEdit,
+  type GaebValidation,
   isTradePhase,
   MAX_GAEB_ATTACHMENT_BYTES,
   MAX_GAEB_BYTES,
-  type GaebValidation,
+  phaseCanEdit,
+  phaseHasPrices,
 } from "../core/types";
-import { text, errorText, type GaebLocale } from "../messages";
+import { errorText, type GaebLocale, text } from "../messages";
 import { mergeGaebDocuments } from "../core/mergeDocument";
 import { recovery } from "../core/recovery";
 import { EditorIconButton } from "./EditorIconButton";
@@ -61,8 +69,8 @@ import TreeView from "@carbon/icons-react/es/TreeView";
 import Search from "@carbon/icons-react/es/Search";
 import type { Collaborator } from "../canvas/types";
 import {
-  GaebDocumentCanvas,
   type CanvasFocus,
+  GaebDocumentCanvas,
   type RichSelection,
 } from "./GaebDocumentCanvas";
 
@@ -73,6 +81,24 @@ export type GaebEditorProps = {
   fileName: string;
   locale?: GaebLocale;
   canEdit: boolean;
+  contentView?: {
+    access: GaebContentAccess;
+    canRename?: boolean;
+    printReadiness?: GaebPrintReadiness;
+    preparePrint?: (
+      source: string,
+      signal?: AbortSignal,
+    ) => Promise<{ xml: string; referenceXml?: string }>;
+    /** Validate references and writable facets against the verified native basis.
+     * An incomplete view cannot be checked against the full GAEB schema. */
+    validate: (
+      source: string,
+      signal?: AbortSignal,
+    ) => Promise<{
+      valid: boolean;
+      issues: GaebValidation["issues"];
+    }>;
+  };
   onSave: (xml: string, base: string) => Promise<string | void>;
   onSaveError?: (
     error: unknown,
@@ -82,6 +108,7 @@ export type GaebEditorProps = {
   remoteXml?: string;
   referenceXml?: string;
   documentTitle?: string;
+  documentKind?: string;
   projectTitle?: string;
   headingLabel?: string;
   collaborators?: Collaborator[];
@@ -89,7 +116,10 @@ export type GaebEditorProps = {
   onActiveField?: (key: string | null) => void;
   sharedFields?: SharedFields;
   onLiveSelection?: (selection: LiveSelection) => void;
-  editorRef?: React.Ref<{ save: () => Promise<boolean> }>;
+  editorRef?: React.Ref<{
+    save: () => Promise<boolean>;
+    snapshot?: () => string | undefined;
+  }>;
   savedLabel?: string;
   onDirtyChange?: (dirty: boolean) => void;
   viewPreferences?: GaebViewPreferences;
@@ -112,7 +142,7 @@ function selectionStyleActive(
   let leaves = group?.leaves.filter((leaf) =>
     selection.start === selection.end
       ? selection.start >= leaf.start && selection.start <= leaf.end
-      : leaf.end > selection.start && leaf.start < selection.end,
+      : leaf.end > selection.start && leaf.start < selection.end
   );
   if (selection.start === selection.end) leaves = leaves?.slice(0, 1);
   return (
@@ -121,7 +151,7 @@ function selectionStyleActive(
       (leaf.element.getAttribute("style") ?? "").split(";").some((part) => {
         const [key, entry] = part.split(":");
         return key?.trim() === property && entry?.trim() === value;
-      }),
+      })
     )
   );
 }
@@ -131,11 +161,13 @@ function downloadAttachment(model: GaebDocument, element: Element) {
   if (
     base64.length > Math.ceil(MAX_GAEB_ATTACHMENT_BYTES / 3) * 4 ||
     !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)
-  )
+  ) {
     throw new Error("document-too-large");
+  }
   const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-  if (bytes.length > MAX_GAEB_ATTACHMENT_BYTES)
+  if (bytes.length > MAX_GAEB_ATTACHMENT_BYTES) {
     throw new Error("document-too-large");
+  }
   const url = URL.createObjectURL(
     new Blob([bytes], { type: "application/octet-stream" }),
   );
@@ -155,6 +187,7 @@ export function GaebEditor({
   fileName,
   locale = "de",
   canEdit,
+  contentView,
   onSave,
   onSaveError,
   onDirtyChange,
@@ -162,6 +195,7 @@ export function GaebEditor({
   remoteXml,
   referenceXml,
   documentTitle,
+  documentKind,
   projectTitle,
   headingLabel,
   collaborators = [],
@@ -177,7 +211,30 @@ export function GaebEditor({
   toolbarActions,
   workflowNotice,
 }: GaebEditorProps) {
-  const useLocalPositionLibrary = !searchPositions;
+  const useLocalPositionLibrary = !searchPositions && !contentView;
+  const contentAccess = contentView?.access;
+  const complete = contentAccess?.complete ?? true;
+  const scopeWritable = gaebCanWrite(contentAccess, "scope");
+  const measurementWritable = gaebCanWrite(contentAccess, "measurement");
+  const calculationWritable = gaebCanWrite(contentAccess, "calculation");
+  const attachmentWritable = gaebCanWrite(contentAccess, "attachment");
+  const allFacetsWritable = GAEB_CONTENT_FACETS.every((facet) =>
+    gaebCanWrite(contentAccess, facet)
+  );
+  const validateSource = useCallback(
+    async (
+      source: string,
+      identity: GaebDocument["identity"],
+      signal?: AbortSignal,
+    ): Promise<GaebValidation> => {
+      if (contentView && !contentView.access.complete) {
+        const result = await contentView.validate(source, signal);
+        return { ...result, schema: "partial-view" };
+      }
+      return validateGaebInBrowser(source, identity, signal);
+    },
+    [contentView],
+  );
   const t = (de: string, en: string) => text(locale, de, en);
   const initial = useMemo(() => {
     try {
@@ -187,10 +244,11 @@ export function GaebEditor({
     }
   }, [xml, fileName]);
   useEffect(() => {
-    if (useLocalPositionLibrary && initial.model)
+    if (useLocalPositionLibrary && initial.model) {
       void rememberPositions(positionLibraryScope, initial.model).catch(
         () => {},
       );
+    }
   }, [initial, useLocalPositionLibrary, positionLibraryScope]);
   const reference = useMemo(() => {
     try {
@@ -202,6 +260,22 @@ export function GaebEditor({
     }
   }, [referenceXml]);
   const [model, setModel] = useState(initial.model);
+  const canPrint = useMemo(() => {
+    if (!contentView) {
+      return true;
+    }
+    if (!contentView.preparePrint) {
+      return false;
+    }
+    const needsCalculation =
+      contentView.printReadiness === "incomplete-pricing" ||
+      (contentView.access.pricingSupported === true &&
+        model !== null && phaseHasPrices(model.phase));
+    if (!needsCalculation) {
+      return true;
+    }
+    return model?.hasCompletePriceView(reference) ?? false;
+  }, [contentView, model, reference]);
   const modelRef = useRef(model);
   const [selected, setSelected] = useState(
     initial.model?.outlineEntries[0]?.key ?? "",
@@ -220,12 +294,13 @@ export function GaebEditor({
     currentView.current = next;
     setView(next);
     if (viewChanged.current) viewChanged.current(next);
-    else
+    else {
       try {
         localStorage.setItem("sortsys-gaeb:view", JSON.stringify(next));
       } catch {
         /* Optional standalone preference. */
       }
+    }
   }, []);
   useEffect(() => {
     if (
@@ -239,17 +314,15 @@ export function GaebEditor({
   const { outlineOpen, showFields } = view;
   const setOutlineOpen = (value: boolean | ((previous: boolean) => boolean)) =>
     updateView({
-      outlineOpen:
-        typeof value === "function"
-          ? value(currentView.current.outlineOpen)
-          : value,
+      outlineOpen: typeof value === "function"
+        ? value(currentView.current.outlineOpen)
+        : value,
     });
   const setShowFields = (value: boolean | ((previous: boolean) => boolean)) =>
     updateView({
-      showFields:
-        typeof value === "function"
-          ? value(currentView.current.showFields)
-          : value,
+      showFields: typeof value === "function"
+        ? value(currentView.current.showFields)
+        : value,
     });
   const outlineCommands = useRef<{
     addTitle: () => void;
@@ -258,10 +331,12 @@ export function GaebEditor({
   const printing = useRef(false);
   const root = useRef<HTMLElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const [validation, setValidation] = useState<{
-    source: string;
-    value: GaebValidation;
-  } | null>(null);
+  const [validation, setValidation] = useState<
+    {
+      source: string;
+      value: GaebValidation;
+    } | null
+  >(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -278,10 +353,12 @@ export function GaebEditor({
     [],
   );
   const [revision, setRevision] = useState(0);
-  const [activeMeasure, setActiveMeasure] = useState<{
-    entryKey: string;
-    id: string;
-  } | null>(null);
+  const [activeMeasure, setActiveMeasure] = useState<
+    {
+      entryKey: string;
+      id: string;
+    } | null
+  >(null);
   const [focus, setFocus] = useState<CanvasFocus | null>(null);
   const focusSequence = useRef(0);
   const selectionRef = useRef<RichSelection | null>(null);
@@ -309,8 +386,7 @@ export function GaebEditor({
       }),
     [sharedFields, history],
   );
-  const editable =
-    canEdit &&
+  const editable = canEdit &&
     recoveryReady &&
     !!model &&
     phaseCanEdit(model.phase) &&
@@ -354,8 +430,9 @@ export function GaebEditor({
       while (
         history.past.length > 1 &&
         (history.past.length > 25 || size > 40 * 1024 * 1024)
-      )
+      ) {
         size -= history.past.shift()!.length * 2;
+      }
       if (!drafts.size) lastAction.current = "native";
       accept(next);
     },
@@ -382,10 +459,11 @@ export function GaebEditor({
     setChecking(true);
     setValidation(null);
     const timeout = setTimeout(() => {
-      void validateGaebInBrowser(model.source, model.identity, abort.signal)
+      void validateSource(model.source, model.identity, abort.signal)
         .then((value) => {
-          if (!abort.signal.aborted)
+          if (!abort.signal.aborted) {
             setValidation({ source: model.source, value });
+          }
         })
         .catch((failure) => {
           if (!abort.signal.aborted) setError(errorText(locale, failure));
@@ -398,99 +476,130 @@ export function GaebEditor({
       clearTimeout(timeout);
       abort.abort();
     };
-  }, [model, locale]);
+  }, [model, locale, validateSource]);
 
-  const save = useCallback(async (): Promise<boolean> => {
-    if (!recoveryReady) return false;
-    if (pendingSave.current) return pendingSave.current;
-    const task = (async () => {
-      let stage: "drafts" | "validation" | "storage" | "merge" = "drafts";
-      try {
-        flushDrafts();
-        if (!modelRef.current) return true;
-        if (!canEdit || modelRef.current.signed)
-          return modelRef.current.source === savedRef.current;
-        savingRef.current = true;
-        setSaving(true);
-        setSaveFailed(false);
-        while (modelRef.current.source !== savedRef.current) {
-          const source = modelRef.current.source,
-            base = savedRef.current;
-          if (recoveryKey)
-            await recovery("put", recoveryKey, {
-              base,
-              source,
-              updatedAt: Date.now(),
-            }).catch(() => {});
-          stage = "validation";
-          const result = await validateGaebInBrowser(
-            source,
-            modelRef.current.identity,
-          );
-          if (modelRef.current.source === source)
-            setValidation({ source, value: result });
-          if (!result.valid) throw new Error("autosave-invalid");
-          stage = "storage";
-          const stored = (await onSave(source, base)) ?? source;
-          stage = "merge";
-          const latest = modelRef.current.source;
-          const merged = mergeGaebDocuments(source, latest, stored, fileName);
-          if (merged !== latest) {
-            accept(new GaebDocument(merged, fileName));
-            history.past = [];
-            history.future = [];
-          }
-          savedRef.current = stored;
-          setSavedSource(stored);
-          if (useLocalPositionLibrary)
-            void rememberPositions(
-              positionLibraryScope,
-              new GaebDocument(stored, fileName),
-            ).catch(() => {});
-          // New input may have arrived while the network request was in flight.
-          stage = "drafts";
-          flushDrafts();
-        }
-        if (recoveryKey) await recovery("delete", recoveryKey).catch(() => {});
-        setError("");
-        return true;
-      } catch (failure) {
-        try {
-          saveErrorHandler.current?.(failure, stage);
-        } catch {
-          /* Diagnostics must not interrupt recovery. */
-        }
-        const blocked =
-          stage === "drafts" ||
-          (failure instanceof Error && failure.message === "autosave-invalid");
-        setSaveBlocked(blocked);
-        setSaveFailed(!blocked);
-        setError(errorText(locale, failure));
-        return false;
-      } finally {
-        savingRef.current = false;
-        setSaving(false);
+  const save = useCallback(
+    async (confirmUnchanged = false): Promise<boolean> => {
+      if (!recoveryReady) return false;
+      if (pendingSave.current) {
+        const accepted = await pendingSave.current;
+        if (!accepted || !confirmUnchanged) return accepted;
       }
-    })();
-    pendingSave.current = task;
-    try {
-      return await task;
-    } finally {
-      pendingSave.current = null;
-    }
-  }, [
-    accept,
-    canEdit,
-    fileName,
-    flushDrafts,
-    locale,
-    onSave,
-    useLocalPositionLibrary,
-    positionLibraryScope,
-    recoveryKey,
-    recoveryReady,
-  ]);
-  useImperativeHandle(editorRef, () => ({ save }), [save]);
+      const task = (async () => {
+        let stage: "drafts" | "validation" | "storage" | "merge" = "drafts";
+        try {
+          flushDrafts();
+          if (!modelRef.current) return true;
+          if (!canEdit || modelRef.current.signed) {
+            return modelRef.current.source === savedRef.current;
+          }
+          savingRef.current = true;
+          setSaving(true);
+          setSaveFailed(false);
+          while (
+            modelRef.current.source !== savedRef.current ||
+            confirmUnchanged
+          ) {
+            // Workflow actions must also confirm live edits which were undone
+            // back to the saved XML. Ordinary autosave still follows dirty state.
+            confirmUnchanged = false;
+            const source = modelRef.current.source,
+              base = savedRef.current;
+            if (recoveryKey) {
+              await recovery("put", recoveryKey, {
+                base,
+                source,
+                updatedAt: Date.now(),
+              }).catch(() => {});
+            }
+            if (source !== base) {
+              stage = "validation";
+              const result = await validateSource(
+                source,
+                modelRef.current.identity,
+              );
+              if (modelRef.current.source === source) {
+                setValidation({ source, value: result });
+              }
+              if (!result.valid) throw new Error("autosave-invalid");
+            }
+            stage = "storage";
+            const stored = (await onSave(source, base)) ?? source;
+            stage = "merge";
+            const latest = modelRef.current.source;
+            const merged = mergeGaebDocuments(source, latest, stored, fileName);
+            if (merged !== latest) {
+              accept(new GaebDocument(merged, fileName));
+              history.past = [];
+              history.future = [];
+            }
+            savedRef.current = stored;
+            setSavedSource(stored);
+            if (useLocalPositionLibrary) {
+              void rememberPositions(
+                positionLibraryScope,
+                new GaebDocument(stored, fileName),
+              ).catch(() => {});
+            }
+            // New input may have arrived while the network request was in flight.
+            stage = "drafts";
+            flushDrafts();
+          }
+          if (recoveryKey) {
+            await recovery("delete", recoveryKey).catch(() => {});
+          }
+          setError("");
+          return true;
+        } catch (failure) {
+          try {
+            saveErrorHandler.current?.(failure, stage);
+          } catch {
+            /* Diagnostics must not interrupt recovery. */
+          }
+          const blocked = stage === "drafts" ||
+            (failure instanceof Error &&
+              failure.message === "autosave-invalid");
+          setSaveBlocked(blocked);
+          setSaveFailed(!blocked);
+          setError(errorText(locale, failure));
+          return false;
+        } finally {
+          savingRef.current = false;
+          setSaving(false);
+        }
+      })();
+      pendingSave.current = task;
+      try {
+        return await task;
+      } finally {
+        pendingSave.current = null;
+      }
+    },
+    [
+      accept,
+      canEdit,
+      fileName,
+      flushDrafts,
+      locale,
+      onSave,
+      validateSource,
+      useLocalPositionLibrary,
+      positionLibraryScope,
+      recoveryKey,
+      recoveryReady,
+    ],
+  );
+  useImperativeHandle(
+    editorRef,
+    () => ({
+      save: () => save(true),
+      snapshot: () => {
+        flushDrafts();
+        return modelRef.current?.source;
+      },
+    }),
+    [save, flushDrafts],
+  );
   useEffect(() => {
     if (!recoveryKey || !canEdit) {
       setRecoveryReady(true);
@@ -564,8 +673,9 @@ export function GaebEditor({
       !remoteXml ||
       remoteXml === observedRemote.current ||
       pendingSave.current
-    )
+    ) {
       return;
+    }
     observedRemote.current = remoteXml;
     if (remoteXml === savedRef.current) return;
     try {
@@ -592,8 +702,9 @@ export function GaebEditor({
   }, [remoteXml, saving]);
   useEffect(() => {
     const retry = () => {
-      if (modelRef.current?.source !== savedRef.current || drafts.size)
+      if (modelRef.current?.source !== savedRef.current || drafts.size) {
         void save();
+      }
     };
     window.addEventListener("online", retry);
     const hidden = () => {
@@ -608,8 +719,8 @@ export function GaebEditor({
   const moveHistory = useCallback(
     (direction: "undo" | "redo") => {
       if (!canEdit || modelRef.current?.signed) return;
-      const liveUndo =
-        lastAction.current === "text" && sharedFields?.canUndo(direction);
+      const liveUndo = lastAction.current === "text" &&
+        sharedFields?.canUndo(direction);
       if (savingRef.current && !liveUndo) return;
       try {
         flushDrafts();
@@ -644,8 +755,9 @@ export function GaebEditor({
           (event.target instanceof HTMLInputElement ||
             event.target instanceof HTMLTextAreaElement) &&
           !event.target.classList.contains("gaeb-canvas-input")
-        )
+        ) {
           return;
+        }
         if (event.key.toLowerCase() === "y") {
           event.preventDefault();
           moveHistory("redo");
@@ -676,8 +788,9 @@ export function GaebEditor({
     return () => window.removeEventListener("keydown", key);
   }, [canEdit, save, moveHistory]);
 
-  const hierarchyEditable =
-    editable && !(reference && ["84", "31"].includes(model?.phase ?? ""));
+  const hierarchyEditable = editable &&
+    allFacetsWritable &&
+    !(reference && ["84", "31"].includes(model?.phase ?? ""));
   const outlineHandlers = {
     onPrepare: useEventCallback(() => run(() => {})),
     onSelect: useEventCallback((key: string) => revealEntry(key)),
@@ -689,7 +802,7 @@ export function GaebEditor({
       requestAnimationFrame(() =>
         root.current
           ?.querySelector<HTMLElement>("[data-gaeb-outline-toggle]")
-          ?.focus(),
+          ?.focus()
       );
     }),
   };
@@ -699,18 +812,18 @@ export function GaebEditor({
   const positionSearch = useMemo(
     () =>
       hierarchyEditable &&
-      ["80", "83", "85", "86", "87", "89", "52", "93", "96"].includes(
-        model?.phase ?? "",
-      ) ? (
-        <GaebPositionSearch
-          locale={locale}
-          search={
-            searchPositions ??
-            ((query) => searchLocalPositions(positionLibraryScope, query))
-          }
-          onSelect={insertFromLibrary}
-        />
-      ) : undefined,
+        ["80", "83", "85", "86", "87", "89", "52", "93", "96"].includes(
+          model?.phase ?? "",
+        )
+        ? (
+          <GaebPositionSearch
+            locale={locale}
+            search={searchPositions ??
+              ((query) => searchLocalPositions(positionLibraryScope, query))}
+            onSelect={insertFromLibrary}
+          />
+        )
+        : undefined,
     [
       hierarchyEditable,
       model?.phase,
@@ -721,12 +834,13 @@ export function GaebEditor({
     ],
   );
 
-  if (!model)
+  if (!model) {
     return (
       <div className="gaeb-empty" role="alert">
         {errorText(locale, initial.error)}
       </div>
     );
+  }
   const entry = model.entries.find((item) => item.key === selected);
   const styleActive = (property: string, value: string) =>
     selectionStyleActive(model, richSelection, property, value);
@@ -747,6 +861,7 @@ export function GaebEditor({
     });
   const enter = (entryKey: string, index: number, offset: number) =>
     run(() => {
+      if (!scopeWritable) return;
       change((current) => {
         const entry = current.entries.find((item) => item.key === entryKey)!;
         const group = current.richGroups(entry)[index];
@@ -760,15 +875,15 @@ export function GaebEditor({
     });
   const format = (property: "font-weight" | "font-style" | "text-decoration") =>
     run(() => {
+      if (!scopeWritable) return;
       const target = selectionRef.current;
       if (!target) return;
       const current = modelRef.current!;
-      const value =
-        property === "font-weight"
-          ? "bold"
-          : property === "font-style"
-            ? "italic"
-            : "underline";
+      const value = property === "font-weight"
+        ? "bold"
+        : property === "font-style"
+        ? "italic"
+        : "underline";
       const reset = property === "text-decoration" ? "none" : "normal";
       const active = selectionStyleActive(current, target, property, value);
       change((doc) =>
@@ -779,7 +894,7 @@ export function GaebEditor({
           target.end,
           property,
           active ? reset : value,
-        ),
+        )
       );
       requestFocus(
         `${target.entryKey}:text:${target.index}`,
@@ -790,9 +905,10 @@ export function GaebEditor({
     });
   const addParagraph = () =>
     run(() => {
+      if (!scopeWritable) return;
       if (!entry) return;
       change((doc) =>
-        doc.addParagraph(doc.entries.find((item) => item.key === entry.key)!),
+        doc.addParagraph(doc.entries.find((item) => item.key === entry.key)!)
       );
       const current = modelRef.current!;
       const item = current.entries.find((item) => item.key === entry.key)!;
@@ -835,8 +951,9 @@ export function GaebEditor({
   };
   const applyHierarchy = (plan: HierarchyPlan) =>
     run(() => {
-      if (modelRef.current!.source !== plan.base)
+      if (modelRef.current!.source !== plan.base) {
         throw new Error("hierarchy-stale");
+      }
       let source = plan.source;
       if (plan.title && plan.selected) {
         const next = new GaebDocument(source, fileName);
@@ -862,12 +979,12 @@ export function GaebEditor({
   const insertPosition = (position: GaebPositionSuggestion) =>
     run(() => {
       const current = modelRef.current!;
-      const chosen =
-        current.entries.find(
-          (entry) => entry.key === lastEditedEntry.current,
-        ) ?? current.entries.find((entry) => entry.key === selected);
-      const parent =
-        chosen?.kind === "item" ? current.outlineParent(chosen) : chosen;
+      const chosen = current.entries.find(
+        (entry) => entry.key === lastEditedEntry.current,
+      ) ?? current.entries.find((entry) => entry.key === selected);
+      const parent = chosen?.kind === "item"
+        ? current.outlineParent(chosen)
+        : chosen;
       let next = new GaebDocument(
         current.addPosition(parent, position),
         fileName,
@@ -876,13 +993,12 @@ export function GaebEditor({
         (entry) => !current.items.some((old) => old.key === entry.key),
       );
       const siblings = current.outlineChildren(parent);
-      const before =
-        chosen?.kind === "item"
-          ? siblings[
-              siblings.findIndex((entry) => entry.key === chosen.key) + 1
-            ]
-          : undefined;
-      if (added && before)
+      const before = chosen?.kind === "item"
+        ? siblings[
+          siblings.findIndex((entry) => entry.key === chosen.key) + 1
+        ]
+        : undefined;
+      if (added && before) {
         next = new GaebDocument(
           next.moveEntry(
             added,
@@ -891,6 +1007,7 @@ export function GaebEditor({
           ),
           fileName,
         );
+      }
       change(() => next.source);
       if (added) {
         lastEditedEntry.current = added.key;
@@ -904,10 +1021,9 @@ export function GaebEditor({
       const selectedEntry = current.entries.find(
         (item) => item.key === (parentKey ?? selected),
       );
-      const owner =
-        selectedEntry?.kind === "item"
-          ? current.outlineParent(selectedEntry)
-          : selectedEntry;
+      const owner = selectedEntry?.kind === "item"
+        ? current.outlineParent(selectedEntry)
+        : selectedEntry;
       const previous = new Set(
         current.items.map((item) => item.element.getAttribute("ID")),
       );
@@ -917,10 +1033,9 @@ export function GaebEditor({
       );
       if (selectedEntry?.kind === "item") {
         const siblings = current.outlineChildren(owner);
-        const before =
-          siblings[
-            siblings.findIndex((item) => item.key === selectedEntry.key) + 1
-          ];
+        const before = siblings[
+          siblings.findIndex((item) => item.key === selectedEntry.key) + 1
+        ];
         if (before) {
           const next = new GaebDocument(source, fileName);
           const added = next.items.find(
@@ -941,24 +1056,33 @@ export function GaebEditor({
       if (added) {
         setSelected(added.key);
         requestFocus(
-          `${added.key}:${model.phase === "31" ? "Qty" : model.phase === "84" ? "Qty" : "text:0"}`,
+          `${added.key}:${
+            model.phase === "31"
+              ? "Qty"
+              : model.phase === "84"
+              ? "Qty"
+              : "text:0"
+          }`,
         );
       }
     });
   const printDocument = async () => {
-    if (printing.current) return;
+    if (printing.current || !canPrint) return;
     printing.current = true;
     try {
       flushDrafts();
       const current = modelRef.current!;
-      if (onPrint) await onPrint(current.source, reference?.source);
+      const printable = contentView?.preparePrint
+        ? await contentView.preparePrint(current.source)
+        : { xml: current.source, referenceXml: reference?.source };
+      if (onPrint) await onPrint(printable.xml, printable.referenceXml);
       else {
         const { downloadGaebPdf } = await import("../core/print");
         await downloadGaebPdf(
-          current.source,
+          printable.xml,
           fileName,
           locale,
-          reference?.source,
+          printable.referenceXml,
         );
       }
     } catch (failure) {
@@ -967,15 +1091,44 @@ export function GaebEditor({
       printing.current = false;
     }
   };
+  function saveState() {
+    if (saveBlocked) {
+      return "invalid";
+    }
+    if (saveFailed) {
+      return "error";
+    }
+    if (saving || dirty) {
+      return "saving";
+    }
+    return "saved";
+  }
+  function schemaState(source: string) {
+    if (!complete) {
+      return "partial";
+    }
+    if (checking || (saveBlocked && drafts.size > 0)) {
+      return "pending";
+    }
+    if (validation?.source !== source) {
+      return "pending";
+    }
+    if (!validation.value.valid) {
+      return "invalid";
+    }
+    return "valid";
+  }
   return (
     <section
       ref={root}
       onKeyDownCapture={(event) => {
-        if (event.nativeEvent.isComposing || !(event.ctrlKey || event.metaKey))
+        if (
+          event.nativeEvent.isComposing || !(event.ctrlKey || event.metaKey)
+        ) {
           return;
+        }
         const target = event.target as HTMLElement;
-        const ordinaryInput =
-          target.matches("input, textarea") &&
+        const ordinaryInput = target.matches("input, textarea") &&
           !target.classList.contains("gaeb-canvas-input");
         if (event.key.toLowerCase() === "p" && !event.altKey) {
           event.preventDefault();
@@ -987,6 +1140,7 @@ export function GaebEditor({
           !ordinaryInput &&
           model.phase === "31" &&
           editable &&
+          measurementWritable &&
           event.ctrlKey &&
           !event.altKey &&
           !event.shiftKey &&
@@ -998,45 +1152,44 @@ export function GaebEditor({
           let targetKey: string | undefined;
           run(() =>
             change((doc) => {
-              const target =
-                doc.items.find((item) => item.key === selected) ?? doc.items[0];
+              const target = doc.items.find((item) => item.key === selected) ??
+                doc.items[0];
               if (!target) return doc.source;
               const state = doc.takeoff(target);
               if (
                 state.headings.some((row) => row.value.id === activeMeasure?.id)
-              )
+              ) {
                 return doc.source;
-              const current =
-                state.rows.find((row) => row.value.id === activeMeasure?.id) ??
+              }
+              const current = state.rows.find((row) =>
+                row.value.id === activeMeasure?.id
+              ) ??
                 state.rows[0];
               if (!current) return doc.source;
-              const contextual =
-                reference?.items.find(
-                  (item) =>
-                    item.element.getAttribute("ID") ===
+              const contextual = reference?.items.find(
+                (item) =>
+                  item.element.getAttribute("ID") ===
                     target.element.getAttribute("ID"),
-                ) ?? reference?.items.find((item) => item.oz === target.oz);
-              const unit =
-                doc.value(target.element, "QU") ||
+              ) ?? reference?.items.find((item) => item.oz === target.oz);
+              const unit = doc.value(target.element, "QU") ||
                 (contextual && reference?.value(contextual.element, "QU")) ||
                 "";
               const shapes = measureShapesForUnit(unit, current.value.shape);
-              const shape =
-                shapes[
-                  (shapes.indexOf(current.value.shape) +
-                    direction +
-                    shapes.length) %
-                    shapes.length
-                ];
+              const shape = shapes[
+                (shapes.indexOf(current.value.shape) +
+                  direction +
+                  shapes.length) %
+                shapes.length
+              ];
               targetKey = `${target.key}:measure:${current.value.id}:count`;
               return doc.setMeasurement(target, current.value.id, {
                 shape,
                 ...(current.value.mode === "opening" &&
-                !["area", "triangle", "trapezoid", "factor"].includes(shape)
+                    !["area", "triangle", "trapezoid", "factor"].includes(shape)
                   ? { mode: "deduct" as const }
                   : {}),
               });
-            }),
+            })
           );
           if (targetKey) requestFocus(targetKey, 0);
           return;
@@ -1049,18 +1202,17 @@ export function GaebEditor({
         ) {
           event.preventDefault();
           event.stopPropagation();
-          const label =
-            event.key === "Backspace"
-              ? activeMeasure &&
+          const label = event.key === "Backspace"
+            ? activeMeasure &&
                 entry?.kind === "item" &&
                 model
                   .takeoff(entry)
                   .headings.some((row) => row.value.id === activeMeasure.id)
-                ? t("Zwischenüberschrift löschen", "Delete measurement heading")
-                : t("Maßansatz löschen", "Delete measurement")
-              : event.shiftKey
-                ? t("Maßansatz duplizieren", "Duplicate measurement")
-                : t("Maßansatz hinzufügen", "Add measurement");
+              ? t("Zwischenüberschrift löschen", "Delete measurement heading")
+              : t("Maßansatz löschen", "Delete measurement")
+            : event.shiftKey
+            ? t("Maßansatz duplizieren", "Duplicate measurement")
+            : t("Maßansatz hinzufügen", "Add measurement");
           root.current
             ?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
             ?.click();
@@ -1082,26 +1234,9 @@ export function GaebEditor({
         }
       }}
       className="gaeb-editor"
-      data-save-state={
-        saveBlocked
-          ? "invalid"
-          : saveFailed
-            ? "error"
-            : saving || dirty
-              ? "saving"
-              : "saved"
-      }
-      data-schema-state={
-        saveBlocked && drafts.size
-          ? "pending"
-          : checking
-            ? "pending"
-            : validation?.source === model.source
-              ? validation.value.valid
-                ? "valid"
-                : "invalid"
-              : "pending"
-      }
+      data-save-state={saveState()}
+      data-schema-state={schemaState(model.source)}
+      data-content-complete={complete}
       aria-label={t("GAEB-Editor", "GAEB editor")}
       tabIndex={-1}
       onPointerDownCapture={(event) => {
@@ -1111,8 +1246,9 @@ export function GaebEditor({
           !event.target.matches(
             ".gaeb-editor, .gaeb-document-body, .gaeb-document-workspace, .gaeb-document-scroll, .gaeb-document-paper, .gaeb-canvas-tile, .gaeb-outline, .gaeb-outline-tree, .gaeb-outline-empty, .gaeb-outline-heading, .gaeb-outline-heading-tools, .gaeb-toolbar, .gaeb-actions, .gaeb-document-zoom",
           )
-        )
+        ) {
           return;
+        }
         event.preventDefault();
         event.stopPropagation();
         clearFocus();
@@ -1128,13 +1264,11 @@ export function GaebEditor({
           <>
             <EditorIconButton
               showLabel
-              disabled={
-                !editable ||
+              disabled={!editable ||
                 (!history.past.length &&
                   !drafts.size &&
                   !sharedFields?.canUndo("undo")) ||
-                (saving && !sharedFields?.canUndo("undo"))
-              }
+                (saving && !sharedFields?.canUndo("undo"))}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => moveHistory("undo")}
               label={t("Rückgängig", "Undo")}
@@ -1143,11 +1277,9 @@ export function GaebEditor({
             />
             <EditorIconButton
               showLabel
-              disabled={
-                !editable ||
+              disabled={!editable ||
                 (!history.future.length && !sharedFields?.canUndo("redo")) ||
-                (saving && !sharedFields?.canUndo("redo"))
-              }
+                (saving && !sharedFields?.canUndo("redo"))}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => moveHistory("redo")}
               label={t("Wiederholen", "Redo")}
@@ -1159,10 +1291,9 @@ export function GaebEditor({
         formatting={
           <>
             <EditorIconButton
-              disabled={!editable || !richSelection}
+              disabled={!editable || !scopeWritable || !richSelection}
               onMouseDown={(event: React.MouseEvent<HTMLElement>) =>
-                event.preventDefault()
-              }
+                event.preventDefault()}
               onClick={() => format("font-weight")}
               label={t("Fett", "Bold")}
               icon={TextBold}
@@ -1170,10 +1301,9 @@ export function GaebEditor({
               aria-pressed={styleActive("font-weight", "bold")}
             />
             <EditorIconButton
-              disabled={!editable || !richSelection}
+              disabled={!editable || !scopeWritable || !richSelection}
               onMouseDown={(event: React.MouseEvent<HTMLElement>) =>
-                event.preventDefault()
-              }
+                event.preventDefault()}
               onClick={() => format("font-style")}
               label={t("Kursiv", "Italic")}
               icon={TextItalic}
@@ -1181,10 +1311,9 @@ export function GaebEditor({
               aria-pressed={styleActive("font-style", "italic")}
             />
             <EditorIconButton
-              disabled={!editable || !richSelection}
+              disabled={!editable || !scopeWritable || !richSelection}
               onMouseDown={(event: React.MouseEvent<HTMLElement>) =>
-                event.preventDefault()
-              }
+                event.preventDefault()}
               onClick={() => format("text-decoration")}
               label={t("Unterstreichen", "Underline")}
               icon={TextUnderline}
@@ -1196,15 +1325,13 @@ export function GaebEditor({
         paragraph={
           <EditorIconButton
             showLabel
-            disabled={
-              !editable ||
+            disabled={!editable ||
+              !scopeWritable ||
               !entry ||
               model.phase === "31" ||
-              (model.phase === "84" && entry.kind === "category")
-            }
+              (model.phase === "84" && entry.kind === "category")}
             onMouseDown={(event: React.MouseEvent<HTMLElement>) =>
-              event.preventDefault()
-            }
+              event.preventDefault()}
             onClick={addParagraph}
             label={t("Absatz hinzufügen", "Add paragraph")}
             icon={Paragraph}
@@ -1260,8 +1387,9 @@ export function GaebEditor({
             />
           </>
         }
-        attachments={
-          model.attachmentElements().length ? (
+        attachments={gaebCanRead(contentAccess, "attachment") &&
+            model.attachmentElements().length
+          ? (
             <>
               {model.attachmentElements().map((attachment, index) => (
                 <Button
@@ -1281,8 +1409,8 @@ export function GaebEditor({
                 </Button>
               ))}
             </>
-          ) : undefined
-        }
+          )
+          : undefined}
         quick={
           <>
             {(!canEdit || model.signed) && (
@@ -1302,6 +1430,7 @@ export function GaebEditor({
               }}
             />
             <EditorIconButton
+              disabled={!canPrint}
               onClick={() => void printDocument()}
               shortcut="Control+p Meta+p"
               label={t("Drucken", "Print")}
@@ -1309,24 +1438,25 @@ export function GaebEditor({
             />
           </>
         }
-        takeoff={
-          model.phase === "52" ? (
+        takeoff={model.phase === "52"
+          ? (
             <>
               <EditorIconButton
                 showLabel
                 icon={AddAlt}
                 label={t("Kostenansatz hinzufügen", "Add cost component")}
-                disabled={!editable || entry?.kind !== "item"}
+                disabled={!editable || !calculationWritable ||
+                  entry?.kind !== "item"}
                 onClick={() =>
                   run(() => {
-                    if (entry)
+                    if (entry) {
                       change((doc) =>
                         doc.addCostApproach(
                           doc.entries.find((e) => e.key === entry.key)!,
-                        ),
+                        )
                       );
-                  })
-                }
+                    }
+                  })}
               />
               <EditorIconButton
                 showLabel
@@ -1335,43 +1465,38 @@ export function GaebEditor({
                   "Letzten Kostenansatz löschen",
                   "Delete last cost component",
                 )}
-                disabled={
-                  !editable ||
+                disabled={!editable ||
+                  !calculationWritable ||
                   entry?.kind !== "item" ||
-                  !model.costApproaches(entry).length
-                }
+                  !model.costApproaches(entry).length}
                 onClick={() =>
                   run(() => {
-                    if (entry)
+                    if (entry) {
                       change((doc) =>
                         doc.removeCostApproach(
                           doc.entries.find((e) => e.key === entry.key)!,
-                        ),
+                        )
                       );
-                  })
-                }
+                    }
+                  })}
               />
             </>
-          ) : model.phase === "31" ? (
+          )
+          : model.phase === "31"
+          ? (
             <>
               <TakeoffTools
                 document={model}
                 reference={reference}
-                entry={
-                  entry?.kind === "item"
-                    ? entry
-                    : (model.items.find(
-                        (item) =>
-                          !entry ||
-                          model.parentCategory(item)?.key === entry.key,
-                      ) ?? model.items[0])
-                }
-                activeId={
-                  activeMeasure?.entryKey === selected
-                    ? activeMeasure.id
-                    : undefined
-                }
-                editable={editable}
+                entry={entry?.kind === "item" ? entry : (model.items.find(
+                  (item) =>
+                    !entry ||
+                    model.parentCategory(item)?.key === entry.key,
+                ) ?? model.items[0])}
+                activeId={activeMeasure?.entryKey === selected
+                  ? activeMeasure.id
+                  : undefined}
+                editable={editable && measurementWritable}
                 locale={locale}
                 run={run}
                 change={change}
@@ -1383,13 +1508,13 @@ export function GaebEditor({
                     0,
                     key.includes(":heading:")
                       ? modelRef.current
-                          ?.takeoff(
-                            modelRef.current.entries.find(
-                              (item) => item.key === entryKey,
-                            )!,
-                          )
-                          .headings.find((row) => row.value.id === id)?.value
-                          .title.length
+                        ?.takeoff(
+                          modelRef.current.entries.find(
+                            (item) => item.key === entryKey,
+                          )!,
+                        )
+                        .headings.find((row) => row.value.id === id)?.value
+                        .title.length
                       : undefined,
                   );
                 }}
@@ -1397,15 +1522,15 @@ export function GaebEditor({
               {model.date === "2023-01" && (
                 <EditorIconButton
                   showLabel
-                  disabled={!editable}
+                  disabled={!editable || !attachmentWritable}
                   onClick={() => attachmentInput.current?.click()}
                   label={t("Anlage hinzufügen", "Add attachment")}
                   icon={Attachment}
                 />
               )}
             </>
-          ) : undefined
-        }
+          )
+          : undefined}
         presence={
           <div
             className="gaeb-presence"
@@ -1419,9 +1544,9 @@ export function GaebEditor({
                 role="img"
                 title={person.name}
                 aria-label={person.name}
-                style={
-                  { "--presence-color": person.color } as React.CSSProperties
-                }
+                style={{
+                  "--presence-color": person.color,
+                } as React.CSSProperties}
               >
                 {person.name
                   .split(/\s+/)
@@ -1471,14 +1596,14 @@ export function GaebEditor({
           {saveBlocked
             ? t("Speichern wartet auf Korrektur", "Saving waits for correction")
             : saveFailed
-              ? t(
-                  "Speichern fehlgeschlagen – erneuter Versuch folgt",
-                  "Save failed — retrying automatically",
-                )
-              : t(
-                  "Verbindung unterbrochen – Änderungen bleiben hier erhalten",
-                  "Connection lost — changes are retained here",
-                )}
+            ? t(
+              "Speichern fehlgeschlagen – erneuter Versuch folgt",
+              "Save failed — retrying automatically",
+            )
+            : t(
+              "Verbindung unterbrochen – Änderungen bleiben hier erhalten",
+              "Connection lost — changes are retained here",
+            )}
         </div>
       )}
       {error && (
@@ -1545,8 +1670,8 @@ export function GaebEditor({
         locale={locale}
         initialWidth={view.outlineWidth}
         onWidthChange={(width) => updateView({ outlineWidth: width })}
-        outline={
-          outlineOpen ? (
+        outline={outlineOpen
+          ? (
             <GaebOutline
               commandRef={outlineCommands}
               model={model}
@@ -1555,7 +1680,7 @@ export function GaebEditor({
               locale={locale}
               selected={selected}
               editable={hierarchyEditable}
-              documentEditable={editable}
+              documentEditable={editable && scopeWritable}
               namesEditable={[
                 "80",
                 "83",
@@ -1569,8 +1694,8 @@ export function GaebEditor({
               ].includes(model.phase)}
               {...outlineHandlers}
             />
-          ) : undefined
-        }
+          )
+          : undefined}
       >
         <GaebDocumentCanvas
           document={model}
@@ -1579,10 +1704,13 @@ export function GaebEditor({
           onZoomChange={(zoom) => updateView({ zoom })}
           reference={reference}
           documentTitle={documentTitle}
+          documentKind={documentKind}
           projectTitle={projectTitle}
           headingLabel={headingLabel}
           locale={locale}
           editable={editable}
+          contentAccess={contentAccess}
+          canRename={contentView?.canRename}
           drafts={drafts}
           revision={revision}
           onDraftChange={draftChanged}
@@ -1604,7 +1732,7 @@ export function GaebEditor({
           onActiveField={(key) => {
             if (key) {
               const entry = modelRef.current?.entries.find((entry) =>
-                key.startsWith(`${entry.key}:`),
+                key.startsWith(`${entry.key}:`)
               );
               if (entry?.kind === "item") {
                 lastEditedEntry.current = entry.key;
@@ -1612,14 +1740,16 @@ export function GaebEditor({
                 const headingId = key.startsWith(`${entry.key}:heading:`)
                   ? key.slice(entry.key.length + 9)
                   : undefined;
-                if (headingId)
+                if (headingId) {
                   setActiveMeasure({ entryKey: entry.key, id: headingId });
-                if (measure)
+                }
+                if (measure) {
                   setActiveMeasure((current) =>
                     current?.entryKey === entry.key && current.id === measure.id
                       ? current
-                      : { entryKey: entry.key, id: measure.id },
+                      : { entryKey: entry.key, id: measure.id }
                   );
+                }
               }
             }
             onActiveField?.(key);
@@ -1705,20 +1835,22 @@ export function GaebEditor({
             if (
               file.size > MAX_GAEB_ATTACHMENT_BYTES ||
               new TextEncoder().encode(modelRef.current!.source).byteLength +
-                Math.ceil(file.size / 3) * 4 >
+                    Math.ceil(file.size / 3) * 4 >
                 MAX_GAEB_BYTES
-            )
+            ) {
               throw new Error("attachment-too-large");
+            }
             const type = file.name.split(".").at(-1)?.toLowerCase() ?? "";
             const bytes = new Uint8Array(await file.arrayBuffer());
             let binary = "";
-            for (let offset = 0; offset < bytes.length; offset += 8192)
+            for (let offset = 0; offset < bytes.length; offset += 8192) {
               binary += String.fromCharCode(
                 ...bytes.subarray(offset, offset + 8192),
               );
+            }
             flushDrafts();
             change((current) =>
-              current.addAttachment(file.name, type, btoa(binary)),
+              current.addAttachment(file.name, type, btoa(binary))
             );
           })().catch((failure) => setError(errorText(locale, failure)));
         }}

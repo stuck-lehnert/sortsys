@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { before, after, test } from "node:test";
+import { after, before, test } from "node:test";
 import { createServer } from "node:http";
-import { readFile, mkdir } from "node:fs/promises";
-import { extname, resolve, sep, join } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
@@ -23,10 +23,11 @@ async function createSection(page, name, nested = false) {
     name: "Dokumentgliederung",
     exact: true,
   });
-  if (!nested)
+  if (!nested) {
     await outline
       .getByRole("button", { name: "Gesamtes Dokument", exact: true })
       .click();
+  }
   await outline
     .getByRole("button", { name: "Neuer Titel", exact: true })
     .click();
@@ -53,8 +54,9 @@ before(async () => {
         new URL(request.url, "http://localhost").pathname,
       );
       const file = resolve(root, `.${path === "/" ? "/index.html" : path}`);
-      if (!file.startsWith(root.endsWith(sep) ? root : root + sep))
+      if (!file.startsWith(root.endsWith(sep) ? root : root + sep)) {
         throw new Error("outside-root");
+      }
       response.setHeader(
         "Content-Type",
         types[extname(file)] ?? "application/octet-stream",
@@ -131,8 +133,9 @@ test(
         );
         const pdf = await compileTypst(source);
         let binary = "";
-        for (let offset = 0; offset < pdf.length; offset += 8192)
+        for (let offset = 0; offset < pdf.length; offset += 8192) {
           binary += String.fromCharCode(...pdf.subarray(offset, offset + 8192));
+        }
         return { pdf: btoa(binary), source };
       })
       .catch((error) => {
@@ -141,11 +144,11 @@ test(
     const bytes = Buffer.from(result.pdf, "base64");
     assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
     assert.ok(bytes.length > 1000);
-    const output =
-      process.env.SORTSYS_UI_SCREENSHOTS ?? "/tmp/sortsys-typst-native";
+    const output = process.env.SORTSYS_UI_SCREENSHOTS ??
+      "/tmp/sortsys-typst-native";
     await mkdir(output, { recursive: true });
     await import("node:fs/promises").then((fs) =>
-      fs.writeFile(join(output, "print.pdf"), bytes),
+      fs.writeFile(join(output, "print.pdf"), bytes)
     );
     await page.close();
   },
@@ -167,7 +170,7 @@ test("Tab and Shift+Tab select individual paragraphs and typing replaces only th
   await page.keyboard.press("Tab");
   const selected = () =>
     input.evaluate((node) =>
-      node.value.slice(node.selectionStart, node.selectionEnd),
+      node.value.slice(node.selectionStart, node.selectionEnd)
     );
   assert.equal(await selected(), "Kurztext");
   await input.press("Tab");
@@ -352,7 +355,7 @@ test("outline width resizes by pointer and keyboard, survives reopening and stay
   await page.waitForFunction(
     () =>
       document.querySelector(".gaeb-outline").getBoundingClientRect().width >
-      380,
+        380,
   );
   assert.equal(await separator.isVisible(), false);
   assert.ok(
@@ -448,20 +451,23 @@ test("ribbon tabs group real commands, retain text selection and support keyboar
   await page.getByRole("tabpanel", { name: "Ansicht", exact: true }).waitFor();
   await page.getByRole("tab", { name: "Ansicht", exact: true }).press("Home");
   await page.getByRole("tabpanel", { name: "Start", exact: true }).waitFor();
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(
         process.env.SORTSYS_UI_SCREENSHOTS,
         "office-ribbon-desktop.png",
       ),
     });
+  }
   await page.close();
 });
 
-for (const scenario of [
-  { phase: "83", density: 1, zoom: 100 },
-  { phase: "86", density: 2, zoom: 175 },
-])
+for (
+  const scenario of [
+    { phase: "83", density: 1, zoom: 100 },
+    { phase: "86", density: 2, zoom: 175 },
+  ]
+) {
   test(`rapid typing reuses static rows and retains every character: X${scenario.phase}, DPR ${scenario.density}, ${scenario.zoom}%`, async (t) => {
     const page = await browser.newPage({
       viewport: { width: 1400, height: 1000 },
@@ -477,7 +483,11 @@ for (const scenario of [
         source = model.setRichGroupText(
           model.items.at(-1),
           0,
-          `${index === 69 ? "InvisibleSentinel" : `Position ${index}`}\n${"Unveränderte Leistungsbeschreibung mit mehreren Wörtern. ".repeat(24)}`,
+          `${index === 69 ? "InvisibleSentinel" : `Position ${index}`}\n${
+            "Unveränderte Leistungsbeschreibung mit mehreren Wörtern. ".repeat(
+              24,
+            )
+          }`,
         );
       }
       return source;
@@ -496,7 +506,7 @@ for (const scenario of [
     await page.waitForFunction(
       (scale) =>
         document.querySelector(".gaeb-canvas-tile canvas")?.width ===
-        Math.ceil(794 * scale * window.devicePixelRatio),
+          Math.ceil(794 * scale * window.devicePixelRatio),
       scenario.zoom / 100,
     );
     await focusEditableField(
@@ -575,7 +585,7 @@ for (const scenario of [
     await page.evaluate(
       () =>
         new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
         ),
     );
     const work = await page.evaluate(() => {
@@ -591,7 +601,7 @@ for (const scenario of [
         fs.writeFile(
           `${process.env.SORTSYS_TYPING_PROFILE}.${scenario.phase}`,
           JSON.stringify(profile),
-        ),
+        )
       );
     }
     const expected = before.slice(0, offset) + typed + before.slice(offset);
@@ -650,6 +660,7 @@ for (const scenario of [
     );
     await page.close();
   });
+}
 
 test("cached rows match a fresh layout after wrapping text and widening price columns", async () => {
   const page = await browser.newPage({
@@ -680,11 +691,13 @@ test("cached rows match a fresh layout after wrapping text and widening price co
       createGaebXml("86", "Layout cache"),
       "cache.x86",
     );
-    for (const title of [
-      "Erste Leistung",
-      "Zweite Leistung",
-      "Dritte Leistung",
-    ]) {
+    for (
+      const title of [
+        "Erste Leistung",
+        "Zweite Leistung",
+        "Dritte Leistung",
+      ]
+    ) {
       model = new GaebDocument(model.addItem(), model.fileName);
       model = new GaebDocument(
         model.setRichGroupText(
@@ -771,8 +784,9 @@ test("zoom gestures reuse their bitmap and rerasterize sharply after settling, w
       y,
       ...rest
     ) {
-      if (["AbsatzEins", "AbsatzZwei"].includes(value))
+      if (["AbsatzEins", "AbsatzZwei"].includes(value)) {
         window.__paragraphY[value] = y;
+      }
       return draw.call(this, value, x, y, ...rest);
     };
   });
@@ -788,7 +802,9 @@ test("zoom gestures reuse their bitmap and rerasterize sharply after settling, w
       .locator("textarea.gaeb-canvas-input")
       .fill(
         index
-          ? `Position ${index}\n${"Längerer Positionstext mit mehreren Worten. ".repeat(30)}`
+          ? `Position ${index}\n${
+            "Längerer Positionstext mit mehreren Worten. ".repeat(30)
+          }`
           : "Kurztext\nAbsatzEins\nAbsatzZwei",
       );
   }
@@ -809,7 +825,7 @@ test("zoom gestures reuse their bitmap and rerasterize sharply after settling, w
   await page.waitForFunction(
     () =>
       document.querySelector(".gaeb-canvas-tile canvas").width ===
-      Math.ceil(794 * window.devicePixelRatio),
+        Math.ceil(794 * window.devicePixelRatio),
   );
   const before = await page.evaluate(() => {
     const target = document.querySelector(".gaeb-canvas-tile canvas");
@@ -894,7 +910,7 @@ test("double click selects a word and triple click selects the complete paragrap
   const input = page.locator("textarea.gaeb-canvas-input");
   const selected = () =>
     input.evaluate((node) =>
-      node.value.slice(node.selectionStart, node.selectionEnd),
+      node.value.slice(node.selectionStart, node.selectionEnd)
     );
   await page.mouse.click(box.x + 12, box.y + 5, { clickCount: 2 });
   assert.equal(await selected(), "Alpha");
@@ -980,13 +996,13 @@ test("touch taps activate document fields and blank space releases them without 
   const canvas = await page.locator("canvas").first().boundingBox();
   await page.touchscreen.tap(canvas.x + 10, canvas.y + 10);
   await page.waitForFunction(() =>
-    document.activeElement?.classList.contains("gaeb-editor"),
+    document.activeElement?.classList.contains("gaeb-editor")
   );
   const field = page.getByRole("button", { name: "Text 1 – 1", exact: true });
   const box = await field.boundingBox();
   await page.touchscreen.tap(box.x + 8, box.y + 8);
   await page.waitForFunction(() =>
-    document.activeElement?.classList.contains("gaeb-canvas-input"),
+    document.activeElement?.classList.contains("gaeb-canvas-input")
   );
   assert.equal(await input.inputValue(), "Touch-Eingabe");
   await input.fill("Touch bleibt erhalten");
@@ -1060,8 +1076,9 @@ test("position numbers and quantity columns share the description baseline at di
   await context.addInitScript(() => {
     const clear = CanvasRenderingContext2D.prototype.clearRect;
     CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-      if (this.canvas.closest(".gaeb-canvas-tile"))
+      if (this.canvas.closest(".gaeb-canvas-tile")) {
         this.canvas.__textCalls = [];
+      }
       return clear.apply(this, args);
     };
     const fill = CanvasRenderingContext2D.prototype.fillText;
@@ -1117,7 +1134,7 @@ test("position numbers and quantity columns share the description baseline at di
   await page.evaluate(
     () =>
       new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
       ),
   );
   const calls = await page
@@ -1146,10 +1163,12 @@ test("position numbers and quantity columns share the description baseline at di
 
 test("fractional zoom paints identical pixels across different canvas boundaries, including hover and selection", async () => {
   const stitched = [];
-  for (const [deviceScaleFactor, percent] of [
-    [1, "187.5"],
-    [1.5, "125"],
-  ]) {
+  for (
+    const [deviceScaleFactor, percent] of [
+      [1, "187.5"],
+      [1.5, "125"],
+    ]
+  ) {
     // Keep Chromium's font hinting constant, while changing the editor's
     // reported display density and therefore its memory-bounded tile height.
     const context = await browser.newContext({
@@ -1165,9 +1184,9 @@ test("fractional zoom paints identical pixels across different canvas boundaries
           this.callback = callback;
         }
         observe(target) {
-          if (target.matches(".gaeb-canvas-tile"))
+          if (target.matches(".gaeb-canvas-tile")) {
             this.callback([{ target, isIntersecting: true }], this);
-          else super.observe(target);
+          } else super.observe(target);
         }
       };
     }, deviceScaleFactor);
@@ -1178,7 +1197,11 @@ test("fractional zoom paints identical pixels across different canvas boundaries
       const paragraphs = Array.from(
         { length: 40 },
         (_, i) =>
-          `<p><span${i % 3 === 0 ? ' style="text-decoration: underline"' : ""}>Paragraph ${i + 1}: Äußere Wärmedämmung, Fassadenfront und Anschlussprofile – Montage und Oberflächenbehandlung.</span></p>`,
+          `<p><span${
+            i % 3 === 0 ? ' style="text-decoration: underline"' : ""
+          }>Paragraph ${
+            i + 1
+          }: Äußere Wärmedämmung, Fassadenfront und Anschlussprofile – Montage und Oberflächenbehandlung.</span></p>`,
       ).join("");
       return new GaebDocument(
         createGaebXml("86", "Tile boundaries"),
@@ -1204,7 +1227,7 @@ test("fractional zoom paints identical pixels across different canvas boundaries
     await page.waitForFunction(
       (scale) =>
         document.querySelector(".gaeb-canvas-tile canvas")?.width ===
-        Math.ceil(794 * scale * window.devicePixelRatio),
+          Math.ceil(794 * scale * window.devicePixelRatio),
       Number(percent) / 100,
     );
     // Rasterization is deliberately deferred during a zoom gesture. Bitmap
@@ -1222,7 +1245,7 @@ test("fractional zoom paints identical pixels across different canvas boundaries
     await page.evaluate(
       () =>
         new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
         ),
     );
     const capture = () =>
@@ -1282,13 +1305,14 @@ test("fractional zoom paints identical pixels across different canvas boundaries
           const delta = Math.abs(pixels[0][i] - pixels[1][i]);
           if (delta) {
             changed++;
-            if (samples.length < 8)
+            if (samples.length < 8) {
               samples.push({
                 x: Math.floor(i / 4) % images[0].width,
                 channel: i % 4,
                 first: pixels[0][i],
                 second: pixels[1][i],
               });
+            }
             rows.add(Math.floor(i / 4 / images[0].width));
           }
           max = Math.max(max, delta);
@@ -1315,8 +1339,9 @@ test("production core retains original XML, namespaces, rich text and vendor ext
   const page = await browser.newPage();
   await page.goto(base);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     let source = createGaebXml("83", "Müller & Söhne");
     source = new GaebDocument(source, "LV.x83").addItem();
     const unknown =
@@ -1358,8 +1383,7 @@ test("production core retains original XML, namespaces, rich text and vendor ext
       mismatch: original.extensionMismatch,
       phase: original.phase,
       signed: signed.signed && blocked,
-      rich:
-        editedText.includes("Dämmung &lt; 10 mm &amp; Öl") &&
+      rich: editedText.includes("Dämmung &lt; 10 mm &amp; Öl") &&
         editedText.includes("<CompleteText><DetailTxt><Text><p>"),
     };
   });
@@ -1408,12 +1432,13 @@ test("all editable phases support native new items and produce schema-valid file
     }
     return results;
   });
-  for (const result of results)
+  for (const result of results) {
     assert.equal(
       result.valid,
       true,
       `X${result.phase}: ${JSON.stringify(result.issues)}`,
     );
+  }
   await page.close();
 });
 
@@ -1421,8 +1446,9 @@ test("X31 editing retains REB rows, stores attachments and checks the 2023 schem
   const page = await browser.newPage();
   await page.goto(base);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     let doc = new GaebDocument(createGaebXml("31", "Aufmaß"), "test.x31");
     doc = new GaebDocument(doc.addItem(), doc.fileName);
     const row = " ".repeat(11) + "REB Bestand #Bild plan.pdf".padEnd(69, " ");
@@ -1444,11 +1470,9 @@ test("X31 editing retains REB rows, stores attachments and checks the 2023 schem
       valid: checked.valid,
       issues: checked.issues,
       row: changed.takeoffRows(changed.items[0])[0].getAttribute("Row") === row,
-      attachment:
-        changed.value(changed.attachmentElements()[0], "Data") ===
+      attachment: changed.value(changed.attachmentElements()[0], "Data") ===
         btoa("%PDF-1.7\nexample"),
-      exact:
-        changed.source ===
+      exact: changed.source ===
         before.replace("<Qty>0.000</Qty>", "<Qty>123.456</Qty>"),
     };
   });
@@ -1565,7 +1589,9 @@ test("long documents use a seamless continuous canvas with virtualized rendering
       Array.from(
         { length: 180 },
         (_, i) =>
-          `Absatz ${i + 1}: Dämmung liefern, fachgerecht montieren und alle Anschlussarbeiten vollständig ausführen. Die Ausführung erfolgt nach den Planunterlagen.`,
+          `Absatz ${
+            i + 1
+          }: Dämmung liefern, fachgerecht montieren und alle Anschlussarbeiten vollständig ausführen. Die Ausführung erfolgt nach den Planunterlagen.`,
       ).join("\n"),
     );
   });
@@ -1585,10 +1611,10 @@ test("long documents use a seamless continuous canvas with virtualized rendering
         (node, i) =>
           i === 0 ||
           Math.abs(
-            node.getBoundingClientRect().top -
-              nodes[i - 1].getBoundingClientRect().bottom,
-          ) < 1,
-      ),
+              node.getBoundingClientRect().top -
+                nodes[i - 1].getBoundingClientRect().bottom,
+            ) < 1,
+      )
     ),
     true,
   );
@@ -1607,7 +1633,7 @@ test("long documents use a seamless continuous canvas with virtualized rendering
           950 * ratio,
         ).data;
         return pixels.some((value, index) => index % 4 === 0 && value < 150);
-      }),
+      })
     ),
     true,
   );
@@ -1621,8 +1647,9 @@ test("prices update stored totals with decimal rounding and retain special prici
   const page = await browser.newPage();
   await page.goto(base);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     let doc = new GaebDocument(createGaebXml("86", "LV"), "LV.x86");
     doc = new GaebDocument(doc.addItem(), doc.fileName);
     doc = new GaebDocument(
@@ -1655,6 +1682,19 @@ test("prices update stored totals with decimal rounding and retain special prici
     } catch {
       blocked = true;
     }
+    const extension =
+      '<vendor:Extra xmlns:vendor="urn:sortsys:test:vendor"><Totals><Total>927461.27</Total><VATAmount>176217.64</VATAmount></Totals></vendor:Extra>';
+    const withExtension = new GaebDocument(
+      doc.source.replace("</BoQ>", `${extension}</BoQ>`),
+      doc.fileName,
+    );
+    const withFixedDiscount = new GaebDocument(
+      doc.source.replace(
+        "<DiscountPcnt>10.000000</DiscountPcnt>",
+        "<DiscountAmt>2.00</DiscountAmt>",
+      ),
+      doc.fileName,
+    );
     return {
       valid: check.valid,
       issues: check.issues,
@@ -1664,6 +1704,15 @@ test("prices update stored totals with decimal rounding and retain special prici
       net: doc.value(total, "TotAfterDisc"),
       blocked,
       unchanged: special.source.includes("<UP>12.345</UP>"),
+      extensionAfterRecalculation: withExtension.recalculate().includes(
+        extension,
+      ),
+      extensionAfterNormalization: withExtension
+        .normalizedCalculatedValues()
+        .includes(extension),
+      fixedDiscountAfterNormalization: withFixedDiscount
+        .normalizedCalculatedValues()
+        .includes("<DiscountAmt>2.00</DiscountAmt>"),
     };
   });
   assert.equal(result.valid, true, JSON.stringify(result.issues));
@@ -1673,6 +1722,9 @@ test("prices update stored totals with decimal rounding and retain special prici
   assert.equal(result.net, "27.77");
   assert.equal(result.blocked, true);
   assert.equal(result.unchanged, true);
+  assert.equal(result.extensionAfterRecalculation, true);
+  assert.equal(result.extensionAfterNormalization, true);
+  assert.equal(result.fixedDiscountAfterNormalization, true);
   await page.close();
 });
 
@@ -1680,8 +1732,9 @@ test("older namespaces and prefixed XML remain editable without conversion", asy
   const page = await browser.newPage();
   await page.goto(base);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     let source = createGaebXml("83", "LV");
     source = new GaebDocument(source, "LV.x83").addItem();
     const old = source
@@ -1709,8 +1762,7 @@ test("older namespaces and prefixed XML remain editable without conversion", asy
       version32: new GaebDocument(changed, "LV.xml").version,
       phase31: doc31.phase,
       version31: doc31.version,
-      exact:
-        prefixDoc.setValue(prefixDoc.items[0], "Qty", "7") ===
+      exact: prefixDoc.setValue(prefixDoc.items[0], "Qty", "7") ===
         prefixed.replace("<g:Qty>0.000</g:Qty>", "<g:Qty>7.000</g:Qty>"),
     };
   });
@@ -1722,10 +1774,12 @@ test("older namespaces and prefixed XML remain editable without conversion", asy
   await page.close();
 });
 
-for (const variant of [
-  { width: 1400, height: 900, theme: "light" },
-  { width: 390, height: 844, theme: "dark" },
-]) {
+for (
+  const variant of [
+    { width: 1400, height: 900, theme: "light" },
+    { width: 390, height: 844, theme: "dark" },
+  ]
+) {
   test(`real editor opens, edits, validates and saves directly at ${variant.width}px/${variant.theme}`, async () => {
     const context = await browser.newContext({
       viewport: variant,
@@ -1780,7 +1834,8 @@ for (const variant of [
     if (process.env.SORTSYS_UI_SCREENSHOTS) {
       await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
       await page.screenshot({
-        path: `${process.env.SORTSYS_UI_SCREENSHOTS}/gaeb-${variant.width}-${variant.theme}.png`,
+        path:
+          `${process.env.SORTSYS_UI_SCREENSHOTS}/gaeb-${variant.width}-${variant.theme}.png`,
       });
     }
     assert.deepEqual(errors, []);
@@ -1817,12 +1872,10 @@ test("trackpad, Ctrl-wheel and explicit zoom preserve the document anchor", asyn
   const anchor = () =>
     page.locator(".gaeb-document-paper").evaluate(
       (node, point) => ({
-        x:
-          (point.x - node.getBoundingClientRect().left) /
+        x: (point.x - node.getBoundingClientRect().left) /
           (Number(document.querySelector(".gaeb-zoom-value input").value) /
             100),
-        y:
-          (point.y - node.getBoundingClientRect().top) /
+        y: (point.y - node.getBoundingClientRect().top) /
           (Number(document.querySelector(".gaeb-zoom-value input").value) /
             100),
       }),
@@ -1993,14 +2046,16 @@ test("contractor document chains retain scope, validate each phase and exclude s
       referenceXml: source.source,
     });
     const results = [];
-    for (const xml of [
-      offer.source,
-      inquiry,
-      supplier.source,
-      order,
-      confirmation,
-      measurement,
-    ]) {
+    for (
+      const xml of [
+        offer.source,
+        inquiry,
+        supplier.source,
+        order,
+        confirmation,
+        measurement,
+      ]
+    ) {
       const doc = new GaebDocument(xml, "file.xml");
       results.push({
         phase: doc.phase,
@@ -2014,26 +2069,26 @@ test("contractor document chains retain scope, validate each phase and exclude s
       originalRetained: source.source === untouched,
       offerNet: gaebNetAmount(offer.source),
       orderNet: gaebNetAmount(order),
-      privatePrices:
-        inquiry.includes("123.456") ||
+      privatePrices: inquiry.includes("123.456") ||
         packageDoc.xml.getElementsByTagNameNS(packageDoc.namespace, "UP")
-          .length > 0 ||
+            .length > 0 ||
         packageDoc.xml.getElementsByTagNameNS(packageDoc.namespace, "IT")
-          .length > 0,
+            .length > 0,
       packageItems: packageDoc.items.map((item) =>
-        item.element.getAttribute("ID"),
+        item.element.getAttribute("ID")
       ),
       takeoffQty: takeoff.quantity(takeoff.items[0]),
       takeoffItems: takeoff.items.length,
       sourceItems: source.items.length,
     };
   });
-  for (const checked of result.results)
+  for (const checked of result.results) {
     assert.equal(
       checked.valid,
       true,
       `X${checked.phase}: ${JSON.stringify(checked.issues)}`,
     );
+  }
   assert.equal(result.originalRetained, true);
   assert.equal(result.offerNet, "308.64");
   assert.equal(result.orderNet, "187.50");
@@ -2165,7 +2220,7 @@ test("price and amount columns start compact and expand with large amounts", asy
       Number.parseFloat(
         document.querySelector('[data-gaeb-field$=":UP"]').style.width,
       ) >
-      width + 10,
+        width + 10,
     initial.width,
   );
   assert.ok(
@@ -2176,17 +2231,20 @@ test("price and amount columns start compact and expand with large amounts", asy
   await page.close();
 });
 
-for (const [locale, currency, symbol, amount] of [
-  ["de", "EUR", "€", "1.776,00\u00a0€"],
-  ["en", "USD", "US$", "US$1,776.00"],
-]) {
+for (
+  const [locale, currency, symbol, amount] of [
+    ["de", "EUR", "€", "1.776,00\u00a0€"],
+    ["en", "USD", "US$", "US$1,776.00"],
+  ]
+) {
   test(`price and amount show ${currency} in ${locale} while price editing retains numeric XML`, async () => {
     const page = await browser.newPage({
       viewport: { width: 1400, height: 1000 },
     });
     await page.goto(base);
-    if (locale === "en")
+    if (locale === "en") {
       await page.getByRole("button", { name: "English", exact: true }).click();
+    }
     const xml = await page.evaluate(async (currency) => {
       const { GaebDocument, createGaebXml } = await import("/editor.js");
       let doc = new GaebDocument(
@@ -2280,9 +2338,10 @@ test("offer canvas uses business columns, visible editable fields and stable mul
   const textField = page.locator('[data-gaeb-field$=":text:0"]');
   await focusEditableField(textField);
   const paragraph =
-    "Vorhandene oberflächenfertige Bauteile mit Klebeband und Folie abkleben. Entfernen alter Tapeten an Leibungsflächen. Herstellen einer vertikalen Deckenschürze. ".repeat(
-      4,
-    );
+    "Vorhandene oberflächenfertige Bauteile mit Klebeband und Folie abkleben. Entfernen alter Tapeten an Leibungsflächen. Herstellen einer vertikalen Deckenschürze. "
+      .repeat(
+        4,
+      );
   const input = page.locator("textarea.gaeb-canvas-input");
   await input.fill(paragraph);
   await page
@@ -2413,8 +2472,7 @@ test("native derivations preserve confirmation rules, resolve omitted bid quanti
     const model = new GaebDocument(confirmed, "Confirmation.x87");
     return {
       net: gaebNetAmount(withoutQuantity, source),
-      privateHidden:
-        !purchase.includes("INTERNAL-MARGIN-77") &&
+      privateHidden: !purchase.includes("INTERNAL-MARGIN-77") &&
         !purchase.includes("INTERNAL-COMMENT-88"),
       sourceRetained: source.includes("INTERNAL-MARGIN-77"),
       conditionalRejected: rejected,
@@ -2526,8 +2584,9 @@ for (const pixelRatio of [1, 2]) {
               data[index + 1] === 240 &&
               data[index + 2] === 253,
           )
-        )
+        ) {
           frameRows.push(py / ratio);
+        }
         if (
           data.some(
             (value, index) =>
@@ -2537,8 +2596,9 @@ for (const pixelRatio of [1, 2]) {
               data[index + 2] < 80 &&
               data[index + 3] === 255,
           )
-        )
+        ) {
           glyphRows.push(py / ratio);
+        }
       }
       return {
         frameTop: Math.min(...frameRows),
@@ -2565,7 +2625,7 @@ for (const pixelRatio of [1, 2]) {
       ) <= 2.5,
       `Text must be vertically centered: ${JSON.stringify(field)}`,
     );
-    if (process.env.SORTSYS_UI_SCREENSHOTS)
+    if (process.env.SORTSYS_UI_SCREENSHOTS) {
       await page.screenshot({
         path: join(
           process.env.SORTSYS_UI_SCREENSHOTS,
@@ -2573,6 +2633,7 @@ for (const pixelRatio of [1, 2]) {
         ),
         fullPage: true,
       });
+    }
     const zoom = page.getByRole("textbox", {
       name: "Zoom in Prozent",
       exact: true,
@@ -2603,7 +2664,7 @@ for (const pixelRatio of [1, 2]) {
             height: node.height,
             cssWidth: node.getBoundingClientRect().width,
             cssHeight: node.getBoundingClientRect().height,
-          })),
+          }))
         );
       assert.ok(
         bitmaps.every(
@@ -2630,13 +2691,13 @@ for (const pixelRatio of [1, 2]) {
       await page.waitForFunction(() =>
         [...document.querySelectorAll(".gaeb-canvas-tile canvas")].some(
           (canvas) => canvas.width >= 794 * 9,
-        ),
+        )
       );
       assert.ok(
         await page
           .locator(".gaeb-canvas-tile canvas")
           .evaluateAll((nodes) =>
-            nodes.every((node) => node.width * node.height <= 8 * 1024 * 1024),
+            nodes.every((node) => node.width * node.height <= 8 * 1024 * 1024)
           ),
       );
     }
@@ -2741,16 +2802,21 @@ test("canvas selection paints blue background and white glyphs while retaining u
           data[offset] === 0 &&
           data[offset + 1] === 0 &&
           data[offset + 2] === 255
-        )
+        ) {
           blue.push({ x, y });
+        }
         if (
           data[offset] === 255 &&
           data[offset + 1] === 255 &&
           data[offset + 2] === 255
-        )
+        ) {
           white.push({ x, y });
-        if (data[offset] < 70 && data[offset + 1] < 70 && data[offset + 2] < 70)
+        }
+        if (
+          data[offset] < 70 && data[offset + 1] < 70 && data[offset + 2] < 70
+        ) {
           dark.push({ x, y });
+        }
       }
       const minX = Math.min(...blue.map((p) => p.x)),
         maxX = Math.max(...blue.map((p) => p.x));
@@ -2817,7 +2883,7 @@ test("Tab and Shift+Tab follow document fields once and can leave and re-enter t
   await page.close();
 });
 
-for (const platform of ["Win32", "MacIntel"])
+for (const platform of ["Win32", "MacIntel"]) {
   test(`text navigation and anchored selection use platform modifiers on ${platform}`, async () => {
     const context = await browser.newContext();
     await context.addInitScript(
@@ -2913,6 +2979,7 @@ for (const platform of ["Win32", "MacIntel"])
     );
     await context.close();
   });
+}
 
 test("clipboard shortcuts cross formatting and paragraphs and keep native XML data outside the selection", async () => {
   const context = await browser.newContext();
@@ -3025,8 +3092,9 @@ test("paragraph boundary edits retain surrounding XML and reject deletion of pro
   const page = await browser.newPage();
   await page.goto(base);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     const base = new GaebDocument(
       createGaebXml("83", "Boundaries"),
       "Boundaries.x83",
@@ -3092,9 +3160,10 @@ test("Home/End and reversed Shift selections follow visual wrapped lines", async
     }),
     input = await keyboardDocument(page);
   const value =
-    "Lange Leistungsbeschreibung für die Ausführung sämtlicher Arbeiten einschließlich aller erforderlichen Nebenleistungen. ".repeat(
-      5,
-    );
+    "Lange Leistungsbeschreibung für die Ausführung sämtlicher Arbeiten einschließlich aller erforderlichen Nebenleistungen. "
+      .repeat(
+        5,
+      );
   await input.fill(value);
   await input.press("Control+Home");
   await input.press("End");
@@ -3173,7 +3242,7 @@ test("span drafts from an earlier editor version recover without overwriting oth
   await page.waitForFunction(
     () =>
       document.querySelector("textarea.gaeb-canvas-input").value ===
-      "Erster Entwurf\nZweiter Absatz",
+        "Erster Entwurf\nZweiter Absatz",
   );
   assert.equal(await input.inputValue(), "Erster Entwurf\nZweiter Absatz");
   await page
@@ -3247,8 +3316,9 @@ test("Enter preserves preceding canvas lines and never paints placeholders insid
   await context.addInitScript(() => {
     const clear = CanvasRenderingContext2D.prototype.clearRect;
     CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-      if (this.canvas.closest(".gaeb-canvas-tile"))
+      if (this.canvas.closest(".gaeb-canvas-tile")) {
         this.canvas.__textCalls = [];
+      }
       return clear.apply(this, args);
     };
     const fill = CanvasRenderingContext2D.prototype.fillText;
@@ -3258,7 +3328,7 @@ test("Enter preserves preceding canvas lines and never paints placeholders insid
       y,
       ...rest
     ) {
-      if (this.canvas.closest(".gaeb-canvas-tile"))
+      if (this.canvas.closest(".gaeb-canvas-tile")) {
         (this.canvas.__textCalls ??= []).push({
           value,
           x,
@@ -3266,6 +3336,7 @@ test("Enter preserves preceding canvas lines and never paints placeholders insid
           font: this.font,
           color: this.fillStyle,
         });
+      }
       return fill.call(this, value, x, y, ...rest);
     };
   });
@@ -3448,10 +3519,9 @@ test("native hierarchical sections retain item XML and numbering through pricing
         valid: valid.valid,
         issues: valid.issues,
         originalId: doc.items[0].element.getAttribute("ID") === originalId,
-        raw:
-          phase === "83" || phase === "31"
-            ? doc.source.includes(before)
-            : doc.source.includes('v:keep="untouched"'),
+        raw: phase === "83" || phase === "31"
+          ? doc.source.includes(before)
+          : doc.source.includes('v:keep="untouched"'),
         itemNumbers: doc.items.map((entry) => entry.oz),
         levels: [
           ...doc.xml.getElementsByTagNameNS(doc.namespace, "BoQBkdn"),
@@ -3495,8 +3565,9 @@ test("hierarchy moves, reorders and deletes preserve native content and valid gl
   const page = await browser.newPage();
   await page.goto(base);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     const checks = [];
     for (const phase of ["83", "84", "86", "87", "31"]) {
       let doc = new GaebDocument(
@@ -3542,8 +3613,9 @@ test("hierarchy moves, reorders and deletes preserve native content and valid gl
         ),
         "indent",
       );
-      if (!doc.source.includes(raw))
+      if (!doc.source.includes(raw)) {
         throw new Error("Moving a title altered its untouched item XML");
+      }
       await step(
         doc.moveEntry(doc.entries.find((item) => item.key === bKey)),
         "outdent",
@@ -3560,8 +3632,9 @@ test("hierarchy moves, reorders and deletes preserve native content and valid gl
       );
       if (
         doc.quantity(doc.entries.find((item) => item.key === aItem)) !== "2.000"
-      )
+      ) {
         throw new Error("Quantity lost");
+      }
       await step(
         doc.reorderEntry(
           doc.entries.find((item) => item.key === aItem),
@@ -3584,8 +3657,9 @@ test("hierarchy moves, reorders and deletes preserve native content and valid gl
       if (
         !doc.items.some((item) => item.key === aItem) ||
         !doc.items.some((item) => item.key === bItem)
-      )
+      ) {
         throw new Error("Moved items were deleted with their old parent");
+      }
       const cycle = doc.entries.find((item) => item.key === bKey);
       let blocked = false;
       try {
@@ -3597,8 +3671,9 @@ test("hierarchy moves, reorders and deletes preserve native content and valid gl
     }
     return checks;
   });
-  for (const check of result)
+  for (const check of result) {
     assert.equal(check.valid, true, JSON.stringify(check));
+  }
   await page.close();
 });
 
@@ -3619,7 +3694,9 @@ test("moving entries retains inherited namespaces and protects referenced or ind
     const owner = doc.entries.find((entry) => entry.key === a).element;
     const raw = doc.source.replace(
       `<BoQCtgy ID="${owner.getAttribute("ID")}"`,
-      `<BoQCtgy xmlns:v="urn:original" xml:lang="de" ID="${owner.getAttribute("ID")}"`,
+      `<BoQCtgy xmlns:v="urn:original" xml:lang="de" ID="${
+        owner.getAttribute("ID")
+      }"`,
     );
     doc = new GaebDocument(
       raw.replace(
@@ -3806,7 +3883,7 @@ test("previous positions autocomplete searches descriptions and inserts short te
   const existing = await page
     .locator(".gaeb-outline [data-gaeb-entry]")
     .evaluateAll((rows) =>
-      rows.map((row) => row.getAttribute("data-gaeb-entry")),
+      rows.map((row) => row.getAttribute("data-gaeb-entry"))
     );
   await page
     .getByRole("button", { name: "Menge", exact: true })
@@ -3823,7 +3900,7 @@ test("previous positions autocomplete searches descriptions and inserts short te
   const inserted = await page
     .locator(".gaeb-outline [data-gaeb-entry]")
     .evaluateAll((rows) =>
-      rows.map((row) => row.getAttribute("data-gaeb-entry")),
+      rows.map((row) => row.getAttribute("data-gaeb-entry"))
     );
   assert.equal(inserted.length, 3);
   assert.equal(inserted[0], existing[0]);
@@ -3847,8 +3924,9 @@ test("heading levels align with items, descriptions stay normal and F2 preserves
       y,
       ...rest
     ) {
-      if (this.canvas.closest(".gaeb-canvas-tile"))
+      if (this.canvas.closest(".gaeb-canvas-tile")) {
         (this.canvas.__calls ??= []).push({ value, x, y, font: this.font });
+      }
       return paint.call(this, value, x, y, ...rest);
     };
   });
@@ -3879,8 +3957,9 @@ test("heading levels align with items, descriptions stay normal and F2 preserves
   await groupName.press("Enter");
   await page.getByRole("button", { name: "Text 1.1 – 1", exact: true }).focus();
   assert.equal(await input.inputValue(), "Untertitel\nGruppenbeschreibung");
-  for (const title of ["Ebene3", "Ebene4", "Ebene5"])
+  for (const title of ["Ebene3", "Ebene4", "Ebene5"]) {
     await createSection(page, title, true);
+  }
   await page
     .getByRole("button", { name: "Position hinzufügen", exact: true })
     .click();
@@ -3913,7 +3992,7 @@ test("heading levels align with items, descriptions stay normal and F2 preserves
   await page.evaluate(
     () =>
       new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
       ),
   );
   const calls = await page
@@ -3938,13 +4017,14 @@ test("heading levels align with items, descriptions stay normal and F2 preserves
   assert.match(title.font, /(?:600|700|bold) 14px/);
   assert.doesNotMatch(description.font, /(?:600|700|bold) /);
   assert.doesNotMatch(groupDescription.font, /(?:600|700|bold) /);
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(
         process.env.SORTSYS_UI_SCREENSHOTS,
         "compact-hierarchy-typography.png",
       ),
     });
+  }
   await context.close();
 });
 
@@ -4008,8 +4088,9 @@ test("mixed folders move a deep item directly into its ancestor and interleave g
             .outlineChildren(doc.entries.find((e) => e.key === c))
             .map((e) => e.key),
         ) !== JSON.stringify([sibling, item])
-      )
+      ) {
         throw new Error("Group did not precede the existing item");
+      }
       await step(
         doc.moveEntry(doc.entries.find((e) => e.key === sibling)),
         "Group back to root",
@@ -4025,10 +4106,14 @@ test("mixed folders move a deep item directly into its ancestor and interleave g
         ),
         "Move directly to A",
       );
-      if (doc.outlineParent(doc.entries.find((e) => e.key === item))?.key !== a)
+      if (
+        doc.outlineParent(doc.entries.find((e) => e.key === item))?.key !== a
+      ) {
         throw new Error("Item is not directly in A");
-      if (doc.outlineEntries.length !== 4)
+      }
+      if (doc.outlineEntries.length !== 4) {
         throw new Error("Extra visible groups");
+      }
       await step(
         doc.addItemInCategory(doc.entries.find((e) => e.key === a)),
         "Second direct item",
@@ -4059,8 +4144,9 @@ test("mixed folders move a deep item directly into its ancestor and interleave g
           vendor.entries
             .find((entry) => entry.key === item2)
             .element.getAttributeNS("urn:keep-list", "keep") !== "retained"
-        )
+        ) {
           throw new Error("Split lost inherited namespace");
+        }
         vendor = new GaebDocument(
           vendor.moveEntry(
             vendor.entries.find((entry) => entry.key === item),
@@ -4068,8 +4154,9 @@ test("mixed folders move a deep item directly into its ancestor and interleave g
           ),
           doc.fileName,
         );
-        if (!vendor.source.includes('v:metadata="retain"'))
+        if (!vendor.source.includes('v:metadata="retain"')) {
           throw new Error("Empty storage cleanup removed vendor metadata");
+        }
       }
       await step(
         doc.moveEntry(
@@ -4082,8 +4169,9 @@ test("mixed folders move a deep item directly into its ancestor and interleave g
       const middle = doc
         .outlineChildren(doc.entries.find((e) => e.key === a))
         .map((e) => e.key);
-      if (JSON.stringify(middle) !== JSON.stringify([item, b, item2]))
+      if (JSON.stringify(middle) !== JSON.stringify([item, b, item2])) {
         throw new Error("Wrong mixed order: " + JSON.stringify(middle));
+      }
       await step(
         doc.moveEntry(
           doc.entries.find((e) => e.key === item2),
@@ -4098,24 +4186,25 @@ test("mixed folders move a deep item directly into its ancestor and interleave g
             .outlineChildren(doc.entries.find((e) => e.key === a))
             .map((e) => e.key),
         ) !== JSON.stringify([item, item2, b])
-      )
+      ) {
         throw new Error("Wrong reordered items");
+      }
       const loaded = new GaebDocument(doc.source, doc.fileName);
       checks.push({
         phase,
         visible: loaded.outlineEntries.length,
         items: loaded.items.length,
-        parent:
-          loaded.outlineParent(loaded.entries.find((e) => e.key === item))
-            .key === a,
+        parent: loaded.outlineParent(loaded.entries.find((e) => e.key === item))
+          .key === a,
       });
       if (phase === "83") {
         const offer = new GaebDocument(
           deriveGaebDocument(doc.source, "84", { ownCompany: "AN" }),
           "Bid.x84",
         );
-        if (offer.outlineEntries.some((e) => offer.isInternalCategory(e)))
+        if (offer.outlineEntries.some((e) => offer.isInternalCategory(e))) {
           throw new Error("Native bucket exposed after pricing");
+        }
       }
     }
     return checks;
@@ -4132,8 +4221,9 @@ test("folder creation stays empty and adding items to parents preserves IDs in e
   const page = await browser.newPage();
   await page.goto(base);
   const checks = await page.evaluate(async () => {
-    const { GaebDocument, createGaebXml, validateGaebInBrowser } =
-      await import("/editor.js");
+    const { GaebDocument, createGaebXml, validateGaebInBrowser } = await import(
+      "/editor.js"
+    );
     const result = [];
     for (const phase of ["83", "84", "86", "87", "31"]) {
       let doc = new GaebDocument(
@@ -4148,7 +4238,7 @@ test("folder creation stays empty and adding items to parents preserves IDs in e
       );
       const folder = doc.children().at(-1);
       const empty = !doc.items.some((item) =>
-        folder.element.contains(item.element),
+        folder.element.contains(item.element)
       );
       const originalParent = doc.parentCategory(
         doc.items.find((item) => item.key === original),
@@ -4158,9 +4248,10 @@ test("folder creation stays empty and adding items to parents preserves IDs in e
         doc.addItemInCategory(undefined, "Work items"),
         doc.fileName,
       );
-      const sameOriginalParent =
-        doc.parentCategory(doc.items.find((item) => item.key === original))
-          .key === originalParent;
+      const sameOriginalParent = doc.parentCategory(doc.items.find((item) =>
+        item.key === original
+      ))
+        .key === originalParent;
       const ownBranch = doc.items.every(
         (item) =>
           !doc.entries
@@ -4177,7 +4268,7 @@ test("folder creation stays empty and adding items to parents preserves IDs in e
       const inFolder = doc.items.filter((item) =>
         doc.entries
           .find((entry) => entry.key === folderKey)
-          .element.contains(item.element),
+          .element.contains(item.element)
       );
       doc = new GaebDocument(
         doc.addEmptyCategory(
@@ -4198,7 +4289,7 @@ test("folder creation stays empty and adding items to parents preserves IDs in e
         ownBranch,
         inFolder: inFolder.length,
         nestedEmpty: !doc.items.some((item) =>
-          nested.element.contains(item.element),
+          nested.element.contains(item.element)
         ),
         ids: doc.items.map((item) => item.key),
         original,
@@ -4245,7 +4336,7 @@ test("blank paper, workspace and outline clear focus and selection without losin
     .first()
     .click({ position: { x: 10, y: 10 } });
   await page.waitForFunction(() =>
-    document.activeElement?.classList.contains("gaeb-editor"),
+    document.activeElement?.classList.contains("gaeb-editor")
   );
   assert.equal(await outline.locator('[aria-selected="true"]').count(), 0);
   assert.equal(
@@ -4264,7 +4355,7 @@ test("blank paper, workspace and outline clear focus and selection without losin
     .locator(".gaeb-document-scroll")
     .click({ position: { x: 4, y: 4 } });
   await page.waitForFunction(() =>
-    document.activeElement?.classList.contains("gaeb-editor"),
+    document.activeElement?.classList.contains("gaeb-editor")
   );
   assert.equal(await outline.locator('[aria-selected="true"]').count(), 0);
   await outline.getByText("Freie Fläche", { exact: true }).click();
@@ -4273,7 +4364,7 @@ test("blank paper, workspace and outline clear focus and selection without losin
   const box = await tree.boundingBox();
   await tree.click({ position: { x: 140, y: box.height - 10 } });
   await page.waitForFunction(() =>
-    document.activeElement?.classList.contains("gaeb-editor"),
+    document.activeElement?.classList.contains("gaeb-editor")
   );
   assert.equal(await outline.locator('[aria-selected="true"]').count(), 0);
   await field.focus();
@@ -4366,10 +4457,11 @@ test("folder explorer names inline, cancels drafts, renames with F2 and reopens 
   await page
     .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
     .waitFor();
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(process.env.SORTSYS_UI_SCREENSHOTS, "folder-explorer.png"),
     });
+  }
   await page.reload();
   await outline.getByText("Fenster und Türen", { exact: true }).waitFor();
   await outline.getByText("Rosetten", { exact: true }).waitFor();
@@ -4477,10 +4569,11 @@ test("visible hierarchy actions move items between sections, reorder with the ke
   await page
     .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
     .waitFor();
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(process.env.SORTSYS_UI_SCREENSHOTS, "hierarchy-moved.png"),
     });
+  }
   await page.reload();
   await outline.getByText("Alpha neu", { exact: true }).waitFor();
   await outline.getByText("Beta", { exact: true }).waitFor();
@@ -4633,13 +4726,14 @@ test("dragging into sections reparents entire subtrees, rejects cycles and suppo
   });
   await row("Alpha").waitFor({ state: "visible" });
   await row("Fassade").and(page.locator("[data-drop-target]")).waitFor();
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(
         process.env.SORTSYS_UI_SCREENSHOTS,
         "hierarchy-drop-target.png",
       ),
     });
+  }
   await page.mouse.up();
   await row("Innen").getByText("1.2", { exact: true }).waitFor();
   await row("Beta").getByText("1.1.2", { exact: true }).waitFor();
@@ -4657,10 +4751,11 @@ test("dragging into sections reparents entire subtrees, rejects cycles and suppo
   await page
     .locator('xpath=descendant-or-self::*[@data-schema-state="valid"]')
     .waitFor();
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(process.env.SORTSYS_UI_SCREENSHOTS, "hierarchy-dragged.png"),
     });
+  }
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -4692,10 +4787,11 @@ test("editor creates named sections with explicit parents and keeps the hierarch
   await outline.getByText("Fassade", { exact: true }).waitFor();
   await outline.getByText("Wärmedämmung", { exact: true }).waitFor();
   await outline.getByText("WDVS Fassadenfront 2x2m", { exact: true }).waitFor();
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(process.env.SORTSYS_UI_SCREENSHOTS, "hierarchy-desktop.png"),
     });
+  }
   await page.reload();
   await outline.getByText("WDVS Fassadenfront 2x2m", { exact: true }).waitFor();
   await page.getByRole("button", { name: "English", exact: true }).click();
@@ -4707,13 +4803,14 @@ test("editor creates named sections with explicit parents and keeps the hierarch
   await page.evaluate(
     () =>
       new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
       ),
   );
-  if (process.env.SORTSYS_UI_SCREENSHOTS)
+  if (process.env.SORTSYS_UI_SCREENSHOTS) {
     await page.screenshot({
       path: join(process.env.SORTSYS_UI_SCREENSHOTS, "hierarchy-mobile.png"),
     });
+  }
   assert.equal(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -4732,7 +4829,7 @@ test("editor creates named sections with explicit parents and keeps the hierarch
             width: node.getBoundingClientRect().width,
             right: node.getBoundingClientRect().right,
           }))
-          .slice(0, 15),
+          .slice(0, 15)
       ),
     ),
   );
@@ -4789,8 +4886,9 @@ test("seed native documents validate, round-trip and support their editable phas
           doc.setMeasurementField(doc.items[0], first.value.id, "count", "2"),
           doc.fileName,
         );
-        if (doc.takeoff(doc.items[0]).mismatch)
+        if (doc.takeoff(doc.items[0]).mismatch) {
           throw new Error("Seed X31 calculation mismatch");
+        }
       } else if (phaseCanEdit(phase)) {
         doc = new GaebDocument(
           doc.setValue(
@@ -4800,7 +4898,7 @@ test("seed native documents validate, round-trip and support their editable phas
           ),
           doc.fileName,
         );
-        if (phaseHasPrices(phase))
+        if (phaseHasPrices(phase)) {
           doc = new GaebDocument(
             doc.setValue(
               doc.items[0],
@@ -4809,6 +4907,7 @@ test("seed native documents validate, round-trip and support their editable phas
             ),
             doc.fileName,
           );
+        }
       }
       output.push({
         phase,
@@ -4818,8 +4917,9 @@ test("seed native documents validate, round-trip and support their editable phas
     }
     return output;
   }, fixtures);
-  for (const r of results)
+  for (const r of results) {
     assert.equal(r.valid, true, `X${r.phase}: ${JSON.stringify(r.issues)}`);
+  }
   await page.close();
 });
 
@@ -4848,10 +4948,11 @@ test("alternative, cost, trade and billing chains produce native schema-valid do
         const error = new DOMParser()
           .parseFromString(xml, "application/xml")
           .querySelector("parsererror");
-        if (error)
+        if (error) {
           throw new Error(
             `X${phase}: ${error.textContent} ${xml.slice(0, 500)}`,
           );
+        }
         const d = new GaebDocument(xml, `chain.x${phase}`);
         checks.push({
           phase,
@@ -4963,8 +5064,9 @@ test("alternative, cost, trade and billing chains produce native schema-valid do
     },
     { fixture, quote },
   );
-  for (const r of result.checks)
+  for (const r of result.checks) {
     assert.equal(r.valid, true, `X${r.phase}: ${JSON.stringify(r.issues)}`);
+  }
   assert.equal(result.measuredItems, 1);
   assert.equal(result.progress, "200.00");
   assert.equal(Number(result.full) - Number(result.final), 200);
@@ -5092,8 +5194,9 @@ test(
       canvas.height = 256;
       const ctx = canvas.getContext("2d");
       const pixels = ctx.createImageData(256, 256);
-      for (let i = 0; i < pixels.data.length; i++)
+      for (let i = 0; i < pixels.data.length; i++) {
         pixels.data[i] = i % 4 === 3 ? 255 : Math.random() * 256;
+      }
       ctx.putImageData(pixels, 0, 0);
       const encoded = canvas.toDataURL("image/png").split(",")[1];
       return doc.source.replace(

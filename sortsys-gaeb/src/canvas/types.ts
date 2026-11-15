@@ -8,6 +8,7 @@ export type Font = {
 };
 export type Collaborator = {
   id: string;
+  facet?: import("../core/contentFacets").GaebContentFacet;
   name: string;
   color: string;
   field?: string | null;
@@ -53,6 +54,7 @@ export type HitRegion = {
 };
 export type EditorField = {
   key: string;
+  facet?: import("../core/contentFacets").GaebContentFacet;
   label: string;
   value: string;
   multiline: boolean;

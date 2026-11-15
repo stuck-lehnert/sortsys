@@ -18,6 +18,20 @@ import { gaebDocumentName } from "../documentTypes";
 import { gaebNetAmount } from "../core/workflows";
 import { decimal, decimalString, roundedDivide } from "../core/decimal";
 import { text, type GaebLocale } from "../messages";
+import {
+  elementContentFacet,
+  metadataField,
+  metadataFieldKey,
+  metadataFields,
+} from "../core/fieldBindings";
+import {
+  gaebAmountFacet,
+  gaebQuantityFacet,
+  gaebCanRead,
+  gaebCanWrite,
+  type GaebContentAccess,
+  type GaebContentFacet,
+} from "../core/contentFacets";
 import { baselineOffset, fontString } from "./render";
 import { measureText } from "./metrics";
 import {
@@ -62,6 +76,7 @@ const pricingSnapshots = new WeakMap<
   {
     complex: boolean;
     net?: string | null;
+    reference?: GaebDocument;
   }
 >();
 function pricingSnapshot(model: GaebDocument) {
@@ -312,9 +327,12 @@ export function layoutGaebDocument(
     locale: GaebLocale;
     reference?: GaebDocument;
     documentTitle?: string;
+    documentKind?: string;
     projectTitle?: string;
     headingLabel?: string;
     editable: boolean;
+    contentAccess?: GaebContentAccess;
+    canRename?: boolean;
     drafts: Map<string, string>;
     change: (operation: (document: GaebDocument) => string) => void;
     enter: (entryKey: string, index: number, offset: number) => void;
@@ -323,11 +341,31 @@ export function layoutGaebDocument(
   },
 ): CanvasDocument {
   const { locale, editable, drafts, change } = options;
+  const canRead = (facet: GaebContentFacet) =>
+    gaebCanRead(options.contentAccess, facet);
+  const canWrite = (facet: GaebContentFacet) =>
+    editable && gaebCanWrite(options.contentAccess, facet);
+  const amountFacet = gaebAmountFacet(
+    options.documentKind ?? model.documentKind ?? "",
+    model.phase,
+  );
+  const quantityFacet = gaebQuantityFacet(model.phase);
+  const complete = options.contentAccess?.complete ?? true;
+  const pricingSupported = options.contentAccess?.pricingSupported ?? complete;
   const t = (de: string, en: string) => text(locale, de, en);
   const fields = new Map<string, EditorField>();
   const complexPricing =
     pricingSnapshot(model).complex ||
     (!!options.reference && pricingSnapshot(options.reference).complex);
+  const visibleAmount = (entry: GaebEntry) => {
+    if (pricingSupported && !complexPricing) {
+      return model.calculatedAmount(entry, options.reference);
+    }
+    if (options.contentAccess?.staleCalculation) {
+      return "";
+    }
+    return model.value(entry.element, "IT");
+  };
   const leafIndices = new Map<string, Map<Element, number>>();
   const groupsByNode = new Map<
     Element,
@@ -336,22 +374,51 @@ export function layoutGaebDocument(
   const drawnGroups = new Set<RichTextGroup>();
   let flow = new Flow(context, false);
   flow.y = BODY_TOP;
-  const bind = (field: EditorField, font = DEFAULT_FONT): Run => {
+  const bind = (
+    field: EditorField,
+    font = DEFAULT_FONT,
+    facet: GaebContentFacet = "scope",
+  ): Run => {
+    if (!canRead(facet)) {
+      return { text: "—", font };
+    }
+    field.editable = field.editable && canWrite(facet);
+    field.facet = facet;
+    const commit = field.commit;
+    field.commit = (value) => {
+      if (field.editable) {
+        commit(value);
+      }
+    };
+    const enter = field.enter;
+    if (enter) {
+      field.enter = (offset) => {
+        if (field.editable) {
+          return enter(offset);
+        }
+      };
+    }
     field.value = drafts.get(field.key) ?? field.value;
     fields.set(field.key, field);
     return { text: field.value, field: field.key, font };
   };
-  const metadata = model.metadataElements();
-  const invoice = invoiceSummary(model);
-  const documentName =
-    options.headingLabel ||
-    (model.documentKind === "variation" && ["83", "84"].includes(model.phase)
-      ? t("Nachtragsangebot", "Variation offer")
-      : invoice?.type === "deduction"
-        ? t("Abschlagsrechnung", "Progress invoice")
-        : invoice?.type === "final account"
-          ? t("Schlussrechnung", "Final invoice")
-          : gaebDocumentName(model.phase, locale));
+  const metadata = metadataFields(model);
+  const invoice = pricingSupported ? invoiceSummary(model) : undefined;
+  let documentName = options.headingLabel;
+  if (!documentName) {
+    if (
+      model.documentKind === "variation" &&
+      ["83", "84"].includes(model.phase)
+    ) {
+      documentName = t("Nachtragsangebot", "Variation offer");
+    } else if (invoice?.type === "deduction") {
+      documentName = t("Abschlagsrechnung", "Progress invoice");
+    } else if (invoice?.type === "final account") {
+      documentName = t("Schlussrechnung", "Final invoice");
+    } else {
+      documentName = gaebDocumentName(model.phase, locale);
+    }
+  }
   flow.paragraph([
     {
       text: documentName,
@@ -374,7 +441,7 @@ export function layoutGaebDocument(
           options.documentTitle ??
           model.documentTitle,
         multiline: false,
-        editable,
+        editable: editable && options.canRename !== false,
         commit: (value) => change((doc) => doc.setDocumentTitle(value)),
       },
       titleFont,
@@ -411,14 +478,11 @@ export function layoutGaebDocument(
   const recipient = model.recipientAddress(options.reference);
   if (recipient) {
     const local = recipient.document === model;
-    const members = recipient.document
-      .metadataElements()
-      .map((element, index) => ({ element, index }))
-      .filter(
-        ({ element }) =>
-          element.parentElement === recipient.address &&
-          !["", "…"].includes(element.textContent?.trim() ?? ""),
-      );
+    const members = [...metadataFields(recipient.document).values()].filter(
+      ({ element }) =>
+        element.parentElement === recipient.address &&
+        !["", "…"].includes(element.textContent?.trim() ?? ""),
+    );
     const labels: Record<string, [string, string]> = {
       Name1: ["Name / Firma", "Name / company"],
       Name2: ["Namenszusatz", "Additional name"],
@@ -430,31 +494,42 @@ export function layoutGaebDocument(
       City: ["Ort", "City"],
     };
     let postalRow = false;
-    for (const { element, index } of members) {
+    for (const { element } of members) {
       if (postalRow && element.localName === "City") continue;
-      const fieldRun = (element: Element, index: number) =>
+      const fieldRun = (element: Element) =>
         bind(
           {
-            key: `${local ? "meta" : "recipient"}:${index}`,
+            key: local
+              ? metadataFieldKey(element)
+              : `recipient:${metadataFieldKey(element)}`,
             label: `${t("Empfänger", "Recipient")} – ${labels[element.localName] ? t(...labels[element.localName]!) : element.localName}`,
             value: element.textContent ?? "",
             multiline: false,
             editable: editable && local,
-            commit: (value) => change((doc) => doc.setMetadata(index, value)),
+            commit: (value) =>
+              change((doc) => {
+                const target = metadataField(doc, metadataFieldKey(element));
+                if (!target) {
+                  throw new Error("invalid-field");
+                }
+                return doc.setMetadata(target.index, value);
+              }),
           },
           DEFAULT_FONT,
+          elementContentFacet(
+            recipient.document,
+            element,
+            options.documentKind,
+          ),
         );
       const city =
         element.localName === "PCode"
           ? members.find((member) => member.element.localName === "City")
           : undefined;
       flow.paragraph([
-        fieldRun(element, index),
+        fieldRun(element),
         ...(city
-          ? [
-              { text: " ", font: DEFAULT_FONT },
-              fieldRun(city.element, city.index),
-            ]
+          ? [{ text: " ", font: DEFAULT_FONT }, fieldRun(city.element)]
           : []),
       ]);
       if (city) postalRow = true;
@@ -471,21 +546,29 @@ export function layoutGaebDocument(
     OfferNo: ["Angebotsnummer", "Quote number"],
     OrderConfNo: ["Bestellbestätigung", "Order confirmation"],
   };
-  metadata.forEach((element, index) => {
+  metadata.forEach(({ element, key }) => {
     const label = extraLabels[element.localName];
     if (!label) return;
     flow.paragraph([
       { text: t(...label) + ": ", font: DEFAULT_FONT },
       bind(
         {
-          key: `meta:${index}`,
+          key,
           label: t(...label),
           value: element.textContent ?? "",
           multiline: false,
           editable: editable && element.localName !== "InvoiceNo",
-          commit: (value) => change((doc) => doc.setMetadata(index, value)),
+          commit: (value) =>
+            change((doc) => {
+              const target = metadataField(doc, key);
+              if (!target) {
+                throw new Error("invalid-field");
+              }
+              return doc.setMetadata(target.index, value);
+            }),
         },
         DEFAULT_FONT,
+        elementContentFacet(model, element, options.documentKind),
       ),
     ]);
     flow.gap(3);
@@ -832,7 +915,7 @@ export function layoutGaebDocument(
       rich(child, entry, target, font, indent);
   }
 
-  const priced = phaseHasPrices(model.phase);
+  const priced = phaseHasPrices(model.phase) && canRead(amountFacet);
   const ozWidth = model.outlineEntries.reduce((width, entry) => {
     context.font = fontString({
       ...DEFAULT_FONT,
@@ -885,7 +968,7 @@ export function layoutGaebDocument(
   const widths = model.items.reduce(
     (sizes, entry) => {
       const price = drafts.get(`${entry.key}:UP`) ?? model.unitPrice(entry);
-      const amount = model.amount(entry);
+      const amount = visibleAmount(entry);
       sizes.price = Math.min(
         128,
         Math.max(
@@ -925,7 +1008,12 @@ export function layoutGaebDocument(
     total: totalX,
   };
   const descWidth = columns.qty - columns.description - 18;
-  const rowColumns = JSON.stringify([columns, widths]);
+  const rowColumns = JSON.stringify([
+    columns,
+    widths,
+    options.contentAccess,
+    amountFacet,
+  ]);
   const cellText = (
     value: string,
     x: number,
@@ -980,21 +1068,40 @@ export function layoutGaebDocument(
     temporary.x = x;
     temporary.width = name === "UP" ? width - prefixWidth - suffixWidth : width;
     temporary.y = 0;
-    const run = bind({
-      key: `${entry.key}:${name}`,
-      label,
-      value:
-        name === "Qty"
-          ? model.quantity(entry)
-          : name === "UP"
-            ? model.unitPrice(entry)
-            : model.value(entry.element, name),
-      multiline: false,
-      editable: editable && !disabled,
-      entryKey: entry.key,
-      commit: (value) =>
-        change((doc) => doc.setValue(entryFor(doc, entry.key), name, value)),
-    });
+    let facet: GaebContentFacet = "scope";
+    let value = model.value(entry.element, name);
+    if (name === "Qty") {
+      facet = quantityFacet;
+      value = model.quantity(entry);
+      if (!value && model.phase === "84" && options.reference) {
+        const source = model.referenceEntry(entry, options.reference);
+        if (source) value = options.reference.quantity(source);
+      }
+    } else if (name === "UP") {
+      facet = amountFacet;
+      value = model.unitPrice(entry);
+    }
+    const run = bind(
+      {
+        key: `${entry.key}:${name}`,
+        label,
+        value,
+        multiline: false,
+        editable: editable && !disabled,
+        entryKey: entry.key,
+        commit: (value) =>
+          change((doc) =>
+            doc.setValue(
+              entryFor(doc, entry.key),
+              name,
+              value,
+              options.reference,
+            ),
+          ),
+      },
+      DEFAULT_FONT,
+      facet,
+    );
     if (name !== "QU" && locale === "de") run.text = run.text.replace(".", ",");
     context.font = fontString(run.font);
     const textX =
@@ -1170,7 +1277,9 @@ export function layoutGaebDocument(
       continue;
     }
     const takeoffState =
-      model.phase === "31" ? model.takeoff(entry) : undefined;
+      model.phase === "31" && canRead("measurement")
+        ? model.takeoff(entry)
+        : undefined;
     const measureRows =
       takeoffState?.rows.map(({ value }) => {
         const row = { ...value };
@@ -1244,7 +1353,7 @@ export function layoutGaebDocument(
         priceY,
         complexPricing,
       );
-      const amount = model.amount(entry);
+      const amount = visibleAmount(entry);
       cellText(
         amount ? amountFormat.format(Number(amount)) : "—",
         columns.total,
@@ -1295,6 +1404,7 @@ export function layoutGaebDocument(
               ),
           },
           inputFont,
+          "measurement",
         );
         // Decimal punctuation has identical offsets in the input and canvas.
         if (!["label", "location"].includes(name) && locale === "de")
@@ -1390,6 +1500,7 @@ export function layoutGaebDocument(
                   ),
               },
               { ...DEFAULT_FONT, size: 16, bold: true },
+              "measurement",
             ),
           ]);
           flow.gap(8);
@@ -1510,7 +1621,7 @@ export function layoutGaebDocument(
         flow.gap(25);
       }
     }
-    if (model.phase === "52")
+    if (model.phase === "52" && canRead("calculation"))
       for (const [index, row] of model.costApproaches(entry).entries()) {
         flow.gap(5);
         const labels: Record<string, [string, string]> = {
@@ -1556,6 +1667,7 @@ export function layoutGaebDocument(
                     ),
                 },
                 { ...DEFAULT_FONT, size: 11 },
+                "calculation",
               ),
             ],
             columns.description - MARGIN,
@@ -1567,9 +1679,12 @@ export function layoutGaebDocument(
     flow.gap(4);
     finishRow();
   }
-  if (priced && model.items.length) {
+  if (pricingSupported && priced && model.items.length) {
     const pricing = pricingSnapshot(model);
-    if (pricing.net === undefined) pricing.net = gaebNetAmount(model.source);
+    if (pricing.net === undefined || pricing.reference !== options.reference) {
+      pricing.net = gaebNetAmount(model.source, options.reference?.source);
+      pricing.reference = options.reference;
+    }
     const net = pricing.net;
     const info = model.xml.getElementsByTagNameNS(
       model.namespace,

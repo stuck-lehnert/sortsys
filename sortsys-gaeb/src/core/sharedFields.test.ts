@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as Y from "yjs";
-import { SharedFields, decodeUpdate, encodeUpdate } from "./sharedFields";
+import {
+  SharedFields,
+  InvalidSharedUpdate,
+  initializeSharedField,
+  decodeUpdate,
+  encodeUpdate,
+} from "./sharedFields";
 import type { EditorField } from "../canvas/types";
 
 function room() {
@@ -34,9 +40,11 @@ function room() {
       peer.connect((message) => {
         const apply = () => {
           if (message.type === "initialize") {
-            const key = String(message.key),
-              fields = state.getMap("__fields");
-            if (fields.has(key)) return;
+            const key = String(message.key);
+            const fields = state.getMap("__fields");
+            if (fields.has(key)) {
+              return;
+            }
             state.transact(() => {
               fields.set(key, true);
               state.getText(key).insert(0, String(message.value));
@@ -48,8 +56,11 @@ function room() {
             broadcast(update);
           }
         };
-        if (held) pending.push(apply);
-        else apply();
+        if (held) {
+          pending.push(apply);
+        } else {
+          apply();
+        }
       }, true);
       return peer;
     },
@@ -64,9 +75,9 @@ function room() {
 }
 
 test("live text converges for simultaneous insertions at the same position, including emoji", () => {
-  const session = room(),
-    first = session.add(),
-    second = session.add();
+  const session = room();
+  const first = session.add();
+  const second = session.add();
   session.hold();
   first.edit("item-a:text:0", "Hallo Welt", "Hallo 👋 Welt");
   second.edit("item-a:text:0", "Hallo Welt", "Hallo schöne Welt");
@@ -77,14 +88,232 @@ test("live text converges for simultaneous insertions at the same position, incl
   assert.equal(first.value("item-a:text:0")?.match(/Hallo/g)?.length, 1);
 });
 
+test("an invalid embedded CRDT object cannot mutate the live text or prevent a later valid edit", () => {
+  const session = room();
+  const reader = session.add();
+  const writer = session.add();
+  const hostile = new Y.Doc();
+  try {
+    hostile.getText("item-a:text:0").insertEmbed(0, { unexpected: "object" });
+    assert.throws(() =>
+      reader.receive(encodeUpdate(Y.encodeStateAsUpdate(hostile))),
+    );
+    assert.equal(reader.value("item-a:text:0"), "Hallo Welt");
+    writer.edit("item-a:text:0", "Hallo Welt", "Hallo Baustelle");
+    assert.equal(reader.value("item-a:text:0"), "Hallo Baustelle");
+  } finally {
+    hostile.destroy();
+  }
+});
+
+function fieldReader(value = "Hallo Welt") {
+  const reader = new SharedFields();
+  reader.register(
+    new Map([
+      [
+        "item-a:text:0",
+        {
+          key: "item-a:text:0",
+          value,
+          multiline: true,
+          editable: true,
+          label: "Text",
+          commit() {},
+        } satisfies EditorField,
+      ],
+    ]),
+  );
+  return reader;
+}
+
+test("discarding a staged initializer retains the old baseline and queued local input", () => {
+  const key = "item-a:text:0";
+  const reader = fieldReader();
+  try {
+    reader.edit(key, "Hallo Welt", "Hallo schöne Welt");
+    const reception = reader.beginReceive();
+    reception.initialize(
+      key,
+      "Unbestätigte Grundlage",
+      initializeSharedField(key, "Unbestätigte Grundlage"),
+    );
+    reception.destroy();
+    assert.equal(reader.value(key), undefined);
+    assert.equal(
+      reader.receiveInitialization(
+        key,
+        "Hallo Welt",
+        initializeSharedField(key, "Hallo Welt"),
+      ),
+      true,
+    );
+    assert.equal(reader.value(key), "Hallo schöne Welt");
+  } finally {
+    reader.destroy();
+  }
+});
+
+test("only the first complete valid initializer wins and cannot smuggle another field", () => {
+  const key = "item-a:text:0";
+  const reader = fieldReader();
+  try {
+    assert.throws(
+      () =>
+        reader.receiveInitialization(
+          key,
+          "Andere Grundlage",
+          initializeSharedField(key, "Hallo Welt"),
+        ),
+      InvalidSharedUpdate,
+    );
+    assert.throws(
+      () =>
+        reader.receiveInitialization(
+          key,
+          "Hallo Welt",
+          initializeSharedField("anderes-feld", "Hallo Welt"),
+        ),
+      InvalidSharedUpdate,
+    );
+    assert.equal(reader.value(key), undefined);
+    assert.equal(
+      reader.receiveInitialization(
+        key,
+        "Hallo Welt",
+        initializeSharedField(key, "Hallo Welt"),
+      ),
+      true,
+    );
+    assert.equal(
+      reader.receiveInitialization(
+        key,
+        "Zweite Grundlage",
+        initializeSharedField(key, "Zweite Grundlage"),
+      ),
+      false,
+    );
+    assert.equal(reader.value(key), "Hallo Welt");
+  } finally {
+    reader.destroy();
+  }
+});
+
+test("a rejected update cannot poison staged valid edits and listeners see only their committed result", () => {
+  const key = "item-a:text:0";
+  const initial = initializeSharedField(key, "Hallo Welt");
+  const reader = fieldReader();
+  const writer = new Y.Doc();
+  const hostile = new Y.Doc();
+  const reception = reader.beginReceive();
+  const changes: string[] = [];
+  reader.subscribe((change) => changes.push(change.value));
+  try {
+    reception.initialize(key, "Hallo Welt", initial);
+    Y.applyUpdate(writer, decodeUpdate(initial));
+    writer.getText(key).insert(6, "schöne ");
+    reception.update(encodeUpdate(Y.encodeStateAsUpdate(writer)));
+    hostile.getMap("__fields").set(key, true);
+    hostile.getText(key).insertEmbed(0, { unsafe: "object" });
+    assert.throws(
+      () => reception.update(encodeUpdate(Y.encodeStateAsUpdate(hostile))),
+      InvalidSharedUpdate,
+    );
+    writer.getText(key).insert(writer.getText(key).length, "!");
+    reception.update(encodeUpdate(Y.encodeStateAsUpdate(writer)));
+    assert.equal(reader.value(key), undefined);
+    assert.deepEqual(changes, []);
+    reception.commit();
+    assert.equal(reader.value(key), "Hallo schöne Welt!");
+    assert.deepEqual(changes, ["Hallo schöne Welt!"]);
+  } finally {
+    reception.destroy();
+    reader.destroy();
+    writer.destroy();
+    hostile.destroy();
+  }
+});
+
+test("committing a network batch preserves local typing performed after the batch began", () => {
+  const key = "item-a:text:0";
+  const initial = initializeSharedField(key, "Hallo Welt");
+  const reader = fieldReader();
+  const writer = new Y.Doc();
+  reader.receiveInitialization(key, "Hallo Welt", initial);
+  reader.connect(() => {}, true);
+  const reception = reader.beginReceive();
+  try {
+    Y.applyUpdate(writer, decodeUpdate(initial));
+    writer.getText(key).insert(6, "schöne ");
+    reception.update(encodeUpdate(Y.encodeStateAsUpdate(writer)));
+    reader.edit(key, "Hallo Welt", "Hallo Welt!");
+    reception.commit();
+    assert.equal(reader.value(key), "Hallo schöne Welt!");
+  } finally {
+    reception.destroy();
+    reader.destroy();
+    writer.destroy();
+  }
+});
+
+test("updates with unresolved dependencies leave no hidden pending structs in the editor", () => {
+  const key = "item-a:text:0";
+  const initial = initializeSharedField(key, "Hallo Welt");
+  const writer = new Y.Doc();
+  const reader = fieldReader();
+  try {
+    Y.applyUpdate(writer, decodeUpdate(initial));
+    const vector = Y.encodeStateVector(writer);
+    writer.getText(key).insert(6, "schöne ");
+    const update = encodeUpdate(Y.encodeStateAsUpdate(writer, vector));
+    assert.throws(() => reader.receive(update), InvalidSharedUpdate);
+    assert.equal(reader.value(key), undefined);
+    reader.receiveInitialization(key, "Hallo Welt", initial);
+    assert.equal(reader.value(key), "Hallo Welt");
+    reader.receive(update);
+    assert.equal(reader.value(key), "Hallo schöne Welt");
+  } finally {
+    reader.destroy();
+    writer.destroy();
+  }
+});
+
+test("empty field markers cannot bypass the shared document size limit", () => {
+  const reader = fieldReader();
+  const hostile = new Y.Doc();
+  try {
+    hostile.transact(() => {
+      const fields = hostile.getMap("__fields");
+      for (let index = 0; index < 25_001; index += 1) {
+        fields.set(`empty-field-${index}`, true);
+      }
+    });
+    assert.throws(
+      () => reader.receive(encodeUpdate(Y.encodeStateAsUpdate(hostile))),
+      InvalidSharedUpdate,
+    );
+    assert.equal(reader.value("item-a:text:0"), undefined);
+    reader.receiveInitialization(
+      "item-a:text:0",
+      "Hallo Welt",
+      initializeSharedField("item-a:text:0", "Hallo Welt"),
+    );
+    assert.equal(reader.value("item-a:text:0"), "Hallo Welt");
+  } finally {
+    hostile.destroy();
+    reader.destroy();
+  }
+});
+
 test("remote insertions keep the local caret attached to its text", () => {
-  const session = room(),
-    first = session.add(),
-    second = session.add();
+  const session = room();
+  const first = session.add();
+  const second = session.add();
   first.cursor({ field: "item-a:text:0", start: 6, end: 10 });
   const changes: Array<{ start?: number; end?: number }> = [];
   first.subscribe((change) => {
-    if (change.selection) changes.push(change.selection);
+    if (change.selection) {
+      changes.push(change.selection);
+    }
   });
   second.edit("item-a:text:0", "Hallo Welt", "Hallo schöne Welt");
   assert.equal(changes.at(-1)?.start, 13);
@@ -92,9 +321,9 @@ test("remote insertions keep the local caret attached to its text", () => {
 });
 
 test("empty text fields initialize once and simultaneous deletions do not duplicate surviving text", () => {
-  const session = room(),
-    first = session.add(""),
-    second = session.add("");
+  const session = room();
+  const first = session.add("");
+  const second = session.add("");
   assert.equal(first.value("item-a:text:0"), "");
   first.edit("item-a:text:0", "", "ABCDE");
   session.hold();
@@ -106,9 +335,9 @@ test("empty text fields initialize once and simultaneous deletions do not duplic
 });
 
 test("Undo removes only this user's live insertion and preserves the other user's text", () => {
-  const session = room(),
-    first = session.add(),
-    second = session.add();
+  const session = room();
+  const first = session.add();
+  const second = session.add();
   session.hold();
   first.edit("item-a:text:0", "Hallo Welt", "Hallo A Welt");
   second.edit("item-a:text:0", "Hallo Welt", "Hallo B Welt");
@@ -145,12 +374,15 @@ test("a new session discards old CRDT IDs while retaining unsaved text and avoid
   const send = (message: Record<string, unknown>) => {
     sent.push(String(message.type));
     if (message.type === "initialize") {
-      if (!server.getMap("__fields").has(key))
+      if (!server.getMap("__fields").has(key)) {
         server.transact(() => {
           server.getMap("__fields").set(key, true);
           server.getText(key).insert(0, String(message.value));
         });
-    } else Y.applyUpdate(server, decodeUpdate(String(message.data)));
+      }
+    } else {
+      Y.applyUpdate(server, decodeUpdate(String(message.data)));
+    }
     peer.receive(encodeUpdate(Y.encodeStateAsUpdate(server)));
   };
   peer.connect(send, true, "1");

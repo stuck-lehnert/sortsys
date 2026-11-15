@@ -27,6 +27,7 @@ import {
   type TextRange,
 } from "../canvas/keyboard";
 import type { GaebDocument } from "../core/document";
+import type { GaebContentAccess } from "../core/contentFacets";
 import { errorText, text, type GaebLocale } from "../messages";
 import { layoutGaebDocument, type GaebLayoutCache } from "../canvas/gaebLayout";
 import {
@@ -63,10 +64,13 @@ type Props = {
   document: GaebDocument;
   reference?: GaebDocument;
   documentTitle?: string;
+  documentKind?: string;
   projectTitle?: string;
   headingLabel?: string;
   locale: GaebLocale;
   editable: boolean;
+  contentAccess?: GaebContentAccess;
+  canRename?: boolean;
   showFields: boolean;
   initialZoom?: number | null;
   onZoomChange?: (zoom: number | null) => void;
@@ -604,7 +608,16 @@ export function GaebDocumentCanvas(props: Props) {
   const images = useImageRevision();
   const layoutCache = useMemo<GaebLayoutCache>(
     () => new Map(),
-    [model, props.reference, locale, editable, pixelRatio, fonts, images],
+    [
+      model,
+      props.reference,
+      props.contentAccess,
+      locale,
+      editable,
+      pixelRatio,
+      fonts,
+      images,
+    ],
   );
   const layout = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -613,8 +626,11 @@ export function GaebDocumentCanvas(props: Props) {
     return layoutGaebDocument(model, context, {
       locale,
       editable,
+      contentAccess: props.contentAccess,
       reference: props.reference,
       documentTitle: props.documentTitle,
+      canRename: props.canRename,
+      documentKind: props.documentKind,
       projectTitle: props.projectTitle,
       headingLabel: props.headingLabel,
       drafts: values,
@@ -626,7 +642,10 @@ export function GaebDocumentCanvas(props: Props) {
   }, [
     model,
     props.reference,
+    props.contentAccess,
     props.documentTitle,
+    props.canRename,
+    props.documentKind,
     props.projectTitle,
     props.headingLabel,
     locale,
@@ -642,6 +661,39 @@ export function GaebDocumentCanvas(props: Props) {
   allPages.current = layout?.pages ?? [];
   const fieldSource = useRef(new Map<string, EditorField>());
   if (layout) fieldSource.current = layout.fields;
+  useLayoutEffect(() => {
+    const fields = layoutRef.current?.fields;
+    if (!fields) {
+      return;
+    }
+    let discardedDraft = false;
+    for (const key of [...values.keys(), ...drafts.keys()]) {
+      const field = fields.get(key);
+      const deniedDraft = !field?.editable && drafts.has(key);
+      if (!field || deniedDraft) {
+        values.delete(key);
+        discardedDraft = drafts.delete(key) || discardedDraft;
+      }
+    }
+    const key = activeKey.current;
+    const field = key ? fields.get(key) : undefined;
+    const node = input.current;
+    if (key && !field?.editable) {
+      activeKey.current = null;
+      currentSelection.current = null;
+      setSelection(null);
+      props.onSelection(null);
+      props.onActiveField?.(null);
+      props.onLiveSelection?.({ field: null });
+      if (node) {
+        node.value = "";
+        node.readOnly = true;
+      }
+    }
+    if (discardedDraft) {
+      props.onDraftChange();
+    }
+  }, [props.contentAccess]);
   useEffect(() => {
     if (layout) props.sharedFields?.register(layout.fields);
   }, [layout, props.sharedFields]);
@@ -1387,6 +1439,13 @@ export function GaebDocumentCanvas(props: Props) {
           }}
           onCopy={(event) => {
             const node = event.currentTarget;
+            if (
+              !activeKey.current ||
+              !layoutRef.current?.fields.has(activeKey.current)
+            ) {
+              event.preventDefault();
+              return;
+            }
             if (node.selectionStart === node.selectionEnd) return;
             event.preventDefault();
             event.clipboardData.setData(
@@ -1396,6 +1455,13 @@ export function GaebDocumentCanvas(props: Props) {
           }}
           onCut={(event) => {
             const node = event.currentTarget;
+            if (
+              !activeKey.current ||
+              !layoutRef.current?.fields.has(activeKey.current)
+            ) {
+              event.preventDefault();
+              return;
+            }
             if (node.selectionStart === node.selectionEnd) return;
             event.preventDefault();
             event.clipboardData.setData(

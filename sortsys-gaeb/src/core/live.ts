@@ -5,6 +5,7 @@ export type LiveSnapshot = {
   xml: string;
   version: bigint;
   canEdit: boolean;
+  frozen?: boolean;
   liveTicket?: string;
   livePath?: string;
 };
@@ -186,6 +187,9 @@ export function connectXmlLive(options: {
   };
   void connect(snapshot);
   return {
+    async flush(): Promise<string | undefined> {
+      return undefined;
+    },
     field(value: string | null) {
       if (value === selection.field) return;
       selection = { field: value };

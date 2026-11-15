@@ -10,6 +10,10 @@ export function text(
 export function errorText(locale: GaebLocale, error: unknown): string {
   const code = error instanceof Error ? error.message : "";
   const messages: Record<string, [string, string]> = {
+    "print-view-incomplete": [
+      "Für diesen Ausdruck fehlen lesbare Dokumentinhalte oder eine prüfbare Berechnungsgrundlage.",
+      "Some printable contents or a verifiable calculation basis are missing.",
+    ],
     "hierarchy-mixed": [
       "Ein GAEB-Titel enthält entweder Positionen oder Untertitel. Wähle einen anderen Zielordner; es werden keine zusätzlichen Gruppen angelegt.",
       "A GAEB section contains either items or subsections. Choose another destination; no extra groups will be created.",
@@ -94,8 +98,14 @@ export function errorText(locale: GaebLocale, error: unknown): string {
       "Die besonderen Preisregeln dieser Datei erfordern eine manuelle Kalkulation. Preise und Summen bleiben erhalten.",
       "This file's special pricing rules require manual calculation. Prices and totals are preserved.",
     ],
-    "invalid-document-title": ["Bitte eine Bezeichnung mit höchstens 127 Zeichen eingeben.","Enter a document title with at most 127 characters."],
-    "project-name-too-long": ["Die Bauvorhaben-Bezeichnung darf im GAEB-Feld höchstens 60 Zeichen enthalten.","The GAEB project name may contain at most 60 characters."],
+    "invalid-document-title": [
+      "Bitte eine Bezeichnung mit höchstens 127 Zeichen eingeben.",
+      "Enter a document title with at most 127 characters.",
+    ],
+    "project-name-too-long": [
+      "Die Bauvorhaben-Bezeichnung darf im GAEB-Feld höchstens 60 Zeichen enthalten.",
+      "The GAEB project name may contain at most 60 characters.",
+    ],
     "takeoff-expression": [
       "Bitte eine Zahl oder eine Formel eingeben, zum Beispiel 2,4 × 3 oder (1,2 + 0,8) × 2.",
       "Enter a number or formula, for example 2.4 × 3 or (1.2 + 0.8) × 2.",

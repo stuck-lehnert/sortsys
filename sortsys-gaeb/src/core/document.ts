@@ -1,32 +1,34 @@
+import { nativeScalarPatch } from "./scalarTextPatch";
+import { GAEB_ITEM_FIELDS, GAEB_TRADE_ITEM_FIELDS } from "./nativeFields";
 import {
   addMeasures,
-  measurementResult,
-  measureDecimal,
-  measurementComment,
-  measurementInput,
   headingComment,
   headingRebRow,
-  type TakeoffHeading,
   MEASURE_BASE_MARKER,
+  measureDecimal,
+  type Measurement,
+  measurementComment,
+  measurementInput,
+  measurementResult,
+  type MeasureProperty,
   newMeasurement,
   readTakeoff,
   rebAddress,
   rebMeasureRow,
   rebResult,
-  type Measurement,
-  type MeasureProperty,
+  type TakeoffHeading,
 } from "./takeoff";
-import { richTextGroups, textDifference, type RichTextGroup } from "./richText";
+import { type RichTextGroup, richTextGroups, textDifference } from "./richText";
 import { decimal, decimalString, itemAmount, roundedDivide } from "./decimal";
 import { gaebUnit } from "./units";
 import {
   GAEB_PHASES,
-  isTradePhase,
-  phaseHasPrices,
   gaebFilePhase,
-  hasXmlDtd,
-  MAX_GAEB_BYTES,
   type GaebPhase,
+  hasXmlDtd,
+  isTradePhase,
+  MAX_GAEB_BYTES,
+  phaseHasPrices,
 } from "./types";
 
 type Span = {
@@ -60,8 +62,9 @@ function patches(source: string, edits: Patch[]): string {
   const sorted = edits.sort((a, b) => b.start - a.start);
   let boundary = source.length;
   for (const edit of sorted) {
-    if (edit.start < 0 || edit.end > boundary)
+    if (edit.start < 0 || edit.end > boundary) {
       throw new Error("overlapping-xml-edit");
+    }
     source = source.slice(0, edit.start) + edit.value + source.slice(edit.end);
     boundary = edit.start;
   }
@@ -82,11 +85,12 @@ function locate(source: string) {
     const start = token.index!,
       end = start + token[0].length,
       tag = token[0];
-    if (stack.length && previous < start)
+    if (stack.length && previous < start) {
       texts.push({ start: previous, end: start, cdata: false });
-    if (tag.startsWith("<![CDATA["))
+    }
+    if (tag.startsWith("<![CDATA[")) {
       texts.push({ start: start + 9, end: end - 3, cdata: true });
-    else if (tag.startsWith("</")) {
+    } else if (tag.startsWith("</")) {
       const span = stack.pop();
       if (!span) throw new Error("invalid-xml");
       span.closeStart = start;
@@ -96,8 +100,9 @@ function locate(source: string) {
       const span = { start, openEnd: end, closeStart: end, end, selfClosing };
       elements.push(span);
       if (!selfClosing) stack.push(span);
-      if (stack.length > 128 || elements.length > 200_000)
+      if (stack.length > 128 || elements.length > 200_000) {
         throw new Error("document-complexity");
+      }
     }
     previous = end;
   }
@@ -117,22 +122,29 @@ export class GaebDocument {
   private spans = new Map<Element, Span>();
   private textSpans = new Map<Node, TextSpan>();
   private richGroupCache = new WeakMap<Element, RichTextGroup[]>();
+  private references?: {
+    byId: Map<string, GaebEntry>;
+    byNumber: Map<string, GaebEntry>;
+  };
 
   constructor(
     readonly source: string,
     readonly fileName: string,
   ) {
-    if (new TextEncoder().encode(source).byteLength > MAX_GAEB_BYTES)
+    if (new TextEncoder().encode(source).byteLength > MAX_GAEB_BYTES) {
       throw new Error("document-too-large");
+    }
     if (hasXmlDtd(source)) throw new Error("document-dtd");
     const encoding = /^\uFEFF?\s*<\?xml[^?]*encoding\s*=\s*["']([^"']+)/i.exec(
       source,
     )?.[1];
-    if (encoding && !/^utf-?8$/i.test(encoding))
+    if (encoding && !/^utf-?8$/i.test(encoding)) {
       throw new Error("document-encoding");
+    }
     this.xml = new DOMParser().parseFromString(source, "application/xml");
-    if (this.xml.getElementsByTagName("parsererror").length)
+    if (this.xml.getElementsByTagName("parsererror").length) {
       throw new Error("invalid-xml");
+    }
     this.root = this.xml.documentElement;
     this.namespace = this.root.namespaceURI ?? "";
     if (
@@ -142,40 +154,41 @@ export class GaebDocument {
       throw new Error("not-gaeb");
     }
     const namespacePhase = /\/DA(\d+)\//.exec(this.namespace)?.[1];
-    const body =
-      this.child(this.root, "Award") ??
+    const body = this.child(this.root, "Award") ??
       this.child(this.root, "QtyDeterm") ??
       this.child(this.root, "Invoice") ??
       this.child(this.root, "Order");
     const headerPhase = this.value(body, "DP");
-    if (namespacePhase && headerPhase && namespacePhase !== headerPhase)
+    if (namespacePhase && headerPhase && namespacePhase !== headerPhase) {
       throw new Error("phase-conflict");
+    }
     const phase = headerPhase || namespacePhase;
-    if (!GAEB_PHASES.includes(phase as GaebPhase))
+    if (!GAEB_PHASES.includes(phase as GaebPhase)) {
       throw new Error("unsupported-phase");
+    }
     this.phase = phase as GaebPhase;
     const info = this.child(this.root, "GAEBInfo");
-    this.version =
-      this.value(info, "Version") ||
+    this.version = this.value(info, "Version") ||
       /\/(3\.[123])$/.exec(this.namespace)?.[1] ||
       "";
     this.date = this.value(info, "VersDate");
-    if (!["3.1", "3.2", "3.3"].includes(this.version))
+    if (!["3.1", "3.2", "3.3"].includes(this.version)) {
       throw new Error("unsupported-version");
-    this.signed =
-      this.xml.getElementsByTagNameNS(
-        "http://www.w3.org/2000/09/xmldsig#",
-        "Signature",
-      ).length > 0;
+    }
+    this.signed = this.xml.getElementsByTagNameNS(
+      "http://www.w3.org/2000/09/xmldsig#",
+      "Signature",
+    ).length > 0;
     const extension = gaebFilePhase(fileName);
     this.extensionMismatch = extension !== null && extension !== this.phase;
 
     const locations = locate(source);
     const elements = [this.root, ...this.root.getElementsByTagName("*")];
-    if (elements.length !== locations.elements.length)
+    if (elements.length !== locations.elements.length) {
       throw new Error("invalid-xml");
+    }
     elements.forEach((element, i) =>
-      this.spans.set(element, locations.elements[i]!),
+      this.spans.set(element, locations.elements[i]!)
     );
     const walker = this.xml.createTreeWalker(
       this.root,
@@ -197,9 +210,9 @@ export class GaebDocument {
   child(parent: Element | null | undefined, name: string): Element | null {
     return parent
       ? ([...parent.children].find(
-          (child) =>
-            child.namespaceURI === this.namespace && child.localName === name,
-        ) ?? null)
+        (child) =>
+          child.namespaceURI === this.namespace && child.localName === name,
+      ) ?? null)
       : null;
   }
   value(parent: Element | null | undefined, name: string): string {
@@ -229,7 +242,7 @@ export class GaebDocument {
     );
   }
   get title() {
-    const info = this.xml.getElementsByTagNameNS(this.namespace, "BoQInfo")[0];
+    const info = this.boqInfo;
     return (
       this.value(this.child(this.root, "PrjInfo"), "NamePrj") ||
       this.value(info, "LblBoQ") ||
@@ -239,35 +252,134 @@ export class GaebDocument {
       this.fileName
     );
   }
+  get envelope(): Element | null {
+    return (
+      this.child(this.root, "Award") ??
+        this.child(this.root, "QtyDeterm") ??
+        this.child(this.root, "Invoice") ??
+        this.child(this.root, "Order")
+    );
+  }
+  get boqInfo(): Element | null {
+    return this.child(this.child(this.envelope, "BoQ"), "BoQInfo");
+  }
+  get projectInfo(): Element | null {
+    return (
+      this.child(this.root, "PrjInfo") ?? this.child(this.envelope, "PrjInfo")
+    );
+  }
   quantity(entry: GaebEntry) {
     return this.phase === "31"
       ? this.value(this.child(entry.element, "QtyDeterm"), "Qty")
       : this.value(entry.element, this.phase === "89" ? "BillQty" : "Qty");
   }
+  private referenceIndex() {
+    if (this.references) return this.references;
+    const byId = new Map<string, GaebEntry>();
+    const byNumber = new Map<string, GaebEntry>();
+    for (const entry of this.entries) {
+      const number = JSON.stringify([entry.kind, entry.oz]);
+      const id = entry.element.getAttribute("ID");
+      const identity = id ? JSON.stringify([entry.kind, id]) : null;
+      if (byNumber.has(number) || (identity && byId.has(identity))) {
+        throw new Error("ambiguous-reference-position");
+      }
+      byNumber.set(number, entry);
+      if (identity) byId.set(identity, entry);
+    }
+    this.references = { byId, byNumber };
+    return this.references;
+  }
+  referenceEntry(entry: GaebEntry, reference?: GaebDocument) {
+    if (!reference) return undefined;
+    const index = reference.referenceIndex();
+    const id = entry.element.getAttribute("ID");
+    const byId = id
+      ? index.byId.get(JSON.stringify([entry.kind, id]))
+      : undefined;
+    const byPosition = index.byNumber.get(
+      JSON.stringify([entry.kind, entry.oz]),
+    );
+    if (byId && byPosition && byId !== byPosition) {
+      throw new Error("ambiguous-reference-position");
+    }
+    return byId ?? byPosition;
+  }
   unitPrice(entry: GaebEntry) {
     return this.value(
       entry.element,
       isTradePhase(this.phase)
-        ? this.child(entry.element, "NetPrice")
-          ? "NetPrice"
-          : "OfferPrice"
+        ? this.child(entry.element, "NetPrice") ? "NetPrice" : "OfferPrice"
         : "UP",
     );
   }
-  amount(entry: GaebEntry) {
+  amount(entry: GaebEntry, reference?: GaebDocument) {
+    if (!isTradePhase(this.phase)) {
+      const declared = this.value(entry.element, "IT");
+      if (declared) {
+        return declared;
+      }
+    }
+    return this.calculatedAmount(entry, reference);
+  }
+  /** Editable calculations derive row values from their actual inputs. An
+   * unfinished draft must not display an old declared IT as its new amount. */
+  calculatedAmount(entry: GaebEntry, reference?: GaebDocument) {
     if (isTradePhase(this.phase)) {
       const basis = this.value(entry.element, "PriceBasis") || "1";
       if (decimal(basis, 2) <= 0n) return "";
+      let quantity = this.quantity(entry);
+      if (!quantity && reference) {
+        const counterpart = this.referenceEntry(entry, reference);
+        if (counterpart) quantity = reference.quantity(counterpart);
+      }
+      const price = this.unitPrice(entry);
+      if (!quantity || !price) return "";
       return decimalString(
         roundedDivide(
-          decimal(this.quantity(entry) || "0", 2) *
-            decimal(this.unitPrice(entry) || "0", 2),
+          decimal(quantity, 2) * decimal(price, 2),
           decimal(basis, 2),
         ),
         2,
       );
     }
-    return this.value(entry.element, "IT");
+    if (this.phase !== "84") reference = undefined;
+    const counterpart = this.referenceEntry(entry, reference);
+    let quantity = this.quantity(entry) ||
+      (reference && counterpart ? reference.quantity(counterpart) : "");
+    const price = this.unitPrice(entry);
+    const lumpSum = this.value(entry.element, "LumpSumItem") ||
+      (reference && counterpart
+        ? reference.value(counterpart.element, "LumpSumItem")
+        : "");
+    if (lumpSum === "Yes") quantity = "1";
+    if (!quantity || !price) return "";
+    return itemAmount(
+      lumpSum === "Yes" ? "1" : quantity,
+      price,
+      this.value(entry.element, "DiscountPcnt") || "0",
+    );
+  }
+  hasCompletePriceView(reference?: GaebDocument): boolean {
+    return this.items.every((entry) => {
+      const counterpart = this.referenceEntry(entry, reference);
+      if (
+        !isTradePhase(this.phase) &&
+        this.value(entry.element, "NotOffered") === "Yes"
+      ) {
+        return true;
+      }
+      if (!this.unitPrice(entry)) return false;
+      const lumpSum = this.value(entry.element, "LumpSumItem") ||
+        (reference && counterpart
+          ? reference.value(counterpart.element, "LumpSumItem")
+          : "");
+      if (!isTradePhase(this.phase) && lumpSum === "Yes") return true;
+      return Boolean(
+        this.quantity(entry) ||
+          (reference && counterpart && reference.quantity(counterpart)),
+      );
+    });
   }
   private collectEntries(parent: Element, parts: string[], depth: number) {
     for (const element of parent.children) {
@@ -277,8 +389,7 @@ export class GaebDocument {
         element.localName === "Item" ||
         element.localName === "OrderItem"
       ) {
-        const part =
-          element.getAttribute("RNoPart") ??
+        const part = element.getAttribute("RNoPart") ??
           (this.value(element, "OrderPosNo") ||
             String(this.entries.length + 1));
         const path = [...parts, part];
@@ -287,15 +398,14 @@ export class GaebDocument {
           element,
           kind === "item" ? "OutlTxt" : "LblTx",
         )[0];
-        const title =
-          (outline
-            ? (
-                this.descendants(outline, "p")[0]?.textContent ??
-                outline.textContent
-              )
-                ?.split("\n")[0]
-                ?.trim()
-            : "") ||
+        const title = (outline
+          ? (
+            this.descendants(outline, "p")[0]?.textContent ??
+              outline.textContent
+          )
+            ?.split("\n")[0]
+            ?.trim()
+          : "") ||
           this.descendants(element, "DetailTxt")[0]
             ?.textContent?.split("\n")[0]
             ?.trim() ||
@@ -304,21 +414,20 @@ export class GaebDocument {
           key: `${kind}-${element.getAttribute("ID") || path.join(".")}`,
           element,
           kind,
-          oz:
-            (kind === "item"
-              ? [
-                  ...parts,
-                  ...Array(Math.max(0, this.hierarchyLevels - depth)).fill("_"),
-                  part,
-                ]
-              : path
-            ).join(".") + (element.getAttribute("RNoIndex") ?? ""),
+          oz: (kind === "item"
+            ? [
+              ...parts,
+              ...Array(Math.max(0, this.hierarchyLevels - depth)).fill("_"),
+              part,
+            ]
+            : path).join(".") + (element.getAttribute("RNoIndex") ?? ""),
           title,
           depth,
         });
         if (kind === "category") this.collectEntries(element, path, depth + 1);
-      } else if (["BoQBody", "Itemlist"].includes(element.localName))
+      } else if (["BoQBody", "Itemlist"].includes(element.localName)) {
         this.collectEntries(element, parts, depth);
+      }
     }
   }
 
@@ -339,6 +448,17 @@ export class GaebDocument {
   }
   private textPatch(element: Element, text: string) {
     return this.replaceContent(element, escapeXml(text));
+  }
+  private calculatedPatch(element: Element, value: string): Patch {
+    const span = this.spans.get(element);
+    if (!span) {
+      throw new Error("invalid-xml-edit");
+    }
+    return nativeScalarPatch(
+      this.source,
+      { ...span, name: element.tagName },
+      value,
+    );
   }
   private insertChild(
     parent: Element,
@@ -414,31 +534,38 @@ export class GaebDocument {
     entry: GaebEntry,
     name: "Qty" | "UP" | "QU" | "DiscountPcnt",
     input: string,
+    reference?: GaebDocument,
   ): string {
-    if (name === "DiscountPcnt" && (this.phase === "31" || this.phase === "83"))
+    if (
+      name === "DiscountPcnt" && (this.phase === "31" || this.phase === "83")
+    ) {
       throw new Error("invalid-field");
+    }
     const numeric = name !== "QU";
     const value = numeric
       ? decimalString(
-          decimal(
-            input,
-            name === "DiscountPcnt" ? 6 : isTradePhase(this.phase) ? 2 : 3,
-            name === "Qty" ? 11 : name === "UP" ? 13 : 9,
-          ),
+        decimal(
+          input,
           name === "DiscountPcnt" ? 6 : isTradePhase(this.phase) ? 2 : 3,
-        )
+          name === "Qty" ? 11 : name === "UP" ? 13 : 9,
+        ),
+        name === "DiscountPcnt" ? 6 : isTradePhase(this.phase) ? 2 : 3,
+      )
       : gaebUnit(input);
-    if (name === "QU" && (this.phase === "31" || this.phase === "84"))
+    if (name === "QU" && (this.phase === "31" || this.phase === "84")) {
       throw new Error("invalid-field");
-    if (name === "UP" && !phaseHasPrices(this.phase))
+    }
+    if (name === "UP" && !phaseHasPrices(this.phase)) {
       throw new Error("invalid-field");
+    }
     if (
       numeric &&
       this.phase !== "31" &&
       this.phase !== "83" &&
       this.hasComplexPricing()
-    )
+    ) {
       throw new Error("complex-pricing");
+    }
     const item = entry.element;
     const parent = this.phase === "31" ? this.child(item, "QtyDeterm") : item;
     if (!parent) {
@@ -446,91 +573,21 @@ export class GaebDocument {
       return this.changed([
         this.appendPatch(
           item,
-          `<${prefix}QtyDeterm><${prefix}Qty>${escapeXml(value)}</${prefix}Qty></${prefix}QtyDeterm>`,
+          `<${prefix}QtyDeterm><${prefix}Qty>${
+            escapeXml(value)
+          }</${prefix}Qty></${prefix}QtyDeterm>`,
         ),
       ]);
     }
-    const order = [
-      "ALNGroupNo",
-      "ALNSerNo",
-      "Accepted",
-      "Provis",
-      "ProvisAccpt",
-      "LumpSumItem",
-      "NotAppl",
-      "NotOffered",
-      "HourIt",
-      "KeyIt",
-      "UPBkdn",
-      "MarkupIt",
-      "CONo",
-      "COStatus",
-      "RefDescr",
-      "RefRNo",
-      "RefPerfNo",
-      "HoldOutType",
-      "UseDur",
-      "UseDurLblTime",
-      "RefBaseItem",
-      "QtyTBD",
-      "Qty",
-      "QtySplit",
-      "PredQty",
-      "BillQty",
-      "QU",
-      "CtlgAssign",
-      "UP",
-      "UP110",
-      "UPComp1",
-      "UPComp2",
-      "UPComp3",
-      "UPComp4",
-      "UPComp5",
-      "UPComp6",
-      "DiscountPcnt",
-      "IT",
-      "VAT",
-      "TimeQu",
-      "Description",
-      "BidComm",
-      "QtyDeterm",
-      "QDetermItem",
-    ];
-    const nativeName =
-      this.phase === "89" && name === "Qty"
-        ? "BillQty"
-        : isTradePhase(this.phase) && name === "UP"
-          ? this.child(item, "OfferPrice") && !this.child(item, "NetPrice")
-            ? "OfferPrice"
-            : "NetPrice"
-          : name;
-    const tradeOrder = [
-      "ItemChara",
-      "ItemType",
-      "RepOrder",
-      "RefItems",
-      "DeliveryChara",
-      "Service",
-      "EAN",
-      "ArtNoID",
-      "ArtNo",
-      "SupplierArtNoID",
-      "SupplierArtNo",
-      "CustomerArtNo",
-      "CatalogArtNo",
-      "CatalogNo",
-      "Qty",
-      "QU",
-      "StorageGoods",
-      "Description",
-      "BidComm",
-      "OfferPrice",
-      "NetPrice",
-      "PriceBasis",
-      "AQU",
-      "Address",
-      "OrderPosNo",
-    ];
+    const order = GAEB_ITEM_FIELDS;
+    const nativeName = this.phase === "89" && name === "Qty"
+      ? "BillQty"
+      : isTradePhase(this.phase) && name === "UP"
+      ? this.child(item, "OfferPrice") && !this.child(item, "NetPrice")
+        ? "OfferPrice"
+        : "NetPrice"
+      : name;
+    const tradeOrder = GAEB_TRADE_ITEM_FIELDS;
     const updated = this.changed([
       this.insertChild(
         parent,
@@ -540,7 +597,7 @@ export class GaebDocument {
       ),
     ]);
     if (!numeric || this.phase === "31" || this.phase === "83") return updated;
-    return new GaebDocument(updated, this.fileName).recalculate();
+    return new GaebDocument(updated, this.fileName).recalculate(reference);
   }
 
   hasComplexPricing(): boolean {
@@ -555,16 +612,17 @@ export class GaebDocument {
               this.value(item.element, "AQU") !==
                 this.value(item.element, "QU")),
         ))
-    )
+    ) {
       return true;
+    }
     if (this.phase === "89") {
       const invoice = this.child(this.root, "Invoice");
       const taxes = invoice
         ? [...invoice.children].filter(
-            (node) =>
-              node.localName === "InvoiceShare" &&
-              this.value(node, "InvoiceShareType") === "VAT",
-          )
+          (node) =>
+            node.localName === "InvoiceShare" &&
+            this.value(node, "InvoiceShareType") === "VAT",
+        )
         : [];
       if (taxes.some((tax) => !this.child(tax, "Percent"))) return true;
     }
@@ -602,84 +660,137 @@ export class GaebDocument {
       )
     );
   }
-  private counted(item: Element): boolean {
+  private counted(
+    item: Element,
+    reference?: GaebDocument,
+    counterpart?: GaebEntry,
+  ): boolean {
+    const contractual = (name: string) =>
+      this.value(item, name) ||
+      (reference && counterpart
+        ? reference.value(counterpart.element, name)
+        : "");
     if (
-      ["Yes"].includes(this.value(item, "NotAppl")) ||
+      contractual("NotAppl") === "Yes" ||
       this.value(item, "NotOffered") === "Yes"
-    )
+    ) {
       return false;
+    }
     if (
-      this.value(item, "Provis") === "WithoutTotal" &&
-      this.value(item, "ProvisAccpt") !== "Yes"
-    )
+      contractual("Provis") === "WithoutTotal" &&
+      contractual("ProvisAccpt") !== "Yes"
+    ) {
       return false;
+    }
     let parent = item.parentElement;
     while (parent) {
       if (this.value(parent, "NotApplBoQ") === "Yes") return false;
       parent = parent.parentElement;
     }
+    let referenceParent = counterpart?.element.parentElement;
+    while (reference && referenceParent) {
+      if (reference.value(referenceParent, "NotApplBoQ") === "Yes") {
+        return false;
+      }
+      referenceParent = referenceParent.parentElement;
+    }
     return true;
   }
   normalizedCalculatedValues(): string {
     const edits: Patch[] = [];
-    for (const element of this.xml.getElementsByTagNameNS(
-      this.namespace,
-      "*",
-    )) {
-      const totals = element.parentElement;
-      if (
-        (element.localName === "IT" && totals?.localName === "Item") ||
-        (totals?.localName === "Totals" &&
-          ([
-            "Total",
-            "TotAfterDisc",
-            "TotalNet",
-            "VATAmount",
-            "TotalGross",
-          ].includes(element.localName) ||
-            (element.localName === "DiscountAmt" &&
-              this.child(totals, "DiscountPcnt"))))
-      )
-        edits.push(this.textPatch(element, "0.00"));
+    for (const item of this.items) {
+      const amount = this.child(item.element, "IT");
+      if (amount) {
+        edits.push(this.calculatedPatch(amount, "0.00"));
+      }
+    }
+    for (const totals of this.nativeTotals()) {
+      for (const element of totals.children) {
+        if (element.namespaceURI !== this.namespace) {
+          continue;
+        }
+        const calculated = [
+          "Total",
+          "TotAfterDisc",
+          "TotalNet",
+          "VATAmount",
+          "TotalGross",
+        ].includes(element.localName);
+        const percentageDiscount = element.localName === "DiscountAmt" &&
+          this.child(totals, "DiscountPcnt") !== null;
+        if (calculated || percentageDiscount) {
+          edits.push(this.calculatedPatch(element, "0.00"));
+        }
+      }
     }
     return this.changed(edits);
   }
-  recalculate(): string {
+  private nativeTotals(): Element[] {
+    const header = this.child(this.boqInfo, "Totals");
+    const categories = this.entries.filter(
+      (entry) => entry.kind === "category",
+    );
+    return [
+      header,
+      ...categories.map((entry) => this.child(entry.element, "Totals")),
+    ].filter((element): element is Element => element !== null);
+  }
+  recalculate(reference?: GaebDocument): string {
+    if (this.phase !== "84") reference = undefined;
     if (
       !phaseHasPrices(this.phase) ||
       isTradePhase(this.phase) ||
-      this.hasComplexPricing()
-    )
+      this.hasComplexPricing() ||
+      reference?.hasComplexPricing()
+    ) {
       return this.source;
+    }
     const edits: Patch[] = [];
+    const complete = this.hasCompletePriceView(reference);
     const amounts = new Map<Element, bigint>();
-    for (const { element } of this.items) {
-      const qty = this.value(element, this.phase === "89" ? "BillQty" : "Qty"),
-        price = this.value(element, "UP");
+    for (const entry of this.items) {
+      const element = entry.element;
+      const counterpart = this.referenceEntry(entry, reference);
+      let qty = this.quantity(entry) ||
+        (reference && counterpart ? reference.quantity(counterpart) : "");
+      const price = this.value(element, "UP");
+      const lumpSum = this.value(element, "LumpSumItem") ||
+        (reference && counterpart
+          ? reference.value(counterpart.element, "LumpSumItem")
+          : "");
+      if (lumpSum === "Yes") qty = "1";
       if (!qty || !price) continue;
       const amount = itemAmount(
-        this.value(element, "LumpSumItem") === "Yes" ? "1" : qty,
+        lumpSum === "Yes" ? "1" : qty,
         price,
         this.value(element, "DiscountPcnt") || "0",
       );
-      amounts.set(element, this.counted(element) ? decimal(amount, 2) : 0n);
+      const counted = this.counted(element, reference, counterpart);
+      amounts.set(element, counted ? decimal(amount, 2) : 0n);
       const it = this.child(element, "IT");
-      if (it) edits.push(this.textPatch(it, amount));
+      if (it) edits.push(this.calculatedPatch(it, amount));
     }
     const subtotal = (owner: Element): bigint => {
       const body = this.child(owner, "BoQBody");
       const categories = body
         ? [...body.children].filter(
-            (child) =>
-              child.namespaceURI === this.namespace &&
-              child.localName === "BoQCtgy",
-          )
+          (child) =>
+            child.namespaceURI === this.namespace &&
+            child.localName === "BoQCtgy",
+        )
         : [];
-      if (!categories.length)
-        return this.items
-          .filter((item) => owner.contains(item.element))
-          .reduce((sum, item) => sum + (amounts.get(item.element) ?? 0n), 0n);
+      const directItems = this.child(body, "Itemlist");
+      const directAmount = directItems
+        ? [...directItems.children]
+          .filter(
+            (item) =>
+              item.namespaceURI === this.namespace &&
+              item.localName === "Item",
+          )
+          .reduce((sum, item) => sum + (amounts.get(item) ?? 0n), 0n)
+        : 0n;
       return categories.reduce((sum, category) => {
+        if (this.value(category, "NotApplBoQ") === "Yes") return sum;
         const total = subtotal(category);
         const totals = this.child(category, "Totals");
         const rate = this.value(totals, "DiscountPcnt");
@@ -687,16 +798,13 @@ export class GaebDocument {
           ? roundedDivide(total * decimal(rate, 6, 9), 100_000_000n)
           : decimal(this.value(totals, "DiscountAmt") || "0", 2);
         return sum + total - discount;
-      }, 0n);
+      }, directAmount);
     };
-    for (const totals of this.xml.getElementsByTagNameNS(
-      this.namespace,
-      "Totals",
-    )) {
-      const owner =
-        totals.parentElement?.localName === "BoQInfo"
-          ? totals.parentElement.parentElement!
-          : totals.parentElement!;
+    for (const totals of this.nativeTotals()) {
+      if (!complete) continue;
+      const owner = totals.parentElement?.localName === "BoQInfo"
+        ? totals.parentElement.parentElement!
+        : totals.parentElement!;
       const total = subtotal(owner);
       const rate = this.value(totals, "DiscountPcnt");
       const discount = rate
@@ -707,16 +815,20 @@ export class GaebDocument {
         net * decimal(this.value(totals, "VAT") || "0", 2, 5),
         10_000n,
       );
-      for (const [name, value] of Object.entries({
-        Total: total,
-        DiscountAmt: discount,
-        TotAfterDisc: net,
-        TotalNet: net,
-        VATAmount: vat,
-        TotalGross: net + vat,
-      })) {
+      for (
+        const [name, value] of Object.entries({
+          Total: total,
+          DiscountAmt: discount,
+          TotAfterDisc: net,
+          TotalNet: net,
+          VATAmount: vat,
+          TotalGross: net + vat,
+        })
+      ) {
         const field = this.child(totals, name);
-        if (field) edits.push(this.textPatch(field, decimalString(value, 2)));
+        if (field) {
+          edits.push(this.calculatedPatch(field, decimalString(value, 2)));
+        }
       }
     }
     if (this.phase === "89") {
@@ -744,12 +856,17 @@ export class GaebDocument {
           (sum, node) => sum + decimal(this.value(node, "Total") || "0", 2),
           0n,
         );
-      for (const [node, value] of [
-        [this.child(basic, "Total"), net],
-        [this.child(tax, "Total"), vat],
-        [this.child(invoice, "TotalGross"), net + vat - deducted],
-      ] as const)
-        if (node) edits.push(this.textPatch(node, decimalString(value, 2)));
+      for (
+        const [node, value] of [
+          [this.child(basic, "Total"), net],
+          [this.child(tax, "Total"), vat],
+          [this.child(invoice, "TotalGross"), net + vat - deducted],
+        ] as const
+      ) {
+        if (node) {
+          edits.push(this.calculatedPatch(node, decimalString(value, 2)));
+        }
+      }
     }
     return this.changed(edits);
   }
@@ -793,8 +910,9 @@ export class GaebDocument {
       !["CostApproachQty", "CostApproachQU", "Performance", "Value"].includes(
         name,
       )
-    )
+    ) {
       throw new Error("invalid-field");
+    }
     if (name !== "CostApproachQU") value = decimalString(decimal(value, 3), 3);
     return this.changed([
       this.insertChild(row, name, value, [
@@ -830,24 +948,26 @@ export class GaebDocument {
     );
   }
   private assertTakeoff(entry: GaebEntry) {
-    if (this.phase !== "31" || entry.kind !== "item")
+    if (this.phase !== "31" || entry.kind !== "item") {
       throw new Error("invalid-field");
+    }
     const state = this.takeoff(entry);
     if (state.mismatch) throw new Error("takeoff-external-change");
     return state;
   }
   addMeasurement(entry: GaebEntry, row: Measurement, afterId?: string): string {
     const state = this.assertTakeoff(entry);
-    if (state.rows.some((existing) => existing.value.id === row.id))
+    if (state.rows.some((existing) => existing.value.id === row.id)) {
       throw new Error("invalid-field");
+    }
     // A quantity-only X31 must keep its existing amount as a real, explicit
     // measure. Text-only REB comments do not contribute any quantity.
     if (
       !state.rows.length &&
       state.baseline.n !== 0n &&
       state.unmanaged.every((element) => {
-        const native =
-          this.child(element, "QTakeoff")?.getAttribute("Row") ?? "";
+        const native = this.child(element, "QTakeoff")?.getAttribute("Row") ??
+          "";
         return rebResult(native)?.n === 0n;
       })
     ) {
@@ -882,7 +1002,9 @@ export class GaebDocument {
     while (used.has(rebAddress(index))) index++;
     const native = rebMeasureRow(row, rebAddress(index));
     const p = entry.element.prefix ? `${entry.element.prefix}:` : "";
-    const xml = `<${p}QDetermItem>${measurementComment(row)}<${p}QTakeoff Row="${escapeXml(native)}"/></${p}QDetermItem>`;
+    const xml = `<${p}QDetermItem>${
+      measurementComment(row)
+    }<${p}QTakeoff Row="${escapeXml(native)}"/></${p}QDetermItem>`;
     const parent = this.child(entry.element, "QtyDeterm");
     const after = state.content.find((candidate) => candidate.id === afterId);
     const edits: Patch[] = [];
@@ -890,13 +1012,14 @@ export class GaebDocument {
       const span = this.spans.get(after.element)!;
       edits.push({ start: span.end, end: span.end, value: xml });
     } else if (parent) edits.push(this.appendPatch(parent, xml));
-    else
+    else {
       edits.push(
         this.appendPatch(
           entry.element,
           `<${p}QtyDeterm>${xml}</${p}QtyDeterm>`,
         ),
       );
+    }
     let source = this.changed(edits);
     // Unrecognized legacy formulae remain byte-for-byte intact. Their explicit
     // opening quantity is carried alongside assisted rows, never replaced by 0.
@@ -936,8 +1059,7 @@ export class GaebDocument {
     const marker = /<!--sortsys:measure:v1:[\s\S]*?-->/;
     const match = marker.exec(before);
     const start = match ? span.start + match.index : span.openEnd;
-    const source =
-      raw.slice(0, start) +
+    const source = raw.slice(0, start) +
       measurementComment(value) +
       raw.slice(start + (match?.[0].length ?? 0));
     const total = addMeasures(
@@ -970,13 +1092,15 @@ export class GaebDocument {
         "threshold",
       ].includes(name) ||
       value.length > 2000
-    )
+    ) {
       throw new Error("invalid-field");
+    }
     if (
       ["count", "a", "b", "c", "factor"].includes(name) &&
       /^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(value.trim())
-    )
+    ) {
       value = measurementInput(value, "en");
+    }
     return this.setMeasurement(entry, id, { [name]: value });
   }
   removeMeasurement(entry: GaebEntry, id: string): string {
@@ -997,8 +1121,9 @@ export class GaebDocument {
     afterId?: string,
   ): string {
     const state = this.assertTakeoff(entry);
-    if (state.content.some((item) => item.id === heading.id))
+    if (state.content.some((item) => item.id === heading.id)) {
       throw new Error("invalid-field");
+    }
     const used = new Set(
       [...this.xml.getElementsByTagNameNS(this.namespace, "QTakeoff")].map(
         (row) => row.getAttribute("Row")?.slice(69, 75),
@@ -1007,7 +1132,11 @@ export class GaebDocument {
     let address = 0;
     while (used.has(rebAddress(address))) address++;
     const p = entry.element.prefix ? `${entry.element.prefix}:` : "";
-    const xml = `<${p}QDetermItem>${headingComment(heading)}<${p}QTakeoff Row="${escapeXml(headingRebRow(heading, rebAddress(address)))}"/></${p}QDetermItem>`;
+    const xml = `<${p}QDetermItem>${
+      headingComment(heading)
+    }<${p}QTakeoff Row="${
+      escapeXml(headingRebRow(heading, rebAddress(address)))
+    }"/></${p}QDetermItem>`;
     const after = state.content.find((item) => item.id === afterId);
     if (after) {
       const span = this.spans.get(after.element)!;
@@ -1015,12 +1144,10 @@ export class GaebDocument {
     }
     const parent = this.child(entry.element, "QtyDeterm");
     return this.changed([
-      parent
-        ? this.appendPatch(parent, xml)
-        : this.appendPatch(
-            entry.element,
-            `<${p}QtyDeterm><${p}Qty>0.000</${p}Qty>${xml}</${p}QtyDeterm>`,
-          ),
+      parent ? this.appendPatch(parent, xml) : this.appendPatch(
+        entry.element,
+        `<${p}QtyDeterm><${p}Qty>0.000</${p}Qty>${xml}</${p}QtyDeterm>`,
+      ),
     ]);
   }
   setTakeoffHeading(entry: GaebEntry, id: string, title: string): string {
@@ -1071,12 +1198,13 @@ export class GaebDocument {
         state.rows.length &&
         state.metadataValid &&
         (!state.mismatch || derivedTotals)
-      )
+      ) {
         source = this.takeoffQuantity(
           source,
           entry.key,
           measureDecimal(state.total),
         );
+      }
     }
     return source;
   }
@@ -1085,8 +1213,9 @@ export class GaebDocument {
       value.length !== 80 ||
       !value.startsWith("           ") ||
       /[\r\n\t]/.test(value)
-    )
+    ) {
       throw new Error("invalid-reb-row");
+    }
     const span = this.spans.get(element)!;
     const opening = this.source.slice(span.start, span.openEnd);
     const attr = /\bRow\s*=\s*(["'])([\s\S]*?)\1/.exec(opening);
@@ -1105,24 +1234,26 @@ export class GaebDocument {
       row.length !== 80 ||
       !row.startsWith("           ") ||
       /[\r\n\t]/.test(row)
-    )
+    ) {
       throw new Error("invalid-reb-row");
+    }
     const p = entry.element.prefix ? `${entry.element.prefix}:` : "";
-    const xml = `<${p}QDetermItem><${p}QTakeoff Row="${escapeXml(row)}"/></${p}QDetermItem>`;
+    const xml = `<${p}QDetermItem><${p}QTakeoff Row="${
+      escapeXml(row)
+    }"/></${p}QDetermItem>`;
     const parent = this.child(entry.element, "QtyDeterm");
     return this.changed([
-      parent
-        ? this.appendPatch(parent, xml)
-        : this.appendPatch(
-            entry.element,
-            `<${p}QtyDeterm>${xml}</${p}QtyDeterm>`,
-          ),
+      parent ? this.appendPatch(parent, xml) : this.appendPatch(
+        entry.element,
+        `<${p}QtyDeterm>${xml}</${p}QtyDeterm>`,
+      ),
     ]);
   }
   parentCategory(entry: GaebEntry): GaebEntry | undefined {
     let parent = entry.element.parentElement;
-    while (parent && parent.localName !== "BoQCtgy")
+    while (parent && parent.localName !== "BoQCtgy") {
       parent = parent.parentElement;
+    }
     return this.entries.find((candidate) => candidate.element === parent);
   }
   children(parent?: GaebEntry): GaebEntry[] {
@@ -1141,8 +1272,9 @@ export class GaebDocument {
   }
   outlineParent(entry: GaebEntry): GaebEntry | undefined {
     let parent = this.parentCategory(entry);
-    while (parent && this.isInternalCategory(parent))
+    while (parent && this.isInternalCategory(parent)) {
       parent = this.parentCategory(parent);
+    }
     return parent;
   }
   outlineChildren(parent?: GaebEntry): GaebEntry[] {
@@ -1164,7 +1296,7 @@ export class GaebDocument {
     label: string,
   ): { model: GaebDocument; bucket: GaebEntry } {
     const existing = this.children(parent).find((entry) =>
-      this.isInternalCategory(entry),
+      this.isInternalCategory(entry)
     );
     if (existing) return { model: this, bucket: existing };
     const owner = parent?.element ?? this.breakdowns().boq;
@@ -1177,20 +1309,20 @@ export class GaebDocument {
       label,
       list
         ? this.source.slice(
-            this.spans.get(list)!.start,
-            this.spans.get(list)!.end,
-          )
+          this.spans.get(list)!.start,
+          this.spans.get(list)!.end,
+        )
         : "",
       true,
     );
     const edits: Patch[] = list
       ? [
-          {
-            start: this.spans.get(list)!.start,
-            end: this.spans.get(list)!.end,
-            value: xml,
-          },
-        ]
+        {
+          start: this.spans.get(list)!.start,
+          end: this.spans.get(list)!.end,
+          value: xml,
+        },
+      ]
       : [this.bodyPatch(owner, xml)];
     const model = new GaebDocument(this.changed(edits), this.fileName);
     return {
@@ -1213,17 +1345,15 @@ export class GaebDocument {
     const list = tail?.element.parentElement;
     const listSpan = list && this.spans.get(list);
     const first = tail && this.spans.get(tail.element)!;
-    const content =
-      first && listSpan
-        ? this.source.slice(first.start, listSpan.closeStart)
-        : "";
+    const content = first && listSpan
+      ? this.source.slice(first.start, listSpan.closeStart)
+      : "";
     const listOpening = listSpan
       ? this.source.slice(listSpan.start, listSpan.openEnd)
       : "";
-    const listBindings =
-      listOpening.match(
-        /\s(?:xmlns(?::[\w.-]+)?|xml:(?:lang|space))\s*=\s*(?:"[^"]*"|'[^']*')/g,
-      ) ?? [];
+    const listBindings = listOpening.match(
+      /\s(?:xmlns(?::[\w.-]+)?|xml:(?:lang|space))\s*=\s*(?:"[^"]*"|'[^']*')/g,
+    ) ?? [];
     let xml = this.categoryXml(
       owner,
       1,
@@ -1233,17 +1363,17 @@ export class GaebDocument {
     );
     if (tail) {
       const bucket = this.parentCategory(tail)!;
-      const context =
-        this.movableXml(bucket, owner).match(/^<[^>]+>/)?.[0] ?? "";
-      const bindings =
-        context.match(
-          /\s(?:xmlns(?::[\w.-]+)?|xml:(?:lang|space))\s*=\s*(?:"[^"]*"|'[^']*')/g,
-        ) ?? [];
+      const context = this.movableXml(bucket, owner).match(/^<[^>]+>/)?.[0] ??
+        "";
+      const bindings = context.match(
+        /\s(?:xmlns(?::[\w.-]+)?|xml:(?:lang|space))\s*=\s*(?:"[^"]*"|'[^']*')/g,
+      ) ?? [];
       xml = xml.replace(/^(<[^ >]+)/, "$1" + bindings.join(""));
     }
     const edits: Patch[] = [];
-    if (first && listSpan)
+    if (first && listSpan) {
       edits.push({ start: first.start, end: listSpan.closeStart, value: "" });
+    }
     if (before) {
       const at = this.spans.get(before.element)!.start;
       edits.push({ start: at, end: at, value: xml });
@@ -1261,13 +1391,15 @@ export class GaebDocument {
   }
   private structureGuard() {
     if (this.signed) throw new Error("signed-document");
-    if (this.xml.getElementsByTagNameNS(this.namespace, "RefRNo").length)
+    if (this.xml.getElementsByTagNameNS(this.namespace, "RefRNo").length) {
       throw new Error("hierarchy-reference");
+    }
     if (
       this.hasComplexPricing() &&
       ["84", "85", "86", "87", "89", "52", "80", "82"].includes(this.phase)
-    )
+    ) {
       throw new Error("complex-pricing");
+    }
   }
   /** Renumber sibling lists in their visible order. IDs and all other attributes
    * remain untouched. Alpha-numbered imported documents retain their numbering. */
@@ -1276,21 +1408,22 @@ export class GaebDocument {
     const edits: Patch[] = [];
     const counters = new Map<Element, number>();
     for (const entry of this.entries) {
-      const part =
-        entry.kind === "category"
-          ? levels[entry.depth]
-          : parts.find((part) => this.value(part, "Type") === "Item");
+      const part = entry.kind === "category"
+        ? levels[entry.depth]
+        : parts.find((part) => this.value(part, "Type") === "Item");
       if (
         !part ||
         this.value(part, "Num") !== "Yes" ||
         entry.element.hasAttribute("RNoIndex")
-      )
+      ) {
         throw new Error("hierarchy-numbering");
+      }
       const parent = entry.element.parentElement!;
       const number = (counters.get(parent) ?? 0) + 1;
       counters.set(parent, number);
-      if (String(number).length > Number(this.value(part, "Length")))
+      if (String(number).length > Number(this.value(part, "Length"))) {
         throw new Error("hierarchy-limit");
+      }
       const span = this.spans.get(entry.element)!;
       const opening = this.source.slice(span.start, span.openEnd);
       const attribute = /\sRNoPart\s*=\s*(["'])(.*?)\1/.exec(opening);
@@ -1336,7 +1469,7 @@ export class GaebDocument {
           (node) => [...node.childNodes].some((child) => child.nodeType === 8),
         ),
     );
-    if (emptyBuckets.length)
+    if (emptyBuckets.length) {
       return new GaebDocument(
         this.changed(
           emptyBuckets.map((entry) => {
@@ -1346,20 +1479,20 @@ export class GaebDocument {
         ),
         this.fileName,
       ).normalizeHierarchy(fillerLabel);
+    }
     const { boq, parts, levels } = this.breakdowns();
     if (!boq) throw new Error("missing-boq");
     const count = Math.max(
       0,
       ...this.entries.map((entry) =>
-        entry.kind === "category" ? entry.depth + 1 : entry.depth,
+        entry.kind === "category" ? entry.depth + 1 : entry.depth
       ),
     );
     if (count > 5) throw new Error("hierarchy-limit");
     const edits: Patch[] = [];
     if (count > levels.length) {
       const item = parts.find((part) => this.value(part, "Type") === "Item");
-      const remaining =
-        14 -
+      const remaining = 14 -
         parts.reduce(
           (sum, part) => sum + Number(this.value(part, "Length")),
           0,
@@ -1378,11 +1511,12 @@ export class GaebDocument {
             `<${p}BoQBkdn><${p}Type>BoQLevel</${p}Type><${p}Length>${width}</${p}Length><${p}Num>Yes</${p}Num></${p}BoQBkdn>`,
         ).join(""),
       });
-    } else
+    } else {
       for (const part of levels.slice(count)) {
         const span = this.spans.get(part)!;
         edits.push({ start: span.start, end: span.end, value: "" });
       }
+    }
     const updated = new GaebDocument(this.changed(edits), this.fileName);
     return new GaebDocument(
       updated.renumberHierarchy(),
@@ -1396,20 +1530,23 @@ export class GaebDocument {
       let node: Element | null = entry.element.parentElement;
       node;
       node = node.parentElement
-    )
-      for (const attribute of node.attributes)
+    ) {
+      for (const attribute of node.attributes) {
         if (attribute.namespaceURI === "http://www.w3.org/2000/xmlns/") {
           const prefix = attribute.name === "xmlns" ? "" : attribute.localName;
           if (!bindings.has(prefix)) bindings.set(prefix, attribute.value);
         }
+      }
+    }
     const additions: string[] = [];
     for (const [prefix, uri] of bindings) {
       const name = prefix ? `xmlns:${prefix}` : "xmlns";
       if (
         !entry.element.hasAttribute(name) &&
         target.lookupNamespaceURI(prefix || null) !== uri
-      )
+      ) {
         additions.push(`${name}="${escapeXml(uri)}"`);
+      }
     }
     for (const name of ["xml:lang", "xml:space"]) {
       if (entry.element.hasAttribute(name)) continue;
@@ -1421,8 +1558,9 @@ export class GaebDocument {
         return null;
       };
       const value = inherited(entry.element.parentElement);
-      if (value !== null && inherited(target) !== value)
+      if (value !== null && inherited(target) !== value) {
         additions.push(`${name}="${escapeXml(value)}"`);
+      }
     }
     const xml = this.source.slice(span.start, span.end);
     if (!additions.length) return xml;
@@ -1458,28 +1596,28 @@ export class GaebDocument {
       parent?.kind === "item" ||
       parent?.element === entry.element ||
       (parent && entry.element.contains(parent.element))
-    )
+    ) {
       throw new Error("hierarchy-cycle");
+    }
     if (
       entry.kind === "item" &&
       this.children(parent).some((child) => child.kind === "category")
     ) {
       let prepared: { model: GaebDocument; bucket: GaebEntry };
       const chosen = before && this.parentCategory(before);
-      if (before?.kind === "category")
+      if (before?.kind === "category") {
         prepared = this.newItemBucket(parent, before);
-      else if (
+      } else if (
         chosen &&
         this.isInternalCategory(chosen) &&
         this.outlineParent(chosen)?.key === parent?.key
-      )
+      ) {
         prepared = { model: this, bucket: chosen };
-      else {
+      } else {
         const last = this.children(parent).at(-1);
-        prepared =
-          last && this.isInternalCategory(last)
-            ? { model: this, bucket: last }
-            : this.newItemBucket(parent);
+        prepared = last && this.isInternalCategory(last)
+          ? { model: this, bucket: last }
+          : this.newItemBucket(parent);
       }
       const { model, bucket } = prepared;
       return model.moveEntry(
@@ -1510,15 +1648,17 @@ export class GaebDocument {
         !container ||
         !this.isInternalCategory(container) ||
         this.outlineParent(container)?.key !== parent?.key
-      )
+      ) {
         throw new Error("hierarchy-layout");
+      }
       const items = this.children(container);
       let model: GaebDocument = this,
         boundary = container;
       if (items[0]?.key !== before.key) {
         const peers = this.children(parent),
-          following =
-            peers[peers.findIndex((child) => child.key === container.key) + 1];
+          following = peers[
+            peers.findIndex((child) => child.key === container.key) + 1
+          ];
         const split = this.newItemBucket(parent, following, before);
         model = split.model;
         boundary = split.bucket;
@@ -1536,15 +1676,17 @@ export class GaebDocument {
       before &&
       (before.kind !== entry.kind ||
         this.parentCategory(before)?.key !== parent?.key)
-    )
+    ) {
       throw new Error("hierarchy-layout");
+    }
     if (before?.key === entry.key) return this.source;
     if (this.parentCategory(entry)?.key === parent?.key) {
       const siblings = this.children(parent).filter(
         (item) => item.kind === entry.kind,
       );
-      const next =
-        siblings[siblings.findIndex((item) => item.key === entry.key) + 1];
+      const next = siblings[
+        siblings.findIndex((item) => item.key === entry.key) + 1
+      ];
       if (next?.key === before?.key) return this.source;
     }
     let body = this.child(target, "BoQBody");
@@ -1552,8 +1694,9 @@ export class GaebDocument {
     if (
       entry.kind === "item" &&
       this.children(parent).some((child) => child.kind === "category")
-    )
+    ) {
       throw new Error("select-leaf-category");
+    }
     if (
       entry.kind === "category" &&
       list &&
@@ -1562,8 +1705,9 @@ export class GaebDocument {
         [...list.childNodes].some(
           (node) => node.nodeType !== 3 || node.textContent?.trim(),
         ))
-    )
+    ) {
       throw new Error("hierarchy-mixed");
+    }
     const span = this.spans.get(entry.element)!;
     const xml = this.movableXml(
       entry,
@@ -1577,9 +1721,9 @@ export class GaebDocument {
     if (before) {
       const start = this.spans.get(before.element)!.start;
       edits.push({ start, end: start, value: xml });
-    } else if (entry.kind === "category")
+    } else if (entry.kind === "category") {
       edits.push(this.bodyPatch(target, xml));
-    else if (list) edits.push(this.appendPatch(list, xml));
+    } else if (list) edits.push(this.appendPatch(list, xml));
     else {
       const p = target.prefix ? `${target.prefix}:` : "";
       edits.push(this.bodyPatch(target, `<${p}Itemlist>${xml}</${p}Itemlist>`));
@@ -1593,8 +1737,9 @@ export class GaebDocument {
     const parent = this.outlineParent(entry);
     const siblings = this.outlineChildren(parent);
     const index = siblings.findIndex((item) => item.key === entry.key);
-    if (index + direction < 0 || index + direction >= siblings.length)
+    if (index + direction < 0 || index + direction >= siblings.length) {
       return this.source;
+    }
     return this.moveEntry(
       entry,
       parent,
@@ -1618,16 +1763,16 @@ export class GaebDocument {
     const info = this.child(boq, "BoQInfo") ?? boq;
     const parts = info
       ? [...info.children].filter(
-          (child) =>
-            child.namespaceURI === this.namespace &&
-            child.localName === "BoQBkdn",
-        )
+        (child) =>
+          child.namespaceURI === this.namespace &&
+          child.localName === "BoQBkdn",
+      )
       : [];
     return {
       boq,
       parts,
       levels: parts.filter((part) =>
-        ["Lot", "BoQLevel"].includes(this.value(part, "Type")),
+        ["Lot", "BoQLevel"].includes(this.value(part, "Type"))
       ),
     };
   }
@@ -1639,7 +1784,19 @@ export class GaebDocument {
     internal = false,
   ) {
     const p = parent.prefix ? `${parent.prefix}:` : "";
-    return `<${p}BoQCtgy ID="${internal ? "sortsys_direct_" : "c_"}${crypto.randomUUID().replace(/-/g, "")}" RNoPart="${number}">${["84", "31"].includes(this.phase) ? "" : `<${p}LblTx><${p}p><${p}span style="font-weight:bold">${escapeXml(label)}</${p}span></${p}p></${p}LblTx>`}<${p}BoQBody>${content}</${p}BoQBody>${["84", "85", "86", "87", "89", "52", "80", "82"].includes(this.phase) ? `<${p}Totals><${p}Total>0.00</${p}Total></${p}Totals>` : ""}</${p}BoQCtgy>`;
+    return `<${p}BoQCtgy ID="${internal ? "sortsys_direct_" : "c_"}${
+      crypto.randomUUID().replace(/-/g, "")
+    }" RNoPart="${number}">${
+      ["84", "31"].includes(this.phase)
+        ? ""
+        : `<${p}LblTx><${p}p><${p}span style="font-weight:bold">${
+          escapeXml(label)
+        }</${p}span></${p}p></${p}LblTx>`
+    }<${p}BoQBody>${content}</${p}BoQBody>${
+      ["84", "85", "86", "87", "89", "52", "80", "82"].includes(this.phase)
+        ? `<${p}Totals><${p}Total>0.00</${p}Total></${p}Totals>`
+        : ""
+    }</${p}BoQCtgy>`;
   }
   private bodyPatch(parent: Element, xml: string): Patch {
     const body = this.child(parent, "BoQBody");
@@ -1667,8 +1824,9 @@ export class GaebDocument {
   addItemInCategory(parent?: GaebEntry, fillerLabel = "Leistungen"): string {
     if (isTradePhase(this.phase)) return this.addItem();
     this.structureGuard();
-    if (!this.children(parent).some((entry) => entry.kind === "category"))
+    if (!this.children(parent).some((entry) => entry.kind === "category")) {
       return this.addItem(parent, fillerLabel);
+    }
     const { model, bucket } = this.withItemBucket(parent, fillerLabel);
     return new GaebDocument(
       model.addItem(bucket, fillerLabel),
@@ -1713,15 +1871,22 @@ export class GaebDocument {
       return this.changed([
         this.appendPatch(
           order,
-          `<${p}OrderItem ID="i_${crypto.randomUUID().replace(/-/g, "")}"><${p}Qty>0.00</${p}Qty><${p}QU>Stk</${p}QU><!--sortsys:position-text--><${p}Description><${p}CompleteText><${p}DetailTxt><${p}Text><${p}p><${p}span style="font-weight:bold">Neue Materialposition</${p}span></${p}p></${p}Text></${p}DetailTxt></${p}CompleteText></${p}Description>${phaseHasPrices(this.phase) ? `<${p}NetPrice>0.00</${p}NetPrice>` : ""}</${p}OrderItem>`,
+          `<${p}OrderItem ID="i_${
+            crypto.randomUUID().replace(/-/g, "")
+          }"><${p}Qty>0.00</${p}Qty><${p}QU>Stk</${p}QU><!--sortsys:position-text--><${p}Description><${p}CompleteText><${p}DetailTxt><${p}Text><${p}p><${p}span style="font-weight:bold">Neue Materialposition</${p}span></${p}p></${p}Text></${p}DetailTxt></${p}CompleteText></${p}Description>${
+            phaseHasPrices(this.phase)
+              ? `<${p}NetPrice>0.00</${p}NetPrice>`
+              : ""
+          }</${p}OrderItem>`,
         ),
       ]);
     }
     let parent: Element | null | undefined = category?.element;
     if (category?.kind === "item") {
       parent = parent?.parentElement;
-      while (parent && !["BoQCtgy", "BoQ"].includes(parent.localName))
+      while (parent && !["BoQCtgy", "BoQ"].includes(parent.localName)) {
         parent = parent.parentElement;
+      }
     }
     parent ??= this.xml.getElementsByTagNameNS(this.namespace, "BoQ")[0];
     if (!parent) throw new Error("missing-boq");
@@ -1733,30 +1898,49 @@ export class GaebDocument {
           child.localName === "BoQCtgy" &&
           child.namespaceURI === this.namespace,
       )
-    )
+    ) {
       throw new Error("select-leaf-category");
+    }
     const list = this.child(body, "Itemlist");
     const siblings = list
       ? [...list.children].filter(
-          (child) =>
-            child.localName === "Item" && child.namespaceURI === this.namespace,
-        )
+        (child) =>
+          child.localName === "Item" && child.namespaceURI === this.namespace,
+      )
       : [];
     let number = 1;
     while (
       siblings.some((item) => Number(item.getAttribute("RNoPart")) === number)
-    )
+    ) {
       number++;
+    }
     const itemPart = this.breakdowns().parts.find(
       (part) => this.value(part, "Type") === "Item",
     );
     if (
       itemPart &&
       String(number).length > Number(this.value(itemPart, "Length"))
-    )
+    ) {
       throw new Error("hierarchy-limit");
+    }
     const p = parent.prefix ? `${parent.prefix}:` : "";
-    const item = `<${p}Item ID="i_${crypto.randomUUID().replace(/-/g, "")}" RNoPart="${number}">${this.phase === "31" ? `<${p}QtyDeterm><${p}Qty>0.000</${p}Qty></${p}QtyDeterm>` : `<${p}${this.phase === "89" ? "BillQty" : "Qty"}>0.000</${p}${this.phase === "89" ? "BillQty" : "Qty"}>${this.phase === "84" ? "" : `<${p}QU>m</${p}QU>`}${!phaseHasPrices(this.phase) ? "" : `<${p}UP>0.000</${p}UP><${p}IT>0.00</${p}IT>`}${this.phase === "84" ? "" : `<!--sortsys:position-text--><${p}Description><${p}CompleteText><${p}DetailTxt><${p}Text><${p}p><${p}span style="font-weight:bold">…</${p}span></${p}p></${p}Text></${p}DetailTxt><${p}OutlineText><${p}OutlTxt><${p}TextOutlTxt><${p}p><${p}span style="font-weight:bold">…</${p}span></${p}p></${p}TextOutlTxt></${p}OutlTxt></${p}OutlineText></${p}CompleteText></${p}Description>`}`}</${p}Item>`;
+    const item = `<${p}Item ID="i_${
+      crypto.randomUUID().replace(/-/g, "")
+    }" RNoPart="${number}">${
+      this.phase === "31"
+        ? `<${p}QtyDeterm><${p}Qty>0.000</${p}Qty></${p}QtyDeterm>`
+        : `<${p}${this.phase === "89" ? "BillQty" : "Qty"}>0.000</${p}${
+          this.phase === "89" ? "BillQty" : "Qty"
+        }>${this.phase === "84" ? "" : `<${p}QU>m</${p}QU>`}${
+          !phaseHasPrices(this.phase)
+            ? ""
+            : `<${p}UP>0.000</${p}UP><${p}IT>0.00</${p}IT>`
+        }${
+          this.phase === "84"
+            ? ""
+            : `<!--sortsys:position-text--><${p}Description><${p}CompleteText><${p}DetailTxt><${p}Text><${p}p><${p}span style="font-weight:bold">…</${p}span></${p}p></${p}Text></${p}DetailTxt><${p}OutlineText><${p}OutlTxt><${p}TextOutlTxt><${p}p><${p}span style="font-weight:bold">…</${p}span></${p}p></${p}TextOutlTxt></${p}OutlTxt></${p}OutlineText></${p}CompleteText></${p}Description>`
+        }`
+    }</${p}Item>`;
     return this.changed([
       list
         ? this.appendPatch(list, item)
@@ -1771,8 +1955,9 @@ export class GaebDocument {
       !["80", "83", "85", "86", "87", "89", "52", "93", "96"].includes(
         this.phase,
       )
-    )
+    ) {
       throw new Error("invalid-field");
+    }
     let next = new GaebDocument(this.addItemInCategory(parent), this.fileName);
     const added = next.items.find(
       (entry) => !this.items.some((old) => old.key === entry.key),
@@ -1787,7 +1972,7 @@ export class GaebDocument {
       ),
       this.fileName,
     );
-    if (text.unit)
+    if (text.unit) {
       next = new GaebDocument(
         next.setValue(
           next.entries.find((entry) => entry.key === added.key)!,
@@ -1796,6 +1981,7 @@ export class GaebDocument {
         ),
         this.fileName,
       );
+    }
     return next.source;
   }
   attachmentElements(): Element[] {
@@ -1806,26 +1992,28 @@ export class GaebDocument {
       this.phase !== "31" ||
       this.date !== "2023-01" ||
       !["pdf", "jpeg", "jpg", "png", "gif", "bmp"].includes(type)
-    )
+    ) {
       throw new Error("invalid-field");
+    }
     if (
       this.attachmentElements().some(
         (element) => this.value(element, "Name") === name,
       )
-    )
+    ) {
       throw new Error("duplicate-attachment");
+    }
     const boq = this.xml.getElementsByTagNameNS(this.namespace, "BoQ")[0];
     if (!boq) throw new Error("missing-boq");
     const p = boq.prefix ? `${boq.prefix}:` : "";
-    const attachment = `<${p}Attachment><${p}Name>${escapeXml(name)}</${p}Name><${p}Type>${type}</${p}Type><${p}Data>${base64}</${p}Data></${p}Attachment>`;
+    const attachment = `<${p}Attachment><${p}Name>${
+      escapeXml(name)
+    }</${p}Name><${p}Type>${type}</${p}Type><${p}Data>${base64}</${p}Data></${p}Attachment>`;
     const catalog = this.child(boq, "CtlgAttachment");
     return this.changed([
-      catalog
-        ? this.appendPatch(catalog, attachment)
-        : this.appendPatch(
-            boq,
-            `<${p}CtlgAttachment>${attachment}</${p}CtlgAttachment>`,
-          ),
+      catalog ? this.appendPatch(catalog, attachment) : this.appendPatch(
+        boq,
+        `<${p}CtlgAttachment>${attachment}</${p}CtlgAttachment>`,
+      ),
     ]);
   }
 
@@ -1900,8 +2088,9 @@ export class GaebDocument {
   }
   setRichGroupText(entry: GaebEntry, index: number, value: string): string {
     const source = this.editRichGroupText(entry, index, value);
-    if (entry.kind !== "item" || index !== 0 || !this.ownsPositionText(entry))
+    if (entry.kind !== "item" || index !== 0 || !this.ownsPositionText(entry)) {
       return source;
+    }
     const next = new GaebDocument(source, this.fileName);
     const item = next.entries.find((item) => item.key === entry.key)!;
     const outline = next.descendants(item.element, "OutlTxt")[0];
@@ -1919,16 +2108,16 @@ export class GaebDocument {
     if (!group) throw new Error("invalid-field");
     value = value.replace(/\r\n?/g, "\n");
     if (value === group.text) return this.source;
-    if (!group.paragraphs)
+    if (!group.paragraphs) {
       return this.setRichText(entry, group.leaves[0]!.index, value);
+    }
     const diff = textDifference(group.text, value);
     const at = (position: number, forward = false) => {
-      const leaf =
-        (forward
-          ? group.leaves.find(
-              (leaf) => position >= leaf.start && position < leaf.end,
-            )
-          : undefined) ??
+      const leaf = (forward
+        ? group.leaves.find(
+          (leaf) => position >= leaf.start && position < leaf.end,
+        )
+        : undefined) ??
         group.leaves.find(
           (leaf) => position >= leaf.start && position <= leaf.end,
         ) ??
@@ -1955,10 +2144,11 @@ export class GaebDocument {
       first.offset,
     );
     const suffix = (last.leaf.element.textContent ?? "").slice(last.offset);
-    if (first.leaf === last.leaf && !diff.insert.includes("\n"))
+    if (first.leaf === last.leaf && !diff.insert.includes("\n")) {
       return this.changed([
         this.textPatch(first.leaf.element, prefix + diff.insert + suffix),
       ]);
+    }
     const safe = (element: Element) =>
       [...element.attributes].every(
         (attr) =>
@@ -1970,8 +2160,9 @@ export class GaebDocument {
       group.leaves.indexOf(first.leaf),
       group.leaves.indexOf(last.leaf) + 1,
     );
-    if (diff.insert.includes("\n") && !safe(first.leaf.element))
+    if (diff.insert.includes("\n") && !safe(first.leaf.element)) {
       throw new Error("rich-structure");
+    }
     if (firstP !== lastP || diff.insert.includes("\n")) {
       if (
         group.nodes
@@ -1989,11 +2180,13 @@ export class GaebDocument {
                 )),
           )
           .some((node) => !safe(node))
-      )
+      ) {
         throw new Error("rich-structure");
+      }
     }
-    if (affected.slice(1, -1).some((leaf) => !safe(leaf.element)))
+    if (affected.slice(1, -1).some((leaf) => !safe(leaf.element))) {
       throw new Error("rich-structure");
+    }
     const firstParagraph = this.spans.get(firstP)!,
       lastParagraph = this.spans.get(lastP)!;
     const opening = this.source
@@ -2005,22 +2198,17 @@ export class GaebDocument {
     const pOpening = this.source
       .slice(firstParagraph.start, firstParagraph.openEnd)
       .replace(/\/\s*>$/, ">");
-    const before =
-      this.source.slice(firstParagraph.openEnd, start.start) +
+    const before = this.source.slice(firstParagraph.openEnd, start.start) +
       opening +
       escapeXml(prefix);
-    const after =
-      escapeXml(suffix) +
+    const after = escapeXml(suffix) +
       `</${last.leaf.element.tagName}>` +
       this.source.slice(end.end, lastParagraph.closeStart);
-    const opaque =
-      first.leaf === last.leaf
-        ? ""
-        : (
-            this.source
-              .slice(start.end, end.start)
-              .match(/<!--[\s\S]*?-->|<\?[\s\S]*?\?>/g) ?? []
-          ).join("");
+    const opaque = first.leaf === last.leaf ? "" : (
+      this.source
+        .slice(start.end, end.start)
+        .match(/<!--[\s\S]*?-->|<\?[\s\S]*?\?>/g) ?? []
+    ).join("");
     const lines = diff.insert.split("\n");
     const normalOpening = (tag: string) => {
       const attribute = /\sstyle\s*=\s*(["'])(.*?)\1/.exec(tag);
@@ -2031,9 +2219,9 @@ export class GaebDocument {
       const style = [existing, "font-weight:normal"].filter(Boolean).join("; ");
       return attribute
         ? tag.replace(
-            attribute[0],
-            ` style=${attribute[1]}${style}${attribute[1]}`,
-          )
+          attribute[0],
+          ` style=${attribute[1]}${style}${attribute[1]}`,
+        )
         : tag.replace(/^(<[^ >]+)/, '$1 style="font-weight:normal"');
     };
     const replacement = lines
@@ -2044,8 +2232,8 @@ export class GaebDocument {
           escapeXml(line) +
           (i === lines.length - 1
             ? (first.leaf === last.leaf
-                ? ""
-                : `</${first.leaf.element.tagName}>` + opaque + endingOpening) +
+              ? ""
+              : `</${first.leaf.element.tagName}>` + opaque + endingOpening) +
               after
             : `</${first.leaf.element.tagName}>`) +
           `</${firstP.tagName}>`,
@@ -2072,7 +2260,7 @@ export class GaebDocument {
     let selected = group.leaves.filter((leaf) =>
       from === to
         ? from >= leaf.start && from <= leaf.end
-        : leaf.end > from && leaf.start < to,
+        : leaf.end > from && leaf.start < to
     );
     if (from === to) selected = selected.slice(0, 1);
     let source = this.source;
@@ -2104,8 +2292,9 @@ export class GaebDocument {
           (attribute) =>
             attribute.name !== "style" && !attribute.name.startsWith("xmlns"),
         )
-      )
+      ) {
         throw new Error("rich-structure");
+      }
       const span = this.spans.get(element)!,
         p = this.spans.get(paragraph)!;
       const opening = this.source
@@ -2144,8 +2333,9 @@ export class GaebDocument {
       !element ||
       element.localName !== "span" ||
       !["font-weight", "font-style", "text-decoration"].includes(property)
-    )
+    ) {
       throw new Error("rich-structure");
+    }
     const span = this.spans.get(element)!;
     const content = element.textContent ?? "";
     const start = Math.max(0, Math.min(from, content.length));
@@ -2160,9 +2350,9 @@ export class GaebDocument {
       .replace(/\/\s*>$/, ">");
     const styledOpening = /\sstyle\s*=\s*(["'])(.*?)\1/.test(originalOpening)
       ? originalOpening.replace(
-          /\sstyle\s*=\s*(["'])(.*?)\1/,
-          ` style="${escapeXml(style)}"`,
-        )
+        /\sstyle\s*=\s*(["'])(.*?)\1/,
+        ` style="${escapeXml(style)}"`,
+      )
       : originalOpening.replace(/>$/, ` style="${escapeXml(style)}">`);
     const close = `</${element.tagName}>`;
     if (start === end || (start === 0 && end === content.length)) {
@@ -2179,21 +2369,20 @@ export class GaebDocument {
         (attribute) =>
           attribute.name !== "style" && !attribute.name.startsWith("xmlns"),
       )
-    )
+    ) {
       throw new Error("rich-structure");
+    }
     const before = start
       ? originalOpening + escapeXml(content.slice(0, start)) + close
       : "";
-    const after =
-      end < content.length
-        ? originalOpening + escapeXml(content.slice(end)) + close
-        : "";
+    const after = end < content.length
+      ? originalOpening + escapeXml(content.slice(end)) + close
+      : "";
     return this.changed([
       {
         start: span.start,
         end: span.end,
-        value:
-          before +
+        value: before +
           styledOpening +
           escapeXml(content.slice(start, end)) +
           close +
@@ -2209,15 +2398,17 @@ export class GaebDocument {
       element.localName !== "span" ||
       paragraph?.localName !== "p" ||
       paragraph.namespaceURI !== this.namespace
-    )
+    ) {
       return this.addParagraph(entry);
+    }
     if (
       [...element.attributes, ...paragraph.attributes].some(
         (attribute) =>
           attribute.name !== "style" && !attribute.name.startsWith("xmlns"),
       )
-    )
+    ) {
       throw new Error("rich-structure");
+    }
     const span = this.spans.get(element)!,
       p = this.spans.get(paragraph)!;
     const opening = this.source
@@ -2226,13 +2417,11 @@ export class GaebDocument {
     const paragraphOpening = this.source.slice(p.start, p.openEnd);
     const content = element.textContent ?? "";
     const position = Math.max(0, Math.min(offset, content.length));
-    const first =
-      this.source.slice(p.openEnd, span.start) +
+    const first = this.source.slice(p.openEnd, span.start) +
       opening +
       escapeXml(content.slice(0, position)) +
       `</${element.tagName}>`;
-    const second =
-      opening +
+    const second = opening +
       escapeXml(content.slice(position)) +
       `</${element.tagName}>` +
       this.source.slice(span.end, p.closeStart);
@@ -2240,8 +2429,7 @@ export class GaebDocument {
       {
         start: p.start,
         end: p.end,
-        value:
-          paragraphOpening +
+        value: paragraphOpening +
           first +
           `</${paragraph.tagName}>` +
           paragraphOpening +
@@ -2281,12 +2469,14 @@ export class GaebDocument {
     const container = description
       ? this.descendants(description, "Text")[0]
       : undefined;
-    if (container)
+    if (container) {
       return this.changed([this.appendPatch(container, paragraph)]);
+    }
     if (description) throw new Error("rich-structure");
-    const xml = `<${p}Description><${p}CompleteText><${p}DetailTxt><${p}Text>${paragraph}</${p}Text></${p}DetailTxt></${p}CompleteText></${p}Description>`;
-    const following =
-      this.child(element, "BidComm") ?? this.child(element, "QtyDeterm");
+    const xml =
+      `<${p}Description><${p}CompleteText><${p}DetailTxt><${p}Text>${paragraph}</${p}Text></${p}DetailTxt></${p}CompleteText></${p}Description>`;
+    const following = this.child(element, "BidComm") ??
+      this.child(element, "QtyDeterm");
     if (!following) return this.changed([this.appendPatch(element, xml)]);
     const start = this.spans.get(following)!.start;
     return this.changed([{ start, end: start, value: xml }]);
@@ -2300,7 +2490,7 @@ export class GaebDocument {
       NodeFilter.SHOW_COMMENT,
     );
     let node: Node | null;
-    while ((node = walker.nextNode()))
+    while ((node = walker.nextNode())) {
       if (node.textContent?.startsWith(prefix)) {
         try {
           return decodeURIComponent(node.textContent.slice(prefix.length));
@@ -2308,13 +2498,18 @@ export class GaebDocument {
           return;
         }
       }
+    }
   }
   private setMetadataComment(prefix: string, value: string): string {
-    const comment = `<!--${prefix}${encodeURIComponent(value).replace(/-/g, "%2D")}-->`;
-    for (const token of this.source.matchAll(
-      /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->/g,
-    )) {
-      if (token[0].startsWith(`<!--${prefix}`))
+    const comment = `<!--${prefix}${
+      encodeURIComponent(value).replace(/-/g, "%2D")
+    }-->`;
+    for (
+      const token of this.source.matchAll(
+        /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->/g,
+      )
+    ) {
+      if (token[0].startsWith(`<!--${prefix}`)) {
         return this.changed([
           {
             start: token.index!,
@@ -2322,6 +2517,7 @@ export class GaebDocument {
             value: comment,
           },
         ]);
+      }
     }
     return this.changed([this.appendPatch(this.root, comment)]);
   }
@@ -2335,12 +2531,13 @@ export class GaebDocument {
   get documentTitle(): string {
     return (
       this.explicitDocumentTitle ??
-      this.fileName.replace(/\.(?:x\d+|xml)$/i, "")
+        this.fileName.replace(/\.(?:x\d+|xml)$/i, "")
     );
   }
   setDocumentTitle(value: string): string {
-    if (!value.trim() || value.length > 127)
+    if (!value.trim() || value.length > 127) {
       throw new Error("invalid-document-title");
+    }
     return this.phase === "31"
       ? this.setTakeoffTitle(value)
       : this.setMetadataComment("sortsys:document-title:v1:", value);
@@ -2353,10 +2550,11 @@ export class GaebDocument {
   }
   setProjectName(value: string): string {
     if (value.length > 60) throw new Error("project-name-too-long");
-    const parent =
-      this.phase === "31" ? this.child(this.root, "QtyDeterm")! : this.root;
+    const parent = this.phase === "31"
+      ? this.child(this.root, "QtyDeterm")!
+      : this.root;
     const info = this.child(parent, "PrjInfo");
-    if (info)
+    if (info) {
       return this.changed([
         this.insertChild(
           info,
@@ -2367,19 +2565,24 @@ export class GaebDocument {
             : ["NamePrj", "PrjID", "LblPrj", "Descrip", "Cur", "CurLbl"],
         ),
       ]);
+    }
     const p = parent.prefix ? `${parent.prefix}:` : "";
-    const xml =
-      this.phase === "31"
-        ? `<${p}PrjInfo><${p}RefPrjName>${escapeXml(value)}</${p}RefPrjName></${p}PrjInfo>`
-        : `<${p}PrjInfo><${p}NamePrj>${escapeXml(Array.from(value).slice(0, 20).join(""))}</${p}NamePrj><${p}LblPrj>${escapeXml(value)}</${p}LblPrj></${p}PrjInfo>`;
-    const following =
-      this.phase === "31"
-        ? this.child(parent, "QtyDetermInfo")
-        : [...parent.children].find(
-            (child) =>
-              child.namespaceURI === this.namespace &&
-              child.localName !== "GAEBInfo",
-          );
+    const xml = this.phase === "31"
+      ? `<${p}PrjInfo><${p}RefPrjName>${
+        escapeXml(value)
+      }</${p}RefPrjName></${p}PrjInfo>`
+      : `<${p}PrjInfo><${p}NamePrj>${
+        escapeXml(Array.from(value).slice(0, 20).join(""))
+      }</${p}NamePrj><${p}LblPrj>${
+        escapeXml(value)
+      }</${p}LblPrj></${p}PrjInfo>`;
+    const following = this.phase === "31"
+      ? this.child(parent, "QtyDetermInfo")
+      : [...parent.children].find(
+        (child) =>
+          child.namespaceURI === this.namespace &&
+          child.localName !== "GAEBInfo",
+      );
     if (following) {
       const span = this.spans.get(following)!;
       return this.changed([{ start: span.start, end: span.start, value: xml }]);
@@ -2397,18 +2600,20 @@ export class GaebDocument {
         node.textContent?.startsWith("sortsys:takeoff-title:v1:"),
     );
     try {
-      if (marker)
+      if (marker) {
         return decodeURIComponent(
           marker.textContent!.slice("sortsys:takeoff-title:v1:".length),
         );
+      }
     } catch {
       /* External malformed comment stays untouched. */
     }
     return this.fileName.replace(/\.x31$/i, "");
   }
   setTakeoffTitle(value: string): string {
-    if (this.phase !== "31" || value.length > 2000)
+    if (this.phase !== "31" || value.length > 2000) {
       throw new Error("invalid-field");
+    }
     const parent = this.xml.getElementsByTagNameNS(
       this.namespace,
       "QtyDetermInfo",
@@ -2417,21 +2622,23 @@ export class GaebDocument {
     const span = this.spans.get(parent)!;
     const source = this.source.slice(span.start, span.end);
     const match = /<!--sortsys:takeoff-title:v1:[\s\S]*?-->/.exec(source);
-    const comment = `<!--sortsys:takeoff-title:v1:${encodeURIComponent(value).replace(/-/g, "%2D")}-->`;
+    const comment = `<!--sortsys:takeoff-title:v1:${
+      encodeURIComponent(value).replace(/-/g, "%2D")
+    }-->`;
     return this.changed([
       match
         ? {
-            start: span.start + match.index,
-            end: span.start + match.index + match[0].length,
-            value: comment,
-          }
+          start: span.start + match.index,
+          end: span.start + match.index + match[0].length,
+          value: comment,
+        }
         : this.appendPatch(parent, comment),
     ]);
   }
   projectName(reference?: GaebDocument): string {
     for (const doc of [this, reference]) {
       if (!doc) continue;
-      const info = doc.xml.getElementsByTagNameNS(doc.namespace, "PrjInfo")[0];
+      const info = doc.projectInfo;
       for (const name of ["LblPrj", "NamePrj", "RefPrjName", "PrjName"]) {
         const value = doc.value(info, name);
         if (value && value !== "…") return value;
@@ -2442,25 +2649,21 @@ export class GaebDocument {
   recipientAddress(
     reference?: GaebDocument,
   ): { document: GaebDocument; address: Element } | undefined {
-    const role =
-      this.phase === "89"
-        ? "InvoiceRecipient"
-        : ["93", "96"].includes(this.phase)
-          ? "SupplierInfo"
-          : ["94", "97"].includes(this.phase)
-            ? "CustomerInfo"
-            : ["81", "82", "83", "86"].includes(this.phase)
-              ? "CTR"
-              : this.phase === "52"
-                ? undefined
-                : "OWN";
+    const role = this.phase === "89"
+      ? "InvoiceRecipient"
+      : ["93", "96"].includes(this.phase)
+      ? "SupplierInfo"
+      : ["94", "97"].includes(this.phase)
+      ? "CustomerInfo"
+      : ["81", "82", "83", "86"].includes(this.phase)
+      ? "CTR"
+      : this.phase === "52"
+      ? undefined
+      : "OWN";
     if (!role) return;
     for (const document of [this, reference]) {
       if (!document) continue;
-      const party = document.xml.getElementsByTagNameNS(
-        document.namespace,
-        role,
-      )[0];
+      const party = document.child(document.envelope, role);
       const address = party && document.child(party, "Address");
       if (
         address &&
@@ -2469,8 +2672,9 @@ export class GaebDocument {
             element.namespaceURI === document.namespace &&
             !["", "…"].includes(element.textContent?.trim() ?? ""),
         )
-      )
+      ) {
         return { document, address };
+      }
     }
   }
   metadataElements(): Element[] {

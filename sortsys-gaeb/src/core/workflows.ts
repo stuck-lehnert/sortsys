@@ -509,34 +509,82 @@ export function gaebNetAmount(
         : 0n;
     return decimalString(decimal(doc.value(basic, "Total"), 2) - deducted, 2);
   }
-  if (isTradePhase(doc.phase))
+  let reference: GaebDocument | undefined;
+  if (referenceXml && (doc.phase === "84" || isTradePhase(doc.phase))) {
+    reference = new GaebDocument(referenceXml, "reference.xml");
+  }
+  if (isTradePhase(doc.phase)) {
+    if (!doc.hasCompletePriceView(reference)) return null;
     return decimalString(
-      doc.items.reduce((sum, entry) => sum + decimal(doc.amount(entry), 2), 0n),
+      doc.items.reduce(
+        (sum, entry) => sum + decimal(doc.amount(entry, reference), 2),
+        0n,
+      ),
       2,
     );
+  }
   if (
     doc.signed ||
-    (doc.phase === "84" && doc.items.some((item) => !doc.quantity(item)))
+    (doc.phase === "84" &&
+      !reference &&
+      doc.items.some((item) => !doc.quantity(item)))
   ) {
     if (referenceXml)
       return gaebNetAmount(deriveGaebDocument(xml, "86", { referenceXml }));
     // X84 may omit quantities supplied by its X83. Never recalculate these as 0.
-    const info = doc.xml.getElementsByTagNameNS(doc.namespace, "BoQInfo")[0];
+    const info = doc.boqInfo;
     const totals = info && doc.child(info, "Totals");
     for (const name of ["TotAfterDisc", "TotalNet", "Total"]) {
       const value = doc.value(totals, name);
       if (value) return decimalString(decimal(value, 2), 2);
     }
-    const offered = doc.items.filter((item) => doc.value(item.element, "NotOffered") !== "Yes");
-    if (!doc.signed && offered.length && offered.every((item) => !!doc.value(item.element, "IT")))
-      return decimalString(offered.reduce((sum, item) => sum + decimal(doc.value(item.element, "IT"), 2), 0n), 2);
+    const offered = doc.items.filter(
+      (item) => doc.value(item.element, "NotOffered") !== "Yes",
+    );
+    if (
+      !doc.signed &&
+      offered.length &&
+      offered.every((item) => !!doc.value(item.element, "IT"))
+    )
+      return decimalString(
+        offered.reduce(
+          (sum, item) => sum + decimal(doc.value(item.element, "IT"), 2),
+          0n,
+        ),
+        2,
+      );
     return null;
   }
-  const computed = new GaebDocument(doc.recalculate(), doc.fileName);
-  const info = computed.xml.getElementsByTagNameNS(
-    computed.namespace,
-    "BoQInfo",
-  )[0];
+  if (!doc.hasCompletePriceView(reference)) return null;
+  // Totals are optional in some native files. A local calculation copy gives
+  // them the same group/discount/provisional logic as documents with totals;
+  // the original file is never changed by asking for its amount.
+  let working = doc;
+  const originalInfo = doc.boqInfo;
+  if (!originalInfo) return null;
+  let originalTotals = doc.child(originalInfo, "Totals");
+  if (!originalTotals || !doc.child(originalTotals, "Total")) {
+    const prefix = originalInfo.prefix ? `${originalInfo.prefix}:` : "";
+    if (!originalTotals) {
+      originalTotals = doc.xml.createElementNS(
+        doc.namespace,
+        `${prefix}Totals`,
+      );
+      originalInfo.appendChild(originalTotals);
+    }
+    const total = doc.xml.createElementNS(doc.namespace, `${prefix}Total`);
+    total.textContent = "0.00";
+    originalTotals.insertBefore(total, originalTotals.firstChild);
+    working = new GaebDocument(
+      new XMLSerializer().serializeToString(doc.root),
+      doc.fileName,
+    );
+  }
+  const computed = new GaebDocument(
+    working.recalculate(reference),
+    doc.fileName,
+  );
+  const info = computed.boqInfo;
   const totals = info && computed.child(info, "Totals");
   for (const name of ["TotAfterDisc", "TotalNet", "Total"]) {
     const value = computed.value(totals, name);
