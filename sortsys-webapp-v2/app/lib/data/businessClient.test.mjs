@@ -53,7 +53,21 @@ function raw() {
           .map((path) => {
             let value = { success: true };
             if (setup) {
-              if (path === "auth.sessionInfo") {
+              if (path === "zerotrust.access.snapshot") {
+                value = {
+                  subject: "user:1",
+                  username: "owner",
+                  history: {
+                    authorities: [
+                      { certificate: setup.authority, transition: null },
+                    ],
+                    identities: [setup.owner],
+                  },
+                  policy: setup.policy,
+                  origins: [],
+                  domains: [],
+                };
+              } else if (path === "auth.sessionInfo") {
                 value = {
                   user: { id: "1", username: "owner", locale: "de" },
                   roles: [":admin"],

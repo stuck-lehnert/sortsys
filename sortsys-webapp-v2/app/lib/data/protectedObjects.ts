@@ -30,8 +30,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import type { EncryptedObject, Facet } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
-import { createdAccess } from "../crypto/createdAccess";
-import { readVerifiedPolicy } from "../crypto/policy";
+import { verifiedAccessContext } from "../crypto/accessContext";
 import { createObjectAuthorVerifier } from "../crypto/objectAuthors";
 import {
   requiredMessageProof,
@@ -214,44 +213,17 @@ async function collectionContext(
   signal: AbortSignal,
   selectedDomain?: string,
 ) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    if (signal.aborted || unlockedAccount() !== account)
-      throw new InvalidProtectedData();
-  };
-  const history = await trustedHistory(client);
-  live();
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
-  live();
-  const subject = `user:${session.user.id}`;
-  const { permissions: root } = await readVerifiedPolicy(client, {
-    account,
-    history,
-    live,
-  });
+  const { account, history, subject, rootPolicy, permissions, domains, live } =
+    await verifiedAccessContext(
+      client,
+      signal,
+      selectedDomain ? { domain: selectedDomain } : {},
+    );
   const author = createObjectAuthorVerifier(
     client,
     { account, history, live },
-    root,
+    rootPolicy,
   );
-  let permissions = root;
-  permissions = await createdAccess(
-    client,
-    permissions,
-    history,
-    signal,
-    selectedDomain,
-  );
-  live();
-  const domains = await required(
-    client.query("zerotrust.domains.list", undefined, {
-      strategy: "network-only",
-    }),
-  );
-  live();
   return {
     pages: new Map<string, ObjectPage>(),
     account,

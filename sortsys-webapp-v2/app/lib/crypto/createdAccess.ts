@@ -18,8 +18,16 @@ export async function createdAccess(
   signal: AbortSignal,
   domain?: string,
 ): Promise<Policy> {
+  const origins = await readCreationOrigins(client, domain);
+  return verifyCreatedAccess(origins, permissions, history, signal, domain);
+}
+
+export async function readCreationOrigins(
+  client: Client,
+  domain?: string,
+): Promise<readonly unknown[]> {
   if (domain && !creationResource(domain.slice(0, domain.lastIndexOf(":"))))
-    return permissions;
+    return [];
   const [origin, error] = domain
     ? await client.query(
         "zerotrust.creations.origin",
@@ -28,13 +36,27 @@ export async function createdAccess(
       )
     : [null, null];
   if (error) throw error;
-  const origins = domain
+  return domain
     ? [origin]
     : await required(
         client.query("zerotrust.creations.list", undefined, {
           strategy: "network-only",
         }),
       );
+}
+
+/** Raw transport results never grant access until every relevant origin is
+ * verified against the pinned generation, tenant and requested domain. */
+export async function verifyCreatedAccess(
+  origins: readonly unknown[],
+  permissions: Policy,
+  history: Awaited<ReturnType<typeof trustedHistory>>,
+  signal: AbortSignal,
+  domain?: string,
+): Promise<Policy> {
+  if (!Array.isArray(origins)) throw new InvalidProtectedData();
+  signal.throwIfAborted();
+  if (origins.length === 0) return permissions;
   const inherited = [];
   for (const input of origins) {
     signal.throwIfAborted();

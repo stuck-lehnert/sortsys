@@ -17,6 +17,7 @@ import {
   verifyPolicy,
 } from "@sortsys/zerotrust/sortsys";
 import { stockPacket } from "../stockObjects";
+import { accessSnapshotFixture } from "./accessSnapshot.mjs";
 import { acceptVault } from "../../crypto/session";
 
 const PHRASE =
@@ -145,6 +146,8 @@ export async function protectedTenant(
     async query(path, input) {
       calls.push({ path, input: structuredClone(input) });
       switch (path) {
+        case "zerotrust.access.snapshot":
+          return accessSnapshotFixture(client, input);
         case "zerotrust.documents.messages.state":
           return [{ current: "0", checkpoint: null }, null];
         case "zerotrust.status":

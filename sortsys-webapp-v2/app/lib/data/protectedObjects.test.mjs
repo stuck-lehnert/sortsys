@@ -17,6 +17,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { acceptVault, lockCryptoSession } from "../crypto/session";
 import { protectedCollection } from "./protectedObjects";
+import { accessSnapshotFixture } from "./testing/accessSnapshot.mjs";
 
 afterEach(() => lockCryptoSession());
 const PHRASE =
@@ -146,7 +147,10 @@ async function fixture(extraReader = false, suspended = false) {
     pages: [],
   };
   const client = {
+    loggedIn: () => true,
     async query(path, input) {
+      if (path === "zerotrust.access.snapshot")
+        return accessSnapshotFixture(client, input);
       if (path === "auth.sessionInfo")
         return [{ user: { id: "1", username: "owner" }, roles: [] }, null];
       if (path === "zerotrust.trust.history")

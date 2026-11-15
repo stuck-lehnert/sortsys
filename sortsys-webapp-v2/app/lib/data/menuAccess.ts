@@ -11,11 +11,9 @@ import {
   type ProjectModule,
   type Rule,
 } from "@sortsys/zerotrust/sortsys";
-import { createdAccess } from "../crypto/createdAccess";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
+import { unlockedAccount } from "../crypto/session";
 import { addressId } from "./addressBook";
-import { required } from "./protectedObjects";
-import { readVerifiedPolicy } from "../crypto/policy";
+import { verifiedAccessContext } from "../crypto/accessContext";
 import { personnelDomain } from "./personnelData";
 import { CLIENT_SCRIPT_COLLECTION } from "./organizationData";
 import { canUseAssistant } from "./assistantArea";
@@ -261,36 +259,10 @@ export async function readMenuAccess(
   client: Client,
   signal: AbortSignal,
 ): Promise<MenuAccess | null> {
-  const account = unlockedAccount();
-  const live = () => {
-    signal.throwIfAborted();
-    if (!account || unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
-  live();
-  if (!account!.pins.recoveryGeneration || !account!.pins.recoverySigningKey)
-    throw new InvalidProtectedData();
-  const history = await trustedHistory(client);
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
-  live();
-  if (session.user.username !== account!.username)
-    throw new InvalidProtectedData();
-  const identity = history.identityCertificate(`user:${session.user.id}`);
-  if (
-    identity.encryptionKey !== account!.vault.encryptionKey ||
-    identity.signingKey !== account!.vault.signingKey
-  )
-    throw new InvalidProtectedData();
-  const { permissions } = await readVerifiedPolicy(client, {
-    account: account!,
-    history,
-    live,
+  const context = await verifiedAccessContext(client, signal, {
+    includeDomains: false,
   });
-  const effective = await createdAccess(client, permissions, history, signal);
-  live();
-  return projectMenuAccess(effective, `user:${session.user.id}`);
+  return projectMenuAccess(context.permissions, context.subject);
 }
 
 /** Access notices invalidate the projection synchronously. Pending work is

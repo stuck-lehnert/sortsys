@@ -33,6 +33,16 @@ Eine Schlüsselrotation oder ein späterer
 Rechteentzug macht frühere zulässige Änderungen dadurch nicht unlesbar.
 Auch die Bestandsübernahme verwendet diese Prüfung.
 
+`zerotrust.access.snapshot` liefert die Vertrauenskette, aktuelle Rechteregeln,
+Bereichsnachweise und das gewünschte Verzeichnis gemeinsam. Die API liest und
+prüft diesen Stand in einer Transaktion. Navigation und Datensammlungen nutzen
+im Browser denselben Prüfer: Er bindet die Antwort an das angemeldete Konto,
+dessen öffentliche Schlüssel und die hinterlegte Wiederherstellungsautorität.
+Erst nach der Prüfung aller Signaturen und Generationen kann ein Inhaltsbereich
+geöffnet werden. Ein Abbruch oder Kontowechsel verwirft auch späte Sammelantworten.
+Für einen einzelnen Bereich ist ein begrenzter Abruf möglich; die Navigation
+benötigt kein zusätzliches Bereichsverzeichnis.
+
 Die Laufzeit ruft bis zu 16 Sammlungsseiten gemeinsam über
 `zerotrust.objects.pages` ab. Die API prüft deren Rechte, verschlüsselte Inhalte
 und Schlüsselpakete in demselben Transaktionsstand. Der Browser prüft weiterhin

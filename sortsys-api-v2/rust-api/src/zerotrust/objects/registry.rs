@@ -280,10 +280,50 @@ async fn check_member(
     Ok(())
 }
 
+/// Both the standalone inventory and the combined access snapshot retain the
+/// same visibility and key-rotation checks, inside their caller's transaction.
+async fn list_domains(
+    context: &mut super::super::access::MetadataContext,
+    selected: Option<&str>,
+) -> RpcResult<Vec<DomainInfo>> {
+    let areas = if let Some(id) = selected {
+        vec![domain(&mut context.transaction, id).await?]
+    } else {
+        context
+            .transaction
+            .all::<DomainRecord>("domains", 2000)
+            .await?
+    };
+    let mut result = Vec::new();
+    let mut rotation = RotationChecks::new(&context.security);
+    for area in areas {
+        if context.auth.is_admin()
+            || context.security.allows(
+                &context.security.subject,
+                &area.scope,
+                area.facet,
+                Action::Read,
+            )
+        {
+            result.push(DomainInfo {
+                id: area.id.clone(),
+                scope: area.scope.clone(),
+                facet: area.facet.name().into(),
+                generation: area.generation.clone(),
+                rotation_required: rotation
+                    .required(&mut context.transaction, &context.security, &area)
+                    .await?,
+            });
+        }
+    }
+    Ok(result)
+}
+
 pub(in crate::zerotrust) fn register(
     builder: ProcedureRegistryBuilder,
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
+    let access_snapshot = Arc::clone(&service);
     let policy_get = Arc::clone(&service);
     let policy_history = Arc::clone(&service);
     let policy_set = Arc::clone(&service);
@@ -294,6 +334,49 @@ pub(in crate::zerotrust) fn register(
     let definitions = Arc::clone(&service);
     let directory = Arc::clone(&service);
     builder
+        .query(
+            "zerotrust.access.snapshot",
+            move |ctx, input: AccessInput| {
+                let service = Arc::clone(&access_snapshot);
+                async move {
+                    let selected = input.domain.as_ref().map(std::slice::from_ref);
+                    if let Some(domain) = &input.domain {
+                        identifier(domain)?;
+                    }
+                    let mut context =
+                        metadata_context_for_domains(&service, &ctx, selected).await?;
+                    if let Some(id) = &input.domain {
+                        let area = domain(&mut context.transaction, id).await?;
+                        if !context.auth.is_admin()
+                            && !context.security.allows(
+                                &context.security.subject,
+                                &area.scope,
+                                area.facet,
+                                Action::Read,
+                            )
+                        {
+                            return Err(forbidden());
+                        }
+                    }
+                    let history =
+                        super::super::setup::metadata_history(&mut context.transaction).await?;
+                    let domains = if input.include_domains.unwrap_or(true) {
+                        list_domains(&mut context, input.domain.as_deref()).await?
+                    } else {
+                        Vec::new()
+                    };
+                    context.transaction.validate().await?;
+                    Ok(AccessSnapshot {
+                        subject: context.security.subject,
+                        username: context.auth.user.username,
+                        history,
+                        policy: context.security.policy,
+                        origins: context.security.origins,
+                        domains,
+                    })
+                }
+            },
+        )
         .query("zerotrust.policy.get", move |ctx, _: ()| {
             let service = Arc::clone(&policy_get);
             async move {
@@ -344,32 +427,7 @@ pub(in crate::zerotrust) fn register(
             let service = Arc::clone(&domains);
             async move {
                 let mut context = context(&service, &ctx).await?;
-                let areas = context
-                    .transaction
-                    .all::<DomainRecord>("domains", 2000)
-                    .await?;
-                let mut result = Vec::new();
-                let mut rotation = RotationChecks::new(&context.security);
-                for area in areas {
-                    if context.auth.is_admin()
-                        || context.security.allows(
-                            &context.security.subject,
-                            &area.scope,
-                            area.facet,
-                            Action::Read,
-                        )
-                    {
-                        result.push(DomainInfo {
-                            id: area.id.clone(),
-                            scope: area.scope.clone(),
-                            facet: area.facet.name().into(),
-                            generation: area.generation.clone(),
-                            rotation_required: rotation
-                                .required(&mut context.transaction, &context.security, &area)
-                                .await?,
-                        });
-                    }
-                }
+                let result = list_domains(&mut context, None).await?;
                 context.transaction.validate().await?;
                 Ok(result)
             }

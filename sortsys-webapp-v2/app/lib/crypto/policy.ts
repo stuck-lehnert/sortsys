@@ -28,6 +28,16 @@ export async function readVerifiedPolicy(
   });
   context.live();
   if (error) throw error;
+  return verifyPolicySnapshot(input, context);
+}
+
+/** Fetching may overlap other public metadata reads. Verification still binds
+ * the response to the caller's pinned authority and active account lifetime. */
+export async function verifyPolicySnapshot(
+  input: unknown,
+  context: PolicyContext,
+) {
+  context.live();
   const checked = await verifyPolicy(input, {
     tenant: context.account.tenant,
     authority: context.history.authority(context.history.current.generation),

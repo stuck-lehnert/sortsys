@@ -339,11 +339,28 @@ export async function trustedHistory(client: Client) {
     { strategy: "network-only" },
   );
   if (error) throw error;
-  return verifyTrustHistory(history, {
+  return verifyAccountHistory(history, current);
+}
+
+/** A batched response has the same pin and account checks as a separate read. */
+export async function verifyAccountHistory(
+  history: unknown,
+  current = account,
+) {
+  if (
+    !current ||
+    current !== account ||
+    !current.pins.recoveryGeneration ||
+    !current.pins.recoverySigningKey
+  )
+    throw new InvalidProtectedData();
+  const verified = await verifyTrustHistory(history, {
     tenant: current.tenant,
     generation: current.pins.recoveryGeneration,
     recoverySigningKey: current.pins.recoverySigningKey,
   });
+  if (current !== account) throw new InvalidProtectedData();
+  return verified;
 }
 
 type SignInAttempt = { signal: AbortSignal; assertCurrent: () => void };

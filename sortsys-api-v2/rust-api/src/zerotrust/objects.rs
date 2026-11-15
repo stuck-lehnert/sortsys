@@ -208,12 +208,34 @@ struct ObjectPage {
 }
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-struct DomainInfo {
+pub(super) struct DomainInfo {
     id: String,
     scope: String,
     facet: String,
     generation: String,
     rotation_required: bool,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AccessInput {
+    #[serde(default)]
+    #[ts(optional)]
+    domain: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    include_domains: Option<bool>,
+}
+
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct AccessSnapshot {
+    subject: String,
+    username: String,
+    history: TrustHistory,
+    policy: SignedPolicy,
+    origins: Vec<super::creation::CreationOrigin>,
+    domains: Vec<DomainInfo>,
 }
 
 #[derive(Serialize, TS)]
@@ -277,6 +299,7 @@ pub(super) async fn metadata_current_domain(
 }
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
+        .query_stub::<AccessInput, AccessSnapshot>("zerotrust.access.snapshot")
         .query_stub::<(), SignedPolicy>("zerotrust.policy.get")
         .query_stub::<PolicyVersionInput, HistoricalPolicy>("zerotrust.policy.getVersion")
         .mutation_stub::<SignedPolicy, Success>("zerotrust.policy.replace")

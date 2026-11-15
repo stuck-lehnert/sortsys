@@ -191,6 +191,7 @@ const AUTH_MUTATIONS = new Set([
   "auth.passkeys.delete",
 ]);
 const CRYPTO_QUERIES = new Set([
+  "zerotrust.access.snapshot",
   "zerotrust.history.get",
   "zerotrust.history.list",
   "zerotrust.timestamps.get",

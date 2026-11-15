@@ -9,6 +9,7 @@ import {
   signPolicy,
 } from "@sortsys/zerotrust/sortsys";
 import { acceptVault, lockCryptoSession } from "../crypto/session";
+import { accessSnapshotFixture } from "./testing/accessSnapshot.mjs";
 import {
   createContentAccess,
   projectMenuAccess,
@@ -326,8 +327,10 @@ async function fixture() {
   const sent = [],
     client = {
       loggedIn: () => true,
-      async query(path) {
+      async query(path, input) {
         sent.push(path);
+        if (path === "zerotrust.access.snapshot")
+          return accessSnapshotFixture(client, input);
         if (path === "auth.sessionInfo")
           return [
             { user: { id: "1", username: "owner" }, roles: [":admin"] },
@@ -375,6 +378,7 @@ test("menu access verifies signed policy and never requests content keys or busi
   expect(
     data.sent.every((path) =>
       [
+        "zerotrust.access.snapshot",
         "auth.sessionInfo",
         "zerotrust.trust.history",
         "zerotrust.policy.get",
@@ -392,8 +396,8 @@ test("an invalidated asynchronous policy result cannot restore old menu rights",
     entered = deferred(),
     original = data.client.query;
   let held = true;
-  data.client.query = async (path) => {
-    const result = await original(path);
+  data.client.query = async (path, input) => {
+    const result = await original(path, input);
     if (path === "zerotrust.policy.get" && held) {
       held = false;
       entered.resolve();
@@ -424,13 +428,13 @@ test("an invalidated asynchronous policy result cannot restore old menu rights",
 test("a substituted session identifier cannot select a different identity's signed grants", async () => {
   const data = await fixture(),
     original = data.client.query;
-  data.client.query = (path) =>
+  data.client.query = (path, input) =>
     path === "auth.sessionInfo"
       ? Promise.resolve([
           { user: { id: "2", username: "owner" }, roles: [":admin"] },
           null,
         ])
-      : original(path);
+      : original(path, input);
   await expect(
     readMenuAccess(data.client, new AbortController().signal),
   ).rejects.toThrow();

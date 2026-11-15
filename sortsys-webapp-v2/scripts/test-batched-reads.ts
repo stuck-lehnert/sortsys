@@ -13,6 +13,63 @@ export async function exerciseBatchedReads(
   snapshot: string,
   signal: AbortSignal,
 ) {
+  const access = await required(peer.query("zerotrust.access.snapshot", {}));
+  const [history, policy, origins, domains, session] = await Promise.all([
+    required(peer.query("zerotrust.trust.history", undefined)),
+    required(peer.query("zerotrust.policy.get", undefined)),
+    required(peer.query("zerotrust.creations.list", undefined)),
+    required(peer.query("zerotrust.domains.list", undefined)),
+    required(peer.query("auth.sessionInfo", undefined)),
+  ]);
+  assert.deepEqual(access.history, history);
+  assert.deepEqual(access.policy, policy);
+  assert.deepEqual(access.origins, origins);
+  assert.deepEqual(access.domains, domains);
+  assert.equal(access.subject, `user:${session.user.id}`);
+  assert.equal(access.username, session.user.username);
+  const narrowAccess = await required(
+    peer.query("zerotrust.access.snapshot", { domain: area.domain }),
+  );
+  assert.deepEqual(
+    narrowAccess.domains,
+    domains.filter((domain) => domain.id === area.domain),
+  );
+  const menuAccess = await required(
+    peer.query("zerotrust.access.snapshot", { includeDomains: false }),
+  );
+  assert.deepEqual(menuAccess.domains, []);
+  assert.deepEqual(menuAccess.policy, policy);
+  for (const substitute of [
+    "subject",
+    "username",
+    "policy",
+    "history",
+  ] as const) {
+    let keysRequested = false;
+    const observed: Client = {
+      ...client,
+      query: (async (path, input, options) => {
+        if (path === "zerotrust.keys.get") keysRequested = true;
+        const reply = await client.query(path, input, options);
+        if (path !== "zerotrust.access.snapshot" || reply[1] || !reply[0])
+          return reply;
+        const forged = structuredClone(
+          reply[0] as QueryResult<"zerotrust.access.snapshot">,
+        );
+        if (substitute === "subject") forged.subject += ":substituted";
+        if (substitute === "username") forged.username += ":substituted";
+        if (substitute === "policy")
+          forged.policy.version = (
+            BigInt(forged.policy.version) + 1n
+          ).toString();
+        if (substitute === "history")
+          forged.history.authorities[0]!.certificate.generation = "999";
+        return [forged, null];
+      }) as Client["query"],
+    };
+    await assert.rejects(protectedCollections(observed, signal));
+    assert.equal(keysRequested, false);
+  }
   const first = {
     domain: area.domain,
     prefix: "staged:0",
