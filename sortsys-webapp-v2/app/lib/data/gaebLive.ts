@@ -291,6 +291,14 @@ function connectChannel(
   const pendingWork: Array<() => Promise<void>> = [];
   const pendingUpdates = new Map<GaebContentFacet, string[]>();
   const updatesQueued = new Set<GaebContentFacet>();
+  const initializations: {
+    facet: GaebContentFacet;
+    field: string;
+    value: string;
+    key: string;
+    data: string;
+  }[] = [];
+  let initializationsQueued = false;
   let draining: Promise<void> | undefined;
   let participants: Collaborator[] = [];
   function channelFacet(value: unknown): GaebContentFacet {
@@ -642,6 +650,24 @@ function connectChannel(
       publishUpdates(facet);
     });
   }
+  function publishInitializations() {
+    if (initializationsQueued || initializations.length === 0) return;
+    initializationsQueued = true;
+    let batch: typeof initializations | undefined;
+    enqueue(async () => {
+      while (batch || initializations.length > 0) {
+        // Retain the same candidate keys after a partial failure. Successful
+        // candidates can be retried without creating extra initializers.
+        batch ??= initializations.splice(0, 16);
+        await mapConcurrent(batch, 4, async ({ key, ...value }) => {
+          await (await currentTransport()).post("initialize", value, key);
+        });
+        await refresh();
+        batch = undefined;
+      }
+      initializationsQueued = false;
+    });
+  }
   function connectFields(canWrite: boolean) {
     const send = (message: Record<string, unknown>) => {
       const facet = channelFacet(message.facet);
@@ -652,12 +678,8 @@ function connectChannel(
         // initializer; a corrupt earlier candidate cannot reserve a field.
         const key = base64(randomSecret());
         const data = initializeSharedField(field, value);
-        enqueue(async () => {
-          await (
-            await currentTransport()
-          ).post("initialize", { facet, field, value, data }, key);
-          await refresh();
-        });
+        initializations.push({ facet, field, value, key, data });
+        publishInitializations();
       } else if (message.type === "update") {
         const updates = pendingUpdates.get(facet) ?? [];
         updates.push(sharedUpdate(message.data));
@@ -761,6 +783,7 @@ function connectChannel(
     pendingWork.length = 0;
     pendingUpdates.clear();
     updatesQueued.clear();
+    initializations.length = 0;
     resetTransport();
     // Closing a connection never reopens it to send a farewell. Presence has
     // a short TTL, so it also disappears after a disconnected browser closes.

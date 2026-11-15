@@ -247,6 +247,44 @@ function fixture(lateDriver = false) {
   };
 }
 
+test("a caller's verified inventory can supply its read and a conflicting read opens a fresh context", async () => {
+  const current = fixture();
+  const original = current.storage.open;
+  let opened = 0;
+  current.storage.open = async () => {
+    opened++;
+    return original();
+  };
+  const inventory = await current.storage.open();
+  try {
+    const result = await current.runtime.read(
+      [first],
+      (view) => view.documents(first),
+      inventory,
+    );
+    expect(result).toHaveLength(1);
+    expect(opened).toBe(1);
+    current.runtime.revalidate();
+    const stale = () => {
+      throw new ProtectedWriteConflict();
+    };
+    expect(
+      await current.runtime.read(
+        [first],
+        (view) => view.documents(first),
+        stale,
+      ),
+    ).toHaveLength(1);
+    expect(opened).toBe(2);
+    current.revoke();
+    await expect(
+      current.runtime.read([first], (view) => view.documents(first), inventory),
+    ).rejects.toThrow();
+  } finally {
+    await current.runtime.close();
+  }
+});
+
 test("read-only preparations retain exact source guards for an external signed publication", async () => {
   const f = fixture();
   let prepared;

@@ -246,3 +246,67 @@ export async function encryptedGaebLiveScenario() {
     await lockCryptoSession();
   }
 }
+
+export async function batchedGaebInitializationScenario() {
+  const session = await createGaebLiveFixture();
+  let active = 0;
+  let maximum = 0;
+  let reads = 0;
+  let replyLost = false;
+  session.state.beforeQuery = async (path) => {
+    if (path === "zerotrust.documents.messages.read") reads++;
+  };
+  session.state.afterPost = async (packet) => {
+    if (packet.kind !== "initialize") return;
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active--;
+    if (!replyLost) {
+      replyLost = true;
+      throw new Error(
+        "Simulated lost initializer reply after durable acceptance",
+      );
+    }
+  };
+  const extraFields = Array.from({ length: 48 }, (_, index) => ({
+    key: `item-extra-${index}:text:0`,
+    value: `Positionstext ${index}`,
+    multiline: true,
+    editable: true,
+    label: "Text",
+    commit() {},
+  }));
+  try {
+    const first = session.peer("Bearbeitung", "Hallo Welt", { extraFields });
+    await first.connection.flush();
+    const initialReads = reads;
+    const candidates = session.messages.filter(
+      (message) => message.kind === "initialize",
+    );
+    const late = session.peer("Späterer Beitritt", "Hallo Welt", {
+      extraFields,
+    });
+    await late.connection.flush();
+    first.sharedFields.edit(
+      extraFields[0].key,
+      extraFields[0].value,
+      "Gemeinsam bearbeitet",
+    );
+    await first.connection.flush();
+    await late.connection.flush();
+    return {
+      candidates: candidates.length,
+      uniqueKeys: new Set(candidates.map((message) => message.key)).size,
+      initialReads,
+      maximum,
+      active,
+      replyLost,
+      text: late.sharedFields.value(extraFields[0].key),
+      leaks: JSON.stringify(session.requests).includes("Positionstext"),
+    };
+  } finally {
+    session.close();
+    await lockCryptoSession();
+  }
+}

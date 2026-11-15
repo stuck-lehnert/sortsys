@@ -543,6 +543,7 @@ async fn commit_batch_inner(
     }
     let publication = super::super::crypto::random_id()?;
     let mut changed_domains = BTreeSet::new();
+    let mut visible_domains = BTreeSet::new();
     let mut changed_metadata = BTreeSet::new();
     let mut wrote = checkpoints.commit(&mut context.transaction).await?;
     for packet in &input.objects {
@@ -563,6 +564,9 @@ async fn commit_batch_inner(
         .await?;
         if written {
             changed_domains.insert(packet.domain.clone());
+            if super::super::documents::blob(&packet.envelope.object)?.is_none() {
+                visible_domains.insert(packet.domain.clone());
+            }
             if packet.envelope.object
                 == format!(
                     "{}:{}:case",
@@ -596,6 +600,7 @@ async fn commit_batch_inner(
         .await?;
         if changed {
             changed_domains.extend(head.domains());
+            visible_domains.extend(head.domains());
             wrote = true;
         }
     }
@@ -616,7 +621,11 @@ async fn commit_batch_inner(
             .await?;
         context.transaction.notify(
             "object",
-            &serde_json::json!({"domain": domain, "sequence": area.sequence}),
+            &serde_json::json!({
+                "domain": domain,
+                "sequence": area.sequence,
+                "staged": !visible_domains.contains(domain),
+            }),
         )?;
     }
     let heads = shape

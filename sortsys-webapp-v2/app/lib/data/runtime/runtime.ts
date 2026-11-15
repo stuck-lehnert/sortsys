@@ -31,7 +31,7 @@ import {
 } from "./rows";
 import { tableDefinition } from "../schema";
 import { projectRuntimeRows, type DataTables } from "./sql";
-import type { DataCollection, DataStorage } from "./storage";
+import type { DataCollection, DataCollections, DataStorage } from "./storage";
 import { mapConcurrent } from "./concurrentReads";
 
 export type DataRequest<T = unknown> = {
@@ -502,14 +502,17 @@ export class DataRuntime {
   read<T>(
     requests: readonly DataRequest[],
     work: (view: DataView) => T | Promise<T>,
+    collections?: DataCollections,
   ): Promise<T> {
     return this.queue(async () => {
+      let supplied = collections;
       for (let attempt = 0; ; attempt++) {
         try {
-          await this.load(requests);
+          await this.load(requests, undefined, supplied);
           break;
         } catch (error) {
           if (!isWriteConflict(error) || attempt >= 2) throw error;
+          supplied = undefined;
           this.invalidate(
             new Set(requests.map((request) => request.area.domain)),
           );
@@ -538,6 +541,7 @@ export class DataRuntime {
   private async load(
     input: readonly DataRequest[],
     opened?: Map<string, DataCollection>,
+    supplied?: DataCollections,
   ): Promise<void> {
     const merged = new Map<string, DataRequest>();
     for (const request of input) {
@@ -592,9 +596,10 @@ export class DataRuntime {
     const generation = this.generation;
     const next = new Map(this.resources);
     const reads = opened ?? new Map<string, DataCollection>();
-    const open = requests.length
-      ? await this.storage.open(this.controller.signal)
-      : null;
+    let open: DataCollections | null = null;
+    if (requests.length) {
+      open = supplied ?? (await this.storage.open(this.controller.signal));
+    }
     try {
       await open?.prefetch?.(
         requests

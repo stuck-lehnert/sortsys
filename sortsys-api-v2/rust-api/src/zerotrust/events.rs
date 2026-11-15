@@ -36,12 +36,62 @@ use ts_rs::TS;
 pub const WS_PATH: &str = "/zerotrust/events";
 #[derive(Clone)]
 enum Event {
-    Objects(String, i64),
+    Objects(String, i64, bool),
     Domain(String),
     Access,
     Account(String),
     Resync,
     DocumentMessage(Room),
+}
+
+#[derive(Default)]
+struct PendingChanges {
+    all: bool,
+    refresh: bool,
+    control: bool,
+    visible: bool,
+    domains: HashMap<String, Option<i64>>,
+    document_messages: HashSet<Room>,
+}
+impl PendingChanges {
+    fn include(&mut self, event: Event, subject: &str) {
+        match event {
+            Event::DocumentMessage(room) => {
+                self.document_messages.insert(room);
+            }
+            Event::Access => {
+                self.refresh = true;
+            }
+            Event::Resync => {
+                self.visible = true;
+                self.all = true;
+                self.refresh = true;
+            }
+            Event::Domain(domain) => {
+                self.visible = true;
+                self.refresh = true;
+                self.control = true;
+                self.domains.insert(domain, None);
+            }
+            Event::Account(user) if user == subject => {
+                self.visible = true;
+                self.all = true;
+                self.refresh = true;
+            }
+            Event::Objects(domain, sequence, staged) => {
+                self.visible |= !staged;
+                self.domains
+                    .entry(domain)
+                    .and_modify(|head| {
+                        if let Some(current) = head {
+                            *current = (*current).max(sequence);
+                        }
+                    })
+                    .or_insert(Some(sequence));
+            }
+            _ => {}
+        }
+    }
 }
 struct Channel {
     outgoing: broadcast::Sender<Event>,
@@ -207,7 +257,11 @@ fn parse_hint(channel: &str, input: &str) -> Option<Event> {
             let domain = data.get("domain")?.as_str()?;
             super::crypto::identifier(domain).ok()?;
             let sequence = super::crypto::revision(data.get("sequence")?.as_str()?).ok()?;
-            Some(Event::Objects(domain.to_owned(), sequence))
+            Some(Event::Objects(
+                domain.to_owned(),
+                sequence,
+                staging_hint(&data)?,
+            ))
         }
         "document-message" => {
             let mut data = data;
@@ -243,7 +297,8 @@ fn parse(input: &str) -> Option<Event> {
             let domain = data.get("domain")?.as_str()?;
             super::crypto::identifier(domain).ok()?;
             let sequence = data.get("seq")?.as_str()?.parse::<i64>().ok()?;
-            (sequence > 0).then(|| Event::Objects(domain.to_owned(), sequence))
+            let staged = staging_hint(&data)?;
+            (sequence > 0).then(|| Event::Objects(domain.to_owned(), sequence, staged))
         }
         "domain" => {
             let domain = data.get("domain")?.as_str()?;
@@ -253,6 +308,13 @@ fn parse(input: &str) -> Option<Event> {
         "policy" | "recovery" | "activation" => Some(Event::Access),
         "account" => Some(Event::Account(data.get("user")?.as_str()?.to_owned())),
         _ => None,
+    }
+}
+
+fn staging_hint(data: &Value) -> Option<bool> {
+    match data.get("staged") {
+        None => Some(false),
+        Some(value) => value.as_bool(),
     }
 }
 fn unavailable() -> RpcError {
@@ -593,56 +655,32 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             value = subscription.incoming.recv() => value,
         };
         tokio::time::sleep(Duration::from_millis(80)).await;
-        let mut all = false;
-        let mut refresh = false;
-        let mut domains = HashMap::<String, Option<i64>>::new();
-        let mut document_messages = HashSet::new();
-        let mut fold = |event: Event| match event {
-            Event::DocumentMessage(room) => {
-                document_messages.insert(room);
-            }
-            Event::Access => {
-                // Another session may have changed. Reauthenticate this socket
-                // without discarding its browser state if its access is intact.
-                refresh = true;
-            }
-            Event::Resync => {
-                all = true;
-                refresh = true;
-            }
-            Event::Domain(domain) => {
-                refresh = true;
-                domains.insert(domain, None);
-            }
-            Event::Account(user) if user == current.subject => {
-                all = true;
-                refresh = true;
-            }
-            Event::Objects(domain, sequence) => {
-                domains
-                    .entry(domain)
-                    .and_modify(|head| {
-                        if let Some(current) = head {
-                            *current = (*current).max(sequence);
-                        }
-                    })
-                    .or_insert(Some(sequence));
-            }
-            _ => {}
-        };
+        let mut pending = PendingChanges::default();
         match event {
-            Ok(event) => fold(event),
-            Err(broadcast::error::RecvError::Lagged(_)) => fold(Event::Resync),
+            Ok(event) => pending.include(event, &current.subject),
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                pending.include(Event::Resync, &current.subject)
+            }
             Err(_) => return Err(unavailable()),
         }
         for _ in 0..64 {
             match subscription.incoming.try_recv() {
-                Ok(event) => fold(event),
-                Err(broadcast::error::TryRecvError::Lagged(_)) => fold(Event::Resync),
+                Ok(event) => pending.include(event, &current.subject),
+                Err(broadcast::error::TryRecvError::Lagged(_)) => {
+                    pending.include(Event::Resync, &current.subject)
+                }
                 Err(broadcast::error::TryRecvError::Empty) => break,
                 Err(_) => return Err(unavailable()),
             }
         }
+        let PendingChanges {
+            mut all,
+            refresh,
+            control,
+            visible,
+            mut domains,
+            document_messages,
+        } = pending;
         let mut reset = false;
         if refresh {
             let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
@@ -654,6 +692,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             }
         }
         domains.retain(|domain, _| current.allowed.contains(domain));
+        let control = control || all || reset;
         let domains = domains
             .into_iter()
             .map(|(domain, sequence)| (domain, sequence.map(|n| n.to_string())))
@@ -661,7 +700,15 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         if all || reset || !domains.is_empty() {
             send(
                 socket,
-                json!({"type":"changed","reset":reset,"all":all,"control":refresh,"domains":domains,"fingerprint":current.fingerprint}),
+                json!({
+                    "type": "changed",
+                    "reset": reset,
+                    "all": all,
+                    "control": control,
+                    "domains": domains,
+                    "fingerprint": current.fingerprint,
+                    "staged": !visible && !control,
+                }),
             )
             .await?;
         }
@@ -684,6 +731,52 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn staging_hints_never_hide_visible_changes_in_a_combined_batch() {
+        let mut changes = PendingChanges::default();
+        changes.include(
+            Event::Objects("commercial:2:scope".into(), 2, true),
+            "user:1",
+        );
+        assert!(!changes.visible);
+        changes.include(Event::Access, "user:1");
+        assert!(changes.refresh);
+        assert!(!changes.visible);
+        assert!(!changes.control);
+        changes.include(
+            Event::Objects("commercial:2:scope".into(), 3, false),
+            "user:1",
+        );
+        changes.include(
+            Event::Objects("commercial:2:scope".into(), 4, true),
+            "user:1",
+        );
+        assert!(changes.visible);
+        assert_eq!(changes.domains["commercial:2:scope"], Some(4));
+        let mut access = PendingChanges::default();
+        access.include(
+            Event::Objects("commercial:2:scope".into(), 1, true),
+            "user:1",
+        );
+        access.include(Event::Domain("commercial:2:scope".into()), "user:1");
+        assert!(access.visible);
+        assert!(access.refresh);
+        assert_eq!(access.domains["commercial:2:scope"], None);
+        assert!(matches!(
+            parse_hint(
+                "object",
+                r#"{"domain":"commercial:2:scope","sequence":"2","staged":true}"#
+            ),
+            Some(Event::Objects(_, 2, true))
+        ));
+        assert!(
+            parse_hint(
+                "object",
+                r#"{"domain":"commercial:2:scope","sequence":"2","staged":"yes"}"#
+            )
+            .is_none()
+        );
+    }
     #[test]
     fn unchanged_session_checks_preserve_context_but_access_changes_do_not() {
         let baseline = || Snapshot {
@@ -757,7 +850,7 @@ mod tests {
     fn notification_decoder_retains_only_routing_and_commit_metadata() {
         let data = json!({"kind":"object","domain":"assistant:user:1:master-data","seq":"9223372036854775807","id":"must-not-be-forwarded","content":"not-an-event-field"});
         assert!(
-            matches!(parse(&data.to_string()), Some(Event::Objects(domain, i64::MAX)) if domain=="assistant:user:1:master-data")
+            matches!(parse(&data.to_string()), Some(Event::Objects(domain, i64::MAX, false)) if domain=="assistant:user:1:master-data")
         );
         assert!(parse("not json").is_none());
         assert!(parse(r#"{"kind":"object","domain":"catalog:products","seq":"-1"}"#).is_none());

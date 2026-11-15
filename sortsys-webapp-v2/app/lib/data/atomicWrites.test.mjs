@@ -45,6 +45,44 @@ function group(count) {
   };
 }
 
+test("independent publication confirmations overlap, remain bounded and finish before a failed write returns", async () => {
+  let active = 0;
+  let maximum = 0;
+  let rejected = false;
+  const groups = Array.from({ length: 6 }, (_, index) => {
+    const item = group(1);
+    item.head.domain = `area:${index}`;
+    item.packets[0].domain = item.head.domain;
+    item.packets[0].envelope.object = `item:${index}`;
+    item.verify = async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        return !(rejected && index === 0);
+      } finally {
+        active--;
+      }
+    };
+    return item;
+  });
+  const lostReply = new Error("Connection lost after publication");
+  const client = {
+    async mutate() {
+      return [null, lostReply];
+    },
+    async invalidate() {},
+  };
+  await commitProtectedWrites(client, groups, new AbortController().signal);
+  expect(maximum).toBeGreaterThan(1);
+  expect(maximum).toBeLessThanOrEqual(4);
+  rejected = true;
+  await expect(
+    commitProtectedWrites(client, groups, new AbortController().signal),
+  ).rejects.toBe(lostReply);
+  expect(active).toBe(0);
+});
+
 test("a policy-only publication cannot accept a false successful reply without its durable signed receipt", async () => {
   const calls = [];
   const guards = [{ domain: "personnel:2:scope", sequence: "7" }];

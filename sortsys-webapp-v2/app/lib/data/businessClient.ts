@@ -626,6 +626,12 @@ export function createBusinessClient(
   }
   function remoteChange(change: EncryptedChange) {
     if (closed) return;
+    if (change.staged) {
+      // Immutable document pieces become visible through their published head.
+      // Their upload must not start business reads ahead of that publication.
+      options.onRemoteChange?.(change);
+      return;
+    }
     if (change.reset) announceDataChanges(base);
     else if (change.control || change.all)
       announceDataChanges(base, undefined, { revalidate: true });

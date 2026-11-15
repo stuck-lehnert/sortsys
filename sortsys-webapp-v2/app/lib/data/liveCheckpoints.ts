@@ -78,7 +78,10 @@ export async function prepareDocumentLivePublications(
         target,
         previousTarget,
         signal,
-        { sequence },
+        {
+          sequence,
+          retainUnchanged: unchanged && !head.locked && !head.readOnly,
+        },
         context,
       );
     },
@@ -137,7 +140,7 @@ async function prepareWithContext(
   target: string,
   previousTarget: string | undefined,
   signal: AbortSignal,
-  options: { sequence?: string; preserve?: boolean },
+  options: { sequence?: string; preserve?: boolean; retainUnchanged?: boolean },
   context: () => ReturnType<typeof publicationContext>,
 ): Promise<LivePublication | null> {
   if (!previousTarget) {
@@ -161,10 +164,19 @@ async function prepareWithContext(
   );
   live();
   liveSequence(state.current);
+  let retainPrevious = false;
   if (options.sequence !== undefined) {
     liveSequence(options.sequence);
     if (options.sequence !== state.current) {
-      throw new ProtectedWriteConflict();
+      if (
+        options.retainUnchanged &&
+        target === previousTarget &&
+        BigInt(options.sequence) < BigInt(state.current)
+      ) {
+        retainPrevious = true;
+      } else {
+        throw new ProtectedWriteConflict();
+      }
     }
   }
   if (state.current === "0" && !state.checkpoint) {
@@ -203,6 +215,12 @@ async function prepareWithContext(
       throw new InvalidProtectedData();
     }
     covered = checkpoint.covered;
+  }
+  if (retainPrevious) {
+    // This native part is byte-for-byte unchanged. Keep its existing receipt
+    // and leave newer messages uncovered and replayable. Never claim that the
+    // caller incorporated messages arriving after its snapshot.
+    return null;
   }
   if (options.sequence !== undefined) {
     covered = options.sequence;

@@ -4,6 +4,7 @@ import {
   certifyIdentity,
   createIdentity,
   digest,
+  documentPartTarget,
   DOCUMENT_FACETS,
   publicIdentity,
   signLiveCheckpoint,
@@ -22,9 +23,10 @@ import { commercialCollection, COMMERCIAL_FACETS } from "./commercialAreas";
 
 afterEach(() => lockCryptoSession());
 
-test("one document batches checkpoint preparation under shared public proofs and rejects any stale channel", async () => {
+test("one document batches checkpoint preparation under shared public proofs and rejects stale changed channels", async () => {
   const fixture = await createDocumentHeadFixture();
   const head = await fixture.head();
+  let target = head;
   const query = fixture.tenant.client.query;
   const calls = [];
   let active = 0;
@@ -49,7 +51,7 @@ test("one document batches checkpoint preparation under shared public proofs and
   const prepare = () =>
     prepareDocumentLivePublications(
       fixture.tenant.client,
-      head,
+      target,
       head,
       new AbortController().signal,
       positions,
@@ -78,7 +80,10 @@ test("one document batches checkpoint preparation under shared public proofs and
       ),
     ).toEqual(publication.checkpoint);
   }
-  stale = "billing";
+  stale = "scope";
+  target = await fixture.head(head, {
+    parts: await fixture.changedPart(head, "scope"),
+  });
   await expect(prepare()).rejects.toBeInstanceOf(ProtectedWriteConflict);
   expect(active).toBe(0);
   stale = undefined;
@@ -115,6 +120,61 @@ test("one document batches checkpoint preparation under shared public proofs and
   }
   await expect(pending).rejects.toThrow();
   expect(active).toBe(0);
+});
+
+test("late messages in unchanged draft parts stay replayable without blocking other parts or weakening finalization", async () => {
+  const fixture = await createDocumentHeadFixture();
+  const previous = await fixture.head();
+  const state = { current: "11", checkpoint: null };
+  const query = fixture.tenant.client.query;
+  fixture.tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.documents.messages.state") {
+      return [
+        input.facet === "scope"
+          ? structuredClone(state)
+          : { current: "0", checkpoint: null },
+        null,
+      ];
+    }
+    return query(path, input, options);
+  };
+  const prepare = (head) =>
+    prepareDocumentLivePublications(
+      fixture.tenant.client,
+      head,
+      previous,
+      new AbortController().signal,
+      { scope: "10" },
+    );
+  expect(await prepare(previous)).toEqual([]);
+  const changed = await fixture.head(previous, {
+    parts: await fixture.changedPart(previous, "scope"),
+  });
+  await expect(prepare(changed)).rejects.toBeInstanceOf(ProtectedWriteConflict);
+  const final = await fixture.head(previous, { readOnly: true, locked: true });
+  await expect(prepare(final)).rejects.toBeInstanceOf(ProtectedWriteConflict);
+  state.current = "9";
+  await expect(prepare(previous)).rejects.toBeInstanceOf(
+    ProtectedWriteConflict,
+  );
+  state.current = "11";
+  state.checkpoint = await signLiveCheckpoint(
+    {
+      tenant: "test",
+      scope: previous.scope,
+      document: previous.id,
+      facet: "scope",
+      target: await documentPartTarget(previous, "scope"),
+      sequence: "8",
+      covered: "8",
+      generation: "1",
+      policyVersion: "3",
+      author: "user:1",
+    },
+    fixture.tenant.identity.signingKey.privateKey,
+  );
+  state.checkpoint.signature = "A".repeat(86);
+  await expect(prepare(previous)).rejects.toThrow();
 });
 
 async function fixture(facet = "opaque") {

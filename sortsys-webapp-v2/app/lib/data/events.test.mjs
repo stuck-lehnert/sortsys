@@ -88,11 +88,23 @@ for (const failFirst of [false, true]) {
           reset: false,
           all: false,
           control: false,
-          domains: { "catalog:products:master-data": "1" },
+          staged: true,
+          domains: { "commercial:2:scope": "2" },
           fingerprint,
         });
         await until(() => changes.length === 1);
-        expect(changes[0].domains).toEqual({
+        expect(changes[0].staged).toBe(true);
+        sockets[0].message({
+          type: "changed",
+          reset: false,
+          all: false,
+          control: false,
+          domains: { "catalog:products:master-data": "1" },
+          fingerprint,
+        });
+        await until(() => changes.length === 2);
+        expect(changes[1].staged).toBeUndefined();
+        expect(changes[1].domains).toEqual({
           "catalog:products:master-data": "1",
         });
         sockets[0].close();

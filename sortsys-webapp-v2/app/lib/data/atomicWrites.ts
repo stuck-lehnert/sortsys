@@ -5,6 +5,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { uiText } from "../i18n";
 import { announceDataChanges } from "./runtime/changes";
+import { mapConcurrent } from "./runtime/concurrentReads";
 import type { LivePublication } from "./liveCheckpoints";
 
 export type PreparedWrites = {
@@ -240,13 +241,14 @@ async function publishProtectedWrites(
   }
   signal.throwIfAborted();
   await client.invalidate("zerotrust.objects.list");
-  for (const publication of [
+  const confirmations = [
     ...groups,
     ...documents,
     ...live,
     ...(member ? [member] : []),
     ...(policy ? [policy] : []),
-  ]) {
+  ];
+  await mapConcurrent(confirmations, 4, async (publication) => {
     signal.throwIfAborted();
     let accepted: boolean;
     try {
@@ -255,6 +257,6 @@ async function publishProtectedWrites(
       throw error ?? verificationError;
     }
     if (!accepted) throw error ?? new ProtectedWriteConflict();
-  }
+  });
   signal.throwIfAborted();
 }

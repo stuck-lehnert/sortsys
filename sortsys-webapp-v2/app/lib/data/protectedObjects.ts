@@ -1012,9 +1012,17 @@ function openCollection(
           objects,
           heads: [{ domain: collection.domain, sequence: head }, ...guards],
         }),
-      ).finally(() =>
-        announceDataChanges(client, new Set([collection.domain])),
-      );
+      ).finally(() => {
+        const stagedDocuments =
+          collection.scope.startsWith("commercial:") &&
+          objects.length > 0 &&
+          objects.every((object) =>
+            isStagedObject(collection, object.envelope.object),
+          );
+        if (!stagedDocuments) {
+          announceDataChanges(client, new Set([collection.domain]));
+        }
+      });
       live();
       if (
         !result.success ||

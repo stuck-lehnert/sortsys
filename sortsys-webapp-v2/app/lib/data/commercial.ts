@@ -95,8 +95,11 @@ import {
 import type { DuckDriver } from "./database";
 import { newProductRowId, publicId } from "./products";
 import { projectCollection, projectDomainId } from "./projectData";
-import { type Collection, required } from "./protectedObjects";
-import { readableAreas } from "./readableAreas";
+import {
+  type Collection,
+  protectedCollections,
+  required,
+} from "./protectedObjects";
 import type { BusinessRow } from "./rowCodec";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import { commercialRow as row } from "./commercialRows";
@@ -149,9 +152,11 @@ export function createProtectedCommercial(
     persist: persistCases,
   });
   async function inventory() {
-    const areas = await readableAreas(client, signal, select);
+    const collections = await protectedCollections(client, signal);
+    const areas = collections.areas(select);
     live();
     return {
+      collections,
       selected: areas
         .filter((area) => commercialDomain(area.domain))
         .map((area) => {
@@ -202,13 +207,14 @@ export function createProtectedCommercial(
   ): Promise<CaseSnapshot> {
     addressId(id);
     if (fresh) runtime.revalidate();
-    const { selected, visible } = await inventory();
+    const { selected, visible, collections } = await inventory();
     const requests = selected.filter(
       (request) => commercialDomain(request.area.domain)!.id === id,
     );
     const value = await runtime.read(
       [...requests, ...invoiceViewRequests(requests)],
       (view) => snapshot(view, id, requests, visible, empty),
+      collections,
     );
     live();
     return value;
@@ -224,7 +230,7 @@ export function createProtectedCommercial(
     return filter.kind == null || value.kind === filter.kind;
   }
   async function list(filter: { projectId?: unknown; kind?: unknown }) {
-    const { selected, visible } = await inventory();
+    const { selected, visible, collections } = await inventory();
     const master = new Map<string, DataRequest<CommercialPayload>>();
     const cases = new Map<string, DataRequest<CommercialPayload>[]>();
     for (const request of selected) {
@@ -251,7 +257,11 @@ export function createProtectedCommercial(
         });
       }
       for (let attempt = 0; ; attempt++) {
-        const candidates = await runtime.read(headerRequests, matchingIds);
+        const candidates = await runtime.read(
+          headerRequests,
+          matchingIds,
+          collections,
+        );
         const included = new Set(candidates);
         const requests = selected.filter((request) => {
           const { id, facet } = commercialDomain(request.area.domain)!;
@@ -271,6 +281,7 @@ export function createProtectedCommercial(
                 snapshot(view, id, cases.get(id)!, visible, true),
               );
             },
+            collections,
           );
         } catch (error) {
           if (!(error instanceof ProtectedWriteConflict) || attempt >= 2)
@@ -287,6 +298,7 @@ export function createProtectedCommercial(
         ids
           .map((id) => snapshot(view, id, cases.get(id)!, visible, true))
           .filter((snapshot) => snapshot.values.length),
+      collections,
     );
     live();
     return values;
@@ -1120,6 +1132,30 @@ export function createProtectedCommercial(
       `commercial:${caseId}`,
       signal,
     );
+    const needsReference =
+      selected.values.purpose === "offer" &&
+      selected.values.source_document_id !== null;
+    async function verifySourceVersion() {
+      if (!needsReference) return;
+      const sourceId = publicId(selected.values.source_document_id);
+      const belongsToCurrentCase = values.some(
+        (row) =>
+          row.table === "commercial_documents" &&
+          row.values.id === selected.values.source_document_id,
+      );
+      let sourceHead: DocumentHead | null;
+      if (belongsToCurrentCase) {
+        sourceHead = await store.head(sourceId);
+      } else {
+        sourceHead = await documentHead(sourceId);
+      }
+      if (
+        !sourceHead ||
+        sourceHead.version !== selected.values.source_version
+      ) {
+        throw new ProtectedWriteConflict();
+      }
+    }
     try {
       const previous = await store.head(id);
       if (!previous || BigInt(previous.version) !== data.version) {
@@ -1128,17 +1164,7 @@ export function createProtectedCommercial(
       if (!editable(values, selected, previous)) {
         throw new InvalidProtectedData();
       }
-      if (
-        selected.values.purpose === "offer" &&
-        selected.values.source_document_id !== null
-      ) {
-        const source = await documentHead(
-          publicId(selected.values.source_document_id),
-        );
-        if (source.version !== selected.values.source_version) {
-          throw new ProtectedWriteConflict();
-        }
-      }
+      await verifySourceVersion();
       let old = await store.load(previous, processor);
       const reference = await documentReference(
         basis,
@@ -1146,6 +1172,7 @@ export function createProtectedCommercial(
         current,
         id,
         true,
+        store,
       );
       old = await materializedContent(
         store,
@@ -1154,9 +1181,6 @@ export function createProtectedCommercial(
         current.kind,
         reference.xml ?? undefined,
       );
-      const needsReference =
-        selected.values.purpose === "offer" &&
-        selected.values.source_document_id !== null;
       const pricingInputs =
         referenceInputsReadable(needsReference, reference) &&
         financialInputsReadable(
@@ -1350,6 +1374,7 @@ export function createProtectedCommercial(
             : livePositions(data.livePositions),
       });
       const refreshed = await afterStaging(basis);
+      await verifySourceVersion();
       await persist(
         refreshed,
         updated,

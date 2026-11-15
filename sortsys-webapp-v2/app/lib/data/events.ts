@@ -19,6 +19,7 @@ export type EncryptedChange = {
   all: boolean;
   control: boolean;
   domains: Record<string, string | null>;
+  staged?: boolean;
 };
 
 export function eventFingerprint(value: unknown): string {
@@ -170,19 +171,25 @@ export async function watchEncryptedEvents(
               return;
             }
             if (raw?.type === "changed" && ready) {
-              const value = record(raw, [
+              const keys = [
                 "type",
                 "reset",
                 "all",
                 "control",
                 "domains",
                 "fingerprint",
-              ]);
+              ];
+              if (Object.hasOwn(raw, "staged")) keys.push("staged");
+              const value = record(raw, keys);
               eventFingerprint(value.fingerprint);
               if (
                 typeof value.reset !== "boolean" ||
                 typeof value.all !== "boolean" ||
                 typeof value.control !== "boolean" ||
+                (value.staged !== undefined &&
+                  typeof value.staged !== "boolean") ||
+                (value.staged === true &&
+                  (value.reset || value.all || value.control)) ||
                 !value.domains ||
                 typeof value.domains !== "object" ||
                 Array.isArray(value.domains) ||
@@ -200,12 +207,14 @@ export async function watchEncryptedEvents(
                   throw new InvalidProtectedData();
               }
               fingerprint = value.fingerprint as string;
-              onChange({
+              const change: EncryptedChange = {
                 reset: value.reset,
                 all: value.all,
                 control: value.control,
                 domains: value.domains as Record<string, string | null>,
-              });
+              };
+              if (value.staged === true) change.staged = true;
+              onChange(change);
               return;
             }
             throw new InvalidProtectedData();

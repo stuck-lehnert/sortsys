@@ -8,6 +8,7 @@ import {
 } from "./commercialDocumentContent";
 import { protectedCollections } from "./protectedObjects";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { listenDataChanges } from "./runtime/changes";
 
 afterEach(() => lockCryptoSession());
 
@@ -57,10 +58,15 @@ test("verified immutable parts are reused within one live store without exposing
     first.scope,
     new AbortController().signal,
   );
+  const changes = [];
+  const stopChanges = listenDataChanges(fixture.client, (domains) =>
+    changes.push(domains),
+  );
   try {
     const part = await store.stage("3", "scope", {
       description: "Originaler Text",
     });
+    expect(changes).toEqual([]);
     const [original, parallel] = await Promise.all([
       store.read(part),
       store.read(part),
@@ -79,9 +85,27 @@ test("verified immutable parts are reused within one live store without exposing
     await expect(
       store.read({ ...part, hash: part.hash + "changed" }),
     ).rejects.toThrow();
+    const open = await protectedCollections(
+      fixture.client,
+      new AbortController().signal,
+      [scope.domain],
+    );
+    const records = open(scope);
+    try {
+      await records.read();
+      await records.write([
+        await records.packet(`${scope.prefix}case`, {
+          description: "Vorgangsdaten",
+        }),
+      ]);
+      expect(changes).toEqual([new Set([scope.domain])]);
+    } finally {
+      records.close();
+    }
     store.close();
     await expect(store.read(part)).rejects.toThrow();
   } finally {
+    stopChanges();
     store.close();
   }
 });

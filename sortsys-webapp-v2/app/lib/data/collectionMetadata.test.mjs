@@ -2,6 +2,9 @@ import { afterEach, expect, test } from "bun:test";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedCollections } from "./protectedObjects";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { defineDataModel } from "./runtime/model";
+import { DataRuntime } from "./runtime/runtime";
+import { encryptedDataStorage } from "./runtime/storage";
 
 afterEach(() => lockCryptoSession());
 
@@ -12,6 +15,64 @@ const area = {
   prefix: "product:",
 };
 const metadataPaths = new Set(["zerotrust.access.snapshot"]);
+
+test("a business read reuses verified metadata while still checking encrypted objects and account lifetime", async () => {
+  const entries = {
+    domain: "testing:entries:master-data",
+    scope: "testing:entries",
+    facet: "master-data",
+    prefix: "entry:",
+  };
+  const fixture = await protectedTenant([entries]);
+  const context = await protectedCollections(
+    fixture.client,
+    new AbortController().signal,
+  );
+  const collection = context(entries);
+  try {
+    await collection.read();
+    await collection.write([
+      await collection.packet("entry:1", { title: "Geprüfter Inhalt" }),
+    ]);
+  } finally {
+    collection.close();
+  }
+  const model = defineDataModel({
+    name: "verified-context-test",
+    decode: (value) => value,
+    sources: () => [],
+    tables: [],
+  });
+  const request = { model, area: entries };
+  const runtime = new DataRuntime(
+    encryptedDataStorage(fixture.client),
+    () => {},
+  );
+  const metadataCount = () =>
+    fixture.calls.filter((call) => metadataPaths.has(call.path)).length;
+  const before = metadataCount();
+  try {
+    const documents = await runtime.read(
+      [request],
+      (view) => view.documents(request),
+      context,
+    );
+    expect(documents.map((document) => document.value)).toEqual([
+      { title: "Geprüfter Inhalt" },
+    ]);
+    expect(metadataCount()).toBe(before);
+    expect(
+      fixture.calls.some((call) => call.path === "zerotrust.objects.list"),
+    ).toBe(true);
+    runtime.revalidate();
+    await lockCryptoSession();
+    await expect(
+      runtime.read([request], (view) => view.documents(request), context),
+    ).rejects.toThrow();
+  } finally {
+    await runtime.close();
+  }
+});
 
 async function heldMetadata() {
   const fixture = await protectedTenant([area]);
