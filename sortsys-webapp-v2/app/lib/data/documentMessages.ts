@@ -70,13 +70,19 @@ export async function openDocumentMessages(
     throw new InvalidProtectedData();
   }
   documentMessageObject(room, "update", base64(randomSecret()));
-  const context = await protectedCollections(client, signal);
   const commercial = room.scope.startsWith("commercial:");
   const areas = commercial
     ? [...documentChannelKeys(room)]
         .sort()
         .map((facet) => commercialCollection(room.scope.slice(11), facet))
     : [fileCollection(room.scope.slice(8))];
+  const domains = new Set(areas.map((area) => area.domain));
+  if (commercial) {
+    domains.add(
+      commercialCollection(room.scope.slice(11), "master-data").domain,
+    );
+  }
+  const context = await protectedCollections(client, signal, [...domains]);
   const stores = areas.map((area) => ({ area, store: context(area) }));
   const outer = stores.find(
     (layer) => layer.area.facet === documentChannelOuter(room),

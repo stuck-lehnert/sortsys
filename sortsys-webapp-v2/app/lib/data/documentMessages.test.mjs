@@ -9,6 +9,34 @@ import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 afterEach(() => lockCryptoSession());
 
+test("a live channel loads only its required key domains and the document header domain", async () => {
+  const selected = commercialCollection("4", "offer-prices");
+  const header = commercialCollection("4", "master-data");
+  const other = commercialCollection("6", "master-data");
+  const tenant = await protectedTenant([selected, header, other]);
+  const messages = await openDocumentMessages(
+    tenant.client,
+    { scope: selected.scope, document: "5", facet: selected.facet },
+    new AbortController().signal,
+  );
+  try {
+    expect(
+      tenant.calls.filter((call) => call.path === "zerotrust.access.snapshot"),
+    ).toEqual([
+      {
+        path: "zerotrust.access.snapshot",
+        input: { domains: [selected.domain, header.domain] },
+      },
+    ]);
+    expect(
+      tenant.calls.some((call) => call.path === "zerotrust.creations.list"),
+    ).toBe(false);
+    expect(messages.canWrite).toBe(true);
+  } finally {
+    messages.close();
+  }
+});
+
 async function fixture(readOnlyFacet) {
   const tenant = await protectedTenant(
     COMMERCIAL_FACETS.map((facet) => commercialCollection("4", facet)),

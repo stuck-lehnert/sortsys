@@ -433,6 +433,15 @@ fn capabilities(
     allowed
 }
 impl Snapshot {
+    fn same_access(&self, next: &Self) -> bool {
+        self.subject == next.subject
+            && self.generation == next.generation
+            && self.version == next.version
+            && self.fingerprint == next.fingerprint
+            && self.allowed == next.allowed
+            && self.signing_key == next.signing_key
+    }
+
     fn loses_to(&self, next: &Self) -> bool {
         self.capabilities
             .iter()
@@ -565,9 +574,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
                 if next.generation != ticket.generation {
                     return Err(forbidden());
                 }
-                let changed = next.version != current.version
-                    || next.allowed != current.allowed
-                    || next.fingerprint != current.fingerprint;
+                let changed = !current.same_access(&next);
                 let reset = current.loses_to(&next);
                 current = next;
                 if changed {
@@ -594,7 +601,12 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             Event::DocumentMessage(room) => {
                 document_messages.insert(room);
             }
-            Event::Access | Event::Resync => {
+            Event::Access => {
+                // Another session may have changed. Reauthenticate this socket
+                // without discarding its browser state if its access is intact.
+                refresh = true;
+            }
+            Event::Resync => {
                 all = true;
                 refresh = true;
             }
@@ -634,6 +646,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         let mut reset = false;
         if refresh {
             let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
+            all |= !current.same_access(&next);
             reset = current.loses_to(&next);
             current = next;
             if current.generation != ticket.generation {
@@ -671,6 +684,39 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unchanged_session_checks_preserve_context_but_access_changes_do_not() {
+        let baseline = || Snapshot {
+            subject: "user:1".into(),
+            generation: "1".into(),
+            version: 1,
+            fingerprint: "rights-and-roles".into(),
+            capabilities: HashMap::new(),
+            roles: vec!["admin".into()],
+            allowed: HashSet::from(["catalog:products:master-data".into()]),
+            signing_key: vec![1; 32],
+        };
+        let before = baseline();
+        assert!(before.same_access(&baseline()));
+        let mut policy = baseline();
+        policy.version += 1;
+        assert!(!before.same_access(&policy));
+        let mut authority = baseline();
+        authority.generation = "2".into();
+        assert!(!before.same_access(&authority));
+        let mut rights = baseline();
+        rights.fingerprint = "changed-rights-or-roles".into();
+        assert!(!before.same_access(&rights));
+        let mut domains = baseline();
+        domains.allowed.clear();
+        assert!(!before.same_access(&domains));
+        let mut identity = baseline();
+        identity.signing_key = vec![2; 32];
+        assert!(!before.same_access(&identity));
+        let mut subject = baseline();
+        subject.subject = "user:2".into();
+        assert!(!before.same_access(&subject));
+    }
     #[test]
     fn effective_rights_ignore_gains_but_detect_denied_actions_and_removed_roles() {
         let make = |rules: Value, roles: Vec<String>| {

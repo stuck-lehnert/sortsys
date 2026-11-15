@@ -367,6 +367,34 @@ test("a replacement bearer session discards old responses even before the accoun
   }
 });
 
+test("requests waiting for synchronization cannot execute under a replacement bearer session", async () => {
+  await account();
+  const { base } = raw();
+  let opened = 0;
+  const client = createBusinessClient(base, {
+    openProducts: async () => {
+      opened++;
+      return products();
+    },
+  });
+  try {
+    const read = client.query("products.list", {});
+    const write = client.mutate("products.update", {
+      id: "1",
+      data: { name: "Prior session edit" },
+    });
+    base.setToken("replacement-session-token");
+    for (const pending of [read, write]) {
+      const [value, error] = await pending;
+      expect(value).toBeNull();
+      expect(error).toBeInstanceOf(Error);
+    }
+    expect(opened).toBe(0);
+  } finally {
+    client.dispose();
+  }
+});
+
 test("unknown actions and malformed inputs carry distinct errors without migration states", async () => {
   await account();
   const { base, requests } = raw();

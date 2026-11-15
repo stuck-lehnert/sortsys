@@ -22,6 +22,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import type { LivePositions } from "./liveCheckpoints";
 import { listenDataChanges } from "./runtime/changes";
+import { mapConcurrent } from "./runtime/concurrentReads";
 import { partialAddressRecord } from "./addressBook";
 import { unlockedAccount } from "../crypto/session";
 import {
@@ -231,8 +232,16 @@ export function connectProtectedGaebLive(
     saved(_value: LiveSnapshot) {},
     async flush(): Promise<string | LivePositions> {
       const positions: LivePositions = {};
-      for (const [facet, channel] of channels) {
-        const sequence = await channel.flush();
+      const snapshots = await mapConcurrent(
+        [...channels],
+        4,
+        async ([facet, channel]) => ({
+          facet,
+          channel,
+          sequence: await channel.flush(),
+        }),
+      );
+      for (const { facet, channel, sequence } of snapshots) {
         if (!commercial) {
           return sequence;
         }

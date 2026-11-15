@@ -60,6 +60,7 @@ import {
 } from "./deliveryNoteData";
 import { createContentAccess } from "./menuAccess";
 import { announceDataChanges, listenDataChanges } from "./runtime/changes";
+import { latestQuery } from "./runtime/latestQuery";
 import {
   TOOL_INDEX,
   TOOL_QUERIES,
@@ -564,10 +565,26 @@ export function createBusinessClient(
     }),
   );
   let synchronization: Promise<void> = Promise.resolve();
+  async function synchronized() {
+    const expected = account;
+    const lifetime = controller.signal;
+    let observed: Promise<void>;
+    do {
+      observed = synchronization;
+      await observed;
+      if (
+        closed ||
+        lifetime.aborted ||
+        account !== expected ||
+        unlockedAccount() !== expected
+      )
+        throw unavailable();
+    } while (observed !== synchronization);
+  }
   const contentAccess = createContentAccess(
     base,
     () => controller.signal,
-    () => synchronization,
+    synchronized,
   );
   let eventsController: AbortController | null = null;
   function restartEvents() {
@@ -583,6 +600,18 @@ export function createBusinessClient(
       return;
     const current = new AbortController();
     eventsController = current;
+    let release: () => void = () => {};
+    const admission = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const admitted = () => {
+      current.signal.removeEventListener("abort", admitted);
+      release();
+    };
+    current.signal.addEventListener("abort", admitted, { once: true });
+    synchronization = Promise.all([synchronization, admission]).then(
+      () => undefined,
+    );
     void import("./events")
       .then((module) =>
         module.watchEncryptedEvents(
@@ -590,9 +619,10 @@ export function createBusinessClient(
           options.endpoint ?? "/api/v2",
           remoteChange,
           current.signal,
+          admitted,
         ),
       )
-      .catch(() => undefined);
+      .catch(admitted);
   }
   function remoteChange(change: EncryptedChange) {
     if (closed) return;
@@ -1043,7 +1073,7 @@ export function createBusinessClient(
     input: unknown,
   ): Promise<[unknown | null, RpcClientError | null]> {
     try {
-      await synchronization;
+      await synchronized();
       if (adapters.owns(path)) return [await adapters.query(path, input), null];
       if (TOOL_QUERIES.has(path)) {
         const signal = controller.signal,
@@ -1269,7 +1299,7 @@ export function createBusinessClient(
     options?: { signal?: AbortSignal },
   ): Promise<[unknown, null] | [null, Error]> {
     try {
-      await synchronization;
+      await synchronized();
       if (adapters.owns(path, true)) {
         const value = await adapters.mutate(path, input, options?.signal);
         notify((query) => adapters.related(query, path));
@@ -1675,7 +1705,7 @@ export function createBusinessClient(
   async function fileWork<T>(
     operation: (files: Files) => Promise<T>,
   ): Promise<T> {
-    await synchronization;
+    await synchronized();
     const expected = account,
       signal = controller.signal;
     const value = await operation(await fileStore());
@@ -1792,7 +1822,7 @@ export function createBusinessClient(
     ): Promise<DocumentEditorSession> {
       addressId(caseId);
       addressId(id);
-      await synchronization;
+      await synchronized();
       const expectedAccount = account;
       const context = editorController.signal;
       const assertCurrent = () => {
@@ -1825,7 +1855,7 @@ export function createBusinessClient(
     async live(
       options: Omit<import("./gaebLive").ProtectedGaebLiveOptions, "name">,
     ) {
-      await synchronization;
+      await synchronized();
       const signal = AbortSignal.any([editorController.signal, options.signal]);
       signal.throwIfAborted();
       const module = await import("./gaebLive");
@@ -1855,7 +1885,7 @@ export function createBusinessClient(
       addressId(caseId);
       addressId(id);
       cancellation?.throwIfAborted();
-      await synchronization;
+      await synchronized();
       const expected = account,
         signal = controller.signal;
       const context = editorController.signal;
@@ -1878,7 +1908,7 @@ export function createBusinessClient(
   async function editOrganization<
     K extends import("./organizationData").OrganizationKind,
   >(kind: K): Promise<import("./organizationData").OrganizationEdit<K>> {
-    await synchronization;
+    await synchronized();
     const expected = account,
       signal = controller.signal;
     const edit = await (await organizationStore()).edit(kind);
@@ -1890,7 +1920,7 @@ export function createBusinessClient(
     return {
       value: edit.value,
       async save(value) {
-        await synchronization;
+        await synchronized();
         live();
         await edit.save(value);
         live();
@@ -1915,7 +1945,7 @@ export function createBusinessClient(
     work: (store: LogoStore, signal: AbortSignal) => Promise<T>,
     cancellation?: AbortSignal,
   ): Promise<T> {
-    await synchronization;
+    await synchronized();
     const expected = account;
     const signals = [controller.signal, editorController.signal];
     if (cancellation) signals.push(cancellation);
@@ -1962,7 +1992,7 @@ export function createBusinessClient(
   async function printWork<T>(
     work: (store: PrintTemplates, context: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    await synchronization;
+    await synchronized();
     const expected = account,
       signal = controller.signal,
       context = editorController.signal;
@@ -2036,7 +2066,7 @@ export function createBusinessClient(
   };
   const commonCostActions = {
     async save(values: readonly CommonCostInput[]) {
-      await synchronization;
+      await synchronized();
       await adapters.mutate(COMMON_COST_SAVE, values);
       notify((path) => COMMON_COST_QUERIES.has(path));
     },
@@ -2083,19 +2113,16 @@ export function createBusinessClient(
       if (technical(path)) return base.streamQuery(path, input, opts);
       return new Observable<[unknown | null, RpcClientError | null]>(
         (subscriber) => {
-          let active = true,
-            revision = 0;
-          const refresh = () => {
-            const version = ++revision;
-            void query(path, input).then((value) => {
-              if (active && version === revision) subscriber.next(value);
-            });
-          };
-          listeners.set(refresh, path);
-          refresh();
+          const observer = latestQuery(
+            () => query(path, input),
+            (value) => subscriber.next(value),
+            (error) => subscriber.next([null, RpcClientError.from(error)]),
+          );
+          listeners.set(observer.refresh, path);
+          observer.refresh();
           return () => {
-            active = false;
-            listeners.delete(refresh);
+            observer.close();
+            listeners.delete(observer.refresh);
           };
         },
       );

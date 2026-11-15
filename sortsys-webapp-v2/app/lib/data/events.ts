@@ -34,6 +34,7 @@ export async function watchEncryptedEvents(
   endpoint: string,
   onChange: (change: EncryptedChange) => void,
   signal: AbortSignal,
+  initialAdmission?: () => void,
 ): Promise<void> {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
@@ -147,7 +148,15 @@ export async function watchEncryptedEvents(
               ready = true;
               delay = 250;
               clearTimeout(timeout);
-              onChange({ reset, all: true, control: true, domains: {} });
+              if (initialAdmission) {
+                // This consumer has held its first business reads until the
+                // subscription baseline. Those reads will already be fresh.
+                const admitted = initialAdmission;
+                initialAdmission = undefined;
+                admitted();
+              } else {
+                onChange({ reset, all: true, control: true, domains: {} });
+              }
               return;
             }
             if (raw?.type === "document-message" && ready) {
@@ -206,6 +215,12 @@ export async function watchEncryptedEvents(
       });
     } catch {
       /* Reconnect without persisting tickets or transport diagnostics. */
+    } finally {
+      // HTTP reads remain usable after a failed first connection. A later
+      // admission must then resynchronize everything read during that gap.
+      const release = initialAdmission;
+      initialAdmission = undefined;
+      release?.();
     }
     if (signal.aborted || unlockedAccount() !== account || !client.loggedIn())
       return;
