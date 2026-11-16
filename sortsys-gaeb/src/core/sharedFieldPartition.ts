@@ -94,6 +94,7 @@ export class SharedFieldPartition {
     {
       baseline: string;
       pending?: string;
+      pendingBaseline?: string;
       known: Set<string>;
       protectNative?: boolean;
       editable: boolean;
@@ -192,6 +193,8 @@ export class SharedFieldPartition {
       field.baseline = this.nativeValue(this.native, key) ?? field.baseline;
       field.pending =
         field.protectNative || pending === field.baseline ? undefined : pending;
+      field.pendingBaseline =
+        field.pending === undefined ? undefined : field.baseline;
       field.known = new Set([
         field.baseline,
         ...(field.pending === undefined ? [] : [field.pending]),
@@ -232,6 +235,7 @@ export class SharedFieldPartition {
       const value = this.nativeValue(this.native, key) ?? field.baseline;
       field.baseline = value;
       field.pending = undefined;
+      field.pendingBaseline = undefined;
       field.protectNative = false;
       field.known = new Set([value]);
     }
@@ -255,6 +259,7 @@ export class SharedFieldPartition {
       if (previous) {
         if (previous.editable && !field.editable) {
           previous.pending = undefined;
+          previous.pendingBaseline = undefined;
           this.undoManager.clear();
         }
         previous.editable = field.editable;
@@ -281,6 +286,7 @@ export class SharedFieldPartition {
         editable: field.editable,
         baseline,
         pending: field.value === baseline ? undefined : field.value,
+        pendingBaseline: field.value === baseline ? undefined : baseline,
         known: new Set([baseline, field.value]),
       });
       added = true;
@@ -408,6 +414,7 @@ export class SharedFieldPartition {
       return;
     }
     if (!this.has(key)) {
+      field.pendingBaseline ??= before;
       field.pending = value;
       return;
     }
@@ -620,7 +627,10 @@ export class SharedFieldPartition {
         plans.push({
           key,
           edits: pendingTextEdits(
-            baselines.get(key) ?? field.baseline,
+            // A live room may have been initialized long before the current
+            // native snapshot. Early typing replaces what this client saw,
+            // rather than text from that historical initializer.
+            field.pendingBaseline ?? field.baseline,
             field.pending,
             checked.getText(key).toString(),
           ),
@@ -647,6 +657,7 @@ export class SharedFieldPartition {
         const text = this.doc.getText(plan.key);
         this.undoManager.addToScope(text);
         field.pending = undefined;
+        field.pendingBaseline = undefined;
         this.doc.transact(() => {
           for (const edit of plan.edits) {
             if (edit.remove > 0) {

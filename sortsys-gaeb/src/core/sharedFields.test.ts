@@ -153,6 +153,34 @@ test("discarding a staged initializer retains the old baseline and queued local 
   }
 });
 
+test("typing into a published snapshot before replay uses that snapshot as its edit baseline", () => {
+  const key = "item-a:text:0";
+  const original = "Ursprüngliches Bauvorhaben";
+  const published = "Gemeinsames Auftrags-LV von John und Frank";
+  const replacement = "Nach dem Entzug ausschließlich für John";
+  const initial = initializeSharedField(key, original);
+  const reader = fieldReader(published);
+  const writer = new Y.Doc();
+  const reception = reader.beginReceive();
+  try {
+    reader.edit(key, published, replacement);
+    Y.applyUpdate(writer, decodeUpdate(initial));
+    writer.transact(() => {
+      const field = writer.getText(key);
+      field.delete(0, field.length);
+      field.insert(0, published);
+    });
+    reception.initialize(key, original, initial);
+    reception.update(encodeUpdate(Y.encodeStateAsUpdate(writer)));
+    reception.commit();
+    assert.equal(reader.value(key), replacement);
+  } finally {
+    reception.destroy();
+    reader.destroy();
+    writer.destroy();
+  }
+});
+
 test("only the first complete valid initializer wins and cannot smuggle another field", () => {
   const key = "item-a:text:0";
   const reader = fieldReader();
