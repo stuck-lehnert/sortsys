@@ -21,6 +21,7 @@ import {
 import { client } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
 import { ProjectAccess } from "./ProjectAccess";
+import { CreationAccess } from "./CreationAccess";
 import { PersonnelAccess } from "./PersonnelAccess";
 import { CommercialAccess } from "./CommercialAccess";
 import { ToolAccess } from "./ToolAccess";
@@ -321,6 +322,14 @@ export default function OrganizationInvitations({
           {uiText("Aktualisieren", "Refresh")}
         </MyButton>
       </div>
+      {editing && selected && !loadingAccess && (
+        <CreationAccess
+          key={`creation:${selected.id}`}
+          user={`user:${selected.id}`}
+          disabled={busy}
+          onBusyChange={setBusy}
+        />
+      )}
       {editing && selected && !loadingAccess && (
         <ProjectAccess
           key={`projects:${selected.id}`}

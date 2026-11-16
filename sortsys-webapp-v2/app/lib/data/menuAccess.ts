@@ -153,7 +153,10 @@ export function projectMenuAccess(permissions: Policy, subject: string) {
       case "commercial":
         return has(creationScope(kind), "master-data", "create");
       case "tool":
-        return can("catalog:tools", "master-data", "create");
+        return (
+          has(creationScope(kind), "master-data", "create") &&
+          can("catalog:tools", "master-data", "update")
+        );
       case "tool-tracking":
         return has(creationScope(kind), "master-data", "create");
       case "regie-report":
@@ -172,11 +175,27 @@ export function projectMenuAccess(permissions: Policy, subject: string) {
         return can(MASTER[kind][0], MASTER[kind][1], "create");
     }
   };
+  function canBookTool(id?: string): boolean {
+    if (!canCreate("tool-tracking")) return false;
+    const eligible = (scope: string) =>
+      can(scope, "master-data", "update") && can(scope, "procurement", "read");
+    if (id !== undefined) {
+      const scope = `tool:${id}`;
+      return creationResource(scope) !== null && eligible(scope);
+    }
+    return access.areas.some(
+      ({ scope, facet }) =>
+        facet === "master-data" &&
+        creationResource(scope)?.namespace === "tool" &&
+        eligible(scope),
+    );
+  }
   return {
     subject,
     can,
     canAny,
     canCreate,
+    canBookTool,
     canSeeOffers: () =>
       canCreate("commercial") || canAny("commercial", "master-data", "read"),
     role(role: MenuRole): boolean | undefined {

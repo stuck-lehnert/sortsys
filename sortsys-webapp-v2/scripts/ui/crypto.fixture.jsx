@@ -25,6 +25,7 @@ import {
   signingPair,
   signPolicy,
   verify,
+  verifyCreationCapability,
 } from "@sortsys/zerotrust/sortsys";
 import { createBusinessDatabase } from "../../app/lib/data/database";
 import { readBusinessRows } from "../../app/lib/data/products";
@@ -3169,6 +3170,11 @@ window.cryptoFixture = {
       },
     };
     let heldPolicyRead = null;
+    const creationCertificates = new Map();
+    let discardCreationCertificate = false;
+    window.cryptoFixture.failNextCreationCertificate = () => {
+      discardCreationCertificate = true;
+    };
     gaebDocuments.choices = async (signal) => {
       signal?.throwIfAborted();
       return replies["commercial.cases.list"];
@@ -3213,6 +3219,9 @@ window.cryptoFixture = {
       heldPolicyRead?.captured === true;
     window.cryptoFixture.releaseAccessRead = () => heldPolicyRead?.release();
     client.query = async (path, input) => {
+      if (path === "zerotrust.creations.capability") {
+        return [creationCertificates.get(input.namespace) ?? null, null];
+      }
       if (
         path === "zerotrust.policy.get" &&
         heldPolicyRead &&
@@ -3291,6 +3300,12 @@ window.cryptoFixture = {
       await lockCryptoSession();
     };
     client.mutate = async (path, input) => {
+      if (path === "zerotrust.creations.grant") {
+        await verifyCreationCapability(input, authorityKey.publicKey);
+        if (discardCreationCertificate) discardCreationCertificate = false;
+        else creationCertificates.set(input.namespace, input);
+        return [{ success: true }, null];
+      }
       if (path !== "zerotrust.policy.replace") {
         throw new Error("Unexpected access form mutation: " + path);
       }

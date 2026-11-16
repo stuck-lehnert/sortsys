@@ -265,7 +265,12 @@ test("tool menus distinguish individual masters, costs, inventories and tracking
     ),
   ).toBe(true);
   const index = project([rule("catalog:tools", "master-data", [...ACTIONS])]);
-  expect(index.canCreate("tool")).toBe(true);
+  expect(index.canCreate("tool")).toBe(false);
+  const toolCreation = project([
+    rule("catalog:tools", "master-data", ["read", "update"]),
+    rule("create:tool", "master-data", ["create"]),
+  ]);
+  expect(toolCreation.canCreate("tool")).toBe(true);
   expect(index.role("view:tools")).toBe(false);
   const oneBooking = project([
     rule("tool-tracking:5", "master-data", [...ACTIONS]),
@@ -276,6 +281,27 @@ test("tool menus distinguish individual masters, costs, inventories and tracking
   ]);
   expect(newBookings.canCreate("tool-tracking")).toBe(true);
   expect(newBookings.role("view:toolTrackings")).toBe(false);
+  const incomplete = project([
+    rule("create:tool-tracking", "master-data", ["create"]),
+    rule("tool:4", "master-data", ["read", "update"]),
+    rule("tool:5", "procurement", ["read"]),
+  ]);
+  expect(incomplete.canBookTool()).toBe(false);
+  expect(incomplete.canBookTool("4")).toBe(false);
+  const eligible = project([
+    rule("create:tool-tracking", "master-data", ["create"]),
+    rule("tool:4", "master-data", ["read", "update"]),
+    rule("tool:4", "procurement", ["read"]),
+  ]);
+  expect(eligible.canBookTool()).toBe(true);
+  expect(eligible.canBookTool("4")).toBe(true);
+  expect(eligible.canBookTool("5")).toBe(false);
+  expect(
+    project([
+      rule("tool:4", "master-data", ["read", "update"]),
+      rule("tool:4", "procurement", ["read"]),
+    ]).canBookTool(),
+  ).toBe(false);
 });
 
 test("personnel menus require name grants for lists and distinguish private field writes", () => {

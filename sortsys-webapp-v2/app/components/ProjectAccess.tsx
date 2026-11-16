@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { QueryResult } from "@sortsys/v2-client";
-import { Checkbox, ComboBox } from "@sortsys/react-components";
+import { ComboBox } from "@sortsys/react-components";
 import { client } from "~/lib/client";
 import {
   changeAreaActionAccesses,
-  changeCommercialCreation,
-  changeProjectCreation,
-  memberCommercialCreation,
   memberProjectAccesses,
-  memberProjectCreation,
   type ProjectAccessLevels,
 } from "~/lib/crypto/permissions";
 import { uiText } from "~/lib/i18n";
@@ -82,10 +78,6 @@ export function ProjectAccess({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
     [version, setVersion] = useState(0);
-  const [creation, setCreation] = useState(false),
-    [savedCreation, setSavedCreation] = useState(false);
-  const [commercialCreation, setCommercialCreation] = useState(false),
-    [savedCommercialCreation, setSavedCommercialCreation] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     setProjects(null);
@@ -96,18 +88,12 @@ export function ProjectAccess({
     void Promise.all([
       required(client.query("projects.list", {})),
       memberProjectAccesses(client, user, controller.signal),
-      memberProjectCreation(client, user, controller.signal),
-      memberCommercialCreation(client, user, controller.signal),
     ])
-      .then(([rows, rights, canCreate, canCreateCommercial]) => {
+      .then(([rows, rights]) => {
         if (!controller.signal.aborted) {
           setProjects(rows);
           setAccess(rights);
           setDrafts(emptyDrafts());
-          setCreation(canCreate);
-          setSavedCreation(canCreate);
-          setCommercialCreation(canCreateCommercial);
-          setSavedCommercialCreation(canCreateCommercial);
         }
       })
       .catch(() => {
@@ -154,41 +140,8 @@ export function ProjectAccess({
       onBusyChange?.(false);
     }
   }
-  async function saveCreation() {
-    if (busy || disabled) return;
-    const controller = new AbortController();
-    operation.current = controller;
-    setBusy(true);
-    onBusyChange?.(true);
-    setError(false);
-    try {
-      if (creation !== savedCreation) {
-        await changeProjectCreation(client, user, creation, controller.signal);
-        if (!controller.signal.aborted) setSavedCreation(creation);
-      }
-      if (commercialCreation !== savedCommercialCreation) {
-        await changeCommercialCreation(
-          client,
-          user,
-          commercialCreation,
-          controller.signal,
-        );
-        if (!controller.signal.aborted)
-          setSavedCommercialCreation(commercialCreation);
-      }
-    } catch {
-      if (!controller.signal.aborted) setError(true);
-    } finally {
-      if (!controller.signal.aborted) setBusy(false);
-      if (operation.current === controller) operation.current = null;
-      onBusyChange?.(false);
-    }
-  }
   return (
     <section className="space-y-4 border-t border-border pt-5">
-      <h3 className="text-lg font-semibold">
-        {uiText("Anlageberechtigungen", "Creation permissions")}
-      </h3>
       {error && (
         <MyCallout color="red">
           {uiText(
@@ -197,42 +150,6 @@ export function ProjectAccess({
           )}
         </MyCallout>
       )}
-      <div className="flex flex-wrap items-center gap-4">
-        <Checkbox
-          id="project-creation"
-          labelText={uiText("Neue Projekte anlegen", "Create new projects")}
-          checked={creation}
-          disabled={busy || disabled || !projects}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-            setCreation(event.target.checked)
-          }
-        />
-        <Checkbox
-          id="commercial-creation"
-          labelText={uiText(
-            "Neue Angebote und Aufträge anlegen",
-            "Create new offers and contracts",
-          )}
-          checked={commercialCreation}
-          disabled={busy || disabled || !projects}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-            setCommercialCreation(event.target.checked)
-          }
-        />
-        <MyButton
-          kind="tertiary"
-          disabled={
-            busy ||
-            disabled ||
-            !projects ||
-            (creation === savedCreation &&
-              commercialCreation === savedCommercialCreation)
-          }
-          onClick={() => void saveCreation()}
-        >
-          {uiText("Anlageberechtigung speichern", "Save creation permission")}
-        </MyButton>
-      </div>
       <h3 className="text-lg font-semibold">
         {uiText("Projektzugriff", "Project access")}
       </h3>

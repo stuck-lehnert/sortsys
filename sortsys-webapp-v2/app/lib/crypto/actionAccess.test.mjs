@@ -3,6 +3,7 @@ import {
   ACTIONS,
   base64,
   certifyIdentity,
+  certifyCreationCapability,
   compilePolicy,
   createAccountVault,
   createIdentity,
@@ -13,6 +14,7 @@ import {
   signPolicy,
   verifyPolicy,
   verifyDomain,
+  verifyCreationCapability,
 } from "@sortsys/zerotrust/sortsys";
 import { acceptVault, lockCryptoSession } from "./session";
 import {
@@ -20,6 +22,8 @@ import {
   changeMemberAccess,
   memberAreaAccesses,
   finishAccessChanges,
+  changeCreationAccesses,
+  memberCreationAccesses,
 } from "./permissions";
 import { MASTER_DATA_AREAS, profilePatch } from "./accessProfiles";
 import { projectAccessArea } from "../data/projectScope";
@@ -90,11 +94,12 @@ async function fixture() {
   );
   const calls = [],
     saved = [],
+    capabilities = new Map(),
     state = { mode: "normal" };
   const client = {
     loggedIn: () => true,
     async invalidate() {},
-    async query(path) {
+    async query(path, input) {
       calls.push(path);
       if (path === "auth.sessionInfo")
         return [
@@ -112,6 +117,9 @@ async function fixture() {
       if (path === "zerotrust.policy.get") return [permissions, null];
       if (path === "zerotrust.status") return [{ profile: setup }, null];
       if (path === "zerotrust.creations.list") return [[], null];
+      if (path === "zerotrust.creations.capability") {
+        return [capabilities.get(input.namespace) ?? null, null];
+      }
       if (path === "zerotrust.identities.list")
         return [
           [setup.owner, certificate].map((cert) => ({
@@ -136,6 +144,19 @@ async function fixture() {
     },
     async mutate(path, input) {
       calls.push(path);
+      if (path === "zerotrust.creations.grant") {
+        await verifyCreationCapability(input, authorityKey.publicKey);
+        if (state.mode !== "false-capability")
+          capabilities.set(input.namespace, input);
+        if (state.duringGrant) {
+          const work = state.duringGrant;
+          state.duringGrant = null;
+          await work();
+        }
+        if (state.mode === "lost-capability")
+          throw new Error("Lost certificate acknowledgement");
+        return [{ success: true }, null];
+      }
       if (path !== "zerotrust.policy.replace")
         throw new Error("Unexpected mutation: " + path);
       await verifyPolicy(input, {
@@ -156,6 +177,7 @@ async function fixture() {
     state,
     saved,
     calls,
+    capabilities,
     get: () => permissions,
     setPolicy: (value) => {
       permissions = value;
@@ -465,6 +487,130 @@ test("fixed-area access reads effective custom actions and rejects an uncertifie
   ]);
   await expect(
     memberAreaAccesses(f.client, "user:3", [f.a], new AbortController().signal),
+  ).rejects.toThrow();
+  expect(f.saved).toHaveLength(0);
+});
+
+test("creation permissions publish edited scopes together and preserve a concurrent unrelated grant", async () => {
+  const f = await fixture();
+  const signal = new AbortController().signal;
+  expect(await memberCreationAccesses(f.client, "user:2", signal)).toEqual({
+    project: false,
+    commercial: false,
+    tool: false,
+    "tool-tracking": false,
+  });
+  const initial = structuredClone(f.get().rules);
+  const concurrent = {
+    subject: "user:2",
+    scope: "tool:8",
+    facet: "procurement",
+    actions: ["read"],
+    effect: "allow",
+  };
+  f.state.duringGrant = async () => {
+    const { signature, ...current } = f.get();
+    f.setPolicy(
+      await signPolicy(
+        {
+          ...current,
+          version: String(BigInt(current.version) + 1n),
+          rules: [...current.rules, concurrent],
+        },
+        f.authorityKey.privateKey,
+      ),
+    );
+  };
+  await changeCreationAccesses(
+    f.client,
+    "user:2",
+    {
+      commercial: true,
+      "tool-tracking": true,
+    },
+    signal,
+  );
+  expect(f.saved).toHaveLength(1);
+  expect(f.capabilities.size).toBe(2);
+  for (const capability of f.capabilities.values()) {
+    expect(capability.creator.user).toBe("user:2");
+    expect(capability.readers.map((reader) => reader.user)).toEqual(["user:1"]);
+  }
+  const creation = (rule) =>
+    rule.subject === "user:2" && rule.scope.startsWith("create:");
+  expect(f.get().rules.filter((rule) => !creation(rule))).toEqual([
+    ...initial,
+    concurrent,
+  ]);
+  expect(await memberCreationAccesses(f.client, "user:2", signal)).toEqual({
+    project: false,
+    commercial: true,
+    tool: false,
+    "tool-tracking": true,
+  });
+  await changeCreationAccesses(
+    f.client,
+    "user:2",
+    { "tool-tracking": false },
+    signal,
+  );
+  const access = await memberCreationAccesses(f.client, "user:2", signal);
+  expect(access.commercial).toBe(true);
+  expect(access["tool-tracking"]).toBe(false);
+  expect(f.capabilities.size).toBe(2);
+});
+
+for (const mode of ["false-capability", "lost-capability", "false"]) {
+  test(`creation certificate and policy readback handle ${mode} without false success`, async () => {
+    const f = await fixture();
+    f.state.mode = mode;
+    const signal = new AbortController().signal;
+    const work = changeCreationAccesses(
+      f.client,
+      "user:2",
+      { "tool-tracking": true },
+      signal,
+    );
+    if (mode === "lost-capability") {
+      await work;
+      expect(
+        (await memberCreationAccesses(f.client, "user:2", signal))[
+          "tool-tracking"
+        ],
+      ).toBe(true);
+      expect(f.saved).toHaveLength(1);
+    } else {
+      await expect(work).rejects.toThrow();
+      expect(
+        (await memberCreationAccesses(f.client, "user:2", signal))[
+          "tool-tracking"
+        ],
+      ).toBe(false);
+      expect(f.saved).toHaveLength(mode === "false-capability" ? 0 : 1);
+    }
+  });
+}
+
+test("a different valid creation certificate cannot acknowledge the requested delegation", async () => {
+  const f = await fixture();
+  const query = f.client.query;
+  f.client.query = async (path, input) => {
+    const reply = await query(path, input);
+    if (path !== "zerotrust.creations.capability" || !reply[0]) return reply;
+    const { signature, ...candidate } = reply[0];
+    const substituted = await certifyCreationCapability(
+      { ...candidate, id: "different-delegation" },
+      f.authorityKey.privateKey,
+    );
+    return [substituted, null];
+  };
+  await expect(
+    changeCreationAccesses(
+      f.client,
+      "user:2",
+      { "tool-tracking": true },
+      new AbortController().signal,
+    ),
   ).rejects.toThrow();
   expect(f.saved).toHaveLength(0);
 });

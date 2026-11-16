@@ -26,12 +26,24 @@ für ein anderes Werkzeug schalten diese Aktionen nicht frei. Die Auswahl lädt
 nur freigegebene Stammdaten und verwendet für die dabei gelesenen Bereiche einen
 gemeinsam geprüften Berechtigungsstand.
 
+Unter „Anlageberechtigungen“ erlaubt „Neue Werkzeugbuchungen anlegen“ die Ausgabe
+und eine angenommene Umbuchung. Diese Freigabe öffnet keine bestehenden Werkzeuge
+und ersetzt deren nötige Einzelrechte nicht. Ein Entzug verhindert neue
+Buchungen; bereits angelegte Buchungen behalten ihre eigenen Freigaben. Der
+verpflichtende Administrator erhält bei einer neuen Buchung ebenfalls deren
+Schlüssel, ohne dass der Ersteller den privaten Mandantenschlüssel bekommt.
+
 Der Browserlauf mit John und Frank verwendet zwei API-Instanzen und prüft diesen
 Ablauf über die tatsächlichen Formulare. Dazu gehören die Änderung ohne
 Kostenfreigabe, unveränderte Preise, der Rechteentzug und die erneute Freigabe
 zum Lesen. Schreibrechte für ein zweites Werkzeug öffnen dabei keine Aktionen
 beim ersten. Die Auswahl und die getrennten Buchungsfreigaben haben zusätzliche
 Tests mit echten kryptografischen Nachweisen.
+
+Ein weiterer Browserlauf legt mit Franks delegiertem Anlegerecht eine Buchung
+an. John kann sie über die andere API-Instanz lesen. Nach dem Entzug darf Frank
+keine neue Buchung beginnen, die vorhandene Buchung aber weiterhin öffnen und
+das Werkzeug auch ohne aktuelle Preisfreigabe zurückgeben.
 
 Bei einer Ausgabe werden die aktive Buchung des Werkzeugs und der neue
 Buchungsdatensatz gemeinsam veröffentlicht. Eine Umbuchung beendet die alte
@@ -63,6 +75,9 @@ Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
 - Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
   auf die Werkzeugkosten, um den historischen Kostenstand anzulegen. Eine
   Übernahme dieses Kostenstands ohne Entschlüsselung ist noch anzuschließen.
+- Der Sammeldialog gibt bereits gebuchte Werkzeuge vor einer neuen Ausgabe
+  derzeit separat zurück. Dieser Wechsel muss wie die angenommene
+  Umbuchungsanfrage in einem gemeinsamen atomaren Befehl erfolgen.
 - Die gemeinsame lokale Suche unterstützt Wortpräfixe. Der vollständige
   Vergleich mit der bisherigen PostgreSQL-Textsuche steht noch aus.
 

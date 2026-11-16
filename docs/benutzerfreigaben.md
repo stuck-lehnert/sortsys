@@ -120,8 +120,9 @@ bearbeitete Bereiche werden als eine signierte Freigabe gespeichert.
 Die festen Profile setzen den gesamten Aktionsumfang des Bereichs neu: **Kein
 Zugriff** entfernt alle Aktionen, **Lesen** erlaubt nur das Lesen und **Lesen
 und bearbeiten** umfasst auch das Anlegen und Löschen. Bereits vorhandene
-zusätzliche Rechte werden bei **Individuell** angezeigt. Für deren gezielte
-Verwaltung fehlen noch eigene Abläufe.
+zusätzliche Rechte werden bei **Individuell** angezeigt. Dort lassen sich Lesen,
+Anlegen, Bearbeiten und Löschen getrennt ändern. Weitere angezeigte Aktionen
+bleiben erhalten, wenn nur eines dieser Einzelrechte geändert wird.
 
 Abwesenheitsanträge und Entscheidungen haben eigene Freigaben. Zertifizierte
 Mitarbeitende können eigene Abwesenheiten beantragen; ihre Vorgesetzten dürfen
@@ -135,12 +136,23 @@ zugehörigen Personalangaben enthalten den Urlaubsanspruch, aber keine internen
 Stundensätze. Die technischen Prüfungen und ihre Grenzen beschreibt der
 [Abwesenheitsablauf](abwesenheiten-protokoll.md).
 
-Unter **Anlageberechtigungen** lassen sich **Neue Projekte anlegen** und **Neue
-Angebote und Aufträge anlegen** unabhängig freigeben. Ein neuer kaufmännischer
+Unter **Anlageberechtigungen** lassen sich neue Projekte, Angebote und Aufträge
+sowie Werkzeugbuchungen unabhängig freigeben. Ein neuer kaufmännischer
 Bereich braucht kein vorab angelegtes Projekt. Die signierte Freigabe nennt die
 berechtigten Ersteller und die verpflichtenden Empfänger; der private
 Mandantenschlüssel wird nicht weitergegeben. Ein Entzug verhindert weitere
-Anlagen und ändert keine bestehenden Einzelfreigaben.
+Anlagen und ändert keine bestehenden Einzelfreigaben. Mehrere geänderte
+Anlegerechte werden gemeinsam signiert. Der Client liest jedes neue Zertifikat
+zurück und prüft seine Signatur, bevor die Zugriffsregel es aktiviert. Eine
+falsche Erfolgsantwort schaltet damit kein ungeprüftes Recht frei; ein erneuter
+Versuch kann die noch offene Änderung abschließen.
+
+Für eine Werkzeugausgabe werden zusätzlich die Schreibfreigabe des Werkzeugs
+und derzeit dessen Kostenfreigabe benötigt. Das Anlegerecht allein öffnet keine
+vorhandenen Werkzeuge oder Buchungen. Bei der Rückgabe wird kein Zugriff auf die
+aktuellen Werkzeugpreise benötigt. Die
+[Werkzeugverwaltung](verschluesselte-werkzeuge.md) beschreibt die noch fehlende
+Preisübernahme ohne Entschlüsselung.
 
 Der Abschnitt **Projektzugriff** verwaltet Grunddaten, Dateien, Auftragswerte,
 Rechnungswerte und Beschaffung unabhängig je Projekt. Lieferscheine,

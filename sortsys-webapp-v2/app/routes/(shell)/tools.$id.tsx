@@ -92,10 +92,7 @@ export default function ToolDetailPage() {
   const latestInventory = sortedInventories?.[0];
   const toolScope = `tool:${id}`;
   const canEditTool = sessionInfo.canAccess(toolScope, "master-data", "update");
-  const canBookTool =
-    canEditTool &&
-    sessionInfo.canCreate("tool-tracking") &&
-    sessionInfo.canAccess(toolScope, "procurement", "read");
+  const canBookTool = sessionInfo.canBookTool(id);
   const trackingScope = activeTracking
     ? `tool-tracking:${activeTracking.id}`
     : null;

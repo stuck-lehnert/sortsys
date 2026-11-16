@@ -73,6 +73,21 @@ ein anderes Projekt genügt nicht. Der Reiter **Anhänge** benötigt zusätzlich
 Lesezugriff auf die Projektdateien. Die Dokumentensuche erscheint bei einer
 entsprechenden Dateifreigabe.
 
+## Werkzeuge ausgeben
+
+**Werkzeuge einbuchen** verwendet im Seitenmenü und in der Detailansicht
+dieselbe Prüfung. Sie verlangt das Recht für neue Werkzeugbuchungen sowie
+Schreibzugriff auf Stammdaten und derzeit Lesezugriff auf die Kosten desselben
+Werkzeugs. Eine Schreibfreigabe für Werkzeug A und eine Preisfreigabe für
+Werkzeug B reichen dafür nicht aus. Ohne das Anlegerecht bleibt die Aktion
+ausgeblendet, auch wenn bereits vorhandene Buchungen bearbeitet werden dürfen.
+
+Eine Rückgabe benötigt das Anlegerecht nicht. Die ursprüngliche Buchung bleibt
+auch nach dessen Entzug zugänglich, solange ihre Einzelfreigaben bestehen.
+**Werkzeug erstellen** benötigt ebenfalls eine eigene Anlagefreigabe und den
+gemeinsamen Nummernindex; das Änderungsrecht für ein vorhandenes Werkzeug
+erlaubt keine neue Anlage.
+
 ## Laufende Aktualisierung
 
 Änderungshinweise über den WebSocket verwerfen die bisherige Menüfreigabe.

@@ -2848,6 +2848,82 @@ async function waitForAccessSave(page, button) {
   );
 }
 
+for (const failure of ["certificate", "policy"]) {
+  test(`creation access retains edited booking permissions after a false ${failure} acknowledgement`, async () => {
+    const { context, page, external } = await open();
+    try {
+      await page.evaluate(() => window.cryptoFixture.showUserAccess());
+      await page.getByRole("combobox", { name: "Benutzerkonto" }).fill("frank");
+      await page
+        .getByRole("option", { name: "frank.doe", exact: true })
+        .click();
+      await waitForClosedListboxes(page);
+      const project = page.getByRole("checkbox", {
+        name: "Neue Projekte anlegen",
+        exact: true,
+      });
+      const booking = page.getByRole("checkbox", {
+        name: "Neue Werkzeugbuchungen anlegen",
+        exact: true,
+      });
+      await revealField(page, booking);
+      await booking.focus();
+      await booking.press("Space");
+      assert.equal(await booking.isChecked(), true);
+      const save = page.getByRole("button", {
+        name: "Anlageberechtigungen speichern",
+        exact: true,
+      });
+      if (failure === "certificate")
+        await page.evaluate(() =>
+          window.cryptoFixture.failNextCreationCertificate(),
+        );
+      else await page.evaluate(() => window.cryptoFixture.failNextAccessSave());
+      await save.click();
+      await page
+        .getByText(
+          "Die Anlageberechtigungen konnten nicht aktualisiert werden.",
+          { exact: true },
+        )
+        .waitFor();
+      assert.equal(await booking.isChecked(), true);
+      assert.equal(await project.isChecked(), false);
+      assert.equal(await save.isEnabled(), true);
+      await save.click();
+      await waitForAccessSave(page, save);
+      await booking.and(page.locator(":enabled")).waitFor();
+      assert.equal(await booking.isChecked(), true);
+      const saves = await page.evaluate(() =>
+        window.cryptoFixture.accessSaves(),
+      );
+      assert.equal(saves.length, failure === "certificate" ? 1 : 2);
+      assert.ok(
+        saves
+          .at(-1)
+          .rules.some(
+            (rule) =>
+              rule.subject === "user:2" &&
+              rule.scope === "create:tool-tracking" &&
+              rule.effect === "allow" &&
+              rule.actions.join() === "create",
+          ),
+      );
+      assert.equal(
+        saves
+          .at(-1)
+          .rules.some(
+            (rule) =>
+              rule.subject === "user:2" && rule.scope === "create:project",
+          ),
+        false,
+      );
+      assert.deepEqual(external, []);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 for (const scenario of [
   {
     kind: "tool",
@@ -3311,7 +3387,7 @@ test("the access form distinguishes editing a certified member from inviting a n
       exact: true,
     });
     const saveCreation = page.getByRole("button", {
-      name: "Anlageberechtigung speichern",
+      name: "Anlageberechtigungen speichern",
       exact: true,
     });
     assert.equal(await creation.isChecked(), false);

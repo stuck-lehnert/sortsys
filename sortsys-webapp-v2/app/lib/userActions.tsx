@@ -58,7 +58,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Werkzeuge ausgeben, zurücknehmen oder umbuchen."),
         group: "work",
         icon: Icons.Track,
-        requiredRole: "manage:toolTrackings",
+        available: sessionInfo.canBookTool(),
         run: () => showTrackToolsModal(modals, {}),
       },
       {
@@ -145,7 +145,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         description: uiText("Neues Werkzeug im Werkzeugstamm anlegen."),
         group: "create",
         icon: Icons.Tool,
-        requiredRole: "manage:tools",
+        available: sessionInfo.canCreate("tool"),
         run: () => showCreateToolModal(modals),
       },
       {

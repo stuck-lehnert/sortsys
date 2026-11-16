@@ -5,6 +5,7 @@ import {
   allows,
   base64,
   certifyCreationCapability,
+  verifyCreationCapability,
   compileReadership,
   compilePolicy,
   domainBoxSigner,
@@ -591,17 +592,35 @@ async function memberCreation(
   namespace: CreationNamespace,
   signal: AbortSignal,
 ): Promise<boolean> {
+  const access = await memberCreationAccesses(client, user, signal);
+  return access[namespace];
+}
+export type CreationAccesses = Record<CreationNamespace, boolean>;
+export async function memberCreationAccesses(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<CreationAccesses> {
   if (!(await memberAccess(client, user, signal)))
     throw new InvalidProtectedData();
   const context = await administrator(client, signal);
-  return allows(context.permissions, {
-    tenant: context.account.tenant,
-    version: context.permissions.version,
-    subjects: [user],
-    scope: creationScope(namespace),
-    facet: "master-data",
-    action: "create",
-  });
+  const result = {} as CreationAccesses;
+  for (const namespace of [
+    "project",
+    "commercial",
+    "tool",
+    "tool-tracking",
+  ] as const) {
+    result[namespace] = allows(context.permissions, {
+      tenant: context.account.tenant,
+      version: context.permissions.version,
+      subjects: [user],
+      scope: creationScope(namespace),
+      facet: "master-data",
+      action: "create",
+    });
+  }
+  return result;
 }
 
 /** A certified employee gets authority for fresh project areas only. The
@@ -680,15 +699,31 @@ async function changeCreation(
   namespace: CreationNamespace,
   signal: AbortSignal,
 ): Promise<void> {
-  const scope = creationScope(namespace);
+  return changeCreationAccesses(client, user, { [namespace]: enabled }, signal);
+}
+
+/** Certificates are staged and read back before one signed policy enables the
+ * edited creation scopes. Unedited grants always come from the latest policy. */
+export async function changeCreationAccesses(
+  client: Client,
+  user: string,
+  changes: Partial<CreationAccesses>,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const edits = Object.entries(changes);
+  if (!edits.length) return;
+  for (const [namespace, enabled] of edits) {
+    creationScope(namespace as CreationNamespace);
+    if (typeof enabled !== "boolean") throw new InvalidProtectedData();
+  }
   const context = await administrator(client, signal);
   if (
     user === `user:${context.session.user.id}` ||
-    typeof enabled !== "boolean" ||
     !(await memberAccess(client, user, signal))
   )
     throw new InvalidProtectedData();
-  if (enabled) {
+  if (edits.some(([, enabled]) => enabled)) {
     const identities = await required(
       client.query("zerotrust.identities.list", undefined, {
         strategy: "network-only",
@@ -721,38 +756,77 @@ async function changeCreation(
       );
       return cert;
     };
-    const capability = await certifyCreationCapability(
-      {
-        tenant: context.account.tenant,
-        id: `create_${base64(randomSecret())}`,
-        generation: context.history.current.generation,
-        namespace,
-        creator: await certificate(user),
-        readers: [await certificate(`user:${context.session.user.id}`)],
-      },
-      context.authority,
-    );
-    context.live();
-    await required(client.mutate("zerotrust.creations.grant", capability));
-    context.live();
+    const creator = await certificate(user);
+    const owner = await certificate(`user:${context.session.user.id}`);
+    for (const [namespace, enabled] of edits) {
+      if (!enabled) continue;
+      const capability = await certifyCreationCapability(
+        {
+          tenant: context.account.tenant,
+          id: `create_${base64(randomSecret())}`,
+          generation: context.history.current.generation,
+          namespace: namespace as CreationNamespace,
+          creator,
+          readers: [owner],
+        },
+        context.authority,
+      );
+      context.live();
+      let failure: unknown;
+      try {
+        await required(client.mutate("zerotrust.creations.grant", capability));
+      } catch (error) {
+        failure = error;
+      }
+      context.live();
+      try {
+        const input = await required(
+          client.query(
+            "zerotrust.creations.capability",
+            {
+              namespace: namespace as CreationNamespace,
+              subject: user,
+            },
+            { strategy: "network-only" },
+          ),
+        );
+        context.live();
+        const saved = await verifyCreationCapability(
+          input,
+          context.history.authority(context.history.current.generation),
+        );
+        context.live();
+        if (saved.signature !== capability.signature)
+          throw new InvalidProtectedData();
+      } catch (error) {
+        context.live();
+        throw failure ?? error;
+      }
+    }
   }
-  const rules = context.permissions.rules.filter(
+  const { permissions } = await readVerifiedPolicy(client, context);
+  const scopes = new Set(
+    edits.map(([namespace]) => creationScope(namespace as CreationNamespace)),
+  );
+  const rules = permissions.rules.filter(
     (rule) =>
       rule.subject !== user ||
-      rule.scope !== scope ||
+      !scopes.has(rule.scope) ||
       rule.facet !== "master-data",
   );
-  if (enabled)
+  for (const [namespace, enabled] of edits) {
+    if (!enabled) continue;
     rules.push({
       subject: user,
-      scope,
+      scope: creationScope(namespace as CreationNamespace),
       facet: "master-data",
       actions: ["create"],
       effect: "allow",
     });
+  }
   const next = {
-    ...context.permissions,
-    version: (BigInt(context.permissions.version) + 1n).toString(),
+    ...permissions,
+    version: (BigInt(permissions.version) + 1n).toString(),
     rules,
   };
   await publishVerifiedPolicy(client, context, next);

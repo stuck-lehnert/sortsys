@@ -96,6 +96,7 @@ function auditPage(page) {
       "Gemeinsames Auftrags-LV von John und Frank",
       "Nach dem Entzug ausschließlich für John",
       "Bohrhammer nach Freigabe bearbeitet",
+      "Delegierte Werkzeugausgabe im Browser",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -277,6 +278,25 @@ async function selectToolAccess(page, title) {
     dialog.getByRole("button", { name: /Werkzeugstammdaten/ }),
   ).toBeEnabled();
   return dialog;
+}
+
+async function saveCreationAccess(dialog) {
+  const save = dialog.getByRole("button", {
+    name: "Anlageberechtigungen speichern",
+    exact: true,
+  });
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(save).toHaveAttribute("data-pending", "true");
+  await expect(save).not.toHaveAttribute("data-pending", "true");
+  await expect(
+    dialog.getByRole("checkbox", {
+      name: "Neue Werkzeugbuchungen anlegen",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await expect(save).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
 }
 
 function firstPrice(editor) {
@@ -749,6 +769,210 @@ try {
     await expect(
       page.locator(".attachment-email-body, .attachment-pdf-frame"),
     ).toHaveCount(0);
+  });
+  await scenario("tool-booking-creation-between-users", async (page) => {
+    const memberServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const memberAudit = auditPage(member);
+    await memberContext.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    let authorization;
+    member.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/api/v2/")) {
+        authorization = request.headers().authorization ?? authorization;
+      }
+    });
+    async function capability(subject) {
+      assert.ok(
+        authorization,
+        "The member must have an authenticated API request",
+      );
+      const input = {
+        namespace: "tool-tracking",
+        ...(subject ? { subject } : {}),
+      };
+      const url = new URL(
+        "/api/v2/zerotrust.creations.capability",
+        memberServer.origin,
+      );
+      url.searchParams.set("batch", "1");
+      url.searchParams.set("input", JSON.stringify({ 0: { json: input } }));
+      const response = await member.request.get(url.href, {
+        headers: { authorization },
+      });
+      assert.equal(response.status(), 200);
+      return (await response.json())[0];
+    }
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await page.goto(`${server.origin}/tools`);
+      await page.getByText("Bohrhammer 1", { exact: true }).click();
+      await expect(
+        page.getByRole("heading", { name: /Bohrhammer 1/ }),
+      ).toBeVisible();
+      const path = new URL(page.url()).pathname;
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      const unavailable = await capability();
+      assert.equal(unavailable.result.data.json, null);
+
+      let access = await selectToolAccess(page, "Bohrhammer 1");
+      await selectAccess(
+        page,
+        access,
+        "Werkzeugstammdaten",
+        "Lesen und bearbeiten",
+      );
+      await selectAccess(
+        page,
+        access,
+        "Anschaffung und Nutzungskosten",
+        "Lesen",
+      );
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await member.goto(`${memberServer.origin}${path}`);
+      await expect(
+        member.getByRole("heading", { name: /Bohrhammer 1/ }),
+      ).toBeVisible();
+      const actions = member
+        .getByRole("main")
+        .getByRole("button", { name: "Aktionen", exact: true });
+      await actions.click();
+      await expect(
+        member.getByRole("menuitem", { name: "Buchen", exact: true }),
+      ).toHaveCount(0);
+      await member.keyboard.press("Escape");
+
+      access = await openMemberPermissions(page);
+      await access
+        .getByText("Neue Werkzeugbuchungen anlegen", { exact: true })
+        .click();
+      await saveCreationAccess(access);
+      const granted = await capability();
+      assert.equal(granted.result.data.json.namespace, "tool-tracking");
+      await expect(
+        member.getByText("Werkzeuge einbuchen", { exact: true }),
+      ).toBeVisible();
+      const denied = await capability(granted.result.data.json.readers[0].user);
+      assert.equal(denied.error.json.data.httpCode, 403);
+      await actions.click();
+      await member
+        .getByRole("menuitem", { name: "Buchen", exact: true })
+        .click();
+      const booking = member.getByRole("dialog", {
+        name: "Werkzeuge einbuchen",
+        exact: true,
+      });
+      await booking
+        .getByRole("combobox", { name: /^Verantwortlicher/ })
+        .fill("Frank");
+      await member.getByRole("option", { name: /Frank Doe/ }).click();
+      await booking
+        .getByLabel("Kommentar", { exact: true })
+        .fill("Delegierte Werkzeugausgabe im Browser");
+      await booking
+        .getByRole("button", { name: "Buchen", exact: true })
+        .click();
+      await expect(booking).toBeHidden();
+      await expect(member.getByText("gebucht", { exact: true })).toBeVisible();
+      await member.reload();
+      await expect(member.getByText("gebucht", { exact: true })).toBeVisible();
+      await page.goto(`${server.origin}${path}`);
+      await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Buchungshistorie (1)", { exact: true }),
+      ).toBeVisible();
+
+      access = await openMemberPermissions(page);
+      await access
+        .getByText("Neue Werkzeugbuchungen anlegen", { exact: true })
+        .click();
+      await saveCreationAccess(access);
+      const revoked = await capability();
+      assert.equal(revoked.result.data.json, null);
+      await expect(
+        member.getByText("Werkzeuge einbuchen", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        member.getByText("Kaufpreis", { exact: true }),
+      ).toBeVisible();
+      access = await selectToolAccess(page, "Bohrhammer 1");
+      await selectAccess(
+        page,
+        access,
+        "Anschaffung und Nutzungskosten",
+        "Kein Zugriff",
+      );
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await expect(member.getByText("Kaufpreis", { exact: true })).toHaveCount(
+        0,
+      );
+      await actions.click();
+      await member
+        .getByRole("menuitem", { name: "Zurückbuchen", exact: true })
+        .click();
+      await expect(
+        member.getByText("verfügbar", { exact: true }),
+      ).toBeVisible();
+      await member.reload();
+      await expect(
+        member.getByText("Buchungshistorie (1)", { exact: true }),
+      ).toBeVisible();
+      await actions.click();
+      await expect(
+        member.getByRole("menuitem", { name: "Buchen", exact: true }),
+      ).toHaveCount(0);
+      await member.keyboard.press("Escape");
+      await page.goto(`${server.origin}${path}`);
+      await expect(page.getByText("verfügbar", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Buchungshistorie (1)", { exact: true }),
+      ).toBeVisible();
+      await member.screenshot({
+        path: join(
+          artifacts,
+          "member-tool-booking-after-creation-revocation.png",
+        ),
+        fullPage: true,
+      });
+      memberAudit.assertClean();
+    } finally {
+      await member
+        .screenshot({
+          path: join(artifacts, "member-tool-booking-current.png"),
+          fullPage: true,
+        })
+        .catch(() => {});
+      await writeFile(
+        join(artifacts, "member-tool-booking-current.html"),
+        await member.content(),
+      ).catch(() => {});
+      await memberContext.tracing.stop({
+        path: join(artifacts, "member-tool-booking.zip"),
+      });
+      await memberContext.close();
+    }
   });
   await scenario("tool-access-between-users", async (page) => {
     const memberServer = await applicationServer(

@@ -322,6 +322,9 @@ pub(super) struct OriginInput {
 pub(super) struct CapabilityInput {
     #[ts(type = "'project'|'commercial'|'tool'|'tool-tracking'")]
     pub namespace: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub subject: Option<String>,
 }
 pub(super) fn creation_scope(namespace: &str) -> RpcResult<&'static str> {
     match namespace {

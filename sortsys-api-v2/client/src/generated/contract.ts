@@ -310,7 +310,7 @@ export type QueryInputs = {
   "users.supervisors.getDefault": void;
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
   "zerotrust.access.snapshot": { domain?: string, domains?: Array<string>, includeDomains?: boolean, };
-  "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', };
+  "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
   "zerotrust.creations.list": void;
   "zerotrust.creations.origin": { domain: string, };
   "zerotrust.deliveryNotes.locate": { id?: Id, number?: string, };

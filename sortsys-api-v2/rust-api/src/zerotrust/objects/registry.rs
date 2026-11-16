@@ -1127,21 +1127,35 @@ pub(in crate::zerotrust) fn register_creation(
                 async move {
                     let mut context = context(&service, &ctx).await?;
                     let scope = super::super::creation::creation_scope(&input.namespace)?;
+                    let inspect_grant = input.subject.is_some() && context.auth.is_admin();
+                    let subject = input
+                        .subject
+                        .as_deref()
+                        .unwrap_or(&context.security.subject);
+                    let user = subject.strip_prefix("user:").ok_or_else(invalid)?;
+                    let user_id = Id::decode(user).map_err(|_| invalid())?;
+                    if user_id.0 <= 0 || user_id.encode() != user {
+                        return Err(invalid());
+                    }
+                    if subject != context.security.subject {
+                        admin(&context.auth)?;
+                    }
                     let permitted = context.security.policy.allows(
-                        &context.security.subject,
+                        subject,
                         scope,
                         Facet::MasterData,
                         Action::Create,
                     );
                     let mut result = None;
-                    if permitted {
+                    // Administrators can verify a newly stored certificate
+                    // before publishing the policy that activates it. Ordinary
+                    // members see only their own currently enabled delegation.
+                    if permitted || inspect_grant {
                         let record = key(
                             "creation-capabilities",
                             &format!(
                                 "{}:{}:{}",
-                                context.security.root.generation,
-                                context.security.subject,
-                                input.namespace
+                                context.security.root.generation, subject, input.namespace
                             ),
                         );
                         if let Some(capability) = context
@@ -1151,7 +1165,7 @@ pub(in crate::zerotrust) fn register_creation(
                         {
                             capability.verify(&context.security.authority)?;
                             if capability.tenant != context.auth.tenant
-                                || capability.creator.user != context.security.subject
+                                || capability.creator.user != subject
                                 || capability.generation
                                     != context.security.root.generation.to_string()
                                 || capability.namespace != input.namespace
