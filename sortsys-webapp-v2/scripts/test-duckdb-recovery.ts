@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   createClient,
+  RpcClientError,
   type Client,
   type MutateInput,
 } from "@sortsys/v2-client";
@@ -35,6 +36,97 @@ import {
   prepareNativeToolRecovery,
   verifyNativeToolRecovery,
 } from "./test-native-tool-recovery";
+import {
+  approveMemberInvitation,
+  createMemberInvitation,
+  invitationMembers,
+  joinMemberInvitation,
+  signInMemberInvitation,
+} from "../app/lib/crypto/invitations";
+
+async function verifyFormerAdministrator(
+  administrator: Client,
+  formerAdministrator: Client,
+  person: { id: string; username: string },
+  login: { tenant: string; username: string; password: string },
+  password: string,
+  signal: AbortSignal,
+) {
+  console.log(
+    "Native recovery: reapproving a former administrator as an ordinary member",
+  );
+  const current = await required(
+    administrator.query("auth.sessionInfo", undefined),
+  );
+  const history = await trustedHistory(administrator);
+  await required(
+    administrator.mutate(
+      "zerotrust.identities.certify",
+      history.identityCertificate(`user:${current.user.id}`),
+    ),
+  );
+  assert.ok(
+    (
+      await required(administrator.query("auth.sessionInfo", undefined))
+    ).roles.includes(":admin"),
+    "Renewing the current identity must preserve its explicitly assigned role",
+  );
+  const previous = (await invitationMembers(administrator, signal)).find(
+    (member) => member.id === person.id,
+  );
+  assert.ok(previous);
+  assert.equal(previous.certified, false);
+  assert.ok(previous.roles.includes(":admin"));
+  const invitation = await createMemberInvitation(
+    administrator,
+    person,
+    {
+      catalogue: "none",
+      customers: "none",
+      contacts: "none",
+      vendors: "none",
+      prices: "none",
+      assistant: false,
+    },
+    signal,
+  );
+  await signInMemberInvitation(
+    formerAdministrator,
+    invitation.link,
+    password,
+    signal,
+  );
+  await joinMemberInvitation(formerAdministrator, invitation.link, signal);
+  await signIn(administrator, login);
+  await approveMemberInvitation(
+    administrator,
+    invitation.link.invitation.id,
+    signal,
+    duckDriver,
+  );
+  await signIn(formerAdministrator, {
+    tenant: login.tenant,
+    username: person.username,
+    password,
+  });
+  const member = await required(
+    formerAdministrator.query("auth.sessionInfo", undefined),
+  );
+  assert.deepEqual(
+    member.roles,
+    [],
+    "Reapproval must not revive roles from the previous authority",
+  );
+  const [directory, denied] = await formerAdministrator.query(
+    "zerotrust.members.list",
+    { after: null },
+    { strategy: "network-only" },
+  );
+  assert.equal(directory, null);
+  assert.ok(denied instanceof RpcClientError);
+  assert.equal(denied.code, "FORBIDDEN");
+  await signIn(administrator, login);
+}
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
 const [, , outputPath] = process.argv.slice(2);
@@ -95,11 +187,12 @@ const passwords = [
   "Native-recovery-password-one-2026!",
   "Native-recovery-password-two-2026!",
 ];
+const originalPassword = "Only-owner-knows-this-password-2026!";
 try {
   await signIn(owner, {
     tenant: source.tenant,
     username: "builder",
-    password: "Only-owner-knows-this-password-2026!",
+    password: originalPassword,
   });
   const original = unlockedAccount()!;
   const session = await required(owner.query("auth.sessionInfo", undefined));
@@ -108,7 +201,7 @@ try {
   const toolRecovery = await prepareNativeToolRecovery(owner, toolMember, {
     tenant: source.tenant,
     username: "builder",
-    password: "Only-owner-knows-this-password-2026!",
+    password: originalPassword,
   });
   // More than 64 keys exercises the server's inventory pagination and the
   // encrypted catalogue tree through its actual read/write endpoints.
@@ -237,6 +330,18 @@ try {
     },
     true,
   );
+  await verifyFormerAdministrator(
+    client,
+    owner,
+    session.user,
+    {
+      tenant: source.tenant,
+      username: winner.username,
+      password: passwords[0],
+    },
+    originalPassword,
+    signal,
+  );
   // The old personal area keeps its original subject after seed recovery.
   const { privateLlmCollection } = await import("../app/lib/data/privateLlm");
   const { protectedCollection } =
@@ -339,6 +444,7 @@ try {
   for (const secret of [
     ...phrases,
     ...passwords,
+    originalPassword,
     ...toolRecovery.secrets,
     canary,
     projectTitle,

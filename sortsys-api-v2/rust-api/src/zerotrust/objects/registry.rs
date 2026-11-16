@@ -727,6 +727,11 @@ pub(in crate::zerotrust) async fn install_identity(
     {
         return Err(invalid());
     }
+    // Reapproval under a new tenant authority does not renew roles granted by
+    // its predecessor. Reissuing a current certificate preserves current roles.
+    if certified_identity(&account, guard)?.is_none() {
+        account.roles.clear();
+    }
     account.credential_mut()?.certificate = serde_json::to_value(input).map_err(internal)?;
     transaction
         .put_protected(accounts::account_key(user.0), &account)

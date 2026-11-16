@@ -63,7 +63,11 @@ Nach einer Recovery müssen die Konten unter der neuen Mandantenautorität erneu
 eingeladen und bestätigt werden. Die Rechteverwaltung bietet für diese Konten
 die Einladung an, auch wenn bereits ein Passwort besteht. Nach der Bestätigung
 gelten die neu erteilten Rechte; frühere Buchungsfreigaben werden nicht pauschal
-wiederhergestellt.
+wiederhergestellt. Auch technische Rollen der vorherigen Autorität werden bei
+dieser erneuten Bestätigung entfernt. Ein ehemaliger Administrator wird durch
+eine normale Mitarbeitereinladung deshalb nicht wieder zum Administrator. Die
+erneute Ausstellung eines bereits aktuellen Zertifikats lässt dagegen dessen
+bestehende Rollen unverändert.
 
 Neue kryptografische Bereiche dürfen nur zusammen mit einem für den aktuellen
 öffentlichen Recovery-Schlüssel verschlüsselten Schlüsselpaket veröffentlicht
@@ -256,8 +260,11 @@ Eine Rückgabe mit anschließendem Schlüsselwechsel verhindert, dass alte
 Mitarbeiterschlüssel spätere Änderungen öffnen. Zwischen den Recoveries wird
 ein Mitarbeiter mit seinem bestehenden Passwort erneut eingeladen und bestätigt.
 Er erhält Zugriff auf eine neue Ausgabe, ohne damit frühere Buchungen oder
-Werkzeugkosten lesen zu können. Dieser Nachweis deckt den Werkzeugablauf ab;
-er ersetzt keine Prüfung sämtlicher Dokumentarten.
+Werkzeugkosten lesen zu können. Auch ein ehemaliger Administrator wird erneut
+als gewöhnlicher Mitarbeiter eingeladen: Sein bisheriges Passwort funktioniert
+weiter, sein Konto erhält dadurch aber keinen Zugriff auf die administrative
+Mitgliederliste. Die Nachweise für weitere Arbeitsabläufe sind im
+[Funktionsabgleich](verschluesselung-funktionsabgleich.md) aufgeführt.
 
 Die unabhängige Generationssperre ist im Datendienst umgesetzt. Sein
 [Wiederherstellungstest](../sortsys-store/src/witness.rs) weist eine alte
