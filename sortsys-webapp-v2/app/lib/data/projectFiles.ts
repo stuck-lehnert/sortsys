@@ -14,6 +14,7 @@ import {
 } from "./database";
 import {
   protectedCollection,
+  protectedCollections,
   required,
   type OpenedObject,
 } from "./protectedObjects";
@@ -41,6 +42,8 @@ import {
   sealOfficeSession,
 } from "./officeCapsule";
 import { officeRecipients, sameOfficeRecipients } from "./officeRecipients";
+import { searchDocuments, type SearchDocument } from "../search/documentSearch";
+import { createDocumentMatcher } from "../search/documentQuery";
 import {
   fileCollection,
   fileDomainId,
@@ -57,6 +60,7 @@ import {
 } from "./projectFileData";
 
 type Collection = Awaited<ReturnType<typeof protectedCollection>>;
+type Collections = Awaited<ReturnType<typeof protectedCollections>>;
 type Store = {
   collection: Collection;
   head: string;
@@ -145,8 +149,8 @@ export function createProtectedProjectFiles(
   let stores = new Map<string, Store>();
   let database: BusinessDatabase | null = null;
   let closed = false;
-  let complete = false;
   let pending: Promise<unknown> = Promise.resolve();
+  let searchController: AbortController | null = null;
   const urls = new Set<string>();
   const live = () => {
     signal.throwIfAborted();
@@ -166,6 +170,7 @@ export function createProtectedProjectFiles(
   };
   async function close() {
     closed = true;
+    searchController?.abort();
     signal.removeEventListener("abort", abort);
     for (const url of urls) {
       URL.revokeObjectURL(url);
@@ -239,12 +244,30 @@ export function createProtectedProjectFiles(
       throw error;
     }
   }
-  async function reload(ids: string[], visible?: Set<string>) {
+  async function reload(
+    ids: string[],
+    visible?: Set<string>,
+    openedCollections?: Collections,
+  ) {
     const candidate = new Map(stores);
     const opened: Collection[] = [];
     let changed = !database;
     let next: BusinessDatabase | null = null;
     try {
+      const open =
+        openedCollections ??
+        (await protectedCollections(
+          client,
+          signal,
+          ids.length > 0 && ids.length <= 16
+            ? ids.map((id) => fileCollection(id).domain)
+            : undefined,
+        ));
+      await open.prefetch(
+        ids
+          .filter((id) => !stores.has(id))
+          .map((id) => ({ area: fileCollection(id) })),
+      );
       if (visible) {
         for (const id of candidate.keys()) {
           if (!visible.has(id)) {
@@ -254,11 +277,7 @@ export function createProtectedProjectFiles(
         }
       }
       for (const id of ids) {
-        const collection = await protectedCollection(
-          client,
-          fileCollection(id),
-          signal,
-        );
+        const collection = open(fileCollection(id));
         opened.push(collection);
         const old = stores.get(id);
         const entries = old
@@ -311,13 +330,15 @@ export function createProtectedProjectFiles(
     }
     return stores.get(projectId)!;
   }
-  async function all() {
-    if (!complete) {
-      const ids = await readableFileAreas(client, signal);
-      await reload(ids, new Set(ids));
-      complete = true;
-    }
-    return [...stores.keys()];
+  async function all(open: Collections) {
+    const ids = open
+      .areas((domain) => {
+        const id = fileDomainId(domain);
+        return id ? fileCollection(id) : null;
+      })
+      .map((area) => fileDomainId(area.domain)!);
+    await reload(ids, new Set(ids), open);
+    return ids;
   }
   async function projectReference(id: string) {
     const area = projectCollection(id);
@@ -751,7 +772,6 @@ export function createProtectedProjectFiles(
         if (!domains) {
           const ids = await readableFileAreas(client, signal);
           await reload(ids, new Set(ids));
-          complete = true;
         } else {
           for (const [domain, minimum] of Object.entries(domains)) {
             const id = fileDomainId(domain);
@@ -876,8 +896,14 @@ export function createProtectedProjectFiles(
           thumbnail_mime_type: thumbnail
             ? inspection.thumbnail!.type || "image/webp"
             : null,
-          thumbnail_width: thumbnail ? (inspection.width ?? null) : null,
-          thumbnail_height: thumbnail ? (inspection.height ?? null) : null,
+          thumbnail_width:
+            thumbnail && inspection.width !== undefined
+              ? String(inspection.width)
+              : null,
+          thumbnail_height:
+            thumbnail && inspection.height !== undefined
+              ? String(inspection.height)
+              : null,
           thumbnail_size_bytes: thumbnail ? String(thumbnail.size) : null,
           thumbnail_generated_at: thumbnail ? now : null,
           text_extraction_status:
@@ -889,7 +915,8 @@ export function createProtectedProjectFiles(
           extracted_text: inspection.text ?? null,
           text_extraction_method:
             inspection.text !== undefined ? "pdfjs-browser" : null,
-          text_extraction_page_count: inspection.pages ?? null,
+          text_extraction_page_count:
+            inspection.pages === undefined ? null : String(inspection.pages),
           text_extraction_version: inspection.text !== undefined ? "1" : null,
           text_extracted_at: inspection.text !== undefined ? now : null,
         };
@@ -1069,6 +1096,12 @@ export function createProtectedProjectFiles(
       });
     },
     query(path: string, input: unknown): Promise<unknown> {
+      let searchSignal: AbortSignal | undefined;
+      if (path === "projects.files.search") {
+        searchController?.abort();
+        searchController = new AbortController();
+        searchSignal = AbortSignal.any([signal, searchController.signal]);
+      }
       return queue(async () => {
         if (path === "projects.files.search") {
           const data = partialAddressRecord(input, [
@@ -1081,14 +1114,27 @@ export function createProtectedProjectFiles(
           if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
             throw new InvalidProtectedData();
           }
+          if (!createDocumentMatcher(query).hasTerms) return [];
+          const access = await protectedCollections(client, searchSignal!);
           const ids =
-            data.projectId == null ? await all() : [data.projectId as string];
-          const results = [];
-          const terms = query.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
-          if (!terms.length) {
-            return [];
+            data.projectId == null
+              ? await all(access)
+              : [data.projectId as string];
+          if (data.projectId != null) {
+            if (!access.readable(fileCollection(data.projectId as string)))
+              throw new InvalidProtectedData();
+            await reload(ids, undefined, access);
           }
+          const documents: SearchDocument[] = [];
+          const entries = new Map<
+            string,
+            Omit<
+              QueryResult<"projects.files.search">[number],
+              "rank" | "excerpt"
+            >
+          >();
           for (const id of ids) {
+            searchSignal!.throwIfAborted();
             const store = await get(id);
             let title = "";
             try {
@@ -1099,36 +1145,59 @@ export function createProtectedProjectFiles(
             for (const payload of store.files.values()) {
               if (payload.file?.values.status === "uploaded") {
                 const v = payload.file.values;
-                const words =
-                  `${v.file_name} ${v.extracted_text ?? ""}`
-                    .toLowerCase()
-                    .match(/[\p{L}\p{N}_]+/gu) ?? [];
-                if (
-                  !terms.every((term) =>
-                    words.some((word) => word.startsWith(term)),
-                  )
-                ) {
-                  continue;
-                }
-                results.push({
+                const key = `${id}:${publicId(v.id)}`;
+                documents.push({
+                  id: key,
+                  name: v.file_name as string,
+                  text:
+                    typeof v.extracted_text === "string"
+                      ? v.extracted_text
+                      : null,
+                });
+                entries.set(key, {
                   id: publicId(v.id),
                   projectId: id,
                   projectTitle: title,
-                  fileName: v.file_name,
-                  mimeType: v.mime_type,
-                  textExtractionStatus: v.text_extraction_status,
-                  excerpt:
-                    typeof v.extracted_text === "string"
-                      ? v.extracted_text.slice(0, 400)
-                      : null,
-                  rank: terms.length,
+                  fileName: v.file_name as string,
+                  mimeType: v.mime_type as string,
+                  textExtractionStatus: v.text_extraction_status as string,
                   modifiedAt: new Date(v.modified_at as string),
                 });
               }
             }
           }
-          return results
-            .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime())
+          const matches = await searchDocuments(
+            documents,
+            query,
+            searchSignal!,
+          );
+          live();
+          searchSignal!.throwIfAborted();
+          // A long worker pass must not publish a scope revoked meanwhile.
+          // This is an eligibility check, never a second text/label filter.
+          const currentAccess = await protectedCollections(
+            client,
+            searchSignal!,
+          );
+          const currentIds = new Set(
+            ids.filter((id) => currentAccess.readable(fileCollection(id))),
+          );
+          if (currentIds.size !== ids.length)
+            await reload([], currentIds, currentAccess);
+          return matches
+            .filter((match) => currentIds.has(entries.get(match.id)!.projectId))
+            .map((match) => ({
+              ...entries.get(match.id)!,
+              rank: match.rank,
+              excerpt: match.excerpt,
+            }))
+            .sort(
+              (a, b) =>
+                b.rank - a.rank ||
+                b.modifiedAt.getTime() - a.modifiedAt.getTime() ||
+                a.id.localeCompare(b.id) ||
+                a.projectId.localeCompare(b.projectId),
+            )
             .slice(0, limit);
         }
         const data = record(input, ["projectId"]);

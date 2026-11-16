@@ -62,9 +62,13 @@ export type DeliveryNoteScanResult = { supplier: string | null, deliveryNumber: 
 
 export type Document = { id: Id, caseId: Id, purpose: string, phase: string, fileName: string, version: bigint, readOnly: boolean, sourceDocumentId: Id | null, sourceVersion: bigint | null, sourceCurrentVersion: bigint | null, partnerName: string | null, netAmount: string | null, createdAt: string, modifiedAt: string, };
 
+export type DocumentExcerpt = { text: string, highlights: Array<DocumentTextRange>, };
+
 export type DocumentHead = { format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, };
 
 export type DocumentPart = { facet: string, object: string, hash: string, keys: Array<PartKey>, };
+
+export type DocumentTextRange = { start: number, end: number, };
 
 export type DomainDefinition = { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };
 
@@ -435,7 +439,7 @@ export type QueryOutputs = {
   "projects.files.folders.list": Array<{ id: Id, projectId: Id, parentFolderId: Id | null, name: string, createdByUserId: Id | null, createdAt: Date, modifiedAt: Date, }>;
   "projects.files.list": { id: string; projectId: string; folderId: null | string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; textExtractionStatus: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[];
   "projects.files.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
-  "projects.files.search": Array<{ id: Id, projectId: Id, projectTitle: string, fileName: string, mimeType: string, textExtractionStatus: string, excerpt: string | null, rank: number, modifiedAt: Date, }>;
+  "projects.files.search": Array<{ id: Id, projectId: Id, projectTitle: string, fileName: string, mimeType: string, textExtractionStatus: string, excerpt: DocumentExcerpt | null, rank: number, modifiedAt: Date, }>;
   "projects.files.xmlContent": { frozen: boolean, recoveryScope: string, liveTicket: string, livePath: string, canEdit: boolean, fileName: string, version: bigint, xml: string, };
   "projects.get": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; };
   "projects.list": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; }[];

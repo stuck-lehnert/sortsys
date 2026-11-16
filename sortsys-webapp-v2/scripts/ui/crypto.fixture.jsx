@@ -59,6 +59,69 @@ function beginLLM(kind) {
 }
 
 window.cryptoFixture = {
+  async documentSearchWorker() {
+    const { searchDocuments } =
+      await import("../../app/lib/search/documentSearch");
+    const { DocumentExcerpt } =
+      await import("../../app/components/DocumentExcerpt");
+    const documents = Array.from({ length: 35 }, (_, index) => ({
+      id: String(index),
+      name: `Anlage ${index}.pdf`,
+      text:
+        (index === 0 ? "Vorbemerkung. ".repeat(100000) : "") +
+        '<<Abschnitt>> <img src=x onerror="alert(1)"> Die Wände werden gestrichen.',
+    }));
+    let completed = false;
+    let responsive = false;
+    const pending = searchDocuments(
+      documents,
+      "Wand",
+      new AbortController().signal,
+    ).finally(() => {
+      completed = true;
+    });
+    const tick = new Promise((resolve) =>
+      setTimeout(() => {
+        responsive = !completed;
+        resolve();
+      }, 0),
+    );
+    const matches = await pending;
+    await tick;
+    root.render(
+      <p data-testid="document-excerpt">
+        <DocumentExcerpt value={matches[1].excerpt} />
+      </p>,
+    );
+    const controller = new AbortController();
+    const cancelled = searchDocuments(documents, "Wand", controller.signal);
+    controller.abort();
+    let aborted = false;
+    try {
+      await cancelled;
+    } catch (error) {
+      aborted = error.name === "AbortError";
+    }
+    return {
+      responsive,
+      aborted,
+      ids: matches.map((match) => match.id),
+      excerpt: matches[0].excerpt,
+    };
+  },
+  async searchExtractedDocument(data) {
+    const { inspectProjectFile } = await import("../../app/lib/fileInspection");
+    const { searchDocuments } =
+      await import("../../app/lib/search/documentSearch");
+    const inspection = await inspectProjectFile(
+      new Blob([new Uint8Array(data)], { type: "application/pdf" }),
+    );
+    return searchDocuments(
+      [{ id: "pdf", name: "Anlage.pdf", text: inspection.text ?? null }],
+      "Materialfreigabe",
+      new AbortController().signal,
+    );
+  },
   async showTenantSetup(options) {
     const { showTenantSetup } = await import("./tenant-setup.fixture.jsx");
     await showTenantSetup(root, options);

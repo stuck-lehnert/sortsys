@@ -53,6 +53,15 @@ fn auth_service(settings: &Config, repository: Repository) -> AuthService {
 }
 
 async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
+    browser_with_tenant(mode, root, endpoints, None).await;
+}
+
+async fn browser_with_tenant(
+    mode: &str,
+    root: &Path,
+    endpoints: Option<&[String]>,
+    tenant: Option<&str>,
+) {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let webapp = workspace.join("sortsys-webapp-v2");
     let fixture =
@@ -81,6 +90,7 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
             "recovery" => "scripts/test-duckdb-recovery.ts",
             "llm" => "scripts/test-duckdb-llm.ts",
             "editors" => "scripts/test-duckdb-editors.ts",
+            "document-search" => "scripts/test-native-document-search.ts",
             "development-seed" => "scripts/test-development-seed.ts",
             "telemetry" => "scripts/test-operator-telemetry.ts",
             "locks" => "scripts/test-object-locks.ts",
@@ -119,6 +129,9 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
     if mode == "owner-minimal" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "recovery-tenant");
     }
+    if let Some(tenant) = tenant {
+        command.env("SORTSYS_NATIVE_AUTH_TENANT", tenant);
+    }
     if let Some(endpoints) = endpoints {
         command.env(
             "SORTSYS_AUTH_TEST_ENDPOINTS",
@@ -133,6 +146,7 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
     } else if matches!(
         mode,
         "recovery"
+            | "document-search"
             | "llm"
             | "editors"
             | "owner-staging"
@@ -1032,6 +1046,42 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
     ] {
         assert_protected_collection(&tenant, collection).await;
     }
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn local_document_search_enforces_live_access_across_independent_api_instances() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let store = QuackConfig::from_env().unwrap().unwrap();
+    assert!(store.control_url.starts_with("http://127.0.0.1:"));
+    let first = Repository::system(CipherStore::new(store.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(store.clone()).unwrap());
+    let mut settings = configuration(store);
+    settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    let endpoints = [first_url, second_url];
+    browser_with_tenant(
+        "owner-minimal",
+        &root,
+        Some(&endpoints),
+        Some("document-search-tenant"),
+    )
+    .await;
+    browser_with_tenant(
+        "document-search",
+        &root,
+        Some(&endpoints),
+        Some("document-search-tenant"),
+    )
+    .await;
 }
 
 #[tokio::test]

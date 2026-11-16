@@ -95,10 +95,20 @@ pub struct ProjectFileSearchResult {
     pub file_name: String,
     pub mime_type: String,
     pub text_extraction_status: String,
-    pub excerpt: Option<String>,
+    pub excerpt: Option<DocumentExcerpt>,
     pub rank: f64,
     #[ts(type = "Date")]
     pub modified_at: DateTime<Utc>,
+}
+#[derive(Debug, Serialize, TS)]
+pub struct DocumentExcerpt {
+    pub text: String,
+    pub highlights: Vec<DocumentTextRange>,
+}
+#[derive(Debug, Serialize, TS)]
+pub struct DocumentTextRange {
+    pub start: usize,
+    pub end: usize,
 }
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

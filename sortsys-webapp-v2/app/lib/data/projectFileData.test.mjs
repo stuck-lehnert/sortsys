@@ -4,11 +4,16 @@ import {
   chunkCollection,
   content,
   contentId,
+  fileObject,
+  filePayload,
+  wireFile,
   FILE_CHUNK_BYTES,
   itemName,
   parsePrivateFileUrl,
   privateFileUrl,
 } from "./projectFileData";
+
+import { row } from "./testing/businessRow.mjs";
 
 const version = "a".repeat(32),
   hash = base64(new Uint8Array(32));
@@ -108,4 +113,50 @@ test("private resource identifiers cannot redirect to remote locations or smuggl
   expect(itemName("  Grundriss Erdgeschoss.pdf  ")).toBe(
     "Grundriss Erdgeschoss.pdf",
   );
+});
+
+test("canonical image metadata exposes numeric preview dimensions without weakening integer validation", () => {
+  const original = {
+    version: "legacy",
+    size: 1,
+    parts: [{ id: contentId("2", "3", "legacy", 0), hash: "A".repeat(43) }],
+  };
+  const source = {
+    format: "sortsys-project-file-v1",
+    file: row("project_files", {
+      id: "3",
+      project_id: "2",
+      file_name: "Montage.jpg",
+      mime_type: "image/jpeg",
+      kind: "image",
+      status: "uploaded",
+      size_bytes: "1",
+      thumbnail_status: "ready",
+      thumbnail_width: "400",
+      thumbnail_height: "300",
+      text_extraction_status: "not_applicable",
+    }),
+    original,
+    thumbnail: original,
+    office: null,
+  };
+  const payload = filePayload(source, fileObject("2", "3"), "2");
+  const file = wireFile(payload, "1");
+  expect(file.thumbnailWidth).toBe(400);
+  expect(file.thumbnailHeight).toBe(300);
+  for (const invalid of [400, "400.5", "2147483648"]) {
+    expect(() =>
+      filePayload(
+        {
+          ...source,
+          file: {
+            ...source.file,
+            values: { ...source.file.values, thumbnail_width: invalid },
+          },
+        },
+        fileObject("2", "3"),
+        "2",
+      ),
+    ).toThrow();
+  }
 });

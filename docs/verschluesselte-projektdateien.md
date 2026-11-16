@@ -53,9 +53,11 @@ Bildscans ohne eingebetteten Text bleiben deshalb ohne Volltext, solange kein
 ausdrücklich aufgerufener Erkennungsvorgang angeschlossen ist.
 
 Die Dateisuche berücksichtigt Dateinamen und vorhandenen extrahierten Text.
-Wortanfänge und mehrere gemeinsam gesuchte Wörter werden lokal ausgewertet. Die
-bisherige deutsche und englische PostgreSQL-Volltextsuche mit Ranking und
-Trefferausschnitten ist damit noch nicht vollständig nachgebildet. Beim ersten
+Sie verarbeitet deutsche und englische Wortformen, Wortanfänge, Phrasen und
+Ausschlüsse lokal in einem Worker. Treffer werden nach ihrer Relevanz sortiert;
+Ausschnitte zeigen passende Textstellen mit Hervorhebung. Die
+[Dokumentensuche](verschluesselte-dokumentensuche.md) beschreibt die Syntax und
+die verbleibenden Unterschiede zur bisherigen PostgreSQL-Suche. Beim ersten
 Zugriff müssen die berechtigten Metadaten synchronisiert werden; die
 Originaldateien werden erst für die jeweilige Vorschau oder den Download
 geladen.

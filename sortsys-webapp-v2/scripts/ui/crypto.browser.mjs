@@ -3958,6 +3958,52 @@ test("new PDF text is extracted locally without OCR or document uploads", async 
   }
 });
 
+test("local document search runs in a cancellable worker and renders excerpts as literal text", async () => {
+  const { context, page, external } = await open();
+  try {
+    const result = await page.evaluate(() =>
+      window.cryptoFixture.documentSearchWorker(),
+    );
+    assert.equal(result.responsive, true);
+    assert.equal(result.aborted, true);
+    assert.deepEqual(
+      result.ids,
+      Array.from({ length: 35 }, (_, index) => String(index)),
+    );
+    assert.match(result.excerpt.text, /Wände werden gestrichen/);
+    const excerpt = page.getByTestId("document-excerpt");
+    await excerpt.locator("mark").waitFor();
+    assert.equal(await excerpt.locator("mark").textContent(), "Wände");
+    assert.equal(await excerpt.locator("img").count(), 0);
+    assert.match(await excerpt.textContent(), /<<Abschnitt>> <img src=x/);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an actual locally extracted PDF is searchable in the document worker without uploads", async () => {
+  const { context, page, external } = await open();
+  try {
+    const bytes = await readFile(
+      new URL(
+        "../../../sortsys-api-v2/seed-assets/materialfreigabe.pdf",
+        import.meta.url,
+      ),
+    );
+    const matches = await page.evaluate(
+      (data) => window.cryptoFixture.searchExtractedDocument(data),
+      Array.from(bytes),
+    );
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].id, "pdf");
+    assert.ok(matches[0].excerpt.highlights.length > 0);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("an encrypted EML opens through the browser resource loader with its attachment intact", async () => {
   const { context, page, external } = await open();
   try {

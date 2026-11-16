@@ -99,6 +99,9 @@ function auditPage(page) {
       "Delegierte Werkzeugausgabe im Browser",
       "Gemeinsame Werkzeugausgabe im Browser",
       "Automatisch freigegebene Werkzeugbuchung im Browser",
+      "Suchbeleg 519842.pdf",
+      "lose Bestandteile",
+      "Saugfähigkeit",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -643,6 +646,117 @@ try {
       }
     },
   );
+  await scenario("local-document-search", async (page) => {
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    await page.goto(`${server.origin}/projects/${seeded.projectId}/files`);
+    const fileName = "Suchbeleg 519842.pdf";
+    const image = await readFile(
+      new URL(
+        "../../../sortsys-api-v2/test-files/thispersondoesnotexist01.jpg",
+        import.meta.url,
+      ),
+    );
+    const pdf = await readFile(
+      new URL(
+        "../../../sortsys-api-v2/seed-assets/materialfreigabe.pdf",
+        import.meta.url,
+      ),
+    );
+    await page.locator('input[type="file"]').setInputFiles({
+      name: fileName,
+      mimeType: "application/pdf",
+      buffer: pdf,
+    });
+    await expect(
+      page.getByRole("button", { name: fileName, exact: true }),
+    ).toBeVisible();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "Suchfoto 519842.jpg",
+      mimeType: "image/jpeg",
+      buffer: image,
+    });
+    const thumbnail = page.getByRole("img", {
+      name: "Suchfoto 519842.jpg",
+      exact: true,
+    });
+    await expect(thumbnail).toBeVisible();
+    await expect
+      .poll(() =>
+        thumbnail.evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true);
+    await page.goto(`${server.origin}/documents`);
+    const query = page.getByRole("searchbox", {
+      name: "Dokumente durchsuchen",
+      exact: true,
+    });
+    await query.fill('"lose Bestandteile"');
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    const result = page.getByRole("link", { name: fileName, exact: true });
+    await expect(result).toBeVisible();
+    await expect(page.locator(".documents-search__excerpt mark")).toHaveText(
+      "lose Bestandteile",
+    );
+    await query.fill('Saugfähigkeit -"lose Bestandteile"');
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    await expect(
+      page.getByText("Keine passenden Dokumente gefunden.", { exact: true }),
+    ).toBeVisible();
+    await expect(result).toHaveCount(0);
+    await query.fill("Innenwand");
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    await expect(result).toBeVisible();
+    await expect(page.locator(".documents-search__excerpt mark")).toContainText(
+      "Innenwände",
+    );
+    await page.screenshot({
+      path: join(artifacts, "local-document-search.png"),
+      fullPage: true,
+    });
+    await result.click();
+    await expect(page).toHaveURL(/\/files\/[1-9a-v][0-9a-v]*$/);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(
+      page
+        .frameLocator('iframe[title="PDF ansehen"]')
+        .locator('.page[data-page-number="1"] canvas'),
+    ).toBeVisible();
+
+    const peerServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(peerServer);
+    const peerContext = await applicationContext();
+    try {
+      const peer = await peerContext.newPage();
+      const audit = auditPage(peer);
+      await login(peer, "frank.doe", "123456", peerServer.origin);
+      await expect(
+        peer.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await peer.goto(
+        `${peerServer.origin}/documents?q=${encodeURIComponent('"lose Bestandteile"')}`,
+      );
+      await expect(
+        peer.getByText("Keine passenden Dokumente gefunden.", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        peer.getByRole("link", { name: fileName, exact: true }),
+      ).toHaveCount(0);
+      await expect(peer.locator(".documents-search__excerpt")).toHaveCount(0);
+      await peer.screenshot({
+        path: join(artifacts, "local-document-search-denied.png"),
+        fullPage: true,
+      });
+      audit.assertClean();
+    } finally {
+      await peerContext.close();
+    }
+  });
   await scenario(
     "encrypted-project-attachments-and-shareable-dialogs",
     async (page) => {

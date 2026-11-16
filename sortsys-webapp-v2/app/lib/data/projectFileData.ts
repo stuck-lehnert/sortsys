@@ -302,8 +302,10 @@ export function wireFile(payload: FilePayload, revision: string): ProjectFile {
     thumbnailExpiresAt: null,
     previewUrl: thumbnail,
     previewExpiresAt: null,
-    thumbnailWidth: v.thumbnail_width as number | null,
-    thumbnailHeight: v.thumbnail_height as number | null,
+    thumbnailWidth:
+      v.thumbnail_width === null ? null : Number(v.thumbnail_width),
+    thumbnailHeight:
+      v.thumbnail_height === null ? null : Number(v.thumbnail_height),
     textExtractionStatus: v.text_extraction_status as string,
     createdByUserId:
       v.created_by_user_id === null ? null : publicId(v.created_by_user_id),

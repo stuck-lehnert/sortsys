@@ -2690,6 +2690,13 @@
       },
       {
         "ecosystem": "npm",
+        "name": "@orama/stemmers",
+        "version": "3.1.18",
+        "license": "Apache-2.0",
+        "source": "https://www.npmjs.com/package/%40orama%2Fstemmers/v/3.1.18"
+      },
+      {
+        "ecosystem": "npm",
         "name": "@radix-ui/primitive",
         "version": "1.2.0",
         "license": "MIT",

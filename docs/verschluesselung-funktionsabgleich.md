@@ -294,7 +294,13 @@ unveränderten Benutzerquelle gespeichert.
 **Dokumentvolltext mit Sprachen, Ranking und Ausschnitten.** Dateinamen und
 vorhandener extrahierter Text sind lokal durchsuchbar. Neue PDFs werden im
 Browser ausgelesen. Sprachverarbeitung, Ranking und vergleichbare Ausschnitte
-fehlen; ein kaltes Gerät und fehlender OCR-Text schränken Ergebnisse ein.
+sind inzwischen für deutsche und englische Wortformen, Phrasen, Ausschlüsse und
+Wortanfänge angeschlossen. Ein Worker bewertet Treffer und erzeugt sichere
+Ausschnitte. Native Mehrinstanztests prüfen den Rechteentzug trotz gefülltem
+Cache; Browsertests prüfen den Worker und eine tatsächlich ausgelesene PDF.
+Die genaue Übereinstimmung mit PostgreSQL ist weiterhin nicht nachgewiesen.
+Ein kaltes Gerät und fehlender OCR-Text schränken Ergebnisse ein. Siehe
+[Dokumentensuche](verschluesselte-dokumentensuche.md).
 
 **Positionsdatenbank aus bisherigen GAEB-Dateien.** Die Suche liest freigegebene
 Vorgangstexte und Projektdateien im Browser. Mengen und Preise aus Vorgängen
@@ -523,15 +529,15 @@ Standardsuche einer anderen Datenbank wäre daher keine Funktionsgleichheit. Auc
 eine korrekte Suche in nur einem bereits geladenen Ausschnitt darf nicht als
 Suche über alle berechtigten Daten dargestellt werden.
 
-Die Browser-Datenbank ist DuckDB-Wasm. Ihre Volltextsuche ersetzt die bisherige
-PostgreSQL-Suche nicht unverändert: Die
-[DuckDB-Erweiterung](https://duckdb.org/docs/2.0/core_extensions/full_text_search)
-verwendet standardmäßig einen englischen Wortstammalgorithmus und filtert
-Zeichen außerhalb von `a` bis `z`. Für deutsche Positionstexte wären diese
-Einstellungen ungeeignet. Verknüpfte Präfixe, Phrasen, Ausschlüsse und deutsche
-beziehungsweise englische Wortformen brauchen Vergleichstests. Auch BM25 liefert
-eine andere Trefferreihenfolge als `ts_rank_cd`. Solange dieser Abgleich fehlt,
-besteht hier keine nachgewiesene Funktionsgleichheit.
+Die Browser-Datenbank ist DuckDB-Wasm. Die Dateisuche verwendet einen eigenen
+Worker mit deutscher und englischer Wortstammverarbeitung. Verknüpfte Wörter,
+Präfixe, Phrasen, Ausschlüsse und `OR` haben Vergleichstests. Dateinamentreffer,
+Häufigkeit und Wortabstände bestimmen die Relevanz; Ausschnitte verwenden
+Zeichenbereiche für die Hervorhebung. Stoppwörter, URLs, zusammengesetzte Wörter
+und die genaue Reihenfolge von `ts_rank_cd` benötigen weitere Vergleichsfälle.
+Die übrigen Fachsuchen behalten ihre jeweils eigene Suchbedeutung. Die
+[Dokumentensuche](verschluesselte-dokumentensuche.md) beschreibt den umgesetzten
+Umfang; eine vollständige Funktionsgleichheit wird daraus nicht abgeleitet.
 
 Der aktuelle Client baut seine Suchdatenbank im Arbeitsspeicher aus den
 freigegebenen verschlüsselten Datensätzen auf. Die entschlüsselte DuckDB-Datei

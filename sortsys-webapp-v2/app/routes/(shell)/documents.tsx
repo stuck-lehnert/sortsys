@@ -8,6 +8,7 @@ import {
 } from "@sortsys/react-components";
 import { MyHeader } from "~/components/MyHeader";
 import { MyCallout } from "~/components/MyCallout";
+import { DocumentExcerpt } from "~/components/DocumentExcerpt";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useTitle } from "~/hooks/useTitle";
 import { client } from "~/lib/client";
@@ -15,42 +16,11 @@ import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { uiText } from "~/lib/i18n";
 import { from } from "rxjs";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import type { QueryResult } from "@sortsys/v2-client";
 
-type DocumentSearchResult = {
-  id: string;
-  projectId: string;
-  projectTitle: string;
-  fileName: string;
-  mimeType: string;
-  textExtractionStatus: string;
-  excerpt: string | null;
-  rank: number;
-  modifiedAt: Date;
-};
-
-function highlightedExcerpt(excerpt: string): ReactNode[] {
-  return excerpt.split(/(<<|>>)/).reduce<{
-    highlighted: boolean;
-    parts: ReactNode[];
-  }>(
-    (state, part, index) => {
-      if (part === "<<") return { ...state, highlighted: true };
-      if (part === ">>") return { ...state, highlighted: false };
-
-      state.parts.push(
-        state.highlighted ? (
-          <mark key={index}>{part}</mark>
-        ) : (
-          <span key={index}>{part}</span>
-        ),
-      );
-      return state;
-    },
-    { highlighted: false, parts: [] },
-  ).parts;
-}
+type DocumentSearchResult = QueryResult<"projects.files.search">[number];
 
 export function meta() {
   return [{ title: uiText("Dokumente", "Documents") }];
@@ -142,8 +112,8 @@ export default function DocumentsPage() {
           <Icons.DocumentAdd aria-hidden="true" />
           <p>
             {uiText(
-              "Durchsuche alle PDFs, die du in deinen Projekten öffnen darfst. Eingescannte Dokumente werden automatisch erkannt.",
-              "Search every PDF you can open in your projects. Scanned documents are recognized automatically.",
+              "Die Suche berücksichtigt freigegebene Dateinamen und ausgelesene PDF-Texte. Scans ohne Textschicht sind über ihren Dateinamen auffindbar.",
+              "Search covers accessible file names and extracted PDF text. Scans without a text layer can be found by their file name.",
             )}
           </p>
         </Tile>
@@ -206,7 +176,7 @@ export default function DocumentsPage() {
 
                 {!!result.excerpt && (
                   <p className="documents-search__excerpt">
-                    {highlightedExcerpt(result.excerpt)}
+                    <DocumentExcerpt value={result.excerpt} />
                   </p>
                 )}
 
