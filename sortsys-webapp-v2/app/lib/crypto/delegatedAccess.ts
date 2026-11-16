@@ -196,85 +196,97 @@ export async function finishDelegatedAccessChanges(
       return;
     }
     const readership = compileReadership(context.permissions);
-    const rotations = await mapConcurrent(pending, 4, async (domain) => {
-      const collection = expected.get(domain.id)!;
+    const managedAreas = pending.map((domain) => {
+      const collection = expected.get(domain.id);
       if (
+        !collection ||
         domain.scope !== collection.scope ||
-        domain.facet !== collection.facet
-      )
+        domain.facet !== collection.facet ||
+        !actor.allows(collection.scope, collection.facet, "grant") ||
+        !actor.allows(collection.scope, collection.facet, "read")
+      ) {
         throw new InvalidProtectedData();
-      const area = {
+      }
+      return {
         tenant: context.account.tenant,
         id: domain.id,
         scope: collection.scope,
         facet: collection.facet,
         generation: domain.generation,
       };
-      if (
-        !actor.allows(area.scope, area.facet, "grant") ||
-        !actor.allows(area.scope, area.facet, "read")
-      )
-        throw new InvalidProtectedData();
-      const input = await required(
-        client.query(
-          "zerotrust.keyAuthorities.forArea",
-          { scope: area.scope, facet: area.facet },
-          { strategy: "network-only" },
-        ),
-      );
-      context.live();
-      const certificate = await verifyKeyAuthority(
-        input,
-        {
-          tenant: context.account.tenant,
-          generation: context.history.current.generation,
-          scope: area.scope,
-          facet: area.facet,
-          holder: context.subject,
-        },
-        context.history.authority(context.history.current.generation),
-      );
-      context.live();
-      if (
-        certificate.holder.signature !==
-        context.history.identityCertificate(context.subject).signature
-      )
-        throw new InvalidProtectedData();
-      const readers = readership(area.scope, area.facet).map((subject) => ({
-        subject,
-        identity: context.history.identityCertificate(subject),
-      }));
-      const grants = await prepareHistoricalKeyGrants(client, {
-        area,
-        owner: {
-          subject: context.subject,
-          privateKey: context.account.identity.encryptionKey.privateKey,
-        },
-        authority: {
-          generation: context.history.current.generation,
-          privateKey: context.account.identity.signingKey.privateKey,
-          keyAuthority: certificate,
-        },
-        history: context.history.authority,
-        readers,
-        signal,
-        live: context.live,
-      });
-      const { definition } = await createManagedDomain({
-        ...area,
-        generation: (BigInt(area.generation) + 1n).toString(),
-        policyVersion: context.rootPolicy.version,
-        keyAuthority: certificate,
-        signingKey: context.account.identity.signingKey.privateKey,
-        recovery: {
-          encryptionKey: context.history.current.recoveryEncryptionKey,
-          signingKey: context.history.current.recoverySigningKey,
-        },
-        readers,
-      });
-      context.live();
-      return { grants, definition };
     });
+    const certificates = await required(
+      client.query(
+        "zerotrust.keyAuthorities.forAreas",
+        {
+          areas: managedAreas.map((area) => ({
+            scope: area.scope,
+            facet: area.facet,
+          })),
+        },
+        { strategy: "network-only" },
+      ),
+    );
+    context.live();
+    if (!Array.isArray(certificates) || certificates.length !== pending.length)
+      throw new InvalidProtectedData();
+    const rotations = await mapConcurrent(
+      managedAreas,
+      4,
+      async (area, index) => {
+        const certificate = await verifyKeyAuthority(
+          certificates[index],
+          {
+            tenant: context.account.tenant,
+            generation: context.history.current.generation,
+            scope: area.scope,
+            facet: area.facet,
+            holder: context.subject,
+          },
+          context.history.authority(context.history.current.generation),
+        );
+        context.live();
+        if (
+          certificate.holder.signature !==
+          context.history.identityCertificate(context.subject).signature
+        )
+          throw new InvalidProtectedData();
+        const readers = readership(area.scope, area.facet).map((subject) => ({
+          subject,
+          identity: context.history.identityCertificate(subject),
+        }));
+        const grants = await prepareHistoricalKeyGrants(client, {
+          area,
+          owner: {
+            subject: context.subject,
+            privateKey: context.account.identity.encryptionKey.privateKey,
+          },
+          authority: {
+            generation: context.history.current.generation,
+            privateKey: context.account.identity.signingKey.privateKey,
+            keyAuthority: certificate,
+          },
+          history: context.history.authority,
+          readers,
+          signal,
+          live: context.live,
+        });
+        const { definition } = await createManagedDomain({
+          ...area,
+          generation: (BigInt(area.generation) + 1n).toString(),
+          policyVersion: context.rootPolicy.version,
+          keyAuthority: certificate,
+          signingKey: context.account.identity.signingKey.privateKey,
+          recovery: {
+            encryptionKey: context.history.current.recoveryEncryptionKey,
+            signingKey: context.history.current.recoverySigningKey,
+          },
+          readers,
+        });
+        context.live();
+        return { grants, definition };
+      },
+    );
     await publishAccessRotations(
       client,
       context.rootPolicy.version,

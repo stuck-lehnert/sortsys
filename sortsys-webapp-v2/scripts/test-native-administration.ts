@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createClient, type Client } from "@sortsys/v2-client";
+import { createClient, type Client, type QueryInput } from "@sortsys/v2-client";
 import {
   administrativeProfiles,
   administrativeProfileKey,
@@ -230,6 +230,52 @@ try {
     ).signature,
     keyAuthority.signature,
   );
+  const managedArea = {
+    scope: PRODUCT_COLLECTION.scope,
+    facet: PRODUCT_COLLECTION.facet,
+  };
+  const certificates = await required(
+    manager.query(
+      "zerotrust.keyAuthorities.forAreas",
+      { areas: [managedArea] },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.equal(certificates.length, 1);
+  assert.equal(certificates[0]?.signature, keyAuthority.signature);
+  const deniedBatches: Array<{
+    areas: QueryInput<"zerotrust.keyAuthorities.forAreas">["areas"];
+    code: "BAD_REQUEST" | "FORBIDDEN";
+  }> = [
+    { areas: [], code: "BAD_REQUEST" },
+    { areas: [managedArea, managedArea], code: "BAD_REQUEST" },
+    {
+      areas: Array.from({ length: 33 }, () => managedArea),
+      code: "BAD_REQUEST",
+    },
+    {
+      areas: [managedArea, { ...managedArea, facet: "calculation" }],
+      code: "FORBIDDEN",
+    },
+    {
+      areas: [managedArea, { ...managedArea, holder: employee.subject }],
+      code: "FORBIDDEN",
+    },
+  ];
+  for (const { areas, code } of deniedBatches) {
+    const [partial, denied] = await manager.query(
+      "zerotrust.keyAuthorities.forAreas",
+      { areas },
+      { strategy: "network-only" },
+    );
+    assert.equal(
+      partial,
+      null,
+      "A denied batch must never return partial certificates",
+    );
+    assert.ok(denied);
+    assert.equal(denied.code, code);
+  }
   const authority = access.history.authority(access.history.current.generation);
   const managerRights = compilePolicy(access.permissions, [delegated.subject]);
   assert.equal(

@@ -483,6 +483,15 @@ werden getrennt, und jede Operation behält ihre eigene Berechtigungsprüfung.
 Ein Transportpaket garantiert keine gemeinsame Transaktion. Die atomare
 Veröffentlichung gehört ausdrücklich zu `zerotrust.access.publish`.
 
+Aktuelle Schlüsselzertifikate werden mit `zerotrust.keyAuthorities.forAreas` für
+bis zu 32 Bereiche in einem gemeinsamen, versionsgeprüften Stand gelesen. Die
+API bündelt auch die zugehörigen Metadatenabrufe beim Datendienst. Alle Einträge
+behalten ihre eigene Bereichs- und Empfängerprüfung; ein unzulässiger Eintrag
+verwirft die gesamte Antwort. Der Client prüft deren Anzahl, Reihenfolge und
+Signaturen. Beim Ausstellen von 35 Zertifikaten sind deshalb zwei begrenzte
+Veröffentlichungen und zwei Nachprüfungen nötig, statt die 35 Zertifikate einzeln
+nachzulesen. Auch vorbereitete Schlüsselwechsel verwenden diesen Sammelabruf.
+
 Für höchstens 16 gezielt bearbeitete Bereiche werden nur deren Nachweise und
 offene Schlüsselwechsel nachgelesen. Größere Auswahlen und die allgemeine
 Fortsetzung prüfen das gesamte Verzeichnis. Eine zwischenzeitlich geänderte

@@ -85,21 +85,25 @@ export async function provisionMemberKeyAuthorities(
     }
     input.live();
     try {
-      await mapConcurrent(batch, 4, async (certificate) => {
-        const saved = await required(
-          client.query(
-            "zerotrust.keyAuthorities.forArea",
-            {
+      const saved = await required(
+        client.query(
+          "zerotrust.keyAuthorities.forAreas",
+          {
+            areas: batch.map((certificate) => ({
               scope: certificate.scope,
               facet: certificate.facet,
               holder: input.subject,
-            },
-            { strategy: "network-only" },
-          ),
-        );
-        input.live();
+            })),
+          },
+          { strategy: "network-only" },
+        ),
+      );
+      input.live();
+      if (!Array.isArray(saved) || saved.length !== batch.length)
+        throw new InvalidProtectedData();
+      await mapConcurrent(batch, 4, async (certificate, index) => {
         const checked = await verifyKeyAuthority(
-          saved,
+          saved[index],
           {
             tenant: input.account.tenant,
             generation: certificate.generation,

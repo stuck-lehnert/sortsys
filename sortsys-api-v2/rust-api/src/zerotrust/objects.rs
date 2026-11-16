@@ -174,6 +174,11 @@ struct KeyAuthorityAreaInput {
     holder: Option<String>,
 }
 #[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct KeyAuthorityAreasInput {
+    areas: Vec<KeyAuthorityAreaInput>,
+}
+#[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AccessPublicationInput {
     policy_version: String,
@@ -452,6 +457,9 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .query_stub::<KeyAuthorityInput, KeyAuthority>("zerotrust.keyAuthorities.get")
         .query_stub::<KeyAuthorityAreaInput, Option<KeyAuthority>>(
             "zerotrust.keyAuthorities.forArea",
+        )
+        .query_stub::<KeyAuthorityAreasInput, Vec<Option<KeyAuthority>>>(
+            "zerotrust.keyAuthorities.forAreas",
         )
         .mutation_stub::<KeyAuthoritiesInput, Success>("zerotrust.keyAuthorities.register")
         .query_stub::<AccessInput, AccessSnapshot>("zerotrust.access.snapshot")

@@ -112,6 +112,8 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type KeyAuthority<F = string> = { tenant: string, generation: string, scope: string, facet: F, holder: IdentityCertificate, signature: string, };
 
+export type KeyAuthorityAreaInput = { scope: string, facet: Facet, holder?: string, };
+
 export type KeyGrant = { domain: string, generation: string, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
 
 export type KeyRecipientInput = { domain: string, generation: string, recipient: string, };
@@ -357,6 +359,7 @@ export type QueryInputs = {
   "zerotrust.invitations.get": { id: string, };
   "zerotrust.invitations.list": void;
   "zerotrust.keyAuthorities.forArea": { scope: string, facet: Facet, holder?: string, };
+  "zerotrust.keyAuthorities.forAreas": { areas: Array<KeyAuthorityAreaInput>, };
   "zerotrust.keyAuthorities.get": { signature: string, };
   "zerotrust.keys.get": { domain: string, generation: string, };
   "zerotrust.keys.inspect": { keys: Array<KeyRecipientInput>, };
@@ -503,6 +506,7 @@ export type QueryOutputs = {
   "zerotrust.invitations.get": { entry: Entry, history: TrustHistory, };
   "zerotrust.invitations.list": Array<{ invitation: Invitation, claim: Claim | null, accepted: boolean, completed: boolean, revoked: boolean, }>;
   "zerotrust.keyAuthorities.forArea": { tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, } | null;
+  "zerotrust.keyAuthorities.forAreas": Array<{ tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, } | null>;
   "zerotrust.keyAuthorities.get": { tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, };
   "zerotrust.keys.get": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
   "zerotrust.keys.inspect": Array<{ tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, }>;

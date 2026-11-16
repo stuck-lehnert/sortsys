@@ -413,6 +413,7 @@ pub(in crate::zerotrust) fn register(
     let public_identity = Arc::clone(&service);
     let key_authority_get = Arc::clone(&service);
     let key_authority_current = Arc::clone(&service);
+    let key_authorities_current = Arc::clone(&service);
     let key_authority_register = Arc::clone(&service);
     builder
         .query(
@@ -438,49 +439,17 @@ pub(in crate::zerotrust) fn register(
             move |ctx, input: KeyAuthorityAreaInput| {
                 let service = Arc::clone(&key_authority_current);
                 async move {
-                    identifier(&input.scope)?;
-                    let mut context =
-                        metadata_context_for_domains(&service, &ctx, Some(&[])).await?;
-                    let subject = input.holder.as_deref().unwrap_or(&context.security.subject);
-                    identifier(subject)?;
-                    if subject != context.security.subject && !context.auth.is_admin() {
-                        return Err(forbidden());
-                    }
-                    require_key_management(&context.security, subject, &input.scope, input.facet)?;
-                    let signature: Option<String> = context
-                        .transaction
-                        .read(key_authority_holder_key(
-                            &context.security.root.generation.to_string(),
-                            subject,
-                            &input.scope,
-                            input.facet,
-                        ))
-                        .await?;
-                    let certificate = if let Some(signature) = signature {
-                        let certificate = load_key_authority(
-                            &mut context.transaction,
-                            &context.security,
-                            &signature,
-                        )
-                        .await?;
-                        let actor =
-                            checked_member(&mut context.transaction, &context.security, subject)
-                                .await?;
-                        if certificate.holder.signature != actor.signature
-                            || certificate.scope != input.scope
-                            || certificate.facet != input.facet
-                            || certificate.generation
-                                != context.security.root.generation.to_string()
-                        {
-                            return Err(forbidden());
-                        }
-                        Some(certificate)
-                    } else {
-                        None
-                    };
-                    context.transaction.validate().await?;
-                    Ok(certificate)
+                    let mut certificates =
+                        current_key_authorities(&service, &ctx, vec![input]).await?;
+                    certificates.pop().ok_or_else(invalid)
                 }
+            },
+        )
+        .query(
+            "zerotrust.keyAuthorities.forAreas",
+            move |ctx, input: KeyAuthorityAreasInput| {
+                let service = Arc::clone(&key_authorities_current);
+                async move { current_key_authorities(&service, &ctx, input.areas).await }
             },
         )
         .mutation(
@@ -934,6 +903,79 @@ pub(in crate::zerotrust) async fn definition_at(
     };
     verify(&signing_key, &definition.proof, &definition.frame()?)?;
     Ok(definition)
+}
+
+/// Current certificates share one checked policy snapshot. Prefetching both
+/// lookup levels also bounds requests to the separate metadata service.
+async fn current_key_authorities(
+    service: &AuthService,
+    request: &RequestContext,
+    areas: Vec<KeyAuthorityAreaInput>,
+) -> RpcResult<Vec<Option<KeyAuthority>>> {
+    if areas.is_empty() || areas.len() > 32 {
+        return Err(invalid());
+    }
+    for area in &areas {
+        identifier(&area.scope)?;
+        if let Some(holder) = &area.holder {
+            identifier(holder)?;
+        }
+    }
+    let mut context = metadata_context_for_domains(service, request, Some(&[])).await?;
+    let generation = context.security.root.generation.to_string();
+    let mut seen = BTreeSet::new();
+    let mut lookups = Vec::with_capacity(areas.len());
+    for area in &areas {
+        let subject = area.holder.as_deref().unwrap_or(&context.security.subject);
+        if !seen.insert((subject, area.scope.as_str(), area.facet.name())) {
+            return Err(invalid());
+        }
+        if subject != context.security.subject && !context.auth.is_admin() {
+            return Err(forbidden());
+        }
+        require_key_management(&context.security, subject, &area.scope, area.facet)?;
+        lookups.push(key_authority_holder_key(
+            &generation,
+            subject,
+            &area.scope,
+            area.facet,
+        ));
+    }
+    let signatures: Vec<Option<String>> = context.transaction.many(lookups).await?;
+    for signature in signatures.iter().flatten() {
+        sized::<64>(signature)?;
+    }
+    context
+        .transaction
+        .prefetch(
+            signatures
+                .iter()
+                .flatten()
+                .map(|signature| key_authority_record(signature))
+                .collect(),
+        )
+        .await?;
+    let mut result = Vec::with_capacity(areas.len());
+    for (area, signature) in areas.iter().zip(signatures) {
+        let Some(signature) = signature else {
+            result.push(None);
+            continue;
+        };
+        let certificate =
+            load_key_authority(&mut context.transaction, &context.security, &signature).await?;
+        let subject = area.holder.as_deref().unwrap_or(&context.security.subject);
+        let holder = checked_member(&mut context.transaction, &context.security, subject).await?;
+        if certificate.holder.signature != holder.signature
+            || certificate.scope != area.scope
+            || certificate.facet != area.facet
+            || certificate.generation != generation
+        {
+            return Err(forbidden());
+        }
+        result.push(Some(certificate));
+    }
+    context.transaction.validate().await?;
+    Ok(result)
 }
 
 fn require_key_management(

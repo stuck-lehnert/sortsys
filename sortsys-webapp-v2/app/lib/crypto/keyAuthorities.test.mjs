@@ -64,6 +64,8 @@ async function fixture(count = 2) {
     lost: false,
     discard: false,
     substitute: false,
+    reverse: false,
+    truncate: false,
     duringRead: async () => {},
     duringWrite: async () => {},
   };
@@ -87,6 +89,18 @@ async function fixture(count = 2) {
     async query(path, input) {
       calls.push({ path, input: structuredClone(input) });
       await state.duringRead();
+      if (path === "zerotrust.keyAuthorities.forAreas") {
+        const saved = input.areas.map((area) => {
+          const signature = current.get(`${area.scope}/${area.facet}`);
+          const certificate = structuredClone(packets.get(signature) ?? null);
+          if (certificate && state.substitute)
+            certificate.scope = "tool:substituted";
+          return certificate;
+        });
+        if (state.reverse) saved.reverse();
+        if (state.truncate) saved.pop();
+        return [saved, null];
+      }
       let signature = input.signature;
       if (path === "zerotrust.keyAuthorities.forArea")
         signature = current.get(`${input.scope}/${input.facet}`);
@@ -198,7 +212,7 @@ test("cancelling one reader does not fail peers, while an account change invalid
   await expect(readBoxKeyAuthority(next.client, next.read)).rejects.toThrow();
 });
 
-test("primary issuance uses bounded batches and confirms lost acknowledgements against actual holder lookups", async () => {
+test("35 issued certificates use two bounded writes and two shared readbacks, including after lost acknowledgements", async () => {
   const f = await fixture(35);
   f.state.lost = true;
   await provisionMemberKeyAuthorities(f.client, f.context);
@@ -208,8 +222,24 @@ test("primary issuance uses bounded batches and confirms lost acknowledgements a
       .map((call) => call.input.authorities.length),
   ).toEqual([32, 3]);
   expect(
-    f.calls.filter((call) => call.path === "zerotrust.keyAuthorities.forArea"),
-  ).toHaveLength(35);
+    f.calls
+      .filter((call) => call.path === "zerotrust.keyAuthorities.forAreas")
+      .map((call) => call.input.areas.length),
+  ).toEqual([32, 3]);
+  expect(f.calls).toHaveLength(4);
+});
+
+test("a truncated or reordered certificate batch cannot confirm successful issuance", async () => {
+  const setup = await fixture();
+  setup.state.truncate = true;
+  await expect(
+    provisionMemberKeyAuthorities(setup.client, setup.context),
+  ).rejects.toThrow();
+  setup.state.truncate = false;
+  setup.state.reverse = true;
+  await expect(
+    provisionMemberKeyAuthorities(setup.client, setup.context),
+  ).rejects.toThrow();
 });
 
 test("ordinary changes issue no key authority; false success, substituted fields and account closure never confirm issuance", async () => {
