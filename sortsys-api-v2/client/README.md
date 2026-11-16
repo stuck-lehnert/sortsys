@@ -52,10 +52,20 @@ eine fehlgeschlagene Anfrage verwendet. Laufende identische Anfragen dürfen
 weiterhin dieselbe Antwort teilen. Die Webapp nutzt dies für Sicherheitsmetadaten,
 die ihre Zugriffsprüfungen stets frisch laden.
 
+Der Client sammelt Leseanfragen über ein festes Fenster von vier Millisekunden.
+Damit können auch unabhängige Aufrufe nach asynchronen Prüfungen dieselbe
+HTTP-Anfrage nutzen. Sobald 32 Operationen warten, wird der Stapel sofort
+gesendet. Weitere Aufrufe verlängern das Sammelfenster nicht. Schreibanfragen
+werden weiterhin in der nächsten Microtask gesendet und warten nicht auf dieses
+Fenster. Die Bündelung mehrerer Operationen stellt keine gemeinsame
+Datenbanktransaktion her; atomare Änderungen verwenden die dafür vorgesehenen
+API-Operationen.
+
 Kleine Leseanfragen verwenden GET. Würde die gebündelte URL länger als 6.000
 Zeichen, überträgt der Client die Eingaben als JSON-Body mit POST. Ein Stapel
 enthält höchstens 32 Operationen. Reihenfolge, Datentypen und die beim Aufruf
-geltenden Zugangsdaten bleiben erhalten.
+geltenden Eingaben und Zugangsdaten bleiben erhalten. Anfragen mit verschiedenen
+Zugangsdaten werden in getrennten Stapeln übertragen.
 
 Die Browser-Anmeldung verwendet den
 [OPAQUE-Anmeldeweg der Webapp](../../sortsys-webapp-v2/app/lib/crypto/session.ts).

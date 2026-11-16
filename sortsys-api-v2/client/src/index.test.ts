@@ -15,6 +15,51 @@ function success(data: unknown) {
   );
 }
 
+test("independent asynchronous reads share one authenticated request through the public client", async () => {
+  const requests: Array<{ authorization: string | null; paths: string[] }> = [];
+  const client = createClient("https://api.example.test", "async-batching", {
+    cache: memoryCache().cache,
+    fetch: (async (input, options) => {
+      const url = new URL(String(input));
+      const encoded = JSON.parse(url.searchParams.get("input")!);
+      requests.push({
+        authorization: new Headers(options?.headers).get("Authorization"),
+        paths: url.pathname.slice(1).split(","),
+      });
+      return new Response(
+        JSON.stringify(
+          Object.values(encoded).map((data) => ({ result: { data } })),
+        ),
+      );
+    }) as typeof globalThis.fetch,
+  });
+  client.setToken("current-session");
+  const pending = [];
+  for (let id = 0; id < 8; id++) {
+    pending.push(
+      client.queryDynamic(
+        "testing.read",
+        { id },
+        {
+          strategy: "network-only",
+        },
+      ),
+    );
+    // Let the earlier call reach the transport before starting the next read.
+    // Microtask-only batching would already have sent it by this point.
+    await Promise.resolve();
+  }
+  expect(await Promise.all(pending)).toEqual(
+    Array.from({ length: 8 }, (_, id) => [{ id }, null]),
+  );
+  expect(requests).toEqual([
+    {
+      authorization: "Bearer current-session",
+      paths: Array.from({ length: 8 }, () => "testing.read"),
+    },
+  ]);
+});
+
 test("excluded responses never use or populate the cache, including stream refreshes and fallback", async () => {
   const { cache, values } = memoryCache();
   let available = true;

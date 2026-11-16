@@ -52,10 +52,11 @@ export class RpcClientError<
 type OperationKind = "query" | "mutation";
 const MAX_QUERY_URL_LENGTH = 6000;
 const MAX_BATCH_OPERATIONS = 32;
+const QUERY_BATCH_WINDOW_MS = 4;
 
 interface PendingOperation {
   path: string;
-  input: unknown;
+  serializedInput: string;
   headers: Headers;
   headerKey: string;
   resolve(value: unknown): void;
@@ -73,7 +74,7 @@ export interface RpcBatchClientOptions {
 }
 
 /**
- * Small legacy-wire-compatible batch transport. It intentionally owns the protocol
+ * First-party batch transport. It intentionally owns the protocol
  * implementation so neither the browser bundle nor its types depend on an external RPC framework.
  */
 export class RpcBatchClient {
@@ -88,6 +89,7 @@ export class RpcBatchClient {
     query: false,
     mutation: false,
   };
+  private queryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(endpoint: string, options: RpcBatchClientOptions = {}) {
     this.endpoint = endpoint.replace(/\/+$/, "");
@@ -117,7 +119,9 @@ export class RpcBatchClient {
       );
       this.queues[kind].push({
         path,
-        input,
+        // The request owns its input from this point on. A later edit must not
+        // change an operation while it waits in the batching window.
+        serializedInput: JSON.stringify(superjson.serialize(input)),
         headers,
         headerKey,
         resolve,
@@ -125,14 +129,32 @@ export class RpcBatchClient {
       });
     });
 
+    if (kind === "query" && this.queues.query.length >= MAX_BATCH_OPERATIONS) {
+      this.flush(kind);
+      return result;
+    }
     if (!this.scheduled[kind]) {
       this.scheduled[kind] = true;
-      queueMicrotask(() => this.flush(kind));
+      if (kind === "query") {
+        // Independent cache reads, cryptographic checks and event handlers can
+        // finish in separate tasks. Keep a short, fixed window from the first
+        // read; later reads never extend it. Full batches leave immediately.
+        this.queryTimer = setTimeout(
+          () => this.flush(kind),
+          QUERY_BATCH_WINDOW_MS,
+        );
+      } else {
+        queueMicrotask(() => this.flush(kind));
+      }
     }
     return result;
   }
 
   private flush(kind: OperationKind) {
+    if (kind === "query" && this.queryTimer !== undefined) {
+      clearTimeout(this.queryTimer);
+      this.queryTimer = undefined;
+    }
     this.scheduled[kind] = false;
     const operations = this.queues[kind].splice(0);
     if (operations.length === 0) return;
@@ -160,17 +182,14 @@ export class RpcBatchClient {
 
   private async send(kind: OperationKind, operations: PendingOperation[]) {
     try {
-      const input = Object.fromEntries(
-        operations.map((operation, index) => [
-          index,
-          superjson.serialize(operation.input),
-        ]),
-      );
       const paths = operations.map((operation) => operation.path).join(",");
       const commonHeaders = new Headers(operations[0]!.headers);
       commonHeaders.set("accept", "application/json");
 
-      const body = JSON.stringify(input);
+      const entries = operations.map(
+        (operation, index) => `"${index}":${operation.serializedInput}`,
+      );
+      const body = `{${entries.join(",")}}`;
       let url = `${this.endpoint}/${paths}?batch=1`;
       const queryUrl =
         kind === "query"
