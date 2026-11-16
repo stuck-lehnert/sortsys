@@ -3126,9 +3126,34 @@ window.cryptoFixture = {
       identities: [setup.owner, certificate],
     };
     const members = [
-      { id: "1", username: "owner", enrolled: true, roles: [":admin"] },
-      { id: "2", username: "frank.doe", enrolled: true, roles: [] },
-      { id: "3", username: "neues.konto", enrolled: false, roles: [] },
+      {
+        id: "1",
+        username: "owner",
+        enrolled: true,
+        certified: true,
+        roles: [":admin"],
+      },
+      {
+        id: "2",
+        username: "frank.doe",
+        enrolled: true,
+        certified: true,
+        roles: [],
+      },
+      {
+        id: "3",
+        username: "neues.konto",
+        enrolled: false,
+        certified: false,
+        roles: [],
+      },
+      {
+        id: "4",
+        username: "konto.nach.recovery",
+        enrolled: true,
+        certified: false,
+        roles: [],
+      },
     ];
     const replies = {
       "commercial.cases.list": [

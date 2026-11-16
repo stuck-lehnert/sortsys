@@ -179,10 +179,16 @@ async fn list_members(
                 return Err(invalid());
             }
             if account.available(Utc::now()) {
+                let certified = super::super::objects::registry::certified_identity(
+                    &account,
+                    &context.security,
+                )?
+                .is_some();
                 rows.push(Member {
                     id: Id(id),
                     username: account.username,
                     enrolled: account.credential.is_some(),
+                    certified,
                     roles: account.roles,
                 });
             }

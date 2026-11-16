@@ -31,6 +31,10 @@ import {
 } from "../app/lib/crypto/initializeTenant";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import {
+  prepareNativeToolRecovery,
+  verifyNativeToolRecovery,
+} from "./test-native-tool-recovery";
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
 const [, , outputPath] = process.argv.slice(2);
@@ -85,6 +89,7 @@ globalThis.fetch = new Proxy(originalFetch, {
 const owner = createClient(endpoints[0], "native-recovery-former-owner");
 const first = createClient(endpoints[1], "native-recovery-first");
 const second = createClient(endpoints[0], "native-recovery-second");
+const toolMember = createClient(endpoints[1], "native-recovery-tool-member");
 const phrases = [source.phrase];
 const passwords = [
   "Native-recovery-password-one-2026!",
@@ -100,6 +105,11 @@ try {
   const session = await required(owner.query("auth.sessionInfo", undefined));
   const subject = `user:${session.user.id}`;
   const originalCompletion = await initializeTenant(owner, signal, duckDriver);
+  const toolRecovery = await prepareNativeToolRecovery(owner, toolMember, {
+    tenant: source.tenant,
+    username: "builder",
+    password: "Only-owner-knows-this-password-2026!",
+  });
   // More than 64 keys exercises the server's inventory pagination and the
   // encrypted catalogue tree through its actual read/write endpoints.
   await provisionOwnedCollections(
@@ -209,11 +219,28 @@ try {
   const project = await required(
     recoveredBusiness.mutate("projects.create", { title: projectTitle }),
   );
+  recoveredBusiness.dispose();
+  const currentIdentities = await required(
+    client.query("zerotrust.identities.list", undefined),
+  );
+  assert.deepEqual(
+    currentIdentities.map((identity) => identity.subject),
+    [winner.transition.nextAdministrator],
+  );
+  await verifyNativeToolRecovery(
+    client,
+    toolRecovery,
+    {
+      tenant: source.tenant,
+      username: winner.username,
+      password: passwords[0],
+    },
+    true,
+  );
   // The old personal area keeps its original subject after seed recovery.
   const { privateLlmCollection } = await import("../app/lib/data/privateLlm");
-  const { protectedCollection } = await import(
-    "../app/lib/data/protectedObjects"
-  );
+  const { protectedCollection } =
+    await import("../app/lib/data/protectedObjects");
   async function readCanary(reader: Client) {
     const collection = await protectedCollection(
       reader,
@@ -235,13 +262,6 @@ try {
       collection.close();
     }
   }
-  const currentIdentities = await required(
-    client.query("zerotrust.identities.list", undefined),
-  );
-  assert.deepEqual(
-    currentIdentities.map((identity) => identity.subject),
-    [winner.transition.nextAdministrator],
-  );
   await readCanary(client);
   console.log("Native recovery: recovering again with the replacement phrase");
   const next = await recoveryDraft(
@@ -287,6 +307,17 @@ try {
       title: "Weitere Baustelle nach erneuter Wiederherstellung",
     }),
   );
+  nextBusiness.dispose();
+  await verifyNativeToolRecovery(
+    second,
+    toolRecovery,
+    {
+      tenant: source.tenant,
+      username: nextPlan.username,
+      password: passwords[1],
+    },
+    false,
+  );
   await readCanary(second);
   await recoveryDraft(first, source.tenant, next.newPhrase, passwords[1]);
   const wire = requests.join("\n");
@@ -305,7 +336,13 @@ try {
       `Missing wire observation for ${path}`,
     );
   }
-  for (const secret of [...phrases, ...passwords, canary, projectTitle])
+  for (const secret of [
+    ...phrases,
+    ...passwords,
+    ...toolRecovery.secrets,
+    canary,
+    projectTitle,
+  ])
     assert.equal(wire.includes(secret), false);
   assert.notEqual(
     original.vault.signingKey,
@@ -317,5 +354,6 @@ try {
 } finally {
   globalThis.fetch = originalFetch;
   await lockCryptoSession();
-  for (const client of [owner, first, second]) client.setToken(null);
+  for (const client of [owner, first, second, toolMember])
+    client.setToken(null);
 }

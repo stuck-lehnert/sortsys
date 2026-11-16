@@ -58,6 +58,13 @@ Generationen. Er enthält keine Passwörter oder privaten Identitätsschlüssel
 anderer Benutzer. Eine Recovery stellt den Zugriff auf betriebliche Inhalte
 wieder her; sie übernimmt nicht die Identität aller Mitarbeiter.
 
+Ein vorhandenes Mitarbeiterpasswort bleibt von der Mandantenfreigabe getrennt.
+Nach einer Recovery müssen die Konten unter der neuen Mandantenautorität erneut
+eingeladen und bestätigt werden. Die Rechteverwaltung bietet für diese Konten
+die Einladung an, auch wenn bereits ein Passwort besteht. Nach der Bestätigung
+gelten die neu erteilten Rechte; frühere Buchungsfreigaben werden nicht pauschal
+wiederhergestellt.
+
 Neue kryptografische Bereiche dürfen nur zusammen mit einem für den aktuellen
 öffentlichen Recovery-Schlüssel verschlüsselten Schlüsselpaket veröffentlicht
 werden. Die Transaktion prüft die Recovery-Generation und verhindert, dass ein
@@ -242,6 +249,15 @@ werden abgewiesen. Ein vorher gespeicherter Inhalt bleibt nach beiden Wechseln
 lesbar. Auch eine verlorene Antwort nach dem Commit wird über den
 veröffentlichten Stand aufgelöst. Die beobachteten Anfragen enthalten weder
 Phrase noch Passwort oder Geschäftsinhalt im Klartext.
+
+Der Test enthält aktive und abgeschlossene Werkzeugbuchungen. Nach beiden
+Recoveries bleiben deren Inhalte und Kosten für den neuen Administrator lesbar.
+Eine Rückgabe mit anschließendem Schlüsselwechsel verhindert, dass alte
+Mitarbeiterschlüssel spätere Änderungen öffnen. Zwischen den Recoveries wird
+ein Mitarbeiter mit seinem bestehenden Passwort erneut eingeladen und bestätigt.
+Er erhält Zugriff auf eine neue Ausgabe, ohne damit frühere Buchungen oder
+Werkzeugkosten lesen zu können. Dieser Nachweis deckt den Werkzeugablauf ab;
+er ersetzt keine Prüfung sämtlicher Dokumentarten.
 
 Die unabhängige Generationssperre ist im Datendienst umgesetzt. Sein
 [Wiederherstellungstest](../sortsys-store/src/witness.rs) weist eine alte

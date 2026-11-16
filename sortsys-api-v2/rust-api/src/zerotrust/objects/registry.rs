@@ -251,7 +251,7 @@ impl RotationChecks {
         Ok(area_readers(previous, area) != current)
     }
 }
-fn certified_identity(
+pub(in crate::zerotrust) fn certified_identity(
     account: &accounts::Account,
     guard: &Security,
 ) -> RpcResult<Option<IdentityCertificate>> {

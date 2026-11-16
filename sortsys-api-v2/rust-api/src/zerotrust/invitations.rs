@@ -151,6 +151,7 @@ struct Member {
     id: Id,
     username: String,
     enrolled: bool,
+    certified: bool,
     roles: Vec<String>,
 }
 #[derive(Deserialize, TS)]

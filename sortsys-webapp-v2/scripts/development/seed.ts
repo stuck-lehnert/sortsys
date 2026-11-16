@@ -162,8 +162,8 @@ async function memberAccount(
     progress.ids.frank = frank.id;
     await saveProgress(options.directory, progress);
     const members = await invitationMembers(owner, options.signal);
-    const enrolled =
-      members.find((person) => person.id === frank.id)?.enrolled ?? false;
+    const certified =
+      members.find((person) => person.id === frank.id)?.certified ?? false;
     const invitations = await administratorInvitations(owner, options.signal);
     let invitation = invitations.find((value) => {
       const current = value.link.invitation;
@@ -173,7 +173,7 @@ async function memberAccount(
         BigInt(current.validUntil) > BigInt(Math.floor(Date.now() / 1000))
       );
     });
-    if (!enrolled && !invitation) {
+    if (!certified && !invitation) {
       const created = await createMemberInvitation(
         owner,
         { id: frank.id, username: frank.username },

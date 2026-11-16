@@ -120,7 +120,7 @@ export type LiveKind = "chat" | "document_import";
 
 export type LlmUseCase = "chat" | "documentImport";
 
-export type Member = { id: Id, username: string, enrolled: boolean, roles: Array<string>, };
+export type Member = { id: Id, username: string, enrolled: boolean, certified: boolean, roles: Array<string>, };
 
 export type MemberAction = "activate" | "deactivate" | "archive" | "unarchive";
 

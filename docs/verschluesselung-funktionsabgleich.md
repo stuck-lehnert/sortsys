@@ -176,6 +176,10 @@ Neue Buchungen gewähren dem zugewiesenen, kryptografisch registrierten Mitarbei
 automatisch Leserechte ohne Kostenfreigabe. Rückgabe und Umbuchung beenden dieses
 abgeleitete Recht. Ein nativer Test mit zwei API-Instanzen prüft die Freigabe,
 abgewiesene Schreibversuche, den Entzug und den administrativen Schlüsselwechsel.
+Ein weiterer nativer Ablauf prüft diese Buchungen über zwei Recoveries hinweg:
+historische Inhalte und Kosten bleiben erhalten, alte Schlüssel öffnen keine
+späteren Änderungen, und eine erneute Einladung stellt alte Buchungsrechte nicht
+automatisch wieder her. Neue Ausgaben erhalten die neue Freigabe.
 Automatische Rechte für ältere Buchungen, später registrierte Mitarbeiter sowie
 Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch. Ohne
 Administrationsrecht bleibt der Schlüsselwechsel nach einer Rückgabe vorgemerkt.

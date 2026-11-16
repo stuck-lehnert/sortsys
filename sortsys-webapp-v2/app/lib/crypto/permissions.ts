@@ -105,7 +105,7 @@ export async function shareNewPersonnelName(
       seen.add(member.id);
       const subject = `user:${member.id}`;
       if (
-        !member.enrolled ||
+        !member.certified ||
         member.id === context.session.user.id ||
         // Directory defaults never replace an existing custom grant or denial.
         permissions.rules.some(

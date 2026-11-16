@@ -68,6 +68,14 @@ Tabelle und Kartenansicht, den fehlenden Link zu gesperrten Werkzeugstammdaten
 und den Entzug nach der Rückgabe. Der Schlüsselwechsel verwirft dabei nicht den
 unveränderten Zugriffskontext des Administrators.
 
+Ein nativer Test durchläuft außerdem zwei Mandantenwiederherstellungen mit
+aktiven und zurückgegebenen Werkzeugbuchungen. Der neue Administrator kann die
+Buchungen lesen und Werkzeuge zurücknehmen; Preise und frühere Änderungen
+bleiben erhalten. Ein erneut eingeladener Mitarbeiter erhält seine alten
+Buchungsfreigaben nicht automatisch zurück. Eine anschließende neue Ausgabe
+erteilt ihm wieder die vorgesehene Lesefreigabe. Nach der Rückgabe öffnet auch
+sein behaltener alter Schlüssel keine späteren Änderungen.
+
 Ein weiterer Browserlauf legt mit Franks delegiertem Anlegerecht eine Buchung
 an. John kann sie über die andere API-Instanz lesen. Nach dem Entzug darf Frank
 keine neue Buchung beginnen, die vorhandene Buchung aber weiterhin öffnen und
@@ -122,8 +130,6 @@ Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
   die Buchung, bleibt der nötige Schlüsselwechsel zur administrativen
   Fortsetzung vorgemerkt. Bis dahin werden neue Inhalte des betroffenen
   Bereichs nicht veröffentlicht.
-- Der vollständige Ablauf dieser abgeleiteten Rechte nach einer
-  Mandantenwiederherstellung ist noch gesondert zu prüfen.
 - Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
   auf die Werkzeugkosten, um den historischen Kostenstand anzulegen. Eine
   Übernahme dieses Kostenstands ohne Entschlüsselung ist noch anzuschließen.

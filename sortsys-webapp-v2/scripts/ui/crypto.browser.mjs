@@ -3319,6 +3319,40 @@ for (const discard of [false, true])
     }
   });
 
+test("an existing password without a current tenant certificate offers invitation controls", async () => {
+  const { context, page, external } = await open();
+  try {
+    await page.evaluate(() => window.cryptoFixture.showUserAccess());
+    await page
+      .getByRole("combobox", { name: "Benutzerkonto" })
+      .fill("recovery");
+    await page
+      .getByRole("option", { name: "konto.nach.recovery", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Einladung erstellen", exact: true })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Berechtigungen speichern", exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .getByRole("button", {
+          name: "Anlageberechtigungen speichern",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("the access form distinguishes editing a certified member from inviting a new account", async () => {
   const { context, page, external } = await open();
   try {

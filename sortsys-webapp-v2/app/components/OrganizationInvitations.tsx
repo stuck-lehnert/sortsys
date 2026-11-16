@@ -109,7 +109,7 @@ export default function OrganizationInvitations({
     );
     if (
       selected &&
-      people.some((member) => member.id === selected.id && member.enrolled)
+      people.some((member) => member.id === selected.id && member.certified)
     ) {
       const access = await memberAccess(client, `user:${selected.id}`, signal);
       signal.throwIfAborted();
@@ -133,7 +133,7 @@ export default function OrganizationInvitations({
     const current = new AbortController();
     setEditing(false);
     loadAccess(initialAccess());
-    if (!selected?.enrolled) {
+    if (!selected?.certified) {
       setLoadingAccess(false);
       return () => current.abort();
     }
@@ -152,7 +152,7 @@ export default function OrganizationInvitations({
         if (!current.signal.aborted) setLoadingAccess(false);
       });
     return () => current.abort();
-  }, [selected?.id, selected?.enrolled]);
+  }, [selected?.id, selected?.certified]);
   async function act(operation: (signal: AbortSignal) => Promise<unknown>) {
     const signal = controller.current?.signal;
     if (!signal || signal.aborted || busy) return;
@@ -257,6 +257,7 @@ export default function OrganizationInvitations({
                     id: user.id,
                     username: user.username,
                     enrolled: false,
+                    certified: false,
                     roles: [],
                   });
                 },

@@ -266,9 +266,21 @@ async function rotationFixture(conflict = false) {
     if (path === "zerotrust.members.list") {
       f.calls.push(path);
       if (input.after === null)
-        return [{ rows: [{ id: "1", enrolled: true }], after: "1" }, null];
+        return [
+          { rows: [{ id: "1", enrolled: true, certified: true }], after: "1" },
+          null,
+        ];
       expect(input.after).toBe("1");
-      return [{ rows: [{ id: "2", enrolled: true }], after: null }, null];
+      return [
+        {
+          rows: [
+            { id: "2", enrolled: true, certified: true },
+            { id: "3", enrolled: true, certified: false },
+          ],
+          after: null,
+        },
+        null,
+      ];
     }
     return query(path, input);
   };
