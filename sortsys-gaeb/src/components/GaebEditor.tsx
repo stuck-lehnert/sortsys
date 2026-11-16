@@ -1235,6 +1235,7 @@ export function GaebEditor({
       }}
       className="gaeb-editor"
       data-save-state={saveState()}
+      data-connection-state={connectionStatus}
       data-schema-state={schemaState(model.source)}
       data-content-complete={complete}
       aria-label={t("GAEB-Editor", "GAEB editor")}

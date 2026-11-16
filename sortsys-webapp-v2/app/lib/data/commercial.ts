@@ -30,6 +30,7 @@ import {
 } from "./addressBook";
 import {
   commitProtectedWrites,
+  isWriteConflict,
   type DocumentPublication,
   mergePreparedWrites,
   type PreparedWrites,
@@ -1398,13 +1399,56 @@ export function createProtectedCommercial(
       });
       const refreshed = await afterStaging(basis);
       await verifySourceVersion();
-      await persist(
-        refreshed,
-        updated,
-        [...new Set(facets)],
-        invoice?.guards ?? [],
-        [publication],
-      );
+      try {
+        await persist(
+          refreshed,
+          updated,
+          [...new Set(facets)],
+          invoice?.guards ?? [],
+          [publication],
+        );
+      } catch (error) {
+        if (
+          !isWriteConflict(error) ||
+          facets.length > 0 ||
+          invoice ||
+          !old.complete
+        ) {
+          throw error;
+        }
+        // Two editors can compact the same accepted live text concurrently.
+        // A newer, verified native file with exactly the requested bytes already
+        // fulfils this document-only change. No business write may be skipped.
+        const currentHead = await store.head(id);
+        if (
+          !currentHead ||
+          BigInt(currentHead.version) <= BigInt(previous.version)
+        ) {
+          throw error;
+        }
+        const currentContent = await store.load(currentHead, processor);
+        if (!currentContent.complete || currentContent.xml !== source)
+          throw error;
+        await verifySourceVersion();
+        if (data.livePositions !== undefined) {
+          const checkpoints = await prepareDocumentLivePublications(
+            client,
+            currentHead,
+            currentHead,
+            signal,
+            livePositions(data.livePositions),
+          );
+          if (checkpoints.length) {
+            await commitProtectedWrites(client, [], signal, [], {
+              live: checkpoints,
+            });
+          }
+        }
+        return {
+          version: BigInt(currentHead.version),
+          savedAt: documentTimestamp(currentHead.modifiedMicros),
+        };
+      }
       return { version: BigInt(publication.head.version), savedAt: now };
     } finally {
       store.close();

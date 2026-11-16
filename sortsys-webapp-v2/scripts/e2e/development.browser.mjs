@@ -49,9 +49,27 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 function auditPage(page) {
   const errors = [];
+  const eventHints = [];
   const plaintextLeaks = [];
   const unsupportedOperations = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("websocket", (socket) => {
+    if (!new URL(socket.url()).pathname.endsWith("/zerotrust/events")) return;
+    socket.on("framereceived", ({ payload }) => {
+      if (typeof payload !== "string") return;
+      const value = JSON.parse(payload);
+      if (value.type === "changed") {
+        eventHints.push({
+          type: value.type,
+          reset: value.reset,
+          all: value.all,
+          control: value.control,
+          staged: value.staged === true,
+          domains: Object.keys(value.domains ?? {}),
+        });
+      }
+    });
+  });
   page.on("request", (request) => {
     if (!new URL(request.url()).pathname.startsWith("/api/v2/")) return;
     const body = request.postData() ?? "";
@@ -70,6 +88,8 @@ function auditPage(page) {
       "Handwerkerstraße 12a",
       "Untergrund vorbereiten",
       "Haftgrund, manuell angepasst",
+      "Treppenhausrenovierung Musterstraße",
+      "Treppenhaus im Live-Abgleich",
       "Antrag vor Standardfreigabe",
       "Antrag mit Standardfreigabe",
     ]) {
@@ -78,6 +98,7 @@ function auditPage(page) {
   });
   return {
     errors,
+    eventHints,
     assertClean() {
       assert.deepEqual(errors, [], "Unhandled browser errors");
       assert.deepEqual(
@@ -118,6 +139,7 @@ async function scenario(name, run) {
   } catch (error) {
     failed = true;
     console.error(`Browser E2E failed: ${name}`, error);
+    console.error("Public change hints:", audit.eventHints);
     if (audit.errors.length)
       console.error("Unhandled browser errors:", audit.errors);
     await page
@@ -168,6 +190,77 @@ async function loginOperator(page) {
   await expect(
     page.getByRole("heading", { name: "Mandanten", exact: true }),
   ).toBeVisible();
+}
+
+function firstPrice(editor) {
+  return editor.locator('[data-gaeb-field$=":UP"]').first();
+}
+async function priceValue(editor) {
+  const value = await firstPrice(editor).getAttribute("aria-description");
+  return Number(value.replace(/[^0-9,.-]/g, "").replace(",", "."));
+}
+async function changePrice(editor, value) {
+  const price = firstPrice(editor);
+  await expect(price).toBeEnabled();
+  await price.focus();
+  const input = editor.locator("textarea.gaeb-canvas-input");
+  await input.fill(value);
+  await input.press("Tab");
+  await expect
+    .poll(() => priceValue(editor))
+    .toBe(Number(value.replace(",", ".")));
+  await expect(editor.locator(".gaeb-editor")).toHaveAttribute(
+    "data-save-state",
+    "saved",
+  );
+}
+
+async function changeTextBeforePublication(writer, reader, value) {
+  let release;
+  const released = new Promise((resolve) => {
+    release = resolve;
+  });
+  const match = (url) =>
+    decodeURIComponent(url.pathname)
+      .split("/")
+      .at(-1)
+      .split(",")
+      .includes("zerotrust.objects.batch");
+  const handler = async (route) => {
+    const body = route.request().postDataJSON();
+    const publishesDocument = Object.values(body).some(
+      (entry) => entry?.json?.documents?.length > 0,
+    );
+    if (publishesDocument) {
+      await released;
+    }
+    await route.continue();
+  };
+  await writer.route(match, handler);
+  await reader.route(match, handler);
+  const field = (editor) => editor.locator('[data-gaeb-field="project:title"]');
+  try {
+    await field(writer).focus();
+    const input = writer.locator("textarea.gaeb-canvas-input");
+    await input.fill(value);
+    await input.press("Tab");
+    await expect(field(writer)).toHaveAttribute("aria-description", value);
+    await expect(field(reader)).toHaveAttribute("aria-description", value);
+  } finally {
+    release();
+    await writer.unroute(match, handler);
+    await reader.unroute(match, handler);
+  }
+  // The production save deadline starts after the test releases its own gate.
+  // The earlier ordinary price saves retain their unchanged cold-save deadline.
+  await Promise.all(
+    [writer, reader].map((editor) =>
+      expect(editor.locator(".gaeb-editor")).toHaveAttribute(
+        "data-save-state",
+        "saved",
+      ),
+    ),
+  );
 }
 
 try {
@@ -255,6 +348,118 @@ try {
       path: join(artifacts, "administrator-document.png"),
       fullPage: true,
     });
+  });
+  await scenario("gaeb-autosave-and-reload", async (page) => {
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    await page.goto(`${server.origin}/offers`);
+    await page
+      .getByText("Treppenhausrenovierung Musterstraße", { exact: true })
+      .click();
+    await expect(firstPrice(page)).toBeEnabled();
+    await changePrice(page, "61,20");
+    await page.reload();
+    await expect(firstPrice(page)).toBeEnabled();
+    await expect.poll(() => priceValue(page)).toBe(61.2);
+    await page.screenshot({
+      path: join(artifacts, "gaeb-autosaved-and-reloaded.png"),
+      fullPage: true,
+    });
+  });
+  await scenario("gaeb-editing-and-replica-synchronization", async (page) => {
+    const peerServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(peerServer);
+    const peerContext = await applicationContext();
+    const peer = await peerContext.newPage();
+    const peerAudit = auditPage(peer);
+    await peerContext.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await page.goto(`${server.origin}/offers`);
+      await page
+        .getByText("Treppenhausrenovierung Musterstraße", { exact: true })
+        .click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(firstPrice(page)).toBeEnabled();
+      console.log("GAEB E2E: editable document ready on first API instance");
+      const originalEditor = await page.locator(".gaeb-editor").elementHandle();
+      assert.ok(originalEditor);
+      const path = new URL(page.url()).pathname;
+      assert.match(path, /^\/gaeb\/[1-9a-v][0-9a-v]{0,12}$/);
+      await login(peer, "john.doe", "123456", peerServer.origin);
+      await expect(
+        peer.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      assert.equal(
+        await originalEditor.evaluate((element) => element.isConnected),
+        true,
+        "A second sign-in must not tear down an editor with unchanged access",
+      );
+      await peer.goto(`${peerServer.origin}${path}`);
+      await expect(firstPrice(peer)).toBeEnabled();
+      console.log("GAEB E2E: editable document ready on second API instance");
+      await changePrice(page, "73,25");
+      console.log("GAEB E2E: first price change saved");
+      await expect.poll(() => priceValue(peer)).toBe(73.25);
+      console.log("GAEB E2E: second browser received first price change");
+      await changePrice(peer, "84,50");
+      console.log("GAEB E2E: second price change saved");
+      await expect.poll(() => priceValue(page)).toBe(84.5);
+      await page.reload();
+      await expect.poll(() => priceValue(page)).toBe(84.5);
+      console.log("GAEB E2E: final price survived reloading");
+      for (const editor of [page, peer]) {
+        await expect(editor.locator(".gaeb-editor")).toHaveAttribute(
+          "data-connection-state",
+          "online",
+        );
+      }
+      await changeTextBeforePublication(
+        page,
+        peer,
+        "Treppenhaus im Live-Abgleich",
+      );
+      console.log("GAEB E2E: live text arrived before native publication");
+      await page.reload();
+      await expect(
+        page.locator('[data-gaeb-field="project:title"]'),
+      ).toHaveAttribute("aria-description", "Treppenhaus im Live-Abgleich");
+      await page.screenshot({
+        path: join(artifacts, "gaeb-edited-and-reloaded.png"),
+        fullPage: true,
+      });
+      peerAudit.assertClean();
+    } finally {
+      await writeFile(
+        join(artifacts, "gaeb-peer-change-hints.json"),
+        JSON.stringify(peerAudit.eventHints),
+      );
+      await peer
+        .screenshot({
+          path: join(artifacts, "gaeb-peer-final.png"),
+          fullPage: true,
+        })
+        .catch((error) => {
+          console.error("Peer screenshot unavailable:", error.message);
+        });
+      await peerContext.tracing.stop({
+        path: join(artifacts, "gaeb-peer-live.zip"),
+      });
+      await peerContext.close();
+      await peerServer.close();
+    }
   });
   await scenario(
     "seeded-project-workflows-and-native-editors",
