@@ -61,6 +61,7 @@ import {
 import { createContentAccess } from "./menuAccess";
 import { announceDataChanges, listenDataChanges } from "./runtime/changes";
 import { latestQuery } from "./runtime/latestQuery";
+import { pendingReads } from "./runtime/pendingReads";
 import {
   TOOL_INDEX,
   TOOL_QUERIES,
@@ -254,6 +255,7 @@ const CRYPTO_MUTATIONS = new Set([
   "zerotrust.invitations.revoke",
   "zerotrust.llm.open",
   "zerotrust.domains.put",
+  "zerotrust.domains.putMany",
   "zerotrust.identities.certify",
   "zerotrust.objects.batch",
   "zerotrust.objects.save",
@@ -361,7 +363,12 @@ export function createBusinessClient(
     for (const listener of editorContextListeners) listener();
   }
   const listeners = new Map<() => void, string>();
+  const reads = pendingReads<[unknown | null, RpcClientError | null]>(
+    readQuery,
+    ([value, error]) => [value === null ? null : structuredClone(value), error],
+  );
   const notify = (matches?: (path: string) => boolean) => {
+    reads.clear();
     for (const [listener, path] of listeners)
       if (!matches || matches(path)) listener();
   };
@@ -528,7 +535,8 @@ export function createBusinessClient(
         throw unavailable();
     },
   );
-  const stopDataChanges = listenDataChanges(base, (domains, options) =>
+  const stopDataChanges = listenDataChanges(base, (domains, options) => {
+    reads.clear();
     queueMicrotask(() => {
       if (options?.control && !closed) {
         resetEditors();
@@ -563,8 +571,8 @@ export function createBusinessClient(
               (TEMPLATE_QUERIES.has(path) || LOGO_QUERIES.has(path))) ||
             adapters.affected(path, domains),
         );
-    }),
-  );
+    });
+  });
   let synchronization: Promise<void> = Promise.resolve();
   async function synchronized() {
     const expected = account;
@@ -808,6 +816,7 @@ export function createBusinessClient(
       });
   }
   function reset() {
+    reads.clear();
     resetEditors();
     adapters.reset();
     synchronization = Promise.resolve();
@@ -1076,6 +1085,27 @@ export function createBusinessClient(
     return result;
   }
   async function query(
+    path: string,
+    input: unknown,
+  ): Promise<[unknown | null, RpcClientError | null]> {
+    const expected = account;
+    const signal = controller.signal;
+    try {
+      const value = await reads.get(path, input);
+      if (
+        closed ||
+        signal.aborted ||
+        account !== expected ||
+        unlockedAccount() !== expected ||
+        !base.loggedIn()
+      )
+        throw unavailable();
+      return value;
+    } catch (error) {
+      return [null, RpcClientError.from(error)];
+    }
+  }
+  async function readQuery(
     path: string,
     input: unknown,
   ): Promise<[unknown | null, RpcClientError | null]> {

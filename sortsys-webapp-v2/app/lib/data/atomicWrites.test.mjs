@@ -85,7 +85,10 @@ test("independent publication confirmations overlap, remain bounded and finish b
 
 test("a policy-only publication cannot accept a false successful reply without its durable signed receipt", async () => {
   const calls = [];
-  const guards = [{ domain: "personnel:2:scope", sequence: "7" }];
+  const guards = Array.from({ length: 129 }, (_, index) => ({
+    domain: `personnel:${(index + 2).toString(32)}:scope`,
+    sequence: "7",
+  }));
   let accepted = false;
   const client = {
     async mutate(path, input) {
@@ -200,6 +203,37 @@ test("large encrypted batches upload bounded parts and publish only once", async
   ]);
   expect(calls[3].input.heads).toEqual([source.head]);
   expect(calls[3].input.parts).toHaveLength(3);
+});
+
+test("a small write with many read prerequisites uses one prepared publication and retains every guard", async () => {
+  const source = group(1);
+  const guards = Array.from({ length: 128 }, (_, index) => ({
+    domain: `prerequisite:${index}`,
+    sequence: "7",
+  }));
+  const calls = [];
+  const client = {
+    async mutate(path, input) {
+      calls.push({ path, input });
+      return [
+        path.endsWith(".stage") ? { id: "a".repeat(64) } : { success: true },
+        null,
+      ];
+    },
+    async invalidate() {},
+  };
+  await commitProtectedWrites(
+    client,
+    [source],
+    new AbortController().signal,
+    guards,
+  );
+  expect(calls.map((call) => call.path)).toEqual([
+    "zerotrust.objects.stage",
+    "zerotrust.objects.commit",
+  ]);
+  expect(calls[1].input.heads).toEqual([source.head, ...guards]);
+  expect(calls[1].input.parts).toEqual(["a".repeat(64)]);
 });
 
 test("a failed or cancelled stage never attempts publication", async () => {

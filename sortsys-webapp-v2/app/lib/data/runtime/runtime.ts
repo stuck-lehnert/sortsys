@@ -605,7 +605,13 @@ export class DataRuntime {
       await open?.prefetch?.(
         requests
           .filter((request) => request.ids === undefined)
-          .map((request) => ({ area: request.area })),
+          .map((request) => {
+            const previous = next.get(dataAreaKey(request.area));
+            return {
+              area: request.area,
+              snapshot: previous?.complete ? previous.head : undefined,
+            };
+          }),
       );
       for (const [key, resource] of next)
         if (open?.readable && !open.readable(resource.request.area))
@@ -1018,26 +1024,31 @@ export class DataRuntime {
                   this.controller.signal,
                 )
               : new Set<string>();
-          for (const packet of group.packets) {
-            if (verified.has(packet.envelope.object)) continue;
-            const changed = allChanges.get(
-              JSON.stringify([packet.domain, packet.envelope.object]),
-            )!;
-            const read = reads.get(dataAreaKey(changed.area))!;
-            const object = await read.get(packet.envelope.object);
-            this.live();
-            if (closed) throw new InvalidProtectedData();
-            if (object.envelope.signature !== packet.envelope.signature)
-              return false;
-            if (packet.envelope.format === TOMBSTONE_FORMAT) {
-              if (
-                object.envelope.format !== TOMBSTONE_FORMAT ||
-                object.value !== null
-              )
+          const confirmations = await mapConcurrent(
+            group.packets,
+            4,
+            async (packet) => {
+              if (verified.has(packet.envelope.object)) return true;
+              const changed = allChanges.get(
+                JSON.stringify([packet.domain, packet.envelope.object]),
+              )!;
+              const read = reads.get(dataAreaKey(changed.area))!;
+              const object = await read.get(packet.envelope.object);
+              this.live();
+              if (closed) throw new InvalidProtectedData();
+              if (object.envelope.signature !== packet.envelope.signature)
                 return false;
-            } else openDataDocument(changed.model, changed.area, object);
-          }
-          return true;
+              if (packet.envelope.format === TOMBSTONE_FORMAT) {
+                if (
+                  object.envelope.format !== TOMBSTONE_FORMAT ||
+                  object.value !== null
+                )
+                  return false;
+              } else openDataDocument(changed.model, changed.area, object);
+              return true;
+            },
+          );
+          return confirmations.every((accepted) => accepted);
         };
       this.live();
       if (generation !== this.generation) throw new ProtectedWriteConflict();

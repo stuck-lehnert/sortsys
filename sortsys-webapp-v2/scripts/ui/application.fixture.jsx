@@ -36,6 +36,7 @@ const bookedTool = {
   label: "TE 60 ATC AVR",
   status: null,
   available: false,
+  activeTrackingId: "l",
 };
 import DashboardPage from "../../app/routes/(shell)/dashboard";
 import ImportPage from "../../app/routes/(shell)/products.deliveryNotes.import";

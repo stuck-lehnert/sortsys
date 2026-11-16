@@ -2826,20 +2826,26 @@ for (const settings of [
         label: "TE 60 ATC AVR",
         status: null,
         available: false,
+        activeTrackingId: "l",
       },
       {
-        id: "tool-sixty-seven",
+        id: "k",
         customId: 67,
         brand: "Hilti",
         category: "Kombihammer",
         label: "TE 70 ATC AVR",
         status: null,
         available: true,
+        activeTrackingId: null,
       },
     ];
     api.respond("tools.list", tools);
-    api.respond("tools.untrack", true);
-    api.respond("tools.track", { id: "fixture-tracking" });
+    api.respond("tools.trackMany", {
+      trackings: [
+        { toolId: "j", trackingId: "m" },
+        { toolId: "k", trackingId: "n" },
+      ],
+    });
     await page.setViewportSize({ width, height: 879 });
     await openApplication("/fixtures/forms", locale, theme);
     await page.getByRole("button", { name: "Book tools", exact: true }).click();
@@ -2895,28 +2901,43 @@ for (const settings of [
     await dialog
       .getByRole("button", { name: /^(Remove|Entfernen) 67 / })
       .waitFor();
+    api.fail("tools.trackMany", "Synthetic batch booking denial");
+    await dialog.getByRole("button", { name: /^(Buchen|Book)$/ }).click();
+    await dialog
+      .getByRole("alert")
+      .getByText("Synthetic batch booking denial", { exact: true })
+      .waitFor();
+    assert.equal(
+      await dialog
+        .getByRole("button", { name: /^(Remove|Entfernen) 11 / })
+        .count(),
+      1,
+    );
+    assert.equal(
+      await dialog
+        .getByRole("button", { name: /^(Remove|Entfernen) 67 / })
+        .count(),
+      1,
+    );
+    api.recover("tools.trackMany");
     await dialog.getByRole("button", { name: /^(Buchen|Book)$/ }).click();
     await dialog.waitFor({ state: "hidden" });
-    assert.deepEqual(
-      api.requests
-        .filter((request) => request.path === "tools.track")
-        .map((request) => request.input.id)
-        .sort(),
-      ["j", "tool-sixty-seven"],
+    const attempts = api.requests.filter(
+      (request) => request.path === "tools.trackMany",
     );
-    assert.deepEqual(
-      api.requests
-        .filter((request) => request.path === "tools.untrack")
-        .map((request) => request.input.id),
-      ["j"],
+    assert.equal(attempts.length, 2);
+    assert.deepEqual(attempts[0].input, attempts[1].input);
+    assert.match(attempts[0].input.operationId, /^[1-9a-v][0-9a-v]{0,12}$/);
+    assert.deepEqual(attempts[0].input.tools, [
+      { id: "j", expectedTrackingId: "l" },
+      { id: "k", expectedTrackingId: null },
+    ]);
+    assert.equal(
+      api.requests.some((request) =>
+        ["tools.track", "tools.untrack"].includes(request.path),
+      ),
+      false,
     );
-    const untrackIndex = api.requests.findIndex(
-      (request) => request.path === "tools.untrack",
-    );
-    const trackIndex = api.requests.findIndex(
-      (request) => request.path === "tools.track",
-    );
-    assert.ok(untrackIndex < trackIndex);
     assert.equal(
       api.requests.some((request) => request.path === "errorReports.report"),
       false,

@@ -46,11 +46,27 @@ keine neue Buchung beginnen, die vorhandene Buchung aber weiterhin öffnen und
 das Werkzeug auch ohne aktuelle Preisfreigabe zurückgeben.
 
 Bei einer Ausgabe werden die aktive Buchung des Werkzeugs und der neue
-Buchungsdatensatz gemeinsam veröffentlicht. Eine Umbuchung beendet die alte
-Buchung, legt eine Fortsetzung an und übernimmt die aktuellen Nutzungskosten.
+Buchungsdatensatz gemeinsam veröffentlicht. Das gilt auch für die gesamte
+Auswahl im Sammeldialog: Fehlt bei einem Werkzeug oder im betroffenen Projekt
+ein Schreibrecht, wird keines der ausgewählten Werkzeuge umgebucht. Wurde eine
+Buchung seit der Auswahl verändert, bleibt die Auswahl mit einer Fehlermeldung
+offen. Die betreffende Auswahl lässt sich anschließend aktualisieren.
+
+Eine Umbuchung beendet die alte Buchung, legt eine Fortsetzung an und übernimmt
+die aktuellen Nutzungskosten.
 Die Kosten der vorherigen Buchung bleiben erhalten. Rückgabe und Ablehnung
 offener Umbuchungsanfragen erfolgen ebenfalls gemeinsam. Eine Rückgabe benötigt
 keinen Kostenschlüssel.
+
+Eine verschlüsselte, unveränderliche Bestätigung bindet den ausgeführten Befehl
+an dessen Urheber und vollständige Eingaben. Nach einer verlorenen Antwort wird
+beim Wiederholen das ursprüngliche Ergebnis zurückgegeben. Das erzeugt auch
+dann keine neue Ausgabe, wenn das Werkzeug inzwischen wieder zurückgegeben
+wurde. Ein nativer Test mit zwei API-Instanzen prüft diese Wiederholung sowie
+fehlende Rechte, konkurrierende Ausgaben und eine vorgetäuschte Speicherantwort.
+Ein Browser-Test mit getrennten Sitzungen prüft den Konflikthinweis und den
+Erhalt der gesamten Auswahl. Ein weiterer durchläuft die Freigabe und den
+Entzug des Anlegerechts mit einem normalen Benutzerkonto.
 
 Für die [Projektkosten](verschluesselte-projektkosten.md) enthalten die
 Projektbereiche eine zusätzliche verschlüsselte Sicht auf ihre Werkzeugnutzung.
@@ -75,9 +91,6 @@ Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
 - Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
   auf die Werkzeugkosten, um den historischen Kostenstand anzulegen. Eine
   Übernahme dieses Kostenstands ohne Entschlüsselung ist noch anzuschließen.
-- Der Sammeldialog gibt bereits gebuchte Werkzeuge vor einer neuen Ausgabe
-  derzeit separat zurück. Dieser Wechsel muss wie die angenommene
-  Umbuchungsanfrage in einem gemeinsamen atomaren Befehl erfolgen.
 - Die gemeinsame lokale Suche unterstützt Wortpräfixe. Der vollständige
   Vergleich mit der bisherigen PostgreSQL-Textsuche steht noch aus.
 

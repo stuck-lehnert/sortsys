@@ -5,12 +5,14 @@ import {
   createDomain,
   InvalidProtectedData,
   publicIdentity,
+  type DomainDefinition,
 } from "@sortsys/zerotrust/sortsys";
 import { openAuthority } from "../crypto/setup";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { publishVerifiedPolicy, readVerifiedPolicy } from "../crypto/policy";
 import { required } from "./protectedObjects";
 import type { Collection } from "./protectedObjects";
+import { publishDomainDefinitions } from "./domainDefinitions";
 
 /** Initial areas belong to the locally unlocked tenant authority. Ordinary
  * readers receive separately certified identities and explicit key grants. */
@@ -96,6 +98,7 @@ export async function provisionOwnedCollections(
       strategy: "network-only",
     }),
   );
+  const definitions: DomainDefinition[] = [];
   for (const c of collections) {
     live();
     if (!domains.some((d) => d.id === c.domain)) {
@@ -116,18 +119,7 @@ export async function provisionOwnedCollections(
           { subject, identity: await publicIdentity(account.identity) },
         ],
       });
-      const [, failure] = await client.mutate(
-        "zerotrust.domains.put",
-        made.definition,
-      );
-      const [saved, readError] = await client.query(
-        "zerotrust.domains.get",
-        { domain: c.domain, generation: "1" },
-        { strategy: "network-only" },
-      );
-      live();
-      if (!saved || saved.proof !== made.definition.proof)
-        throw failure ?? readError ?? new InvalidProtectedData();
+      definitions.push(made.definition);
       domains.push({
         id: c.domain,
         scope: c.scope,
@@ -137,4 +129,6 @@ export async function provisionOwnedCollections(
       });
     }
   }
+  await publishDomainDefinitions(client, definitions, signal);
+  live();
 }

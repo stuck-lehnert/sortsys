@@ -171,6 +171,7 @@ async function publishProtectedWrites(
   if (
     !documents.length &&
     (packets.length > 64 ||
+      (heads.length > 128 && packets.length > 0) ||
       packets.reduce(
         (sum, packet) => sum + packet.envelope.ciphertext.length,
         0,

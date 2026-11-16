@@ -104,6 +104,16 @@ test("tool and booking choices read only permitted master data and reuse one acc
         "zerotrust.objects.get",
       ].includes(call.path),
     );
+    const cachedMasterReads = reads
+      .flatMap((call) => call.input.selections ?? [call.input])
+      .filter((request) => request.domain === master.domain);
+    expect(cachedMasterReads.length).toBeGreaterThan(0);
+    for (const request of cachedMasterReads) {
+      expect(request.headOnly).toBe(true);
+      expect(request.snapshot).toBe(
+        String(tenant.domains.get(master.domain).head),
+      );
+    }
     for (const call of reads) {
       for (const selected of call.input.selections ?? [call.input]) {
         expect(selected.domain.endsWith(":master-data")).toBe(true);

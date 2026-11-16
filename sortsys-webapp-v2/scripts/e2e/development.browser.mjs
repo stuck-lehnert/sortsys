@@ -97,6 +97,7 @@ function auditPage(page) {
       "Nach dem Entzug ausschließlich für John",
       "Bohrhammer nach Freigabe bearbeitet",
       "Delegierte Werkzeugausgabe im Browser",
+      "Gemeinsame Werkzeugausgabe im Browser",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -770,6 +771,170 @@ try {
       page.locator(".attachment-email-body, .attachment-pdf-frame"),
     ).toHaveCount(0);
   });
+  await scenario("tool-batch-booking-dialog", async (page) => {
+    const peerServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(peerServer);
+    const peerContext = await applicationContext();
+    const peer = await peerContext.newPage();
+    const peerAudit = auditPage(peer);
+    await peerContext.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    async function openTool(browserPage, origin, title) {
+      await browserPage.goto(`${origin}/tools`);
+      await browserPage.getByText(title, { exact: true }).click();
+      await expect(
+        browserPage.getByRole("heading", { name: new RegExp(title) }),
+      ).toBeVisible();
+      return new URL(browserPage.url()).pathname;
+    }
+    async function bookCurrentTool(browserPage) {
+      await browserPage
+        .getByRole("main")
+        .getByRole("button", { name: "Aktionen", exact: true })
+        .click();
+      await browserPage
+        .getByRole("menuitem", { name: "Buchen", exact: true })
+        .click();
+      const dialog = browserPage.locator('[data-slot="modal-dialog"]');
+      await expect(
+        dialog.getByRole("heading", {
+          name: "Werkzeuge einbuchen",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByRole("button", { name: /^Entfernen 91000[12] / }),
+      ).toBeVisible();
+      await dialog
+        .getByRole("combobox", { name: /^Verantwortlicher/ })
+        .fill("John");
+      await browserPage.getByRole("option", { name: /John Doe/ }).click();
+      await expect(
+        dialog.getByRole("combobox", { name: /^Verantwortlicher/ }),
+      ).toHaveCount(0);
+      return dialog;
+    }
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      const firstPath = await openTool(page, server.origin, "Bohrhammer 1");
+      const dialog = await bookCurrentTool(page);
+      const tools = dialog.getByRole("combobox", { name: /^Werkzeuge/ });
+      await tools.fill("Rührwerk 2");
+      await page.getByRole("option", { name: /^910002 / }).click();
+      await tools.press("Escape");
+      await expect(
+        dialog.getByRole("button", { name: /^Entfernen 910002 / }),
+      ).toBeVisible();
+      await dialog
+        .getByLabel("Kommentar", { exact: true })
+        .fill("Gemeinsame Werkzeugausgabe im Browser");
+
+      await login(peer, "john.doe", "123456", peerServer.origin);
+      await expect(
+        peer.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      const secondPath = await openTool(peer, peerServer.origin, "Rührwerk 2");
+      const competing = await bookCurrentTool(peer);
+      await competing
+        .getByRole("button", { name: "Buchen", exact: true })
+        .click();
+      await expect(competing).toBeHidden({ timeout: 45_000 });
+      await expect(
+        peer.getByText("Buchungshistorie (1)", { exact: true }),
+      ).toBeVisible();
+
+      await dialog.getByRole("button", { name: "Buchen", exact: true }).click();
+      await expect(
+        dialog.locator('[data-slot="alert-root"][role="alert"]'),
+      ).toContainText("zwischenzeitlich geändert");
+      await expect(
+        dialog.getByRole("button", { name: /^Entfernen 910001 / }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByRole("button", { name: /^Entfernen 910002 / }),
+      ).toBeVisible();
+      await expect(dialog.getByLabel("Kommentar", { exact: true })).toHaveValue(
+        "Gemeinsame Werkzeugausgabe im Browser",
+      );
+      await page.screenshot({
+        path: join(artifacts, "tool-batch-booking-conflict.png"),
+        fullPage: true,
+      });
+      await peer.goto(`${peerServer.origin}${firstPath}`);
+      await expect(peer.getByText("verfügbar", { exact: true })).toBeVisible();
+      await expect(
+        peer.getByText("Buchungshistorie (0)", { exact: true }),
+      ).toBeVisible();
+
+      await dialog.getByRole("button", { name: /^Entfernen 910002 / }).click();
+      await tools.fill("Rührwerk 2");
+      const updatedOption = page.getByRole("option", { name: /^910002 / });
+      await expect(updatedOption).toBeVisible();
+      await expect(updatedOption).toBeEnabled();
+      // Live results may move while their popover settles. Keep a real pointer
+      // click without requiring two identical animation frames.
+      await updatedOption.click({ force: true });
+      await tools.press("Escape");
+      for (const number of ["910001", "910002"]) {
+        await expect(
+          dialog.getByRole("button", {
+            name: new RegExp(`^Entfernen ${number} `),
+          }),
+        ).toBeVisible();
+      }
+      await dialog.getByRole("button", { name: "Buchen", exact: true }).click();
+      // Creating the key areas, publishing the whole selection and checking
+      // its durable signatures form one asynchronous submission.
+      await expect(dialog).toBeHidden({ timeout: 45_000 });
+      await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Buchungshistorie (1)", { exact: true }),
+      ).toBeVisible();
+      await peer.goto(`${peerServer.origin}${secondPath}`);
+      await expect(peer.getByText("gebucht", { exact: true })).toBeVisible();
+      await expect(
+        peer.getByText("Buchungshistorie (2)", { exact: true }),
+      ).toBeVisible();
+      await page.reload();
+      await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Buchungshistorie (1)", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "Doe, John", exact: true }),
+      ).toHaveCount(2);
+      await page.screenshot({
+        path: join(artifacts, "tool-batch-booking-completed.png"),
+        fullPage: true,
+      });
+      peerAudit.assertClean();
+    } finally {
+      await peer
+        .screenshot({
+          path: join(artifacts, "tool-batch-booking-peer.png"),
+          fullPage: true,
+        })
+        .catch(() => {});
+      await writeFile(
+        join(artifacts, "tool-batch-booking-peer.html"),
+        await peer.content(),
+      ).catch(() => {});
+      await peerContext.tracing.stop({
+        path: join(artifacts, "tool-batch-booking-peer.zip"),
+      });
+      await peerContext.close();
+    }
+  });
+
   await scenario("tool-booking-creation-between-users", async (page) => {
     const memberServer = await applicationServer(
       new URL("../../build/client", import.meta.url).pathname,

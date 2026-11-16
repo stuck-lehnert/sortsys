@@ -52,6 +52,9 @@ globalThis.fetch = new Proxy(originalFetch, {
     );
     const body = options?.body;
     if (typeof body === "string") requests.push(body);
+    if (mode === "owner-tool-batches" && url.searchParams.has("input")) {
+      requests.push(url.searchParams.get("input")!);
+    }
     if (mode === "owner-staging" && url.searchParams.get("batch") === "1") {
       rpcTransmissions.push(url.pathname.slice(1).split(","));
     }
@@ -259,6 +262,18 @@ try {
     await exerciseRpcBatching(owner, rpcTransmissions);
     const { exerciseNativeStaging } = await import("./test-native-staging");
     await exerciseNativeStaging(owner, peer, draft);
+  } else if (mode === "owner-tool-batches") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseNativeDomainBatches } =
+      await import("./test-native-domain-batches");
+    await exerciseNativeDomainBatches(owner, peer);
+    const { exerciseToolBookingBatches } =
+      await import("./test-tool-booking-batches");
+    await exerciseToolBookingBatches(owner, peer, (hook) => {
+      requestHook = hook;
+    });
   } else if (mode === "owner-backup-archive") {
     const { exerciseBackupArchive } = await import("./test-backup-archive");
     await exerciseBackupArchive(owner, peer, draft);
@@ -278,6 +293,24 @@ try {
       !body.includes(draft.phrase),
       "the recovery phrase must stay in the browser",
     );
+    if (mode === "owner-tool-batches") {
+      for (const marker of [
+        "Werkzeugausgabe Rohbau",
+        "Werkzeugausgabe Ausbau",
+        "Sammelausgabe Nordflügel",
+        "Sammelausgabe Südflügel",
+        "Geschützte Sammelausgabe 751392",
+        "1127.25",
+        "917.25",
+        "11.375",
+      ]) {
+        assert.equal(
+          body.includes(marker),
+          false,
+          "Tool booking plaintext must stay in the browser: " + marker,
+        );
+      }
+    }
   }
   await writeFile(
     join(dirname(outputPath), "owner-recovery.json"),

@@ -1,4 +1,6 @@
 import { uiText } from "~/lib/i18n";
+import type { MutateInput } from "@sortsys/v2-client";
+import { newProductRowId, publicId } from "~/lib/data/products";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
@@ -14,6 +16,19 @@ import { parseFloatCustom } from "~/lib/utils";
 import type { Project, Tool, ToolTracking, User } from "~/type-helpers";
 
 const TOOL_SELECTION_TITLE_MAX = 12;
+
+function toolBookingSubmission() {
+  let previous: { input: string; operationId: string } | null = null;
+  return (
+    input: Omit<MutateInput<"tools.trackMany">, "operationId">,
+  ): MutateInput<"tools.trackMany"> => {
+    const serialized = JSON.stringify(input);
+    if (!previous || previous.input !== serialized) {
+      previous = { input: serialized, operationId: publicId(newProductRowId()) };
+    }
+    return { ...input, operationId: previous.operationId };
+  };
+}
 
 function toolSelectionChipLabel(tool: Tool) {
   const title = toolTitle(tool);
@@ -255,6 +270,7 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
   project?: Project;
   responsibleUser?: User;
 }) {
+  const submission = toolBookingSubmission();
   modals.showForm({
     content: ({ context }) => {
       const createEntityAction = useCreateEntityAction(modals);
@@ -335,34 +351,27 @@ export function showTrackToolsModal(modals: MyModalsInterface, props: {
       const project: Project | null = values.project.at(0) ?? null;
       const responsible: User = values.responsible[0];
 
-      let tools = values.tools as Tool[];
-      const failedTools: Tool[] = [];
-
-      await Promise.all(tools.map(async (tool) => {
-        if (tool.available) return;
-
-        const [data, err] = await client.mutate('tools.untrack', { id: tool.id });
-        if (err || !data) failedTools.push(tool);
-      }));
-
-      tools = tools.filter(tool => !failedTools.includes(tool));
-
-      await Promise.all(tools.map(async tool => {
-        const [data, err] = await client.mutate('tools.track', {
-          id: tool.id,
+      const tools = values.tools as Tool[];
+      const [data, error] = await client.mutate(
+        "tools.trackMany",
+        submission({
+          tools: tools.map((tool) => ({
+            id: tool.id,
+            expectedTrackingId: tool.activeTrackingId,
+          })),
           data: {
             projectId: project?.id,
             responsibleUserId: responsible.id,
             comment: values.comment,
           },
-        });
-
-        if (err || !data) failedTools.push(tool);
-      }));
-
-      if (failedTools.length) {
-        context.field('tools')?.setValue(failedTools);
-        return;
+        }),
+      );
+      if (error) throw error;
+      if (!data) {
+        throw new Error(uiText(
+          "Die Buchung konnte nicht bestätigt werden.",
+          "The booking could not be confirmed.",
+        ));
       }
 
       hide();
@@ -379,6 +388,7 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
   tracking: ToolTracking;
   isRequest: boolean;
 }) {
+  const submission = toolBookingSubmission();
   modals.showForm({
     content: () => {
       const createEntityAction = useCreateEntityAction(modals);
@@ -416,8 +426,6 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
 
-      console.log(values);
-
       if (!values.transferToUser.length) return;
 
       const transferToUser: User = values.transferToUser[0];
@@ -434,20 +442,20 @@ export function showToolTransferModal(modals: MyModalsInterface, props: {
         if (err) throw err;
         if (!data) return;
       } else {
-        {
-          const [data, err] = await client.mutate('tools.untrack', { id: props.tracking.toolId });
-          if (err) throw err;
-          if (!data) return;
-        }
-
-        const [data, err] = await client.mutate('tools.track', {
-          id: props.tracking.toolId,
-          data: {
-            projectId: project?.id,
-            responsibleUserId: transferToUser.id,
-            comment: values.notes,
-          },
-        });
+        const [data, err] = await client.mutate(
+          "tools.trackMany",
+          submission({
+            tools: [{
+              id: props.tracking.toolId,
+              expectedTrackingId: props.tracking.id,
+            }],
+            data: {
+              projectId: project?.id,
+              responsibleUserId: transferToUser.id,
+              comment: values.notes,
+            },
+          }),
+        );
 
         if (err) throw err;
         if (!data) return;

@@ -206,6 +206,12 @@ export type Target = { format: string, kind: string, tenant: string, scope: stri
 
 export type TechnicalMetadata = { revision: string, status?: number, };
 
+export type ToolBookingData = { projectId?: Id | null, responsibleUserId?: Id | null, deadlineAt?: Date | null, comment?: string | null, };
+
+export type ToolBookingReference = { toolId: Id, trackingId: Id, };
+
+export type ToolBookingSelection = { id: Id, expectedTrackingId: Id | null, };
+
 export type TrustHistory = { authorities: Array<AuthorityHistory>, identities: Array<IdentityCertificate>, };
 
 export type QueryInputs = {
@@ -437,10 +443,10 @@ export type QueryOutputs = {
   "settings.tenantName.get": { companyName: null | string; };
   "tools.brands": string[];
   "tools.categories": string[];
-  "tools.get": { id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | "lost" | "broken"; available: boolean; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; };
+  "tools.get": { id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | "lost" | "broken"; available: boolean; activeTrackingId: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; };
   "tools.inventories.list": { id: string; toolId: string; comment: null | string; createdAt: Date; }[];
   "tools.inventories.overview": { id: string; customId: number; brand: string; category: string; label: null | string; status: null | "lost" | "broken"; available: boolean; archivedSince: null | Date; lastInventoryAt: null | Date; lastResponsibleUserId: null | string; lastResponsibleFirstName: null | string; lastResponsibleLastName: null | string; }[];
-  "tools.list": { id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | "lost" | "broken"; available: boolean; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }[];
+  "tools.list": { id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | "lost" | "broken"; available: boolean; activeTrackingId: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }[];
   "tools.suggestNextCustomId": number;
   "tools.trackings.list": { id: string; toolId: string; projectId: null | string; responsibleUserId: null | string; startedByUserId: null | string; endedByUserId: null | string; toolUsageCostPerDay: null | number; comment: null | string; startedAt: Date; endedAt: null | Date; deadlineAt: null | Date; }[];
   "tools.trackings.transfers.list": { id: string; toolTrackingId: string; toolId: string; transferToUserId: string; createdByUserId: string; projectId: null | string; status: "open" | "denied" | "accepted"; notes: null | string; createdAt: Date; responsibleUserId: null | string; toolUsageCostPerDay: null | number; }[];
@@ -641,6 +647,7 @@ export type MutationInputs = {
   "tools.inventories.create": { toolId: string; comment?: undefined | null | string; };
   "tools.inventories.delete": { id: string; };
   "tools.track": { id: string; data: { projectId?: undefined | null | string; responsibleUserId?: undefined | null | string; deadlineAt?: unknown; comment?: undefined | null | string; }; };
+  "tools.trackMany": { operationId: Id, tools: Array<ToolBookingSelection>, data: ToolBookingData, };
   "tools.trackings.transfers.accept": { id: string; projectId?: undefined | null | string; };
   "tools.trackings.transfers.deny": { id: string; };
   "tools.trackings.transfers.request": { toolTrackingId: string; transferToUserId?: undefined | null | string; projectId?: undefined | null | string; notes?: undefined | null | string; };
@@ -666,6 +673,7 @@ export type MutationInputs = {
   "zerotrust.deliveryNotes.initialize": { generation: string, policyVersion: string, proof: string, };
   "zerotrust.documents.messages.post": { room: Room, kind: Kind, key: string, authorityGeneration: string, envelope: EncryptedObject<Facet>, };
   "zerotrust.domains.put": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };
+  "zerotrust.domains.putMany": { domains: Array<DomainDefinition>, };
   "zerotrust.events.open": void;
   "zerotrust.fileChunks.put": { domain: string, envelope: EncryptedObject<Facet>, };
   "zerotrust.identities.certify": { tenant: string, generation: string, user: string, encryptionKey: string, signingKey: string, signature: string, };
@@ -849,6 +857,7 @@ export type MutationOutputs = {
   "tools.inventories.create": { id: string; };
   "tools.inventories.delete": { success: true; };
   "tools.track": { trackingId: string; };
+  "tools.trackMany": { trackings: Array<ToolBookingReference>, };
   "tools.trackings.transfers.accept": { success: true; };
   "tools.trackings.transfers.deny": { success: true; };
   "tools.trackings.transfers.request": { id: string; };
@@ -874,6 +883,7 @@ export type MutationOutputs = {
   "zerotrust.deliveryNotes.initialize": { success: true, };
   "zerotrust.documents.messages.post": { success: true, };
   "zerotrust.domains.put": { success: true, };
+  "zerotrust.domains.putMany": { success: true, };
   "zerotrust.events.open": { ticket: string, subject: string, generation: string, };
   "zerotrust.fileChunks.put": { success: true, };
   "zerotrust.identities.certify": { success: true, };

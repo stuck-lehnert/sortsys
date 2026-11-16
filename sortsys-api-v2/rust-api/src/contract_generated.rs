@@ -875,7 +875,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "tools.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; }",
-        output_ts: "{ id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | \"lost\" | \"broken\"; available: boolean; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }",
+        output_ts: "{ id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | \"lost\" | \"broken\"; available: boolean; activeTrackingId: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }",
     },
     RawContractSpec {
         path: "tools.inventories.create",
@@ -905,7 +905,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "tools.list",
         kind: ProcedureKind::Query,
         input_ts: "{ search?: undefined | null | string; status?: undefined | null | \"lost\" | \"broken\" | \"available\" | \"unavailable\"; brand?: undefined | null | string; category?: undefined | null | string; }",
-        output_ts: "{ id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | \"lost\" | \"broken\"; available: boolean; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }[]",
+        output_ts: "{ id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | \"lost\" | \"broken\"; available: boolean; activeTrackingId: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }[]",
     },
     RawContractSpec {
         path: "tools.suggestNextCustomId",

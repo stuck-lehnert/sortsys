@@ -1455,6 +1455,7 @@ window.cryptoFixture = {
       label: "Profilfräse",
       status: null,
       available: true,
+      activeTrackingId: null,
       purchasePrice: costAccess === "none" ? null : 1537.87654321,
       usageCostPerDay: costAccess === "none" ? null : 17.375,
       createdByUserId: "1",

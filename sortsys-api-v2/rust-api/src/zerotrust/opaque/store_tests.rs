@@ -72,6 +72,7 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
             | "owner-minimal"
             | "owner-bootstrap"
             | "owner-staging"
+            | "owner-tool-batches"
             | "owner-backup"
             | "owner-backup-archive" => "scripts/test-owner-setup.ts",
             "invitations" => "scripts/test-duckdb-invitations.ts",
@@ -98,6 +99,9 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
     if mode == "owner-staging" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "staging-tenant");
     }
+    if mode == "owner-tool-batches" {
+        command.env("SORTSYS_NATIVE_AUTH_TENANT", "tool-batch-tenant");
+    }
     if mode == "owner-backup" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "backup-tenant");
     }
@@ -120,7 +124,13 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
         Duration::from_secs(1800)
     } else if matches!(
         mode,
-        "recovery" | "llm" | "editors" | "owner-staging" | "owner-backup" | "owner-backup-archive"
+        "recovery"
+            | "llm"
+            | "editors"
+            | "owner-staging"
+            | "owner-tool-batches"
+            | "owner-backup"
+            | "owner-backup-archive"
     ) {
         Duration::from_secs(300)
     } else if matches!(mode, "invitations" | "owner-bootstrap") {
@@ -1109,6 +1119,27 @@ async fn prepared_business_changes_publish_atomically_across_api_instances() {
     let (first_url, _first_api) = api(auth_service(&settings, first)).await;
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     browser("owner-staging", &root, Some(&[first_url, second_url])).await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn tool_booking_batches_publish_atomically_across_api_instances() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let mut settings = configuration(config);
+    settings.jwt_secret = Arc::from(b"disposable-tool-booking-signing-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    browser("owner-tool-batches", &root, Some(&[first_url, second_url])).await;
 }
 
 #[tokio::test]

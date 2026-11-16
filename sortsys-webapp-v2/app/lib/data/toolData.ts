@@ -56,6 +56,7 @@ export const TOOL_MUTATIONS = new Set([
   "tools.archive",
   "tools.unarchive",
   "tools.track",
+  "tools.trackMany",
   "tools.untrack",
   "tools.trackings.transfers.request",
   "tools.trackings.transfers.accept",
@@ -63,6 +64,28 @@ export const TOOL_MUTATIONS = new Set([
   "tools.inventories.create",
   "tools.inventories.delete",
 ]);
+export function toolTimestamp(value: unknown): string | null {
+  if (value == null) return null;
+  if (
+    typeof value === "string" &&
+    (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      value,
+    ) ||
+      !Number.isFinite(Date.parse(value.slice(0, 10))) ||
+      new Date(value.slice(0, 10)).toISOString().slice(0, 10) !==
+        value.slice(0, 10))
+  )
+    throw new InvalidProtectedData();
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "string"
+        ? new Date(value)
+        : null;
+  if (!date || !Number.isFinite(date.getTime()))
+    throw new InvalidProtectedData();
+  return date.toISOString();
+}
 export function toolCollection(
   namespace: ToolNamespace,
   id: string,

@@ -1,5 +1,6 @@
 //! Public key registry in the tenant's DuckDB file. No decrypted business data
 //! or private key is accepted by these procedures.
+use super::super::access::MetadataContext;
 use super::*;
 use crate::{
     auth::{AuthResult, AuthService},
@@ -342,6 +343,7 @@ pub(in crate::zerotrust) fn register(
     let policy_set = Arc::clone(&service);
     let domains = Arc::clone(&service);
     let domain_set = Arc::clone(&service);
+    let domain_batch = Arc::clone(&service);
     let keys = Arc::clone(&service);
     let key_grant = Arc::clone(&service);
     let definitions = Arc::clone(&service);
@@ -447,6 +449,13 @@ pub(in crate::zerotrust) fn register(
             move |ctx, input: DomainDefinition| {
                 let service = Arc::clone(&domain_set);
                 async move { put_domain(&service, &ctx, input).await }
+            },
+        )
+        .mutation(
+            "zerotrust.domains.putMany",
+            move |ctx, input: DomainDefinitionsInput| {
+                let service = Arc::clone(&domain_batch);
+                async move { put_domains(&service, &ctx, input.domains).await }
             },
         )
         .query("zerotrust.domains.get", move |ctx, input: KeyInput| {
@@ -795,7 +804,38 @@ async fn put_domain(
     request: &RequestContext,
     input: DomainDefinition,
 ) -> RpcResult<Success> {
+    put_domains(service, request, vec![input]).await
+}
+
+async fn put_domains(
+    service: &AuthService,
+    request: &RequestContext,
+    inputs: Vec<DomainDefinition>,
+) -> RpcResult<Success> {
+    if inputs.is_empty() || inputs.len() > 64 {
+        return Err(invalid());
+    }
+    let mut seen = BTreeSet::new();
+    if inputs.iter().any(|input| !seen.insert(&input.id)) {
+        return Err(invalid());
+    }
     let mut context = context(service, request).await?;
+    let mut changed = false;
+    for input in inputs {
+        changed |= put_domain_in_transaction(&mut context, input).await?;
+    }
+    if changed {
+        context.transaction.commit().await?;
+    } else {
+        context.transaction.validate().await?;
+    }
+    Ok(Success { success: true })
+}
+
+async fn put_domain_in_transaction(
+    context: &mut MetadataContext,
+    input: DomainDefinition,
+) -> RpcResult<bool> {
     let guard = &context.security;
     if !context.auth.is_admin() && input.creation.is_none() {
         return Err(forbidden());
@@ -828,8 +868,7 @@ async fn put_domain(
             if serde_json::to_value(saved).map_err(internal)?
                 == serde_json::to_value(&input).map_err(internal)?
             {
-                context.transaction.validate().await?;
-                return Ok(Success { success: true });
+                return Ok(false);
             }
         }
         if input.creation.is_some()
@@ -1012,8 +1051,7 @@ async fn put_domain(
         "domain",
         &serde_json::json!({"domain": input.id, "sequence": area.sequence}),
     )?;
-    context.transaction.commit().await?;
-    Ok(Success { success: true })
+    Ok(true)
 }
 
 async fn grant_key(

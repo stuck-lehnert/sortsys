@@ -218,6 +218,12 @@ pub(super) struct DomainInfo {
 
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DomainDefinitionsInput {
+    domains: Vec<DomainDefinition>,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AccessInput {
     #[serde(default)]
     #[ts(optional)]
@@ -363,6 +369,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .mutation_stub::<SignedPolicy, Success>("zerotrust.policy.replace")
         .query_stub::<(), Vec<DomainInfo>>("zerotrust.domains.list")
         .mutation_stub::<DomainDefinition, Success>("zerotrust.domains.put")
+        .mutation_stub::<DomainDefinitionsInput, Success>("zerotrust.domains.putMany")
         .query_stub::<KeyInput, SealedBox>("zerotrust.keys.get")
         .mutation_stub::<KeyGrant, Success>("zerotrust.keys.grant")
         .query_stub::<KeyInput, DomainDefinition>("zerotrust.domains.get")
@@ -441,6 +448,37 @@ pub(super) fn policy_batch_binding(
 #[cfg(test)]
 mod policy_transaction_tests {
     use super::*;
+    use serde_json::json;
+    #[test]
+    fn prepared_publications_allow_more_read_prerequisites_without_unbounding_ordinary_batches() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/zerotrust-policy-transactions.json"
+        ))
+        .unwrap();
+        let mut heads = fixture["heads"].as_array().unwrap().clone();
+        heads.extend((0..128).map(|index| {
+            json!({
+                "domain": format!("testing:prerequisite{index}:master-data"), "sequence": "0"
+            })
+        }));
+        let input: BatchInput = serde_json::from_value(json!({
+            "objects": fixture["objects"], "heads": heads
+        }))
+        .unwrap();
+        assert!(validate_batch(&input, false).is_err());
+        assert!(validate_batch(&input, true).is_ok());
+        let mut oversized = input;
+        oversized
+            .heads
+            .as_mut()
+            .unwrap()
+            .extend((128..20_001).map(|index| DomainHead {
+                domain: format!("testing:prerequisite{index}:master-data"),
+                sequence: "0".to_owned(),
+            }));
+        assert!(validate_batch(&oversized, true).is_err());
+    }
+
     #[test]
     fn browser_policy_transactions_bind_origins_writes_read_heads_and_previous_policy() {
         let value: Value = serde_json::from_str(include_str!(
@@ -602,9 +640,12 @@ fn validate_batch(input: &BatchInput, allow_large: bool) -> RpcResult<BatchShape
     }
     if let Some(heads) = &input.heads {
         let mut seen = std::collections::HashSet::new();
-        if heads.len() < domains.len()
-            || heads.len() > if input.policy.is_some() { 20_001 } else { 128 }
-        {
+        let maximum_heads = if allow_large || input.policy.is_some() {
+            20_001
+        } else {
+            128
+        };
+        if heads.len() < domains.len() || heads.len() > maximum_heads {
             return Err(invalid());
         }
         for head in heads {

@@ -16,6 +16,7 @@ pub mod personalization;
 pub mod products;
 pub mod project_files;
 pub mod settings;
+pub mod tool_bookings;
 pub mod xml_documents;
 use crate::rpc::ProcedureRegistryBuilder;
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
@@ -32,6 +33,7 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = commercial_documents::register_contract(builder);
     let builder = gaeb_positions::register_contract(builder);
     let builder = personalization::register_contract(builder);
+    let builder = tool_bookings::register_contract(builder);
     let builder = llm::register_contract(builder);
     let builder = delivery_notes::register_contract(builder);
     let builder = products::register_contract(builder);

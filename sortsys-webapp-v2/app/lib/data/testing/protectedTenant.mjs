@@ -455,6 +455,44 @@ export async function protectedTenant(
     );
     return JSON.parse(new TextDecoder().decode(opened));
   }
+  async function addArea(area, actions = [...ACTIONS]) {
+    if (domains.has(area.domain)) throw new Error("Test area already exists");
+    const made = await createDomain({
+      tenant: "test",
+      id: area.domain,
+      scope: area.scope,
+      facet: area.facet,
+      generation: "1",
+      policyVersion: policy.version,
+      authorityGeneration: "1",
+      authorityKey: authorityKey.privateKey,
+      recovery: {
+        encryptionKey: setup.authority.recoveryEncryptionKey,
+        signingKey: setup.authority.recoverySigningKey,
+      },
+      readers: [{ subject, identity: await publicIdentity(identity) }],
+    });
+    domains.set(area.domain, { area, ...made, head: 0 });
+    const { signature, ...previous } = policy;
+    policy = await signPolicy(
+      {
+        ...previous,
+        version: (BigInt(policy.version) + 1n).toString(),
+        rules: [
+          ...policy.rules,
+          {
+            subject,
+            scope: area.scope,
+            facet: area.facet,
+            actions,
+            effect: "allow",
+          },
+        ],
+      },
+      authorityKey.privateKey,
+    );
+    policies.set(policy.version, policy);
+  }
   return {
     client,
     calls,
@@ -464,6 +502,7 @@ export async function protectedTenant(
     state,
     seed,
     plain,
+    addArea,
     identity,
     authorityKey,
     setup,

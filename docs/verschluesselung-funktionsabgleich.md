@@ -154,7 +154,11 @@ nachgewiesen.
 Werkzeug und Buchung; Kosten sind getrennt. Bestandsübernahme, lokale Suche,
 Filter, Stammdatenänderungen, Ausgabe, Rückgabe, Inventuren und Umbuchungen sind
 an den gemeinsamen Datenkern angeschlossen. Historische Kosten bleiben erhalten;
-konkurrierende Ausgaben und Umbuchungen werden atomar veröffentlicht. Die
+Ausgaben und Umbuchungen werden für die gesamte Auswahl atomar veröffentlicht.
+Die beim Auswählen bekannte aktive Buchung wird beim Speichern mitgeprüft.
+Verschlüsselte Bestätigungen verhindern doppelte Ausgaben beim Wiederholen
+nach einer verlorenen Antwort. Der native Mehrinstanztest prüft konkurrierende
+Buchungen, Ablehnungen und die Wiederholung nach einer Rückgabe. Die
 Personalauswahl verwendet verschlüsselte Profile. Freigaben für Werkzeuge und
 einzelne Buchungen lassen sich beim Benutzerkonto getrennt nach Stammdaten,
 Kosten, Inventuren und Umbuchungsanfragen verwalten.

@@ -63,6 +63,11 @@ Bereiche läuft mit höchstens vier parallelen Lesevorgängen. Scheitert ein Abr
 werden keine weiteren gestartet. Bereits laufende Abrufe werden beendet, bevor
 die Laufzeit ihre Zugriffskontexte schließt.
 
+Bei einer vollständig geladenen Sammlung übergibt bereits der nächste Abruf
+deren bekannten Stand. Ein unveränderter Bereich benötigt damit nur die
+Versionsprüfung. Frisch geladene Berechtigungen werden auch dann übernommen,
+wenn sich weder Inhalte noch Bereichsstände geändert haben.
+
 Eine nach Projekt oder Dokumentart gefilterte Vorgangsliste liest zunächst die
 geprüften Kopfdaten einschließlich festgeschriebener Rechnungsangaben. Die
 übrigen Felder werden anschließend nur für passende Vorgänge geladen. Dabei
@@ -82,6 +87,13 @@ RPC-Antwortcache. Diese Metadaten müssen frisch vom Server kommen; ihre erneute
 Serialisierung bringt für diesen Lesepfad keinen Nutzen. Die begrenzte
 Wiederverwendung mathematisch geprüfter öffentlicher Signaturen bleibt davon
 getrennt und ersetzt keine Aktualitätsprüfung.
+
+Identische, gleichzeitig laufende Fachabfragen teilen ihre lokale Leseprüfung.
+So benötigen etwa Verantwortlicher und Herausgeber derselben Buchung nur einen
+Abruf desselben Benutzerprofils. Jeder Aufrufer erhält eine eigene Ergebniskopie;
+nach Abschluss bleibt kein Ergebnis in dieser Ablage. Änderungsmeldungen und
+Kontowechsel lösen laufende Einträge sofort aus der Wiederverwendung. Eine später
+begonnene Abfrage liest damit wieder frisch.
 
 Alte Daten benötigen weiterhin ihre signierten Rechteregeln, Zertifikate und
 Ursprungsnachweise. Diese gehören zur Sicherung des verschlüsselten Bestands und
@@ -117,6 +129,15 @@ den zuvor gelesenen Bereichsversionen. Das Rücklesen muss dieselben Signaturen
 liefern. Eine erfolgreiche HTTP-Antwort allein gilt nicht als Speichernachweis.
 Eine verlorene Antwort kann deshalb trotzdem als erfolgreicher Abschluss erkannt
 werden. Fremde Änderungen führen zu einem Versionskonflikt.
+
+Beim Anlegen mehrerer Schlüsselbereiche bündelt `publishDomainDefinitions` bis
+zu 64 öffentliche Definitionen über `zerotrust.domains.putMany`. Die API prüft
+alle Signaturen, Empfänger und Anlegerechte in derselben Transaktion. Eine
+ungültige Definition verhindert die Veröffentlichung der ganzen Gruppe.
+Auch hier bestätigt der Browser die tatsächlich gespeicherten signierten
+Definitionen. Geschäftsdaten und private Schlüssel gehören nicht in diese
+Anfrage. Größere Verzeichnisse werden in begrenzten Gruppen vorbereitet; die
+zugehörigen Geschäftsdaten werden anschließend gemeinsam veröffentlicht.
 
 `tx.edit` ändert zusammengehörige Inhalte eines Objekts, etwa Produktkategorien.
 `tx.create` legt ein neues Objekt an. Mehrere geänderte Objekte und Schlüsselbereiche

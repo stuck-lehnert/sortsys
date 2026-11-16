@@ -1028,6 +1028,69 @@ test("a supplied fresh access context updates permissions even when cached rows 
       ),
     ).toBe(false);
     expect(f.calls.read).toBe(reads);
+    const changed = structuredClone(
+      f.state(mainArea).objects.get("main:1").value,
+    );
+    changed.row.values.comment = "Änderung von einer anderen API-Instanz";
+    f.seed(mainArea, "main:1", changed);
+    const freshContents = await f.storage.open();
+    expect(
+      await f.runtime.read(
+        [first],
+        (view) => view.row("product_price_records", { id: "1" }).get("comment"),
+        freshContents,
+      ),
+    ).toBe("Änderung von einer anderen API-Instanz");
+    expect(f.calls.read).toBe(reads + 1);
+  } finally {
+    await f.runtime.close();
+  }
+});
+
+test("independent readbacks in one write area overlap and finish before the publication returns", async () => {
+  const f = fixture();
+  f.seed(mainArea, "main:2", {
+    row: row("product_price_records", {
+      id: "2",
+      product_id: "2",
+      price: 0,
+      comment: "Zweite Zeile",
+    }),
+  });
+  const open = f.storage.open;
+  let active = 0;
+  let maximum = 0;
+  f.storage.open = async (...args) => {
+    const collections = await open(...args);
+    return Object.assign((area) => {
+      const collection = collections(area);
+      return {
+        ...collection,
+        async get(id) {
+          active++;
+          maximum = Math.max(maximum, active);
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 3));
+            return await collection.get(id);
+          } finally {
+            active--;
+          }
+        },
+      };
+    }, collections);
+  };
+  try {
+    await f.runtime.transaction([first], (tx) => {
+      for (const id of ["1", "2"])
+        tx.patch(
+          "product_price_records",
+          { id },
+          { comment: "Gemeinsam geändert" },
+        );
+    });
+    expect(maximum).toBe(2);
+    expect(active).toBe(0);
+    expect(f.calls.commit).toBe(1);
   } finally {
     await f.runtime.close();
   }

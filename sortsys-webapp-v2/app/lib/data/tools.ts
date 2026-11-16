@@ -30,6 +30,7 @@ import {
   toolPart,
   toolRequest,
   toolRow,
+  toolTimestamp as timestamp,
   TOOL_INDEX,
   TOOL_MODEL,
   TOOL_MUTATIONS,
@@ -37,6 +38,7 @@ import {
   type ToolNamespace,
   type ToolPart,
 } from "./toolData";
+import { bookProtectedTools } from "./toolBookings";
 import type { createProtectedProjects } from "./projects";
 import { createProtectedPersonnel } from "./personnel";
 import {
@@ -66,28 +68,6 @@ const COSTS = new Set([
 const date = (value: unknown) =>
   value === null ? null : new Date(value as string);
 const id = (value: unknown) => (value === null ? null : publicId(value));
-function timestamp(value: unknown): string | null {
-  if (value == null) return null;
-  if (
-    typeof value === "string" &&
-    (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(
-      value,
-    ) ||
-      !Number.isFinite(Date.parse(value.slice(0, 10))) ||
-      new Date(value.slice(0, 10)).toISOString().slice(0, 10) !==
-        value.slice(0, 10))
-  )
-    throw new InvalidProtectedData();
-  const result =
-    value instanceof Date
-      ? value
-      : typeof value === "string"
-        ? new Date(value)
-        : null;
-  if (!result || !Number.isFinite(result.getTime()))
-    throw new InvalidProtectedData();
-  return result.toISOString();
-}
 function pagination(input: Record<string, unknown>, values: unknown[]) {
   const integer = (key: string, fallback: number, minimum: number) => {
     const value = input[key] ?? fallback;
@@ -160,6 +140,7 @@ function wireTool(
     ),
     status: p.status as "lost" | "broken" | null,
     available: value.activeTrackingId === null,
+    activeTrackingId: value.activeTrackingId,
     createdByUserId: id(p.created_by_user_id),
     createdAt: date(p.created_at)!,
     modifiedAt: date(p.modified_at)!,
@@ -786,80 +767,25 @@ export function createProtectedTools(
         });
         return { id: resource };
       }
-      if (path === "tools.track") {
-        const p = record(input, ["id", "data"]);
-        const resource = p.id as string;
-        addressId(resource);
-        const data = partialAddressRecord(p.data, [
-          "projectId",
-          "responsibleUserId",
-          "deadlineAt",
-          "comment",
-        ]);
-        const guards = await reference(data.projectId);
-        const responsible = await member(data.responsibleUserId, guards);
-        const deadline = timestamp(data.deadlineAt);
-        const comment = addressText(data.comment, false, 255);
-        const trackingId = publicId(newProductRowId());
-        const tool = toolRequest("tool", resource, "master-data");
-        const price = toolRequest("tool", resource, "procurement");
-        const next = CREATION_FACETS["tool-tracking"].map((facet) =>
-          toolRequest("tool-tracking", trackingId, facet),
+      if (path === "tools.track" || path === "tools.trackMany") {
+        let command = input;
+        if (path === "tools.track") {
+          const value = record(input, ["id", "data"]);
+          command = {
+            operationId: publicId(newProductRowId()),
+            tools: [{ id: value.id, expectedTrackingId: null }],
+            data: value.data,
+          };
+        }
+        const result = await bookProtectedTools(
+          { client, runtime, signal, live, reference, member },
+          command,
+          actorId,
+          now,
         );
-        await runtime.read([tool, price], (view) => {
-          values(view, tool);
-          values(view, price);
-          if (document(view, tool)!.value.activeTrackingId !== null)
-            throw new ProtectedWriteConflict();
-        });
-        await provision("tool-tracking", trackingId);
-        const projectUsage =
-          data.projectId == null
-            ? []
-            : [
-                toolUsageRequest(data.projectId as string, "master-data"),
-                toolUsageRequest(data.projectId as string, "procurement"),
-              ];
-        await persist(
-          [tool, price, ...next, ...projectUsage],
-          (tx) => {
-            const source = document(tx, tool)!.value;
-            values(tx, tool);
-            if (source.activeTrackingId !== null)
-              throw new ProtectedWriteConflict();
-            const row = toolRow("tool_trackings", {
-              id: addressId(trackingId),
-              tool_id: addressId(resource),
-              responsible_user_id: responsible,
-              project_id:
-                data.projectId == null ? null : addressId(data.projectId),
-              started_by_user_id: actorId,
-              ended_by_user_id: null,
-              tool_usage_cost_per_day: values(tx, price).usage_cost_per_day,
-              comment,
-              started_at: now,
-              ended_at: null,
-              deadline_at: deadline && deadline < now ? now : deadline,
-              modified_at: now,
-              continuation_of: null,
-              notes: null,
-            });
-            tx.edit(tool, tool.area.prefix, (value) => {
-              value.activeTrackingId = trackingId;
-            });
-            for (const request of next)
-              replace(
-                tx,
-                request,
-                toolPart("tool-tracking", trackingId, request.area.facet, [
-                  row,
-                ]),
-              );
-            syncToolUsage(tx, row);
-          },
-          guards,
-        );
-        return { trackingId };
+        if (path === "tools.track")
+          return { trackingId: result.trackings[0]!.trackingId };
+        return result;
       }
       if (
         path === "tools.update" ||

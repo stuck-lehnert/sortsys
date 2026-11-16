@@ -13,12 +13,14 @@ import {
   verifyDomain,
   type CreationNamespace,
   type CreationParent,
+  type DomainDefinition,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { readVerifiedPolicy } from "../crypto/policy";
 import { required, type Collection } from "./protectedObjects";
 import { provisionOwnedCollections } from "./prepareCollections";
 import { addressId } from "./addressBook";
+import { publishDomainDefinitions } from "./domainDefinitions";
 
 export async function createProjectArea(
   client: Client,
@@ -51,6 +53,7 @@ export async function createResourceAreas(
   }
   signal.throwIfAborted();
   const domains = new Set<string>();
+  const definitions: DomainDefinition[] = [];
   for (const area of areas) {
     const resource = creationResource(area.scope);
     if (
@@ -127,13 +130,15 @@ export async function createResourceAreas(
     if (resource.module) {
       const scope = `project:${resource.id}`;
       const id = `${scope}:master-data`;
-      const original = await required(
-        client.query(
-          "zerotrust.domains.get",
-          { domain: id, generation: "1" },
-          { strategy: "network-only" },
-        ),
-      );
+      const original =
+        definitions.find((definition) => definition.id === id) ??
+        (await required(
+          client.query(
+            "zerotrust.domains.get",
+            { domain: id, generation: "1" },
+            { strategy: "network-only" },
+          ),
+        ));
       live();
       if (!original) throw new InvalidProtectedData();
       const verified = await verifyDomain(
@@ -183,18 +188,8 @@ export async function createResourceAreas(
       },
     });
     live();
-    const [, error] = await client.mutate("zerotrust.domains.put", definition);
-    live();
-    // A lost acknowledgement is accepted only for the identical signed
-    // definition. A matching domain name from another writer is insufficient.
-    const [saved, readError] = await client.query(
-      "zerotrust.domains.get",
-      { domain: area.domain, generation: "1" },
-      { strategy: "network-only" },
-    );
-    live();
-    if (!saved || saved.proof !== definition.proof) {
-      throw error ?? readError ?? new InvalidProtectedData();
-    }
+    definitions.push(definition);
   }
+  await publishDomainDefinitions(client, definitions, signal);
+  live();
 }

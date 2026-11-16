@@ -10,6 +10,7 @@ import {
 import { acceptVault, lockCryptoSession } from "../crypto/session";
 import { createBusinessClient } from "./businessClient";
 import { ramCache } from "./ramCache";
+import { announceDataChanges } from "./runtime/changes";
 
 let setup = null;
 afterEach(async () => {
@@ -161,6 +162,116 @@ function products() {
     },
   };
 }
+
+test("parallel local queries share unfinished work but receive independent values and no completed cache", async () => {
+  await account();
+  const { base } = raw();
+  const store = products();
+  let release;
+  let started;
+  let calls = 0;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise((resolve) => {
+    started = resolve;
+  });
+  store.list = async () => {
+    calls++;
+    started();
+    await held;
+    return [{ name: "Profil", categories: [] }];
+  };
+  const client = createBusinessClient(base, {
+    openProducts: async () => store,
+  });
+  try {
+    const first = client.query("products.list", {});
+    const second = client.queryDynamic("products.list", {});
+    await entered;
+    expect(calls).toBe(1);
+    release();
+    const [[left, leftError], [right, rightError]] = await Promise.all([
+      first,
+      second,
+    ]);
+    expect(leftError).toBeNull();
+    expect(rightError).toBeNull();
+    left[0].categories.push("local edit");
+    expect(right[0].categories).toEqual([]);
+    await client.query("products.list", {});
+    expect(calls).toBe(2);
+  } finally {
+    release();
+    client.dispose();
+  }
+});
+
+test("an announced change prevents a new caller from joining an old unfinished local read", async () => {
+  await account();
+  const { base } = raw();
+  const store = products();
+  let release;
+  let started;
+  let calls = 0;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise((resolve) => {
+    started = resolve;
+  });
+  store.list = async () => {
+    calls++;
+    if (calls === 1) {
+      started();
+      await held;
+      return [{ name: "Before the change" }];
+    }
+    return [{ name: "After the change" }];
+  };
+  const client = createBusinessClient(base, {
+    openProducts: async () => store,
+  });
+  try {
+    const previous = client.query("products.list", {});
+    await entered;
+    announceDataChanges(base, new Set(["catalog:products:master-data"]));
+    const [current, error] = await client.query("products.list", {});
+    expect(error).toBeNull();
+    expect(current).toEqual([{ name: "After the change" }]);
+    expect(calls).toBe(2);
+    release();
+    expect((await previous)[0]).toEqual([{ name: "Before the change" }]);
+  } finally {
+    release();
+    client.dispose();
+  }
+});
+
+test("locking while a shared result is copied still prevents plaintext delivery", async () => {
+  await account();
+  const { base } = raw();
+  const store = products();
+  store.list = async () => [
+    Object.defineProperty({}, "name", {
+      enumerable: true,
+      get() {
+        void lockCryptoSession();
+        return "Private value after lock";
+      },
+    }),
+  ];
+  const client = createBusinessClient(base, {
+    openProducts: async () => store,
+  });
+  try {
+    const [value, error] = await client.query("products.list", {});
+    expect(value).toBeNull();
+    expect(error).toBeInstanceOf(Error);
+  } finally {
+    client.dispose();
+  }
+});
 
 test("seed-authorized recovery pages remain reachable without an unlocked account", async () => {
   await lockCryptoSession();
