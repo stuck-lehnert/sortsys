@@ -249,6 +249,52 @@ function MenusFixture() {
   );
 }
 
+function ScrollingSelectionFixture() {
+  const [open, setOpen] = useState(false);
+  const [requested, setRequested] = useState(false);
+  const [items, setItems] = useState([]);
+  const [selected, setSelected] = useState("");
+  useEffect(() => {
+    if (!requested) return;
+    const timer = setTimeout(() => setItems(["Visible document"]), 75);
+    return () => clearTimeout(timer);
+  }, [requested]);
+  return (
+    <Tile role="region" aria-label="Scrolling selections">
+      <Button onClick={() => setOpen(true)}>Open scrolling selections</Button>
+      <Modal
+        open={open}
+        modalHeading="Scrolling selections"
+        onRequestClose={() => setOpen(false)}
+      >
+        <div className="h-[1400px]" />
+        <ComboBox
+          titleText="Scrolling single"
+          items={items}
+          loading={requested && !items.length}
+          onFocus={() => setRequested(true)}
+          onChange={({ selectedItem }) => setSelected(selectedItem ?? "")}
+        />
+        <FilterableMultiSelect
+          titleText="Scrolling multiple"
+          items={items}
+          loading={requested && !items.length}
+          onFocus={() => setRequested(true)}
+          onChange={({ selectedItems }) => setSelected(selectedItems.join(","))}
+        />
+        <Select
+          labelText="Scrolling select"
+          onChange={(event) => setSelected(event.target.value)}
+        >
+          <SelectItem value="" text="Choose a document" />
+          <SelectItem value="Visible document" text="Visible document" />
+        </Select>
+        <output aria-label="Scrolling selection">{selected}</output>
+      </Modal>
+    </Tile>
+  );
+}
+
 function DialogsFixture() {
   const [open, setOpen] = useState(false);
   const [nested, setNested] = useState(false);
@@ -366,11 +412,16 @@ async function loadAsyncChoices({ query, init }) {
       ? { id: "slow", name: "Slow stale result" }
       : query === "fresh"
         ? { id: "fresh", name: "Fresh result" }
-        : { id: "alpha", name: "Alpha contact", description: "description-only-match" };
+        : {
+            id: "alpha",
+            name: "Alpha contact",
+            description: "description-only-match",
+          };
 
   // Model server-side matching across labels and additional searchable fields.
   return [existingAsyncContact, existingAsyncContact, result, result].filter(
-    (item) => `${item.name} ${item.description ?? ""}`.toLowerCase().includes(query),
+    (item) =>
+      `${item.name} ${item.description ?? ""}`.toLowerCase().includes(query),
   );
 }
 
@@ -773,6 +824,7 @@ function FixtureContent() {
                   <FormFixture />
                   <MenusFixture />
                   <DialogsFixture />
+                  <ScrollingSelectionFixture />
                   <FormFieldsFixture />
                   <ModalSizingFixture />
                   <ExpandableFixture />

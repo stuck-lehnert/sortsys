@@ -1117,6 +1117,64 @@ test("async multiselect keeps results matched by description rather than their v
     .waitFor();
 });
 
+for (const kind of ["single", "multiple", "select"]) {
+  test(`the ${kind} selection remains clickable at the bottom of a scrolling dialog`, async () => {
+    await openFixture();
+    await page
+      .getByRole("button", { name: "Open scrolling selections", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "Scrolling selections",
+      exact: true,
+    });
+    if (kind === "select") {
+      await dialog.getByRole("button", { name: /Scrolling select/ }).click();
+    } else {
+      await dialog
+        .getByRole("combobox", { name: `Scrolling ${kind}`, exact: true })
+        .fill("Visible");
+    }
+    const option = page.getByRole("option", {
+      name: "Visible document",
+      exact: true,
+    });
+    await option.waitFor();
+    const body = await dialog.boundingBox();
+    const bounds = await option.boundingBox();
+    assert.ok(bounds.y >= body.y);
+    assert.ok(bounds.y + bounds.height <= body.y + body.height);
+    await option.click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('output[aria-label="Scrolling selection"]')
+          .textContent === "Visible document",
+    );
+    if (kind !== "multiple") {
+      await page.getByRole("listbox").waitFor({ state: "hidden" });
+    }
+  });
+}
+
+test("Escape cancels a pending autocomplete opening in a scrolling dialog", async () => {
+  await openFixture();
+  await page
+    .getByRole("button", { name: "Open scrolling selections", exact: true })
+    .click();
+  const input = page.getByRole("combobox", {
+    name: "Scrolling single",
+    exact: true,
+  });
+  await input.focus();
+  await input.press("Escape");
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  assert.equal(await input.getAttribute("aria-expanded"), "false");
+});
+
 test("actual async single suggestions show pending status and appear while typing", async () => {
   await openFixture();
   const region = page.getByRole("region", {

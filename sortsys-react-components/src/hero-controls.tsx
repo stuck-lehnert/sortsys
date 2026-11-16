@@ -33,7 +33,8 @@ import {
   TagGroup,
 } from "@heroui/react";
 
-const DialogFieldsContext = createContext(false);
+const DialogFieldsContext =
+  createContext<React.RefObject<HTMLDivElement | null> | null>(null);
 
 function useFieldAutoFocus(autoFocus?: boolean) {
   const isDialogField = useContext(DialogFieldsContext);
@@ -46,14 +47,44 @@ function useFieldAutoFocus(autoFocus?: boolean) {
 const AutocompleteInput = forwardRef<
   HTMLInputElement,
   React.ComponentProps<typeof Input>
->(function AutocompleteInput({ onKeyDownCapture, ...props }, ref) {
+>(function AutocompleteInput(
+  { onKeyDownCapture, onFocus, onBlur, ...props },
+  ref,
+) {
   const state = useContext(ComboBoxStateContext);
+  const dialogBoundary = useContext(DialogFieldsContext);
+  const openFrame = useRef<number | null>(null);
+  function cancelPendingOpen() {
+    if (openFrame.current !== null) cancelAnimationFrame(openFrame.current);
+    openFrame.current = null;
+  }
+  useEffect(() => cancelPendingOpen, []);
   return (
     <Input
       {...props}
       ref={ref}
+      onFocus={(event) => {
+        onFocus?.(event);
+        if (!dialogBoundary || state?.isFocused || state?.isOpen) return;
+        const input = event.currentTarget;
+        cancelPendingOpen();
+        // Native focus scrolls the dialog after the focus event. Open after
+        // that scroll so React Aria does not immediately dismiss the menu.
+        openFrame.current = requestAnimationFrame(() => {
+          openFrame.current = requestAnimationFrame(() => {
+            openFrame.current = null;
+            if (input.ownerDocument.activeElement === input)
+              state?.open(null, "focus");
+          });
+        });
+      }}
+      onBlur={(event) => {
+        cancelPendingOpen();
+        onBlur?.(event);
+      }}
       onKeyDownCapture={(event) => {
         onKeyDownCapture?.(event);
+        if (event.key === "Escape" || event.key === "Tab") cancelPendingOpen();
         if (
           event.defaultPrevented ||
           event.key !== "Tab" ||
@@ -389,6 +420,7 @@ export const Select = forwardRef<HTMLButtonElement, any>(function Select(
   },
   ref,
 ) {
+  const dialogBoundary = useContext(DialogFieldsContext);
   const fieldAutoFocus = useFieldAutoFocus(props.autoFocus);
   const generatedId = useId();
   const [internalValue, setInternalValue] = useState(defaultValue);
@@ -445,7 +477,12 @@ export const Select = forwardRef<HTMLButtonElement, any>(function Select(
         </HeroSelect.Trigger>
         {suffix && <span className="shrink-0">{suffix}</span>}
       </div>
-      <HeroSelect.Popover>
+      <HeroSelect.Popover
+        boundaryElement={
+          dialogBoundary?.current?.closest<HTMLElement>('[role="dialog"]') ??
+          undefined
+        }
+      >
         <ListBox
           aria-label={typeof labelText === "string" ? labelText : undefined}
         >
@@ -554,6 +591,7 @@ export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(
   },
   ref,
 ) {
+  const dialogBoundary = useContext(DialogFieldsContext);
   const fieldAutoFocus = useFieldAutoFocus(autoFocus);
   const [internalValue, setInternalValue] = useState("");
   const singleOptions = items.filter(
@@ -572,7 +610,7 @@ export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(
       allowsCustomValue
       allowsEmptyCollection
       aria-busy={loading}
-      menuTrigger="focus"
+      menuTrigger={dialogBoundary ? "input" : "focus"}
       inputValue={value === undefined ? internalValue : String(value ?? "")}
       onInputChange={(next) => {
         setInternalValue(next);
@@ -603,7 +641,12 @@ export const ComboBox = forwardRef<HTMLInputElement, any>(function ComboBox(
         {loading && <AutocompleteLoading />}
         <HeroComboBox.Trigger className="w-8 pe-0" />
       </HeroComboBox.InputGroup>
-      <HeroComboBox.Popover>
+      <HeroComboBox.Popover
+        boundaryElement={
+          dialogBoundary?.current?.closest<HTMLElement>('[role="dialog"]') ??
+          undefined
+        }
+      >
         <ListBox
           aria-busy={loading}
           renderEmptyState={() => (
@@ -667,6 +710,7 @@ export function FilterableMultiSelect<T = unknown>({
   ref,
   ...inputProps
 }: FilterableMultiSelectProps<T>) {
+  const dialogBoundary = useContext(DialogFieldsContext);
   const fieldAutoFocus = useFieldAutoFocus(autoFocus);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -716,7 +760,7 @@ export function FilterableMultiSelect<T = unknown>({
         allowsCustomValue
         allowsEmptyCollection
         aria-busy={loading}
-        menuTrigger="focus"
+        menuTrigger={dialogBoundary ? "input" : "focus"}
         inputValue={query}
         onInputChange={(next) => {
           setQuery(next);
@@ -796,7 +840,12 @@ export function FilterableMultiSelect<T = unknown>({
           <HeroComboBox.Trigger className="w-8 pe-0" />
         </HeroComboBox.InputGroup>
         {helperText && <Description>{helperText}</Description>}
-        <HeroComboBox.Popover>
+        <HeroComboBox.Popover
+          boundaryElement={
+            dialogBoundary?.current?.closest<HTMLElement>('[role="dialog"]') ??
+            undefined
+          }
+        >
           <ListBox
             aria-busy={loading}
             renderEmptyState={() => (
@@ -1070,7 +1119,7 @@ function ModalFocusRestoration() {
     return () => {
       // Wait for the overlay's passive cleanup to release inert. React Aria's
       // restore frame can run before that cleanup and silently lose focus.
-      queueMicrotask(() => {
+      const restore = () => {
         if (
           ownerDocument.activeElement === ownerDocument.body &&
           returnFocusTo.isConnected &&
@@ -1078,6 +1127,12 @@ function ModalFocusRestoration() {
         ) {
           returnFocusTo.focus({ preventScroll: true });
         }
+      };
+      queueMicrotask(() => {
+        restore();
+        // Some browsers release inert on the following frame. Retry only
+        // while focus is still on the body; preserve any deliberate change.
+        ownerDocument.defaultView?.requestAnimationFrame(restore);
       });
     };
   }, [returnFocusTo]);
@@ -1111,6 +1166,7 @@ export function Modal({
   ...props
 }: any) {
   const headingId = useId();
+  const dialogBoundary = useRef<HTMLDivElement | null>(null);
   const isFullHeight = fullHeight === true || fullHeight === "true";
   const isFullWidth = fullWidth === true || fullWidth === "true";
   const isFullScreen = Boolean(edgeToEdge) && isFullHeight && isFullWidth;
@@ -1128,11 +1184,13 @@ export function Modal({
   );
 
   return (
-    <DialogFieldsContext.Provider value={true}>
+    <DialogFieldsContext.Provider value={dialogBoundary}>
       <HeroModal.Backdrop
         {...props}
         isDismissable={preventClose ? false : props.isDismissable}
-        isKeyboardDismissDisabled={preventClose || props.isKeyboardDismissDisabled}
+        isKeyboardDismissDisabled={
+          preventClose || props.isKeyboardDismissDisabled
+        }
         isOpen={Boolean(open)}
         onOpenChange={(next) => {
           if (!next && !preventClose) {
@@ -1183,10 +1241,12 @@ export function Modal({
                 }
 
                 const target = event.target;
-                if (!(
-                  target instanceof HTMLInputElement ||
-                  target instanceof HTMLSelectElement
-                )) {
+                if (
+                  !(
+                    target instanceof HTMLInputElement ||
+                    target instanceof HTMLSelectElement
+                  )
+                ) {
                   return;
                 }
 
@@ -1236,7 +1296,9 @@ export function Modal({
                   <p
                     className={classes(
                       "ss-modal-label m-0 text-xs leading-snug text-muted",
-                      isFullScreen ? "order-2 min-w-0 flex-1 truncate" : "break-words",
+                      isFullScreen
+                        ? "order-2 min-w-0 flex-1 truncate"
+                        : "break-words",
                     )}
                   >
                     {modalLabel}
@@ -1263,6 +1325,7 @@ export function Modal({
                 {isFullScreen && closeTrigger}
               </HeroModal.Header>
               <HeroModal.Body
+                ref={dialogBoundary}
                 className={classes(
                   "ss-modal-content min-h-0",
                   isFullHeight && "flex-1",
