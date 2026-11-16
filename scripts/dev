@@ -6,49 +6,42 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/container-images.sh"
 SERVER_DIR="$ROOT_DIR/sortsys-api-v2"
 CLIENT_DIR="$ROOT_DIR/sortsys-webapp-v2"
-JOB_RUNNER_DIR="$ROOT_DIR/sortsys-v2-job_runner"
 DEV_ENV_FILE="${DEV_ENV_FILE:-$ROOT_DIR/.env}"
 
-DEV_NETWORK="sortsys-dev-network"
-DEV_PG_CONTAINER="sortsys-dev-postgres"
-DEV_S3_CONTAINER="sortsys-dev-s3"
-DEV_OFFICE_CONTAINER="sortsys-dev-office"
-DEV_DRAWIO_CONTAINER="sortsys-dev-drawio"
-DEV_API_CONTAINER="sortsys-dev-api"
-DEV_DUCKDB_CONTAINER="sortsys-dev-duckdb"
+DEV_STACK_NAME="${DEV_STACK_NAME:-sortsys-dev-zt}"
+if [[ ! "$DEV_STACK_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+  echo "DEV_STACK_NAME enthält ungültige Zeichen" >&2
+  exit 1
+fi
+DEV_NETWORK="${DEV_STACK_NAME}-network"
+DEV_OFFICE_CONTAINER="${DEV_STACK_NAME}-office"
+DEV_DRAWIO_CONTAINER="${DEV_STACK_NAME}-drawio"
+DEV_API_CONTAINER="${DEV_STACK_NAME}-api"
+DEV_DUCKDB_CONTAINER="${DEV_STACK_NAME}-duckdb"
 DEV_DUCKDB_TOKEN="${DEV_DUCKDB_TOKEN:-sortsys-development-duckdb-token-not-for-production}"
-DEV_WEBAPP_CONTAINER="sortsys-dev-webapp"
-DEV_CLIENT_BUILD_CONTAINER="sortsys-dev-client-build"
-DEV_JOB_RUNNER_CONTAINERS=("sortsys-dev-job-runner-1" "sortsys-dev-job-runner-2")
-DEV_DATA_DIR="$ROOT_DIR/.dev-data"
+DEV_WEBAPP_CONTAINER="${DEV_STACK_NAME}-webapp"
+DEV_CLIENT_BUILD_CONTAINER="${DEV_STACK_NAME}-client-build"
+DEV_SEED_CONTAINER="${DEV_STACK_NAME}-seed"
+DEV_DATA_DIR="${DEV_DATA_DIR:-$ROOT_DIR/.dev-data/zerotrust}"
 DEV_PRESERVE_FAILED_API=false
-DEV_POSTGRES_DATA_DIR="$DEV_DATA_DIR/postgres"
-DEV_S3_DATA_DIR="$DEV_DATA_DIR/s3"
-DEV_DUCKDB_DATA_DIR="$DEV_DATA_DIR/duckdb"
-DEV_GO_BUILD_CACHE_DIR="$DEV_DATA_DIR/go-build"
-DEV_GO_MODULE_CACHE_DIR="$DEV_DATA_DIR/go-modules"
+# Keep the seeded environment independent of already claimed draft tenants.
+DEV_DUCKDB_DATA_DIR="$DEV_DATA_DIR/seeded-duckdb"
 DEV_WEBAPP_DEPS_DIR="$DEV_DATA_DIR/webapp-dependencies"
 DEV_DWG_DEPS_DIR="$DEV_DATA_DIR/dwgviewer-dependencies"
 DEV_GAEB_DEPS_DIR="$DEV_DATA_DIR/gaeb-dependencies"
 DEV_OFFICE_DATA_DIR="$DEV_DATA_DIR/private-office"
+DEV_SEED_DATA_DIR="$DEV_DATA_DIR/seed"
 
-DEV_POSTGRES_IMAGE="${DEV_POSTGRES_IMAGE:-$(sortsys_container_image dev-postgres)}"
-DEV_S3_IMAGE="${DEV_S3_IMAGE:-$(sortsys_s3_image)}"
-DEV_S3_IMAGE_FALLBACK="${DEV_S3_IMAGE_FALLBACK:-}"
 DEV_OFFICE_IMAGE="${DEV_OFFICE_IMAGE:-localhost/sortsys-private-office:dev}"
 DEV_DRAWIO_IMAGE="${DEV_DRAWIO_IMAGE:-$(sortsys_container_image drawio)}"
 DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-$(sortsys_container_image bun)}"
 DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-$(sortsys_container_image rust)}"
-DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.88-pg17}"
-DEV_JOB_RUNNER_IMAGE="${DEV_JOB_RUNNER_IMAGE:-localhost/sortsys-job-runner-dev:latest}"
+DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.99-duckdb-2}"
 DEV_NODE_IMAGE="${DEV_NODE_IMAGE:-$(sortsys_container_image node)}"
-DEV_GO_IMAGE="${DEV_GO_IMAGE:-$(sortsys_container_image go)}"
 DEV_REVISION="$(git -C "$ROOT_DIR" rev-parse --verify HEAD 2>/dev/null || printf development)"
 
 DEV_API_PORT="${DEV_API_PORT:-3000}"
 DEV_WEBAPP_PORT="${DEV_WEBAPP_PORT:-5173}"
-DEV_PG_PORT="${DEV_PG_PORT:-32532}"
-DEV_S3_PORT="${DEV_S3_PORT:-39100}"
 DEV_OFFICE_PORT="${DEV_OFFICE_PORT:-39180}"
 DEV_OFFICE_SANDBOX_PORT="${DEV_OFFICE_SANDBOX_PORT:-39182}"
 DEV_OFFICE_PUBLIC_ORIGIN="${DEV_OFFICE_PUBLIC_ORIGIN:-http://127.0.0.1:${DEV_OFFICE_PORT}}"
@@ -56,24 +49,11 @@ DEV_OFFICE_SANDBOX_ORIGIN="${DEV_OFFICE_SANDBOX_ORIGIN:-http://127.0.0.1:${DEV_O
 DEV_SORTSYS_PUBLIC_ORIGIN="${DEV_SORTSYS_PUBLIC_ORIGIN:-http://127.0.0.1:${DEV_WEBAPP_PORT}}"
 DEV_DRAWIO_PORT="${DEV_DRAWIO_PORT:-39181}"
 DEV_DRAWIO_PUBLIC_URL="${DEV_DRAWIO_PUBLIC_URL:-http://127.0.0.1:${DEV_DRAWIO_PORT}}"
-DEV_S3_PUBLIC_BASE_URL="${DEV_S3_PUBLIC_BASE_URL:-http://127.0.0.1:${DEV_S3_PORT}}"
 
-DEV_S3_REGION="${DEV_S3_REGION:-us-east-1}"
-DEV_S3_BUCKET="${DEV_S3_BUCKET:-sortsys-dev}"
-DEV_S3_ACCESS_KEY_ID="${DEV_S3_ACCESS_KEY_ID:-minioadmin}"
-DEV_S3_SECRET_ACCESS_KEY="${DEV_S3_SECRET_ACCESS_KEY:-minioadmin}"
-DEV_PG_ADMIN_PASSWORD="${TEST_PG_PASSWORD:-dev-postgres}"
-DEV_JOB_RUNNER_TOKEN="${DEV_JOB_RUNNER_TOKEN:-dev-job-runner-token}"
-DEV_JWT_SECRET="${DEV_JWT_SECRET:-dev-jwt-secret}"
-DEV_LLM_ENCRYPTION_KEY="${DEV_LLM_ENCRYPTION_KEY:-dev-llm-encryption-key}"
+DEV_JWT_SECRET="${DEV_JWT_SECRET:-sortsys-development-api-signing-secret-not-for-production}"
 # Development global-admin password: 123456
+DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-123456}"
 DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$A20B6GFXZPxMInilSMwRy.q3tixzPl9Bq0tgyrCvNAHUQI2BHqlPa}"
-
-DEV_MASTER_DATABASE_NAME="${DEV_MASTER_DATABASE_NAME:-live_sortsys_api_test_tenants}"
-DEV_TEST_TENANT_NAME="${DEV_TEST_TENANT_NAME:-test}"
-DEV_TEST_DATABASE_NAME="${DEV_TEST_DATABASE_NAME:-live_sortsys_api_test}"
-DEV_TEST_DATABASE_USER="${DEV_TEST_DATABASE_USER:-live_sortsys_api_test_app}"
-DEV_LIVE_POSTGRES_HOST_NAME="${DEV_LIVE_POSTGRES_HOST_NAME:-dev-local-postgres}"
 
 DEV_OPTIONAL_EDITOR_CONTAINERS=(
   "$DEV_OFFICE_CONTAINER"
@@ -81,13 +61,9 @@ DEV_OPTIONAL_EDITOR_CONTAINERS=(
 )
 
 DEV_SERVICE_CONTAINERS=(
-  "$DEV_PG_CONTAINER"
-  "$DEV_S3_CONTAINER"
   "$DEV_API_CONTAINER"
   "$DEV_DUCKDB_CONTAINER"
   "$DEV_WEBAPP_CONTAINER"
-  "${DEV_JOB_RUNNER_CONTAINERS[0]}"
-  "${DEV_JOB_RUNNER_CONTAINERS[1]}"
 )
 
 # Optional editors and short-lived helpers are cleaned up with the core stack.
@@ -96,9 +72,16 @@ DEV_ALL_CONTAINERS=(
   "${DEV_SERVICE_CONTAINERS[@]}"
   "${DEV_OPTIONAL_EDITOR_CONTAINERS[@]}"
   "$DEV_CLIENT_BUILD_CONTAINER"
+  "$DEV_SEED_CONTAINER"
 )
 
-if command -v podman >/dev/null 2>&1; then
+if [ -n "${CONTAINER_RUNTIME:-}" ]; then
+  if [[ "$CONTAINER_RUNTIME" != "docker" && "$CONTAINER_RUNTIME" != "podman" ]]; then
+    echo "CONTAINER_RUNTIME muss docker oder podman sein" >&2
+    exit 1
+  fi
+  command -v "$CONTAINER_RUNTIME" >/dev/null
+elif command -v podman >/dev/null 2>&1; then
   CONTAINER_RUNTIME="podman"
 elif command -v docker >/dev/null 2>&1; then
   CONTAINER_RUNTIME="docker"
@@ -107,17 +90,15 @@ else
   exit 1
 fi
 
-if [ ! -d "$SERVER_DIR" ] || [ ! -d "$CLIENT_DIR" ] || [ ! -d "$JOB_RUNNER_DIR" ]; then
+if [ ! -d "$SERVER_DIR" ] || [ ! -d "$CLIENT_DIR" ]; then
   echo "expected monorepo directories are missing; run ./dev from the repository root"
   exit 1
 fi
 
-runtime_pull_args=()
+runtime_pull_args=(--pull=missing)
 # The initializer and services share these binds on SELinux-enabled hosts.
 runtime_mount_suffix=":z"
-runtime_user_args=()
 runtime_env_args=(-e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm)
-runtime_llm_env_args=()
 DEV_LLM_ENV_CONTENT=""
 
 if [ "$CONTAINER_RUNTIME" = "podman" ]; then
@@ -148,8 +129,10 @@ prepare_llm_environment() {
       names[11] = "LLM_MCP_URL"
       names[12] = "OPENROUTER_API_KEY"
       names[13] = "OPENROUTER_MODEL"
+      names[14] = "LLM_ENCRYPTION_KEY"
+      names[15] = "LLM_LIVE_INTERNAL_URL"
 
-      for (position = 1; position <= 13; position++) {
+      for (position = 1; position <= 15; position++) {
         allowed[names[position]] = 1
       }
     }
@@ -183,7 +166,7 @@ prepare_llm_environment() {
     }
 
     END {
-      for (position = 1; position <= 13; position++) {
+      for (position = 1; position <= 15; position++) {
         key = names[position]
 
         if (key in ENVIRON) {
@@ -196,17 +179,14 @@ prepare_llm_environment() {
   ' "$source_file")"
 
   if [ -n "$DEV_LLM_ENV_CONTENT" ]; then
-    runtime_llm_env_args=(--env-file /dev/stdin)
     echo "Using development LLM configuration"
   else
-    runtime_llm_env_args=()
     echo "No development LLM credentials found; assistant remains disabled"
   fi
 }
 
 cleanup_llm_environment() {
   DEV_LLM_ENV_CONTENT=""
-  runtime_llm_env_args=()
 }
 
 image_exists() {
@@ -232,14 +212,11 @@ prepare_development_directories() {
   # Services initialize ownership inside their own bind-mounted data folders.
   # Do not recursively chmod/chown existing database files on the host.
   mkdir -p \
-    "$DEV_POSTGRES_DATA_DIR" \
-    "$DEV_S3_DATA_DIR" \
     "$DEV_DUCKDB_DATA_DIR" \
-    "$DEV_GO_BUILD_CACHE_DIR" \
-    "$DEV_GO_MODULE_CACHE_DIR" \
     "$DEV_WEBAPP_DEPS_DIR" \
     "$DEV_DWG_DEPS_DIR" \
     "$DEV_GAEB_DEPS_DIR" \
+    "$DEV_SEED_DATA_DIR" \
     "$DEV_OFFICE_DATA_DIR"
 }
 
@@ -434,8 +411,8 @@ wait_for_tcp_port() {
 wait_for_api_ready() {
   local attempt
 
-  echo "Waiting for API startup after compilation and development seeding"
-  echo "Inspect compiler and seed progress: ${CONTAINER_RUNTIME} logs -f ${DEV_API_CONTAINER}"
+  echo "Waiting for native API startup after compilation"
+  echo "Inspect compiler progress: ${CONTAINER_RUNTIME} logs -f ${DEV_API_CONTAINER}"
 
   for ((attempt = 1; attempt <= 600; attempt++)); do
     if ! container_is_running "$DEV_API_CONTAINER"; then
@@ -447,13 +424,13 @@ wait_for_api_ready() {
       echo "Failed API container retained: ${CONTAINER_RUNTIME} logs ${DEV_API_CONTAINER}" >&2
       return 1
     fi
-    if "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" 2>&1 |
-      grep -F 'sortsys Rust API listening' >/dev/null; then
+    if "$CONTAINER_RUNTIME" exec "$DEV_API_CONTAINER" \
+      curl --fail --silent --max-time 2 "http://127.0.0.1:${DEV_API_PORT}/ping" >/dev/null 2>&1; then
       return 0
     fi
 
     if ((attempt % 10 == 0)); then
-      echo "API compilation, seeding or startup is still running (${attempt}s)"
+      echo "API compilation or startup is still running (${attempt}s)"
     fi
 
     sleep 1
@@ -463,152 +440,17 @@ wait_for_api_ready() {
   return 1
 }
 
-validate_pg_identifier() {
-  local value="$1"
-  local field="$2"
-
-  if ! [[ "$value" =~ ^[a-z][a-z0-9_]{0,62}$ ]]; then
-    echo "Invalid ${field}: '${value}' (must match ^[a-z][a-z0-9_]{0,62}$)"
-    exit 1
-  fi
-}
-
-initialize_master_database() {
-  validate_pg_identifier "$DEV_MASTER_DATABASE_NAME" "DEV_MASTER_DATABASE_NAME"
-  validate_pg_identifier "$DEV_TEST_DATABASE_NAME" "DEV_TEST_DATABASE_NAME"
-  validate_pg_identifier "$DEV_TEST_DATABASE_USER" "DEV_TEST_DATABASE_USER"
-
-  echo "Initializing development master database ${DEV_MASTER_DATABASE_NAME}"
-  "$CONTAINER_RUNTIME" exec "$DEV_PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -d postgres \
-    -c "SET client_min_messages TO WARNING;" \
-    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('${DEV_MASTER_DATABASE_NAME}', '${DEV_TEST_DATABASE_NAME}') AND pid <> pg_backend_pid();" \
-    -c "DROP DATABASE IF EXISTS \"${DEV_TEST_DATABASE_NAME}\";" \
-    -c "DROP DATABASE IF EXISTS \"${DEV_MASTER_DATABASE_NAME}\";" \
-    -c "DROP ROLE IF EXISTS \"${DEV_TEST_DATABASE_USER}\";" \
-    -c "CREATE DATABASE \"${DEV_MASTER_DATABASE_NAME}\";" >/dev/null
-}
-
 prepare_images() {
-  local images=(
-    "$DEV_POSTGRES_IMAGE"
-    "$DEV_DRAWIO_IMAGE"
-    "$DEV_BUN_IMAGE"
-    "$DEV_RUST_IMAGE"
-    "$DEV_NODE_IMAGE"
-    "$DEV_GO_IMAGE"
-  )
-  local labels=("PostgreSQL" "diagrams.net" "Bun" "Rust" "Node.js" "Go")
+  local images=("$DEV_DRAWIO_IMAGE" "$DEV_BUN_IMAGE" "$DEV_RUST_IMAGE" "$DEV_NODE_IMAGE")
   local pids=()
-  local failed=0
-  local image
   local index
-
-  echo "Preparing development images: pulls and the MinIO build run in parallel"
-
   for image in "${images[@]}"; do
     ensure_image "$image" 5 &
     pids+=("$!")
   done
-
-  sortsys_prepare_s3_image "$CONTAINER_RUNTIME" "$DEV_S3_IMAGE" "$DEV_GO_IMAGE" &
-  local s3_pid="$!"
-
   for index in "${!pids[@]}"; do
-    if ! wait_for_startup_step "${pids[$index]}" \
-      "${labels[$index]} image (${images[$index]})"; then
-      echo "Failed to prepare ${labels[$index]} image: ${images[$index]}" >&2
-      failed=1
-    fi
+    wait_for_startup_step "${pids[$index]}" "${images[$index]}"
   done
-
-  if ! wait_for_startup_step "$s3_pid" "S3 image (${DEV_S3_IMAGE})"; then
-    echo "Failed to prepare S3 image: ${DEV_S3_IMAGE}"
-    if [ -n "$DEV_S3_IMAGE_FALLBACK" ] && \
-      sortsys_prepare_s3_image "$CONTAINER_RUNTIME" "$DEV_S3_IMAGE_FALLBACK" "$DEV_GO_IMAGE"; then
-      DEV_S3_IMAGE="$DEV_S3_IMAGE_FALLBACK"
-    else
-      failed=1
-    fi
-  fi
-
-  if [ "$failed" -eq 0 ]; then
-    echo "All development images are ready"
-  fi
-
-  return "$failed"
-}
-
-start_postgres() {
-  echo "Starting development PostgreSQL on port ${DEV_PG_PORT}"
-
-  ensure_network
-  "$CONTAINER_RUNTIME" run -d \
-    --rm \
-    --name "$DEV_PG_CONTAINER" \
-    "${runtime_pull_args[@]}" \
-    --network "$DEV_NETWORK" \
-    -p "${DEV_PG_PORT}:5432" \
-    -e POSTGRES_HOST_AUTH_METHOD=trust \
-    -e PG_HOST_AUTH_METHOD=trust \
-    -v "${DEV_POSTGRES_DATA_DIR}:/var/lib/postgresql/data${runtime_mount_suffix}" \
-    "$DEV_POSTGRES_IMAGE" >/dev/null
-
-  echo "Waiting for PostgreSQL readiness"
-  for ((i = 1; i <= 120; i++)); do
-    if ! container_is_running "$DEV_PG_CONTAINER"; then
-      echo "PostgreSQL container stopped unexpectedly"
-      "$CONTAINER_RUNTIME" logs "$DEV_PG_CONTAINER" || true
-      return 1
-    fi
-
-    # The image's temporary init server only accepts Unix-socket connections.
-    if "$CONTAINER_RUNTIME" exec "$DEV_PG_CONTAINER" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "PostgreSQL did not become ready in time"
-  return 1
-}
-
-start_s3() {
-  echo "Starting development S3 on port ${DEV_S3_PORT}"
-
-  ensure_network
-  "$CONTAINER_RUNTIME" run -d \
-    --rm \
-    --name "$DEV_S3_CONTAINER" \
-    "${runtime_pull_args[@]}" \
-    --network "$DEV_NETWORK" \
-    -p "${DEV_S3_PORT}:9000" \
-    -e MINIO_ROOT_USER="$DEV_S3_ACCESS_KEY_ID" \
-    -e MINIO_ROOT_PASSWORD="$DEV_S3_SECRET_ACCESS_KEY" \
-    -v "${DEV_S3_DATA_DIR}:/data${runtime_mount_suffix}" \
-    "$DEV_S3_IMAGE" server /data --address :9000 >/dev/null
-
-  if ! wait_for_tcp_port "127.0.0.1" "$DEV_S3_PORT" "S3" 120 "$DEV_S3_CONTAINER"; then
-    "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
-    return 1
-  fi
-
-  echo "Initializing MinIO development bucket ${DEV_S3_BUCKET}"
-  for ((i = 1; i <= 120; i++)); do
-    if "$CONTAINER_RUNTIME" exec "$DEV_S3_CONTAINER" \
-      mc alias set sortsys-dev http://127.0.0.1:9000 \
-        "$DEV_S3_ACCESS_KEY_ID" "$DEV_S3_SECRET_ACCESS_KEY" >/dev/null 2>&1; then
-      "$CONTAINER_RUNTIME" exec "$DEV_S3_CONTAINER" \
-        mc mb --ignore-existing "sortsys-dev/${DEV_S3_BUCKET}" >/dev/null
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "MinIO did not become API-ready in time"
-  "$CONTAINER_RUNTIME" logs "$DEV_S3_CONTAINER" || true
-  return 1
 }
 
 build_private_office_image() {
@@ -667,7 +509,6 @@ ensure_local_api_client_package() {
   "$CONTAINER_RUNTIME" run --rm \
     --name "$DEV_CLIENT_BUILD_CONTAINER" \
     "${runtime_pull_args[@]}" \
-    "${runtime_user_args[@]}" \
     "${runtime_env_args[@]}" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
     -w /workspace/sortsys-api-v2/client \
@@ -686,10 +527,10 @@ ensure_local_api_client_package() {
 }
 
 build_api_development_image() {
-  echo "Building cached Rust development image with PostgreSQL 17 clients"
+  echo "Building Rust/DuckDB development image"
   "$CONTAINER_RUNTIME" build \
     --build-arg "RUST_IMAGE=$DEV_RUST_IMAGE" \
-    --file "$SERVER_DIR/rust-api/Dockerfile.test" \
+    --file "$SERVER_DIR/rust-api/Dockerfile.development" \
     --tag "$DEV_API_IMAGE" \
     "$SERVER_DIR" >/dev/null
 }
@@ -699,7 +540,6 @@ start_duckdb_container() {
   "$CONTAINER_RUNTIME" run -d \
     --name "$DEV_DUCKDB_CONTAINER" \
     "${runtime_pull_args[@]}" \
-    "${runtime_user_args[@]}" \
     "${runtime_env_args[@]}" \
     --network "$DEV_NETWORK" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
@@ -708,13 +548,13 @@ start_duckdb_container() {
     -e DUCKDB_SERVICE_TOKEN="$DEV_DUCKDB_TOKEN" \
     -e DUCKDB_DATA_DIRECTORY=/data \
     "$DEV_API_IMAGE" \
-    cargo run --package sortsys-api --bin sortsys_duckdb >/dev/null
+    cargo run --manifest-path /workspace/sortsys-store/Cargo.toml --target-dir /workspace/sortsys-api-v2/target --locked --bin sortsys-duckdb >/dev/null
   for ((attempt=1; attempt<=240; attempt++)); do
     if ! container_is_running "$DEV_DUCKDB_CONTAINER"; then
       "$CONTAINER_RUNTIME" logs "$DEV_DUCKDB_CONTAINER" >&2 || true
       return 1
     fi
-    if "$CONTAINER_RUNTIME" exec "$DEV_DUCKDB_CONTAINER" /workspace/sortsys-api-v2/target/debug/sortsys_duckdb --health >/dev/null 2>&1; then
+    if "$CONTAINER_RUNTIME" exec "$DEV_DUCKDB_CONTAINER" /workspace/sortsys-api-v2/target/debug/sortsys-duckdb --health >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -724,193 +564,36 @@ start_duckdb_container() {
 }
 
 start_api_container() {
-  local pg_master_dsn
-
-  pg_master_dsn="postgres://postgres:${DEV_PG_ADMIN_PASSWORD}@${DEV_PG_CONTAINER}:5432/${DEV_MASTER_DATABASE_NAME}"
-
   prepare_llm_environment
-
-  echo "Starting containerized API on port ${DEV_API_PORT}"
-
+  echo "Starting independent API on port ${DEV_API_PORT}"
   printf '%s\n' "$DEV_LLM_ENV_CONTENT" | "$CONTAINER_RUNTIME" run -d \
     --name "$DEV_API_CONTAINER" \
     "${runtime_pull_args[@]}" \
-    "${runtime_user_args[@]}" \
     "${runtime_env_args[@]}" \
-    "${runtime_llm_env_args[@]}" \
+    --env-file /dev/stdin \
     --network "$DEV_NETWORK" \
-    -p "${DEV_API_PORT}:${DEV_API_PORT}" \
+    -p "127.0.0.1:${DEV_API_PORT}:${DEV_API_PORT}" \
     -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
     -w /workspace/sortsys-api-v2 \
     -e PORT="$DEV_API_PORT" \
-    -e PG_MASTER_DSN="$pg_master_dsn" \
     -e JWT_SECRET="$DEV_JWT_SECRET" \
     -e DUCKDB_QUACK_URI="quack:${DEV_DUCKDB_CONTAINER}:9494" \
     -e DUCKDB_CONTROL_URL="http://${DEV_DUCKDB_CONTAINER}:9495" \
     -e DUCKDB_SERVICE_TOKEN="$DEV_DUCKDB_TOKEN" \
     -e DUCKDB_QUACK_DISABLE_SSL="true" \
-    -e LLM_ENCRYPTION_KEY="$DEV_LLM_ENCRYPTION_KEY" \
     -e OFFICE_PUBLIC_ORIGIN="$DEV_OFFICE_PUBLIC_ORIGIN" \
     -e DRAWIO_PUBLIC_URL="$DEV_DRAWIO_PUBLIC_URL" \
     -e ADMIN_HASH="$DEV_ADMIN_HASH" \
-    -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
-    -e TEST_PG_HOST="$DEV_PG_CONTAINER" \
-    -e TEST_PG_PORT="5432" \
-    -e TEST_PG_USER="postgres" \
-    -e TEST_PG_PASSWORD="$DEV_PG_ADMIN_PASSWORD" \
-    -e DEV_MASTER_DATABASE_NAME="$DEV_MASTER_DATABASE_NAME" \
-    -e DEV_TEST_TENANT_NAME="$DEV_TEST_TENANT_NAME" \
-    -e DEV_TEST_DATABASE_NAME="$DEV_TEST_DATABASE_NAME" \
-    -e DEV_TEST_DATABASE_USER="$DEV_TEST_DATABASE_USER" \
-    -e DEV_LIVE_POSTGRES_HOST_NAME="$DEV_LIVE_POSTGRES_HOST_NAME" \
-    -e TEST_S3_ENDPOINT="http://${DEV_S3_CONTAINER}:9000" \
-    -e TEST_S3_PUBLIC_BASE_URL="$DEV_S3_PUBLIC_BASE_URL" \
-    -e TEST_S3_REGION="$DEV_S3_REGION" \
-    -e TEST_S3_BUCKET="$DEV_S3_BUCKET" \
-    -e TEST_S3_ACCESS_KEY_ID="$DEV_S3_ACCESS_KEY_ID" \
-    -e TEST_S3_SECRET_ACCESS_KEY="$DEV_S3_SECRET_ACCESS_KEY" \
-    -e TEST_S3_FORCE_PATH_STYLE="true" \
     "$DEV_API_IMAGE" \
-    sh -c '
-      set -e
-
-      if ! command -v pg_dump >/dev/null 2>&1 || ! command -v psql >/dev/null 2>&1; then
-        if command -v apk >/dev/null 2>&1; then
-          apk add --no-cache postgresql-client >/dev/null
-        elif command -v apt-get >/dev/null 2>&1; then
-          apt-get update >/dev/null
-          DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-client >/dev/null
-          rm -rf /var/lib/apt/lists/*
-        else
-          echo "Warning: unable to install postgresql-client (no apk/apt-get found). Backup/restore features may not work in dev." >&2
-        fi
-      fi
-
-      cargo run --package sortsys-api --bin seed_dev
-      exec cargo run --package sortsys-api --bin sortsys-api
-    ' >/dev/null
-
-  # Values parsed from .env are needed only while Docker creates the container.
+    cargo run --locked --package sortsys-api --bin sortsys-api >/dev/null
   cleanup_llm_environment
-
   if ! wait_for_api_ready; then
     mkdir -p "$DEV_DATA_DIR/logs"
     "$CONTAINER_RUNTIME" logs "$DEV_API_CONTAINER" > "$DEV_DATA_DIR/logs/api-startup.log" 2>&1 || true
     tail -n 150 "$DEV_DATA_DIR/logs/api-startup.log" >&2
     echo "Full API startup log: $DEV_DATA_DIR/logs/api-startup.log" >&2
-    exit 1
+    return 1
   fi
-}
-
-build_job_runner_development_image() {
-  echo "Building cached local job runner development image"
-  "$CONTAINER_RUNTIME" build \
-    --build-arg "GO_IMAGE=$DEV_GO_IMAGE" \
-    --target development \
-    -f "$JOB_RUNNER_DIR/Dockerfile" \
-    -t "$DEV_JOB_RUNNER_IMAGE" \
-    "$JOB_RUNNER_DIR" >/dev/null
-}
-
-start_job_runner_containers() {
-  echo "Starting 2 containerized Go job runners with source watching"
-  for idx in "${!DEV_JOB_RUNNER_CONTAINERS[@]}"; do
-    local container_name="${DEV_JOB_RUNNER_CONTAINERS[$idx]}"
-    local runner_id="dev-runner-$((idx + 1))"
-
-    "$CONTAINER_RUNTIME" run -d \
-      --rm \
-      --name "$container_name" \
-      "${runtime_pull_args[@]}" \
-      "${runtime_user_args[@]}" \
-      "${runtime_env_args[@]}" \
-      --network "$DEV_NETWORK" \
-      -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
-      -v "${DEV_GO_BUILD_CACHE_DIR}:/tmp/go-build${runtime_mount_suffix}" \
-      -v "${DEV_GO_MODULE_CACHE_DIR}:/tmp/go${runtime_mount_suffix}" \
-      -w /workspace/sortsys-v2-job_runner \
-      -e JOB_RUNNER_WS_URL="ws://${DEV_API_CONTAINER}:${DEV_API_PORT}/internal/job-runners/ws" \
-      -e JOB_RUNNER_WS_IGNORE_PROXY="true" \
-      -e JOB_RUNNER_TOKEN="$DEV_JOB_RUNNER_TOKEN" \
-      -e JOB_RUNNER_ID="$runner_id" \
-      -e JOB_RUNNER_LEASE_SEC="300" \
-      -e GOCACHE=/tmp/go-build \
-      -e GOPATH=/tmp/go \
-      "$DEV_JOB_RUNNER_IMAGE" \
-      sh -lc '
-        set -eu
-        export PATH="/usr/local/go/bin:$PATH"
-        go mod download
-
-        runner_pid=""
-        current_hash=""
-
-        shutdown() {
-          if [ -n "$runner_pid" ] && kill -0 "$runner_pid" 2>/dev/null; then
-            kill "$runner_pid" 2>/dev/null || true
-            wait "$runner_pid" 2>/dev/null || true
-          fi
-          exit 0
-        }
-
-        trap shutdown INT TERM
-
-        while true; do
-          go_files="$(find cmd internal -type f -name "*.go" | sort)"
-          next_hash="$({
-            sha256sum go.mod go.sum
-            if [ -n "$go_files" ]; then
-              sha256sum $go_files
-            fi
-          } | sha256sum | cut -d" " -f1)"
-
-          if [ "$next_hash" != "$current_hash" ]; then
-            current_hash="$next_hash"
-
-            if [ -n "$runner_pid" ] && kill -0 "$runner_pid" 2>/dev/null; then
-              kill "$runner_pid" 2>/dev/null || true
-              wait "$runner_pid" 2>/dev/null || true
-            fi
-
-            echo "[$JOB_RUNNER_ID] source changed, restarting"
-            go run ./cmd/job-runner &
-            runner_pid="$!"
-          fi
-
-          if [ -n "$runner_pid" ] && ! kill -0 "$runner_pid" 2>/dev/null; then
-            wait "$runner_pid" 2>/dev/null || true
-            echo "[$JOB_RUNNER_ID] process exited, restarting"
-            go run ./cmd/job-runner &
-            runner_pid="$!"
-          fi
-
-          sleep 1
-        done
-      ' >/dev/null
-
-    if ! container_is_running "$container_name"; then
-      echo "Job runner container failed to start: ${container_name}"
-      "$CONTAINER_RUNTIME" logs "$container_name" || true
-      exit 1
-    fi
-  done
-}
-
-initialize_development_logo() {
-  echo "Installing Sortsys as the development company logo"
-  "$CONTAINER_RUNTIME" run --rm \
-    "${runtime_pull_args[@]}" \
-    "${runtime_user_args[@]}" \
-    "${runtime_env_args[@]}" \
-    --network "$DEV_NETWORK" \
-    -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
-    -w /workspace \
-    -e DEV_TEST_TENANT_NAME="$DEV_TEST_TENANT_NAME" \
-    -e DEV_LOGO_API_URL="http://${DEV_API_CONTAINER}:${DEV_API_PORT}" \
-    -e DEV_LOGO_S3_PUBLIC_BASE_URL="$DEV_S3_PUBLIC_BASE_URL" \
-    -e DEV_LOGO_S3_INTERNAL_BASE_URL="http://${DEV_S3_CONTAINER}:9000" \
-    "$DEV_BUN_IMAGE" \
-    bun scripts/dev-logo.mjs
 }
 
 start_webapp_container() {
@@ -919,7 +602,6 @@ start_webapp_container() {
     --rm \
     --name "$DEV_WEBAPP_CONTAINER" \
     "${runtime_pull_args[@]}" \
-    "${runtime_user_args[@]}" \
     "${runtime_env_args[@]}" \
     --network "$DEV_NETWORK" \
     -p "${DEV_WEBAPP_PORT}:${DEV_WEBAPP_PORT}" \
@@ -930,6 +612,7 @@ start_webapp_container() {
     -v "${DEV_GAEB_DEPS_DIR}:/workspace/sortsys-gaeb/node_modules${runtime_mount_suffix}" \
     -e CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}" \
     -e DEV_WEBAPP_PORT="$DEV_WEBAPP_PORT" \
+    -e VITE_API_PORT="$DEV_API_PORT" \
     -e SORTSYS_REVISION="$DEV_REVISION" \
     "$DEV_NODE_IMAGE" \
     sh -lc '
@@ -990,6 +673,26 @@ start_webapp_container() {
     "$CONTAINER_RUNTIME" logs "$DEV_WEBAPP_CONTAINER" || true
     return 1
   fi
+}
+
+seed_development_tenant() {
+  echo "Preparing the encrypted development tenant"
+  "$CONTAINER_RUNTIME" run --rm \
+    --name "$DEV_SEED_CONTAINER" \
+    --user "$(id -u):$(id -g)" \
+    "${runtime_pull_args[@]}" \
+    "${runtime_env_args[@]}" \
+    --network "$DEV_NETWORK" \
+    -v "${ROOT_DIR}:/workspace${runtime_mount_suffix}" \
+    -v "${DEV_WEBAPP_DEPS_DIR}:/workspace/sortsys-webapp-v2/node_modules${runtime_mount_suffix}" \
+    -v "${DEV_GAEB_DEPS_DIR}:/workspace/sortsys-gaeb/node_modules${runtime_mount_suffix}" \
+    -v "${DEV_SEED_DATA_DIR}:/seed${runtime_mount_suffix}" \
+    -w /workspace/sortsys-webapp-v2 \
+    -e SORTSYS_DEVELOPMENT_SEED=1 \
+    -e SORTSYS_DEV_API_URL="http://${DEV_API_CONTAINER}:${DEV_API_PORT}/" \
+    -e SORTSYS_DEV_SEED_DIRECTORY=/seed \
+    -e SORTSYS_DEV_ADMIN_PASSWORD="$DEV_ADMIN_PASSWORD" \
+    "$DEV_BUN_IMAGE" bun scripts/seed-development.ts
 }
 
 monitor_containers() {
@@ -1053,53 +756,35 @@ force_shutdown() {
 trap force_shutdown INT TERM
 trap cleanup EXIT
 
-if [ "$DEV_API_PORT" != "3000" ]; then
-  echo "Warning: webapp dev client currently targets API port 3000 in-browser."
-fi
-
 cleanup_containers
 prepare_development_directories
 ensure_network
 prepare_images
 
-start_postgres &
-postgres_pid="$!"
-start_s3 &
-s3_pid="$!"
 start_optional_editor "Office" start_private_office &
 start_optional_editor "diagrams.net" start_drawio &
 build_api_development_image &
 api_image_pid="$!"
-build_job_runner_development_image &
-job_runner_image_pid="$!"
 (
   ensure_local_api_client_package
   start_webapp_container
 ) &
 webapp_pid="$!"
-
-wait_for_startup_step "$postgres_pid" "PostgreSQL"
-initialize_master_database
-
-wait_for_startup_step "$s3_pid" "S3"
 wait_for_startup_step "$api_image_pid" "API development image build"
-wait_for_startup_step "$job_runner_image_pid" "Job runner development image build"
 
 start_duckdb_container
 start_api_container
-start_job_runner_containers
 
 wait_for_startup_step "$webapp_pid" "Webapp"
-
-initialize_development_logo
+seed_development_tenant
 
 echo
-echo "sortsys dev stack is running (containerized)"
+echo "Independent DuckDB development stack is running"
+echo "- Data:     ${DEV_DUCKDB_DATA_DIR} (persistent)"
+echo "- Mandant:  john.doe@test (Admin), frank.doe@test (normal); Passwort jeweils 123456"
+echo "- Betreiberverwaltung: DEV_ADMIN_PASSWORD (Standard: 123456)"
 echo "- API:      http://127.0.0.1:${DEV_API_PORT}"
 echo "- Webapp:   http://127.0.0.1:${DEV_WEBAPP_PORT}"
-echo "- Postgres: 127.0.0.1:${DEV_PG_PORT}"
-echo "- MasterDB: ${DEV_MASTER_DATABASE_NAME}"
-echo "- S3:       http://127.0.0.1:${DEV_S3_PORT}"
 echo "- Office: ${DEV_OFFICE_PUBLIC_ORIGIN}"
 echo "- diagrams.net: ${DEV_DRAWIO_PUBLIC_URL}"
 echo

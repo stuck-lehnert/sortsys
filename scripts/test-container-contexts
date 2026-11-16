@@ -59,7 +59,7 @@ for index in "${!ignore_files[@]}"; do
     Cargo.toml
     Cargo.lock
     rust-api/src/main.rs
-    rust-api/migrations/schema.sql
+    rust-api/src/contracts.rs
     client/src/rpc.ts
     client/package.json
     client/bun.lock
@@ -87,18 +87,24 @@ for index in "${!ignore_files[@]}"; do
   fi
 
   if [[ $index -eq 0 ]]; then
-    # The webapp root context also excludes unrelated repository packages.
+    # The shared root context keeps both API sources and browser packages.
     canaries+=(
       README.unrelated
       scripts/unneeded
       sortsys-api-v2/Dockerfile
+      sortsys-api-v2/internal/config.json
+      sortsys-api-v2/rust-api/.env
+      sortsys-api-v2/target/release/sortsys-api
+      sortsys-store/target/release/deps/library.rlib
+      sortsys-zerotrust/target/release/deps/library.rlib
+      sortsys-zerotrust/node_modules/private-package/index.js
+    )
+    retained=(
       sortsys-api-v2/Cargo.toml
       sortsys-api-v2/Cargo.lock
       sortsys-api-v2/rust-api/src/main.rs
-      sortsys-api-v2/rust-api/migrations/schema.sql
-      sortsys-api-v2/internal/config.json
-    )
-    retained=(
+      sortsys-api-v2/rust-api/src/contracts.rs
+      sortsys-api-v2/seed-assets/manifest.json
       sortsys-api-v2/client/src/rpc.ts
       sortsys-api-v2/client/package.json
       sortsys-api-v2/client/bun.lock
@@ -108,6 +114,15 @@ for index in "${!ignore_files[@]}"; do
       sortsys-webapp-v2/nginx.conf
       sortsys-react-components/src/index.tsx
       sortsys-dwgviewer/lib/Cargo.lock
+      sortsys-store/Cargo.toml
+      sortsys-store/Cargo.lock
+      sortsys-store/src/lib.rs
+      sortsys-store/src/metadata.rs
+      sortsys-zerotrust/Cargo.toml
+      sortsys-zerotrust/Cargo.lock
+      sortsys-zerotrust/rust/lib.rs
+      sortsys-zerotrust/src/index.ts
+      sortsys-zerotrust/src/core/framework.ts
     )
 
     for canary in "${canaries[@]}"; do

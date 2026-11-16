@@ -1,14 +1,8 @@
 # Image defaults used by the shell scripts, read by container-images.sh.
 # Dependabot can update FROM instructions; it cannot update shell literals.
 # This file is an image catalog and is not built as an application container.
-FROM docker.io/library/postgres:17 AS dev-postgres
-FROM docker.io/library/postgres:17-bookworm AS test-postgres
-FROM docker.io/library/postgres:17-alpine AS kubernetes-postgres
-# MinIO is built from pinned source releases in Dockerfile.s3.
 FROM docker.io/jgraph/drawio:32.6.9 AS drawio
 FROM docker.io/oven/bun:1.4.4 AS bun
 FROM docker.io/library/rust:1.99-bookworm AS rust
 FROM docker.io/library/node:24 AS node
-FROM docker.io/library/golang:1.27-bookworm AS go
-FROM docker.io/amazon/aws-cli:latest AS aws-cli
 FROM docker.io/library/python:3.15-alpine AS python

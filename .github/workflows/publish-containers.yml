@@ -24,11 +24,11 @@ jobs:
       matrix:
         include:
           - image: api
-            context: ./sortsys-api-v2
+            context: .
             file: ./sortsys-api-v2/Dockerfile
-          - image: jobrunner
-            context: ./sortsys-v2-job_runner
-            file: ./sortsys-v2-job_runner/Dockerfile
+          - image: store
+            context: .
+            file: ./sortsys-store/Dockerfile
           - image: webapp
             context: .
             file: ./sortsys-webapp-v2/Dockerfile

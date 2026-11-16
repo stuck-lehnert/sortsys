@@ -1,25 +1,8 @@
 services:
-  postgres:
-    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-sortsys}
-      POSTGRES_USER: ${POSTGRES_USER:-sortsys}
-      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    stop_grace_period: 1m
-
   duckdb:
     build:
-      context: ./sortsys-api-v2
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sortsys-store/Dockerfile
     command: ["/usr/local/bin/sortsys-duckdb"]
     restart: unless-stopped
     init: true
@@ -78,7 +61,8 @@ services:
     expose:
       - "8080"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/drawio/"]
+      test:
+        ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/drawio/"]
       interval: 15s
       timeout: 10s
       retries: 20
@@ -87,8 +71,8 @@ services:
 
   api:
     build:
-      context: ./sortsys-api-v2
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sortsys-api-v2/Dockerfile
     restart: unless-stopped
     init: true
     cap_drop:
@@ -97,68 +81,40 @@ services:
       - no-new-privileges:true
     networks:
       - default
-      - jobs
       - data
     environment:
       NODE_ENV: production
       PORT: "3000"
-      AUTO_BACKUPS_ENABLED: ${AUTO_BACKUPS_ENABLED:-true}
-      PG_MASTER_DSN: postgresql://${POSTGRES_USER:-sortsys}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/${POSTGRES_DB:-sortsys}
       JWT_SECRET: ${SERVICE_BASE64_64_JWT}
       DUCKDB_QUACK_URI: quack:duckdb:9494
       DUCKDB_CONTROL_URL: http://duckdb:9495
       DUCKDB_SERVICE_TOKEN: ${SERVICE_BASE64_64_DUCKDB}
       DUCKDB_QUACK_DISABLE_SSL: "true"
       ADMIN_HASH: ${ADMIN_HASH:?Set ADMIN_HASH to a bcrypt hash for the global administrator}
-      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
-      LLM_ENCRYPTION_KEY: ${SERVICE_BASE64_64_LLM}
       LLM_MCP_URL: ${LLM_MCP_URL:-}
+      LLM_ENCRYPTION_KEY: ${LLM_ENCRYPTION_KEY:-}
       LLM_LIVE_INTERNAL_URL: ${LLM_LIVE_INTERNAL_URL:-}
       OFFICE_PUBLIC_ORIGIN: ${OFFICE_PUBLIC_ORIGIN}
       DRAWIO_PUBLIC_URL: /drawio
     expose:
       - "3000"
     depends_on:
-      postgres:
-        condition: service_healthy
       duckdb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/ping"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "--show-error",
+          "http://127.0.0.1:3000/ping",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 20s
-    stop_grace_period: 30s
-
-  job-runner:
-    build:
-      context: ./sortsys-v2-job_runner
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    init: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - jobs
-    environment:
-      JOB_RUNNER_WS_URL: ws://api:3000/internal/job-runners/ws
-      JOB_RUNNER_WS_IGNORE_PROXY: "true"
-      JOB_RUNNER_TOKEN: ${SERVICE_BASE64_64_JOBRUNNER}
-      JOB_RUNNER_ID: ${JOB_RUNNER_ID:-sortsys-compose-1}
-      JOB_RUNNER_JOB_TYPE: ${JOB_RUNNER_JOB_TYPE:-project_file_thumbnail_generate,tenant_logo_generate,delivery_note_ocr,project_file_pdf_extract}
-      JOB_RUNNER_LEASE_SEC: "300"
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     stop_grace_period: 30s
 
   webapp:
@@ -197,11 +153,9 @@ services:
 
 networks:
   default:
-  jobs:
   data:
     internal: true
 
 volumes:
   private-office-data:
-  postgres-data:
   duckdb-data:

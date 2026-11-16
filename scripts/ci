@@ -11,7 +11,7 @@ node ./scripts/check-runtime-versions.mjs
 node --test ./scripts/check-runtime-versions.test.mjs
 
 echo "Checking branch promotion and API test orchestration"
-node --test ./scripts/deploy-upgrade.test.mjs ./scripts/test-api-upgrade.test.mjs \
+node --test ./scripts/promote-predeploy.test.mjs ./scripts/test-api.test.mjs \
   ./scripts/reuse-ci-success.test.mjs
 
 echo
@@ -32,18 +32,6 @@ bun test ./scripts/dev-storage.test.mjs ./scripts/dev-llm.test.mjs
 
 echo
 
-echo "Running API integration and contract checks"
-./scripts/test-api
-
-echo
-echo "Running Go job-runner tests"
-(
-  cd sortsys-v2-job_runner
-  go test -mod=readonly ./...
-  go vet -mod=readonly ./...
-)
-
-echo
 echo "Running DWG parser checks"
 cargo fmt --manifest-path sortsys-dwgviewer/lib/Cargo.toml -- --check
 cargo test --manifest-path sortsys-dwgviewer/lib/Cargo.toml --locked
@@ -83,6 +71,7 @@ echo "Checking client-side encryption and recovery"
   bun run typecheck
   bun test
   bun run build
+  bun run test:portable
 )
 
 echo
@@ -110,8 +99,9 @@ echo "Running webapp checks"
   bun run test:pdf
   bun run test:regie-list
   bun run test:invoice-numbering
-  bun test app/lib/data/*.test.mjs
+  bun test app/lib/data/*.test.mjs app/lib/data/runtime/*.test.* app/lib/backups/*.test.mjs
   bun test app/lib/crypto/*.test.mjs app/lib/errorTelemetry.test.mjs
+  bun test scripts/development/documents.test.ts
   bun run build
 
   if [ "${CI:-}" = "true" ]; then
@@ -121,5 +111,6 @@ echo "Running webapp checks"
   fi
 
   SORTSYS_UI_ASSETS="$PWD/build/client" bun run test:ui
+  TEST_NATIVE_BROWSER=1 ../scripts/test-api
   (cd ../sortsys-gaeb && bun run test:browser)
 )

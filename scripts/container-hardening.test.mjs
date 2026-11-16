@@ -4,7 +4,7 @@ import { YAML } from "bun";
 import { test } from "bun:test";
 
 const root = new URL("../", import.meta.url);
-const applications = ["api", "job-runner", "webapp", "office"];
+const applications = ["api", "webapp", "office"];
 const filenames = ["compose.yaml", "ghcr-compose.yaml"];
 
 function read(filename) {
@@ -42,39 +42,52 @@ for (const filename of filenames) {
     }
   });
 
-  test(`${filename}: PostgreSQL retains its existing network and API connection`, () => {
-    assert.equal(services.postgres.networks, undefined);
-    assert.deepEqual(networks(services.postgres), ["default"]);
-    assert.equal(shareNetwork(services, "postgres", "api"), true);
-  });
-
-  test(`${filename}: the shared DuckDB service is reachable only by API replicas`,()=>{
-    const service=services.duckdb;
-    assert.deepEqual(service.networks,["data"]);
-    assert.equal(compose.networks.data.internal,true);
-    assert.equal(shareNetwork(services,"duckdb","api"),true);
-    for(const name of ["postgres","webapp","job-runner","office","drawio"]) assert.equal(shareNetwork(services,"duckdb",name),false,name);
-    assert.deepEqual(service.command,["/usr/local/bin/sortsys-duckdb"]);
-    assert.deepEqual(service.cap_drop,["ALL"]);
-    assert.deepEqual(service.security_opt,["no-new-privileges:true"]);
-    assert.equal(service.init,true);
-    assert.equal(service.environment.DUCKDB_SERVICE_TOKEN,services.api.environment.DUCKDB_SERVICE_TOKEN);
-    assert.deepEqual(service.volumes,["duckdb-data:/var/lib/sortsys-duckdb"]);
-  });
-
-  test(`${filename}: runner connectivity is limited to the API and outbound services`, () => {
-    assert.equal(shareNetwork(services, "job-runner", "api"), true);
-
-    for (const name of ["postgres", "webapp", "office", "drawio"]) {
-      assert.equal(shareNetwork(services, "job-runner", name), false, name);
+  test(`${filename}: the independent runtime has no plaintext database or worker services`, () => {
+    assert.equal(services.postgres, undefined);
+    assert.equal(services["job-runner"], undefined);
+    assert.deepEqual(services.api.depends_on, {
+      duckdb: { condition: "service_healthy" },
+    });
+    for (const variable of [
+      "PG_MASTER_DSN",
+      "JOB_RUNNER_TOKEN",
+      "AUTO_BACKUPS_ENABLED",
+    ]) {
+      assert.equal(services.api.environment[variable], undefined, variable);
     }
+    // This key protects provider credentials for the explicit live-LLM
+    // exception. It cannot decrypt tenant business content.
+    assert.equal(
+      services.api.environment.LLM_ENCRYPTION_KEY,
+      "${LLM_ENCRYPTION_KEY:-}",
+    );
+  });
 
+  test(`${filename}: the shared DuckDB service is reachable only by API replicas`, () => {
+    const service = services.duckdb;
+    assert.deepEqual(service.networks, ["data"]);
+    assert.equal(compose.networks.data.internal, true);
+    assert.equal(shareNetwork(services, "duckdb", "api"), true);
+    for (const name of ["webapp", "office", "drawio"])
+      assert.equal(shareNetwork(services, "duckdb", name), false, name);
+    assert.deepEqual(service.command, ["/usr/local/bin/sortsys-duckdb"]);
+    assert.deepEqual(service.cap_drop, ["ALL"]);
+    assert.deepEqual(service.security_opt, ["no-new-privileges:true"]);
+    assert.equal(service.init, true);
+    assert.equal(
+      service.environment.DUCKDB_SERVICE_TOKEN,
+      services.api.environment.DUCKDB_SERVICE_TOKEN,
+    );
+    assert.deepEqual(service.volumes, ["duckdb-data:/var/lib/sortsys-duckdb"]);
+  });
+
+  test(`${filename}: application services retain their public connectivity`, () => {
     for (const name of applications) {
       assert.ok(
-        networks(services[name]).some((network) => {
-          return !compose.networks[network]?.internal;
-        }),
-        `${name} retains external connectivity for S3, LLM or proxy traffic`,
+        networks(services[name]).some(
+          (network) => !compose.networks[network]?.internal,
+        ),
+        name,
       );
     }
   });
@@ -102,11 +115,11 @@ for (const filename of filenames) {
     ]);
     assert.equal(webapp.sysctls["net.ipv4.ip_unprivileged_port_start"], "0");
 
-    for (const name of ["api", "job-runner"]) {
+    for (const name of ["api"]) {
       assert.equal(
         services[name].tmpfs,
         undefined,
-        "Large backup/OCR files stay on disk",
+        "The API does not mount a plaintext document volume",
       );
     }
   });
@@ -197,35 +210,17 @@ test("production images retain non-root users and the core-only nginx base", () 
   );
 });
 
-test("the API keeps one PostgreSQL client library and explicit runtime dependencies", () => {
+test("the API runtime needs DuckDB and contains no PostgreSQL client tools", () => {
   const dockerfile = read("sortsys-api-v2/Dockerfile");
   const runtime = dockerfile.split(/^FROM /m).at(-1);
   const packages = runtime.split(/\s+/);
-
-  assert.equal(packages.includes("libpq5"), false);
-
-  for (const name of [
-    "ca-certificates",
-    "curl",
-    "libgssapi-krb5-2",
-    "libldap-2.5-0",
-    "liblz4-1",
-    "libreadline8",
-    "libssl3",
-    "libzstd1",
-    "zlib1g",
-  ]) {
+  for (const name of ["ca-certificates", "curl", "libssl3", "libstdc++6"]) {
     assert.ok(packages.includes(name), name);
   }
-
-  assert.equal(runtime.match(/^COPY .*libpq\./gm)?.length, 1);
-  assert.ok(runtime.includes("libpq.so.5.* /usr/local/lib/"));
+  assert.match(runtime, /^COPY --from=duckdb .*libduckdb\.so/m);
   assert.match(runtime, /^RUN ldconfig$/m);
-  assert.doesNotMatch(runtime, /system_libpq/);
-
-  for (const tool of ["pg_dump", "psql"]) {
-    assert.ok(runtime.includes(`/usr/lib/postgresql/17/bin/${tool}`), tool);
-  }
+  assert.doesNotMatch(dockerfile, /postgres|libpq|pg_dump|psql/);
+  assert.match(dockerfile, /cargo build .*--bin sortsys-api/);
 });
 
 test("the worker's smaller runtime retains its required image, PDF and language packages", () => {
@@ -334,7 +329,6 @@ test("prebuilt image references can be pinned without changing production defaul
 
   for (const [service, variable, image] of [
     ["api", "SORTSYS_API_IMAGE", "api"],
-    ["job-runner", "SORTSYS_JOBRUNNER_IMAGE", "jobrunner"],
     ["webapp", "SORTSYS_WEBAPP_IMAGE", "webapp"],
   ]) {
     assert.equal(
@@ -358,10 +352,26 @@ test("branch pushes run tests once and only successful predeploy tests can promo
   assert.equal(previous.run, "./scripts/reuse-ci-success");
   assert.equal(workflow.jobs.test.permissions.actions, "read");
   for (const step of workflow.jobs.test.steps.filter(
-    (step) => step.with || step.run === "./scripts/ci",
+    (step) =>
+      step.run === "./scripts/ci" ||
+      step.uses?.startsWith("dtolnay/rust-toolchain@") ||
+      step.uses?.startsWith("actions/setup-node@") ||
+      step.uses?.startsWith("oven-sh/setup-bun@"),
   )) {
     assert.equal(step.if, "steps.previous.outputs.reused != 'true'");
   }
+  const evidence = workflow.jobs.test.steps.find((step) =>
+    step.uses?.startsWith("actions/upload-artifact@"),
+  );
+  assert.equal(
+    evidence.if,
+    "always() && steps.previous.outputs.reused != 'true'",
+  );
+  assert.equal(
+    evidence.with.path,
+    "${{ runner.temp }}/sortsys-tests/**/browser-artifacts/",
+  );
+  assert.equal(evidence.with["retention-days"], 7);
   assert.equal(workflow.jobs.promote.needs, "test");
   assert.equal(
     workflow.jobs.promote.if,
@@ -394,12 +404,10 @@ test("deploy builds and publishes the applications and private Office service fr
   const matrix = workflow.jobs.publish.strategy.matrix.include;
   assert.deepEqual(
     matrix.map((entry) => entry.image),
-    ["api", "jobrunner", "webapp", "office"],
+    ["api", "store", "webapp", "office"],
   );
   for (const entry of matrix)
-    assert.ok(
-      /^(?:FROM|ARG) /m.test(read(entry.file)),
-    );
+    assert.ok(/^(?:FROM|ARG) /m.test(read(entry.file)));
   const build = workflow.jobs.publish.steps.find((step) =>
     step.uses?.startsWith("docker/build-push-action@"),
   );
@@ -410,7 +418,7 @@ test("deploy builds and publishes the applications and private Office service fr
   for (const filename of ["ci.yml", "publish-containers.yml"]) {
     assert.doesNotMatch(
       read(`.github/workflows/${filename}`),
-      /actions\/(?:cache|upload-artifact|download-artifact)@|cache-(?:from|to):|workflow_call:/,
+      /actions\/(?:cache|download-artifact)@|cache-(?:from|to):|workflow_call:/,
     );
   }
 });
@@ -420,13 +428,15 @@ for (const file of ["compose.yaml", "ghcr-compose.yaml"]) {
     const { services } = YAML.parse(read(file));
 
     assert.deepEqual(services.api.depends_on, {
-      postgres: { condition: "service_healthy" },
       duckdb: { condition: "service_healthy" },
     });
     assert.deepEqual(services.webapp.depends_on, {
       api: { condition: "service_healthy" },
     });
-    assert.match(read("sortsys-office/Dockerfile"), /HEALTHCHECK.*run\.cjs.*--health/);
+    assert.match(
+      read("sortsys-office/Dockerfile"),
+      /HEALTHCHECK.*run\.cjs.*--health/,
+    );
     assert.ok(services.drawio.healthcheck);
   });
 }

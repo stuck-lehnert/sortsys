@@ -26,6 +26,7 @@ function developmentFunction(name) {
 const environmentFunctions = [
   developmentFunction("prepare_llm_environment"),
   developmentFunction("cleanup_llm_environment"),
+  developmentFunction("start_api_container"),
 ].join("\n\n");
 
 function loadEnvironment(content, exported = {}) {
@@ -48,12 +49,19 @@ function loadEnvironment(content, exported = {}) {
 umask 077
 ${environmentFunctions}
 
-prepare_llm_environment
-printf '%s' "$DEV_LLM_ENV_CONTENT" > "$DEV_TEST_ENV_CAPTURE"
-printf '%s\\n' "\${runtime_llm_env_args[@]}" > "$DEV_TEST_ARGS_CAPTURE"
-cleanup_llm_environment
+CONTAINER_RUNTIME=record_runtime
+runtime_pull_args=(--pull=missing)
+runtime_env_args=(-e HOME=/tmp)
+record_runtime() {
+  printf '%s\\n' "$@" > "$DEV_TEST_ARGS_CAPTURE"
+  cat > "$DEV_TEST_ENV_CAPTURE"
+}
+wait_for_api_ready() {
+  return 0
+}
+start_api_container
 
-if [ -n "$DEV_LLM_ENV_CONTENT" ] || [ "\${#runtime_llm_env_args[@]}" -ne 0 ]; then
+if [ -n "$DEV_LLM_ENV_CONTENT" ]; then
   echo "Development LLM credentials were not cleared after handoff" >&2
   exit 1
 fi
@@ -66,6 +74,19 @@ fi
           DEV_ENV_FILE: envFile,
           DEV_TEST_ENV_CAPTURE: environmentCapture,
           DEV_TEST_ARGS_CAPTURE: argumentsCapture,
+          DEV_API_CONTAINER: "fixture-api",
+          DEV_NETWORK: "fixture-network",
+          DEV_API_PORT: "3000",
+          DEV_JWT_SECRET: "fixture-runtime-signing-secret-2026",
+          DEV_DUCKDB_CONTAINER: "fixture-duckdb",
+          DEV_DUCKDB_TOKEN: "fixture-datastore-token",
+          DEV_OFFICE_PUBLIC_ORIGIN: "http://127.0.0.1:39180",
+          DEV_DRAWIO_PUBLIC_URL: "http://127.0.0.1:39181",
+          DEV_ADMIN_HASH: "fixture-password-hash",
+          DEV_API_IMAGE: "fixture-api-image",
+          ROOT_DIR: directory,
+          runtime_mount_suffix: ":z",
+
           ...exported,
         },
       },
@@ -81,12 +102,15 @@ fi
       environment.set(line.slice(0, separator), line.slice(separator + 1));
     }
 
+    const argumentsList = readFileSync(argumentsCapture, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    const environmentFlag = argumentsList.indexOf("--env-file");
+    assert.ok(environmentFlag >= 0);
     return {
       environment,
-      arguments: readFileSync(argumentsCapture, "utf8")
-        .trim()
-        .split("\n")
-        .filter(Boolean),
+      arguments: argumentsList.slice(environmentFlag, environmentFlag + 2),
       executed: existsSync(executionMarker),
       stdout: result.stdout,
       stderr: result.stderr,
@@ -164,7 +188,7 @@ test("a missing dotenv file without credentials leaves the assistant disabled", 
   const result = loadEnvironment(undefined);
 
   assert.equal(result.environment.size, 0);
-  assert.deepEqual(result.arguments, []);
+  assert.deepEqual(result.arguments, ["--env-file", "/dev/stdin"]);
   assert.match(result.stdout, /assistant remains disabled/);
 });
 
@@ -177,4 +201,15 @@ test("dotenv values are parsed as data and never executed as shell code", () => 
   );
   assert.equal(result.executed, false);
   assert.equal(result.stdout.includes("$(touch"), false);
+});
+
+test("provider encryption and per-instance routing settings use the protected environment input", () => {
+  const secret = "fixture-provider-credential-encryption-secret";
+  const endpoint = "http://native-api-instance:3000";
+  const result = loadEnvironment(
+    `LLM_ENCRYPTION_KEY='${secret}'\nLLM_LIVE_INTERNAL_URL=${endpoint}\n`,
+  );
+  assert.equal(result.environment.get("LLM_ENCRYPTION_KEY"), secret);
+  assert.equal(result.environment.get("LLM_LIVE_INTERNAL_URL"), endpoint);
+  assert.equal(result.arguments.includes(secret), false);
 });

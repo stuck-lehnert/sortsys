@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
-  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -16,17 +15,12 @@ import { test } from "node:test";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const promotion = join(root, "scripts/promote-predeploy");
-const upgrade = join(root, "scripts/test-deploy-upgrade");
-const phaseRunner = join(
-  root,
-  "sortsys-api-v2/rust-api/tests/run-upgrade-phase",
-);
 const realGit = execFileSync("sh", ["-c", "command -v git"], {
   encoding: "utf8",
 }).trim();
 
 function temporaryDirectory(t) {
-  const directory = mkdtempSync(join(tmpdir(), "sortsys-upgrade-test-"));
+  const directory = mkdtempSync(join(tmpdir(), "sortsys-promotion-test-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
 
   return directory;
@@ -45,10 +39,10 @@ function git(cwd, ...args) {
     env: {
       ...process.env,
       // This identity belongs only to disposable test-fixture commits.
-      GIT_AUTHOR_NAME: "Upgrade fixture",
-      GIT_AUTHOR_EMAIL: "upgrade-fixture@example.invalid",
-      GIT_COMMITTER_NAME: "Upgrade fixture",
-      GIT_COMMITTER_EMAIL: "upgrade-fixture@example.invalid",
+      GIT_AUTHOR_NAME: "Promotion fixture",
+      GIT_AUTHOR_EMAIL: "promotion-fixture@example.invalid",
+      GIT_COMMITTER_NAME: "Promotion fixture",
+      GIT_COMMITTER_EMAIL: "promotion-fixture@example.invalid",
     },
   }).trim();
 }
@@ -186,111 +180,4 @@ test("promotion fails closed without a deploy branch or valid pinned SHAs", (t) 
   const missing = f.promote();
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /couldn't find remote ref/);
-});
-
-test("upgrade uses archived deploy source, forwards failures and removes the archive", (t) => {
-  const f = fixture(t);
-  const scripts = join(f.work, "scripts");
-  const api = join(f.work, "sortsys-api-v2/rust-api/src/bin");
-  const inspection = join(f.directory, "inspection.json");
-  mkdirSync(scripts, { recursive: true });
-  mkdirSync(api, { recursive: true });
-  cpSync(upgrade, join(scripts, "test-deploy-upgrade"));
-  writeFileSync(join(api, "seed_dev.rs"), "deploy seed version\n");
-  git(f.work, "add", "sortsys-api-v2");
-  const deployed = f.commit("fixture with deploy seed");
-  writeFileSync(
-    join(api, "seed_dev.rs"),
-    "candidate seed must not populate deploy\n",
-  );
-  git(f.work, "add", "sortsys-api-v2");
-  f.commit("candidate seed");
-
-  executable(
-    join(scripts, "test-api"),
-    `#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$TEST_UPGRADE_FROM_DIR" > "$INSPECTION"
-cat "$TEST_UPGRADE_FROM_DIR/sortsys-api-v2/rust-api/src/bin/seed_dev.rs" >> "$INSPECTION"
-exit 37
-`,
-  );
-  const result = spawnSync(
-    "bash",
-    [join(scripts, "test-deploy-upgrade"), deployed],
-    {
-      cwd: f.work,
-      encoding: "utf8",
-      env: { ...process.env, INSPECTION: inspection },
-    },
-  );
-  assert.equal(result.status, 37, result.stderr);
-  const [archive, seed] = readFileSync(inspection, "utf8").trim().split("\n");
-  assert.equal(seed, "deploy seed version");
-  assert.throws(() =>
-    readFileSync(join(archive, "sortsys-api-v2/rust-api/src/bin/seed_dev.rs")),
-  );
-});
-
-function phaseFixture(t, listing, exitStatus = 0) {
-  const directory = temporaryDirectory(t);
-  const bin = join(directory, "bin");
-  const calls = join(directory, "calls");
-  mkdirSync(bin);
-  executable(
-    join(bin, "cargo"),
-    `#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$*" >> "$CALLS"
-
-if [ "\${!#}" = --list ]; then
-  printf '%s\\n' "$PHASE_LISTING"
-  exit 0
-fi
-
-exit "$TEST_STATUS"
-`,
-  );
-
-  return {
-    calls,
-    run: (phase = "migrate_deploy_fixture") =>
-      spawnSync("bash", [phaseRunner, phase], {
-        cwd: root,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH}`,
-          CALLS: calls,
-          PHASE_LISTING: listing,
-          TEST_STATUS: String(exitStatus),
-        },
-      }),
-  };
-}
-
-test("a missing or renamed ignored phase cannot silently pass with zero tests", (t) => {
-  const f = phaseFixture(t, "0 tests, 0 benchmarks");
-  const result = f.run();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Required deploy-upgrade test is missing/);
-  assert.equal(readFileSync(f.calls, "utf8").trim().split("\n").length, 1);
-});
-
-test("upgrade phases explicitly execute the selected test and forward failures", (t) => {
-  const f = phaseFixture(t, "migrate_deploy_fixture: test", 29);
-  const result = f.run();
-  assert.equal(result.status, 29);
-  const calls = readFileSync(f.calls, "utf8").trim().split("\n");
-  assert.equal(calls.length, 2);
-  assert.match(calls[0], /--ignored --exact --list$/);
-  assert.match(calls[1], /--ignored --exact --nocapture$/);
-});
-
-test("unknown upgrade phase names are rejected before cargo runs", (t) => {
-  const f = phaseFixture(t, "");
-  const result = f.run("renamed_phase");
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Unknown deploy-upgrade test phase/);
-  assert.throws(() => readFileSync(f.calls));
 });

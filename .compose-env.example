@@ -1,14 +1,11 @@
 # Coolify generates and persists these SERVICE_* values automatically.
 # For a local Docker Compose deployment, replace every placeholder with a
 # long, random value and keep the resulting .compose-env file out of Git.
-SERVICE_PASSWORD_64_POSTGRES=replace-with-a-long-random-postgres-password
 SERVICE_BASE64_64_JWT=replace-with-a-long-random-jwt-secret
-SERVICE_BASE64_64_JOBRUNNER=replace-with-a-long-random-job-runner-token
-SERVICE_BASE64_64_LLM=replace-with-a-long-random-llm-encryption-key
 # Internal API-to-datastore credential; never a tenant decryption key.
 SERVICE_BASE64_64_DUCKDB=replace-with-a-random-duckdb-service-token-at-least-32-chars
 
-# Required. Generate this as documented in README.md. In Coolify, mark the
+# Required. Generate this as documented in docs/deployment.md. In Coolify, mark the
 # bcrypt value as Literal so its dollar signs are not interpolated.
 ADMIN_HASH=replace-with-a-bcrypt-password-hash
 
@@ -18,30 +15,27 @@ ADMIN_HASH=replace-with-a-bcrypt-password-hash
 # OpenRouter defaults to authenticated MCP on API loopback; no public URL is needed.
 # For a separate MCP address, set a URL reachable from the API.
 LLM_MCP_URL=
+# Gemeinsames Geheimnis der API-Instanzen für gespeicherte Anbieterzugänge.
+# Es verschlüsselt ausschließlich diese Betreiberzugänge, keine Mandantendaten.
+LLM_ENCRYPTION_KEY=
 # Optional: eindeutige, direkt erreichbare Adresse dieser API-Instanz.
 # Standard: automatisch ermittelte Netzwerkadresse; keine gemeinsame LB-Adresse.
 LLM_LIVE_INTERNAL_URL=
 
 # Optional overrides (the shown values are the Compose defaults).
-# Daily database backups at 02:00 Europe/Berlin; the API handles DST transitions.
-AUTO_BACKUPS_ENABLED=true
-POSTGRES_IMAGE=postgres:17-alpine
 
 # Beide Office-Domains auf Port 8080 des Dienstes office routen.
 SORTSYS_PUBLIC_ORIGIN=https://sortsys.example.com
 OFFICE_PUBLIC_ORIGIN=https://office.example.com
 OFFICE_SANDBOX_ORIGIN=https://office-sandbox.example.com
 DRAWIO_IMAGE=jgraph/drawio:32.6.9
-POSTGRES_DB=sortsys
-POSTGRES_USER=sortsys
-JOB_RUNNER_ID=sortsys-compose-1
 CLIENT_MAX_BODY_SIZE=64m
 # Writable memory for nginx configuration and buffered uploads; size for concurrency.
 WEBAPP_TMPFS_SIZE=256m
 
 # Prebuilt deployment overrides; pin all four to a tested revision or digest.
+# SORTSYS_STORE_IMAGE=ghcr.io/stuck-lehnert/sortsys-store:latest
 # SORTSYS_API_IMAGE=ghcr.io/stuck-lehnert/sortsys-api:latest
-# SORTSYS_JOBRUNNER_IMAGE=ghcr.io/stuck-lehnert/sortsys-jobrunner:latest
 # SORTSYS_WEBAPP_IMAGE=ghcr.io/stuck-lehnert/sortsys-webapp:latest
 
 # SORTSYS_OFFICE_IMAGE=ghcr.io/stuck-lehnert/sortsys-office:latest

@@ -29,14 +29,17 @@ test("core startup does not wait for optional editors", () => {
   const directory = mkdtempSync(join(tmpdir(), "sortsys-dev-startup-"));
   const startup = development.slice(
     development.indexOf("\ncleanup_containers\n"),
-    development.indexOf('\necho\necho "sortsys dev stack'),
+    development.indexOf('\necho\necho "Independent DuckDB development'),
   );
   const startupHelpers = [
     developmentFunction("wait_for_startup_step"),
     developmentFunction("start_optional_editor"),
   ].join("\n\n");
 
-  assert.ok(startup.includes("initialize_development_logo"));
+  assert.doesNotMatch(
+    startup,
+    /start_postgres|start_s3|start_job_runner|seed_dev_data/,
+  );
 
   try {
     const result = runShell(
@@ -65,16 +68,6 @@ ensure_network() {
 prepare_images() {
   return 0
 }
-start_postgres() {
-  record postgres
-}
-initialize_master_database() {
-  test -f "$DEV_TEST_ROOT/postgres"
-  record master
-}
-start_s3() {
-  record s3
-}
 start_private_office() {
   for ((attempt = 0; attempt < 200; attempt++)); do
     if [ -f "$DEV_TEST_ROOT/core-ready" ]; then
@@ -94,9 +87,6 @@ start_drawio() {
 build_api_development_image() {
   record api-image
 }
-build_job_runner_development_image() {
-  record runner-image
-}
 ensure_local_api_client_package() {
   record client
 }
@@ -109,25 +99,21 @@ start_duckdb_container() {
   record duckdb
 }
 start_api_container() {
-  for dependency in postgres master s3 api-image duckdb; do
+  for dependency in api-image duckdb; do
     test -f "$DEV_TEST_ROOT/$dependency"
   done
 
   record api
 }
-start_job_runner_containers() {
-  test -f "$DEV_TEST_ROOT/api"
-  test -f "$DEV_TEST_ROOT/runner-image"
-  record runners
-}
-initialize_development_logo() {
-  for dependency in api webapp runners; do
+seed_development_tenant() {
+  for dependency in api webapp; do
     test -f "$DEV_TEST_ROOT/$dependency"
   done
-
-  record core-ready
+  record seed
 }
 ${startup}
+test -f "$DEV_TEST_ROOT/seed"
+record core-ready
 wait
 `,
       { DEV_TEST_ROOT: directory },
@@ -186,13 +172,13 @@ failed_startup() {
 }
 failed_startup &
 pid="$!"
-wait_for_startup_step "$pid" PostgreSQL
+wait_for_startup_step "$pid" DuckDB
 printf 'API must not start\\n'
 `);
 
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(result.stdout, /Waiting for PostgreSQL/);
-  assert.match(result.stderr, /PostgreSQL startup failed/);
+  assert.match(result.stdout, /Waiting for DuckDB/);
+  assert.match(result.stderr, /DuckDB startup failed/);
   assert.doesNotMatch(result.stdout, /API must not start/);
 });
 
@@ -384,13 +370,12 @@ test("API readiness reports compilation progress until the listener is ready", (
 ${developmentFunction("wait_for_api_ready")}
 CONTAINER_RUNTIME=record_runtime
 DEV_API_CONTAINER=api
+DEV_API_PORT=3000
 sleeps=0
 record_runtime() {
-  test "$1" = logs
-
-  if [ "$sleeps" -ge 10 ]; then
-    printf 'sortsys Rust API listening\\n'
-  fi
+  test "$1" = exec
+  test "$4" = --fail
+  [ "$sleeps" -ge 10 ]
 }
 container_is_running() {
   return 0
@@ -403,7 +388,7 @@ wait_for_api_ready
 
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /record_runtime logs -f api/);
-  assert.match(result.stdout, /API compilation, seeding or startup.*\(10s\)/);
+  assert.match(result.stdout, /API compilation or startup.*\(10s\)/);
 });
 
 test("TCP readiness stops immediately when its required container exits", () => {

@@ -57,6 +57,8 @@ updates:
   - package-ecosystem: cargo
     directories:
       - /sortsys-api-v2
+      - /sortsys-store
+      - /sortsys-zerotrust
       - /sortsys-dwgviewer/lib
     schedule:
       interval: weekly
@@ -83,6 +85,8 @@ updates:
     directories:
       - /sortsys-api-v2
       - /sortsys-api-v2/rust-api
+      - /sortsys-store
+      - /sortsys-office
       - /sortsys-webapp-v2
       - /sortsys-v2-job_runner
       - /scripts
@@ -99,14 +103,9 @@ updates:
         patterns: ["*golang"]
       bun-runtime:
         patterns: ["*bun"]
-      postgres:
-        patterns: ["*postgres"]
-    # Keep supported PostgreSQL 17 until the documented data migration is tested.
     # Node LTS-major migrations are explicit; do not drift off .node-version.
     # Nginx 1.31 is mainline; keep stable patches/new stable lines eligible.
     ignore:
-      - dependency-name: "*postgres"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "*node"
         update-types: ["version-update:semver-major"]
       - dependency-name: nginx
@@ -119,9 +118,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
-    ignore:
-      - dependency-name: "*postgres"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

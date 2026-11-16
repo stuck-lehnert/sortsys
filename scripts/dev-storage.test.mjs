@@ -14,13 +14,12 @@ import { test } from "bun:test";
 const development = readFileSync(new URL("./dev", import.meta.url), "utf8");
 const directoryDefinitions = development.match(/^DEV_\w+_DIR=.*$/gm).join("\n");
 const folders = [
-  "postgres",
-  "s3",
-  "go-build",
-  "go-modules",
+  "seeded-duckdb",
   "webapp-dependencies",
   "dwgviewer-dependencies",
+  "gaeb-dependencies",
   "private-office",
+  "seed",
 ];
 
 function developmentFunction(name) {
@@ -49,10 +48,8 @@ ${directoryDefinitions}
 SCRIPT_DIR="$ROOT_DIR/scripts"
 ${definitions}
 runtime_mount_suffix="$DEV_TEST_SUFFIX"
-runtime_pull_args=()
-runtime_user_args=()
-runtime_env_args=()
-DEV_JOB_RUNNER_CONTAINERS=(runner-1 runner-2)
+runtime_pull_args=(--pull=missing)
+runtime_env_args=(-e HOME=/tmp)
 CONTAINER_RUNTIME=record_runtime
 record_runtime() {
   printf '%s\\0' "$@" >> "$DEV_TEST_CAPTURE"
@@ -102,7 +99,7 @@ test("development storage initialization preserves existing local data", () => {
     runStorageFunctions(root, "", ["prepare_development_directories"]);
 
     for (const folder of folders) {
-      const directory = join(root, ".dev-data", folder);
+      const directory = join(root, ".dev-data", "zerotrust", folder);
       assert.ok(existsSync(directory), `${folder} was prepared`);
       writeFileSync(join(directory, "preserved"), folder);
     }
@@ -111,7 +108,10 @@ test("development storage initialization preserves existing local data", () => {
 
     for (const folder of folders) {
       assert.equal(
-        readFileSync(join(root, ".dev-data", folder, "preserved"), "utf8"),
+        readFileSync(
+          join(root, ".dev-data", "zerotrust", folder, "preserved"),
+          "utf8",
+        ),
         folder,
       );
     }
@@ -127,45 +127,56 @@ for (const suffix of ["", ":z"]) {
     try {
       const calls = runStorageFunctions(root, suffix, [
         "prepare_development_directories",
-        "start_postgres",
-        "start_s3",
+        "start_duckdb_container",
         "start_private_office",
-        "start_job_runner_containers",
         "start_webapp_container",
+        "seed_development_tenant",
       ]);
-      const build = calls.find(call => call[0] === "build");
+      const build = calls.find((call) => call[0] === "build");
       assert.ok(build, "Private Office is built before startup");
-      const runs = calls.filter(call => call[0] === "run");
-      const office = runs.find(call => call.includes("DEV_OFFICE_CONTAINER"));
-      assert.ok(office && !office.includes("--rm"), "Office failure logs survive exit");
+      const runs = calls.filter((call) => call[0] === "run");
+      const office = runs.find((call) => call.includes("DEV_OFFICE_CONTAINER"));
+      assert.ok(
+        office && !office.includes("--rm"),
+        "Office failure logs survive exit",
+      );
       assert.ok(calls.indexOf(build) < calls.indexOf(office));
       assert.equal(office.at(-1), "DEV_OFFICE_IMAGE");
       assert.ok(office.includes("--read-only"));
-      assert.ok(office.includes("OFFICE_PUBLIC_ORIGIN=DEV_OFFICE_PUBLIC_ORIGIN"));
-      assert.ok(office.includes("OFFICE_SANDBOX_ORIGIN=DEV_OFFICE_SANDBOX_ORIGIN"));
-      assert.ok(office.includes("SORTSYS_PUBLIC_ORIGIN=DEV_SORTSYS_PUBLIC_ORIGIN"));
+      assert.ok(
+        office.includes("OFFICE_PUBLIC_ORIGIN=DEV_OFFICE_PUBLIC_ORIGIN"),
+      );
+      assert.ok(
+        office.includes("OFFICE_SANDBOX_ORIGIN=DEV_OFFICE_SANDBOX_ORIGIN"),
+      );
+      assert.ok(
+        office.includes("SORTSYS_PUBLIC_ORIGIN=DEV_SORTSYS_PUBLIC_ORIGIN"),
+      );
 
       const mounts = runs.flatMap((call) =>
         call.filter((argument, index) => call[index - 1] === "-v"),
       );
       const expected = new Map([
-        ["postgres", "/var/lib/postgresql/data"],
-        ["s3", "/data"],
-        ["go-build", "/tmp/go-build"],
-        ["go-modules", "/tmp/go"],
+        ["seeded-duckdb", "/data"],
+        ["gaeb-dependencies", "/workspace/sortsys-gaeb/node_modules"],
         ["webapp-dependencies", "/workspace/sortsys-webapp-v2/node_modules"],
         ["dwgviewer-dependencies", "/workspace/sortsys-dwgviewer/node_modules"],
         ["private-office", "/var/lib/sortsys-office"],
+        ["seed", "/seed"],
       ]);
 
       assert.equal(
         runs.length,
-        6,
-        "PostgreSQL, S3, Office, two runners and webapp",
+        4,
+        "DuckDB, Office, webapp and the seed client",
       );
+      const seed = runs.find((call) => call.includes("DEV_SEED_CONTAINER"));
+      assert.ok(seed.includes("SORTSYS_DEVELOPMENT_SEED=1"));
+      assert.ok(seed.includes("SORTSYS_DEV_ADMIN_PASSWORD=DEV_ADMIN_PASSWORD"));
+      assert.equal(seed.at(-1), "scripts/seed-development.ts");
 
       for (const [folder, destination] of expected) {
-        const source = join(root, ".dev-data", folder);
+        const source = join(root, ".dev-data", "zerotrust", folder);
         assert.ok(
           existsSync(source),
           `${folder} exists before service startup`,
@@ -183,11 +194,7 @@ for (const suffix of ["", ":z"]) {
       );
 
       if (suffix) {
-        assert.ok(
-          mounts.every(
-            (mount) => mount.endsWith(suffix),
-          ),
-        );
+        assert.ok(mounts.every((mount) => mount.endsWith(suffix)));
       }
 
       assert.ok(!calls.some((call) => call[0] === "volume"));
@@ -200,7 +207,7 @@ for (const suffix of ["", ":z"]) {
 for (const runtime of ["docker", "podman"]) {
   test(`${runtime} development binds request shared SELinux labels`, () => {
     const setup = development.slice(
-      development.indexOf("runtime_pull_args=()"),
+      development.indexOf("runtime_pull_args=(--pull=missing)"),
       development.indexOf("\nprepare_llm_environment()"),
     );
     const result = spawnSync(
@@ -218,7 +225,7 @@ printf '%s\\0' "$runtime_mount_suffix" "\${runtime_pull_args[@]}"
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.deepEqual(
       result.stdout.split("\0").filter(Boolean),
-      runtime === "podman" ? [":z", "--pull=never"] : [":z"],
+      runtime === "podman" ? [":z", "--pull=never"] : [":z", "--pull=missing"],
     );
   });
 }
@@ -239,7 +246,7 @@ test("development folders are ignored and prepared before startup", () => {
   );
   assert.ok(
     startup.indexOf("prepare_development_directories") <
-      startup.indexOf("start_postgres"),
+      startup.indexOf("start_duckdb_container"),
   );
   assert.doesNotMatch(development, /_VOLUME\b|\bvolume (?:create|rm)\b/);
 

@@ -146,78 +146,42 @@ ensure_image example/image:failure 2
   assert.doesNotMatch(output, /Image ready:/);
 });
 
-function prepareImages({
-  failRust = false,
-  failS3 = false,
-  fallback = "",
-} = {}) {
+function prepareImages({ failRust = false } = {}) {
   return runShell(
     `
 ${developmentFunction("wait_for_startup_step")}
 ${developmentFunction("prepare_images")}
-CONTAINER_RUNTIME=record_runtime
-DEV_POSTGRES_IMAGE=postgres
 DEV_DRAWIO_IMAGE=drawio
 DEV_BUN_IMAGE=bun
 DEV_RUST_IMAGE=rust
 DEV_NODE_IMAGE=node
-DEV_GO_IMAGE=go
-DEV_S3_IMAGE=s3
 ensure_image() {
   printf 'Prepared fixture image %s\\n' "$1"
-
   if [ "$1" = rust ] && [ "$DEV_TEST_FAIL_RUST" = true ]; then
     return 1
   fi
-
-  return 0
-}
-sortsys_prepare_s3_image() {
-  printf 'Prepared fixture S3 image %s\\n' "$2"
-
-  if [ "$2" = s3 ] && [ "$DEV_TEST_FAIL_S3" = true ]; then
-    return 1
-  fi
-
-  return 0
 }
 prepare_images
-printf 'Selected S3 image: %s\\n' "$DEV_S3_IMAGE"
+printf 'All selected images ready\\n'
 `,
-    {
-      DEV_TEST_FAIL_RUST: String(failRust),
-      DEV_TEST_FAIL_S3: String(failS3),
-      DEV_S3_IMAGE_FALLBACK: fallback,
-    },
+    { DEV_TEST_FAIL_RUST: String(failRust) },
   );
 }
 
-test("image preparation announces the dependency it is waiting for", () => {
+test("image preparation waits for the independent runtime dependencies", () => {
   const result = prepareImages();
-
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /Waiting for PostgreSQL image \(postgres\)/);
-  assert.match(result.stdout, /Waiting for Rust image \(rust\)/);
-  assert.match(result.stdout, /Waiting for S3 image \(s3\)/);
-  assert.match(result.stdout, /All development images are ready/);
+  assert.match(result.stdout, /Waiting for drawio/);
+  assert.match(result.stdout, /Waiting for rust/);
+  assert.match(result.stdout, /All selected images ready/);
+  assert.doesNotMatch(result.stdout, /postgres|s3|go/);
 });
 
-test("S3 image fallback selection survives the preparation wait", () => {
-  const result = prepareImages({ failS3: true, fallback: "fallback-s3" });
-
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /Prepared fixture S3 image fallback-s3/);
-  assert.match(result.stdout, /Selected S3 image: fallback-s3/);
-});
-
-test("a required image failure still prevents startup", () => {
+test("a required image failure prevents startup", () => {
   const result = prepareImages({ failRust: true });
-  const output = result.stdout + result.stderr;
-
-  assert.equal(result.status, 1, output);
-  assert.match(output, /Failed to prepare Rust image: rust/);
-  assert.doesNotMatch(output, /All development images are ready/);
-  assert.doesNotMatch(output, /Selected S3 image:/);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /rust startup failed/);
+  assert.doesNotMatch(result.stdout, /All selected images ready/);
 });
 
 test("a failed API startup remains inspectable after cleanup", () => {
@@ -226,12 +190,12 @@ ${developmentFunction("wait_for_api_ready")}
 ${developmentFunction("cleanup_containers")}
 CONTAINER_RUNTIME=fixture_runtime
 DEV_API_CONTAINER=fixture-api
-DEV_ALL_CONTAINERS=(fixture-api fixture-postgres)
+DEV_ALL_CONTAINERS=(fixture-api fixture-duckdb)
 DEV_PRESERVE_FAILED_API=false
 removed_api=$(mktemp)
 rm -f "$removed_api"
 fixture_runtime() {
-  if [ "$1" = inspect ]; then printf 'Exit code=7; seed failed\\n'; fi
+  if [ "$1" = inspect ]; then printf 'Exit code=7; compilation failed\\n'; fi
   if [ "$1" = rm ] && [ "$3" = fixture-api ]; then touch "$removed_api"; fi
 }
 container_is_running() { return 1; }

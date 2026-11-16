@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+(
+  cd sortsys-api-v2/client
+  bun install --frozen-lockfile
+  bunx tsc -p tsconfig.json --noEmit
+  bun test
+  bun run build
+)
+for package in sortsys-zerotrust sortsys-react-components sortsys-gaeb sortsys-webapp-v2; do
+  (cd "$package" && bun install --frozen-lockfile)
+done
+
+for manifest in sortsys-zerotrust/Cargo.toml sortsys-store/Cargo.toml sortsys-api-v2/Cargo.toml; do
+  cargo fmt --manifest-path "$manifest" --all --check
+  if [ "$manifest" = sortsys-api-v2/Cargo.toml ]; then
+    cargo test --manifest-path "$manifest" --locked --lib
+  else
+    cargo test --manifest-path "$manifest" --locked
+  fi
+  cargo clippy --manifest-path "$manifest" --workspace --all-targets --locked -- -D warnings
+done
+cargo test --manifest-path sortsys-store/Cargo.toml --locked --test service -- --ignored
+(
+  cd sortsys-api-v2
+  cargo run --locked --quiet --bin generate_contract -- --check
+)
+
+# Real browser cryptography and independent API replicas share one disposable store.
+if [ "${SORTSYS_NATIVE_BROWSER:-0}" = 1 ]; then
+  (cd sortsys-webapp-v2 && bunx playwright install --with-deps chromium)
+fi
+./scripts/test-native-auth
