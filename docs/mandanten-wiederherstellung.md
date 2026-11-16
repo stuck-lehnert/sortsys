@@ -1,14 +1,14 @@
 # Mandanten mit einer Seed-Phrase wiederherstellen
 
-Dieser Entwurf ergänzt das
-[Verschlüsselungs- und Berechtigungsmodell](verschluesselung-und-berechtigungen.md).
-Die kryptografische Grundlage und die API sind im
-[Draft](../sortsys-zerotrust/README.md) umgesetzt. Die Webapp enthält die
-Einrichtung des Notfallzugangs unter Verwaltung → Organisation → Datenschutz und die
-Wiederherstellungsseite unter `/auth/recovery`. Die Umstellung bestehender
-Fachdaten und Dateien ist noch nicht abgeschlossen. Die Notfallwiederherstellung soll
-auch dann funktionieren, wenn kein Administrator mehr sein Konto oder ein
-eingerichtetes Gerät öffnen kann.
+Die Wiederherstellung verwendet das
+[Verschlüsselungs- und Berechtigungsmodell](verschluesselung-und-berechtigungen.md)
+und die gemeinsamen Bausteine aus
+[`sortsys-zerotrust`](../sortsys-zerotrust/README.md). Die Webapp enthält die
+Einrichtung des Notfallzugangs unter Verwaltung → Organisation → Datenschutz und
+die Wiederherstellungsseite unter `/auth/recovery`. Sie benötigt kein geöffnetes
+Administratorkonto und kein zuvor eingerichtetes Gerät. Den geprüften Umfang und
+verbleibende Lücken führt der
+[Funktionsabgleich](verschluesselung-funktionsabgleich.md) auf.
 
 Die Wiederherstellungsphrase ist eine Sicherung der Administration. Normale
 Benutzer müssen weder eine Phrase aufbewahren noch Schlüssel verwalten. Ihre
@@ -17,11 +17,11 @@ funktionieren; notwendige Schlüsselwechsel übernimmt die Anwendung.
 
 ## Was die Phrase wiederherstellt
 
-Bei der Einrichtung erzeugt der Browser 256 zufällige Bits und stellt sie als
-24 Wörter mit Prüfsumme dar. Dafür eignet sich die Kodierung aus
-[BIP-39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki).
-Die Wörter werden zufällig vorgegeben; ein selbst gewählter Satz ist ungeeignet.
-Es gibt weder eine Wallet-Anbindung noch eine zusätzliche, leicht vergessene
+Bei der Einrichtung erzeugt der Browser 256 zufällige Bits und stellt sie als 24
+Wörter mit Prüfsumme dar. Dafür eignet sich die Kodierung aus
+[BIP-39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki). Die
+Wörter werden zufällig vorgegeben; ein selbst gewählter Satz ist ungeeignet. Es
+gibt weder eine Wallet-Anbindung noch eine zusätzliche, leicht vergessene
 Wallet-Passphrase. Das versionierte Recovery-Format legt Kodierung und
 Schlüsselableitung eindeutig fest.
 
@@ -39,19 +39,18 @@ Zuordnungs- beziehungsweise Sicherungsdaten, aber keine weiteren Geheimnisse.
 
 Es gibt keinen Provider-Hauptschlüssel, keinen vom Provider entschlüsselbaren
 Recovery-Escrow und keinen Support-Endpunkt, der den Nachweis ersetzen darf.
-Insbesondere darf der Provider keinen privaten Recovery-Schlüssel besitzen,
-auch nicht als mit einem
-eigenen KMS-Schlüssel entschlüsselbare Kopie. Ein betreiberseitiger
-Administrator- oder Datenbankzugang stellt keine Wiederherstellungsberechtigung
-dar.
+Insbesondere darf der Provider keinen privaten Recovery-Schlüssel besitzen, auch
+nicht als mit einem eigenen KMS-Schlüssel entschlüsselbare Kopie. Ein
+betreiberseitiger Administrator- oder Datenbankzugang stellt keine
+Wiederherstellungsberechtigung dar.
 
-Der aktive Recovery-Vertrauensanker wird bei der Einrichtung im Client bestätigt.
-Jeder spätere Wechsel erfordert einen Nachweis mit dem bisherigen privaten
-Recovery-Schlüssel. Normale Mandantenadministration und selbst die betriebliche
-Signaturautorität können diesen Nachweis nicht ersetzen. Clients prüfen die
-Wechselkette, statt neue Recovery-Schlüssel aus einer Datenbankantwort ungeprüft
-zu übernehmen. Ein eingetragener Provider-Schlüssel erhält so auch keinen
-Zugriff auf künftig erzeugte Bereichsschlüssel.
+Der aktive Recovery-Vertrauensanker wird bei der Einrichtung im Client
+bestätigt. Jeder spätere Wechsel erfordert einen Nachweis mit dem bisherigen
+privaten Recovery-Schlüssel. Normale Mandantenadministration und selbst die
+betriebliche Signaturautorität können diesen Nachweis nicht ersetzen. Clients
+prüfen die Wechselkette, statt neue Recovery-Schlüssel aus einer
+Datenbankantwort ungeprüft zu übernehmen. Ein eingetragener Provider-Schlüssel
+erhält so auch keinen Zugriff auf künftig erzeugte Bereichsschlüssel.
 
 Der Recovery-Katalog enthält die für die Wiederherstellung benötigten
 betrieblichen Bereichsschlüssel, einschließlich noch benötigter historischer
@@ -63,8 +62,8 @@ Neue kryptografische Bereiche dürfen nur zusammen mit einem für den aktuellen
 öffentlichen Recovery-Schlüssel verschlüsselten Schlüsselpaket veröffentlicht
 werden. Die Transaktion prüft die Recovery-Generation und verhindert, dass ein
 gleichzeitiger Wechsel eine Lücke im Katalog hinterlässt. Der erzeugende Client
-verantwortet das korrekte Paket. Prüfungen müssen dessen Erzeugung und eine echte
-Entschlüsselung mit der Phrase abdecken.
+verantwortet das korrekte Paket. Prüfungen müssen dessen Erzeugung und eine
+echte Entschlüsselung mit der Phrase abdecken.
 
 Die API legt das verschlüsselte Schlüsselpaket vor der Veröffentlichung des
 Bereichs ab. Scheitert danach die Mandantentransaktion, kann ein unbenutzter
@@ -91,42 +90,43 @@ darf nicht aus der alten ableitbar sein. Eine Generation kann genau einen
 Wiederherstellungsvorgang starten, auch bei gleichzeitigen Anfragen an mehrere
 API-Instanzen.
 
-Der Wechsel läuft in zwei Abschnitten ab. Die sofortige Sperre der alten Phrase
-erfolgt beim verbindlichen Start; die anschließende Schlüsselumstellung kann
-länger dauern.
+Der Browser bereitet den vollständigen neuen Stand vor. Die API veröffentlicht
+ihn anschließend in einer einzigen Transaktion in der DuckDB-Mandantendatei.
 
-1. Der Administrator öffnet die Wiederherstellung für seine Mandantenkennung und
-   gibt die bisherige Phrase ausschließlich im Browser ein. Dieser prüft
+1. Die bisherige Phrase wird ausschließlich im Browser eingegeben. Dieser prüft
    Wortliste und Prüfsumme und öffnet den verschlüsselten Recovery-Katalog.
-2. Der Browser erzeugt eine neue Phrase, neue Administrator-Schlüssel und eine
-   neue Signaturautorität für den Mandanten. Die neue Phrase wird vor dem
-   verbindlichen Start gesichert und durch eine lokale Wortabfrage bestätigt.
-   Das neue Administratorkonto wird über OPAQUE eingerichtet.
-3. Der Client verschlüsselt einen fortsetzbaren Recovery-Katalog für die neue
-   Phrase. Dieser enthält bereits die bisherigen Schlüssel, sodass ein Absturz
-   nach dem Wechsel nicht den Zugriff auf alte Inhalte zerstört.
-4. Die API stellt eine kurzlebige einmalige Challenge aus. Der Client signiert
-   mit seinem bisherigen Recovery-Schlüssel den Mandanten, die Challenge,
-   Recovery-ID, erwartete Generation und Katalogversion sowie die neuen
-   öffentlichen Schlüssel und den Hash des vorbereiteten Recovery-Katalogs.
-   Eine Signatur darf nicht für einen anderen Administrator oder einen anderen
-   Katalog wiederverwendet werden.
-5. Nach Prüfung des Nachweises setzt eine Transaktion in der Mandantendatenbank
-   eine dauerhafte Schreibsperre für diesen Recovery-Vorgang. Sie prüft die
-   erwartete Katalogversion und hinterlegt den vorbereiteten verschlüsselten
-   Katalog. Bereits laufende Schreibzugriffe werden davor abgeschlossen;
-   danach entstehen keine weiteren Bereiche oder Inhalte unter dem alten Stand.
-6. Eine Transaktion in der Masterdatenbank sperrt den aktuellen Recovery-Kopf,
-   prüft Nachweis und erwartete Versionen, verbraucht die Challenge und wechselt
-   auf die neue Generation. Sie veröffentlicht den neuen verschlüsselten
-   Katalog, die neue Autorität und den Status `rekeying`. Die alte Phrase ist
-   damit für einen weiteren Start sofort ungültig.
-7. Eine weitere Transaktion übernimmt ausschließlich den bereits signierten
-   Plan in die Mandantendatenbank: neues OPAQUE-Konto, neue Autorität, neue
-   Bereichsschlüssel und Zugänge zu historischen Schlüsseln. Sie widerruft
-   bisherige Sitzungen. Erst danach wird der Recovery-Kopf wieder freigegeben.
-   Ein nicht fertig umgestellter Mandant bleibt im Einrichtungsstatus;
-   Recovery erklärt ihn nicht nachträglich für vollständig verschlüsselt.
+2. Der Browser erzeugt eine unabhängige neue Phrase, neue Administratorschlüssel
+   und eine neue Signaturautorität. Die neue Phrase wird vor dem verbindlichen
+   Start gesichert und durch eine lokale Wortabfrage bestätigt. Das neue Konto
+   wird über OPAQUE vorbereitet.
+3. Der Client verpackt die bisherigen Schlüssel für die neue Phrase. Größere
+   Kataloge werden als verschlüsselte Seiten abgelegt und vor der
+   Veröffentlichung zurückgelesen. Dabei erhält die API keine Schlüssel im
+   Klartext.
+4. Eine kurzlebige Challenge bindet den signierten Plan an Mandant, Generation,
+   Katalogversion, neue öffentliche Schlüssel und den neuen Recovery-Katalog.
+   Auch der neue Recovery-Schlüssel bestätigt diesen Plan. Eine Signatur kann
+   weder auf ein anderes Konto noch auf einen anderen Katalog übertragen werden.
+5. Die gemeinsame Transaktion prüft den aktuellen Stand und die vollständige
+   Abdeckung aller veröffentlichten Schlüsselgenerationen. Sie speichert das
+   neue Konto, die neue Autorität, Richtlinien, Bereichsschlüssel und
+   historische Schlüsselzugänge. Gleichzeitig verbraucht sie die Challenge und
+   widerruft sämtliche bisherigen Sitzungen.
+6. Der Datendienst sichert den vorbereiteten Auftrag in `control.duckdb`,
+   veröffentlicht ihn in der Mandantendatei und bestätigt anschließend die
+   unabhängigen Versionsnachweise. Erst danach meldet die Anfrage Erfolg.
+   Unterbrechungen werden anhand desselben Auftrags fortgesetzt. Die bisherige
+   Phrase kann dann keinen weiteren Vorgang starten. Ein konkurrierender Plan
+   verliert seine Versionsprüfung und veröffentlicht keine Teiländerungen.
+
+Das neue Administrationskonto erhält einen eigenen privaten Bereich für seine
+Einladungen. Persönliche Verläufe bleiben den bisherigen Benutzerkonten
+zugeordnet. Bestehende Mitglieder können über eine neue Einladung erneut
+freigegeben werden und melden sich dabei mit ihrem vorhandenen Passwort an. Die
+Freigabe umfasst auch frühere Schlüsselgenerationen ihres eigenen KI-Bereichs,
+damit übernommene Chats nach der Wiederherstellung lesbar bleiben. Sie öffnet
+keinen fremden persönlichen Verlauf. Die Mandanten-Recovery selbst benötigt
+dafür kein Passwort eines bisherigen Mitglieds.
 
 Das Signieren einer Challenge ist ein Besitznachweis. Die API erfährt dadurch
 weder die Phrase noch den Entschlüsselungsschlüssel. Erratbare
@@ -136,56 +136,37 @@ begrenzte Nachrichten und höchstens 128 gleichzeitig gültige Challenges pro
 Mandant begrenzen den gespeicherten Zustand. Die Phrase hat 256 Bit zufällige
 Entropie; es gibt keinen erratbaren Recovery-Code mit wenigen Stellen.
 
-Die Masterdatenbank ist der verbindliche Ort für die aktuelle Recovery-Generation.
-Eine Transaktion über Master- und Mandantendatenbank wird nicht vorausgesetzt.
-Stattdessen steht die dauerhafte Tenant-Schreibsperre bereits vor dem
-Generationswechsel. Normale Commits sperren die entsprechende Tenant-Zeile
-geteilt und prüfen ihren Status; das Vorbereiten einer Recovery sperrt sie
-exklusiv. Alle Schreibwege verwenden dieselbe Sperrreihenfolge.
-
-Ein Absturz zwischen beiden Datenbank-Commits lässt die Schreibsperre bestehen.
-Die Recovery-ID erlaubt die Fortsetzung desselben unveränderlichen Plans.
-Sie erlaubt weder einen anderen Administrator noch andere Schlüssel. Die
-Fortsetzung gibt auch keinen Sitzungsschlüssel zurück; das neue Konto meldet
-sich anschließend mit seinem im Client eingerichteten OPAQUE-Passwort an.
-Ein Zurücksetzen auf die alte Generation ist nicht vorgesehen.
-Eine weitere API-Instanz darf einen vorbereiteten Vorgang nicht durch eine neue
-Operation überschreiben. Benachrichtigungen dienen nur zur UI-Aktualisierung.
-Geschützte Zugriffe gleichen die Generation mit dem Recovery-Kopf in der
-Masterdatenbank ab. So öffnet eine separat zurückgespielte alte
-Mandantensicherung keinen Schreibweg unter bereits abgelösten Schlüsseln.
+Ein Abbruch vor dem Commit lässt den bisherigen Stand unverändert. Geht nur die
+Antwort nach dem Commit verloren, prüft der Browser die veröffentlichte neue
+Generation. Die Recovery-ID bestätigt ausschließlich den bereits gespeicherten
+Plan; sie erlaubt keinen anderen Administrator und liefert keinen
+Sitzungsschlüssel. Das neue Konto meldet sich anschließend mit seinem im Browser
+eingerichteten OPAQUE-Passwort an. Benachrichtigungen aktualisieren die
+Oberfläche; die Versionsprüfung des Datenspeichers entscheidet über die
+Gültigkeit einer Anfrage.
 
 ## Schlüssel nach einer Recovery wechseln
 
-Nur den Recovery-Katalog für neue Wörter zu verpacken wäre unzureichend. Die alte
-Phrase könnte bereits eine Kopie der bisherigen Bereichsschlüssel erschlossen
-haben. Deshalb werden alle betroffenen Bereichsschlüssel unabhängig neu erzeugt.
-Neue Datenversionen erhalten neue Datenschlüssel und werden ausschließlich unter
-der neuen Generation verpackt. Neue Geheimnisse dürfen weder unter alten
-Bereichsschlüsseln noch für alte Recovery-Schlüssel veröffentlicht werden.
+Nur den Recovery-Katalog für neue Wörter zu verpacken wäre unzureichend. Die
+alte Phrase könnte bereits eine Kopie der bisherigen Bereichsschlüssel
+erschlossen haben. Deshalb werden alle betroffenen Bereichsschlüssel unabhängig
+neu erzeugt. Neue Datenversionen erhalten neue Datenschlüssel und werden
+ausschließlich unter der neuen Generation verpackt. Neue Geheimnisse dürfen
+weder unter alten Bereichsschlüsseln noch für alte Recovery-Schlüssel
+veröffentlicht werden.
 
 Die bisherige Signaturautorität bleibt nur zur Prüfung historischer Vorgänge
 erhalten. Sie darf keine neuen Identitäten, Freigaben oder Geräte zulassen. Der
-neue Administrator bestätigt die weiter geltenden Benutzeridentitäten und
-Rechte unter der neuen Autorität. Alte Administratorrechte werden dabei nicht
-ungeprüft übernommen. Benutzerkonten können mit ihren bisherigen Passwörtern
-erhalten bleiben; ihre Schlüsselpakete werden erst nach erneuter Bestätigung
+neue Administrator bestätigt die weiter geltenden Benutzeridentitäten und Rechte
+unter der neuen Autorität. Alte Administratorrechte werden dabei nicht ungeprüft
+übernommen. Benutzerkonten können mit ihren bisherigen Passwörtern erhalten
+bleiben; ihre Schlüsselpakete werden erst nach erneuter Bestätigung
 veröffentlicht. Kompromittierte Identitäten müssen ersetzt werden.
 
-Eine benötigte Änderung an der Mandantendatenbank und die Fortschrittsmeldung an
-die Masterdatenbank erfolgen wiederholbar mit Recovery-ID und Generation. Der
-Status wird erst wieder freigegeben, wenn der gesamte aktuelle Bereichskatalog
-umgestellt ist und der neue Recovery-Katalog alle benötigten Schlüssel enthält.
-War der Mandant zuvor noch in Einrichtung, bleibt er in diesem Zustand. Die neue
-Regelversion gibt zunächst ausschließlich dem neuen Administrator Zugriff;
-weitere Benutzer werden danach erneut bestätigt. Bis zur Übernahme des Plans
-bleibt die Sperre für geschützte Zugriffe bestehen.
-
-Vorhandene verschlüsselte Inhalte müssen für den Schutz zukünftiger Änderungen
-nicht alle sofort neu verschlüsselt werden. Sie bleiben mit ihren historischen
-Datenschlüsseln lesbar und werden für Berechtigte neu verpackt. Ein zusätzliches
-Neuverschlüsseln des aktuellen Bestands kann Teil einer Bereinigung sein, löscht
-aber keine früher kopierte Version.
+Die neue Richtlinie gibt zunächst ausschließlich dem neuen Administrator
+Zugriff. Weitere Benutzer werden unter der neuen Autorität erneut bestätigt.
+Historische Zertifikate bleiben für die Prüfung alter Inhalte erhalten,
+berechtigen aber nicht zu neuen Schlüsselabrufen.
 
 ## Abbruch, Geräteverlust und zweite Wiederherstellung
 
@@ -206,9 +187,9 @@ erreichbarem neuem Administratorzugang. Ein Fehler nach dem ersten Commit darf
 niemals mit der Aufforderung enden, erneut die bereits verbrauchte Phrase zu
 verwenden. Bereits vor dem Commit gesicherte neue Wörter verhindern diese Lücke.
 
-Der normale Passwortreset eines Mitarbeiters durch einen berechtigten
-Mandantenadministrator ist ein anderer Vorgang. Er braucht keine mandantenweite
-Seed-Phrase und setzt keine anderen Benutzer zurück.
+Ein Passwortreset für ein einzelnes Mitglied ist ein anderer Vorgang als die
+mandantenweite Recovery. Dieser Ablauf ist noch nicht angeschlossen; ein
+Betreiberreset darf keinen Zugang zu den privaten Kontoschlüsseln schaffen.
 
 ## Grenzen der Ungültigkeit und Wiederherstellung alter Sicherungen
 
@@ -219,20 +200,32 @@ Alte Datenkopien bleiben jedoch mit den damals gültigen Schlüsseln
 entschlüsselbar. Eine Seed-Phrase kann einen einmal geöffneten Datenbestand
 nicht nachträglich unlesbar machen.
 
-Die Phrase ersetzt keine Datensicherung. Erforderlich bleiben die verschlüsselten
-Daten, ihre technischen Metadaten und ein passender verschlüsselter
-Recovery-Katalog. Nach einem Phrase-Wechsel kann eine alte Sicherung unter
-Umständen nur zusammen mit dem neueren Recovery-Katalog geöffnet werden. Dieser
-enthält deshalb die noch benötigten historischen Bereichsschlüssel und wird
-zusammen mit dem aktuellen Recovery-Kopf unabhängig gesichert.
+Die Phrase ersetzt keine Datensicherung. Erforderlich bleiben die
+verschlüsselten Daten, ihre technischen Metadaten und ein passender
+verschlüsselter Recovery-Katalog. Nach einem Phrase-Wechsel kann eine alte
+Sicherung unter Umständen nur zusammen mit dem neueren Recovery-Katalog geöffnet
+werden. Dieser enthält deshalb die noch benötigten historischen
+Bereichsschlüssel und muss zusammen mit dem aktuellen Recovery-Kopf unabhängig
+gesichert werden.
 
-Eine Wiederherstellung der Mandantendatenbank darf den Recovery-Kopf in der
-Masterdatenbank nicht zurücksetzen. Beim Rückspielen werden Generation und
-Status zuerst abgeglichen. Auch ein vollständiger Betriebsrestore muss den
+Eine Wiederherstellung der Mandantendatei darf den unabhängig gesicherten
+aktuellen Recovery-Stand nicht zurücksetzen. Beim Rückspielen werden Generation
+und Status zuerst abgeglichen. Auch ein vollständiger Betriebsrestore muss den
 höchsten bereits bestätigten Recovery-Stand aus einer unabhängig aufbewahrten
 Sicherung oder Bestätigung übernehmen. Wenn sämtliche Sicherheitszustände auf
 einen alten Stand zurückgesetzt werden und kein neuerer Vertrauensanker
 verbleibt, lässt sich die einmalige Nutzung nicht mehr zuverlässig erkennen.
+
+Der Datendienst verankert inzwischen die Recovery-Generation und den
+maßgeblichen Rechte- und Schlüsselstand außerhalb der Mandantendatei. Ältere
+oder fehlende Nachweise sperren den Zugriff. Das verhindert die erneute
+Verwendung einer verbrauchten Phrase über eine allein zurückgespielte
+Mandantendatei. Dazu bewahrt er den verschlüsselten Recovery-Kopf,
+Kontozustände, signierte Richtlinien, Schlüsselumschläge und veröffentlichte
+Katalogseiten unabhängig auf. Ein automatischer Rücksicherungsablauf, der den
+älteren Fachbestand mit dem neuesten verschlüsselten Recovery-Katalog
+zusammenführt, fehlt noch. Ein Dateisnapshot allein ist deshalb noch kein
+geprüfter vollständiger Wiederherstellungsweg.
 
 Bei der unabhängigen Aufbewahrung gehören die neue Phrase und der verschlüsselte
 aktuelle Recovery-Katalog zum Wiederherstellungspaket. Weitere Geschäftsdaten
@@ -242,19 +235,35 @@ vertraulichen Inhalte bleiben unter dem aktuellen Recovery-Schlüssel geschützt
 
 ## Nachweise vor produktiver Nutzung
 
+Der eigenständige DuckDB-Test verbindet den Webapp-Kryptografiecode mit zwei
+API-Instanzen. Er prüft konkurrierende Pläne, verschlüsselte Katalogseiten und
+zwei aufeinanderfolgende Recoveries. Verbrauchte Phrasen und alte Sitzungen
+werden abgewiesen. Ein vorher gespeicherter Inhalt bleibt nach beiden Wechseln
+lesbar. Auch eine verlorene Antwort nach dem Commit wird über den
+veröffentlichten Stand aufgelöst. Die beobachteten Anfragen enthalten weder
+Phrase noch Passwort oder Geschäftsinhalt im Klartext.
+
+Die unabhängige Generationssperre ist im Datendienst umgesetzt. Sein
+[Wiederherstellungstest](../sortsys-store/src/witness.rs) weist eine alte
+Mandantendatei nach einem Recovery-Wechsel zurück. Ein allgemeiner Ablauf, der
+einen älteren Fachstand unter Erhalt der aktuellen Sicherheitsnachweise
+wiederherstellt, fehlt weiterhin. Auch Bestände oberhalb der normalen
+Sammelgrenzen benötigen einen erweiterten Schreibweg. Die folgenden Fälle
+unterscheiden laufende Protokollprüfungen von noch nötigen Ausfalltests:
+
 - Zwei API-Instanzen versuchen gleichzeitig dieselbe Phrase zu verwenden. Genau
   eine Operation startet; die andere darf weder einen zweiten Administrator
   erzeugen noch die neue Phrase überschreiben.
-- Ein Stromausfall wird vor und nach jedem verbindlichen Schritt simuliert.
-  Vor dem ersten Commit funktioniert die alte Phrase, danach die neue Phrase
-  zur Fortsetzung. Die Daten bleiben wiederherstellbar.
-- Neue kryptografische Bereiche entstehen gleichzeitig mit einer Recovery.
-  Kein erfolgreich veröffentlichter Bereich fehlt im wiederherstellbaren Stand.
+- Ein Stromausfall wird vor und nach jedem verbindlichen Schritt simuliert. Vor
+  dem ersten Commit funktioniert die alte Phrase, danach die neue Phrase zur
+  Fortsetzung. Die Daten bleiben wiederherstellbar.
+- Neue kryptografische Bereiche entstehen gleichzeitig mit einer Recovery. Kein
+  erfolgreich veröffentlichter Bereich fehlt im wiederherstellbaren Stand.
 - Ein Angreifer kennt die alte Phrase und den alten Katalog. Nach Abschluss
   öffnen diese keine neuen Inhalte und erlauben keine neuen Freigaben.
 - Eine ältere Tenant-Sicherung wird eingespielt. Die verbrauchte Phrase wird
-  dadurch nicht erneut für die aktuelle Recovery gültig; die neue Phrase und
-  der passende Recovery-Katalog erschließen die historischen Daten.
+  dadurch nicht erneut für die aktuelle Recovery gültig; die neue Phrase und der
+  passende Recovery-Katalog erschließen die historischen Daten.
 - Netzwerk-, Datenbank- und Protokollaufzeichnungen enthalten weder Wörter noch
   private Recovery-Schlüssel. Ein normaler Supportzugang reicht nicht zur
   Wiederherstellung aus.

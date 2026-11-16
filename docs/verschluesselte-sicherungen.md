@@ -1,0 +1,70 @@
+# Mandantendateien sichern
+
+Die Betreiberverwaltung zeigt unter **Datenspeicher** die registrierten
+Mandanten. **Sicherungen** öffnet deren Dateikopien. Mit **Sicherung erstellen**
+entsteht eine geschlossene DuckDB-Datei, während der Mandant weiterarbeiten
+kann. **Herunterladen** überträgt diese Datei. Geschäftsinhalte und Anhänge
+bleiben darin verschlüsselt; der Betreiber erhält dadurch keinen
+Entschlüsselungsschlüssel.
+
+Eine unterbrochene Anfrage lässt sich mit **Erneut versuchen** fortsetzen. Nach
+einem Neuladen zeigt ein noch offener Auftrag stattdessen **Fortsetzen**.
+Derselbe Auftrag erzeugt dieselbe Datei, auch wenn die zweite Anfrage eine
+andere API-Instanz erreicht. Eine neue Sicherung benötigt einen neuen Auftrag.
+
+Die Liste lädt jeweils höchstens 100 Einträge eines gemeinsamen Datenstands.
+**Weitere Sicherungen** ruft die nächste Seite ab. Ändert sich die Liste
+zwischenzeitlich, verlangt sie einen neuen Abruf, statt unterschiedliche Stände
+zu vermischen. Ein globaler Betreiberzugang ist für Aufträge, Listen und
+Downloads erforderlich. Mandantenadministratoren und mandantenspezifische
+Betreiberzugänge können diese Infrastrukturdateien nicht lesen.
+
+## Was zur vollständigen Wiederherstellung gehört
+
+Eine einzelne Mandantendatei ersetzt keine vollständige Sicherung des
+Datendienstes. In `control.duckdb` liegen unter anderem das Mandantenregister
+und die unabhängig gespeicherten aktuellen Sicherheitsnachweise. Sie verhindern,
+dass eine alte Mandantendatei eine verbrauchte Recovery-Phrase oder einen
+überholten Rechtezustand reaktiviert. Das Office-Volume enthält zusätzlich
+verschlüsselte Bearbeitungsstände; die [Betriebsdokumentation](deployment.md)
+beschreibt diese Ablage.
+
+Auch endgültige Dokumentsperren, unveränderliche Datensätze und
+Abwesenheitsentscheidungen erhalten unabhängige Nachweise. Sobald ein
+OpenTimestamps-Nachweis gespeichert wurde, wird auch dieser aufbewahrt. Ein
+Ausfall der Zeitstempelserver verhindert weiterhin keine Bearbeitung und keine
+Entscheidung. Die Sperre hängt nicht davon ab, ob bereits ein externer
+Zeitstempel vorliegt. Das Rückspielen einer älteren Mandantendatei darf diese
+späteren Festschreibungen nicht verschwinden lassen.
+
+Eine sichere Rücksicherung eines älteren Fachstands unter Beibehaltung der
+aktuellen Recovery- und Berechtigungsnachweise ist noch nicht fertig. Die
+Oberfläche bietet deshalb keinen allgemeinen Rücksicherungsaufruf an. Der
+Datendienst weist Mandantendateien mit veralteten Sicherheitsnachweisen
+weiterhin ab. Auch eine gemeinsame Rücksetzung von Mandanten- und Kontrolldatei
+auf einen alten Stand braucht unabhängige aktuelle Nachweise, um erkennbar zu
+bleiben.
+
+## Erstellung und Nachweise
+
+Der gemeinsame Datendienst erstellt die Kopie mit `COPY FROM DATABASE`, schließt
+sie, synchronisiert die Datei und veröffentlicht sie durch atomare Umbenennung.
+Unvollständige Dateien sind nicht herunterladbar. Wiederholungen verwenden eine
+Kennung, die Mandant und Auftrag bindet. Die API speichert den offenen Auftrag
+vor dem Kopieren und bestätigt die fertige Datei durch einen Versionsvergleich.
+Ein verlorener Abschluss kann dadurch wiederaufgenommen werden.
+
+Die API streamt den Download; sie wandelt die Datei nicht in Base64 oder ein
+RPC-Ergebnis um. Das Dienstkennwort bleibt intern. Der Browser fordert die Datei
+mit dem Betreiberzugang an und bietet sie als Download an; dabei hält er sie
+vorübergehend als Blob im Speicher. Für sehr große Sicherungen ist ein direkter
+Dateischreibweg noch offen.
+
+Der [Datendiensttest](../sortsys-store/tests/service.rs) prüft konkurrierende
+Aufträge und eine Wiederholung nach weiteren Änderungen. Der
+[native API-Test](../sortsys-webapp-v2/scripts/test-operator-telemetry.ts) prüft
+zusätzlich zwei API-Instanzen, verweigerte Zugriffe und die Mandantenbindung.
+Die
+[Browser-E2E-Suite](../sortsys-webapp-v2/scripts/e2e/development.browser.mjs)
+legt eine Sicherung des Musterbestands an, lädt sie herunter und prüft ihre
+Sichtbarkeit nach einem Neuladen.

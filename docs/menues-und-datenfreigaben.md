@@ -1,10 +1,12 @@
 # Aktionen passend zur Datenfreigabe anzeigen
 
 Produktkatalog, Kunden, Ansprechpartner, Lieferanten, Preisaufzeichnungen,
-Projektgrunddaten und Lieferscheine verwenden ihre verifizierten Freigaben auch für die Anzeige
-von Menüs und Schaltflächen. Ein Benutzer mit Leserechten sieht die zugehörigen
-Ansichten. Mit einer Bearbeitungsfreigabe stehen die passenden Änderungsaktionen
-zur Verfügung. Das Anlegen neuer Einträge wird gesondert geprüft.
+Personalprofile, Werkzeuge, Projektgrunddaten, Tages- und Regieberichte,
+Lieferscheine und Client-Skripte verwenden ihre verifizierten Freigaben auch für
+die Anzeige von Menüs und Schaltflächen. Ein Benutzer mit Leserechten sieht die
+zugehörigen Ansichten. Mit einer Bearbeitungsfreigabe stehen die passenden
+Änderungsaktionen zur Verfügung. Das Anlegen neuer Einträge wird gesondert
+geprüft.
 
 Eine bisherige Administratorrolle öffnet diese Inhaltsaktionen nicht pauschal.
 Sie bleibt für die Verwaltungsoberfläche und die technischen Anmelderollen
@@ -12,10 +14,37 @@ maßgeblich. Die Inhaltsfreigabe benötigt weiterhin eine gültige signierte Reg
 Der Browser bindet diese Regel an die bestätigte Identität des angemeldeten
 Kontos; eine andere Benutzerkennung aus einer Antwort genügt nicht.
 
+Der KI-Assistent benötigt Lesen, Anlegen und Bearbeiten im eigenen
+Assistentenbereich. Die persönliche Verlaufsfreigabe öffnet damit auch die
+Assistentenfunktionen. Sie vergibt keinen Zugriff auf den Produktkatalog oder
+interne Preise. Ein Entzug beendet laufende Modellanfragen auch dann, wenn die
+Verwaltung mit einer anderen API-Instanz verbunden ist.
+
 Die Menüanzeige liest dafür nur öffentliche technische Metadaten und signierte
 Nachweise. Sie fordert weder Inhaltsschlüssel noch Produkttexte, Preise oder
 Dokumente an. Die Datenadapter und die API prüfen jede tatsächliche Aktion
 zusätzlich. Eine sichtbare Schaltfläche vergibt kein neues Recht.
+
+[Vermerke](verschluesselte-vermerke.md) richten sich nach dem jeweiligen
+Projekt, Werkzeug, Kunden- oder Kontaktkatalog. Auch ihre Schaltflächen trennen
+Anlegen, Bearbeiten und Löschen. Ein Änderungsrecht für ein anderes Projekt
+öffnet keine Vermerkaktion.
+
+Menü, Dateiübersicht und Datenadapter verwenden dieselben Prüfbausteine. Beim
+Laden der Regeln werden Mandant, Datenformat und Signatur gegen den im Konto
+bestätigten Schlüssel geprüft. Ein Kontowechsel während der Anfrage oder der
+Signaturprüfung verwirft die Antwort. Erst danach werden die Regeln für die
+jeweiligen Benutzer ausgewertet. Ausdrückliche Verbote haben überall Vorrang;
+ein Bearbeitungsrecht erzeugt dabei nicht automatisch ein Leserecht. Die
+Menüanzeige verlangt Lesen zusätzlich, bevor sie eine Inhaltsaktion anbietet.
+Zertifizierte Anlagenachweise werden weiterhin gesondert geprüft.
+
+Auch Freigabeänderungen haben einen gemeinsamen Speicherweg. Er signiert die
+neuen Regeln und verlangt anschließend genau deren signierten Stand beim
+Zurücklesen. Eine erfolgreiche HTTP-Antwort allein genügt nicht. Geht die
+Antwort nach dem Speichern verloren, kann derselbe Nachweis den Abschluss
+bestätigen. Ein fremder oder inzwischen ersetzter Stand wird nicht als eigene
+Änderung bestätigt. Das gilt für neue Freigaben ebenso wie für deren Entzug.
 
 ## Angebote und Projekte unabhängig anlegen
 
@@ -26,9 +55,17 @@ Freigaben **Neue Projekte anlegen** und **Neue Angebote und Aufträge anlegen**
 bleiben unabhängig.
 
 Ein neu angelegtes Projekt oder Angebot erhält seine Zugriffe über den
-zertifizierten Anlagenachweis. Die Menüanzeige prüft auch diesen Nachweis.
-Wird die Anlageberechtigung später entzogen, bleiben bereits vergebene Zugriffe
-auf vorhandene Projekte erhalten.
+zertifizierten Anlagenachweis. Die Menüanzeige prüft auch diesen Nachweis. Wird
+die Anlageberechtigung später entzogen, bleiben bereits vergebene Zugriffe auf
+vorhandene Projekte erhalten.
+
+Bei Client-Skripten hat **Neu** eine eigene Anlagefreigabe. Leserechte und das
+Recht, ein Skript anzulegen, erlauben keine spätere Codeänderung oder Löschung.
+Die Übersicht durchsucht Namen und Beschreibungen im Browser; der Code gehört
+nicht zur Listenantwort. Skripte bleiben in ihrem eigenen verschlüsselten
+Organisationsbereich. Nach einem Rechteentzug wird der Schlüssel für künftige
+Änderungen gewechselt. Bereits gelesener Code lässt sich damit nicht
+zurückholen.
 
 Auf einer Projektseite richten sich Bearbeiten, Abschließen, Fortsetzen und
 Löschen nach der Freigabe genau dieses Projekts. Eine Bearbeitungsfreigabe für
@@ -41,11 +78,57 @@ entsprechenden Dateifreigabe.
 Änderungshinweise über den WebSocket verwerfen die bisherige Menüfreigabe.
 Während der Prüfung des neuen Stands bleiben die betroffenen Aktionen gesperrt.
 Das funktioniert auch, wenn Verwaltung und Benutzer an unterschiedlichen
-API-Instanzen verbunden sind. Ein Kontowechsel verwirft laufende Abfragen;
-eine verspätete Antwort kann die alten Aktionen nicht wieder einschalten.
-Bei einem Ladefehler lässt sich die Prüfung mit **Erneut versuchen** wiederholen.
+API-Instanzen verbunden sind. Ein Kontowechsel verwirft laufende Abfragen; eine
+verspätete Antwort kann die alten Aktionen nicht wieder einschalten. Bei einem
+Ladefehler lässt sich die Prüfung mit **Erneut versuchen** wiederholen.
 
-Weitere Fachbereiche verwenden bis zu ihrem Anschluss noch die bisherigen
-Menürollen. Die vollständige Umstellung umfasst außerdem die feineren Aktionen
-innerhalb der Dokumenteditoren und die noch fehlenden Fachadapter. Weitere
-Produktverweise aus noch nicht umgestellten Fachbereichen bleiben offen.
+Die technischen Verwaltungsrollen und die Inhaltsfreigaben bleiben getrennt. Der
+vollständige Funktionsabgleich muss weiterhin die einzelnen Aktionen der
+Dokumenteditoren und ihre Verweise auf andere Fachbereiche prüfen.
+
+## Bautagesberichte und Arbeitskosten
+
+Ein Projekt kann Bautagesberichte und Arbeitszeiten freigeben, ohne seine
+internen Arbeitskosten offenzulegen. Beide Bereiche lassen sich in der
+Projektfreigabe getrennt vergeben. Das Erstellen eines Berichts verwendet ein
+Anlagerecht; ein Leserecht allein öffnet keine Bearbeitungsaktion. Die
+Detailansicht prüft das konkrete Projekt, bevor sie Änderungen oder
+Löschaktionen anbietet.
+
+Die Freigabenansicht liest die Projektbereiche aus einem gemeinsam geprüften
+Regelstand. Unveränderte Bereiche bleiben beim Speichern erhalten. Ein Fehler
+nach einer bereits bestätigten Teilfreigabe setzt deren Anzeige nicht auf den
+alten Stand zurück.
+
+Bei Regieberichten ist Materialbearbeitung unabhängig von der
+Stundenbearbeitung. Die Menüanzeige prüft beide Freigaben am selben Projekt.
+Eine Stundenfreigabe für eine andere Baustelle öffnet keine Bearbeitungsaktion.
+Ohne Stundenfreigabe bleiben Arbeitszeiten in Ansicht und Ausgaben ausdrücklich
+als nicht freigegeben markiert.
+
+Lieferscheine, Bautagesberichte und Regieberichte besitzen jeweils eigene
+Schlüsselbereiche pro Projekt. Eine Freigabe für Bautagesberichte öffnet keine
+Regiestunden; eine Lieferscheinfreigabe öffnet kein Regiematerial. Auch die
+Projektgrunddaten, Dateien und kaufmännischen Vorgänge bleiben davon unabhängig.
+Die Preisfreigabe für Lieferscheine ist außerdem von Beschaffung und
+Weitervergaben getrennt.
+
+Rechnungswerte und die projektbezogene Werkzeugnutzung haben eigene Freigaben.
+Die [Kostenübersicht](verschluesselte-projektkosten.md) zeigt betroffene
+Projekte bei fehlenden Rechten mit leeren Beträgen und einer Erklärung.
+Schreibrechte auf Projektgrunddaten erlauben keine Änderungen von
+Rechnungssummen.
+
+Projektanlage, Bereichserkennung und Freigabenmaske verwenden dasselbe
+Bereichsverzeichnis. Neue Projekte erhalten alle darin beschriebenen Bereiche;
+zusätzliche Berichtsrechte werden daraus nicht für andere Projekte abgeleitet.
+Die TypeScript- und Rust-Prüfungen kontrollieren die Bindung neu angelegter
+Berichtsbereiche an den ursprünglichen Projektanlagenachweis. Ein bloßes Recht,
+neue Projekte anzulegen, reicht für Bereiche eines fremden Projekts nicht aus.
+
+Die lokalen Kryptografie-, Modell- und Browsertests prüfen diese Trennung. Der
+native Lauf über zwei unabhängige API-Prozesse prüft unter anderem
+verschlüsselte Berichte, Werkzeugbuchungen und die Projektkosten nach der
+Bestandsübernahme und nach zwei Seed-Recoveries. Der zusätzliche Test, der jeden
+Projektbereich einzeln freigibt, entzieht und erneut freigibt, ist vorbereitet;
+dieser vollständige Durchlauf steht noch aus.

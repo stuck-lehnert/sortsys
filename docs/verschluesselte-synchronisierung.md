@@ -1,22 +1,22 @@
 # Änderungen in mehreren geöffneten Ansichten
 
 Ändert eine zweite Anmeldung einen Produkt-, Kunden- oder Kontakteintrag,
-aktualisieren offene Listen ihren lokalen Bestand. Neu angelegte Chats erscheinen auch in
-einer weiteren Anmeldung desselben Benutzers. Beim Einlesen erhält die
-Verlaufsliste auf diesem Weg den gespeicherten Stand. Dafür fragt die Webapp
-keine fachlichen Status-Endpunkte in einer Schleife ab.
+aktualisieren offene Listen ihren lokalen Bestand. Neu angelegte Chats
+erscheinen auch in einer weiteren Anmeldung desselben Benutzers. Beim Einlesen
+erhält die Verlaufsliste auf diesem Weg den gespeicherten Stand. Dafür fragt die
+Webapp keine fachlichen Status-Endpunkte in einer Schleife ab.
 
 Die dauerhafte WebSocket-Verbindung überträgt Änderungshinweise. Darin stehen
 Bereichskennungen und technische Speicherstände, keine Produktbeschreibungen,
-Preise, Chattexte oder Dateiinhalte. Die Webapp liest anschließend die benötigten
-verschlüsselten Objekte und prüft deren Signaturen. Ein Hinweis allein erlaubt
-weder eine Fachänderung noch die Übernahme ungeprüfter Daten.
+Preise, Chattexte oder Dateiinhalte. Die Webapp liest anschließend die
+benötigten verschlüsselten Objekte und prüft deren Signaturen. Ein Hinweis
+allein erlaubt weder eine Fachänderung noch die Übernahme ungeprüfter Daten.
 
 Produkte, Lieferanten, Organisationseinstellungen, Kunden, Kontakte, Projekte
 und die Leseansicht der Lieferscheine verwenden dafür bereits den
-[gemeinsamen Datenkern im Browser](clientseitige-datenlaufzeit.md).
-Dieser führt Speicherstände, lokale Zeilen und Invalidierung zusammen, auch wenn
-mehrere Ansichten denselben API-Client verwenden.
+[gemeinsamen Datenkern im Browser](clientseitige-datenlaufzeit.md). Dieser führt
+Speicherstände, lokale Zeilen und Invalidierung zusammen, auch wenn mehrere
+Ansichten denselben API-Client verwenden.
 
 ## Verbindung und Wiederaufnahme
 
@@ -27,12 +27,14 @@ Verbindung. Die Eintrittskarte kann über eine andere API-Instanz eingelöst
 werden; beide Instanzen prüfen Sitzung, bestätigte Identität und aktuelle
 Wiederherstellungsgeneration gegen denselben Bestand.
 
-Pro aktivem Mandanten und API-Prozess besteht eine PostgreSQL-Listener-Verbindung.
-Mehrere Browser teilen diesen Listener. Erst der Commit einer Transaktion
-liefert ihren Hinweis. Die API fasst kurze Folgen von Hinweisen zusammen und
-meldet Bereiche nach den für diese Verbindung bestätigten Lesefreigaben. Ein privater
-Verlauf eines anderen Benutzers liefert keinen Bereichshinweis an dieses Konto.
-Nach dem Schließen des letzten Browsers wird die Listener-Verbindung freigegeben.
+Pro aktivem Mandanten und API-Prozess besteht ein gemeinsamer Abruf des
+dauerhaften Änderungsjournals im DuckDB-Datendienst. Mehrere Browser teilen
+diesen Abruf. Die Anfrage wartet bis zu 25 Sekunden auf einen neuen Stand; dabei
+hält sie keine Datenbanksperre. Erst der Commit einer Transaktion liefert ihren
+Hinweis. Die API fasst kurze Folgen von Hinweisen zusammen und meldet Bereiche
+nach den für diese Verbindung bestätigten Lesefreigaben. Ein privater Verlauf
+eines anderen Benutzers liefert keinen Bereichshinweis an dieses Konto. Nach dem
+Schließen des letzten Browsers wird der gemeinsame Abruf beendet.
 
 Der erste Verbindungsaufbau gleicht den aktuellen Stand ab, ohne eine bereits
 gestartete LLM-Verarbeitung abzubrechen. Bei einer Wiederverbindung bleiben
@@ -40,11 +42,10 @@ laufende Anfragen erhalten, solange sich die eigenen Freigaben nicht geändert
 haben.
 
 Bei einem Verbindungsabbruch verbindet sich der Browser erneut und liest den
-aktuellen Stand. Auch der Listener meldet nach seiner Wiederverbindung einen
-erneuten Abgleich. Während des Ausfalls verlorene PostgreSQL-Mitteilungen sind
-deshalb keine Voraussetzung für die Wiederaufnahme. Überlaufende Warteschlangen
-führen ebenfalls zu einem Abgleich. Die Warteschlangen enthalten nur technische
-Hinweise.
+aktuellen Stand. Auch die API meldet nach einer unterbrochenen Verbindung zum
+Datendienst einen erneuten Abgleich. Das dauerhafte Journal liefert die seitdem
+bestätigten Änderungen nach. Überlaufende Warteschlangen führen ebenfalls zu
+einem Abgleich. Die Warteschlangen enthalten nur technische Hinweise.
 
 Kennt der lokale Produktspeicher einen gemeldeten Stand bereits, wird seine
 Browser-Datenbank nicht erneut aufgebaut. Das vermeidet insbesondere den
@@ -54,28 +55,28 @@ Neuaufbau des Produktkatalogs aus.
 Auch eine geänderte Regelversion verlangt nicht automatisch einen Neuaufbau
 unveränderter Fachdaten. Die Webapp prüft Freigaben und Bereichsdefinitionen
 erneut und vergleicht den technischen Datenstand mit dem bereits geprüften
-Bestand. Erst geänderte Inhalte werden erneut entschlüsselt und projiziert.
-Der geprüfte Bestand wird dabei getrennt vom Rückgabestand einer laufenden
+Bestand. Erst geänderte Inhalte werden erneut entschlüsselt und projiziert. Der
+geprüfte Bestand wird dabei getrennt vom Rückgabestand einer laufenden
 Speicherung geführt, damit eigene Änderungen weiterhin vollständig nachgelesen
 werden.
 
 ## Berechtigungen und laufende Arbeit
 
-Entzogene eigene Rechte verwerfen die lokalen Zugriffskontexte und
-deren Bereichsschlüssel. Laufende LLM-Anfragen mit dem bisherigen Zugriffskontext
-werden abgebrochen. Abonnierte Ansichten lesen ihre Freigaben und Inhalte erneut.
-Ein neuer Schlüsselstand wird erst nach Prüfung der signierten Bereichsdefinition
-verwendet. Bereits kopierte Inhalte lassen sich durch diesen Ablauf nicht
-zurückholen.
+Entzogene eigene Rechte verwerfen die lokalen Zugriffskontexte und deren
+Bereichsschlüssel. Laufende LLM-Anfragen mit dem bisherigen Zugriffskontext
+werden abgebrochen. Abonnierte Ansichten lesen ihre Freigaben und Inhalte
+erneut. Ein neuer Schlüsselstand wird erst nach Prüfung der signierten
+Bereichsdefinition verwendet. Bereits kopierte Inhalte lassen sich durch diesen
+Ablauf nicht zurückholen.
 
 Änderungen an den Rechten anderer Konten laden die aktuelle Regelversion nach,
 ohne den eigenen laufenden Chat- oder Dokumentkontext allein deswegen
-abzubrechen. Zusätzliche eigene Rechte beenden einen bereits erlaubten
-Kontext ebenfalls nicht. Sitzung und Freigaben werden außerdem alle 30 Sekunden erneut
+abzubrechen. Zusätzliche eigene Rechte beenden einen bereits erlaubten Kontext
+ebenfalls nicht. Sitzung und Freigaben werden außerdem alle 30 Sekunden erneut
 geprüft. Das sind Prüfungen technischer Zugangsdaten; Fachinhalte werden dabei
 nicht abgefragt. Jeder Datenabruf und jede Speicherung prüft die aktuellen
-Freigaben weiterhin unabhängig vom Hinweis. Eine ungültig gewordene Sitzung oder Wiederherstellungsgeneration
-beendet die Verbindung.
+Freigaben weiterhin unabhängig vom Hinweis. Eine ungültig gewordene Sitzung oder
+Wiederherstellungsgeneration beendet die Verbindung.
 
 Der Kanal ist an Produktkatalog, Kunden, Ansprechpartner, Projektgrunddaten,
 [Projektdateien](verschluesselte-projektdateien.md) und persönliche KI-Verläufe
@@ -86,6 +87,6 @@ Dokumentbearbeitung ist durch den Ereigniskanal allein noch nicht umgesetzt.
 
 Der [Mehrinstanztest](../sortsys-webapp-v2/scripts/test-live-events.ts) prüft
 unter anderem gleichzeitige Ansichten, Verbindungsabbrüche, Wiederaufnahme und
-die Freigabe des gemeinsamen Listeners. Der
+das Beenden des gemeinsamen Journalabrufs. Der
 [Rechtetest](../sortsys-webapp-v2/scripts/test-live-permissions.ts) prüft auch,
 dass ein privater Bereich keine Hinweise an ein anderes Konto liefert.

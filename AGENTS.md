@@ -15,6 +15,12 @@
 - Server-side search and query-aware option providers own text matching. Disable built-in label filtering when displaying their results; do not apply another client-side text filter.
 - Local text matching is appropriate for complete local datasets. Keep eligibility checks, such as excluding the current user from their own supervisor choices, separate from search matching.
 
+# Code readability
+
+- Write readable source code, including test fixtures. Use descriptive names and separate statements instead of compressing control flow onto one line.
+- Prefer explicit conditions and named helpers over nested ternaries for comparisons, permissions and business rules. Keep the order of checks apparent to a reviewer.
+- Format changed code consistently with its surroundings. Formatting alone does not replace simplifying an unnecessarily complicated expression.
+
 # LLM interactions
 
 - Chat and document import must use authenticated MCP for tool discovery and tool calls. Provider adapters must preserve this path, including OpenRouter's MCP bridge.

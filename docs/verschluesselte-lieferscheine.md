@@ -7,14 +7,16 @@ Aktionen werden für geschützte Mandanten vor dem HTTP-Aufruf gesperrt.
 
 Eine Baustellenmitarbeiterin kann die gelieferten Materialien und Sonderposten
 eines freigegebenen Projekts sehen, ohne dessen Einkaufspreise zu erhalten.
-Dafür verwendet der Lieferschein den Mengenbereich des jeweiligen Projekts
-(`contract-quantities`). Die Projektgrunddaten allein öffnen diesen Bereich
-nicht. In der Benutzerverwaltung lässt sich der Zugriff unter „Lieferscheine
-und Mengen“ getrennt vergeben.
+Dafür verwendet der Lieferschein einen eigenen Mengenbereich des Projekts
+(`project:<id>:delivery-notes`, Feldbereich `master-data`). Die
+Projektgrunddaten allein öffnen diesen Bereich nicht. In der Benutzerverwaltung
+lässt sich der Zugriff unter **Lieferscheine** getrennt vergeben. Regieberichte
+und Bautagesberichte bleiben unabhängig.
 
-Preise für Sonderposten liegen im Beschaffungsbereich des Projekts
-(`procurement`). Dieser Bereich enthält bereits die Weitervergaben. Eine reine
-Mengenfreigabe fordert weder seinen Schlüssel noch seine verschlüsselten
+Preise für Sonderposten liegen im eigenen Preisbereich der Lieferscheine
+(`procurement` innerhalb desselben Lieferscheinbereichs). **Lieferscheinpreise**
+öffnet weder die Weitervergaben des Projekts noch deren Angebotspreise. Eine
+reine Mengenfreigabe fordert weder diesen Schlüssel noch die verschlüsselten
 Lieferscheinpreise an. Ohne Preisfreigabe zeigt der normale Datenzugriff für
 Sonderposten `null`; die Kostenabfrage wird verweigert. Für Materialkosten ist
 zusätzlich die getrennte Freigabe der Produktpreisaufzeichnungen erforderlich.
@@ -32,13 +34,13 @@ Anfragekennung und die geprüften Eingaben. Eine wiederholte Anfrage nach einem
 Verbindungsabbruch erzeugt dadurch keinen zweiten Lieferschein. Mengen,
 Sonderpostenpreise und der Anlagebeleg werden gemeinsam veröffentlicht.
 
-Die Kostenberechnung verwendet den letzten Preis vor oder zum Lieferdatum.
-Fehlt ein solcher Preis, gilt der erste spätere Preis. Bei identischen
-Zeitstempeln entscheidet die numerische Kennung wie in der bisherigen API.
-Die Auswahl berücksichtigt Mikrosekunden vor der Umwandlung in JavaScript-
-Datumswerte. Mengen und Preise bleiben Gleitkommazahlen entsprechend dem
-bisherigen Datenmodell; eine Umstellung der kaufmännischen Rechnung auf exakte
-Dezimalwerte ist damit nicht erfolgt.
+Die Kostenberechnung verwendet den letzten Preis vor oder zum Lieferdatum. Fehlt
+ein solcher Preis, gilt der erste spätere Preis. Bei identischen Zeitstempeln
+entscheidet die numerische Kennung wie in der bisherigen API. Die Auswahl
+berücksichtigt Mikrosekunden vor der Umwandlung in JavaScript- Datumswerte.
+Mengen und Preise bleiben Gleitkommazahlen entsprechend dem bisherigen
+Datenmodell; eine Umstellung der kaufmännischen Rechnung auf exakte Dezimalwerte
+ist damit nicht erfolgt.
 
 ## Was beim Öffnen geprüft wird
 
@@ -46,25 +48,25 @@ Signaturen und Verschlüsselung binden jeden Lieferschein an Mandant, Projekt,
 Inhaltsbereich, Autor und Version. Der Browser prüft anschließend die Zeilen
 gegen das abgeleitete Fachdatenmodell. Eine Position mit einer fremden
 Lieferscheinkennung, ein zusätzliches Feld oder ein Preis im Mengenbereich
-verwirft die gesamte geladene Liste. Unbekannte Inhalte werden nicht stillschweigend
-übersprungen. Auch doppelte Positionskennungen und doppelte laufende Nummern im
-gelesenen Bestand werden zurückgewiesen.
+verwirft die gesamte geladene Liste. Unbekannte Inhalte werden nicht
+stillschweigend übersprungen. Auch doppelte Positionskennungen und doppelte
+laufende Nummern im gelesenen Bestand werden zurückgewiesen.
 
 Die lokale DuckDB prüft Beziehungen innerhalb des freigegebenen Mengenbestands.
 Die privaten Produkt-, Benutzer- und Projektgrunddaten gehören zu anderen
-Schlüsselbereichen und werden dafür nicht zusätzlich geöffnet. Deren
-Existenz wird beim Anlegen über die zusätzlich gelesenen Projekt- und
-Produktstände geprüft. Deren Versionen gehen in die Veröffentlichung ein. Die
-vollständige Übernahme der bisherigen Löschkaskaden und die Anbindung der
-Personalverwaltung fehlen noch. Die API kann fachlich falsche, aber gültig
-signierte Geheimwerte weiterhin nicht erkennen.
+Schlüsselbereichen und werden dafür nicht zusätzlich geöffnet. Deren Existenz
+wird beim Anlegen über die zusätzlich gelesenen Projekt- und Produktstände
+geprüft. Deren Versionen gehen in die Veröffentlichung ein. Die vollständige
+Übernahme der bisherigen Löschkaskaden und die Anbindung der Personalverwaltung
+fehlen noch. Die API kann fachlich falsche, aber gültig signierte Geheimwerte
+weiterhin nicht erkennen.
 
 Mengen und Sonderpostenpreise werden getrennt geladen. Bevor ein neuer Bestand
 sichtbar wird, prüft der Leser die gelesenen Bereichsversionen erneut. Eine
-zwischenzeitliche Änderung startet den Abruf neu. Technische Ereignisse über
-den gemeinsamen PostgreSQL-Transport aktualisieren abonnierte Ansichten auch
-dann, wenn die schreibende und die lesende Verbindung verschiedene
-API-Instanzen verwenden. Kontowechsel verwerfen den bisherigen RAM-Bestand.
+zwischenzeitliche Änderung startet den Abruf neu. Technische Ereignisse über den
+gemeinsamen PostgreSQL-Transport aktualisieren abonnierte Ansichten auch dann,
+wenn die schreibende und die lesende Verbindung verschiedene API-Instanzen
+verwenden. Kontowechsel verwerfen den bisherigen RAM-Bestand.
 
 Die Bestandsübernahme kopiert Originalkennungen, Lieferdatum, Mengen, Einheiten
 und Kommentare aus dem bereits geprüften Archiv. Der Preiswert wird aus der
@@ -77,9 +79,9 @@ Der [Integrationstest](../sortsys-webapp-v2/scripts/test-live-delivery-notes.ts)
 vergleicht die übernommenen Werte und historischen Kosten mit der bisherigen
 API. Er prüft getrennte Projekt- und Preisrechte, gültig signierte fehlerhafte
 Inhalte und Änderungen über zwei API-Prozesse. Die anschließende
-Wiederherstellung läuft ohne vorhandene Anmeldung oder entsperrtes Konto mit
-der Seed-Phrase; die verbrauchte Phrase wird danach zurückgewiesen.
-Der [Schreibtest](../sortsys-webapp-v2/scripts/test-live-delivery-writes.ts)
-ergänzt konkurrierende Anlagen über zwei Instanzen, verlorene und fälschlich
-bestätigte Antworten, erhaltene Positionskennungen, nicht lesbare Preise und
-veraltete Formularstände.
+Wiederherstellung läuft ohne vorhandene Anmeldung oder entsperrtes Konto mit der
+Seed-Phrase; die verbrauchte Phrase wird danach zurückgewiesen. Der
+[Schreibtest](../sortsys-webapp-v2/scripts/test-live-delivery-writes.ts) ergänzt
+konkurrierende Anlagen über zwei Instanzen, verlorene und fälschlich bestätigte
+Antworten, erhaltene Positionskennungen, nicht lesbare Preise und veraltete
+Formularstände.

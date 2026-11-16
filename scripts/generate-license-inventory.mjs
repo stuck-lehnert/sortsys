@@ -17,6 +17,9 @@ const outputPath = join(
   "sortsys-webapp-v2/app/generated/license-inventory.generated.json",
 );
 const checkOnly = process.argv.includes("--check");
+const firstPartyCargoManifests = new Set([
+  join(root, "sortsys-zerotrust/Cargo.toml"),
+]);
 
 function run(command, args, cwd = root) {
   return execFileSync(command, args, {
@@ -78,6 +81,7 @@ function cargoLicenses(manifestPath) {
     .filter(id => !roots.has(id))
     .map(id => packages.get(id))
     .filter(Boolean)
+    .filter(pkg => !firstPartyCargoManifests.has(pkg.manifest_path))
     .map(pkg => ({
       ecosystem: "Rust",
       name: pkg.name,

@@ -18,16 +18,20 @@ unabhängige Schlüssel. Weitere Fachbereiche werden noch umgestellt.
 Nach Auswahl eines bestätigten Benutzerkontos unter **Verwaltung → Organisation
 → Datenschutz** erscheint der Abschnitt **Projektzugriff**. Dort lässt sich ein
 Projekt suchen und den Zugriff auf **Projektgrunddaten**, **Projektdateien**,
-**Auftragswerte**, **Beschaffung und Weitervergaben** sowie **Lieferscheine und
-Mengen** unabhängig auf Lesen oder Bearbeiten
-setzen. Der Vergabebereich enthält die belegten Positionen; Angebotspreise des
+**Auftragswerte** und **Beschaffung und Weitervergaben** unabhängig auf Lesen
+oder Bearbeiten setzen. Eigene Freigaben gelten für Lieferscheine und deren
+Preise, Bautagesberichte und deren interne Arbeitskosten sowie Regieberichte und
+deren Arbeitszeiten. **Rechnungswerte**, **Werkzeugnutzung im Projekt** und
+**Werkzeugkosten im Projekt** sind ebenfalls getrennt freigegeben. Die
+[Kostenauswertung](verschluesselte-projektkosten.md) zeigt fehlende Freigaben
+an. Der Vergabebereich enthält die belegten Positionen; Angebotspreise des
 Nachunternehmers bleiben im eigenen Vorgangsbereich. Die
 [Lieferscheinansicht](verschluesselte-lieferscheine.md) trennt gelieferte Mengen
-von Sonderpostenpreisen im Beschaffungsbereich. Die
+von Sonderpostenpreisen im eigenen Lieferscheinpreisbereich. Die
 [Dateifreigabe](verschluesselte-projektdateien.md) öffnet keine anderen
-Projektinhalte. Das Entfernen einer Freigabe wechselt den Bereichsschlüssel. Frühere
-Leser erhalten den neuen Schlüssel nicht. Bereits kopierte Inhalte lassen sich
-dadurch nicht zurückholen.
+Projektinhalte. Das Entfernen einer Freigabe wechselt den Bereichsschlüssel.
+Frühere Leser erhalten den neuen Schlüssel nicht. Bereits kopierte Inhalte
+lassen sich dadurch nicht zurückholen.
 
 Bei einer erneuten Freigabe werden die benötigten früheren Schlüsselgenerationen
 bereitgestellt. Andere Projekte und Inhaltsbereiche behalten ihre bisherigen
@@ -42,9 +46,11 @@ Seed-Phrase-Wiederherstellung bereit. Der private Mandantenschlüssel wird dabei
 nicht an den Mitarbeiter weitergegeben.
 
 Auch ein angenommenes Haupt- oder Nebenangebot kann ein Projekt anlegen. Dessen
-Grunddaten, Angebotszuordnung und erster Auftragswert werden zusammen gespeichert.
-Die [Vorgangsabläufe](verschluesselte-vorgaenge.md#abgabe-annahme-und-weitervergabe)
-beschreiben die Annahme und die weitere Arbeit mit Nachträgen und Weitervergaben.
+Grunddaten, Angebotszuordnung und erster Auftragswert werden zusammen
+gespeichert. Die
+[Vorgangsabläufe](verschluesselte-vorgaenge.md#abgabe-annahme-und-weitervergabe)
+beschreiben die Annahme und die weitere Arbeit mit Nachträgen und
+Weitervergaben.
 
 Das Entziehen dieser Anlageberechtigung verhindert weitere Projekte. Bestehende
 Projektfreigaben bleiben erhalten und lassen sich einzeln ändern. Eine
@@ -57,10 +63,18 @@ brauchbaren Schlüssel an alle Empfänger verschlüsselt hat, lässt sich daraus
 nicht beweisen. Hier gilt dieselbe
 [Grenze wie bei ungültigen verschlüsselten Fachdaten](verschluesselung-datenpruefung.md).
 
-Die vorhandenen Menürollen bleiben derzeit zusätzlich wirksam. Die Verbindung
-dieser Rollen mit den neuen Projektfreigaben ist noch nicht vollständig: Eine
-kryptografische Schreibfreigabe allein schaltet noch nicht alle bisherigen
-Bearbeitungsschaltflächen frei. Dieser Abgleich gehört zur weiteren Umsetzung.
+Bei der Anlage werden alle vorgesehenen Projekt- und Berichtsbereiche aus einem
+gemeinsamen Verzeichnis erstellt. Ihre Schlüssel sind voneinander unabhängig.
+Ein zertifizierter Berichtsbereich enthält außerdem den signierten Nachweis
+seines ursprünglichen Projekts. Browser und API prüfen Projektkennung,
+Erstelleridentität und Wiederherstellungsgeneration. Die API verlangt zusätzlich
+den bereits registrierten, identischen Projektanlagenachweis. Ein Mitarbeiter
+kann somit keine Berichtsbereiche an ein fremdes Projekt anhängen, indem er
+lediglich eine passende Kennung angibt.
+
+Die Bereichsfreigaben bestimmen auch die bereits umgestellten Menüs und
+Schaltflächen. Die [Menübeschreibung](menues-und-datenfreigaben.md) nennt die
+verbleibenden Anschlüsse.
 
 ## Speichern und gleichzeitige Änderungen
 
@@ -73,8 +87,8 @@ verwenden. Die API prüft dafür Berechtigungen, Signaturen und technische
 Versionsstände; sie entschlüsselt keine Projektwerte.
 
 Ein Projektverantwortlicher muss für eine neue Zuordnung derzeit bereits eine
-bestätigte Kontoidentität besitzen. Vorhandene Verweise auf Benutzer werden
-beim Lesen eines Projekts erhalten, ohne dessen Personaldaten zu laden.
+bestätigte Kontoidentität besitzen. Vorhandene Verweise auf Benutzer werden beim
+Lesen eines Projekts erhalten, ohne dessen Personaldaten zu laden.
 Projektkontakte lassen sich vollständig entfernen, ohne den gesamten
 Kontaktbestand zu entschlüsseln.
 
@@ -86,10 +100,14 @@ berechtigten Projektstände nach.
 
 ## Noch ausstehende Teile
 
-Nach einer Mandantenwiederherstellung müssen Anlageberechtigungen erneut
-erteilt werden. Die Wiederherstellung überträgt bislang alle Projekte an das
-neue Administratorkonto; der Erhalt bestehender Mitarbeiterfreigaben über diesen
-Wechsel ist noch offen.
+Nach einer Mandantenwiederherstellung müssen Anlageberechtigungen erneut erteilt
+werden. Die Wiederherstellung überträgt bislang alle Projekte an das neue
+Administratorkonto; der Erhalt bestehender Mitarbeiterfreigaben über diesen
+Wechsel ist noch offen. Die Projektanlage erstellt deshalb bereits alle
+bekannten Berichtsbereiche. Soll ein bislang fehlender Bereich nach einer
+Wiederherstellung ergänzt werden, benötigt dieser Schritt den lokal entsperrten
+Administratorschlüssel; eine neu erteilte Projektanlageberechtigung genügt
+nicht.
 
 Die technische Bereichsliste ist derzeit auf 2.000 Bereiche je Mandant begrenzt.
 Bei der delegierten Anlage prüft die API diese Grenze vor der Veröffentlichung
@@ -97,24 +115,26 @@ neuer Schlüssel. Für größere Bestände benötigen Verwaltung, Änderungsabgl
 und Wiederherstellung noch eine Verarbeitung in mehreren Abschnitten.
 
 Die Suche umfasst Titel und Adresswerte. Der vollständige Vergleich mit der
-bisherigen PostgreSQL-Textsuche und deren Sortierung steht noch aus.
-Die Sortierung nach Aktivität berücksichtigt bislang Erstellungs- und
+bisherigen PostgreSQL-Textsuche und deren Sortierung steht noch aus. Die
+Sortierung nach Aktivität berücksichtigt bislang Erstellungs- und
 Bearbeitungsstand der Grunddaten; Aktivitäten aus Berichten, Dateien oder
 anderen geschützten Bereichen werden erst mit deren Adaptern und der
 bereichsübergreifenden Auswertung einbezogen.
 
-Löschen setzt derzeit eine verschlüsselte Löschmarkierung. Das Projekt
-verschwindet aus den normalen Listen, seine früheren verschlüsselten Fassungen
-und abhängigen Datensätze werden dadurch noch nicht physisch entfernt.
-Weitere Projektzuweisungen, Berichte, die Kostenauswertung und gemeinsame
-Dokumentbearbeitung sind noch anzuschließen. Der bisherige
-Klartextbestand bleibt bis zur vollständigen Umstellung eingefroren erhalten.
+Löschen veröffentlicht einen signierten, inhaltsleeren Löschdatensatz. Die
+Freigaben Lesen und Löschen genügen; Bearbeiten wird dafür nicht verlangt. Das
+Projekt verschwindet aus den normalen Listen, seine früheren verschlüsselten
+Fassungen und abhängigen Datensätze werden dadurch noch nicht physisch entfernt.
+Weitere Projektzuweisungen, die übergreifende Kostenauswertung und gemeinsame
+Dokumentbearbeitung sind noch anzuschließen. Der bisherige Klartextbestand
+bleibt bis zur vollständigen Umstellung eingefroren erhalten.
 
 Die Integrationsprüfungen vergleichen
 [Projektfelder und Arbeitsabläufe](../sortsys-webapp-v2/scripts/test-live-projects.ts)
 mit dem übernommenen Bestand und prüfen die
 [Trennung einzelner Projekte und Inhaltsbereiche](../sortsys-webapp-v2/scripts/test-live-project-permissions.ts).
-Die [Prüfung der Auftrags- und Vergabefreigaben](../sortsys-webapp-v2/scripts/test-live-project-commercial-permissions.ts)
+Die
+[Prüfung der Auftrags- und Vergabefreigaben](../sortsys-webapp-v2/scripts/test-live-project-commercial-permissions.ts)
 verwendet außerdem ein gewöhnliches Benutzerkonto mit Leseschlüsseln. Die API
 weist dessen korrekt signierte Schreibanfragen zurück. Nach einem Entzug öffnen
 zurückbehaltene Schlüssel neue Stände nicht; eine erneute Freigabe stellt auch

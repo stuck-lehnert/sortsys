@@ -1,36 +1,55 @@
 # Einladungen zum verschlüsselten Arbeitsbereich
 
-Eine Einladung verbindet ein vorhandenes Benutzerkonto mit der Organisation.
+Neue Benutzer lassen sich im Abschnitt **Benutzerzugang** unter **Verwaltung →
+Organisation → Datenschutz** anlegen. **Benutzer anlegen** öffnet das gewohnte
+Profilformular. Nach dem Speichern ist das neue Konto für eine Einladung
+ausgewählt. Das Anlegen vergibt noch kein Passwort und keinen Inhaltszugriff.
+Name, Kontaktdaten, Urlaubsanspruch und Stundensatz werden im Browser
+verschlüsselt. Die API speichert die technischen Kontodaten und einen signierten
+Anlagenachweis. Die persönlichen Profilfelder erhält sie verschlüsselt.
+
+Eine Einladung verbindet das Benutzerkonto anschließend mit der Organisation.
 Die Freigabe umfasst derzeit Produktkatalog, Kunden, Ansprechpartner,
-Lieferanten, Preisaufzeichnungen und persönlichen KI-Verlauf. Für die fünf
-Fachdatenbereiche stehen Lesen und Bearbeiten getrennt zur Auswahl. Lieferanten
-und Preise verwenden voneinander unabhängige Schlüssel; eine reine
-Preisfreigabe öffnet keine Produkt- oder Lieferantenbeschreibungen.
-Für bestätigte Konten lassen sich außerdem
-[einzelne Projekte freigeben](verschluesselte-projekte.md).
+Lieferanten, Preisaufzeichnungen sowie **KI-Assistent und persönlicher
+Verlauf**. Für die fünf Fachdatenbereiche stehen feste Profile und eine Auswahl
+**Individuell** bereit. Damit lassen sich Lesen, Anlegen, Bearbeiten und Löschen
+einzeln erlauben. Lieferanten und Preise verwenden voneinander unabhängige
+Schlüssel; eine reine Preisfreigabe öffnet keine Produkt- oder
+Lieferantenbeschreibungen. Für bestätigte Konten lassen sich außerdem
+[einzelne Projekte freigeben](verschluesselte-projekte.md) und
+[Personaldaten getrennt von internen Stundensätzen öffnen](verschluesselte-personaldaten.md).
+
+Für bestätigte Konten steht außerdem eine eigene **Skriptfreigabe** bereit. Sie
+erlaubt beispielsweise das Lesen und Ausführen vorhandener Client-Skripte, ohne
+deren Bearbeitung zuzulassen. Anlegen, Bearbeiten und Löschen lassen sich
+einzeln vergeben. Der Zugriff auf die Unternehmensanschrift öffnet diesen
+Bereich nicht. Ein ausgeführtes Skript verwendet weiterhin die Datenfreigaben
+des angemeldeten Kontos.
 
 Bei der ersten Annahme wird ein Passwort festgelegt. Der Browser erstellt damit
-die OPAQUE-Registrierung und verschlüsselt die privaten Kontoschlüssel. Dieser
-Weg funktioniert auch nach der Bestandsumstellung; das Passwort wird nicht an
-den bisherigen Anmelde-Endpunkt gesendet. Ein bereits geschütztes Konto meldet
-sich mit seinem vorhandenen Passwort an. Eine Einladung kann dessen Passwort
-oder Kontotresor nicht ersetzen.
+die OPAQUE-Registrierung und verschlüsselt die privaten Kontoschlüssel. Das
+Passwort bleibt im Browser. Ein bereits geschütztes Konto meldet sich mit seinem
+vorhandenen Passwort an. Eine Einladung kann dessen Passwort oder Kontotresor
+nicht ersetzen.
 
 Im Tab **Datenschutz** unter **Verwaltung → Organisation** wird das Konto
 ausgewählt. Nach Auswahl der zusätzlichen Berechtigungen entsteht ein
 Einladungslink. Er ist sechs Tage gültig und lässt sich bis zur Freigabe
-zurückziehen. Die bereits umgestellten Menüs verwenden die verifizierten
-Inhaltsfreigaben. Weitere Fachbereiche benötigen bis zu ihrem Anschluss noch
-die bisherigen Menürollen; eine Einladung ändert diese Rollen nicht.
-Ein bereits bestehender Zugriff wird durch eine Einladung nicht entzogen.
+zurückziehen. Die Menüs verwenden die verifizierten Inhaltsfreigaben. Ein
+bereits bestehender Zugriff wird durch eine Einladung nicht entzogen.
+
+Der normale Namenszugriff umfasst aktive Personalprofile. Einladungen erhalten
+deren Stammdatenschlüssel; neu angelegte Profile werden den bereits bestätigten
+Namenslesern ebenfalls bereitgestellt. Ausdrückliche Verbote bleiben erhalten.
+Die Bereiche für Personalangaben und interne Stundensätze bleiben getrennt.
 
 Der Empfänger öffnet den Link. Die Webapp prüft zunächst dessen Signatur und
 Vertrauensanker. Anschließend erscheint das Formular zum Festlegen des Passworts
-oder zur Anmeldung mit dem vorhandenen Konto. Die Webapp bestätigt die Einladung und wartet auf die Freigabe durch den
-Organisationsadministrator. Dieser lädt die Liste neu und wählt **Zugang
-freigeben**. Erst nach Bereitstellung aller vorgesehenen Datenbereiche ist der
-Zugang fertig. Bei einer unterbrochenen Freigabe lässt sich dieser Schritt
-erneut ausführen.
+oder zur Anmeldung mit dem vorhandenen Konto. Die Webapp bestätigt die Einladung
+und wartet auf die Freigabe durch den Organisationsadministrator. Dieser lädt
+die Liste neu und wählt **Zugang freigeben**. Erst nach Bereitstellung aller
+vorgesehenen Datenbereiche ist der Zugang fertig. Bei einer unterbrochenen
+Freigabe lässt sich dieser Schritt erneut ausführen.
 
 ## Weshalb der Link ein Geheimnis enthält
 
@@ -41,11 +60,11 @@ Fragment wird bei einem normalen Seitenaufruf nicht an den Webserver übertragen
 Die Einladungsseite entfernt es nach dem Öffnen aus der sichtbaren Adresse.
 
 Der Browser des Empfängers bestätigt seine öffentlichen Schlüssel mit diesem
-Geheimnis. Die Bestätigung bindet außerdem Benutzerkonto, Mandant,
-Kontofassung und Wiederherstellungsgeneration. Der einladende Browser prüft sie,
-bevor er die Identität bestätigt. Das Geheimnis liegt bei ihm ausschließlich in
-einem verschlüsselten persönlichen Datensatz. Die API erhält öffentliche
-Nachweise, aber weder das Geheimnis noch private Kontoschlüssel. Ein zusätzlicher
+Geheimnis. Die Bestätigung bindet außerdem Benutzerkonto, Mandant, Kontofassung
+und Wiederherstellungsgeneration. Der einladende Browser prüft sie, bevor er die
+Identität bestätigt. Das Geheimnis liegt bei ihm ausschließlich in einem
+verschlüsselten persönlichen Datensatz. Die API erhält öffentliche Nachweise,
+aber weder das Geheimnis noch private Kontoschlüssel. Ein zusätzlicher
 Kontonachweis bindet die erste Registrierung an den verschlüsselten Kontotresor
 und den OPAQUE-Eintrag. Ein abgefangener Einladungsnachweis lässt sich damit
 nicht mit einem anderen Passwort oder Tresor wiederverwenden.
@@ -57,17 +76,29 @@ Einladungsgeheimnisse abgreifen.
 
 ## Getrennte Datenfreigaben
 
-Nach der Bestätigung stellt der Administrator die nötigen Bereichsschlüssel
-für die bestätigten öffentlichen Schlüssel bereit. Dabei werden alle noch
+Nach der Bestätigung stellt der Administrator die nötigen Bereichsschlüssel für
+die bestätigten öffentlichen Schlüssel bereit. Dabei werden alle noch
 verwendeten Schlüsselgenerationen berücksichtigt. Ein Katalog mit älteren und
 neueren Einträgen bleibt dadurch vollständig lesbar. Die API prüft Signaturen,
 Berechtigungen und Fassungen; sie entschlüsselt keine Inhalte.
 
 Für den persönlichen KI-Verlauf entsteht ein eigener Bereich. Seine
 Schlüsselhülle ist für das eingeladene Konto bestimmt. Das einladende
-Administratorkonto erhält dadurch keinen Leseschlüssel für diesen Verlauf.
-Die Wiederherstellungsphrase deckt diesen Bereich wie die anderen
-Mandantendaten ab.
+Administratorkonto erhält dadurch keinen Leseschlüssel für diesen Verlauf. Die
+Wiederherstellungsphrase deckt diesen Bereich wie die anderen Mandantendaten ab.
+
+Die Freigabe für den Assistenten erlaubt auch dessen Nutzung. Dazu werden Lesen,
+Anlegen und Bearbeiten im persönlichen Bereich geprüft. Eine zusätzliche
+LLM-Rolle ist dafür nicht erforderlich. Die fachlichen Rechte bleiben getrennt:
+Ein Mitarbeiter kann beispielsweise chatten, ohne Katalog- oder Preisschlüssel
+zu erhalten. Für das Einlesen mit Produktsuche wird zusätzlich Katalogzugriff
+benötigt.
+
+Wird die Assistentenfreigabe entzogen, beendet die API auch eine bereits
+laufende Anfrage. Das funktioniert über verschiedene API-Instanzen und hängt
+nicht davon ab, ob die Oberfläche ihre Verbindung freiwillig schließt. Eine
+spätere Freigabe macht den vorhandenen verschlüsselten Verlauf wieder
+zugänglich.
 
 Identitätsbestätigung und fertiger Zugang sind getrennte Zustände. Fehlt nach
 einem Verbindungsabbruch noch eine Schlüsselhülle, meldet die Oberfläche keinen
@@ -79,23 +110,52 @@ verschiedene Instanzen.
 
 Bei einem bereits bestätigten Konto zeigt dieselbe Auswahl dessen aktuelle
 Freigaben. **Berechtigungen speichern** ändert die Zugriffe auf Produktkatalog,
-Kunden, Ansprechpartner, Lieferanten, Preisaufzeichnungen und persönlichen KI-Verlauf. Nicht bearbeitete
-Bereiche behalten ihre bisherigen Regeln, einschließlich individueller
-Schreibrechte und ausdrücklicher Verbote.
+Kunden, Ansprechpartner, Lieferanten, Preisaufzeichnungen und persönlichen
+KI-Verlauf. Nicht bearbeitete Bereiche behalten ihre bisherigen Regeln,
+einschließlich individueller Schreibrechte und ausdrücklicher Verbote. Ein
+einzelnes Häkchen ändert nur diese Aktion. Ändert eine andere Administration
+währenddessen ein unberührtes Recht, bleibt deren Änderung erhalten. Mehrere
+bearbeitete Bereiche werden als eine signierte Freigabe gespeichert.
 
-Unter **Anlageberechtigungen** lassen sich **Neue Projekte anlegen** und
-**Neue Angebote und Aufträge anlegen** unabhängig freigeben. Ein neuer
-kaufmännischer Bereich braucht kein vorab angelegtes Projekt. Die signierte
-Freigabe nennt die berechtigten Ersteller und die verpflichtenden Empfänger;
-der private Mandantenschlüssel wird nicht weitergegeben. Ein Entzug verhindert
-weitere Anlagen und ändert keine bestehenden Einzelfreigaben.
+Die festen Profile setzen den gesamten Aktionsumfang des Bereichs neu: **Kein
+Zugriff** entfernt alle Aktionen, **Lesen** erlaubt nur das Lesen und **Lesen
+und bearbeiten** umfasst auch das Anlegen und Löschen. Bereits vorhandene
+zusätzliche Rechte werden bei **Individuell** angezeigt. Für deren gezielte
+Verwaltung fehlen noch eigene Abläufe.
+
+Abwesenheitsanträge und Entscheidungen haben eigene Freigaben. Zertifizierte
+Mitarbeitende können eigene Abwesenheiten beantragen; ihre Vorgesetzten dürfen
+sie über alle nachgeordneten Ebenen entscheiden. Externe Kräfte, Nachunternehmer
+und interne Personen ohne zuständigen Vorgesetzten erhalten die eigene
+automatische Genehmigung. Ein eingestellter Standardvorgesetzter übernimmt
+interne Personen ohne direkte Zuordnung. Seine eigene Zuordnung bleibt davon
+ausgenommen. Ein Vorgesetztenwechsel führt diese automatischen Rechte nach und
+erhält manuelle Ausnahmen. Ein gezielt gesetztes Verbot gilt weiterhin. Die
+zugehörigen Personalangaben enthalten den Urlaubsanspruch, aber keine internen
+Stundensätze. Die technischen Prüfungen und ihre Grenzen beschreibt der
+[Abwesenheitsablauf](abwesenheiten-protokoll.md).
+
+Unter **Anlageberechtigungen** lassen sich **Neue Projekte anlegen** und **Neue
+Angebote und Aufträge anlegen** unabhängig freigeben. Ein neuer kaufmännischer
+Bereich braucht kein vorab angelegtes Projekt. Die signierte Freigabe nennt die
+berechtigten Ersteller und die verpflichtenden Empfänger; der private
+Mandantenschlüssel wird nicht weitergegeben. Ein Entzug verhindert weitere
+Anlagen und ändert keine bestehenden Einzelfreigaben.
 
 Der Abschnitt **Projektzugriff** verwaltet Grunddaten, Dateien, Auftragswerte,
-Beschaffung und Lieferscheinmengen unabhängig je Projekt. Die
-[Projektbeschreibung](verschluesselte-projekte.md) erklärt die Anlageberechtigung;
-die [Dateiablage](verschluesselte-projektdateien.md) beschreibt den Schutz der
-Originale und Vorschauen. Für [Lieferscheine](verschluesselte-lieferscheine.md)
-öffnen Mengenrechte keine Sonderpostenpreise.
+Rechnungswerte und Beschaffung unabhängig je Projekt. Lieferscheine,
+Bautagesberichte und Regieberichte haben eigene Bereiche. Lieferscheinpreise,
+interne Arbeitskosten und Regiestunden werden jeweils separat freigegeben.
+Werkzeugnutzung und Werkzeugkosten sind ebenfalls je Projekt getrennt. Die
+[Kostenauswertung](verschluesselte-projektkosten.md) erklärt ihre weiteren
+Voraussetzungen. Die
+[Einsatzplanung und Baustellensperren](verschluesselte-einsatzplanung.md) haben
+ebenfalls einen eigenen Projektbereich. Die
+[Projektbeschreibung](verschluesselte-projekte.md) erklärt die
+Anlageberechtigung; die [Dateiablage](verschluesselte-projektdateien.md)
+beschreibt den Schutz der Originale und Vorschauen. Für
+[Lieferscheine](verschluesselte-lieferscheine.md) öffnen Mengenrechte keine
+Sonderpostenpreise.
 
 Ändert sich der Leserkreis eines vorhandenen Bereichs, bleibt das Schreiben dort
 bis zum fertigen Schlüsselwechsel gesperrt. Der Browser erstellt einen neuen
@@ -106,10 +166,9 @@ persönlichen Verlauf anderer Benutzer.
 
 Eine Unterbrechung verliert diesen Auftrag nicht. **Aktualisieren** oder das
 erneute Öffnen der Verwaltung setzt ihn mit den aktuellen signierten Regeln
-fort. Dafür muss ein berechtigter Administrator im Browser angemeldet sein;
-die API kann diesen Schritt ohne private Schlüssel nicht selbst ausführen.
-Eine verlorene Antwort wird anhand der gespeicherten signierten Freigabe
-geprüft.
+fort. Dafür muss ein berechtigter Administrator im Browser angemeldet sein; die
+API kann diesen Schritt ohne private Schlüssel nicht selbst ausführen. Eine
+verlorene Antwort wird anhand der gespeicherten signierten Freigabe geprüft.
 
 Ein Rechteentzug kann bereits gelesene Inhalte und bekannte Schlüssel nicht
 zurückholen. Neue Inhalte verwenden nach dem Wechsel einen anderen Schlüssel.
@@ -133,11 +192,23 @@ Verwaltungsfreigabe. Andere Fachbereiche müssen an dieselbe Rechteverwaltung
 angeschlossen werden. Eine neue Wiederherstellungsgeneration macht alte
 Einladungen ungültig.
 
+Aktivieren, Deaktivieren, Archivieren und Entarchivieren verbinden das
+verschlüsselte Personalprofil mit dem technischen Kontostatus und nötigenfalls
+einer signierten Zugriffssperre. Die bisherigen Freigaben bleiben bei einer
+Sperre erhalten. Die
+[Personaldatenverwaltung](verschluesselte-personaldaten.md#benutzerzugänge)
+beschreibt den Ablauf und seine Grenzen.
+
+Umbenennen, Löschen, Rollenänderungen und der Passwortverlust eines einzelnen
+Mitglieds benötigen noch geschützte Abläufe. Eine Einladung ersetzt kein bereits
+registriertes Passwort und keinen vorhandenen Kontotresor.
+
 Die vollständige Bestandsumstellung bleibt bis zum Anschluss der übrigen
-Fachbereiche gesperrt. Die Benutzerverwaltung hebt diese Sperre nicht auf.
-Bei kaufmännischen Vorgängen sind Listen, neue Entwürfe und Änderungen der
+Fachbereiche gesperrt. Die Benutzerverwaltung hebt diese Sperre nicht auf. Bei
+kaufmännischen Vorgängen sind Listen, neue Entwürfe und Änderungen der
 Grunddaten mit den getrennten Inhaltsbereichen verbunden. Ein Mitarbeiter kann
 eine Bezeichnung ändern, ohne dafür Preise oder interne Notizen lesen zu müssen.
 Öffnen, Speichern und Phasenwechsel sind angeschlossen. Im Editor fehlen noch
-gesperrte Felder für Teilfreigaben; auch die Abrechnung braucht weitere Anschlüsse. Der
-[Vorgangsadapter](verschluesselte-vorgaenge.md) beschreibt den genauen Umfang.
+gesperrte Felder für Teilfreigaben; auch die Abrechnung braucht weitere
+Anschlüsse. Der [Vorgangsadapter](verschluesselte-vorgaenge.md) beschreibt den
+genauen Umfang.

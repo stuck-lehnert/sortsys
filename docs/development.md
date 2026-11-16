@@ -1,68 +1,184 @@
 # Lokale Entwicklung
 
-Mit dem [Schnellstart](../README.md#entwicklung) steht eine vollständige Umgebung
-bereit: PostgreSQL, DuckDB-Dienst, MinIO, API, zwei Hintergrunddienste, Webapp,
-Office-Dienst und diagrams.net. Die Editoren starten unabhängig von API und Webapp
-und können erst später verfügbar sein.
+`./scripts/dev` startet den gemeinsamen DuckDB-Datendienst, API und Webapp. Der
+Office-Dienst und diagrams.net starten unabhängig davon. Das neue Setup
+verwendet keine laufende PostgreSQL-Installation. Alte Bestände werden
+[beim Anlegen eines Mandanten aus einer Sicherung übernommen](bestandsumstellung.md).
 
-## Dienste
-
-| Dienst | Standardadresse |
-| --- | --- |
-| Webapp | <http://127.0.0.1:5173> |
-| API | <http://127.0.0.1:3000> |
-| PostgreSQL | `127.0.0.1:32532` |
-| MinIO | <http://127.0.0.1:39100> |
-| Office | <http://127.0.0.1:39180> |
+| Dienst         | Standardadresse          |
+| -------------- | ------------------------ |
+| Webapp         | <http://127.0.0.1:5173>  |
+| API            | <http://127.0.0.1:3000>  |
+| Office         | <http://127.0.0.1:39180> |
 | Office-Sandbox | <http://127.0.0.1:39182> |
-| diagrams.net | <http://127.0.0.1:39181> |
+| diagrams.net   | <http://127.0.0.1:39181> |
 
 Ports und Images lassen sich über die `DEV_*`-Variablen am Anfang von
-[`scripts/dev`](../scripts/dev) anpassen. Das Skript verwendet Podman, wenn es
-verfügbar ist, andernfalls Docker.
+[`scripts/dev`](../scripts/dev) anpassen. `CONTAINER_RUNTIME=docker` oder
+`CONTAINER_RUNTIME=podman` wählt das Werkzeug ausdrücklich. Ohne Vorgabe wird
+Podman verwendet, falls es vorhanden ist, andernfalls Docker. Auch mit
+macOS-Bash muss der Start funktionieren.
 
 ## Daten und Protokolle
 
-Jeder Start erstellt die Entwicklungsdatenbanken neu. Dienstdaten und
-Abhängigkeits-Caches liegen im ignorierten Verzeichnis `.dev-data/`. Beim Beenden
-werden die Container entfernt und diese Ordner erhalten. Beim nächsten Start
-werden die Entwicklungsdatenbanken trotzdem zurückgesetzt. Vorhandene
-Office-Sitzungsstände bleiben unter `.dev-data/private-office/` erhalten. Der
-Office-Dienst wird aus `sortsys-office/` gebaut; die beiden Editor-Origins und
-die Webapp-Origin müssen verschieden sein. Die API erhält nur die öffentliche
-Editoradresse. Ein klassischer Dokumentserver mit Klartext-Callbacks startet
-nicht mehr.
+Der Stack verwendet eigene Namen mit dem Präfix `sortsys-dev-zt`. Die Dateien
+und Abhängigkeiten liegen unter `.dev-data/zerotrust/`. Ein Neustart erhält die
+Mandantendateien. Der geseedete Bestand liegt in `seeded-duckdb/`; bereits
+vorhandene Dateien in `duckdb/` werden nicht verändert. Das vermeidet eine
+Kollision mit einem zuvor manuell eingerichteten Mandanten namens `test`.
+`DEV_DATA_DIR` und `DEV_STACK_NAME` erlauben einen getrennten zweiten Stack;
+dafür müssen auch die Ports angepasst werden.
 
-Dienstprotokolle zeigt `docker logs -f sortsys-dev-api` beziehungsweise der
-entsprechende Podman-Befehl. Bei fehlgeschlagenem API-Start bleiben der Container
-und `.dev-data/logs/api-startup.log` zur Diagnose verfügbar. Der nächste Start
-ersetzt den Container. Nicht verfügbare Editoren stoppen die Kernanwendung nicht.
+Beim ersten Start wird der Mandant `test` eingerichtet. `john.doe@test` hat
+Administratorrechte, `frank.doe@test` keine besonderen Berechtigungen. Beide
+Konten verwenden das Passwort `123456`. Die Unternehmensanschrift, Kunden,
+Produkte mit Preisen und Werkzeuge sind bereits angelegt. Angebote liegen als
+Anfrage, Entwurf, versendet, angenommen, abgelehnt und zurückgezogen vor. Aus
+angenommenen Angeboten sind Projekte entstanden. Dort lassen sich Nachträge,
+Nebenangebote, Weitervergaben und Preisanfragen in verschiedenen
+Bearbeitungsständen öffnen. Aufmaße enthalten Maßansätze mit
+Zwischenüberschriften und Öffnungsabzügen. Die Rechnungsbeispiele zeigen
+leistungsbezogene und pauschale Abschläge samt Zahlungen, die anschließende
+Schlussrechnung sowie Einzelrechnungen für Aufträge ohne Abschläge. Die Vorgänge
+verwenden native GAEB-Dateien mit verknüpften Ausgangsdokumenten. Zum
+Hauptprojekt gehören außerdem
+[feste Plan- und E-Mail-Beispiele](../sortsys-api-v2/seed-assets/README.md).
 
-## LLM-Konfiguration
+Die Befüllung läuft als lokaler Client mit derselben Verschlüsselung und
+denselben Freigabeprüfungen wie die Webapp. Die API erhält keine privaten
+Schlüssel. `seed/progress.json` unterhalb von `DEV_DATA_DIR` hält den
+Fortschritt fest; ein Neustart erhält eigene Änderungen. Ergänzungen des
+Musterbestands werden einmalig hinzugefügt. Die nur für diesen
+Entwicklungsbestand erzeugte Recovery-Phrase liegt in `seed/recovery-phrase.txt`
+und wird nicht an die API übermittelt. Der erste Aufbau dauert länger als ein
+normaler Neustart.
 
-Das Startskript liest die `.env` im Hauptverzeichnis als Daten ein. Ein befüllter
-`OPENROUTER_API_KEY` wählt OpenRouter; andernfalls wählt `OPENAI_API_KEY` OpenAI.
-`OPENROUTER_MODEL` und `OPENAI_MODEL` überschreiben die Modellvorgaben.
-Exportierte Werte haben Vorrang vor `.env`. Die aktuellen Standardwerte stehen
-in [`scripts/dev`](../scripts/dev).
+Die Betreiberverwaltung verwendet ebenfalls das Passwort `123456`. Bei einer
+eigenen Vorgabe müssen `DEV_ADMIN_PASSWORD` und `DEV_ADMIN_HASH` zusammenpassen.
+Weitere Mandanten werden über einen einmaligen Link eingerichtet. Der erste
+Benutzer erhält Administratorrechte. Erst ein signierter Abschluss der
+Grundeinrichtung gibt die Fachseiten frei; nach einem Abbruch lässt sich die
+Einrichtung fortsetzen.
 
-## Beispieldaten
+`Ctrl+C` beendet die gestarteten Container. Protokolle zeigt beispielsweise
+`docker logs -f sortsys-dev-zt-api`. Bei fehlgeschlagenem API-Start bleiben der
+Container und `.dev-data/zerotrust/logs/api-startup.log` zur Diagnose erhalten.
+Nicht verfügbare Editoren beenden die Kernanwendung nicht. Der Office-Dienst
+verwendet zwei getrennte Origins für Editor und Sandbox.
 
-Der Mandant `test` enthält fiktive Unternehmensdaten, Benutzer und Projekte sowie
-Angebote, Aufmaße und weitere Dokumente in verschiedenen Bearbeitungsständen,
-einschließlich aufgemessener X31-Positionen und Rechnungsbeispielen. `john.doe`
-ist Administrator, `frank.doe` ein weiterer Beispielbenutzer. Beide verwenden
-lokal das Passwort `123456`.
+Die native Live-LLM-Anbindung verwendet authentifiziertes MCP, auch wenn
+WebSocket und Werkzeugaufruf verschiedene API-Instanzen erreichen. Die noch
+offenen Punkte stehen im
+[Funktionsabgleich](verschluesselung-funktionsabgleich.md).
 
-[Dokumentbeispiele](../sortsys-api-v2/seed-assets/README.md) liegen fest im Repository;
-das Seeding lädt sie unverändert hoch. Positionsdaten werden zufällig erzeugt.
-Mit demselben Zufallsstartwert lässt sich ein Lauf reproduzieren.
-
-Fehlende Dokumentbeispiele zu einem bestehenden, laufenden Entwicklungsmandanten hinzufügen:
+## Native Tests ohne Entwicklungsstack
 
 ```bash
-docker exec sortsys-dev-api cargo run --package sortsys-api --bin seed_dev -- --extend-native-documents
+./scripts/test-api
 ```
 
-Dieser ergänzende Lauf verwendet Seed-Manifeste und erhält eigene Änderungen.
-Er führt den Datenbank-Reset von `scripts/dev` nicht aus.
+Docker oder Podman stellt dafür die festgelegten Werkzeuge bereit. Ein eigener
+Container erhält eine Kopie der Quellen ohne lokale Zugangsdaten und prüft die
+Rust-Pakete, den TypeScript-Client, den Vertrag und die nativen Abläufe. Er
+startet seine Dienste selbst, veröffentlicht keine Ports und wird nach dem Lauf
+entfernt. Die Cargo-Verzeichnisse werden wiederverwendet; Testdaten und Prozesse
+sind für jeden Lauf neu. `TEST_LOG_DIR` bestimmt den Ablageort der Protokolle.
+
+Wer Rust, Bun und DuckDB bereits installiert hat, kann die native Integration
+direkt prüfen:
+
+```bash
+./scripts/test-native-auth
+```
+
+Mit Rust, Bun, der festgelegten DuckDB-Bibliothek und ihren Erweiterungen
+startet dieser Test einen eigenen DuckDB-Prozess und zwei unabhängige
+API-Zustände auf Loopback-Ports. Er verwendet den Kryptografie- und
+Datenadaptercode der Webapp. Anmeldung, verschlüsselter Kontospeicher,
+Passwortwechsel und Sitzungsentzug werden ohne PostgreSQL geprüft.
+
+Die Suite richtet außerdem einen neuen Mandanten über den einmaligen
+Einrichtungslink ein. Sie prüft öffentliche Schlüssel und Rechte, gemeinsame
+Objektänderungen, Katalogreferenzen und endgültig gesperrte Dokumentstände.
+Tagesberichte und Regieberichte werden über beide API-Instanzen angelegt und
+bearbeitet. Der Fachablauf prüft genaue Stunden und Mengen, erhaltene
+Zeilenkennungen und interne Stundensätze sowie atomare Baustellenwechsel in der
+Einsatzplanung. Veraltete Formulare und vorgetäuschter Speichererfolg werden
+abgewiesen; eine verlorene Bestätigung darf keine zweite Anlage erzeugen. Der
+Änderungsverlauf wird mit unveränderlichen Seiten, wiederholten Anfragen und der
+echten Aktivitätenansicht geprüft. OpenTimestamps-Aufträge werden konkurrierend
+reserviert und nach Ablauf durch eine neue Browser-Sitzung übernommen.
+Vorhandene Belege müssen bei einem erfolglosen Folgeversuch erhalten bleiben.
+Drei WebSocket-Verbindungen prüfen Änderungen über beide API-Instanzen sowie den
+sofortigen Rechte- und Sitzungsentzug.
+
+`DUCKDB_LIB_DIR`, `DUCKDB_INCLUDE_DIR` und `DUCKDB_EXTENSION_DIRECTORY` wählen
+die benötigten Bibliotheken. Der Systemloader muss die DuckDB-Laufzeitbibliothek
+finden; `SORTSYS_NATIVE_BUN` kann einen abweichenden Bun-Pfad angeben. Der Test
+verwendet öffentliche Testvektoren und eigene temporäre Dateien. Ein
+Entwicklungsstack oder eine PostgreSQL-Instanz werden nicht angesprochen.
+Protokolle und das Ergebnis der Dienstbereinigung bleiben unter dem ausgegebenen
+Tempverzeichnis erhalten.
+
+## Browser-E2E mit echten Diensten
+
+Nach `bun run build` in `sortsys-webapp-v2` führt
+`TEST_NATIVE_BROWSER=1 ./scripts/test-api` die native Suite samt
+Chromium-Prüfung der gebauten Anwendung aus. Die CI verwendet diesen Aufruf
+ebenfalls. Der Browser arbeitet gegen die echten API-Router und den isolierten
+DuckDB-Dienst; Fachadapter werden nicht ersetzt.
+
+Geprüft werden unter anderem abgewiesene Anmeldungen, sichtbare
+Admin-Funktionen, das Speichern und erneute Laden der Unternehmensanschrift,
+Beispieldaten und der Dokumentdialog. Aufmaß, Preisanfrage und Schlussrechnung
+werden auch über die Projektübersicht und direkte Dokumentlinks geöffnet. Ein
+normales Konto darf die Admin-Tabs, fremde Vorgänge und Projektanhänge auch über
+direkte Links nicht öffnen. Der Seed-Test prüft zusätzlich verweigerte
+Schreibzugriffe und den Erhalt manueller Änderungen beim zweiten Start. Zwei
+gleichzeitig angemeldete Konten an getrennten API-Instanzen prüfen die Freigabe
+und den Entzug des Produktkatalogs: Inhalte und Navigation müssen sich ohne
+Neuladen aktualisieren. Geschäfts-Klartext darf in den geprüften API-Anfragen
+nicht vorkommen. Im Abwesenheitsablauf setzt die Administration den
+Standardvorgesetzten, lädt dessen Auswahl erneut und verfolgt einen zunächst
+offenen Abwesenheitsantrag bis zur Freigabe über die zweite API-Instanz. Beide
+Browser werden auf unbehandelte Fehler, unimplementierte Clientaufrufe und die
+Übertragung der geprüften Klartexte kontrolliert. Die OpenTimestamps-Kalender
+antworten in diesem Test gezielt mit 503; Antrag und Genehmigung müssen trotzdem
+gespeichert werden. Die [Betreiberdiagnose](technische-fehlerberichte.md) wird
+nach einer verweigerten Dokumentabfrage ebenfalls über die tatsächliche
+Oberfläche geprüft. Der Betreiber erstellt eine
+[verschlüsselte Mandantensicherung](verschluesselte-sicherungen.md), lädt sie
+herunter und findet sie nach einem Neuladen wieder. Ein nativer Mehrinstanztest
+prüft zusätzlich, dass eine verlorene Antwort keine zweite Sicherungsdatei für
+denselben Auftrag erzeugt. Screenshots, Playwright-Traces und bei Fehlern der
+HTML-Stand liegen im Unterverzeichnis `browser-artifacts` der gesicherten
+Testprotokolle.
+
+Bei lokal installierten Werkzeugen und bereits installiertem Chromium lässt sich
+gezielt dieser Ablauf ausführen:
+
+```bash
+SORTSYS_NATIVE_BROWSER=1 \
+SORTSYS_NATIVE_AUTH_TEST_FILTER=zerotrust::opaque::store_tests::development_seed_creates_ready_accounts_and_preserves_manual_edits \
+./scripts/test-native-auth
+```
+
+`SORTSYS_E2E_HEADED=1` öffnet dabei ein sichtbares Browserfenster, sofern ein
+Desktop verfügbar ist. `bunx playwright show-trace <pfad-zur-trace.zip>` öffnet
+die Aufzeichnung eines einzelnen Szenarios.
+
+Der [Datendienst](../sortsys-store/README.md#prüfen) hat eigene
+Netzwerkprüfungen für wiederholte Schreibanfragen, wartende Änderungsabfragen
+und die Wiederherstellung aus einer Mandantendatei. Kalenderantworten im
+API-Test sind synthetisch; weder echte Kalender noch ein LLM-Anbieter werden
+kontaktiert.
+
+Die Tests verwenden denselben nativen Router wie der Serverstart. Weitere Fälle
+prüfen Einladungen, getrennte Benutzerrechte, Abwesenheitsentscheidungen und
+zwei aufeinanderfolgende Recoveries. Die Ersteinrichtung wird mit einem Abbruch
+vor den Grunddaten sowie einer verlorenen Abschlussantwort geprüft.
+Browser-Tests zeigen, dass direkte Links zu Fachseiten vor dem signierten
+Abschluss gesperrt bleiben. Ein eigener Starttest prüft, dass alte
+Klartext-Endpunkte nicht registriert sind. Diese Nachweise ersetzen noch keinen
+vollständigen Fachablauf. Den aktuellen Umfang beschreibt der
+[Funktionsabgleich](verschluesselung-funktionsabgleich.md).

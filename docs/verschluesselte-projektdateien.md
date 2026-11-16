@@ -13,24 +13,25 @@ derzeit höchstens 512 MiB groß sein.
 ## Dateien freigeben
 
 Unter **Verwaltung → Organisation → Datenschutz → Projektzugriff** sind
-**Projektgrunddaten** und **Projektdateien** getrennt einstellbar. Ein Mitarbeiter kann damit
-Pläne bearbeiten, ohne den Schlüssel für die Projektgrunddaten oder eine
-separate Kalkulation zu erhalten. Die Dateifreigabe gilt für den gesamten Dateibereich
-des gewählten Projekts, nicht für einzelne Ordner.
+**Projektgrunddaten** und **Projektdateien** getrennt einstellbar. Ein
+Mitarbeiter kann damit Pläne bearbeiten, ohne den Schlüssel für die
+Projektgrunddaten oder eine separate Kalkulation zu erhalten. Die Dateifreigabe
+gilt für den gesamten Dateibereich des gewählten Projekts, nicht für einzelne
+Ordner.
 
 Die Freigabe öffnet vollständige Originaldateien, einschließlich darin
 enthaltener Preise. Die getrennte Freigabe von Mengen und Preisen innerhalb
 nativer Geschäftsdokumente benötigt weiterhin den jeweiligen GAEB-Fachadapter.
 
-Ein neu angelegtes Projekt erhält unabhängige Schlüssel für beide Bereiche.
-Bei einer delegierten Projektanlage gehören der Ersteller und die festgelegten
+Ein neu angelegtes Projekt erhält unabhängige Schlüssel für beide Bereiche. Bei
+einer delegierten Projektanlage gehören der Ersteller und die festgelegten
 Pflichtempfänger zum anfänglichen Leserkreis. Eine Anlageberechtigung für
 Projekte erlaubt keine Dateifreigabe für fremde Projekte.
 
 Beim Entzug eines Leserechts wechselt der Dateischlüssel. Frühere Schlüssel
-öffnen danach weder neue Dateistände noch neue Dateinamen und Ordnerdaten.
-Eine erneute Freigabe stellt auch benötigte ältere Schlüssel bereit.
-Bereits heruntergeladene Kopien können nicht zurückgeholt werden.
+öffnen danach weder neue Dateistände noch neue Dateinamen und Ordnerdaten. Eine
+erneute Freigabe stellt auch benötigte ältere Schlüssel bereit. Bereits
+heruntergeladene Kopien können nicht zurückgeholt werden.
 
 Geöffnete Vorschauen werden bei Abmeldung, Kontowechsel oder einem gemeldeten
 Rechteentzug entfernt. Der Browser bricht laufende Ladevorgänge ab und gibt die
@@ -39,11 +40,11 @@ dem vorherigen Zugriff wieder einsetzen.
 
 ## Anzeigen und suchen
 
-PDFs werden nach der Entschlüsselung mit PDF.js geöffnet. EML und MSG verarbeitet
-der vorhandene Parser im Browser; eingebettete Bilder bleiben möglich, entfernte
-Bilder sind gesperrt. Bilder, Videos und DWG-Pläne verwenden ebenfalls lokale
-Datei-URLs. Diese URLs verlassen den Browser nicht und gelten nur während der
-geöffneten Vorschau.
+PDFs werden nach der Entschlüsselung mit PDF.js geöffnet. EML und MSG
+verarbeitet der vorhandene Parser im Browser; eingebettete Bilder bleiben
+möglich, entfernte Bilder sind gesperrt. Bilder, Videos und DWG-Pläne verwenden
+ebenfalls lokale Datei-URLs. Diese URLs verlassen den Browser nicht und gelten
+nur während der geöffneten Vorschau.
 
 Beim Hochladen erzeugt der Browser Bildvorschauen und liest eingebetteten
 PDF-Text aus. Der daraus gewonnene Text wird zusammen mit den Dateimetadaten
@@ -52,11 +53,12 @@ Bildscans ohne eingebetteten Text bleiben deshalb ohne Volltext, solange kein
 ausdrücklich aufgerufener Erkennungsvorgang angeschlossen ist.
 
 Die Dateisuche berücksichtigt Dateinamen und vorhandenen extrahierten Text.
-Wortanfänge und mehrere gemeinsam gesuchte Wörter werden lokal ausgewertet.
-Die bisherige deutsche und englische PostgreSQL-Volltextsuche mit Ranking und
+Wortanfänge und mehrere gemeinsam gesuchte Wörter werden lokal ausgewertet. Die
+bisherige deutsche und englische PostgreSQL-Volltextsuche mit Ranking und
 Trefferausschnitten ist damit noch nicht vollständig nachgebildet. Beim ersten
 Zugriff müssen die berechtigten Metadaten synchronisiert werden; die
-Originaldateien werden erst für die jeweilige Vorschau oder den Download geladen.
+Originaldateien werden erst für die jeweilige Vorschau oder den Download
+geladen.
 
 ## Speichern und technische Prüfungen
 
@@ -83,44 +85,19 @@ Projektlöschung, die abhängige Bereiche verbindlich sperrt, steht noch aus.
 Diese Grenze gehört zur vereinbarten
 [clientseitigen Datenprüfung](verschluesselung-datenpruefung.md).
 
-## Bestandsumstellung und offene Anschlüsse
+## Vorhandene Dateien aus einer Sicherung übernehmen
 
-Die Bestandsumstellung liest vorhandene Originale und fertige Vorschaubilder
-über einen eingeschränkten Administrationszugriff. Sie prüft den eingefrorenen
-Quellbestand und übernimmt Dateien schrittweise. Ein erneuter Lauf verwendet
-bereits bestätigte Kopien, statt dieselben Originale nochmals zu übertragen.
-Dieser Quellzugriff steht normalen Dateilesern nicht offen.
+Bei der Einrichtung eines neuen Mandanten kann ein gesicherter Dateiordner
+zusammen mit der alten SQL-Sicherung ausgewählt werden. Die Webapp ordnet die
+Originale ihren Objektpfaden zu und prüft ihre Größen, bevor das erste Konto
+registriert wird. Die Dateiübernahme verwendet dieselben verschlüsselten Blöcke
+wie neue Uploads. Ein unterbrochener Vorgang kann bereits bestätigte Blöcke
+weiterverwenden.
 
-Die bisherigen Klartextdateien im Objektspeicher und die alten Datenbankzeilen
-bleiben bis zum Abschluss der gesamten Umstellung eingefroren erhalten. Der
-Mandant wird durch die Dateiübernahme allein noch nicht vollständig auf den
-geschützten Betrieb umgeschaltet. Alte Sicherungen werden nicht nachträglich
-verschlüsselt. Eine vollständige Sicherung braucht derzeit sowohl PostgreSQL
-als auch die zugehörige DuckDB-Datei; der alte Objektspeicher bleibt bis zur
-abschließenden Bereinigung ebenfalls relevant.
-
-GAEB- und Diagrammdateien verwenden den verschlüsselten Weg für Öffnen und
-Speichern. Andere geöffnete GAEB-Ansichten bekommen Hinweise auf gespeicherte
-Stände. Die verschlüsselte Zusammenführung einzelner Tastatureingaben und
-gemeinsame Cursor fehlen dort noch. Die normalen Office-Dialoge verwenden den
-[CryptPad-Adapter](editoren-ohne-klartextserver.md) mit getrennten Lese- und
-Bearbeitungszugängen. Ein Test mit zwei unabhängigen Browseranmeldungen bestätigt
-gemeinsame Änderungen und das Öffnen dieses Standes mit einem reinen Lesezugang.
-Vor einem erzwungenen Sitzungswechsel, etwa bei Rechteentzug, sind noch nicht als
-Datei bestätigte Änderungen bisher nicht gesichert.
-
-Bearbeitungen einer Datei entfernen bislang den alten Suchtext und das alte
-Vorschaubild. Deren erneute Erzeugung nach einer Editoränderung ist noch
-anzuschließen. Löschungen setzen verschlüsselte Markierungen; alte Blöcke und
-abgebrochene Uploads werden noch nicht physisch bereinigt. Große Uploads laufen
-blockweise, halten aber derzeit die lokale Warteschlange für Dateiänderungen
-belegt.
-
-Die [Datei-Integrationstests](../sortsys-webapp-v2/scripts/test-live-project-files.ts)
-vergleichen übernommene PDF-, DWG-, MSG- und EML-Dateien bytegenau mit den
-Originalen. Sie prüfen außerdem Versionskonflikte, verlorene Bestätigungen,
-Ordnerbezüge und lokale Datei-URLs. Die
-[Freigabetests](../sortsys-webapp-v2/scripts/test-live-file-permissions.ts)
-prüfen getrennte Rechte, Entzug, Schlüsselwechsel und erneute Freigabe über
-mehrere API-Instanzen. Browsertests öffnen echte PDF- und EML-Vorschauen und
-prüfen deren Entfernung bei Kontowechsel und Rechteentzug.
+Die Quelle wird ausschließlich lokal gelesen. Eine laufende alte Datenbank,
+S3-Schreibfreigaben oder frühere Hintergrundjobs werden dafür nicht
+angesprochen. Nach dem signierten Abschluss bleibt das Quellarchiv
+unveränderlich; die übernommenen Projektdateien werden über ihre normalen
+Projektfreigaben bearbeitet. Die [Bestandsübernahme](bestandsumstellung.md)
+beschreibt Dateiauswahl, Benutzerzuordnung und die Grenzen einer reinen
+Mandantensicherung.

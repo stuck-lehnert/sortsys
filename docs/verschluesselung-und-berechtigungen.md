@@ -1,21 +1,22 @@
 # Verschlüsselte Mandantendaten und abgestufte Berechtigungen
 
-Architekturentwurf vom 8. November 2026. Eine
-[technische Grundlage](../sortsys-zerotrust/README.md) ist auf `draft/zerotrust`
-implementiert; der bestehende Datenbestand und die Webapp sind noch nicht
-umgestellt. Der Entwurf legt fest, wie ein Betrieb seine Daten gemeinsam
-bearbeiten kann, ohne dass der normale API-Betrieb oder ein Datenbankzugriff die
-vertraulichen Inhalte offenlegt.
+Architekturentwurf vom 8. November 2026, fortgeschrieben während der Umsetzung
+auf `draft/zerotrust`. Das [Framework](../sortsys-zerotrust/README.md) steht als
+TypeScript-Paket und Rust-Crate bereit; die Fachbereiche werden daran
+angeschlossen. Bestehende Produktivmandanten wurden nicht umgestellt. Der
+Entwurf legt fest, wie ein Betrieb seine Daten gemeinsam bearbeiten kann, ohne
+dass der normale API-Betrieb oder ein Datenbankzugriff die vertraulichen Inhalte
+offenlegt.
 
 Der ausgelieferte Client und seine Aktualisierungen gelten als vertrauenswürdig.
 Bei aufgerufenen LLM-Funktionen dürfen die dafür freigegebenen Inhalte beim
 Betreiber und Modellanbieter im Klartext verarbeitet werden. Ein Schutz gegen
-absichtlich veränderten Anwendungscode ist nicht Gegenstand dieses Entwurfs.
-Der [Funktionsabgleich](verschluesselung-funktionsabgleich.md) bewertet die Folgen
+absichtlich veränderten Anwendungscode ist nicht Gegenstand dieses Entwurfs. Der
+[Funktionsabgleich](verschluesselung-funktionsabgleich.md) bewertet die Folgen
 für bestehende Arbeitsabläufe; die
 [Mandantenwiederherstellung](mandanten-wiederherstellung.md) beschreibt den
-Notfallzugang mit einer nach Gebrauch wechselnden Seed-Phrase.
-Die [Datenprüfung](verschluesselung-datenpruefung.md) unterscheidet technische
+Notfallzugang mit einer nach Gebrauch wechselnden Seed-Phrase. Die
+[Datenprüfung](verschluesselung-datenpruefung.md) unterscheidet technische
 Servergarantien von fachlichen Clientprüfungen. Der erste Ausbau verwendet
 keinen abgeschirmten Datendienst und keine Klartextprüfung durch die API.
 Dadurch bleiben bestimmte fachliche Konsistenzgarantien ausdrücklich geringer
@@ -25,8 +26,8 @@ Für Beschäftigte bleibt der gewohnte Arbeitsablauf maßgeblich: anmelden,
 Angebote bearbeiten, Aufmaße erfassen und gemeinsam an Dokumenten arbeiten.
 Schlüsselerzeugung, Freigaben und notwendige Datenumstellungen erledigt die
 Anwendung im Hintergrund. Ein zusätzliches Schlüsselpasswort, ein Schlüsselmenü
-oder manuell auszulösende Verschlüsselungsschritte gehören nicht in diesen Ablauf.
-Die Administration vergibt weiterhin fachliche Rollen und Zugriffe.
+oder manuell auszulösende Verschlüsselungsschritte gehören nicht in diesen
+Ablauf. Die Administration vergibt weiterhin fachliche Rollen und Zugriffe.
 
 Für den Notfall sichert die Administration einmalig die Wiederherstellungsphrase
 der Organisation. Diese Sicherung ist vom normalen Benutzerzugang getrennt;
@@ -38,13 +39,15 @@ Schlüssel. Der Draft bildet den gewohnten Ablauf noch nicht vollständig ab.
 Das bestehende Rollenmodell unterscheidet `view:*`, `manage:*` und `delete:*`.
 `manage:*` schließt Lesen ein; Löschen ist ein eigenes Recht. `:admin` erlaubt
 derzeit alle Aktionen. Angebote, Kalkulation, Aufmaße und andere kaufmännische
-Vorgänge verwenden überwiegend `view:projects` beziehungsweise `manage:projects`.
-Die Umsetzung steht in [auth.rs](../sortsys-api-v2/rust-api/src/auth.rs),
-[commercial.rs](../sortsys-api-v2/rust-api/src/procedures/commercial.rs) und im
+Vorgänge verwenden überwiegend `view:projects` beziehungsweise
+`manage:projects`. Die Umsetzung steht in
+[auth.rs](../sortsys-api-v2/rust-api/src/auth.rs),
+[Vorgangsadapter](../sortsys-webapp-v2/app/lib/data/commercial.ts) und im
 [Rollenmodell der Oberfläche](../sortsys-webapp-v2/app/lib/roleModel.ts).
 
-Für verschlüsselte Inhalte braucht jede Erlaubnis zusätzlich einen Geltungsbereich
-und einen Inhaltsbereich. Eine Freigabe beschreibt beispielsweise:
+Für verschlüsselte Inhalte braucht jede Erlaubnis zusätzlich einen
+Geltungsbereich und einen Inhaltsbereich. Eine Freigabe beschreibt
+beispielsweise:
 
 ```text
 Subjekt:         Benutzer oder Benutzergruppe
@@ -54,48 +57,49 @@ Aktionen:        Lesen, Anlegen, Bearbeiten
 Delegation:      keine
 ```
 
-Geltungsbereiche sind der Mandant, ein Benutzer, ein Angebotsvorgang, ein Projekt
-oder ein ausdrücklich freigegebenes Dokument beziehungsweise Arbeitspaket.
-Angebotsvorgänge haben schon vor der Projektanlage einen eigenen Geltungsbereich.
-Ein Projektverweis verknüpft später die Inhalte; daraus entsteht keine zusätzliche
-Leseberechtigung. Die Gliederung eines GAEB-Dokuments ist ebenfalls keine
-Berechtigungshierarchie.
+Geltungsbereiche sind der Mandant, ein Benutzer, ein Angebotsvorgang, ein
+Projekt oder ein ausdrücklich freigegebenes Dokument beziehungsweise
+Arbeitspaket. Angebotsvorgänge haben schon vor der Projektanlage einen eigenen
+Geltungsbereich. Ein Projektverweis verknüpft später die Inhalte; daraus
+entsteht keine zusätzliche Leseberechtigung. Die Gliederung eines GAEB-Dokuments
+ist ebenfalls keine Berechtigungshierarchie.
 
 Für kaufmännische Vorgänge werden mindestens diese Inhaltsbereiche getrennt:
 
-| Inhaltsbereich | Beispiele |
-| --- | --- |
-| Leistungsumfang | OZ, Gruppen, Kurztexte, Beschreibungen, Einheiten |
-| Vertragsmengen | Angefragte und beauftragte Mengen |
-| Aufmaß | Maßansätze, Berechnungen, gemessene Mengen |
-| Angebotspreise | Verkaufspreise, Nachlässe, Angebots- und Auftragssummen |
-| Interne Kalkulation | Einkaufsansätze, Lohnansätze, Zuschläge, Margen |
+| Inhaltsbereich            | Beispiele                                                |
+| ------------------------- | -------------------------------------------------------- |
+| Leistungsumfang           | OZ, Gruppen, Kurztexte, Beschreibungen, Einheiten        |
+| Vertragsmengen            | Angefragte und beauftragte Mengen                        |
+| Aufmaß                    | Maßansätze, Berechnungen, gemessene Mengen               |
+| Angebotspreise            | Verkaufspreise, Nachlässe, Angebots- und Auftragssummen  |
+| Interne Kalkulation       | Einkaufsansätze, Lohnansätze, Zuschläge, Margen          |
 | Weitervergabe und Einkauf | Nachunternehmerpreise, Lieferantenangebote, Bestellungen |
-| Abrechnung | Rechnungspositionen, Zahlungen, offene Beträge |
+| Abrechnung                | Rechnungspositionen, Zahlungen, offene Beträge           |
 
 Weitere Bereiche erhalten dieselbe Behandlung: etwa Produktstammdaten getrennt
 von `productPriceRecords`, sichtbare Mitarbeiterstammdaten getrennt von
 Personalkosten. Ein Schlüssel für Projektdaten öffnet keine Personalkosten.
 
-Die folgende Belegung ist ein Beispiel für explizite Projektfreigaben. Sie ersetzt
-keine bestehende Rollenvorlage automatisch; insbesondere darf die Bauleitung
-weiterhin Angebotspreise oder Kosten sehen, wenn der Betrieb ihr diese Rechte gibt.
+Die folgende Belegung ist ein Beispiel für explizite Projektfreigaben. Sie
+ersetzt keine bestehende Rollenvorlage automatisch; insbesondere darf die
+Bauleitung weiterhin Angebotspreise oder Kosten sehen, wenn der Betrieb ihr
+diese Rechte gibt.
 
-| Benutzer im Projekt | Leistungsumfang | Vertragsmengen | Aufmaß | Angebotspreise | Interne Kalkulation |
-| --- | --- | --- | --- | --- | --- |
-| Kalkulation | Bearbeiten | Bearbeiten | Lesen | Bearbeiten | Bearbeiten |
-| Bauleitung | Lesen | Lesen | Bearbeiten | Lesen | Kein Zugriff |
-| Aufmaßteam | Lesen | Lesen | Bearbeiten | Kein Zugriff | Kein Zugriff |
-| Nachunternehmer | Nur sein Arbeitspaket | Nur sein Arbeitspaket | Nach Freigabe | Nur sein eigenes Angebot | Kein Zugriff |
+| Benutzer im Projekt | Leistungsumfang       | Vertragsmengen        | Aufmaß        | Angebotspreise           | Interne Kalkulation |
+| ------------------- | --------------------- | --------------------- | ------------- | ------------------------ | ------------------- |
+| Kalkulation         | Bearbeiten            | Bearbeiten            | Lesen         | Bearbeiten               | Bearbeiten          |
+| Bauleitung          | Lesen                 | Lesen                 | Bearbeiten    | Lesen                    | Kein Zugriff        |
+| Aufmaßteam          | Lesen                 | Lesen                 | Bearbeiten    | Kein Zugriff             | Kein Zugriff        |
+| Nachunternehmer     | Nur sein Arbeitspaket | Nur sein Arbeitspaket | Nach Freigabe | Nur sein eigenes Angebot | Kein Zugriff        |
 
 Server und Client werten dieselben versionierten Regeln aus. Ohne passende
 Erlaubnis wird ein Zugriff abgelehnt; eine passende ausdrückliche Sperre hat
 Vorrang. Eine Regel gilt nur für ihren angegebenen Geltungs- und Inhaltsbereich.
-Anlegen, Bearbeiten, Löschen, fachliches Freigeben und Weitergeben werden getrennt
-geprüft. Weitergeben darf nur delegierte Rechte im erlaubten Umfang vergeben;
-es erlaubt weder eine Rechteerhöhung noch die Aufhebung einer fremden Sperre.
-Bei einer Umstellung werden bestehende Rechte explizit auf diese Bereiche
-abgebildet und vom Mandanten geprüft.
+Anlegen, Bearbeiten, Löschen, fachliches Freigeben und Weitergeben werden
+getrennt geprüft. Weitergeben darf nur delegierte Rechte im erlaubten Umfang
+vergeben; es erlaubt weder eine Rechteerhöhung noch die Aufhebung einer fremden
+Sperre. Bei einer Umstellung werden bestehende Rechte explizit auf diese
+Bereiche abgebildet und vom Mandanten geprüft.
 
 Die Rechteverwaltung zeigt die wirksamen Rechte und ihre Herkunft an, etwa
 „Aufmaß bearbeiten durch Gruppe Bauleitung, Projekt 238427“. Für die Bedienung
@@ -112,10 +116,11 @@ Datenschlüssel; berechtigte Benutzer erhalten den Bereichsschlüssel für ihren
 jeweiligen öffentlichen Schlüssel verschlüsselt. Empfänger müssen dafür nicht
 gleichzeitig angemeldet sein.
 
-Ein kryptografischer Bereich gehört zu einem Geltungsbereich, einem Inhaltsbereich
-und einer konkreten Menge berechtigter Leser. Bei abweichenden Leserechten werden
-unabhängige Bereiche gebildet. Schreibrechte können sich innerhalb derselben
-Lesermenge unterscheiden, da sie durch Signaturen und Erlaubnisse geprüft werden.
+Ein kryptografischer Bereich gehört zu einem Geltungsbereich, einem
+Inhaltsbereich und einer konkreten Menge berechtigter Leser. Bei abweichenden
+Leserechten werden unabhängige Bereiche gebildet. Schreibrechte können sich
+innerhalb derselben Lesermenge unterscheiden, da sie durch Signaturen und
+Erlaubnisse geprüft werden.
 
 ```text
 Persönliche Schlüssel der berechtigten Leser
@@ -131,26 +136,30 @@ entschlüsseln könnte. Auch bei mehreren Gruppen darf kein alternativer
 Schlüsselpfad eine wirksame Sperre umgehen.
 
 Eine vom Mandanten verwaltete Signaturautorität bestätigt Identitäten und
-Delegationen. Dieser Vertrauensanker dient zur Prüfung von Freigaben; er ist kein
-allgemeiner Entschlüsselungsschlüssel. Bereits eingerichtete Geräte übernehmen
-keinen neuen Vertrauensanker allein aus einer Serverantwort. Gerätezulassungen und
-Schlüsselpakete sind an die bestätigte Identität und Freigabe gebunden.
-Der Recovery-Vertrauensanker ist davon getrennt: Er kann ausschließlich mit der
-aktuellen Seed-Phrase gewechselt werden. Weder der Provider noch eine normale
-Mandantenautorität darf eine Ersatz-Recovery einrichten.
+Delegationen. Dieser Vertrauensanker dient zur Prüfung von Freigaben; er ist
+kein allgemeiner Entschlüsselungsschlüssel. Bereits eingerichtete Geräte
+übernehmen keinen neuen Vertrauensanker allein aus einer Serverantwort.
+Gerätezulassungen und Schlüsselpakete sind an die bestätigte Identität und
+Freigabe gebunden. Der Recovery-Vertrauensanker ist davon getrennt: Er kann
+ausschließlich mit der aktuellen Seed-Phrase gewechselt werden. Weder der
+Provider noch eine normale Mandantenautorität darf eine Ersatz-Recovery
+einrichten.
 
 Der Draft verwendet AES-256-GCM über Web Crypto für Datenblöcke, AES-KW für
-deren Datenschlüssel, HPKE für Schlüsselpakete und Ed25519 für Signaturen.
-HPKE nutzt X25519, HKDF-SHA-256 und AES-256-GCM. Jede unveränderliche
-Blockversion erhält einen frischen Datenschlüssel; Nonces dürfen unter demselben
-Schlüssel nie wiederverwendet werden. Mandant, Objekt, Inhaltsbereich, Version und
+deren Datenschlüssel, HPKE für Schlüsselpakete und Ed25519 für Signaturen. HPKE
+nutzt X25519, HKDF-SHA-256 und AES-256-GCM. Jede unveränderliche Blockversion
+erhält einen frischen Datenschlüssel; Nonces dürfen unter demselben Schlüssel
+nie wiederverwendet werden. Mandant, Objekt, Inhaltsbereich, Version und
 Schlüsselgeneration werden authentifiziert eingebunden.
 
 Nachrichtenformate und Größenlimits stehen im
-[Client-Paket](../sortsys-zerotrust/src/index.ts) und ihren Rust-Gegenstücken.
-Die Tests vergleichen browserseitig erzeugte Nachrichten mit der API; eine
-unabhängige kryptografische Prüfung ersetzen sie nicht. HPKE ist
-in [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html) beschrieben; die
+[gemeinsamen Framework](../sortsys-zerotrust/README.md). Dessen allgemeiner
+TypeScript-Einstieg und Rust-Crate enthalten keine sortsys-Fachmodelle. Die
+Anwendung ergänzt ihre Inhaltsbereiche und Fachregeln über
+`@sortsys/zerotrust/sortsys` beziehungsweise ihre API-Adapter. Die Tests
+vergleichen browserseitig erzeugte Nachrichten mit der API; eine unabhängige
+kryptografische Prüfung ersetzen sie nicht. HPKE ist in
+[RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html) beschrieben; die
 [libsodium-Dokumentation](https://doc.libsodium.org/public-key_cryptography/public-key_signatures)
 erklärt die Trennung von Signaturen und authentifizierter Verschlüsselung.
 
@@ -185,13 +194,23 @@ online sein. Das neue Gerät erhält keine bisher fehlenden Inhaltsrechte. Eine
 Passwortänderung verpackt den Kontoschlüssel neu und erfordert keine
 Neuverschlüsselung aller Geschäftsdaten.
 
-Der Mandant richtet bei der Einführung eine Seed-Phrase für die Wiederherstellung
-ein und bewahrt sie außerhalb der Betreiber-Infrastruktur auf. Ihr Besitzer
-kann die betriebliche Schlüsselverwaltung und damit den Mandanten wiederherstellen.
-Sie gehört deshalb in die Verantwortung der Unternehmensleitung. Der normale
-Kontoadministrator erhält sie nicht automatisch. Erstellung, einmalige Nutzung,
-Wechsel aller betroffenen Schlüssel und unterbrochene Wiederherstellungen sind
-im [Recovery-Konzept](mandanten-wiederherstellung.md) festgelegt.
+Passkeys mit PRF-Unterstützung öffnen denselben Kontospeicher unmittelbar im
+Browser, auch auf einem neuen Gerät. Die API erhält dafür ein signiertes
+Schlüsselpaket, aber weder das PRF-Geheimnis noch den Kontodatenschlüssel. Ohne
+PRF kann ein Passkey weiterhin anmelden; zum Entschlüsseln wird dann ein bereits
+geschützter Gerätespeicher oder das gewöhnliche Passwort benötigt. Die Challenge
+wird innerhalb derselben Datenbanktransaktion wie die Anmeldung verbraucht. So
+können zwei API-Instanzen dieselbe Antwort nicht erneut annehmen, auch wenn der
+Authenticator keinen steigenden Signaturzähler liefert.
+
+Der Mandant richtet bei der Einführung eine Seed-Phrase für die
+Wiederherstellung ein und bewahrt sie außerhalb der Betreiber-Infrastruktur auf.
+Ihr Besitzer kann die betriebliche Schlüsselverwaltung und damit den Mandanten
+wiederherstellen. Sie gehört deshalb in die Verantwortung der
+Unternehmensleitung. Der normale Kontoadministrator erhält sie nicht
+automatisch. Erstellung, einmalige Nutzung, Wechsel aller betroffenen Schlüssel
+und unterbrochene Wiederherstellungen sind im
+[Recovery-Konzept](mandanten-wiederherstellung.md) festgelegt.
 
 Benutzerverwaltung allein verleiht keine Datenrechte. Der Support kann eine
 Anmeldung zurücksetzen, aber ohne vorhandenes Gerät oder eine vom Mandanten
@@ -215,21 +234,22 @@ Eine Freigabe läuft so ab:
 2. Sein Client prüft die bestätigten Empfängeridentitäten, signiert die
    Berechtigungsänderung und verpackt die betroffenen Bereichsschlüssel für die
    bestätigten Empfängeridentitäten.
-3. Die API prüft Signatur, Delegationsumfang, Sitzung und erwartete Regelversion.
-   Freigabe und Schlüsselpakete werden in einer Transaktion veröffentlicht.
+3. Die API prüft Signatur, Delegationsumfang, Sitzung und erwartete
+   Regelversion. Freigabe und Schlüsselpakete werden in einer Transaktion
+   veröffentlicht.
 4. Die Empfänger prüfen die Signaturkette und öffnen ihre Schlüsselpakete lokal.
 
-Eine reine Änderung von `user_role_assignments` in PostgreSQL liefert deshalb
-noch keinen entschlüsselbaren Bereichsschlüssel. Die API kann eine fehlende
-Freigabe nicht selbst erzeugen. Ist gerade kein geeigneter Client verfügbar,
-bleibt sie als ausstehend sichtbar. Ein Kontoadministrator ohne Datenrechte kann
-eine solche Freigabe anfordern, aber nicht eigenständig vervollständigen.
+Eine reine Änderung gespeicherter Rollen liefert deshalb noch keinen
+entschlüsselbaren Bereichsschlüssel. Die API kann eine fehlende Freigabe nicht
+selbst erzeugen. Ist gerade kein geeigneter Client verfügbar, bleibt sie als
+ausstehend sichtbar. Ein Kontoadministrator ohne Datenrechte kann eine solche
+Freigabe anfordern, aber nicht eigenständig vervollständigen.
 
 Ein Rechteentzug ist ebenfalls eine signierte Berechtigungsänderung. Eine
 Transaktion sperrt die betroffenen Zugriffe und erhöht die Berechtigungsversion.
-Offene Verbindungen werden benachrichtigt; Schreibversuche
-mit der alten Version werden auch an anderen API-Instanzen abgelehnt. Es gibt
-keine Frist, in der ein bereits ausgestelltes WebSocket-Ticket alte Rechte erhält.
+Offene Verbindungen werden benachrichtigt; Schreibversuche mit der alten Version
+werden auch an anderen API-Instanzen abgelehnt. Es gibt keine Frist, in der ein
+bereits ausgestelltes WebSocket-Ticket alte Rechte erhält.
 
 Sobald ein berechtigter Client verfügbar ist, erzeugt er neue Bereichsschlüssel
 und verteilt sie ausschließlich an die verbleibenden Empfänger. Neue Inhalte
@@ -300,8 +320,8 @@ passenden Bereich zugeordnet; ohne sichere Zuordnung bleiben sie einem
 vollständig berechtigten Bearbeiter vorbehalten.
 
 Ein Client mit eingeschränkten Rechten bearbeitet seine erlaubten Bestandteile
-und ersetzt niemals das gesamte Dokument durch seine unvollständige Ansicht.
-Ein vollständiger nativer Download setzt Zugriff auf alle enthaltenen Bereiche
+und ersetzt niemals das gesamte Dokument durch seine unvollständige Ansicht. Ein
+vollständiger nativer Download setzt Zugriff auf alle enthaltenen Bereiche
 voraus. Für begrenzte Weitergaben wird ein eigenes Dokument erzeugt, dessen
 Inhalt und Empfängerbereich ausdrücklich feststehen.
 
@@ -320,51 +340,55 @@ Fachentscheidung. Protokolle und Fehlermeldungen enthalten keine Inhaltskopien.
 
 ## Speicherung und mehrere API-Instanzen
 
-PostgreSQL bleibt für Berechtigungen, Versionen und Transaktionen zuständig;
-Dateispeicher enthalten ausschließlich die jeweils verschlüsselten Nutzdaten.
-Technische Metadaten wie IDs, Beziehungen, Bereichskennungen, Gerätezertifikate,
-Berechtigungen, Generationen, Größen und Änderungszeiten bleiben serverseitig
+Der gemeinsame DuckDB-Dienst speichert öffentliche Berechtigungsnachweise und
+Versionen und führt deren Änderungen atomar aus; Dateispeicher enthalten
+ausschließlich die jeweils verschlüsselten Nutzdaten. Technische Metadaten wie
+IDs, Beziehungen, Bereichskennungen, Gerätezertifikate, Berechtigungen,
+Generationen, Größen, Änderungszeiten und die UI-Sprache bleiben serverseitig
 sichtbar. Fachliche Bezeichnungen, Adressen, Texte, Preise und Beträge werden
 geschützt. Anmeldekennungen und für den Kontobetrieb benötigte Kontaktdaten
-werden gesondert als notwendige Metadaten dokumentiert.
-Eine solche Metadatensicht ist kein Versprechen, jegliche Rückschlüsse auf
+werden gesondert als notwendige Metadaten dokumentiert. Eine solche
+Metadatensicht ist kein Versprechen, jegliche Rückschlüsse auf
 Geschäftsaktivität auszuschließen.
 
-Die technische Grundlage verwendet folgende Datensätze. Die Einbindung der
-bestehenden Fachtabellen steht noch aus:
+Die folgenden logischen Datensätze bilden die technische Grundlage. Die
+bestehenden API-Handler verwenden dafür noch PostgreSQL-Tabellen; sie werden auf
+die versionsgeprüften Metadatensätze des DuckDB-Dienstes umgestellt:
 
-| Datensatz | Wesentlicher Inhalt |
-| --- | --- |
-| `__zerotrust_accounts` | Öffentliche Benutzerschlüssel, OPAQUE-Eintrag und verschlüsselter Kontospeicher |
-| `__zerotrust_authorities`, `__zerotrust_identity_history` | Zertifikate und gegengezeichnete Recovery-Übergänge zur Prüfung historischer Absender |
-| `__zerotrust_policies` | Signierte Regeln und ihre unveränderlichen Versionen; zunächst direkte Benutzerfreigaben |
-| `__zerotrust_domains` | Geltungsbereich, Inhaltsbereich, Leserzuordnung, Schlüsselgeneration und notwendige Schlüsselwechsel |
-| `__zerotrust_key_envelopes` | Verschlüsselte Schlüsselpakete je berechtigtem Empfänger und Generation |
-| `__zerotrust_objects`, `__zerotrust_changes` | Signierte verschlüsselte Versionen und eindeutige Nachrichten-IDs |
-| `__zerotrust_recovery_heads`, `__zerotrust_recovery_keys`, `__zerotrust_recovery_history` | Aktueller Recovery-Kopf, verschlüsselte Schlüsselkopien und fortsetzbare signierte Pläne in der Masterdatenbank |
+| Datensatz                                                                                 | Wesentlicher Inhalt                                                                                                       |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `__zerotrust_accounts`                                                                    | Öffentliche Benutzerschlüssel, OPAQUE-Eintrag und verschlüsselter Kontospeicher                                           |
+| `__zerotrust_authorities`, `__zerotrust_identity_history`                                 | Zertifikate und gegengezeichnete Recovery-Übergänge zur Prüfung historischer Absender                                     |
+| `__zerotrust_policies`                                                                    | Signierte Regeln und ihre unveränderlichen Versionen; zunächst direkte Benutzerfreigaben                                  |
+| `__zerotrust_domains`                                                                     | Geltungsbereich, Inhaltsbereich, Leserzuordnung, Schlüsselgeneration und notwendige Schlüsselwechsel                      |
+| `__zerotrust_key_envelopes`                                                               | Verschlüsselte Schlüsselpakete je berechtigtem Empfänger und Generation                                                   |
+| `__zerotrust_objects`, `__zerotrust_changes`                                              | Signierte verschlüsselte Versionen und eindeutige Nachrichten-IDs                                                         |
+| `__zerotrust_recovery_heads`, `__zerotrust_recovery_keys`, `__zerotrust_recovery_history` | Aktueller Recovery-Kopf, verschlüsselte Schlüsselkopien und fortsetzbare signierte Pläne in der jeweiligen Mandantendatei |
 
 Eine schreibende Transaktion prüft das äußere Schema, aktuelle Rechte und die
 maßgeblichen öffentlichen Ausgangsversionen. Sie sperrt die relevante
 Regelversion gegen gleichzeitigen Entzug. Erst dann werden Chiffrat und neue
-Objektversion gespeichert. Ein Rechteentzug verwendet denselben Sperrmechanismus.
-Lokale Berechtigungscaches ersetzen diese Prüfung nicht. Für große Objekte
-werden zunächst verschlüsselte Blöcke hochgeladen und anschließend verbindlich
-referenziert. Eine fachliche Prüfung des verborgenen Inhalts ist damit nicht
-nachgewiesen.
+Objektversion gespeichert. Ein Rechteentzug verwendet denselben
+Sperrmechanismus. Lokale Berechtigungscaches ersetzen diese Prüfung nicht. Für
+große Objekte werden zunächst verschlüsselte Blöcke hochgeladen und anschließend
+verbindlich referenziert. Eine fachliche Prüfung des verborgenen Inhalts ist
+damit nicht nachgewiesen.
 
-PostgreSQL-Benachrichtigungen melden Änderungen an die anderen API-Instanzen.
-Nach einer Unterbrechung wird der dauerhafte Stand nachgelesen; Nachrichten-IDs
-verhindern eine doppelte Annahme. Die API verteilt verschlüsselte CRDT-Änderungen
-und führt sie nicht selbst zusammen. Berechtigte Clients erzeugen zusammengefasste
-Stände. Empfänger prüfen deren Herkunft und ihre lesbaren Inhalte erneut.
-Einzelne Tastendrücke benötigen keine vollständige Dokumentverschlüsselung.
+Ein dauerhaftes Änderungsjournal im gemeinsamen Datendienst ermöglicht den
+Abgleich zwischen API-Instanzen. Die bisherige PostgreSQL-Benachrichtigung wird
+dadurch ersetzt. Nach einer Unterbrechung wird der dauerhafte Stand nachgelesen;
+Nachrichten-IDs verhindern eine doppelte Annahme. Die API verteilt
+verschlüsselte CRDT-Änderungen und führt sie nicht selbst zusammen. Berechtigte
+Clients erzeugen zusammengefasste Stände. Empfänger prüfen deren Herkunft und
+ihre lesbaren Inhalte erneut. Einzelne Tastendrücke benötigen keine vollständige
+Dokumentverschlüsselung.
 
 Asymmetrische Schlüsselverteilung erfolgt bei Identitäts- und Rechteänderungen,
 nicht für jeden Datenblock an jeden Benutzer. Die Speichergröße für Schlüssel
 wächst damit im Wesentlichen mit den Datenblöcken sowie der Anzahl von Bereichen
-und berechtigten Benutzern. Lokale Eingaben werden sofort dargestellt; Übertragung
-und Signaturen können kurze Änderungsfolgen bündeln. Ihre Persistenzbestätigung
-bleibt vom lokalen Bearbeitungszustand unterscheidbar.
+und berechtigten Benutzern. Lokale Eingaben werden sofort dargestellt;
+Übertragung und Signaturen können kurze Änderungsfolgen bündeln. Ihre
+Persistenzbestätigung bleibt vom lokalen Bearbeitungszustand unterscheidbar.
 
 Signierte Versionen und lokal bekannte Höchststände erkennen bestimmte
 Manipulationen und Rücksetzungen. Sie garantieren weder Verfügbarkeit noch auf
@@ -376,31 +400,32 @@ signierte Löschoperation.
 ## Suche, Auswertungen und LLM-Funktionen
 
 Clients synchronisieren die für sie berechtigten Daten schrittweise und pflegen
-lokale Suchindizes. Für vollständige Suche ohne vorherige lokale Synchronisierung
-wäre später ein privater Datendienst möglich. Im ersten Ausbau bleibt diese
-Suche vom synchronisierten Index des Clients abhängig.
-Kryptografie, Indexierung und Auswertungen laufen außerhalb
-des Rendering-Pfads. Häufig benutzte Schlüssel werden für die entsperrte Sitzung
-vorgehalten. Persistente lokale Daten und Indizes werden verschlüsselt; nach
-Rechteentzug werden betroffene Ansichten und lokale Caches im vertrauenswürdigen
-Client entfernt. Das widerruft keine zuvor kopierten Informationen.
+lokale Suchindizes. Für vollständige Suche ohne vorherige lokale
+Synchronisierung wäre später ein privater Datendienst möglich. Im ersten Ausbau
+bleibt diese Suche vom synchronisierten Index des Clients abhängig.
+Kryptografie, Indexierung und Auswertungen laufen außerhalb des Rendering-Pfads.
+Häufig benutzte Schlüssel werden für die entsperrte Sitzung vorgehalten.
+Persistente lokale Daten und Indizes werden verschlüsselt; nach Rechteentzug
+werden betroffene Ansichten und lokale Caches im vertrauenswürdigen Client
+entfernt. Das widerruft keine zuvor kopierten Informationen.
 
 Eine Suchanfrage wird entweder vollständig von einem lokalen Index oder von
 einem dafür vorgesehenen Suchdienst beantwortet. Serverseitige Treffer werden
-weiterhin nicht nachträglich anhand von Anzeigenamen gefiltert. Ein lokaler Index
-darf Treffer nur für seinen tatsächlich synchronisierten Bestand behaupten;
-fehlende Bereiche werden nachgeladen oder als noch nicht durchsucht angezeigt.
+weiterhin nicht nachträglich anhand von Anzeigenamen gefiltert. Ein lokaler
+Index darf Treffer nur für seinen tatsächlich synchronisierten Bestand
+behaupten; fehlende Bereiche werden nachgeladen oder als noch nicht durchsucht
+angezeigt.
 
 Die lokale Auswertungsengine ist DuckDB-Wasm. Sie läuft in einem Worker und hält
 entschlüsselte Tabellen ausschließlich im Arbeitsspeicher. Feldtypen und
-Prüfbedingungen werden aus dem verbindlichen SQL-Schema abgeleitet;
-PostgreSQL-Prozeduren und Trigger werden dabei nicht automatisch übernommen.
-Die Suchbedeutung wird gesondert geprüft. Ein Datenbankwechsel auf dem Server ist
-für die Verschlüsselung nicht erforderlich. Beliebige SQL-Abfragen über geheime Werte kann die
-API ohne Klartextzugriff nicht unverändert weiter ausführen. Sie kann technische
-Eindeutigkeit und Versionen sichern, aber keine verschlüsselten Rechnungsbeträge
-nachrechnen. Fachliche Berechnungen und Prüfungen laufen in den berechtigten
-Clients; der Server kann deren Ergebnisse nicht vollständig nachprüfen.
+Prüfbedingungen sind im fachlichen Browserschema festgelegt. Der Server
+verwendet den gemeinsamen DuckDB-Datendienst ohne frühere PostgreSQL-Prozeduren
+oder Trigger. Die Suchbedeutung wird gesondert geprüft. Beliebige SQL-Abfragen
+über geheime Werte kann die API ohne Klartextzugriff nicht unverändert weiter
+ausführen. Sie kann technische Eindeutigkeit und Versionen sichern, aber keine
+verschlüsselten Rechnungsbeträge nachrechnen. Fachliche Berechnungen und
+Prüfungen laufen in den berechtigten Clients; der Server kann deren Ergebnisse
+nicht vollständig nachprüfen.
 
 Aufgerufene LLM-Funktionen erhalten die für ihren Zweck nötigen Klartextinhalte.
 Das ist Teil des jeweiligen Workflows und benötigt keinen zusätzlichen Dialog
@@ -412,13 +437,13 @@ Da der MCP-Server die verschlüsselten Geschäftsdaten nicht selbst öffnen kann
 liefert der zugehörige aktive Client erlaubte Suchergebnisse und Dokumentinhalte
 über eine sitzungsgebundene Verbindung zu. Ein späterer abgeschirmter
 Datendienst könnte ebenfalls einen ausdrücklich auf den LLM-Workflow begrenzten
-Klartextkontext bedienen. Diese vom Benutzerclient signierte Delegation bindet Zweck, Empfänger,
-Inhaltsbereiche, Sitzung und kurze Gültigkeit. Sie ist kein allgemeines
-Entschlüsselungsrecht des MCP-Servers. Ohne geeigneten Client, gültige
-Dienstdelegation oder bereits freigegebenen temporären Kontext kann der Server
-diese Suche nicht ausführen.
-Es werden keine Mandanten- oder Bereichsschlüssel an den LLM-Dienst übergeben.
-Ein Rechteentzug beendet betroffene Delegationen und temporäre Kontexte.
+Klartextkontext bedienen. Diese vom Benutzerclient signierte Delegation bindet
+Zweck, Empfänger, Inhaltsbereiche, Sitzung und kurze Gültigkeit. Sie ist kein
+allgemeines Entschlüsselungsrecht des MCP-Servers. Ohne geeigneten Client,
+gültige Dienstdelegation oder bereits freigegebenen temporären Kontext kann der
+Server diese Suche nicht ausführen. Es werden keine Mandanten- oder
+Bereichsschlüssel an den LLM-Dienst übergeben. Ein Rechteentzug beendet
+betroffene Delegationen und temporäre Kontexte.
 
 Dauerhaft gespeicherte Chatverläufe und Tool-Ergebnisse werden wieder
 clientseitig verschlüsselt; Klartextkontexte haben eine begrenzte Lebensdauer.
@@ -429,30 +454,33 @@ Schlüsselfreigaben erteilen und keine fehlenden Benutzerrechte ersetzen.
 
 ## Einführung und Nachweise
 
-Zuerst wird die Regelprüfung vereinheitlicht und um Geltungs- und Inhaltsbereiche
-ergänzt. Tests legen die Zuordnung der bestehenden Rollen fest, einschließlich
-persönlicher und projektbezogener Zugriffe. Danach folgen Anmeldung,
-Gerätezulassung und Wiederherstellung. Erst auf dieser Grundlage werden native
-GAEB-Dokumente, kaufmännische Datensätze und die zugehörige Zusammenarbeit
-verschlüsselt. Weitere Fachbereiche werden anschließend nach denselben Regeln
-umgestellt.
+Zuerst wird die Regelprüfung vereinheitlicht und um Geltungs- und
+Inhaltsbereiche ergänzt. Tests legen die Zuordnung der bestehenden Rollen fest,
+einschließlich persönlicher und projektbezogener Zugriffe. Danach folgen
+Anmeldung, Gerätezulassung und Wiederherstellung. Erst auf dieser Grundlage
+werden native GAEB-Dokumente, kaufmännische Datensätze und die zugehörige
+Zusammenarbeit verschlüsselt. Weitere Fachbereiche werden anschließend nach
+denselben Regeln umgestellt.
 
-Ein vorhandener Mandant wird durch einen berechtigten Client migriert. Alle
-Klartextkopien eines Schutzbereichs müssen erfasst werden, auch Summen in
-`commercial_cases`, Rechnungsdetails, Originaldateien, alte Dokumentstände,
-Suchindizes und Exporte. Verschlüsselung schützt alte Klartextsicherungen nicht
-nachträglich. Bis zu deren kontrolliertem Ablauf beziehungsweise Entfernung gilt
-die Zusage nur für den nachweislich umgestellten Datenbestand. Solange einzelne
-Bereiche fehlen, wird keine vollständige Verschlüsselung des Mandanten behauptet.
+Das neue System läuft unabhängig von der vorherigen Installation. Ein neuer
+Mandant kann
+[aus einer alten Sicherung eingerichtet werden](bestandsumstellung.md). Die
+Quelle wird dabei im Browser gelesen, geprüft und vor der Übertragung
+verschlüsselt. Eine laufende PostgreSQL-Anbindung, gemeinsame Umschaltsperren
+und ein Mischbetrieb alter und neuer Mandanten gehören nicht zum Zielaufbau.
+Alte Klartextsicherungen werden durch den Import nicht nachträglich geschützt.
 
 Vor einer Freigabe müssen insbesondere folgende Fälle nachgewiesen werden:
 
-- Ein Dump von PostgreSQL und Dateispeicher enthält für die umgestellten Bereiche
-  weder Klartext noch durch Betreiber-Schlüssel entschlüsselbare Inhalte.
-- Das Aufmaßteam kann Maßansätze gemeinsam ändern, aber weder über Originaldatei,
-  PDF, Historie, Summe noch Suchindex an geschützte Preise gelangen.
-- Manipulierte Rollen oder ausgetauschte Empfängerschlüssel erzeugen keine gültige
-  Freigabe. Ein Leser kann keine gültig autorisierte Schreiboperation erzeugen.
+- Eine Sicherung der neuen DuckDB-Mandantendatei und ihrer verschlüsselten
+  Dateien enthält weder Klartext noch durch Betreiber-Schlüssel entschlüsselbare
+  Inhalte.
+- Das Aufmaßteam kann Maßansätze gemeinsam ändern, aber weder über
+  Originaldatei, PDF, Historie, Summe noch Suchindex an geschützte Preise
+  gelangen.
+- Manipulierte Rollen oder ausgetauschte Empfängerschlüssel erzeugen keine
+  gültige Freigabe. Ein Leser kann keine gültig autorisierte Schreiboperation
+  erzeugen.
 - Ein berechtigter Schreiber reicht unbekannte Felder, falsche Datentypen oder
   fachlich ungültige Inhalte ein. Ungültige äußere Felder werden serverseitig
   abgelehnt; ungültige entschlüsselte Inhalte werden im Client zurückgewiesen.
@@ -460,8 +488,8 @@ Vor einer Freigabe müssen insbesondere folgende Fälle nachgewiesen werden:
 - Eingeschränkte Clients überschreiben keine verborgenen XML-Bestandteile.
   Unbekannte Elemente und Attribute überstehen einen vollständigen Round-Trip.
 - Ein Rechteentzug während eines Schreibzugriffs wird über zwei unabhängige
-  API-Instanzen korrekt geordnet. Alte Tickets und offline aufbewahrte Änderungen
-  umgehen die neue Regel- und Schlüsselgeneration nicht.
+  API-Instanzen korrekt geordnet. Alte Tickets und offline aufbewahrte
+  Änderungen umgehen die neue Regel- und Schlüsselgeneration nicht.
 - Ein neu ausgeschlossener Leser kann neue Inhalte nicht mit einem alten
   Bereichs- oder Datenschlüssel öffnen. Alternative Gruppenfreigaben und
   ausdrückliche Sperren werden dabei mitgeprüft.
@@ -469,9 +497,10 @@ Vor einer Freigabe müssen insbesondere folgende Fälle nachgewiesen werden:
   Betreiberzugriff auf Schlüssel; ein Support-Reset allein öffnet keine Daten.
 - Das LLM erhält ausschließlich Inhalte innerhalb der Benutzerrechte und seiner
   Delegation. Gespeicherte Verläufe enthalten keine ungeschützten Kopien.
-- Tippen, gemeinsames Bearbeiten, Suche, erste Synchronisierung und große Projekte
-  werden auf schwächeren Geräten gemessen und mit dem bisherigen Verhalten
-  verglichen. Performancewerte werden erst nach diesen Messungen zugesagt.
+- Tippen, gemeinsames Bearbeiten, Suche, erste Synchronisierung und große
+  Projekte werden auf schwächeren Geräten gemessen und mit dem bisherigen
+  Verhalten verglichen. Performancewerte werden erst nach diesen Messungen
+  zugesagt.
 
 Proton Drive beschreibt einen verwandten Ansatz aus Freigaben, getrennten
 Schlüsseln und geprüften Inhalten in seinem

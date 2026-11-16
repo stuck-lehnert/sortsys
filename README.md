@@ -6,8 +6,9 @@ Abrechnung: Aus angenommenen Angeboten entstehen Projekte, in denen Aufmaße,
 Nachträge, Weitervergaben und Rechnungen auf denselben Leistungen aufbauen.
 
 Dazu kommen Einsatzplanung, Bautagesberichte, Materiallieferungen und die
-Verwaltung von Werkzeugen, Plänen und weiteren Dokumenten. GAEB-Dateien lassen sich
-gemeinsam direkt im Browser bearbeiten. Die Oberfläche ist auf Deutsch und Englisch verfügbar.
+Verwaltung von Werkzeugen, Plänen und weiteren Dokumenten. GAEB-Dateien lassen
+sich gemeinsam direkt im Browser bearbeiten. Die Oberfläche ist auf Deutsch und
+Englisch verfügbar.
 
 ## Entwicklung
 
@@ -17,12 +18,17 @@ Voraussetzungen: Bash und Docker oder Podman. Im Hauptverzeichnis starten:
 ./scripts/dev
 ```
 
-Die Webapp ist unter <http://127.0.0.1:5173> erreichbar. Lokaler Administrator:
-Mandant `test`, Benutzer `john.doe`, Passwort `123456`.
+Die Webapp ist unter <http://127.0.0.1:5173> erreichbar. Im vorbereiteten
+Mandanten `test` hat `john.doe@test` Administratorrechte; `frank.doe@test` hat
+keine besonderen Berechtigungen. Beide Konten und die lokale Betreiberverwaltung
+verwenden das Passwort `123456`. Weitere Mandanten werden über einen einmaligen
+Link eingerichtet.
 
-**Jeder Start legt die Entwicklungsdatenbanken neu an und befüllt sie mit Beispieldaten.**
-`Ctrl+C` beendet die Umgebung. Konfiguration und Protokolle beschreibt der
-[Entwicklungsleitfaden](docs/development.md).
+Entwicklungsdaten bleiben unter `.dev-data/zerotrust/` erhalten. `Ctrl+C`
+beendet die Umgebung. Konfiguration und Protokolle beschreibt der
+[Entwicklungsleitfaden](docs/development.md). Die
+[Bestandsübernahme](docs/bestandsumstellung.md) beschreibt die Einrichtung mit
+einer Sicherung aus der früheren Installation.
 
 ## Prüfungen
 
@@ -36,28 +42,34 @@ und die Übernahme von `predeploy` nach `deploy`.
 
 ## Pakete
 
-| Paket | Aufgabe |
-| --- | --- |
-| [API](sortsys-api-v2/README.md) | Rust-Dienst, Mandantendatenbanken und typisierter TypeScript-Client |
-| [Webapp](sortsys-webapp-v2/README.md) | React-Anwendung für Angebote, Projekte und Verwaltung |
-| [Komponenten](sortsys-react-components/README.md) | Einheitliche Bedienelemente und Gestaltung |
-| [GAEB](sortsys-gaeb/README.md) | Dokumente direkt bearbeiten und Leistungen kalkulieren |
-| [Planansicht](sortsys-dwgviewer/README.md) | PDF-/DWG-Pläne mit Rust-/WASM-Parser |
-| [Hintergrunddienst](sortsys-v2-job_runner/README.md) | Medienverarbeitung und Texterkennung |
+| Paket                                             | Aufgabe                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [API](sortsys-api-v2/README.md)                   | Rust-Dienst, Mandantendatenbanken und typisierter TypeScript-Client          |
+| [Datendienst](sortsys-store/README.md)            | DuckDB-Mandantendateien, atomare Metadaten und Sicherungen                   |
+| [Webapp](sortsys-webapp-v2/README.md)             | React-Anwendung für Angebote, Projekte und Verwaltung                        |
+| [Komponenten](sortsys-react-components/README.md) | Einheitliche Bedienelemente und Gestaltung                                   |
+| [GAEB](sortsys-gaeb/README.md)                    | Dokumente direkt bearbeiten und Leistungen kalkulieren                       |
+| [Planansicht](sortsys-dwgviewer/README.md)        | PDF-/DWG-Pläne mit Rust-/WASM-Parser                                         |
+| [Kryptografie](sortsys-zerotrust/README.md)       | Wiederverwendbare Bausteine für verschlüsselte Daten, Freigaben und Recovery |
 
 Verarbeitung erfolgt nach Möglichkeit im Browser. Die API übernimmt Speicherung,
-Berechtigungen und Vorgänge, die einen verbindlichen gemeinsamen Datenstand benötigen.
-Der [Architekturentwurf zur Verschlüsselung](docs/verschluesselung-und-berechtigungen.md)
-beschreibt die geplante Absicherung vertraulicher Inhalte bei abgestuften Zugriffsrechten.
+Berechtigungen und Vorgänge, die einen verbindlichen gemeinsamen Datenstand
+benötigen. Alte Bestände werden
+[beim Anlegen eines Mandanten aus einer Sicherung übernommen](docs/bestandsumstellung.md).
+Das [Verschlüsselungsmodell](docs/verschluesselung-und-berechtigungen.md)
+beschreibt Freigaben, Recovery und die Grenzen der Absicherung vertraulicher
+Inhalte.
 
 ## Bereitstellung
 
 Der [Betriebsleitfaden](docs/deployment.md) führt durch Compose, Coolify und die
-veröffentlichten Container-Images. Ausgangspunkt ist [.compose-env.example](.compose-env.example).
+veröffentlichten Container-Images. Ausgangspunkt ist
+[.compose-env.example](.compose-env.example).
 
 ## Lizenz und Gemeinschaft
 
-sortsys steht unter der [AGPL-3.0-only](LICENSE). Für Beiträge und den Austausch im
-Projekt gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
+sortsys steht unter der [AGPL-3.0-only](LICENSE). Für Beiträge und den Austausch
+im Projekt gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
 
-Für fremde Abhängigkeiten und Beispieldateien gelten deren eigene Lizenzen und Hinweise.
+Für fremde Abhängigkeiten und Beispieldateien gelten deren eigene Lizenzen und
+Hinweise.
