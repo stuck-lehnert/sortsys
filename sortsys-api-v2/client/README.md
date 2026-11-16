@@ -63,9 +63,16 @@ API-Operationen.
 
 Kleine Leseanfragen verwenden GET. Würde die gebündelte URL länger als 6.000
 Zeichen, überträgt der Client die Eingaben als JSON-Body mit POST. Ein Stapel
-enthält höchstens 32 Operationen. Reihenfolge, Datentypen und die beim Aufruf
-geltenden Eingaben und Zugangsdaten bleiben erhalten. Anfragen mit verschiedenen
+enthält höchstens 32 Operationen und ein MiB Eingabedaten einschließlich
+JSON-Rahmen. Maßgeblich ist die UTF-8-Bytegröße. Größere Einzeloperationen werden
+allein übertragen; für sie gilt weiterhin das Limit ihres API-Endpunkts.
+Reihenfolge, Datentypen und die beim Aufruf geltenden Eingaben und Zugangsdaten
+bleiben erhalten. Anfragen mit verschiedenen
 Zugangsdaten werden in getrennten Stapeln übertragen.
+
+Die API weist Stapel mit mehr als 32 Operationen oder unvollständiger Zuordnung
+von Pfaden und Eingaben zurück, bevor eine Operation beginnt. Mehrere Pfade
+setzen eine ausdrücklich als Stapel gekennzeichnete Anfrage voraus.
 
 Die Browser-Anmeldung verwendet den
 [OPAQUE-Anmeldeweg der Webapp](../../sortsys-webapp-v2/app/lib/crypto/session.ts).

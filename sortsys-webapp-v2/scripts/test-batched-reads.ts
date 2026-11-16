@@ -6,6 +6,50 @@ import {
   type Collection,
 } from "../app/lib/data/protectedObjects";
 
+export async function exerciseRpcBatching(
+  client: Client,
+  transmissions: readonly string[][],
+) {
+  const session = await required(client.query("auth.sessionInfo", undefined));
+  const start = transmissions.length;
+  const pending = [];
+  for (let index = 0; index < 40; index++) {
+    pending.push(
+      required(
+        client.query(
+          "zerotrust.access.snapshot",
+          { domains: [`testing:batch${index}:master-data`] },
+          { strategy: "network-only" },
+        ),
+      ),
+    );
+    // Each request reaches the transport in a separate microtask. They have
+    // different inputs, so request deduplication cannot explain the reduction.
+    await Promise.resolve();
+  }
+  const snapshots = await Promise.all(pending);
+  assert.equal(snapshots.length, 40);
+  for (const snapshot of snapshots) {
+    assert.equal(snapshot.subject, `user:${session.user.id}`);
+    assert.equal(snapshot.username, session.user.username);
+    assert.deepEqual(snapshot.domains, []);
+  }
+  assert.deepEqual(
+    transmissions.slice(start).map((paths) => paths.length),
+    [32, 8],
+  );
+  assert.equal(
+    transmissions
+      .slice(start)
+      .flat()
+      .every((path) => path === "zerotrust.access.snapshot"),
+    true,
+  );
+  console.log(
+    "Native RPC batching: 40 distinct authenticated reads use 2 HTTP requests with every result preserved",
+  );
+}
+
 export async function exerciseBatchedReads(
   client: Client,
   peer: Client,

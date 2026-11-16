@@ -308,3 +308,94 @@ test("many queued operations use bounded wire batches without losing results", a
   ).toEqual(values);
   expect(sizes).toEqual([32, 32, 6]);
 });
+
+for (const kind of ["query", "mutation"] as const) {
+  test(`${kind} batches respect UTF-8 body limits, not just operation counts or string lengths`, async () => {
+    const requests: Array<{ bytes: number; paths: string[] }> = [];
+    const transport = echoTransport([]);
+    const encoder = new TextEncoder();
+    const client = new RpcBatchClient("https://api.example.test", {
+      fetch: (async (input, options) => {
+        const bytes = encoder.encode(String(options?.body)).byteLength;
+        requests.push({
+          bytes,
+          paths: new URL(String(input)).pathname.slice(1).split(","),
+        });
+        // The API's ordinary body limit applies to every HTTP request, even
+        // when each individual operation would be accepted on its own.
+        if (bytes > 2 * 1024 * 1024) return new Response(null, { status: 413 });
+        return transport(input, options);
+      }) as typeof globalThis.fetch,
+    });
+    const inputs = Array.from({ length: 8 }, (_, id) => ({
+      id,
+      text: "界".repeat(120_000),
+      version: BigInt(id),
+      date: new Date("2026-11-16T09:00:00Z"),
+    }));
+    expect(
+      await Promise.all(inputs.map((input) => client[kind]("echo", input))),
+    ).toEqual(inputs);
+    expect(requests.map((request) => request.paths.length)).toEqual([
+      2, 2, 2, 2,
+    ]);
+    expect(requests.every((request) => request.bytes <= 1024 * 1024)).toBe(
+      true,
+    );
+  });
+
+  test(`${kind} sends a large individual operation alone and still batches its small peers`, async () => {
+    const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+    const client = new RpcBatchClient("https://api.example.test", {
+      fetch: echoTransport(requests),
+    });
+    const inputs = [
+      { id: 0, text: "a".repeat(1024 * 1024) },
+      { id: 1 },
+      { id: 2 },
+      { id: 3, text: "a".repeat(1024 * 1024) },
+      { id: 4 },
+      { id: 5 },
+    ];
+    expect(
+      await Promise.all(inputs.map((input) => client[kind]("echo", input))),
+    ).toEqual(inputs);
+    expect(
+      requests.map((request) =>
+        request.inputs.map((input) => (input as { id: number }).id),
+      ),
+    ).toEqual([[0], [1, 2], [3], [4, 5]]);
+  });
+}
+
+test("the body budget includes JSON framing and allows a batch exactly at the limit", async () => {
+  const budget = 1024 * 1024;
+  const emptyBytes = new TextEncoder().encode(
+    JSON.stringify(superjson.serialize({ text: "" })),
+  ).byteLength;
+  const first = { text: "a".repeat(524_282 - emptyBytes) };
+  for (const extraBytes of [0, 1]) {
+    const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+    const transport = echoTransport(requests);
+    const sizes: number[] = [];
+    const client = new RpcBatchClient("https://api.example.test", {
+      fetch: (async (input, options) => {
+        sizes.push(new TextEncoder().encode(String(options?.body)).byteLength);
+        return transport(input, options);
+      }) as typeof globalThis.fetch,
+    });
+    const second = { text: "b".repeat(524_283 + extraBytes - emptyBytes) };
+    expect(
+      await Promise.all([
+        client.query("echo", first),
+        client.query("echo", second),
+      ]),
+    ).toEqual([first, second]);
+    if (extraBytes === 0) {
+      expect(sizes).toEqual([budget]);
+    } else {
+      expect(sizes).toHaveLength(2);
+      expect(sizes.every((bytes) => bytes < budget)).toBe(true);
+    }
+  }
+});

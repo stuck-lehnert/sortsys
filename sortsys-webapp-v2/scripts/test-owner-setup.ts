@@ -40,6 +40,7 @@ type RequestHook = (
 let requestHook: RequestHook | null = null;
 const originalFetch = globalThis.fetch;
 const requests: string[] = [];
+const rpcTransmissions: string[][] = [];
 let rejectOneSetup = false;
 let loseOneSetupReply = false;
 let committedRequest: Request | null = null;
@@ -51,6 +52,9 @@ globalThis.fetch = new Proxy(originalFetch, {
     );
     const body = options?.body;
     if (typeof body === "string") requests.push(body);
+    if (mode === "owner-staging" && url.searchParams.get("batch") === "1") {
+      rpcTransmissions.push(url.pathname.slice(1).split(","));
+    }
     if (requestHook)
       return requestHook(url, () => Reflect.apply(target, receiver, args));
     if (url.pathname === "/auth.owner.finish" && loseOneSetupReply) {
@@ -251,6 +255,8 @@ try {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");
     await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseRpcBatching } = await import("./test-batched-reads");
+    await exerciseRpcBatching(owner, rpcTransmissions);
     const { exerciseNativeStaging } = await import("./test-native-staging");
     await exerciseNativeStaging(owner, peer, draft);
   } else if (mode === "owner-backup-archive") {

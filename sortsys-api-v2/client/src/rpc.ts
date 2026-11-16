@@ -52,11 +52,16 @@ export class RpcClientError<
 type OperationKind = "query" | "mutation";
 const MAX_QUERY_URL_LENGTH = 6000;
 const MAX_BATCH_OPERATIONS = 32;
+// Keep combined inputs below the API's ordinary 2 MiB body limit. An operation
+// that is larger on its own travels alone and retains its endpoint's own limit.
+const MAX_BATCH_BODY_BYTES = 1024 * 1024;
 const QUERY_BATCH_WINDOW_MS = 4;
+const encoder = new TextEncoder();
 
 interface PendingOperation {
   path: string;
   serializedInput: string;
+  inputBytes: number;
   headers: Headers;
   headerKey: string;
   resolve(value: unknown): void;
@@ -66,6 +71,30 @@ interface PendingOperation {
 interface WireResult {
   result?: { data: unknown };
   error?: unknown;
+}
+
+function* boundedBatches(operations: PendingOperation[]) {
+  let batch: PendingOperation[] = [];
+  let bodyBytes = 2; // Opening and closing braces.
+  for (const operation of operations) {
+    const entryBytes = operation.inputBytes + String(batch.length).length + 3;
+    const separatorBytes = batch.length === 0 ? 0 : 1;
+    if (
+      batch.length > 0 &&
+      (batch.length === MAX_BATCH_OPERATIONS ||
+        bodyBytes + separatorBytes + entryBytes > MAX_BATCH_BODY_BYTES)
+    ) {
+      yield batch;
+      batch = [];
+      bodyBytes = 2;
+    }
+    const nextEntryBytes =
+      operation.inputBytes + String(batch.length).length + 3;
+    if (batch.length > 0) bodyBytes++;
+    batch.push(operation);
+    bodyBytes += nextEntryBytes;
+  }
+  if (batch.length > 0) yield batch;
 }
 
 export interface RpcBatchClientOptions {
@@ -117,11 +146,19 @@ export class RpcBatchClient {
       const headerKey = JSON.stringify(
         headerEntries.sort(([first], [second]) => first.localeCompare(second)),
       );
+      // The request owns its input from this point on. A later edit must not
+      // change an operation while it waits in the batching window.
+      const serializedInput = JSON.stringify(superjson.serialize(input));
+      // UTF-8 needs at least one byte per UTF-16 code unit in a JSON string.
+      // Inputs already over budget travel alone, without an extra large copy.
+      const inputBytes =
+        serializedInput.length > MAX_BATCH_BODY_BYTES
+          ? serializedInput.length
+          : encoder.encode(serializedInput).byteLength;
       this.queues[kind].push({
         path,
-        // The request owns its input from this point on. A later edit must not
-        // change an operation while it waits in the batching window.
-        serializedInput: JSON.stringify(superjson.serialize(input)),
+        serializedInput,
+        inputBytes,
         headers,
         headerKey,
         resolve,
@@ -167,15 +204,8 @@ export class RpcBatchClient {
       batches.set(operation.headerKey, batch);
     }
     for (const batch of batches.values()) {
-      for (
-        let offset = 0;
-        offset < batch.length;
-        offset += MAX_BATCH_OPERATIONS
-      ) {
-        void this.send(
-          kind,
-          batch.slice(offset, offset + MAX_BATCH_OPERATIONS),
-        );
+      for (const bounded of boundedBatches(batch)) {
+        void this.send(kind, bounded);
       }
     }
   }

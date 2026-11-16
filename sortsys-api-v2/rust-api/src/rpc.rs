@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{Path, RawQuery, State},
-    http::{HeaderMap, Method},
+    http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::any,
 };
@@ -26,6 +26,8 @@ use crate::{
     error::{ErrorCode, RpcError, RpcResult},
     superjson,
 };
+
+const MAX_BATCH_OPERATIONS: usize = 32;
 
 type HandlerFuture = Pin<Box<dyn Future<Output = RpcResult<Value>> + Send>>;
 type Handler = dyn Fn(RequestContext, Value) -> HandlerFuture + Send + Sync;
@@ -460,6 +462,16 @@ async fn handle_http(
         .as_deref()
         .and_then(|query| query_parameter(query, "batch"))
         .is_some_and(|value| value == "1");
+    let paths: Vec<&str> = path.split(',').take(MAX_BATCH_OPERATIONS + 1).collect();
+    if paths.len() > MAX_BATCH_OPERATIONS {
+        return reject_request(is_batch, "RPC batch exceeds 32 operations");
+    }
+    if paths.iter().any(|path| path.is_empty()) {
+        return reject_request(is_batch, "RPC request contains an empty procedure path");
+    }
+    if !is_batch && paths.len() != 1 {
+        return reject_request(false, "Multiple procedure paths require batch=1");
+    }
     let serialized_input = if method == Method::GET {
         raw_query
             .as_deref()
@@ -482,7 +494,15 @@ async fn handle_http(
         }
     };
 
-    let paths: Vec<String> = path.split(',').map(str::to_owned).collect();
+    if is_batch {
+        let valid_inputs = input.as_object().is_some_and(|inputs| {
+            inputs.len() == paths.len()
+                && (0..paths.len()).all(|index| inputs.contains_key(&index.to_string()))
+        });
+        if !valid_inputs {
+            return reject_request(is_batch, "RPC batch inputs must match the procedure paths");
+        }
+    }
     let calls = paths.into_iter().enumerate().map(|(index, path)| {
         let registry = registry.clone();
         let context = RequestContext {
@@ -498,7 +518,7 @@ async fn handle_http(
             input.clone()
         };
         let input = superjson::decode(envelope);
-        async move { registry.call(path, method, context, input).await }
+        async move { registry.call(path.to_owned(), method, context, input).await }
     });
 
     let responses = join_all(calls).await;
@@ -510,6 +530,14 @@ async fn handle_http(
         })
     };
     Json(response).into_response()
+}
+
+fn reject_request(is_batch: bool, message: &str) -> Response {
+    let error = RpcError::new(ErrorCode::BadRequest, message)
+        .with_http_code(400)
+        .into_wire();
+    let response = if is_batch { json!([error]) } else { error };
+    (StatusCode::BAD_REQUEST, Json(response)).into_response()
 }
 
 fn query_parameter(query: &str, name: &str) -> Option<String> {
@@ -698,6 +726,118 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_full_batch_keeps_every_result_in_request_order() {
+        let router = super::http_router(
+            super::ProcedureRegistry::builder()
+                .query("echo", |_: super::RequestContext, input: Value| async {
+                    tokio::task::yield_now().await;
+                    Ok(input)
+                })
+                .build(),
+        );
+        let paths = ["echo"; 32].join(",");
+        let inputs: serde_json::Map<String, Value> = (0..32)
+            .map(|index| (index.to_string(), json!({ "json": index })))
+            .collect();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/{paths}?batch=1"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(Value::Object(inputs).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let replies: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(replies.len(), 32);
+        for (index, reply) in replies.iter().enumerate() {
+            assert_eq!(reply["result"]["data"]["json"], json!(index));
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_or_oversized_batches_never_start_any_handler() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let router = super::http_router(
+            super::ProcedureRegistry::builder()
+                .mutation("write", move |_: super::RequestContext, _: ()| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                })
+                .build(),
+        );
+        let oversized_paths = ["write"; 33].join(",");
+        let oversized_inputs: serde_json::Map<String, Value> = (0..33)
+            .map(|index| (index.to_string(), json!({ "json": null })))
+            .collect();
+        let cases = [
+            ("/write,write".to_owned(), json!({ "json": null })),
+            (
+                "/write,?batch=1".to_owned(),
+                json!({ "0": { "json": null }, "1": { "json": null } }),
+            ),
+            (
+                "/write,write?batch=1".to_owned(),
+                json!({ "0": { "json": null } }),
+            ),
+            (
+                "/write,write?batch=1".to_owned(),
+                json!({ "1": { "json": null }, "2": { "json": null } }),
+            ),
+            (
+                "/write,write?batch=1".to_owned(),
+                json!({ "0": { "json": null }, "1": { "json": null }, "2": { "json": null } }),
+            ),
+            ("/write?batch=1".to_owned(), json!([{ "json": null }])),
+            ("/write?batch=1".to_owned(), Value::Null),
+            (
+                format!("/{oversized_paths}?batch=1"),
+                Value::Object(oversized_inputs),
+            ),
+        ];
+        for (uri, input) in cases {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(input.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let response: Value = serde_json::from_slice(&bytes).unwrap();
+            let error = if response.is_array() {
+                &response[0]
+            } else {
+                &response
+            };
+            assert_eq!(
+                error["error"]["json"]["data"]["code"], "BAD_REQUEST",
+                "{uri}"
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "{uri}");
+        }
+    }
+
+    #[tokio::test]
     async fn queries_accept_large_json_bodies_without_changing_the_wire_contract() {
         let router = super::http_router(
             super::ProcedureRegistry::builder()
@@ -755,12 +895,16 @@ mod tests {
                 .build(),
         );
         for (method, path) in [("GET", "write"), ("PUT", "read"), ("DELETE", "read")] {
+            let mut uri = format!("/{path}?batch=1");
+            if method == "GET" {
+                uri.push_str("&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D");
+            }
             let response = router
                 .clone()
                 .oneshot(
                     Request::builder()
                         .method(method)
-                        .uri(format!("/{path}?batch=1"))
+                        .uri(uri)
                         .header("content-type", "application/json")
                         .body(Body::from(r#"{"0":{"json":null}}"#))
                         .unwrap(),
