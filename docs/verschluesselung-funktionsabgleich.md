@@ -34,8 +34,8 @@ Siehe [Benutzerzugang](benutzerfreigaben.md).
 
 **Fein abgestufte Lese- und Schreibrechte.** Getrennte Schlüssel schützen
 Teilinhalte; signierte Regeln begrenzen technische Schreibaktionen. Die
-gemeinsame Rechteauswahl für Stammdaten, Projekte und Personal erlaubt Lesen,
-Anlegen, Bearbeiten und Löschen einzeln. Einzelne Änderungen erhalten andere
+gemeinsame Rechteauswahl für Stammdaten, Projekte, Personal und Werkzeuge erlaubt
+Lesen, Anlegen, Bearbeiten und Löschen einzeln. Einzelne Änderungen erhalten andere
 aktuelle Rechte; mehrere Bereiche werden gemeinsam signiert. Fachliche
 Bedingungen über Geheimwerte prüft der Client. Die unabhängige Löschung von
 Unterzeilen benötigt teils noch feiner aufgeteilte Objekte.
@@ -109,9 +109,11 @@ Preisänderungen mit Teilfreigaben sind angeschlossen. Der Druck prüft die
 dargestellten Inhalte und benötigt keine verborgenen internen Notizen. Zwei
 Browser mit demselben Konto sind gegen getrennte API-Instanzen geprüft,
 einschließlich Textabgleich vor der XML-Veröffentlichung und erneutem Öffnen
-nach dem Speichern. Der entsprechende vollständige Browsernachweis mit
-verschiedenen Konten steht noch aus. Dauerhafte Wiederanlaufpunkte und das
-spätere Zusammenführen heruntergeladener Teilentwürfe brauchen weitere Arbeit.
+nach dem Speichern. Mit John und Frank ist auch die gemeinsame Änderung des
+Feldes „Bauvorhaben“ ohne Preisfreigabe über zwei API-Instanzen geprüft, ebenso
+Rechteentzug und erneute Nur-Lesen-Freigabe. Dieser Nachweis deckt noch nicht die
+gemeinsame Bearbeitung aller Positionsabsätze ab. Dauerhafte Wiederanlaufpunkte
+und das spätere Zusammenführen heruntergeladener Teilentwürfe brauchen weitere Arbeit.
 
 **Projektgrunddaten und Projektkontakte.** Getrennte Bereiche je Projekt,
 Grunddaten, Kontaktbezeichnungen und Statuswechsel sind angeschlossen.
@@ -153,9 +155,12 @@ Werkzeug und Buchung; Kosten sind getrennt. Bestandsübernahme, lokale Suche,
 Filter, Stammdatenänderungen, Ausgabe, Rückgabe, Inventuren und Umbuchungen sind
 an den gemeinsamen Datenkern angeschlossen. Historische Kosten bleiben erhalten;
 konkurrierende Ausgaben und Umbuchungen werden atomar veröffentlicht. Die
-Personalauswahl verwendet verschlüsselte Profile. Automatische
-Mitarbeiterfreigaben und die Ausgabe ohne lesbare Kosten fehlen noch.
-Vollständige Textsuchparität steht ebenfalls aus. Siehe
+Personalauswahl verwendet verschlüsselte Profile. Freigaben für Werkzeuge und
+einzelne Buchungen lassen sich beim Benutzerkonto getrennt nach Stammdaten,
+Kosten, Inventuren und Umbuchungsanfragen verwalten.
+Die Aktionen der Detailansicht prüfen das jeweilige Werkzeug und seine Buchung.
+Automatische Mitarbeiterfreigaben und die Ausgabe ohne lesbare Kosten fehlen
+noch. Vollständige Textsuchparität steht ebenfalls aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).
 
 **Einsatzplanung und Baustellensperren.** Bestandsübernahme, Listen, Anlage,

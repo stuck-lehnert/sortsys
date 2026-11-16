@@ -23,6 +23,7 @@ import { uiText } from "~/lib/i18n";
 import { ProjectAccess } from "./ProjectAccess";
 import { PersonnelAccess } from "./PersonnelAccess";
 import { CommercialAccess } from "./CommercialAccess";
+import { ToolAccess } from "./ToolAccess";
 import { OrganizationAccess } from "./OrganizationAccess";
 import { AccessLevelSelect } from "./AccessLevelSelect";
 import { MyButton } from "./MyButton";
@@ -339,6 +340,14 @@ export default function OrganizationInvitations({
       {editing && selected && !loadingAccess && (
         <PersonnelAccess
           key={`personnel:${selected.id}`}
+          user={`user:${selected.id}`}
+          disabled={busy}
+          onBusyChange={setBusy}
+        />
+      )}
+      {editing && selected && !loadingAccess && (
+        <ToolAccess
+          key={`tools:${selected.id}`}
           user={`user:${selected.id}`}
           disabled={busy}
           onBusyChange={setBusy}

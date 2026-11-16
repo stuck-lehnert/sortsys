@@ -46,6 +46,7 @@ import { NotFound } from "./_404";
 import { MyExpandable } from "~/components/MyExpandable";
 import { Remarks } from "~/components/Remarks";
 import { EntityActivityTimeline } from "~/components/EntityActivityTimeline";
+import type { ToolTracking } from "~/type-helpers";
 
 export default function ToolDetailPage() {
   const { id } = useParams();
@@ -89,9 +90,61 @@ export default function ToolDetailPage() {
   const activeTracking =
     sortedTrackings?.find((tracking) => !tracking.endedAt) ?? null;
   const latestInventory = sortedInventories?.[0];
+  const toolScope = `tool:${id}`;
+  const canEditTool = sessionInfo.canAccess(toolScope, "master-data", "update");
+  const canBookTool =
+    canEditTool &&
+    sessionInfo.canCreate("tool-tracking") &&
+    sessionInfo.canAccess(toolScope, "procurement", "read");
+  const trackingScope = activeTracking
+    ? `tool-tracking:${activeTracking.id}`
+    : null;
+  const canEditTracking =
+    !!trackingScope &&
+    sessionInfo.canAccess(trackingScope, "master-data", "update");
+  const canEditTransfers =
+    !!trackingScope && sessionInfo.canAccess(trackingScope, "scope", "update");
+  const canEditProjectUsage =
+    !activeTracking?.projectId ||
+    sessionInfo.canAccess(
+      `project:${activeTracking.projectId}:tool-usage`,
+      "master-data",
+      "update",
+    );
+  const canReturnTool =
+    canEditTool && canEditTracking && canEditTransfers && canEditProjectUsage;
+  const canTransferTool =
+    canBookTool && canEditTracking && canEditTransfers && canEditProjectUsage;
+  const canRequestTransfer =
+    !!activeTracking &&
+    !!trackingScope &&
+    sessionInfo.canAccess(trackingScope, "scope", "create") &&
+    (sessionInfo.user.id === activeTracking.responsibleUserId ||
+      sessionInfo.user.id === activeTracking.startedByUserId);
+  function canDeleteTracking(tracking: ToolTracking) {
+    const scope = `tool-tracking:${tracking.id}`;
+    const canDeleteBooking = (
+      ["master-data", "procurement", "scope"] as const
+    ).every((facet) => sessionInfo.canAccess(scope, facet, "delete"));
+    if (!canDeleteBooking) return false;
+    if (!tracking.projectId) return true;
+    const projectScope = `project:${tracking.projectId}:tool-usage`;
+    return (
+      sessionInfo.canAccess(projectScope, "master-data", "delete") &&
+      sessionInfo.canAccess(projectScope, "procurement", "delete")
+    );
+  }
+  const canDeleteTool =
+    (["master-data", "procurement", "measurement"] as const).every((facet) =>
+      sessionInfo.canAccess(toolScope, facet, "delete"),
+    ) &&
+    sessionInfo.canAccess("catalog:tools", "master-data", "update") &&
+    !trackingsError &&
+    !!sortedTrackings &&
+    sortedTrackings.every(canDeleteTracking);
 
   useShortcut("Control+e", (e) => {
-    if (!tool || !sessionInfo.canDo("manage:tools")) return;
+    if (!tool || !canEditTool) return;
     e.preventDefault();
     showModifyToolModal(modals, tool);
   });
@@ -118,17 +171,13 @@ export default function ToolDetailPage() {
                 {
                   label: uiText("Buchen"),
                   renderIcon: Icons.Track,
-                  hideIf:
-                    !tool.available ||
-                    !sessionInfo.canDo("manage:toolTrackings"),
+                  hideIf: !tool.available || !canBookTool,
                   onClick: () => showTrackToolsModal(modals, { tools: [tool] }),
                 },
                 {
                   label: uiText("Zurückbuchen"),
                   renderIcon: Icons.TakeBack,
-                  hideIf:
-                    tool.available ||
-                    !sessionInfo.canDo("manage:toolTrackings"),
+                  hideIf: tool.available || !canReturnTool,
                   onClick: async () => {
                     const [, err] = await client.mutate("tools.untrack", {
                       id: tool.id,
@@ -137,36 +186,33 @@ export default function ToolDetailPage() {
                   },
                 },
                 {
-                  label: sessionInfo.canDo("manage:toolTrackings")
+                  label: canTransferTool
                     ? uiText("Umbuchen")
                     : uiText("Umbuchungsanfrage"),
                   renderIcon: Icons.Transfer,
                   hideIf:
-                    !activeTracking ||
-                    !(
-                      sessionInfo.canDo("manage:toolTrackings") ||
-                      sessionInfo.user.id ===
-                        activeTracking.responsibleUserId ||
-                      sessionInfo.user.id === activeTracking.startedByUserId
-                    ),
+                    !activeTracking || !(canTransferTool || canRequestTransfer),
                   onClick: () =>
                     showToolTransferModal(modals, {
                       tool,
                       tracking: activeTracking!,
-                      isRequest: !sessionInfo.canDo("manage:toolTrackings"),
+                      isRequest: !canTransferTool,
                     }),
                 },
                 {
                   label: uiText("Inventur"),
                   renderIcon: Icons.ToolInventory,
-                  hideIf: !sessionInfo.canDo("manage:toolInventories"),
+                  hideIf: !sessionInfo.canAccess(
+                    toolScope,
+                    "measurement",
+                    "create",
+                  ),
                   onClick: () => showCreateToolInventoryModal(modals, tool),
                 },
                 {
                   label: uiText("Archivieren", "Archive"),
                   renderIcon: Icons.Archive,
-                  hideIf:
-                    !!tool.archivedSince || !sessionInfo.canDo("manage:tools"),
+                  hideIf: !!tool.archivedSince || !canEditTool,
                   onClick: async () => {
                     const [, err] = await client.mutate("tools.archive", {
                       id: tool.id,
@@ -177,8 +223,7 @@ export default function ToolDetailPage() {
                 {
                   label: uiText("Aus Archiv holen"),
                   renderIcon: Icons.Archive,
-                  hideIf:
-                    !tool.archivedSince || !sessionInfo.canDo("manage:tools"),
+                  hideIf: !tool.archivedSince || !canEditTool,
                   onClick: async () => {
                     const [, err] = await client.mutate("tools.unarchive", {
                       id: tool.id,
@@ -189,13 +234,13 @@ export default function ToolDetailPage() {
                 {
                   label: uiText("Bearbeiten"),
                   renderIcon: Icons.Edit,
-                  hideIf: !sessionInfo.canDo("manage:tools"),
+                  hideIf: !canEditTool,
                   onClick: () => showModifyToolModal(modals, tool),
                 },
                 {
                   label: uiText("Löschen"),
                   renderIcon: Icons.Delete,
-                  hideIf: !sessionInfo.canDo("delete:tools"),
+                  hideIf: !canDeleteTool,
                   onClick: () => showDeleteToolModal(modals, tool),
                 },
               ]}

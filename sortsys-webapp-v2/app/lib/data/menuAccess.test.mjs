@@ -267,6 +267,15 @@ test("tool menus distinguish individual masters, costs, inventories and tracking
   const index = project([rule("catalog:tools", "master-data", [...ACTIONS])]);
   expect(index.canCreate("tool")).toBe(true);
   expect(index.role("view:tools")).toBe(false);
+  const oneBooking = project([
+    rule("tool-tracking:5", "master-data", [...ACTIONS]),
+  ]);
+  expect(oneBooking.canCreate("tool-tracking")).toBe(false);
+  const newBookings = project([
+    rule("create:tool-tracking", "master-data", ["create"]),
+  ]);
+  expect(newBookings.canCreate("tool-tracking")).toBe(true);
+  expect(newBookings.role("view:toolTrackings")).toBe(false);
 });
 
 test("personnel menus require name grants for lists and distinguish private field writes", () => {

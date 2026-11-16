@@ -2847,7 +2847,8 @@ window.cryptoFixture = {
     );
   },
   async showUserAccess(asDialog = false, onlyCommercial = false) {
-    const { client, gaebDocuments } = await import("../../app/lib/client");
+    const { client, gaebDocuments, toolResources } =
+      await import("../../app/lib/client");
     client.loggedIn = () => true;
     const { acceptVault } = await import("../../app/lib/crypto/session");
     const { PRODUCT_COLLECTION, PRICE_COLLECTION } =
@@ -2862,6 +2863,17 @@ window.cryptoFixture = {
       await import("../../app/lib/data/commercialAreas");
     const commercialAreas = ["6", "7"].flatMap((id) =>
       COMMERCIAL_FACETS.map((facet) => commercialCollection(id, facet)),
+    );
+    const { toolCollection } = await import("../../app/lib/data/toolData");
+    const toolAreas = ["8", "9"].flatMap((id) =>
+      ["master-data", "procurement", "measurement"].map((facet) =>
+        toolCollection("tool", id, facet),
+      ),
+    );
+    const bookingAreas = ["a", "b"].flatMap((id) =>
+      ["master-data", "procurement", "scope"].map((facet) =>
+        toolCollection("tool-tracking", id, facet),
+      ),
     );
     const projectAreas = PROJECT_ACCESS_KEYS.map((key) =>
       projectAccessArea("4", key),
@@ -2886,6 +2898,8 @@ window.cryptoFixture = {
           ...personnel,
           ...projectAreas,
           ...commercialAreas,
+          ...toolAreas,
+          ...bookingAreas,
         ],
       },
     );
@@ -2904,6 +2918,22 @@ window.cryptoFixture = {
         version: "2",
         rules: [
           ...setup.policy.rules,
+          ...["tool:8", "tool-tracking:a"].flatMap((scope) => [
+            {
+              subject: "user:2",
+              scope,
+              facet: "master-data",
+              actions: ["read", "update"],
+              effect: "allow",
+            },
+            {
+              subject: "user:2",
+              scope,
+              facet: "procurement",
+              actions: ["read"],
+              effect: "deny",
+            },
+          ]),
           {
             subject: "user:2",
             scope: "commercial:6",
@@ -3029,6 +3059,8 @@ window.cryptoFixture = {
         ...personnel,
         ...projectAreas,
         ...commercialAreas,
+        ...toolAreas,
+        ...bookingAreas,
       ].map(
         async (area) =>
           (
@@ -3140,6 +3172,35 @@ window.cryptoFixture = {
     gaebDocuments.choices = async (signal) => {
       signal?.throwIfAborted();
       return replies["commercial.cases.list"];
+    };
+    const toolChoices = [
+      {
+        id: "8",
+        customId: 73,
+        brand: "Muster",
+        category: "Bohrhammer",
+        label: "Nordflügel",
+      },
+      {
+        id: "9",
+        customId: 74,
+        brand: "Muster",
+        category: "Rührwerk",
+        label: "Südflügel",
+      },
+    ];
+    toolResources.tools = async (signal) => {
+      signal?.throwIfAborted();
+      return toolChoices;
+    };
+    toolResources.trackings = async (signal) => {
+      signal?.throwIfAborted();
+      return toolChoices.map((tool, index) => ({
+        id: index === 0 ? "a" : "b",
+        tool,
+        startedAt: new Date("2026-11-09T08:15:00Z"),
+        endedAt: null,
+      }));
     };
     window.cryptoFixture.holdNextAccessRead = () => {
       let release;

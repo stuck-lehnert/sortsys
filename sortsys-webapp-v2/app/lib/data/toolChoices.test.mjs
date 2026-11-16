@@ -1,0 +1,121 @@
+import { afterEach, expect, test } from "bun:test";
+import { ACTIONS } from "@sortsys/zerotrust/sortsys";
+import { lockCryptoSession } from "../crypto/session";
+import { createProtectedTools } from "./tools";
+import { toolCollection, toolPart } from "./toolData";
+import { row } from "./testing/businessRow.mjs";
+import { duckDriver } from "./testing/duckDriver.mjs";
+import { protectedTenant } from "./testing/protectedTenant.mjs";
+
+afterEach(() => lockCryptoSession());
+
+test("tool and booking choices read only permitted master data and reuse one access snapshot per read", async () => {
+  const master = toolCollection("tool", "34", "master-data");
+  const cost = toolCollection("tool", "34", "procurement");
+  const booking = toolCollection("tool-tracking", "35", "master-data");
+  const bookingCost = toolCollection("tool-tracking", "35", "procurement");
+  const unshared = toolCollection("tool", "36", "master-data");
+  const unrelatedBooking = toolCollection("tool-tracking", "37", "master-data");
+  const tenant = await protectedTenant(
+    [master, cost, booking, bookingCost, unshared, unrelatedBooking],
+    (area) => (area === unshared ? [] : [...ACTIONS]),
+  );
+  const source = row("tools", {
+    id: "100",
+    custom_id: "73",
+    brand: "Muster",
+    category: "Bohrhammer",
+    label: "Sanierung Nordflügel",
+    purchase_price: 1537.87654321,
+    usage_cost_per_day: 17.375,
+  });
+  await tenant.seed(
+    master,
+    master.prefix,
+    toolPart("tool", "34", "master-data", [source], "35"),
+  );
+  await tenant.seed(cost, cost.prefix, { invalid: true });
+  await tenant.seed(bookingCost, bookingCost.prefix, { invalid: true });
+  for (const [area, toolId, bookingId] of [
+    [booking, "100", "101"],
+    [unrelatedBooking, "102", "103"],
+  ]) {
+    const source = row("tool_trackings", {
+      id: bookingId,
+      tool_id: toolId,
+      started_at: "2026-11-09T08:15:00Z",
+      ended_at: null,
+      tool_usage_cost_per_day: 17.375,
+    });
+    await tenant.seed(
+      area,
+      area.prefix,
+      toolPart("tool-tracking", area.scope.split(":")[1], "master-data", [
+        source,
+      ]),
+    );
+  }
+  const store = createProtectedTools(
+    tenant.client,
+    new AbortController().signal,
+    async () => {
+      throw new Error("Choices must not load project contents");
+    },
+    duckDriver,
+  );
+  try {
+    tenant.calls.length = 0;
+    const tools = await store.choices();
+    expect(tools).toEqual([
+      {
+        id: "34",
+        customId: 73,
+        brand: "Muster",
+        category: "Bohrhammer",
+        label: "Sanierung Nordflügel",
+      },
+    ]);
+    expect(
+      tenant.calls.filter((call) => call.path === "zerotrust.access.snapshot"),
+    ).toHaveLength(1);
+    tenant.calls.length = 0;
+    const choices = await store.trackingChoices();
+    expect(choices).toEqual([
+      {
+        id: "35",
+        tool: tools[0],
+        startedAt: new Date("2026-11-09T08:15:00Z"),
+        endedAt: null,
+      },
+      {
+        id: "37",
+        tool: null,
+        startedAt: new Date("2026-11-09T08:15:00Z"),
+        endedAt: null,
+      },
+    ]);
+    expect(
+      tenant.calls.filter((call) => call.path === "zerotrust.access.snapshot"),
+    ).toHaveLength(1);
+    const reads = tenant.calls.filter((call) =>
+      [
+        "zerotrust.objects.pages",
+        "zerotrust.objects.list",
+        "zerotrust.objects.get",
+      ].includes(call.path),
+    );
+    for (const call of reads) {
+      for (const selected of call.input.selections ?? [call.input]) {
+        expect(selected.domain.endsWith(":master-data")).toBe(true);
+        expect(selected.domain).not.toBe(unshared.domain);
+      }
+    }
+    expect(JSON.stringify(tenant.calls)).not.toContain("Sanierung Nordflügel");
+    store.close();
+    const calls = tenant.calls.length;
+    await expect(store.choices()).rejects.toThrow();
+    expect(tenant.calls).toHaveLength(calls);
+  } finally {
+    store.close();
+  }
+});

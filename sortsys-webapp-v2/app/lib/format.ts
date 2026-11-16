@@ -35,7 +35,9 @@ export function contactName(contact: Contact) {
   return userFullName(contact);
 }
 
-export function toolTitle(tool: Tool): string {
+export function toolTitle(
+  tool: Pick<Tool, "brand" | "category" | "label">,
+): string {
   let title = `${tool.brand} ${tool.category}`;
   if (tool.label) title += ` ${tool.label}`;
   return title;

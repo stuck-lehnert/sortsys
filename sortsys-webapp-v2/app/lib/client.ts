@@ -27,6 +27,7 @@ const businessClient = createBusinessClient(baseClient, {
 
 export const projectFiles = businessClient.files;
 export const gaebDocuments = businessClient.documents;
+export const toolResources = businessClient.toolResources;
 export const organizationSettings = businessClient.organization;
 export const organizationLogo = businessClient.logo;
 export const protectedContent = businessClient.context;

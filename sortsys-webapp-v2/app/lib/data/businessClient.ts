@@ -1821,21 +1821,44 @@ export function createBusinessClient(
       return result;
     },
   };
+  async function readResourceChoices<T>(
+    read: () => Promise<T>,
+    cancellation?: AbortSignal,
+  ) {
+    await synchronized();
+    const expectedAccount = account;
+    const context = editorController.signal;
+    const live = () => {
+      cancellation?.throwIfAborted();
+      context.throwIfAborted();
+      if (closed || !expectedAccount || expectedAccount !== unlockedAccount())
+        throw unavailable();
+    };
+    live();
+    const choices = await read();
+    live();
+    return choices;
+  }
+  const toolResourceActions = {
+    tools(cancellation?: AbortSignal) {
+      return readResourceChoices(
+        async () => (await toolStore()).choices(),
+        cancellation,
+      );
+    },
+    trackings(cancellation?: AbortSignal) {
+      return readResourceChoices(
+        async () => (await toolStore()).trackingChoices(),
+        cancellation,
+      );
+    },
+  };
   const documentActions = {
-    async choices(cancellation?: AbortSignal) {
-      await synchronized();
-      const expectedAccount = account;
-      const context = editorController.signal;
-      const live = () => {
-        cancellation?.throwIfAborted();
-        context.throwIfAborted();
-        if (closed || !expectedAccount || expectedAccount !== unlockedAccount())
-          throw unavailable();
-      };
-      live();
-      const choices = await (await commercialStore()).choices();
-      live();
-      return choices;
+    choices(cancellation?: AbortSignal) {
+      return readResourceChoices(
+        async () => (await commercialStore()).choices(),
+        cancellation,
+      );
     },
     async open(
       caseId: string,
@@ -2100,6 +2123,7 @@ export function createBusinessClient(
     access: typeof contentAccess;
     files: typeof fileActions;
     documents: typeof documentActions;
+    toolResources: typeof toolResourceActions;
     organization: typeof organizationActions;
     logo: typeof logoActions;
     templates: typeof templateActions;
@@ -2111,6 +2135,7 @@ export function createBusinessClient(
     access: contentAccess,
     files: fileActions,
     documents: documentActions,
+    toolResources: toolResourceActions,
     organization: organizationActions,
     logo: logoActions,
     templates: templateActions,

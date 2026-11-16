@@ -155,10 +155,7 @@ export function projectMenuAccess(permissions: Policy, subject: string) {
       case "tool":
         return can("catalog:tools", "master-data", "create");
       case "tool-tracking":
-        return (
-          has(creationScope(kind), "master-data", "create") ||
-          canAny(kind, "master-data", "create")
-        );
+        return has(creationScope(kind), "master-data", "create");
       case "regie-report":
         return canAny("project", "master-data", "create", "regie-reports");
       case "delivery-note":

@@ -95,6 +95,7 @@ function auditPage(page) {
       "Antrag mit Standardfreigabe",
       "Gemeinsames Auftrags-LV von John und Frank",
       "Nach dem Entzug ausschließlich für John",
+      "Bohrhammer nach Freigabe bearbeitet",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -239,8 +240,16 @@ async function selectOfferAccess(page, title) {
 }
 
 async function saveOfferAccess(dialog) {
+  await saveResourceAccess(
+    dialog,
+    "Dokumentzugriff speichern",
+    "Bezeichnung und Status",
+  );
+}
+
+async function saveResourceAccess(dialog, label, field) {
   const save = dialog.getByRole("button", {
-    name: "Dokumentzugriff speichern",
+    name: label,
     exact: true,
   });
   await expect(save).toBeEnabled();
@@ -248,10 +257,26 @@ async function saveOfferAccess(dialog) {
   await expect(save).toHaveAttribute("data-pending", "true");
   await expect(save).not.toHaveAttribute("data-pending", "true");
   await expect(
-    dialog.getByRole("button", { name: /Bezeichnung und Status/ }),
+    dialog.getByRole("button", { name: new RegExp(field) }),
   ).toBeEnabled();
   await expect(save).toBeDisabled();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
+}
+
+async function selectToolAccess(page, title) {
+  const dialog = await openMemberPermissions(page);
+  const picker = dialog.getByRole("combobox", {
+    name: "Werkzeug",
+    exact: true,
+  });
+  await expect(picker).toBeEnabled();
+  await picker.fill(title);
+  await page.getByRole("option", { name: new RegExp(title) }).click();
+  await expect(page.getByRole("listbox")).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: /Werkzeugstammdaten/ }),
+  ).toBeEnabled();
+  return dialog;
 }
 
 function firstPrice(editor) {
@@ -724,6 +749,193 @@ try {
     await expect(
       page.locator(".attachment-email-body, .attachment-pdf-frame"),
     ).toHaveCount(0);
+  });
+  await scenario("tool-access-between-users", async (page) => {
+    const memberServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const memberAudit = auditPage(member);
+    const originalTitle = "Bohrhammer 1";
+    const editedTitle = "Bohrhammer nach Freigabe bearbeitet";
+    const missingResource =
+      "Die angeforderte Ressource konnte nicht aufgelöst werden.";
+    const memberActions = member
+      .getByRole("main")
+      .getByRole("button", { name: "Aktionen", exact: true });
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await page.goto(`${server.origin}/tools`);
+      await page.getByText(originalTitle, { exact: true }).click();
+      await expect(
+        page.getByRole("heading", { name: new RegExp(originalTitle) }),
+      ).toBeVisible();
+      const toolPath = new URL(page.url()).pathname;
+      await expect(page.getByText("Kaufpreis", { exact: true })).toBeVisible();
+      const costValues = page
+        .locator("dl")
+        .filter({ hasText: "Kaufpreis" })
+        .getByRole("definition");
+      const originalCosts = await costValues.allTextContents();
+
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await member.goto(`${memberServer.origin}${toolPath}`);
+      await expect(
+        member.getByText(missingResource, { exact: true }),
+      ).toBeVisible();
+      await expect(member.getByText("Kaufpreis", { exact: true })).toHaveCount(
+        0,
+      );
+
+      let access = await selectToolAccess(page, originalTitle);
+      await selectAccess(page, access, "Werkzeugstammdaten", "Lesen");
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await member.reload();
+      await expect(
+        member.getByRole("heading", { name: new RegExp(originalTitle) }),
+      ).toBeVisible();
+      await expect(memberActions).toHaveCount(0);
+      await expect(member.getByText("Kaufpreis", { exact: true })).toHaveCount(
+        0,
+      );
+      await expect(
+        member.getByText("Nutzungskosten pro Tag", { exact: true }),
+      ).toHaveCount(0);
+
+      // A write grant for a different tool must not enable this tool's actions.
+      access = await selectToolAccess(page, "Rührwerk 2");
+      await selectAccess(
+        page,
+        access,
+        "Werkzeugstammdaten",
+        "Lesen und bearbeiten",
+      );
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await member.goto(`${memberServer.origin}/tools`);
+      await member.getByText("Rührwerk 2", { exact: true }).click();
+      await expect(memberActions).toBeVisible();
+      await member.goto(`${memberServer.origin}${toolPath}`);
+      await expect(
+        member.getByRole("heading", { name: new RegExp(originalTitle) }),
+      ).toBeVisible();
+      await expect(memberActions).toHaveCount(0);
+      await member.keyboard.press("Control+e");
+      await expect(
+        member.getByRole("dialog", {
+          name: "Werkzeug bearbeiten",
+          exact: true,
+        }),
+      ).toHaveCount(0);
+
+      access = await selectToolAccess(page, originalTitle);
+      await selectAccess(
+        page,
+        access,
+        "Werkzeugstammdaten",
+        "Lesen und bearbeiten",
+      );
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await expect(memberActions).toBeVisible();
+      await memberActions.click();
+      for (const action of ["Buchen", "Inventur", "Löschen"]) {
+        await expect(
+          member.getByRole("menuitem", { name: action, exact: true }),
+        ).toHaveCount(0);
+      }
+      await member
+        .getByRole("menuitem", { name: "Bearbeiten", exact: true })
+        .click();
+      const edit = member.getByRole("dialog", {
+        name: "Werkzeug bearbeiten",
+        exact: true,
+      });
+      await expect(edit.getByLabel("Modell", { exact: true })).toHaveValue(
+        originalTitle,
+      );
+      await expect(
+        edit.getByLabel("Kaufpreis (EUR)", { exact: true }),
+      ).toHaveCount(0);
+      await edit.getByLabel("Modell", { exact: true }).fill(editedTitle);
+      await edit
+        .getByRole("button", { name: "Speichern", exact: true })
+        .click();
+      await expect(edit).toBeHidden();
+      await member.reload();
+      await expect(
+        member.getByRole("heading", { name: new RegExp(editedTitle) }),
+      ).toBeVisible();
+      await expect(member.getByText("Kaufpreis", { exact: true })).toHaveCount(
+        0,
+      );
+      await member.screenshot({
+        path: join(artifacts, "member-tool-without-cost-access.png"),
+        fullPage: true,
+      });
+
+      await page.goto(`${server.origin}${toolPath}`);
+      await expect(
+        page.getByRole("heading", { name: new RegExp(editedTitle) }),
+      ).toBeVisible();
+      await expect(costValues).toHaveText(originalCosts);
+
+      access = await selectToolAccess(page, editedTitle);
+      await selectAccess(page, access, "Werkzeugstammdaten", "Kein Zugriff");
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await expect(
+        member.getByText(missingResource, { exact: true }),
+      ).toBeVisible();
+      await member.reload();
+      await expect(
+        member.getByText(missingResource, { exact: true }),
+      ).toBeVisible();
+      await expect(member.getByText(editedTitle, { exact: true })).toHaveCount(
+        0,
+      );
+
+      access = await selectToolAccess(page, editedTitle);
+      await selectAccess(page, access, "Werkzeugstammdaten", "Lesen");
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await member.reload();
+      await expect(
+        member.getByRole("heading", { name: new RegExp(editedTitle) }),
+      ).toBeVisible();
+      await expect(memberActions).toHaveCount(0);
+      await expect(member.getByText("Kaufpreis", { exact: true })).toHaveCount(
+        0,
+      );
+      memberAudit.assertClean();
+    } finally {
+      await memberContext.close();
+    }
   });
   await scenario("gaeb-editing-between-users", async (page) => {
     const memberServer = await applicationServer(

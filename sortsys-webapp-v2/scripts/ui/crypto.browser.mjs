@@ -41,7 +41,10 @@ async function waitForClosedListboxes(page) {
 }
 
 async function revealField(page, field) {
-  await field.scrollIntoViewIfNeeded();
+  await field.and(page.locator(":enabled")).waitFor();
+  await field.evaluate((element) =>
+    element.scrollIntoView({ block: "center" }),
+  );
   // React Aria closes non-modal lists on ancestor scroll. Deliver the scroll
   // before focusing a newly revealed input and opening its next list.
   await page.evaluate(
@@ -2843,6 +2846,125 @@ async function waitForAccessSave(page, button) {
     (element) => element.disabled && element.dataset.pending !== "true",
     await button.elementHandle(),
   );
+}
+
+for (const scenario of [
+  {
+    kind: "tool",
+    picker: "Werkzeug",
+    primary: "Werkzeugstammdaten",
+    costs: "Anschaffung und Nutzungskosten",
+    edited: "Werkzeuginventuren",
+    facet: "measurement",
+    scope: "tool:8",
+    save: "Werkzeugzugriff speichern",
+    error: "Die Werkzeugfreigaben konnten nicht aktualisiert werden.",
+    discard: false,
+  },
+  {
+    kind: "booking",
+    picker: "Werkzeugbuchung",
+    primary: "Buchungsdaten",
+    costs: "Historische Nutzungskosten",
+    edited: "Umbuchungsanfragen",
+    facet: "scope",
+    scope: "tool-tracking:a",
+    save: "Buchungszugriff speichern",
+    error: "Die Buchungsfreigaben konnten nicht aktualisiert werden.",
+    discard: true,
+  },
+]) {
+  test(`${scenario.kind} access saves one edited area and preserves custom master-data rights and denied costs`, async () => {
+    const { context, page, external } = await open();
+    try {
+      await page.evaluate(() => window.cryptoFixture.showUserAccess());
+      await page.getByRole("combobox", { name: "Benutzerkonto" }).fill("frank");
+      await page
+        .getByRole("option", { name: "frank.doe", exact: true })
+        .click();
+      await waitForClosedListboxes(page);
+      const picker = page.getByRole("combobox", {
+        name: scenario.picker,
+        exact: true,
+      });
+      await revealField(page, picker);
+      await picker.fill("Nordflügel");
+      await page
+        .getByRole("option", { name: /73 Muster Bohrhammer Nordflügel/ })
+        .click();
+      await waitForClosedListboxes(page);
+      const primary = page.getByRole("button", {
+        name: new RegExp(scenario.primary),
+      });
+      const costs = page.getByRole("button", {
+        name: new RegExp(scenario.costs),
+      });
+      const edited = page.getByRole("button", {
+        name: new RegExp(scenario.edited),
+      });
+      await primary.and(page.locator(":enabled")).waitFor();
+      assert.match(await primary.innerText(), /Individuell/);
+      assert.match(await costs.innerText(), /Kein Zugriff/);
+      await edited.click();
+      await page.getByRole("option", { name: "Lesen", exact: true }).click();
+      await waitForClosedListboxes(page);
+      const save = page.getByRole("button", {
+        name: scenario.save,
+        exact: true,
+      });
+      if (scenario.discard)
+        await page.evaluate(() => window.cryptoFixture.failNextAccessSave());
+      await save.click();
+      if (scenario.discard) {
+        await page.getByText(scenario.error, { exact: true }).waitFor();
+        assert.match(await edited.innerText(), /Lesen/);
+        assert.equal(await save.isEnabled(), true);
+        await save.click();
+      }
+      await waitForAccessSave(page, save);
+      const { initial, saves } = await page.evaluate(() => ({
+        initial: window.cryptoFixture.initialAccessRules(),
+        saves: window.cryptoFixture.accessSaves(),
+      }));
+      assert.equal(saves.length, scenario.discard ? 2 : 1);
+      const changed = (rule) =>
+        rule.subject === "user:2" &&
+        rule.scope === scenario.scope &&
+        rule.facet === scenario.facet;
+      assert.deepEqual(
+        saves.at(-1).rules.filter((rule) => !changed(rule)),
+        initial,
+      );
+      assert.deepEqual(saves.at(-1).rules.filter(changed), [
+        {
+          subject: "user:2",
+          scope: scenario.scope,
+          facet: scenario.facet,
+          actions: ["read"],
+          effect: "allow",
+        },
+        {
+          subject: "user:2",
+          scope: scenario.scope,
+          facet: scenario.facet,
+          actions: ["create", "update", "delete", "approve", "grant"],
+          effect: "deny",
+        },
+      ]);
+      await revealField(page, picker);
+      await picker.fill("Südflügel");
+      await page
+        .getByRole("option", { name: /74 Muster Rührwerk Südflügel/ })
+        .click();
+      await waitForClosedListboxes(page);
+      await primary.and(page.locator(":enabled")).waitFor();
+      for (const field of [primary, costs, edited])
+        assert.match(await field.innerText(), /Kein Zugriff/);
+      assert.deepEqual(external, []);
+    } finally {
+      await context.close();
+    }
+  });
 }
 
 async function chooseAccessDocument(page, title) {

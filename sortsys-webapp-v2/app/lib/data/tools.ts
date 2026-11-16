@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryResult } from "@sortsys/v2-client";
 import {
   CREATION_FACETS,
   InvalidProtectedData,
@@ -14,7 +14,11 @@ import {
 import { createResourceAreas } from "./createProjectArea";
 import type { DuckDriver } from "./database";
 import { newProductRowId, prefixMatches, publicId } from "./products";
-import { required, type Collection } from "./protectedObjects";
+import {
+  protectedCollections,
+  required,
+  type Collection,
+} from "./protectedObjects";
 import { readableAreas } from "./readableAreas";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
@@ -44,6 +48,16 @@ import {
 
 type Projects = ReturnType<typeof createProtectedProjects>;
 type PartRequest = DataRequest<ToolPart>;
+export type ToolChoice = Pick<
+  QueryResult<"tools.get">,
+  "id" | "customId" | "brand" | "category" | "label"
+>;
+export type ToolTrackingChoice = {
+  id: string;
+  tool: ToolChoice | null;
+  startedAt: Date;
+  endedAt: Date | null;
+};
 const COSTS = new Set([
   "purchase_price",
   "usage_cost_per_day",
@@ -193,6 +207,7 @@ export function createProtectedTools(
     return part ? toolCollection(part.namespace, part.id, part.facet) : null;
   };
   async function requests() {
+    live();
     const areas = await readableAreas(client, signal, select);
     live();
     return areas.map((area) => ({ model: TOOL_MODEL, area }));
@@ -201,14 +216,23 @@ export function createProtectedTools(
     work: (view: DataView, selected: PartRequest[]) => T | Promise<T>,
     include: (request: PartRequest) => boolean = () => true,
   ) {
-    const selected = (await requests()).filter(include);
-    const result = await runtime.read(selected, (view) => {
-      live();
-      return work(
-        view,
-        selected.filter((request) => document(view, request, true)),
-      );
-    });
+    live();
+    const collections = await protectedCollections(client, signal);
+    const selected = collections
+      .areas(select)
+      .map((area) => ({ model: TOOL_MODEL, area }))
+      .filter(include);
+    const result = await runtime.read(
+      selected,
+      (view) => {
+        live();
+        return work(
+          view,
+          selected.filter((request) => document(view, request, true)),
+        );
+      },
+      collections,
+    );
     live();
     return result;
   }
@@ -308,8 +332,61 @@ export function createProtectedTools(
     }
     throw new InvalidProtectedData();
   };
+  function toolChoice(view: DataView, request: PartRequest): ToolChoice {
+    const value = document(view, request)!.value;
+    const record = values(view, request);
+    return {
+      id: value.id,
+      customId: Number(record.custom_id),
+      brand: record.brand as string,
+      category: record.category as string,
+      label: record.label as string | null,
+    };
+  }
+  function active(view: DataView, request: PartRequest) {
+    return !document(view, request)!.value.deleted;
+  }
   return {
     close: lease.close,
+    async choices(): Promise<ToolChoice[]> {
+      return readAll(
+        (view, selected) =>
+          matching(selected, "tool", "master-data")
+            .filter((request) => active(view, request))
+            .map((request) => toolChoice(view, request)),
+        (request) => {
+          const part = toolDomain(request.area.domain)!;
+          return part.namespace === "tool" && part.facet === "master-data";
+        },
+      );
+    },
+    async trackingChoices(): Promise<ToolTrackingChoice[]> {
+      return readAll(
+        (view, selected) => {
+          const tools = new Map(
+            matching(selected, "tool", "master-data")
+              .filter((request) => active(view, request))
+              .map((request) => {
+                const choice = toolChoice(view, request);
+                return [choice.id, choice] as const;
+              }),
+          );
+          return matching(selected, "tool-tracking", "master-data")
+            .filter((request) => active(view, request))
+            .map((request) => {
+              const value = document(view, request)!.value;
+              const record = values(view, request);
+              return {
+                id: value.id,
+                tool: tools.get(publicId(record.tool_id)) ?? null,
+                startedAt: date(record.started_at)!,
+                endedAt: date(record.ended_at),
+              };
+            });
+        },
+        (request) => request.area.facet === "master-data",
+      );
+    },
     async refresh(domains?: Record<string, string | null>) {
       live();
       if (!domains) runtime.revalidate();
