@@ -106,8 +106,7 @@ test("an invalid embedded CRDT object cannot mutate the live text or prevent a l
   }
 });
 
-function fieldReader(value = "Hallo Welt") {
-  const reader = new SharedFields();
+function fieldReader(value = "Hallo Welt", reader = new SharedFields()) {
   reader.register(
     new Map([
       [
@@ -173,6 +172,32 @@ test("typing into a published snapshot before replay uses that snapshot as its e
     reception.initialize(key, original, initial);
     reception.update(encodeUpdate(Y.encodeStateAsUpdate(writer)));
     reception.commit();
+    assert.equal(reader.value(key), replacement);
+  } finally {
+    reception.destroy();
+    reader.destroy();
+    writer.destroy();
+  }
+});
+
+test("registering an already replayed native value cannot replay it again over a later edit", () => {
+  const key = "item-a:text:0";
+  const published = "Gemeinsames Auftrags-LV von John und Frank";
+  const replacement = "Nach dem Entzug ausschließlich für John";
+  const initial = initializeSharedField(key, "");
+  const reader = new SharedFields();
+  const writer = new Y.Doc();
+  const reception = reader.beginReceive();
+  try {
+    Y.applyUpdate(writer, decodeUpdate(initial));
+    writer.getText(key).insert(0, published);
+    reception.initialize(key, "", initial);
+    reception.update(encodeUpdate(Y.encodeStateAsUpdate(writer)));
+    reception.commit();
+    fieldReader(published, reader);
+    reader.connect(() => {}, true);
+    reader.edit(key, published, replacement);
+    reader.receive(encodeUpdate(Y.encodeStateAsUpdate(writer)));
     assert.equal(reader.value(key), replacement);
   } finally {
     reception.destroy();

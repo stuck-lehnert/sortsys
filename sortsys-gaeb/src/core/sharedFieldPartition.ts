@@ -282,11 +282,15 @@ export class SharedFieldPartition {
         this.commonBaselines.get(field.key) ??
         this.nativeValue(this.native, field.key) ??
         field.value;
+      let pending: string | undefined;
+      if (field.value !== baseline && field.value !== this.value(field.key)) {
+        pending = field.value;
+      }
       this.fields.set(field.key, {
         editable: field.editable,
         baseline,
-        pending: field.value === baseline ? undefined : field.value,
-        pendingBaseline: field.value === baseline ? undefined : baseline,
+        pending,
+        pendingBaseline: pending === undefined ? undefined : baseline,
         known: new Set([baseline, field.value]),
       });
       added = true;

@@ -14,6 +14,7 @@ import {
   Suspense,
   useCallback,
   useImperativeHandle,
+  useLayoutEffect,
   useEffect,
   useRef,
   useState,
@@ -43,6 +44,7 @@ import { CommercialOfferDialog } from "~/components/CommercialOfferDialog";
 import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { useProtectedState } from "~/hooks/useProtectedState";
 import { client } from "~/lib/client";
 import { invoiceActionAccess } from "~/lib/crypto/invoiceAccess";
 import { newProductRowId, publicId } from "~/lib/data/products";
@@ -92,7 +94,17 @@ export default function CommercialWorkspace({
     paymentOperation.current = null;
   }, [caseId]);
   const session = useSessionInfo();
-  const [detail, setDetail] = useState<CommercialDetail>();
+  const [detail, setDetail, context] = useProtectedState<
+    CommercialDetail | undefined
+  >(undefined);
+  useLayoutEffect(() => {
+    if (!detail) {
+      frame?.setPresentation({
+        heading: uiText("Dokument öffnen", "Open document"),
+        fullscreen: true,
+      });
+    }
+  }, [detail, frame]);
   const detailRef = useRef(detail);
   detailRef.current = detail;
   const [activeId, setActiveId] = useState<string>();
@@ -133,6 +145,7 @@ export default function CommercialWorkspace({
       { id: caseId },
       { strategy: "network-only" },
     );
+    context.throwIfAborted();
     if (error || !value) throw error ?? new Error("load-failed");
     if (generation !== requestGeneration.current) return value;
     setDetail(value);
@@ -173,48 +186,63 @@ export default function CommercialWorkspace({
           )?.id,
     );
     return value;
-  }, [caseId]);
-  const documentSaved = useCallback((revision: GaebSavedRevision) => {
-    setDetail((previous) => {
-      if (!previous) return previous;
-      const changed = previous.documents.find(
-        (document) => document.id === revision.id,
-      );
-      if (!changed || changed.version > revision.version) return previous;
-      return {
-        ...previous,
-        case:
-          ["offer", "alternative", "invoice"].includes(changed.purpose) &&
-          !["subcontract", "procurement"].includes(previous.case.kind)
-            ? {
-                ...previous.case,
-                netAmount: revision.netAmount,
-                title: revision.title ?? previous.case.title,
-              }
-            : {
-                ...previous.case,
-                title: revision.title ?? previous.case.title,
-              },
-        documents: previous.documents.map((document) =>
-          document.id === revision.id
-            ? {
-                ...document,
-                version: revision.version,
-                netAmount: revision.netAmount,
-              }
-            : document.sourceDocumentId === revision.id
-              ? { ...document, sourceCurrentVersion: revision.version }
-              : document,
-        ),
-      };
-    });
-  }, []);
+  }, [caseId, context, setDetail]);
+  const documentSaved = useCallback(
+    (revision: GaebSavedRevision) => {
+      setDetail((previous) => {
+        if (!previous) return previous;
+        const changed = previous.documents.find(
+          (document) => document.id === revision.id,
+        );
+        if (!changed || changed.version > revision.version) return previous;
+        return {
+          ...previous,
+          case:
+            ["offer", "alternative", "invoice"].includes(changed.purpose) &&
+            !["subcontract", "procurement"].includes(previous.case.kind)
+              ? {
+                  ...previous.case,
+                  netAmount: revision.netAmount,
+                  title: revision.title ?? previous.case.title,
+                }
+              : {
+                  ...previous.case,
+                  title: revision.title ?? previous.case.title,
+                },
+          documents: previous.documents.map((document) =>
+            document.id === revision.id
+              ? {
+                  ...document,
+                  version: revision.version,
+                  netAmount: revision.netAmount,
+                }
+              : document.sourceDocumentId === revision.id
+                ? { ...document, sourceCurrentVersion: revision.version }
+                : document,
+          ),
+        };
+      });
+    },
+    [setDetail],
+  );
   useEffect(() => {
     setDetail(undefined);
     setActiveId(undefined);
     setError("");
     setReviewKey("");
     setDifferences([]);
+    setSourceModel(undefined);
+    setSupplierModels(new Map());
+    setSupplier("");
+    setPaymentAmount("");
+    setPaymentReference("");
+    setPaymentOpen(false);
+    setHistoryOpen(false);
+    setComparisonOpen(false);
+    setSupplierImportOpen(false);
+    setConfirm(null);
+    setCandidate(undefined);
+    setReviewed(false);
     let active = true;
     void refresh().catch((error) => {
       if (active) setError(commercialError(error));

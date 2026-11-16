@@ -2577,11 +2577,7 @@ for (const discard of [false, true])
         );
         await save.click();
       }
-      await page.waitForFunction(
-        (button) =>
-          button.disabled && button.getAttribute("aria-busy") !== "true",
-        await save.elementHandle(),
-      );
+      await waitForAccessSave(page, save);
       const { initial, saves } = await page.evaluate(() => ({
         initial: window.cryptoFixture.initialAccessRules(),
         saves: window.cryptoFixture.accessSaves(),
@@ -2651,11 +2647,7 @@ test("two project areas save as one policy while newer untouched actions remain 
     });
     await revealField(page, save);
     await save.click();
-    await page.waitForFunction(
-      (button) =>
-        button.disabled && button.getAttribute("aria-busy") !== "true",
-      await save.elementHandle(),
-    );
+    await waitForAccessSave(page, save);
     const saves = await page.evaluate(() => window.cryptoFixture.accessSaves());
     assert.equal(saves.length, 1);
     assert.equal(saves[0].version, "4");
@@ -2703,11 +2695,7 @@ test("the master-data access form saves an exact read/delete profile without add
     });
     await revealField(page, save);
     await save.click();
-    await page.waitForFunction(
-      (button) =>
-        button.disabled && button.getAttribute("aria-busy") !== "true",
-      await save.elementHandle(),
-    );
+    await waitForAccessSave(page, save);
     const saves = await page.evaluate(() => window.cryptoFixture.accessSaves());
     assert.equal(saves.length, 1);
     assert.equal(
@@ -2818,11 +2806,7 @@ for (const discard of [false, true])
         assert.equal(await save.isEnabled(), true);
         await save.click();
       }
-      await page.waitForFunction(
-        (button) =>
-          button.disabled && button.getAttribute("aria-busy") !== "true",
-        await save.elementHandle(),
-      );
+      await waitForAccessSave(page, save);
       const { initial, saves } = await page.evaluate(() => ({
         initial: window.cryptoFixture.initialAccessRules(),
         saves: window.cryptoFixture.accessSaves(),
@@ -2854,6 +2838,193 @@ for (const discard of [false, true])
     }
   });
 
+async function waitForAccessSave(page, button) {
+  await page.waitForFunction(
+    (element) => element.disabled && element.dataset.pending !== "true",
+    await button.elementHandle(),
+  );
+}
+
+async function chooseAccessDocument(page, title) {
+  const picker = page.getByRole("combobox", {
+    name: "Angebot oder Dokument",
+    exact: true,
+  });
+  await revealField(page, picker);
+  await picker.fill(title);
+  await page.getByRole("option", { name: new RegExp(title) }).click();
+  await waitForClosedListboxes(page);
+}
+
+for (const scenario of [
+  { suffix: "", discard: false, refresh: false },
+  { suffix: " after a false acknowledgement", discard: true, refresh: false },
+  { suffix: " during a live access refresh", discard: false, refresh: true },
+]) {
+  const { discard, refresh } = scenario;
+  test(`document access saves only edited text actions and retains other grants${scenario.suffix}`, async () => {
+    const { context, page, external } = await open();
+    try {
+      await page.evaluate(() =>
+        window.cryptoFixture.showUserAccess(false, true),
+      );
+      await chooseAccessDocument(page, "Vertrauliche Fassadenarbeiten");
+      const text = page.getByRole("button", {
+        name: /Leistungsbeschreibungen/,
+      });
+      await text.and(page.locator(":enabled")).waitFor();
+      assert.match(await text.innerText(), /Individuell/);
+      const prices = page.getByRole("button", { name: /Angebotspreise/ });
+      assert.match(await prices.innerText(), /Kein Zugriff/);
+      await text.click();
+      await page
+        .getByRole("option", { name: "Individuell", exact: true })
+        .click();
+      await waitForClosedListboxes(page);
+      const actions = page.getByRole("group", {
+        name: "Einzelrechte für Leistungsbeschreibungen",
+        exact: true,
+      });
+      await actions.getByText("Löschen", { exact: true }).click();
+      await page.evaluate(() =>
+        window.cryptoFixture.grantConcurrentOfferPriceRead(),
+      );
+      const save = page.getByRole("button", {
+        name: "Dokumentzugriff speichern",
+        exact: true,
+      });
+      if (discard)
+        await page.evaluate(() => window.cryptoFixture.failNextAccessSave());
+      if (refresh) {
+        await page.evaluate(() =>
+          window.cryptoFixture.refreshContextAfterNextAccessSave(),
+        );
+      }
+      await save.click();
+      if (discard) {
+        await page
+          .getByText(
+            "Die Dokumentfreigaben konnten nicht aktualisiert werden.",
+            { exact: true },
+          )
+          .waitFor();
+        assert.equal(
+          await actions
+            .getByRole("checkbox", { name: "Löschen", exact: true })
+            .isChecked(),
+          true,
+        );
+        assert.equal(await save.isEnabled(), true);
+        await save.click();
+      }
+      await waitForAccessSave(page, save);
+      await text.and(page.locator(":enabled")).waitFor();
+      const { initial, saves } = await page.evaluate(() => ({
+        initial: window.cryptoFixture.initialAccessRules(),
+        saves: window.cryptoFixture.accessSaves(),
+      }));
+      assert.equal(saves.length, discard ? 2 : 1);
+      const last = saves.at(-1).rules;
+      const textRule = (rule) =>
+        rule.subject === "user:2" &&
+        rule.scope === "commercial:6" &&
+        rule.facet === "scope";
+      const priceRule = {
+        subject: "user:2",
+        scope: "commercial:6",
+        facet: "offer-prices",
+        actions: ["read"],
+        effect: "allow",
+      };
+      assert.deepEqual(
+        last.filter((rule) => !textRule(rule)),
+        [...initial.filter((rule) => !textRule(rule)), priceRule],
+      );
+      assert.deepEqual(
+        last
+          .filter(textRule)
+          .flatMap((rule) => rule.actions)
+          .sort(),
+        ["delete", "read", "update"],
+      );
+      assert.match(await prices.innerText(), /Lesen/);
+      assert.deepEqual(external, []);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+test("switching access documents discards a late policy result for the previous choice", async () => {
+  const { context, page, external } = await open();
+  try {
+    await page.evaluate(() => window.cryptoFixture.showUserAccess(false, true));
+    await page.evaluate(() => window.cryptoFixture.holdNextAccessRead());
+    await chooseAccessDocument(page, "Vertrauliche Fassadenarbeiten");
+    await page.waitForFunction(() => window.cryptoFixture.accessReadHeld());
+    await chooseAccessDocument(page, "Eigenständige Dacharbeiten");
+    const text = page.getByRole("button", { name: /Leistungsbeschreibungen/ });
+    await text.and(page.locator(":enabled")).waitFor();
+    assert.match(await text.innerText(), /Kein Zugriff/);
+    await page.evaluate(() => window.cryptoFixture.releaseAccessRead());
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    assert.match(await text.innerText(), /Kein Zugriff/);
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Dokumentzugriff speichern", exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => window.cryptoFixture.accessSaves()),
+      [],
+    );
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("locking the account removes document access labels and rejects late reads", async () => {
+  const { context, page, external } = await open();
+  try {
+    await page.evaluate(() => window.cryptoFixture.showUserAccess(false, true));
+    await page.evaluate(() => window.cryptoFixture.holdNextAccessRead());
+    await chooseAccessDocument(page, "Vertrauliche Fassadenarbeiten");
+    await page.waitForFunction(() => window.cryptoFixture.accessReadHeld());
+    await page.evaluate(() => window.cryptoFixture.lockAccessSession());
+    await page.evaluate(() => window.cryptoFixture.releaseAccessRead());
+    await page.waitForFunction(
+      () =>
+        !document.body.textContent.includes("Vertrauliche Fassadenarbeiten"),
+    );
+    assert.equal(
+      await page
+        .getByRole("combobox", { name: "Angebot oder Dokument", exact: true })
+        .inputValue(),
+      "",
+    );
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Dokumentzugriff speichern", exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => window.cryptoFixture.accessSaves()),
+      [],
+    );
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 for (const discard of [false, true])
   test(`personnel access preserves custom name grants while saving hourly-rate rights${discard ? " after a false acknowledgement" : ""}`, async () => {
     const { context, page, external } = await open();
@@ -2880,6 +3051,7 @@ for (const discard of [false, true])
       const names = page.getByRole("button", { name: /Name und Kontaktdaten/ }),
         employment = page.getByRole("button", { name: /Personalangaben/ }),
         costs = page.getByRole("button", { name: /Interner Stundensatz/ });
+      await names.and(page.locator(":enabled")).waitFor();
       assert.match(await names.innerText(), /Individuell/);
       assert.match(await employment.innerText(), /Lesen und bearbeiten/);
       assert.match(await costs.innerText(), /Kein Zugriff/);
@@ -2908,11 +3080,7 @@ for (const discard of [false, true])
       await page.waitForFunction(
         () => document.querySelectorAll('[role="alert"]').length === 0,
       );
-      await page.waitForFunction(
-        (button) =>
-          button.disabled && button.getAttribute("aria-busy") !== "true",
-        await save.elementHandle(),
-      );
+      await waitForAccessSave(page, save);
       const { initial, saves } = await page.evaluate(() => ({
         initial: window.cryptoFixture.initialAccessRules(),
         saves: window.cryptoFixture.accessSaves(),
@@ -2943,6 +3111,7 @@ for (const discard of [false, true])
         .getByRole("option", { name: "Max Muster (max.muster)", exact: true })
         .click();
       await waitForClosedListboxes(page);
+      await names.and(page.locator(":enabled")).waitFor();
       assert.match(await names.innerText(), /Kein Zugriff/);
       assert.match(await employment.innerText(), /Kein Zugriff/);
       assert.match(await costs.innerText(), /Kein Zugriff/);

@@ -73,6 +73,7 @@ function auditPage(page) {
   page.on("request", (request) => {
     if (!new URL(request.url()).pathname.startsWith("/api/v2/")) return;
     const body = request.postData() ?? "";
+    const query = decodeURIComponent(new URL(request.url()).search);
     if (
       new URL(request.url()).pathname.includes("errorReports.report") &&
       body
@@ -92,8 +93,11 @@ function auditPage(page) {
       "Treppenhaus im Live-Abgleich",
       "Antrag vor Standardfreigabe",
       "Antrag mit Standardfreigabe",
+      "Gemeinsames Auftrags-LV von John und Frank",
+      "Nach dem Entzug ausschließlich für John",
     ]) {
-      if (body.includes(marker)) plaintextLeaks.push(marker);
+      if (body.includes(marker) || query.includes(marker))
+        plaintextLeaks.push(marker);
     }
   });
   return {
@@ -190,6 +194,64 @@ async function loginOperator(page) {
   await expect(
     page.getByRole("heading", { name: "Mandanten", exact: true }),
   ).toBeVisible();
+}
+
+async function openMemberPermissions(page) {
+  await page.goto(`${server.origin}/users`);
+  await page.getByText("Frank", { exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Aktionen", exact: true })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Berechtigungen verwalten", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Berechtigungen verwalten",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function selectAccess(page, scope, label, value) {
+  const button = scope.getByRole("button", { name: new RegExp(label) });
+  await expect(button).toBeEnabled();
+  await button.click();
+  await page.getByRole("option", { name: value, exact: true }).click();
+  await expect(page.getByRole("listbox")).toBeHidden();
+}
+
+async function selectOfferAccess(page, title) {
+  const dialog = await openMemberPermissions(page);
+  const picker = dialog.getByRole("combobox", {
+    name: "Angebot oder Dokument",
+    exact: true,
+  });
+  await expect(picker).toBeEnabled();
+  await picker.fill(title);
+  await page.getByRole("option", { name: new RegExp(title) }).click();
+  await expect(page.getByRole("listbox")).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: /Bezeichnung und Status/ }),
+  ).toBeEnabled();
+  return dialog;
+}
+
+async function saveOfferAccess(dialog) {
+  const save = dialog.getByRole("button", {
+    name: "Dokumentzugriff speichern",
+    exact: true,
+  });
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(save).toHaveAttribute("data-pending", "true");
+  await expect(save).not.toHaveAttribute("data-pending", "true");
+  await expect(
+    dialog.getByRole("button", { name: /Bezeichnung und Status/ }),
+  ).toBeEnabled();
+  await expect(save).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
 }
 
 function firstPrice(editor) {
@@ -663,6 +725,142 @@ try {
       page.locator(".attachment-email-body, .attachment-pdf-frame"),
     ).toHaveCount(0);
   });
+  await scenario("gaeb-editing-between-users", async (page) => {
+    const memberServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const memberAudit = auditPage(member);
+    await memberContext.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    const title = "Treppenhausrenovierung Musterstraße";
+    let path;
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await page.goto(`${server.origin}/offers`);
+      await page.getByText(title, { exact: true }).click();
+      await expect(firstPrice(page)).toBeEnabled();
+      path = new URL(page.url()).pathname;
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await member.goto(`${memberServer.origin}${path}`);
+      await expect(
+        member.getByText("Vorgang nicht geladen", { exact: true }),
+      ).toBeVisible();
+      await expect(member.locator(".gaeb-editor")).toHaveCount(0);
+      await expect(member.locator('nav a[href="/admin"]')).toHaveCount(0);
+
+      let access = await selectOfferAccess(page, title);
+      await selectAccess(page, access, "Bezeichnung und Status", "Lesen");
+      await selectAccess(
+        page,
+        access,
+        "Leistungsbeschreibungen",
+        "Lesen und bearbeiten",
+      );
+      await selectAccess(page, access, "Vertragsmengen", "Lesen");
+      await saveOfferAccess(access);
+      await expect(member.locator(".gaeb-editor")).toBeVisible();
+      await expect(member.locator('[data-gaeb-field$=":UP"]')).toHaveCount(0);
+      await page.goto(`${server.origin}${path}`);
+      await expect(firstPrice(page)).toBeEnabled();
+      for (const editor of [page, member]) {
+        await expect(editor.locator(".gaeb-editor")).toHaveAttribute(
+          "data-connection-state",
+          "online",
+        );
+      }
+      await changeTextBeforePublication(
+        member,
+        page,
+        "Gemeinsames Auftrags-LV von John und Frank",
+      );
+      await member.reload();
+      await expect(
+        member.locator('[data-gaeb-field="project:title"]'),
+      ).toHaveAttribute(
+        "aria-description",
+        "Gemeinsames Auftrags-LV von John und Frank",
+      );
+      await expect(member.locator('[data-gaeb-field$=":UP"]')).toHaveCount(0);
+      await member.screenshot({
+        path: join(artifacts, "member-gaeb-text-access.png"),
+        fullPage: true,
+      });
+
+      access = await selectOfferAccess(page, title);
+      for (const label of [
+        "Bezeichnung und Status",
+        "Leistungsbeschreibungen",
+        "Vertragsmengen",
+      ]) {
+        await selectAccess(page, access, label, "Kein Zugriff");
+      }
+      await saveOfferAccess(access);
+      await expect(member.locator(".gaeb-editor")).toHaveCount(0);
+      await expect(member.locator("textarea.gaeb-canvas-input")).toHaveCount(0);
+      await page.goto(`${server.origin}${path}`);
+      const field = page.locator('[data-gaeb-field="project:title"]');
+      await expect(field).toBeEnabled();
+      await field.focus();
+      await page
+        .locator("textarea.gaeb-canvas-input")
+        .fill("Nach dem Entzug ausschließlich für John");
+      await page.locator("textarea.gaeb-canvas-input").press("Tab");
+      await expect(page.locator(".gaeb-editor")).toHaveAttribute(
+        "data-save-state",
+        "saved",
+      );
+      await member.reload();
+      await expect(
+        member.getByText("Vorgang nicht geladen", { exact: true }),
+      ).toBeVisible();
+      await expect(member.locator(".gaeb-editor")).toHaveCount(0);
+
+      access = await selectOfferAccess(page, title);
+      await selectAccess(page, access, "Bezeichnung und Status", "Lesen");
+      await selectAccess(page, access, "Leistungsbeschreibungen", "Lesen");
+      await saveOfferAccess(access);
+      await expect(
+        member.locator('[data-gaeb-field="project:title"]'),
+      ).toHaveAttribute(
+        "aria-description",
+        "Nach dem Entzug ausschließlich für John",
+      );
+      await expect(
+        member.locator('[data-gaeb-field="project:title"]'),
+      ).toBeDisabled();
+      await expect(member.locator('[data-gaeb-field$=":UP"]')).toHaveCount(0);
+      await member.screenshot({
+        path: join(artifacts, "member-gaeb-readonly-after-regrant.png"),
+        fullPage: true,
+      });
+      memberAudit.assertClean();
+    } finally {
+      await member
+        .screenshot({
+          path: join(artifacts, "member-gaeb-final.png"),
+          fullPage: true,
+        })
+        .catch(() => {});
+      await memberContext.tracing.stop({
+        path: join(artifacts, "member-gaeb.zip"),
+      });
+      await memberContext.close();
+      await memberServer.close();
+    }
+  });
   await scenario("grant-and-revoke-across-api-instances", async (page) => {
     const memberServer = await applicationServer(
       new URL("../../build/client", import.meta.url).pathname,
@@ -693,22 +891,7 @@ try {
       await expect(
         page.getByRole("link", { name: "Einstellungen", exact: true }),
       ).toBeVisible();
-      await page.goto(`${server.origin}/users`);
-      await page.getByText("Frank", { exact: true }).click();
-      await page
-        .getByRole("main")
-        .getByRole("button", { name: "Aktionen", exact: true })
-        .click();
-      await page
-        .getByRole("menuitem", {
-          name: "Berechtigungen verwalten",
-          exact: true,
-        })
-        .click();
-      const dialog = page.getByRole("dialog", {
-        name: "Berechtigungen verwalten",
-        exact: true,
-      });
+      const dialog = await openMemberPermissions(page);
       const catalogue = dialog.getByRole("button", { name: /Produktkatalog/ });
       const save = dialog.getByRole("button", {
         name: "Berechtigungen speichern",

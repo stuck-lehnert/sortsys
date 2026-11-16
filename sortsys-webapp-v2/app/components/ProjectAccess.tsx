@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { QueryResult } from "@sortsys/v2-client";
-import { Checkbox, ComboBox, Loading } from "@sortsys/react-components";
+import { Checkbox, ComboBox } from "@sortsys/react-components";
 import { client } from "~/lib/client";
 import {
   changeAreaActionAccesses,
@@ -197,89 +197,80 @@ export function ProjectAccess({
           )}
         </MyCallout>
       )}
-      {!projects && !error && (
-        <Loading
-          active
-          description={uiText("Projekte werden geladen …", "Loading projects…")}
+      <div className="flex flex-wrap items-center gap-4">
+        <Checkbox
+          id="project-creation"
+          labelText={uiText("Neue Projekte anlegen", "Create new projects")}
+          checked={creation}
+          disabled={busy || disabled || !projects}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+            setCreation(event.target.checked)
+          }
         />
-      )}
-      {projects && (
-        <div className="flex flex-wrap items-center gap-4">
-          <Checkbox
-            id="project-creation"
-            labelText={uiText("Neue Projekte anlegen", "Create new projects")}
-            checked={creation}
-            disabled={busy || disabled}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-              setCreation(event.target.checked)
+        <Checkbox
+          id="commercial-creation"
+          labelText={uiText(
+            "Neue Angebote und Aufträge anlegen",
+            "Create new offers and contracts",
+          )}
+          checked={commercialCreation}
+          disabled={busy || disabled || !projects}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+            setCommercialCreation(event.target.checked)
+          }
+        />
+        <MyButton
+          kind="tertiary"
+          disabled={
+            busy ||
+            disabled ||
+            !projects ||
+            (creation === savedCreation &&
+              commercialCreation === savedCommercialCreation)
+          }
+          onClick={() => void saveCreation()}
+        >
+          {uiText("Anlageberechtigung speichern", "Save creation permission")}
+        </MyButton>
+      </div>
+      <h3 className="text-lg font-semibold">
+        {uiText("Projektzugriff", "Project access")}
+      </h3>
+      <div className="grid items-start gap-4 sm:grid-cols-3">
+        <ComboBox
+          titleText={uiText("Projekt", "Project")}
+          items={projects ?? []}
+          itemToString={(project: Project) => project.title}
+          disabled={busy || disabled || !projects}
+          loading={!projects && !error}
+          loadError={error}
+          selectedItem={selected}
+          onChange={({ selectedItem }: { selectedItem: Project | null }) => {
+            setSelected(selectedItem);
+            setDrafts(
+              accessDrafts(PROJECT_ACCESS_KEYS, (key) =>
+                selectedItem
+                  ? (access[key]?.[selectedItem.id] ?? "none")
+                  : "none",
+              ),
+            );
+          }}
+        />
+        {PROJECT_ACCESS_KEYS.map((key) => (
+          <AccessLevelSelect
+            key={`${selected?.id}:${key}`}
+            label={labels[key]()}
+            value={drafts[key].value}
+            disabled={busy || disabled || !selected}
+            onChange={(value, actions) =>
+              setDrafts((previous) => ({
+                ...previous,
+                [key]: editAccessDraft(previous[key], value, actions),
+              }))
             }
           />
-          <Checkbox
-            id="commercial-creation"
-            labelText={uiText(
-              "Neue Angebote und Aufträge anlegen",
-              "Create new offers and contracts",
-            )}
-            checked={commercialCreation}
-            disabled={busy || disabled}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-              setCommercialCreation(event.target.checked)
-            }
-          />
-          <MyButton
-            kind="tertiary"
-            disabled={
-              busy ||
-              disabled ||
-              (creation === savedCreation &&
-                commercialCreation === savedCommercialCreation)
-            }
-            onClick={() => void saveCreation()}
-          >
-            {uiText("Anlageberechtigung speichern", "Save creation permission")}
-          </MyButton>
-        </div>
-      )}
-      {projects && (
-        <h3 className="text-lg font-semibold">
-          {uiText("Projektzugriff", "Project access")}
-        </h3>
-      )}
-      {projects && (
-        <div className="grid items-start gap-4 sm:grid-cols-3">
-          <ComboBox
-            titleText={uiText("Projekt", "Project")}
-            items={projects}
-            itemToString={(project: Project) => project.title}
-            disabled={busy || disabled}
-            selectedItem={selected}
-            onChange={({ selectedItem }: { selectedItem: Project | null }) => {
-              setSelected(selectedItem);
-              setDrafts(
-                accessDrafts(PROJECT_ACCESS_KEYS, (key) =>
-                  selectedItem
-                    ? (access[key]?.[selectedItem.id] ?? "none")
-                    : "none",
-                ),
-              );
-            }}
-          />
-          {PROJECT_ACCESS_KEYS.map((key) => (
-            <AccessLevelSelect
-              key={`${selected?.id}:${key}`}
-              label={labels[key]()}
-              value={drafts[key].value}
-              disabled={busy || disabled || !selected}
-              onChange={(value, actions) =>
-                setDrafts((previous) => ({
-                  ...previous,
-                  [key]: editAccessDraft(previous[key], value, actions),
-                }))
-              }
-            />
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
       <div className="flex flex-wrap gap-2">
         <MyButton
           disabled={

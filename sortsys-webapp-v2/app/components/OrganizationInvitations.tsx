@@ -22,6 +22,7 @@ import { client } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
 import { ProjectAccess } from "./ProjectAccess";
 import { PersonnelAccess } from "./PersonnelAccess";
+import { CommercialAccess } from "./CommercialAccess";
 import { OrganizationAccess } from "./OrganizationAccess";
 import { AccessLevelSelect } from "./AccessLevelSelect";
 import { MyButton } from "./MyButton";
@@ -322,6 +323,14 @@ export default function OrganizationInvitations({
       {editing && selected && !loadingAccess && (
         <ProjectAccess
           key={`projects:${selected.id}`}
+          user={`user:${selected.id}`}
+          disabled={busy}
+          onBusyChange={setBusy}
+        />
+      )}
+      {editing && selected && !loadingAccess && (
+        <CommercialAccess
+          key={`documents:${selected.id}`}
           user={`user:${selected.id}`}
           disabled={busy}
           onBusyChange={setBusy}

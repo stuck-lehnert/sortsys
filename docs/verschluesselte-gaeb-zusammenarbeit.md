@@ -425,12 +425,25 @@ während die Veröffentlichung des nativen Dokuments noch angehalten ist. Die
 Anwendungspfade werden dabei nicht ersetzt; lediglich die externen
 Zeitstempelserver sind gezielt nicht verfügbar.
 
+Ein zweiter Ablauf verwendet John als Administrator und Frank mit begrenzten
+Dokumentrechten, wiederum an getrennten API-Instanzen. Die Freigabe erfolgt in
+der normalen Benutzerverwaltung. Frank ändert die Bezeichnung des Bauvorhabens
+ohne Preisfelder; John erhält die Änderung bereits vor der Veröffentlichung des
+nativen Dokuments. Der Test prüft das erneute Öffnen, das Entfernen der Ansicht
+nach einem Rechteentzug und eine spätere reine Lesefreigabe. Inhalte, die John
+nach dem Entzug ergänzt, bleiben bis zur erneuten Freigabe verborgen.
+
+Der Textabgleich berücksichtigt auch Eingaben während des Verbindungsaufbaus.
+Deren Ausgangspunkt ist der sichtbare Dokumentstand, selbst wenn der gemeinsame
+Nachrichtenverlauf mit einem älteren Text beginnt. Ein bereits nachgelesener
+Dokumenttext wird beim Registrieren der Eingabefelder nicht nochmals als lokale
+Änderung vorgemerkt.
+
 Vor der Freigabe fehlen insbesondere:
 
 - Der dauerhafte Nachrichtenverlauf braucht bestätigte Zwischenstände und eine
   begrenzte Wiederanlaufzeit. Lange Feldtexte benötigen eine Aufteilung; derzeit
   ist der Nachrichteninhalt auf 64 KiB begrenzt.
-- Vollständige Editordialoge mit unterschiedlichen Benutzerkonten, Rechteentzug,
-  Projektdateien und Wiederverbindung brauchen weitere gemeinsame Browser- und
-  Mehrinstanztests. Die bisherige Prüfung mit drei Verbindungen ersetzt diese
-  Abläufe nicht.
+- Projektdateien und Wiederverbindungen nach längeren Unterbrechungen brauchen
+  weitere gemeinsame Browser- und Mehrinstanztests. Die geprüften Angebotsabläufe
+  decken diese Fälle noch nicht ab.

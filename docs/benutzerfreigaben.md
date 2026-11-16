@@ -157,6 +157,16 @@ beschreibt den Schutz der Originale und Vorschauen. Für
 [Lieferscheine](verschluesselte-lieferscheine.md) öffnen Mengenrechte keine
 Sonderpostenpreise.
 
+Unter **Angebote und Dokumente** wird ein einzelner Vorgang ausgewählt. Seine
+Bezeichnung, Leistungsbeschreibungen, Vertragsmengen, Aufmaße, Angebotspreise,
+interne Kalkulation, Beschaffung, Rechnungswerte und Anlagen haben getrennte
+Freigaben. Damit kann ein Mitarbeiter beispielsweise die Positionstexte eines
+Angebots bearbeiten, ohne dessen Preise zu erhalten. Die Auswahl lädt nur die
+geschützten Bezeichnungen; Dokumentinhalte und Kalkulationsdaten bleiben dabei
+geschlossen. **Dokumentzugriff speichern** übernimmt die geänderten Einzelrechte
+gemeinsam. Unveränderte Rechte bleiben auch dann erhalten, wenn ein anderer
+Administrator sie zwischenzeitlich angepasst hat.
+
 Ändert sich der Leserkreis eines vorhandenen Bereichs, bleibt das Schreiben dort
 bis zum fertigen Schlüsselwechsel gesperrt. Der Browser erstellt einen neuen
 Schlüssel und verteilt ihn ausschließlich an die weiterhin berechtigten

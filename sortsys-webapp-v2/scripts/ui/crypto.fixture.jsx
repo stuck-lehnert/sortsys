@@ -2846,8 +2846,8 @@ window.cryptoFixture = {
       new Blob([new Uint8Array(data)], { type: "application/pdf" }),
     );
   },
-  async showUserAccess(asDialog = false) {
-    const { client } = await import("../../app/lib/client");
+  async showUserAccess(asDialog = false, onlyCommercial = false) {
+    const { client, gaebDocuments } = await import("../../app/lib/client");
     client.loggedIn = () => true;
     const { acceptVault } = await import("../../app/lib/crypto/session");
     const { PRODUCT_COLLECTION, PRICE_COLLECTION } =
@@ -2858,6 +2858,11 @@ window.cryptoFixture = {
       await import("../../app/lib/data/personnelData");
     const { PROJECT_ACCESS_KEYS, projectAccessArea } =
       await import("../../app/lib/data/projectScope");
+    const { COMMERCIAL_FACETS, commercialCollection } =
+      await import("../../app/lib/data/commercialAreas");
+    const commercialAreas = ["6", "7"].flatMap((id) =>
+      COMMERCIAL_FACETS.map((facet) => commercialCollection(id, facet)),
+    );
     const projectAreas = PROJECT_ACCESS_KEYS.map((key) =>
       projectAccessArea("4", key),
     );
@@ -2880,6 +2885,7 @@ window.cryptoFixture = {
           personal,
           ...personnel,
           ...projectAreas,
+          ...commercialAreas,
         ],
       },
     );
@@ -2898,6 +2904,27 @@ window.cryptoFixture = {
         version: "2",
         rules: [
           ...setup.policy.rules,
+          {
+            subject: "user:2",
+            scope: "commercial:6",
+            facet: "master-data",
+            actions: ["read"],
+            effect: "allow",
+          },
+          {
+            subject: "user:2",
+            scope: "commercial:6",
+            facet: "scope",
+            actions: ["read", "update"],
+            effect: "allow",
+          },
+          {
+            subject: "user:2",
+            scope: "commercial:6",
+            facet: "calculation",
+            actions: ["read"],
+            effect: "deny",
+          },
           {
             subject: "user:2",
             scope: "project:4",
@@ -3001,6 +3028,7 @@ window.cryptoFixture = {
         memberPersonal,
         ...personnel,
         ...projectAreas,
+        ...commercialAreas,
       ].map(
         async (area) =>
           (
@@ -3037,6 +3065,18 @@ window.cryptoFixture = {
       { id: "3", username: "neues.konto", enrolled: false, roles: [] },
     ];
     const replies = {
+      "commercial.cases.list": [
+        {
+          id: "6",
+          reference: "ANG-26-10",
+          title: "Vertrauliche Fassadenarbeiten",
+        },
+        {
+          id: "7",
+          reference: "ANG-26-11",
+          title: "Eigenständige Dacharbeiten",
+        },
+      ],
       "users.list": [
         {
           id: "4",
@@ -3096,7 +3136,32 @@ window.cryptoFixture = {
         keyGeneration: "1",
       },
     };
+    let heldPolicyRead = null;
+    gaebDocuments.choices = async (signal) => {
+      signal?.throwIfAborted();
+      return replies["commercial.cases.list"];
+    };
+    window.cryptoFixture.holdNextAccessRead = () => {
+      let release;
+      const promise = new Promise((resolve) => {
+        release = resolve;
+      });
+      heldPolicyRead = { promise, release, captured: false };
+    };
+    window.cryptoFixture.accessReadHeld = () =>
+      heldPolicyRead?.captured === true;
+    window.cryptoFixture.releaseAccessRead = () => heldPolicyRead?.release();
     client.query = async (path, input) => {
+      if (
+        path === "zerotrust.policy.get" &&
+        heldPolicyRead &&
+        !heldPolicyRead.captured
+      ) {
+        heldPolicyRead.captured = true;
+        const snapshot = structuredClone(replies[path]);
+        await heldPolicyRead.promise;
+        return [snapshot, null];
+      }
       if (path === "zerotrust.access.snapshot")
         return accessSnapshotFixture(client, input);
       if (path === "zerotrust.domains.get") {
@@ -3110,9 +3175,13 @@ window.cryptoFixture = {
     client.invalidate = async () => {};
     const savedAccess = [];
     let discardAccess = false;
+    let refreshAfterAccessSave = false;
     window.cryptoFixture.accessSaves = () => savedAccess;
     window.cryptoFixture.failNextAccessSave = () => {
       discardAccess = true;
+    };
+    window.cryptoFixture.refreshContextAfterNextAccessSave = () => {
+      refreshAfterAccessSave = true;
     };
     window.cryptoFixture.initialAccessRules = () => permissions.rules;
     window.cryptoFixture.grantConcurrentProjectUpdate = async () => {
@@ -3135,6 +3204,31 @@ window.cryptoFixture = {
         authorityKey.privateKey,
       );
     };
+    window.cryptoFixture.grantConcurrentOfferPriceRead = async () => {
+      const { signature, ...current } = replies["zerotrust.policy.get"];
+      replies["zerotrust.policy.get"] = await signPolicy(
+        {
+          ...current,
+          version: String(BigInt(current.version) + 1n),
+          rules: [
+            ...current.rules,
+            {
+              subject: "user:2",
+              scope: "commercial:6",
+              facet: "offer-prices",
+              actions: ["read"],
+              effect: "allow",
+            },
+          ],
+        },
+        authorityKey.privateKey,
+      );
+    };
+    window.cryptoFixture.lockAccessSession = async () => {
+      const { lockCryptoSession } =
+        await import("../../app/lib/crypto/session");
+      await lockCryptoSession();
+    };
     client.mutate = async (path, input) => {
       if (path !== "zerotrust.policy.replace") {
         throw new Error("Unexpected access form mutation: " + path);
@@ -3142,6 +3236,10 @@ window.cryptoFixture = {
       savedAccess.push(structuredClone(input));
       if (discardAccess) discardAccess = false;
       else replies["zerotrust.policy.get"] = input;
+      if (refreshAfterAccessSave) {
+        refreshAfterAccessSave = false;
+        await client.clearCache();
+      }
       return [{ success: true }, null];
     };
     const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
@@ -3155,6 +3253,8 @@ window.cryptoFixture = {
     );
     const { default: OrganizationInvitations } =
       await import("../../app/components/OrganizationInvitations");
+    const { CommercialAccess } =
+      await import("../../app/components/CommercialAccess");
     const { MyModalsProvider, useMyModals } =
       await import("../../app/hooks/useMyModals");
     const { showUserAccessModal } = await import("../../app/modals/users");
@@ -3180,7 +3280,13 @@ window.cryptoFixture = {
         <MemoryRouter>
           <MyModalsProvider>
             <main className="mx-auto max-w-3xl p-6">
-              {asDialog ? <OpenPermissions /> : <OrganizationInvitations />}
+              {onlyCommercial ? (
+                <CommercialAccess user="user:2" />
+              ) : asDialog ? (
+                <OpenPermissions />
+              ) : (
+                <OrganizationInvitations />
+              )}
             </main>
           </MyModalsProvider>
         </MemoryRouter>
