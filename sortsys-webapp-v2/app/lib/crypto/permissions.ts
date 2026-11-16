@@ -167,8 +167,12 @@ export async function finishAccessChanges(
   client: Client,
   signal: AbortSignal,
 ): Promise<void> {
+  let context = await administrator(client, signal);
+  let directory: {
+    identities: QueryResult<"zerotrust.identities.list">;
+    members: QueryResult<"zerotrust.members.list">["rows"];
+  } | null = null;
   for (let count = 0; count < 2001; count++) {
-    const context = await administrator(client, signal);
     const domains = await required(
       client.query("zerotrust.domains.list", undefined, {
         strategy: "network-only",
@@ -204,11 +208,18 @@ export async function finishAccessChanges(
       }
     }
     if (!pending) {
+      const latest = await readVerifiedPolicy(client, context);
+      if (latest.permissions.version !== context.permissions.version) {
+        context = await administrator(client, signal);
+        directory = null;
+        continue;
+      }
       await client.invalidate("products.list");
       return;
     }
+    let current: QueryResult<"zerotrust.domains.get"> | undefined;
     if (!initial) {
-      const current = await required(
+      current = await required(
         client.query(
           "zerotrust.domains.get",
           { domain: pending.id, generation: pending.generation },
@@ -232,60 +243,81 @@ export async function finishAccessChanges(
       scope: pending.scope,
       facet: pending.facet as Collection["facet"],
     });
-    const identities = await required(
-      client.query("zerotrust.identities.list", undefined, {
-        strategy: "network-only",
-      }),
-    );
-    context.live();
-    const recipients: { subject: string; identity: IdentityCertificate }[] = [];
-    let after: string | null = null,
-      members = 0;
-    do {
-      const page: QueryResult<"zerotrust.members.list"> = await required(
-        client.query(
-          "zerotrust.members.list",
-          { after },
-          { strategy: "network-only" },
+    if (!directory) {
+      // Every affected area uses the same verified policy and member list.
+      // Start independent metadata reads together so the RPC transport can
+      // batch them, then reuse them until a policy conflict requires a refresh.
+      const [identities, firstPage] = await Promise.all([
+        required(
+          client.query("zerotrust.identities.list", undefined, {
+            strategy: "network-only",
+          }),
         ),
-      );
+        required(
+          client.query(
+            "zerotrust.members.list",
+            { after: null },
+            { strategy: "network-only" },
+          ),
+        ),
+      ]);
       context.live();
+      const members: QueryResult<"zerotrust.members.list">["rows"] = [];
+      let page = firstPage;
+      let after: string | null = null;
+      do {
+        if (
+          (page.after && page.after === after) ||
+          members.length + page.rows.length > 10000
+        ) {
+          throw new InvalidProtectedData();
+        }
+        members.push(...page.rows);
+        after = page.after;
+        if (after) {
+          page = await required(
+            client.query(
+              "zerotrust.members.list",
+              { after },
+              { strategy: "network-only" },
+            ),
+          );
+          context.live();
+        }
+      } while (after);
+      directory = { identities, members };
+    }
+    const { identities } = directory;
+    const recipients: { subject: string; identity: IdentityCertificate }[] = [];
+    for (const member of directory.members) {
+      const subject = `user:${member.id}`;
+      if (!allowed.has(subject)) continue;
+      const identity = identities.find((value) => value.subject === subject);
+      if (!identity) throw new InvalidProtectedData();
+      const certificate = record(identity.certificate, [
+        "tenant",
+        "generation",
+        "user",
+        "encryptionKey",
+        "signingKey",
+        "signature",
+      ]) as IdentityCertificate;
       if (
-        (page.after && page.after === after) ||
-        (members += page.rows.length) > 10000
+        certificate.tenant !== context.account.tenant ||
+        certificate.generation !== context.history.current.generation ||
+        certificate.user !== subject ||
+        certificate.encryptionKey !== identity.encryptionKey ||
+        certificate.signingKey !== identity.signingKey
       )
         throw new InvalidProtectedData();
-      for (const member of page.rows) {
-        const subject = `user:${member.id}`;
-        if (!allowed.has(subject)) continue;
-        const identity = identities.find((value) => value.subject === subject);
-        if (!identity) throw new InvalidProtectedData();
-        const certificate = record(identity.certificate, [
-          "tenant",
-          "generation",
-          "user",
-          "encryptionKey",
-          "signingKey",
-          "signature",
-        ]) as IdentityCertificate;
-        if (
-          certificate.tenant !== context.account.tenant ||
-          certificate.generation !== context.history.current.generation ||
-          certificate.user !== subject ||
-          certificate.encryptionKey !== identity.encryptionKey ||
-          certificate.signingKey !== identity.signingKey
-        )
-          throw new InvalidProtectedData();
-        await verify(
-          context.history.authority(certificate.generation),
-          certificate.signature,
-          identityCertificateFrame(certificate),
-        );
-        context.live();
-        recipients.push({ subject, identity: certificate });
-      }
-      after = page.after;
-    } while (after);
+      await verify(
+        context.history.authority(certificate.generation),
+        certificate.signature,
+        identityCertificateFrame(certificate),
+      );
+      context.live();
+      recipients.push({ subject, identity: certificate });
+    }
     if (
       recipients.length &&
       ([
@@ -307,13 +339,17 @@ export async function finishAccessChanges(
         generation <= BigInt(pending.generation);
         generation++
       ) {
-        const old = await required(
-          client.query(
-            "zerotrust.domains.get",
-            { domain: pending.id, generation: generation.toString() },
-            { strategy: "network-only" },
-          ),
-        );
+        let old = current;
+        if (generation.toString() !== pending.generation) {
+          old = await required(
+            client.query(
+              "zerotrust.domains.get",
+              { domain: pending.id, generation: generation.toString() },
+              { strategy: "network-only" },
+            ),
+          );
+        }
+        if (!old) throw new InvalidProtectedData();
         context.live();
         const verified = await verifyDomain(
           old,
@@ -421,6 +457,8 @@ export async function finishAccessChanges(
         permissions.permissions.version === context.permissions.version
       )
         throw error;
+      context = permissions;
+      directory = null;
       // A concurrent policy or completed rotation requires a fresh definition.
       // Never publish the old recipient set against a changed policy.
     }

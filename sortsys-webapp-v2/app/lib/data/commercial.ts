@@ -153,6 +153,7 @@ export function createProtectedCommercial(
     persist: persistCases,
   });
   async function inventory() {
+    live();
     const collections = await protectedCollections(client, signal);
     const areas = collections.areas(select);
     live();
@@ -2345,6 +2346,28 @@ export function createProtectedCommercial(
   }
   return {
     nativeDocument,
+    async choices() {
+      const { selected, visible, collections } = await inventory();
+      const headers = selected.filter(
+        (request) => request.area.facet === "master-data",
+      );
+      const values = await runtime.read(
+        [...headers, ...invoiceViewRequests(headers)],
+        (view) =>
+          headers.flatMap((request) => {
+            const id = commercialDomain(request.area.domain)!.id;
+            const header = snapshot(view, id, [request], visible, true);
+            if (!header.values.length) return [];
+            const value = wireCommercialCase(header.values);
+            return [
+              { id: value.id, reference: value.reference, title: value.title },
+            ];
+          }),
+        collections,
+      );
+      live();
+      return values;
+    },
     openDocument(caseId: string, id: string) {
       return loadDocument(caseId, id, true);
     },

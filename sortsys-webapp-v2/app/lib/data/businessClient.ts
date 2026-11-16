@@ -1822,6 +1822,21 @@ export function createBusinessClient(
     },
   };
   const documentActions = {
+    async choices(cancellation?: AbortSignal) {
+      await synchronized();
+      const expectedAccount = account;
+      const context = editorController.signal;
+      const live = () => {
+        cancellation?.throwIfAborted();
+        context.throwIfAborted();
+        if (closed || !expectedAccount || expectedAccount !== unlockedAccount())
+          throw unavailable();
+      };
+      live();
+      const choices = await (await commercialStore()).choices();
+      live();
+      return choices;
+    },
     async open(
       caseId: string,
       id: string,

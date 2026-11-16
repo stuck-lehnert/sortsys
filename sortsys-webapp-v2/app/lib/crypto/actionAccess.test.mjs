@@ -6,16 +6,20 @@ import {
   compilePolicy,
   createAccountVault,
   createIdentity,
+  createDomain,
   createTenantSetup,
+  openBox,
   publicIdentity,
   signPolicy,
   verifyPolicy,
+  verifyDomain,
 } from "@sortsys/zerotrust/sortsys";
 import { acceptVault, lockCryptoSession } from "./session";
 import {
   changeAreaActionAccesses,
   changeMemberAccess,
   memberAreaAccesses,
+  finishAccessChanges,
 } from "./permissions";
 import { MASTER_DATA_AREAS, profilePatch } from "./accessProfiles";
 import { projectAccessArea } from "../data/projectScope";
@@ -145,7 +149,177 @@ async function fixture() {
       return [{ success: true }, null];
     },
   };
-  return { client, a, b, state, saved, calls, get: () => permissions };
+  return {
+    client,
+    a,
+    b,
+    state,
+    saved,
+    calls,
+    get: () => permissions,
+    setPolicy: (value) => {
+      permissions = value;
+    },
+    owner,
+    member,
+    setup,
+    authorityKey,
+  };
+}
+
+async function rotationFixture(conflict = false) {
+  const f = await fixture();
+  const areas = [f.a, f.b];
+  const definitions = new Map();
+  const pending = new Set(areas.map((area) => area.domain));
+  const grants = [];
+  for (const area of areas) {
+    const { definition } = await createDomain({
+      tenant: "test",
+      id: area.domain,
+      scope: area.scope,
+      facet: area.facet,
+      generation: "1",
+      policyVersion: "1",
+      authorityGeneration: "1",
+      authorityKey: f.authorityKey.privateKey,
+      recovery: {
+        encryptionKey: f.setup.authority.recoveryEncryptionKey,
+        signingKey: f.setup.authority.recoverySigningKey,
+      },
+      readers: [{ subject: "user:1", identity: await publicIdentity(f.owner) }],
+    });
+    definitions.set(`${area.domain}:1`, definition);
+  }
+  const query = f.client.query;
+  f.client.query = async (path, input) => {
+    if (path === "zerotrust.domains.list") {
+      f.calls.push(path);
+      return [
+        areas.map((area) => ({
+          id: area.domain,
+          scope: area.scope,
+          facet: area.facet,
+          generation: pending.has(area.domain) ? "1" : "2",
+          rotationRequired: pending.has(area.domain),
+        })),
+        null,
+      ];
+    }
+    if (path === "zerotrust.domains.get" || path === "zerotrust.keys.get") {
+      f.calls.push(path);
+      const definition = definitions.get(`${input.domain}:${input.generation}`);
+      expect(definition).toBeDefined();
+      return [
+        path === "zerotrust.keys.get"
+          ? definition.envelopes.find((box) => box.recipient === "user:1")
+          : definition,
+        null,
+      ];
+    }
+    if (path === "zerotrust.members.list") {
+      f.calls.push(path);
+      if (input.after === null)
+        return [{ rows: [{ id: "1", enrolled: true }], after: "1" }, null];
+      expect(input.after).toBe("1");
+      return [{ rows: [{ id: "2", enrolled: true }], after: null }, null];
+    }
+    return query(path, input);
+  };
+  const mutate = f.client.mutate;
+  f.client.mutate = async (path, input) => {
+    if (path === "zerotrust.keys.grant") {
+      f.calls.push(path);
+      const original = definitions.get(`${input.domain}:${input.generation}`);
+      const binding = {
+        tenant: "test",
+        purpose: "area-key",
+        object: input.domain,
+        generation: input.generation,
+        author: "authority:1",
+      };
+      const before = await openBox(
+        original.envelopes[0],
+        { ...binding, recipient: "user:1" },
+        f.owner.encryptionKey.privateKey,
+        f.authorityKey.publicKey,
+      );
+      const shared = await openBox(
+        input.envelope,
+        { ...binding, recipient: "user:2" },
+        f.member.encryptionKey.privateKey,
+        f.authorityKey.publicKey,
+      );
+      try {
+        expect(shared).toEqual(before);
+      } finally {
+        before.fill(0);
+        shared.fill(0);
+      }
+      grants.push(input);
+      return [{ success: true }, null];
+    }
+    if (path === "zerotrust.domains.put") {
+      f.calls.push(path);
+      if (conflict) {
+        conflict = false;
+        const { signature, ...previous } = f.get();
+        f.setPolicy(
+          await signPolicy(
+            {
+              ...previous,
+              version: "3",
+              rules: previous.rules.filter(
+                (rule) => rule.subject !== "user:2" || rule.scope !== f.b.scope,
+              ),
+            },
+            f.authorityKey.privateKey,
+          ),
+        );
+        return [null, new Error("Concurrent policy change")];
+      }
+      expect(input.policyVersion).toBe(f.get().version);
+      expect(input.generation).toBe("2");
+      await verifyDomain(
+        input,
+        {
+          tenant: "test",
+          id: input.id,
+          scope: input.scope,
+          facet: input.facet,
+          generation: "2",
+        },
+        () => f.authorityKey.publicKey,
+      );
+      definitions.set(`${input.id}:2`, input);
+      pending.delete(input.id);
+      return [{ success: true }, null];
+    }
+    return mutate(path, input);
+  };
+  return { ...f, definitions, grants };
+}
+
+for (const conflict of [false, true]) {
+  test(`key changes reuse one member directory and revalidate a changed policy${conflict ? " after a concurrent revocation" : ""}`, async () => {
+    const f = await rotationFixture(conflict);
+    await finishAccessChanges(f.client, new AbortController().signal);
+    const directoryReads = conflict ? 2 : 1;
+    expect(
+      f.calls.filter((path) => path === "zerotrust.identities.list"),
+    ).toHaveLength(directoryReads);
+    expect(
+      f.calls.filter((path) => path === "zerotrust.members.list"),
+    ).toHaveLength(directoryReads * 2);
+    for (const area of [f.a, f.b]) {
+      const updated = f.definitions.get(`${area.domain}:2`);
+      expect(updated).toBeDefined();
+      const recipients = updated.envelopes.map((box) => box.recipient);
+      if (conflict && area === f.b) expect(recipients).toEqual(["user:1"]);
+      else expect(recipients).toEqual(["user:1", "user:2"]);
+    }
+    expect(f.grants.length).toBeGreaterThan(0);
+  });
 }
 test("multiple edited areas publish one signed policy and preserve unedited custom actions and denials", async () => {
   const f = await fixture(),
