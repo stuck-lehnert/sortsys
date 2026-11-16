@@ -42,10 +42,27 @@ const signal = new AbortController().signal;
 const password = "New-member-only-knows-this-password-2026!";
 const originalFetch = globalThis.fetch;
 const bodies: string[] = [];
+const requests: { paths: string[]; grantCount: number }[] = [];
 globalThis.fetch = new Proxy(originalFetch, {
   apply(target, receiver, args) {
+    const url = new URL(
+      typeof args[0] === "string" || args[0] instanceof URL
+        ? args[0]
+        : args[0].url,
+    );
     const body = args[1]?.body;
     if (typeof body === "string") bodies.push(body);
+    const inputs = JSON.parse(
+      typeof body === "string" ? body : (url.searchParams.get("input") ?? "{}"),
+    );
+    const paths = url.pathname.slice(1).split(",");
+    let grantCount = 0;
+    for (const [index, path] of paths.entries()) {
+      if (path === "zerotrust.access.publish") {
+        grantCount += inputs[String(index)].json.grants.length;
+      }
+    }
+    requests.push({ paths, grantCount });
     return Reflect.apply(target, receiver, args).then(
       async (response: Response) => {
         const reply = await response.clone().json();
@@ -189,11 +206,33 @@ try {
   business = null;
   const lease = acquireDataRuntime(administrator, signal, duckDriver);
   try {
+    const firstRequest = requests.length;
     console.log("Native invitation: approving and granting access");
     await approveMemberInvitation(
       administrator,
       invitation.link.invitation.id,
       signal,
+    );
+    const approvalRequests = requests.slice(firstRequest);
+    const publications = approvalRequests.filter(
+      (request) => request.grantCount > 0,
+    );
+    assert.ok(publications.some((request) => request.grantCount > 1));
+    assert.equal(
+      approvalRequests.some((request) =>
+        request.paths.includes("zerotrust.keys.grant"),
+      ),
+      false,
+    );
+    assert.ok(
+      approvalRequests.some(
+        (request) =>
+          request.paths.filter((path) => path === "zerotrust.domains.get")
+            .length > 1,
+      ),
+    );
+    console.log(
+      `Native invitation: ${publications.reduce((count, request) => count + request.grantCount, 0)} encrypted grants in ${publications.length} bounded publication request(s)`,
     );
     console.log("Native invitation: approving and granting access");
     await approveMemberInvitation(

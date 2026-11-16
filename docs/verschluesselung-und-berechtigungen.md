@@ -438,6 +438,22 @@ Werten. Das gilt auch bei einer verlorenen Antwort. Die administrative Abfrage
 sie erfordert deren aktuelles Leserecht und liefert keine entschlüsselten
 Schlüssel.
 
+Bei Einladungen und geänderten Freigaben bereitet der Browser unabhängige
+Schlüsselgenerationen mit höchstens vier parallelen Abrufen je Bereich vor.
+Dadurch können diese Abfragen die vorhandenen RPC-Pakete gemeinsam nutzen.
+Eine Einladung bearbeitet höchstens vier Bereiche gleichzeitig und
+veröffentlicht die vorbereiteten Schlüsselkopien ebenfalls über
+`zerotrust.access.publish`. Eine Wiederholung prüft auch hier die tatsächlich
+gespeicherten Pakete. Der Zugriff auf eine ungültige Schlüsselhistorie wird
+abgebrochen, bevor deren vorbereitete Kopien veröffentlicht werden.
+
+Der RPC-Transport bündelt Leseanfragen in einem festen Fenster von vier
+Millisekunden. Ein Paket enthält höchstens 32 Operationen; die zusammengefassten
+Eingaben belegen höchstens ein MiB. Größere Einzeloperationen werden separat
+übertragen und unterliegen der Grenze ihres Endpunkts. Schreibanfragen warten
+nur bis zum nächsten Microtask. Operationen verschiedener Anmeldesitzungen
+werden getrennt, und jede Operation behält ihre eigene Berechtigungsprüfung.
+
 Für höchstens 16 gezielt bearbeitete Bereiche werden nur deren Nachweise und
 offene Schlüsselwechsel nachgelesen. Größere Auswahlen und die allgemeine
 Fortsetzung prüfen das gesamte Verzeichnis. Eine zwischenzeitlich geänderte

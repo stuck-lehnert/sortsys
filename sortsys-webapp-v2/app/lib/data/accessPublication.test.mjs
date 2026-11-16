@@ -5,7 +5,10 @@ import {
   publicIdentity,
   rewrapDomainKey,
 } from "@sortsys/zerotrust/sortsys";
-import { publishAccessRotations } from "./accessPublication";
+import {
+  publishAccessGrants,
+  publishAccessRotations,
+} from "./accessPublication";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
@@ -243,4 +246,61 @@ test("duplicate areas and account closure prevent a publication from being ackno
   expect(
     f.calls.every((call) => call.path === "zerotrust.access.publish"),
   ).toBe(true);
+});
+
+test("invitation grants use bounded publications without creating replacement generations", async () => {
+  const f = await fixture(1, 65);
+  f.state.lost = true;
+  await publishAccessGrants(
+    f.client,
+    "2",
+    f.rotations[0].grants,
+    new AbortController().signal,
+  );
+  const publications = f.calls.filter(
+    (call) => call.path === "zerotrust.access.publish",
+  );
+  expect(publications.map((call) => call.input.grants.length)).toEqual([
+    32, 32, 1,
+  ]);
+  expect(publications.every((call) => call.input.domains.length === 0)).toBe(
+    true,
+  );
+  expect(publications.flatMap((call) => call.input.grants)).toEqual(
+    f.rotations[0].grants,
+  );
+  expect(
+    f.calls.filter((call) => call.path === "zerotrust.keys.inspect"),
+  ).toHaveLength(3);
+  expect(f.calls.some((call) => call.path === "zerotrust.domains.get")).toBe(
+    false,
+  );
+});
+
+test("invitation publications reject false success, duplicate grants and account changes", async () => {
+  const f = await fixture();
+  const grants = f.rotations.flatMap((rotation) => rotation.grants);
+  await expect(
+    publishAccessGrants(
+      f.client,
+      "2",
+      [grants[0], grants[0]],
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow();
+  expect(f.calls).toHaveLength(0);
+  f.state.discard = true;
+  await expect(
+    publishAccessGrants(f.client, "2", grants, new AbortController().signal),
+  ).rejects.toThrow();
+  f.state.discard = false;
+  f.state.substitute = "keys";
+  await expect(
+    publishAccessGrants(f.client, "2", grants, new AbortController().signal),
+  ).rejects.toThrow();
+  f.state.substitute = null;
+  f.state.during = () => lockCryptoSession();
+  await expect(
+    publishAccessGrants(f.client, "2", grants, new AbortController().signal),
+  ).rejects.toThrow();
 });

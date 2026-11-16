@@ -309,6 +309,153 @@ test("read-only preparations retain exact source guards for an external signed p
   }
 });
 
+test("preparation reloads a stale batched snapshot before running the business callback", async () => {
+  const f = fixture();
+  const original = f.storage.open;
+  let opened = 0;
+  let callbacks = 0;
+  f.storage.open = async (...args) => {
+    opened++;
+    const collections = await original(...args);
+    collections.prefetch = async (selections) => {
+      for (const selection of selections) {
+        if (
+          selection.snapshot !== undefined &&
+          selection.snapshot !== String(f.state(selection.area).sequence)
+        ) {
+          throw Object.assign(new Error("Stale batch snapshot"), {
+            code: "CONFLICT",
+          });
+        }
+      }
+    };
+    return collections;
+  };
+  try {
+    await f.runtime.read([first], (view) => view.documents(first));
+    f.seed(mainArea, "main:1", {
+      row: row("product_price_records", {
+        id: "1",
+        product_id: "2",
+        price: 0,
+        comment: "Geändert",
+      }),
+    });
+    f.runtime.revalidate();
+    const prepared = await f.runtime.prepare([first], (tx) => {
+      callbacks++;
+      return tx.row("product_price_records", { id: "1" }).require("comment");
+    });
+    try {
+      expect(prepared.value).toBe("Geändert");
+      expect(prepared.guards).toEqual([
+        { domain: mainArea.domain, sequence: "2" },
+      ]);
+      expect(callbacks).toBe(1);
+      expect(opened).toBe(3);
+      expect(f.calls.commit).toBe(0);
+    } finally {
+      prepared.close();
+    }
+  } finally {
+    await f.runtime.close();
+  }
+});
+
+test("snapshot acquisition retries are bounded and never repeat a business callback or a denial", async () => {
+  for (const code of ["CONFLICT", "FORBIDDEN"]) {
+    const f = fixture();
+    const original = f.storage.open;
+    let opened = 0;
+    let callbacks = 0;
+    f.storage.open = async (...args) => {
+      opened++;
+      const collections = await original(...args);
+      collections.prefetch = async () => {
+        throw Object.assign(new Error(code), { code });
+      };
+      return collections;
+    };
+    try {
+      await expect(
+        f.runtime.prepare([first], () => callbacks++),
+      ).rejects.toThrow();
+      expect(opened).toBe(code === "CONFLICT" ? 3 : 1);
+      expect(callbacks).toBe(0);
+      expect(f.calls.commit).toBe(0);
+    } finally {
+      await f.runtime.close();
+    }
+  }
+  const f = fixture();
+  let callbacks = 0;
+  try {
+    await expect(
+      f.runtime.prepare([first], () => {
+        callbacks++;
+        throw new ProtectedWriteConflict();
+      }),
+    ).rejects.toBeInstanceOf(ProtectedWriteConflict);
+    expect(callbacks).toBe(1);
+    expect(f.calls.commit).toBe(0);
+  } finally {
+    await f.runtime.close();
+  }
+});
+
+test("a failed final snapshot check closes all started collections before retrying preparation", async () => {
+  const f = fixture();
+  const original = f.storage.open;
+  const closed = [];
+  let opened = 0;
+  let callbacks = 0;
+  f.storage.open = async (...args) => {
+    const attempt = ++opened;
+    const collections = await original(...args);
+    let prefetches = 0;
+    const open = (area) => {
+      const collection = collections(area);
+      return {
+        ...collection,
+        close() {
+          closed.push(`${attempt}:${area.domain}`);
+          collection.close();
+        },
+      };
+    };
+    open.prefetch = async () => {
+      if (attempt === 1 && ++prefetches === 2) {
+        f.state(mainArea).sequence++;
+        throw new ProtectedWriteConflict();
+      }
+    };
+    return open;
+  };
+  try {
+    const prepared = await f.runtime.prepare(
+      [first, second],
+      () => ++callbacks,
+    );
+    try {
+      expect(opened).toBe(2);
+      expect(callbacks).toBe(1);
+      expect(closed.sort()).toEqual(
+        [`1:${mainArea.domain}`, `1:${privateArea.domain}`].sort(),
+      );
+      expect(prepared.guards).toEqual([
+        { domain: mainArea.domain, sequence: "2" },
+        { domain: privateArea.domain, sequence: "1" },
+      ]);
+      expect(f.calls.commit).toBe(0);
+    } finally {
+      prepared.close();
+    }
+    expect(closed).toHaveLength(4);
+  } finally {
+    await f.runtime.close();
+  }
+});
+
 test("shared rows distinguish unavailable fields from NULL and route patches to their owning facet", async () => {
   const f = fixture();
   try {

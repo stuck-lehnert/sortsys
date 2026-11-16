@@ -505,19 +505,7 @@ export class DataRuntime {
     collections?: DataCollections,
   ): Promise<T> {
     return this.queue(async () => {
-      let supplied = collections;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await this.load(requests, undefined, supplied);
-          break;
-        } catch (error) {
-          if (!isWriteConflict(error) || attempt >= 2) throw error;
-          supplied = undefined;
-          this.invalidate(
-            new Set(requests.map((request) => request.area.domain)),
-          );
-        }
-      }
+      await this.loadCurrent(requests, undefined, collections);
       const generation = this.generation;
       let active = true;
       const view = new DataView(
@@ -537,6 +525,30 @@ export class DataRuntime {
         active = false;
       }
     });
+  }
+  /** Retry only snapshot acquisition. Business callbacks have not run yet;
+   * conflicts during their execution or publication remain the caller's concern. */
+  private async loadCurrent(
+    requests: readonly DataRequest[],
+    opened?: Map<string, DataCollection>,
+    supplied?: DataCollections,
+  ): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.load(requests, opened, supplied);
+        return;
+      } catch (error) {
+        if (!isWriteConflict(error) || attempt >= 2) throw error;
+        if (opened) {
+          for (const collection of opened.values()) collection.close();
+          opened.clear();
+        }
+        supplied = undefined;
+        this.invalidate(
+          new Set(requests.map((request) => request.area.domain)),
+        );
+      }
+    }
   }
   private async load(
     input: readonly DataRequest[],
@@ -850,7 +862,7 @@ export class DataRuntime {
       for (const read of reads.values()) read.close();
     };
     try {
-      await this.load(requests, reads);
+      await this.loadCurrent(requests, reads);
       const generation = this.generation;
       const tx = new DataTransaction(
         this.projectedResources,
@@ -1108,7 +1120,7 @@ export class DataRuntime {
     return this.queue(async () => {
       const reads = new Map<string, DataCollection>();
       try {
-        await this.load([request], reads);
+        await this.loadCurrent([request], reads);
         const resource = this.resources.get(dataAreaKey(request.area))!;
         const document = resource.documents.find(
           (document) => document.object.envelope.object === id,

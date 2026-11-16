@@ -10,7 +10,6 @@ import {
   identityCertificateFrame,
   InvalidProtectedData,
   record,
-  rewrapDomainKey,
   verify,
   verifyDomain,
   type Facet,
@@ -19,6 +18,7 @@ import {
 import { administratorPolicyContext } from "./administration";
 import { verifiedAccessContext } from "./accessContext";
 import { readVerifiedPolicy } from "./policy";
+import { prepareHistoricalKeyGrants } from "./historicalKeyGrants";
 import { MASTER_DATA_AREAS } from "./accessProfiles";
 import { ORGANIZATION_AREAS } from "../data/organizationData";
 import { commercialDomain } from "../data/commercialAreas";
@@ -210,79 +210,34 @@ async function prepareRotation(
       context.history.authority,
     );
   }
-  const grants: AccessRotation["grants"] = [];
-  if (recipients.length && retainHistory(pending.id)) {
-    if (BigInt(pending.generation) > 10000n) throw new InvalidProtectedData();
-    for (
-      let generation = 1n;
-      generation <= BigInt(pending.generation);
-      generation++
-    ) {
-      const old =
-        generation.toString() === pending.generation
-          ? current
-          : await required(
-              client.query(
-                "zerotrust.domains.get",
-                {
-                  domain: pending.id,
-                  generation: generation.toString(),
-                },
-                { strategy: "network-only" },
-              ),
-            );
-      context.live();
-      if (!old) throw new InvalidProtectedData();
-      const area = {
+  let grants: AccessRotation["grants"] = [];
+  if (
+    recipients.length &&
+    retainHistory(pending.id) &&
+    pending.generation !== "0"
+  ) {
+    grants = await prepareHistoricalKeyGrants(client, {
+      area: {
         tenant: context.account.tenant,
         id: pending.id,
         scope: pending.scope,
         facet,
-        generation: generation.toString(),
-      };
-      const verified = await verifyDomain(old, area, context.history.authority);
-      if (!verified.envelopes.length) continue;
-      const subject = `user:${context.session.user.id}`;
-      const missing = recipients.filter(
-        (recipient) =>
-          recipient.subject !== subject &&
-          !verified.envelopes.some(
-            (box) => box.recipient === recipient.subject,
-          ),
-      );
-      if (!missing.length) continue;
-      const box = await required(
-        client.query(
-          "zerotrust.keys.get",
-          { domain: pending.id, generation: generation.toString() },
-          { strategy: "network-only" },
-        ),
-      );
-      context.live();
-      const envelopes = await rewrapDomainKey({
-        definition: old,
-        area,
-        envelope: box,
-        owner: {
-          subject,
-          privateKey: context.account.identity.encryptionKey.privateKey,
-        },
-        authority: {
-          generation: context.history.current.generation,
-          privateKey: context.authority,
-        },
-        history: context.history.authority,
-        readers: missing,
-        signal,
-        live: context.live,
-      });
-      for (const envelope of envelopes)
-        grants.push({
-          domain: pending.id,
-          generation: generation.toString(),
-          envelope,
-        });
-    }
+        generation: pending.generation,
+      },
+      latest: current,
+      owner: {
+        subject: `user:${context.session.user.id}`,
+        privateKey: context.account.identity.encryptionKey.privateKey,
+      },
+      authority: {
+        generation: context.history.current.generation,
+        privateKey: context.authority,
+      },
+      history: context.history.authority,
+      readers: recipients,
+      signal,
+      live: context.live,
+    });
   }
   const { definition } = await createDomain({
     tenant: context.account.tenant,

@@ -18,6 +18,21 @@ export type AccessRotation = {
   grants: Publication["grants"];
   definition: DomainDefinition;
 };
+type AccessChange = {
+  grants: Publication["grants"];
+  definition?: DomainDefinition;
+};
+
+/** Invitations only redistribute existing keys; they do not create a new
+ * generation. Use the same bounded publication and readback as rotations. */
+export async function publishAccessGrants(
+  client: Client,
+  policyVersion: string,
+  grants: Publication["grants"],
+  signal: AbortSignal,
+): Promise<void> {
+  return publishAccessChanges(client, policyVersion, [{ grants }], signal);
+}
 
 /** Publish a bounded set of rotations, keeping each area's historical grants
  * with its replacement generation whenever it fits in one transaction. */
@@ -25,6 +40,15 @@ export async function publishAccessRotations(
   client: Client,
   policyVersion: string,
   rotations: readonly AccessRotation[],
+  signal: AbortSignal,
+): Promise<void> {
+  return publishAccessChanges(client, policyVersion, rotations, signal);
+}
+
+async function publishAccessChanges(
+  client: Client,
+  policyVersion: string,
+  changes: readonly AccessChange[],
   signal: AbortSignal,
 ): Promise<void> {
   const account = unlockedAccount();
@@ -37,14 +61,16 @@ export async function publishAccessRotations(
   const encoder = new TextEncoder();
   const domainIds = new Set<string>();
   const grantIds = new Set<string>();
-  for (const rotation of rotations) {
-    if (
-      domainIds.has(rotation.definition.id) ||
-      rotation.definition.policyVersion !== policyVersion
-    )
-      throw new InvalidProtectedData();
-    domainIds.add(rotation.definition.id);
-    for (const grant of rotation.grants) {
+  for (const change of changes) {
+    if (change.definition) {
+      if (
+        domainIds.has(change.definition.id) ||
+        change.definition.policyVersion !== policyVersion
+      )
+        throw new InvalidProtectedData();
+      domainIds.add(change.definition.id);
+    }
+    for (const grant of change.grants) {
       const envelope = sealedBox(grant.envelope);
       const id = JSON.stringify([
         grant.domain,
@@ -149,15 +175,19 @@ export async function publishAccessRotations(
     }
     pending = merged;
   }
-  for (const rotation of rotations) {
+  for (const change of changes) {
     live();
-    const part = { grants: rotation.grants, domains: [rotation.definition] };
+    const part = {
+      grants: change.grants,
+      domains: change.definition ? [change.definition] : [],
+    };
     if (fits({ policyVersion, ...part })) {
       await append(part);
     } else {
-      for (const grant of rotation.grants)
+      for (const grant of change.grants)
         await append({ grants: [grant], domains: [] });
-      await append({ grants: [], domains: [rotation.definition] });
+      if (change.definition)
+        await append({ grants: [], domains: [change.definition] });
     }
   }
   await flush();

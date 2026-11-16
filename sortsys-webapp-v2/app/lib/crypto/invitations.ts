@@ -1,5 +1,8 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import type { PasswordPolicy } from "./passwordPolicy";
+import { prepareHistoricalKeyGrants } from "./historicalKeyGrants";
+import { publishAccessGrants } from "../data/accessPublication";
+import { mapConcurrent } from "../data/runtime/concurrentReads";
 import {
   ACTIONS,
   InvalidProtectedData,
@@ -10,15 +13,11 @@ import {
   createDomain,
   createInvitation,
   frame,
-  hpke,
   invitationApprovalFrame,
   invitationClaimHash,
-  openBox,
   readInvitationLink,
   record,
-  sealBox,
   sign,
-  sized,
   verifyDomain,
   verifyInvitation,
   verifyInvitationClaim,
@@ -600,85 +599,41 @@ async function grantInvitationAccess(
       granted.push(personal);
     }
   }
-  for (const area of granted) {
+  const historicalGrants = await mapConcurrent(granted, 4, async (area) => {
     const definition = known.find((domain) => domain.id === area.domain);
     if (!definition) throw new InvalidProtectedData();
-    if (BigInt(definition.generation) > 10000n)
-      throw new InvalidProtectedData();
-    // Existing objects can reference every historical key generation.
-    for (let number = 1n; number <= BigInt(definition.generation); number++) {
-      signal.throwIfAborted();
-      const generation = number.toString();
-      await verifyDomain(
-        await required(
-          client.query(
-            "zerotrust.domains.get",
-            { domain: area.domain, generation },
-            { strategy: "network-only" },
-          ),
-        ),
-        {
-          tenant: context.account.tenant,
-          id: area.domain,
-          scope: area.scope,
-          facet: area.facet,
-          generation,
-        },
-        context.history.authority,
-      );
-      const box = await required(
-        client.query(
-          "zerotrust.keys.get",
-          { domain: area.domain, generation },
-          { strategy: "network-only" },
-        ),
-      );
-      context.live();
-      const authorGeneration = box.author.match(/^authority:([1-9]\d*)$/)?.[1];
-      if (!authorGeneration) throw new InvalidProtectedData();
-      const raw = await openBox(
-        box,
-        {
-          tenant: context.account.tenant,
-          purpose: "area-key",
-          object: area.domain,
-          generation,
-          recipient: `user:${context.session.user.id}`,
-          author: box.author,
-        },
-        context.account.identity.encryptionKey.privateKey,
-        context.history.authority(authorGeneration),
-      );
-      try {
-        const envelope = await sealBox(
-          {
-            tenant: context.account.tenant,
-            purpose: "area-key",
-            object: area.domain,
-            generation,
-            recipient: recipient.user,
-            author: `authority:${context.history.current.generation}`,
-          },
-          raw,
-          await hpke.kem.deserializePublicKey(
-            sized(recipient.encryptionKey, 32),
-          ),
-          context.authority,
-        );
-        context.live();
-        await required(
-          client.mutate("zerotrust.keys.grant", {
-            domain: area.domain,
-            generation,
-            envelope,
-          }),
-        );
-        context.live();
-      } finally {
-        raw.fill(0);
-      }
-    }
-  }
+    return prepareHistoricalKeyGrants(client, {
+      area: {
+        tenant: context.account.tenant,
+        id: area.domain,
+        scope: area.scope,
+        facet: area.facet,
+        generation: definition.generation,
+      },
+      owner: {
+        subject: `user:${context.session.user.id}`,
+        privateKey: context.account.identity.encryptionKey.privateKey,
+      },
+      authority: {
+        generation: context.history.current.generation,
+        privateKey: context.authority,
+      },
+      history: context.history.authority,
+      readers: [{ subject: recipient.user, identity: recipient }],
+      // Reapproval may certify a replacement identity for the same subject.
+      replaceExisting: true,
+      signal,
+      live: context.live,
+    });
+  });
+  context.live();
+  await publishAccessGrants(
+    client,
+    policyVersion,
+    historicalGrants.flat(),
+    signal,
+  );
+  context.live();
   if (saved.access.assistant && !existingPersonalDomain) {
     const { definition } = await createDomain({
       tenant: context.account.tenant,
