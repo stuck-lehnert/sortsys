@@ -98,6 +98,65 @@ function raw() {
   base.setToken("synthetic-test-token");
   return { base, requests };
 }
+
+test("typed cryptographic procedures cross the business facade without a second hand-maintained allowlist", async () => {
+  await account();
+  const { base, requests } = raw();
+  const facade = createBusinessClient(base);
+  try {
+    const queries = [
+      ["zerotrust.keyAuthorities.get", { signature: "public-certificate" }],
+      [
+        "zerotrust.keyAuthorities.forArea",
+        { scope: "catalog:products", facet: "master-data" },
+      ],
+      ["zerotrust.keyAuthorities.forAreas", { areas: [] }],
+      [
+        "zerotrust.identities.recipients",
+        { scope: "catalog:products", facet: "master-data", after: null },
+      ],
+    ];
+    for (const [path, input] of queries) {
+      const [, error] = await facade.queryDynamic(path, input, {
+        strategy: "network-only",
+      });
+      expect(error).toBeNull();
+      expect(
+        requests.some((request) =>
+          new URL(request.url).pathname.includes(path),
+        ),
+      ).toBe(true);
+    }
+    const [, error] = await facade.mutate("zerotrust.keyAuthorities.register", {
+      authorities: [],
+    });
+    expect(error).toBeNull();
+    expect(
+      requests.some((request) =>
+        new URL(request.url).pathname.includes(
+          "zerotrust.keyAuthorities.register",
+        ),
+      ),
+    ).toBe(true);
+    for (const [method, path] of [
+      ["queryDynamic", "zerotrust.notRegistered"],
+      ["queryDynamic", "zerotrust.keyAuthorities.register"],
+      ["mutateDynamic", "zerotrust.keyAuthorities.forAreas"],
+      ["queryDynamic", "business.notRegistered"],
+    ]) {
+      const start = requests.length;
+      const [, denied] = await facade[method](path, {});
+      expect(denied?.code).toBe("UNKNOWN_CLIENT_OPERATION");
+      expect(
+        requests.slice(start).some((request) =>
+          new URL(request.url).pathname.slice(1).split(",").includes(path),
+        ),
+      ).toBe(false);
+    }
+  } finally {
+    facade.dispose();
+  }
+});
 function products() {
   let item = {
     id: "1",

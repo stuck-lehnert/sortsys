@@ -206,14 +206,42 @@ Leistungsumfang benötigt; eine reine Preisfreigabe öffnet keine Positionstexte
 Mengen und Preise werden für die Wiederverwendung einer Leistungsbeschreibung
 nicht entschlüsselt.
 
+## Freigaben für einen Bereich verwalten
+
+Die Hauptadministration wählt ein bestätigtes Konto und den betreffenden
+Datenbereich aus. Unter **Individuell** lässt sich neben dem Lesezugriff
+**Freigaben verwalten** einschalten. Das gilt auch für einzelne Projektbereiche,
+Dokumente, Personal- und Werkzeugdaten. Beim Speichern erhält das Konto einen
+öffentlichen Nachweis für seine eigenen Schlüsselunterschriften. Der private
+Mandantenschlüssel wird nicht weitergegeben.
+
+Anschließend öffnet **Verwaltung → Organisation** für dieses Konto die Ansicht
+**Datenfreigaben**. Dort werden ein bestätigter Empfänger und ein verwaltbarer
+Bereich ausgewählt. Die Einzelrechte beschränken sich auf die eigenen
+Befugnisse des Verwalters. Ein anderer Bereichsverwalter kann dessen Rechte
+nicht ändern. Enthält eine Empfängerfreigabe weitergehende Rechte, bleibt sie
+ebenfalls der Hauptadministration vorbehalten; ein einzelnes Häkchen darf diese
+Rechte nicht beiläufig entfernen.
+
+Empfängernamen stammen aus den freigegebenen verschlüsselten Personalprofilen.
+Ohne Namensfreigabe erscheint die zertifizierte Kontokennung. Die Auswahl liest
+keine technischen Rollen oder Personalangaben. Der Abruf bestätigt berechtigte
+Konten in Seiten mit höchstens 64 Einträgen und prüft die Verwaltungsbefugnis bei
+jeder Seite erneut. Nach Auswahl wird das aktuelle Empfängerzertifikat nochmals
+mit der Vertrauenskette verglichen.
+
+Das Speichern verwendet denselben Signatur- und Schlüsselwechsel wie die
+primäre Rechteverwaltung. **Aktualisieren** setzt auch unterbrochene Wechsel
+fort. Ein Entzug der Verwaltungsbefugnis sperrt die offene Ansicht über die
+laufende Verbindung. Einladungen, Kontoverwaltung und Wiederherstellung stehen
+in dieser Ansicht nicht zur Verfügung.
+
 ## Verbleibender Umbau
 
-Die Verwaltungsoberfläche ist derzeit auf das Konto beschränkt, das die
-Organisation eingerichtet oder zuletzt wiederhergestellt hat. Die gemeinsame
-Rechtefunktion und die API unterstützen bereits bereichsgebundene Verwalter mit
-eigenen Signaturen und Inhaltsschlüsselwechseln. Für diese Konten fehlt noch der
-Zugang zur entsprechend begrenzten Verwaltungsmaske. Andere Fachbereiche müssen
-ebenfalls an dieselbe Rechteverwaltung angeschlossen werden. Eine neue
+Die Bereichsverwaltung benötigt derzeit ein unmittelbar von der
+Hauptadministration signiertes Verwaltungsrecht. Ein ausschließlich aus einem
+Anlagenachweis abgeleitetes Recht, etwa für ein selbst angelegtes Projekt, muss
+noch an diesen Ablauf angeschlossen werden. Eine neue
 Wiederherstellungsgeneration macht alte Einladungen ungültig.
 
 Aktivieren, Deaktivieren, Archivieren und Entarchivieren verbinden das

@@ -35,6 +35,8 @@ type SessionInfo = Omit<RawSession, "user"> & {
   canCreate(kind: CreationKind): boolean;
   canBookTool(id?: string): boolean;
   canCreateAccount(): boolean;
+  canManagePermissions(): boolean;
+  contentAccessState(): "loading" | "failed" | "ready";
   canAccess(scope: string, facet: Facet, action: DataAction): boolean;
   canSeeOffers(): boolean;
   canSearchProjectFiles(): boolean;
@@ -182,6 +184,12 @@ export function SessionInfoProvider({
     hasRole,
     isAdmin: () => isAdmin,
     canCreateAccount: () => !!liveView() && isAdmin,
+    canManagePermissions: () => liveView()?.canManagePermissions() === true,
+    contentAccessState: () => {
+      if (!current) return "loading";
+      if (current.failed || !liveView()) return "failed";
+      return "ready";
+    },
     canCreate: (kind) => liveView()?.canCreate(kind) === true,
     canBookTool: (id) => liveView()?.canBookTool(id) === true,
     canAccess: (scope, facet, action) =>

@@ -177,6 +177,7 @@ export function ProjectAccess({
           <AccessLevelSelect
             key={`${selected?.id}:${key}`}
             label={labels[key]()}
+            allowManagement
             value={drafts[key].value}
             disabled={busy || disabled || !selected}
             onChange={(value, actions) =>

@@ -31,6 +31,9 @@ const DocumentTemplateEditor = lazy(
 const OrganizationEncryption = lazy(
   () => import("~/components/OrganizationEncryption"),
 );
+const ScopedAccessAdministration = lazy(
+  () => import("~/components/ScopedAccessAdministration"),
+);
 
 type DefaultSupervisorData = {
   userId: string | null;
@@ -42,7 +45,45 @@ export function meta() {
 
 export default function AdminPage() {
   const session = useSessionInfo();
-  if (!session.isAdmin()) return <NotFound reason="pageNotFound" />;
+  const [confirmedSession, setConfirmedSession] = useState<string | null>(null);
+  const managesPermissions = session.canManagePermissions();
+  if (managesPermissions && confirmedSession !== session.session.id)
+    setConfirmedSession(session.session.id);
+  if (!session.isAdmin()) {
+    if (session.contentAccessState() === "ready" && !managesPermissions)
+      return <NotFound reason="pageNotFound" />;
+    if (!managesPermissions && confirmedSession !== session.session.id)
+      return (
+        <Loading
+          active
+          description={uiText(
+            "Freigaben werden geprüft …",
+            "Checking permissions…",
+          )}
+        />
+      );
+    // A policy write invalidates the menu projection itself. Keep the command
+    // mounted while new rights are verified, so its key publication can finish.
+    // Protected state clears the old labels; a confirmed revocation unmounts it.
+    return (
+      <Suspense
+        fallback={<Loading active description={uiText("Lädt …", "Loading…")} />}
+      >
+        {!managesPermissions && (
+          <Loading
+            active
+            description={uiText(
+              "Freigaben werden geprüft …",
+              "Checking permissions…",
+            )}
+          />
+        )}
+        <div hidden={!managesPermissions}>
+          <ScopedAccessAdministration />
+        </div>
+      </Suspense>
+    );
+  }
   return <OrganizationAdministration />;
 }
 

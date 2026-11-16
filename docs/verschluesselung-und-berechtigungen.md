@@ -440,9 +440,15 @@ Hauptadministration stellt beim Vergeben von `grant` und `read` automatisch ein
 öffentliches, bereichsgebundenes Schlüsselzertifikat aus. Der Verwalter signiert
 damit historische Schlüsselkopien und neue Generationen mit seinem eigenen
 Identitätsschlüssel. Ein entzogener Verwaltungszugriff sperrt neue
-Veröffentlichungen; frühere Signaturen bleiben prüfbar. Die Verwaltungsoberfläche
-muss für diese Konten noch geöffnet und auf deren einzelne Bereiche begrenzt
-werden.
+Veröffentlichungen; frühere Signaturen bleiben prüfbar. Die Oberfläche zeigt
+diesen Konten eine begrenzte Freigabenansicht mit ihren einzelnen Bereichen und
+Aktionen. Kontoverwaltung und Recovery bleiben bei der Hauptadministration.
+
+Der Browser leitet technische Kryptografieaufrufe anhand des generierten
+API-Vertrags weiter. Eine zweite, manuell gepflegte Endpunktliste ist dafür
+nicht nötig. Ein unbekannter Name oder die falsche Aufrufart wird lokal
+abgewiesen. Fachliche Aufrufe bleiben bei den Browseradaptern; die Einstufung
+eines Namens im Typvertrag allein macht ihn nicht zu einem Serverhandler.
 
 Bei geänderten Leserechten bündelt `zerotrust.access.publish` historische
 Schlüsselkopien und neue Bereichsdefinitionen in einer Transaktion. Die API

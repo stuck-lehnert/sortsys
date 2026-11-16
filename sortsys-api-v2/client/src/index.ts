@@ -104,6 +104,7 @@ function _isAuthError(e: unknown): boolean {
 }
 
 export { RpcClientError } from "./rpc";
+export { contractProcedureKind } from "./generated/contract";
 export type QueryPath = Extract<keyof QueryInputs, string>;
 export type MutatePath = Extract<keyof MutationInputs, string>;
 

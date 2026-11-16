@@ -9,8 +9,11 @@ zugehörigen Ansichten. Mit einer Bearbeitungsfreigabe stehen die passenden
 geprüft.
 
 Eine bisherige Administratorrolle öffnet diese Inhaltsaktionen nicht pauschal.
-Sie bleibt für die Verwaltungsoberfläche und die technischen Anmelderollen
-maßgeblich. Die Inhaltsfreigabe benötigt weiterhin eine gültige signierte Regel.
+Sie bleibt für die vollständige Organisationsverwaltung und die technischen
+Anmelderollen maßgeblich. Ein bereichsgebundenes Verwaltungsrecht öffnet daneben
+die begrenzte Ansicht **Datenfreigaben**. Ein eigenes Verwaltungsrecht für
+persönliche Einstellungen reicht dafür nicht aus. Die Inhaltsfreigabe benötigt
+weiterhin eine gültige signierte Regel.
 Der Browser bindet diese Regel an die bestätigte Identität des angemeldeten
 Kontos; eine andere Benutzerkennung aus einer Antwort genügt nicht.
 

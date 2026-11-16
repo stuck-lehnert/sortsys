@@ -1,3 +1,4 @@
+import { contractProcedureKind } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
 import type { Client } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
@@ -187,94 +188,12 @@ const AUTH_MUTATIONS = new Set([
   "auth.passkeys.register",
   "auth.passkeys.delete",
 ]);
-const CRYPTO_QUERIES = new Set([
-  "zerotrust.access.snapshot",
-  "zerotrust.access.page",
-  "zerotrust.history.get",
-  "zerotrust.history.list",
-  "zerotrust.timestamps.get",
-  "zerotrust.deliveryNotes.locate",
-  "zerotrust.deliveryNotes.references",
-  "zerotrust.stock.references",
-  "zerotrust.stock.deleted",
-  "zerotrust.documents.get",
-  "zerotrust.documents.history",
-  "zerotrust.documents.messages.read",
-  "zerotrust.documents.messages.pages",
-  "zerotrust.documents.messages.state",
-  "zerotrust.editors.config",
-  "zerotrust.setup.backup.status",
-  "zerotrust.fileChunks.get",
-  "zerotrust.creations.list",
-  "zerotrust.creations.origin",
-  "zerotrust.creations.capability",
-  "zerotrust.members.list",
-  "zerotrust.members.creation",
-  "zerotrust.members.status",
-  "zerotrust.invitations.get",
-  "zerotrust.invitations.list",
-  "zerotrust.domains.get",
-  "zerotrust.domains.proof",
-  "zerotrust.domains.list",
-  "zerotrust.identities.list",
-  "zerotrust.identities.get",
-  "zerotrust.keys.get",
-  "zerotrust.keys.inspect",
-  "zerotrust.objects.get",
-  "zerotrust.objects.list",
-  "zerotrust.objects.pages",
-  "zerotrust.policy.get",
-  "zerotrust.policy.getVersion",
-  "zerotrust.recovery.head",
-  "zerotrust.status",
-  "zerotrust.trust.history",
-]);
-const CRYPTO_MUTATIONS = new Set([
-  "zerotrust.members.create",
-  "zerotrust.documents.messages.post",
-  "zerotrust.timestamps.work",
-  "zerotrust.timestamps.finish",
-  "zerotrust.deliveryNotes.initialize",
-  "zerotrust.deliveryNotes.allocate",
-  "zerotrust.deliveryNotes.adopt",
-  "zerotrust.objects.stage",
-  "zerotrust.setup.backup.begin",
-  "zerotrust.setup.backup.complete",
-  "zerotrust.objects.commit",
-  "zerotrust.stock.delete",
-  "zerotrust.fileChunks.put",
-  "zerotrust.creations.grant",
-  "zerotrust.events.open",
-  "zerotrust.keys.grant",
-  "zerotrust.invitations.create",
-  "zerotrust.invitations.join",
-  "zerotrust.invitations.approve",
-  "zerotrust.invitations.complete",
-  "zerotrust.invitations.revoke",
-  "zerotrust.llm.open",
-  "zerotrust.domains.put",
-  "zerotrust.domains.putMany",
-  "zerotrust.access.publish",
-  "zerotrust.identities.certify",
-  "zerotrust.objects.batch",
-  "zerotrust.objects.save",
-  "zerotrust.policy.replace",
-  "zerotrust.recovery.begin",
-  "zerotrust.recovery.inspect",
-  "zerotrust.recovery.page",
-  "zerotrust.recovery.registration",
-  "zerotrust.recovery.resume",
-  "zerotrust.setup",
-  "zerotrust.setup.complete",
-]);
-
-// Business callers never fall through to the old plaintext API. The raw client
-// belongs only to reviewed authentication, ciphertext and telemetry adapters.
+// Only typed cryptographic control procedures belong on the wire. Business
+// operations remain local; authentication keeps its explicit reviewed boundary.
 function technical(path: string, mutation = false): boolean {
-  return (
-    (mutation ? CRYPTO_MUTATIONS : CRYPTO_QUERIES).has(path) ||
-    (mutation ? AUTH_MUTATIONS : AUTH_QUERIES).has(path)
-  );
+  if ((mutation ? AUTH_MUTATIONS : AUTH_QUERIES).has(path)) return true;
+  if (!path.startsWith("zerotrust.")) return false;
+  return contractProcedureKind(path) === (mutation ? "mutation" : "query");
 }
 function unavailable(): RpcClientError {
   return new RpcClientError({

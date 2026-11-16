@@ -21,6 +21,7 @@ export function AccessLevelSelect({
   noneLabel,
   individual = false,
   actions = DATA_ACTIONS,
+  allowManagement = false,
 }: {
   label: string;
   value: AccessValue;
@@ -29,10 +30,15 @@ export function AccessLevelSelect({
   noneLabel?: string;
   individual?: boolean;
   actions?: readonly ManagedAction[];
+  allowManagement?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
   const preset = accessPreset(value);
+  const editableActions: readonly ManagedAction[] =
+    allowManagement && !actions.includes("grant")
+      ? [...actions, "grant"]
+      : actions;
   const labels = {
     read: uiText("Lesen", "Read"),
     create: uiText("Anlegen", "Create"),
@@ -42,7 +48,7 @@ export function AccessLevelSelect({
     grant: uiText("Freigaben verwalten", "Manage grants"),
   };
   const extra = accessActions(value).filter(
-    (action) => !actions.includes(action),
+    (action) => !editableActions.includes(action),
   );
   return (
     <div className="min-w-0 self-start space-y-2">
@@ -85,7 +91,7 @@ export function AccessLevelSelect({
             `Individual permissions for ${label}`,
           )}
         >
-          {actions.map((action) => (
+          {editableActions.map((action) => (
             <Checkbox
               key={action}
               id={`${id}-${action}`}
@@ -101,7 +107,7 @@ export function AccessLevelSelect({
             />
           ))}
           {!hasAccess(value, "read") &&
-            actions.some(
+            editableActions.some(
               (action) => action !== "read" && hasAccess(value, action),
             ) && (
               <p className="text-sm text-muted">

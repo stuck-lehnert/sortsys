@@ -90,7 +90,7 @@ export default Authenticated(function () {
   const canViewClientScripts = sessionInfo.canDo("view:clientScripts");
   const canUseLlm =
     sessionInfo.canDo(":llm") && llmStatus?.tenantEnabled === true;
-  const canSeeOrganisation = isAdmin;
+  const canSeeOrganisation = isAdmin || sessionInfo.canManagePermissions();
   const workActions = visibleActions.filter(
     (action) => action.group === "work",
   );

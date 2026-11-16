@@ -49,9 +49,19 @@ Empfänger und Inhaltsbereiche sowie konkurrierende Änderungen. Ein bereits
 signierter Schreibauftrag wird nach dem Rechteentzug abgewiesen. Nach dem
 Widerruf der Verwaltungsbefugnis bleiben unabhängig vergebene Mitarbeiterrechte
 erhalten; weitere Schlüsselveröffentlichungen des Verwalters werden abgewiesen.
-Die gemeinsame Rechtefunktion verwendet diese delegierte Verteilung bereits.
-Die vorhandene Verwaltungsoberfläche ist noch auf die Hauptadministration
-beschränkt.
+Die gemeinsame Rechtefunktion und eine eigene Freigabenansicht verwenden diese
+delegierte Verteilung. Die Hauptadministration vergibt das Verwaltungsrecht in
+der bisherigen Rechteauswahl. Für die unmittelbar aus Anlagenachweisen
+abgeleiteten Verwaltungsrechte fehlt noch der Anschluss; sie benötigen derzeit
+eine ausdrückliche primäre Freigabe.
+
+Der native Browsertest prüft die fertige Webapp mit drei getrennten Sitzungen
+gegen zwei API-Instanzen. Eine Katalogfreigabe macht die Produkte beim Empfänger
+sichtbar; ihr Entzug entfernt die Inhalte und den Menüeintrag wieder. Auch das
+Entziehen und erneute Vergeben des Verwaltungsrechts wird in der Oberfläche
+geprüft. Unzulässige Verwaltungsaktionen bleiben ausgeblendet. Der vorhandene
+Browsermodus der API-Tests führt diesen Ablauf mit aus und sichert Screenshots
+und Ablaufprotokolle als CI-Artefakte.
 
 Historische Schlüsselkopien und neue Schlüsselgenerationen werden gemeinsam in
 begrenzten Stapeln veröffentlicht. Die Nachprüfung liest nur die bearbeiteten

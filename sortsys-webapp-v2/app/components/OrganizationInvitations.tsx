@@ -19,6 +19,10 @@ import {
   memberAccess,
 } from "~/lib/crypto/permissions";
 import { client } from "~/lib/client";
+import {
+  permissionSelection,
+  rememberPermissionSelection,
+} from "~/lib/crypto/permissionSelection";
 import { uiText } from "~/lib/i18n";
 import { ProjectAccess } from "./ProjectAccess";
 import { CreationAccess } from "./CreationAccess";
@@ -78,6 +82,7 @@ export default function OrganizationInvitations({
   const modals = useMyModals();
   const [members, setMembers] = useState<Member[] | null>(null);
   const [selected, setSelected] = useState<Member | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
   const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -102,11 +107,11 @@ export default function OrganizationInvitations({
     signal.throwIfAborted();
     setMembers(people);
     setInvitations(pending);
-    setSelected(
-      (previous) =>
-        people.find((member) => member.id === (memberId ?? previous?.id)) ??
-        null,
-    );
+    const selectedId = memberId ?? selected?.id ?? permissionSelection().member;
+    const nextMember =
+      people.find((member) => member.id === selectedId) ?? null;
+    setSelected(nextMember);
+    setMemberSearch(nextMember?.username ?? "");
     if (
       selected &&
       people.some((member) => member.id === selected.id && member.certified)
@@ -201,15 +206,22 @@ export default function OrganizationInvitations({
               itemToString={(member: Member) => member.username}
               disabled={busy}
               selectedItem={selected}
-              onChange={({ selectedItem }: { selectedItem: Member | null }) =>
-                setSelected(selectedItem)
-              }
+              value={memberSearch}
+              onInputChange={setMemberSearch}
+              onChange={({ selectedItem }: { selectedItem: Member | null }) => {
+                rememberPermissionSelection({
+                  member: selectedItem?.id ?? null,
+                });
+                setSelected(selectedItem);
+                if (selectedItem) setMemberSearch(selectedItem.username);
+              }}
             />
           )}
           {MASTER_DATA_FIELDS.map((key) => (
             <AccessLevelSelect
               key={`${selected?.id}:${key}`}
               label={accessLabel(key)}
+              allowManagement={editing}
               disabled={busy || loadingAccess}
               value={drafts[key].value}
               noneLabel={
@@ -253,6 +265,8 @@ export default function OrganizationInvitations({
                   if (!signal) return;
                   await refresh(signal);
                   signal.throwIfAborted();
+                  rememberPermissionSelection({ member: user.id });
+                  setMemberSearch(user.username);
                   setSelected({
                     id: user.id,
                     username: user.username,

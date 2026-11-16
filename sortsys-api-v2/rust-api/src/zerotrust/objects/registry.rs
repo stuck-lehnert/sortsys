@@ -414,8 +414,16 @@ pub(in crate::zerotrust) fn register(
     let key_authority_get = Arc::clone(&service);
     let key_authority_current = Arc::clone(&service);
     let key_authorities_current = Arc::clone(&service);
+    let permission_recipients = Arc::clone(&service);
     let key_authority_register = Arc::clone(&service);
     builder
+        .query(
+            "zerotrust.identities.recipients",
+            move |ctx, input: RecipientPageInput| {
+                let service = Arc::clone(&permission_recipients);
+                async move { list_permission_recipients(&service, &ctx, input).await }
+            },
+        )
         .query(
             "zerotrust.keyAuthorities.get",
             move |ctx, input: KeyAuthorityInput| {
@@ -903,6 +911,84 @@ pub(in crate::zerotrust) async fn definition_at(
     };
     verify(&signing_key, &definition.proof, &definition.frame()?)?;
     Ok(definition)
+}
+
+/// A scoped manager can choose confirmed recipients without receiving the
+/// account-management directory, technical roles or private personnel fields.
+async fn list_permission_recipients(
+    service: &AuthService,
+    request: &RequestContext,
+    input: RecipientPageInput,
+) -> RpcResult<PermissionRecipients> {
+    identifier(&input.scope)?;
+    let mut context = metadata_context_for_domains(service, request, Some(&[])).await?;
+    require_key_management(
+        &context.security,
+        &context.security.subject,
+        &input.scope,
+        input.facet,
+    )?;
+    if !context.auth.is_admin() {
+        let signature: String = context
+            .transaction
+            .read(key_authority_holder_key(
+                &context.security.root.generation.to_string(),
+                &context.security.subject,
+                &input.scope,
+                input.facet,
+            ))
+            .await?
+            .ok_or_else(forbidden)?;
+        let certificate =
+            load_key_authority(&mut context.transaction, &context.security, &signature).await?;
+        if certificate.scope != input.scope || certificate.facet != input.facet {
+            return Err(forbidden());
+        }
+        validate_key_authority_actor(&mut context, &certificate).await?;
+    }
+    let page = context
+        .transaction
+        .scan_with_limit::<i64>(
+            "member-directory",
+            input.after.map(|id| format!("{:020}", id.0)),
+            64,
+        )
+        .await?;
+    let ids = page
+        .records
+        .into_iter()
+        .map(|row| row.value.ok_or_else(invalid))
+        .collect::<RpcResult<Vec<_>>>()?;
+    let after = if page.after.is_some() {
+        Some(Id(*ids.last().ok_or_else(invalid)?))
+    } else {
+        None
+    };
+    let accounts = context
+        .transaction
+        .many::<accounts::Account>(ids.iter().map(|id| accounts::account_key(*id)).collect())
+        .await?;
+    let mut rows = Vec::new();
+    for (id, account) in ids.into_iter().zip(accounts) {
+        let account = account.ok_or_else(invalid)?;
+        if account.id != id {
+            return Err(invalid());
+        }
+        if !account.active(chrono::Utc::now())
+            || context
+                .security
+                .policy
+                .suspended
+                .as_ref()
+                .is_some_and(|subjects| subjects.contains(&format!("user:{}", Id(id).encode())))
+            || certified_identity(&account, &context.security)?.is_none()
+        {
+            continue;
+        }
+        rows.push(Id(id));
+    }
+    context.transaction.validate().await?;
+    Ok(PermissionRecipients { rows, after })
 }
 
 /// Current certificates share one checked policy snapshot. Prefetching both

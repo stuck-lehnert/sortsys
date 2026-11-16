@@ -258,6 +258,7 @@ function ResourceAccessForm<Resource extends { id: string }>({
             key={`${user}:${selected?.id}:${field.key}`}
             label={field.label()}
             individual={field.individual}
+            allowManagement
             actions={field.actions}
             value={drafts[field.key]?.value ?? "none"}
             disabled={busy || disabled || !selected || !loaded}

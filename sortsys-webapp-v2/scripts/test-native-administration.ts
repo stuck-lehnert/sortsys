@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import { createClient, type Client, type QueryInput } from "@sortsys/v2-client";
 import {
   administrativeProfiles,
@@ -27,7 +28,10 @@ import {
 import { verifiedAccessContext } from "../app/lib/crypto/accessContext";
 import { prepareHistoricalKeyGrants } from "../app/lib/crypto/historicalKeyGrants";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
-import { changeAreaActionAccesses } from "../app/lib/crypto/permissions";
+import {
+  changeAreaActionAccesses,
+  shareNewPersonnelName,
+} from "../app/lib/crypto/permissions";
 import {
   commitRecovery,
   recoveryDraft,
@@ -111,6 +115,7 @@ async function enroll(
   } finally {
     business.dispose();
   }
+  await shareNewPersonnelName(owner, person.id, signal);
   const invitation = await createMemberInvitation(
     owner,
     { id: person.id, username },
@@ -187,6 +192,35 @@ try {
     ],
     signal,
   );
+  if (
+    process.env.SORTSYS_NATIVE_ADMIN_UI === "1" ||
+    process.env.SORTSYS_NATIVE_BROWSER === "1"
+  ) {
+    const testRoot = process.env.SORTSYS_NATIVE_AUTH_ROOT;
+    assert.ok(testRoot);
+    const log = join(testRoot, "browser-administration-ui.log");
+    const output = await open(log, "w");
+    try {
+      const child = spawn("node", ["scripts/e2e/scopedAccess.browser.mjs"], {
+        env: process.env,
+        stdio: ["ignore", output.fd, output.fd],
+      });
+      await new Promise<void>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("exit", (code) => {
+          if (code === 0) resolve();
+          else
+            reject(
+              new Error(
+                `Scoped administration browser test failed; inspect ${log}`,
+              ),
+            );
+        });
+      });
+    } finally {
+      await output.close();
+    }
+  }
   const root = await required(
     owner.query("zerotrust.policy.get", undefined, {
       strategy: "network-only",
@@ -215,6 +249,43 @@ try {
   });
   const author = access.history.identityCertificate(delegated.subject);
   const managerKey = unlockedAccount()!.identity.signingKey.privateKey;
+  const recipients = await required(
+    manager.query(
+      "zerotrust.identities.recipients",
+      {
+        scope: PRODUCT_COLLECTION.scope,
+        facet: PRODUCT_COLLECTION.facet,
+        after: null,
+      },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.deepEqual(Object.keys(recipients).sort(), ["after", "rows"]);
+  assert.ok(recipients.rows.includes(employee.subject.slice(5)));
+  assert.ok(recipients.rows.includes(added.subject.slice(5)));
+  for (const actor of [reader, newReader]) {
+    const [directory, denied] = await actor.query(
+      "zerotrust.identities.recipients",
+      {
+        scope: PRODUCT_COLLECTION.scope,
+        facet: PRODUCT_COLLECTION.facet,
+        after: null,
+      },
+      { strategy: "network-only" },
+    );
+    assert.equal(directory, null);
+    assert.equal(denied?.code, "FORBIDDEN");
+  }
+  const [, unrelatedDirectory] = await manager.query(
+    "zerotrust.identities.recipients",
+    {
+      scope: PRODUCT_COLLECTION.scope,
+      facet: "procurement",
+      after: null,
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(unrelatedDirectory?.code, "FORBIDDEN");
   assert.equal(
     (
       await required(
@@ -562,6 +633,9 @@ try {
   const shared = await candidate(retained, ["read"], added.subject);
   await required(manager.mutate("zerotrust.policy.replace", shared));
   const historical = await prepareHistoricalKeyGrants(manager, {
+    // The optional browser phase may already have granted a generation.
+    // Refresh all historical copies for the atomic replacement checks below.
+    replaceExisting: true,
     area: {
       tenant: login.tenant,
       id: PRODUCT_COLLECTION.domain,
@@ -647,6 +721,15 @@ try {
   );
   const substituted = structuredClone(historical[0]!);
   substituted.envelope.recipient = employee.subject;
+  const [previousCopy] = await newReader.query(
+    "zerotrust.keys.get",
+    {
+      domain: PRODUCT_COLLECTION.domain,
+      generation: historical[0]!.generation,
+    },
+    { strategy: "network-only" },
+  );
+  assert.notDeepEqual(previousCopy, historical[0]!.envelope);
   assert.ok(
     (
       await manager.mutate("zerotrust.access.publish", {
@@ -664,11 +747,16 @@ try {
     },
     { strategy: "network-only" },
   );
-  assert.equal(partial, null);
-  assert.ok(
-    failedGrant,
-    "A later invalid grant must roll back the earlier valid recipient copy",
+  assert.deepEqual(
+    partial,
+    previousCopy,
+    "A later invalid grant must leave the previous recipient copy unchanged",
   );
+  if (previousCopy === null) {
+    assert.ok(failedGrant);
+  } else {
+    assert.equal(failedGrant, null);
+  }
   // The signed profile already exists, as after an interrupted command. The
   // production action must finish its keys without another policy revision.
   await changeAreaActionAccesses(

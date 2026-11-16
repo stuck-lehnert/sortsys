@@ -166,6 +166,7 @@ function OrganizationAreaAccess({
       {loaded && (
         <AccessLevelSelect
           label={settings.label}
+          allowManagement
           value={draft.value}
           disabled={busy || disabled}
           onChange={(value, actions) =>

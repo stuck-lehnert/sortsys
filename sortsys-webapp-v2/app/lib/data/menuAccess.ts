@@ -17,6 +17,7 @@ import { verifiedAccessContext } from "../crypto/accessContext";
 import { personnelDomain } from "./personnelData";
 import { CLIENT_SCRIPT_COLLECTION } from "./organizationData";
 import { canUseAssistant } from "./assistantArea";
+import { hasScopedManagement } from "../crypto/managedAreas";
 
 export type MenuRole = QueryResult<"auth.sessionInfo">["roles"][number];
 export type DataAction = Extract<
@@ -108,10 +109,15 @@ export function protectedMenuRole(role: MenuRole): boolean {
 /** A navigation projection, not an authorization grant. Only the checked
  * policy reader below constructs it for the application. No content keys or
  * decrypted business values are needed to decide which actions to display. */
-export function projectMenuAccess(permissions: Policy, subject: string) {
+export function projectMenuAccess(
+  permissions: Policy,
+  subject: string,
+  managementPolicy = permissions,
+) {
   if (!subject.startsWith("user:")) throw new InvalidProtectedData();
   addressId(subject.slice(5));
   const access = compilePolicy(permissions, [subject]);
+  const managesPermissions = hasScopedManagement(managementPolicy, subject);
   const has = access.allows;
   const can = (scope: string, facet: Facet, action: DataAction) =>
     has(scope, facet, "read") && has(scope, facet, action);
@@ -196,6 +202,7 @@ export function projectMenuAccess(permissions: Policy, subject: string) {
     canAny,
     canCreate,
     canBookTool,
+    canManagePermissions: () => managesPermissions,
     canSeeOffers: () =>
       canCreate("commercial") || canAny("commercial", "master-data", "read"),
     role(role: MenuRole): boolean | undefined {
@@ -278,7 +285,11 @@ export async function readMenuAccess(
   const context = await verifiedAccessContext(client, signal, {
     includeDomains: false,
   });
-  return projectMenuAccess(context.permissions, context.subject);
+  return projectMenuAccess(
+    context.permissions,
+    context.subject,
+    context.rootPolicy,
+  );
 }
 
 /** Access notices invalidate the projection synchronously. Pending work is

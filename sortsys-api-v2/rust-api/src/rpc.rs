@@ -133,6 +133,24 @@ impl ProcedureRegistry {
             }
             output.push_str("};\n\n");
         }
+        for (kind, name) in [
+            (ProcedureKind::Query, "queryProcedures"),
+            (ProcedureKind::Mutation, "mutationProcedures"),
+        ] {
+            output.push_str(&format!("const {name} = new Set<string>([\n"));
+            for (path, _) in self.procedures.iter().filter(|(_, p)| p.kind == kind) {
+                output.push_str(&format!("  {path:?},\n"));
+            }
+            output.push_str("]);\n\n");
+        }
+        output.push_str(
+            r#"export function contractProcedureKind(path: string): "query" | "mutation" | undefined {
+  if (queryProcedures.has(path)) return "query";
+  if (mutationProcedures.has(path)) return "mutation";
+  return undefined;
+}
+"#,
+        );
         output
     }
 
