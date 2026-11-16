@@ -129,6 +129,11 @@ struct KeyInput {
     generation: String,
 }
 #[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct IdentityInput {
+    subject: String,
+}
+#[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KeyGrant {
     domain: String,
@@ -164,6 +169,8 @@ pub(super) struct SaveInput {
     pub references: Option<super::stock::StockReferences>,
     #[ts(optional)]
     pub migration_origin: Option<super::history::MigrationOrigin>,
+    #[ts(optional)]
+    pub resource_access: Option<sortsys_zerotrust::resource_access::ResourceAccessState>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -425,6 +432,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .query_stub::<ListBatchInput, Vec<ObjectPage>>("zerotrust.objects.pages")
         .query_stub::<IdInput, EncryptedObject>("zerotrust.objects.get")
         .query_stub::<(), Vec<IdentityInfo>>("zerotrust.identities.list")
+        .query_stub::<IdentityInput, Option<IdentityCertificate>>("zerotrust.identities.get")
         .mutation_stub::<IdentityCertificate, Success>("zerotrust.identities.certify")
 }
 
@@ -915,6 +923,7 @@ mod permission_tests {
             envelope: deleted,
             references: None,
             migration_origin: None,
+            resource_access: None,
         };
         tombstone_binding(&input).unwrap();
         for id in [
@@ -948,6 +957,7 @@ mod permission_tests {
             envelope,
             references: None,
             migration_origin: None,
+            resource_access: None,
         };
         tool_object_binding(&input).unwrap();
         for object in [
@@ -986,6 +996,7 @@ mod permission_tests {
             envelope,
             references: None,
             migration_origin: None,
+            resource_access: None,
         };
         assert!(import_receipt(&input, "user:1").unwrap());
         assert!(import_receipt(&input, "user:2").is_err());

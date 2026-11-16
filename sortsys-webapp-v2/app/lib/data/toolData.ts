@@ -4,6 +4,7 @@ import {
   record,
   type Facet,
 } from "@sortsys/zerotrust/sortsys";
+import type { QueryResult } from "@sortsys/v2-client";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import type { Collection } from "./protectedObjects";
 import { publicId } from "./products";
@@ -18,6 +19,9 @@ import { defineDataModel } from "./runtime/model";
 import type { DataRequest } from "./runtime/runtime";
 
 export type ToolNamespace = "tool" | "tool-tracking";
+export type ToolBookingTool = NonNullable<
+  QueryResult<"tools.trackings.list">[number]["toolSummary"]
+>;
 export type ToolPart = {
   format: "sortsys-tool-part-v1";
   schema: string;
@@ -27,7 +31,34 @@ export type ToolPart = {
   deleted: boolean;
   activeTrackingId: string | null;
   rows: BusinessFields[];
+  toolSummary?: ToolBookingTool;
 };
+
+export function bookingToolSummary(row: BusinessFields): ToolBookingTool {
+  if (row.table !== "tools") throw new InvalidProtectedData();
+  return decodeBookingTool({
+    id: publicId(row.values.id),
+    customId: Number(row.values.custom_id),
+    brand: row.values.brand,
+    category: row.values.category,
+    label: row.values.label,
+  });
+}
+function decodeBookingTool(input: unknown): ToolBookingTool {
+  const value = record(input, ["id", "customId", "brand", "category", "label"]);
+  addressId(value.id);
+  addressText(value.brand, true, 127);
+  addressText(value.category, true, 127);
+  addressText(value.label, false, 255);
+  if (
+    typeof value.customId !== "number" ||
+    !Number.isSafeInteger(value.customId) ||
+    value.customId < 1 ||
+    value.customId > 2147483647
+  )
+    throw new InvalidProtectedData();
+  return value as ToolBookingTool;
+}
 export type ToolIndex = {
   format: "sortsys-tool-index-v1";
   entries: { id: string; customId: number }[];
@@ -64,6 +95,66 @@ export const TOOL_MUTATIONS = new Set([
   "tools.inventories.create",
   "tools.inventories.delete",
 ]);
+
+/** Business queries follow their actual encrypted inputs. A booking key change
+ * must not restart an unrelated tool-name or price read. */
+export function toolQueryAffected(
+  path: string,
+  domains?: ReadonlySet<string>,
+): boolean {
+  if (!TOOL_QUERIES.has(path)) return false;
+  if (!domains) return true;
+  for (const domain of domains) {
+    if (path === "tools.suggestNextCustomId") {
+      if (domain === TOOL_INDEX.domain) return true;
+      continue;
+    }
+    const part = toolDomain(domain);
+    if (!part) continue;
+    const { namespace, facet } = part;
+    switch (path) {
+      case "tools.get":
+      case "tools.list":
+        if (
+          namespace === "tool" &&
+          ["master-data", "procurement"].includes(facet)
+        )
+          return true;
+        break;
+      case "tools.brands":
+      case "tools.categories":
+        if (namespace === "tool" && facet === "master-data") return true;
+        break;
+      case "tools.trackings.list":
+        if (
+          namespace === "tool-tracking" &&
+          ["master-data", "procurement"].includes(facet)
+        )
+          return true;
+        break;
+      case "tools.trackings.transfers.list":
+        if (
+          namespace === "tool-tracking" &&
+          ["master-data", "scope"].includes(facet)
+        )
+          return true;
+        break;
+      case "tools.inventories.list":
+        if (namespace === "tool" && facet === "measurement") return true;
+        break;
+      case "tools.inventories.overview":
+        if (
+          namespace === "tool" &&
+          ["master-data", "measurement"].includes(facet)
+        )
+          return true;
+        if (namespace === "tool-tracking" && facet === "master-data")
+          return true;
+        break;
+    }
+  }
+  return false;
+}
 export function toolTimestamp(value: unknown): string | null {
   if (value == null) return null;
   if (
@@ -146,6 +237,10 @@ function layout(
 export const TOOL_MODEL = defineDataModel<ToolPart>({
   name: "tool-resources",
   decode(input, object, area) {
+    const hasSummary =
+      !!input &&
+      typeof input === "object" &&
+      Object.hasOwn(input, "toolSummary");
     const part = toolDomain(area.domain),
       value = record(input, [
         "format",
@@ -156,6 +251,7 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
         "deleted",
         "activeTrackingId",
         "rows",
+        ...(hasSummary ? ["toolSummary"] : []),
       ]);
     if (
       !part ||
@@ -226,7 +322,22 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
           rows.length !== 1
     )
       throw new InvalidProtectedData();
-    return { ...value, rows } as ToolPart;
+    let toolSummary: ToolBookingTool | undefined;
+    if (hasSummary) {
+      if (part.namespace !== "tool-tracking" || part.facet !== "master-data")
+        throw new InvalidProtectedData();
+      toolSummary = decodeBookingTool(value.toolSummary);
+      if (
+        !value.deleted &&
+        toolSummary.id !== publicId(rows[0]!.values.tool_id)
+      )
+        throw new InvalidProtectedData();
+    }
+    return {
+      ...value,
+      rows,
+      ...(toolSummary ? { toolSummary } : {}),
+    } as ToolPart;
   },
   sources: (value) =>
     value.rows.map((row, index) => ({
@@ -300,6 +411,7 @@ export function toolPart(
   facet: Facet,
   rows: BusinessRow[],
   activeTrackingId: string | null = null,
+  toolSummary?: ToolBookingTool,
 ): ToolPart {
   const expected = layout(namespace, facet);
   return {
@@ -310,6 +422,9 @@ export function toolPart(
     facet,
     deleted: false,
     activeTrackingId,
+    ...(namespace === "tool-tracking" && facet === "master-data" && toolSummary
+      ? { toolSummary }
+      : {}),
     rows: rows
       .filter((row) => row.table === expected.table)
       .map((row) => ({

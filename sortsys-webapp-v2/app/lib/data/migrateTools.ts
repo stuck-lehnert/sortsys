@@ -11,6 +11,7 @@ import { publicId, readBusinessRows } from "./products";
 import {
   toolCollection,
   toolPart,
+  bookingToolSummary,
   TOOL_INDEX,
   TOOL_INDEX_MODEL,
   TOOL_MODEL,
@@ -35,6 +36,7 @@ export async function prepareTools(
   const inventoryByTool = new Map<string, BusinessRow[]>(),
     transfersByTracking = new Map<string, BusinessRow[]>(),
     active = new Map<string, string>();
+  const toolsById = new Map(tools.map((row) => [row.values.id, row]));
   for (const row of inventories) {
     const key = row.values.tool_id as string,
       rows = inventoryByTool.get(key) ?? [];
@@ -112,10 +114,16 @@ export async function prepareTools(
     for (const facet of CREATION_FACETS["tool-tracking"]) {
       const id = publicId(row.values.id),
         area = toolCollection("tool-tracking", id, facet),
-        value = toolPart("tool-tracking", id, facet, [
-          row,
-          ...(transfersByTracking.get(row.values.id as string) ?? []),
-        ]);
+        value = toolPart(
+          "tool-tracking",
+          id,
+          facet,
+          [row, ...(transfersByTracking.get(row.values.id as string) ?? [])],
+          null,
+          toolsById.has(row.values.tool_id)
+            ? bookingToolSummary(toolsById.get(row.values.tool_id)!)
+            : undefined,
+        );
       await copyProtectedCollection(
         client,
         area,

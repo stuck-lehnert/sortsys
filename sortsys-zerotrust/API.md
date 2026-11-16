@@ -103,6 +103,33 @@ Bindung an die neue Ressource in der Veröffentlichungstransaktion prüfen.
 Widerrufe, verbrauchte Einmalberechtigungen und Berechtigungen weiterer
 Empfänger sind damit noch nicht aus einem Signaturnachweis ableitbar.
 
+## Veränderliche Zugriffsstände
+
+`signResourceAccess(input, key)` bindet einen öffentlichen Zugriffsstand an die
+Signatur einer bestimmten Chiffratrevision. Der Nachweis enthält Mandant,
+Ressource, Objekt, Revision, Autoritätsgeneration, eine anwendungseigene
+32-Byte-Bindung und `active`. Der Autor wird durch sein Identitätszertifikat
+nachgewiesen. Geschäftstexte und Schlüssel gehören nicht in diese Struktur.
+
+`verifyResourceAccess(input, expected, authority)` prüft Form, erwarteten Kontext,
+Zertifikat und Signatur. Rust bietet denselben Rahmen und dieselbe Prüfung als
+`resource_access::ResourceAccessState`. Die Anwendung muss den vertrauenswürdigen
+Kontext vorgeben. Die Bibliothek entscheidet weder über Schreibrechte des Autors
+noch über erlaubte Zustandsübergänge.
+
+Beim Speichern muss die Anwendung den Nachweis und das genaue Chiffrat in
+derselben versionsgeprüften Transaktion veröffentlichen. Sie prüft auch die
+aktuelle Sitzung, Schreibrechte, Paketrevision und Paketsignatur. Soll ein
+beendeter Zugriff nicht wieder aufleben dürfen, muss sie diesen Übergang
+ausdrücklich ausschließen. Ohne aktuellen Nachweis dürfen daraus keine Rechte
+entstehen. Empfängerschlüssel müssen bei einem Entzug für spätere Inhalte
+gewechselt werden; die Signatur allein macht frühere Schlüssel nicht unbrauchbar.
+
+Der Browser muss nach dem Entschlüsseln außerdem prüfen, ob der öffentliche
+Zugriffsstand zum Fachinhalt passt. Ein berechtigter, aber manipulierter Client
+kann beides widersprüchlich signieren. Ohne Klartext oder zusätzliche Beweise
+kann der Server diese fachliche Konsistenz nicht garantieren.
+
 ## Wiederholte öffentliche Nachweise
 
 Zertifikate, Rechteregeln und Schlüsselumschläge enthalten öffentliche Metadaten

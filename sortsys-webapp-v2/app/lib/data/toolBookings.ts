@@ -25,6 +25,7 @@ import {
   toolUsageRequests,
 } from "./projectToolUsage";
 import { protectedCollections } from "./protectedObjects";
+import { finishToolResponsibilityChanges } from "./toolResponsibility";
 import { defineDataModel } from "./runtime/model";
 import type {
   DataRequest,
@@ -36,6 +37,7 @@ import {
   toolRequest,
   toolRow,
   toolTimestamp,
+  bookingToolSummary,
   type ToolPart,
 } from "./toolData";
 
@@ -413,6 +415,7 @@ export async function bookProtectedTools(
       missing.map((request) => request.area),
       "tool-tracking",
       signal,
+      responsible === null ? {} : { assignee: `user:${publicId(responsible)}` },
     );
   }
   runtime.revalidate();
@@ -487,6 +490,8 @@ export async function bookProtectedTools(
                 selection.trackingId,
                 request.area.facet,
                 [row],
+                null,
+                bookingToolSummary(part(tx, selection.tool).rows[0]!),
               ),
             );
           }
@@ -517,6 +522,11 @@ export async function bookProtectedTools(
           prepared.guards,
         );
       live();
+      await finishToolResponsibilityChanges(
+        client,
+        prepared.groups.flatMap((group) => group.packets),
+        signal,
+      );
       return prepared.value;
     } finally {
       prepared.close();

@@ -98,6 +98,7 @@ function auditPage(page) {
       "Bohrhammer nach Freigabe bearbeitet",
       "Delegierte Werkzeugausgabe im Browser",
       "Gemeinsame Werkzeugausgabe im Browser",
+      "Automatisch freigegebene Werkzeugbuchung im Browser",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -139,7 +140,7 @@ async function scenario(name, run) {
     sources: true,
   });
   try {
-    await run(page);
+    await run(page, audit);
     audit.assertClean();
     results.push({ name, passed: true });
     console.log(`Browser E2E passed: ${name}`);
@@ -932,6 +933,126 @@ try {
         path: join(artifacts, "tool-batch-booking-peer.zip"),
       });
       await peerContext.close();
+    }
+  });
+
+  await scenario("tool-responsibility-between-users", async (page, audit) => {
+    const memberServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const memberAudit = auditPage(member);
+    await memberContext.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await page.goto(`${server.origin}/tools`);
+      await page.getByText("Bohrhammer 1", { exact: true }).click();
+      await expect(
+        page.getByRole("heading", { name: /Bohrhammer 1/ }),
+      ).toBeVisible();
+      const toolPath = new URL(page.url()).pathname;
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      const memberTools = member.getByRole("link", {
+        name: "Werkzeuge",
+        exact: true,
+      });
+      await expect(memberTools).toHaveCount(0);
+
+      const actions = page
+        .getByRole("main")
+        .getByRole("button", { name: "Aktionen", exact: true });
+      await actions.click();
+      await page.getByRole("menuitem", { name: "Buchen", exact: true }).click();
+      const booking = page.getByRole("dialog", {
+        name: "Werkzeuge einbuchen",
+        exact: true,
+      });
+      await booking
+        .getByRole("combobox", { name: /^Verantwortlicher/ })
+        .fill("Frank");
+      await page.getByRole("option", { name: /Frank Doe/ }).click();
+      await booking
+        .getByLabel("Kommentar", { exact: true })
+        .fill("Automatisch freigegebene Werkzeugbuchung im Browser");
+      await booking
+        .getByRole("button", { name: "Buchen", exact: true })
+        .click();
+      await expect(booking).toBeHidden();
+      await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
+
+      await member
+        .getByRole("button", { name: "Material & Werkzeuge", exact: true })
+        .click();
+      await expect(memberTools).toHaveAttribute("href", "/tools/trackings");
+      await memberTools.click();
+      await expect(
+        member.getByRole("heading", { name: "Buchungshistorie", exact: true }),
+      ).toBeVisible();
+      const label = member.getByRole("main").getByText(/Bohrhammer 1/);
+      await expect(label).toBeVisible();
+      await expect(member.locator(`a[href="${toolPath}"]`)).toHaveCount(0);
+      await expect(member.getByText("Kaufpreis", { exact: true })).toHaveCount(
+        0,
+      );
+      await member.screenshot({
+        path: join(artifacts, "automatic-tool-responsibility-desktop.png"),
+        fullPage: true,
+      });
+      await member.setViewportSize({ width: 800, height: 1000 });
+      const card = member
+        .getByRole("main")
+        .locator("section")
+        .filter({ hasText: "Seit" });
+      await expect(card.getByText(/Bohrhammer 1/)).toBeVisible();
+      await expect(member.locator(`a[href="${toolPath}"]`)).toHaveCount(0);
+      await member.screenshot({
+        path: join(artifacts, "automatic-tool-responsibility-card.png"),
+        fullPage: true,
+      });
+      await member.setViewportSize({ width: 1440, height: 1000 });
+      await member.reload();
+      await expect(label).toBeVisible();
+
+      const returnNotices = audit.eventHints.length;
+      await actions.click();
+      await page
+        .getByRole("menuitem", { name: "Zurückbuchen", exact: true })
+        .click();
+      await expect(page.getByText("verfügbar", { exact: true })).toBeVisible();
+      await expect(label).toHaveCount(0);
+      await expect(memberTools).toHaveCount(0);
+      assert.deepEqual(
+        audit.eventHints
+          .slice(returnNotices)
+          .filter((notice) => notice.control),
+        [],
+        "Closing another member's assignment and rotating its keys preserves the owner's unchanged access context",
+      );
+      memberAudit.assertClean();
+    } finally {
+      await member
+        .screenshot({
+          path: join(artifacts, "automatic-tool-responsibility-current.png"),
+          fullPage: true,
+        })
+        .catch(() => {});
+      await memberContext.tracing.stop({
+        path: join(artifacts, "automatic-tool-responsibility.zip"),
+      });
+      await memberContext.close();
     }
   });
 

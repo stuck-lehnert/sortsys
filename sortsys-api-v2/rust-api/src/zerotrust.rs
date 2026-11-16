@@ -22,6 +22,7 @@ mod objects;
 mod opaque;
 mod ots;
 mod recovery;
+mod resource_access;
 mod setup;
 mod staged;
 mod stock;

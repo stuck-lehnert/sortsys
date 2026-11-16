@@ -12,6 +12,12 @@ erscheint nur die Telefonnummer im Verlauf. Der Name des Bearbeiters ist nur mit
 dessen Stammdatenfreigabe lesbar. Bereits früher gelesene Informationen lassen
 sich durch einen späteren Rechteentzug allerdings nicht zurückholen.
 
+Die Zeitleiste eines Werkzeugs fragt nur die passenden Werkzeugdaten,
+Werkzeugbuchungen und übernommenen Altverläufe als Kandidaten ab. Die Zuordnung
+einer Buchung zum Werkzeug prüft weiterhin der Browser, da diese Beziehung
+verschlüsselt ist. Ein Wechsel zur vollständigen Aktivitätsliste verwirft den
+begrenzten Verlaufscache.
+
 ## Alte Einträge übernehmen
 
 Die Bestandsumstellung liest `entity_changes` aus dem geprüften, verschlüsselten

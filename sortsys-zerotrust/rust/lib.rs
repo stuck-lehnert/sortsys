@@ -16,6 +16,7 @@ pub mod passkey;
 pub mod policy;
 pub mod protocol;
 pub mod recovery;
+pub mod resource_access;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Error {

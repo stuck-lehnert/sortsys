@@ -245,6 +245,9 @@ try {
   console.log(
     "Wiederholtes Seeding und Erhalt manueller Änderungen werden geprüft",
   );
+  const { exerciseNativeToolResponsibility } =
+    await import("./test-native-tool-responsibility");
+  await exerciseNativeToolResponsibility(owner, member);
   await seedDevelopmentTenant({ ...options, endpoint: endpoints[1]! });
   await signIn(owner, {
     tenant: options.tenant,
@@ -278,6 +281,8 @@ try {
     "Fenstersanierung Pirckheimer",
     "Haftvermittler",
     "manuell angepasst",
+    "Private automatic tool responsibility 672914",
+    "Unangemeldet",
   ])
     assert.equal(wire.includes(marker), false, marker);
   await writeFile(

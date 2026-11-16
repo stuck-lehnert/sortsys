@@ -28,6 +28,7 @@ import {
   identifier,
   objectWriteAction,
   revision as checkedRevision,
+  verifyCreationOrigin,
 } from "@sortsys/zerotrust/sortsys";
 import type { EncryptedObject, Facet } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
@@ -48,6 +49,10 @@ import { stockKind } from "@sortsys/zerotrust/sortsys";
 import { checkDeliveryObjects } from "./deliveryRegistry";
 import { announceDataChanges } from "./runtime/changes";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import {
+  checkToolResponsibility,
+  toolResponsibilityPacket,
+} from "./toolResponsibility";
 
 export async function required<T>(
   request: Promise<[T | null, Error | null]>,
@@ -221,8 +226,16 @@ async function collectionContext(
   } else if (selection !== undefined) {
     options = { domains: [...selection] };
   }
-  const { account, history, subject, rootPolicy, permissions, domains, live } =
-    await verifiedAccessContext(client, signal, options);
+  const {
+    account,
+    history,
+    subject,
+    rootPolicy,
+    permissions,
+    domains,
+    origins,
+    live,
+  } = await verifiedAccessContext(client, signal, options);
   const author = createObjectAuthorVerifier(
     client,
     { account, history, live },
@@ -235,6 +248,7 @@ async function collectionContext(
     subject,
     permissions,
     domains,
+    origins,
     author,
     access: compilePolicy(permissions, [subject]),
     readership: compileReadership(permissions),
@@ -275,6 +289,9 @@ function openCollection(
   )
     throw new InvalidProtectedData();
   const keys = new Map<string, Promise<CryptoKey>>();
+  let origin = context.origins.find(
+    (origin) => origin.id === collection.domain,
+  );
   const openings = new Map<
     string,
     NonNullable<ObjectPage["openings"]>[number]
@@ -368,7 +385,23 @@ function openCollection(
     const key = await keyFor(domain!.generation);
     live();
     const definition = definitions.get(domain!.generation);
-    const expected = readership(collection.scope, collection.facet);
+    let expected = readership(collection.scope, collection.facet);
+    if (origin?.assignee && !origin.access && definition?.creation?.assignee) {
+      const prospective = compileReadership({
+        ...permissions,
+        rules: [
+          ...permissions.rules,
+          {
+            subject: origin.assignee.user,
+            scope: origin.scope,
+            facet: origin.facet,
+            effect: "allow",
+            actions: ["read"],
+          },
+        ],
+      });
+      expected = prospective(collection.scope, collection.facet);
+    }
     const recipients = definition?.envelopes.map((box) => box.recipient).sort();
     if (
       !recipients ||
@@ -381,6 +414,7 @@ function openCollection(
   async function openEnvelope(
     input: unknown,
     id: string,
+    historical = false,
   ): Promise<OpenedObject> {
     live();
     const envelope = encryptedObject(input);
@@ -426,6 +460,32 @@ function openCollection(
         throw new InvalidProtectedData();
       }
       live();
+      if (
+        !historical &&
+        origin?.assignee &&
+        id === `${origin.scope}:master-data:record` &&
+        origin.access?.packetSignature !== envelope.signature
+      ) {
+        const fresh = await verifyCreationOrigin(
+          await required(
+            client.query(
+              "zerotrust.creations.origin",
+              { domain: origin.id },
+              { strategy: "network-only" },
+            ),
+          ),
+          history.authority,
+        );
+        live();
+        if (
+          fresh.id !== origin.id ||
+          fresh.signature !== origin.signature ||
+          fresh.assignee?.signature !== origin.assignee.signature
+        )
+          throw new InvalidProtectedData();
+        origin = fresh;
+      }
+      checkToolResponsibility(origin, envelope, value, historical);
       return { envelope, value };
     } finally {
       plain.fill(0);
@@ -661,12 +721,20 @@ function openCollection(
             account.identity.signingKey.privateKey,
           )
         : undefined;
+      const resourceAccess = await toolResponsibilityPacket(
+        origin,
+        envelope,
+        value,
+        history.identityCertificate(subject),
+        account.identity.signingKey.privateKey,
+      );
       live();
       return {
         domain: collection.domain,
         messageId: `msg_${base64(randomSecret())}`,
         envelope,
         ...(references ? { references } : {}),
+        ...(resourceAccess ? { resourceAccess } : {}),
       };
     } finally {
       plain?.fill(0);
@@ -861,7 +929,7 @@ function openCollection(
     // Historical callers validate the model after checking this exact signed
     // revision. Current stock/delivery references describe only the live head.
     async openHistorical(input: unknown, id: string) {
-      return openEnvelope(input, id);
+      return openEnvelope(input, id, true);
     },
     async get(id: string): Promise<OpenedObject> {
       if (!id.startsWith(collection.prefix)) throw new InvalidProtectedData();

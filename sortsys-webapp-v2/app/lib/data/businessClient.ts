@@ -62,12 +62,7 @@ import { createContentAccess } from "./menuAccess";
 import { announceDataChanges, listenDataChanges } from "./runtime/changes";
 import { latestQuery } from "./runtime/latestQuery";
 import { pendingReads } from "./runtime/pendingReads";
-import {
-  TOOL_INDEX,
-  TOOL_QUERIES,
-  TOOL_MUTATIONS,
-  toolDomain,
-} from "./toolData";
+import { TOOL_QUERIES, TOOL_MUTATIONS, toolQueryAffected } from "./toolData";
 import {
   PERSONNEL_QUERIES,
   PERSONNEL_MUTATIONS,
@@ -222,6 +217,7 @@ const CRYPTO_QUERIES = new Set([
   "zerotrust.domains.proof",
   "zerotrust.domains.list",
   "zerotrust.identities.list",
+  "zerotrust.identities.get",
   "zerotrust.keys.get",
   "zerotrust.keys.inspect",
   "zerotrust.objects.get",
@@ -552,10 +548,6 @@ export function createBusinessClient(
         [...domains].some(
           (domain) => commercialDomain(domain) || projectDomainId(domain),
         );
-      const toolChanged =
-        !domains ||
-        domains.has(TOOL_INDEX.domain) ||
-        [...domains].some(toolDomain);
       const templatesChanged = !domains || domains.has(PRINT_COLLECTION.domain);
       if (!closed)
         notify(
@@ -569,7 +561,7 @@ export function createBusinessClient(
             ADDRESS_QUERIES.has(path) ||
             PROJECT_QUERIES.has(path) ||
             (cases && COMMERCIAL_QUERIES.has(path)) ||
-            (toolChanged && TOOL_QUERIES.has(path)) ||
+            toolQueryAffected(path, domains) ||
             (templatesChanged &&
               (TEMPLATE_QUERIES.has(path) || LOGO_QUERIES.has(path))) ||
             adapters.affected(path, domains),
@@ -656,10 +648,17 @@ export function createBusinessClient(
         ),
       });
     options.onRemoteChange?.(change);
+    const editorKeyChanged = Object.entries(change.domains).some(
+      ([domain, head]) =>
+        head === null &&
+        (commercialDomain(domain) ||
+          fileDomainId(domain) ||
+          domain.startsWith("assistant:")),
+    );
     if (change.reset) {
       llmActivity.cancelAll();
       reset();
-    } else if (change.control || change.all) {
+    } else if (change.control || change.all || editorKeyChanged) {
       resetEditors();
       if (change.control) contentAccess.refresh();
     }
@@ -1350,7 +1349,8 @@ export function createBusinessClient(
         const signal = controller.signal,
           value = await (await toolStore()).mutate(path, input);
         if (closed || signal.aborted) throw unavailable();
-        notify((query) => TOOL_QUERIES.has(query));
+        // The confirmed encrypted publication already announces its exact
+        // domains. A second broad refresh would discard those in-flight reads.
         return [value, null];
       }
       if (VENDOR_MUTATIONS.has(path)) {

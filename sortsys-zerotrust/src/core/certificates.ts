@@ -103,6 +103,20 @@ export type IdentityCertificate = PublicIdentity & {
   signature: string;
 };
 
+export function identityCertificate(input: unknown): IdentityCertificate {
+  const value = record(input, [
+    "tenant",
+    "generation",
+    "user",
+    "encryptionKey",
+    "signingKey",
+    "signature",
+  ]) as IdentityCertificate;
+  identityCertificateFrame(value);
+  sized(value.signature, 64);
+  return { ...value };
+}
+
 export function identityCertificateFrame(
   input: Omit<IdentityCertificate, "signature">,
 ): Uint8Array<ArrayBuffer> {

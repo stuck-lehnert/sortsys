@@ -178,7 +178,7 @@ export default function ToolTrackingsPage() {
         const project = (id?: string | null) => id ? projects.find(t => t.id === id) : null;
 
         return (trackings ?? []).map(tracking => {
-            const _tool = tool(tracking.toolId);
+            const _tool = tool(tracking.toolId) ?? tracking.toolSummary;
             const _responsible = user(tracking.responsibleUserId);
             const _author = user(tracking.startedByUserId);
             const _project = project(tracking.projectId);

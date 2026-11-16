@@ -3,6 +3,7 @@ import { Heading, Tag, Tile } from "@sortsys/react-components";
 import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
 import { MyLink } from "~/components/MyLink";
+import { trackingToolReference } from "~/components/trackingToolReference";
 import { client } from "~/lib/client";
 import {
   contactName,
@@ -571,17 +572,7 @@ export function TrackingTile({
             name={uiText("Werkzeug")}
             value={
               <Awaited
-                promise={async () => {
-                  const [tool] = await client.query("tools.get", {
-                    id: tracking.toolId,
-                  });
-                  if (!tool) return "Unbekannt";
-                  return (
-                    <MyLink to={`/tools/${tool.id}`}>
-                      {tool.customId} {toolTitle(tool)}
-                    </MyLink>
-                  );
-                }}
+                promise={() => trackingToolReference(tracking)}
               />
             }
           />

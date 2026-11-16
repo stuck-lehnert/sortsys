@@ -11,6 +11,12 @@ import {
   publicIdentity,
   verifyCreationCapability,
   verifyDomain,
+  certifyCreationCapability,
+  base64,
+  randomSecret,
+  identityCertificate,
+  identityCertificateFrame,
+  verify,
   type CreationNamespace,
   type CreationParent,
   type DomainDefinition,
@@ -21,6 +27,7 @@ import { required, type Collection } from "./protectedObjects";
 import { provisionOwnedCollections } from "./prepareCollections";
 import { addressId } from "./addressBook";
 import { publishDomainDefinitions } from "./domainDefinitions";
+import { openAuthority } from "../crypto/setup";
 
 export async function createProjectArea(
   client: Client,
@@ -46,12 +53,18 @@ export async function createResourceAreas(
   areas: readonly Collection[],
   namespace: CreationNamespace,
   signal: AbortSignal,
+  options: { assignee?: string } = {},
 ): Promise<void> {
   const account = unlockedAccount();
   if (!account || !Object.hasOwn(CREATION_FACETS, namespace)) {
     throw new InvalidProtectedData();
   }
   signal.throwIfAborted();
+  if (options.assignee !== undefined) {
+    if (namespace !== "tool-tracking" || !options.assignee.startsWith("user:"))
+      throw new InvalidProtectedData();
+    addressId(options.assignee.slice(5));
+  }
   const domains = new Set<string>();
   const definitions: DomainDefinition[] = [];
   for (const area of areas) {
@@ -79,13 +92,54 @@ export async function createResourceAreas(
   );
   live();
   const subject = `user:${session.user.id}`;
-  const [input, failure] = await client.query(
+  let [input, failure] = await client.query(
     "zerotrust.creations.capability",
     { namespace },
     { strategy: "network-only" },
   );
   live();
   if (failure) throw failure;
+  if (
+    !input &&
+    options.assignee &&
+    options.assignee !== subject &&
+    session.roles.includes(":admin")
+  ) {
+    const status = await required(
+      client.query("zerotrust.status", undefined, { strategy: "network-only" }),
+    );
+    const authority = await openAuthority(client, status.profile);
+    live();
+    const creator = history.identityCertificate(subject);
+    const own = await certifyCreationCapability(
+      {
+        tenant: account.tenant,
+        id: `create_${base64(randomSecret())}`,
+        generation: history.current.generation,
+        namespace,
+        creator,
+        readers: [creator],
+      },
+      authority,
+    );
+    let publicationFailure: unknown;
+    try {
+      await required(
+        client.mutate("zerotrust.creations.grant", own, { signal }),
+      );
+    } catch (error) {
+      publicationFailure = error;
+    }
+    live();
+    [input, failure] = await client.query(
+      "zerotrust.creations.capability",
+      { namespace },
+      { strategy: "network-only" },
+    );
+    live();
+    if (failure || !input || input.signature !== own.signature)
+      throw publicationFailure ?? failure ?? new InvalidProtectedData();
+  }
   if (!input) {
     if (!session.roles.includes(":admin")) throw new InvalidProtectedData();
     return provisionOwnedCollections(client, subject, [...areas], signal);
@@ -105,6 +159,36 @@ export async function createResourceAreas(
     capability.creator.encryptionKey !== identity.encryptionKey
   ) {
     throw new InvalidProtectedData();
+  }
+  let assignee: ReturnType<typeof identityCertificate> | undefined;
+  if (
+    options.assignee &&
+    ![capability.creator, ...capability.readers].some(
+      (member) => member.user === options.assignee,
+    )
+  ) {
+    const [candidate, error] = await client.query(
+      "zerotrust.identities.get",
+      { subject: options.assignee },
+      { strategy: "network-only" },
+    );
+    live();
+    if (error) throw error;
+    if (candidate) {
+      assignee = identityCertificate(candidate);
+      if (
+        assignee.tenant !== account.tenant ||
+        assignee.generation !== history.current.generation ||
+        assignee.user !== options.assignee
+      )
+        throw new InvalidProtectedData();
+      await verify(
+        history.authority(assignee.generation),
+        assignee.signature,
+        identityCertificateFrame(assignee),
+      );
+      live();
+    }
   }
   const { permissions } = await readVerifiedPolicy(client, {
     account,
@@ -175,6 +259,9 @@ export async function createResourceAreas(
         facet: area.facet,
         capability,
         ...(parent ? { parent } : {}),
+        ...(assignee && ["master-data", "scope"].includes(area.facet)
+          ? { assignee }
+          : {}),
       },
       account.identity.signingKey.privateKey,
     );

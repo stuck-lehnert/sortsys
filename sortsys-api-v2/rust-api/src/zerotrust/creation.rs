@@ -83,6 +83,12 @@ pub(super) struct CreationOrigin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent: Option<CreationParent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub assignee: Option<IdentityCertificate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub access: Option<sortsys_zerotrust::resource_access::ResourceAccessState>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -104,6 +110,8 @@ impl CreationParent {
             capability: self.capability.clone(),
             signature: self.signature.clone(),
             parent: None,
+            assignee: None,
+            access: None,
         }
     }
 }
@@ -213,8 +221,25 @@ impl CreationOrigin {
             }
             fields.push(packet_hash(origin.frame()?, &parent.signature)?);
         }
+        if let Some(assignee) = &self.assignee {
+            if self.capability.namespace != "tool-tracking"
+                || !matches!(self.facet, Facet::MasterData | Facet::Scope)
+                || assignee.tenant != self.tenant
+                || assignee.generation != self.capability.generation
+                || std::iter::once(&self.capability.creator)
+                    .chain(&self.capability.readers)
+                    .any(|member| member.user == assignee.user)
+            {
+                return Err(invalid());
+            }
+            fields.push(packet_hash(assignee.frame()?, &assignee.signature)?);
+        } else if self.access.is_some() {
+            return Err(invalid());
+        }
         Ok(frame(
-            if self.parent.is_some() {
+            if self.assignee.is_some() {
+                "sortsys/created-area-assignee/v1"
+            } else if self.parent.is_some() {
                 "sortsys/created-area/v2"
             } else {
                 "sortsys/created-area/v1"
@@ -230,6 +255,18 @@ impl CreationOrigin {
     }
     pub fn verify(&self, authority: &[u8]) -> RpcResult<()> {
         let body = self.frame()?;
+        if let Some(access) = &self.access {
+            access.verify(
+                &sortsys_zerotrust::resource_access::ResourceAccessContext {
+                    tenant: &self.tenant,
+                    resource: &self.scope,
+                    object: &format!("{}:master-data:record", self.scope),
+                    generation: &self.capability.generation,
+                    binding: &self.assignment_binding()?,
+                },
+                authority,
+            )?;
+        }
         let mut hash = Sha256::new();
         hash.update(authority);
         hash.update(&body);
@@ -241,6 +278,9 @@ impl CreationOrigin {
             return Ok(());
         }
         self.capability.verify(authority)?;
+        if let Some(assignee) = &self.assignee {
+            assignee.verify(authority)?;
+        }
         if let Some(parent) = &self.parent {
             parent.origin().verify(authority)?;
         }
@@ -261,7 +301,7 @@ impl CreationOrigin {
             .chain(&self.capability.readers)
             .map(|member| member.user.clone())
             .collect();
-        subjects
+        let mut rules: Vec<_> = subjects
             .into_iter()
             .map(|subject| Rule {
                 origin: None,
@@ -271,7 +311,38 @@ impl CreationOrigin {
                 actions: vec![Action::Read, Action::Create, Action::Update, Action::Delete],
                 effect: Effect::Allow,
             })
+            .collect();
+        if let Some(assignee) = &self.assignee
+            && self.access.as_ref().is_some_and(|access| access.active)
+        {
+            rules.push(Rule {
+                origin: None,
+                subject: assignee.user.clone(),
+                scope: self.scope.clone(),
+                facet: self.facet,
+                actions: vec![Action::Read],
+                effect: Effect::Allow,
+            });
+        }
+        rules
+    }
+    pub fn recipients(&self) -> Vec<&IdentityCertificate> {
+        std::iter::once(&self.capability.creator)
+            .chain(&self.capability.readers)
+            .chain(self.assignee.iter())
             .collect()
+    }
+    pub fn assignment_binding(&self) -> RpcResult<String> {
+        let assignee = self.assignee.as_ref().ok_or_else(invalid)?;
+        Ok(super::crypto::encode(&Sha256::digest(frame(
+            "sortsys/creation-assignment/v1",
+            &[
+                &self.tenant,
+                &self.scope,
+                &self.capability.signature,
+                &assignee.signature,
+            ],
+        ))))
     }
 }
 
@@ -311,6 +382,10 @@ pub(super) async fn metadata_origins(
         }
         origin.verify(authority)?;
         let original_participant = origin.capability.creator.user == subject
+            || origin
+                .assignee
+                .as_ref()
+                .is_some_and(|assignee| assignee.user == subject)
             || origin
                 .capability
                 .readers

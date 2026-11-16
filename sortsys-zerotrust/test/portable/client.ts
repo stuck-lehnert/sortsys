@@ -15,6 +15,8 @@ import {
   MigrationInventory,
   migrationSealFrame,
   sign,
+  signResourceAccess,
+  verifyResourceAccess,
   OpenTimestampUnavailable,
   publicIdentity,
   record,
@@ -107,6 +109,31 @@ export async function exerciseFramework() {
     identity.signingKey.privateKey,
   );
   const first = await store.receive(context.object, object);
+  const accessState = await signResourceAccess(
+    {
+      tenant: context.tenant,
+      resource: context.scope,
+      object: context.object,
+      revision: context.revision,
+      generation: "1",
+      binding: base64(new Uint8Array(32).fill(7)),
+      active: true,
+      packetSignature: object.signature,
+      author: delegation.readers[0]!,
+    },
+    identity.signingKey.privateKey,
+  );
+  await verifyResourceAccess(
+    accessState,
+    {
+      tenant: context.tenant,
+      resource: context.scope,
+      object: context.object,
+      generation: "1",
+      binding: base64(new Uint8Array(32).fill(7)),
+    },
+    () => identity.signingKey.publicKey,
+  );
   require(
     first.kind === "verified" &&
       first.current.value.observation === "Sample remains stable",
@@ -259,6 +286,7 @@ export async function exerciseFramework() {
   return {
     signer: (await publicIdentity(identity)).signingKey,
     delegation,
+    accessState,
     object,
     policy,
     permanent,

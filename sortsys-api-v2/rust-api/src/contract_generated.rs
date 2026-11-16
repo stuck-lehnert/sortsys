@@ -920,12 +920,6 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         output_ts: "{ trackingId: string; }",
     },
     RawContractSpec {
-        path: "tools.trackings.list",
-        kind: ProcedureKind::Query,
-        input_ts: "{ finished?: undefined | null | false | true; toolId?: undefined | null | string; projectId?: undefined | null | string; responsibleUserId?: undefined | null | string; startedByUserId?: undefined | null | string; endedByUserId?: undefined | null | string; startedBefore?: unknown; startedAfter?: unknown; endedBefore?: unknown; endedAfter?: unknown; limit?: undefined | number; offset?: undefined | number; }",
-        output_ts: "{ id: string; toolId: string; projectId: null | string; responsibleUserId: null | string; startedByUserId: null | string; endedByUserId: null | string; toolUsageCostPerDay: null | number; comment: null | string; startedAt: Date; endedAt: null | Date; deadlineAt: null | Date; }[]",
-    },
-    RawContractSpec {
         path: "tools.trackings.transfers.accept",
         kind: ProcedureKind::Mutation,
         input_ts: "{ id: string; projectId?: undefined | null | string; }",

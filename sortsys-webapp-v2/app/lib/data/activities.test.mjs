@@ -17,6 +17,7 @@ import { splitLegacyActivity } from "./legacyActivityData";
 import { row } from "./rowCodec.test.mjs";
 import { financialCollection, financialObject } from "./projectFinancialData";
 import { projectCollection } from "./projectData";
+import { toolCollection, toolPart } from "./toolData";
 
 afterEach(() => lockCryptoSession());
 
@@ -326,6 +327,74 @@ const legacyRow = (id, time, changes = {}) =>
     is_imported: true,
     ...changes,
   });
+
+test("a tool timeline excludes unrelated history and keeps its cache separate from the complete activity list", async () => {
+  const master = toolCollection("tool", "34", "master-data");
+  const booking = toolCollection("tool-tracking", "35", "master-data");
+  const f = await createActivityFixture([master, booking]);
+  try {
+    await f.append("master-data", { first_name: "Andere Tätigkeit" });
+    await f.appendObject(
+      master,
+      master.prefix,
+      toolPart("tool", "34", "master-data", [
+        row("tools", {
+          id: "100",
+          custom_id: "73",
+          brand: "Muster",
+          category: "Bohrhammer",
+        }),
+      ]),
+    );
+    await f.appendObject(
+      booking,
+      booking.prefix,
+      toolPart("tool-tracking", "35", "master-data", [
+        row("tool_trackings", {
+          id: "101",
+          tool_id: "100",
+          started_at: "2026-11-16T08:00:00Z",
+          ended_at: null,
+        }),
+      ]),
+    );
+    f.calls.length = 0;
+    const selected = await f.store.query("personalization.activity.list", {
+      resourceType: "tool",
+      resourceId: "34",
+      limit: 50,
+    });
+    expect(selected.length).toBeGreaterThan(0);
+    expect(
+      selected.every(
+        (item) => item.resourceType === "tool" && item.resourceId === "34",
+      ),
+    ).toBe(true);
+    const reads = f.calls.filter(
+      (call) => call.path === "zerotrust.history.list",
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    expect(
+      reads.every(
+        (call) =>
+          JSON.stringify(call.input.prefixes) ===
+          JSON.stringify(["tool:34:", "tool-tracking:", "legacy-activity:"]),
+      ),
+    ).toBe(true);
+    const complete = await f.store.query("personalization.activity.list", {
+      limit: 50,
+    });
+    expect(complete.some((item) => item.resourceType === "user")).toBe(true);
+    const again = await f.store.query("personalization.activity.list", {
+      resourceType: "tool",
+      resourceId: "34",
+      limit: 50,
+    });
+    expect(again).toEqual(selected);
+  } finally {
+    f.store.close();
+  }
+});
 
 test("project finance history recognizes manual and permanent records without opening workflow registers", async () => {
   const project = projectCollection("4");

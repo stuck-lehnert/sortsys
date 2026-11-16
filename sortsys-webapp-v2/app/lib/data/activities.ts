@@ -68,6 +68,7 @@ type ActivityOwner = {
 type Candidate = ActivityCandidate;
 type ActivityCache = {
   stamp: string;
+  prefixes: string;
   head: string;
   total: string;
   snapshot: string;
@@ -229,6 +230,17 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
   };
   async function query(input: unknown): Promise<Activity[]> {
     const request = activityInput(input);
+    let prefixes = ACTIVITY_PREFIXES;
+    if (request.resourceType === "tool") {
+      prefixes = [
+        request.resourceId ? `tool:${request.resourceId}:` : "tool:",
+        // The tool reference is encrypted inside each booking. Keep these
+        // candidates and the copied history until their owners are decoded.
+        "tool-tracking:",
+        LEGACY_ACTIVITY_PREFIX,
+      ];
+    }
+    const prefixKey = JSON.stringify(prefixes);
     const expectedAccessEpoch = accessEpoch;
     const assertCurrentAccess = () => {
       assertActive();
@@ -696,14 +708,14 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       return boundary;
     }
     try {
-      if (cache?.stamp !== context.stamp) {
+      if (cache?.stamp !== context.stamp || cache.prefixes !== prefixKey) {
         cache = null;
       }
       const first = await required(
         client.query(
           "zerotrust.history.list",
           {
-            prefixes: ACTIVITY_PREFIXES,
+            prefixes,
             before: null,
             snapshot: null,
             known: cache?.head ?? null,
@@ -721,6 +733,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         assertCurrentAccess();
         cache = {
           stamp: context.stamp,
+          prefixes: prefixKey,
           head: first.current,
           total: first.total,
           snapshot: first.snapshot,
@@ -767,7 +780,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           client.query(
             "zerotrust.history.list",
             {
-              prefixes: ACTIVITY_PREFIXES,
+              prefixes,
               before,
               snapshot: state.snapshot,
               known: null,

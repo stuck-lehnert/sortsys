@@ -6,6 +6,7 @@ import { type Facet, FACETS } from "./objects";
 import { importSigningKey } from "./identity";
 import {
   creationAuthor,
+  creationRecipients,
   type CreationOrigin,
   creationOrigin,
   creationOriginFrame,
@@ -23,9 +24,10 @@ export const sortsysDomainCodec = createDomainCodec<Facet, CreationOrigin>(
     authorityGeneration: (origin) => origin.capability.generation,
     signer: (origin) => importSigningKey(origin.capability.creator.signingKey),
     readers: (origin) =>
-      [origin.capability.creator, ...origin.capability.readers].map(
-        (identity) => ({ subject: identity.user, identity }),
-      ),
+      creationRecipients(origin).map((identity) => ({
+        subject: identity.user,
+        identity,
+      })),
   },
 );
 export const {

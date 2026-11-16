@@ -546,6 +546,7 @@ async fn commit_batch_inner(
     let mut visible_domains = BTreeSet::new();
     let mut changed_metadata = BTreeSet::new();
     let mut wrote = checkpoints.commit(&mut context.transaction).await?;
+    let mut changed_access = false;
     for packet in &input.objects {
         let area = areas.get(&packet.domain).ok_or_else(invalid)?;
         if rotation
@@ -555,6 +556,8 @@ async fn commit_batch_inner(
             return Err(conflict());
         }
         let written = save(&mut context, area, packet, &publication, preuploaded).await?;
+        changed_access |=
+            super::super::resource_access::save(&mut context, packet, written).await?;
         super::super::stock::metadata_save_references(
             &mut context.transaction,
             &context.security,
@@ -608,6 +611,20 @@ async fn commit_batch_inner(
         registry::replace_policy(&mut context.transaction, &context.security, policy, false)
             .await?;
         wrote = true;
+    }
+    if changed_access {
+        let mut root =
+            super::super::setup::metadata_root(&mut context.transaction, &context.auth.tenant)
+                .await?;
+        root.catalog_version = revision(&root.catalog_version)?
+            .checked_add(1)
+            .ok_or_else(conflict)?
+            .to_string();
+        super::super::setup::write_root(&mut context.transaction, &root).await?;
+        context.transaction.notify(
+            "access",
+            &serde_json::json!({"policy": context.security.policy.version}),
+        )?;
     }
     for domain in &changed_domains {
         let area = areas.get_mut(domain).ok_or_else(invalid)?;

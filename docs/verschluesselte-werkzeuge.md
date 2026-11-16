@@ -46,6 +46,28 @@ zum Lesen. Schreibrechte für ein zweites Werkzeug öffnen dabei keine Aktionen
 beim ersten. Die Auswahl und die getrennten Buchungsfreigaben haben zusätzliche
 Tests mit echten kryptografischen Nachweisen.
 
+Wird eine neue Buchung einem bereits kryptografisch registrierten Mitarbeiter
+zugewiesen, erhält dieser automatisch Leserechte für die Buchungsdaten und
+Umbuchungsanfragen. Die Kosten bleiben gesperrt; Bearbeitungsrechte werden
+dadurch nicht vergeben. Die Buchung enthält eine verschlüsselte Kopie der
+Werkzeugbezeichnung. Damit bleibt sie auch ohne Freigabe der Werkzeugstammdaten
+verständlich. Ein Link zu deren Detailansicht erscheint nur bei lesbaren
+Stammdaten.
+
+Ein signierter Zuständigkeitsnachweis ist an die genaue verschlüsselte
+Buchungsrevision gebunden. Er wird gemeinsam mit der Buchung veröffentlicht.
+Die Rückgabe oder Umbuchung beendet das abgeleitete Leserecht. Ein fehlender
+Nachweis oder das erneute Senden einer alten Bereichsdefinition stellt es nicht
+wieder her. Schließt ein Administrator die Buchung, verteilt der Browser
+anschließend neue Schlüssel für die betroffenen Bereiche. Ehemalige Empfänger
+können damit spätere Änderungen auch mit einem behaltenen alten Schlüssel nicht
+lesen. Bereits entschlüsselte Inhalte lassen sich ihnen nicht entziehen.
+
+Ein Browserlauf mit getrennten Sitzungen prüft die automatische Freigabe in
+Tabelle und Kartenansicht, den fehlenden Link zu gesperrten Werkzeugstammdaten
+und den Entzug nach der Rückgabe. Der Schlüsselwechsel verwirft dabei nicht den
+unveränderten Zugriffskontext des Administrators.
+
 Ein weiterer Browserlauf legt mit Franks delegiertem Anlegerecht eine Buchung
 an. John kann sie über die andere API-Instanz lesen. Nach dem Entzug darf Frank
 keine neue Buchung beginnen, die vorhandene Buchung aber weiterhin öffnen und
@@ -91,9 +113,17 @@ die API prüft Signaturen, Schreibrechte und technische Versionsstände.
 
 Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
 
-- Die automatische Vergabe und Entziehung der Mitarbeiterfreigaben bei einer
-  neuen Zuständigkeit fehlt. Bis dahin müssen die Freigaben beim Benutzerkonto
-  ausdrücklich eingestellt werden.
+- Bereits vorhandene Buchungen erhalten die automatische Mitarbeiterfreigabe
+  noch nicht nachträglich. Mitarbeiter ohne bestätigte Verschlüsselungsidentität
+  können ein Werkzeug erhalten; meldet sich ein solcher Mitarbeiter später an,
+  muss dessen Lesefreigabe noch ausdrücklich eingerichtet werden.
+- Rechte zum Rückgeben oder Umbuchen folgen noch nicht automatisch aus der
+  Zuständigkeit. Schließt ein berechtigter Benutzer ohne Administrationsrecht
+  die Buchung, bleibt der nötige Schlüsselwechsel zur administrativen
+  Fortsetzung vorgemerkt. Bis dahin werden neue Inhalte des betroffenen
+  Bereichs nicht veröffentlicht.
+- Der vollständige Ablauf dieser abgeleiteten Rechte nach einer
+  Mandantenwiederherstellung ist noch gesondert zu prüfen.
 - Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
   auf die Werkzeugkosten, um den historischen Kostenstand anzulegen. Eine
   Übernahme dieses Kostenstands ohne Entschlüsselung ist noch anzuschließen.

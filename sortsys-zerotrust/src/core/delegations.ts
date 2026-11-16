@@ -9,6 +9,7 @@ import {
 import { sign } from "../identity";
 import { publicProofDigest, verifyPublicProof } from "../publicProofs";
 import {
+  identityCertificate,
   identityCertificateFrame,
   type IdentityCertificate,
 } from "./certificates";
@@ -32,20 +33,6 @@ export type DelegationContext<N extends string = string> = {
   namespace: N;
   creator: string;
 };
-
-function certificate(input: unknown): IdentityCertificate {
-  const value = record(input, [
-    "tenant",
-    "generation",
-    "user",
-    "encryptionKey",
-    "signingKey",
-    "signature",
-  ]) as IdentityCertificate;
-  identityCertificateFrame(value);
-  if (typeof value.signature !== "string") throw new InvalidProtectedData();
-  return { ...value };
-}
 
 /** The application supplies its vocabulary and checks live permission,
  * revocation and consumption inside its storage transaction. */
@@ -83,8 +70,8 @@ export function createDelegationCodec<const N extends string>(
     ) {
       throw new InvalidProtectedData();
     }
-    const creator = certificate(value.creator);
-    const readers = value.readers.map(certificate);
+    const creator = identityCertificate(value.creator);
+    const readers = Array.from(value.readers, identityCertificate);
     const subjects = new Set<string>();
     for (const member of [creator, ...readers]) {
       if (

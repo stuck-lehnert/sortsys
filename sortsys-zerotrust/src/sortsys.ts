@@ -23,6 +23,7 @@ export * from "./deviceVault";
 export * from "./migration";
 export * from "./invitations";
 export * from "./creation";
+export * from "./core/resourceAccess";
 export { sealLayer, openLayer } from "./layers";
 export * from "./documents";
 export * from "./documentChannels";

@@ -48,7 +48,6 @@ enum Event {
 struct PendingChanges {
     all: bool,
     refresh: bool,
-    control: bool,
     visible: bool,
     domains: HashMap<String, Option<i64>>,
     document_messages: HashSet<Room>,
@@ -70,7 +69,6 @@ impl PendingChanges {
             Event::Domain(domain) => {
                 self.visible = true;
                 self.refresh = true;
-                self.control = true;
                 self.domains.insert(domain, None);
             }
             Event::Account(user) if user == subject => {
@@ -676,7 +674,6 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         let PendingChanges {
             mut all,
             refresh,
-            control,
             visible,
             mut domains,
             document_messages,
@@ -692,7 +689,9 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             }
         }
         domains.retain(|domain, _| current.allowed.contains(domain));
-        let control = control || all || reset;
+        // A new key generation requires fresh authorization and a reload of
+        // that domain. Only an actual access change invalidates every view.
+        let control = all || reset;
         let domains = domains
             .into_iter()
             .map(|(domain, sequence)| (domain, sequence.map(|n| n.to_string())))
@@ -732,6 +731,19 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
 mod tests {
     use super::*;
     #[test]
+    fn domain_key_hints_recheck_authorization_without_invalidating_unrelated_views() {
+        let mut changes = PendingChanges::default();
+        changes.include(
+            Event::Domain("tool-tracking:2:master-data".into()),
+            "user:1",
+        );
+        assert!(changes.refresh);
+        assert!(changes.visible);
+        assert!(!changes.all);
+        assert_eq!(changes.domains.len(), 1);
+        assert_eq!(changes.domains["tool-tracking:2:master-data"], None);
+    }
+    #[test]
     fn staging_hints_never_hide_visible_changes_in_a_combined_batch() {
         let mut changes = PendingChanges::default();
         changes.include(
@@ -742,7 +754,6 @@ mod tests {
         changes.include(Event::Access, "user:1");
         assert!(changes.refresh);
         assert!(!changes.visible);
-        assert!(!changes.control);
         changes.include(
             Event::Objects("commercial:2:scope".into(), 3, false),
             "user:1",

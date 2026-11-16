@@ -16,6 +16,16 @@ import {
 } from "./core/delegations";
 import type { Rule } from "./policy";
 import type { Facet } from "./objects";
+import {
+  identityCertificate,
+  identityCertificateFrame,
+  type IdentityCertificate,
+} from "./core/certificates";
+import {
+  resourceAccessState,
+  verifyResourceAccess,
+  type ResourceAccessState,
+} from "./core/resourceAccess";
 
 export const PROJECT_CREATION_SCOPE = "create:project";
 export type CreationNamespace = keyof typeof CREATION_FACETS;
@@ -104,7 +114,11 @@ export type CreationParent = {
   capability: CreationCapability;
   signature: string;
 };
-export type CreationOrigin = CreationParent & { parent?: CreationParent };
+export type CreationOrigin = CreationParent & {
+  parent?: CreationParent;
+  assignee?: IdentityCertificate;
+  access?: ResourceAccessState;
+};
 
 const delegations = createDelegationCodec(
   Object.keys(CREATION_FACETS) as CreationNamespace[],
@@ -131,6 +145,10 @@ export async function verifyCreationCapability(
 export function creationOrigin(input: unknown): CreationOrigin {
   const hasParent =
     !!input && typeof input === "object" && Object.hasOwn(input, "parent");
+  const hasAssignee =
+    !!input && typeof input === "object" && Object.hasOwn(input, "assignee");
+  const hasAccess =
+    !!input && typeof input === "object" && Object.hasOwn(input, "access");
   const value = record(input, [
     "tenant",
     "id",
@@ -139,6 +157,8 @@ export function creationOrigin(input: unknown): CreationOrigin {
     "capability",
     "signature",
     ...(hasParent ? ["parent"] : []),
+    ...(hasAssignee ? ["assignee"] : []),
+    ...(hasAccess ? ["access"] : []),
   ]);
   const capability = creationCapability(value.capability);
   if (
@@ -157,6 +177,25 @@ export function creationOrigin(input: unknown): CreationOrigin {
   )
     throw new InvalidProtectedData();
   let parent: CreationParent | undefined;
+  let assignee: IdentityCertificate | undefined;
+  let access: ResourceAccessState | undefined;
+  if (hasAssignee) {
+    assignee = identityCertificate(value.assignee);
+    if (
+      resource.namespace !== "tool-tracking" ||
+      !["master-data", "scope"].includes(value.facet as string) ||
+      assignee.tenant !== capability.tenant ||
+      assignee.generation !== capability.generation ||
+      [capability.creator, ...capability.readers].some(
+        (member) => member.user === assignee!.user,
+      )
+    )
+      throw new InvalidProtectedData();
+  }
+  if (hasAccess) {
+    if (!assignee) throw new InvalidProtectedData();
+    access = resourceAccessState(value.access);
+  }
   if (resource.module) {
     // The parent is exactly one project root. Reject nesting before recursing.
     const raw = record(value.parent, [
@@ -193,6 +232,8 @@ export function creationOrigin(input: unknown): CreationOrigin {
     capability,
     signature: value.signature,
     ...(parent ? { parent } : {}),
+    ...(assignee ? { assignee } : {}),
+    ...(access ? { access } : {}),
   };
 }
 export async function creationOriginFrame(
@@ -220,10 +261,19 @@ export async function creationOriginFrame(
         ),
       ),
     );
-  return frame(
-    value.parent ? "sortsys/created-area/v2" : "sortsys/created-area/v1",
-    fields,
-  );
+  if (value.assignee)
+    fields.push(
+      await digest(
+        signedPacketFrame(
+          identityCertificateFrame(value.assignee),
+          value.assignee.signature,
+        ),
+      ),
+    );
+  let format = "sortsys/created-area/v1";
+  if (value.assignee) format = "sortsys/created-area-assignee/v1";
+  else if (value.parent) format = "sortsys/created-area/v2";
+  return frame(format, fields);
 }
 export async function createOrigin(
   input: Omit<CreationOrigin, "signature">,
@@ -244,15 +294,55 @@ export async function verifyCreationOrigin(
     authority(value.capability.generation),
   );
   if (value.parent) await verifyCreationOrigin(value.parent, authority);
+  if (value.assignee)
+    await verify(
+      authority(value.capability.generation),
+      value.assignee.signature,
+      identityCertificateFrame(value.assignee),
+    );
   await verify(
     await importSigningKey(value.capability.creator.signingKey),
     value.signature,
     await creationOriginFrame(value),
   );
+  if (value.access)
+    await verifyResourceAccess(
+      value.access,
+      {
+        tenant: value.tenant,
+        resource: value.scope,
+        object: `${value.scope}:master-data:record`,
+        generation: value.capability.generation,
+        binding: await creationAssignmentBinding(value),
+      },
+      authority,
+    );
   return value;
 }
-export function creationRules(origin: CreationOrigin): Rule[] {
+export async function creationAssignmentBinding(
+  origin: CreationOrigin,
+): Promise<string> {
+  if (!origin.assignee) throw new InvalidProtectedData();
+  return digest(
+    frame("sortsys/creation-assignment/v1", [
+      origin.tenant,
+      origin.scope,
+      origin.capability.signature,
+      origin.assignee.signature,
+    ]),
+  );
+}
+export function creationRecipients(
+  origin: CreationOrigin,
+): IdentityCertificate[] {
   return [
+    origin.capability.creator,
+    ...origin.capability.readers,
+    ...(origin.assignee ? [origin.assignee] : []),
+  ];
+}
+export function creationRules(origin: CreationOrigin): Rule[] {
+  const rules: Rule[] = [
     ...new Set([
       origin.capability.creator.user,
       ...origin.capability.readers.map((reader) => reader.user),
@@ -264,6 +354,15 @@ export function creationRules(origin: CreationOrigin): Rule[] {
     effect: "allow",
     actions: ["read", "create", "update", "delete"],
   }));
+  if (origin.assignee && origin.access?.active)
+    rules.push({
+      subject: origin.assignee.user,
+      scope: origin.scope,
+      facet: origin.facet,
+      effect: "allow",
+      actions: ["read"],
+    });
+  return rules;
 }
 export function creationAuthor(origin: CreationOrigin): string {
   return `creator:${origin.capability.creator.user}:${origin.capability.generation}`;

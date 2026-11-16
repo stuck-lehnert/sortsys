@@ -9,6 +9,68 @@ import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 afterEach(() => lockCryptoSession());
 
+test("one tool read checks only its master data and costs, without paging the whole tenant inventory", async () => {
+  const master = toolCollection("tool", "34", "master-data");
+  const cost = toolCollection("tool", "34", "procurement");
+  const unrelated = toolCollection("tool-tracking", "35", "master-data");
+  const tenant = await protectedTenant([master, cost, unrelated]);
+  const source = row("tools", {
+    id: "100",
+    custom_id: "73",
+    brand: "Muster",
+    category: "Bohrhammer",
+    purchase_price: 1357.5,
+    usage_cost_per_day: 17.375,
+  });
+  await tenant.seed(
+    master,
+    master.prefix,
+    toolPart("tool", "34", "master-data", [source]),
+  );
+  await tenant.seed(
+    cost,
+    cost.prefix,
+    toolPart("tool", "34", "procurement", [source]),
+  );
+  await tenant.seed(unrelated, unrelated.prefix, { invalid: true });
+  const store = createProtectedTools(
+    tenant.client,
+    new AbortController().signal,
+    async () => {
+      throw new Error("A tool read must not open project data");
+    },
+    duckDriver,
+  );
+  try {
+    tenant.calls.length = 0;
+    const result = await store.query("tools.get", { id: "34" });
+    expect(result.id).toBe("34");
+    expect(result.purchasePrice).toBe(1357.5);
+    expect(result.usageCostPerDay).toBe(17.375);
+    const snapshots = tenant.calls.filter(
+      (call) => call.path === "zerotrust.access.snapshot",
+    );
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].input.domains).toEqual([master.domain, cost.domain]);
+    expect(
+      tenant.calls.some((call) => call.path === "zerotrust.access.page"),
+    ).toBe(false);
+    const reads = tenant.calls.filter(
+      (call) => call.path === "zerotrust.objects.pages",
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    for (const read of reads)
+      expect(
+        read.input.selections.map((selection) => selection.domain).sort(),
+      ).toEqual([master.domain, cost.domain].sort());
+    tenant.calls.length = 0;
+    await expect(store.query("tools.get", { id: "034" })).rejects.toThrow();
+    expect(tenant.calls).toHaveLength(0);
+  } finally {
+    store.close();
+  }
+});
+
 test("tool and booking choices read only permitted master data and reuse one access snapshot per read", async () => {
   const master = toolCollection("tool", "34", "master-data");
   const cost = toolCollection("tool", "34", "procurement");

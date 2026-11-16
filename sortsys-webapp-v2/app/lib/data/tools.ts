@@ -31,6 +31,7 @@ import {
   toolRequest,
   toolRow,
   toolTimestamp as timestamp,
+  bookingToolSummary,
   TOOL_INDEX,
   TOOL_MODEL,
   TOOL_MUTATIONS,
@@ -39,6 +40,7 @@ import {
   type ToolPart,
 } from "./toolData";
 import { bookProtectedTools } from "./toolBookings";
+import { finishToolResponsibilityChanges } from "./toolResponsibility";
 import type { createProtectedProjects } from "./projects";
 import { createProtectedPersonnel } from "./personnel";
 import {
@@ -157,6 +159,9 @@ function wireTracking(
   return {
     id: resource,
     toolId: publicId(p.tool_id),
+    ...(document(view, request)!.value.toolSummary
+      ? { toolSummary: document(view, request)!.value.toolSummary }
+      : {}),
     projectId: id(p.project_id),
     responsibleUserId: id(p.responsible_user_id),
     startedByUserId: id(p.started_by_user_id),
@@ -196,9 +201,14 @@ export function createProtectedTools(
   async function readAll<T>(
     work: (view: DataView, selected: PartRequest[]) => T | Promise<T>,
     include: (request: PartRequest) => boolean = () => true,
+    selectedDomains?: readonly string[],
   ) {
     live();
-    const collections = await protectedCollections(client, signal);
+    const collections = await protectedCollections(
+      client,
+      signal,
+      selectedDomains,
+    );
     const selected = collections
       .areas(select)
       .map((area) => ({ model: TOOL_MODEL, area }))
@@ -238,12 +248,21 @@ export function createProtectedTools(
         prepared.guards,
       );
       live();
+      await finishToolResponsibilityChanges(
+        client,
+        prepared.groups.flatMap((group) => group.packets),
+        signal,
+      );
       return prepared.value;
     } finally {
       prepared.close();
     }
   }
-  async function provision(namespace: ToolNamespace, resource: string) {
+  async function provision(
+    namespace: ToolNamespace,
+    resource: string,
+    assignee?: string,
+  ) {
     await createResourceAreas(
       client,
       CREATION_FACETS[namespace].map((facet) =>
@@ -251,6 +270,7 @@ export function createProtectedTools(
       ),
       namespace,
       signal,
+      assignee ? { assignee } : {},
     );
     runtime.revalidate();
   }
@@ -394,6 +414,14 @@ export function createProtectedTools(
             ) + 1
           );
         });
+      }
+      let selectedDomains: string[] | undefined;
+      if (path === "tools.get") {
+        const selection = record(input, ["id"]);
+        addressId(selection.id);
+        selectedDomains = ["master-data", "procurement"].map(
+          (facet) => `tool:${selection.id}:${facet}`,
+        );
       }
       return readAll(
         (view, selected) => {
@@ -708,6 +736,7 @@ export function createProtectedTools(
               path === "tools.trackings.transfers.list")
           );
         },
+        selectedDomains,
       );
     },
     async mutate(path: string, input: unknown): Promise<unknown> {
@@ -1236,7 +1265,12 @@ export function createProtectedTools(
       const next = CREATION_FACETS["tool-tracking"].map((facet) =>
         toolRequest("tool-tracking", nextId, facet),
       );
-      if (path.endsWith("accept")) await provision("tool-tracking", nextId);
+      if (path.endsWith("accept"))
+        await provision(
+          "tool-tracking",
+          nextId,
+          `user:${publicId(baseline.source.transfer_to_user_id)}`,
+        );
       const usage = path.endsWith("accept")
         ? [
             ...toolUsageRequests(
@@ -1333,7 +1367,14 @@ export function createProtectedTools(
               replace(
                 tx,
                 request,
-                toolPart("tool-tracking", nextId, request.area.facet, [row]),
+                toolPart(
+                  "tool-tracking",
+                  nextId,
+                  request.area.facet,
+                  [row],
+                  null,
+                  bookingToolSummary(document(tx, tool)!.value.rows[0]!),
+                ),
               );
             syncToolUsage(tx, row);
           }

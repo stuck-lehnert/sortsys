@@ -360,7 +360,7 @@ keine zusätzlichen SQL-Tabellen:
 | `accounts` | Technische Kontodaten, öffentliche Benutzerschlüssel, OPAQUE-Eintrag und verschlüsselter Kontospeicher |
 | `crypto-root`, `authority-history`, `identity-history` | Aktueller Mandantenkopf, Zertifikate und gegengezeichnete Recovery-Übergänge für historische Absender |
 | `policies`, `policy-generations` | Signierte Regeln und Zuordnung zur unterzeichnenden Autorität |
-| `domain-catalog`, `domains`, `created-areas-*` | Bereichsverzeichnis, Schlüsselgenerationen, Leserzuordnung und signierte Anlegenachweise |
+| `domain-catalog`, `domains`, `created-areas-*` | Bereichsverzeichnis, Schlüsselgenerationen, Leserzuordnung, signierte Anlegenachweise und paketgebundene Zuständigkeitsnachweise |
 | `domain-definitions`, `key-envelopes` | Signierte Bereichsdefinitionen und verschlüsselte Schlüsselpakete je Empfänger und Generation |
 | `objects-*`, `object-history`, `object-changes` | Referenzen auf signierte Chiffrate, Vorgängerversionen und eindeutige Nachrichten-IDs |
 | `recovery-inventory-*`, `recovery-challenges`, `recovery-operations` | Verzeichnis früherer Schlüsselhüllen, zeitlich begrenzte Challenges und Nachweise abgeschlossener Wiederherstellungen |
@@ -372,7 +372,9 @@ in einer eigenen Transaktion gegen Sitzung und aktuelle Rechte geprüft. Ein
 Token bindet die Seiten an denselben Mandanten, dieselbe Sitzung, Regelversion
 und Katalogversion. Es ersetzt keine Signaturprüfung im Browser.
 
-Normale Inhaltsänderungen lassen diesen Abruf weiterlaufen. Neue Bereiche,
+Normale Inhaltsänderungen lassen diesen Abruf weiterlaufen. Bei einer
+Werkzeugzuständigkeit gilt das auch für neue Buchungsrevisionen, solange deren
+abgeleiteter Zugriff unverändert bleibt. Neue Bereiche,
 Schlüsselwechsel oder geänderte Regeln verwerfen dagegen den begonnenen Abruf.
 Dasselbe gilt, wenn eine Schlüsselvergabe den angezeigten Bedarf an einem
 Schlüsselwechsel ändert. Der Browser beginnt dann vollständig von vorn und
@@ -394,7 +396,23 @@ nicht zusätzlich aufgelistet. Dieser Abruf bindet seine Seiten an die Version d
 Sammlung mit Anlegenachweisen statt an den gesamten Bereichskatalog. Neue
 Anlegenachweise oder geänderte Regeln verwerfen ihn weiterhin; ein reiner
 Schlüsselwechsel oder das Speichern eines Dokuments erfordert keinen erneuten
-Menüabruf.
+Menüabruf. Zuständigkeitsnachweise werden hingegen mit der jeweiligen
+Buchungsrevision erneuert und ändern diese Sammlung auch bei gleichbleibenden
+Leserechten.
+
+Bei neuen Werkzeugbuchungen kann ein Anlegenachweis zusätzlich den zertifizierten
+Verantwortlichen benennen. Ein gesonderter signierter Zugriffsstand bindet dessen
+abgeleitetes Leserecht an die genaue Buchungsrevision. Die API speichert beide
+in derselben Transaktion wie das Chiffrat; ein beendeter Stand lässt sich nicht
+wieder aktivieren. Ohne aktuellen Nachweis entstehen keine solchen Leserechte.
+Die API sieht dadurch die technische Zuständigkeit und deren Ende. Ob diese
+Angabe zum verschlüsselten Fachinhalt passt, prüft der Browser.
+
+`zerotrust.identities.get` liefert das öffentliche Zertifikat eines Kontos im
+eigenen Mandanten. Für ein noch nicht registriertes, inaktives oder gesperrtes
+Konto ist das Ergebnis `null`. Die Abfrage gibt weder Personalprofile noch
+private Schlüssel frei. Eine neue Buchung kann deshalb auch ohne bestätigtes
+Zielzertifikat bestehen; die automatische spätere Freigabe ist noch offen.
 
 Neue Schlüsselbereiche werden in Stapeln mit höchstens 32 Definitionen
 veröffentlicht und anschließend anhand ihrer signierten Nachweise zurückgelesen.
@@ -425,6 +443,14 @@ offene Schlüsselwechsel nachgelesen. Größere Auswahlen und die allgemeine
 Fortsetzung prüfen das gesamte Verzeichnis. Eine zwischenzeitlich geänderte
 Regelversion erfordert eine neue Empfängerauswahl. Konflikte bei unveränderten
 Regeln und Schlüsselgenerationen werden höchstens zweimal wiederholt.
+
+Der Abruf eines einzelnen Werkzeugs fragt dessen Stammdaten und Kosten gemeinsam
+gezielt ab. Dafür wird nicht das gesamte Berechtigungsverzeichnis geladen.
+Auch WebSocket-Hinweise für neue Schlüsselgenerationen führen zunächst zu einer
+erneuten serverseitigen Prüfung von Sitzung und Rechten. Bleibt der Zugriff
+gleich, laden die Clients nur die betroffenen Bereiche neu. Ändern sich Rechte,
+Rollen oder die erlaubten Bereiche, wird der gesamte Zugriffskontext erneuert;
+bei einem Entzug werden die betroffenen laufenden Arbeiten verworfen.
 
 Eine schreibende Transaktion prüft das äußere Schema, aktuelle Rechte und die
 maßgeblichen öffentlichen Ausgangsversionen. Sie sperrt die relevante

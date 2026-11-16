@@ -1,13 +1,14 @@
 use serde::Deserialize;
 use sortsys_zerotrust::{
     anchors::RecordAnchor,
-    crypto::{decode, packet_hash, sized},
+    crypto::{decode, encode, packet_hash, sized},
     delegations::{DelegationCertificate, DelegationContext},
     immutable,
     migration::{MigrationInventory, MigrationSeal},
     opentimestamps,
     policy::{Action, Effect, PolicyRef, RuleRef},
     protocol::EncryptedObject,
+    resource_access::{ResourceAccessContext, ResourceAccessState},
 };
 
 #[derive(Deserialize)]
@@ -41,6 +42,7 @@ struct BrowserVector {
     replacement: RecordAnchor,
     anchor_digest: String,
     delegation: DelegationCertificate<Namespace>,
+    access_state: ResourceAccessState,
 }
 
 #[derive(Clone, Deserialize)]
@@ -68,6 +70,16 @@ fn main() {
         vector.anchor_digest
     );
     let signer = sized::<32>(&vector.signer).unwrap();
+    let binding = encode(&[7; 32]);
+    let access_context = ResourceAccessContext {
+        tenant: "laboratory:alpha", resource: "experiment:42", object: "note:1",
+        generation: "1", binding: &binding,
+    };
+    vector.access_state.verify(&access_context, &signer).unwrap();
+    assert_eq!(vector.access_state.packet_signature, vector.object.signature);
+    let mut altered = vector.access_state.clone();
+    altered.active = false;
+    assert!(altered.verify(&access_context, &signer).is_err());
     let expected = DelegationContext {
         tenant: "laboratory:alpha",
         generation: "1",

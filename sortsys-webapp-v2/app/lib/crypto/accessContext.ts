@@ -5,7 +5,11 @@ import {
   type QueryResult,
 } from "@sortsys/v2-client";
 import { readSnapshotPages } from "@sortsys/zerotrust";
-import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import {
+  creationOrigin,
+  InvalidProtectedData,
+  record,
+} from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
 import { unlockedAccount, verifyAccountHistory } from "./session";
 import { verifyPolicySnapshot } from "./policy";
@@ -252,6 +256,7 @@ async function readAccessContext(
     rootPolicy,
     permissions,
     domains,
+    origins: origins.filter((origin) => origin !== null).map(creationOrigin),
     live,
   };
 }

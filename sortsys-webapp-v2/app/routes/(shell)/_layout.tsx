@@ -74,6 +74,7 @@ export default Authenticated(function () {
   const canViewRegieReports = sessionInfo.canDo("view:regieReports");
   const canSearchDocuments = sessionInfo.supportsProjectFiles() && sessionInfo.canSearchProjectFiles();
   const canViewTools = sessionInfo.canDo("view:tools");
+  const canViewToolTrackings = sessionInfo.canDo("view:toolTrackings");
   const canViewUsers = sessionInfo.canDo("view:users");
   const canViewProducts =
     sessionInfo.canDo("view:products") ||
@@ -360,10 +361,10 @@ export default Authenticated(function () {
               isPathActive("/products")
             }
           >
-            {canViewTools && (
+            {(canViewTools || canViewToolTrackings) && (
               <MySideNavLink
                 icon={Icons.Tool}
-                href="/tools"
+                href={canViewTools ? "/tools" : "/tools/trackings"}
                 title={t("shell.tools")}
               />
             )}

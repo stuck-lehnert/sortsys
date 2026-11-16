@@ -18,6 +18,7 @@ export {
   certifyIdentity,
   type IdentityCertificate,
   identityCertificateFrame,
+  identityCertificate,
   verifyAuthority,
 } from "./core/certificates";
 

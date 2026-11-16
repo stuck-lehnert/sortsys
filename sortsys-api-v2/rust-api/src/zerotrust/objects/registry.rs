@@ -177,12 +177,14 @@ fn area_readers(sets: &ReaderSets, area: &DomainRecord) -> BTreeSet<String> {
 pub(in crate::zerotrust) struct RotationChecks {
     current: ReaderSets,
     previous: BTreeMap<String, ReaderSets>,
+    pending_assignments: BTreeSet<String>,
 }
 impl RotationChecks {
     pub(in crate::zerotrust) fn new(guard: &Security) -> Self {
         Self {
             current: readers(&guard.policy, &guard.inherited),
             previous: BTreeMap::new(),
+            pending_assignments: BTreeSet::new(),
         }
     }
     pub(in crate::zerotrust) async fn required(
@@ -191,9 +193,46 @@ impl RotationChecks {
         guard: &Security,
         area: &DomainRecord,
     ) -> RpcResult<bool> {
-        let current = area_readers(&self.current, area);
+        let mut current = area_readers(&self.current, area);
+        let mut pending_assignment = false;
+        if area.generation == "1"
+            && let Some(origin) = guard.origins.iter().find(|origin| origin.id == area.id)
+            && origin.access.is_none()
+            && let Some(assignee) = &origin.assignee
+        {
+            let canonical = format!("{}:master-data:record", origin.scope);
+            if self.pending_assignments.contains(&area.scope)
+                || super::persistence::object(transaction, &canonical)
+                    .await?
+                    .is_none()
+            {
+                pending_assignment = true;
+                self.pending_assignments.insert(area.scope.clone());
+                let mut prospective = guard.inherited.clone();
+                prospective.push(super::super::wire::Rule {
+                    origin: None,
+                    subject: assignee.user.clone(),
+                    scope: area.scope.clone(),
+                    facet: area.facet,
+                    actions: vec![Action::Read],
+                    effect: super::super::wire::Effect::Allow,
+                });
+                if guard.policy.allows_with(
+                    &prospective,
+                    &assignee.user,
+                    &area.scope,
+                    area.facet,
+                    Action::Read,
+                ) {
+                    current.insert(assignee.user.clone());
+                }
+            }
+        }
         if area.recipients.get(&area.generation) != Some(&current) {
             return Ok(true);
+        }
+        if pending_assignment {
+            return Ok(false);
         }
         if area.policy_version == guard.policy.version {
             return Ok(false);
@@ -243,19 +282,31 @@ fn certified_identity(
     certificate.verify(&guard.authority)?;
     Ok(Some(certificate))
 }
-async fn checked_member(
+async fn member_account(
     transaction: &mut Transaction,
-    guard: &Security,
     subject: &str,
-) -> RpcResult<IdentityCertificate> {
+) -> RpcResult<accounts::Account> {
     let user =
         Id::decode(subject.strip_prefix("user:").ok_or_else(invalid)?).map_err(|_| invalid())?;
+    if user.0 <= 0 || format!("user:{}", user.encode()) != subject {
+        return Err(invalid());
+    }
     let account: accounts::Account = transaction
         .read(accounts::account_key(user.0))
         .await?
         .ok_or_else(forbidden)?;
-    if account.id != user.0
-        || !account.active(chrono::Utc::now())
+    if account.id != user.0 {
+        return Err(invalid());
+    }
+    Ok(account)
+}
+async fn active_member(
+    transaction: &mut Transaction,
+    guard: &Security,
+    subject: &str,
+) -> RpcResult<accounts::Account> {
+    let account = member_account(transaction, subject).await?;
+    if !account.active(chrono::Utc::now())
         || guard
             .policy
             .suspended
@@ -264,9 +315,17 @@ async fn checked_member(
     {
         return Err(forbidden());
     }
+    Ok(account)
+}
+async fn checked_member(
+    transaction: &mut Transaction,
+    guard: &Security,
+    subject: &str,
+) -> RpcResult<IdentityCertificate> {
+    let account = active_member(transaction, guard, subject).await?;
     certified_identity(&account, guard)?.ok_or_else(forbidden)
 }
-async fn check_member(
+pub(in crate::zerotrust) async fn check_member(
     transaction: &mut Transaction,
     guard: &Security,
     expected: &IdentityCertificate,
@@ -351,6 +410,7 @@ pub(in crate::zerotrust) fn register(
     let key_grant = Arc::clone(&service);
     let definitions = Arc::clone(&service);
     let directory = Arc::clone(&service);
+    let public_identity = Arc::clone(&service);
     builder
         .query(
             "zerotrust.access.snapshot",
@@ -518,6 +578,30 @@ pub(in crate::zerotrust) fn register(
             let service = Arc::clone(&key_grant);
             async move { grant_key(&service, &ctx, input).await }
         })
+        .query(
+            "zerotrust.identities.get",
+            move |ctx, input: IdentityInput| {
+                let service = Arc::clone(&public_identity);
+                async move {
+                    let mut context =
+                        metadata_context_for_domains(&service, &ctx, Some(&[])).await?;
+                    let account = member_account(&mut context.transaction, &input.subject).await?;
+                    let suspended = context
+                        .security
+                        .policy
+                        .suspended
+                        .as_ref()
+                        .is_some_and(|members| members.contains(&input.subject));
+                    let certificate = if account.active(chrono::Utc::now()) && !suspended {
+                        certified_identity(&account, &context.security)?
+                    } else {
+                        None
+                    };
+                    context.transaction.validate().await?;
+                    Ok(certificate)
+                }
+            },
+        )
         .query("zerotrust.identities.list", move |ctx, _: ()| {
             let service = Arc::clone(&directory);
             async move {
@@ -715,7 +799,7 @@ fn capability_key(
         ),
     )
 }
-pub(super) fn origin_collection(generation: i64) -> String {
+pub(in crate::zerotrust) fn origin_collection(generation: i64) -> String {
     format!("created-areas-{generation}")
 }
 
@@ -771,13 +855,31 @@ async fn check_creation(
     {
         return Err(forbidden());
     }
-    for member in std::iter::once(&origin.capability.creator).chain(&origin.capability.readers) {
+    if origin.access.is_some() {
+        return Err(invalid());
+    }
+    if origin.facet == Facet::Scope && origin.assignee.is_some() {
+        let master: super::super::creation::CreationOrigin = transaction
+            .read(key(
+                &origin_collection(guard.root.generation),
+                &format!("{}:master-data", origin.scope),
+            ))
+            .await?
+            .ok_or_else(forbidden)?;
+        if serde_json::to_value(&master.assignee).map_err(internal)?
+            != serde_json::to_value(&origin.assignee).map_err(internal)?
+            || master.capability.signature != origin.capability.signature
+        {
+            return Err(forbidden());
+        }
+    }
+    for member in origin.recipients() {
         check_member(transaction, guard, member).await?;
     }
     let expected: BTreeSet<_> = origin
-        .rules()
+        .recipients()
         .into_iter()
-        .map(|rule| rule.subject)
+        .map(|member| member.user.clone())
         .collect();
     let actual: BTreeSet<_> = input
         .envelopes
@@ -883,6 +985,16 @@ async fn put_domain_in_transaction(
     let mut inherited = guard.inherited.clone();
     if let Some(origin) = &input.creation {
         inherited.extend(origin.rules());
+        if let Some(assignee) = &origin.assignee {
+            inherited.push(super::super::wire::Rule {
+                origin: None,
+                subject: assignee.user.clone(),
+                scope: origin.scope.clone(),
+                facet: origin.facet,
+                actions: vec![Action::Read],
+                effect: super::super::wire::Effect::Allow,
+            });
+        }
     }
     let mut recipients = BTreeSet::new();
     for envelope in &input.envelopes {

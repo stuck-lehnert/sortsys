@@ -172,8 +172,15 @@ Personalauswahl verwendet verschlüsselte Profile. Freigaben für Werkzeuge und
 einzelne Buchungen lassen sich beim Benutzerkonto getrennt nach Stammdaten,
 Kosten, Inventuren und Umbuchungsanfragen verwalten.
 Die Aktionen der Detailansicht prüfen das jeweilige Werkzeug und seine Buchung.
-Automatische Mitarbeiterfreigaben und die Ausgabe ohne lesbare Kosten fehlen
-noch. Vollständige Textsuchparität steht ebenfalls aus. Siehe
+Neue Buchungen gewähren dem zugewiesenen, kryptografisch registrierten Mitarbeiter
+automatisch Leserechte ohne Kostenfreigabe. Rückgabe und Umbuchung beenden dieses
+abgeleitete Recht. Ein nativer Test mit zwei API-Instanzen prüft die Freigabe,
+abgewiesene Schreibversuche, den Entzug und den administrativen Schlüsselwechsel.
+Automatische Rechte für ältere Buchungen, später registrierte Mitarbeiter sowie
+Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch. Ohne
+Administrationsrecht bleibt der Schlüsselwechsel nach einer Rückgabe vorgemerkt.
+Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
+aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).
 
 **Einsatzplanung und Baustellensperren.** Bestandsübernahme, Listen, Anlage,
