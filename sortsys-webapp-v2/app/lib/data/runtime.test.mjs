@@ -1011,6 +1011,28 @@ test("commercial aggregates use shared rows without loading XML or overwriting i
   }
 }, 15000);
 
+test("a supplied fresh access context updates permissions even when cached rows and heads are unchanged", async () => {
+  const f = fixture();
+  try {
+    expect(
+      await f.runtime.read([first], (view) => view.can(first, "update")),
+    ).toBe(true);
+    const reads = f.calls.read;
+    f.forbid(first.area.domain, "update");
+    const currentAccess = await f.storage.open();
+    expect(
+      await f.runtime.read(
+        [first],
+        (view) => view.can(first, "update"),
+        currentAccess,
+      ),
+    ).toBe(false);
+    expect(f.calls.read).toBe(reads);
+  } finally {
+    await f.runtime.close();
+  }
+});
+
 test("commercial status and receipt share one publication and private amounts remain separate", async () => {
   const f = fixture();
   const { requests, master, prices } = commercialFixture(f);

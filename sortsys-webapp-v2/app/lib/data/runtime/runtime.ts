@@ -576,6 +576,7 @@ export class DataRuntime {
     const requests = [...merged.values()];
     if (
       !opened &&
+      !supplied &&
       this.projectedGeneration === this.generation &&
       [...this.projectedResources.keys()].every(
         (key) => !this.stale.has(key),
