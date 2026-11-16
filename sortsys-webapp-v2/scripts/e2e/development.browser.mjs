@@ -257,11 +257,7 @@ async function saveResourceAccess(dialog, label, field) {
   await expect(save).toBeEnabled();
   await save.click();
   await expect(save).toHaveAttribute("data-pending", "true");
-  // Publishing rights also backfills historical keys, rotates affected areas
-  // and verifies their durable heads across API instances.
-  await expect(save).not.toHaveAttribute("data-pending", "true", {
-    timeout: 45_000,
-  });
+  await expect(save).not.toHaveAttribute("data-pending", "true");
   await expect(
     dialog.getByRole("button", { name: new RegExp(field) }),
   ).toBeEnabled();
@@ -953,25 +949,29 @@ try {
       snapshots: true,
       sources: true,
     });
+    const publications = [];
+    page.on("request", (request) => {
+      const paths = new URL(request.url()).pathname
+        .split("/")
+        .at(-1)
+        .split(",");
+      const index = paths.indexOf("zerotrust.access.publish");
+      if (index < 0) return;
+      const body = request.postDataJSON();
+      publications.push(body[String(index)].json);
+    });
     let authorization;
     member.on("request", (request) => {
       if (new URL(request.url()).pathname.startsWith("/api/v2/")) {
         authorization = request.headers().authorization ?? authorization;
       }
     });
-    async function capability(subject) {
+    async function memberQuery(path, input) {
       assert.ok(
         authorization,
         "The member must have an authenticated API request",
       );
-      const input = {
-        namespace: "tool-tracking",
-        ...(subject ? { subject } : {}),
-      };
-      const url = new URL(
-        "/api/v2/zerotrust.creations.capability",
-        memberServer.origin,
-      );
+      const url = new URL(`/api/v2/${path}`, memberServer.origin);
       url.searchParams.set("batch", "1");
       url.searchParams.set("input", JSON.stringify({ 0: { json: input } }));
       const response = await member.request.get(url.href, {
@@ -979,6 +979,12 @@ try {
       });
       assert.equal(response.status(), 200);
       return (await response.json())[0];
+    }
+    async function capability(subject) {
+      return memberQuery("zerotrust.creations.capability", {
+        namespace: "tool-tracking",
+        ...(subject ? { subject } : {}),
+      });
     }
     try {
       await login(page, "john.doe");
@@ -1011,11 +1017,30 @@ try {
         "Anschaffung und Nutzungskosten",
         "Lesen",
       );
+      const publicationStart = publications.length;
       await saveResourceAccess(
         access,
         "Werkzeugzugriff speichern",
         "Werkzeugstammdaten",
       );
+      const published = publications.slice(publicationStart);
+      assert.equal(
+        published.length,
+        1,
+        "Both edited areas share one atomic access publication",
+      );
+      const toolScope = `tool:${path.split("/").at(-1)}`;
+      assert.equal(
+        published[0].domains.filter((domain) => domain.scope === toolScope)
+          .length,
+        2,
+      );
+      assert.ok(
+        published[0].grants.filter((grant) =>
+          grant.domain.startsWith(`${toolScope}:`),
+        ).length >= 2,
+      );
+
       await member.goto(`${memberServer.origin}${path}`);
       await expect(
         member.getByRole("heading", { name: /Bohrhammer 1/ }),
@@ -1036,6 +1061,17 @@ try {
       await saveCreationAccess(access);
       const granted = await capability();
       assert.equal(granted.result.data.json.namespace, "tool-tracking");
+      const encryptedKeys = await memberQuery("zerotrust.keys.inspect", {
+        keys: [
+          {
+            domain: `${toolScope}:master-data`,
+            generation: "1",
+            recipient: granted.result.data.json.creator.user,
+          },
+        ],
+      });
+      assert.equal(encryptedKeys.error.json.data.httpCode, 403);
+
       await expect(
         member.getByText("Werkzeuge einbuchen", { exact: true }),
       ).toBeVisible();

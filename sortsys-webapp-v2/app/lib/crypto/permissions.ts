@@ -8,17 +8,10 @@ import {
   verifyCreationCapability,
   compileReadership,
   compilePolicy,
-  domainBoxSigner,
   creationScope,
   randomSecret,
   InvalidProtectedData,
-  createDomain,
   identityCertificateFrame,
-  hpke,
-  openBox,
-  sealBox,
-  sized,
-  verifyDomain,
   record,
   verify,
 } from "@sortsys/zerotrust/sortsys";
@@ -28,10 +21,7 @@ import type {
   Policy,
   Rule,
 } from "@sortsys/zerotrust/sortsys";
-import { createdAccess } from "./createdAccess";
 import { publishVerifiedPolicy, readVerifiedPolicy } from "./policy";
-import { unlockedAccount, trustedHistory } from "./session";
-import { PRICE_COLLECTION } from "../data/products";
 import { privateLlmCollection } from "../data/privateLlm";
 import { required } from "../data/protectedObjects";
 import type { Collection } from "../data/protectedObjects";
@@ -60,8 +50,6 @@ import {
   PROJECT_ACCESS_KEYS,
   type ProjectAccessKey,
 } from "../data/projectScope";
-import { ORGANIZATION_AREAS } from "../data/organizationData";
-import { preferenceDomain } from "../data/preferenceData";
 import {
   TOOL_INDEX,
   toolCollection,
@@ -75,7 +63,12 @@ import {
   personnelDomain,
   type PersonnelFacet,
 } from "../data/personnelData";
-import { administratorContext } from "./administration";
+import {
+  administratorContext,
+  administratorPolicyContext as administrator,
+} from "./administration";
+import { finishAccessChanges } from "./accessRotations";
+export { finishAccessChanges };
 import { absenceCollection } from "../data/absenceData";
 import { canUseAssistant } from "../data/assistantArea";
 
@@ -142,329 +135,11 @@ export async function shareNewPersonnelName(
   } while (after);
 }
 
-async function administrator(client: Client, signal: AbortSignal) {
-  const context = await administratorContext(client, signal);
-  const { account, session, history, authority, live } = context;
-  const { permissions } = await readVerifiedPolicy(client, {
-    account,
-    history,
-    live,
-  });
-  const effective = await createdAccess(client, permissions, history, signal);
-  live();
-  return { account, session, history, authority, permissions, effective, live };
-}
-
 function readers(
   permissions: Policy,
   area: Pick<Collection, "scope" | "facet">,
 ): Set<string> {
   return new Set(compileReadership(permissions)(area.scope, area.facet));
-}
-
-/** A policy change leaves a durable server-side marker. Resume it using the
- * latest verified policy, without retaining raw keys or requesting a phrase. */
-export async function finishAccessChanges(
-  client: Client,
-  signal: AbortSignal,
-): Promise<void> {
-  let context = await administrator(client, signal);
-  let directory: {
-    identities: QueryResult<"zerotrust.identities.list">;
-    members: QueryResult<"zerotrust.members.list">["rows"];
-  } | null = null;
-  for (let count = 0; count < 2001; count++) {
-    const domains = await required(
-      client.query("zerotrust.domains.list", undefined, {
-        strategy: "network-only",
-      }),
-    );
-    context.live();
-    let pending = domains.find((domain) => domain.rotationRequired);
-    let initial = false;
-    if (!pending) {
-      for (const rule of context.permissions.rules) {
-        if (
-          !/^user:[1-9a-v][0-9a-v]{0,12}$/.test(rule.subject) ||
-          !rule.scope.startsWith("assistant:")
-        )
-          continue;
-        const personal = privateLlmCollection(rule.subject);
-        if (
-          rule.scope === personal.scope &&
-          rule.facet === personal.facet &&
-          readers(context.permissions, personal).has(rule.subject) &&
-          !domains.some((domain) => domain.id === personal.domain)
-        ) {
-          pending = {
-            id: personal.domain,
-            scope: personal.scope,
-            facet: personal.facet,
-            generation: "0",
-            rotationRequired: true,
-          };
-          initial = true;
-          break;
-        }
-      }
-    }
-    if (!pending) {
-      const latest = await readVerifiedPolicy(client, context);
-      if (latest.permissions.version !== context.permissions.version) {
-        context = await administrator(client, signal);
-        directory = null;
-        continue;
-      }
-      await client.invalidate("products.list");
-      return;
-    }
-    let current: QueryResult<"zerotrust.domains.get"> | undefined;
-    if (!initial) {
-      current = await required(
-        client.query(
-          "zerotrust.domains.get",
-          { domain: pending.id, generation: pending.generation },
-          { strategy: "network-only" },
-        ),
-      );
-      context.live();
-      await verifyDomain(
-        current,
-        {
-          tenant: context.account.tenant,
-          id: pending.id,
-          scope: pending.scope,
-          facet: pending.facet as Collection["facet"],
-          generation: pending.generation,
-        },
-        context.history.authority,
-      );
-    }
-    const allowed = readers(context.effective, {
-      scope: pending.scope,
-      facet: pending.facet as Collection["facet"],
-    });
-    if (!directory) {
-      // Every affected area uses the same verified policy and member list.
-      // Start independent metadata reads together so the RPC transport can
-      // batch them, then reuse them until a policy conflict requires a refresh.
-      const [identities, firstPage] = await Promise.all([
-        required(
-          client.query("zerotrust.identities.list", undefined, {
-            strategy: "network-only",
-          }),
-        ),
-        required(
-          client.query(
-            "zerotrust.members.list",
-            { after: null },
-            { strategy: "network-only" },
-          ),
-        ),
-      ]);
-      context.live();
-      const members: QueryResult<"zerotrust.members.list">["rows"] = [];
-      let page = firstPage;
-      let after: string | null = null;
-      do {
-        if (
-          (page.after && page.after === after) ||
-          members.length + page.rows.length > 10000
-        ) {
-          throw new InvalidProtectedData();
-        }
-        members.push(...page.rows);
-        after = page.after;
-        if (after) {
-          page = await required(
-            client.query(
-              "zerotrust.members.list",
-              { after },
-              { strategy: "network-only" },
-            ),
-          );
-          context.live();
-        }
-      } while (after);
-      directory = { identities, members };
-    }
-    const { identities } = directory;
-    const recipients: { subject: string; identity: IdentityCertificate }[] = [];
-    for (const member of directory.members) {
-      const subject = `user:${member.id}`;
-      if (!allowed.has(subject)) continue;
-      const identity = identities.find((value) => value.subject === subject);
-      if (!identity) throw new InvalidProtectedData();
-      const certificate = record(identity.certificate, [
-        "tenant",
-        "generation",
-        "user",
-        "encryptionKey",
-        "signingKey",
-        "signature",
-      ]) as IdentityCertificate;
-      if (
-        certificate.tenant !== context.account.tenant ||
-        certificate.generation !== context.history.current.generation ||
-        certificate.user !== subject ||
-        certificate.encryptionKey !== identity.encryptionKey ||
-        certificate.signingKey !== identity.signingKey
-      )
-        throw new InvalidProtectedData();
-      await verify(
-        context.history.authority(certificate.generation),
-        certificate.signature,
-        identityCertificateFrame(certificate),
-      );
-      context.live();
-      recipients.push({ subject, identity: certificate });
-    }
-    if (
-      recipients.length &&
-      ([
-        ...Object.values(MASTER_DATA_AREAS).map((area) => area.domain),
-        TOOL_INDEX.domain,
-        PRICE_COLLECTION.domain,
-        ...ORGANIZATION_AREAS.map((area) => area.domain),
-      ].includes(pending.id) ||
-        personnelDomain(pending.id) ||
-        absenceDomain(pending.id) ||
-        toolDomain(pending.id) ||
-        projectAccessDomain(pending.id) ||
-        commercialDomain(pending.id) ||
-        preferenceDomain(pending.id))
-    ) {
-      if (BigInt(pending.generation) > 10000n) throw new InvalidProtectedData();
-      for (
-        let generation = 1n;
-        generation <= BigInt(pending.generation);
-        generation++
-      ) {
-        let old = current;
-        if (generation.toString() !== pending.generation) {
-          old = await required(
-            client.query(
-              "zerotrust.domains.get",
-              { domain: pending.id, generation: generation.toString() },
-              { strategy: "network-only" },
-            ),
-          );
-        }
-        if (!old) throw new InvalidProtectedData();
-        context.live();
-        const verified = await verifyDomain(
-          old,
-          {
-            tenant: context.account.tenant,
-            id: pending.id,
-            scope: pending.scope,
-            facet: pending.facet as Collection["facet"],
-            generation: generation.toString(),
-          },
-          context.history.authority,
-        );
-        if (!old.envelopes.length) continue; // Recovery-only generation had no ordinary writer.
-        const missing = recipients.filter(
-          (recipient) =>
-            !old.envelopes.some((box) => box.recipient === recipient.subject),
-        );
-        if (!missing.length) continue;
-        const box = await required(
-          client.query(
-            "zerotrust.keys.get",
-            { domain: pending.id, generation: generation.toString() },
-            { strategy: "network-only" },
-          ),
-        );
-        context.live();
-        const raw = await openBox(
-          box,
-          {
-            tenant: context.account.tenant,
-            purpose: "area-key",
-            object: pending.id,
-            generation: generation.toString(),
-            recipient: `user:${context.session.user.id}`,
-            author: box.author,
-          },
-          context.account.identity.encryptionKey.privateKey,
-          await domainBoxSigner(verified, box, context.history.authority),
-        );
-        try {
-          for (const recipient of missing) {
-            if (recipient.subject === `user:${context.session.user.id}`)
-              continue;
-            const envelope = await sealBox(
-              {
-                tenant: context.account.tenant,
-                purpose: "area-key",
-                object: pending.id,
-                generation: generation.toString(),
-                recipient: recipient.subject,
-                author: `authority:${context.history.current.generation}`,
-              },
-              raw,
-              await hpke.kem.deserializePublicKey(
-                sized(recipient.identity.encryptionKey, 32),
-              ),
-              context.authority,
-            );
-            context.live();
-            await required(
-              client.mutate("zerotrust.keys.grant", {
-                domain: pending.id,
-                generation: generation.toString(),
-                envelope,
-              }),
-            );
-            context.live();
-          }
-        } finally {
-          raw.fill(0);
-        }
-      }
-    }
-    const { definition } = await createDomain({
-      tenant: context.account.tenant,
-      id: pending.id,
-      scope: pending.scope,
-      facet: pending.facet as Collection["facet"],
-      generation: (BigInt(pending.generation) + 1n).toString(),
-      policyVersion: context.permissions.version,
-      authorityGeneration: context.history.current.generation,
-      authorityKey: context.authority,
-      recovery: {
-        encryptionKey: context.history.current.recoveryEncryptionKey,
-        signingKey: context.history.current.recoverySigningKey,
-      },
-      readers: recipients,
-    });
-    context.live();
-    const [, error] = await client.mutate("zerotrust.domains.put", definition);
-    context.live();
-    if (error) {
-      await client.invalidate("zerotrust.domains.list");
-      await client.invalidate("zerotrust.policy.get");
-      const latest = await required(
-        client.query("zerotrust.domains.list", undefined, {
-          strategy: "network-only",
-        }),
-      );
-      context.live();
-      const current = latest.find((domain) => domain.id === pending.id);
-      const permissions = await administrator(client, signal);
-      if (
-        (initial ? !current : current?.generation === pending.generation) &&
-        permissions.permissions.version === context.permissions.version
-      )
-        throw error;
-      context = permissions;
-      directory = null;
-      // A concurrent policy or completed rotation requires a fresh definition.
-      // Never publish the old recipient set against a changed policy.
-    }
-  }
-  throw new InvalidProtectedData();
 }
 
 export type ProjectAccessLevels = Partial<
@@ -476,7 +151,11 @@ export async function memberAreaAccesses(
   areas: readonly Collection[],
   signal: AbortSignal,
 ): Promise<AccessValue[]> {
-  const context = await administrator(client, signal);
+  const context = await administrator(
+    client,
+    signal,
+    areas.map((area) => area.domain),
+  );
   if (!(await certifiedMember(client, user, context)))
     throw new InvalidProtectedData();
   const level = compileManagedAccess(context.effective, user);
@@ -889,7 +568,11 @@ export async function changeAreaActionAccesses(
   changes: readonly AreaActionChange[],
   signal: AbortSignal,
 ): Promise<void> {
-  const context = await administrator(client, signal);
+  const context = await administrator(
+    client,
+    signal,
+    changes.map(({ area }) => area.domain),
+  );
   await publishActionChanges(client, user, changes, context, signal);
 }
 async function publishActionChanges(
@@ -937,7 +620,9 @@ async function publishActionChanges(
       rules,
     });
   }
-  await finishAccessChanges(client, signal);
+  const domains = changes.map(({ area }) => area.domain);
+  if (assistant !== undefined) domains.push(privateLlmCollection(user).domain);
+  await finishAccessChanges(client, signal, domains);
   await client.invalidate("projects.list");
 }
 async function certifiedMember(
@@ -989,7 +674,10 @@ export async function memberAccess(
   user: string,
   signal: AbortSignal,
 ): Promise<MemberAccess | null> {
-  const context = await administrator(client, signal);
+  const context = await administrator(client, signal, [
+    ...Object.values(MASTER_DATA_AREAS).map((area) => area.domain),
+    privateLlmCollection(user).domain,
+  ]);
   if (!(await certifiedMember(client, user, context))) return null;
   const level = compileManagedAccess(context.permissions, user);
   const permitted = compilePolicy(context.permissions, [user]);
@@ -1053,8 +741,11 @@ export async function changeMemberAccess(
         : {}),
     };
   }
-  const context = await administrator(client, signal),
-    previous = compileManagedAccess(context.permissions, user);
+  const context = await administrator(client, signal, [
+    ...Object.values(MASTER_DATA_AREAS).map((area) => area.domain),
+    privateLlmCollection(user).domain,
+  ]);
+  const previous = compileManagedAccess(context.permissions, user);
   const changes = MASTER_DATA_FIELDS.flatMap((key) => {
     const area = MASTER_DATA_AREAS[key],
       patch = edits

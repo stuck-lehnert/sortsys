@@ -390,12 +390,41 @@ Verbindung gebunden und enthalten keine entschlüsselten Geschäftsdaten.
 
 Für den Menüaufbau werden nur die Anlegenachweise gelesen. Bereiche ohne solche
 Nachweise sind bereits durch die signierten Regeln abgedeckt und werden dafür
-nicht zusätzlich aufgelistet.
+nicht zusätzlich aufgelistet. Dieser Abruf bindet seine Seiten an die Version der
+Sammlung mit Anlegenachweisen statt an den gesamten Bereichskatalog. Neue
+Anlegenachweise oder geänderte Regeln verwerfen ihn weiterhin; ein reiner
+Schlüsselwechsel oder das Speichern eines Dokuments erfordert keinen erneuten
+Menüabruf.
 
 Neue Schlüsselbereiche werden in Stapeln mit höchstens 32 Definitionen
 veröffentlicht und anschließend anhand ihrer signierten Nachweise zurückgelesen.
 Auch Schlüsselhüllen, Integritätsnachweise und Benachrichtigungen gehören zur
 jeweiligen Transaktion; diese zusätzlichen Datensätze begrenzen die Stapelgröße.
+
+Bei geänderten Leserechten bündelt `zerotrust.access.publish` historische
+Schlüsselkopien und neue Bereichsdefinitionen in einer Transaktion. Die API
+prüft das aktuelle Administrationsrecht, die erwartete signierte Regelversion
+und die Leserechte aller Empfänger. Eine ungültige Signatur oder ein inzwischen
+entzogenes Recht verwirft den gesamten Stapel. Die Regeländerung selbst wird
+zuvor veröffentlicht; bis zum Abschluss eines nötigen Schlüsselwechsels bleibt
+der Bereich für neue Inhalte gesperrt.
+
+Der Client begrenzt einen Stapel auf 32 Schlüsselkopien beziehungsweise
+Bereichsdefinitionen zusammen und acht MiB. Die Kopien eines Bereichs bleiben
+mit dessen neuer Definition zusammen, solange sie in einen Stapel passen. Lange
+Historien werden aufgeteilt; gespeicherte Wechselmarkierungen erlauben die
+Fortsetzung. Nach jeder Veröffentlichung vergleicht der Client die vollständigen
+signierten Definitionen und verschlüsselten Schlüsselpakete mit den gesendeten
+Werten. Das gilt auch bei einer verlorenen Antwort. Die administrative Abfrage
+`zerotrust.keys.inspect` erlaubt diese Prüfung für die tatsächlichen Empfänger;
+sie erfordert deren aktuelles Leserecht und liefert keine entschlüsselten
+Schlüssel.
+
+Für höchstens 16 gezielt bearbeitete Bereiche werden nur deren Nachweise und
+offene Schlüsselwechsel nachgelesen. Größere Auswahlen und die allgemeine
+Fortsetzung prüfen das gesamte Verzeichnis. Eine zwischenzeitlich geänderte
+Regelversion erfordert eine neue Empfängerauswahl. Konflikte bei unveränderten
+Regeln und Schlüsselgenerationen werden höchstens zweimal wiederholt.
 
 Eine schreibende Transaktion prüft das äußere Schema, aktuelle Rechte und die
 maßgeblichen öffentlichen Ausgangsversionen. Sie sperrt die relevante

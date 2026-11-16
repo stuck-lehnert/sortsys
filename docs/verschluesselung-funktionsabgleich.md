@@ -40,9 +40,14 @@ aktuelle Rechte; mehrere Bereiche werden gemeinsam signiert. Fachliche
 Bedingungen über Geheimwerte prüft der Client. Die unabhängige Löschung von
 Unterzeilen benötigt teils noch feiner aufgeteilte Objekte.
 
-Das Veröffentlichen mehrerer Bereichsrechte kann im geprüften Musterbestand mehr
-als 20 Sekunden dauern. Historische Schlüsselkopien und Schlüsselwechsel werden
-dabei noch einzeln übertragen und zurückgelesen.
+Historische Schlüsselkopien und neue Schlüsselgenerationen werden gemeinsam in
+begrenzten Stapeln veröffentlicht. Die Nachprüfung liest nur die bearbeiteten
+Bereiche. Im echten Zwei-Nutzer-Browsertest mit dem Musterbestand werden zwei
+Werkzeugbereiche in einer Transaktion freigegeben; auch der spätere Rechteentzug
+und die erneute Vergabe bleiben innerhalb der normalen Wartezeit von 20 Sekunden.
+Das belegt keine feste Antwortzeit für größere Mandanten oder lange
+Schlüsselhistorien. Überschreitet eine Änderung die Stapelgrenze, besteht sie aus
+mehreren einzeln atomaren Transaktionen.
 
 **Menüs und Aktionsschaltflächen.** Die bereits verschlüsselten Stammdaten und
 Projektaktionen verwenden verifizierte Inhaltsfreigaben. Angebots- und

@@ -449,6 +449,18 @@ impl Transaction {
         self.scan_filtered(collection, None, after, limit).await
     }
 
+    /// Observe a collection's version without enumerating its full inventory.
+    /// The observation participates in this transaction's CAS validation.
+    pub async fn collection_version(&mut self, collection: &str) -> RpcResult<String> {
+        if let Some(version) = self.collections.get(collection) {
+            return Ok(version.clone());
+        }
+        Ok(self
+            .scan_with_limit::<serde_json::Value>(collection, None, 1)
+            .await?
+            .version)
+    }
+
     pub async fn scan_prefix<T: DeserializeOwned>(
         &mut self,
         collection: &str,

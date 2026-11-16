@@ -104,6 +104,10 @@ export type InvoicePayment = { id: Id, amount: string, paidOn: string, reference
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
+export type KeyGrant = { domain: string, generation: string, envelope: SealedBox, };
+
+export type KeyRecipientInput = { domain: string, generation: string, recipient: string, };
+
 export type Kind = "initialize" | "update" | "presence";
 
 export type Level = "error" | "warning";
@@ -338,6 +342,7 @@ export type QueryInputs = {
   "zerotrust.invitations.get": { id: string, };
   "zerotrust.invitations.list": void;
   "zerotrust.keys.get": { domain: string, generation: string, };
+  "zerotrust.keys.inspect": { keys: Array<KeyRecipientInput>, };
   "zerotrust.members.changeReceipt": { requestId: string, };
   "zerotrust.members.creation": { id: Id, };
   "zerotrust.members.list": { after: Id | null, };
@@ -480,6 +485,7 @@ export type QueryOutputs = {
   "zerotrust.invitations.get": { entry: Entry, history: TrustHistory, };
   "zerotrust.invitations.list": Array<{ invitation: Invitation, claim: Claim | null, accepted: boolean, completed: boolean, revoked: boolean, }>;
   "zerotrust.keys.get": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
+  "zerotrust.keys.inspect": Array<{ tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, }>;
   "zerotrust.members.changeReceipt": { tenant: string, generation: string, author: string, id: string, action: MemberAction, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
   "zerotrust.members.creation": { creation: MemberCreation, createdAt: string, };
   "zerotrust.members.list": { rows: Array<Member>, after: Id | null, };
@@ -669,6 +675,7 @@ export type MutationInputs = {
   "users.vacations.create": { operationId?: undefined | string; from: unknown; to: unknown; userId?: undefined | null | string; type?: undefined | "vacation" | "other"; label?: undefined | null | string; note?: undefined | null | string; };
   "users.vacations.delete": { id: string; expectedRevision?: undefined | string; };
   "users.vacations.deny": { id: string; expectedRevision?: undefined | string; reason: string; };
+  "zerotrust.access.publish": { policyVersion: string, grants: Array<KeyGrant>, domains: Array<DomainDefinition>, };
   "zerotrust.creations.grant": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
   "zerotrust.deliveryNotes.adopt": { context: string, generation: string, policyVersion: string, allocations: Array<DeliveryAllocation>, proof: string, };
   "zerotrust.deliveryNotes.allocate": { projectId: Id, requestId: string, generation: string, policyVersion: string, proof: string, };
@@ -879,6 +886,7 @@ export type MutationOutputs = {
   "users.vacations.create": { id: string; status: "denied" | "requested" | "approved"; };
   "users.vacations.delete": { success: true; };
   "users.vacations.deny": { success: true; };
+  "zerotrust.access.publish": { success: true, };
   "zerotrust.creations.grant": { success: true, };
   "zerotrust.deliveryNotes.adopt": { success: true, };
   "zerotrust.deliveryNotes.allocate": { id: Id, projectId: Id, number: string, };

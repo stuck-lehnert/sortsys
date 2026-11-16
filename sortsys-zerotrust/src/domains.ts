@@ -35,4 +35,5 @@ export const {
   domainBoxSigner,
   createDomain,
   createDelegatedDomain,
+  rewrapDomainKey,
 } = sortsysDomainCodec;

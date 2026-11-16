@@ -74,6 +74,7 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
             | "owner-staging"
             | "owner-tool-batches"
             | "owner-access-pages"
+            | "owner-access-publications"
             | "owner-backup"
             | "owner-backup-archive" => "scripts/test-owner-setup.ts",
             "invitations" => "scripts/test-duckdb-invitations.ts",
@@ -99,6 +100,9 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
     }
     if mode == "owner-staging" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "staging-tenant");
+    }
+    if mode == "owner-access-publications" {
+        command.env("SORTSYS_NATIVE_AUTH_TENANT", "access-publications-tenant");
     }
     if mode == "owner-access-pages" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "access-pages-tenant");
@@ -134,6 +138,7 @@ async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
             | "owner-staging"
             | "owner-tool-batches"
             | "owner-access-pages"
+            | "owner-access-publications"
             | "owner-backup"
             | "owner-backup-archive"
     ) {
@@ -1259,4 +1264,31 @@ async fn access_inventories_page_across_api_instances_without_tracking_content_r
     let (first_url, _first_api) = api(auth_service(&settings, first)).await;
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     browser("owner-access-pages", &root, Some(&[first_url, second_url])).await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn access_publications_commit_grants_and_rotations_atomically_across_api_instances() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let mut settings = configuration(config);
+    settings.jwt_secret =
+        Arc::from(b"disposable-access-publication-signing-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    browser(
+        "owner-access-publications",
+        &root,
+        Some(&[first_url, second_url]),
+    )
+    .await;
 }

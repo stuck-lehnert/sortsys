@@ -549,6 +549,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected absence policy query: " + path);
       },
     };
@@ -706,6 +707,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected planning policy query: " + path);
       },
     };
@@ -894,6 +896,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected regie policy query: " + path);
       },
     };
@@ -1110,6 +1113,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected daily-report policy query: " + path);
       },
     };
@@ -1280,6 +1284,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected personnel policy query: " + path);
       },
     };
@@ -1447,6 +1452,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected tool policy query: " + path);
       },
     };
@@ -1698,6 +1704,7 @@ window.cryptoFixture = {
         }
         if (path === "zerotrust.policy.get") return [permissions, null];
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         throw new Error("Unexpected technical session query: " + path);
       },
     };
@@ -1945,6 +1952,7 @@ window.cryptoFixture = {
           ];
         }
         if (path === "zerotrust.creations.list") return [[], null];
+        if (path === "zerotrust.creations.origin") return [null, null];
         if (path === "zerotrust.policy.get") {
           const current = permissions;
           if (pause) {
@@ -3169,6 +3177,7 @@ window.cryptoFixture = {
         roles: [":admin"],
       },
       "zerotrust.creations.list": [],
+      "zerotrust.creations.origin": null,
       "zerotrust.status": { tenant: "test", phase: "active", profile: setup },
       "zerotrust.trust.history": history,
       "zerotrust.policy.get": permissions,

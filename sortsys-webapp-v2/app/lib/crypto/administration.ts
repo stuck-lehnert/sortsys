@@ -3,6 +3,7 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
 import { trustedHistory, unlockedAccount } from "./session";
 import { openAuthority } from "./setup";
+import { verifiedAccessContext } from "./accessContext";
 
 /** Administration needs both a live technical role and possession of the
  * pinned tenant authority. Neither an API-supplied user ID nor a role suffices. */
@@ -42,4 +43,33 @@ export async function administratorContext(
   const authority = await openAuthority(client, status.profile);
   live();
   return { account, session, history, authority, live };
+}
+
+/** Administrative operations use the same freshly checked public inventory as
+ * ordinary reads, including certified creation grants and conditional pages. */
+export async function administratorPolicyContext(
+  client: Client,
+  signal: AbortSignal,
+  domains?: readonly string[],
+) {
+  const context = await administratorContext(client, signal);
+  const selected = domains ? [...new Set(domains)] : [];
+  const verified = await verifiedAccessContext(
+    client,
+    signal,
+    selected.length > 0 && selected.length <= 16 ? { domains: selected } : {},
+  );
+  context.live();
+  if (
+    verified.account !== context.account ||
+    verified.subject !== `user:${context.session.user.id}`
+  )
+    throw new InvalidProtectedData();
+  return {
+    ...context,
+    history: verified.history,
+    permissions: verified.rootPolicy,
+    effective: verified.permissions,
+    domains: verified.domains,
+  };
 }

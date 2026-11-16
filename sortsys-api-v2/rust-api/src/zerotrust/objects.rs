@@ -135,6 +135,25 @@ struct KeyGrant {
     generation: String,
     envelope: SealedBox,
 }
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AccessPublicationInput {
+    policy_version: String,
+    grants: Vec<KeyGrant>,
+    domains: Vec<DomainDefinition>,
+}
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KeyRecipientInput {
+    domain: String,
+    generation: String,
+    recipient: String,
+}
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct KeyInspectionInput {
+    keys: Vec<KeyRecipientInput>,
+}
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct SaveInput {
@@ -395,7 +414,9 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .query_stub::<(), Vec<DomainInfo>>("zerotrust.domains.list")
         .mutation_stub::<DomainDefinition, Success>("zerotrust.domains.put")
         .mutation_stub::<DomainDefinitionsInput, Success>("zerotrust.domains.putMany")
+        .mutation_stub::<AccessPublicationInput, Success>("zerotrust.access.publish")
         .query_stub::<KeyInput, SealedBox>("zerotrust.keys.get")
+        .query_stub::<KeyInspectionInput, Vec<SealedBox>>("zerotrust.keys.inspect")
         .mutation_stub::<KeyGrant, Success>("zerotrust.keys.grant")
         .query_stub::<KeyInput, DomainDefinition>("zerotrust.domains.get")
         .mutation_stub::<SaveInput, Success>("zerotrust.objects.save")

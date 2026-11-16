@@ -174,6 +174,7 @@ async fn body_limit(mut request: Request, next: Next) -> Response {
                         | "zerotrust.objects.batch"
                         | "zerotrust.domains.put"
                         | "zerotrust.domains.putMany"
+                        | "zerotrust.access.publish"
                         | "zerotrust.recovery.begin"
                 )
             })

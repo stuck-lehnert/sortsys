@@ -345,6 +345,8 @@ pub(in crate::zerotrust) fn register(
     let domains = Arc::clone(&service);
     let domain_set = Arc::clone(&service);
     let domain_batch = Arc::clone(&service);
+    let access_publish = Arc::clone(&service);
+    let key_inspection = Arc::clone(&service);
     let keys = Arc::clone(&service);
     let key_grant = Arc::clone(&service);
     let definitions = Arc::clone(&service);
@@ -431,6 +433,20 @@ pub(in crate::zerotrust) fn register(
             move |ctx, input: DomainDefinitionsInput| {
                 let service = Arc::clone(&domain_batch);
                 async move { put_domains(&service, &ctx, input.domains).await }
+            },
+        )
+        .mutation(
+            "zerotrust.access.publish",
+            move |ctx, input: AccessPublicationInput| {
+                let service = Arc::clone(&access_publish);
+                async move { publish_access(&service, &ctx, input).await }
+            },
+        )
+        .query(
+            "zerotrust.keys.inspect",
+            move |ctx, input: KeyInspectionInput| {
+                let service = Arc::clone(&key_inspection);
+                async move { inspect_keys(&service, &ctx, input).await }
             },
         )
         .query("zerotrust.domains.get", move |ctx, input: KeyInput| {
@@ -1038,6 +1054,12 @@ async fn grant_key(
 ) -> RpcResult<Success> {
     let mut context = context(service, request).await?;
     admin(&context.auth)?;
+    grant_key_in_transaction(&mut context, input).await?;
+    context.transaction.commit().await?;
+    Ok(Success { success: true })
+}
+
+async fn grant_key_in_transaction(context: &mut MetadataContext, input: KeyGrant) -> RpcResult<()> {
     let guard = &context.security;
     let mut area = domain(&mut context.transaction, &input.domain).await?;
     if revision(&input.generation)? > revision(&area.generation)?
@@ -1098,8 +1120,128 @@ async fn grant_key(
         "account",
         &serde_json::json!({"subject": input.envelope.recipient}),
     )?;
-    context.transaction.commit().await?;
+    Ok(())
+}
+
+/// Related historical envelopes and replacement generations become visible in
+/// one commit. Every grant and definition still uses the current signed policy.
+async fn publish_access(
+    service: &AuthService,
+    request: &RequestContext,
+    input: AccessPublicationInput,
+) -> RpcResult<Success> {
+    revision(&input.policy_version)?;
+    let operations = input
+        .grants
+        .len()
+        .checked_add(input.domains.len())
+        .ok_or_else(invalid)?;
+    if operations == 0 || operations > 32 {
+        return Err(invalid());
+    }
+    let mut grants = BTreeSet::new();
+    let mut definitions = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+    for grant in &input.grants {
+        identifier(&grant.domain)?;
+        revision(&grant.generation)?;
+        identifier(&grant.envelope.recipient)?;
+        if !grants.insert((&grant.domain, &grant.generation, &grant.envelope.recipient)) {
+            return Err(invalid());
+        }
+        selected.insert(grant.domain.clone());
+    }
+    for definition in &input.domains {
+        identifier(&definition.id)?;
+        if !definitions.insert(&definition.id) {
+            return Err(invalid());
+        }
+        selected.insert(definition.id.clone());
+    }
+    let selected: Vec<String> = selected.into_iter().collect();
+    let mut context = metadata_context_for_domains(service, request, Some(&selected)).await?;
+    admin(&context.auth)?;
+    if context.security.policy.version != input.policy_version {
+        return Err(conflict());
+    }
+    let has_grants = !input.grants.is_empty();
+    for grant in input.grants {
+        grant_key_in_transaction(&mut context, grant).await?;
+    }
+    let mut changed = has_grants;
+    for definition in input.domains {
+        changed |= put_domain_in_transaction(&mut context, definition).await?;
+    }
+    if changed {
+        context.transaction.commit().await?;
+    } else {
+        context.transaction.validate().await?;
+    }
     Ok(Success { success: true })
+}
+
+/// Administrators can verify encrypted packets for their actual recipients
+/// without impersonating them or obtaining any recipient's private key.
+async fn inspect_keys(
+    service: &AuthService,
+    request: &RequestContext,
+    input: KeyInspectionInput,
+) -> RpcResult<Vec<SealedBox>> {
+    if input.keys.is_empty() || input.keys.len() > 32 {
+        return Err(invalid());
+    }
+    let mut references = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+    for reference in &input.keys {
+        identifier(&reference.domain)?;
+        revision(&reference.generation)?;
+        identifier(&reference.recipient)?;
+        if !references.insert((
+            &reference.domain,
+            &reference.generation,
+            &reference.recipient,
+        )) {
+            return Err(invalid());
+        }
+        selected.insert(reference.domain.clone());
+    }
+    let selected: Vec<String> = selected.into_iter().collect();
+    let mut context = metadata_context_for_domains(service, request, Some(&selected)).await?;
+    admin(&context.auth)?;
+    let mut result = Vec::new();
+    for reference in input.keys {
+        let area = domain(&mut context.transaction, &reference.domain).await?;
+        if !context
+            .security
+            .allows(&reference.recipient, &area.scope, area.facet, Action::Read)
+        {
+            return Err(forbidden());
+        }
+        if !area.definitions.contains_key(&reference.generation) {
+            return Err(not_found());
+        }
+        let envelope: SealedBox = context
+            .transaction
+            .read(envelope_key(
+                &reference.domain,
+                &reference.generation,
+                &reference.recipient,
+            )?)
+            .await?
+            .ok_or_else(not_found)?;
+        envelope.frame()?;
+        if envelope.tenant != context.auth.tenant
+            || envelope.object != reference.domain
+            || envelope.generation != reference.generation
+            || envelope.recipient != reference.recipient
+            || envelope.purpose != "area-key"
+        {
+            return Err(invalid());
+        }
+        result.push(envelope);
+    }
+    context.transaction.validate().await?;
+    Ok(result)
 }
 
 pub(in crate::zerotrust) fn register_creation(

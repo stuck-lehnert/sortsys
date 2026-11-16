@@ -1,4 +1,4 @@
-import { boxFrame, sealBox, sealedBox } from "../boxes";
+import { boxFrame, openBox, sealBox, sealedBox } from "../boxes";
 import type { SealedBox } from "../boxes";
 import {
   frame,
@@ -424,6 +424,97 @@ export function createDomainCodec<
     }
   }
 
+  /** Rewrap one authenticated area key for recipients selected by the caller's
+   * verified policy. No raw key is returned; the owned temporary buffer is
+   * cleared on success, failure and cancellation. No network dependency. */
+  async function rewrapDomainKey(input: {
+    definition: unknown;
+    area: {
+      tenant: string;
+      id: string;
+      scope: string;
+      facet: F;
+      generation: string;
+    };
+    envelope: unknown;
+    owner: { subject: string; privateKey: CryptoKey };
+    authority: { generation: string; privateKey: CryptoKey };
+    history: (generation: string) => CryptoKey;
+    readers: readonly { subject: string; identity: PublicIdentity }[];
+    signal?: AbortSignal;
+    live?: () => void;
+  }): Promise<SealedBox[]> {
+    const checkpoint = () => {
+      input.signal?.throwIfAborted();
+      input.live?.();
+    };
+    checkpoint();
+    identifier(input.owner.subject);
+    revision(input.authority.generation);
+    if (input.readers.length > 10000) throw new InvalidProtectedData();
+    const subjects = new Set<string>();
+    const readers = input.readers.map((reader) => {
+      identifier(reader.subject);
+      if (subjects.has(reader.subject)) throw new InvalidProtectedData();
+      subjects.add(reader.subject);
+      sized(reader.identity.encryptionKey, 32);
+      return {
+        subject: reader.subject,
+        encryptionKey: reader.identity.encryptionKey,
+      };
+    });
+    const area = { ...input.area };
+    const definition = await verifyDomain(
+      input.definition,
+      area,
+      input.history,
+    );
+    checkpoint();
+    const envelope = sealedBox(input.envelope);
+    const raw = await openBox(
+      envelope,
+      {
+        tenant: area.tenant,
+        purpose: "area-key",
+        object: area.id,
+        generation: area.generation,
+        recipient: input.owner.subject,
+        author: envelope.author,
+      },
+      input.owner.privateKey,
+      await domainBoxSigner(definition, envelope, input.history),
+    );
+    try {
+      checkpoint();
+      if (raw.length !== 32) throw new InvalidProtectedData();
+      const grants: SealedBox[] = [];
+      for (const reader of readers) {
+        checkpoint();
+        grants.push(
+          await sealBox(
+            {
+              tenant: area.tenant,
+              purpose: "area-key",
+              object: area.id,
+              generation: area.generation,
+              recipient: reader.subject,
+              author: `authority:${input.authority.generation}`,
+            },
+            raw,
+            await hpke.kem.deserializePublicKey(
+              sized(reader.encryptionKey, 32),
+            ),
+            input.authority.privateKey,
+          ),
+        );
+        checkpoint();
+      }
+      return grants;
+    } finally {
+      raw.fill(0);
+    }
+  }
+
   return Object.freeze({
     verifyDomain,
     domainFrame,
@@ -431,6 +522,7 @@ export function createDomainCodec<
     domainBoxSigner,
     createDomain,
     createDelegatedDomain,
+    rewrapDomainKey,
   });
 }
 

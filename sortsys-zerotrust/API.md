@@ -218,6 +218,23 @@ festgelegten Leser und den Recovery-Schlüssel. Delegiertes Anlegen benötigt
 einen ausdrücklich angebundenen `domainCreation`-Prüfer. Ohne ihn werden
 fremde Herkunftsnachweise abgelehnt.
 
+`security.domains.rewrapDomainKey` verteilt einen bereits bestehenden
+Bereichsschlüssel an zusätzliche Empfänger. Die Anwendung übergibt die erwartete
+Bereichskennung, die signierte Definition, das eigene Schlüsselpaket und die aus
+geprüften Regeln und Zertifikaten abgeleiteten Leser. Die Funktion prüft
+Definition und Paket, öffnet den Schlüssel im Browser und liefert neue
+HPKE-Schlüsselhüllen zurück. Ein Klartextschlüssel gehört nicht zum Ergebnis;
+der eigene temporäre Schlüsselpuffer wird auch bei Fehlern überschrieben.
+`signal` und der optionale `live`-Callback brechen den Vorgang ab, wenn das
+zugehörige Konto währenddessen gesperrt oder gewechselt wird. Der Callback muss
+diese Kontobindung prüfen; das Framework kennt weder Anmeldeoberfläche noch
+Anwendungskonten.
+
+Das Speichern der Hüllen bleibt Aufgabe des Adapters. Ein Adapter muss dabei
+aktuelle Rechte und die erwartete Regelversion nochmals in der schreibenden
+Transaktion prüfen. Bereitet der Browser mehrere Hüllen vor, erteilt deren
+Signatur allein keine Freigabe gegen eine inzwischen geänderte Richtlinie.
+
 `security.recovery.prepareRecovery` übernimmt den vollständigen veröffentlichten
 Schlüsselbestand, die bisherige und die neue Phrase sowie das neue Passwort.
 Die Funktion prüft den bisherigen Vertrauensanker, erhält historische Schlüssel

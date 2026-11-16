@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryResult } from "@sortsys/v2-client";
 import {
   InvalidProtectedData,
   base64,
@@ -13,6 +13,28 @@ import { mapConcurrent } from "./runtime/concurrentReads";
 // Recipient envelopes, integrity witnesses and notifications all participate in
 // the same server transaction. Its record budget also bounds small definitions.
 const MAX_DEFINITIONS_PER_BATCH = 32;
+
+/** Compare the complete signed frame with a locally prepared definition. A
+ * matching signature alone must not hide substituted envelope fields. */
+export async function sameDomainDefinition(
+  saved: QueryResult<"zerotrust.domains.get">,
+  expected: DomainDefinition,
+): Promise<boolean> {
+  if (saved.proof !== expected.proof) return false;
+  const [actualFrame, expectedFrame] = await Promise.all([
+    domainFrame({
+      ...saved,
+      envelopes: saved.envelopes.map(sealedBox),
+      recoveryEnvelope: sealedBox(saved.recoveryEnvelope),
+      creation:
+        saved.creation === undefined
+          ? undefined
+          : creationOrigin(saved.creation),
+    }),
+    domainFrame(expected),
+  ]);
+  return base64(actualFrame) === base64(expectedFrame);
+}
 
 /** Related public key definitions become visible in one transaction.
  * Confirm their exact signed proofs, including after a lost acknowledgement. */
@@ -58,20 +80,9 @@ export async function publishDomainDefinitions(
       live();
       if (!saved || saved.proof !== definition.proof)
         throw failure ?? error ?? new InvalidProtectedData();
-      const [actual, expected] = await Promise.all([
-        domainFrame({
-          ...saved,
-          envelopes: saved.envelopes.map(sealedBox),
-          recoveryEnvelope: sealedBox(saved.recoveryEnvelope),
-          creation:
-            saved.creation === undefined
-              ? undefined
-              : creationOrigin(saved.creation),
-        }),
-        domainFrame(definition),
-      ]);
+      const matches = await sameDomainDefinition(saved, definition);
       live();
-      if (base64(actual) !== base64(expected)) throw new InvalidProtectedData();
+      if (!matches) throw new InvalidProtectedData();
     });
   }
   const encoder = new TextEncoder();

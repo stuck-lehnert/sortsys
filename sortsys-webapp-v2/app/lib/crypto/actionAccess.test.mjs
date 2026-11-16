@@ -1,4 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
+import { RpcClientError } from "@sortsys/v2-client";
+import { administratorPolicyContext } from "./administration";
+import { verifiedAccessContext } from "./accessContext";
 import {
   ACTIONS,
   base64,
@@ -27,6 +30,7 @@ import {
 } from "./permissions";
 import { MASTER_DATA_AREAS, profilePatch } from "./accessProfiles";
 import { projectAccessArea } from "../data/projectScope";
+import { accessSnapshotFixture } from "../data/testing/accessSnapshot.mjs";
 const PHRASE =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 afterEach(() => lockCryptoSession());
@@ -92,6 +96,7 @@ async function fixture() {
     }),
     false,
   );
+  const snapshots = [];
   const calls = [],
     saved = [],
     capabilities = new Map(),
@@ -101,6 +106,13 @@ async function fixture() {
     async invalidate() {},
     async query(path, input) {
       calls.push(path);
+      if (
+        path === "zerotrust.access.snapshot" ||
+        path === "zerotrust.access.page"
+      ) {
+        snapshots.push(structuredClone(input));
+        return accessSnapshotFixture(client, input);
+      }
       if (path === "auth.sessionInfo")
         return [
           { user: { id: "1", username: "owner" }, roles: [":admin"] },
@@ -117,6 +129,7 @@ async function fixture() {
       if (path === "zerotrust.policy.get") return [permissions, null];
       if (path === "zerotrust.status") return [{ profile: setup }, null];
       if (path === "zerotrust.creations.list") return [[], null];
+      if (path === "zerotrust.creations.origin") return [null, null];
       if (path === "zerotrust.creations.capability") {
         return [capabilities.get(input.namespace) ?? null, null];
       }
@@ -178,6 +191,7 @@ async function fixture() {
     saved,
     calls,
     capabilities,
+    snapshots,
     get: () => permissions,
     setPolicy: (value) => {
       permissions = value;
@@ -195,6 +209,7 @@ async function rotationFixture(conflict = false) {
   const definitions = new Map();
   const pending = new Set(areas.map((area) => area.domain));
   const grants = [];
+  const publishedKeys = new Map();
   for (const area of areas) {
     const { definition } = await createDomain({
       tenant: "test",
@@ -215,6 +230,15 @@ async function rotationFixture(conflict = false) {
   }
   const query = f.client.query;
   f.client.query = async (path, input) => {
+    if (path === "zerotrust.keys.inspect") {
+      f.calls.push(path);
+      return [
+        input.keys.map((key) =>
+          publishedKeys.get(`${key.domain}:${key.generation}:${key.recipient}`),
+        ),
+        null,
+      ];
+    }
     if (path === "zerotrust.domains.list") {
       f.calls.push(path);
       return [
@@ -250,39 +274,19 @@ async function rotationFixture(conflict = false) {
   };
   const mutate = f.client.mutate;
   f.client.mutate = async (path, input) => {
-    if (path === "zerotrust.keys.grant") {
+    if (path === "zerotrust.access.publish") {
       f.calls.push(path);
-      const original = definitions.get(`${input.domain}:${input.generation}`);
-      const binding = {
-        tenant: "test",
-        purpose: "area-key",
-        object: input.domain,
-        generation: input.generation,
-        author: "authority:1",
-      };
-      const before = await openBox(
-        original.envelopes[0],
-        { ...binding, recipient: "user:1" },
-        f.owner.encryptionKey.privateKey,
-        f.authorityKey.publicKey,
-      );
-      const shared = await openBox(
-        input.envelope,
-        { ...binding, recipient: "user:2" },
-        f.member.encryptionKey.privateKey,
-        f.authorityKey.publicKey,
-      );
-      try {
-        expect(shared).toEqual(before);
-      } finally {
-        before.fill(0);
-        shared.fill(0);
+      if (f.state.publicationConflicts > 0) {
+        f.state.publicationConflicts--;
+        return [
+          null,
+          new RpcClientError({
+            message: "Concurrent catalogue update",
+            code: -32009,
+            data: { code: "CONFLICT" },
+          }),
+        ];
       }
-      grants.push(input);
-      return [{ success: true }, null];
-    }
-    if (path === "zerotrust.domains.put") {
-      f.calls.push(path);
       if (conflict) {
         conflict = false;
         const { signature, ...previous } = f.get();
@@ -301,26 +305,131 @@ async function rotationFixture(conflict = false) {
         return [null, new Error("Concurrent policy change")];
       }
       expect(input.policyVersion).toBe(f.get().version);
-      expect(input.generation).toBe("2");
-      await verifyDomain(
-        input,
-        {
+      for (const grant of input.grants) {
+        const original = definitions.get(`${grant.domain}:${grant.generation}`);
+        const binding = {
           tenant: "test",
-          id: input.id,
-          scope: input.scope,
-          facet: input.facet,
-          generation: "2",
-        },
-        () => f.authorityKey.publicKey,
-      );
-      definitions.set(`${input.id}:2`, input);
-      pending.delete(input.id);
+          purpose: "area-key",
+          object: grant.domain,
+          generation: grant.generation,
+          author: "authority:1",
+        };
+        const before = await openBox(
+          original.envelopes[0],
+          { ...binding, recipient: "user:1" },
+          f.owner.encryptionKey.privateKey,
+          f.authorityKey.publicKey,
+        );
+        const shared = await openBox(
+          grant.envelope,
+          { ...binding, recipient: "user:2" },
+          f.member.encryptionKey.privateKey,
+          f.authorityKey.publicKey,
+        );
+        try {
+          expect(shared).toEqual(before);
+        } finally {
+          before.fill(0);
+          shared.fill(0);
+        }
+      }
+      for (const definition of input.domains) {
+        expect(definition.policyVersion).toBe(f.get().version);
+        expect(definition.generation).toBe("2");
+        await verifyDomain(
+          definition,
+          {
+            tenant: "test",
+            id: definition.id,
+            scope: definition.scope,
+            facet: definition.facet,
+            generation: "2",
+          },
+          () => f.authorityKey.publicKey,
+        );
+      }
+      for (const grant of input.grants) {
+        grants.push(grant);
+        publishedKeys.set(
+          `${grant.domain}:${grant.generation}:${grant.envelope.recipient}`,
+          grant.envelope,
+        );
+      }
+      for (const definition of input.domains) {
+        definitions.set(`${definition.id}:2`, definition);
+        pending.delete(definition.id);
+      }
       return [{ success: true }, null];
     }
     return mutate(path, input);
   };
-  return { ...f, definitions, grants };
+  return { ...f, definitions, grants, pending };
 }
+
+test("administration binds independently valid metadata to the same technical account", async () => {
+  const f = await fixture();
+  const alias = await certifyIdentity(
+    {
+      tenant: "test",
+      generation: "1",
+      user: "user:3",
+      ...(await publicIdentity(f.owner)),
+    },
+    f.authorityKey.privateKey,
+  );
+  const query = f.client.query;
+  f.client.query = async (path, input) => {
+    const [value, error] = await query(path, input);
+    if (error) return [value, error];
+    if (path === "zerotrust.trust.history")
+      return [{ ...value, identities: [...value.identities, alias] }, null];
+    if (path === "zerotrust.access.snapshot")
+      return [{ ...value, subject: "user:3" }, null];
+    return [value, null];
+  };
+  expect(
+    (await verifiedAccessContext(f.client, new AbortController().signal))
+      .subject,
+  ).toBe("user:3");
+  await expect(
+    administratorPolicyContext(f.client, new AbortController().signal),
+  ).rejects.toThrow();
+});
+
+test("scoped completion checks only edited areas and preserves another pending rotation", async () => {
+  const f = await rotationFixture();
+  await finishAccessChanges(f.client, new AbortController().signal, [
+    f.a.domain,
+  ]);
+  expect(f.definitions.has(`${f.a.domain}:2`)).toBe(true);
+  expect(f.definitions.has(`${f.b.domain}:2`)).toBe(false);
+  expect(f.pending.has(f.b.domain)).toBe(true);
+  expect(f.snapshots.length).toBeGreaterThan(0);
+  expect(
+    f.snapshots.every(
+      (input) => input.domains?.length === 1 && input.domains[0] === f.a.domain,
+    ),
+  ).toBe(true);
+});
+
+test("unrelated catalogue conflicts retry from fresh input and remain bounded", async () => {
+  const f = await rotationFixture();
+  f.state.publicationConflicts = 1;
+  await finishAccessChanges(f.client, new AbortController().signal);
+  expect(f.pending.size).toBe(0);
+  expect(
+    f.calls.filter((path) => path === "zerotrust.access.publish"),
+  ).toHaveLength(2);
+  const blocked = await rotationFixture();
+  blocked.state.publicationConflicts = 10;
+  await expect(
+    finishAccessChanges(blocked.client, new AbortController().signal),
+  ).rejects.toBeInstanceOf(RpcClientError);
+  expect(
+    blocked.calls.filter((path) => path === "zerotrust.access.publish"),
+  ).toHaveLength(3);
+  expect(blocked.pending.size).toBe(2);
+});
 
 for (const conflict of [false, true]) {
   test(`key changes reuse one member directory and revalidate a changed policy${conflict ? " after a concurrent revocation" : ""}`, async () => {
@@ -341,6 +450,17 @@ for (const conflict of [false, true]) {
       else expect(recipients).toEqual(["user:1", "user:2"]);
     }
     expect(f.grants.length).toBeGreaterThan(0);
+    expect(
+      f.calls.filter((path) => path === "zerotrust.access.publish"),
+    ).toHaveLength(conflict ? 2 : 1);
+    expect(
+      f.calls.some(
+        (path) =>
+          path === "zerotrust.keys.grant" || path === "zerotrust.domains.put",
+      ),
+    ).toBe(false);
+    if (conflict)
+      expect(f.grants.some((grant) => grant.domain === f.b.domain)).toBe(false);
   });
 }
 test("multiple edited areas publish one signed policy and preserve unedited custom actions and denials", async () => {

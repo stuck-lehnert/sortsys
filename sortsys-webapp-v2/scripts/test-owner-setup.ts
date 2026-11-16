@@ -54,7 +54,11 @@ globalThis.fetch = new Proxy(originalFetch, {
     const body = options?.body;
     if (typeof body === "string") requests.push(body);
     if (
-      ["owner-tool-batches", "owner-access-pages"].includes(mode) &&
+      [
+        "owner-tool-batches",
+        "owner-access-pages",
+        "owner-access-publications",
+      ].includes(mode) &&
       url.searchParams.has("input")
     ) {
       requests.push(url.searchParams.get("input")!);
@@ -275,6 +279,15 @@ try {
     await exerciseRpcBatching(owner, rpcTransmissions);
     const { exerciseNativeStaging } = await import("./test-native-staging");
     await exerciseNativeStaging(owner, peer, draft);
+  } else if (mode === "owner-access-publications") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseNativeAccessPublications } =
+      await import("./test-native-access-publications");
+    await exerciseNativeAccessPublications(owner, peer, (hook) => {
+      requestHook = hook;
+    });
   } else if (mode === "owner-access-pages") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");
@@ -338,6 +351,12 @@ try {
           "Tool booking plaintext must stay in the browser: " + marker,
         );
       }
+    }
+    if (mode === "owner-access-publications") {
+      assert.equal(
+        body.includes("Private batched permission record 591274"),
+        false,
+      );
     }
     if (mode === "owner-access-pages") {
       assert.equal(

@@ -38,6 +38,20 @@ pub(super) async fn metadata_security_for_domains(
     auth: &AuthResult,
     domains: Option<&[String]>,
 ) -> RpcResult<Security> {
+    metadata_security_for_selection(transaction, auth, domains, DomainReads::WithHeads).await
+}
+
+enum DomainReads {
+    WithHeads,
+    OriginsOnly,
+}
+
+async fn metadata_security_for_selection(
+    transaction: &mut crate::control::Transaction,
+    auth: &AuthResult,
+    domains: Option<&[String]>,
+    domain_reads: DomainReads,
+) -> RpcResult<Security> {
     use crate::control::{accounts, key};
     let (account, _) = accounts::checked_session(transaction, auth).await?;
     let stored = super::setup::metadata_root(transaction, &auth.tenant).await?;
@@ -49,7 +63,9 @@ pub(super) async fn metadata_security_for_domains(
         let origins = format!("created-areas-{generation}");
         for domain in domains {
             records.push(key(&origins, domain));
-            records.push(key("domains", domain));
+            if matches!(domain_reads, DomainReads::WithHeads) {
+                records.push(key("domains", domain));
+            }
         }
     }
     transaction.prefetch(records).await?;
@@ -141,9 +157,28 @@ impl MetadataRequest {
         })
     }
 
-    pub async fn authorize(mut self, domains: Option<&[String]>) -> RpcResult<MetadataContext> {
-        let security =
-            metadata_security_for_domains(&mut self.transaction, &self.auth, domains).await?;
+    pub async fn authorize(self, domains: Option<&[String]>) -> RpcResult<MetadataContext> {
+        self.authorize_for(domains, DomainReads::WithHeads).await
+    }
+
+    /// A public origin inventory does not depend on mutable content heads.
+    pub async fn authorize_origins(self, domains: &[String]) -> RpcResult<MetadataContext> {
+        self.authorize_for(Some(domains), DomainReads::OriginsOnly)
+            .await
+    }
+
+    async fn authorize_for(
+        mut self,
+        domains: Option<&[String]>,
+        domain_reads: DomainReads,
+    ) -> RpcResult<MetadataContext> {
+        let security = metadata_security_for_selection(
+            &mut self.transaction,
+            &self.auth,
+            domains,
+            domain_reads,
+        )
+        .await?;
         Ok(MetadataContext {
             auth: self.auth,
             transaction: self.transaction,

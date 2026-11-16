@@ -36,7 +36,7 @@ async fn inventory_page(
             identifier(&origin.id)?;
             domains.push(origin.id);
         }
-        let context = request.authorize(Some(&domains)).await?;
+        let context = request.authorize_origins(&domains).await?;
         return Ok((context, domains, page.after));
     }
     let page = request
@@ -76,6 +76,16 @@ async fn snapshot(
         super::super::setup::metadata_root(&mut context.transaction, &context.auth.tenant).await?;
     let mut roles = context.auth.roles.clone();
     roles.sort();
+    let source_version = if include_domains {
+        root.catalog_version.clone()
+    } else {
+        context
+            .transaction
+            .collection_version(&registry::origin_collection(
+                context.security.root.generation,
+            ))
+            .await?
+    };
     let identity = serde_json::to_string(&(
         "sortsys/access-inventory/v1",
         &context.auth.tenant,
@@ -86,7 +96,7 @@ async fn snapshot(
         &context.security.signing_key,
         &root.profile.authority.signature,
         &context.security.policy.signature,
-        &root.catalog_version,
+        source_version,
         include_domains,
         selected,
     ))

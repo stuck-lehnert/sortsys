@@ -412,6 +412,21 @@ export async function exerciseNativeAccessPages(
       "Key grants cannot reuse an old verified inventory",
     );
     assert.notEqual(changed.snapshot, complete.first.snapshot);
+    const stableMenu = await required(
+      owner.query(
+        "zerotrust.access.snapshot",
+        {
+          includeDomains: false,
+          known: menu.first.snapshot,
+        },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.equal(
+      stableMenu.unchanged,
+      true,
+      "Key rotations do not change the certified origin inventory used by menus",
+    );
     const beforePolicy = await required(
       owner.query(
         "zerotrust.access.snapshot",
@@ -428,6 +443,21 @@ export async function exerciseNativeAccessPages(
       (await continuePage(beforePolicy.snapshot))[1]?.code,
       "CONFLICT",
     );
+    const menuAfterPolicy = await required(
+      owner.query(
+        "zerotrust.access.snapshot",
+        {
+          includeDomains: false,
+          known: menu.first.snapshot,
+        },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.equal(
+      menuAfterPolicy.unchanged,
+      false,
+      "Policy changes still invalidate menu proofs",
+    );
     const beforeRegistration = await required(
       owner.query(
         "zerotrust.access.snapshot",
@@ -439,6 +469,21 @@ export async function exerciseNativeAccessPages(
     assert.equal(
       (await continuePage(beforeRegistration.snapshot))[1]?.code,
       "CONFLICT",
+    );
+    const menuAfterOrigin = await required(
+      owner.query(
+        "zerotrust.access.snapshot",
+        {
+          includeDomains: false,
+          known: menuAfterPolicy.snapshot,
+        },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.equal(
+      menuAfterOrigin.unchanged,
+      false,
+      "A new certified origin cannot reuse a stale menu inventory",
     );
     const selected = await required(
       owner.query(
