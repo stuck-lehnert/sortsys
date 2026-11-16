@@ -3,7 +3,6 @@ import {
   identifier,
   InvalidProtectedData,
   record,
-  revision,
   signedPacketFrame,
 } from "./encoding";
 import { importSigningKey, sign } from "./identity";
@@ -11,8 +10,10 @@ import {
   publicProofDigest as digest,
   verifyPublicProof as verify,
 } from "./publicProofs";
-import { identityCertificateFrame } from "./authority";
-import type { IdentityCertificate } from "./authority";
+import {
+  createDelegationCodec,
+  type DelegationCertificate,
+} from "./core/delegations";
 import type { Rule } from "./policy";
 import type { Facet } from "./objects";
 
@@ -94,15 +95,7 @@ export function creationFacets(scope: unknown): readonly Facet[] {
     ? PROJECT_MODULE_FACETS[resource.module]
     : CREATION_FACETS[resource.namespace];
 }
-export type CreationCapability = {
-  tenant: string;
-  id: string;
-  generation: string;
-  namespace: CreationNamespace;
-  creator: IdentityCertificate;
-  readers: IdentityCertificate[];
-  signature: string;
-};
+export type CreationCapability = DelegationCertificate<CreationNamespace>;
 export type CreationParent = {
   tenant: string;
   id: string;
@@ -113,103 +106,27 @@ export type CreationParent = {
 };
 export type CreationOrigin = CreationParent & { parent?: CreationParent };
 
-function identity(input: unknown): IdentityCertificate {
-  const value = record(input, [
-    "tenant",
-    "generation",
-    "user",
-    "encryptionKey",
-    "signingKey",
-    "signature",
-  ]) as IdentityCertificate;
-  identityCertificateFrame(value);
-  if (typeof value.signature !== "string") throw new InvalidProtectedData();
-  return { ...value };
-}
-export function creationCapability(input: unknown): CreationCapability {
-  const value = record(input, [
-    "tenant",
-    "id",
-    "generation",
-    "namespace",
-    "creator",
-    "readers",
-    "signature",
-  ]);
-  identifier(value.tenant);
-  identifier(value.id);
-  revision(value.generation);
-  if (
-    typeof value.namespace !== "string" ||
-    !Object.hasOwn(CREATION_FACETS, value.namespace) ||
-    !Array.isArray(value.readers) ||
-    !value.readers.length ||
-    value.readers.length > 8 ||
-    typeof value.signature !== "string"
-  )
-    throw new InvalidProtectedData();
-  const creator = identity(value.creator),
-    readers = value.readers.map(identity);
-  if (
-    [creator, ...readers].some(
-      (member) =>
-        member.tenant !== value.tenant ||
-        member.generation !== value.generation,
-    ) ||
-    new Set(readers.map((member) => member.user)).size !== readers.length
-  )
-    throw new InvalidProtectedData();
-  return {
-    tenant: value.tenant,
-    id: value.id,
-    generation: value.generation,
-    namespace: value.namespace as CreationNamespace,
-    creator,
-    readers,
-    signature: value.signature,
-  };
-}
-export async function creationCapabilityFrame(
-  input: Omit<CreationCapability, "signature">,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const value = creationCapability({ ...input, signature: "" });
-  const hashes = await Promise.all(
-    [value.creator, ...value.readers].map((member) =>
-      digest(
-        signedPacketFrame(identityCertificateFrame(member), member.signature),
-      ),
-    ),
-  );
-  return frame("sortsys/creation-capability/v1", [
-    value.tenant,
-    value.id,
-    value.generation,
-    value.namespace,
-    ...hashes,
-  ]);
-}
+const delegations = createDelegationCodec(
+  Object.keys(CREATION_FACETS) as CreationNamespace[],
+);
+export const creationCapability = delegations.parse;
+export const creationCapabilityFrame = delegations.frame;
+export const certifyCreationCapability = delegations.certify;
 export async function verifyCreationCapability(
   input: unknown,
   authority: CryptoKey,
 ): Promise<CreationCapability> {
   const value = creationCapability(input);
-  await verify(
+  return delegations.verify(
+    value,
+    {
+      tenant: value.tenant,
+      generation: value.generation,
+      namespace: value.namespace,
+      creator: value.creator.user,
+    },
     authority,
-    value.signature,
-    await creationCapabilityFrame(value),
   );
-  for (const member of [value.creator, ...value.readers])
-    await verify(authority, member.signature, identityCertificateFrame(member));
-  return value;
-}
-export async function certifyCreationCapability(
-  input: Omit<CreationCapability, "signature">,
-  authority: CryptoKey,
-): Promise<CreationCapability> {
-  return {
-    ...creationCapability({ ...input, signature: "" }),
-    signature: await sign(authority, await creationCapabilityFrame(input)),
-  };
 }
 export function creationOrigin(input: unknown): CreationOrigin {
   const hasParent =

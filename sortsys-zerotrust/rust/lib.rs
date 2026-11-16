@@ -4,6 +4,7 @@
 
 pub mod anchors;
 pub mod crypto;
+pub mod delegations;
 pub mod immutable;
 pub mod initialization;
 pub mod journal;

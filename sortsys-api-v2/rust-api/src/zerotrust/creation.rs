@@ -1,6 +1,6 @@
 //! Public, certified creation authority. No private tenant key is delegated.
 use super::{
-    crypto::{frame, invalid, revision, sized, verify},
+    crypto::{frame, invalid, sized, verify},
     objects::packet_hash,
     wire::{Action, Effect, Facet, IdentityCertificate, Rule},
 };
@@ -42,41 +42,32 @@ impl CreationCapability {
     pub fn creation_scope(&self) -> RpcResult<&'static str> {
         creation_scope(&self.namespace)
     }
+    fn as_protocol(&self) -> sortsys_zerotrust::delegations::DelegationRef<'_> {
+        sortsys_zerotrust::delegations::DelegationRef {
+            tenant: &self.tenant,
+            id: &self.id,
+            generation: &self.generation,
+            namespace: &self.namespace,
+            creator: &self.creator,
+            readers: &self.readers,
+            signature: &self.signature,
+        }
+    }
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
-        super::crypto::identifier(&self.tenant)?;
-        super::crypto::identifier(&self.id)?;
-        revision(&self.generation)?;
         self.creation_scope()?;
-        if self.readers.is_empty() || self.readers.len() > 8 {
-            return Err(invalid());
-        }
-        let mut seen = HashSet::new();
-        for reader in &self.readers {
-            if !seen.insert(&reader.user) {
-                return Err(invalid());
-            }
-        }
-        let mut hashes = Vec::new();
-        for member in std::iter::once(&self.creator).chain(&self.readers) {
-            if member.tenant != self.tenant || member.generation != self.generation {
-                return Err(invalid());
-            }
-            hashes.push(packet_hash(member.frame()?, &member.signature)?);
-        }
-        let mut fields = vec![
-            self.tenant.as_str(),
-            self.id.as_str(),
-            self.generation.as_str(),
-            self.namespace.as_str(),
-        ];
-        fields.extend(hashes.iter().map(String::as_str));
-        Ok(frame("sortsys/creation-capability/v1", &fields))
+        Ok(self.as_protocol().frame()?)
     }
     pub fn verify(&self, authority: &[u8]) -> RpcResult<()> {
-        verify(authority, &self.signature, &self.frame()?)?;
-        for member in std::iter::once(&self.creator).chain(&self.readers) {
-            member.verify(authority)?;
-        }
+        self.creation_scope()?;
+        self.as_protocol().verify(
+            &sortsys_zerotrust::delegations::DelegationContext {
+                tenant: &self.tenant,
+                generation: &self.generation,
+                namespace: &self.namespace,
+                creator: &self.creator.user,
+            },
+            authority,
+        )?;
         Ok(())
     }
 }

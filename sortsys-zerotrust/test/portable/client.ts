@@ -4,6 +4,8 @@ import {
   anchorFingerprint,
   base64,
   bytes,
+  certifyIdentity,
+  createDelegationCodec,
   createIdentity,
   createZeroTrust,
   digest,
@@ -32,6 +34,47 @@ export async function exerciseFramework() {
     facets: ["research-notes", "appointments"],
   });
   const identity = await createIdentity();
+  const delegate = await createIdentity();
+  const delegations = createDelegationCodec(["experiment", "appointment"]);
+  const delegation = await delegations.certify(
+    {
+      tenant: "laboratory:alpha",
+      id: "delegation:experiment42",
+      generation: "1",
+      namespace: "experiment",
+      creator: await certifyIdentity(
+        {
+          tenant: "laboratory:alpha",
+          generation: "1",
+          user: "researcher:kai",
+          ...(await publicIdentity(delegate)),
+        },
+        identity.signingKey.privateKey,
+      ),
+      readers: [
+        await certifyIdentity(
+          {
+            tenant: "laboratory:alpha",
+            generation: "1",
+            user: "researcher:lee",
+            ...(await publicIdentity(identity)),
+          },
+          identity.signingKey.privateKey,
+        ),
+      ],
+    },
+    identity.signingKey.privateKey,
+  );
+  await delegations.verify(
+    delegation,
+    {
+      tenant: "laboratory:alpha",
+      generation: "1",
+      namespace: "experiment",
+      creator: "researcher:kai",
+    },
+    identity.signingKey.publicKey,
+  );
   const key = await areaKey();
   const context = {
     tenant: "laboratory:alpha",
@@ -215,6 +258,7 @@ export async function exerciseFramework() {
   );
   return {
     signer: (await publicIdentity(identity)).signingKey,
+    delegation,
     object,
     policy,
     permanent,

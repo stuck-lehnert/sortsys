@@ -17,6 +17,7 @@ export * from "./policyTransactions";
 export * from "./core/objects";
 export * from "./core/policy";
 export * from "./core/certificates";
+export * from "./core/delegations";
 export * from "./core/framework";
 export * from "./core/store";
 export * from "./core/trustHistory";

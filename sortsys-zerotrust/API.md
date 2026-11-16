@@ -77,6 +77,32 @@ geprüft werden. Ohne diese Erweiterung werden Regeln mit `origin` abgelehnt.
 Benutzerkennungsformats. Dieselben fachlichen Beschränkungen müssen auch auf
 der Serverseite gelten.
 
+## Begrenzte Anlegedelegationen
+
+`createDelegationCodec(["patient-file", "appointment"])` prüft und signiert
+Delegationen für anwendungseigene Ressourcenarten. Ein Zertifikat benennt den
+Ersteller und ein bis acht verpflichtende Empfänger. Alle Identitätszertifikate
+müssen zum Mandanten und zur Autoritätsgeneration der Delegation gehören. Das
+Zertifikat enthält öffentliche Schlüssel und Signaturen; der private
+Autoritätsschlüssel bleibt bei der ausstellenden Stelle.
+
+`certify(input, authorityKey)` erzeugt den Nachweis. Zum Prüfen dient
+`verify(input, { tenant, generation, namespace, creator }, authorityKey)`.
+Der erwartete Kontext muss aus der geprüften Sitzung und dem beabsichtigten
+Vorgang stammen. Eine gültige Signatur allein erlaubt weder das Verteilen an
+weitere Empfänger noch das Ändern bestehender Ressourcen.
+
+Rust bietet dieselben Prüfungen mit `delegations::DelegationCertificate` und
+`DelegationContext`. Ein eigener Namespace-Enum kann beim Deserialisieren
+unbekannte Ressourcenarten ausschließen. `DelegationRef` bindet vorhandene
+Anwendungsstrukturen an denselben Prüfer, ohne Zertifikate zu kopieren. Die
+sortsys-API verwendet diesen Weg für Projekt-, Vorgangs- und Werkzeuganlagen.
+
+Die Anwendung muss den aktuellen Delegationsstand, das Anlegerecht und die
+Bindung an die neue Ressource in der Veröffentlichungstransaktion prüfen.
+Widerrufe, verbrauchte Einmalberechtigungen und Berechtigungen weiterer
+Empfänger sind damit noch nicht aus einem Signaturnachweis ableitbar.
+
 ## Wiederholte öffentliche Nachweise
 
 Zertifikate, Rechteregeln und Schlüsselumschläge enthalten öffentliche Metadaten

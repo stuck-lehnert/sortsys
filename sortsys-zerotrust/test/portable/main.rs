@@ -2,6 +2,7 @@ use serde::Deserialize;
 use sortsys_zerotrust::{
     anchors::RecordAnchor,
     crypto::{decode, packet_hash, sized},
+    delegations::{DelegationCertificate, DelegationContext},
     immutable,
     migration::{MigrationInventory, MigrationSeal},
     opentimestamps,
@@ -39,6 +40,23 @@ struct BrowserVector {
     anchored: RecordAnchor,
     replacement: RecordAnchor,
     anchor_digest: String,
+    delegation: DelegationCertificate<Namespace>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum Namespace {
+    Experiment,
+    Appointment,
+}
+
+impl AsRef<str> for Namespace {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Experiment => "experiment",
+            Self::Appointment => "appointment",
+        }
+    }
 }
 
 fn main() {
@@ -50,6 +68,19 @@ fn main() {
         vector.anchor_digest
     );
     let signer = sized::<32>(&vector.signer).unwrap();
+    let expected = DelegationContext {
+        tenant: "laboratory:alpha",
+        generation: "1",
+        namespace: "experiment",
+        creator: "researcher:kai",
+    };
+    vector.delegation.verify(&expected, &signer).unwrap();
+    let mut substituted = vector.delegation.clone();
+    substituted.namespace = Namespace::Appointment;
+    assert!(substituted.verify(&expected, &signer).is_err());
+    let mut substituted = vector.delegation.clone();
+    substituted.readers[0].user = "researcher:intruder".into();
+    assert!(substituted.verify(&expected, &signer).is_err());
     vector.object.verify(&signer).unwrap();
     assert_eq!(vector.object.facet, "research-notes");
     let rules = vector
@@ -141,6 +172,6 @@ fn main() {
     changed.revision = "2".into();
     assert!(immutable::write_action(&changed).is_err());
     println!(
-        "Independent Rust consumer verified browser signatures, permissions, migration seals and OTS evidence."
+        "Independent Rust consumer verified browser signatures, delegations, permissions, migration seals and OTS evidence."
     );
 }
