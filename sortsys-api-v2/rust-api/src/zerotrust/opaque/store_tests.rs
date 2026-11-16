@@ -91,6 +91,7 @@ async fn browser_with_tenant(
             "llm" => "scripts/test-duckdb-llm.ts",
             "editors" => "scripts/test-duckdb-editors.ts",
             "document-search" => "scripts/test-native-document-search.ts",
+            "administration" => "scripts/test-native-administration.ts",
             "development-seed" => "scripts/test-development-seed.ts",
             "telemetry" => "scripts/test-operator-telemetry.ts",
             "locks" => "scripts/test-object-locks.ts",
@@ -147,6 +148,7 @@ async fn browser_with_tenant(
         mode,
         "recovery"
             | "document-search"
+            | "administration"
             | "llm"
             | "editors"
             | "owner-staging"
@@ -1082,6 +1084,31 @@ async fn local_document_search_enforces_live_access_across_independent_api_insta
         Some("document-search-tenant"),
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn delegated_administration_uses_own_keys_and_revokes_across_independent_api_instances() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let store = QuackConfig::from_env().unwrap().unwrap();
+    assert!(store.control_url.starts_with("http://127.0.0.1:"));
+    let first = Repository::system(CipherStore::new(store.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(store.clone()).unwrap());
+    let mut settings = configuration(store);
+    settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    let endpoints = [first_url, second_url];
+    for mode in ["owner-minimal", "administration"] {
+        browser_with_tenant(mode, &root, Some(&endpoints), Some("administration-tenant")).await;
+    }
 }
 
 #[tokio::test]

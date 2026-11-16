@@ -40,6 +40,17 @@ aktuelle Rechte; mehrere Bereiche werden gemeinsam signiert. Fachliche
 Bedingungen über Geheimwerte prüft der Client. Die unabhängige Löschung von
 Unterzeilen benötigt teils noch feiner aufgeteilte Objekte.
 
+Das Framework und die API unterstützen außerdem bereichsgebundene
+Verwaltungsrechte mit dem eigenen Signaturschlüssel des beauftragten Nutzers.
+Die Hauptadministration gibt diesen Nutzern keinen privaten Mandantenschlüssel.
+Ein nativer Test mit drei Konten und zwei API-Instanzen prüft die Vergabe und den
+Entzug von Katalog-Schreibrechten, unzulässige Empfänger und Inhaltsbereiche,
+konkurrierende Änderungen und den Widerruf der Verwaltungsbefugnis. Ein bereits
+signierter Schreibauftrag wird nach dem Rechteentzug abgewiesen. Die delegierte
+Verteilung und Erneuerung von Inhaltsschlüsseln sowie die Anbindung an die
+Rechteauswahl fehlen noch; die vorhandene Oberfläche nutzt weiterhin die
+Hauptadministration.
+
 Historische Schlüsselkopien und neue Schlüsselgenerationen werden gemeinsam in
 begrenzten Stapeln veröffentlicht. Die Nachprüfung liest nur die bearbeiteten
 Bereiche. Im echten Zwei-Nutzer-Browsertest mit dem Musterbestand werden zwei

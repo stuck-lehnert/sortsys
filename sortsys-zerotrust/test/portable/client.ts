@@ -164,6 +164,100 @@ export async function exerciseFramework() {
     },
     identity.signingKey.privateKey,
   );
+  const administrationRoot = await security.policies.signPolicy(
+    {
+      tenant: context.tenant,
+      version: "2",
+      rules: [
+        {
+          subject: context.author,
+          scope: context.scope,
+          facet: context.facet,
+          actions: ["read", "update", "grant"],
+          effect: "allow",
+        },
+        {
+          subject: delegation.creator.user,
+          scope: context.scope,
+          facet: context.facet,
+          actions: ["read", "update", "grant"],
+          effect: "allow",
+        },
+        {
+          subject: "researcher:ada",
+          scope: "preferences:ada",
+          facet: context.facet,
+          actions: ["read", "update", "grant"],
+          effect: "allow",
+        },
+      ],
+    },
+    identity.signingKey.privateKey,
+  );
+  const profile = await security.policies.administrativeProfiles.sign(
+    {
+      tenant: context.tenant,
+      rootSignature: administrationRoot.signature,
+      version: "3",
+      subject: "researcher:ada",
+      scope: context.scope,
+      facet: context.facet,
+      actions: ["read", "update"],
+      author: delegation.creator,
+    },
+    delegate.signingKey.privateKey,
+  );
+  const administrativePolicy = await security.policies.signAdministrativePolicy(
+    {
+      root: administrationRoot,
+      profiles: [profile],
+      author: delegation.creator,
+      previousSignature: administrationRoot.signature,
+      version: "3",
+    },
+    delegate.signingKey.privateKey,
+  );
+  const checkedAdministration = await security.policies.verifyPolicy(
+    administrativePolicy,
+    { tenant: context.tenant, authority: identity.signingKey.publicKey },
+  );
+  const unchangedAdministration =
+    await security.policies.signAdministrativePolicy(
+      {
+        ...administrativePolicy.administration!,
+        previousSignature: administrativePolicy.signature,
+        version: "4",
+      },
+      delegate.signingKey.privateKey,
+    );
+  require(
+    security.policies
+      .compilePolicy(checkedAdministration.permissions, ["researcher:ada"])
+      .allows(context.scope, context.facet, "update"),
+  );
+  const administrationRevoked = await security.policies.signPolicy(
+    {
+      ...checkedAdministration.permissions,
+      version: "4",
+      rules: checkedAdministration.permissions.rules.map((rule) =>
+        rule.subject === delegation.creator.user
+          ? {
+              ...rule,
+              actions: rule.actions.filter((action) => action !== "grant"),
+            }
+          : rule,
+      ),
+    },
+    identity.signingKey.privateKey,
+  );
+  const staleAdministration = await security.policies.signAdministrativePolicy(
+    {
+      ...administrativePolicy.administration!,
+      previousSignature: administrationRevoked.signature,
+      version: "5",
+    },
+    delegate.signingKey.privateKey,
+  );
   const checked = await security.policies.verifyPolicy(policy, {
     tenant: context.tenant,
     authority: identity.signingKey.publicKey,
@@ -289,6 +383,10 @@ export async function exerciseFramework() {
     accessState,
     object,
     policy,
+    administrativePolicy,
+    unchangedAdministration,
+    administrationRevoked,
+    staleAdministration,
     permanent,
     packetDigest,
     migration,

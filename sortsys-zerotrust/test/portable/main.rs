@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use sortsys_zerotrust::{
+    administration::{PolicyAdministration, PolicyAdministrationRef},
     anchors::RecordAnchor,
     crypto::{decode, encode, packet_hash, sized},
     delegations::{DelegationCertificate, DelegationContext},
@@ -11,7 +12,7 @@ use sortsys_zerotrust::{
     resource_access::{ResourceAccessContext, ResourceAccessState},
 };
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Rule {
     subject: String,
     scope: String,
@@ -20,12 +21,51 @@ struct Rule {
     effect: Effect,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Policy {
     tenant: String,
     version: String,
     rules: Vec<Rule>,
     signature: String,
+    suspended: Option<Vec<String>>,
+    administration: Option<PolicyAdministration<Policy>>,
+}
+
+impl Policy {
+    fn as_protocol(&self) -> PolicyRef<'_> {
+        PolicyRef {
+            tenant: &self.tenant,
+            version: &self.version,
+            rules: self
+                .rules
+                .iter()
+                .map(|rule| RuleRef {
+                    subject: &rule.subject,
+                    scope: &rule.scope,
+                    facet: &rule.facet,
+                    actions: &rule.actions,
+                    effect: rule.effect,
+                    origin: None,
+                })
+                .collect(),
+            suspended: self.suspended.as_deref(),
+            transaction: None,
+            administration: self
+                .administration
+                .as_ref()
+                .map(|value| PolicyAdministrationRef {
+                    root: Box::new(value.root.as_protocol()),
+                    root_signature: &value.root.signature,
+                    profiles: value
+                        .profiles
+                        .iter()
+                        .map(|profile| profile.as_protocol())
+                        .collect(),
+                    author: &value.author,
+                    previous_signature: &value.previous_signature,
+                }),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -43,6 +83,10 @@ struct BrowserVector {
     anchor_digest: String,
     delegation: DelegationCertificate<Namespace>,
     access_state: ResourceAccessState,
+    administrative_policy: Policy,
+    unchanged_administration: Policy,
+    administration_revoked: Policy,
+    stale_administration: Policy,
 }
 
 #[derive(Clone, Deserialize)]
@@ -70,13 +114,93 @@ fn main() {
         vector.anchor_digest
     );
     let signer = sized::<32>(&vector.signer).unwrap();
+    let administrative = vector.administrative_policy.as_protocol();
+    administrative
+        .verify(&signer, &vector.administrative_policy.signature)
+        .unwrap();
+    assert!(administrative.allows_with(
+        &[],
+        "researcher:ada",
+        "experiment:42",
+        "research-notes",
+        Action::Update
+    ));
+    assert!(!administrative.allows_with(
+        &[],
+        "researcher:ada",
+        "experiment:42",
+        "research-notes",
+        Action::Grant
+    ));
+    let admission = administrative.administration.as_ref().unwrap();
+    assert!(
+        admission
+            .replaces(
+                &admission.root,
+                admission.root_signature,
+                admission.author,
+                &vector.administrative_policy.version
+            )
+            .unwrap()
+    );
+    let unchanged = vector.unchanged_administration.as_protocol();
+    unchanged
+        .verify(&signer, &vector.unchanged_administration.signature)
+        .unwrap();
+    assert!(
+        !unchanged
+            .administration
+            .as_ref()
+            .unwrap()
+            .replaces(
+                &administrative,
+                &vector.administrative_policy.signature,
+                admission.author,
+                &vector.unchanged_administration.version
+            )
+            .unwrap()
+    );
+    let stale = vector.stale_administration.as_protocol();
+    stale
+        .verify(&signer, &vector.stale_administration.signature)
+        .unwrap();
+    assert!(
+        !stale
+            .administration
+            .as_ref()
+            .unwrap()
+            .replaces(
+                &vector.administration_revoked.as_protocol(),
+                &vector.administration_revoked.signature,
+                admission.author,
+                &vector.stale_administration.version
+            )
+            .unwrap()
+    );
+    let mut altered = vector.administrative_policy.clone();
+    altered.administration.as_mut().unwrap().profiles[0].subject = "researcher:intruder".into();
+    assert!(
+        altered
+            .as_protocol()
+            .verify(&signer, &altered.signature)
+            .is_err()
+    );
     let binding = encode(&[7; 32]);
     let access_context = ResourceAccessContext {
-        tenant: "laboratory:alpha", resource: "experiment:42", object: "note:1",
-        generation: "1", binding: &binding,
+        tenant: "laboratory:alpha",
+        resource: "experiment:42",
+        object: "note:1",
+        generation: "1",
+        binding: &binding,
     };
-    vector.access_state.verify(&access_context, &signer).unwrap();
-    assert_eq!(vector.access_state.packet_signature, vector.object.signature);
+    vector
+        .access_state
+        .verify(&access_context, &signer)
+        .unwrap();
+    assert_eq!(
+        vector.access_state.packet_signature,
+        vector.object.signature
+    );
     let mut altered = vector.access_state.clone();
     altered.active = false;
     assert!(altered.verify(&access_context, &signer).is_err());
@@ -114,6 +238,7 @@ fn main() {
         rules,
         suspended: None,
         transaction: None,
+        administration: None,
     };
     policy.verify(&signer, &vector.policy.signature).unwrap();
     assert!(policy.allows_with(

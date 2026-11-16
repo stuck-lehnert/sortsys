@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::crypto::invalid;
 #[cfg(test)]
 use super::crypto::sized;
-use super::crypto::{invalid, verify};
 use crate::error::RpcResult;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -91,6 +91,10 @@ pub(super) struct SignedPolicy {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub transaction: Option<PolicyTransaction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub administration:
+        Option<sortsys_zerotrust::administration::PolicyAdministration<SignedPolicy, Facet>>,
     pub signature: String,
 }
 impl Rule {
@@ -155,10 +159,31 @@ impl SignedPolicy {
             rules: self.rules.iter().map(Rule::as_protocol).collect(),
             suspended: self.suspended.as_deref(),
             transaction: self.transaction.as_ref(),
+            administration: self.administration.as_ref().map(|value| {
+                sortsys_zerotrust::administration::PolicyAdministrationRef {
+                    root: Box::new(value.root.as_protocol()),
+                    root_signature: &value.root.signature,
+                    profiles: value
+                        .profiles
+                        .iter()
+                        .map(|profile| profile.as_protocol())
+                        .collect(),
+                    author: &value.author,
+                    previous_signature: &value.previous_signature,
+                }
+            }),
         }
     }
 
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
+        if let Some(administration) = &self.administration {
+            if administration.root.administration.is_some() {
+                return Err(invalid());
+            }
+            // Application-specific rule origins must also be valid in the
+            // primary checkpoint, including rules replaced by a profile.
+            administration.root.frame()?;
+        }
         if let Some(subjects) = &self.suspended {
             for subject in subjects {
                 let value = subject.strip_prefix("user:").ok_or_else(invalid)?;
@@ -175,7 +200,29 @@ impl SignedPolicy {
     }
 
     pub fn verify(&self, key: &[u8]) -> RpcResult<()> {
-        verify(key, &self.signature, &self.frame()?)
+        self.frame()?;
+        self.as_protocol()
+            .verify(key, &self.signature)
+            .map_err(Into::into)
+    }
+
+    pub fn administrative_replacement(
+        &self,
+        previous: &Self,
+        actor: &super::wire::IdentityCertificate,
+    ) -> RpcResult<bool> {
+        let protocol = self.as_protocol();
+        let Some(administration) = protocol.administration.as_ref() else {
+            return Ok(false);
+        };
+        administration
+            .replaces(
+                &previous.as_protocol(),
+                &previous.signature,
+                actor,
+                &self.version,
+            )
+            .map_err(Into::into)
     }
 
     pub fn allows(&self, subject: &str, scope: &str, facet: Facet, action: Action) -> bool {
@@ -212,6 +259,57 @@ pub(super) type EncryptedObject = sortsys_zerotrust::protocol::EncryptedObject<F
 #[cfg(test)]
 mod object_tombstone_tests {
     use super::*;
+    use crate::zerotrust::crypto::encode;
+
+    #[test]
+    fn delegated_frames_validate_primary_rule_origins_and_reject_nested_administration() {
+        let certificate = IdentityCertificate {
+            tenant: "frame-test".into(),
+            generation: "1".into(),
+            user: "user:1".into(),
+            encryption_key: encode(&[0; 32]),
+            signing_key: encode(&[0; 32]),
+            signature: encode(&[0; 64]),
+        };
+        let mut root = SignedPolicy {
+            tenant: certificate.tenant.clone(),
+            version: "1".into(),
+            rules: vec![Rule {
+                subject: "user:1".into(),
+                scope: "catalog:products".into(),
+                facet: Facet::MasterData,
+                actions: vec![Action::Read],
+                effect: Effect::Allow,
+                origin: Some(RuleOrigin::AbsenceDefault),
+            }],
+            suspended: None,
+            transaction: None,
+            administration: None,
+            signature: certificate.signature.clone(),
+        };
+        let mut delegated = SignedPolicy {
+            tenant: root.tenant.clone(),
+            version: "2".into(),
+            rules: Vec::new(),
+            suspended: None,
+            transaction: None,
+            administration: Some(sortsys_zerotrust::administration::PolicyAdministration {
+                root: Box::new(root.clone()),
+                profiles: Vec::new(),
+                author: certificate,
+                previous_signature: root.signature.clone(),
+            }),
+            signature: root.signature.clone(),
+        };
+        assert!(delegated.frame().is_err());
+        root.rules[0].origin = None;
+        *delegated.administration.as_mut().unwrap().root = root;
+        assert!(delegated.frame().is_ok());
+        let nested = delegated.clone();
+        *delegated.administration.as_mut().unwrap().root = nested;
+        assert!(delegated.frame().is_err());
+    }
+
     #[test]
     fn browser_tombstones_are_signed_empty_bodies_and_cannot_be_relabelled() {
         let value: serde_json::Value = serde_json::from_str(include_str!(

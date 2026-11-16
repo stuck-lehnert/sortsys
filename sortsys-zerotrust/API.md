@@ -77,6 +77,70 @@ geprüft werden. Ohne diese Erweiterung werden Regeln mit `origin` abgelehnt.
 Benutzerkennungsformats. Dieselben fachlichen Beschränkungen müssen auch auf
 der Serverseite gelten.
 
+## Rechteverwaltung delegieren
+
+Ein primär mit `signPolicy` signierter Stand kann einem zertifizierten Verwalter
+`grant` für einen bestimmten Bereich und Inhaltsbereich erlauben. Dieser
+Verwalter signiert Änderungen mit seinem eigenen Identitätsschlüssel. Der
+private Autoritätsschlüssel wird dafür nicht weitergegeben.
+
+Für die erste Änderung auf einem bereits geprüften primären Stand:
+
+```ts
+const version = (BigInt(checkpoint.version) + 1n).toString();
+const profile = await security.policies.administrativeProfiles.sign(
+  {
+    tenant: checkpoint.tenant,
+    rootSignature: checkpoint.signature,
+    version,
+    subject: "doctor:ada",
+    scope: "patient:ada",
+    facet: "notes",
+    actions: ["read", "update"],
+    author: managerCertificate,
+  },
+  managerIdentity.signingKey.privateKey,
+);
+const next = await security.policies.signAdministrativePolicy(
+  {
+    root: checkpoint,
+    profiles: [profile],
+    author: managerCertificate,
+    previousSignature: checkpoint.signature,
+    version,
+  },
+  managerIdentity.signingKey.privateKey,
+);
+```
+
+Ein Profil ersetzt die gewöhnlichen Rechte genau eines Empfängers in einem
+Bereich. Es darf nur Aktionen enthalten, die der Verwalter selbst besitzt;
+`grant` lässt sich damit nicht weiterreichen. Für Nutzer, die im selben Bereich
+selbst ein Verwaltungsrecht haben, bleibt die primäre Autorität zuständig.
+Eigene Verwaltungsrechte für persönliche Einstellungen schützen keine anderen
+Bereiche vor solchen Änderungen.
+
+`verifyPolicy` prüft den primären Stand, Zertifikate, Profile, abgeleitete Regeln
+und die äußere Signatur. Historische Nachweise bleiben dabei prüfbar. Vor dem
+Speichern sind zusätzlich **beide Stände** zu verifizieren und
+`administrativeReplacement(previous, next, currentActorCertificate)` zu prüfen.
+Diese Prüfung bindet die Änderung an den aktuellen Vorgänger, dessen primären
+Stand und den tatsächlichen Absender. Sie verhindert auch das Entfernen oder
+Wiedereinspielen fremder Profile. Mindestens ein Profil muss sich ändern;
+eine bloße neue Versionsnummer genügt nicht. Unveränderte Profile werden nach
+`administrativeProfileKey` sortiert übernommen.
+
+Die Anwendung muss diese Vergleiche zusammen mit der aktiven Sitzung und dem
+aktuellen Empfängerzertifikat in derselben Transaktion ausführen. In Rust dienen
+dafür `PolicyRef::verify` und `PolicyAdministrationRef::replaces`. Eine neue
+primäre Signatur kann die effektiven Mitarbeiterrechte übernehmen und zugleich
+ein Verwaltungsrecht entfernen. Sie ersetzt dann die Profile; es entsteht keine
+wachsende Kette früherer Berechtigungsstände.
+
+Die Rechteprüfung verteilt noch keine Inhaltsschlüssel. Neue Leser und ein
+kryptografischer Leserentzug benötigen zusätzlich geprüfte Schlüsselpakete und
+gegebenenfalls einen Schlüsselwechsel durch den Speicheradapter.
+
 ## Begrenzte Anlegedelegationen
 
 `createDelegationCodec(["patient-file", "appointment"])` prüft und signiert

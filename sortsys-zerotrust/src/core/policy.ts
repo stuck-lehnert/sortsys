@@ -5,8 +5,10 @@ import {
   InvalidProtectedData,
   record,
   revision,
+  signedPacketFrame,
+  sized,
 } from "../encoding";
-import { sign } from "../identity";
+import { importSigningKey, sign } from "../identity";
 import { verifyPublicProof as verify } from "../publicProofs";
 import {
   type PolicyTransaction,
@@ -15,6 +17,11 @@ import {
   preparePolicyTransaction,
 } from "../policyTransactions";
 import { facetVocabulary } from "./vocabulary";
+import { identityCertificate, identityCertificateFrame } from "./certificates";
+import {
+  createAdministrativeProfileCodec,
+  type PolicyAdministration,
+} from "./administration";
 
 export const ACTIONS = [
   "read",
@@ -45,6 +52,13 @@ export type SignedPolicy<
 > = Policy<F, O> & {
   signature: string;
   transaction?: PolicyTransaction;
+  administration?: PolicyAdministration<F, O>;
+};
+export type VerifiedPolicy<F extends string, O extends string = never> = {
+  permissions: Policy<F, O>;
+  signature: string;
+  transaction?: PolicyTransaction;
+  administration?: PolicyAdministration<F, O>;
 };
 export type PolicyOptions<F extends string, O extends string> = {
   /** Reject application-specific rule origins unless explicitly understood. */
@@ -234,22 +248,25 @@ export function createPolicyCodec<
     };
   }
 
+  function ruleFrame(rule: Rule<F, O>): string {
+    const fields = [rule.subject, rule.scope, rule.facet, rule.effect];
+    if (rule.origin !== undefined) fields.push(rule.origin);
+    fields.push(...rule.actions);
+    return base64(
+      frame(
+        rule.origin === undefined ? "sortsys/rule/v1" : "sortsys/rule/v2",
+        fields,
+      ),
+    );
+  }
+
   function policyFrame(
     input: Policy<F, O>,
     transaction?: PolicyTransaction,
+    administration?: PolicyAdministration<F, O>,
   ): Uint8Array<ArrayBuffer> {
     const current = policy(input);
-    const rules = current.rules.map((rule) => {
-      const fields = [rule.subject, rule.scope, rule.facet, rule.effect];
-      if (rule.origin !== undefined) fields.push(rule.origin);
-      fields.push(...rule.actions);
-      return base64(
-        frame(
-          rule.origin === undefined ? "sortsys/rule/v1" : "sortsys/rule/v2",
-          fields,
-        ),
-      );
-    });
+    const rules = current.rules.map(ruleFrame);
     const fields = [current.tenant, current.version];
     if (current.suspended !== undefined) {
       fields.push(base64(frame("sortsys/suspended/v1", current.suspended)));
@@ -261,7 +278,196 @@ export function createPolicyCodec<
     let domain = "sortsys/policy/v1";
     if (transaction !== undefined) domain = "sortsys/policy/v3";
     else if (current.suspended !== undefined) domain = "sortsys/policy/v2";
-    return frame(domain, fields);
+    const primaryFrame = frame(domain, fields);
+    if (administration === undefined) return primaryFrame;
+    return frame("sortsys/delegated-policy/v1", [
+      base64(primaryFrame),
+      administration.root.signature,
+      base64(
+        signedPacketFrame(
+          identityCertificateFrame(administration.author),
+          administration.author.signature,
+        ),
+      ),
+      administration.previousSignature,
+      ...administration.profiles.map((profile) => profile.signature),
+    ]);
+  }
+
+  const administrativeProfiles = createAdministrativeProfileCodec<F, O>(
+    facets,
+    { policy, compilePolicy },
+  );
+
+  function parseSigned(
+    input: unknown,
+    allowAdministration = true,
+  ): SignedPolicy<F, O> {
+    const object = input && typeof input === "object" ? input : null;
+    const hasSuspended = !!object && Object.hasOwn(object, "suspended");
+    const hasTransaction = !!object && Object.hasOwn(object, "transaction");
+    const hasAdministration =
+      !!object && Object.hasOwn(object, "administration");
+    if (hasAdministration && !allowAdministration)
+      throw new InvalidProtectedData();
+    const value = record(input, [
+      "tenant",
+      "version",
+      "rules",
+      "signature",
+      ...(hasSuspended ? ["suspended"] : []),
+      ...(hasTransaction ? ["transaction"] : []),
+      ...(hasAdministration ? ["administration"] : []),
+    ]);
+    const {
+      signature,
+      transaction: transactionInput,
+      administration: administrationInput,
+      ...unsigned
+    } = value;
+    sized(signature as string, 64);
+    const permissions = policy(unsigned);
+    const transaction = hasTransaction
+      ? policyTransaction(transactionInput)
+      : undefined;
+    let administration: PolicyAdministration<F, O> | undefined;
+    if (hasAdministration) {
+      const source = record(administrationInput, [
+        "root",
+        "profiles",
+        "author",
+        "previousSignature",
+      ]);
+      if (!Array.isArray(source.profiles) || source.profiles.length > 10000)
+        throw new InvalidProtectedData();
+      sized(source.previousSignature as string, 64);
+      const root = parseSigned(source.root, false);
+      const author = identityCertificate(source.author);
+      const profiles = source.profiles.map(administrativeProfiles.parse);
+      if (
+        root.tenant !== permissions.tenant ||
+        author.tenant !== permissions.tenant ||
+        BigInt(root.version) >= BigInt(permissions.version)
+      )
+        throw new InvalidProtectedData();
+      for (const profile of profiles) {
+        if (
+          profile.author.generation !== author.generation ||
+          BigInt(profile.version) > BigInt(permissions.version)
+        )
+          throw new InvalidProtectedData();
+      }
+      const rules = administrativeProfiles.apply(
+        unsignedPolicy(root),
+        profiles,
+        root.signature,
+      );
+      if (
+        JSON.stringify(rules.map(ruleFrame)) !==
+          JSON.stringify(permissions.rules.map(ruleFrame)) ||
+        JSON.stringify(root.suspended) !== JSON.stringify(permissions.suspended)
+      )
+        throw new InvalidProtectedData();
+      administration = {
+        root,
+        profiles,
+        author,
+        previousSignature: source.previousSignature as string,
+      };
+      if (
+        transaction &&
+        (transaction.author !== author.user ||
+          transaction.previousSignature !== administration.previousSignature)
+      )
+        throw new InvalidProtectedData();
+    }
+    return {
+      ...permissions,
+      ...(transaction ? { transaction } : {}),
+      ...(administration ? { administration } : {}),
+      signature: signature as string,
+    };
+  }
+
+  function unsignedPolicy(input: SignedPolicy<F, O>): Policy<F, O> {
+    const {
+      signature: _,
+      transaction: __,
+      administration: ___,
+      ...permissions
+    } = input;
+    return policy(permissions);
+  }
+
+  function canAdminister(input: Policy<F, O>, subject: string): boolean {
+    const compiled = compilePolicy(input, [subject]);
+    return input.rules.some((rule) =>
+      compiled.allows(rule.scope, rule.facet, "grant"),
+    );
+  }
+
+  async function signAdministrativePolicy(
+    input: PolicyAdministration<F, O> & {
+      version: string;
+      transaction?: PolicyTransaction;
+    },
+    key: CryptoKey,
+  ): Promise<SignedPolicy<F, O>> {
+    const root = parseSigned(input.root, false);
+    const administration = {
+      root,
+      profiles: input.profiles.map(administrativeProfiles.parse),
+      author: identityCertificate(input.author),
+      previousSignature: input.previousSignature,
+    };
+    const permissions = policy({
+      ...unsignedPolicy(root),
+      version: input.version,
+      rules: administrativeProfiles.apply(
+        unsignedPolicy(root),
+        administration.profiles,
+        root.signature,
+      ),
+    });
+    const transaction =
+      input.transaction === undefined
+        ? undefined
+        : policyTransaction(input.transaction);
+    const candidate = {
+      ...permissions,
+      administration,
+      ...(transaction ? { transaction } : {}),
+    };
+    const signature = await sign(
+      key,
+      policyFrame(permissions, transaction, administration),
+    );
+    return parseSigned({ ...candidate, signature });
+  }
+
+  function administrativeReplacement(
+    previous: SignedPolicy<F, O>,
+    next: SignedPolicy<F, O>,
+    actor: import("./certificates").IdentityCertificate,
+  ): boolean {
+    const current = parseSigned(previous);
+    const candidate = parseSigned(next);
+    const administration = candidate.administration;
+    if (
+      !administration ||
+      BigInt(candidate.version) !== BigInt(current.version) + 1n ||
+      administration.author.signature !== actor.signature ||
+      administration.previousSignature !== current.signature
+    )
+      return false;
+    const root = current.administration?.root ?? current;
+    if (administration.root.signature !== root.signature) return false;
+    return administrativeProfiles.replacement(
+      current.administration?.profiles ?? [],
+      administration.profiles,
+      actor,
+      candidate.version,
+    );
   }
 
   async function signPolicy(
@@ -292,35 +498,50 @@ export function createPolicyCodec<
   async function verifyPolicy(
     input: unknown,
     expected: { tenant: string; authority: CryptoKey },
-  ) {
-    const hasSuspended =
-      !!input && typeof input === "object" && Object.hasOwn(input, "suspended");
-    const hasTransaction =
-      !!input &&
-      typeof input === "object" &&
-      Object.hasOwn(input, "transaction");
-    const value = record(input, [
-      "tenant",
-      "version",
-      "rules",
-      "signature",
-      ...(hasSuspended ? ["suspended"] : []),
-      ...(hasTransaction ? ["transaction"] : []),
-    ]);
-    const { signature, transaction: source, ...unsigned } = value;
-    const permissions = policy(unsigned);
-    const transaction = hasTransaction ? policyTransaction(source) : undefined;
+  ): Promise<VerifiedPolicy<F, O>> {
+    const value = parseSigned(input);
+    const { signature, transaction, administration } = value;
+    const permissions = unsignedPolicy(value);
     if (permissions.tenant !== expected.tenant || typeof signature !== "string")
       throw new InvalidProtectedData();
+    let signer = expected.authority;
+    if (administration) {
+      const root = await verifyPolicy(administration.root, expected);
+      if (!canAdminister(root.permissions, administration.author.user))
+        throw new InvalidProtectedData();
+      await verify(
+        expected.authority,
+        administration.author.signature,
+        identityCertificateFrame(administration.author),
+      );
+      for (
+        let offset = 0;
+        offset < administration.profiles.length;
+        offset += 16
+      ) {
+        await Promise.all(
+          administration.profiles.slice(offset, offset + 16).map((profile) =>
+            administrativeProfiles.verify(profile, {
+              root: root.permissions,
+              signature: root.signature,
+              authority: expected.authority,
+              generation: administration.author.generation,
+            }),
+          ),
+        );
+      }
+      signer = await importSigningKey(administration.author.signingKey);
+    }
     await verify(
-      expected.authority,
+      signer,
       signature,
-      policyFrame(permissions, transaction),
+      policyFrame(permissions, transaction, administration),
     );
     return {
       permissions,
       signature,
       ...(transaction === undefined ? {} : { transaction }),
+      ...(administration === undefined ? {} : { administration }),
     };
   }
 
@@ -333,6 +554,11 @@ export function createPolicyCodec<
     signPolicy,
     signPolicyTransaction,
     verifyPolicy,
+    administrativeProfiles,
+    signAdministrativePolicy,
+    parseSigned,
+    canAdminister,
+    administrativeReplacement,
   });
 }
 

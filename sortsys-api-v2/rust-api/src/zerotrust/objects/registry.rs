@@ -464,7 +464,9 @@ pub(in crate::zerotrust) fn register(
                         return Err(invalid());
                     }
                     let mut context = context(&service, &ctx).await?;
-                    admin(&context.auth)?;
+                    if input.administration.is_none() {
+                        admin(&context.auth)?;
+                    }
                     replace_policy(&mut context.transaction, &context.security, &input, false)
                         .await?;
                     context.transaction.commit().await?;
@@ -646,6 +648,20 @@ pub(in crate::zerotrust) async fn replace_policy(
     account_change: bool,
 ) -> RpcResult<()> {
     input.verify(&guard.authority)?;
+    if let Some(administration) = &input.administration {
+        if account_change {
+            return Err(forbidden());
+        }
+        let actor = checked_member(transaction, guard, &guard.subject).await?;
+        if !input.administrative_replacement(&guard.policy, &actor)? {
+            return Err(forbidden());
+        }
+        for profile in &administration.profiles {
+            if profile.version == input.version {
+                checked_member(transaction, guard, &profile.subject).await?;
+            }
+        }
+    }
     if input.tenant != guard.policy.tenant
         || guard.root.policy_version.checked_add(1) != Some(revision(&input.version)?)
         || !account_change

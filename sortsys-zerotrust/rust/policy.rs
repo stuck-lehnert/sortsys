@@ -23,6 +23,7 @@ pub struct PolicyRef<'a> {
     pub rules: Vec<RuleRef<'a>>,
     pub suspended: Option<&'a [String]>,
     pub transaction: Option<&'a PolicyTransaction>,
+    pub administration: Option<crate::administration::PolicyAdministrationRef<'a>>,
 }
 
 impl PolicyRef<'_> {
@@ -63,13 +64,20 @@ impl PolicyRef<'_> {
         } else {
             "sortsys/policy/v1"
         };
-        Ok(frame(
+        let primary_frame = frame(
             domain,
             &fields.iter().map(String::as_str).collect::<Vec<_>>(),
-        ))
+        );
+        match &self.administration {
+            Some(administration) => administration.frame(&primary_frame),
+            None => Ok(primary_frame),
+        }
     }
 
     pub fn verify(&self, key: &[u8], signature: &str) -> Result<()> {
+        if let Some(administration) = &self.administration {
+            return administration.verify(self, signature, key);
+        }
         verify(key, signature, &self.frame()?)
     }
 

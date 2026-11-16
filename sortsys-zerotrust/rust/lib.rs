@@ -2,6 +2,7 @@
 //! The crate has no HTTP framework, database driver or business-model dependency.
 #![forbid(unsafe_code)]
 
+pub mod administration;
 pub mod anchors;
 pub mod crypto;
 pub mod delegations;

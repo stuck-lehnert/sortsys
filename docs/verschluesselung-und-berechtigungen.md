@@ -419,6 +419,26 @@ veröffentlicht und anschließend anhand ihrer signierten Nachweise zurückgeles
 Auch Schlüsselhüllen, Integritätsnachweise und Benachrichtigungen gehören zur
 jeweiligen Transaktion; diese zusätzlichen Datensätze begrenzen die Stapelgröße.
 
+Für delegierte Rechteänderungen enthält der signierte Stand einen primären
+Ausgangsstand und einzelne Empfängerprofile. Der Verwalter benötigt ein darin
+erlaubtes `grant` für genau den betroffenen Bereich und Inhaltsbereich. Er
+signiert mit seinem eigenen zertifizierten Identitätsschlüssel und kann nur
+Aktionen vergeben, die er selbst besitzt. Verwaltungsrechte anderer Nutzer im
+selben Bereich kann ausschließlich die primäre Mandantenautorität ändern.
+
+Die API prüft zusätzlich zur Signatur den tatsächlichen Absender, dessen aktuelles
+Zertifikat, den exakten Vorgänger und die erwartete nächste Version. Änderungen
+auf einem früheren primären Stand dürfen keinen inzwischen neu signierten Stand
+ersetzen. Ein neuer primärer Stand kann bestehende Mitarbeiterrechte beibehalten
+und gleichzeitig die Verwaltungsbefugnis entziehen. Historische Signaturen
+bleiben für frühere Dokumentstände prüfbar. Diese Unterscheidung zwischen
+historischer Prüfung und aktueller Schreibfreigabe gilt auch für zwei Clients an
+verschiedenen API-Instanzen.
+
+Die delegierte Vergabe von Schreibrechten ist nativ geprüft. Neue Leser benötigen
+zusätzlich Inhaltsschlüssel; deren delegierte Verteilung, Schlüsselwechsel und
+die Bedienung über die Rechteverwaltung sind noch nicht angeschlossen.
+
 Bei geänderten Leserechten bündelt `zerotrust.access.publish` historische
 Schlüsselkopien und neue Bereichsdefinitionen in einer Transaktion. Die API
 prüft das aktuelle Administrationsrecht, die erwartete signierte Regelversion

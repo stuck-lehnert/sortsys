@@ -10,6 +10,8 @@ export type ActivityResourceType = "project" | "tool" | "user" | "customer" | "c
 
 export type Address = { country?: string | null, zip?: string | null, city: string, streetAddress: string, };
 
+export type AdministrativeProfile<F = string> = { tenant: string, rootSignature: string, version: string, subject: string, scope: string, facet: F, actions: Array<Action>, author: IdentityCertificate, signature: string, };
+
 export type ApplyPriceImportRow = { productId: Id | null, productName: string, brand: string | null, description: string | null, baseUnit: string, otherUnits: { [key in string]: number }, pricePerBaseUnit: number, comment: string | null, };
 
 export type Asset = { id: Id, name: string, mimeType: string, sizeBytes: number, downloadUrl: string | null, };
@@ -146,6 +148,8 @@ export type PasskeyUser = { id: string, name: string, displayName: string, };
 
 export type PasskeyVault = { format: string, tenant: string, username: string, rpId: string, credentialId: string, encryptionKey: string, signingKey: string, wrappedKey: string, signature: string, };
 
+export type PolicyAdministration<R, F = string> = { root: R, profiles: Array<AdministrativeProfile<F>>, author: IdentityCertificate, previousSignature: string, };
+
 export type PolicyHead = { domain: string, sequence: string, };
 
 export type PolicyTransaction = { author: string, previousSignature: string, packets: Array<string>, heads: Array<PolicyHead>, packetCommitment?: PacketCommitment, };
@@ -202,7 +206,7 @@ export type SealedBox = { tenant: string, purpose: string, object: string, gener
 
 export type SetupInput = { authority: AuthorityCertificate, owner: IdentityCertificate, authorityEnvelope: SealedBox, catalog: SealedBox, policy: SignedPolicy, proof: string, };
 
-export type SignedPolicy = { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, signature: string, };
+export type SignedPolicy = { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
 
 export type SnapshotSummary = { id: string, tenant: string, createdAt: Date, bytes: number | null, };
 
@@ -503,7 +507,7 @@ export type QueryOutputs = {
   "zerotrust.objects.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, openings?: Array<DomainOpening>, };
   "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, openings?: Array<DomainOpening>, }>;
-  "zerotrust.policy.get": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, signature: string, };
+  "zerotrust.policy.get": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.policy.getVersion": { generation: string, policy: SignedPolicy, };
   "zerotrust.recovery.head": { phase: string, generation: string, authority: AuthorityCertificate, operation: string | null, };
   "zerotrust.setup.backup.status": { context: string | null, source: InitializationSourceProof | null, completion: InitializationSourceProof | null, };
@@ -708,7 +712,7 @@ export type MutationInputs = {
   "zerotrust.objects.commit": { parts: Array<string>, heads: Array<DomainHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
   "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, };
   "zerotrust.objects.stage": { objects: Array<SaveInput>, };
-  "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, signature: string, };
+  "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.recovery.begin": { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, nextSetup: SetupInput, username: string, registrationRecord: string, vault: AccountVault, oldKeyEnvelopes: Array<SealedBox>, domains: Array<DomainDefinition>, proof: string, nextProof: string, };
   "zerotrust.recovery.catalog.read": { access: RecoveryCatalogAccess, proof: string, };
   "zerotrust.recovery.catalog.write": { access: RecoveryCatalogAccess, proof: string, packet: SealedBox, };
