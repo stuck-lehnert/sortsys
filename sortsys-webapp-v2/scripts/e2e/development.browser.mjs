@@ -257,7 +257,11 @@ async function saveResourceAccess(dialog, label, field) {
   await expect(save).toBeEnabled();
   await save.click();
   await expect(save).toHaveAttribute("data-pending", "true");
-  await expect(save).not.toHaveAttribute("data-pending", "true");
+  // Publishing rights also backfills historical keys, rotates affected areas
+  // and verifies their durable heads across API instances.
+  await expect(save).not.toHaveAttribute("data-pending", "true", {
+    timeout: 45_000,
+  });
   await expect(
     dialog.getByRole("button", { name: new RegExp(field) }),
   ).toBeEnabled();

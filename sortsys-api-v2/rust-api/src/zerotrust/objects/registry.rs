@@ -283,7 +283,7 @@ async fn check_member(
 
 /// Both the standalone inventory and the combined access snapshot retain the
 /// same visibility and key-rotation checks, inside their caller's transaction.
-async fn list_domains(
+pub(super) async fn list_domains(
     context: &mut super::super::access::MetadataContext,
     selected: Option<&[String]>,
 ) -> RpcResult<Vec<DomainInfo>> {
@@ -338,6 +338,7 @@ pub(in crate::zerotrust) fn register(
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
     let access_snapshot = Arc::clone(&service);
+    let access_page = Arc::clone(&service);
     let policy_get = Arc::clone(&service);
     let policy_history = Arc::clone(&service);
     let policy_set = Arc::clone(&service);
@@ -353,40 +354,14 @@ pub(in crate::zerotrust) fn register(
             "zerotrust.access.snapshot",
             move |ctx, input: AccessInput| {
                 let service = Arc::clone(&access_snapshot);
-                async move {
-                    let selected = input.selected_domains()?;
-                    let mut context =
-                        metadata_context_for_domains(&service, &ctx, selected).await?;
-                    if let Some(id) = &input.domain {
-                        let area = domain(&mut context.transaction, id).await?;
-                        if !context.auth.is_admin()
-                            && !context.security.allows(
-                                &context.security.subject,
-                                &area.scope,
-                                area.facet,
-                                Action::Read,
-                            )
-                        {
-                            return Err(forbidden());
-                        }
-                    }
-                    let history =
-                        super::super::setup::metadata_history(&mut context.transaction).await?;
-                    let domains = if input.include_domains.unwrap_or(true) {
-                        list_domains(&mut context, selected).await?
-                    } else {
-                        Vec::new()
-                    };
-                    context.transaction.validate().await?;
-                    Ok(AccessSnapshot {
-                        subject: context.security.subject,
-                        username: context.auth.user.username,
-                        history,
-                        policy: context.security.policy,
-                        origins: context.security.origins,
-                        domains,
-                    })
-                }
+                async move { super::access_inventory::first(&service, &ctx, input).await }
+            },
+        )
+        .query(
+            "zerotrust.access.page",
+            move |ctx, input: AccessPageInput| {
+                let service = Arc::clone(&access_page);
+                async move { super::access_inventory::next(&service, &ctx, input).await }
             },
         )
         .query("zerotrust.policy.get", move |ctx, _: ()| {
@@ -724,7 +699,7 @@ fn capability_key(
         ),
     )
 }
-fn origin_collection(generation: i64) -> String {
+pub(super) fn origin_collection(generation: i64) -> String {
     format!("created-areas-{generation}")
 }
 
@@ -812,7 +787,9 @@ async fn put_domains(
     request: &RequestContext,
     inputs: Vec<DomainDefinition>,
 ) -> RpcResult<Success> {
-    if inputs.is_empty() || inputs.len() > 64 {
+    // Each created area emits two hints and may store nine recipient envelopes
+    // plus their integrity witnesses. Stay inside both metadata batch limits.
+    if inputs.is_empty() || inputs.len() > 32 {
         return Err(invalid());
     }
     let mut seen = BTreeSet::new();
@@ -1083,6 +1060,10 @@ async fn grant_key(
     )?;
     input.envelope.verify(&guard.authority)?;
     checked_member(&mut context.transaction, guard, &input.envelope.recipient).await?;
+    let mut rotation = RotationChecks::new(guard);
+    let previous_rotation = rotation
+        .required(&mut context.transaction, guard, &area)
+        .await?;
     context
         .transaction
         .put_protected(
@@ -1094,10 +1075,25 @@ async fn grant_key(
         .entry(input.generation)
         .or_default()
         .insert(input.envelope.recipient.clone());
+    let current_rotation = rotation
+        .required(&mut context.transaction, guard, &area)
+        .await?;
     context
         .transaction
         .put(key("domains", &input.domain), &area)
         .await?;
+    // Historical grants and replacement envelopes do not change the public
+    // inventory. Only invalidate it when the advertised rotation state changes.
+    if previous_rotation != current_rotation {
+        let mut root =
+            super::super::setup::metadata_root(&mut context.transaction, &context.auth.tenant)
+                .await?;
+        root.catalog_version = revision(&root.catalog_version)?
+            .checked_add(1)
+            .ok_or_else(conflict)?
+            .to_string();
+        super::super::setup::write_root(&mut context.transaction, &root).await?;
+    }
     context.transaction.notify(
         "account",
         &serde_json::json!({"subject": input.envelope.recipient}),

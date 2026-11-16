@@ -8,6 +8,7 @@ pub(super) use registry::{
     DomainDescriptor, DomainRecord, catalog as metadata_catalog, has_key as metadata_has_key,
     install_identity as metadata_install_identity, replace_policy as metadata_replace_policy,
 };
+mod access_inventory;
 pub(super) mod registry;
 
 use serde::{Deserialize, Serialize};
@@ -227,6 +228,9 @@ struct DomainDefinitionsInput {
 struct AccessInput {
     #[serde(default)]
     #[ts(optional)]
+    known: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
     domain: Option<String>,
     #[serde(default)]
     #[ts(optional)]
@@ -300,6 +304,26 @@ struct AccessSnapshot {
     policy: SignedPolicy,
     origins: Vec<super::creation::CreationOrigin>,
     domains: Vec<DomainInfo>,
+    snapshot: String,
+    after: Option<String>,
+    unchanged: bool,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AccessPageInput {
+    snapshot: String,
+    after: String,
+    include_domains: bool,
+}
+
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct AccessInventoryPage {
+    snapshot: String,
+    origins: Vec<super::creation::CreationOrigin>,
+    domains: Vec<DomainInfo>,
+    after: Option<String>,
 }
 
 #[derive(Serialize, TS)]
@@ -364,6 +388,7 @@ pub(super) async fn metadata_current_domain(
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .query_stub::<AccessInput, AccessSnapshot>("zerotrust.access.snapshot")
+        .query_stub::<AccessPageInput, AccessInventoryPage>("zerotrust.access.page")
         .query_stub::<(), SignedPolicy>("zerotrust.policy.get")
         .query_stub::<PolicyVersionInput, HistoricalPolicy>("zerotrust.policy.getVersion")
         .mutation_stub::<SignedPolicy, Success>("zerotrust.policy.replace")

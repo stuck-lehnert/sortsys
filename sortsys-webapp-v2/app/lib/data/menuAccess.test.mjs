@@ -364,7 +364,10 @@ async function fixture() {
       loggedIn: () => true,
       async query(path, input) {
         sent.push(path);
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(client, input);
         if (path === "auth.sessionInfo")
           return [

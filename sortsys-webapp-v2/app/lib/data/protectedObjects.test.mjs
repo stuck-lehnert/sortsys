@@ -149,7 +149,10 @@ async function fixture(extraReader = false, suspended = false) {
   const client = {
     loggedIn: () => true,
     async query(path, input) {
-      if (path === "zerotrust.access.snapshot")
+      if (
+        path === "zerotrust.access.snapshot" ||
+        path === "zerotrust.access.page"
+      )
         return accessSnapshotFixture(client, input);
       if (path === "auth.sessionInfo")
         return [{ user: { id: "1", username: "owner" }, roles: [] }, null];

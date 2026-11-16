@@ -315,7 +315,8 @@ export type QueryInputs = {
   "users.roles.list": void;
   "users.supervisors.getDefault": void;
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
-  "zerotrust.access.snapshot": { domain?: string, domains?: Array<string>, includeDomains?: boolean, };
+  "zerotrust.access.page": { snapshot: string, after: string, includeDomains: boolean, };
+  "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, };
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
   "zerotrust.creations.list": void;
   "zerotrust.creations.origin": { domain: string, };
@@ -456,7 +457,8 @@ export type QueryOutputs = {
   "users.roles.list": (":admin" | ":llm" | "view:users" | "manage:users" | "delete:users" | "view:projects" | "manage:projects" | "delete:projects" | "view:projectDeployments" | "manage:projectDeployments" | "delete:projectDeployments" | "view:userVacations" | "manage:userVacations" | "delete:userVacations" | "view:tools" | "manage:tools" | "delete:tools" | "view:toolTrackings" | "manage:toolTrackings" | "delete:toolTrackings" | "view:toolInventories" | "manage:toolInventories" | "delete:toolInventories" | "view:products" | "manage:products" | "delete:products" | "view:deliveryNotes" | "manage:deliveryNotes" | "delete:deliveryNotes" | "view:productVendors" | "manage:productVendors" | "delete:productVendors" | "view:productPriceRecords" | "manage:productPriceRecords" | "delete:productPriceRecords" | "view:customers" | "manage:customers" | "delete:customers" | "view:contacts" | "manage:contacts" | "delete:contacts" | "view:dailyProjectReports" | "manage:dailyProjectReports" | "delete:dailyProjectReports" | "view:regieReports" | "manage:regieReports" | "delete:regieReports" | "view:clientScripts" | "manage:clientScripts" | "delete:clientScripts")[];
   "users.supervisors.getDefault": { userId: null | string; };
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
-  "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, };
+  "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
+  "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, }>;
   "zerotrust.creations.origin": { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, } | null;

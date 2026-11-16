@@ -351,19 +351,51 @@ werden gesondert als notwendige Metadaten dokumentiert. Eine solche
 Metadatensicht ist kein Versprechen, jegliche Rückschlüsse auf
 Geschäftsaktivität auszuschließen.
 
-Die folgenden logischen Datensätze bilden die technische Grundlage. Die
-bestehenden API-Handler verwenden dafür noch PostgreSQL-Tabellen; sie werden auf
-die versionsgeprüften Metadatensätze des DuckDB-Dienstes umgestellt:
+Die API verwendet versionsgeprüfte Metadatensätze im gemeinsamen
+DuckDB-Dienst. Die folgenden Namen bezeichnen Sammlungen dieser Datensätze,
+keine zusätzlichen SQL-Tabellen:
 
-| Datensatz                                                                                 | Wesentlicher Inhalt                                                                                                       |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `__zerotrust_accounts`                                                                    | Öffentliche Benutzerschlüssel, OPAQUE-Eintrag und verschlüsselter Kontospeicher                                           |
-| `__zerotrust_authorities`, `__zerotrust_identity_history`                                 | Zertifikate und gegengezeichnete Recovery-Übergänge zur Prüfung historischer Absender                                     |
-| `__zerotrust_policies`                                                                    | Signierte Regeln und ihre unveränderlichen Versionen; zunächst direkte Benutzerfreigaben                                  |
-| `__zerotrust_domains`                                                                     | Geltungsbereich, Inhaltsbereich, Leserzuordnung, Schlüsselgeneration und notwendige Schlüsselwechsel                      |
-| `__zerotrust_key_envelopes`                                                               | Verschlüsselte Schlüsselpakete je berechtigtem Empfänger und Generation                                                   |
-| `__zerotrust_objects`, `__zerotrust_changes`                                              | Signierte verschlüsselte Versionen und eindeutige Nachrichten-IDs                                                         |
-| `__zerotrust_recovery_heads`, `__zerotrust_recovery_keys`, `__zerotrust_recovery_history` | Aktueller Recovery-Kopf, verschlüsselte Schlüsselkopien und fortsetzbare signierte Pläne in der jeweiligen Mandantendatei |
+| Sammlung | Inhalt |
+| --- | --- |
+| `accounts` | Technische Kontodaten, öffentliche Benutzerschlüssel, OPAQUE-Eintrag und verschlüsselter Kontospeicher |
+| `crypto-root`, `authority-history`, `identity-history` | Aktueller Mandantenkopf, Zertifikate und gegengezeichnete Recovery-Übergänge für historische Absender |
+| `policies`, `policy-generations` | Signierte Regeln und Zuordnung zur unterzeichnenden Autorität |
+| `domain-catalog`, `domains`, `created-areas-*` | Bereichsverzeichnis, Schlüsselgenerationen, Leserzuordnung und signierte Anlegenachweise |
+| `domain-definitions`, `key-envelopes` | Signierte Bereichsdefinitionen und verschlüsselte Schlüsselpakete je Empfänger und Generation |
+| `objects-*`, `object-history`, `object-changes` | Referenzen auf signierte Chiffrate, Vorgängerversionen und eindeutige Nachrichten-IDs |
+| `recovery-inventory-*`, `recovery-challenges`, `recovery-operations` | Verzeichnis früherer Schlüsselhüllen, zeitlich begrenzte Challenges und Nachweise abgeschlossener Wiederherstellungen |
+
+Das Berechtigungsverzeichnis wird in Seiten mit höchstens 64 Bereichen gelesen.
+Die erste Antwort enthält außerdem die Vertrauenskette und die signierte
+Regelversion; Fortsetzungen wiederholen diese Nachweise nicht. Jede Seite wird
+in einer eigenen Transaktion gegen Sitzung und aktuelle Rechte geprüft. Ein
+Token bindet die Seiten an denselben Mandanten, dieselbe Sitzung, Regelversion
+und Katalogversion. Es ersetzt keine Signaturprüfung im Browser.
+
+Normale Inhaltsänderungen lassen diesen Abruf weiterlaufen. Neue Bereiche,
+Schlüsselwechsel oder geänderte Regeln verwerfen dagegen den begonnenen Abruf.
+Dasselbe gilt, wenn eine Schlüsselvergabe den angezeigten Bedarf an einem
+Schlüsselwechsel ändert. Der Browser beginnt dann vollständig von vorn und
+wiederholt diesen Leseversuch höchstens zweimal. Er übernimmt keine Einträge aus dem
+verworfenen Versuch. Ein gezielter Abruf von bis zu 16 Bereichen benötigt keine
+Fortsetzung.
+
+Für bereits vollständig geprüfte Verzeichnisse sendet der Browser beim nächsten
+Aufruf deren Versionskennung mit. Die API prüft Sitzung und Rechte erneut und
+bestätigt einen unveränderten Stand ohne die Verzeichniseinträge. Der Browser
+verwendet dann seine geprüften öffentlichen Metadaten; signierte Regeln und
+Vertrauenskette werden weiterhin geprüft. Ohne erfolgreiche Serverantwort gibt
+es diesen Rückgriff nicht. Die Einträge bleiben im Arbeitsspeicher an Konto und
+Verbindung gebunden und enthalten keine entschlüsselten Geschäftsdaten.
+
+Für den Menüaufbau werden nur die Anlegenachweise gelesen. Bereiche ohne solche
+Nachweise sind bereits durch die signierten Regeln abgedeckt und werden dafür
+nicht zusätzlich aufgelistet.
+
+Neue Schlüsselbereiche werden in Stapeln mit höchstens 32 Definitionen
+veröffentlicht und anschließend anhand ihrer signierten Nachweise zurückgelesen.
+Auch Schlüsselhüllen, Integritätsnachweise und Benachrichtigungen gehören zur
+jeweiligen Transaktion; diese zusätzlichen Datensätze begrenzen die Stapelgröße.
 
 Eine schreibende Transaktion prüft das äußere Schema, aktuelle Rechte und die
 maßgeblichen öffentlichen Ausgangsversionen. Sie sperrt die relevante

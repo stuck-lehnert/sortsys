@@ -67,6 +67,9 @@ function raw() {
                   policy: setup.policy,
                   origins: [],
                   domains: [],
+                  snapshot: "fixture-access-snapshot",
+                  after: null,
+                  unchanged: false,
                 };
               } else if (path === "auth.sessionInfo") {
                 value = {

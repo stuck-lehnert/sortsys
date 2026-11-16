@@ -83,7 +83,7 @@ test("large inventories preserve definition order in bounded publication groups"
     f.definitions,
     new AbortController().signal,
   );
-  expect(f.calls.map((definitions) => definitions.length)).toEqual([64, 1]);
+  expect(f.calls.map((definitions) => definitions.length)).toEqual([32, 32, 1]);
   expect(f.calls.flat()).toEqual(f.definitions);
 });
 

@@ -28,14 +28,36 @@ export async function accessSnapshotFixture(client, input = {}) {
     input.includeDomains === false ? [] : await read("zerotrust.domains.list");
   if (selected)
     domains = domains.filter((domain) => selected.includes(domain.id));
+  const snapshot = "fixture-access-snapshot";
+  const ids = [
+    ...new Set([
+      ...domains.map((domain) => domain.id),
+      ...origins.map((origin) => origin.id),
+    ]),
+  ].sort();
+  let offset = 0;
+  if (input.after !== undefined) {
+    if (input.snapshot !== snapshot || !ids.includes(input.after)) {
+      return [null, new Error("Invalid fixture access continuation")];
+    }
+    offset = ids.indexOf(input.after) + 1;
+  }
+  const pageIds = ids.slice(offset, offset + 64);
+  const page = {
+    snapshot,
+    origins: origins.filter((origin) => pageIds.includes(origin.id)),
+    domains: domains.filter((domain) => pageIds.includes(domain.id)),
+    after: offset + 64 < ids.length ? pageIds.at(-1) : null,
+  };
+  if (input.after !== undefined) return [page, null];
   return [
     {
       subject: `user:${session.user.id}`,
       username: session.user.username,
       history,
       policy,
-      origins,
-      domains,
+      ...page,
+      unchanged: false,
     },
     null,
   ];

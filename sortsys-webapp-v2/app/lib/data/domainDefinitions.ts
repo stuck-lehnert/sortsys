@@ -10,6 +10,10 @@ import {
 import { unlockedAccount } from "../crypto/session";
 import { mapConcurrent } from "./runtime/concurrentReads";
 
+// Recipient envelopes, integrity witnesses and notifications all participate in
+// the same server transaction. Its record budget also bounds small definitions.
+const MAX_DEFINITIONS_PER_BATCH = 32;
+
 /** Related public key definitions become visible in one transaction.
  * Confirm their exact signed proofs, including after a lost acknowledgement. */
 export async function publishDomainDefinitions(
@@ -78,7 +82,8 @@ export async function publishDomainDefinitions(
     const size = encoder.encode(JSON.stringify(definition)).byteLength;
     if (
       batch.length &&
-      (batch.length === 64 || bytes + size > 8 * 1024 * 1024)
+      (batch.length === MAX_DEFINITIONS_PER_BATCH ||
+        bytes + size > 8 * 1024 * 1024)
     ) {
       await publish(batch);
       batch = [];

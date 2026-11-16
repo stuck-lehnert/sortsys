@@ -194,6 +194,7 @@ const AUTH_MUTATIONS = new Set([
 ]);
 const CRYPTO_QUERIES = new Set([
   "zerotrust.access.snapshot",
+  "zerotrust.access.page",
   "zerotrust.history.get",
   "zerotrust.history.list",
   "zerotrust.timestamps.get",

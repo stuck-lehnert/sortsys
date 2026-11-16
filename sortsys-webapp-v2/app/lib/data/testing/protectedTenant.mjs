@@ -147,6 +147,7 @@ export async function protectedTenant(
       calls.push({ path, input: structuredClone(input) });
       switch (path) {
         case "zerotrust.access.snapshot":
+        case "zerotrust.access.page":
           return accessSnapshotFixture(client, input);
         case "zerotrust.documents.messages.state":
           return [{ current: "0", checkpoint: null }, null];

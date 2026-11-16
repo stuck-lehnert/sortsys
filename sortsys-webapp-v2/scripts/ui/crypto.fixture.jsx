@@ -530,7 +530,10 @@ window.cryptoFixture = {
           ]),
         ),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: [":admin"] }, null];
@@ -684,7 +687,10 @@ window.cryptoFixture = {
           ]),
         ),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: [":admin"] }, null];
@@ -869,7 +875,10 @@ window.cryptoFixture = {
           ]),
         ),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: [":admin"] }, null];
@@ -1082,7 +1091,10 @@ window.cryptoFixture = {
           ]),
         ),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: [":admin"] }, null];
@@ -1249,7 +1261,10 @@ window.cryptoFixture = {
           ]);
         }),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: administrator ? [":admin"] : [] }, null];
@@ -1413,7 +1428,10 @@ window.cryptoFixture = {
           ]);
         }),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: [":admin"] }, null];
@@ -1661,7 +1679,10 @@ window.cryptoFixture = {
     const raw = {
       loggedIn: () => true,
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         reads.push(path);
         if (path === "auth.sessionInfo") return [metadata(), null];
@@ -1906,7 +1927,10 @@ window.cryptoFixture = {
           ]);
         }),
       async query(path, input) {
-        if (path === "zerotrust.access.snapshot")
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
           return [{ user, roles: [":admin"] }, null];
@@ -3233,7 +3257,10 @@ window.cryptoFixture = {
         await heldPolicyRead.promise;
         return [snapshot, null];
       }
-      if (path === "zerotrust.access.snapshot")
+      if (
+        path === "zerotrust.access.snapshot" ||
+        path === "zerotrust.access.page"
+      )
         return accessSnapshotFixture(client, input);
       if (path === "zerotrust.domains.get") {
         return [definitions.find((def) => def.id === input.domain), null];

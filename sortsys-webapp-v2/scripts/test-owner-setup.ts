@@ -35,7 +35,8 @@ for (const endpoint of endpoints) {
 }
 type RequestHook = (
   url: URL,
-  next: () => Promise<Response>,
+  next: (replacement?: URL) => Promise<Response>,
+  options?: RequestInit,
 ) => Promise<Response>;
 let requestHook: RequestHook | null = null;
 const originalFetch = globalThis.fetch;
@@ -52,14 +53,26 @@ globalThis.fetch = new Proxy(originalFetch, {
     );
     const body = options?.body;
     if (typeof body === "string") requests.push(body);
-    if (mode === "owner-tool-batches" && url.searchParams.has("input")) {
+    if (
+      ["owner-tool-batches", "owner-access-pages"].includes(mode) &&
+      url.searchParams.has("input")
+    ) {
       requests.push(url.searchParams.get("input")!);
     }
     if (mode === "owner-staging" && url.searchParams.get("batch") === "1") {
       rpcTransmissions.push(url.pathname.slice(1).split(","));
     }
     if (requestHook)
-      return requestHook(url, () => Reflect.apply(target, receiver, args));
+      return requestHook(
+        url,
+        (replacement) =>
+          Reflect.apply(
+            target,
+            receiver,
+            replacement ? [replacement, options] : args,
+          ),
+        options,
+      );
     if (url.pathname === "/auth.owner.finish" && loseOneSetupReply) {
       loseOneSetupReply = false;
       // Start on one replica and complete on the other. Losing only the
@@ -262,6 +275,15 @@ try {
     await exerciseRpcBatching(owner, rpcTransmissions);
     const { exerciseNativeStaging } = await import("./test-native-staging");
     await exerciseNativeStaging(owner, peer, draft);
+  } else if (mode === "owner-access-pages") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseNativeAccessPages } =
+      await import("./test-native-access-pages");
+    await exerciseNativeAccessPages(owner, peer, endpoints, (hook) => {
+      requestHook = hook;
+    });
   } else if (mode === "owner-tool-batches") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");
@@ -316,6 +338,12 @@ try {
           "Tool booking plaintext must stay in the browser: " + marker,
         );
       }
+    }
+    if (mode === "owner-access-pages") {
+      assert.equal(
+        body.includes("Private page inventory fixture 861329"),
+        false,
+      );
     }
     if (mode === "owner-backup-archive") {
       for (const marker of [

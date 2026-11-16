@@ -40,6 +40,10 @@ aktuelle Rechte; mehrere Bereiche werden gemeinsam signiert. Fachliche
 Bedingungen über Geheimwerte prüft der Client. Die unabhängige Löschung von
 Unterzeilen benötigt teils noch feiner aufgeteilte Objekte.
 
+Das Veröffentlichen mehrerer Bereichsrechte kann im geprüften Musterbestand mehr
+als 20 Sekunden dauern. Historische Schlüsselkopien und Schlüsselwechsel werden
+dabei noch einzeln übertragen und zurückgelesen.
+
 **Menüs und Aktionsschaltflächen.** Die bereits verschlüsselten Stammdaten und
 Projektaktionen verwenden verifizierte Inhaltsfreigaben. Angebots- und
 Projektanlage bleiben getrennt; zertifizierte Anlagenachweise werden
@@ -351,7 +355,11 @@ die Seed-Recovery ersetzt keine Datensicherung. Siehe
 **Migrationen über Inhaltsfelder.** Berechtigte Clients migrieren Inhalte.
 Servermigrationen betreffen nur öffentliche Hüllen und Referenzen.
 
-Die Bereichsverzeichnisse und Wiederherstellungspläne haben noch feste Grenzen:
+Die Browser lesen Berechtigungsverzeichnisse inzwischen in geprüften Seiten
+mit höchstens 64 Bereichen. Die Vertrauenskette und die signierten Regeln
+werden nur mit der ersten Seite übertragen. Das behebt die bisherigen
+Gesamtgrenzen noch nicht: Registrierung, weitere Verwaltungsabrufe und
+Wiederherstellungspläne begrenzen weiterhin den gesamten Bestand auf
 2.000 Inhaltsbereiche beziehungsweise 10.000 bisherige Schlüsselhüllen je
 Recovery-Plan. Diese Werte begrenzen reale Bestände, nicht nur einzelne
 Netzwerkpakete. Seitenweise Objektabrufe und gebündelte Übertragungen heben die
