@@ -49,10 +49,10 @@ globalThis.fetch = new Proxy(originalFetch, {
     const url = new URL(
       typeof input === "string" || input instanceof URL ? input : input.url,
     );
-    if (requestHook)
-      return requestHook(url, () => Reflect.apply(target, receiver, args));
     const body = options?.body;
     if (typeof body === "string") requests.push(body);
+    if (requestHook)
+      return requestHook(url, () => Reflect.apply(target, receiver, args));
     if (url.pathname === "/auth.owner.finish" && loseOneSetupReply) {
       loseOneSetupReply = false;
       // Start on one replica and complete on the other. Losing only the
@@ -231,6 +231,13 @@ try {
     });
     const { exerciseNativeDelivery } = await import("./test-duckdb-delivery");
     const canaries = await exerciseNativeDelivery(owner, peer);
+    const { exerciseNativeBusinessWorkflows } =
+      await import("./test-native-business-workflows");
+    canaries.push(
+      ...(await exerciseNativeBusinessWorkflows(owner, peer, (hook) => {
+        requestHook = hook;
+      })),
+    );
     for (const canary of canaries)
       assert.equal(
         requests.some((body) => body.includes(canary)),

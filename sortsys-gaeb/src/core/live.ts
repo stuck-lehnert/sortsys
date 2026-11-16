@@ -1,5 +1,6 @@
 import type { Collaborator } from "../canvas/types";
 import type { LiveSelection, SharedFields } from "./sharedFields";
+import { GAEB_CONTENT_FACETS } from "./contentFacets";
 
 export type LiveSnapshot = {
   xml: string;
@@ -122,7 +123,13 @@ export function connectXmlLive(options: {
             showParticipants();
           }
           if (message.type === "sync" && typeof message.data === "string") {
-            options.sharedFields?.receive(message.data);
+            if (
+              message.facet !== undefined &&
+              !GAEB_CONTENT_FACETS.includes(message.facet)
+            ) {
+              throw new Error("live-facet");
+            }
+            options.sharedFields?.receive(message.data, message.facet);
             sendField();
             showParticipants();
           }

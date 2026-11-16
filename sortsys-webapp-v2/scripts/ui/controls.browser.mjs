@@ -749,8 +749,14 @@ test("only opted-in document editors are edge-to-edge with a compact context hea
       .boundingBox();
     const label = await editor.locator(".ss-modal-label").boundingBox();
     assert.ok(heading.x <= 16, JSON.stringify({ heading, viewport }));
-    assert.ok(label.x >= heading.x + heading.width + 4, JSON.stringify({ heading, label }));
-    assert.ok(Math.abs(label.y + label.height / 2 - heading.y - heading.height / 2) <= 1);
+    assert.ok(
+      label.x >= heading.x + heading.width + 4,
+      JSON.stringify({ heading, label }),
+    );
+    assert.ok(
+      Math.abs(label.y + label.height / 2 - heading.y - heading.height / 2) <=
+        1,
+    );
     const close = editor.getByRole("button", {
       name: "Close editor",
       exact: true,
@@ -1095,13 +1101,20 @@ test("async multiselect keeps results matched by description rather than their v
     name: "Async people",
     exact: true,
   });
-  await region.getByRole("button", { name: "Remove Existing contact", exact: true }).waitFor();
+  await region
+    .getByRole("button", { name: "Remove Existing contact", exact: true })
+    .waitFor();
   await input.fill("description-only-match");
-  const result = page.getByRole("option", { name: "Alpha contact", exact: true });
+  const result = page.getByRole("option", {
+    name: "Alpha contact",
+    exact: true,
+  });
   await result.waitFor();
   await result.click();
   await input.press("Escape");
-  await region.getByRole("button", { name: "Remove Alpha contact", exact: true }).waitFor();
+  await region
+    .getByRole("button", { name: "Remove Alpha contact", exact: true })
+    .waitFor();
 });
 
 test("actual async single suggestions show pending status and appear while typing", async () => {
@@ -1155,11 +1168,20 @@ test("actual async single suggestions show pending status and appear while typin
 
 test("async single suggestions keep results matched outside the visible label", async () => {
   await openFixture();
-  const input = page.getByRole("combobox", { name: "Async single", exact: true });
+  const input = page.getByRole("combobox", {
+    name: "Async single",
+    exact: true,
+  });
   await input.fill("description-only-match");
-  const result = page.getByRole("option", { name: "Alpha contact", exact: true });
+  const result = page.getByRole("option", {
+    name: "Alpha contact",
+    exact: true,
+  });
   await result.waitFor();
   await result.click();
+  await page.waitForFunction(
+    () => document.querySelector('[name="single"]').value === "Alpha contact",
+  );
   assert.equal(await input.inputValue(), "Alpha contact");
 });
 

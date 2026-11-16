@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Button, Content } from "@sortsys/react-components";
 import { NotificationProvider } from "@sortsys/react-components/notifications";
 import { Outlet, Route, Routes, useLocation } from "react-router";
@@ -7,14 +7,16 @@ import { MyModalsProvider, useMyModals } from "../../app/hooks/useMyModals";
 import { CommercialLinkHandler } from "../../app/modals/commercial";
 import { client } from "../../app/lib/client";
 import { adminClient } from "../../app/lib/adminClient";
+import { installPresentationClient } from "./presentation-client.fixture.mjs";
 import GlobalAdminErrorsPage from "../../app/routes/(admin)/__admin.errors";
+import GlobalAdminDatabasesPage from "../../app/routes/(admin)/__admin.databases";
 import GlobalAdminLlmPage from "../../app/routes/(admin)/__admin.llm";
 import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
 import {
   showCreateUserModal,
   showModifyUserModal,
-  showSetUserPasswordModal,
+  showChangeOwnPasswordModal,
   showSetUserSupervisorModal,
 } from "../../app/modals/users";
 import { showCreateDailyProjectReportModal } from "../../app/modals/dailyProjectReport";
@@ -27,7 +29,7 @@ import { showCreateAbsenceModal } from "../../app/modals/absences";
 import { showTrackToolsModal } from "../../app/modals/tools";
 
 const bookedTool = {
-  id: "tool-eleven",
+  id: "j",
   customId: 11,
   brand: "Hilti",
   category: "Bohrhammer",
@@ -82,7 +84,7 @@ if (
 function FormEntrypoints() {
   const modals = useMyModals();
   const user = {
-    id: "fixture-user",
+    id: "d",
     username: "fixture.user",
     firstName: "Fixture",
     lastName: "User",
@@ -115,12 +117,16 @@ function FormEntrypoints() {
       >
         Book tools
       </Button>
-      <Button onClick={() => showSetUserPasswordModal(modals, user)}>
+      <Button onClick={() => showChangeOwnPasswordModal(modals, user)}>
         Set password
       </Button>
       <Button onClick={() => showCreateUserModal(modals)}>Create user</Button>
-      <Button onClick={() => showModifyUserModal(modals, user)}>Edit user</Button>
-      <Button onClick={() => showSetUserSupervisorModal(modals, user)}>Set supervisor</Button>
+      <Button onClick={() => showModifyUserModal(modals, user)}>
+        Edit user
+      </Button>
+      <Button onClick={() => showSetUserSupervisorModal(modals, user)}>
+        Set supervisor
+      </Button>
       <Button onClick={() => showCreateDailyProjectReportModal(modals)}>
         Create daily report
       </Button>
@@ -146,7 +152,7 @@ function FormEntrypoints() {
 }
 
 function ProjectFixture() {
-  const project = { id: "project-fixture", title: "Fixture project" };
+  const project = { id: "c", title: "Fixture project" };
 
   return (
     <>
@@ -175,8 +181,19 @@ function ApplicationFrame({ children }) {
 }
 
 export function ApplicationFixture() {
+  const [access, setAccess] = useState(null);
+  useEffect(() => {
+    let active = true;
+    void installPresentationClient().then((value) => {
+      if (active) setAccess(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (!access) return null;
   return (
-    <SessionInfoProvider>
+    <SessionInfoProvider access={access}>
       <NotificationProvider
         closeLabel="Close notification"
         regionLabel="Notifications"
@@ -213,6 +230,10 @@ export function ApplicationFixture() {
               <Route
                 path="/__admin/errors"
                 element={<GlobalAdminErrorsPage />}
+              />
+              <Route
+                path="/__admin/databases"
+                element={<GlobalAdminDatabasesPage />}
               />
               <Route path="/__admin/llm" element={<GlobalAdminLlmPage />} />
               <Route path="/scripts" element={<ClientScriptsPage />} />

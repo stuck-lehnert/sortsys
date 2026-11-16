@@ -585,6 +585,12 @@ export default function LlmPage() {
     const currentChatId = selectedId;
 
     async function refresh() {
+      if (request && !request.pending) {
+        // A history request started during generation may still be in flight.
+        // Do not reuse that earlier snapshot after the final reply arrived.
+        await client.invalidate("llm.chats.get");
+        if (cancelled) return;
+      }
       const [data, err] = await client.query(
         "llm.chats.get",
         { chatId: currentChatId },
@@ -1058,7 +1064,7 @@ export default function LlmPage() {
               <div className="flex flex-1 items-center justify-center">
                 <Loading active description={t("common.loading")} />
               </div>
-            ) : !hasMessages ? (
+            ) : !hasMessages && status?.available ? (
               <div
                 className={[
                   "flex flex-1 flex-col items-center justify-center",
@@ -1134,51 +1140,56 @@ export default function LlmPage() {
           </div>
         </div>
 
-        <form
-          className="mx-auto w-full max-w-3xl shrink-0 space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void sendMessage();
-          }}
-        >
-          <div className="flex items-end gap-2">
-            <UITextArea
-              autoFocus
-              variant="secondary"
-              className="max-h-48 min-h-14 min-w-0 flex-1 resize-none"
-              aria-label={t("llm.message")}
-              placeholder={t("llm.placeholder")}
-              value={content}
-              disabled={
-                !canSend || isSending || isStartingNewChat || !status?.available
-              }
-              rows={2}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-                setContent(event.currentTarget.value);
-              }}
-              onKeyDown={handleComposerKeyDown}
-            />
-            <UIAction
-              type="submit"
-              className="shrink-0 rounded-full"
-              aria-label={t("llm.send")}
-              title={t("llm.send")}
-              disabled={
-                !canSend ||
-                isSending ||
-                isStartingNewChat ||
-                !status?.available ||
-                !content.trim()
-              }
-            >
-              <Icons.Magic size={18} aria-hidden="true" />
-              <span className="sr-only sm:not-sr-only">{t("llm.send")}</span>
-            </UIAction>
-          </div>
-          <p className="px-1 text-xs leading-relaxed text-muted">
-            {t("llm.composerHint")}
-          </p>
-        </form>
+        {(selectedId || status?.available) && (
+          <form
+            className="mx-auto w-full max-w-3xl shrink-0 space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendMessage();
+            }}
+          >
+            <div className="flex items-end gap-2">
+              <UITextArea
+                autoFocus
+                variant="secondary"
+                className="max-h-48 min-h-14 min-w-0 flex-1 resize-none"
+                aria-label={t("llm.message")}
+                placeholder={t("llm.placeholder")}
+                value={content}
+                disabled={
+                  !canSend ||
+                  isSending ||
+                  isStartingNewChat ||
+                  !status?.available
+                }
+                rows={2}
+                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+                  setContent(event.currentTarget.value);
+                }}
+                onKeyDown={handleComposerKeyDown}
+              />
+              <UIAction
+                type="submit"
+                className="shrink-0 rounded-full"
+                aria-label={t("llm.send")}
+                title={t("llm.send")}
+                disabled={
+                  !canSend ||
+                  isSending ||
+                  isStartingNewChat ||
+                  !status?.available ||
+                  !content.trim()
+                }
+              >
+                <Icons.Magic size={18} aria-hidden="true" />
+                <span className="sr-only sm:not-sr-only">{t("llm.send")}</span>
+              </UIAction>
+            </div>
+            <p className="px-1 text-xs leading-relaxed text-muted">
+              {t("llm.composerHint")}
+            </p>
+          </form>
+        )}
       </section>
 
       {/* Pending announcements keep their name after the proposal is replaced. */}

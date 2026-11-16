@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import superjson from "superjson";
 import * as Y from "yjs";
@@ -12,7 +12,10 @@ import { makeEmlFixture } from "../../test-fixtures/emailFixture.mjs";
 import { legacyContract } from "../../test-fixtures/gaebContractFixture.mjs";
 
 const pdfjsVersion = JSON.parse(
-  await readFile(new URL("../../vendor/pdfjs/release.json", import.meta.url), "utf8"),
+  await readFile(
+    new URL("../../vendor/pdfjs/release.json", import.meta.url),
+    "utf8",
+  ),
 ).version;
 
 let browser;
@@ -21,6 +24,13 @@ let context;
 let page;
 let api;
 let errors;
+
+function isWorkflowApiUrl(url) {
+  return (
+    url.origin === "http://127.0.0.1:3000" ||
+    (url.origin === server.origin && url.pathname.startsWith("/api/v2/"))
+  );
+}
 
 const existingContact = {
   id: "1dag4dqo8npse",
@@ -35,7 +45,7 @@ const existingContact = {
 };
 const otherContact = {
   ...existingContact,
-  id: "contact-second",
+  id: "f",
   firstName: "Ben",
   lastName: "Schneider",
 };
@@ -98,10 +108,11 @@ function createWorkflowApi() {
   const injectedErrors = new Set();
   const responses = new Map();
   const heldResponses = new Map();
+  const heldSnapshots = new Map();
   const requests = [];
   const unexpected = [];
   let customer = {
-    id: "customer-fixture",
+    id: "b",
     salutation: null,
     name: "Fixture Customer",
     address: { city: "Berlin", streetAddress: "Teststraße 17", zip: "10115" },
@@ -114,18 +125,19 @@ function createWorkflowApi() {
   let contacts = [existingContact];
   const date = new Date("2026-10-27T08:00:00Z");
   const chat = {
-    id: "fixture-chat",
+    id: "k",
     title: "Fixture conversation",
     createdAt: date,
     updatedAt: date,
   };
   const archivedChat = {
-    id: "archived-chat",
+    id: "l",
     title: "Archived site discussion",
     createdAt: new Date("2026-09-14T08:00:00Z"),
     updatedAt: new Date("2026-09-15T10:00:00Z"),
   };
   let chats = [chat, archivedChat];
+  let dashboardPins = [];
   const chatDetails = new Map([
     [chat.id, { chat, messages: [], proposals: [] }],
     [
@@ -134,7 +146,7 @@ function createWorkflowApi() {
         chat: archivedChat,
         messages: [
           {
-            id: "archived-message",
+            id: "m",
             role: "assistant",
             content: "Saved discussion from last month.",
             createdAt: archivedChat.updatedAt,
@@ -160,7 +172,7 @@ function createWorkflowApi() {
       case "auth.sessionInfo":
         return {
           user: {
-            id: "fixture-user",
+            id: "d",
             username: "fixture.user",
             name: "Fixture User",
             locale,
@@ -172,6 +184,7 @@ function createWorkflowApi() {
             objectStorageEnabled: true,
           },
           roles,
+          session: { id: "q" },
           hasPassword: true,
         };
       case "customers.get":
@@ -206,7 +219,7 @@ function createWorkflowApi() {
       case "personalization.visits.list":
         return [
           {
-            path: "/customers/customer-fixture",
+            path: "/customers/b",
             title: "Fixture Customer",
             visitedAt: date,
           },
@@ -221,16 +234,43 @@ function createWorkflowApi() {
       case "customers.list":
         return [customer];
       case "products.vendors.list":
-        return [{ id: "vendor-fixture", name: "Fixture Vendor" }].filter(
-          (vendor) =>
-            vendor.name
-              .toLocaleLowerCase()
-              .includes(input?.search?.trim().toLocaleLowerCase() ?? ""),
+        return [{ id: "g", name: "Fixture Vendor" }].filter((vendor) =>
+          vendor.name
+            .toLocaleLowerCase()
+            .includes(input?.search?.trim().toLocaleLowerCase() ?? ""),
         );
       case "users.list":
         return [];
       case "users.supervisors.getDefault":
         return { userId: null };
+      case "personalization.dashboard.pins.get":
+        return dashboardPins;
+      case "personalization.dashboard.pins.pin":
+        dashboardPins = [
+          input,
+          ...dashboardPins.filter((pin) => pin.path !== input.path),
+        ];
+        return { success: true };
+      case "personalization.dashboard.pins.unpin":
+        dashboardPins = dashboardPins.filter((pin) => pin.path !== input.path);
+        return { success: true };
+      case "personalization.dashboard.pins.move": {
+        const index = dashboardPins.findIndex((pin) => pin.path === input.path);
+        if (index < 0) throw new Error("Unknown presentation pin");
+        const [pin] = dashboardPins.splice(index, 1);
+        let destination = index + (input.offset ?? 0);
+        if (input.target) {
+          destination = dashboardPins.findIndex(
+            (entry) => entry.path === input.target,
+          );
+          if (input.after) destination += 1;
+        }
+        dashboardPins.splice(Math.max(0, destination), 0, pin);
+        return { success: true };
+      }
+      case "personalization.dashboard.pins.import":
+        dashboardPins = input.entries;
+        return { success: true };
       case "personalization.gaebView.get":
         return gaebView;
       case "personalization.gaebView.set":
@@ -267,8 +307,8 @@ function createWorkflowApi() {
           ? []
           : [
               {
-                id: "file-fixture",
-                projectId: "project-fixture",
+                id: "e",
+                projectId: "c",
                 projectTitle: "Fixture Project",
                 fileName: "Fixture report.pdf",
                 mimeType: "application/pdf",
@@ -380,7 +420,7 @@ function createWorkflowApi() {
       case "products.priceImports.apply":
         return true;
       case "errorReports.report":
-        if (!injectedErrors.has(input.message)) {
+        if (input.message !== "Client operation failed") {
           unexpected.push(`errorReports.report: ${input.message}`);
           throw new Error("Unexpected application error report");
         }
@@ -395,10 +435,11 @@ function createWorkflowApi() {
   return {
     requests,
     unexpected,
+    dashboardPins: () => structuredClone(dashboardPins),
     seedProposal() {
       chatDetails.get(chat.id).proposals = [
         {
-          id: "proposal-fixture",
+          id: "n",
           chatId: chat.id,
           assistantMessageId: null,
           title: "Dummy-Testprojekt anlegen",
@@ -449,6 +490,18 @@ function createWorkflowApi() {
       heldResponses.get(path)?.release();
       heldResponses.delete(path);
     },
+    holdNextSnapshot(path) {
+      let release;
+      let capture;
+      const response = new Promise((resolve) => {
+        release = resolve;
+      });
+      const captured = new Promise((resolve) => {
+        capture = resolve;
+      });
+      heldSnapshots.set(path, { response, capture });
+      return { captured, release };
+    },
     async handle(route) {
       const request = route.request();
       const headers = {
@@ -488,6 +541,13 @@ function createWorkflowApi() {
           };
         }
       });
+      for (const path of paths) {
+        const snapshot = heldSnapshots.get(path);
+        if (!snapshot) continue;
+        heldSnapshots.delete(path);
+        snapshot.capture(request);
+        await snapshot.response;
+      }
       await route.fulfill({
         status: 200,
         headers,
@@ -517,7 +577,7 @@ beforeEach(async () => {
     await route.abort("blockedbyclient");
   });
   api = createWorkflowApi();
-  await context.route("http://127.0.0.1:3000/**", api.handle);
+  await context.route(isWorkflowApiUrl, api.handle);
   page = await context.newPage();
   page.setDefaultTimeout(6000);
   errors = [];
@@ -529,7 +589,25 @@ beforeEach(async () => {
   });
 });
 
-afterEach(async () => {
+afterEach(async (testContext) => {
+  if (process.env.SORTSYS_UI_DIAGNOSTICS_DIRECTORY) {
+    const directory = process.env.SORTSYS_UI_DIAGNOSTICS_DIRECTORY;
+    await mkdir(directory, { recursive: true });
+    const name = testContext.name.replace(/[^a-zA-Z0-9-]+/g, "_");
+    await page.screenshot({
+      path: join(directory, `${name}.png`),
+      fullPage: true,
+    });
+    await writeFile(join(directory, `${name}.html`), await page.content());
+    await writeFile(
+      join(directory, `${name}.json`),
+      superjson.stringify({
+        requests: api.requests,
+        errors,
+        unexpected: api.unexpected,
+      }),
+    );
+  }
   await context.close();
   assert.deepEqual(
     api.unexpected,
@@ -544,8 +622,11 @@ afterEach(async () => {
 });
 
 after(async () => {
-  await browser.close();
-  await server.close();
+  try {
+    await browser?.close();
+  } finally {
+    await server?.close();
+  }
 });
 
 async function openApplication(path, locale = "en", theme = "light") {
@@ -585,13 +666,13 @@ function populateDashboard() {
     "LLM",
   ];
   const paths = [
-    "/customers/customer-fixture",
+    "/customers/b",
     "/deployments",
     "/vacations",
     "/tools",
     "/toolTrackings",
     "/projects",
-    "/projects/project-fixture",
+    "/projects/c",
     "/llm",
   ];
   api.respond(
@@ -675,7 +756,7 @@ for (const [locale, viewport] of [
 ]) {
   test(`actual customer editing keeps selected contact IDs unique in ${locale}`, async () => {
     await page.setViewportSize(viewport);
-    await openApplication("/customers/customer-fixture", locale);
+    await openApplication("/customers/b", locale);
     await page
       .getByRole("heading", { name: "Fixture Customer", exact: true })
       .waitFor();
@@ -727,10 +808,7 @@ for (const [locale, viewport] of [
       assignment.input.contactIds.sort(),
       [existingContact.id, otherContact.id].sort(),
     );
-    assert.equal(
-      new URL(page.url()).searchParams.get("path"),
-      "/customers/customer-fixture",
-    );
+    assert.equal(new URL(page.url()).searchParams.get("path"), "/customers/b");
   });
 }
 
@@ -987,8 +1065,7 @@ for (const [locale, theme, layout, viewport] of [
       .waitFor();
     assert.ok(
       api.requests.some(
-        ({ path, input }) =>
-          path === "llm.chats.get" && input.chatId === "archived-chat",
+        ({ path, input }) => path === "llm.chats.get" && input.chatId === "l",
       ),
     );
 
@@ -1199,55 +1276,59 @@ for (const [locale, theme, layout, viewport] of [
   });
 }
 
-test("actual chat history distinguishes loading from an empty history", async () => {
-  let release;
-  let observed;
-  const pending = new Promise((resolve) => {
-    release = resolve;
-  });
-  const requested = new Promise((resolve) => {
-    observed = resolve;
-  });
-  await page.route("http://127.0.0.1:3000/**", async (route) => {
-    if (
-      decodeURIComponent(new URL(route.request().url()).pathname).includes(
-        "llm.chats.list",
-      )
-    ) {
-      observed();
-      await pending;
-    }
-
-    await api.handle(route);
-  });
-
-  try {
-    await openApplication("/llm/chats");
-    await requested;
-    const history = page.getByRole("navigation", {
-      name: "Chats",
-      exact: true,
+test(
+  "actual chat history distinguishes loading from an empty history",
+  { timeout: 20_000 },
+  async () => {
+    let release;
+    let observed;
+    const pending = new Promise((resolve) => {
+      release = resolve;
     });
-    await history
-      .getByRole("status")
-      .filter({ hasText: /Loading/ })
-      .waitFor();
-    assert.equal(
-      await history.getByText("No chats yet", { exact: true }).count(),
-      0,
-    );
-    release();
-    await history
-      .getByRole("link", { name: /Archived site discussion/ })
-      .waitFor();
-    assert.equal(
-      await history.getByText("Loading", { exact: true }).count(),
-      0,
-    );
-  } finally {
-    release();
-  }
-});
+    const requested = new Promise((resolve) => {
+      observed = resolve;
+    });
+    await page.route(isWorkflowApiUrl, async (route) => {
+      if (
+        decodeURIComponent(new URL(route.request().url()).pathname).includes(
+          "llm.chats.list",
+        )
+      ) {
+        observed();
+        await pending;
+      }
+
+      await api.handle(route);
+    });
+
+    try {
+      await openApplication("/llm/chats");
+      await requested;
+      const history = page.getByRole("navigation", {
+        name: "Chats",
+        exact: true,
+      });
+      await history
+        .getByRole("status")
+        .filter({ hasText: /Loading/ })
+        .waitFor();
+      assert.equal(
+        await history.getByText("No chats yet", { exact: true }).count(),
+        0,
+      );
+      release();
+      await history
+        .getByRole("link", { name: /Archived site discussion/ })
+        .waitFor();
+      assert.equal(
+        await history.getByText("Loading", { exact: true }).count(),
+        0,
+      );
+    } finally {
+      release();
+    }
+  },
+);
 
 for (const [layout, viewport] of [
   ["desktop", { width: 1400, height: 1000 }],
@@ -1299,7 +1380,7 @@ for (const [layout, viewport] of [
 
   test(`actual notes keep compact amber cards and icon-only actions on ${layout}`, async () => {
     await page.setViewportSize(viewport);
-    await openApplication("/customers/customer-fixture");
+    await openApplication("/customers/b");
     const body = page.getByText(
       "Anlieferungen bitte mindestens einen Werktag vorher bei der Bauleitung anmelden.",
       { exact: true },
@@ -1462,57 +1543,122 @@ test("actual restricted roles cannot use administration or the LLM composer", as
 });
 
 test("price-import lookups retain description-only server matches for vendors and products", async () => {
-  const vendor = { id: "description-vendor", name: "Nordbau", description: "Fassadenlieferant" };
-  const product = {
-    id: "description-product", customId: 840, name: "Reparaturmörtel",
-    description: "Haftbrücke für mineralische Untergründe", baseUnit: "kg",
-    brand: "Bauwerk", otherUnits: {},
+  const vendor = {
+    id: "description-vendor",
+    name: "Nordbau",
+    description: "Fassadenlieferant",
   };
-  api.respond("products.vendors.list", ({ search }) => search === "fassaden" ? [vendor] : []);
-  api.respond("products.list", ({ search }) => search === "mineralisch haftbrücke" ? [product] : []);
+  const product = {
+    id: "description-product",
+    customId: 840,
+    name: "Reparaturmörtel",
+    description: "Haftbrücke für mineralische Untergründe",
+    baseUnit: "kg",
+    brand: "Bauwerk",
+    otherUnits: {},
+  };
+  api.respond("products.vendors.list", ({ search }) =>
+    search === "fassaden" ? [vendor] : [],
+  );
+  api.respond("products.list", ({ search }) =>
+    search === "mineralisch haftbrücke" ? [product] : [],
+  );
   await openApplication("/fixtures/forms");
-  await page.getByRole("button", { name: "Import price list", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Import price list", exact: true })
+    .click();
   const dialog = page.getByRole("dialog");
-  const vendorInput = dialog.getByRole("combobox", { name: "Vendor", exact: true });
+  const vendorInput = dialog.getByRole("combobox", {
+    name: "Vendor",
+    exact: true,
+  });
   await vendorInput.fill("fassaden");
   await page.getByRole("option", { name: "Nordbau", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('.price-import-fields input')?.value === "Nordbau");
-  await dialog.getByRole("button", { name: "Open details for Fixture material 1", exact: true }).click();
-  const productInput = dialog.getByRole("combobox", { name: "Product match", exact: true });
+  await page.waitForFunction(
+    () =>
+      document.querySelector(".price-import-fields input")?.value === "Nordbau",
+  );
+  await dialog
+    .getByRole("button", {
+      name: "Open details for Fixture material 1",
+      exact: true,
+    })
+    .click();
+  const productInput = dialog.getByRole("combobox", {
+    name: "Product match",
+    exact: true,
+  });
   await productInput.fill("mineralisch haftbrücke");
   await page.getByRole("option", { name: /840 · Reparaturmörtel/ }).click();
-  await page.waitForFunction(() => document.querySelector('.price-import-row-body input')?.value === "840 · Reparaturmörtel");
+  await page.waitForFunction(
+    () =>
+      document.querySelector(".price-import-row-body input")?.value ===
+      "840 · Reparaturmörtel",
+  );
   await dialog.getByText(/^Existing product/).waitFor();
-  assert.ok(api.requests.some(({ path, input }) => path === "products.list" && input.search === "mineralisch haftbrücke"));
+  assert.ok(
+    api.requests.some(
+      ({ path, input }) =>
+        path === "products.list" && input.search === "mineralisch haftbrücke",
+    ),
+  );
 });
 
 for (const entrypoint of ["Create user", "Edit user", "Set supervisor"]) {
   test(`${entrypoint} searches supervisors through the API and retains email matches`, async () => {
     const candidate = {
-      id: "supervisor-fixture", username: "abauer", firstName: "Alex", lastName: "Bauer",
+      id: "supervisor-fixture",
+      username: "abauer",
+      firstName: "Alex",
+      lastName: "Bauer",
       email: "planung@example.test",
     };
-    api.respond("users.list", ({ search }) => search === "planung@example.test" ? [
-      { id: "fixture-user", username: "fixture.user", firstName: "Fixture", lastName: "User" },
-      candidate,
-    ] : []);
+    api.respond("users.list", ({ search }) =>
+      search === "planung@example.test"
+        ? [
+            {
+              id: "d",
+              username: "fixture.user",
+              firstName: "Fixture",
+              lastName: "User",
+            },
+            candidate,
+          ]
+        : [],
+    );
     await openApplication("/fixtures/forms");
     await page.getByRole("button", { name: entrypoint, exact: true }).click();
     const dialog = page.getByRole("dialog");
     const input = dialog.getByRole("combobox", { name: /^Supervisor/ });
     await input.fill("planung@example.test");
-    const option = page.getByRole("option", { name: "Alex Bauer", exact: true });
+    const option = page.getByRole("option", {
+      name: "Alex Bauer",
+      exact: true,
+    });
     await option.waitFor();
     if (entrypoint !== "Create user")
-      assert.equal(await page.getByRole("option", { name: "Fixture User", exact: true }).count(), 0);
+      assert.equal(
+        await page
+          .getByRole("option", { name: "Fixture User", exact: true })
+          .count(),
+        0,
+      );
     await option.click();
-    await dialog.locator(".ss-single-select-preview").getByText("Alex Bauer", { exact: true }).waitFor();
-    assert.ok(api.requests.some(({ path, input }) => path === "users.list" && input.search === "planung@example.test"));
+    await dialog
+      .locator(".ss-single-select-preview")
+      .getByText("Alex Bauer", { exact: true })
+      .waitFor();
+    assert.ok(
+      api.requests.some(
+        ({ path, input }) =>
+          path === "users.list" && input.search === "planung@example.test",
+      ),
+    );
   });
 }
 
 function populatePlanning(employeeCount = 1) {
-  const project = { id: "project-fixture", title: "Fixture project" };
+  const project = { id: "c", title: "Fixture project" };
   const employee = {
     id: "employee-fixture",
     username: "fixture.employee",
@@ -1548,8 +1694,8 @@ function populatePlanning(employeeCount = 1) {
 function populateAttachments() {
   const date = new Date("2026-10-27T08:00:00Z");
   const document = {
-    id: "file-fixture",
-    projectId: "project-fixture",
+    id: "e",
+    projectId: "c",
     folderId: null,
     fileName: "Specification.pdf",
     mimeType: "application/pdf",
@@ -1557,7 +1703,7 @@ function populateAttachments() {
     sizeBytes: 2048,
     status: "uploaded",
     textExtractionStatus: "ready",
-    createdByUserId: "fixture-user",
+    createdByUserId: "d",
     createdAt: date,
     modifiedAt: date,
     uploadedAt: date,
@@ -1570,7 +1716,7 @@ function populateAttachments() {
     document,
     {
       ...document,
-      id: "nested-file-fixture",
+      id: "nested-e",
       folderId: "folder-fixture",
       fileName: "Plan.xlsx",
       mimeType:
@@ -1590,7 +1736,7 @@ function populateAttachments() {
   api.respond("projects.files.folders.list", [
     {
       id: "folder-fixture",
-      projectId: "project-fixture",
+      projectId: "c",
       parentFolderId: null,
       name: "Plans",
       createdAt: date,
@@ -1624,13 +1770,21 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
     ],
     [
       "msg",
-      new Uint8Array(makeMsgFixture({ htmlCodepage: 28591, messageCodepage: 1252 })),
+      new Uint8Array(
+        makeMsgFixture({ htmlCodepage: 28591, messageCodepage: 1252 }),
+      ),
       "Baufortschritt – Grüße",
       "Grüße vom Gelände.",
     ],
     [
       "msg",
-      new Uint8Array(makeMsgFixture({ htmlCodepage: 77777, messageCodepage: 77777, htmlCharset: "iso-8859-1" })),
+      new Uint8Array(
+        makeMsgFixture({
+          htmlCodepage: 77777,
+          messageCodepage: 77777,
+          htmlCharset: "iso-8859-1",
+        }),
+      ),
       "Baufortschritt – Grüße",
       "Grüße vom Gelände.",
     ],
@@ -1666,39 +1820,71 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
   }
 });
 
-test("reported MSG opens in the actual email dialog", { skip: !process.env.SORTSYS_TEST_EMAIL_MSG }, async () => {
-  // Personal correspondence stays outside the repository; CI uses synthetic
-  // MSG fixtures with the same code-page properties in the worker test above.
-  const bytes = await readFile(process.env.SORTSYS_TEST_EMAIL_MSG);
-  const date = new Date("2026-11-08T08:00:00Z");
-  api.respond("projects.files.list", [{
-    id: "reported-msg", projectId: "project-fixture", folderId: null,
-    fileName: "Reported message.msg", mimeType: "application/vnd.ms-outlook", kind: "file",
-    sizeBytes: bytes.length, status: "uploaded", textExtractionStatus: "ready",
-    createdByUserId: "fixture-user", createdAt: date, modifiedAt: date, uploadedAt: date,
-    downloadUrl: `${server.origin}/reported.msg`,
-  }]);
-  api.respond("projects.files.folders.list", []);
-  await page.route(`${server.origin}/reported.msg`, route => route.fulfill({ contentType: "application/vnd.ms-outlook", body: bytes }));
-  const external = [];
-  page.on("request", request => {
-    if (/^https?:/.test(request.url()) && ![server.origin, "http://127.0.0.1:3000"].includes(new URL(request.url()).origin)) external.push(request.url());
-  });
-  await openApplication("/projects/project-fixture/files/reported-msg", "de", "light");
-  const dialog = page.getByRole("dialog", { name: /E-Mail ansehen|View email/ });
-  await dialog.locator(".attachment-email-metadata").waitFor();
-  assert.match(await dialog.locator(".attachment-email-heading h2").textContent(), /Systemumstellung/);
-  const body = dialog.frameLocator(".attachment-email-body");
-  await body.locator("main").waitFor();
-  assert.ok((await body.locator("main").innerText()).length > 100);
-  assert.equal(await body.locator("img").count(), 2);
-  for (const image of await body.locator("img").all()) {
-    assert.ok((await image.getAttribute("src")).startsWith("data:image/"));
-    await image.evaluate(element => element.decode());
-    assert.ok(await image.evaluate(element => element.naturalWidth > 0));
-  }
-  assert.deepEqual(external, [], "The message must not load external resources");
-});
+test(
+  "reported MSG opens in the actual email dialog",
+  { skip: !process.env.SORTSYS_TEST_EMAIL_MSG },
+  async () => {
+    // Personal correspondence stays outside the repository; CI uses synthetic
+    // MSG fixtures with the same code-page properties in the worker test above.
+    const bytes = await readFile(process.env.SORTSYS_TEST_EMAIL_MSG);
+    const date = new Date("2026-11-08T08:00:00Z");
+    api.respond("projects.files.list", [
+      {
+        id: "reported-msg",
+        projectId: "c",
+        folderId: null,
+        fileName: "Reported message.msg",
+        mimeType: "application/vnd.ms-outlook",
+        kind: "file",
+        sizeBytes: bytes.length,
+        status: "uploaded",
+        textExtractionStatus: "ready",
+        createdByUserId: "d",
+        createdAt: date,
+        modifiedAt: date,
+        uploadedAt: date,
+        downloadUrl: `${server.origin}/reported.msg`,
+      },
+    ]);
+    api.respond("projects.files.folders.list", []);
+    await page.route(`${server.origin}/reported.msg`, (route) =>
+      route.fulfill({ contentType: "application/vnd.ms-outlook", body: bytes }),
+    );
+    const external = [];
+    page.on("request", (request) => {
+      if (
+        /^https?:/.test(request.url()) &&
+        ![server.origin, "http://127.0.0.1:3000"].includes(
+          new URL(request.url()).origin,
+        )
+      )
+        external.push(request.url());
+    });
+    await openApplication("/projects/c/files/reported-msg", "de", "light");
+    const dialog = page.getByRole("dialog", {
+      name: /E-Mail ansehen|View email/,
+    });
+    await dialog.locator(".attachment-email-metadata").waitFor();
+    assert.match(
+      await dialog.locator(".attachment-email-heading h2").textContent(),
+      /Systemumstellung/,
+    );
+    const body = dialog.frameLocator(".attachment-email-body");
+    await body.locator("main").waitFor();
+    assert.ok((await body.locator("main").innerText()).length > 100);
+    assert.equal(await body.locator("img").count(), 2);
+    for (const image of await body.locator("img").all()) {
+      assert.ok((await image.getAttribute("src")).startsWith("data:image/"));
+      await image.evaluate((element) => element.decode());
+      assert.ok(await image.evaluate((element) => element.naturalWidth > 0));
+    }
+    assert.deepEqual(
+      external,
+      [],
+      "The message must not load external resources",
+    );
+  },
+);
 
 for (const locale of ["de", "en"]) {
   test(`dashboard wraps six quick actions on one wide row in ${locale}`, async () => {
@@ -1765,7 +1951,7 @@ test(dashboardPinningTestName, async () => {
     .filter({ has: page.locator('a[href="/deployments"]') });
   const customerRow = recent
     .locator(".dashboard-visit-row")
-    .filter({ has: page.locator('a[href="/customers/customer-fixture"]') });
+    .filter({ has: page.locator('a[href="/customers/b"]') });
   await deploymentRow.getByRole("button").click();
   await customerRow.getByRole("button").click();
   const pinned = page.locator(".dashboard-pinned-visits");
@@ -1779,15 +1965,18 @@ test(dashboardPinningTestName, async () => {
         ?.getAttribute("href") === "/deployments"
     );
   });
-  const stored = await page.evaluate(() => {
-    const key = Object.keys(localStorage).find((key) => {
-      return key.startsWith("webapp::dashboard.pinnedVisits:");
-    });
-    return JSON.parse(localStorage.getItem(key) || "[]");
-  });
   assert.deepEqual(
-    stored.map((visit) => visit.path),
-    ["/deployments", "/customers/customer-fixture"],
+    api.dashboardPins().map((visit) => visit.path),
+    ["/deployments", "/customers/b"],
+  );
+  assert.equal(
+    await page.evaluate(() =>
+      Object.keys(localStorage).some((key) =>
+        key.startsWith("webapp::dashboard.pinnedVisits:"),
+      ),
+    ),
+    false,
+    "Presentation must not recreate the former plaintext pin cache",
   );
   await page.reload();
   await pinned.locator(".dashboard-visit-row").nth(1).waitFor();
@@ -1805,7 +1994,7 @@ test(dashboardPinningTestName, async () => {
     return (
       document
         .querySelector(".dashboard-pinned-visits a")
-        ?.getAttribute("href") === "/customers/customer-fixture"
+        ?.getAttribute("href") === "/customers/b"
     );
   });
   await pinned
@@ -1910,7 +2099,7 @@ for (const [locale, theme, viewport] of [
   test(attachmentsTestName, async () => {
     populateAttachments();
     await page.setViewportSize(viewport);
-    await openApplication("/projects/project-fixture/files", locale, theme);
+    await openApplication("/projects/c/files", locale, theme);
     const browser = page.getByRole("region", {
       name: /Dateiablage|File storage/,
     });
@@ -1988,12 +2177,13 @@ for (const [locale, theme, viewport] of [
     await browser.getByRole("button", { name: /Specification.pdf/ }).waitFor();
   });
 
-  const emailViewport = viewport.width >= 1400 ? { width: 2560, height: 1000 } : viewport;
+  const emailViewport =
+    viewport.width >= 1400 ? { width: 2560, height: 1000 } : viewport;
   test(`actual email previews decode MSG and EML with compact headers in ${locale}-${theme}-${emailViewport.width}`, async () => {
     const date = new Date("2026-10-27T08:00:00Z");
     const files = ["msg", "eml"].map((format) => ({
       id: `email-${format}`,
-      projectId: "project-fixture",
+      projectId: "c",
       folderId: null,
       fileName: `Correspondence.${format}`,
       mimeType:
@@ -2002,7 +2192,7 @@ for (const [locale, theme, viewport] of [
       sizeBytes: 2048,
       status: "uploaded",
       textExtractionStatus: "ready",
-      createdByUserId: "fixture-user",
+      createdByUserId: "d",
       createdAt: date,
       modifiedAt: date,
       uploadedAt: date,
@@ -2023,10 +2213,11 @@ for (const [locale, theme, viewport] of [
       }),
     );
     await page.setViewportSize(emailViewport);
-    await openApplication("/projects/project-fixture/files", locale, theme);
+    await openApplication("/projects/c/files", locale, theme);
     const remoteRequests = [];
-    page.on("request", request => {
-      if (/tracker\.invalid|\/relative-pixel/.test(request.url())) remoteRequests.push(request.url());
+    page.on("request", (request) => {
+      if (/tracker\.invalid|\/relative-pixel/.test(request.url()))
+        remoteRequests.push(request.url());
     });
     for (const format of ["msg", "eml"]) {
       const trigger = page.getByRole("button", {
@@ -2035,7 +2226,7 @@ for (const [locale, theme, viewport] of [
       await trigger.click();
       assert.equal(
         new URL(page.url()).pathname,
-        `/projects/project-fixture/files/email-${format}`,
+        `/projects/c/files/email-${format}`,
       );
       const dialog = page.getByRole("dialog", {
         name: /E-Mail ansehen|View email/,
@@ -2048,8 +2239,14 @@ for (const [locale, theme, viewport] of [
       const header = await dialog.locator(".ss-modal-header").boundingBox();
       const heading = await dialog.locator(".ss-modal-heading").boundingBox();
       const filename = await dialog.locator(".ss-modal-label").boundingBox();
-      assert.ok(heading.x <= header.x + 16, "The dialog title stays at the left on wide displays");
-      assert.ok(filename.x >= heading.x + heading.width + 4, "The filename follows the title");
+      assert.ok(
+        heading.x <= header.x + 16,
+        "The dialog title stays at the left on wide displays",
+      );
+      assert.ok(
+        filename.x >= heading.x + heading.width + 4,
+        "The filename follows the title",
+      );
       const close = dialog.getByRole("button", { name: /^(Schließen|Close)$/ });
       const bounds = await close.boundingBox();
       assert.ok(header.height <= 44);
@@ -2058,15 +2255,32 @@ for (const [locale, theme, viewport] of [
           1,
       );
       const body = dialog.frameLocator(".attachment-email-body");
-      await body.getByText("Freigabe der Fensterdetails", { exact: true }).waitFor();
-      const image = body.getByRole("img", { name: "Musterbau Logo", exact: true });
+      await body
+        .getByText("Freigabe der Fensterdetails", { exact: true })
+        .waitFor();
+      const image = body.getByRole("img", {
+        name: "Musterbau Logo",
+        exact: true,
+      });
       await image.waitFor();
-      await image.evaluate(element => element.decode());
-      assert.equal(await image.evaluate(element => element.naturalWidth), 44);
+      await image.evaluate((element) => element.decode());
+      assert.equal(await image.evaluate((element) => element.naturalWidth), 44);
       assert.equal(await body.locator("img").count(), 1);
-      assert.equal(await body.getByText("Freigabe der Fensterdetails", { exact: true }).evaluate(element => getComputedStyle(element).color), "rgb(22, 71, 124)");
-      await dialog.getByText(/Externe Bilder sind blockiert|External images are blocked/).waitFor();
-      assert.equal(await dialog.locator(".attachment-email-attachments .attachment-email-file").count(), 1);
+      assert.equal(
+        await body
+          .getByText("Freigabe der Fensterdetails", { exact: true })
+          .evaluate((element) => getComputedStyle(element).color),
+        "rgb(22, 71, 124)",
+      );
+      await dialog
+        .getByText(/Externe Bilder sind blockiert|External images are blocked/)
+        .waitFor();
+      assert.equal(
+        await dialog
+          .locator(".attachment-email-attachments .attachment-email-file")
+          .count(),
+        1,
+      );
       const embedded = dialog.locator(".attachment-email-inline-images");
       assert.equal(await embedded.getAttribute("open"), null);
       await embedded.locator("summary").click();
@@ -2074,12 +2288,36 @@ for (const [locale, theme, viewport] of [
       await embedded.getByRole("button", { name: /logo\.png/ }).click();
       assert.equal((await download).suggestedFilename(), "logo.png");
       await embedded.locator("summary").click();
-      const metadata = await dialog.locator(".attachment-email-metadata").boundingBox();
-      const message = await dialog.locator(".attachment-email-body").boundingBox();
-      assert.ok(message.height >= emailViewport.height * .42, "The message retains sufficient reading space");
-      assert.ok(metadata.width <= emailViewport.width, "The mail header stays inside the viewport");
-      assert.equal(await dialog.getByRole("button", { name: /^(Nur Text|Plain text|Formatierte Ansicht|Formatted view)$/ }).count(), 0);
-      assert.equal(await dialog.getByRole("link", { name: /Original herunterladen|Download original/ }).count(), 0);
+      const metadata = await dialog
+        .locator(".attachment-email-metadata")
+        .boundingBox();
+      const message = await dialog
+        .locator(".attachment-email-body")
+        .boundingBox();
+      assert.ok(
+        message.height >= emailViewport.height * 0.42,
+        "The message retains sufficient reading space",
+      );
+      assert.ok(
+        metadata.width <= emailViewport.width,
+        "The mail header stays inside the viewport",
+      );
+      assert.equal(
+        await dialog
+          .getByRole("button", {
+            name: /^(Nur Text|Plain text|Formatierte Ansicht|Formatted view)$/,
+          })
+          .count(),
+        0,
+      );
+      assert.equal(
+        await dialog
+          .getByRole("link", {
+            name: /Original herunterladen|Download original/,
+          })
+          .count(),
+        0,
+      );
       if (process.env.SORTSYS_UI_SCREENSHOTS) {
         await mkdir(process.env.SORTSYS_UI_SCREENSHOTS, { recursive: true });
         await page.screenshot({
@@ -2090,7 +2328,11 @@ for (const [locale, theme, viewport] of [
           animations: "disabled",
         });
       }
-      assert.deepEqual(remoteRequests, [], "Email rendering must never request remote or relative image/CSS URLs");
+      assert.deepEqual(
+        remoteRequests,
+        [],
+        "Email rendering must never request remote or relative image/CSS URLs",
+      );
       await close.click();
       await dialog.waitFor({ state: "hidden" });
     }
@@ -2106,7 +2348,7 @@ for (const canEdit of [true, false]) {
     api.respond("projects.files.list", [
       {
         id: "gaeb-file",
-        projectId: "project-fixture",
+        projectId: "c",
         folderId: null,
         fileName: "Angebot.x84",
         mimeType: "application/xml",
@@ -2120,20 +2362,26 @@ for (const canEdit of [true, false]) {
       },
     ]);
     api.respond("projects.files.folders.list", []);
-    api.respond("projects.files.xmlContent", {
+    let document = {
       xml,
       fileName: "Angebot.x84",
       version: 1n,
       canEdit,
+    };
+    api.respond("projects.files.xmlContent", () => document);
+    api.respond("projects.files.xmlSave", (input) => {
+      assert.equal(input.version, document.version);
+      document = {
+        ...document,
+        xml: input.xml,
+        version: document.version + 1n,
+      };
+      return { version: document.version, savedAt: date };
     });
-    api.respond("projects.files.xmlSave", { version: 2n, savedAt: date });
     await page.setViewportSize({ width: canEdit ? 1400 : 390, height: 900 });
-    await openApplication("/projects/project-fixture/files", "en");
+    await openApplication("/projects/c/files", "en");
     await page.getByRole("button", { name: /Angebot.x84/ }).click();
-    assert.equal(
-      new URL(page.url()).pathname,
-      "/projects/project-fixture/files/gaeb-file",
-    );
+    assert.equal(new URL(page.url()).pathname, "/projects/c/files/gaeb-file");
     const dialog = page.getByRole("dialog", {
       name: canEdit ? "Edit GAEB" : "View GAEB",
       exact: true,
@@ -2233,17 +2481,12 @@ for (const canEdit of [true, false]) {
         true,
         "Back waits for the pending autosave",
       );
-      assert.equal(
-        new URL(page.url()).pathname,
-        "/projects/project-fixture/files/gaeb-file",
-      );
+      assert.equal(new URL(page.url()).pathname, "/projects/c/files/gaeb-file");
       api.release("projects.files.xmlSave");
     } else
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await dialog.waitFor({ state: "hidden" });
-    await page.waitForURL(
-      (url) => url.pathname === "/projects/project-fixture/files",
-    );
+    await page.waitForURL((url) => url.pathname === "/projects/c/files");
     if (canEdit)
       assert.match(
         api.requests
@@ -2275,7 +2518,7 @@ test("two GAEB editors autosave parallel changes and reconnect without overwriti
       route.send(JSON.stringify({ type: "presence", participants: peers() }));
   };
   await context.routeWebSocket(
-    "ws://127.0.0.1:3000/documents/xml/live",
+    (url) => url.pathname.endsWith("/documents/xml/live"),
     (route) => {
       const id = `peer-${Math.random()}`;
       route.onMessage((raw) => {
@@ -2307,7 +2550,7 @@ test("two GAEB editors autosave parallel changes and reconnect without overwriti
   api.respond("projects.files.list", [
     {
       id: "gaeb-file",
-      projectId: "project-fixture",
+      projectId: "c",
       folderId: null,
       fileName: "Angebot.x84",
       mimeType: "application/xml",
@@ -2328,7 +2571,7 @@ test("two GAEB editors autosave parallel changes and reconnect without overwriti
     canEdit: true,
     livePath: "/documents/xml/live",
     liveTicket: "document-scoped-fixture-ticket",
-    recoveryScope: "fixture-user",
+    recoveryScope: "d",
   }));
   api.respond("projects.files.xmlSave", (input) => {
     if (!available) throw new Error("Fixture is offline");
@@ -2344,10 +2587,10 @@ test("two GAEB editors autosave parallel changes and reconnect without overwriti
   const second = await context.newPage();
   second.setDefaultTimeout(10000);
   try {
-    await openApplication("/projects/project-fixture/files", "en");
+    await openApplication("/projects/c/files", "en");
     await page.getByRole("button", { name: /Angebot.x84/ }).click();
     page = second;
-    await openApplication("/projects/project-fixture/files", "en");
+    await openApplication("/projects/c/files", "en");
     await page.getByRole("button", { name: /Angebot.x84/ }).click();
     const firstEditor = originalPage.getByRole("dialog", {
       name: "Edit GAEB",
@@ -2436,7 +2679,7 @@ test("actual attachments announce loading and a single empty result", async () =
   const waiting = new Promise((resolve) => {
     release = resolve;
   });
-  await page.route("http://127.0.0.1:3000/**", async (route) => {
+  await page.route(isWorkflowApiUrl, async (route) => {
     const request = route.request();
     const paths = decodeURIComponent(new URL(request.url()).pathname);
     if (
@@ -2449,7 +2692,7 @@ test("actual attachments announce loading and a single empty result", async () =
     await api.handle(route);
   });
   try {
-    await openApplication("/projects/project-fixture/files");
+    await openApplication("/projects/c/files");
     await page
       .getByRole("status")
       .filter({ hasText: /Anhänge werden geladen|Loading attachments/ })
@@ -2558,13 +2801,11 @@ for (const settings of [
     const request = api.requests.find(
       (item) => item.path === "users.vacations.create",
     );
-    assert.equal(request.input.userId, "fixture-user");
+    assert.equal(request.input.userId, "d");
     assert.equal(request.input.type, "other");
     assert.equal(request.input.label, "Training");
-    assert.ok(
-      request.input.from instanceof Date && request.input.to instanceof Date,
-    );
-    assert.ok(request.input.from < request.input.to);
+    assert.equal(request.input.from, "2026-10-30");
+    assert.equal(request.input.to, "2026-11-03");
   });
 }
 
@@ -2578,7 +2819,7 @@ for (const settings of [
   test(testName, async () => {
     const tools = [
       {
-        id: "tool-eleven",
+        id: "j",
         customId: 11,
         brand: "Hilti",
         category: "Bohrhammer",
@@ -2661,13 +2902,13 @@ for (const settings of [
         .filter((request) => request.path === "tools.track")
         .map((request) => request.input.id)
         .sort(),
-      ["tool-eleven", "tool-sixty-seven"],
+      ["j", "tool-sixty-seven"],
     );
     assert.deepEqual(
       api.requests
         .filter((request) => request.path === "tools.untrack")
         .map((request) => request.input.id),
-      ["tool-eleven"],
+      ["j"],
     );
     const untrackIndex = api.requests.findIndex(
       (request) => request.path === "tools.untrack",
@@ -2805,7 +3046,7 @@ for (const locale of ["de", "en"]) {
         id: "created-folder-fixture",
       });
       await page.setViewportSize({ width: 375, height: 812 });
-      await openApplication("/projects/project-fixture/files", locale);
+      await openApplication("/projects/c/files", locale);
       await page.getByRole("button", { name: /Specification.pdf/ }).waitFor();
 
       if (nested) {
@@ -2855,7 +3096,7 @@ for (const locale of ["de", "en"]) {
         requests.map(({ input }) => input),
         [
           {
-            projectId: "project-fixture",
+            projectId: "c",
             parentFolderId: nested ? "folder-fixture" : null,
             name: "Inspection records",
           },
@@ -2908,10 +3149,10 @@ for (const [locale, theme, width] of [
 ]) {
   const variant = `${locale}-${theme}-${width}`;
 
-  test(`proposal acceptance sends revived dates as RFC3339 in ${variant}`, async () => {
+  test(`proposal acceptance delegates one decision without executing business operations in the view in ${variant}`, async () => {
     api.seedProposal();
     await page.setViewportSize({ width, height: 900 });
-    await openApplication("/llm/fixture-chat", locale, theme);
+    await openApplication("/llm/k", locale, theme);
     const labels = proposalLabels(locale);
     const proposal = page.getByRole("article").filter({
       has: page.getByRole("heading", { name: "Dummy-Testprojekt anlegen" }),
@@ -2938,37 +3179,21 @@ for (const [locale, theme, width] of [
     const creates = api.requests.filter(
       ({ path }) => path === "projects.create",
     );
-    assert.equal(creates.length, 1);
-    assert.equal(creates[0].input.orderReceivedAt, "2026-10-31T09:30:00.000Z");
-    assert.equal(creates[0].input.customerId, null);
-    assert.equal(creates[0].input.projectLeaderUserId, null);
-    assert.equal(creates[0].input.address, null);
+    assert.equal(creates.length, 0);
     const reviews = api.requests.filter(
       ({ path }) => path === "llm.proposals.review",
     );
     assert.equal(reviews.length, 1);
     assert.equal(reviews[0].input.decision, "accept");
     assert.equal(reviews[0].input.continueConversation, true);
-    assert.equal(
-      reviews[0].input.executionResults[0].output.id,
-      "created-project",
-    );
-    const projectLink = proposal.getByRole("link", {
-      name: locale === "de" ? "Projekt öffnen" : "Open project",
-      exact: true,
-    });
-    await projectLink.hover();
-    assert.equal(
-      await projectLink.evaluate((node) => getComputedStyle(node).opacity),
-      "0.7",
-    );
+    assert.equal(Object.hasOwn(reviews[0].input, "executionResults"), false);
     await checkPageLayout(`proposal-accepted-${variant}`);
   });
 
   test(`proposal revision uses a deliberate compact dialog in ${variant}`, async () => {
     api.seedProposal();
     await page.setViewportSize({ width, height: 900 });
-    await openApplication("/llm/fixture-chat", locale, theme);
+    await openApplication("/llm/k", locale, theme);
     const labels = proposalLabels(locale);
     const openRevision = page.getByRole("button", {
       name: labels.revise,
@@ -3076,7 +3301,7 @@ for (const [locale, theme, width] of [
   test(`proposal decline stays a single review without execution in ${variant}`, async () => {
     api.seedProposal();
     await page.setViewportSize({ width, height: 900 });
-    await openApplication("/llm/fixture-chat", locale, theme);
+    await openApplication("/llm/k", locale, theme);
     const labels = proposalLabels(locale);
     await page
       .getByRole("button", { name: labels.decline, exact: true })
@@ -3087,7 +3312,7 @@ for (const [locale, theme, width] of [
     );
     assert.equal(reviews.length, 1);
     assert.deepEqual(reviews[0].input, {
-      proposalId: "proposal-fixture",
+      proposalId: "n",
       decision: "decline",
       comment: null,
     });
@@ -3134,7 +3359,7 @@ for (const locale of ["de", "en"]) {
   test(`pending proposal revision blocks duplicate submission in ${locale}`, async () => {
     api.seedProposal();
     api.hold("llm.proposals.review");
-    await openApplication("/llm/fixture-chat", locale);
+    await openApplication("/llm/k", locale);
     const labels = proposalLabels(locale);
     await page
       .getByRole("button", { name: labels.revise, exact: true })
@@ -3195,30 +3420,74 @@ for (const locale of ["de", "en"]) {
   });
 }
 
-test("proposal mutation failure keeps review pending and allows retry", async () => {
+test(
+  "late chat history cannot replace a completed revision reply",
+  { timeout: 15000 },
+  async () => {
+    api.seedProposal();
+    await openApplication("/llm/k", "en");
+    await page.getByRole("button", { name: "Revise", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Revise", exact: true });
+    await dialog
+      .getByRole("textbox", { name: "Requested changes", exact: true })
+      .fill("Adjust the title.");
+
+    api.hold("llm.messages.send");
+    const snapshot = api.holdNextSnapshot("llm.chats.get");
+    try {
+      await dialog.getByRole("button", { name: "Revise", exact: true }).click();
+      const earlierRequest = await snapshot.captured;
+      const earlierReply = page.waitForResponse(
+        (response) => response.request() === earlierRequest,
+      );
+      api.release("llm.messages.send");
+      const source = page
+        .getByRole("log")
+        .getByRole("link", { name: "source", exact: true });
+      await source.waitFor();
+      snapshot.release();
+      await earlierReply;
+      // Let both the old fetch and its React effect finish after the final reply.
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      assert.equal(await source.isVisible(), true);
+      assert.equal(
+        api.requests.filter(({ path }) => path === "llm.messages.send").length,
+        1,
+      );
+    } finally {
+      api.release("llm.messages.send");
+      snapshot.release();
+    }
+  },
+);
+
+test("proposal decision failure keeps review pending and allows retry", async () => {
   api.seedProposal();
-  api.fail("projects.create", "Synthetic project creation failure");
-  await openApplication("/llm/fixture-chat");
+  api.fail("llm.proposals.review", "Synthetic decision failure");
+  await openApplication("/llm/k");
   const accept = page.getByRole("button", { name: "Accept", exact: true });
   await accept.click();
-  await page
-    .getByText("Create Dummy-Testprojekt: Synthetic project creation failure")
-    .waitFor();
+  await page.getByText("Synthetic decision failure").waitFor();
   assert.equal(await accept.isEnabled(), true);
   assert.equal(
-    api.requests.some(({ path }) => path === "llm.proposals.review"),
-    false,
+    api.requests.filter(({ path }) => path === "llm.proposals.review").length,
+    1,
   );
-  api.recover("projects.create");
+  api.recover("llm.proposals.review");
   await accept.click();
   await page.locator(".assistant-proposal-complete").waitFor();
   assert.equal(
     api.requests.filter(({ path }) => path === "projects.create").length,
-    2,
+    0,
   );
   assert.equal(
     api.requests.filter(({ path }) => path === "llm.proposals.review").length,
-    1,
+    2,
   );
 });
 
@@ -3226,26 +3495,28 @@ for (const { locale, theme, width } of [
   { locale: "de", theme: "light", width: 1400 },
   { locale: "en", theme: "dark", width: 390 },
 ]) {
-  test(`admin error details open only in a modal in ${locale}`, async () => {
+  test(`technical diagnostic details omit private error fields in ${locale}`, async () => {
     const report = {
       id: "synthetic-error",
       tenant: "Fixture Tenant",
-      source: "webapp",
-      message: "Synthetic error summary",
+      level: "error",
+      source: "gaeb.autosave",
+      message: "Client operation failed",
       createdAt: new Date("2026-10-27T08:00:00Z"),
       username: "fixture.user",
-      createdByUserId: null,
-      path: `/projects/${"long-path-".repeat(30)}`,
-      stack: `Synthetic trace ${"x".repeat(200)}`,
-      componentStack: "Synthetic component trace",
-      metadata: { fixture: true },
-      userAgent: "Synthetic browser agent",
+      createdByUserId: "d",
+      path: "/gaeb",
+      // Unexpected private fields must also stay absent from the renderer.
+      stack: "Private calculation 123.45",
+      componentStack: "Private document trace",
+      metadata: { revision: "a".repeat(64), status: 409 },
+      userAgent: null,
     };
     api.respond("admin.errors.list", [report]);
     await page.setViewportSize({ width, height: 1000 });
     await openApplication("/__admin/errors", locale, theme);
-    const message = page.getByRole("button", { name: report.message });
-    await message.waitFor();
+    const source = page.getByText(report.source, { exact: true });
+    await source.waitFor();
     assert.equal(await page.getByRole("dialog").count(), 0);
     assert.equal(
       await page.getByText(report.stack, { exact: true }).count(),
@@ -3253,25 +3524,36 @@ for (const { locale, theme, width } of [
     );
 
     if (width > 1000) {
-      const row = message.locator("xpath=ancestor::tr");
+      const row = source.locator("xpath=ancestor::tr");
       assert.equal(
         await row.evaluate((node) => getComputedStyle(node).cursor),
         "pointer",
       );
     }
 
-    await message.click();
-    const dialog = page.getByRole("dialog", { name: report.message });
-    await dialog.getByText(report.stack, { exact: true }).waitFor();
-    await dialog.getByText(report.componentStack, { exact: true }).waitFor();
-    const trace = dialog.locator("pre").filter({ hasText: report.stack });
-    await trace.focus();
-    assert.equal(
-      await trace.evaluate((node) => node === document.activeElement),
-      true,
+    if (width > 1000) {
+      await source.click();
+    } else {
+      await page
+        .getByRole("button", { name: "Open entry", exact: true })
+        .click();
+    }
+    const dialog = page.getByRole("dialog", {
+      name: locale === "de" ? "Technische Meldung" : "Technical report",
+    });
+    await dialog.getByText(report.metadata.revision, { exact: true }).waitFor();
+    await dialog.getByText(report.path, { exact: true }).waitFor();
+    await page.waitForFunction(
+      () => !document.querySelector("[data-entering]"),
     );
-    await page.keyboard.press("ArrowRight");
-    await page.waitForFunction(() => document.activeElement.scrollLeft > 0);
+    assert.equal(
+      await page.getByText(report.stack, { exact: true }).count(),
+      0,
+    );
+    assert.equal(
+      await page.getByText(report.componentStack, { exact: true }).count(),
+      0,
+    );
     await checkPageLayout(`admin-error-modal-${locale}`);
     await dialog.getByRole("button", { name: /^(Schließen|Close)$/ }).click();
     await dialog.waitFor({ state: "hidden" });
@@ -3279,6 +3561,52 @@ for (const { locale, theme, width } of [
       await page.getByText(report.stack, { exact: true }).count(),
       0,
     );
+  });
+
+  test(`encrypted datastore controls replace PostgreSQL forms in ${locale}`, async () => {
+    const tenant = "fixture-tenant";
+    const snapshot = {
+      id: "e17c9cf3-6055-41b4-a349-d81d46cd49ec",
+      tenant,
+      createdAt: new Date("2026-11-15T09:00:00Z"),
+      bytes: 1048576,
+    };
+    api.respond("admin.tenants.list", [
+      {
+        name: tenant,
+        ownerRegistered: true,
+        createdAt: snapshot.createdAt,
+        lockedAt: null,
+        deactivatedAt: null,
+        deletedAt: null,
+      },
+    ]);
+    api.respond("admin.storage.snapshots.list", {
+      rows: [snapshot],
+      after: null,
+      version: "1",
+    });
+    await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/__admin/databases", locale, theme);
+    await page
+      .getByRole("button", {
+        name: locale === "de" ? "Sicherungen" : "Backups",
+        exact: true,
+      })
+      .click();
+    const backups = page.getByRole("region", {
+      name: locale === "de" ? "Sicherungen" : "Backups",
+      exact: true,
+    });
+    await backups
+      .getByRole("button", {
+        name: locale === "de" ? "Herunterladen" : "Download",
+        exact: true,
+      })
+      .waitFor();
+    await backups.getByText(snapshot.id, { exact: true }).waitFor();
+    assert.equal(await page.getByText(/Postgres|S3|Admin-Passwort/).count(), 0);
+    await checkPageLayout(`encrypted-datastore-${locale}`);
   });
 
   test(`admin import selects verified vision models only in ${locale}`, async () => {
@@ -3340,21 +3668,32 @@ for (const { locale, theme, width } of [
       createdAt: new Date("2026-10-27T08:00:00Z"),
       modifiedAt: new Date("2026-10-27T08:00:00Z"),
     };
-    api.respond("clientScripts.list", [script]);
-    api.respond("clientScripts.get", script);
-    api.hold("clientScripts.get");
     await page.setViewportSize({ width, height: 1000 });
-    await openApplication("/scripts", locale, theme);
+    await page.emulateMedia({ colorScheme: theme });
+    await page.goto(`${server.origin}/crypto.html`);
+    await page.waitForFunction(() => window.cryptoFixture);
+    await page.evaluate(
+      (options) => window.cryptoFixture.showClientScripts(options),
+      { locale, theme, holdDetail: true },
+    );
+    await page.waitForFunction(
+      (language) => document.documentElement.lang === language,
+      locale,
+    );
     const item = page.getByRole("button", { name: /Fixture script/ });
     await item.waitFor();
     assert.equal(await page.locator(".script-editor-tile").count(), 0);
     assert.equal(
-      api.requests.some(({ path }) => path === "clientScripts.get"),
+      await page.evaluate(() =>
+        window.cryptoFixture
+          .clientScriptRequests()
+          .includes("clientScripts.get"),
+      ),
       false,
     );
     await item.click();
     assert.equal(await page.locator(".script-code-preview").count(), 0);
-    api.release("clientScripts.get");
+    await page.evaluate(() => window.cryptoFixture.releaseScriptDetail());
     const editor = page.locator(".script-editor-tile");
     await editor.getByRole("textbox", { name: "Name", exact: true }).waitFor();
     await editor
@@ -3417,6 +3756,11 @@ for (const { locale, theme, width } of [
       api.requests.some(({ path }) => path === "clientScripts.update"),
       false,
     );
+    const wire = await page.evaluate(() =>
+      JSON.stringify(window.cryptoFixture.clientScriptWireCalls()),
+    );
+    assert.equal(wire.includes(script.code), false);
+    assert.equal(wire.includes('"path":"clientScripts.'), false);
   });
 }
 
@@ -3474,8 +3818,11 @@ test("admin chat still offers text models", async () => {
 });
 
 test("client scripts do not render a draft editor for an empty listing", async () => {
-  api.respond("clientScripts.list", []);
-  await openApplication("/scripts");
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(() =>
+    window.cryptoFixture.showClientScripts({ empty: true, locale: "en" }),
+  );
   await page.getByText("No scripts yet.", { exact: true }).waitFor();
   assert.equal(await page.locator(".script-editor-tile").count(), 0);
   assert.equal(await page.locator(".script-code-preview").count(), 0);
@@ -3486,14 +3833,71 @@ test("client scripts do not render a draft editor for an empty listing", async (
   await checkPageLayout("client-scripts-empty");
 });
 
+for (const permission of ["create", "delete"]) {
+  test(`client scripts expose ${permission} without granting code updates`, async () => {
+    await page.goto(`${server.origin}/crypto.html`);
+    await page.waitForFunction(() => window.cryptoFixture);
+    await page.evaluate(
+      (permission) =>
+        window.cryptoFixture.showClientScripts({
+          locale: "en",
+          actions: ["read", permission],
+        }),
+      permission,
+    );
+    const item = page.getByRole("button", { name: /Fixture script/ });
+    await item.waitFor();
+    assert.equal(
+      await page.getByRole("button", { name: "New", exact: true }).count(),
+      permission === "create" ? 1 : 0,
+    );
+    await item.click();
+    const editor = page.locator(".script-editor-tile");
+    await editor.getByRole("textbox", { name: "Name", exact: true }).waitFor();
+    assert.equal(
+      await editor
+        .getByRole("textbox", { name: "Name", exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.equal(
+      await editor.getByRole("button", { name: "Edit", exact: true }).count(),
+      0,
+    );
+    assert.equal(
+      await editor.getByRole("button", { name: "Delete", exact: true }).count(),
+      permission === "delete" ? 1 : 0,
+    );
+    if (permission === "create") {
+      await page.getByRole("button", { name: "New", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog
+        .getByRole("textbox", { name: "Name *", exact: true })
+        .fill("Own initial script");
+      await dialog
+        .getByRole("textbox", { name: "Code", exact: true })
+        .fill("const ownInitialScript = 1;");
+      await dialog.getByRole("button", { name: "Create", exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: /Own initial script/ }).waitFor();
+      await editor
+        .locator(".script-code-preview-content")
+        .getByText("const ownInitialScript = 1;")
+        .waitFor();
+      const requests = await page.evaluate(() =>
+        window.cryptoFixture.clientScriptRequests(),
+      );
+      assert.equal(requests.includes("clientScripts.update"), false);
+    }
+  });
+}
+
 const contractorInquiry = `<?xml version="1.0" encoding="UTF-8"?><GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA83/3.3"><GAEBInfo><Version>3.3</Version><VersDate>2021-05</VersDate><Date>2026-11-04</Date></GAEBInfo><Award><DP>83</DP><AwardInfo><Cur>EUR</Cur></AwardInfo><BoQ ID="boq"><BoQInfo><Name>School renovation</Name><LblBoQ>School renovation</LblBoQ><OutlCompl>AllTxt</OutlCompl><BoQBkdn><Type>Item</Type><Length>4</Length><Num>Yes</Num></BoQBkdn></BoQInfo><BoQBody><Itemlist><Item ID="item1" RNoPart="0001"><Qty>2.000</Qty><QU>m²</QU><Description><CompleteText><DetailTxt><Text><p><span>Install insulation</span></p></Text></DetailTxt></CompleteText></Description></Item></Itemlist></BoQBody></BoQ></Award></GAEB>`;
 function seedContractorWorkflows(canManage = true) {
   const cases = new Map(),
     documents = new Map();
   let sequence = 0;
-  api.respond("customers.list", [
-    { id: "customer-fixture", name: "Fixture Customer" },
-  ]);
+  api.respond("customers.list", [{ id: "b", name: "Fixture Customer" }]);
   api.respond("commercial.cases.list", (input) =>
     [...cases.values()]
       .map((detail) => detail.case)
@@ -3535,7 +3939,7 @@ function seedContractorWorkflows(canManage = true) {
         projectId: input.projectId ?? null,
         parentCaseId: input.parentCaseId ?? null,
         customerName: "Fixture Customer",
-        customerId: "customer-fixture",
+        customerId: "b",
         counterpartyName: null,
         currency: "EUR",
         netAmount: null,
@@ -3627,8 +4031,8 @@ function seedContractorWorkflows(canManage = true) {
   api.respond("commercial.cases.createProject", ({ id }) => {
     const detail = cases.get(id);
     assert.equal(detail.case.status, "accepted");
-    detail.case.projectId = "project-fixture";
-    return { id: "project-fixture" };
+    detail.case.projectId = "c";
+    return { id: "c" };
   });
   return { cases, documents };
 }
@@ -3901,10 +4305,7 @@ for (const [locale, theme, width] of [
         exact: true,
       })
       .waitFor();
-    assert.equal(
-      [...state.cases.values()][0].case.projectId,
-      "project-fixture",
-    );
+    assert.equal([...state.cases.values()][0].case.projectId, "c");
     await page.getByText("School renovation", { exact: true }).waitFor();
     await page.waitForFunction(
       () =>
@@ -4015,7 +4416,7 @@ for (const [locale, theme, width] of [
       measurementCase.parentCaseId,
       [...state.cases.values()][0].case.id,
     );
-    assert.equal(measurementCase.projectId, "project-fixture");
+    assert.equal(measurementCase.projectId, "c");
     await page
       .getByRole("dialog")
       .filter({ has: page.locator(".gaeb-editor") })
@@ -4124,8 +4525,8 @@ test("contractor subcontract package selects contract work, compares purchase bi
     kind: "offer",
     status: "accepted",
     existingContract: false,
-    projectId: "project-fixture",
-    customerId: "customer-fixture",
+    projectId: "c",
+    customerId: "b",
     customerName: "Fixture Customer",
     currency: "EUR",
     netAmount: "251.00",
@@ -4159,7 +4560,7 @@ test("contractor subcontract package selects contract work, compares purchase bi
     sourceVersion: 1n,
     netAmount: "251.00",
   });
-  await openApplication("/projects/project-fixture/contract", "en", "light");
+  await openApplication("/projects/c/contract", "en", "light");
   await page
     .getByRole("button", { name: "Create document", exact: true })
     .click();
@@ -4671,9 +5072,14 @@ test(
       return { source: template.source, revision: template.revision };
     });
     api.respond("settings.documentTemplate.assets.createUpload", (input) => {
-      const id = `asset-${uploaded.size}`;
+      const id = (uploaded.size + 10).toString(32);
       const url = `${server.origin}/template-test/${id}`;
-      uploaded.set(id, { ...input, id, downloadUrl: url });
+      uploaded.set(id, {
+        ...input,
+        name: input.fileName,
+        id,
+        downloadUrl: `sortsys-template:${id}:legacy`,
+      });
       return {
         id,
         uploadUrl: url,
@@ -4710,7 +5116,7 @@ test(
         width: node.getBoundingClientRect().width,
       })),
     );
-    assert.equal(tabs.length, 6);
+    assert.equal(tabs.length, 7);
     assert.ok(
       tabs.every((tab) => tab.width < 250 && tab.x + tab.width <= 1600),
       JSON.stringify(tabs),
@@ -4850,8 +5256,7 @@ test(
     const text = await page.evaluate(
       async ({ data, version }) => {
         const pdfjs = await import(`/pdfjs/${version}/build/pdf.mjs`);
-        pdfjs.GlobalWorkerOptions.workerSrc =
-          `/pdfjs/${version}/build/pdf.worker.mjs`;
+        pdfjs.GlobalWorkerOptions.workerSrc = `/pdfjs/${version}/build/pdf.worker.mjs`;
         const task = pdfjs.getDocument({ data: new Uint8Array(data) });
         const pdf = await task.promise;
         try {
@@ -4931,7 +5336,7 @@ test("offer scope autosaves before pricing and changed quantities reuse the exis
     .locator('xpath=descendant-or-self::*[@data-save-state="saved"]')
     .waitFor();
   await dialog
-    .getByRole("button", { name: "Edit scope of work", exact: true })
+    .getByRole("button", { name: "Open scope of work", exact: true })
     .click();
   const quantity = dialog.getByRole("button", {
     name: "Quantity",
@@ -4957,6 +5362,8 @@ test("offer scope autosaves before pricing and changed quantities reuse the exis
   assert.match(updated.xml, /<Qty>6.000<\/Qty>/);
   assert.equal(updated.netAmount, "43.50");
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+  await page.locator(".gaeb-editor").waitFor({ state: "detached" });
   await page.getByRole("heading", { name: "Offers", exact: true }).waitFor();
   assert.equal(await page.locator(".gaeb-editor").count(), 0);
 });
@@ -5015,8 +5422,9 @@ test("invalid units identify the field, retain drafts and stop retrying until co
   await diagnostic;
   const before = attempts().length;
   assert.ok(before > 0);
-  assert.equal(attempts()[0].input.message, "unit-too-long");
-  assert.equal(attempts()[0].input.metadata.stage, "drafts");
+  assert.equal(attempts()[0].input.message, "Client operation failed");
+  assert.equal(attempts()[0].input.path, "/gaeb");
+  assert.equal(Object.hasOwn(attempts()[0].input.metadata, "stage"), false);
   await page.waitForTimeout(5500);
   assert.equal(
     attempts().length,
@@ -5057,8 +5465,17 @@ test("invalid units identify the field, retain drafts and stop retrying until co
 test("live offer text and cursors synchronize before autosave and workflow updates never poll the case", async () => {
   const state = seedOverlayOffers(1, true);
   const document = state.documents.get("scope-0");
-  const shared = new Y.Doc();
+  const partitions = new Map();
+  const partition = (facet = "scope") => {
+    let shared = partitions.get(facet);
+    if (!shared) {
+      shared = new Y.Doc();
+      partitions.set(facet, shared);
+    }
+    return shared;
+  };
   const sockets = new Map();
+  const frames = [];
   let holdUpdates = false;
   const updates = [];
   const broadcast = (message) => {
@@ -5090,11 +5507,17 @@ test("live offer text and cursors synchronize before autosave and workflow updat
     })),
   });
   await context.routeWebSocket(
-    "ws://127.0.0.1:3000/documents/xml/live",
+    (url) => url.pathname.endsWith("/documents/xml/live"),
     (route) => {
       const id = `peer-${sockets.size}`;
       route.onMessage((raw) => {
         const message = JSON.parse(String(raw));
+        frames.push({
+          type: message.type,
+          facet: message.facet,
+          key: message.key,
+          value: message.value,
+        });
         if (message.ticket) {
           sockets.set(id, {
             route,
@@ -5109,16 +5532,20 @@ test("live offer text and cursors synchronize before autosave and workflow updat
               collaboration: true,
             }),
           );
-          route.send(
-            JSON.stringify({
-              type: "sync",
-              data: Buffer.from(Y.encodeStateAsUpdate(shared)).toString(
-                "base64",
-              ),
-            }),
-          );
+          for (const [facet, shared] of partitions) {
+            route.send(
+              JSON.stringify({
+                type: "sync",
+                facet,
+                data: Buffer.from(Y.encodeStateAsUpdate(shared)).toString(
+                  "base64",
+                ),
+              }),
+            );
+          }
           presence();
         } else if (message.type === "initialize") {
+          const shared = partition(message.facet);
           const keys = shared.getMap("__fields");
           if (keys.has(message.key)) return;
           const vector = Y.encodeStateVector(shared);
@@ -5128,14 +5555,20 @@ test("live offer text and cursors synchronize before autosave and workflow updat
           });
           broadcast({
             type: "sync",
+            facet: message.facet,
             data: Buffer.from(Y.encodeStateAsUpdate(shared, vector)).toString(
               "base64",
             ),
           });
         } else if (message.type === "update") {
           const apply = () => {
+            const shared = partition(message.facet);
             Y.applyUpdate(shared, Buffer.from(message.data, "base64"));
-            broadcast({ type: "sync", data: message.data });
+            broadcast({
+              type: "sync",
+              data: message.data,
+              facet: message.facet,
+            });
           };
           if (holdUpdates) updates.push(apply);
           else apply();
@@ -5261,10 +5694,21 @@ test("live offer text and cursors synchronize before autosave and workflow updat
     );
     page = first;
     await checkPageLayout("gaeb-live-text-and-cursors");
+  } catch (cause) {
+    const values = await Promise.all(
+      [first, second].map((peer) =>
+        peer.locator("textarea.gaeb-canvas-input").inputValue(),
+      ),
+    );
+    throw new Error(
+      `${cause.message}\nInputs: ${JSON.stringify(values)}\nFrames: ${JSON.stringify(frames)}`,
+      { cause },
+    );
   } finally {
     api.release("commercial.documents.save");
     page = first;
     await second.close();
+    for (const shared of partitions.values()) shared.destroy();
   }
 });
 
@@ -5525,8 +5969,7 @@ for (const locale of ["de", "en"]) {
     );
     assert.equal(await dialog.getByRole("menuitemcheckbox").count(), 0);
     const scope = dialog.getByRole("button", {
-      name:
-        locale === "de" ? "Leistungsumfang bearbeiten" : "Edit scope of work",
+      name: locale === "de" ? "Leistungsumfang öffnen" : "Open scope of work",
       exact: true,
     });
     const submission = dialog.getByRole("button", {
@@ -5817,7 +6260,7 @@ test("offer rows drag inside fullscreen, retain prices by ID and cancel keyboard
   const originalPrices = await pricesById(bid.xml);
   assert.deepEqual(Object.values(originalPrices), ["11.000", "22.000"]);
   await dialog
-    .getByRole("button", { name: "Edit scope of work", exact: true })
+    .getByRole("button", { name: "Open scope of work", exact: true })
     .click();
   await row("Beta")
     .getByRole("button", { name: /Move entry/ })
@@ -5906,8 +6349,8 @@ test("read-only offers open directly in fullscreen without mutation actions or a
       reference: "ANG-READ",
       status: "draft",
       customerName: "Fixture Customer",
-      customerId: "customer-fixture",
-      projectId: "project-fixture",
+      customerId: "b",
+      projectId: "c",
       parentCaseId: null,
       netAmount: null,
       currency: "EUR",
@@ -5970,7 +6413,7 @@ function seedOverlayOffers(count = 1, canManage = false) {
         title: `Offer ${index}`,
         reference: `ANG-${index}`,
         status: "draft",
-        customerId: "customer-fixture",
+        customerId: "b",
         customerName: "Fixture Customer",
         projectId: null,
         parentCaseId: null,
@@ -6043,9 +6486,12 @@ test("offer overlay preserves the current route, filters, loaded pages, focus an
   );
   assert.equal(await searchNode.evaluate((node) => node.isConnected), true);
   assert.equal(new URL(page.url()).pathname, "/gaeb/overlay-59");
+  const refreshed = page.waitForResponse((response) =>
+    response.url().includes("commercial.cases.list"),
+  );
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await page.locator('[aria-label="Offers list"][aria-busy="true"]').waitFor();
-  await page.locator('[aria-label="Offers list"][aria-busy="false"]').waitFor();
+  await refreshed;
+  await dialog.waitFor({ state: "hidden" });
   assert.equal(await search.inputValue(), "Offer");
   assert.equal(await searchNode.evaluate((node) => node.isConnected), true);
   assert.equal(await page.getByText("Offer 59", { exact: true }).count(), 1);
@@ -6221,7 +6667,7 @@ for (const kind of ["offer", "measurement"])
 
 test("project attachment URLs preserve the browser and reopen through history, reload and legacy links", async () => {
   populateAttachments();
-  await openApplication("/projects/project-fixture/files?keep=1", "en");
+  await openApplication("/projects/c/files?keep=1", "en");
   const search = page.getByPlaceholder("Search attachments", { exact: true });
   await search.fill("Specification");
   const input = await search.elementHandle();
@@ -6231,10 +6677,7 @@ test("project attachment URLs preserve the browser and reopen through history, r
   const dialog = page.getByRole("dialog", { name: "View PDF", exact: true });
   await dialog.waitFor();
   const link = page.url();
-  assert.equal(
-    new URL(link).pathname,
-    "/projects/project-fixture/files/file-fixture",
-  );
+  assert.equal(new URL(link).pathname, "/projects/c/files/e");
   assert.equal(new URL(link).searchParams.has("file"), false);
   assert.equal(await input.evaluate((node) => node.isConnected), true);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
@@ -6267,8 +6710,8 @@ test("project attachment URLs preserve the browser and reopen through history, r
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.waitForURL(background);
   const legacy = new URL(link);
-  legacy.pathname = "/projects/project-fixture/files";
-  legacy.searchParams.set("file", "file-fixture");
+  legacy.pathname = "/projects/c/files";
+  legacy.searchParams.set("file", "e");
   await page.goto(legacy.href);
   await dialog.waitFor();
   await page.waitForURL(link);
@@ -6281,7 +6724,7 @@ test("project attachment URLs preserve the browser and reopen through history, r
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.waitForURL(background);
   const missing = new URL(link);
-  missing.pathname = "/projects/project-fixture/files/missing-file";
+  missing.pathname = "/projects/c/files/missing-file";
   await page.goto(missing.href);
   const unavailable = page.getByRole("dialog", {
     name: "File preview",
@@ -6305,7 +6748,7 @@ test("the project image gallery updates its file ID without adding history entri
     "projects.files.list",
     ["photo-1", "photo-2"].map((id, index) => ({
       id,
-      projectId: "project-fixture",
+      projectId: "c",
       folderId: null,
       fileName: `Photo ${index + 1}.png`,
       mimeType: "image/png",
@@ -6318,17 +6761,14 @@ test("the project image gallery updates its file ID without adding history entri
       downloadUrl: image,
     })),
   );
-  await openApplication("/projects/project-fixture/files", "en");
+  await openApplication("/projects/c/files", "en");
   const background = page.url();
   const length = await page.evaluate(() => history.length);
   await page.getByRole("button", { name: "Photo 1.png", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
   await page.keyboard.press("ArrowRight");
-  assert.equal(
-    new URL(page.url()).pathname,
-    "/projects/project-fixture/files/photo-2",
-  );
+  assert.equal(new URL(page.url()).pathname, "/projects/c/files/photo-2");
   assert.equal(
     await dialog.locator(".ss-modal-label").textContent(),
     "Photo 2.png",
@@ -6402,39 +6842,76 @@ function seedAdoption() {
     const id = "adopted-contract";
     state.cases.set(id, {
       case: {
-        id, projectId: input.projectId, title: input.title, kind: "offer", status: "accepted",
-        existingContract: true, reference: "BES-2026-1", customerId: "customer-fixture",
-        customerName: "Fixture Customer", currency: "EUR", netAmount: input.netAmount,
-        createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(),
-      }, events: [],
+        id,
+        projectId: input.projectId,
+        title: input.title,
+        kind: "offer",
+        status: "accepted",
+        existingContract: true,
+        reference: "BES-2026-1",
+        customerId: "b",
+        customerName: "Fixture Customer",
+        currency: "EUR",
+        netAmount: input.netAmount,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+      },
+      events: [],
     });
     let sourceDocumentId = null;
     const add = (purpose, phase, fileName, xml) => {
       const docId = `adopted-${purpose}`;
       state.documents.set(docId, {
-        id: docId, caseId: id, purpose, phase, fileName, xml, readOnly: true, version: 1n,
-        sourceDocumentId, sourceVersion: sourceDocumentId ? 1n : null,
+        id: docId,
+        caseId: id,
+        purpose,
+        phase,
+        fileName,
+        xml,
+        readOnly: true,
+        version: 1n,
+        sourceDocumentId,
+        sourceVersion: sourceDocumentId ? 1n : null,
       });
       sourceDocumentId = docId;
     };
-    if (input.referenceXml) add("inquiry", "83", "Leistungsverzeichnis.x83", input.referenceXml);
-    add({ "84": "offer", "85": "alternative", "86": "order", "87": "confirmation" }[input.sourcePhase], input.sourcePhase, input.sourceFileName, input.sourceXml);
-    if (input.offerXml) add("offer", "84", "Vertragspreise.x84", input.offerXml);
+    if (input.referenceXml)
+      add("inquiry", "83", "Leistungsverzeichnis.x83", input.referenceXml);
+    add(
+      { 84: "offer", 85: "alternative", 86: "order", 87: "confirmation" }[
+        input.sourcePhase
+      ],
+      input.sourcePhase,
+      input.sourceFileName,
+      input.sourceXml,
+    );
+    if (input.offerXml)
+      add("offer", "84", "Vertragspreise.x84", input.offerXml);
     return { id };
   });
   return state;
 }
 
 async function openAdoption(buffer, name) {
-  await openApplication("/projects/project-fixture/contract", "en");
-  await page.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-  const form = page.getByRole("dialog", { name: "Adopt existing contract", exact: true });
+  await openApplication("/projects/c/contract", "en");
+  await page
+    .getByRole("button", { name: "Adopt existing contract", exact: true })
+    .click();
+  const form = page.getByRole("dialog", {
+    name: "Adopt existing contract",
+    exact: true,
+  });
   const chooser = page.waitForEvent("filechooser");
-  await form.getByRole("button", { name: "Choose GAEB file", exact: true }).click();
+  await form
+    .getByRole("button", { name: "Choose GAEB file", exact: true })
+    .click();
   const input = await chooser;
   assert.match(await input.element().getAttribute("accept"), /\.d87/);
   await input.setFiles({ name, mimeType: "application/octet-stream", buffer });
-  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).and(page.locator(":enabled")).waitFor();
+  await form
+    .getByRole("button", { name: "Adopt existing contract", exact: true })
+    .and(page.locator(":enabled"))
+    .waitFor();
   return form;
 }
 
@@ -6442,42 +6919,86 @@ for (const format of ["x", "d", "p"]) {
   for (const phase of ["84", "85", "86", "87"]) {
     test(`existing ${format}${phase} contract adopts its real phase and supports subsequent measurements`, async () => {
       const state = seedAdoption();
-      const buffer = format === "x"
-        ? await readFile(new URL(`../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x${phase}`, import.meta.url))
-        : legacyContract(phase, format);
+      const buffer =
+        format === "x"
+          ? await readFile(
+              new URL(
+                `../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x${phase}`,
+                import.meta.url,
+              ),
+            )
+          : legacyContract(phase, format);
       const form = await openAdoption(buffer, `Bestand.${format}${phase}`);
       // X84 itself has no unit column; its matching X83 provides the full scope.
       if (format === "x" && phase === "84") {
         const chooser = page.waitForEvent("filechooser");
-        await form.getByRole("button", { name: "Add bill of quantities", exact: true }).click();
-        await (await chooser).setFiles({
-          name: "Bestand.x83", mimeType: "application/xml",
-          buffer: await readFile(new URL("../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x83", import.meta.url)),
+        await form
+          .getByRole("button", { name: "Add bill of quantities", exact: true })
+          .click();
+        await (
+          await chooser
+        ).setFiles({
+          name: "Bestand.x83",
+          mimeType: "application/xml",
+          buffer: await readFile(
+            new URL(
+              "../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x83",
+              import.meta.url,
+            ),
+          ),
         });
         await form.getByText("Bestand.x83", { exact: true }).waitFor();
       }
-      await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-      const editor = page.getByRole("dialog").filter({ has: page.locator(".gaeb-editor") });
+      await form
+        .getByRole("button", { name: "Adopt existing contract", exact: true })
+        .click();
+      const editor = page
+        .getByRole("dialog")
+        .filter({ has: page.locator(".gaeb-editor") });
       await editor.locator("canvas").first().waitFor();
       await editor.getByText(`Bestand.x${phase}`, { exact: true }).waitFor();
-      const request = api.requests.find(({ path }) => path === "commercial.cases.adoptContract");
+      const request = api.requests.find(
+        ({ path }) => path === "commercial.cases.adoptContract",
+      );
       assert.equal(request.input.sourcePhase, phase);
       assert.equal(request.input.sourceFileName, `Bestand.x${phase}`);
-      if (format === "x") assert.equal(request.input.sourceXml, buffer.toString("utf8"));
+      if (format === "x")
+        assert.equal(request.input.sourceXml, buffer.toString("utf8"));
       else assert.match(request.input.sourceXml, /sortsys:legacy-source:v1:/);
       assert.equal(state.cases.get("adopted-contract").case.status, "accepted");
       if (format !== "x") assert.equal(request.input.netAmount, "154.25");
-      if (phase !== "86") assert.equal([...state.documents.values()].some((doc) => doc.phase === "86"), false);
+      if (phase !== "86")
+        assert.equal(
+          [...state.documents.values()].some((doc) => doc.phase === "86"),
+          false,
+        );
       await editor.getByRole("button", { name: "Close", exact: true }).click();
       await editor.waitFor({ state: "hidden" });
-      await page.getByRole("button", { name: "Create document", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Measurement", exact: true }).click();
-      const measurement = page.getByRole("dialog", { name: "Start measurement", exact: true });
+      await page
+        .getByRole("button", { name: "Create document", exact: true })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "Measurement", exact: true })
+        .click();
+      const measurement = page.getByRole("dialog", {
+        name: "Start measurement",
+        exact: true,
+      });
       await measurement.getByRole("checkbox").first().waitFor();
-      await measurement.getByRole("textbox", { name: /^Title/ }).fill("Measured work");
-      await measurement.getByRole("button", { name: "Start measurement", exact: true }).click();
-      await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
-      const takeoff = [...state.documents.values()].find((doc) => doc.phase === "31");
+      await measurement
+        .getByRole("textbox", { name: /^Title/ })
+        .fill("Measured work");
+      await measurement
+        .getByRole("button", { name: "Start measurement", exact: true })
+        .click();
+      await page
+        .getByRole("dialog")
+        .locator(".gaeb-editor canvas")
+        .first()
+        .waitFor();
+      const takeoff = [...state.documents.values()].find(
+        (doc) => doc.phase === "31",
+      );
       assert.ok(takeoff);
       assert.match(takeoff.xml, /<QtyDeterm>/);
     });
@@ -6486,12 +7007,25 @@ for (const format of ["x", "d", "p"]) {
 
 test("existing XML with a legacy suffix uses the header phase and a modern filename", async () => {
   seedAdoption();
-  const xml = await readFile(new URL("../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x87", import.meta.url));
+  const xml = await readFile(
+    new URL(
+      "../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x87",
+      import.meta.url,
+    ),
+  );
   const form = await openAdoption(xml, "Renamed.D84");
   await form.getByText("Renamed.x87", { exact: true }).waitFor();
-  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-  await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
-  const request = api.requests.find(({ path }) => path === "commercial.cases.adoptContract");
+  await form
+    .getByRole("button", { name: "Adopt existing contract", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator(".gaeb-editor canvas")
+    .first()
+    .waitFor();
+  const request = api.requests.find(
+    ({ path }) => path === "commercial.cases.adoptContract",
+  );
   assert.equal(request.input.sourcePhase, "87");
   assert.equal(request.input.sourceFileName, "Renamed.x87");
   assert.equal(request.input.sourceXml, xml.toString("utf8"));
@@ -6500,10 +7034,21 @@ test("existing XML with a legacy suffix uses the header phase and a modern filen
 for (const format of ["d", "p"]) {
   test(`price-only ${format}84 adopts known amounts without an invented scope`, async () => {
     seedAdoption();
-    const form = await openAdoption(legacyContract("84", format, true), `Preise.${format}84`);
-    await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-    await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
-    const request = api.requests.find(({ path }) => path === "commercial.cases.adoptContract");
+    const form = await openAdoption(
+      legacyContract("84", format, true),
+      `Preise.${format}84`,
+    );
+    await form
+      .getByRole("button", { name: "Adopt existing contract", exact: true })
+      .click();
+    await page
+      .getByRole("dialog")
+      .locator(".gaeb-editor canvas")
+      .first()
+      .waitFor();
+    const request = api.requests.find(
+      ({ path }) => path === "commercial.cases.adoptContract",
+    );
     assert.equal(request.input.sourcePhase, "84");
     assert.equal(request.input.netAmount, "154.25");
     assert.equal(request.input.offerXml, null);
@@ -6515,27 +7060,75 @@ for (const format of ["d", "p"]) {
 
 test("a price-only P84 without a total can be completed by its D83 scope", async () => {
   seedAdoption();
-  const form = await openAdoption(legacyContract("84", "p", true, false), "Preise.p84");
-  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-  await form.getByText("This price file requires its associated bill of quantities.", { exact: true }).waitFor();
-  assert.equal(api.requests.some(({ path }) => path === "commercial.cases.adoptContract"), false);
+  const form = await openAdoption(
+    legacyContract("84", "p", true, false),
+    "Preise.p84",
+  );
+  await form
+    .getByRole("button", { name: "Adopt existing contract", exact: true })
+    .click();
+  await form
+    .getByText("This price file requires its associated bill of quantities.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    api.requests.some(({ path }) => path === "commercial.cases.adoptContract"),
+    false,
+  );
   const wrongChooser = page.waitForEvent("filechooser");
-  await form.getByRole("button", { name: "Add bill of quantities", exact: true }).click();
-  await (await wrongChooser).setFiles({
-    name: "AnderesLV.d83", mimeType: "application/octet-stream",
-    buffer: Buffer.from(legacyContract("83", "d").toString("latin1").replace("010001", "010099"), "latin1"),
+  await form
+    .getByRole("button", { name: "Add bill of quantities", exact: true })
+    .click();
+  await (
+    await wrongChooser
+  ).setFiles({
+    name: "AnderesLV.d83",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from(
+      legacyContract("83", "d").toString("latin1").replace("010001", "010099"),
+      "latin1",
+    ),
   });
   await form.getByText("AnderesLV.x83", { exact: true }).waitFor();
-  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-  await form.getByText("The bill of quantities and price file must contain matching items and quantities.", { exact: true }).waitFor();
-  assert.equal(api.requests.some(({ path }) => path === "commercial.cases.adoptContract"), false);
+  await form
+    .getByRole("button", { name: "Adopt existing contract", exact: true })
+    .click();
+  await form
+    .getByText(
+      "The bill of quantities and price file must contain matching items and quantities.",
+      { exact: true },
+    )
+    .waitFor();
+  assert.equal(
+    api.requests.some(({ path }) => path === "commercial.cases.adoptContract"),
+    false,
+  );
   const chooser = page.waitForEvent("filechooser");
-  await form.getByRole("button", { name: "Add bill of quantities", exact: true }).click();
-  await (await chooser).setFiles({ name: "Leistungen.d83", mimeType: "application/octet-stream", buffer: legacyContract("83", "d") });
+  await form
+    .getByRole("button", { name: "Add bill of quantities", exact: true })
+    .click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "Leistungen.d83",
+    mimeType: "application/octet-stream",
+    buffer: legacyContract("83", "d"),
+  });
   await form.getByText("Leistungen.x83", { exact: true }).waitFor();
-  await form.getByRole("button", { name: "Adopt existing contract", exact: true }).click();
-  await page.getByRole("dialog").locator(".gaeb-editor canvas").first().waitFor();
-  assert.equal(api.requests.find(({ path }) => path === "commercial.cases.adoptContract").input.netAmount, "154.25");
+  await form
+    .getByRole("button", { name: "Adopt existing contract", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator(".gaeb-editor canvas")
+    .first()
+    .waitFor();
+  assert.equal(
+    api.requests.find(({ path }) => path === "commercial.cases.adoptContract")
+      .input.netAmount,
+    "154.25",
+  );
 });
 
 async function seedExtendedContract() {
@@ -6549,9 +7142,9 @@ async function seedExtendedContract() {
       status: "accepted",
       title: "Musterhaus",
       existingContract: false,
-      projectId: "project-fixture",
+      projectId: "c",
       parentCaseId: null,
-      customerId: "customer-fixture",
+      customerId: "b",
       customerName: "Fixture Customer",
       currency: "EUR",
       netAmount: "10000.00",
@@ -6587,7 +7180,7 @@ async function seedExtendedContract() {
     vatRate: null,
   });
   api.respond("customers.get", {
-    id: "customer-fixture",
+    id: "b",
     name: "Fixture Customer",
     address: { streetAddress: "Musterweg 20", zip: "06108", city: "Halle" },
     phoneNumbers: [],
@@ -6598,7 +7191,7 @@ async function seedExtendedContract() {
 
 test("project creates a native X89 invoice and keeps it inside its fullscreen editor", async () => {
   const state = await seedExtendedContract();
-  await openApplication("/projects/project-fixture/contract", "en");
+  await openApplication("/projects/c/contract", "en");
   await page
     .getByRole("button", { name: "Create document", exact: true })
     .click();
@@ -6633,7 +7226,7 @@ test("project creates a native X89 invoice and keeps it inside its fullscreen ed
 for (const type of ["procurement", "calculation"]) {
   test(`project creates editable native ${type} from the accepted contract`, async () => {
     const state = await seedExtendedContract();
-    await openApplication("/projects/project-fixture/contract", "en");
+    await openApplication("/projects/c/contract", "en");
     await page
       .getByRole("button", { name: "Create document", exact: true })
       .click();
@@ -6748,6 +7341,15 @@ test("added delivery-note products and special items focus the new field without
   );
   await name.fill("Extra delivery");
   await name.press("Tab");
+  const remove = dialog.getByRole("button", {
+    name: "Remove special item",
+    exact: true,
+  });
+  await page.waitForFunction(
+    (node) => node === document.activeElement,
+    await remove.elementHandle(),
+  );
+  await remove.press("Tab");
   const amount = dialog.getByRole("spinbutton", { name: /^Quantity/ }).last();
   await page.waitForFunction(
     (node) => node === document.activeElement,
@@ -6930,8 +7532,12 @@ test("editing the document designation updates the workflow heading and overview
     "Sanierung Südflügel – Angebot",
   );
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
   await page
-    .getByText("Sanierung Südflügel – Angebot", { exact: true })
+    .getByRole("row")
+    .filter({
+      has: page.getByText("Sanierung Südflügel – Angebot", { exact: true }),
+    })
     .waitFor();
   assert.equal(
     await page.getByText("Initial designation", { exact: true }).count(),
