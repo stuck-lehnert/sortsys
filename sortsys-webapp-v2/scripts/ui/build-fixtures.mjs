@@ -62,10 +62,26 @@ await viteBuild({
       "react-stately",
     ],
     alias: [
-      { find: /^@sortsys\/zerotrust\/worker$/, replacement: join(repository, "sortsys-zerotrust/src/opaqueWorker.ts") },
-      { find: /^@sortsys\/zerotrust$/, replacement: join(repository, "sortsys-zerotrust/src/index.ts") },
-      { find: /^@sortsys\/gaeb\/styles\.css$/, replacement: join(repository, "sortsys-gaeb/src/styles.css") },
-      { find: /^@sortsys\/gaeb$/, replacement: join(repository, "sortsys-gaeb/src/index.ts") },
+      {
+        find: /^@sortsys\/zerotrust\/worker$/,
+        replacement: join(repository, "sortsys-zerotrust/src/opaqueWorker.ts"),
+      },
+      {
+        find: /^@sortsys\/zerotrust\/sortsys$/,
+        replacement: join(repository, "sortsys-zerotrust/src/sortsys.ts"),
+      },
+      {
+        find: /^@sortsys\/zerotrust$/,
+        replacement: join(repository, "sortsys-zerotrust/src/index.ts"),
+      },
+      {
+        find: /^@sortsys\/gaeb\/styles\.css$/,
+        replacement: join(repository, "sortsys-gaeb/src/styles.css"),
+      },
+      {
+        find: /^@sortsys\/gaeb$/,
+        replacement: join(repository, "sortsys-gaeb/src/index.ts"),
+      },
       {
         find: /^iconv-lite$/,
         replacement: join(webapp, "app/lib/msgTextEncoding.ts"),
@@ -126,7 +142,12 @@ await viteBuild({
     emptyOutDir: false,
     minify: false,
     rollupOptions: {
-      input: { controls: join(directory, "controls.fixture.jsx"), crypto: join(directory, "crypto.fixture.jsx"), "private-editors": join(directory, "private-editors.fixture.ts") },
+      input: {
+        controls: join(directory, "controls.fixture.jsx"),
+        crypto: join(directory, "crypto.fixture.jsx"),
+        passkeys: join(directory, "passkeys.fixture.mjs"),
+        "private-editors": join(directory, "private-editors.fixture.ts"),
+      },
       output: {
         entryFileNames: "bundle/[name].js",
         chunkFileNames: "bundle/[name]-[hash].js",
@@ -174,8 +195,18 @@ writeFileSync(
   join(output, "assets.json"),
   JSON.stringify({ assets, styles }, null, 2) + "\n",
 );
-writeFileSync(join(output, "crypto.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Crypto browser test</title>${links}</head><body><div id="root"></div><script type="module" src="/bundle/crypto.js"></script></body></html>`);
-writeFileSync(join(output, "private-editors.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Private editor protocol test</title>${links}</head><body><script type="module" src="/bundle/private-editors.js"></script></body></html>`);
+writeFileSync(
+  join(output, "crypto.html"),
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Crypto browser test</title>${links}</head><body><div id="root"></div><script type="module" src="/bundle/crypto.js"></script></body></html>`,
+);
+writeFileSync(
+  join(output, "private-editors.html"),
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Private editor protocol test</title>${links}</head><body><script type="module" src="/bundle/private-editors.js"></script></body></html>`,
+);
+writeFileSync(
+  join(output, "passkeys.html"),
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Passkey protocol test</title></head><body><script type="module" src="/bundle/passkeys.js"></script></body></html>',
+);
 console.log(
   `Built actual UI fixtures with ${styles.length} production stylesheet(s).`,
 );
