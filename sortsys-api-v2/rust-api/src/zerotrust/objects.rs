@@ -140,6 +140,19 @@ struct KeyInput {
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
+struct KeyHistoryInput {
+    domain: String,
+    generations: Vec<String>,
+}
+#[derive(Serialize, TS)]
+#[serde(deny_unknown_fields)]
+struct KeyHistoryEntry {
+    generation: String,
+    definition: DomainDefinition,
+    envelope: Option<SealedBox>,
+}
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 struct IdentityInput {
     subject: String,
 }
@@ -485,6 +498,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .mutation_stub::<DomainDefinitionsInput, Success>("zerotrust.domains.putMany")
         .mutation_stub::<AccessPublicationInput, Success>("zerotrust.access.publish")
         .query_stub::<KeyInput, SealedBox>("zerotrust.keys.get")
+        .query_stub::<KeyHistoryInput, Vec<KeyHistoryEntry>>("zerotrust.keys.history")
         .query_stub::<KeyInspectionInput, Vec<SealedBox>>("zerotrust.keys.inspect")
         .mutation_stub::<KeyGrant, Success>("zerotrust.keys.grant")
         .query_stub::<KeyInput, DomainDefinition>("zerotrust.domains.get")

@@ -11,7 +11,7 @@ import { protectedTenant } from "../data/testing/protectedTenant.mjs";
 
 afterEach(() => lockCryptoSession());
 
-async function fixture() {
+async function fixture(generations = 9) {
   const area = {
     tenant: "test",
     id: "testing:history:master-data",
@@ -19,7 +19,7 @@ async function fixture() {
     scope: "testing:history",
     facet: "master-data",
     prefix: "record:",
-    generation: "9",
+    generation: String(generations),
   };
   const tenant = await protectedTenant([area]);
   const owner = {
@@ -32,7 +32,7 @@ async function fixture() {
     identity: await publicIdentity(identity),
   };
   const definitions = new Map();
-  for (let number = 1; number <= 9; number++) {
+  for (let number = 1; number <= generations; number++) {
     let readers = [owner];
     if (number === 4) readers = [];
     if (number === 7) readers = [owner, reader];
@@ -64,13 +64,30 @@ async function fixture() {
       try {
         await new Promise((resolve) => setTimeout(resolve, 1));
         if (state.abort) controller.abort();
-        const definition = definitions.get(input.generation);
-        if (path === "zerotrust.domains.get") {
-          const result = structuredClone(definition);
-          if (state.tamper === "definition") result.scope = "testing:wrong";
-          return [result, null];
+        if (path === "zerotrust.keys.history") {
+          const entries = input.generations.map((generation) => {
+            const definition = structuredClone(definitions.get(generation));
+            const envelope = structuredClone(definition.envelopes[0] ?? null);
+            return { generation, definition, envelope };
+          });
+          if (state.tamper === "definition")
+            entries[0].definition.scope = "testing:wrong";
+          if (state.tamper === "definitionSignature")
+            entries[0].definition.proof = entries[1].definition.proof;
+          if (state.tamper === "envelope")
+            entries[0].envelope.generation = "99";
+          if (state.tamper === "envelopeSignature")
+            entries[0].envelope.signature = entries[1].envelope.signature;
+          if (state.tamper === "recipient")
+            entries[0].envelope.recipient = "user:9";
+          if (state.tamper === "missingEnvelope") entries[0].envelope = null;
+          if (state.tamper === "order") entries.reverse();
+          if (state.tamper === "count") entries.pop();
+          if (state.tamper === "extra") entries[0].untrusted = true;
+          return [entries, null];
         }
         expect(path).toBe("zerotrust.keys.get");
+        const definition = definitions.get(input.generation);
         const envelope = structuredClone(definition.envelopes[0]);
         if (state.tamper === "envelope") envelope.generation = "99";
         return [envelope, null];
@@ -103,11 +120,10 @@ async function fixture() {
   };
 }
 
-test("history reads overlap within a fixed budget and returned grants retain generation order", async () => {
+test("one bounded read returns definitions and recipient copies while prepared grants retain generation order", async () => {
   const f = await fixture();
   const grants = await prepareHistoricalKeyGrants(f.client, f.input);
-  expect(f.state.maximum).toBeGreaterThan(1);
-  expect(f.state.maximum).toBeLessThanOrEqual(4);
+  expect(f.state.maximum).toBe(1);
   expect(f.state.active).toBe(0);
   expect(grants.map((grant) => grant.generation)).toEqual([
     "1",
@@ -118,12 +134,15 @@ test("history reads overlap within a fixed budget and returned grants retain gen
     "8",
     "9",
   ]);
-  expect(
-    f.calls.filter((call) => call.path === "zerotrust.domains.get"),
-  ).toHaveLength(9);
-  expect(
-    f.calls.filter((call) => call.path === "zerotrust.keys.get"),
-  ).toHaveLength(7);
+  expect(f.calls).toEqual([
+    {
+      path: "zerotrust.keys.history",
+      input: {
+        domain: f.input.area.id,
+        generations: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+      },
+    },
+  ]);
   for (const grant of grants) {
     const definition = f.definitions.get(grant.generation);
     const expected = await openBox(
@@ -179,32 +198,67 @@ test("a verified current definition avoids another read while reapproval can rep
     "9",
   ]);
   expect(
-    f.calls.filter((call) => call.path === "zerotrust.domains.get"),
-  ).toHaveLength(8);
+    f.calls.filter((call) => call.path === "zerotrust.keys.history"),
+  ).toHaveLength(1);
+  expect(f.calls[0].input.generations).toEqual([
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+  ]);
+  expect(f.calls[1]).toEqual({
+    path: "zerotrust.keys.get",
+    input: { domain: f.input.area.id, generation: "9" },
+  });
 });
 
 test("substituted proofs and cancellation reject the whole preparation after started reads settle", async () => {
-  for (const tamper of ["definition", "envelope"]) {
+  for (const tamper of [
+    "definition",
+    "definitionSignature",
+    "envelope",
+    "envelopeSignature",
+    "recipient",
+    "missingEnvelope",
+    "order",
+    "count",
+    "extra",
+  ]) {
     const f = await fixture();
     f.state.tamper = tamper;
     await expect(
       prepareHistoricalKeyGrants(f.client, f.input),
     ).rejects.toThrow();
     expect(f.state.active).toBe(0);
-    expect(
-      f.calls.filter((call) => call.path === "zerotrust.domains.get").length,
-    ).toBeLessThan(9);
-    if (tamper === "definition") {
-      expect(f.calls.some((call) => call.path === "zerotrust.keys.get")).toBe(
-        false,
-      );
-    }
+    expect(f.calls).toHaveLength(1);
   }
   const f = await fixture();
   f.state.abort = true;
   await expect(prepareHistoricalKeyGrants(f.client, f.input)).rejects.toThrow();
   expect(f.state.active).toBe(0);
-  expect(f.calls).toHaveLength(4);
+  expect(f.calls).toHaveLength(1);
+});
+
+test("a longer history uses at most 16 generations per read with no individual definition or key reads", async () => {
+  const f = await fixture(33);
+  const grants = await prepareHistoricalKeyGrants(f.client, f.input);
+  expect(f.calls.map((call) => call.path)).toEqual([
+    "zerotrust.keys.history",
+    "zerotrust.keys.history",
+    "zerotrust.keys.history",
+  ]);
+  expect(f.calls.map((call) => call.input.generations.length)).toEqual([
+    16, 16, 1,
+  ]);
+  expect(f.calls.flatMap((call) => call.input.generations)).toEqual(
+    Array.from({ length: 33 }, (_, index) => String(index + 1)),
+  );
+  expect(grants).toHaveLength(31);
+  expect(grants.at(-1).generation).toBe("33");
 });
 
 test("invalid and oversized histories fail before any request", async () => {
@@ -218,4 +272,20 @@ test("invalid and oversized histories fail before any request", async () => {
     ).rejects.toThrow();
   }
   expect(f.calls).toHaveLength(0);
+});
+
+test("a forged later page never yields the grants prepared from an earlier valid page", async () => {
+  const f = await fixture(33);
+  const query = f.client.query.bind(f.client);
+  f.client.query = async (path, input) => {
+    const [page, error] = await query(path, input);
+    if (input.generations[0] === "17")
+      page[0].definition.scope = "testing:wrong";
+    return [page, error];
+  };
+  await expect(prepareHistoricalKeyGrants(f.client, f.input)).rejects.toThrow();
+  expect(f.calls.map((call) => call.input.generations.length)).toEqual([
+    16, 16,
+  ]);
+  expect(f.state.active).toBe(0);
 });

@@ -471,9 +471,20 @@ Schlüssel. Die Prüfung einer delegierten Veröffentlichung verlangt zusätzlic
 den tatsächlichen zertifizierten Verwalter als Absender sowie dessen aktuelles
 Lese- und Verwaltungsrecht im jeweiligen Bereich.
 
-Bei Einladungen und geänderten Freigaben bereitet der Browser unabhängige
-Schlüsselgenerationen mit höchstens vier parallelen Abrufen je Bereich vor.
-Dadurch können diese Abfragen die vorhandenen RPC-Pakete gemeinsam nutzen.
+Bei Einladungen und geänderten Freigaben liest `zerotrust.keys.history` bis zu
+16 historische Definitionen und die eigenen verschlüsselten Schlüsselkopien
+eines Bereichs gemeinsam. Sitzung, aktuelles Leserecht und alle Datensätze
+werden in derselben Transaktion geprüft. Der Abruf darf keine fremden
+Empfänger auswählen. Eine unbekannte oder unzulässige Generation verwirft die
+ganze Antwort; eine fehlende eigene Schlüsselkopie wird ausdrücklich als
+fehlend zurückgegeben. Auch ein Administratorkonto benötigt das Leserecht.
+
+Der Browser prüft Anzahl, Reihenfolge, Bereich und Signaturen und bereitet
+höchstens vier Generationen gleichzeitig kryptografisch auf. Erst wenn die
+vollständige Auswahl geprüft ist, können neue Schlüsselkopien veröffentlicht
+werden. Eine Historie mit 33 Generationen benötigt dafür drei Sammelabrufe;
+zusätzliche Nachweise für delegierte Unterzeichner werden bei Bedarf separat
+geprüft. Eine bereits bekannte aktuelle Definition wird weiterverwendet.
 Eine Einladung bearbeitet höchstens vier Bereiche gleichzeitig und
 veröffentlicht die vorbereiteten Schlüsselkopien ebenfalls über
 `zerotrust.access.publish`. Eine Wiederholung prüft auch hier die tatsächlich

@@ -112,6 +112,10 @@ test("typed cryptographic procedures cross the business facade without a second 
       ],
       ["zerotrust.keyAuthorities.forAreas", { areas: [] }],
       [
+        "zerotrust.keys.history",
+        { domain: "catalog:products:master-data", generations: ["1"] },
+      ],
+      [
         "zerotrust.identities.recipients",
         { scope: "catalog:products", facet: "master-data", after: null },
       ],
@@ -148,9 +152,11 @@ test("typed cryptographic procedures cross the business facade without a second 
       const [, denied] = await facade[method](path, {});
       expect(denied?.code).toBe("UNKNOWN_CLIENT_OPERATION");
       expect(
-        requests.slice(start).some((request) =>
-          new URL(request.url).pathname.slice(1).split(",").includes(path),
-        ),
+        requests
+          .slice(start)
+          .some((request) =>
+            new URL(request.url).pathname.slice(1).split(",").includes(path),
+          ),
       ).toBe(false);
     }
   } finally {

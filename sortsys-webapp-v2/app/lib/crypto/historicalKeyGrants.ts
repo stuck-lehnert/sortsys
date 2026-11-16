@@ -1,6 +1,7 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
 import {
   InvalidProtectedData,
+  record,
   rewrapDomainKey,
   verifyDomain,
 } from "@sortsys/zerotrust/sortsys";
@@ -11,8 +12,8 @@ import { readBoxKeyAuthority } from "./keyAuthorities";
 type Rewrap = Parameters<typeof rewrapDomainKey>[0];
 type Grant = MutateInput<"zerotrust.access.publish">["grants"][number];
 
-/** Prepare independent history generations together so their reads can share
- * RPC batches. No grant is published before every selected proof is verified. */
+/** Fetch definitions and own recipient copies in bounded, authorized pages.
+ * No grant is published before every selected proof is verified. */
 export async function prepareHistoricalKeyGrants(
   client: Client,
   input: Pick<
@@ -37,20 +38,14 @@ export async function prepareHistoricalKeyGrants(
   const generations = Array.from({ length: Number(count) }, (_, index) =>
     String(index + 1),
   );
-  const grants = await mapConcurrent(generations, 4, async (generation) => {
+  if (input.latest !== undefined) generations.pop();
+  async function prepareGeneration(
+    generation: string,
+    definition: unknown,
+    readEnvelope: () => Promise<unknown>,
+  ): Promise<Grant[]> {
     checkpoint();
     const area = { ...input.area, generation };
-    const definition =
-      input.latest !== undefined && generation === input.area.generation
-        ? input.latest
-        : await required(
-            client.query(
-              "zerotrust.domains.get",
-              { domain: area.id, generation },
-              { strategy: "network-only" },
-            ),
-          );
-    checkpoint();
     const verified = await verifyDomain(definition, area, input.history);
     checkpoint();
     // A recovery-only generation has no user copy to redistribute.
@@ -64,13 +59,7 @@ export async function prepareHistoricalKeyGrants(
           )),
     );
     if (!readers.length) return [];
-    const envelope = await required(
-      client.query(
-        "zerotrust.keys.get",
-        { domain: area.id, generation },
-        { strategy: "network-only" },
-      ),
-    );
+    const envelope = await readEnvelope();
     checkpoint();
     const sourceAuthority = await readBoxKeyAuthority(client, {
       box: envelope,
@@ -99,7 +88,48 @@ export async function prepareHistoricalKeyGrants(
         ? { keyAuthority: input.authority.keyAuthority }
         : {}),
     }));
-  });
+  }
+  const grants: Grant[] = [];
+  for (let offset = 0; offset < generations.length; offset += 16) {
+    checkpoint();
+    const selected = generations.slice(offset, offset + 16);
+    const page = await required(
+      client.query(
+        "zerotrust.keys.history",
+        { domain: input.area.id, generations: selected },
+        { strategy: "network-only" },
+      ),
+    );
+    checkpoint();
+    if (!Array.isArray(page) || page.length !== selected.length)
+      throw new InvalidProtectedData();
+    for (const [index, entry] of page.entries()) {
+      record(entry, ["generation", "definition", "envelope"]);
+      if (entry.generation !== selected[index])
+        throw new InvalidProtectedData();
+    }
+    const prepared = await mapConcurrent(page, 4, (entry) =>
+      prepareGeneration(
+        entry.generation,
+        entry.definition,
+        async () => entry.envelope,
+      ),
+    );
+    grants.push(...prepared.flat());
+  }
+  if (input.latest !== undefined) {
+    grants.push(
+      ...(await prepareGeneration(input.area.generation, input.latest, () =>
+        required(
+          client.query(
+            "zerotrust.keys.get",
+            { domain: input.area.id, generation: input.area.generation },
+            { strategy: "network-only" },
+          ),
+        ),
+      )),
+    );
+  }
   checkpoint();
-  return grants.flat();
+  return grants;
 }

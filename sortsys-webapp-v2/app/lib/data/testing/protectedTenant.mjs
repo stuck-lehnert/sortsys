@@ -218,6 +218,17 @@ export async function protectedTenant(
         }
         case "zerotrust.keys.get":
           return [domains.get(input.domain).definition.envelopes[0], null];
+        case "zerotrust.keys.history": {
+          const definition = domains.get(input.domain).definition;
+          return [
+            input.generations.map((generation) => ({
+              generation,
+              definition,
+              envelope: definition.envelopes[0] ?? null,
+            })),
+            null,
+          ];
+        }
         case "zerotrust.stock.references":
           return [
             input.objects.map((object) => ({

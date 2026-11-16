@@ -51,9 +51,9 @@ Widerruf der Verwaltungsbefugnis bleiben unabhängig vergebene Mitarbeiterrechte
 erhalten; weitere Schlüsselveröffentlichungen des Verwalters werden abgewiesen.
 Die gemeinsame Rechtefunktion und eine eigene Freigabenansicht verwenden diese
 delegierte Verteilung. Die Hauptadministration vergibt das Verwaltungsrecht in
-der bisherigen Rechteauswahl. Für die unmittelbar aus Anlagenachweisen
-abgeleiteten Verwaltungsrechte fehlt noch der Anschluss; sie benötigen derzeit
-eine ausdrückliche primäre Freigabe.
+der bisherigen Rechteauswahl. Anlagenachweise gewähren Bearbeitungsrechte für
+das neue Objekt, aber keine Freigabenverwaltung. Diese Befugnis wird gesondert
+von der Hauptadministration vergeben.
 
 Der native Browsertest prüft die fertige Webapp mit drei getrennten Sitzungen
 gegen zwei API-Instanzen. Eine Katalogfreigabe macht die Produkte beim Empfänger

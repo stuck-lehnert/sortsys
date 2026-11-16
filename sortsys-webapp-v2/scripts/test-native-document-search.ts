@@ -32,6 +32,18 @@ for (const endpoint of endpoints) {
   assert.equal(url.hostname, "127.0.0.1");
   assert.equal(url.protocol, "http:");
 }
+const originalFetch = globalThis.fetch;
+const requests: string[] = [];
+// Clients capture fetch when constructed. Observe both GET and POST inputs.
+globalThis.fetch = new Proxy(originalFetch, {
+  apply(target, receiver, args) {
+    const input = args[0] instanceof Request ? args[0].url : String(args[0]);
+    const url = new URL(input);
+    for (const value of url.searchParams.values()) requests.push(value);
+    if (typeof args[1]?.body === "string") requests.push(args[1].body);
+    return Reflect.apply(target, receiver, args);
+  },
+});
 const owner = createClient(endpoints[0], "document-search-owner");
 const member = createClient(endpoints[1], "document-search-member");
 const signal = new AbortController().signal;
@@ -45,14 +57,6 @@ const login = {
 const query = "Fenster Wand";
 const searchInput = { query, limit: 50n };
 const secret = "VERTRAULICHER_SUCHINHALT_519842";
-const originalFetch = globalThis.fetch;
-const requests: string[] = [];
-globalThis.fetch = new Proxy(originalFetch, {
-  apply(target, receiver, args) {
-    if (typeof args[1]?.body === "string") requests.push(args[1].body);
-    return Reflect.apply(target, receiver, args);
-  },
-});
 let ownerBusiness: ReturnType<typeof createBusinessClient> | undefined;
 let memberBusiness: ReturnType<typeof createBusinessClient> | undefined;
 try {
@@ -247,6 +251,10 @@ try {
     )[1],
   );
   const wire = requests.join("\n");
+  assert.ok(
+    wire.includes("sortsys-hpke-v1"),
+    "The leak check must observe encrypted RPC payloads",
+  );
   for (const privateText of [
     query,
     secret,

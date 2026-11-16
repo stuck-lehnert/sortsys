@@ -252,6 +252,23 @@ async function rotationFixture(conflict = false) {
         null,
       ];
     }
+    if (path === "zerotrust.keys.history") {
+      f.calls.push(path);
+      return [
+        input.generations.map((generation) => {
+          const definition = definitions.get(`${input.domain}:${generation}`);
+          expect(definition).toBeDefined();
+          return {
+            generation,
+            definition,
+            envelope:
+              definition.envelopes.find((box) => box.recipient === "user:1") ??
+              null,
+          };
+        }),
+        null,
+      ];
+    }
     if (path === "zerotrust.domains.get" || path === "zerotrust.keys.get") {
       f.calls.push(path);
       const definition = definitions.get(`${input.domain}:${input.generation}`);

@@ -7,6 +7,7 @@ test("the generated contract classifies crypto queries and mutations without acc
     "zerotrust.keyAuthorities.forArea",
     "zerotrust.keyAuthorities.forAreas",
     "zerotrust.identities.recipients",
+    "zerotrust.keys.history",
   ]) {
     expect(contractProcedureKind(path)).toBe("query");
   }

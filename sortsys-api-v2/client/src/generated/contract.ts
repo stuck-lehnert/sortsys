@@ -363,6 +363,7 @@ export type QueryInputs = {
   "zerotrust.keyAuthorities.forAreas": { areas: Array<KeyAuthorityAreaInput>, };
   "zerotrust.keyAuthorities.get": { signature: string, };
   "zerotrust.keys.get": { domain: string, generation: string, };
+  "zerotrust.keys.history": { domain: string, generations: Array<string>, };
   "zerotrust.keys.inspect": { keys: Array<KeyRecipientInput>, };
   "zerotrust.members.changeReceipt": { requestId: string, };
   "zerotrust.members.creation": { id: Id, };
@@ -511,6 +512,7 @@ export type QueryOutputs = {
   "zerotrust.keyAuthorities.forAreas": Array<{ tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, } | null>;
   "zerotrust.keyAuthorities.get": { tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, };
   "zerotrust.keys.get": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
+  "zerotrust.keys.history": Array<{ generation: string, definition: DomainDefinition, envelope: SealedBox | null, }>;
   "zerotrust.keys.inspect": Array<{ tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, }>;
   "zerotrust.members.changeReceipt": { tenant: string, generation: string, author: string, id: string, action: MemberAction, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
   "zerotrust.members.creation": { creation: MemberCreation, createdAt: string, };
@@ -1083,6 +1085,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.keyAuthorities.forAreas",
   "zerotrust.keyAuthorities.get",
   "zerotrust.keys.get",
+  "zerotrust.keys.history",
   "zerotrust.keys.inspect",
   "zerotrust.members.changeReceipt",
   "zerotrust.members.creation",

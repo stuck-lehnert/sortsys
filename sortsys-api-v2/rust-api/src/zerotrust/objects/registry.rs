@@ -407,6 +407,7 @@ pub(in crate::zerotrust) fn register(
     let access_publish = Arc::clone(&service);
     let key_inspection = Arc::clone(&service);
     let keys = Arc::clone(&service);
+    let key_history = Arc::clone(&service);
     let key_grant = Arc::clone(&service);
     let definitions = Arc::clone(&service);
     let directory = Arc::clone(&service);
@@ -627,6 +628,13 @@ pub(in crate::zerotrust) fn register(
                 Ok(result)
             }
         })
+        .query(
+            "zerotrust.keys.history",
+            move |ctx, input: KeyHistoryInput| {
+                let service = Arc::clone(&key_history);
+                async move { read_key_history(&service, &ctx, input).await }
+            },
+        )
         .query("zerotrust.keys.get", move |ctx, input: KeyInput| {
             let service = Arc::clone(&keys);
             async move {
@@ -858,18 +866,17 @@ pub(in crate::zerotrust) async fn install_identity(
     Ok(())
 }
 
-pub(in crate::zerotrust) async fn definition_at(
-    transaction: &mut Transaction,
-    guard: &Security,
-    area: &DomainRecord,
+fn definition_authority_generation<'a>(
+    area: &'a DomainRecord,
     generation: &str,
-) -> RpcResult<DomainDefinition> {
+    maximum: i64,
+) -> RpcResult<&'a str> {
     revision(generation)?;
     let available = area.definitions.get(generation).ok_or_else(not_found)?;
     let mut selected = None;
     for candidate in available {
         let number = revision(candidate)?;
-        if number <= guard.root.generation
+        if number <= maximum
             && selected
                 .as_ref()
                 .is_none_or(|(current, _)| number > *current)
@@ -878,6 +885,17 @@ pub(in crate::zerotrust) async fn definition_at(
         }
     }
     let (_, authority_generation) = selected.ok_or_else(not_found)?;
+    Ok(authority_generation)
+}
+
+pub(in crate::zerotrust) async fn definition_at(
+    transaction: &mut Transaction,
+    guard: &Security,
+    area: &DomainRecord,
+    generation: &str,
+) -> RpcResult<DomainDefinition> {
+    let authority_generation =
+        definition_authority_generation(area, generation, guard.root.generation)?;
     let definition: DomainDefinition = transaction
         .read(definition_key(&area.id, generation, authority_generation)?)
         .await?
@@ -911,6 +929,71 @@ pub(in crate::zerotrust) async fn definition_at(
     };
     verify(&signing_key, &definition.proof, &definition.frame()?)?;
     Ok(definition)
+}
+
+/// Read one area's own historical key packages under one current authorization
+/// snapshot. Missing recipient copies are explicit; an invalid generation or
+/// a concurrent rights change rejects the complete result.
+async fn read_key_history(
+    service: &AuthService,
+    request: &RequestContext,
+    input: KeyHistoryInput,
+) -> RpcResult<Vec<KeyHistoryEntry>> {
+    identifier(&input.domain)?;
+    if input.generations.is_empty() || input.generations.len() > 16 {
+        return Err(invalid());
+    }
+    let mut seen = BTreeSet::new();
+    for generation in &input.generations {
+        revision(generation)?;
+        if !seen.insert(generation) {
+            return Err(invalid());
+        }
+    }
+    let mut context =
+        metadata_context_for_domains(service, request, Some(std::slice::from_ref(&input.domain)))
+            .await?;
+    let area = domain(&mut context.transaction, &input.domain).await?;
+    let guard = &context.security;
+    if !guard.allows(&guard.subject, &area.scope, area.facet, Action::Read) {
+        return Err(forbidden());
+    }
+    let mut records = Vec::new();
+    let mut authorities = BTreeSet::new();
+    for generation in &input.generations {
+        let authority_generation =
+            definition_authority_generation(&area, generation, guard.root.generation)?;
+        records.push(definition_key(&area.id, generation, authority_generation)?);
+        records.push(envelope_key(&area.id, generation, &guard.subject)?);
+        if authorities.insert(authority_generation) {
+            records.push(key("authority-history", &padded(authority_generation)?));
+        }
+    }
+    context.transaction.prefetch(records).await?;
+    let mut result = Vec::new();
+    for generation in input.generations {
+        let definition = definition_at(&mut context.transaction, guard, &area, &generation).await?;
+        let envelope: Option<SealedBox> = context
+            .transaction
+            .read(envelope_key(&area.id, &generation, &guard.subject)?)
+            .await?;
+        if let Some(envelope) = &envelope
+            && (envelope.tenant != guard.policy.tenant
+                || envelope.object != area.id
+                || envelope.generation != generation
+                || envelope.recipient != guard.subject
+                || envelope.purpose != "area-key")
+        {
+            return Err(invalid());
+        }
+        result.push(KeyHistoryEntry {
+            generation,
+            definition,
+            envelope,
+        });
+    }
+    context.transaction.validate().await?;
+    Ok(result)
 }
 
 /// A scoped manager can choose confirmed recipients without receiving the

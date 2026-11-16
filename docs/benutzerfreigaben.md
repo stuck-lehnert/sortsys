@@ -236,13 +236,13 @@ fort. Ein Entzug der Verwaltungsbefugnis sperrt die offene Ansicht über die
 laufende Verbindung. Einladungen, Kontoverwaltung und Wiederherstellung stehen
 in dieser Ansicht nicht zur Verfügung.
 
-## Verbleibender Umbau
+Anlegen und Freigabenverwaltung sind getrennte Befugnisse. Ein Anlagenachweis
+erlaubt das Bearbeiten des neuen Projekts oder Dokuments, aber nicht das
+Weitergeben von Rechten. Dafür ist eine ausdrückliche Verwaltungsfreigabe der
+Hauptadministration erforderlich. Eine neue Wiederherstellungsgeneration macht
+alte Einladungen ungültig.
 
-Die Bereichsverwaltung benötigt derzeit ein unmittelbar von der
-Hauptadministration signiertes Verwaltungsrecht. Ein ausschließlich aus einem
-Anlagenachweis abgeleitetes Recht, etwa für ein selbst angelegtes Projekt, muss
-noch an diesen Ablauf angeschlossen werden. Eine neue
-Wiederherstellungsgeneration macht alte Einladungen ungültig.
+## Verbleibender Umbau
 
 Aktivieren, Deaktivieren, Archivieren und Entarchivieren verbinden das
 verschlüsselte Personalprofil mit dem technischen Kontostatus und nötigenfalls

@@ -72,6 +72,23 @@ for (const endpoint of endpoints) {
 }
 const tenant = process.env.SORTSYS_NATIVE_AUTH_TENANT;
 assert.equal(tenant, "administration-tenant");
+const originalFetch = globalThis.fetch;
+const bodies: string[] = [];
+const transmissions: string[][] = [];
+// Install before constructing clients: the transport captures fetch at setup.
+// Observe query inputs as well as request bodies, so a GET cannot evade the
+// plaintext canaries checked below.
+globalThis.fetch = new Proxy(originalFetch, {
+  apply(target, receiver, args) {
+    const requestUrl =
+      args[0] instanceof Request ? args[0].url : String(args[0]);
+    const url = new URL(requestUrl);
+    transmissions.push(url.pathname.split("/").at(-1)!.split(","));
+    for (const value of url.searchParams.values()) bodies.push(value);
+    if (typeof args[1]?.body === "string") bodies.push(args[1].body);
+    return Reflect.apply(target, receiver, args);
+  },
+});
 const owner = createClient(endpoints[0], "administration-owner");
 const manager = createClient(endpoints[1], "administration-manager");
 const reader = createClient(endpoints[0], "administration-reader");
@@ -87,14 +104,6 @@ const login = {
   username: "builder",
   password: "Only-owner-knows-this-password-2026!",
 };
-const originalFetch = globalThis.fetch;
-const bodies: string[] = [];
-globalThis.fetch = new Proxy(originalFetch, {
-  apply(target, receiver, args) {
-    if (typeof args[1]?.body === "string") bodies.push(args[1].body);
-    return Reflect.apply(target, receiver, args);
-  },
-});
 
 async function enroll(
   client: Client,
@@ -615,6 +624,79 @@ try {
   ).find((domain) => domain.id === PRODUCT_COLLECTION.domain)!.generation;
   const secondGeneration = (BigInt(initialGeneration) + 1n).toString();
   const thirdGeneration = (BigInt(secondGeneration) + 1n).toString();
+  const selectedGenerations =
+    initialGeneration === "1" ? ["1"] : [initialGeneration, "1"];
+  const historyKeys = await required(
+    manager.query(
+      "zerotrust.keys.history",
+      { domain: PRODUCT_COLLECTION.domain, generations: selectedGenerations },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.deepEqual(
+    historyKeys.map((entry) => entry.generation),
+    selectedGenerations,
+  );
+  for (const entry of historyKeys) {
+    const [definition, envelope] = await Promise.all([
+      required(
+        manager.query(
+          "zerotrust.domains.get",
+          {
+            domain: PRODUCT_COLLECTION.domain,
+            generation: entry.generation,
+          },
+          { strategy: "network-only" },
+        ),
+      ),
+      required(
+        manager.query(
+          "zerotrust.keys.get",
+          {
+            domain: PRODUCT_COLLECTION.domain,
+            generation: entry.generation,
+          },
+          { strategy: "network-only" },
+        ),
+      ),
+    ]);
+    assert.deepEqual(entry.definition, definition);
+    assert.deepEqual(entry.envelope, envelope);
+  }
+  for (const generations of [
+    [],
+    ["01"],
+    ["1", "1"],
+    Array.from({ length: 17 }, (_, index) => String(index + 1)),
+    ["1", thirdGeneration],
+  ]) {
+    const [partial, invalidHistory] = await manager.query(
+      "zerotrust.keys.history",
+      {
+        domain: PRODUCT_COLLECTION.domain,
+        generations,
+      },
+      { strategy: "network-only" },
+    );
+    assert.equal(partial, null);
+    assert.ok(
+      invalidHistory,
+      "An invalid or unavailable generation rejects the entire history selection",
+    );
+  }
+  const [hiddenHistory, deniedHistory] = await newReader.query(
+    "zerotrust.keys.history",
+    {
+      domain: PRODUCT_COLLECTION.domain,
+      generations: ["1"],
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(hiddenHistory, null);
+  assert.equal(deniedHistory?.code, "FORBIDDEN");
+  console.log(
+    "Native key history: bounded selections retain exact definition/key pairs and reject partial, duplicate, unavailable or unauthorized reads",
+  );
   await acceptVaultWithKey(added.account.dataKey, added.account.vault, false);
   assert.ok(
     (
@@ -632,6 +714,23 @@ try {
   );
   const shared = await candidate(retained, ["read"], added.subject);
   await required(manager.mutate("zerotrust.policy.replace", shared));
+  const missingCopy = await required(
+    newReader.query(
+      "zerotrust.keys.history",
+      {
+        domain: PRODUCT_COLLECTION.domain,
+        generations: [initialGeneration],
+      },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.equal(missingCopy.length, 1);
+  assert.equal(
+    missingCopy[0]!.envelope,
+    null,
+    "Current read permission does not manufacture a missing historical key copy",
+  );
+  const historyStart = transmissions.length;
   const historical = await prepareHistoricalKeyGrants(manager, {
     // The optional browser phase may already have granted a generation.
     // Refresh all historical copies for the atomic replacement checks below.
@@ -662,6 +761,13 @@ try {
     signal,
   });
   assert.equal(historical.length, Number(initialGeneration));
+  assert.equal(
+    transmissions
+      .slice(historyStart)
+      .filter((paths) => paths.includes("zerotrust.keys.history")).length,
+    Math.ceil(Number(initialGeneration) / 16),
+    "Historical definitions and recipient copies share one HTTP read per 16 generations",
+  );
   async function rotation(policy: SignedPolicy, generation: string) {
     const checked = (
       await verifyPolicy(policy, { tenant: login.tenant, authority })
@@ -1001,6 +1107,10 @@ try {
   }
 
   const wire = bodies.join("\n");
+  assert.ok(
+    wire.includes("sortsys-hpke-v1"),
+    "The leak check must have observed actual encrypted RPC payloads",
+  );
   for (const secret of [
     "VERTRAULICHES_PRODUKT_681942",
     "VERTRAULICHE_BESCHREIBUNG_681942",

@@ -51,6 +51,7 @@ test("point reads verify certified creation rights for every declared resource n
       action: "read",
     };
     expect(allows(effective, request)).toBe(true);
+    expect(allows(effective, { ...request, action: "grant" })).toBe(false);
     expect(allows(effective, { ...request, action: "update" })).toBe(false);
     expect(allows(effective, { ...request, scope: `${namespace}:def` })).toBe(
       false,
