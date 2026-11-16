@@ -269,6 +269,9 @@ try {
     const { exerciseNativeDomainBatches } =
       await import("./test-native-domain-batches");
     await exerciseNativeDomainBatches(owner, peer);
+    const { exerciseInitialRecordRevocation } =
+      await import("./test-initial-record-revocation");
+    await exerciseInitialRecordRevocation(owner, peer);
     const { exerciseToolBookingBatches } =
       await import("./test-tool-booking-batches");
     await exerciseToolBookingBatches(owner, peer, (hook) => {
@@ -295,6 +298,9 @@ try {
     );
     if (mode === "owner-tool-batches") {
       for (const marker of [
+        "First authorized publication",
+        "Must remain unpublished after revocation",
+        "Existing resource remains editable",
         "Werkzeugausgabe Rohbau",
         "Werkzeugausgabe Ausbau",
         "Sammelausgabe Nordflügel",
@@ -308,6 +314,19 @@ try {
           body.includes(marker),
           false,
           "Tool booking plaintext must stay in the browser: " + marker,
+        );
+      }
+    }
+    if (mode === "owner-backup-archive") {
+      for (const marker of [
+        "Private Werkzeugdaten 651297",
+        "1287.25",
+        "11.625",
+      ]) {
+        assert.equal(
+          body.includes(marker),
+          false,
+          "Adopted tool contents must remain client-encrypted",
         );
       }
     }

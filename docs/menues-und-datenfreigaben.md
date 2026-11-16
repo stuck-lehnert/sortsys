@@ -59,6 +59,15 @@ zertifizierten Anlagenachweis. Die Menüanzeige prüft auch diesen Nachweis. Wir
 die Anlageberechtigung später entzogen, bleiben bereits vergebene Zugriffe auf
 vorhandene Projekte erhalten.
 
+Vorbereitete Schlüsselbereiche allein erlauben noch keine neue Anlage. Beim
+ersten Speichern des eigentlichen Projekt-, Vorgangs-, Werkzeug- oder
+Buchungsdatensatzes prüft die API das aktuelle Anlegerecht erneut. Das gilt auch
+für einen Wiederholungsversuch nach einer Unterbrechung und für zuvor
+hochgeladene, noch unveröffentlichte Chiffrate. Die Prüfung und Veröffentlichung
+verwenden dieselbe Transaktion. Die Übernahme eines Backups bei der Ersteinrichtung
+hat einen eigenen Nachweis der Mandantenautorität; nach abgeschlossener Einrichtung
+lässt sich dieser Weg nicht mehr verwenden.
+
 Bei Client-Skripten hat **Neu** eine eigene Anlagefreigabe. Leserechte und das
 Recht, ein Skript anzulegen, erlauben keine spätere Codeänderung oder Löschung.
 Die Übersicht durchsucht Namen und Beschreibungen im Browser; der Code gehört

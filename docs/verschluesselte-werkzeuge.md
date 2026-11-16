@@ -33,6 +33,12 @@ Buchungen; bereits angelegte Buchungen behalten ihre eigenen Freigaben. Der
 verpflichtende Administrator erhält bei einer neuen Buchung ebenfalls deren
 Schlüssel, ohne dass der Ersteller den privaten Mandantenschlüssel bekommt.
 
+Ein abgebrochener Speicherversuch kann bereits leere Schlüsselbereiche
+hinterlassen. Sie umgehen einen späteren Entzug des Anlegerechts nicht: Die API
+prüft dieses Recht beim ersten Veröffentlichen des Buchungsdatensatzes erneut.
+Ein nativer Mehrinstanztest reproduziert diesen Fall bei einer Sammelbuchung und prüft,
+dass bestehende Buchungen und Werkzeugdaten unverändert bleiben.
+
 Der Browserlauf mit John und Frank verwendet zwei API-Instanzen und prüft diesen
 Ablauf über die tatsächlichen Formulare. Dazu gehören die Änderung ohne
 Kostenfreigabe, unveränderte Preise, der Rechteentzug und die erneute Freigabe

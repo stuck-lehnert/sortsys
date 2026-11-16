@@ -683,6 +683,24 @@ async fn save(
         return Err(conflict());
     }
     let action = write_action(envelope, previous.is_some())?;
+    // Backup adoption has its own authority-signed, setup-only admission above.
+    // An ordinary first publication must still hold the namespace grant.
+    if previous.is_none()
+        && input.migration_origin.is_none()
+        && let Some(scope) = super::super::creation::initial_record_creation_scope(
+            &envelope.scope,
+            envelope.facet,
+            &envelope.object,
+        )
+        && !context.security.policy.allows(
+            &context.security.subject,
+            scope,
+            Facet::MasterData,
+            Action::Create,
+        )
+    {
+        return Err(forbidden());
+    }
     let blob = super::super::documents::blob(&envelope.object)?;
     if !context
         .security

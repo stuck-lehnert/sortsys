@@ -126,6 +126,34 @@ pub(super) fn project_module_facets(module: &str) -> Option<&'static [Facet]> {
         _ => None,
     }
 }
+
+/// Allocating keys does not publish a business resource. Its canonical first
+/// record still needs the current namespace grant at the atomic write boundary.
+pub(super) fn initial_record_creation_scope(
+    scope: &str,
+    facet: Facet,
+    object: &str,
+) -> Option<&'static str> {
+    if facet != Facet::MasterData {
+        return None;
+    }
+    let (namespace, token) = scope.split_once(':')?;
+    let id = Id::decode(token).ok()?;
+    if id.0 <= 0 || id.encode() != token {
+        return None;
+    }
+    let expected = match namespace {
+        "project" => scope.to_owned(),
+        "commercial" => format!("{scope}:master-data:case"),
+        "tool" | "tool-tracking" => format!("{scope}:master-data:record"),
+        _ => return None,
+    };
+    if object != expected {
+        return None;
+    }
+    creation_scope(namespace).ok()
+}
+
 impl CreationOrigin {
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
         let prefix = format!("{}:", self.capability.namespace);
@@ -347,6 +375,53 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
+    #[test]
+    fn canonical_resource_records_require_namespace_creation_only_in_master_data() {
+        use super::{Facet, initial_record_creation_scope};
+        for (scope, object, expected) in [
+            ("project:abc", "project:abc", "create:project"),
+            (
+                "commercial:abc",
+                "commercial:abc:master-data:case",
+                "create:commercial",
+            ),
+            ("tool:abc", "tool:abc:master-data:record", "create:tool"),
+            (
+                "tool-tracking:abc",
+                "tool-tracking:abc:master-data:record",
+                "create:tool-tracking",
+            ),
+        ] {
+            assert_eq!(
+                initial_record_creation_scope(scope, Facet::MasterData, object),
+                Some(expected)
+            );
+            assert_eq!(
+                initial_record_creation_scope(scope, Facet::Procurement, object),
+                None
+            );
+            assert_eq!(
+                initial_record_creation_scope(
+                    scope,
+                    Facet::MasterData,
+                    &format!("{object}:receipt")
+                ),
+                None
+            );
+        }
+        for scope in [
+            "project:0",
+            "project:0abc",
+            "project:w",
+            "project:abc:planning",
+            "catalog:products",
+        ] {
+            assert_eq!(
+                initial_record_creation_scope(scope, Facet::MasterData, scope),
+                None
+            );
+        }
+    }
     #[test]
     fn browser_tool_creation_proofs_bind_each_resource_without_expanding_other_capabilities() {
         let input: serde_json::Value = serde_json::from_str(include_str!(

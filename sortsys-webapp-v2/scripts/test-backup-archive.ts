@@ -79,6 +79,23 @@ export async function exerciseBackupArchive(
         other_units: "{}",
       }),
       row("projects", { id: "92", title: "Private Fenstersanierung 862451" }),
+      row("tools", {
+        id: "102",
+        custom_id: "910901",
+        brand: "Private Werkzeugdaten 651297",
+        category: "Bohrhammer",
+        purchase_price: 1287.25,
+        usage_cost_per_day: 17.375,
+      }),
+      row("tool_trackings", {
+        id: "103",
+        tool_id: "102",
+        project_id: "92",
+        responsible_user_id: "87",
+        started_by_user_id: "87",
+        started_at: "2026-10-11T08:00:00Z",
+        tool_usage_cost_per_day: 11.625,
+      }),
       row("product_delivery_notes", {
         id: "94",
         auto_id: "840",
@@ -162,7 +179,7 @@ export async function exerciseBackupArchive(
       await digest(new Uint8Array(await recoveredFile.arrayBuffer())),
       await digest(original),
     );
-    assert.equal(reopened.rows, 10n);
+    assert.equal(reopened.rows, 12n);
   } finally {
     await reopened.database.close();
   }
@@ -219,6 +236,17 @@ export async function exerciseBackupArchive(
       business.query("deliveryNotes.get", { id: "2u" }),
     );
     assert.equal(delivery.autoId, 840);
+    const tool = await required(business.query("tools.get", { id: "36" }));
+    assert.equal(tool.brand, "Private Werkzeugdaten 651297");
+    assert.equal(tool.purchasePrice, 1287.25);
+    assert.equal(tool.usageCostPerDay, 17.375);
+    assert.equal(tool.activeTrackingId, "37");
+    const bookings = await required(
+      business.query("tools.trackings.list", { toolId: "36" }),
+    );
+    assert.equal(bookings.length, 1);
+    assert.equal(bookings[0]!.id, "37");
+    assert.equal(bookings[0]!.toolUsageCostPerDay, 11.625);
   } finally {
     business.dispose();
   }

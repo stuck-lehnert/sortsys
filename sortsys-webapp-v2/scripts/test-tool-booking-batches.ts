@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { Client, MutateInput } from "@sortsys/v2-client";
+import type { Action } from "@sortsys/zerotrust/sortsys";
 import { publicId, newProductRowId } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 import { toolCollection } from "../app/lib/data/toolData";
@@ -118,25 +119,25 @@ export async function exerciseToolBookingBatches(
     live: () => assert.equal(unlockedAccount(), account),
   };
   const deniedScope = toolCollection("tool", second.id, "master-data").scope;
-  async function denySecond(denied: boolean) {
+  async function denyAction(scope: string, action: Action, denied: boolean) {
     const { permissions } = await readVerifiedPolicy(owner, context);
     const rules = permissions.rules.filter(
       (rule) =>
         !(
           rule.subject === subject &&
-          rule.scope === deniedScope &&
+          rule.scope === scope &&
           rule.facet === "master-data" &&
           rule.effect === "deny" &&
           rule.actions.length === 1 &&
-          rule.actions[0] === "update"
+          rule.actions[0] === action
         ),
     );
     if (denied)
       rules.push({
         subject,
-        scope: deniedScope,
+        scope,
         facet: "master-data",
-        actions: ["update"],
+        actions: [action],
         effect: "deny",
       });
     await publishVerifiedPolicy(owner, context, {
@@ -146,10 +147,10 @@ export async function exerciseToolBookingBatches(
     });
   }
   try {
-    await denySecond(true);
+    await denyAction(deniedScope, "update", true);
     assert.ok((await owner.mutate("tools.trackMany", input))[1]);
     await assertOriginal();
-    await denySecond(false);
+    await denyAction(deniedScope, "update", false);
 
     let pretend = true;
     install(async (url, next) => {
@@ -170,6 +171,22 @@ export async function exerciseToolBookingBatches(
       );
     install(null);
     await assertOriginal();
+
+    // Preparation has created empty key areas. Revocation must still prevent
+    // their first business publication, even when a retry reuses those areas.
+    await denyAction("create:tool-tracking", "create", true);
+    assert.ok(
+      (await owner.mutate("tools.trackMany", input))[1],
+      "Prepared empty areas must not bypass revoked creation permission",
+    );
+    await assertOriginal();
+    await required(
+      owner.mutate("tools.update", {
+        id: first.id,
+        data: { label: "Vorhandenes Werkzeug bleibt bearbeitbar" },
+      }),
+    );
+    await denyAction("create:tool-tracking", "create", false);
 
     let winner: string | null = null;
     let race = true;
