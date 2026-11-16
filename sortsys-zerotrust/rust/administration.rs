@@ -2,7 +2,7 @@
 //! checkpoints authorize flat profiles; no private tenant authority is shared.
 use crate::{
     Result,
-    crypto::{encode, frame, identifier, invalid, revision, sized, verify},
+    crypto::{encode, frame, identifier, invalid, revision, signed_packet_frame, sized, verify},
     policy::{Action, Effect, PolicyRef, RuleRef},
     protocol::IdentityCertificate,
 };
@@ -66,11 +66,10 @@ pub struct PolicyAdministrationRef<'a> {
 }
 
 fn signed_certificate(certificate: &IdentityCertificate) -> Result<String> {
-    sized::<64>(&certificate.signature)?;
-    Ok(encode(&frame(
-        "sortsys/signed-packet/v1",
-        &[&encode(&certificate.frame()?), &certificate.signature],
-    )))
+    Ok(encode(&signed_packet_frame(
+        &certificate.frame()?,
+        &certificate.signature,
+    )?))
 }
 
 impl<F: AsRef<str>> AdministrativeProfile<F> {

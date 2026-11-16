@@ -6,6 +6,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
+import { readBoxKeyAuthority } from "./keyAuthorities";
 
 type Rewrap = Parameters<typeof rewrapDomainKey>[0];
 type Grant = MutateInput<"zerotrust.access.publish">["grants"][number];
@@ -71,12 +72,19 @@ export async function prepareHistoricalKeyGrants(
       ),
     );
     checkpoint();
+    const sourceAuthority = await readBoxKeyAuthority(client, {
+      box: envelope,
+      definition: verified,
+      history: { authority: input.history },
+      live: checkpoint,
+    });
     const envelopes = await rewrapDomainKey({
       definition,
       area,
       envelope,
       owner: input.owner,
       authority: input.authority,
+      sourceAuthority,
       history: input.history,
       readers,
       signal: input.signal,
@@ -87,6 +95,9 @@ export async function prepareHistoricalKeyGrants(
       domain: area.id,
       generation,
       envelope,
+      ...(input.authority.keyAuthority
+        ? { keyAuthority: input.authority.keyAuthority }
+        : {}),
     }));
   });
   checkpoint();

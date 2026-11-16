@@ -36,6 +36,7 @@ export const {
   domainFrameFromHashes,
   domainBoxSigner,
   createDomain,
+  createManagedDomain,
   createDelegatedDomain,
   rewrapDomainKey,
 } = sortsysDomainCodec;

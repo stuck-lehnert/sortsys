@@ -208,11 +208,13 @@ nicht entschlüsselt.
 
 ## Verbleibender Umbau
 
-Derzeit kann das Konto verwalten, das die Organisation eingerichtet oder zuletzt
-wiederhergestellt hat. Weitere Administratoren brauchen noch eine delegierte
-Verwaltungsfreigabe. Andere Fachbereiche müssen an dieselbe Rechteverwaltung
-angeschlossen werden. Eine neue Wiederherstellungsgeneration macht alte
-Einladungen ungültig.
+Die Verwaltungsoberfläche ist derzeit auf das Konto beschränkt, das die
+Organisation eingerichtet oder zuletzt wiederhergestellt hat. Die gemeinsame
+Rechtefunktion und die API unterstützen bereits bereichsgebundene Verwalter mit
+eigenen Signaturen und Inhaltsschlüsselwechseln. Für diese Konten fehlt noch der
+Zugang zur entsprechend begrenzten Verwaltungsmaske. Andere Fachbereiche müssen
+ebenfalls an dieselbe Rechteverwaltung angeschlossen werden. Eine neue
+Wiederherstellungsgeneration macht alte Einladungen ungültig.
 
 Aktivieren, Deaktivieren, Archivieren und Entarchivieren verbinden das
 verschlüsselte Personalprofil mit dem technischen Kontostatus und nötigenfalls

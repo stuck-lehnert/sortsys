@@ -15,6 +15,7 @@ export * from "./opaque";
 export * from "./authority";
 export * from "./setup";
 export * from "./domains";
+export * from "./keyAuthorities";
 export * from "./domainProofs";
 export * from "./recoveryPlan";
 export * from "./verifiedStore";

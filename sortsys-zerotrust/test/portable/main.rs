@@ -4,11 +4,13 @@ use sortsys_zerotrust::{
     anchors::RecordAnchor,
     crypto::{decode, encode, packet_hash, sized},
     delegations::{DelegationCertificate, DelegationContext},
+    domains::{DomainFrameRef, DomainSignerRef},
     immutable,
+    key_authorities::{KeyAuthority, KeyAuthorityContext},
     migration::{MigrationInventory, MigrationSeal},
     opentimestamps,
     policy::{Action, Effect, PolicyRef, RuleRef},
-    protocol::EncryptedObject,
+    protocol::{EncryptedObject, SealedBox},
     resource_access::{ResourceAccessContext, ResourceAccessState},
 };
 
@@ -84,9 +86,47 @@ struct BrowserVector {
     delegation: DelegationCertificate<Namespace>,
     access_state: ResourceAccessState,
     administrative_policy: Policy,
+    managed_domain: ManagedDomain,
     unchanged_administration: Policy,
     administration_revoked: Policy,
     stale_administration: Policy,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedDomain {
+    tenant: String,
+    id: String,
+    scope: String,
+    facet: String,
+    generation: String,
+    policy_version: String,
+    envelopes: Vec<SealedBox>,
+    recovery_envelope: SealedBox,
+    key_authority: KeyAuthority,
+    proof: String,
+}
+
+impl ManagedDomain {
+    fn frame(&self) -> sortsys_zerotrust::Result<Vec<u8>> {
+        let hashes = self
+            .envelopes
+            .iter()
+            .chain(std::iter::once(&self.recovery_envelope))
+            .map(|envelope| packet_hash(&envelope.frame()?, &envelope.signature))
+            .collect::<sortsys_zerotrust::Result<Vec<_>>>()?;
+        DomainFrameRef {
+            tenant: &self.tenant,
+            id: &self.id,
+            scope: &self.scope,
+            facet: &self.facet,
+            generation: &self.generation,
+            policy_version: &self.policy_version,
+            envelope_hashes: &hashes,
+            signer: DomainSignerRef::Manager(self.key_authority.as_protocol()),
+        }
+        .frame()
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -114,6 +154,37 @@ fn main() {
         vector.anchor_digest
     );
     let signer = sized::<32>(&vector.signer).unwrap();
+    let managed = &vector.managed_domain;
+    managed
+        .key_authority
+        .verify(
+            &KeyAuthorityContext {
+                tenant: "laboratory:alpha",
+                generation: "1",
+                scope: "experiment:42",
+                facet: "research-notes",
+                holder: Some("researcher:kai"),
+            },
+            &signer,
+        )
+        .unwrap();
+    let manager_key = sized::<32>(&managed.key_authority.holder.signing_key).unwrap();
+    sortsys_zerotrust::crypto::verify(&manager_key, &managed.proof, &managed.frame().unwrap())
+        .unwrap();
+    for envelope in managed
+        .envelopes
+        .iter()
+        .chain(std::iter::once(&managed.recovery_envelope))
+    {
+        assert_eq!(envelope.tenant, managed.tenant);
+        assert_eq!(envelope.object, managed.id);
+        assert_eq!(envelope.generation, managed.generation);
+        assert_eq!(envelope.author, managed.key_authority.author().unwrap());
+        envelope.verify(&manager_key).unwrap();
+    }
+    let mut substituted = managed.clone();
+    substituted.scope = "experiment:other".into();
+    assert!(substituted.frame().is_err());
     let administrative = vector.administrative_policy.as_protocol();
     administrative
         .verify(&signer, &vector.administrative_policy.signature)

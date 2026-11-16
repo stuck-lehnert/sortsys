@@ -34,6 +34,7 @@ import type { EncryptedObject, Facet } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { verifiedAccessContext } from "../crypto/accessContext";
 import { createObjectAuthorVerifier } from "../crypto/objectAuthors";
+import { readBoxKeyAuthority } from "../crypto/keyAuthorities";
 import {
   requiredMessageProof,
   StaleMessageProof,
@@ -349,6 +350,13 @@ function openCollection(
             ),
           ));
         live();
+        const keyAuthority = await readBoxKeyAuthority(client, {
+          box,
+          definition: verified,
+          history,
+          live,
+          keyAuthority: bundled?.keyAuthority,
+        });
         const raw = await openBox(
           box,
           {
@@ -360,7 +368,7 @@ function openCollection(
             author: box.author,
           },
           account!.identity.encryptionKey.privateKey,
-          await domainBoxSigner(verified, box, history.authority),
+          await domainBoxSigner(verified, box, history.authority, keyAuthority),
         );
         try {
           const key = await areaKey(raw);

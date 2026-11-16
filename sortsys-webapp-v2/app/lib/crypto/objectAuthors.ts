@@ -40,7 +40,10 @@ type ControlAuthor = {
   author: string;
   signature: string;
 };
-type BirthProof = Pick<DomainDefinition, "policyVersion" | "creation">;
+type BirthProof = Pick<
+  DomainDefinition,
+  "policyVersion" | "creation" | "keyAuthority"
+>;
 const proofCaches = new WeakMap<
   Client,
   WeakMap<object, Map<string, BirthProof>>
@@ -80,12 +83,14 @@ export function createObjectAuthorVerifier(
     if (
       previous &&
       (previous.policyVersion !== value.policyVersion ||
-        previous.creation?.signature !== value.creation?.signature)
+        previous.creation?.signature !== value.creation?.signature ||
+        previous.keyAuthority?.signature !== value.keyAuthority?.signature)
     )
       throw new InvalidProtectedData();
     const proof = structuredClone({
       policyVersion: value.policyVersion,
       ...(value.creation ? { creation: value.creation } : {}),
+      ...(value.keyAuthority ? { keyAuthority: value.keyAuthority } : {}),
     });
     proofCache.delete(key);
     proofCache.set(key, proof);
@@ -104,6 +109,7 @@ export function createObjectAuthorVerifier(
       expected,
       context.history.authority,
     );
+    await verifyKeyManagement(verified, expected.scope, expected.facet);
     rememberProof(verified.id, verified.generation, verified);
     return verified;
   }
@@ -112,6 +118,26 @@ export function createObjectAuthorVerifier(
   const signers = new Map<string, Promise<CryptoKey>>();
   const accessViews = new Map<string, ReturnType<typeof compilePolicy>>();
   const publicDefinitions = new Map<string, Promise<BirthProof>>();
+  async function verifyKeyManagement(
+    proof: BirthProof,
+    scope: string,
+    facet: Facet,
+  ): Promise<void> {
+    const certificate = proof.keyAuthority;
+    if (!certificate) return;
+    const checked = await policy(proof.policyVersion);
+    context.live();
+    const access = compilePolicy(checked.permissions, [
+      certificate.holder.user,
+    ]);
+    if (
+      checked.generation !== certificate.generation ||
+      !access.allows(scope, facet, "grant") ||
+      !access.allows(scope, facet, "read")
+    ) {
+      throw new InvalidProtectedData();
+    }
+  }
   if (current) {
     policies.set(
       current.version,
@@ -198,6 +224,7 @@ export function createObjectAuthorVerifier(
           },
           context.history.authority,
         );
+        await verifyKeyManagement(checked, definition.scope, definition.facet);
         context.live();
         rememberProof(checked.id, checked.generation, checked);
         return checked;
@@ -285,6 +312,7 @@ export function createObjectAuthorVerifier(
           { tenant: context.account.tenant, id, scope, facet, generation },
           context.history.authority,
         );
+        await verifyKeyManagement(proof, scope, facet);
         context.live();
         return rememberProof(id, generation, proof);
       })();

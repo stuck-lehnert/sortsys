@@ -28,9 +28,17 @@ pub fn encode(value: &[u8]) -> String {
 
 /// Commit to the exact canonical message and its signature, never JSON layout.
 pub fn packet_hash(message: &[u8], signature: &str) -> Result<String> {
+    Ok(encode(&Sha256::digest(signed_packet_frame(
+        message, signature,
+    )?)))
+}
+
+pub fn signed_packet_frame(message: &[u8], signature: &str) -> Result<Vec<u8>> {
     sized::<64>(signature)?;
-    let signed = frame("sortsys/signed-packet/v1", &[&encode(message), signature]);
-    Ok(encode(&Sha256::digest(signed)))
+    Ok(frame(
+        "sortsys/signed-packet/v1",
+        &[&encode(message), signature],
+    ))
 }
 
 pub fn frame(domain: &str, fields: &[&str]) -> Vec<u8> {

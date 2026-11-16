@@ -5,6 +5,10 @@ import {
   base64,
   bytes,
   createDomain,
+  createManagedDomain,
+  createIdentity,
+  certifyIdentity,
+  certifyKeyAuthority,
   createRecoveryPhrase,
   decryptObject,
   encryptObject,
@@ -34,6 +38,134 @@ test("seed recovery retains the signed initialization source context", async () 
   const changed = structuredClone(plan);
   delete changed.nextSetup.authority.context;
   await expect(verifyRecoveryTransition(changed)).rejects.toThrow();
+});
+
+test("seed-only recovery opens manager-signed historical generations and rejects missing provenance before registration", async () => {
+  const f = await recoveryFixture();
+  const manager = await createIdentity();
+  const holder = await certifyIdentity(
+    {
+      tenant: "test",
+      generation: "1",
+      user: "user:2",
+      ...(await publicIdentity(manager)),
+    },
+    f.authorityKey.privateKey,
+  );
+  const certificate = await certifyKeyAuthority(
+    {
+      tenant: "test",
+      generation: "1",
+      scope: f.definition.scope,
+      facet: f.definition.facet,
+      holder,
+    },
+    f.authorityKey.privateKey,
+  );
+  const managed = await createManagedDomain({
+    tenant: "test",
+    id: f.definition.id,
+    scope: f.definition.scope,
+    facet: f.definition.facet,
+    generation: "2",
+    policyVersion: "1",
+    keyAuthority: certificate,
+    signingKey: manager.signingKey.privateKey,
+    recovery: {
+      encryptionKey: f.setup.authority.recoveryEncryptionKey,
+      signingKey: f.setup.authority.recoverySigningKey,
+    },
+    readers: [{ subject: holder.user, identity: holder }],
+  });
+  const source = {
+    ...f.source,
+    domains: f.source.domains.map((domain) => ({ ...domain, generation: "2" })),
+    keys: [...f.source.keys, managed.definition.recoveryEnvelope],
+    delegatedDomains: [managed.definition],
+  };
+  const { plan, identity } = await prepareRecovery({
+    oldPhrase: f.phrase,
+    newPhrase: f.newPhrase,
+    password: f.password,
+    source,
+    register: f.register,
+  });
+  const archived = plan.oldKeyEnvelopes.find(
+    (box) => box.object === managed.definition.id && box.generation === "2",
+  )!;
+  const raw = await openBox(
+    archived,
+    {
+      tenant: "test",
+      purpose: "area-key",
+      object: archived.object,
+      generation: "2",
+      recipient: plan.transition.nextAdministrator,
+      author: "authority:2",
+    },
+    identity.encryptionKey.privateKey,
+    await importSigningKey(plan.nextSetup.authority.authoritySigningKey),
+  );
+  try {
+    const context = {
+      tenant: "test",
+      scope: f.definition.scope,
+      facet: f.definition.facet,
+      object: "position:managed",
+      revision: "1",
+      generation: "2",
+      policyVersion: "1",
+      author: holder.user,
+    };
+    const encrypted = await encryptObject(
+      context,
+      bytes("Vertrauliche Kalkulation nach Schlüsselwechsel"),
+      managed.key,
+      manager.signingKey.privateKey,
+    );
+    expect(
+      await decryptObject(
+        encrypted,
+        context,
+        await areaKey(raw),
+        manager.signingKey.publicKey,
+      ),
+    ).toEqual(bytes("Vertrauliche Kalkulation nach Schlüsselwechsel"));
+  } finally {
+    raw.fill(0);
+  }
+  let registered = false;
+  const register = async () => {
+    registered = true;
+    throw new Error("Registration must not be reached");
+  };
+  await expect(
+    prepareRecovery({
+      oldPhrase: f.phrase,
+      newPhrase: f.newPhrase,
+      password: f.password,
+      source: {
+        ...source,
+        delegatedDomains: [],
+      },
+      register,
+    }),
+  ).rejects.toThrow();
+  const substituted = structuredClone(managed.definition);
+  substituted.keyAuthority!.holder.signingKey = base64(new Uint8Array(32));
+  await expect(
+    prepareRecovery({
+      oldPhrase: f.phrase,
+      newPhrase: f.newPhrase,
+      password: f.password,
+      source: {
+        ...source,
+        delegatedDomains: [substituted],
+      },
+      register,
+    }),
+  ).rejects.toThrow();
+  expect(registered).toBe(false);
 });
 
 test("seed recovery restores historical content, changes all future keys and creates an independent OPAQUE account", async () => {
@@ -233,7 +365,7 @@ test("a second recovery preserves both historical key generations and verifies o
         generation: d.generation,
       })),
       keys: f.plan.domains.map((d) => d.recoveryEnvelope),
-      createdDomains: [],
+      delegatedDomains: [],
     },
   });
   expect(second.oldKeyEnvelopes.map((e) => e.generation).sort()).toEqual([
@@ -356,7 +488,7 @@ test("recovery ignores unpublished domain drafts and conflicting future key draf
 test("paged recovery inventory feeds the same verified seed-only transition", async () => {
   const f = await recoveryFixture();
   const { loadRecoverySource } = await import("../src/sortsys");
-  const { domains, keys, createdDomains, ...metadata } = f.source;
+  const { domains, keys, delegatedDomains, ...metadata } = f.source;
   const requests: unknown[] = [];
   const pages = [
     {
@@ -395,7 +527,7 @@ test("paged recovery inventory feeds the same verified seed-only transition", as
 test("a duplicate domain in another recovery page does not produce a partial source", async () => {
   const f = await recoveryFixture();
   const { loadRecoverySource } = await import("../src/sortsys");
-  const { domains, keys, createdDomains, ...metadata } = f.source;
+  const { domains, keys, delegatedDomains, ...metadata } = f.source;
   let calls = 0;
   await expect(
     loadRecoverySource({

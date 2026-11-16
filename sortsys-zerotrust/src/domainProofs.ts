@@ -14,6 +14,12 @@ import {
 } from "./encoding";
 import { importSigningKey, verify } from "./identity";
 import type { Facet } from "./objects";
+import {
+  keyAuthority,
+  verifyKeyAuthority,
+  keyAuthorityAuthor,
+  type KeyAuthority,
+} from "./keyAuthorities";
 
 export type DomainProof = {
   format: "sortsys-domain-proof-v1";
@@ -27,6 +33,7 @@ export type DomainProof = {
   recoveryEnvelope: SealedBox;
   proof: string;
   creation?: CreationOrigin;
+  keyAuthority?: KeyAuthority;
 };
 
 /** Derive a public authorization proof; user key packages stay private. */
@@ -60,6 +67,11 @@ export async function verifyDomainProof(
     input !== null &&
     typeof input === "object" &&
     Object.hasOwn(input, "creation");
+  const hasKeyAuthority =
+    input !== null &&
+    typeof input === "object" &&
+    Object.hasOwn(input, "keyAuthority");
+  if (hasCreation && hasKeyAuthority) throw new InvalidProtectedData();
   const fields = [
     "format",
     "tenant",
@@ -72,7 +84,11 @@ export async function verifyDomainProof(
     "recoveryEnvelope",
     "proof",
   ];
-  const value = record(input, hasCreation ? [...fields, "creation"] : fields);
+  const value = record(input, [
+    ...fields,
+    ...(hasCreation ? ["creation"] : []),
+    ...(hasKeyAuthority ? ["keyAuthority"] : []),
+  ]);
   for (const name of [
     "tenant",
     "id",
@@ -104,18 +120,36 @@ export async function verifyDomainProof(
   const creation = hasCreation
     ? await verifyCreationOrigin(value.creation, authority)
     : undefined;
-  const rootGeneration =
+  let management: KeyAuthority | undefined;
+  if (hasKeyAuthority) {
+    const certificate = keyAuthority(value.keyAuthority);
+    management = await verifyKeyAuthority(
+      certificate,
+      {
+        tenant: expected.tenant,
+        generation: certificate.generation,
+        scope: expected.scope,
+        facet: expected.facet,
+      },
+      authority(certificate.generation),
+    );
+  }
+  let rootGeneration =
     creation?.capability.generation ??
     recoveryEnvelope.author.match(/^authority:([1-9]\d*)$/)?.[1];
+  if (management) rootGeneration = management.generation;
   if (!rootGeneration) {
     throw new InvalidProtectedData();
   }
-  const signer = creation
-    ? await importSigningKey(creation.capability.creator.signingKey)
-    : authority(rootGeneration);
-  const expectedAuthor = creation
-    ? creationAuthor(creation)
-    : `authority:${rootGeneration}`;
+  let signer = authority(rootGeneration);
+  let expectedAuthor = `authority:${rootGeneration}`;
+  if (creation) {
+    signer = await importSigningKey(creation.capability.creator.signingKey);
+    expectedAuthor = creationAuthor(creation);
+  } else if (management) {
+    signer = await importSigningKey(management.holder.signingKey);
+    expectedAuthor = keyAuthorityAuthor(management);
+  }
   if (
     recoveryEnvelope.tenant !== expected.tenant ||
     recoveryEnvelope.object !== expected.id ||
@@ -134,6 +168,7 @@ export async function verifyDomainProof(
     recoveryEnvelope,
     proof: value.proof,
     ...(creation ? { creation } : {}),
+    ...(management ? { keyAuthority: management } : {}),
   };
   const recoveryHash = await digest(
     signedPacketFrame(boxFrame(recoveryEnvelope), recoveryEnvelope.signature),

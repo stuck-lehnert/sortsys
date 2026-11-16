@@ -71,6 +71,8 @@ import { finishAccessChanges } from "./accessRotations";
 export { finishAccessChanges };
 import { absenceCollection } from "../data/absenceData";
 import { canUseAssistant } from "../data/assistantArea";
+import { provisionMemberKeyAuthorities } from "./keyAuthorities";
+import { changeDelegatedAreaActions } from "./delegatedAccess";
 
 export type MemberAccess = ManagedAccess;
 
@@ -568,6 +570,15 @@ export async function changeAreaActionAccesses(
   changes: readonly AreaActionChange[],
   signal: AbortSignal,
 ): Promise<void> {
+  const session = await required(
+    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+  );
+  signal.throwIfAborted();
+  if (!session.roles.includes(":admin")) {
+    await changeDelegatedAreaActions(client, user, changes, signal);
+    await client.invalidate("projects.list");
+    return;
+  }
   const context = await administrator(
     client,
     signal,
@@ -613,13 +624,21 @@ async function publishActionChanges(
         actions: [...ACTIONS],
       });
   }
+  let permissions = context.permissions;
   if (JSON.stringify(rules) !== JSON.stringify(context.permissions.rules)) {
-    await publishVerifiedPolicy(client, context, {
+    ({ permissions } = await publishVerifiedPolicy(client, context, {
       ...context.permissions,
       version: (BigInt(context.permissions.version) + 1n).toString(),
       rules,
-    });
+    }));
   }
+  await provisionMemberKeyAuthorities(client, {
+    ...context,
+    permissions,
+    subject: user,
+    areas: changes.map(({ area }) => area),
+    signal,
+  });
   const domains = changes.map(({ area }) => area.domain);
   if (assistant !== undefined) domains.push(privateLlmCollection(user).domain);
   await finishAccessChanges(client, signal, domains);

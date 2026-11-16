@@ -6,6 +6,8 @@ import {
   certifyIdentity,
   createDelegatedDomain,
   createDomain,
+  createManagedDomain,
+  certifyKeyAuthority,
   createIdentity,
   domainProof,
   frame,
@@ -575,6 +577,111 @@ test("recorded write rights never replace the native prerequisite of recorded re
         f.domain.definition,
       ),
     ).rejects.toThrow();
+  }
+});
+
+test("managed key definitions require recorded Grant and Read rights at their signed policy version", async () => {
+  for (const actions of [
+    ["read", "update", "grant"],
+    ["read", "update"],
+    ["update", "grant"],
+  ]) {
+    const f = await fixture(actions);
+    const certificate = await certifyKeyAuthority(
+      {
+        tenant: "test",
+        generation: "1",
+        scope: area.scope,
+        facet: area.facet,
+        holder: f.context.history.identityCertificate("user:2"),
+      },
+      f.authorityKey.privateKey,
+    );
+    const made = await createManagedDomain({
+      tenant: "test",
+      ...area,
+      generation: "2",
+      policyVersion: "2",
+      keyAuthority: certificate,
+      signingKey: f.reader.signingKey.privateKey,
+      recovery: {
+        encryptionKey: f.setup.authority.recoveryEncryptionKey,
+        signingKey: f.setup.authority.recoverySigningKey,
+      },
+      readers: [{ subject: "user:2", identity: certificate.holder }],
+    });
+    f.definitions.set("2", made.definition);
+    const publicVerifier = createObjectAuthorVerifier(f.client, {
+      ...f.context,
+      account: { tenant: "test" },
+    });
+    const control = await signedControl(f);
+    const replies = await Promise.allSettled([
+      f.verifier.definition(made.definition, {
+        tenant: "test",
+        ...area,
+        generation: "2",
+      }),
+      publicVerifier.control(control.value, control.signedFrame, {
+        all: [{ facet: area.facet, action: "update", keyGeneration: "2" }],
+      }),
+    ]);
+    if (actions.includes("read") && actions.includes("grant")) {
+      expect(replies.map((reply) => reply.status)).toEqual([
+        "fulfilled",
+        "fulfilled",
+      ]);
+      expect(replies[0].value.proof).toBe(made.definition.proof);
+      const original = permissionsOf(f.roots.get("2").policy);
+      f.roots.set("3", {
+        generation: "1",
+        policy: await signPolicy(
+          {
+            ...original,
+            version: "3",
+            rules: original.rules.map((rule) => ({
+              ...rule,
+              actions: rule.actions.filter((action) => action !== "grant"),
+            })),
+          },
+          f.authorityKey.privateKey,
+        ),
+      });
+      const future = await createManagedDomain({
+        tenant: "test",
+        ...area,
+        generation: "3",
+        policyVersion: "3",
+        keyAuthority: certificate,
+        signingKey: f.reader.signingKey.privateKey,
+        recovery: {
+          encryptionKey: f.setup.authority.recoveryEncryptionKey,
+          signingKey: f.setup.authority.recoverySigningKey,
+        },
+        readers: [{ subject: "user:2", identity: certificate.holder }],
+      });
+      await expect(
+        f.verifier.definition(future.definition, {
+          tenant: "test",
+          ...area,
+          generation: "3",
+        }),
+      ).rejects.toThrow();
+      expect(
+        (
+          await f.verifier.definition(made.definition, {
+            tenant: "test",
+            ...area,
+            generation: "2",
+          })
+        ).proof,
+      ).toBe(made.definition.proof);
+    } else {
+      expect(replies.map((reply) => reply.status)).toEqual([
+        "rejected",
+        "rejected",
+      ]);
+    }
   }
 });
 

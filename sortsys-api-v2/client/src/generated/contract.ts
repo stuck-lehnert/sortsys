@@ -72,13 +72,13 @@ export type DocumentPart = { facet: string, object: string, hash: string, keys: 
 
 export type DocumentTextRange = { start: number, end: number, };
 
-export type DomainDefinition = { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };
+export type DomainDefinition = { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
 
 export type DomainHead = { domain: string, sequence: string, };
 
 export type DomainInfo = { id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, };
 
-export type DomainOpening = { generation: string, definition: DomainDefinition, envelope: SealedBox, };
+export type DomainOpening = { generation: string, definition: DomainDefinition, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
 
 export type Effect = "allow" | "deny";
 
@@ -110,7 +110,9 @@ export type InvoicePayment = { id: Id, amount: string, paidOn: string, reference
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type KeyGrant = { domain: string, generation: string, envelope: SealedBox, };
+export type KeyAuthority<F = string> = { tenant: string, generation: string, scope: string, facet: F, holder: IdentityCertificate, signature: string, };
+
+export type KeyGrant = { domain: string, generation: string, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
 
 export type KeyRecipientInput = { domain: string, generation: string, recipient: string, };
 
@@ -354,6 +356,8 @@ export type QueryInputs = {
   "zerotrust.identities.list": void;
   "zerotrust.invitations.get": { id: string, };
   "zerotrust.invitations.list": void;
+  "zerotrust.keyAuthorities.forArea": { scope: string, facet: Facet, holder?: string, };
+  "zerotrust.keyAuthorities.get": { signature: string, };
   "zerotrust.keys.get": { domain: string, generation: string, };
   "zerotrust.keys.inspect": { keys: Array<KeyRecipientInput>, };
   "zerotrust.members.changeReceipt": { requestId: string, };
@@ -487,9 +491,9 @@ export type QueryOutputs = {
   "zerotrust.documents.messages.pages": Array<{ messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, }>;
   "zerotrust.documents.messages.read": { messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, };
   "zerotrust.documents.messages.state": { current: string, checkpoint: LiveCheckpoint | null, };
-  "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };
+  "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.list": Array<{ id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, }>;
-  "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };
+  "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.editors.config": { drawioUrl: string | null, officeOrigin: string | null, };
   "zerotrust.fileChunks.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.history.get": { access: Access, sequence: string, orderId: string, publication: string, initialPublication: string, domain: string, envelope: EncryptedObject<Facet>, previous: EncryptedObject<Facet> | null, migrationOrigin: MigrationOrigin | null, deletion: JsonValue | null, references: JsonValue | null, occurredAt: Date, occurredMicros: string, } | null;
@@ -498,6 +502,8 @@ export type QueryOutputs = {
   "zerotrust.identities.list": Array<{ subject: string, encryptionKey: string, signingKey: string, certificate: JsonValue, }>;
   "zerotrust.invitations.get": { entry: Entry, history: TrustHistory, };
   "zerotrust.invitations.list": Array<{ invitation: Invitation, claim: Claim | null, accepted: boolean, completed: boolean, revoked: boolean, }>;
+  "zerotrust.keyAuthorities.forArea": { tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, } | null;
+  "zerotrust.keyAuthorities.get": { tenant: string, generation: string, scope: string, facet: Facet, holder: IdentityCertificate, signature: string, };
   "zerotrust.keys.get": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
   "zerotrust.keys.inspect": Array<{ tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, }>;
   "zerotrust.members.changeReceipt": { tenant: string, generation: string, author: string, id: string, action: MemberAction, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
@@ -695,7 +701,7 @@ export type MutationInputs = {
   "zerotrust.deliveryNotes.allocate": { projectId: Id, requestId: string, generation: string, policyVersion: string, proof: string, };
   "zerotrust.deliveryNotes.initialize": { generation: string, policyVersion: string, proof: string, };
   "zerotrust.documents.messages.post": { room: Room, kind: Kind, key: string, authorityGeneration: string, envelope: EncryptedObject<Facet>, };
-  "zerotrust.domains.put": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, };
+  "zerotrust.domains.put": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.putMany": { domains: Array<DomainDefinition>, };
   "zerotrust.events.open": void;
   "zerotrust.fileChunks.put": { domain: string, envelope: EncryptedObject<Facet>, };
@@ -705,7 +711,8 @@ export type MutationInputs = {
   "zerotrust.invitations.create": { tenant: string, id: string, generation: string, user: string, username: string, validUntil: string, verifier: string, signature: string, };
   "zerotrust.invitations.join": { invitation: string, generation: string, user: string, revision: string, encryptionKey: string, signingKey: string, proof: string, confirmation: string, };
   "zerotrust.invitations.revoke": { id: string, proof: string, };
-  "zerotrust.keys.grant": { domain: string, generation: string, envelope: SealedBox, };
+  "zerotrust.keyAuthorities.register": { authorities: Array<KeyAuthority<Facet>>, };
+  "zerotrust.keys.grant": { domain: string, generation: string, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.llm.open": { kind: LiveKind, chatId: Id | null, queries: Array<string>, mutations: Array<string>, };
   "zerotrust.members.create": { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
   "zerotrust.objects.batch": { objects: Array<SaveInput>, heads?: Array<DomainHead>, documents?: Array<DocumentHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
@@ -916,6 +923,7 @@ export type MutationOutputs = {
   "zerotrust.invitations.create": { success: true, };
   "zerotrust.invitations.join": { success: true, };
   "zerotrust.invitations.revoke": { success: true, };
+  "zerotrust.keyAuthorities.register": { success: true, };
   "zerotrust.keys.grant": { success: true, };
   "zerotrust.llm.open": { ticket: string, subject: string, generation: string, };
   "zerotrust.members.create": { success: true, };

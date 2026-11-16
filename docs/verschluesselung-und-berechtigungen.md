@@ -435,15 +435,20 @@ bleiben für frühere Dokumentstände prüfbar. Diese Unterscheidung zwischen
 historischer Prüfung und aktueller Schreibfreigabe gilt auch für zwei Clients an
 verschiedenen API-Instanzen.
 
-Die delegierte Vergabe von Schreibrechten ist nativ geprüft. Neue Leser benötigen
-zusätzlich Inhaltsschlüssel; deren delegierte Verteilung, Schlüsselwechsel und
-die Bedienung über die Rechteverwaltung sind noch nicht angeschlossen.
+Die gemeinsame Rechtefunktion unterstützt auch delegierte Lesefreigaben. Die
+Hauptadministration stellt beim Vergeben von `grant` und `read` automatisch ein
+öffentliches, bereichsgebundenes Schlüsselzertifikat aus. Der Verwalter signiert
+damit historische Schlüsselkopien und neue Generationen mit seinem eigenen
+Identitätsschlüssel. Ein entzogener Verwaltungszugriff sperrt neue
+Veröffentlichungen; frühere Signaturen bleiben prüfbar. Die Verwaltungsoberfläche
+muss für diese Konten noch geöffnet und auf deren einzelne Bereiche begrenzt
+werden.
 
 Bei geänderten Leserechten bündelt `zerotrust.access.publish` historische
 Schlüsselkopien und neue Bereichsdefinitionen in einer Transaktion. Die API
-prüft das aktuelle Administrationsrecht, die erwartete signierte Regelversion
-und die Leserechte aller Empfänger. Eine ungültige Signatur oder ein inzwischen
-entzogenes Recht verwirft den gesamten Stapel. Die Regeländerung selbst wird
+prüft das aktuelle primäre oder bereichsgebundene Verwaltungsrecht, die erwartete
+signierte Regelversion und die Leserechte aller Empfänger. Eine ungültige
+Signatur oder ein inzwischen entzogenes Recht verwirft den gesamten Stapel. Die Regeländerung selbst wird
 zuvor veröffentlicht; bis zum Abschluss eines nötigen Schlüsselwechsels bleibt
 der Bereich für neue Inhalte gesperrt.
 
@@ -456,7 +461,9 @@ signierten Definitionen und verschlüsselten Schlüsselpakete mit den gesendeten
 Werten. Das gilt auch bei einer verlorenen Antwort. Die administrative Abfrage
 `zerotrust.keys.inspect` erlaubt diese Prüfung für die tatsächlichen Empfänger;
 sie erfordert deren aktuelles Leserecht und liefert keine entschlüsselten
-Schlüssel.
+Schlüssel. Die Prüfung einer delegierten Veröffentlichung verlangt zusätzlich
+den tatsächlichen zertifizierten Verwalter als Absender sowie dessen aktuelles
+Lese- und Verwaltungsrecht im jeweiligen Bereich.
 
 Bei Einladungen und geänderten Freigaben bereitet der Browser unabhängige
 Schlüsselgenerationen mit höchstens vier parallelen Abrufen je Bereich vor.
@@ -473,6 +480,8 @@ Eingaben belegen höchstens ein MiB. Größere Einzeloperationen werden separat
 übertragen und unterliegen der Grenze ihres Endpunkts. Schreibanfragen warten
 nur bis zum nächsten Microtask. Operationen verschiedener Anmeldesitzungen
 werden getrennt, und jede Operation behält ihre eigene Berechtigungsprüfung.
+Ein Transportpaket garantiert keine gemeinsame Transaktion. Die atomare
+Veröffentlichung gehört ausdrücklich zu `zerotrust.access.publish`.
 
 Für höchstens 16 gezielt bearbeitete Bereiche werden nur deren Nachweise und
 offene Schlüsselwechsel nachgelesen. Größere Auswahlen und die allgemeine

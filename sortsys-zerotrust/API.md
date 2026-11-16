@@ -141,6 +141,38 @@ Die Rechteprüfung verteilt noch keine Inhaltsschlüssel. Neue Leser und ein
 kryptografischer Leserentzug benötigen zusätzlich geprüfte Schlüsselpakete und
 gegebenenfalls einen Schlüsselwechsel durch den Speicheradapter.
 
+### Schlüsselverwaltung im selben Bereich
+
+`security.keyAuthorities.certify(input, authorityKey)` bestätigt den öffentlichen
+Identitätsschlüssel eines Verwalters für genau einen Bereich und Inhaltsbereich.
+Der Nachweis enthält `tenant`, `generation`, `scope`, `facet` und `holder`.
+`holder` ist das bereits bestätigte Identitätszertifikat des Verwalters. Der
+private Mandantenschlüssel bleibt bei der primären Autorität.
+
+Der Verwalter erzeugt anschließend mit `security.domains.createManagedDomain`
+eine neue Bereichsgeneration. Er übergibt den Nachweis als `keyAuthority`, seinen
+eigenen privaten `signingKey`, die zertifizierten Leser und die öffentlichen
+Recovery-Schlüssel. `rewrapDomainKey` verteilt vorhandene Bereichsschlüssel neu;
+es öffnet die eigene Schlüsselkopie und verschlüsselt sie für die ausgewählten
+Leser. Historische Kopien anderer Verwalter benötigen deren Nachweis als
+`sourceAuthority`. Der entschlüsselte Schlüssel wird nicht zurückgegeben.
+
+`verifyKeyAuthority` beziehungsweise `security.keyAuthorities.verify` prüft den
+erwarteten Kontext und die Signaturen. Rust bietet dieselbe Prüfung mit
+`key_authorities::KeyAuthority` und `KeyAuthorityContext`; `domains::DomainFrameRef`
+bildet den zugehörigen Bereichsnachweis. Der Speicheradapter muss bei jeder neuen
+Veröffentlichung zusätzlich die tatsächliche Sitzung, das aktuelle
+Identitätszertifikat sowie `grant` und `read` im betroffenen Bereich prüfen.
+Ein historisch gültiger Nachweis erlaubt nach dem Entzug keine neuen
+Schlüsselpakete. Die Browserprüfung muss außerdem das Verwaltungsrecht zum
+signierten `policyVersion` der Bereichsdefinition nachweisen.
+
+Die Recovery sammelt fremd signierte Bereichsdefinitionen in
+`RecoverySource.delegatedDomains`. Jede Definition muss zur exakten
+Schlüsselgeneration und Recovery-Hülle gehören. Damit lassen sich solche
+Schlüssel allein mit der Recovery-Phrase prüfen und öffnen; ein Benutzerkonto
+oder ein privater Verwalterschlüssel wird dafür nicht benötigt.
+
 ## Begrenzte Anlegedelegationen
 
 `createDelegationCodec(["patient-file", "appointment"])` prüft und signiert

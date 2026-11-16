@@ -7,6 +7,7 @@ import {
   type DomainCreationCodec,
 } from "./domains";
 import { createSetupCodec } from "./setup";
+import { createKeyAuthorityCodec } from "./keyAuthorities";
 import { createRecoveryCodec, type RecoveryOptions } from "./recovery";
 
 /** Isolated codecs with the same application vocabulary. Neither codec stores
@@ -30,6 +31,7 @@ export function createZeroTrust<
     verifyTrustHistory: createTrustHistoryVerifier(objects),
     policies,
     domains,
+    keyAuthorities: createKeyAuthorityCodec(options.facets),
     setup,
     recovery: createRecoveryCodec(
       options.facets,

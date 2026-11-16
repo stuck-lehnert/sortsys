@@ -411,7 +411,114 @@ pub(in crate::zerotrust) fn register(
     let definitions = Arc::clone(&service);
     let directory = Arc::clone(&service);
     let public_identity = Arc::clone(&service);
+    let key_authority_get = Arc::clone(&service);
+    let key_authority_current = Arc::clone(&service);
+    let key_authority_register = Arc::clone(&service);
     builder
+        .query(
+            "zerotrust.keyAuthorities.get",
+            move |ctx, input: KeyAuthorityInput| {
+                let service = Arc::clone(&key_authority_get);
+                async move {
+                    let mut context =
+                        metadata_context_for_domains(&service, &ctx, Some(&[])).await?;
+                    let certificate = load_key_authority(
+                        &mut context.transaction,
+                        &context.security,
+                        &input.signature,
+                    )
+                    .await?;
+                    context.transaction.validate().await?;
+                    Ok(certificate)
+                }
+            },
+        )
+        .query(
+            "zerotrust.keyAuthorities.forArea",
+            move |ctx, input: KeyAuthorityAreaInput| {
+                let service = Arc::clone(&key_authority_current);
+                async move {
+                    identifier(&input.scope)?;
+                    let mut context =
+                        metadata_context_for_domains(&service, &ctx, Some(&[])).await?;
+                    let subject = input.holder.as_deref().unwrap_or(&context.security.subject);
+                    identifier(subject)?;
+                    if subject != context.security.subject && !context.auth.is_admin() {
+                        return Err(forbidden());
+                    }
+                    require_key_management(&context.security, subject, &input.scope, input.facet)?;
+                    let signature: Option<String> = context
+                        .transaction
+                        .read(key_authority_holder_key(
+                            &context.security.root.generation.to_string(),
+                            subject,
+                            &input.scope,
+                            input.facet,
+                        ))
+                        .await?;
+                    let certificate = if let Some(signature) = signature {
+                        let certificate = load_key_authority(
+                            &mut context.transaction,
+                            &context.security,
+                            &signature,
+                        )
+                        .await?;
+                        let actor =
+                            checked_member(&mut context.transaction, &context.security, subject)
+                                .await?;
+                        if certificate.holder.signature != actor.signature
+                            || certificate.scope != input.scope
+                            || certificate.facet != input.facet
+                            || certificate.generation
+                                != context.security.root.generation.to_string()
+                        {
+                            return Err(forbidden());
+                        }
+                        Some(certificate)
+                    } else {
+                        None
+                    };
+                    context.transaction.validate().await?;
+                    Ok(certificate)
+                }
+            },
+        )
+        .mutation(
+            "zerotrust.keyAuthorities.register",
+            move |ctx, input: KeyAuthoritiesInput| {
+                let service = Arc::clone(&key_authority_register);
+                async move {
+                    if input.authorities.is_empty() || input.authorities.len() > 32 {
+                        return Err(invalid());
+                    }
+                    let mut context =
+                        metadata_context_for_domains(&service, &ctx, Some(&[])).await?;
+                    admin(&context.auth)?;
+                    let mut seen = BTreeSet::new();
+                    let mut subjects = BTreeSet::new();
+                    for certificate in input.authorities {
+                        if !seen.insert(certificate.signature.clone()) {
+                            return Err(invalid());
+                        }
+                        validate_current_key_authority(&mut context, &certificate).await?;
+                        store_key_authority(
+                            &mut context.transaction,
+                            &context.security,
+                            &certificate,
+                        )
+                        .await?;
+                        subjects.insert(certificate.holder.user);
+                    }
+                    for subject in subjects {
+                        context
+                            .transaction
+                            .notify("account", &serde_json::json!({"subject": subject}))?;
+                    }
+                    context.transaction.commit().await?;
+                    Ok(Success { success: true })
+                }
+            },
+        )
         .query(
             "zerotrust.access.snapshot",
             move |ctx, input: AccessInput| {
@@ -658,6 +765,14 @@ pub(in crate::zerotrust) async fn replace_policy(
         }
         for profile in &administration.profiles {
             if profile.version == input.version {
+                if guard.allows(
+                    &profile.subject,
+                    &profile.scope,
+                    profile.facet,
+                    Action::Grant,
+                ) {
+                    return Err(forbidden());
+                }
                 checked_member(transaction, guard, &profile.subject).await?;
             }
         }
@@ -802,11 +917,181 @@ pub(in crate::zerotrust) async fn definition_at(
     let signing_key = if let Some(origin) = &definition.creation {
         origin.verify(&sized::<32>(&authority.authority_signing_key)?)?;
         sized::<32>(&origin.capability.creator.signing_key)?
+    } else if let Some(certificate) = &definition.key_authority {
+        certificate.verify(
+            &sortsys_zerotrust::key_authorities::KeyAuthorityContext {
+                tenant: &definition.tenant,
+                generation: authority_generation,
+                scope: &definition.scope,
+                facet: definition.facet.name(),
+                holder: None,
+            },
+            &sized::<32>(&authority.authority_signing_key)?,
+        )?;
+        sized::<32>(&certificate.holder.signing_key)?
     } else {
         sized::<32>(&authority.authority_signing_key)?
     };
     verify(&signing_key, &definition.proof, &definition.frame()?)?;
     Ok(definition)
+}
+
+fn require_key_management(
+    guard: &Security,
+    subject: &str,
+    scope: &str,
+    facet: Facet,
+) -> RpcResult<()> {
+    if !guard.allows(subject, scope, facet, Action::Grant)
+        || !guard.allows(subject, scope, facet, Action::Read)
+    {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
+fn key_authority_holder_key(
+    generation: &str,
+    subject: &str,
+    scope: &str,
+    facet: Facet,
+) -> sortsys_zerotrust::metadata::RecordKey {
+    use sha2::{Digest, Sha256};
+    let fields = frame(
+        "sortsys/key-authority-holder/v1",
+        &[generation, subject, scope, facet.name()],
+    );
+    key(
+        "key-authority-holders",
+        &format!(
+            "holder:{}",
+            super::super::crypto::encode(&Sha256::digest(fields))
+        ),
+    )
+}
+
+fn key_authority_record(signature: &str) -> sortsys_zerotrust::metadata::RecordKey {
+    key("key-authorities", &format!("certificate:{signature}"))
+}
+
+async fn store_key_authority(
+    transaction: &mut Transaction,
+    guard: &Security,
+    certificate: &KeyAuthority,
+) -> RpcResult<()> {
+    let record = key_authority_record(&certificate.signature);
+    if let Some(existing) = transaction.read::<KeyAuthority>(record.clone()).await? {
+        if serde_json::to_value(existing).map_err(internal)?
+            != serde_json::to_value(certificate).map_err(internal)?
+        {
+            return Err(invalid());
+        }
+    } else {
+        transaction.put_protected(record, certificate).await?;
+    }
+    transaction
+        .put(
+            key_authority_holder_key(
+                &guard.root.generation.to_string(),
+                &certificate.holder.user,
+                &certificate.scope,
+                certificate.facet,
+            ),
+            &certificate.signature,
+        )
+        .await?;
+    Ok(())
+}
+
+async fn validate_current_key_authority(
+    context: &mut MetadataContext,
+    certificate: &KeyAuthority,
+) -> RpcResult<()> {
+    let guard = &context.security;
+    certificate.verify(
+        &sortsys_zerotrust::key_authorities::KeyAuthorityContext {
+            tenant: &guard.policy.tenant,
+            generation: &guard.root.generation.to_string(),
+            scope: &certificate.scope,
+            facet: certificate.facet.name(),
+            holder: None,
+        },
+        &guard.authority,
+    )?;
+    let holder = checked_member(&mut context.transaction, guard, &certificate.holder.user).await?;
+    if holder.signature != certificate.holder.signature {
+        return Err(forbidden());
+    }
+    if !guard.allows(
+        &certificate.holder.user,
+        &certificate.scope,
+        certificate.facet,
+        Action::Grant,
+    ) || !guard.allows(
+        &certificate.holder.user,
+        &certificate.scope,
+        certificate.facet,
+        Action::Read,
+    ) {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
+async fn validate_key_authority_actor(
+    context: &mut MetadataContext,
+    certificate: &KeyAuthority,
+) -> RpcResult<()> {
+    validate_current_key_authority(context, certificate).await?;
+    if certificate.holder.user != context.security.subject {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
+async fn load_key_authority(
+    transaction: &mut Transaction,
+    guard: &Security,
+    signature: &str,
+) -> RpcResult<KeyAuthority> {
+    sized::<64>(signature)?;
+    let certificate: KeyAuthority = transaction
+        .read(key_authority_record(signature))
+        .await?
+        .ok_or_else(not_found)?;
+    if certificate.signature != signature
+        || revision(&certificate.generation)? > guard.root.generation
+    {
+        return Err(invalid());
+    }
+    let root = authority_at(transaction, &guard.policy.tenant, &certificate.generation).await?;
+    certificate.verify(
+        &sortsys_zerotrust::key_authorities::KeyAuthorityContext {
+            tenant: &guard.policy.tenant,
+            generation: &certificate.generation,
+            scope: &certificate.scope,
+            facet: certificate.facet.name(),
+            holder: None,
+        },
+        &sized::<32>(&root.authority_signing_key)?,
+    )?;
+    Ok(certificate)
+}
+
+pub(super) async fn key_authority_for_box(
+    transaction: &mut Transaction,
+    guard: &Security,
+    area: &DomainRecord,
+    envelope: &SealedBox,
+) -> RpcResult<Option<KeyAuthority>> {
+    let Some(signature) = envelope.author.strip_prefix("delegate:") else {
+        return Ok(None);
+    };
+    let certificate = load_key_authority(transaction, guard, signature).await?;
+    if certificate.scope != area.scope || certificate.facet != area.facet {
+        return Err(invalid());
+    }
+    Ok(Some(certificate))
 }
 
 fn capability_key(
@@ -952,8 +1237,11 @@ async fn put_domain_in_transaction(
     context: &mut MetadataContext,
     input: DomainDefinition,
 ) -> RpcResult<bool> {
+    if let Some(certificate) = &input.key_authority {
+        validate_key_authority_actor(context, certificate).await?;
+    }
     let guard = &context.security;
-    if !context.auth.is_admin() && input.creation.is_none() {
+    if !context.auth.is_admin() && input.creation.is_none() && input.key_authority.is_none() {
         return Err(forbidden());
     }
     let signer = if let Some(origin) = &input.creation {
@@ -965,6 +1253,8 @@ async fn put_domain_in_transaction(
             return Err(forbidden());
         }
         sized::<32>(&origin.capability.creator.signing_key)?.to_vec()
+    } else if let Some(certificate) = &input.key_authority {
+        sized::<32>(&certificate.holder.signing_key)?.to_vec()
     } else {
         guard.authority.clone()
     };
@@ -994,15 +1284,21 @@ async fn put_domain_in_transaction(
         {
             return Err(conflict());
         }
+    } else if input.key_authority.is_some() {
+        return Err(forbidden());
     } else if generation != 1 {
         return Err(conflict());
     }
     check_creation(&mut context.transaction, guard, &input).await?;
-    let author = input
-        .creation
-        .as_ref()
-        .map(super::super::creation::CreationOrigin::author)
-        .unwrap_or_else(|| format!("authority:{}", guard.root.generation));
+    let author = if let Some(certificate) = &input.key_authority {
+        certificate.author()?
+    } else {
+        input
+            .creation
+            .as_ref()
+            .map(super::super::creation::CreationOrigin::author)
+            .unwrap_or_else(|| format!("authority:{}", guard.root.generation))
+    };
     let mut inherited = guard.inherited.clone();
     if let Some(origin) = &input.creation {
         inherited.extend(origin.rules());
@@ -1049,6 +1345,9 @@ async fn put_domain_in_transaction(
     input.recovery_envelope.verify(&signer)?;
     if input.recovery_envelope.recipient != format!("recovery:{}", guard.root.generation) {
         return Err(invalid());
+    }
+    if let Some(certificate) = &input.key_authority {
+        store_key_authority(&mut context.transaction, guard, certificate).await?;
     }
     let mut root: super::super::setup::RootState = context
         .transaction
@@ -1186,15 +1485,35 @@ async fn grant_key(
     input: KeyGrant,
 ) -> RpcResult<Success> {
     let mut context = context(service, request).await?;
-    admin(&context.auth)?;
+    if input.key_authority.is_none() {
+        admin(&context.auth)?;
+    }
     grant_key_in_transaction(&mut context, input).await?;
     context.transaction.commit().await?;
     Ok(Success { success: true })
 }
 
 async fn grant_key_in_transaction(context: &mut MetadataContext, input: KeyGrant) -> RpcResult<()> {
+    let (author, signer) = if let Some(certificate) = &input.key_authority {
+        validate_key_authority_actor(context, certificate).await?;
+        (
+            certificate.author()?,
+            sized::<32>(&certificate.holder.signing_key)?.to_vec(),
+        )
+    } else {
+        admin(&context.auth)?;
+        (
+            format!("authority:{}", context.security.root.generation),
+            context.security.authority.clone(),
+        )
+    };
     let guard = &context.security;
     let mut area = domain(&mut context.transaction, &input.domain).await?;
+    if let Some(certificate) = &input.key_authority
+        && (certificate.scope != area.scope || certificate.facet != area.facet)
+    {
+        return Err(forbidden());
+    }
     if revision(&input.generation)? > revision(&area.generation)?
         || !area.definitions.contains_key(&input.generation)
         || !guard.allows(
@@ -1211,10 +1530,13 @@ async fn grant_key_in_transaction(context: &mut MetadataContext, input: KeyGrant
         &context.auth.tenant,
         &input.domain,
         &input.generation,
-        &format!("authority:{}", guard.root.generation),
+        &author,
     )?;
-    input.envelope.verify(&guard.authority)?;
+    input.envelope.verify(&signer)?;
     checked_member(&mut context.transaction, guard, &input.envelope.recipient).await?;
+    if let Some(certificate) = &input.key_authority {
+        store_key_authority(&mut context.transaction, guard, certificate).await?;
+    }
     let mut rotation = RotationChecks::new(guard);
     let previous_rotation = rotation
         .required(&mut context.transaction, guard, &area)
@@ -1293,7 +1615,6 @@ async fn publish_access(
     }
     let selected: Vec<String> = selected.into_iter().collect();
     let mut context = metadata_context_for_domains(service, request, Some(&selected)).await?;
-    admin(&context.auth)?;
     if context.security.policy.version != input.policy_version {
         return Err(conflict());
     }
@@ -1340,10 +1661,17 @@ async fn inspect_keys(
     }
     let selected: Vec<String> = selected.into_iter().collect();
     let mut context = metadata_context_for_domains(service, request, Some(&selected)).await?;
-    admin(&context.auth)?;
     let mut result = Vec::new();
     for reference in input.keys {
         let area = domain(&mut context.transaction, &reference.domain).await?;
+        if !context.auth.is_admin() {
+            require_key_management(
+                &context.security,
+                &context.security.subject,
+                &area.scope,
+                area.facet,
+            )?;
+        }
         if !context
             .security
             .allows(&reference.recipient, &area.scope, area.facet, Action::Read)
@@ -1524,4 +1852,25 @@ pub(in crate::zerotrust) fn register_creation(
                 }
             },
         )
+}
+
+#[cfg(test)]
+mod key_authority_tests {
+    use super::*;
+
+    #[test]
+    fn opaque_signature_and_holder_ids_always_have_valid_metadata_prefixes() {
+        for byte in 0..=u8::MAX {
+            let signature = super::super::super::crypto::encode(&[byte; 64]);
+            key_authority_record(&signature).validate().unwrap();
+            key_authority_holder_key(
+                "1",
+                &format!("user:{byte:x}"),
+                "catalog:products",
+                Facet::MasterData,
+            )
+            .validate()
+            .unwrap();
+        }
+    }
 }

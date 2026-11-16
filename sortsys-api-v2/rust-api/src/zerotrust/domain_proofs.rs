@@ -3,7 +3,7 @@ use super::{
     access::metadata_context_for_domains,
     creation::CreationOrigin,
     crypto::{identifier, revision},
-    objects::{packet_hash, registry},
+    objects::{KeyAuthority, packet_hash, registry},
     wire::{Action, Facet, SealedBox},
 };
 use crate::{
@@ -39,6 +39,9 @@ struct DomainProof {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     creation: Option<CreationOrigin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    key_authority: Option<KeyAuthority>,
 }
 
 async fn get(
@@ -96,6 +99,7 @@ async fn get(
         recovery_envelope: definition.recovery_envelope,
         proof: definition.proof,
         creation: definition.creation,
+        key_authority: definition.key_authority,
     };
     context.transaction.validate().await?;
     Ok(proof)

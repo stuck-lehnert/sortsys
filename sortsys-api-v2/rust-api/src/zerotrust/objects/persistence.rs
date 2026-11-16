@@ -359,6 +359,13 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
                 .await?
                 .ok_or_else(forbidden)?;
             let opening = DomainOpening {
+                key_authority: registry::key_authority_for_box(
+                    &mut context.transaction,
+                    &context.security,
+                    &area,
+                    &envelope,
+                )
+                .await?,
                 generation,
                 definition,
                 envelope,

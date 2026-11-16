@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createClient, type Client } from "@sortsys/v2-client";
 import {
-  ACTIONS,
   administrativeProfiles,
   administrativeProfileKey,
   compilePolicy,
+  compileReadership,
+  createManagedDomain,
+  decryptObject,
+  areaKey,
+  openBox,
+  keyAuthorityAuthor,
   policyFrame,
   sign,
   signAdministrativePolicy,
@@ -18,7 +25,14 @@ import {
   administratorPolicyContext,
 } from "../app/lib/crypto/administration";
 import { verifiedAccessContext } from "../app/lib/crypto/accessContext";
+import { prepareHistoricalKeyGrants } from "../app/lib/crypto/historicalKeyGrants";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
+import { changeAreaActionAccesses } from "../app/lib/crypto/permissions";
+import {
+  commitRecovery,
+  recoveryDraft,
+  recoveryPlan,
+} from "../app/lib/crypto/recovery";
 import {
   approveMemberInvitation,
   createMemberInvitation,
@@ -57,6 +71,12 @@ assert.equal(tenant, "administration-tenant");
 const owner = createClient(endpoints[0], "administration-owner");
 const manager = createClient(endpoints[1], "administration-manager");
 const reader = createClient(endpoints[0], "administration-reader");
+const newReader = createClient(endpoints[1], "administration-new-reader");
+const recoveryClients = endpoints.map((endpoint, index) =>
+  createClient(endpoint, `administration-recovery-${index}`),
+);
+const clients = [owner, manager, reader, newReader, ...recoveryClients];
+const recoverySecrets: string[] = [];
 const signal = new AbortController().signal;
 const login = {
   tenant,
@@ -72,7 +92,11 @@ globalThis.fetch = new Proxy(originalFetch, {
   },
 });
 
-async function enroll(client: Client, username: string) {
+async function enroll(
+  client: Client,
+  username: string,
+  catalogue: "read" | "none" = "read",
+) {
   console.log(`Native administration: enrolling ${username}`);
   const business = createBusinessClient(owner, { productDriver: duckDriver });
   let person: { id: string };
@@ -91,7 +115,7 @@ async function enroll(client: Client, username: string) {
     owner,
     { id: person.id, username },
     {
-      catalogue: "read",
+      catalogue,
       customers: "none",
       contacts: "none",
       vendors: "none",
@@ -127,6 +151,7 @@ try {
   const administrator = unlockedAccount()!;
   const delegated = await enroll(manager, "permission.manager");
   const employee = await enroll(reader, "permission.reader");
+  const added = await enroll(newReader, "key.reader", "none");
   const ownerBusiness = createBusinessClient(owner, {
     productDriver: duckDriver,
   });
@@ -144,31 +169,40 @@ try {
     ownerBusiness.dispose();
   }
   const primary = await administratorPolicyContext(owner, signal);
-  const root = await signPolicy(
-    {
-      ...primary.permissions,
-      version: (BigInt(primary.permissions.version) + 1n).toString(),
-      rules: [
-        ...primary.permissions.rules,
-        {
-          subject: delegated.subject,
-          scope: PRODUCT_COLLECTION.scope,
-          facet: PRODUCT_COLLECTION.facet,
-          effect: "allow",
-          actions: [...ACTIONS],
+  await changeAreaActionAccesses(
+    owner,
+    delegated.subject,
+    [
+      {
+        area: PRODUCT_COLLECTION,
+        patch: {
+          read: true,
+          create: true,
+          update: true,
+          delete: false,
+          approve: true,
+          grant: true,
         },
-        {
-          subject: delegated.subject,
-          scope: PRODUCT_COLLECTION.scope,
-          facet: PRODUCT_COLLECTION.facet,
-          effect: "deny",
-          actions: ["delete"],
-        },
-      ],
-    },
-    primary.authority,
+      },
+    ],
+    signal,
   );
-  await required(owner.mutate("zerotrust.policy.replace", root));
+  const root = await required(
+    owner.query("zerotrust.policy.get", undefined, {
+      strategy: "network-only",
+    }),
+  );
+  const keyAuthority = await required(
+    owner.query(
+      "zerotrust.keyAuthorities.forArea",
+      {
+        scope: PRODUCT_COLLECTION.scope,
+        facet: PRODUCT_COLLECTION.facet,
+        holder: delegated.subject,
+      },
+      { strategy: "network-only" },
+    ),
+  );
 
   await acceptVaultWithKey(
     delegated.account.dataKey,
@@ -181,6 +215,21 @@ try {
   });
   const author = access.history.identityCertificate(delegated.subject);
   const managerKey = unlockedAccount()!.identity.signingKey.privateKey;
+  assert.equal(
+    (
+      await required(
+        manager.query(
+          "zerotrust.keyAuthorities.forArea",
+          {
+            scope: PRODUCT_COLLECTION.scope,
+            facet: PRODUCT_COLLECTION.facet,
+          },
+          { strategy: "network-only" },
+        ),
+      )
+    ).signature,
+    keyAuthority.signature,
+  );
   const authority = access.history.authority(access.history.current.generation);
   const managerRights = compilePolicy(access.permissions, [delegated.subject]);
   assert.equal(
@@ -203,15 +252,16 @@ try {
   async function candidate(
     previous: SignedPolicy,
     actions: Action[],
-    checkpoint = root,
+    target = employee.subject,
   ) {
+    const checkpoint = root;
     const version = (BigInt(previous.version) + 1n).toString();
     const profile = await administrativeProfiles.sign(
       {
         tenant: login.tenant,
         rootSignature: checkpoint.signature,
         version,
-        subject: employee.subject,
+        subject: target,
         scope: PRODUCT_COLLECTION.scope,
         facet: PRODUCT_COLLECTION.facet,
         actions,
@@ -357,7 +407,12 @@ try {
     );
     await rejected(manager, invalid);
   }
-  await required(manager.mutate("zerotrust.policy.replace", writable));
+  await changeAreaActionAccesses(
+    manager,
+    employee.subject,
+    [{ area: PRODUCT_COLLECTION, patch: { update: true } }],
+    signal,
+  );
   console.log(
     "Native administration: granting and revoking real product updates",
   );
@@ -398,7 +453,12 @@ try {
     false,
   );
   const readOnly = await candidate(writable, ["read"]);
-  await required(manager.mutate("zerotrust.policy.replace", readOnly));
+  await changeAreaActionAccesses(
+    manager,
+    employee.subject,
+    [{ area: PRODUCT_COLLECTION, patch: { update: false } }],
+    signal,
+  );
   const [, refusedWrite] = await reader.mutate("zerotrust.objects.batch", {
     objects: [delayed],
     heads: [{ domain: PRODUCT_COLLECTION.domain, sequence }],
@@ -426,15 +486,277 @@ try {
   const retained = await candidate(winner, ["read", "update"]);
   await required(manager.mutate("zerotrust.policy.replace", retained));
 
+  console.log(
+    "Native administration: sharing history with a new reader and rotating keys without the primary key",
+  );
+  const initialGeneration = (
+    await required(
+      manager.query("zerotrust.domains.list", undefined, {
+        strategy: "network-only",
+      }),
+    )
+  ).find((domain) => domain.id === PRODUCT_COLLECTION.domain)!.generation;
+  const secondGeneration = (BigInt(initialGeneration) + 1n).toString();
+  const thirdGeneration = (BigInt(secondGeneration) + 1n).toString();
+  await acceptVaultWithKey(added.account.dataKey, added.account.vault, false);
+  assert.ok(
+    (
+      await newReader.query(
+        "zerotrust.keys.get",
+        { domain: PRODUCT_COLLECTION.domain, generation: initialGeneration },
+        { strategy: "network-only" },
+      )
+    )[1],
+  );
+  await acceptVaultWithKey(
+    delegated.account.dataKey,
+    delegated.account.vault,
+    false,
+  );
+  const shared = await candidate(retained, ["read"], added.subject);
+  await required(manager.mutate("zerotrust.policy.replace", shared));
+  const historical = await prepareHistoricalKeyGrants(manager, {
+    area: {
+      tenant: login.tenant,
+      id: PRODUCT_COLLECTION.domain,
+      scope: PRODUCT_COLLECTION.scope,
+      facet: PRODUCT_COLLECTION.facet,
+      generation: initialGeneration,
+    },
+    owner: {
+      subject: delegated.subject,
+      privateKey: delegated.account.identity.encryptionKey.privateKey,
+    },
+    authority: {
+      generation: keyAuthority.generation,
+      privateKey: managerKey,
+      keyAuthority,
+    },
+    history: access.history.authority,
+    readers: [
+      {
+        subject: added.subject,
+        identity: access.history.identityCertificate(added.subject),
+      },
+    ],
+    signal,
+  });
+  assert.equal(historical.length, Number(initialGeneration));
+  async function rotation(policy: SignedPolicy, generation: string) {
+    const checked = (
+      await verifyPolicy(policy, { tenant: login.tenant, authority })
+    ).permissions;
+    return createManagedDomain({
+      tenant: login.tenant,
+      id: PRODUCT_COLLECTION.domain,
+      scope: PRODUCT_COLLECTION.scope,
+      facet: PRODUCT_COLLECTION.facet,
+      generation,
+      policyVersion: policy.version,
+      keyAuthority,
+      signingKey: managerKey,
+      recovery: {
+        encryptionKey: access.history.current.recoveryEncryptionKey,
+        signingKey: access.history.current.recoverySigningKey,
+      },
+      readers: compileReadership(checked)(
+        PRODUCT_COLLECTION.scope,
+        PRODUCT_COLLECTION.facet,
+      ).map((subject) => ({
+        subject,
+        identity: access.history.identityCertificate(subject),
+      })),
+    });
+  }
+  const proposed = await rotation(shared, secondGeneration);
+  assert.ok(
+    (await reader.mutate("zerotrust.domains.put", proposed.definition))[1],
+  );
+  assert.ok(
+    (
+      await reader.query(
+        "zerotrust.keys.inspect",
+        {
+          keys: [
+            {
+              domain: PRODUCT_COLLECTION.domain,
+              generation: initialGeneration,
+              recipient: `user:${primary.session.user.id}`,
+            },
+          ],
+        },
+        { strategy: "network-only" },
+      )
+    )[1],
+  );
+  assert.ok(
+    (
+      await manager.mutate("zerotrust.keys.grant", {
+        domain: historical[0]!.domain,
+        generation: historical[0]!.generation,
+        envelope: historical[0]!.envelope,
+      })
+    )[1],
+    "A delegated signature without its authority proof cannot use the primary-administrator path",
+  );
+  const substituted = structuredClone(historical[0]!);
+  substituted.envelope.recipient = employee.subject;
+  assert.ok(
+    (
+      await manager.mutate("zerotrust.access.publish", {
+        policyVersion: shared.version,
+        grants: [historical[0]!, substituted],
+        domains: [],
+      })
+    )[1],
+  );
+  const [partial, failedGrant] = await newReader.query(
+    "zerotrust.keys.get",
+    {
+      domain: PRODUCT_COLLECTION.domain,
+      generation: historical[0]!.generation,
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(partial, null);
+  assert.ok(
+    failedGrant,
+    "A later invalid grant must roll back the earlier valid recipient copy",
+  );
+  // The signed profile already exists, as after an interrupted command. The
+  // production action must finish its keys without another policy revision.
+  await changeAreaActionAccesses(
+    manager,
+    added.subject,
+    [{ area: PRODUCT_COLLECTION, patch: { read: true } }],
+    signal,
+  );
+  assert.equal((await current(manager)).signature, shared.signature);
+  const second = {
+    definition: await required(
+      manager.query(
+        "zerotrust.domains.get",
+        {
+          domain: PRODUCT_COLLECTION.domain,
+          generation: secondGeneration,
+        },
+        { strategy: "network-only" },
+      ),
+    ),
+  };
+  await acceptVaultWithKey(added.account.dataKey, added.account.vault, false);
+  const addedBusiness = createBusinessClient(newReader, {
+    productDriver: duckDriver,
+  });
+  try {
+    const visible = await required(
+      addedBusiness.query("products.get", { id: product.id }),
+    );
+    assert.equal(visible.description, "FREIGEGEBENE_AENDERUNG_681942");
+  } finally {
+    addedBusiness.dispose();
+  }
+  const oldEnvelope = second.definition.envelopes.find(
+    (envelope) => envelope.recipient === added.subject,
+  )!;
+  const oldRaw = await openBox(
+    oldEnvelope,
+    {
+      tenant: login.tenant,
+      purpose: "area-key",
+      object: PRODUCT_COLLECTION.domain,
+      generation: secondGeneration,
+      recipient: added.subject,
+      author: keyAuthorityAuthor(keyAuthority),
+    },
+    added.account.identity.encryptionKey.privateKey,
+    delegated.account.identity.signingKey.publicKey,
+  );
+  const oldKey = await areaKey(oldRaw);
+  oldRaw.fill(0);
+  await acceptVaultWithKey(
+    delegated.account.dataKey,
+    delegated.account.vault,
+    false,
+  );
+  const revoked = await candidate(shared, [], added.subject);
+  await required(manager.mutate("zerotrust.policy.replace", revoked));
+  await changeAreaActionAccesses(
+    manager,
+    added.subject,
+    [{ area: PRODUCT_COLLECTION, patch: { read: false } }],
+    signal,
+  );
+  assert.equal((await current(manager)).signature, revoked.signature);
+  const third = {
+    definition: await required(
+      manager.query(
+        "zerotrust.domains.get",
+        {
+          domain: PRODUCT_COLLECTION.domain,
+          generation: thirdGeneration,
+        },
+        { strategy: "network-only" },
+      ),
+    ),
+  };
+  const managerBusiness = createBusinessClient(manager, {
+    productDriver: duckDriver,
+  });
+  try {
+    await required(
+      managerBusiness.mutate("products.update", {
+        id: product.id,
+        data: { description: "NEUE_SCHLUESSELGENERATION_681942" },
+      }),
+    );
+  } finally {
+    managerBusiness.dispose();
+  }
+  const changed = await required(
+    manager.query(
+      "zerotrust.objects.get",
+      { id: PRODUCT_COLLECTION.prefix + product.id },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.equal(changed.generation, thirdGeneration);
+  const {
+    format,
+    nonce,
+    ciphertext,
+    wrappedKey,
+    signature,
+    ...changedContext
+  } = changed;
+  assert.ok(format && nonce && ciphertext && wrappedKey && signature);
+  await assert.rejects(() =>
+    decryptObject(
+      changed,
+      changedContext,
+      oldKey,
+      delegated.account.identity.signingKey.publicKey,
+    ),
+  );
+  assert.ok(
+    (
+      await newReader.query(
+        "zerotrust.keys.get",
+        { domain: PRODUCT_COLLECTION.domain, generation: thirdGeneration },
+        { strategy: "network-only" },
+      )
+    )[1],
+  );
+
   await acceptVaultWithKey(administrator.dataKey, administrator.vault, false);
   const effective = (
-    await verifyPolicy(retained, { tenant: login.tenant, authority })
+    await verifyPolicy(revoked, { tenant: login.tenant, authority })
   ).permissions;
   const checkpoint = await signPolicy(
     {
       ...effective,
-      version: (BigInt(retained.version) + 1n).toString(),
-      rules: retained.rules
+      version: (BigInt(revoked.version) + 1n).toString(),
+      rules: revoked.rules
         .map((rule) => {
           if (rule.subject !== delegated.subject) return rule;
           return {
@@ -460,8 +782,89 @@ try {
   const stale = await candidate(checkpoint, ["read"]);
   await verifyPolicy(stale, { tenant: login.tenant, authority });
   await rejected(manager, stale);
+  const future = await rotation(
+    checkpoint,
+    (BigInt(thirdGeneration) + 1n).toString(),
+  );
+  assert.ok(
+    (
+      await manager.query(
+        "zerotrust.keyAuthorities.forArea",
+        {
+          scope: PRODUCT_COLLECTION.scope,
+          facet: PRODUCT_COLLECTION.facet,
+        },
+        { strategy: "network-only" },
+      )
+    )[1],
+  );
+  assert.ok(
+    (await manager.mutate("zerotrust.domains.put", future.definition))[1],
+  );
+  assert.ok(
+    (
+      await manager.mutate("zerotrust.access.publish", {
+        policyVersion: checkpoint.version,
+        grants: historical,
+        domains: [],
+      })
+    )[1],
+  );
+  assert.equal(
+    (
+      await required(
+        manager.query(
+          "zerotrust.domains.get",
+          { domain: PRODUCT_COLLECTION.domain, generation: thirdGeneration },
+          { strategy: "network-only" },
+        ),
+      )
+    ).proof,
+    third.definition.proof,
+  );
   await edit("AENDERUNG_NACH_VERWALTERENTZUG_681942", true);
   assert.equal((await current(reader)).signature, checkpoint.signature);
+
+  const testRoot = process.env.SORTSYS_NATIVE_AUTH_ROOT;
+  assert.ok(testRoot);
+  const recoverySource: { tenant: string; phrase: string } = JSON.parse(
+    await readFile(join(testRoot, "owner-recovery.json"), "utf8"),
+  );
+  assert.equal(recoverySource.tenant, tenant);
+  let phrase = recoverySource.phrase;
+  recoverySecrets.push(phrase);
+  for (let round = 0; round < 2; round++) {
+    console.log(`Native administration: seed-only recovery ${round + 1}`);
+    await lockCryptoSession();
+    for (const client of clients) client.setToken(null);
+    assert.equal(unlockedAccount(), null);
+    const client = recoveryClients[round]!;
+    const other = recoveryClients[1 - round]!;
+    const password = `Independent-seed-recovery-${round}-2026!`;
+    const draft = await recoveryDraft(client, tenant, phrase, password);
+    recoverySecrets.push(password, draft.newPhrase);
+    const plan = await recoveryPlan(client, draft);
+    await commitRecovery(client, plan);
+    await assert.rejects(() => recoveryDraft(other, tenant, phrase, password));
+    await signIn(client, { tenant, username: plan.username, password });
+    const initialized = await initializeTenant(client, signal, duckDriver);
+    assert.equal(initialized.generation, String(round + 2));
+    const recoveredBusiness = createBusinessClient(client, {
+      productDriver: duckDriver,
+    });
+    try {
+      const restored = await required(
+        recoveredBusiness.query("products.get", { id: product.id }),
+      );
+      assert.equal(
+        restored.description,
+        "AENDERUNG_NACH_VERWALTERENTZUG_681942",
+      );
+    } finally {
+      recoveredBusiness.dispose();
+    }
+    phrase = draft.newPhrase;
+  }
 
   const wire = bodies.join("\n");
   for (const secret of [
@@ -470,6 +873,8 @@ try {
     "FREIGEGEBENE_AENDERUNG_681942",
     "VERZOEGERTER_SCHREIBAUFTRAG_681942",
     "AENDERUNG_NACH_VERWALTERENTZUG_681942",
+    "NEUE_SCHLUESSELGENERATION_681942",
+    ...recoverySecrets,
   ]) {
     assert.equal(
       wire.includes(secret),
@@ -478,12 +883,12 @@ try {
     );
   }
   console.log(
-    "Native administration verified: independent manager key, ordinary-user read/update changes, wrong actor/area/target denial, signed stale-write denial, competing policies and management revocation with retained employee rights across two APIs.",
+    "Native administration verified: independent manager key, atomic historical grants and rotation, wrong actor/area/target denial, stale-write denial, competing policies, management revocation and two seed-only recoveries across two APIs.",
   );
 } finally {
   globalThis.fetch = originalFetch;
   await lockCryptoSession();
-  for (const client of [owner, manager, reader]) {
+  for (const client of clients) {
     client.setToken(null);
   }
 }

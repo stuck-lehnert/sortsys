@@ -149,31 +149,179 @@ test("tool and tracking creation cannot grant project access, other records or u
   }
 });
 
-for (const namespace of ["project", "commercial", "tool", "tool-tracking"] as const) test(`phrase-only recovery opens ${namespace} creator keys and rejects unproven creator packages`, async () => {
-  const f = await recoveryFixture(), creator = await createIdentity();
-  const member = await certifyIdentity({ tenant: "test", generation: "1", user: "user:2", ...await publicIdentity(creator) }, f.authorityKey.privateKey);
-  const capability = await certifyCreationCapability({ tenant: "test", generation: "1", id: "create_test", namespace, creator: member, readers: [f.setup.owner] }, f.authorityKey.privateKey);
-  const origin = await createOrigin({ tenant: "test", id: `${namespace}:abc:master-data`, scope: `${namespace}:abc`, facet: "master-data", capability }, creator.signingKey.privateKey);
-  const { definition, key } = await createDelegatedDomain({ origin, creatorKey: creator.signingKey.privateKey, policyVersion: "1", recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } });
-  const definitions = [definition];
-  if (namespace === "project") for (const [module, facets] of Object.entries(PROJECT_MODULE_FACETS)) for (const facet of facets) {
-    const scope = `project:abc:${module}`;
-    const part = await createOrigin({ ...origin, id: `${scope}:${facet}`, scope, facet, parent: origin }, creator.signingKey.privateKey);
-    definitions.push((await createDelegatedDomain({ origin: part, creatorKey: creator.signingKey.privateKey, policyVersion: "1", recovery: { encryptionKey: f.setup.authority.recoveryEncryptionKey, signingKey: f.setup.authority.recoverySigningKey } })).definition);
-  }
-  const source = { ...f.source, domains: [...f.source.domains, ...definitions.map(part => ({ id: part.id, scope: part.scope, facet: part.facet, generation: "1" }))],
-    keys: [...f.source.keys, ...definitions.map(part => part.recoveryEnvelope)], createdDomains: definitions };
-  const { plan, identity } = await prepareRecovery({ oldPhrase: f.phrase, newPhrase: f.newPhrase, password: f.password, source, register: f.register });
-  for (const part of definitions) expect(plan.oldKeyEnvelopes.some(box => box.object === part.id)).toBe(true);
-  const archived = plan.oldKeyEnvelopes.find(box => box.object === definition.id)!;
-  const raw = await openBox(archived, { tenant: "test", purpose: "area-key", object: definition.id, generation: "1", recipient: plan.transition.nextAdministrator, author: "authority:2" }, identity.encryptionKey.privateKey, await importSigningKey(plan.nextSetup.authority.authoritySigningKey));
-  const context = { tenant: "test", scope: definition.scope, facet: "master-data" as const, object: definition.scope, revision: "1", generation: "1", policyVersion: "1", author: "user:2" };
-  try { expect(new TextDecoder().decode(await decryptObject(await encryptObject(context, bytes("created before recovery"), key, creator.signingKey.privateKey), context, await areaKey(raw), creator.signingKey.publicKey))).toBe("created before recovery"); }
-  finally { raw.fill(0); }
-  let registered = false;
-  const register = async () => { registered = true; throw new Error("not reached"); };
-  await expect(prepareRecovery({ oldPhrase: f.phrase, newPhrase: f.newPhrase, password: f.password, source: { ...source, createdDomains: [] }, register })).rejects.toThrow();
-  const replaced = structuredClone(definition); replaced.creation!.capability.creator.signingKey = base64(new Uint8Array(32));
-  await expect(prepareRecovery({ oldPhrase: f.phrase, newPhrase: f.newPhrase, password: f.password, source: { ...source, createdDomains: [replaced] }, register })).rejects.toThrow();
-  expect(registered).toBe(false);
-}, 15000);
+for (const namespace of [
+  "project",
+  "commercial",
+  "tool",
+  "tool-tracking",
+] as const)
+  test(`phrase-only recovery opens ${namespace} creator keys and rejects unproven creator packages`, async () => {
+    const fixture = await recoveryFixture();
+    const creator = await createIdentity();
+    const member = await certifyIdentity(
+      {
+        tenant: "test",
+        generation: "1",
+        user: "user:2",
+        ...(await publicIdentity(creator)),
+      },
+      fixture.authorityKey.privateKey,
+    );
+    const capability = await certifyCreationCapability(
+      {
+        tenant: "test",
+        generation: "1",
+        id: "create_test",
+        namespace,
+        creator: member,
+        readers: [fixture.setup.owner],
+      },
+      fixture.authorityKey.privateKey,
+    );
+    const origin = await createOrigin(
+      {
+        tenant: "test",
+        id: `${namespace}:abc:master-data`,
+        scope: `${namespace}:abc`,
+        facet: "master-data",
+        capability,
+      },
+      creator.signingKey.privateKey,
+    );
+    const { definition, key } = await createDelegatedDomain({
+      origin,
+      creatorKey: creator.signingKey.privateKey,
+      policyVersion: "1",
+      recovery: {
+        encryptionKey: fixture.setup.authority.recoveryEncryptionKey,
+        signingKey: fixture.setup.authority.recoverySigningKey,
+      },
+    });
+    const definitions = [definition];
+    if (namespace === "project") {
+      for (const [module, facets] of Object.entries(PROJECT_MODULE_FACETS)) {
+        for (const facet of facets) {
+          const scope = `project:abc:${module}`;
+          const part = await createOrigin(
+            {
+              ...origin,
+              id: `${scope}:${facet}`,
+              scope,
+              facet,
+              parent: origin,
+            },
+            creator.signingKey.privateKey,
+          );
+          const created = await createDelegatedDomain({
+            origin: part,
+            creatorKey: creator.signingKey.privateKey,
+            policyVersion: "1",
+            recovery: {
+              encryptionKey: fixture.setup.authority.recoveryEncryptionKey,
+              signingKey: fixture.setup.authority.recoverySigningKey,
+            },
+          });
+          definitions.push(created.definition);
+        }
+      }
+    }
+    const source = {
+      ...fixture.source,
+      domains: [
+        ...fixture.source.domains,
+        ...definitions.map((part) => ({
+          id: part.id,
+          scope: part.scope,
+          facet: part.facet,
+          generation: "1",
+        })),
+      ],
+      keys: [
+        ...fixture.source.keys,
+        ...definitions.map((part) => part.recoveryEnvelope),
+      ],
+      delegatedDomains: definitions,
+    };
+    const { plan, identity } = await prepareRecovery({
+      oldPhrase: fixture.phrase,
+      newPhrase: fixture.newPhrase,
+      password: fixture.password,
+      source,
+      register: fixture.register,
+    });
+    for (const part of definitions)
+      expect(plan.oldKeyEnvelopes.some((box) => box.object === part.id)).toBe(
+        true,
+      );
+    const archived = plan.oldKeyEnvelopes.find(
+      (box) => box.object === definition.id,
+    )!;
+    const raw = await openBox(
+      archived,
+      {
+        tenant: "test",
+        purpose: "area-key",
+        object: definition.id,
+        generation: "1",
+        recipient: plan.transition.nextAdministrator,
+        author: "authority:2",
+      },
+      identity.encryptionKey.privateKey,
+      await importSigningKey(plan.nextSetup.authority.authoritySigningKey),
+    );
+    const context = {
+      tenant: "test",
+      scope: definition.scope,
+      facet: "master-data" as const,
+      object: definition.scope,
+      revision: "1",
+      generation: "1",
+      policyVersion: "1",
+      author: "user:2",
+    };
+    try {
+      const encrypted = await encryptObject(
+        context,
+        bytes("created before recovery"),
+        key,
+        creator.signingKey.privateKey,
+      );
+      const plaintext = await decryptObject(
+        encrypted,
+        context,
+        await areaKey(raw),
+        creator.signingKey.publicKey,
+      );
+      expect(new TextDecoder().decode(plaintext)).toBe("created before recovery");
+    } finally {
+      raw.fill(0);
+    }
+    let registered = false;
+    const register = async () => {
+      registered = true;
+      throw new Error("not reached");
+    };
+    await expect(
+      prepareRecovery({
+        oldPhrase: fixture.phrase,
+        newPhrase: fixture.newPhrase,
+        password: fixture.password,
+        source: { ...source, delegatedDomains: [] },
+        register,
+      }),
+    ).rejects.toThrow();
+    const replaced = structuredClone(definition);
+    replaced.creation!.capability.creator.signingKey = base64(
+      new Uint8Array(32),
+    );
+    await expect(
+      prepareRecovery({
+        oldPhrase: fixture.phrase,
+        newPhrase: fixture.newPhrase,
+        password: fixture.password,
+        source: { ...source, delegatedDomains: [replaced] },
+        register,
+      }),
+    ).rejects.toThrow();
+    expect(registered).toBe(false);
+  }, 15000);

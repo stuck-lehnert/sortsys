@@ -18,6 +18,7 @@ import {
 import type { PublicIdentity } from "../identity";
 
 import { facetVocabulary } from "./vocabulary";
+import { createKeyAuthorityCodec, type KeyAuthority } from "./keyAuthorities";
 
 export type DomainCreation<F extends string = string> = {
   tenant: string;
@@ -59,6 +60,7 @@ export type DomainDefinition<
   recoveryEnvelope: SealedBox;
   proof: string;
   creation?: C;
+  keyAuthority?: KeyAuthority<F>;
 };
 
 export function createDomainCodec<
@@ -66,6 +68,7 @@ export function createDomainCodec<
   C extends DomainCreation<F> = never,
 >(facets: readonly F[], creation?: DomainCreationCodec<F, C>) {
   const allowedFacets = facetVocabulary(facets);
+  const keyAuthorities = createKeyAuthorityCodec(facets);
   const configuredCreation =
     creation === undefined ? undefined : Object.freeze({ ...creation });
   function requiredCreation(): DomainCreationCodec<F, C> {
@@ -96,12 +99,13 @@ export function createDomainCodec<
       "recoveryEnvelope",
       "proof",
     ];
-    const raw = record(
-      input,
-      input && typeof input === "object" && Object.hasOwn(input, "creation")
-        ? [...keys, "creation"]
-        : keys,
+    const optional = ["creation", "keyAuthority"].filter(
+      (key) => input && typeof input === "object" && Object.hasOwn(input, key),
     );
+    const raw = record(input, [...keys, ...optional]);
+    if (raw.creation !== undefined && raw.keyAuthority !== undefined) {
+      throw new InvalidProtectedData();
+    }
     for (const key of [
       "tenant",
       "id",
@@ -121,6 +125,20 @@ export function createDomainCodec<
       raw.creation === undefined
         ? undefined
         : await requiredCreation().verify(raw.creation, authority);
+    let keyAuthority: KeyAuthority<F> | undefined;
+    if (raw.keyAuthority !== undefined) {
+      const parsed = keyAuthorities.parse(raw.keyAuthority);
+      keyAuthority = await keyAuthorities.verify(
+        parsed,
+        {
+          tenant: expected.tenant,
+          generation: parsed.generation,
+          scope: expected.scope,
+          facet: expected.facet,
+        },
+        authority(parsed.generation),
+      );
+    }
     if (
       origin &&
       (origin.tenant !== expected.tenant ||
@@ -137,6 +155,7 @@ export function createDomainCodec<
     if (origin !== undefined) {
       rootGeneration = requiredCreation().authorityGeneration(origin);
     }
+    if (keyAuthority) rootGeneration = keyAuthority.generation;
     if (!rootGeneration) {
       throw new InvalidProtectedData();
     }
@@ -146,13 +165,17 @@ export function createDomainCodec<
       envelopes: raw.envelopes.map(sealedBox),
       recoveryEnvelope,
       ...(origin ? { creation: origin } : {}),
+      ...(keyAuthority ? { keyAuthority } : {}),
     } as DomainDefinition<F, C>;
-    const key = origin
-      ? await requiredCreation().signer(origin)
-      : authority(rootGeneration);
-    const author = origin
-      ? requiredCreation().author(origin)
-      : `authority:${rootGeneration}`;
+    let key = authority(rootGeneration);
+    let author = `authority:${rootGeneration}`;
+    if (origin) {
+      key = await requiredCreation().signer(origin);
+      author = requiredCreation().author(origin);
+    } else if (keyAuthority) {
+      key = await keyAuthorities.signer(keyAuthority);
+      author = keyAuthorities.author(keyAuthority);
+    }
     await verify(key, definition.proof, await domainFrame(definition));
     for (const box of [...definition.envelopes, definition.recoveryEnvelope]) {
       if (
@@ -202,6 +225,7 @@ export function createDomainCodec<
       | "generation"
       | "policyVersion"
       | "creation"
+      | "keyAuthority"
     >,
     packetHashes: readonly string[],
   ): Promise<Uint8Array<ArrayBuffer>> {
@@ -221,6 +245,7 @@ export function createDomainCodec<
       sized(hash, 32);
     }
     const hashes = [...packetHashes];
+    if (input.creation && input.keyAuthority) throw new InvalidProtectedData();
     if (input.creation) {
       if (
         input.generation !== "1" ||
@@ -240,18 +265,35 @@ export function createDomainCodec<
         ),
       );
     }
-    return frame(
-      input.creation ? "sortsys/domain-created/v1" : "sortsys/domain/v1",
-      [
-        input.tenant,
-        input.id,
-        input.scope,
-        input.facet,
-        input.generation,
-        input.policyVersion,
-        ...hashes,
-      ],
-    );
+    if (input.keyAuthority) {
+      const { signature, ...certificate } = keyAuthorities.parse(
+        input.keyAuthority,
+      );
+      if (
+        certificate.tenant !== input.tenant ||
+        certificate.scope !== input.scope ||
+        certificate.facet !== input.facet
+      ) {
+        throw new InvalidProtectedData();
+      }
+      hashes.push(
+        await digest(
+          signedPacketFrame(keyAuthorities.frame(certificate), signature),
+        ),
+      );
+    }
+    let frameDomain = "sortsys/domain/v1";
+    if (input.creation) frameDomain = "sortsys/domain-created/v1";
+    if (input.keyAuthority) frameDomain = "sortsys/domain-managed/v1";
+    return frame(frameDomain, [
+      input.tenant,
+      input.id,
+      input.scope,
+      input.facet,
+      input.generation,
+      input.policyVersion,
+      ...hashes,
+    ]);
   }
 
   /** Historical grants can be signed by the tenant authority; an original
@@ -260,11 +302,26 @@ export function createDomainCodec<
     definition: DomainDefinition<F, C>,
     input: unknown,
     authority: (generation: string) => CryptoKey,
+    sourceAuthority?: KeyAuthority<F>,
   ): Promise<CryptoKey> {
     const box = sealedBox(input);
     const generation = box.author.match(/^authority:([1-9]\d*)$/)?.[1];
     if (generation) {
       return authority(generation);
+    }
+    const certificate = sourceAuthority ?? definition.keyAuthority;
+    if (certificate && box.author === keyAuthorities.author(certificate)) {
+      const verified = await keyAuthorities.verify(
+        certificate,
+        {
+          tenant: definition.tenant,
+          generation: certificate.generation,
+          scope: definition.scope,
+          facet: definition.facet,
+        },
+        authority(certificate.generation),
+      );
+      return keyAuthorities.signer(verified);
     }
     if (
       definition.creation &&
@@ -362,9 +419,23 @@ export function createDomainCodec<
     authorityKey: CryptoKey;
     recovery: PublicIdentity;
     readers: { subject: string; identity: PublicIdentity }[];
+    keyAuthority?: KeyAuthority<F>;
   }): Promise<{ definition: DomainDefinition<F, C>; key: CryptoKey }> {
     const raw = randomSecret();
     try {
+      let author = `authority:${input.authorityGeneration}`;
+      if (input.keyAuthority) {
+        const certificate = keyAuthorities.parse(input.keyAuthority);
+        if (
+          certificate.tenant !== input.tenant ||
+          certificate.scope !== input.scope ||
+          certificate.facet !== input.facet ||
+          certificate.generation !== input.authorityGeneration
+        ) {
+          throw new InvalidProtectedData();
+        }
+        author = keyAuthorities.author(certificate);
+      }
       const readers = [...input.readers].sort((a, b) =>
         compareIdentifiers(a.subject, b.subject),
       );
@@ -377,7 +448,7 @@ export function createDomainCodec<
               object: input.id,
               generation: input.generation,
               recipient: reader.subject,
-              author: `authority:${input.authorityGeneration}`,
+              author,
             },
             raw,
             await hpke.kem.deserializePublicKey(
@@ -394,7 +465,7 @@ export function createDomainCodec<
           object: input.id,
           generation: input.generation,
           recipient: `recovery:${input.authorityGeneration}`,
-          author: `authority:${input.authorityGeneration}`,
+          author,
         },
         raw,
         await hpke.kem.deserializePublicKey(
@@ -411,6 +482,7 @@ export function createDomainCodec<
         policyVersion: input.policyVersion,
         envelopes,
         recoveryEnvelope,
+        ...(input.keyAuthority ? { keyAuthority: input.keyAuthority } : {}),
       };
       return {
         definition: {
@@ -422,6 +494,23 @@ export function createDomainCodec<
     } finally {
       raw.fill(0);
     }
+  }
+
+  async function createManagedDomain(
+    input: Omit<
+      Parameters<typeof createDomain>[0],
+      "authorityGeneration" | "authorityKey"
+    > & {
+      keyAuthority: KeyAuthority<F>;
+      signingKey: CryptoKey;
+    },
+  ) {
+    const { signingKey, ...options } = input;
+    return createDomain({
+      ...options,
+      authorityGeneration: input.keyAuthority.generation,
+      authorityKey: signingKey,
+    });
   }
 
   /** Rewrap one authenticated area key for recipients selected by the caller's
@@ -438,7 +527,12 @@ export function createDomainCodec<
     };
     envelope: unknown;
     owner: { subject: string; privateKey: CryptoKey };
-    authority: { generation: string; privateKey: CryptoKey };
+    authority: {
+      generation: string;
+      privateKey: CryptoKey;
+      keyAuthority?: KeyAuthority<F>;
+    };
+    sourceAuthority?: KeyAuthority<F>;
     history: (generation: string) => CryptoKey;
     readers: readonly { subject: string; identity: PublicIdentity }[];
     signal?: AbortSignal;
@@ -464,6 +558,22 @@ export function createDomainCodec<
       };
     });
     const area = { ...input.area };
+    let grantAuthor = `authority:${input.authority.generation}`;
+    if (input.authority.keyAuthority) {
+      const certificate = await keyAuthorities.verify(
+        input.authority.keyAuthority,
+        {
+          tenant: area.tenant,
+          generation: input.authority.generation,
+          scope: area.scope,
+          facet: area.facet,
+          holder: input.owner.subject,
+        },
+        input.history(input.authority.generation),
+      );
+      checkpoint();
+      grantAuthor = keyAuthorities.author(certificate);
+    }
     const definition = await verifyDomain(
       input.definition,
       area,
@@ -482,7 +592,12 @@ export function createDomainCodec<
         author: envelope.author,
       },
       input.owner.privateKey,
-      await domainBoxSigner(definition, envelope, input.history),
+      await domainBoxSigner(
+        definition,
+        envelope,
+        input.history,
+        input.sourceAuthority,
+      ),
     );
     try {
       checkpoint();
@@ -498,7 +613,7 @@ export function createDomainCodec<
               object: area.id,
               generation: area.generation,
               recipient: reader.subject,
-              author: `authority:${input.authority.generation}`,
+              author: grantAuthor,
             },
             raw,
             await hpke.kem.deserializePublicKey(
@@ -521,6 +636,7 @@ export function createDomainCodec<
     domainFrameFromHashes,
     domainBoxSigner,
     createDomain,
+    createManagedDomain,
     createDelegatedDomain,
     rewrapDomainKey,
   });

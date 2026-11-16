@@ -116,13 +116,24 @@ export async function publishVerifiedPolicy(
 ) {
   context.live();
   const signed = await signPolicy(next, context.authority);
+  return publishSignedPolicy(client, context, signed);
+}
+
+/** Primary and delegated writers share the same proof verification, publication
+ * and readback. The API independently binds a delegated write to its session. */
+export async function publishSignedPolicy(
+  client: Client,
+  context: PolicyContext,
+  signed: SignedPolicy,
+) {
   context.live();
   const checked = await verifyPolicy(signed, {
     tenant: context.account.tenant,
     authority: context.history.authority(context.history.current.generation),
   });
   context.live();
-  const packet = { ...checked.permissions, signature: checked.signature };
+  const { permissions, ...proof } = checked;
+  const packet = { ...permissions, ...proof };
   let failure: unknown;
   try {
     const [, error] = await client.mutate("zerotrust.policy.replace", packet);

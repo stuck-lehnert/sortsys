@@ -367,7 +367,7 @@ test("another application performs two seed recoveries and retains its historica
         },
       ],
       keys: [domain.definition.recoveryEnvelope],
-      createdDomains: [],
+      delegatedDomains: [],
     },
   });
   await framework.recovery.verifyRecoveryTransition(first.plan);
@@ -486,7 +486,7 @@ test("another application performs two seed recoveries and retains its historica
         generation,
       })),
       keys: first.plan.domains.map((definition) => definition.recoveryEnvelope),
-      createdDomains: [],
+      delegatedDomains: [],
     },
   });
   await framework.recovery.verifyRecoveryTransition(second.plan);

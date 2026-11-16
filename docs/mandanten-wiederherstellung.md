@@ -254,6 +254,15 @@ lesbar. Auch eine verlorene Antwort nach dem Commit wird über den
 veröffentlichten Stand aufgelöst. Die beobachteten Anfragen enthalten weder
 Phrase noch Passwort oder Geschäftsinhalt im Klartext.
 
+Ein weiterer Mehrinstanztest erzeugt Schlüsselgenerationen mit dem eigenen
+Signaturschlüssel eines beauftragten Bereichsverwalters. Neue Leser erhalten
+historische Kopien; ein späterer Leserentzug erneuert die Schlüssel. Nachdem
+auch dem Verwalter die Befugnis entzogen wurde, bleiben diese Inhalte nach zwei
+Recoveries lesbar. Beide Wiederherstellungen beginnen ohne entsperrtes
+Benutzerkonto und benötigen nur die jeweils gültige Phrase. Fehlende oder
+veränderte Nachweise fremd signierter Recovery-Hüllen werden bereits vor der
+Registrierung eines neuen Kontos abgelehnt.
+
 Der Test enthält aktive und abgeschlossene Werkzeugbuchungen. Nach beiden
 Recoveries bleiben deren Inhalte und Kosten für den neuen Administrator lesbar.
 Eine Rückgabe mit anschließendem Schlüsselwechsel verhindert, dass alte

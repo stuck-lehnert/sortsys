@@ -40,6 +40,7 @@ pub(super) fn conflict() -> RpcError {
     .with_http_code(409)
 }
 pub(super) use super::crypto::packet_hash;
+pub(super) type KeyAuthority = sortsys_zerotrust::key_authorities::KeyAuthority<Facet>;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,9 +64,15 @@ pub(super) struct DomainDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub creation: Option<super::creation::CreationOrigin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub key_authority: Option<KeyAuthority>,
 }
 impl DomainDefinition {
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
+        if self.creation.is_some() && self.key_authority.is_some() {
+            return Err(invalid());
+        }
         for id in [&self.tenant, &self.id, &self.scope] {
             identifier(id)?;
         }
@@ -86,34 +93,37 @@ impl DomainDefinition {
             }
             hashes.push(packet_hash(box_.frame()?, &box_.signature)?);
         }
-        let mut values = vec![
-            self.tenant.as_str(),
-            self.id.as_str(),
-            self.scope.as_str(),
-            self.facet.name(),
-            self.generation.as_str(),
-            self.policy_version.as_str(),
-        ];
-        if let Some(origin) = &self.creation {
-            if self.generation != "1"
-                || origin.tenant != self.tenant
-                || origin.id != self.id
-                || origin.scope != self.scope
-                || origin.facet != self.facet
-            {
-                return Err(invalid());
-            }
-            hashes.push(packet_hash(origin.frame()?, &origin.signature)?);
+        use sortsys_zerotrust::domains::{DomainCreationRef, DomainFrameRef, DomainSignerRef};
+        let creation_frame = self
+            .creation
+            .as_ref()
+            .map(|origin| origin.frame())
+            .transpose()?;
+        let signer = if let Some(origin) = &self.creation {
+            DomainSignerRef::Creator(DomainCreationRef {
+                tenant: &origin.tenant,
+                id: &origin.id,
+                scope: &origin.scope,
+                facet: origin.facet.name(),
+                frame: creation_frame.as_deref().ok_or_else(invalid)?,
+                signature: &origin.signature,
+            })
+        } else if let Some(authority) = &self.key_authority {
+            DomainSignerRef::Manager(authority.as_protocol())
+        } else {
+            DomainSignerRef::Authority
+        };
+        Ok(DomainFrameRef {
+            tenant: &self.tenant,
+            id: &self.id,
+            scope: &self.scope,
+            facet: self.facet.name(),
+            generation: &self.generation,
+            policy_version: &self.policy_version,
+            envelope_hashes: &hashes,
+            signer,
         }
-        values.extend(hashes.iter().map(String::as_str));
-        Ok(frame(
-            if self.creation.is_some() {
-                "sortsys/domain-created/v1"
-            } else {
-                "sortsys/domain/v1"
-            },
-            &values,
-        ))
+        .frame()?)
     }
 }
 
@@ -139,6 +149,29 @@ struct KeyGrant {
     domain: String,
     generation: String,
     envelope: SealedBox,
+    #[serde(default)]
+    #[ts(optional)]
+    key_authority: Option<KeyAuthority>,
+}
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct KeyAuthorityInput {
+    signature: String,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct KeyAuthoritiesInput {
+    authorities: Vec<KeyAuthority>,
+}
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct KeyAuthorityAreaInput {
+    scope: String,
+    facet: Facet,
+    #[serde(default)]
+    #[ts(optional)]
+    holder: Option<String>,
 }
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -221,6 +254,9 @@ struct DomainOpening {
     generation: String,
     definition: DomainDefinition,
     envelope: SealedBox,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "keyAuthority")]
+    #[ts(optional)]
+    key_authority: Option<KeyAuthority>,
 }
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -413,6 +449,11 @@ pub(super) async fn metadata_current_domain(
 }
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
+        .query_stub::<KeyAuthorityInput, KeyAuthority>("zerotrust.keyAuthorities.get")
+        .query_stub::<KeyAuthorityAreaInput, Option<KeyAuthority>>(
+            "zerotrust.keyAuthorities.forArea",
+        )
+        .mutation_stub::<KeyAuthoritiesInput, Success>("zerotrust.keyAuthorities.register")
         .query_stub::<AccessInput, AccessSnapshot>("zerotrust.access.snapshot")
         .query_stub::<AccessPageInput, AccessInventoryPage>("zerotrust.access.page")
         .query_stub::<(), SignedPolicy>("zerotrust.policy.get")

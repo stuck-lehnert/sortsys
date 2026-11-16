@@ -207,6 +207,30 @@ export async function exerciseFramework() {
     },
     delegate.signingKey.privateKey,
   );
+  const keyAuthority = await security.keyAuthorities.certify(
+    {
+      tenant: context.tenant,
+      generation: "1",
+      scope: context.scope,
+      facet: context.facet,
+      holder: delegation.creator,
+    },
+    identity.signingKey.privateKey,
+  );
+  const managedDomain = await security.domains.createManagedDomain({
+    tenant: context.tenant,
+    id: `${context.scope}:${context.facet}`,
+    scope: context.scope,
+    facet: context.facet,
+    generation: "2",
+    policyVersion: "3",
+    keyAuthority,
+    signingKey: delegate.signingKey.privateKey,
+    recovery: await publicIdentity(identity),
+    readers: [
+      { subject: delegation.creator.user, identity: delegation.creator },
+    ],
+  });
   const administrativePolicy = await security.policies.signAdministrativePolicy(
     {
       root: administrationRoot,
@@ -385,6 +409,7 @@ export async function exerciseFramework() {
     policy,
     administrativePolicy,
     unchangedAdministration,
+    managedDomain: managedDomain.definition,
     administrationRevoked,
     staleAdministration,
     permanent,
