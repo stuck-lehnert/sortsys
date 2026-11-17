@@ -158,6 +158,14 @@ Datensatz, einschließlich zuvor nicht vorhandener Einträge. Ändert eine zweit
 API-Instanz währenddessen einen dieser Stände, wird die gesamte Veröffentlichung
 abgewiesen.
 
+Der Browser prüft zusätzlich die signierte Definition der jeweils angegebenen
+aktuellen Bereichsgeneration. Sie bindet die Bereichszuordnung und den Inhaltstyp
+an die exakte Recovery-Hülle. Eine veränderte Zuordnung kann dadurch nicht allein
+mit einem unveränderten Schlüsselpaket in den neuen Plan übernommen werden.
+Auch historische Verwalter- und Anlagenachweise werden geprüft. Diese Prüfung
+beginnt vor der Registrierung des neuen Administratorkontos; Vollständigkeit
+und Versionsstand prüft weiterhin die gemeinsame Veröffentlichung.
+
 Auch nach einer positiven Erfolgsantwort liest der Browser die veröffentlichte
 Autorität erneut und prüft Signatur, Generation und die Bindung an den eigenen
 vorbereiteten Plan. Eine bloße Erfolgsantwort bestätigt keine abgeschlossene
@@ -286,6 +294,12 @@ werden abgewiesen. Ein vorher gespeicherter Inhalt bleibt nach beiden Wechseln
 lesbar. Auch eine verlorene Antwort nach dem Commit wird über den
 veröffentlichten Stand aufgelöst. Die beobachteten Anfragen enthalten weder
 Phrase noch Passwort oder Geschäftsinhalt im Klartext.
+
+Der Test verändert außerdem Bereichszuordnungen und Inhaltstypen in den
+Bestandsantworten, wahlweise auch in den mitgelieferten Definitionen. Der Browser
+lehnt diese Antworten vor einer neuen Kontoregistrierung ab. Separate
+Framework-Tests prüfen fehlende und doppelte Nachweise sowie eine andere gültig
+signierte Recovery-Hülle neben einer unveränderten Definition.
 
 Ein HTTP-Messtest veröffentlicht 600 geschützte Datensätze atomar. Für die
 Schreibziele und ihre Sicherheitsnachweise benötigt er drei Leseanfragen.

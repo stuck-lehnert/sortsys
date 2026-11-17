@@ -167,11 +167,20 @@ Ein historisch gültiger Nachweis erlaubt nach dem Entzug keine neuen
 Schlüsselpakete. Die Browserprüfung muss außerdem das Verwaltungsrecht zum
 signierten `policyVersion` der Bereichsdefinition nachweisen.
 
-Die Recovery sammelt fremd signierte Bereichsdefinitionen in
-`RecoverySource.delegatedDomains`. Jede Definition muss zur exakten
-Schlüsselgeneration und Recovery-Hülle gehören. Damit lassen sich solche
-Schlüssel allein mit der Recovery-Phrase prüfen und öffnen; ein Benutzerkonto
-oder ein privater Verwalterschlüssel wird dafür nicht benötigt.
+`RecoverySource.domainProofs` enthält die signierte Definition der deklarierten
+aktuellen Generation jedes Bereichs. Für historisch fremd signierte
+Schlüsselpakete kommen deren ursprüngliche Definitionen hinzu. Jede Definition
+muss zur exakten Schlüsselgeneration und Recovery-Hülle gehören. Die Prüfung
+bindet Mandant, Bereich, Inhaltstyp und Generation an die durch die Phrase
+bestätigte Autorität. Ein Schlüsselpaket allein enthält diesen vollständigen
+Bereichsnachweis nicht.
+
+`loadRecoverySource` übernimmt die nötigen Definitionen aus den vorhandenen
+Bestandsseiten; zusätzliche Anfragen sind dafür nicht nötig. `prepareRecovery`
+prüft sie vor dem Öffnen des Archivs und vor einer neuen Kontoregistrierung.
+Fehlende, doppelte oder veränderte Nachweise werden abgelehnt, ebenso eine
+andere Recovery-Hülle neben einer gültigen Definition. Ein Benutzerkonto oder
+ein privater Verwalterschlüssel wird für diese Prüfung nicht benötigt.
 
 ## Begrenzte Anlegedelegationen
 

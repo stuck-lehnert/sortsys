@@ -13,6 +13,7 @@ import {
   createRecoveryPhrase,
   preparePayload,
   MAX_PAYLOAD_PART_BYTES,
+  InvalidProtectedData,
   recoveryIdentity,
   recoveryTransitionFrame,
   sign,
@@ -28,6 +29,7 @@ import {
   commitRecovery,
   recoveryDraft,
   recoveryPlan,
+  type RecoveryDraft,
 } from "../app/lib/crypto/recovery";
 import { provisionOwnedCollections } from "../app/lib/data/prepareCollections";
 import {
@@ -53,6 +55,56 @@ import {
   joinMemberInvitation,
   signInMemberInvitation,
 } from "../app/lib/crypto/invitations";
+
+async function rejectSubstitutedRecoveryMetadata(
+  client: Client,
+  draft: RecoveryDraft,
+) {
+  const target = "test:recovery:071:master-data";
+  for (const field of ["scope", "facet"] as const) {
+    for (const alterDefinition of [false, true]) {
+      let alteredDomains = 0;
+      let alteredDefinitions = 0;
+      let registrations = 0;
+      const source: Client = {
+        ...client,
+        mutate: (async (path, input, options) => {
+          if (path === "zerotrust.recovery.registration") registrations++;
+          const reply = await client.mutate(path, input, options);
+          if (
+            path !== "zerotrust.recovery.page" ||
+            reply[1] ||
+            reply[0] === null
+          )
+            return reply;
+          const page = structuredClone(
+            reply[0] as MutateResult<"zerotrust.recovery.page">,
+          );
+          for (const item of page.items) {
+            if (item.value.id !== target) continue;
+            if (item.kind === "key" && !alterDefinition) continue;
+            if (field === "scope")
+              item.value.scope = "test:substituted-recovery";
+            else item.value.facet = "calculation";
+            if (item.kind === "domain") alteredDomains++;
+            else alteredDefinitions++;
+          }
+          return [page, null];
+        }) as Client["mutate"],
+      };
+      await assert.rejects(
+        () => recoveryPlan(source, draft),
+        InvalidProtectedData,
+      );
+      assert.equal(alteredDomains, 1);
+      assert.equal(alteredDefinitions, alterDefinition ? 1 : 0);
+      assert.equal(registrations, 0);
+    }
+  }
+  console.log(
+    "Native recovery: substituted area bindings and forged definitions rejected before account registration",
+  );
+}
 
 async function verifyFormerAdministrator(
   administrator: Client,
@@ -253,6 +305,7 @@ try {
     passwords[0],
   );
   phrases.push(competingDraft.newPhrase);
+  await rejectSubstitutedRecoveryMetadata(first, draft);
   console.log("Native recovery: preparing two independently authorized plans");
   const plan = await recoveryPlan(first, draft);
   const competing = await recoveryPlan(second, competingDraft);

@@ -14,6 +14,7 @@ import {
   encryptObject,
   finishOpaqueLogin,
   importSigningKey,
+  InvalidProtectedData,
   opaqueIdentifiers,
   openAccountVault,
   openBox,
@@ -28,6 +29,81 @@ import {
   verifyTrustHistory,
 } from "../src/sortsys";
 import { server } from "@serenity-kit/opaque";
+
+async function rejectsBeforeRegistration(
+  fixture: Awaited<ReturnType<typeof recoveryFixture>>,
+  source: Parameters<typeof prepareRecovery>[0]["source"],
+) {
+  let registered = false;
+  await expect(
+    prepareRecovery({
+      oldPhrase: fixture.phrase,
+      newPhrase: fixture.newPhrase,
+      password: fixture.password,
+      source,
+      register: async (input) => {
+        registered = true;
+        return fixture.register(input);
+      },
+    }),
+  ).rejects.toBeInstanceOf(InvalidProtectedData);
+  expect(registered).toBe(false);
+}
+
+test("recovery rejects substituted scope and facet metadata before registering a new account", async () => {
+  const f = await recoveryFixture();
+  for (const change of [
+    { scope: "tenant:substituted" },
+    { facet: "master-data" as const },
+  ]) {
+    for (const alterDefinition of [false, true]) {
+      const source = structuredClone(f.source);
+      Object.assign(source.domains[0]!, change);
+      if (alterDefinition) Object.assign(source.domainProofs[0]!, change);
+      await rejectsBeforeRegistration(f, source);
+    }
+  }
+});
+
+test("recovery requires one authentic definition for every declared current generation", async () => {
+  const f = await recoveryFixture();
+  const missing = structuredClone(f.source);
+  missing.domainProofs = [];
+  await rejectsBeforeRegistration(f, missing);
+  const forged = structuredClone(f.source);
+  forged.domainProofs[0]!.proof = base64(new Uint8Array(64));
+  await rejectsBeforeRegistration(f, forged);
+  const duplicate = structuredClone(f.source);
+  duplicate.keys.push(duplicate.keys[0]!);
+  duplicate.domainProofs.push(duplicate.domainProofs[0]!);
+  await rejectsBeforeRegistration(f, duplicate);
+  const announcedNext = structuredClone(f.source);
+  announcedNext.domains[0]!.generation = "2";
+  await rejectsBeforeRegistration(f, announcedNext);
+});
+
+test("a signed definition cannot be paired with a different valid recovery envelope", async () => {
+  const f = await recoveryFixture();
+  const alternative = await createDomain({
+    tenant: f.definition.tenant,
+    id: f.definition.id,
+    scope: f.definition.scope,
+    facet: f.definition.facet,
+    generation: "1",
+    policyVersion: "1",
+    authorityGeneration: "1",
+    authorityKey: f.authorityKey.privateKey,
+    recovery: {
+      encryptionKey: f.setup.authority.recoveryEncryptionKey,
+      signingKey: f.setup.authority.recoverySigningKey,
+    },
+    readers: [{ subject: f.setup.owner.user, identity: f.setup.owner }],
+  });
+  await rejectsBeforeRegistration(f, {
+    ...f.source,
+    keys: [alternative.definition.recoveryEnvelope],
+  });
+});
 
 test("seed recovery retains the signed initialization source context", async () => {
   const context = `backup:${base64(new Uint8Array(32).fill(19))}`;
@@ -81,7 +157,7 @@ test("seed-only recovery opens manager-signed historical generations and rejects
     ...f.source,
     domains: f.source.domains.map((domain) => ({ ...domain, generation: "2" })),
     keys: [...f.source.keys, managed.definition.recoveryEnvelope],
-    delegatedDomains: [managed.definition],
+    domainProofs: [managed.definition],
   };
   const { plan, identity } = await prepareRecovery({
     oldPhrase: f.phrase,
@@ -146,7 +222,7 @@ test("seed-only recovery opens manager-signed historical generations and rejects
       password: f.password,
       source: {
         ...source,
-        delegatedDomains: [],
+        domainProofs: [],
       },
       register,
     }),
@@ -160,7 +236,7 @@ test("seed-only recovery opens manager-signed historical generations and rejects
       password: f.password,
       source: {
         ...source,
-        delegatedDomains: [substituted],
+        domainProofs: [substituted],
       },
       register,
     }),
@@ -365,7 +441,7 @@ test("a second recovery preserves both historical key generations and verifies o
         generation: d.generation,
       })),
       keys: f.plan.domains.map((d) => d.recoveryEnvelope),
-      delegatedDomains: [],
+      domainProofs: f.plan.domains,
     },
   });
   expect(second.oldKeyEnvelopes.map((e) => e.generation).sort()).toEqual([
@@ -488,7 +564,7 @@ test("recovery ignores unpublished domain drafts and conflicting future key draf
 test("paged recovery inventory feeds the same verified seed-only transition", async () => {
   const f = await recoveryFixture();
   const { loadRecoverySource } = await import("../src/sortsys");
-  const { domains, keys, delegatedDomains, ...metadata } = f.source;
+  const { domains, domainProofs, keys, ...metadata } = f.source;
   const requests: unknown[] = [];
   const pages = [
     {
@@ -527,7 +603,7 @@ test("paged recovery inventory feeds the same verified seed-only transition", as
 test("a duplicate domain in another recovery page does not produce a partial source", async () => {
   const f = await recoveryFixture();
   const { loadRecoverySource } = await import("../src/sortsys");
-  const { domains, keys, delegatedDomains, ...metadata } = f.source;
+  const { domains, domainProofs, keys, ...metadata } = f.source;
   let calls = 0;
   await expect(
     loadRecoverySource({

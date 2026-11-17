@@ -52,8 +52,8 @@ export async function recoveryFixture(options: { context?: string } = {}) {
         generation: "1",
       },
     ],
+    domainProofs: [definition],
     keys: [definition.recoveryEnvelope],
-    delegatedDomains: [],
   };
   const serverSetup = server.createSetup();
   const newPhrase = createRecoveryPhrase();

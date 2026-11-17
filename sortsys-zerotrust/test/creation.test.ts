@@ -240,7 +240,7 @@ for (const namespace of [
         ...fixture.source.keys,
         ...definitions.map((part) => part.recoveryEnvelope),
       ],
-      delegatedDomains: definitions,
+      domainProofs: [...fixture.source.domainProofs, ...definitions],
     };
     const { plan, identity } = await prepareRecovery({
       oldPhrase: fixture.phrase,
@@ -306,7 +306,7 @@ for (const namespace of [
         oldPhrase: fixture.phrase,
         newPhrase: fixture.newPhrase,
         password: fixture.password,
-        source: { ...source, delegatedDomains: [] },
+        source: { ...source, domainProofs: [] },
         register,
       }),
     ).rejects.toThrow();
@@ -319,7 +319,7 @@ for (const namespace of [
         oldPhrase: fixture.phrase,
         newPhrase: fixture.newPhrase,
         password: fixture.password,
-        source: { ...source, delegatedDomains: [replaced] },
+        source: { ...source, domainProofs: [replaced] },
         register,
       }),
     ).rejects.toThrow();

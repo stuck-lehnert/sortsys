@@ -67,12 +67,12 @@ export type RecoverySource<
   catalogVersion: string;
   policyVersion: string;
   domains: { id: string; scope: string; facet: F; generation: string }[];
+  domainProofs: DomainDefinition<F, C>[];
   keys: SealedBox[];
-  delegatedDomains: DomainDefinition<F, C>[];
 };
 export type RecoverySourceHead = Omit<
   RecoverySource,
-  "domains" | "keys" | "delegatedDomains"
+  "domains" | "domainProofs" | "keys"
 > & { snapshot: string };
 export type RecoveryPlan<
   F extends string = string,
@@ -128,8 +128,8 @@ export function createRecoveryCodec<
       "catalogVersion",
       "policyVersion",
       "domains",
+      "domainProofs",
       "keys",
-      "delegatedDomains",
     ]);
     identifier(source.challengeId);
     revision(source.catalogVersion);
@@ -140,10 +140,10 @@ export function createRecoveryCodec<
     if (
       !Array.isArray(source.domains) ||
       source.domains.length > inventoryLimits.domains ||
+      !Array.isArray(source.domainProofs) ||
       !Array.isArray(source.keys) ||
       source.keys.length > inventoryLimits.keyGenerations ||
-      !Array.isArray(source.delegatedDomains) ||
-      source.delegatedDomains.length > source.keys.length
+      source.domainProofs.length > source.keys.length
     )
       throw new InvalidProtectedData();
     const domains = source.domains.map((input) => {
@@ -164,8 +164,8 @@ export function createRecoveryCodec<
       catalogVersion: source.catalogVersion as string,
       policyVersion: source.policyVersion as string,
       domains,
+      domainProofs: [...source.domainProofs] as DomainDefinition<F, C>[],
       keys: source.keys.map(sealedBox),
-      delegatedDomains: source.delegatedDomains as DomainDefinition<F, C>[],
     };
   }
 
@@ -202,8 +202,8 @@ export function createRecoveryCodec<
     const source = recoverySource({
       ...metadata,
       domains: [],
+      domainProofs: [],
       keys: [],
-      delegatedDomains: [],
     });
     const head: RecoverySourceHead = {
       challengeId: source.challengeId,
@@ -214,7 +214,7 @@ export function createRecoveryCodec<
       policyVersion: source.policyVersion,
       snapshot,
     };
-    const domains = new Set<string>();
+    const domains = new Map<string, RecoverySource<F, C>["domains"][number]>();
     const keys = new Set<string>();
     for await (const page of readSnapshotPages({
       read: (request) => input.read(request, head),
@@ -228,12 +228,12 @@ export function createRecoveryCodec<
           const [domain] = recoverySource({
             ...metadata,
             domains: [entry.value],
+            domainProofs: [],
             keys: [],
-            delegatedDomains: [],
           }).domains;
           if (!domain || domains.has(domain.id))
             throw new InvalidProtectedData();
-          domains.add(domain.id);
+          domains.set(domain.id, domain);
           source.domains.push(domain);
         } else if (entry.kind === "key") {
           const definition = entry.value as DomainDefinition<F, C>;
@@ -244,8 +244,14 @@ export function createRecoveryCodec<
           if (keys.has(id)) throw new InvalidProtectedData();
           keys.add(id);
           source.keys.push(box);
-          if (definition.creation || definition.keyAuthority)
-            source.delegatedDomains.push(definition);
+          const published = domains.get(box.object);
+          if (
+            published?.generation === box.generation ||
+            definition.creation ||
+            definition.keyAuthority
+          ) {
+            source.domainProofs.push(definition);
+          }
         } else {
           throw new InvalidProtectedData();
         }
@@ -391,40 +397,44 @@ export function createRecoveryCodec<
       if (version !== generation) throw new InvalidProtectedData();
       return oldAuthorityKey;
     };
-    const delegated = new Map<string, DomainDefinition<F, C>>();
     const recoveryBoxes = new Map(
       source.keys.map((box) => [`${box.object}\0${box.generation}`, box]),
     );
-    for (const definition of source.delegatedDomains) {
+    const verifiedHeads = new Set<string>();
+    const verifiedDefinitions = new Map<string, DomainDefinition<F, C>>();
+    for (const definition of source.domainProofs) {
       if (!definition || typeof definition !== "object")
         throw new InvalidProtectedData();
-      revision(definition.generation);
       const published = publishedDomains.get(definition.id);
+      revision(definition.generation);
       const id = `${definition.id}\0${definition.generation}`;
       if (
         !published ||
         BigInt(definition.generation) > BigInt(published.generation) ||
-        (!definition.creation && !definition.keyAuthority) ||
-        delegated.has(id) ||
-        recoveryBoxes.get(id)?.signature !==
-          definition.recoveryEnvelope?.signature
+        verifiedDefinitions.has(id)
       ) {
         throw new InvalidProtectedData();
       }
-      delegated.set(
-        id,
-        await verifyDomain(
-          definition,
-          {
-            tenant,
-            id: published.id,
-            scope: published.scope,
-            facet: published.facet,
-            generation: definition.generation,
-          },
-          authority,
-        ),
+      const verified = await verifyDomain(
+        definition,
+        { tenant, ...published, generation: definition.generation },
+        authority,
       );
+      const box = recoveryBoxes.get(id);
+      if (
+        !box ||
+        box.signature !== verified.recoveryEnvelope.signature ||
+        base64(boxFrame(box)) !== base64(boxFrame(verified.recoveryEnvelope))
+      ) {
+        throw new InvalidProtectedData();
+      }
+      verifiedDefinitions.set(id, verified);
+      if (verified.generation === published.generation) {
+        verifiedHeads.add(verified.id);
+      }
+    }
+    if (verifiedHeads.size !== publishedDomains.size) {
+      throw new InvalidProtectedData();
     }
     const archived = new Map<string, ArchivedKey>();
     const collect = (value: unknown) => {
@@ -462,7 +472,9 @@ export function createRecoveryCodec<
     for (const box of source.keys) {
       let signer = oldAuthorityKey;
       if (box.author !== `authority:${generation}`) {
-        const definition = delegated.get(`${box.object}\0${box.generation}`);
+        const definition = verifiedDefinitions.get(
+          `${box.object}\0${box.generation}`,
+        );
         if (
           !definition ||
           definition.recoveryEnvelope.signature !== box.signature ||
