@@ -132,9 +132,9 @@ export type LlmUseCase = "chat" | "documentImport";
 
 export type Member = { id: Id, username: string, enrolled: boolean, certified: boolean, roles: Array<string>, };
 
-export type MemberAction = "activate" | "deactivate" | "archive" | "unarchive";
+export type MemberAction = "activate" | "deactivate" | "archive" | "unarchive" | "rename";
 
-export type MemberChange = { tenant: string, generation: string, author: string, id: string, action: MemberAction, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
+export type MemberChange = { tenant: string, generation: string, author: string, id: string, action: MemberAction, username?: string, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
 
 export type MemberCreation = { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
 
@@ -518,10 +518,10 @@ export type QueryOutputs = {
   "zerotrust.keys.get": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
   "zerotrust.keys.history": Array<{ generation: string, definition: DomainDefinition, envelope: SealedBox | null, }>;
   "zerotrust.keys.inspect": Array<{ tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, }>;
-  "zerotrust.members.changeReceipt": { tenant: string, generation: string, author: string, id: string, action: MemberAction, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
+  "zerotrust.members.changeReceipt": { tenant: string, generation: string, author: string, id: string, action: MemberAction, username?: string, requestId: string, expected: string, atMicros: string, packetSignature: string, permissions?: SignedPolicy, proof: string, };
   "zerotrust.members.creation": { creation: MemberCreation, createdAt: string, };
   "zerotrust.members.list": { rows: Array<Member>, after: Id | null, };
-  "zerotrust.members.status": { id: Id, version: string, atMicros: string, deactivatedMicros: string | null, archivedMicros: string | null, };
+  "zerotrust.members.status": { username: string, id: Id, version: string, atMicros: string, deactivatedMicros: string | null, archivedMicros: string | null, };
   "zerotrust.objects.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, openings?: Array<DomainOpening>, };
   "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, openings?: Array<DomainOpening>, }>;

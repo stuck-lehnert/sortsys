@@ -89,6 +89,7 @@ async fn browser_with_tenant(
             | "owner-backup"
             | "owner-backup-archive" => "scripts/test-owner-setup.ts",
             "invitations" => "scripts/test-duckdb-invitations.ts",
+            "member-renames" => "scripts/test-native-member-renames.ts",
             "recovery" => "scripts/test-duckdb-recovery.ts",
             "recovery-scale" => "scripts/test-recovery-scale.ts",
             "llm" => "scripts/test-duckdb-llm.ts",
@@ -166,7 +167,7 @@ async fn browser_with_tenant(
             | "owner-backup-archive"
     ) {
         Duration::from_secs(300)
-    } else if matches!(mode, "invitations" | "owner-bootstrap") {
+    } else if matches!(mode, "invitations" | "member-renames" | "owner-bootstrap") {
         Duration::from_secs(180)
     } else {
         Duration::from_secs(90)
@@ -653,6 +654,68 @@ async fn browser_password_changes_revoke_peer_sessions_without_postgres() {
             .unwrap()
             .is_some()
     );
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn member_renames_preserve_credentials_and_commit_profiles_atomically_across_replicas() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let mut settings = configuration(config);
+    settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first.clone())).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    let endpoints = [first_url, second_url];
+    browser_with_tenant("owner-minimal", &root, Some(&endpoints), Some("new-tenant")).await;
+    browser("member-renames", &root, Some(&endpoints)).await;
+    let tenant = first.tenant("new-tenant").unwrap();
+    assert_protected_collection(&tenant, "accounts").await;
+    for alias in [
+        "builder",
+        "rename.member",
+        "renamed.concurrent",
+        "renamed.stale",
+        "substituted.alias",
+    ] {
+        assert!(
+            tenant
+                .read::<Username>(key("usernames", alias))
+                .await
+                .unwrap()
+                .value
+                .is_none()
+        );
+    }
+    for alias in ["builder.updated", "renamed-final"] {
+        let index = tenant
+            .read::<Username>(key("usernames", alias))
+            .await
+            .unwrap()
+            .value
+            .unwrap();
+        let account = tenant
+            .read::<Account>(accounts::account_key(index.user_id))
+            .await
+            .unwrap()
+            .value
+            .unwrap();
+        assert_eq!(account.username, alias);
+        assert_eq!(account.credential().unwrap().revision, 1);
+        assert_eq!(
+            account.credential().unwrap().vault.subject,
+            accounts::subject(account.id)
+        );
+    }
 }
 
 #[tokio::test]

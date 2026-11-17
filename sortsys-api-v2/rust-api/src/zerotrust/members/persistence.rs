@@ -170,6 +170,7 @@ async fn status(
         .ok_or_else(not_found)?;
     let row = status_row(&account);
     let result = MemberStatus {
+        username: account.username.clone(),
         id: input.id,
         version: row.version(input.id),
         at_micros: row.stamp.timestamp_micros().to_string(),
@@ -207,16 +208,20 @@ pub(in crate::zerotrust) async fn apply_change(
     if input.tenant != guard.policy.tenant
         || input.generation != guard.root.generation.to_string()
         || input.author != guard.subject
-        || format!("user:{}", input.id) == guard.subject
-        || objects.len() != 1
+        || (format!("user:{}", input.id) == guard.subject && input.action != MemberAction::Rename)
+        || (objects.len() != 1 && input.action != MemberAction::Rename)
     {
         return Err(forbidden());
     }
     verify(&guard.authority, &input.proof, &input.frame()?)?;
-    let packet = &objects[0];
     let scope = format!("personnel:{}", input.id);
-    if packet.domain != format!("{scope}:master-data")
-        || packet.envelope.object != format!("{scope}:master-data:record")
+    let domain = format!("{scope}:master-data");
+    let mut matching = objects.iter().filter(|packet| packet.domain == domain);
+    let packet = matching.next().ok_or_else(invalid)?;
+    if matching.next().is_some() {
+        return Err(invalid());
+    }
+    if packet.envelope.object != format!("{domain}:record")
         || packet.envelope.scope != scope
         || packet.envelope.facet != Facet::MasterData
         || packet.envelope.signature != input.packet_signature
@@ -307,6 +312,38 @@ pub(in crate::zerotrust) async fn apply_change(
                 return Err(conflict());
             }
             account.archived_at = None;
+        }
+        MemberAction::Rename => {
+            let username = input.username.as_deref().ok_or_else(invalid)?;
+            let previous_key = key("usernames", &account.username);
+            let next_key = key("usernames", username);
+            context
+                .transaction
+                .prefetch(vec![previous_key.clone(), next_key.clone()])
+                .await?;
+            // Both index entries and the protected account are CAS-guarded in
+            // this same transaction as the encrypted personnel changes.
+            let previous: accounts::Username = context
+                .transaction
+                .read(previous_key.clone())
+                .await?
+                .ok_or_else(conflict)?;
+            if previous.user_id != id.0 {
+                return Err(conflict());
+            }
+            if username != account.username {
+                if context
+                    .transaction
+                    .read::<accounts::Username>(next_key.clone())
+                    .await?
+                    .is_some()
+                {
+                    return Err(conflict());
+                }
+                context.transaction.delete(previous_key).await?;
+                context.transaction.put(next_key, &previous).await?;
+                account.username = username.into();
+            }
         }
     }
     if matches!(

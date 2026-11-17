@@ -1218,7 +1218,7 @@ for (const mode of ["basic", "cost", "employment"])
       );
       assert.equal(
         await dialog.getByLabel(/^Anmeldename\b/).isDisabled(),
-        true,
+        mode === "cost",
       );
       const cost = dialog.getByLabel("Kosten pro Stunde (EUR)", {
           exact: true,
@@ -1235,6 +1235,8 @@ for (const mode of ["basic", "cost", "employment"])
         assert.equal(await dialog.getByLabel(/^Vorname\b/).isDisabled(), true);
         await cost.fill("81.375");
       } else await dialog.getByLabel(/^Vorname\b/).fill("Anna überarbeitet");
+      if (mode === "basic")
+        await dialog.getByLabel(/^Anmeldename\b/).fill("anna-updated");
       if (mode === "employment") await leave.fill("31");
       await dialog
         .getByRole("button", { name: "Speichern", exact: true })
@@ -1246,6 +1248,7 @@ for (const mode of ["basic", "cost", "employment"])
         window.cryptoFixture.personEdits(),
       );
       assert.equal(saved.id, "4");
+      if (mode === "basic") assert.equal(saved.data.username, "anna-updated");
       assert.equal(
         saved.data.firstName,
         mode === "cost" ? undefined : "Anna überarbeitet",
@@ -1282,6 +1285,7 @@ test("a personnel editor can change contact details and leave allowance while su
       (input) => input?.value === "Anna",
       await dialog.getByLabel(/^Vorname\b/).elementHandle(),
     );
+    assert.equal(await dialog.getByLabel(/^Anmeldename\b/).isDisabled(), true);
     assert.equal(
       await dialog
         .getByRole("combobox", { name: /^Vorgesetzter/ })

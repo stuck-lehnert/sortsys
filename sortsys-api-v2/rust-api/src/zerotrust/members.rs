@@ -42,6 +42,21 @@ struct InitialMemberState {
     deactivated_micros: Option<String>,
     archived_micros: Option<String>,
 }
+fn validate_username(username: &str) -> RpcResult<()> {
+    if username.is_empty()
+        || username.len() > 63
+        || username.starts_with('.')
+        || username.ends_with('.')
+        || username.contains("..")
+        || !username.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'.' | b'-')
+        })
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 impl MemberCreation {
     fn user_id(&self) -> RpcResult<Id> {
         let id = Id::decode(&self.id).map_err(|_| invalid())?;
@@ -55,18 +70,7 @@ impl MemberCreation {
         identifier(&self.author)?;
         revision(&self.generation)?;
         self.user_id()?;
-        if self.username.is_empty()
-            || self.username.len() > 63
-            || self.username.starts_with('.')
-            || self.username.ends_with('.')
-            || self.username.contains("..")
-            || !self
-                .username
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'.'))
-        {
-            return Err(invalid());
-        }
+        validate_username(&self.username)?;
         let mut fields: Vec<&str> = vec![
             &self.tenant,
             &self.generation,
@@ -121,6 +125,7 @@ pub(super) enum MemberAction {
     Deactivate,
     Archive,
     Unarchive,
+    Rename,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -129,7 +134,10 @@ pub(super) struct MemberChange {
     generation: String,
     author: String,
     id: String,
-    action: MemberAction,
+    pub(super) action: MemberAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    username: Option<String>,
     request_id: String,
     expected: String,
     at_micros: String,
@@ -157,15 +165,23 @@ impl MemberChange {
             MemberAction::Deactivate => "deactivate",
             MemberAction::Archive => "archive",
             MemberAction::Unarchive => "unarchive",
+            MemberAction::Rename => "rename",
         };
+        match (&self.action, &self.username) {
+            (MemberAction::Rename, Some(username)) => validate_username(username)?,
+            (MemberAction::Rename, None) => return Err(invalid()),
+            (_, Some(_)) => return Err(invalid()),
+            (_, None) => {}
+        }
         Ok(frame(
-            "sortsys/member-change/v1",
+            "sortsys/member-change/v2",
             &[
                 &self.tenant,
                 &self.generation,
                 &self.author,
                 &self.id,
                 action,
+                self.username.as_deref().unwrap_or(""),
                 &self.request_id,
                 &self.expected,
                 &self.at_micros,
@@ -186,6 +202,7 @@ struct ChangeReceiptId {
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct MemberStatus {
+    username: String,
     id: Id,
     version: String,
     at_micros: String,
@@ -254,7 +271,10 @@ mod tests {
     #[test]
     fn reservations_accept_only_canonical_technical_identifiers() {
         assert!(request().frame().is_ok());
-        for username in ["", "Anna", ".anna", "anna.", "anna..muster", "a-b"] {
+        let mut recovered = request();
+        recovered.username = "recovery-4".into();
+        assert!(recovered.frame().is_ok());
+        for username in ["", "Anna", ".anna", "anna.", "anna..muster", "a/b"] {
             let mut value = request();
             value.username = username.into();
             assert!(value.frame().is_err());
@@ -270,5 +290,36 @@ mod tests {
         let mut value = serde_json::to_value(request()).unwrap();
         value["firstName"] = serde_json::json!("No personal data here");
         assert!(serde_json::from_value::<MemberCreation>(value).is_err());
+    }
+
+    #[test]
+    fn rename_frames_bind_canonical_aliases_and_other_actions_cannot_carry_them() {
+        let mut change = MemberChange {
+            tenant: "test".into(),
+            generation: "1".into(),
+            author: "user:1".into(),
+            id: "4".into(),
+            action: MemberAction::Rename,
+            username: Some("anna.updated".into()),
+            request_id: "request:rename".into(),
+            expected: encode(&[0; 32]),
+            at_micros: "123456789".into(),
+            packet_signature: encode(&[0; 64]),
+            permissions: None,
+            proof: String::new(),
+        };
+        let original = change.frame().unwrap();
+        change.username = Some("anna.other".into());
+        assert_ne!(original, change.frame().unwrap());
+        for username in ["", "Anna", ".anna", "anna.", "anna..muster", "a/b"] {
+            change.username = Some(username.into());
+            assert!(change.frame().is_err());
+        }
+        change.username = None;
+        assert!(change.frame().is_err());
+        change.action = MemberAction::Deactivate;
+        assert!(change.frame().is_ok());
+        change.username = Some("anna.updated".into());
+        assert!(change.frame().is_err());
     }
 }

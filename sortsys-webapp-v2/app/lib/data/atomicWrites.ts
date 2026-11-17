@@ -137,6 +137,11 @@ async function publishProtectedWrites(
     ...groups.flatMap((group) => group.live ?? []),
     ...documents.flatMap((document) => document.live ?? []),
   ];
+  const renaming = member?.change.action === "rename";
+  const invalidMember =
+    member && (documents.length > 0 || (!renaming && packets.length !== 1));
+  const invalidPolicy =
+    policy && (documents.length > 0 || (member && !renaming));
   if (
     (!packets.length && !documents.length && !policy && !live.length) ||
     documents.length > 16 ||
@@ -148,8 +153,8 @@ async function publishProtectedWrites(
         group.packets.some((p) => p.domain !== group.head.domain),
     ) ||
     new Set(groups.map((group) => group.head.domain)).size !== groups.length ||
-    (member && (packets.length !== 1 || documents.length !== 0)) ||
-    (policy && (member || documents.length > 0))
+    invalidMember ||
+    invalidPolicy
   )
     throw new InvalidProtectedData();
   // Independently prepared commands often read one another's write areas.

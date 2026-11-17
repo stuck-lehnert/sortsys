@@ -333,3 +333,58 @@ test("account effects and ciphertext require both readbacks, including a thrown 
     true,
   );
 });
+
+test("a rename, multiple private facets and supervisor permissions share one verified commit", async () => {
+  const source = group(2);
+  const calls = [];
+  const checked = [];
+  const member = {
+    change: { requestId: "rename:1", action: "rename", username: "new.alias" },
+    async verify() {
+      checked.push("member");
+      return true;
+    },
+  };
+  const policy = {
+    async bind(packets, heads) {
+      expect(packets).toHaveLength(2);
+      expect(heads).toEqual([source.head]);
+      return { signature: "signed-supervisor-policy" };
+    },
+    async verify() {
+      checked.push("policy");
+      return true;
+    },
+  };
+  const client = {
+    async mutate(path, input) {
+      calls.push({ path, input });
+      throw new Error("Lost combined reply");
+    },
+    async invalidate() {},
+  };
+  source.verify = async () => {
+    checked.push("private");
+    return true;
+  };
+  await commitProtectedWrites(
+    client,
+    [source],
+    new AbortController().signal,
+    [],
+    { member, policy },
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0].path).toBe("zerotrust.objects.batch");
+  expect(calls[0].input.member).toEqual(member.change);
+  expect(calls[0].input.policy.signature).toBe("signed-supervisor-policy");
+  expect(checked.sort()).toEqual(["member", "policy", "private"]);
+  member.change.action = "deactivate";
+  await expect(
+    commitProtectedWrites(client, [source], new AbortController().signal, [], {
+      member,
+      policy,
+    }),
+  ).rejects.toThrow();
+  expect(calls).toHaveLength(1);
+});

@@ -55,7 +55,7 @@ export function CryptoUnlocked({ children }: { children: ReactNode }) {
     cryptoSignInPending,
     () => false,
   );
-  const sessionKey = `${session.user.id}/${session.user.username}/${session.session.id}`;
+  const sessionKey = `${session.user.id}/${session.session.id}`;
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [restored, setRestored] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

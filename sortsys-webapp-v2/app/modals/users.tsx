@@ -65,7 +65,11 @@ export function showCreateUserModal(
             required
             name="username"
             labelText={uiText("Anmeldename")}
-            rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]}
+            rules={[
+              MyForm.Input.rules.pattern(
+                /^[a-z0-9A-Z_-]+(?:\.[a-z0-9A-Z_-]+)*$/,
+              ),
+            ]}
           />
 
           <MyDivider />
@@ -210,10 +214,14 @@ export function showModifyUserModal(modals: MyModalsInterface, user: User) {
         <>
           <MyForm.Input
             required
-            disabled
+            disabled={!session.isAdmin() || !mayEditMaster()}
             name="username"
             labelText={uiText("Anmeldename")}
-            rules={[MyForm.Input.rules.pattern(/^[a-z0-9A-Z_\.\-]+$/)]}
+            rules={[
+              MyForm.Input.rules.pattern(
+                /^[a-z0-9A-Z_-]+(?:\.[a-z0-9A-Z_-]+)*$/,
+              ),
+            ]}
           />
 
           <MyDivider />

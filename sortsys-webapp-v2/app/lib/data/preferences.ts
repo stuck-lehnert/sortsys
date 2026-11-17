@@ -70,7 +70,7 @@ export function createProtectedPreferences(
         }),
       );
       live();
-      if (before.user.username !== unlockedAccount()?.username)
+      if (unlockedAccount()?.vault.subject !== `user:${before.user.id}`)
         throw new InvalidProtectedData();
       let failure: unknown;
       try {

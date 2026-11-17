@@ -25,6 +25,7 @@ import {
   memberCreationFrame,
   memberLifecycle,
   type MemberAction,
+  type MemberStatus,
 } from "../crypto/members";
 import { commitProtectedWrites, ProtectedWriteConflict } from "./atomicWrites";
 import type { DataRequest, DataView } from "./runtime/runtime";
@@ -33,6 +34,7 @@ import {
   finishAccessChanges,
   shareNewPersonnelName,
 } from "../crypto/permissions";
+import { unlockedAccount } from "../crypto/session";
 import { timestampMicros } from "./timestamps";
 import { absenceCollection } from "./absenceData";
 
@@ -43,6 +45,30 @@ export function createProtectedPersonnel(
 ) {
   const lease = acquireDataRuntime(client, signal, driver),
     { runtime, live } = lease;
+  function requireMemberStatus(
+    tx: import("./runtime/runtime").DataTransaction,
+    id: string,
+    status: MemberStatus,
+  ) {
+    const row = tx.row("users", { id: addressId(id) });
+    if (row.require("username") !== status.username)
+      throw new ProtectedWriteConflict();
+    for (const [column, native] of [
+      ["deactivated_at", status.deactivatedAt],
+      ["archived_at", status.archivedAt],
+    ] as const) {
+      const value = row.require(column);
+      if (value === null) {
+        if (native !== null) throw new ProtectedWriteConflict();
+      } else if (
+        typeof value !== "string" ||
+        native === null ||
+        timestampMicros(value) !== timestampMicros(native)
+      ) {
+        throw new ProtectedWriteConflict();
+      }
+    }
+  }
   let preparingSelf: Promise<void> | null = null;
   const drafts = new Map<string, string>();
   async function prepareSelf() {
@@ -315,21 +341,7 @@ export function createProtectedPersonnel(
         const prepared = await runtime.prepare([request], (tx) => {
           live();
           tx.require(request, "update");
-          const row = tx.row("users", { id: addressId(id) });
-          for (const [column, native] of [
-            ["deactivated_at", control.status.deactivatedAt],
-            ["archived_at", control.status.archivedAt],
-          ] as const) {
-            const value = row.require(column);
-            if (
-              value === null
-                ? native !== null
-                : typeof value !== "string" ||
-                  native === null ||
-                  timestampMicros(value) !== timestampMicros(native)
-            )
-              throw new ProtectedWriteConflict();
-          }
+          requireMemberStatus(tx, id, control.status);
           if (!control.unchanged)
             tx.patch(
               "users",
@@ -495,15 +507,35 @@ export function createProtectedPersonnel(
             await import("../crypto/absenceDefaults")
           ).absenceDefaultPlan(client, signal)
         : null;
+      const renaming =
+        Object.hasOwn(changes, "username") &&
+        (await runtime.read(
+          edited,
+          (view) =>
+            view.row("users", { id: addressId(id) }).require("username") !==
+            changes.username,
+        ));
+      live();
+      const rename = renaming
+        ? await memberLifecycle(
+            client,
+            id,
+            "rename",
+            signal,
+            changes.username as string,
+          )
+        : null;
       const change = (tx: import("./runtime/runtime").DataTransaction) => {
         live();
         for (const request of edited) tx.require(request, "update");
-        if (Object.hasOwn(changes, "username")) {
+        if (rename) requireMemberStatus(tx, id, rename.status);
+        else if (Object.hasOwn(changes, "username")) {
           if (
             tx.row("users", { id: addressId(id) }).require("username") !==
             changes.username
-          )
-            throw new InvalidProtectedData();
+          ) {
+            throw new ProtectedWriteConflict();
+          }
           delete changes.username;
         }
         checkSupervisor(tx, id, changes.supervisor_user_id, plan.chainIds);
@@ -526,26 +558,48 @@ export function createProtectedPersonnel(
             },
           );
       };
-      if (defaults) {
+      if (defaults || rename) {
         const prepared = await runtime.prepare(
-          [...edited, ...plan.selected, ...defaults.selected],
+          [...edited, ...plan.selected, ...(defaults?.selected ?? [])],
           (tx) => {
             change(tx);
-            return defaults.next(tx);
+            return defaults ? defaults.next(tx) : null;
           },
         );
         try {
+          const masterPacket = prepared.groups
+            .flatMap((group) => group.packets)
+            .find(
+              (packet) =>
+                packet.domain === personnelCollection(id, "master-data").domain,
+            );
+          const member =
+            rename && masterPacket
+              ? await rename.publication(masterPacket)
+              : undefined;
+          if (rename && !member) throw new InvalidProtectedData();
           await commitProtectedWrites(
             client,
             prepared.groups,
             signal,
             prepared.guards,
-            { policy: defaults.publication(prepared.value) },
+            {
+              ...(defaults
+                ? { policy: defaults.publication(prepared.value!) }
+                : {}),
+              ...(member ? { member } : {}),
+            },
           );
         } finally {
           prepared.close();
         }
-        await finishAccessChanges(client, signal);
+        if (defaults) await finishAccessChanges(client, signal);
+        if (rename) {
+          const current = unlockedAccount();
+          if (current?.vault.subject === `user:${id}`)
+            current.username = changes.username as string;
+          await client.invalidate("auth.sessionInfo");
+        }
       } else await runtime.transaction([...edited, ...plan.selected], change);
       live();
       return { success: true as const };

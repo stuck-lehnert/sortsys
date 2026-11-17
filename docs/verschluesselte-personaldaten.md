@@ -115,10 +115,25 @@ Deaktivierung bestehen; Aktivieren hebt auch die Archivierung auf. Diese
 Aktionen benötigen die Verwaltungsbefugnis und Schreibzugriff auf die Stammdaten
 der betroffenen Person. Änderungen am eigenen Kontostatus sind ausgeschlossen.
 
-Noch offen sind das Umbenennen und Löschen von Konten, Rollenänderungen und
-Standardvorgesetzte. Abwesenheiten und Urlaub verwenden inzwischen ihren eigenen
-[verschlüsselten Fachadapter](abwesenheiten-protokoll.md). Der Anmeldename
-bleibt im geschützten Bearbeitungsformular gesperrt.
+Die Administration kann Anmeldenamen im Personalformular ändern, auch den
+eigenen. Dafür sind Verwaltungsbefugnis, der lokale Mandantenautoritätsschlüssel
+und Schreibzugriff auf die Stammdaten nötig. Anmeldemetadaten, Namensindex und
+verschlüsseltes Profil werden gemeinsam veröffentlicht. Ein belegter Name oder
+eine konkurrierende Änderung verwirft den gesamten Vorgang, einschließlich
+gleichzeitig geänderter Kontaktdaten, Stundensätze oder Vorgesetztenzuordnungen.
+Bei verlorener Antwort bestätigt der Browser den signierten Änderungsnachweis
+und sämtliche verschlüsselten Fassungen erneut.
+
+Die unveränderliche Kontokennung bindet Passwortanmeldung, Tresor und
+Passkey-Schlüsselpakete. Ein anderer Anmeldename ändert deshalb weder Passwort
+noch Schlüssel oder vorhandene Sitzungen. Die nächste Anmeldung verwendet den
+neuen Namen. Bereits ausgestellte Einladungen sind an ihren bisherigen
+Anmeldenamen gebunden; für noch nicht registrierte Konten ist nach einer
+Umbenennung eine neue Einladung erforderlich.
+
+Das Löschen von Konten und Rollenänderungen sind noch offen. Abwesenheiten,
+Urlaub und Standardvorgesetzte verwenden ihren eigenen
+[verschlüsselten Fachadapter](abwesenheiten-protokoll.md).
 
 Die lokale Suche berücksichtigt Namen, Anmeldenamen, E-Mail, Telefon und
 Vertragsart. Sie verwendet Wortpräfixe aus dem gemeinsamen Suchweg; ein
@@ -131,10 +146,10 @@ weiterhin falsche Angaben signieren. Diese Grenze beschreibt die
 [Datenprüfung](verschluesselung-datenpruefung.md).
 
 Der [native Fachadapterlauf](development.md#native-tests-ohne-entwicklungsstack)
-prüft die Bestandsübernahme und Profiländerungen mit zwei getrennten
-API-Prozessen, PostgreSQL und Quack. Dazu gehören lokale Namenstreffer, genaue
-Stundensätze, Vorgesetztenwechsel, die Zurückweisung von Zyklen und die
-Erkennung verlorener oder falscher Speicherbestätigungen. Profilwerte bleiben
-nach zwei vollständigen Recoveries lesbar. Diese Prüfung umfasst noch nicht
-sämtliche Aktionen des Kontolebenszyklus oder den Vergleich der vollständigen
-Textsuche.
+verwendet getrennte API-Prozesse und einen gemeinsamen DuckDB-Dienst. Der Test
+für Umbenennungen prüft belegte Namen, manipulierte Befehle und konkurrierende
+Änderungen. Nach einer verlorenen Antwort müssen Anmeldename, Stundensatz und
+Vorgesetztenzuordnung gemeinsam lesbar sein. Bestehende Sitzungen und
+Kontotresore bleiben erhalten. Browsertests prüfen zusätzlich, wer das Feld im
+Personalformular bearbeiten kann. Der vollständige Vergleich der Textsuche
+bleibt offen.

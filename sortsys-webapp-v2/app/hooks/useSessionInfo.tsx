@@ -94,10 +94,15 @@ export function SessionInfoProvider({
         )
           return;
         const account = unlockedAccount();
-        if (!data || (account && account.vault.subject !== `user:${data.user.id}`)) {
+        if (
+          !data ||
+          (account && account.vault.subject !== `user:${data.user.id}`)
+        ) {
           setLoaded(null);
           return;
         }
+        // A login alias can change without replacing the unlocked identity.
+        if (account) account.username = data.user.username;
         setLocale(data.user.locale);
         setLoaded({ context: accountContext, data });
       });

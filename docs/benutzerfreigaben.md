@@ -251,9 +251,11 @@ Sperre erhalten. Die
 [Personaldatenverwaltung](verschluesselte-personaldaten.md#benutzerzugänge)
 beschreibt den Ablauf und seine Grenzen.
 
-Umbenennen, Löschen, Rollenänderungen und der Passwortverlust eines einzelnen
-Mitglieds benötigen noch geschützte Abläufe. Eine Einladung ersetzt kein bereits
-registriertes Passwort und keinen vorhandenen Kontotresor.
+Anmeldenamen lassen sich durch die Administration ändern; der technische
+Namensindex und das verschlüsselte Personalprofil werden dabei gemeinsam
+gespeichert. Das Löschen von Konten, Rollenänderungen und der Passwortverlust
+eines einzelnen Mitglieds benötigen noch geschützte Abläufe. Eine Einladung
+ersetzt kein bereits registriertes Passwort und keinen vorhandenen Kontotresor.
 
 Die vollständige Bestandsumstellung bleibt bis zum Anschluss der übrigen
 Fachbereiche gesperrt. Die Benutzerverwaltung hebt diese Sperre nicht auf. Bei

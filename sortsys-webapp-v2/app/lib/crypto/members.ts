@@ -24,6 +24,7 @@ type MemberChange = NonNullable<
 export type MemberAction = MemberChange["action"];
 export type MemberStatus = {
   id: string;
+  username: string;
   version: string;
   at: string;
   deactivatedAt: string | null;
@@ -33,9 +34,11 @@ export function decodeMemberStatus(
   input: QueryResult<"zerotrust.members.status">,
 ): MemberStatus {
   addressId(input.id);
+  technicalUsername(input.username);
   sized(input.version, 32);
   return {
     id: input.id,
+    username: input.username,
     version: input.version,
     at: timestampFromMicros(input.atMicros),
     deactivatedAt:
@@ -57,15 +60,20 @@ export function memberChangeFrame(change: Omit<MemberChange, "proof">) {
   sized(change.packetSignature, 64);
   timestampFromMicros(change.atMicros);
   if (
-    !["activate", "deactivate", "archive", "unarchive"].includes(change.action)
+    !["activate", "deactivate", "archive", "unarchive", "rename"].includes(
+      change.action,
+    )
   )
     throw new InvalidProtectedData();
-  return frame("sortsys/member-change/v1", [
+  if (change.action === "rename") technicalUsername(change.username);
+  else if (change.username !== undefined) throw new InvalidProtectedData();
+  return frame("sortsys/member-change/v2", [
     change.tenant,
     change.generation,
     change.author,
     change.id,
     change.action,
+    change.username ?? "",
     change.requestId,
     change.expected,
     change.atMicros,
@@ -78,6 +86,11 @@ export function memberStateAfter(status: MemberStatus, action: MemberAction) {
   for (const value of [status.deactivatedAt, status.archivedAt])
     if (value !== null) timestampMicros(value);
   switch (action) {
+    case "rename":
+      return {
+        deactivated_at: status.deactivatedAt,
+        archived_at: status.archivedAt,
+      };
     case "activate":
       return { deactivated_at: null, archived_at: null };
     case "deactivate":
@@ -108,18 +121,24 @@ export async function memberLifecycle(
   id: string,
   action: MemberAction,
   signal: AbortSignal,
+  username?: string,
 ) {
   addressId(id);
+  if (action === "rename") technicalUsername(username);
+  else if (username !== undefined) throw new InvalidProtectedData();
   const context = await administratorContext(client, signal);
-  if (id === context.session.user.id) throw new InvalidProtectedData();
-  const { permissions } = await readVerifiedPolicy(client, context);
-  const wireStatus = await required(
-    client.query(
-      "zerotrust.members.status",
-      { id },
-      { strategy: "network-only" },
+  if (id === context.session.user.id && action !== "rename")
+    throw new InvalidProtectedData();
+  const [{ permissions }, wireStatus] = await Promise.all([
+    readVerifiedPolicy(client, context),
+    required(
+      client.query(
+        "zerotrust.members.status",
+        { id },
+        { strategy: "network-only" },
+      ),
     ),
-  );
+  ]);
   context.live();
   const status = decodeMemberStatus(wireStatus);
   if (status.id !== id) throw new InvalidProtectedData();
@@ -129,14 +148,11 @@ export async function memberLifecycle(
   const suspended = permissions.suspended?.includes(subject) === true;
   const same =
     values.deactivated_at === status.deactivatedAt &&
-    values.archived_at === status.archivedAt;
-  const unchanged =
-    same &&
-    (action === "deactivate"
-      ? suspended
-      : action === "activate"
-        ? !suspended
-        : true);
+    values.archived_at === status.archivedAt &&
+    (action !== "rename" || username === status.username);
+  let unchanged = same;
+  if (action === "deactivate") unchanged = same && suspended;
+  else if (action === "activate") unchanged = same && !suspended;
   return {
     status,
     values,
@@ -175,6 +191,7 @@ export async function memberLifecycle(
         author: `user:${context.session.user.id}`,
         id,
         action,
+        ...(action === "rename" ? { username } : {}),
         requestId: crypto.randomUUID(),
         expected: status.version,
         atMicros: wireStatus.atMicros,
@@ -234,14 +251,20 @@ export async function memberLifecycle(
     },
   };
 }
+export function technicalUsername(input: unknown): string {
+  if (
+    typeof input !== "string" ||
+    input.length > 63 ||
+    !/^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/.test(input)
+  ) {
+    throw new InvalidProtectedData();
+  }
+  return input;
+}
+
 export function memberCreationFrame(input: Omit<Creation, "proof">) {
   addressId(input.id);
-  if (
-    typeof input.username !== "string" ||
-    input.username.length > 63 ||
-    !/^[a-z0-9_]+(?:\.[a-z0-9_]+)*$/.test(input.username)
-  )
-    throw new InvalidProtectedData();
+  technicalUsername(input.username);
   const fields = [
     input.tenant,
     input.generation,

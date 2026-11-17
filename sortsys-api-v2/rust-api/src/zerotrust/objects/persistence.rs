@@ -475,14 +475,15 @@ async fn commit_batch_inner(
             input.heads.as_deref().ok_or_else(invalid)?,
         )?;
     }
-    if input.member.is_some()
-        && (input.policy.is_some()
-            || input
-                .documents
-                .as_ref()
-                .is_some_and(|heads| !heads.is_empty()))
-    {
-        return Err(invalid());
+    if let Some(member) = &input.member {
+        let changes_permissions = member.action != super::super::members::MemberAction::Rename;
+        let has_documents = input
+            .documents
+            .as_ref()
+            .is_some_and(|heads| !heads.is_empty());
+        if has_documents || (changes_permissions && input.policy.is_some()) {
+            return Err(invalid());
+        }
     }
     let mut areas = BTreeMap::new();
     let mut rotation = registry::RotationChecks::new(&context.security);

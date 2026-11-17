@@ -8,9 +8,11 @@ import {
 import { administratorContext } from "./administration";
 import {
   createMemberAccount,
+  decodeMemberStatus,
   memberCreationFrame,
   memberStateAfter,
   memberLifecycle,
+  memberChangeFrame,
 } from "./members";
 import { acceptVault, lockCryptoSession } from "./session";
 import { timestampMicros } from "../data/timestamps";
@@ -61,6 +63,7 @@ async function fixture() {
           return [
             {
               id: "4",
+              username: "anna.muster",
               version: base64(new Uint8Array(32)),
               atMicros: timestampMicros(
                 "2026-11-12T02:00:00.123456Z",
@@ -171,7 +174,7 @@ test("account reservation frames reject ambiguous usernames and noncanonical ide
     ".anna",
     "anna.",
     "anna..muster",
-    "a-b",
+    "a/b",
     "a".repeat(64),
   ])
     expect(() => memberCreationFrame({ ...value, username })).toThrow();
@@ -226,4 +229,62 @@ test("a stored change receipt cannot replace confirmation of the signed suspensi
   expect(await publication.verify()).toBe(false);
   data.setPolicy(publication.change.permissions);
   expect(await publication.verify()).toBe(true);
+});
+
+test("renaming binds a canonical login alias without changing the signed permission policy", async () => {
+  const data = await fixture();
+  const control = await memberLifecycle(
+    data.client,
+    "4",
+    "rename",
+    new AbortController().signal,
+    "anna.updated",
+  );
+  expect(control.status.username).toBe("anna.muster");
+  expect(control.unchanged).toBe(false);
+  const publication = await control.publication({
+    domain: "personnel:4:master-data",
+    envelope: {
+      object: "personnel:4:master-data:record",
+      policyVersion: "1",
+      signature: base64(new Uint8Array(64)),
+    },
+  });
+  expect(publication.change.username).toBe("anna.updated");
+  expect(publication.change.permissions).toBeUndefined();
+  expect(await publication.verify()).toBe(false);
+  data.setChange(publication.change);
+  expect(await publication.verify()).toBe(true);
+  data.setChange({ ...publication.change, username: "anna.other" });
+  expect(await publication.verify()).toBe(false);
+  expect(() =>
+    memberChangeFrame({ ...publication.change, username: ".invalid" }),
+  ).toThrow();
+  expect(() =>
+    memberChangeFrame({ ...publication.change, username: undefined }),
+  ).toThrow();
+  expect(() =>
+    memberChangeFrame({ ...publication.change, action: "archive" }),
+  ).toThrow();
+});
+
+test("recovery aliases and ordinary names with hyphens remain editable", () => {
+  const status = decodeMemberStatus({
+    id: "4",
+    username: "recovery-4",
+    version: base64(new Uint8Array(32)),
+    atMicros: "123456789",
+    deactivatedMicros: null,
+    archivedMicros: null,
+  });
+  expect(status.username).toBe("recovery-4");
+  expect(() =>
+    memberCreationFrame({
+      tenant: "test",
+      generation: "1",
+      author: "user:1",
+      id: "4",
+      username: "anna-muster",
+    }),
+  ).not.toThrow();
 });
