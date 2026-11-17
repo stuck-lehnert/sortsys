@@ -138,8 +138,11 @@ async function publishProtectedWrites(
     ...documents.flatMap((document) => document.live ?? []),
   ];
   const renaming = member?.change.action === "rename";
+  const deletingMember = member?.change.action === "delete";
   const invalidMember =
-    member && (documents.length > 0 || (!renaming && packets.length !== 1));
+    member &&
+    (documents.length > 0 ||
+      (!renaming && packets.length !== (deletingMember ? 3 : 1)));
   const invalidPolicy =
     policy && (documents.length > 0 || (member && !renaming));
   if (

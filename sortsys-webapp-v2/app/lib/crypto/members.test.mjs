@@ -70,6 +70,7 @@ async function fixture() {
               ).toString(),
               deactivatedMicros: null,
               archivedMicros: null,
+              deletedMicros: null,
             },
             null,
           ];
@@ -189,6 +190,7 @@ test("lifecycle transitions preserve deactivation when unarchiving and reject ac
     at: "2026-11-12T02:00:00.123456Z",
     deactivatedAt: null,
     archivedAt: null,
+    deletedAt: null,
   };
   expect(memberStateAfter(current, "deactivate")).toEqual({
     deactivated_at: current.at,
@@ -229,6 +231,45 @@ test("a stored change receipt cannot replace confirmation of the signed suspensi
   expect(await publication.verify()).toBe(false);
   data.setPolicy(publication.change.permissions);
   expect(await publication.verify()).toBe(true);
+});
+
+test("a terminal deletion needs the signed suspension and cannot be activated or renamed afterwards", async () => {
+  const data = await fixture();
+  const control = await memberLifecycle(
+    data.client,
+    "4",
+    "delete",
+    new AbortController().signal,
+  );
+  const packet = {
+    domain: "personnel:4:master-data",
+    envelope: {
+      object: "personnel:4:master-data:record",
+      policyVersion: "1",
+      signature: base64(new Uint8Array(64)),
+    },
+  };
+  await expect(control.publication(packet)).rejects.toThrow();
+  const publication = await control.publication(packet, {
+    inventorySnapshot: base64(new Uint8Array(32)),
+  });
+  expect(publication.change.action).toBe("delete");
+  expect(publication.change.permissions.suspended).toContain("user:4");
+  data.setChange(publication.change);
+  expect(await publication.verify()).toBe(false);
+  data.setPolicy(publication.change.permissions);
+  expect(await publication.verify()).toBe(true);
+  const deleted = { ...control.status, deletedAt: control.status.at };
+  for (const action of [
+    "activate",
+    "deactivate",
+    "archive",
+    "unarchive",
+    "rename",
+    "delete",
+  ]) {
+    expect(() => memberStateAfter(deleted, action)).toThrow();
+  }
 });
 
 test("renaming binds a canonical login alias without changing the signed permission policy", async () => {
@@ -276,6 +317,7 @@ test("recovery aliases and ordinary names with hyphens remain editable", () => {
     atMicros: "123456789",
     deactivatedMicros: null,
     archivedMicros: null,
+    deletedMicros: null,
   });
   expect(status.username).toBe("recovery-4");
   expect(() =>

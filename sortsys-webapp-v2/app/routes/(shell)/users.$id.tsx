@@ -24,6 +24,7 @@ import { MyDropdown } from "~/components/MyDropdown";
 import { Icons } from "~/lib/icons";
 import {
   showDeactivateUserModal,
+  showDeleteUserModal,
   showModifyUserModal,
   showChangeOwnPasswordModal,
   showUserAccessModal,
@@ -66,6 +67,14 @@ export default function UserDetailPage() {
     sessionInfo.canAccess(scope, "master-data", "update");
   const canEditSupervisor =
     !!user && sessionInfo.canAccess(scope, "scope", "update");
+  const canDeleteAccount =
+    !!user &&
+    user.id !== sessionInfo.user.id &&
+    sessionInfo.isAdmin() &&
+    (["master-data", "scope", "calculation"] as const).every((facet) =>
+      sessionInfo.canAccess(scope, facet, "read") &&
+      sessionInfo.canAccess(scope, facet, "delete"),
+    );
 
   useTitle(() => (user ? userFullName(user) : null), [user]);
 
@@ -156,6 +165,12 @@ export default function UserDetailPage() {
                   renderIcon: Icons.SetPassword,
                   hideIf: sessionInfo.user.id !== user.id,
                   onClick: () => showChangeOwnPasswordModal(modals, user),
+                },
+                {
+                  label: uiText("Löschen", "Delete"),
+                  renderIcon: Icons.Delete,
+                  hideIf: !canDeleteAccount,
+                  onClick: () => showDeleteUserModal(modals, user),
                 },
                 {
                   label: uiText("Bearbeiten"),

@@ -104,6 +104,19 @@ async fn snapshot(
     Ok(crate::control::fingerprint(&identity))
 }
 
+/// Bind commands that depend on a complete inventory, including areas created
+/// since the browser read it. The root read joins the command's CAS checks.
+pub(in crate::zerotrust) async fn check_snapshot(
+    context: &mut MetadataContext,
+    expected: &str,
+) -> RpcResult<()> {
+    sized::<32>(expected)?;
+    if snapshot(context, true, None).await? != expected {
+        return Err(conflict());
+    }
+    Ok(())
+}
+
 pub(super) async fn first(
     service: &crate::auth::AuthService,
     request: &RequestContext,

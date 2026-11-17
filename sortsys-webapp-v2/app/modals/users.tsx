@@ -509,6 +509,45 @@ export function showDeactivateUserModal(modals: MyModalsInterface, user: User) {
   });
 }
 
+export function showDeleteUserModal(modals: MyModalsInterface, user: User) {
+  modals.showForm({
+    content: () => (
+      <>
+        <p>
+          {uiText(
+            "Das Konto wird dauerhaft gesperrt und das Personalprofil entfernt. Vorhandene Berichte und unterschriebene Vorgänge bleiben erhalten.",
+            "The account will be permanently closed and its personnel profile removed. Existing reports and signed records remain available.",
+          )}
+        </p>
+        <MyForm.Checkbox
+          required
+          name="_understood"
+          labelText={uiText(
+            "Dieses Konto kann anschließend nicht wieder aktiviert werden.",
+            "This account cannot be reactivated afterwards.",
+          )}
+        />
+      </>
+    ),
+    onSubmit: async ({ hide, pathname, navigate }) => {
+      const [result, error] = await client.mutate("users.delete", {
+        id: user.id,
+      });
+      if (error) throw error;
+      if (!result) return;
+      if (pathname === `/users/${user.id}`) navigate("/users");
+      hide();
+    },
+    modalProps: () => ({
+      danger: true,
+      noFullscreen: true,
+      modalHeading: uiText("Benutzer löschen", "Delete user"),
+      modalLabel: userFullName(user),
+      primaryButtonText: uiText("Löschen", "Delete"),
+    }),
+  });
+}
+
 export function showChangeOwnPasswordModal(
   modals: MyModalsInterface,
   user: User,

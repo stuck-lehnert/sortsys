@@ -93,6 +93,7 @@ async fn browser_with_tenant(
             | "owner-backup-archive" => "scripts/test-owner-setup.ts",
             "invitations" => "scripts/test-duckdb-invitations.ts",
             "member-renames" => "scripts/test-native-member-renames.ts",
+            "member-deletion" => "scripts/test-native-member-deletion.ts",
             "recovery" => "scripts/test-duckdb-recovery.ts",
             "recovery-scale" => "scripts/test-recovery-scale.ts",
             "llm" => "scripts/test-duckdb-llm.ts",
@@ -170,7 +171,10 @@ async fn browser_with_tenant(
             | "owner-backup-archive"
     ) {
         Duration::from_secs(300)
-    } else if matches!(mode, "invitations" | "member-renames" | "owner-bootstrap") {
+    } else if matches!(
+        mode,
+        "invitations" | "member-renames" | "member-deletion" | "owner-bootstrap"
+    ) {
         Duration::from_secs(180)
     } else {
         Duration::from_secs(90)
@@ -396,6 +400,7 @@ async fn browser_password_changes_revoke_peer_sessions_without_postgres() {
         modified_at: Utc::now(),
         deactivated_at: None,
         archived_at: None,
+        deleted_at: None,
         credential: Some(Credential {
             revision: 1,
             record: vector["registrationRecord"].as_str().unwrap().into(),
@@ -719,6 +724,55 @@ async fn member_renames_preserve_credentials_and_commit_profiles_atomically_acro
             accounts::subject(account.id)
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn member_deletions_are_atomic_terminal_and_survive_tenant_recovery() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let mut settings = configuration(config);
+    settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first.clone())).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    let endpoints = [first_url, second_url];
+    browser_with_tenant(
+        "owner-minimal",
+        &root,
+        Some(&endpoints),
+        Some("member-deletion-tenant"),
+    )
+    .await;
+    browser("member-deletion", &root, Some(&endpoints)).await;
+    let result: Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("report.json")).unwrap()).unwrap();
+    assert_eq!(result["terminalDeletion"], true);
+    assert_eq!(result["recoveryRetainedDeletion"], true);
+    let id = crate::ids::Id::decode(result["deletedMember"].as_str().unwrap()).unwrap();
+    let tenant = first.tenant("member-deletion-tenant").unwrap();
+    let account = tenant
+        .read::<Account>(accounts::account_key(id.0))
+        .await
+        .unwrap()
+        .value
+        .unwrap();
+    assert!(account.deleted_at.is_some());
+    assert!(!account.active(Utc::now()));
+    let directory = tenant
+        .read::<i64>(key("member-directory", &format!("{:020}", id.0)))
+        .await
+        .unwrap();
+    assert!(directory.value.is_none());
+    assert_protected_collection(&tenant, "accounts").await;
 }
 
 #[tokio::test]

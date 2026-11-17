@@ -126,6 +126,7 @@ pub(super) enum MemberAction {
     Archive,
     Unarchive,
     Rename,
+    Delete,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -138,6 +139,9 @@ pub(super) struct MemberChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    inventory_snapshot: Option<String>,
     request_id: String,
     expected: String,
     at_micros: String,
@@ -166,6 +170,7 @@ impl MemberChange {
             MemberAction::Archive => "archive",
             MemberAction::Unarchive => "unarchive",
             MemberAction::Rename => "rename",
+            MemberAction::Delete => "delete",
         };
         match (&self.action, &self.username) {
             (MemberAction::Rename, Some(username)) => validate_username(username)?,
@@ -173,8 +178,15 @@ impl MemberChange {
             (_, Some(_)) => return Err(invalid()),
             (_, None) => {}
         }
+        match (&self.action, &self.inventory_snapshot) {
+            (MemberAction::Delete, Some(snapshot)) => {
+                sized::<32>(snapshot)?;
+            }
+            (MemberAction::Delete, None) | (_, Some(_)) => return Err(invalid()),
+            (_, None) => {}
+        }
         Ok(frame(
-            "sortsys/member-change/v2",
+            "sortsys/member-change/v3",
             &[
                 &self.tenant,
                 &self.generation,
@@ -182,6 +194,7 @@ impl MemberChange {
                 &self.id,
                 action,
                 self.username.as_deref().unwrap_or(""),
+                self.inventory_snapshot.as_deref().unwrap_or(""),
                 &self.request_id,
                 &self.expected,
                 &self.at_micros,
@@ -208,12 +221,14 @@ struct MemberStatus {
     at_micros: String,
     deactivated_micros: Option<String>,
     archived_micros: Option<String>,
+    deleted_micros: Option<String>,
 }
 struct StatusRow {
     username: String,
     modified_at: DateTime<Utc>,
     deactivated_at: Option<DateTime<Utc>>,
     archived_at: Option<DateTime<Utc>>,
+    deleted_at: Option<DateTime<Utc>>,
     stamp: DateTime<Utc>,
 }
 fn date(value: DateTime<Utc>) -> String {
@@ -229,13 +244,14 @@ fn micros(value: &str) -> RpcResult<DateTime<Utc>> {
 impl StatusRow {
     fn version(&self, id: Id) -> String {
         encode(&Sha256::digest(frame(
-            "sortsys/member-status/v1",
+            "sortsys/member-status/v2",
             &[
                 &id.encode(),
                 &self.username,
                 &date(self.modified_at),
                 &self.deactivated_at.map(date).unwrap_or_default(),
                 &self.archived_at.map(date).unwrap_or_default(),
+                &self.deleted_at.map(date).unwrap_or_default(),
             ],
         )))
     }
@@ -243,6 +259,7 @@ impl StatusRow {
 
 mod persistence;
 pub(super) use persistence::apply_change as metadata_apply_change;
+pub(super) use persistence::check_profile_writes as metadata_check_profile_writes;
 pub(crate) use persistence::register as register_metadata;
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
@@ -292,22 +309,27 @@ mod tests {
         assert!(serde_json::from_value::<MemberCreation>(value).is_err());
     }
 
-    #[test]
-    fn rename_frames_bind_canonical_aliases_and_other_actions_cannot_carry_them() {
-        let mut change = MemberChange {
+    fn rename_request() -> MemberChange {
+        MemberChange {
             tenant: "test".into(),
             generation: "1".into(),
             author: "user:1".into(),
             id: "4".into(),
             action: MemberAction::Rename,
             username: Some("anna.updated".into()),
+            inventory_snapshot: None,
             request_id: "request:rename".into(),
             expected: encode(&[0; 32]),
             at_micros: "123456789".into(),
             packet_signature: encode(&[0; 64]),
             permissions: None,
             proof: String::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn rename_frames_bind_canonical_aliases_and_other_actions_cannot_carry_them() {
+        let mut change = rename_request();
         let original = change.frame().unwrap();
         change.username = Some("anna.other".into());
         assert_ne!(original, change.frame().unwrap());
@@ -320,6 +342,23 @@ mod tests {
         change.action = MemberAction::Deactivate;
         assert!(change.frame().is_ok());
         change.username = Some("anna.updated".into());
+        assert!(change.frame().is_err());
+    }
+
+    #[test]
+    fn deletion_frames_require_and_bind_the_complete_inventory_snapshot() {
+        let mut change = rename_request();
+        change.action = MemberAction::Delete;
+        change.username = None;
+        assert!(change.frame().is_err());
+        change.inventory_snapshot = Some(encode(&[0; 32]));
+        let original = change.frame().unwrap();
+        change.inventory_snapshot = Some(encode(&[1; 32]));
+        assert_ne!(original, change.frame().unwrap());
+        change.inventory_snapshot = Some(encode(&[0; 31]));
+        assert!(change.frame().is_err());
+        change.inventory_snapshot = Some(encode(&[0; 32]));
+        change.action = MemberAction::Activate;
         assert!(change.frame().is_err());
     }
 }

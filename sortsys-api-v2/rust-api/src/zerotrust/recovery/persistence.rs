@@ -364,6 +364,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         modified_at: now,
         deactivated_at: None,
         archived_at: None,
+        deleted_at: None,
         credential: Some(accounts::Credential {
             revision: 1,
             record: encode(&validate_registration(&input.registration_record)?),

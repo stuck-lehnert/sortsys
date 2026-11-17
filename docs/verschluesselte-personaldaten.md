@@ -131,9 +131,38 @@ neuen Namen. Bereits ausgestellte Einladungen sind an ihren bisherigen
 Anmeldenamen gebunden; für noch nicht registrierte Konten ist nach einer
 Umbenennung eine neue Einladung erforderlich.
 
-Das Löschen von Konten und Rollenänderungen sind noch offen. Abwesenheiten,
-Urlaub und Standardvorgesetzte verwenden ihren eigenen
-[verschlüsselten Fachadapter](abwesenheiten-protokoll.md).
+**Löschen** entfernt Stammdaten, Personalangaben und Stundensatz gemeinsam mit
+einer dauerhaften Kontosperre. Für diesen Ablauf sind Administrationsbefugnis
+sowie Lese- und Löschrechte für alle drei Profilbereiche erforderlich. Die eigene
+Anmeldung kann damit nicht gelöscht werden. Der Dialog verlangt eine Bestätigung;
+Deaktivieren und Archivieren bleiben die Möglichkeiten für einen später wieder
+benötigten Zugang.
+
+Vor dem Löschen prüft der Browser die lesbare Vorgesetztenübersicht und die
+Einstellung des Standardvorgesetzten. Noch vorhandene Zuordnungen müssen zuerst
+geändert werden. Fehlen dafür lesbare Personalangaben, kann die Prüfung nicht
+abgeschlossen werden. Die gelesenen Fassungen werden im selben Schreibvorgang
+geprüft, damit eine zwischenzeitliche Zuordnung nicht übersehen wird. Der Befehl
+bindet außerdem den vollständigen öffentlichen Bereichsstand. Entsteht
+zwischenzeitlich ein neuer Bereich, wird der alte Befehl abgewiesen. Die API
+kann die geheimen Vorgesetztenbeziehungen weiterhin nicht selbst fachlich prüfen.
+
+Der signierte Löschbefehl bindet die technischen Kontodaten an die drei
+verschlüsselten Löschmarkierungen und die Zugriffssperre. Ein fehlender
+Profilbereich verwirft den gesamten Vorgang. Vorhandene Sitzungen und künftige
+Anmeldungen werden abgewiesen. Eine verlorene Antwort wird anhand der
+gespeicherten Nachweise geprüft. Auch ein gültig signierter Schreibauftrag über
+den allgemeinen Datenendpunkt kann das Profil anschließend nicht wieder
+anlegen.
+
+Berichte und frühere Unterschriften behalten ihre Identitätsnachweise.
+Historische Vorgänge und Sicherungen können weiterhin personenbezogene Angaben
+enthalten. Die technische Kontokennung und der Anmeldename bleiben reserviert.
+Eine Seed-Recovery lässt den Löschstatus bestehen.
+
+Rollenänderungen und der Passwortverlust eines einzelnen Mitglieds brauchen
+noch eigene Abläufe. Abwesenheiten, Urlaub und Standardvorgesetzte verwenden
+ihren eigenen [verschlüsselten Fachadapter](abwesenheiten-protokoll.md).
 
 Die lokale Suche berücksichtigt Namen, Anmeldenamen, E-Mail, Telefon und
 Vertragsart. Sie verwendet Wortpräfixe aus dem gemeinsamen Suchweg; ein

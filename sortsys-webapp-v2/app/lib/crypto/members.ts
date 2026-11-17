@@ -29,6 +29,7 @@ export type MemberStatus = {
   at: string;
   deactivatedAt: string | null;
   archivedAt: string | null;
+  deletedAt: string | null;
 };
 export function decodeMemberStatus(
   input: QueryResult<"zerotrust.members.status">,
@@ -49,6 +50,10 @@ export function decodeMemberStatus(
       input.archivedMicros === null
         ? null
         : timestampFromMicros(input.archivedMicros),
+    deletedAt:
+      input.deletedMicros === null
+        ? null
+        : timestampFromMicros(input.deletedMicros),
   };
 }
 export function memberChangeFrame(change: Omit<MemberChange, "proof">) {
@@ -60,20 +65,29 @@ export function memberChangeFrame(change: Omit<MemberChange, "proof">) {
   sized(change.packetSignature, 64);
   timestampFromMicros(change.atMicros);
   if (
-    !["activate", "deactivate", "archive", "unarchive", "rename"].includes(
-      change.action,
-    )
+    ![
+      "activate",
+      "deactivate",
+      "archive",
+      "unarchive",
+      "rename",
+      "delete",
+    ].includes(change.action)
   )
     throw new InvalidProtectedData();
   if (change.action === "rename") technicalUsername(change.username);
   else if (change.username !== undefined) throw new InvalidProtectedData();
-  return frame("sortsys/member-change/v2", [
+  if (change.action === "delete") sized(change.inventorySnapshot ?? "", 32);
+  else if (change.inventorySnapshot !== undefined)
+    throw new InvalidProtectedData();
+  return frame("sortsys/member-change/v3", [
     change.tenant,
     change.generation,
     change.author,
     change.id,
     change.action,
     change.username ?? "",
+    change.inventorySnapshot ?? "",
     change.requestId,
     change.expected,
     change.atMicros,
@@ -83,9 +97,15 @@ export function memberChangeFrame(change: Omit<MemberChange, "proof">) {
 }
 export function memberStateAfter(status: MemberStatus, action: MemberAction) {
   timestampMicros(status.at);
+  if (status.deletedAt !== null) throw new InvalidProtectedData();
   for (const value of [status.deactivatedAt, status.archivedAt])
     if (value !== null) timestampMicros(value);
   switch (action) {
+    case "delete":
+      return {
+        deactivated_at: status.deactivatedAt ?? status.at,
+        archived_at: status.archivedAt ?? status.at,
+      };
     case "rename":
       return {
         deactivated_at: status.deactivatedAt,
@@ -129,16 +149,17 @@ export async function memberLifecycle(
   const context = await administratorContext(client, signal);
   if (id === context.session.user.id && action !== "rename")
     throw new InvalidProtectedData();
-  const [{ permissions }, wireStatus] = await Promise.all([
-    readVerifiedPolicy(client, context),
-    required(
-      client.query(
-        "zerotrust.members.status",
-        { id },
-        { strategy: "network-only" },
+  const [{ permissions, signature: policySignature }, wireStatus] =
+    await Promise.all([
+      readVerifiedPolicy(client, context),
+      required(
+        client.query(
+          "zerotrust.members.status",
+          { id },
+          { strategy: "network-only" },
+        ),
       ),
-    ),
-  ]);
+    ]);
   context.live();
   const status = decodeMemberStatus(wireStatus);
   if (status.id !== id) throw new InvalidProtectedData();
@@ -151,16 +172,23 @@ export async function memberLifecycle(
     values.archived_at === status.archivedAt &&
     (action !== "rename" || username === status.username);
   let unchanged = same;
-  if (action === "deactivate") unchanged = same && suspended;
+  if (action === "delete") unchanged = false;
+  else if (action === "deactivate") unchanged = same && suspended;
   else if (action === "activate") unchanged = same && !suspended;
   return {
     status,
     values,
     unchanged,
+    policySignature,
     async publication(
       packet: MutateInput<"zerotrust.objects.save">,
+      options: { inventorySnapshot?: string } = {},
     ): Promise<MemberPublication> {
       context.live();
+      const inventorySnapshot = options.inventorySnapshot;
+      if (action === "delete") sized(inventorySnapshot ?? "", 32);
+      else if (inventorySnapshot !== undefined)
+        throw new InvalidProtectedData();
       if (
         packet.domain !== `personnel:${id}:master-data` ||
         packet.envelope.object !== `personnel:${id}:master-data:record` ||
@@ -170,12 +198,12 @@ export async function memberLifecycle(
       const blocked = (permissions.suspended ?? []).filter(
         (member) => member !== subject,
       );
-      if (action === "deactivate") {
+      if (action === "deactivate" || action === "delete") {
         blocked.push(subject);
         blocked.sort();
       }
       const next =
-        action === "activate" || action === "deactivate"
+        action === "activate" || action === "deactivate" || action === "delete"
           ? await signPolicy(
               {
                 ...permissions,
@@ -192,6 +220,7 @@ export async function memberLifecycle(
         id,
         action,
         ...(action === "rename" ? { username } : {}),
+        ...(action === "delete" ? { inventorySnapshot } : {}),
         requestId: crypto.randomUUID(),
         expected: status.version,
         atMicros: wireStatus.atMicros,
@@ -241,7 +270,7 @@ export async function memberLifecycle(
             if (
               BigInt(current.permissions.version) < BigInt(next.version) ||
               (current.permissions.suspended?.includes(subject) === true) !==
-                (action === "deactivate")
+                (action === "deactivate" || action === "delete")
             )
               return false;
           }

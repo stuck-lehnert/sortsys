@@ -50,6 +50,7 @@ pub struct Account {
     pub modified_at: DateTime<Utc>,
     pub deactivated_at: Option<DateTime<Utc>>,
     pub archived_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
     pub credential: Option<Credential>,
 }
 
@@ -60,6 +61,7 @@ impl Account {
             && self.epoch > 0
             && !self.deactivated_at.is_some_and(|at| at <= now)
             && self.archived_at.is_none()
+            && self.deleted_at.is_none()
     }
     pub fn active(&self, now: DateTime<Utc>) -> bool {
         self.available(now)
@@ -275,4 +277,34 @@ pub async fn new_session(
         .put_expiring(session_key(id), &session, session.expires_at)
         .await?;
     Ok(session)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_terminal_deletion_cannot_be_undone_by_clearing_deactivation_or_archive() {
+        let now = Utc::now();
+        let mut account = Account {
+            id: 1,
+            username: "closed.member".into(),
+            locale: "de".into(),
+            epoch: 1,
+            roles: vec![],
+            created_at: now,
+            modified_at: now,
+            deactivated_at: None,
+            archived_at: None,
+            deleted_at: None,
+            credential: None,
+        };
+        assert!(account.available(now));
+        account.deleted_at = Some(now);
+        assert!(!account.available(now));
+        assert!(!account.active(now));
+        account.deactivated_at = None;
+        account.archived_at = None;
+        assert!(!account.available(now));
+    }
 }

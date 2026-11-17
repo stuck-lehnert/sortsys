@@ -148,11 +148,12 @@ async function readAccessContext(
     identity.signingKey !== account.vault.signingKey
   )
     throw new InvalidProtectedData();
-  const { permissions: rootPolicy } = await verifyPolicySnapshot(input.policy, {
-    account,
-    history,
-    live,
-  });
+  const { permissions: rootPolicy, signature: rootPolicySignature } =
+    await verifyPolicySnapshot(input.policy, {
+      account,
+      history,
+      live,
+    });
   const domains: Inventory["domains"] = [];
   const origins: Inventory["origins"] = [];
   if (input.unchanged) {
@@ -254,6 +255,8 @@ async function readAccessContext(
     history,
     subject: input.subject,
     rootPolicy,
+    rootPolicySignature,
+    snapshot: input.snapshot,
     permissions,
     domains,
     origins: origins.filter((origin) => origin !== null).map(creationOrigin),

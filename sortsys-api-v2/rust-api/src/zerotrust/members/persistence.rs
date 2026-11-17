@@ -24,6 +24,7 @@ fn status_row(account: &accounts::Account) -> StatusRow {
         modified_at: account.modified_at,
         deactivated_at: account.deactivated_at,
         archived_at: account.archived_at,
+        deleted_at: account.deleted_at,
         stamp: Utc::now(),
     }
 }
@@ -56,7 +57,7 @@ async fn create(
             .read(accounts::account_key(user.0))
             .await?
             .ok_or_else(conflict)?;
-        if account.username != input.username {
+        if account.username != input.username || account.deleted_at.is_some() {
             return Err(conflict());
         }
         context.transaction.validate().await?;
@@ -104,6 +105,7 @@ async fn create(
             .and_then(|source| source.archived_micros.as_deref())
             .map(micros)
             .transpose()?,
+        deleted_at: None,
         credential: None,
     };
     context
@@ -178,6 +180,7 @@ async fn status(
             .deactivated_at
             .map(|at| at.timestamp_micros().to_string()),
         archived_micros: row.archived_at.map(|at| at.timestamp_micros().to_string()),
+        deleted_micros: row.deleted_at.map(|at| at.timestamp_micros().to_string()),
     };
     context.transaction.validate().await?;
     Ok(result)
@@ -209,11 +212,20 @@ pub(in crate::zerotrust) async fn apply_change(
         || input.generation != guard.root.generation.to_string()
         || input.author != guard.subject
         || (format!("user:{}", input.id) == guard.subject && input.action != MemberAction::Rename)
-        || (objects.len() != 1 && input.action != MemberAction::Rename)
+        || (objects.len() != 1
+            && !matches!(input.action, MemberAction::Rename | MemberAction::Delete))
     {
         return Err(forbidden());
     }
     verify(&guard.authority, &input.proof, &input.frame()?)?;
+    if input.action == MemberAction::Delete {
+        super::super::objects::metadata_check_inventory_snapshot(
+            context,
+            input.inventory_snapshot.as_deref().ok_or_else(invalid)?,
+        )
+        .await?;
+    }
+    let guard = &context.security;
     let scope = format!("personnel:{}", input.id);
     let domain = format!("{scope}:master-data");
     let mut matching = objects.iter().filter(|packet| packet.domain == domain);
@@ -226,6 +238,34 @@ pub(in crate::zerotrust) async fn apply_change(
         || packet.envelope.facet != Facet::MasterData
         || packet.envelope.signature != input.packet_signature
     {
+        return Err(invalid());
+    }
+    if input.action == MemberAction::Delete {
+        // All private profile facets disappear together. Other records or live
+        // contents may not be smuggled into this terminal account operation.
+        let expected = [Facet::MasterData, Facet::Scope, Facet::Calculation];
+        if objects.len() != expected.len() {
+            return Err(invalid());
+        }
+        for facet in expected {
+            let domain = format!("{scope}:{}", facet.name());
+            let matches: Vec<_> = objects
+                .iter()
+                .filter(|value| value.domain == domain)
+                .collect();
+            if matches.len() != 1 {
+                return Err(invalid());
+            }
+            let envelope = &matches[0].envelope;
+            if envelope.object != format!("{domain}:record")
+                || envelope.scope != scope
+                || envelope.facet != facet
+                || !envelope.is_tombstone()
+            {
+                return Err(invalid());
+            }
+        }
+    } else if objects.iter().any(|value| value.envelope.is_tombstone()) {
         return Err(invalid());
     }
     let receipt = key("member-changes", &input.request_id);
@@ -245,6 +285,9 @@ pub(in crate::zerotrust) async fn apply_change(
         .read(accounts::account_key(id.0))
         .await?
         .ok_or_else(not_found)?;
+    if account.deleted_at.is_some() {
+        return Err(forbidden());
+    }
     let row = status_row(&account);
     if row.version(id) != input.expected {
         return Err(conflict());
@@ -256,7 +299,7 @@ pub(in crate::zerotrust) async fn apply_change(
     let subject = format!("user:{}", input.id);
     if matches!(
         input.action,
-        MemberAction::Activate | MemberAction::Deactivate
+        MemberAction::Activate | MemberAction::Deactivate | MemberAction::Delete
     ) {
         let permissions = input.permissions.as_ref().ok_or_else(invalid)?;
         if permissions.transaction.is_some() {
@@ -264,7 +307,10 @@ pub(in crate::zerotrust) async fn apply_change(
         }
         let mut suspended = guard.policy.suspended.clone().unwrap_or_default();
         suspended.retain(|member| member != &subject);
-        if input.action == MemberAction::Deactivate {
+        if matches!(
+            input.action,
+            MemberAction::Deactivate | MemberAction::Delete
+        ) {
             suspended.push(subject.clone());
             suspended.sort();
         }
@@ -313,6 +359,15 @@ pub(in crate::zerotrust) async fn apply_change(
             }
             account.archived_at = None;
         }
+        MemberAction::Delete => {
+            account.deleted_at = Some(at);
+            account.deactivated_at = account.deactivated_at.or(Some(at));
+            account.archived_at = account.archived_at.or(Some(at));
+            context
+                .transaction
+                .delete(key("member-directory", &format!("{:020}", account.id)))
+                .await?;
+        }
         MemberAction::Rename => {
             let username = input.username.as_deref().ok_or_else(invalid)?;
             let previous_key = key("usernames", &account.username);
@@ -348,7 +403,7 @@ pub(in crate::zerotrust) async fn apply_change(
     }
     if matches!(
         input.action,
-        MemberAction::Deactivate | MemberAction::Archive
+        MemberAction::Deactivate | MemberAction::Archive | MemberAction::Delete
     ) {
         account.epoch = account.epoch.checked_add(1).ok_or_else(conflict)?;
     }
@@ -361,6 +416,61 @@ pub(in crate::zerotrust) async fn apply_change(
     context
         .transaction
         .notify("account", &serde_json::json!({"subject": subject}))?;
+    Ok(())
+}
+
+pub(in crate::zerotrust) async fn check_profile_writes(
+    context: &mut MetadataContext,
+    member: Option<&MemberChange>,
+    objects: &[SaveInput],
+) -> RpcResult<()> {
+    let mut profiles = std::collections::BTreeMap::new();
+    for packet in objects {
+        let envelope = &packet.envelope;
+        let profile_facet = matches!(
+            envelope.facet,
+            Facet::MasterData | Facet::Scope | Facet::Calculation
+        );
+        let profile_object = format!("{}:{}:record", envelope.scope, envelope.facet.name());
+        if !profile_facet || envelope.object != profile_object {
+            continue;
+        }
+        let Some(id) = packet.envelope.scope.strip_prefix("personnel:") else {
+            continue;
+        };
+        let id = Id::decode(id).map_err(|_| invalid())?;
+        if id.0 <= 0 || packet.envelope.scope != format!("personnel:{}", id.encode()) {
+            return Err(invalid());
+        }
+        profiles.entry(id.0).or_insert_with(Vec::new).push(packet);
+    }
+    let accounts = context
+        .transaction
+        .many::<accounts::Account>(
+            profiles
+                .keys()
+                .map(|id| accounts::account_key(*id))
+                .collect(),
+        )
+        .await?;
+    for ((id, packets), account) in profiles.into_iter().zip(accounts) {
+        let account = account.ok_or_else(not_found)?;
+        if account.id != id {
+            return Err(invalid());
+        }
+        let deletion_authorized = member.is_some_and(|change| {
+            change.action == MemberAction::Delete && change.id == Id(id).encode()
+        });
+        for packet in packets {
+            let envelope = &packet.envelope;
+            if account.deleted_at.is_some() && !envelope.is_tombstone() {
+                return Err(forbidden());
+            }
+            if envelope.is_tombstone() && !deletion_authorized {
+                return Err(forbidden());
+            }
+        }
+    }
     Ok(())
 }
 pub(crate) fn register(

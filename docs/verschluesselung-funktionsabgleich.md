@@ -96,8 +96,15 @@ Namen, Personalangaben und Stundensätze. Formulare verbergen nicht freigegebene
 Werte und überschreiben sie beim Speichern nicht. Werkzeugauswahl und
 Namensanzeigen sind angeschlossen. Die Organisationsverwaltung kann die drei
 Bereiche einzeln freigeben. Aktivierung, Deaktivierung und Archivierung
-verbinden Profil, Kontostatus und signierte Zugriffssperre atomar. Umbenennen,
-Löschen und Rollen fehlen noch. Abwesenheiten haben einen eigenen Adapter;
+verbinden Profil, Kontostatus und signierte Zugriffssperre atomar. Umbenennen
+speichert Namensindex und Profil gemeinsam. Löschen entfernt alle drei
+Profilbereiche und sperrt das Konto dauerhaft; historische Signaturen bleiben
+prüfbar. Ein nativer Mehrinstanztest prüft auch manipulierte und unvollständige
+Befehle, konkurrierende Änderungen, verlorene Antworten, einen gültig signierten
+Wiederanlegeversuch und die Kontosperre nach Seed-Recovery. Direkte und
+Standardvorgesetztenzuordnungen müssen vor der Löschung geändert werden.
+Browsertests prüfen Sichtbarkeit und Bestätigungsdialog. Rollenänderungen fehlen
+noch. Abwesenheiten haben einen eigenen Adapter;
 Vorgesetzten- und Vertragswechsel verbinden die Personaländerung mit ihren
 automatisch abgeleiteten Freigaben. Der native Fachadapterlauf prüft
 Profiländerungen und zwei Recoveries über getrennte API-Prozesse. Vollständige

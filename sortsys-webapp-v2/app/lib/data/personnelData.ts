@@ -24,6 +24,7 @@ export const PERSONNEL_QUERIES = new Set(["users.list", "users.get"]);
 export const PERSONNEL_MUTATIONS = new Set([
   "users.create",
   "users.update",
+  "users.delete",
   "users.activate",
   "users.deactivate",
   "users.archive",

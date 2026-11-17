@@ -1297,9 +1297,14 @@ window.cryptoFixture = {
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
+      deleting = mode.startsWith("delete"),
+      fullDeletionRights = deleting && mode !== "delete-limited",
+      costActions = (mode === "cost" || fullDeletionRights ? [...ACTIONS] : ["read"])
+        .filter((action) => mode !== "delete-without-cost-read" || action !== "read"),
+      personId = mode === "delete-self" ? "1" : "4",
       rule = (facet, actions) => ({
         subject: "user:1",
-        scope: "personnel:4",
+        scope: `personnel:${personId}`,
         facet,
         actions,
         effect: "allow",
@@ -1313,8 +1318,13 @@ window.cryptoFixture = {
           ...(mode === "basic"
             ? []
             : [
-                rule("calculation", mode === "cost" ? [...ACTIONS] : ["read"]),
-                rule("scope", mode === "employment" ? [...ACTIONS] : ["read"]),
+                rule("calculation", costActions),
+                rule(
+                  "scope",
+                  mode === "employment" || fullDeletionRights
+                    ? [...ACTIONS]
+                    : ["read"],
+                ),
               ]),
         ],
       },
@@ -1360,7 +1370,7 @@ window.cryptoFixture = {
     const access = createContentAccess(raw, projectFiles.context),
       mutations = [],
       person = {
-        id: "4",
+        id: personId,
         username: "anna.muster",
         firstName: "Anna",
         lastName: "Muster",
@@ -1368,7 +1378,7 @@ window.cryptoFixture = {
         email: null,
         phone: null,
         contractType: "internal",
-        costPerHour: mode === "basic" ? null : 73.87654321,
+        costPerHour: mode === "basic" || mode === "delete-without-cost-read" ? null : 73.87654321,
         vacationDaysPerYear: mode === "basic" ? null : 30,
         supervisorUserId: null,
         createdAt: new Date(),
@@ -1387,6 +1397,10 @@ window.cryptoFixture = {
         return mutations.length === 1
           ? [null, new Error("Anlageantwort unterbrochen")]
           : [{ id: "4" }, null];
+      }
+      if (deleting && path === "users.delete") {
+        mutations.push(structuredClone(input));
+        return [{ success: true }, null];
       }
       if (path !== "users.update") {
         throw new Error("Unexpected personnel form mutation: " + path);
@@ -1416,6 +1430,31 @@ window.cryptoFixture = {
           Person bearbeiten
         </button>
       );
+    }
+    if (deleting) {
+      const { default: UserDetailPage } =
+        await import("../../app/routes/(shell)/users.$id");
+      client.streamQuery = (path) =>
+        new Observable((subscriber) => {
+          if (path === "users.get") subscriber.next([person, null]);
+          else if (path === "tools.trackings.list") subscriber.next([[], null]);
+          else throw new Error("Unexpected personnel detail query: " + path);
+        });
+      root.render(
+        <I18nProvider>
+          <MemoryRouter initialEntries={[`/users/${personId}`]}>
+            <SessionInfoProvider sessionClient={raw} access={access}>
+              <MyModalsProvider>
+                <Routes>
+                  <Route path="/users/:id" element={<UserDetailPage />} />
+                  <Route path="/users" element={<p>Benutzerübersicht</p>} />
+                </Routes>
+              </MyModalsProvider>
+            </SessionInfoProvider>
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      return;
     }
     root.render(
       <I18nProvider>

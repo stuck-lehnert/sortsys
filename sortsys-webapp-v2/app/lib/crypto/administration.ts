@@ -69,6 +69,8 @@ export async function administratorPolicyContext(
     ...context,
     history: verified.history,
     permissions: verified.rootPolicy,
+    policySignature: verified.rootPolicySignature,
+    inventorySnapshot: verified.snapshot,
     effective: verified.permissions,
     domains: verified.domains,
   };

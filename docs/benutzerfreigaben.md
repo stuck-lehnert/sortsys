@@ -253,8 +253,10 @@ beschreibt den Ablauf und seine Grenzen.
 
 Anmeldenamen lassen sich durch die Administration ändern; der technische
 Namensindex und das verschlüsselte Personalprofil werden dabei gemeinsam
-gespeichert. Das Löschen von Konten, Rollenänderungen und der Passwortverlust
-eines einzelnen Mitglieds benötigen noch geschützte Abläufe. Eine Einladung
+gespeichert. Das Löschen entfernt die drei privaten Profilbereiche und sperrt das
+Konto dauerhaft; noch vorhandene Vorgesetztenzuordnungen müssen vorher geändert
+werden. Rollenänderungen und der Passwortverlust eines einzelnen Mitglieds
+benötigen noch geschützte Abläufe. Eine Einladung
 ersetzt kein bereits registriertes Passwort und keinen vorhandenen Kontotresor.
 
 Die vollständige Bestandsumstellung bleibt bis zum Anschluss der übrigen

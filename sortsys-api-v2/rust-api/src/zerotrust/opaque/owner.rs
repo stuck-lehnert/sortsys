@@ -254,6 +254,7 @@ async fn finish(
         modified_at: Utc::now(),
         deactivated_at: None,
         archived_at: None,
+        deleted_at: None,
         credential: Some(accounts::Credential {
             revision: 1,
             record: encode(&record),

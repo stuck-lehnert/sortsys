@@ -8,7 +8,10 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { absenceCollection } from "../data/absenceData";
 import { addressId } from "../data/addressBook";
-import { commitProtectedWrites } from "../data/atomicWrites";
+import {
+  commitProtectedWrites,
+  ProtectedWriteConflict,
+} from "../data/atomicWrites";
 import type { DuckDriver } from "../data/database";
 import { ORGANIZATION_COLLECTION } from "../data/organizationData";
 import {
@@ -18,16 +21,15 @@ import {
 } from "../data/personnelData";
 import { provisionOwnedCollections } from "../data/prepareCollections";
 import { publicId } from "../data/products";
-import { required } from "../data/protectedObjects";
 import type { DataRequest, DataView } from "../data/runtime/runtime";
 import { acquireDataRuntime } from "../data/runtime/session";
 import {
   defaultSupervisor,
   supervisorSettingsRequest,
 } from "../data/supervisorSettingsData";
-import { administratorContext } from "./administration";
+import { administratorPolicyContext } from "./administration";
 import { finishAccessChanges } from "./permissions";
-import { preparePolicyPublication, readVerifiedPolicy } from "./policy";
+import { preparePolicyPublication } from "./policy";
 
 export type AbsencePerson = {
   id: string;
@@ -138,23 +140,22 @@ export function withAbsenceDefaults(
   });
 }
 
-export async function absenceDefaultPlan(client: Client, signal: AbortSignal) {
-  const context = await administratorContext(client, signal);
-  const directory = await required(
-    client.query("zerotrust.domains.list", undefined, {
-      strategy: "network-only",
-    }),
-  );
-  context.live();
-  const ids = directory
-    .map((area) => personnelDomain(area.id))
-    .filter((part) => part?.facet === "master-data")
-    .map((part) => part!.id);
-  const known = new Set(directory.map((area) => area.id));
-  const missing = ids
-    .flatMap((id) => [absenceCollection(id), absenceCollection(id, true)])
-    .filter((area) => !known.has(area.domain));
-  if (missing.length) {
+/** Personnel inventory and its policy must belong to one verified snapshot.
+ * Provisioning a missing area changes that snapshot, so read it again before
+ * deriving either supervision defaults or deletion prerequisites. */
+async function absencePrerequisites(client: Client, signal: AbortSignal) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const context = await administratorPolicyContext(client, signal);
+    const directory = context.domains;
+    const ids = directory
+      .map((area) => personnelDomain(area.id))
+      .filter((part) => part?.facet === "master-data")
+      .map((part) => part!.id);
+    const known = new Set(directory.map((area) => area.id));
+    const missing = ids
+      .flatMap((id) => [absenceCollection(id), absenceCollection(id, true)])
+      .filter((area) => !known.has(area.domain));
+    if (!missing.length) return { context, ids, known };
     await provisionOwnedCollections(
       client,
       `user:${context.session.user.id}`,
@@ -163,8 +164,15 @@ export async function absenceDefaultPlan(client: Client, signal: AbortSignal) {
     );
     context.live();
   }
-  const previous = await readVerifiedPolicy(client, context);
-  context.live();
+  throw new ProtectedWriteConflict();
+}
+
+export async function absenceDefaultPlan(client: Client, signal: AbortSignal) {
+  const { context, ids, known } = await absencePrerequisites(client, signal);
+  const previous = {
+    permissions: context.permissions,
+    signature: context.policySignature,
+  };
   const selected: DataRequest[] = ids.flatMap((id) => [
     personnelRequest(id, "master-data"),
     personnelRequest(id, "scope"),
@@ -176,6 +184,8 @@ export async function absenceDefaultPlan(client: Client, signal: AbortSignal) {
 
   return {
     selected,
+    policySignature: previous.signature,
+    inventorySnapshot: context.inventorySnapshot,
     next(view: DataView) {
       context.live();
       const people: AbsencePerson[] = [];

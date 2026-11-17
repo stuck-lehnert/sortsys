@@ -37,6 +37,7 @@ import {
 import { unlockedAccount } from "../crypto/session";
 import { timestampMicros } from "./timestamps";
 import { absenceCollection } from "./absenceData";
+import { uiText } from "../i18n";
 
 export function createProtectedPersonnel(
   client: Client,
@@ -375,6 +376,72 @@ export function createProtectedPersonnel(
           await shareNewPersonnelName(client, id, signal);
           live();
         }
+        return { success: true as const };
+      }
+      if (path === "users.delete") {
+        const data = partialAddressRecord(input, ["id"]);
+        const id = data.id as string;
+        addressId(id);
+        const dependencies = await (
+          await import("../crypto/absenceDefaults")
+        ).absenceDefaultPlan(client, signal);
+        const control = await memberLifecycle(client, id, "delete", signal);
+        live();
+        if (control.policySignature !== dependencies.policySignature)
+          throw new ProtectedWriteConflict();
+        const selected = PERSONNEL_FACETS.map((facet) =>
+          personnelRequest(id, facet),
+        );
+        const prepared = await runtime.prepare(
+          [...selected, ...dependencies.selected],
+          (tx) => {
+            live();
+            requireMemberStatus(tx, id, control.status);
+            // Validate the existing graph first. Only removing this profile may
+            // account for a missing supervisor in the second check.
+            dependencies.next(tx);
+            for (const request of selected) {
+              tx.require(request, "delete");
+              tx.delete(request, request.area.prefix);
+            }
+            try {
+              dependencies.next(tx);
+            } catch (error) {
+              if (!(error instanceof InvalidProtectedData)) throw error;
+              live();
+              throw new Error(
+                uiText(
+                  "Der Benutzer ist noch als Vorgesetzter oder Standardvorgesetzter eingetragen. Bitte diese Zuordnungen zuerst ändern.",
+                  "The user is still assigned as a supervisor or default supervisor. Change these assignments first.",
+                ),
+              );
+            }
+          },
+        );
+        try {
+          const packets = prepared.groups.flatMap((group) => group.packets);
+          const master = packets.find(
+            (packet) =>
+              packet.domain === personnelCollection(id, "master-data").domain,
+          );
+          if (packets.length !== PERSONNEL_FACETS.length || !master)
+            throw new InvalidProtectedData();
+          const member = await control.publication(master, {
+            inventorySnapshot: dependencies.inventorySnapshot,
+          });
+          await commitProtectedWrites(
+            client,
+            prepared.groups,
+            signal,
+            prepared.guards,
+            { member },
+          );
+          live();
+        } finally {
+          prepared.close();
+        }
+        await finishAccessChanges(client, signal);
+        live();
         return { success: true as const };
       }
       if (path === "users.create") {

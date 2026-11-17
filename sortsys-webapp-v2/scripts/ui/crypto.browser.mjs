@@ -1199,6 +1199,67 @@ test("the actual user creation form retains its operation ID after a failed subm
   }
 });
 
+for (const scenario of [
+  { mode: "delete", administrator: true, available: true },
+  { mode: "delete-limited", administrator: true, available: false },
+  { mode: "delete-without-cost-read", administrator: true, available: false },
+  { mode: "delete", administrator: false, available: false },
+  { mode: "delete-self", administrator: true, available: false },
+]) {
+  test(`the actual personnel detail ${scenario.available ? "offers" : "hides"} terminal deletion (${scenario.mode}, admin=${scenario.administrator})`, async () => {
+    const { context, page } = await open();
+    try {
+      await page.evaluate(
+        ({ mode, administrator }) =>
+          window.cryptoFixture.showPersonEdit(mode, administrator),
+        scenario,
+      );
+      await page
+        .getByRole("heading", { name: "Anna Muster", exact: true })
+        .waitFor();
+      await page.getByRole("button", { name: "Aktionen", exact: true }).click();
+      const action = page.getByRole("menuitem", {
+        name: "Löschen",
+        exact: true,
+      });
+      if (!scenario.available) {
+        assert.equal(await action.count(), 0);
+        assert.deepEqual(
+          await page.evaluate(() => window.cryptoFixture.personEdits()),
+          [],
+        );
+        return;
+      }
+      await action.click();
+      const dialog = page.getByRole("dialog", {
+        name: "Benutzer löschen",
+        exact: true,
+      });
+      await dialog.waitFor();
+      const remove = dialog.getByRole("button", {
+        name: "Löschen",
+        exact: true,
+      });
+      if (await remove.isEnabled()) await remove.click();
+      assert.deepEqual(
+        await page.evaluate(() => window.cryptoFixture.personEdits()),
+        [],
+      );
+      await dialog.getByRole("checkbox").focus();
+      await dialog.getByRole("checkbox").press("Space");
+      assert.equal(await dialog.getByRole("checkbox").isChecked(), true);
+      await remove.click();
+      await page.getByText("Benutzerübersicht", { exact: true }).waitFor();
+      assert.deepEqual(
+        await page.evaluate(() => window.cryptoFixture.personEdits()),
+        [{ id: "4" }],
+      );
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 for (const mode of ["basic", "cost", "employment"])
   test(`the actual personnel form preserves independent ${mode} rights`, async () => {
     const { context, page, external } = await open();

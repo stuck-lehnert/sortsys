@@ -550,6 +550,12 @@ async fn commit_batch_inner(
         }
     }
     let publication = super::super::crypto::random_id()?;
+    super::super::members::metadata_check_profile_writes(
+        &mut context,
+        input.member.as_ref(),
+        &input.objects,
+    )
+    .await?;
     let mut changed_domains = BTreeSet::new();
     let mut visible_domains = BTreeSet::new();
     let mut changed_metadata = BTreeSet::new();
