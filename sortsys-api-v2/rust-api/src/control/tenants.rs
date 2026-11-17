@@ -190,6 +190,7 @@ pub async fn provision(system: &Repository, input: &ProvisionRequest) -> RpcResu
     };
     let mut registry = system.transaction()?;
     let previous: Option<RegistryEntry> = registry.read(key("tenants", &name)).await?;
+    let mut changed = previous.is_none();
     if let Some(previous) = previous {
         if previous.operation != entry.operation
             || previous.name != entry.name
@@ -199,7 +200,26 @@ pub async fn provision(system: &Repository, input: &ProvisionRequest) -> RpcResu
         }
     } else {
         registry.put(key("tenants", &name), &entry).await?;
+    }
+    let route = key(
+        "tenant-routes",
+        &format!(
+            "t_{}",
+            sortsys_zerotrust::webauthn::tenant_fingerprint(&name)?
+        ),
+    );
+    match registry.read::<String>(route.clone()).await? {
+        Some(previous) if previous != name => return Err(conflict()),
+        Some(_) => {}
+        None => {
+            registry.put(route, &name).await?;
+            changed = true;
+        }
+    }
+    if changed {
         registry.commit().await?;
+    } else {
+        registry.validate().await?;
     }
     summary(system, &name).await
 }

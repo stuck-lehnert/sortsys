@@ -23,6 +23,10 @@ import {
   verifyResourceAccess,
   OpenTimestampUnavailable,
   publicIdentity,
+  passkeyDeletionFrame,
+  passkeyRegistrationFrame,
+  registrationCredentialFrame,
+  routingUserHandle,
   record,
   reserveRecoveryInventory,
   serializeOtsTree,
@@ -52,6 +56,42 @@ export async function exerciseFramework() {
     facets: ["research-notes", "appointments"],
   });
   const identity = await createIdentity();
+  const passkeyCredential = {
+    id: base64(new Uint8Array([19, 42, 87])),
+    rawId: base64(new Uint8Array([19, 42, 87])),
+    type: "public-key" as const,
+    response: {
+      clientDataJSON: base64(bytes("portable public client data")),
+      attestationObject: base64(new Uint8Array([0xa0])),
+    },
+    transports: ["internal", "hybrid"],
+  };
+  const passkeyBinding = {
+    tenant: "laboratory:alpha",
+    subject: "researcher:kai",
+    userHandle: await routingUserHandle(
+      "laboratory:alpha",
+      new Uint8Array([42]),
+    ),
+    exchangeHash: await digest(bytes("portable challenge token")),
+    credentialHash: await digest(
+      registrationCredentialFrame(passkeyCredential),
+    ),
+    keyVaultHash: "",
+    label: "Laborgerät",
+  };
+  const passkey = {
+    credential: passkeyCredential,
+    binding: passkeyBinding,
+    proof: await sign(
+      identity.signingKey.privateKey,
+      passkeyRegistrationFrame(passkeyBinding),
+    ),
+    deletion: await sign(
+      identity.signingKey.privateKey,
+      passkeyDeletionFrame(passkeyBinding, "device:17"),
+    ),
+  };
   const delegate = await createIdentity();
   const delegations = createDelegationCodec(["experiment", "appointment"]);
   const delegation = await delegations.certify(
@@ -418,6 +458,7 @@ export async function exerciseFramework() {
     anchored,
   );
   return {
+    passkey,
     credential: credentialIdentifier({
       tenant: "laboratory:alpha",
       subject: "researcher:kai",

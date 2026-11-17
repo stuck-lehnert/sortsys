@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use sortsys_zerotrust::{
     administration::{PolicyAdministration, PolicyAdministrationRef},
     anchors::RecordAnchor,
@@ -15,6 +16,7 @@ use sortsys_zerotrust::{
     protocol::{EncryptedObject, SealedBox},
     recovery_inventory::{DEFAULT_RECOVERY_LIMITS, RecoveryInventory},
     resource_access::{ResourceAccessContext, ResourceAccessState},
+    webauthn::{self, RegistrationCredential},
 };
 
 #[derive(Clone, Deserialize)]
@@ -76,6 +78,7 @@ impl Policy {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserVector {
+    passkey: PasskeyVector,
     credential: String,
     account_vault: AccountVault,
     inventory: RecoveryInventory,
@@ -97,6 +100,26 @@ struct BrowserVector {
     unchanged_administration: Policy,
     administration_revoked: Policy,
     stale_administration: Policy,
+}
+
+#[derive(Deserialize)]
+struct PasskeyVector {
+    credential: RegistrationCredential,
+    binding: PasskeyBinding,
+    proof: String,
+    deletion: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyBinding {
+    tenant: String,
+    subject: String,
+    user_handle: String,
+    exchange_hash: String,
+    credential_hash: String,
+    key_vault_hash: String,
+    label: String,
 }
 
 #[derive(Deserialize)]
@@ -187,6 +210,37 @@ fn main() {
         vector.anchor_digest
     );
     let signer = sized::<32>(&vector.signer).unwrap();
+    let passkey = &vector.passkey;
+    let binding = &passkey.binding;
+    let enrollment = webauthn::RegistrationBinding {
+        tenant: &binding.tenant,
+        subject: &binding.subject,
+        user_handle: &binding.user_handle,
+        exchange_hash: &binding.exchange_hash,
+        credential_hash: &binding.credential_hash,
+        key_vault_hash: &binding.key_vault_hash,
+        label: &binding.label,
+    };
+    assert_eq!(binding.tenant, "laboratory:alpha");
+    assert_eq!(binding.subject, "researcher:kai");
+    assert_eq!(
+        binding.user_handle,
+        webauthn::routing_user_handle(&binding.tenant, &[42]).unwrap()
+    );
+    assert_eq!(
+        binding.credential_hash,
+        encode(&Sha256::digest(
+            webauthn::registration_frame(&passkey.credential).unwrap()
+        ))
+    );
+    sortsys_zerotrust::crypto::verify(&signer, &passkey.proof, &enrollment.frame().unwrap())
+        .unwrap();
+    sortsys_zerotrust::crypto::verify(
+        &signer,
+        &passkey.deletion,
+        &webauthn::deletion_frame(&binding.tenant, &binding.subject, "device:17").unwrap(),
+    )
+    .unwrap();
     let managed = &vector.managed_domain;
     managed
         .key_authority

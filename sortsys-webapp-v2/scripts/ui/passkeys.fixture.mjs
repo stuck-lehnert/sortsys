@@ -17,6 +17,7 @@ import {
 } from "../../app/lib/crypto/session";
 import {
   registerPasskey,
+  accountPasskeyHandle,
   signInWithPasskey,
 } from "../../app/lib/crypto/passkeys";
 
@@ -35,6 +36,8 @@ let activeAssertions = 0;
 let accountVault;
 let keyVault = null;
 let registration = null;
+let registrationProof = null;
+let registrationReply = "normal";
 let identityKeys;
 let corruptWrapper = false;
 let holdNextLogin = false;
@@ -90,14 +93,14 @@ function challenge() {
   return base64(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-function registrationOptions() {
+async function registrationOptions() {
   return {
     challengeToken: "synthetic-registration-challenge",
     options: {
       challenge: challenge(),
       rp: { id: rpId, name: "Sortsys browser test" },
       user: {
-        id: base64(new TextEncoder().encode(`${tenant}/${username}`)),
+        id: await accountPasskeyHandle(tenant, "user:1"),
         name: `${username}@${tenant}`,
         displayName: "Synthetic owner",
       },
@@ -115,9 +118,25 @@ function registrationOptions() {
 }
 
 async function responseFor(path, input) {
+  if (path === "auth.passkeys.list")
+    return registration
+      ? [
+          {
+            id: "1",
+            label: "Browser authenticator",
+            credentialId: registration.rawId,
+            identityProof: registrationProof,
+            createdAt: new Date(),
+            lastUsedAt: null,
+            opensData: keyVault !== null,
+          },
+        ]
+      : [];
   if (path === "auth.passkeys.registerOptions") return registrationOptions();
   if (path === "auth.passkeys.register") {
+    if (registrationReply === "unpublished") return { success: true };
     registration = structuredClone(input.credential);
+    registrationProof = input.identityProof;
     keyVault = input.keyVault ?? null;
     return { success: true };
   }
@@ -165,6 +184,9 @@ const client = createClient(location.origin, "passkey-browser-test", {
       const value = superjson.deserialize(inputs[index]);
       requests.push({ path, body: JSON.stringify(value) });
       const data = await responseFor(path, value);
+      if (path === "auth.passkeys.register" && registrationReply === "lost") {
+        throw new TypeError("Synthetic response lost after publication");
+      }
       outputs.push({ result: { data: superjson.serialize(data) } });
     }
     return new Response(JSON.stringify(outputs));
@@ -189,6 +211,9 @@ window.passkeyFixture = {
   register() {
     return registerPasskey(client, "Browser authenticator");
   },
+  registrationReply(mode) {
+    registrationReply = mode;
+  },
   async coldDevice() {
     await lockCryptoSession(true);
     client.setToken(null);
@@ -201,7 +226,12 @@ window.passkeyFixture = {
     const current = unlockedAccount();
     try {
       await withCryptoSignIn(client, async () => {
-        await acceptVaultWithKey(current.dataKey, current.vault, current.username, false);
+        await acceptVaultWithKey(
+          current.dataKey,
+          current.vault,
+          current.username,
+          false,
+        );
         throw new Error("Synthetic failure after local decryption");
       });
     } catch {

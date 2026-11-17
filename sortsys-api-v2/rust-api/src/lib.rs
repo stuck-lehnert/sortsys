@@ -18,5 +18,4 @@ mod storage;
 pub mod superjson;
 mod telemetry;
 pub mod transport;
-pub mod webauthn;
 pub mod zerotrust;

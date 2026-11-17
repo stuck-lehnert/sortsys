@@ -84,10 +84,43 @@ for (const duringCreation of [true, false]) {
         assert.deepEqual(state.paths, [
           "auth.passkeys.registerOptions",
           "auth.passkeys.register",
+          "auth.passkeys.list",
           "auth.passkeys.loginOptions",
           "auth.passkeys.login",
         ]);
         assert.deepEqual(external, []);
+      } finally {
+        await context.close();
+      }
+    },
+  );
+}
+
+for (const mode of ["lost", "unpublished"]) {
+  test(
+    `enrollment confirms durable publication when its response is ${mode}`,
+    { timeout: 15000 },
+    async () => {
+      const { context, page } = await open();
+      try {
+        await page.evaluate(
+          (mode) => window.passkeyFixture.registrationReply(mode),
+          mode,
+        );
+        const accepted = await page.evaluate(async () => {
+          try {
+            await window.passkeyFixture.register();
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        assert.equal(accepted, mode === "lost");
+        const state = await page.evaluate(() => window.passkeyFixture.state());
+        assert.equal(state.registrationStored, mode === "lost");
+        assert.equal(state.encryptedKeyStored, mode === "lost");
+        assert.equal(state.unlocked, true);
+        assert.equal(state.activeCreations, 0);
       } finally {
         await context.close();
       }

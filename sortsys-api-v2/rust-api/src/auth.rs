@@ -44,6 +44,7 @@ pub struct AuthService {
     records: Option<Repository>,
     jwt_secret: Arc<[u8]>,
     admin_hash: Arc<str>,
+    pub(crate) passkeys: crate::zerotrust::passkeys::Config,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -105,7 +106,13 @@ impl AuthService {
             records,
             jwt_secret,
             admin_hash,
+            passkeys: crate::zerotrust::passkeys::Config::default(),
         }
+    }
+
+    pub(crate) fn with_passkeys(mut self, config: crate::zerotrust::passkeys::Config) -> Self {
+        self.passkeys = config;
+        self
     }
 
     pub(crate) fn records(&self) -> RpcResult<&Repository> {

@@ -1,17 +1,12 @@
-#![doc = " Passkey registration, discovery, authentication, listing, and deletion."]
-#![doc = ""]
-#![doc = " Route handlers deliberately keep four visual phases: authentication,"]
-#![doc = " validation, database work, and response construction. Cryptographic parsing"]
-#![doc = " lives in `webauthn` so this module remains concerned with application flow."]
-use crate::{
-    api::Success,
-    ids::Id,
-    rpc::ProcedureRegistryBuilder,
-    webauthn::{AuthenticationCredential, CredentialDescriptor, RegistrationCredential},
-};
+//! Wire contract for native passkey authentication and account-owned key wrappers.
+use crate::{api::Success, ids::Id, rpc::ProcedureRegistryBuilder};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sortsys_zerotrust::{AccountVault, passkey::PasskeyVault};
+use sortsys_zerotrust::{
+    AccountVault,
+    passkey::PasskeyVault,
+    webauthn::{AuthenticationCredential, CredentialDescriptor, RegistrationCredential},
+};
 use ts_rs::TS;
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
@@ -27,6 +22,7 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PasskeyRegistrationInput {
+    pub identity_proof: String,
     pub challenge_token: String,
     pub label: String,
     pub credential: RegistrationCredential,
@@ -37,6 +33,7 @@ pub struct PasskeyRegistrationInput {
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteInput {
+    pub identity_proof: String,
     pub id: Id,
 }
 #[derive(Debug, Deserialize, TS)]
@@ -54,6 +51,8 @@ pub struct LoginInput {
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PasskeyListItem {
+    pub credential_id: String,
+    pub identity_proof: String,
     pub id: Id,
     pub label: String,
     #[ts(type = "Date")]

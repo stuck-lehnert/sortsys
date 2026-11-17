@@ -583,6 +583,7 @@ start_api_container() {
     -e DUCKDB_QUACK_DISABLE_SSL="true" \
     -e OFFICE_PUBLIC_ORIGIN="$DEV_OFFICE_PUBLIC_ORIGIN" \
     -e DRAWIO_PUBLIC_URL="$DEV_DRAWIO_PUBLIC_URL" \
+    -e SORTSYS_PUBLIC_ORIGIN="$DEV_SORTSYS_PUBLIC_ORIGIN" \
     -e ADMIN_HASH="$DEV_ADMIN_HASH" \
     "$DEV_API_IMAGE" \
     cargo run --locked --package sortsys-api --bin sortsys-api >/dev/null

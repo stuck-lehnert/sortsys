@@ -404,7 +404,7 @@ export type QueryOutputs = {
   "auth.opaque.invitation": { invitation: Invitation, history: TrustHistory, enrolled: boolean, };
   "auth.opaque.mode": { opaque: boolean, };
   "auth.opaque.vault": { revision: string, vault: AccountVault, };
-  "auth.passkeys.list": Array<{ id: Id, label: string, createdAt: Date, lastUsedAt: Date | null, opensData: boolean, }>;
+  "auth.passkeys.list": Array<{ credentialId: string, identityProof: string, id: Id, label: string, createdAt: Date, lastUsedAt: Date | null, opensData: boolean, }>;
   "auth.sessionInfo": { user: { id: string; username: string; locale: "de" | "en"; }; session: { id: string; inetAddr: null | string; userAgent: null | string; createdAt: Date; expiresAt: Date; }; roles: (":admin" | ":llm" | "view:users" | "manage:users" | "delete:users" | "view:projects" | "manage:projects" | "delete:projects" | "view:projectDeployments" | "manage:projectDeployments" | "delete:projectDeployments" | "view:userVacations" | "manage:userVacations" | "delete:userVacations" | "view:tools" | "manage:tools" | "delete:tools" | "view:toolTrackings" | "manage:toolTrackings" | "delete:toolTrackings" | "view:toolInventories" | "manage:toolInventories" | "delete:toolInventories" | "view:products" | "manage:products" | "delete:products" | "view:deliveryNotes" | "manage:deliveryNotes" | "delete:deliveryNotes" | "view:productVendors" | "manage:productVendors" | "delete:productVendors" | "view:productPriceRecords" | "manage:productPriceRecords" | "delete:productPriceRecords" | "view:customers" | "manage:customers" | "delete:customers" | "view:contacts" | "manage:contacts" | "delete:contacts" | "view:dailyProjectReports" | "manage:dailyProjectReports" | "delete:dailyProjectReports" | "view:regieReports" | "manage:regieReports" | "delete:regieReports" | "view:clientScripts" | "manage:clientScripts" | "delete:clientScripts")[]; tenant: { companyName: null | string; objectStorageEnabled: boolean; }; };
   "clientScripts.get": null | { id: string; name: string; description: null | string; code: string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; };
   "clientScripts.list": { id: string; name: string; description: null | string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
@@ -568,10 +568,10 @@ export type MutationInputs = {
   "auth.owner.finish": { exchange: string, registrationRecord: string, vault: AccountVault, setup: SetupInput, locale: "de" | "en", proof: string, };
   "auth.owner.inspect": { tenant: string, secret: string, userId?: string, };
   "auth.owner.start": { tenant: string, secret: string, username: string, registrationRequest: string, };
-  "auth.passkeys.delete": { id: Id, };
+  "auth.passkeys.delete": { identityProof: string, id: Id, };
   "auth.passkeys.login": { challengeToken: string, credential: AuthenticationCredential, };
   "auth.passkeys.loginOptions": { tenant: string, username: string, } | void;
-  "auth.passkeys.register": { challengeToken: string, label: string, credential: RegistrationCredential, keyVault?: PasskeyVault, };
+  "auth.passkeys.register": { identityProof: string, challengeToken: string, label: string, credential: RegistrationCredential, keyVault?: PasskeyVault, };
   "auth.passkeys.registerOptions": void;
   "auth.setPassword": { username: string; password: string; };
   "clientScripts.create": { name: string; code: string; description?: undefined | null | string; enabled?: undefined | false | true; };

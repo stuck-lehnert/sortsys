@@ -11,7 +11,7 @@ import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { isPasskeySupported } from "~/lib/passkeys";
-import { registerPasskey } from "~/lib/crypto/passkeys";
+import { registerPasskey, removePasskey } from "~/lib/crypto/passkeys";
 import type { Route } from "./+types/settings.passkeys";
 
 type Passkey = {
@@ -103,12 +103,13 @@ export default function PasskeySettingsPage() {
         primaryButtonText: uiText("Entfernen"),
       }),
       onPrimaryAction: async ({ hide }) => {
-        const [, err] = await client.mutate("auth.passkeys.delete", {
-          id: passkey.id,
-        });
-        if (err) {
+        try {
+          await removePasskey(client, passkey.id);
+        } catch (err) {
           setError(
-            err.message || uiText("Passkey konnte nicht entfernt werden."),
+            err instanceof Error
+              ? err.message
+              : uiText("Passkey konnte nicht entfernt werden."),
           );
           hide();
           return;

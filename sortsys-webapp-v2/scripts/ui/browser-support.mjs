@@ -39,13 +39,18 @@ function containedFile(root, pathname) {
   return filename;
 }
 
-export async function createFixtureServer() {
-  const { assets } = JSON.parse(
-    await readFile(join(fixtureDirectory, "assets.json"), "utf8"),
-  );
-  const html = await readFile(join(fixtureDirectory, "index.html"));
+export async function createFixtureServer({
+  directory = fixtureDirectory,
+  assetsDirectory,
+  handleRequest,
+} = {}) {
+  const assets =
+    assetsDirectory ??
+    JSON.parse(await readFile(join(directory, "assets.json"), "utf8")).assets;
+  const html = await readFile(join(directory, "index.html"));
   const server = createServer(async (request, response) => {
     try {
+      if (handleRequest && (await handleRequest(request, response))) return;
       const pathname = decodeURIComponent(
         new URL(request.url, "http://fixture.invalid").pathname,
       );
@@ -60,9 +65,7 @@ export async function createFixtureServer() {
         return;
       }
 
-      const root = /^\/(?:assets|pdfjs)\//.test(pathname)
-        ? assets
-        : fixtureDirectory;
+      const root = /^\/(?:assets|pdfjs)\//.test(pathname) ? assets : directory;
       const filename = containedFile(root, pathname);
       const contentType = filename && contentTypes.get(extname(filename));
       if (!filename || !contentType) {

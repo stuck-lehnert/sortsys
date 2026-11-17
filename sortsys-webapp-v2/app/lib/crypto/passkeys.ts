@@ -1,5 +1,17 @@
 import type { Client } from "@sortsys/v2-client";
-import { accountVault, InvalidProtectedData } from "@sortsys/zerotrust";
+import {
+  accountVault,
+  bytes,
+  digest,
+  InvalidProtectedData,
+  passkeyDeletionFrame,
+  passkeyRegistrationFrame,
+  passkeyVaultDigest,
+  registrationCredentialFrame,
+  routingUserHandle,
+  sign,
+} from "@sortsys/zerotrust";
+import { addressId } from "../data/addressBook";
 import { createPasskeyCredential, getPasskeyCredential } from "../passkeys";
 import { uiText } from "../i18n";
 import {
@@ -15,10 +27,11 @@ export async function registerPasskey(
   label: string,
 ): Promise<void> {
   const owner = unlockedAccount();
+  if (!owner) throw new InvalidProtectedData();
+  label = label.trim();
   const controller = new AbortController();
   const isCurrent = () => {
     const current = unlockedAccount();
-    if (!owner) return current === null;
     return (
       current?.tenant === owner.tenant &&
       current.vault.subject === owner.vault.subject &&
@@ -45,8 +58,8 @@ export async function registerPasskey(
       );
     }
     if (
-      owner &&
-      begin.options.user.name !== `${owner.username}@${owner.tenant}`
+      begin.options.user.id !==
+      (await accountPasskeyHandle(owner.tenant, owner.vault.subject))
     )
       throw new InvalidProtectedData();
     result = await createPasskeyCredential(begin.options, controller.signal);
@@ -57,17 +70,61 @@ export async function registerPasskey(
         : undefined;
     if (!isCurrent()) throw new InvalidProtectedData();
     controller.signal.throwIfAborted();
-    const [, error] = await client.mutate(
-      "auth.passkeys.register",
-      {
-        challengeToken: begin.challengeToken,
+    const [exchangeHash, credentialHash, keyVaultHash] = await Promise.all([
+      digest(bytes(begin.challengeToken)),
+      digest(registrationCredentialFrame(result.credential)),
+      passkeyVaultDigest(keyVault),
+    ]);
+    const identityProof = await sign(
+      owner.identity.signingKey.privateKey,
+      passkeyRegistrationFrame({
+        tenant: owner.tenant,
+        subject: owner.vault.subject,
+        userHandle: begin.options.user.id,
+        exchangeHash,
+        credentialHash,
+        keyVaultHash,
         label,
-        credential: result.credential,
-        ...(keyVault ? { keyVault } : {}),
-      },
-      { signal: controller.signal },
+      }),
     );
-    if (error) throw error;
+    if (!isCurrent()) throw new InvalidProtectedData();
+    let failure: unknown;
+    try {
+      const [, error] = await client.mutate(
+        "auth.passkeys.register",
+        {
+          challengeToken: begin.challengeToken,
+          label,
+          identityProof,
+          credential: result.credential,
+          ...(keyVault ? { keyVault } : {}),
+        },
+        { signal: controller.signal },
+      );
+      if (error) throw error;
+    } catch (error) {
+      failure = error;
+    }
+    controller.signal.throwIfAborted();
+    if (!isCurrent()) throw new InvalidProtectedData();
+    const [stored, readError] = await client.query(
+      "auth.passkeys.list",
+      undefined,
+      { strategy: "network-only" },
+    );
+    if (!isCurrent()) throw new InvalidProtectedData();
+    if (
+      readError ||
+      !stored?.some(
+        (key) =>
+          key.credentialId === result!.credential.rawId &&
+          key.identityProof === identityProof &&
+          key.label === label &&
+          key.opensData === Boolean(keyVault),
+      )
+    ) {
+      throw failure ?? readError ?? new InvalidProtectedData();
+    }
   } finally {
     result?.unlock?.dispose();
     stop();
@@ -147,4 +204,50 @@ export async function signInWithPasskey(client: Client): Promise<void> {
       result.unlock?.dispose();
     }
   });
+}
+
+/** The application encodes its immutable account ID as eight opaque bytes. */
+export async function accountPasskeyHandle(
+  tenant: string,
+  subject: string,
+): Promise<string> {
+  if (!subject.startsWith("user:")) throw new InvalidProtectedData();
+  const id = BigInt(addressId(subject.slice("user:".length)));
+  const payload = new Uint8Array(8);
+  new DataView(payload.buffer).setBigInt64(0, id, false);
+  return routingUserHandle(tenant, payload);
+}
+
+export async function removePasskey(client: Client, id: string): Promise<void> {
+  addressId(id);
+  const owner = unlockedAccount();
+  if (!owner) throw new InvalidProtectedData();
+  const live = () => {
+    if (unlockedAccount() !== owner) throw new InvalidProtectedData();
+  };
+  const identityProof = await sign(
+    owner.identity.signingKey.privateKey,
+    passkeyDeletionFrame(
+      { tenant: owner.tenant, subject: owner.vault.subject },
+      id,
+    ),
+  );
+  live();
+  let failure: unknown;
+  try {
+    const [, error] = await client.mutate("auth.passkeys.delete", {
+      id,
+      identityProof,
+    });
+    if (error) throw error;
+  } catch (error) {
+    failure = error;
+  }
+  live();
+  const [keys, error] = await client.query("auth.passkeys.list", undefined, {
+    strategy: "network-only",
+  });
+  live();
+  if (error || !keys || keys.some((key) => key.id === id))
+    throw failure ?? error ?? new InvalidProtectedData();
 }

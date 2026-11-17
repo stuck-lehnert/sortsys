@@ -1,5 +1,6 @@
 export * from "./encoding";
 export * from "./credentials";
+export * from "./passkeyRegistration";
 export * from "./identity";
 export * from "./publicProofs";
 export * from "./objects";

@@ -23,6 +23,7 @@ pub mod protocol;
 pub mod recovery;
 pub mod recovery_inventory;
 pub mod resource_access;
+pub mod webauthn;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Error {

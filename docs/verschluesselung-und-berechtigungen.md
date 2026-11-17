@@ -203,6 +203,26 @@ wird innerhalb derselben Datenbanktransaktion wie die Anmeldung verbraucht. So
 können zwei API-Instanzen dieselbe Antwort nicht erneut annehmen, auch wenn der
 Authenticator keinen steigenden Signaturzähler liefert.
 
+Die API verwendet dafür eine fest konfigurierte `SORTSYS_PUBLIC_ORIGIN`.
+Unverschlüsseltes HTTP ist ausschließlich auf Loopback-Adressen für lokale
+Entwicklung zulässig. Ein Request-Header darf weder die RP-Kennung noch die
+erlaubte Herkunft bestimmen. Ohne konfigurierte Herkunft ist die
+Passkey-Einrichtung deaktiviert; die Passwortanmeldung bleibt verfügbar.
+
+Einrichtung und Löschung benötigen neben der Sitzung eine Signatur des
+entsperrten persönlichen Kontos. Die globale Zuordnung einer Credential-Kennung
+zu einem Konto wird einmalig durch eine gemeinsame Compare-and-swap-Transaktion
+reserviert. Erst die anschließende Veröffentlichung im Mandanten erlaubt eine
+Anmeldung. Ein Abbruch dazwischen erteilt keinen Zugang; dasselbe Konto kann
+die Einrichtung erneut versuchen. Die Zuordnung bleibt nach dem Löschen
+erhalten und kann keinem anderen Konto zugewiesen werden. Der aktive Passkey,
+sein Zählerstand und sein Löschstatus sind zusätzlich an dauerhafte
+Kontrollnachweise außerhalb der Mandantendatei gebunden.
+
+Ein Passwortwechsel oder geänderter Anmeldename erhält eingerichtete Passkeys.
+Eine Mandanten-Recovery wechselt dagegen die Autoritätsgeneration; bisherige
+Passkeys werden dadurch unbrauchbar und müssen neu eingerichtet werden.
+
 Der Mandant richtet bei der Einführung eine Seed-Phrase für die
 Wiederherstellung ein und bewahrt sie außerhalb der Betreiber-Infrastruktur auf.
 Ihr Besitzer kann die betriebliche Schlüsselverwaltung und damit den Mandanten

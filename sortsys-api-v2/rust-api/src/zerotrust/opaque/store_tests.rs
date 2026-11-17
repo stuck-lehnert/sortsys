@@ -17,6 +17,7 @@ use std::{
 use tokio::{process::Command, task::JoinHandle};
 
 mod batching;
+mod passkeys;
 
 struct ApiTask(JoinHandle<()>);
 impl Drop for ApiTask {
@@ -43,6 +44,7 @@ fn configuration(store: QuackConfig) -> Config {
         admin_hash: "unused-test-admin-hash".into(),
         store,
         editors: crate::editors::EditorConfig::default(),
+        passkeys: crate::zerotrust::passkeys::Config::default(),
     }
 }
 
@@ -52,6 +54,7 @@ fn auth_service(settings: &Config, repository: Repository) -> AuthService {
         Arc::clone(&settings.admin_hash),
         Some(repository),
     )
+    .with_passkeys(settings.passkeys.clone())
 }
 
 async fn browser(mode: &str, root: &Path, endpoints: Option<&[String]>) {
@@ -1280,6 +1283,7 @@ async fn standalone_startup_needs_only_duckdb_and_closes_old_plaintext_routes() 
             .into(),
         store,
         editors: crate::editors::EditorConfig::default(),
+        passkeys: crate::zerotrust::passkeys::Config::default(),
     };
     let router = crate::standalone::connect(&settings).await.unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

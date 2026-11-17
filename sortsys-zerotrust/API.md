@@ -374,6 +374,34 @@ Signaturzähler allein genügt dafür nicht: Synchronisierte Passkeys können
 dauerhaft den Zählerstand null liefern. Die lokale PRF-Auswertung verhindert
 weder Challenge-Replays noch Fehler in der serverseitigen WebAuthn-Prüfung.
 
+Rusts Modul `webauthn` prüft ES256-Registrierungen mit `none`-Attestierung und
+anschließende Anmeldesignaturen. `Origin::parse` legt die erlaubte Herkunft und
+RP-Kennung fest. `verify_registration` liefert den geprüften öffentlichen
+Schlüssel samt Credential-Kennung und Authenticator-Zustand;
+`verify_authentication` benötigt dieses Ergebnis erneut. Beide Prüfungen
+verlangen Benutzeranwesenheit und Benutzerverifikation. Anschließend prüft
+`AuthenticatorState::follows` Zähler und Backup-Kennzeichen. Die Grenzen und
+Felder folgen [WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/).
+
+Eine gültige technische Sitzung allein soll keinen neuen dauerhaften Zugang
+erlauben. Deshalb signiert das entsperrte Konto zusätzlich
+`passkeyRegistrationFrame`: Mandant, unveränderliche Kontokennung, User Handle,
+Challenge-Token, das genaue öffentliche Registrierungspaket, das optionale
+Schlüsselpaket und der Gerätename sind darüber gebunden. Rust stellt denselben
+Rahmen als `webauthn::RegistrationBinding::frame` bereit. Für die Paketbindung
+dienen `registrationCredentialFrame` und `webauthn::registration_frame`; für das
+signierte Schlüsselpaket dient `passkeyVaultDigest`. Auch das Löschen benötigt
+eine Kontosignatur über `passkeyDeletionFrame` beziehungsweise
+`webauthn::deletion_frame`.
+
+`routingUserHandle(tenant, subjectBytes)` verpackt den Mandanten-Fingerabdruck
+und bis zu 31 anwendungseigene Bytes in höchstens 64 Bytes. Das Format enthält
+keinen veränderlichen Anmeldenamen. Rust verwendet `routing_user_handle` und
+`parse_routing_user_handle`. Ein User Handle ersetzt keinen Identitätsnachweis:
+Der Speicheradapter muss zusätzlich die registrierte Credential-Kennung und
+deren kontogebundene Signatur prüfen und doppelte Zuordnungen innerhalb der
+RP-Kennung ausschließen.
+
 ## Recovery und Speicherung
 
 Der Browser erzeugt eine 24-Wort-Phrase mit `createRecoveryPhrase`.

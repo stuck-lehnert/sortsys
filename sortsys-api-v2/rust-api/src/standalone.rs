@@ -22,6 +22,7 @@ pub struct Config {
     pub admin_hash: Arc<str>,
     pub store: QuackConfig,
     pub editors: crate::editors::EditorConfig,
+    pub passkeys: crate::zerotrust::passkeys::Config,
 }
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -37,6 +38,8 @@ pub enum ConfigError {
     InvalidStore,
     #[error(transparent)]
     InvalidEditors(#[from] crate::editors::ConfigError),
+    #[error(transparent)]
+    InvalidPasskeys(#[from] crate::zerotrust::passkeys::ConfigError),
 }
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -56,6 +59,7 @@ impl Config {
             admin_hash: Arc::from(admin_hash),
             store,
             editors: crate::editors::EditorConfig::from_env()?,
+            passkeys: crate::zerotrust::passkeys::Config::from_env()?,
         })
     }
 }
@@ -94,11 +98,14 @@ pub async fn connect_at(
     repository
         .read::<serde_json::Value>(key("runtime", "ready"))
         .await?;
-    let service = Arc::new(AuthService::from_credentials(
-        Arc::clone(&config.jwt_secret),
-        Arc::clone(&config.admin_hash),
-        Some(repository),
-    ));
+    let service = Arc::new(
+        AuthService::from_credentials(
+            Arc::clone(&config.jwt_secret),
+            Arc::clone(&config.admin_hash),
+            Some(repository),
+        )
+        .with_passkeys(config.passkeys.clone()),
+    );
     let settings = Arc::new(crate::llm::control::Settings::from_env());
     let runtime = crate::llm::live::Runtime::new(Arc::clone(&service), settings);
     runtime

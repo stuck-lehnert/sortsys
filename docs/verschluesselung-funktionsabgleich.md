@@ -23,6 +23,17 @@ bestehenden Kontospeicher auch auf einem neuen Gerät direkt im Browser. Ohne PR
 benötigt ein neues Gerät das gewöhnliche Passwort; ein bereits geschützter
 Gerätespeicher bleibt verwendbar.
 
+Ein nativer Chromium-Test verwendet die echten Passkey-Endpunkte zweier
+API-Instanzen und einen virtuellen Authenticator. Er prüft das Öffnen nach dem
+Leeren des lokalen Schlüsselspeichers, Passwortwechsel und Umbenennung über den
+Personalworkflow. Unsignierte oder veränderte Einrichtungen, fremde Herkünfte,
+mandantenübergreifende Credential-Kopien und wiederholte Antworten werden
+abgewiesen. Gleichzeitige Antworten mit Zählerstand null erzeugen genau eine
+Sitzung. Löschung und Seed-Recovery sperren auch frisch signierte Anmeldungen.
+Der Browsermodus der nativen API-Tests führt diesen Ablauf mit aus; Screenshot
+und Protokolle bleiben als Testartefakte erhalten. Die Framework-Prüfungen
+decken außerdem fehlerhafte CBOR-Pakete, Kurvenpunkte und Authenticator-Flags ab.
+
 **Benutzer anlegen und deren Passwort zurücksetzen.** Die Benutzeranlage
 speichert persönliche Profile verschlüsselt und legt nur technische
 Kontometadaten an der API an. Nach einer Einladung registriert das neue Mitglied

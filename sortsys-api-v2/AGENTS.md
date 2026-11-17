@@ -15,6 +15,8 @@
 ## Runtime configuration
 `JWT_SECRET` (at least 32 bytes), a bcrypt `ADMIN_HASH`, `DUCKDB_QUACK_URI`, `DUCKDB_CONTROL_URL` and `DUCKDB_SERVICE_TOKEN` are required. `PORT` defaults to `3000`. API settings can be read from `/run/secrets/SORTSYS_API_V2_<NAME>`; datastore connection settings use `/run/secrets/SORTSYS_STORE_<NAME>`.
 
+Passkeys additionally require a fixed `SORTSYS_PUBLIC_ORIGIN`. HTTPS is required except for local loopback development. Never derive the allowed origin or RP ID from request headers. Without this setting, password login remains available and passkey ceremonies are disabled.
+
 The process listens on `0.0.0.0:{PORT}`. Terminate TLS upstream. Never add a provider-controlled password reset or tenant decryption key.
 
 ## Verification

@@ -96,6 +96,7 @@ services:
       LLM_LIVE_INTERNAL_URL: ${LLM_LIVE_INTERNAL_URL:-}
       OFFICE_PUBLIC_ORIGIN: ${OFFICE_PUBLIC_ORIGIN}
       DRAWIO_PUBLIC_URL: /drawio
+      SORTSYS_PUBLIC_ORIGIN: ${SORTSYS_PUBLIC_ORIGIN}
     expose:
       - "3000"
     depends_on:

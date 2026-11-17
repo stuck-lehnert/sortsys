@@ -21,6 +21,7 @@ mod members;
 mod objects;
 mod opaque;
 mod ots;
+pub mod passkeys;
 mod recovery;
 mod resource_access;
 mod setup;
@@ -59,6 +60,7 @@ pub(crate) fn register_native(
     let builder = timestamps::register_metadata(builder, Arc::clone(&service));
     let builder = objects::register_creation(builder, Arc::clone(&service));
     let builder = events::register_metadata(builder, Arc::clone(&service));
+    let builder = passkeys::register(builder, Arc::clone(&service));
     opaque::register_account_auth(builder, service)
 }
 

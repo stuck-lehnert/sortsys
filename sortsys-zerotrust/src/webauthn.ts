@@ -28,7 +28,7 @@ export type PasskeyRegistrationCredential = {
   rawId: string;
   type: "public-key";
   response: { clientDataJSON: string; attestationObject: string };
-  transports?: string[];
+  transports?: string[] | null;
 };
 export type PasskeyAssertionCredential = {
   id: string;
