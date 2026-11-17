@@ -14,7 +14,7 @@ export async function testProtectedCommercial(client: Client, source: BusinessDa
   await prepareCommercialCases(client, source, subject, signal);
   await prepareCommercialCases(client, source, subject, signal);
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "commercial-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const requests: unknown[] = []; let lose = false, falseAck = false, raceCustomer = false;
   const observed: Client = { ...client, query: ((path, input, options) => { requests.push({ path, input }); return client.query(path, input, options); }) as Client["query"],
     mutate: (async (path, input, options) => {

@@ -20,7 +20,7 @@ function editingIdentity(): string | null {
   return account
     ? JSON.stringify([
         account.tenant,
-        account.username,
+        account.vault.subject,
         account.vault.signingKey,
         account.vault.encryptionKey,
       ])

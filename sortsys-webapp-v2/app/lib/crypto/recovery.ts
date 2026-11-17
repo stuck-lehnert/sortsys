@@ -217,11 +217,11 @@ export async function recoveryPlan(
       catalogStorage,
       registrationCrypto: {
         start: (password) => worker.call("registrationStart", { password }),
-        finish: (password, tenant, username, state, response) =>
+        finish: (password, tenant, subject, state, response) =>
           worker.call("registrationFinish", {
             password,
             tenant,
-            username,
+            subject,
             state,
             response,
           }),

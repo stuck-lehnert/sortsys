@@ -99,7 +99,7 @@ export async function testBillingPermissions(
   );
   await joinMemberInvitation(peer, invitation.link, signal);
   const account = unlockedAccount()!;
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   // Invitation approval synchronizes absence grants through the shared local
   // runtime. Native tests use the blocking DuckDB driver, not a browser worker.
   const ownerRuntime = acquireDataRuntime(ownerClient, signal, driver);
@@ -136,7 +136,7 @@ export async function testBillingPermissions(
     transport: Client,
     work: (business: Business) => Promise<T>,
   ): Promise<T> {
-    await acceptVaultWithKey(identity.dataKey, identity.vault, false);
+    await acceptVaultWithKey(identity.dataKey, identity.vault, identity.username, false);
     const business = createBusinessClient(transport, {
       productDriver: driver,
       gaebProcessor: gaebTestProcessor,
@@ -149,7 +149,7 @@ export async function testBillingPermissions(
   }
 
   async function grant(changes: { area: Collection; access: AccessValue }[]) {
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
     await changeAreaActionAccesses(
       ownerClient,
       subject,
@@ -426,7 +426,7 @@ export async function testBillingPermissions(
 
     stage =
       "numbering grant without configuration write or parent update rights";
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
     const numbering = editAccessDraft(accessDraft("none"), "write", ACTIONS);
     await changeAreaActionAccesses(
       ownerClient,
@@ -649,6 +649,6 @@ export async function testBillingPermissions(
     throw new Error(`Billing permissions failed at ${stage}`, { cause });
   } finally {
     peer.setToken(null);
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   }
 }

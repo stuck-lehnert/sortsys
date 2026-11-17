@@ -35,7 +35,7 @@ export async function testProjectPermissions(ownerClient: Client, memberClient: 
   await changeMemberAccess(ownerClient, user, { catalogue: "write", customers: "none", contacts: "none", vendors: "none", prices: "none", assistant: true }, signal);
   await changeProjectAccess(ownerClient, user, projectA.id, "read", signal);
   assert.deepEqual(await memberProjectAccess(ownerClient, user, signal), { [projectA.id]: "read" });
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   const keys: string[] = [], observed: Client = { ...memberClient, query: ((path, input, options) => {
     if (path === "zerotrust.keys.get") keys.push((input as { domain: string }).domain); return memberClient.query(path, input, options);
   }) as Client["query"] };
@@ -57,15 +57,15 @@ export async function testProjectPermissions(ownerClient: Client, memberClient: 
     const { format: _format, nonce: _nonce, ciphertext: _ciphertext, wrappedKey: _wrapped, signature: _sig, ...context } = calculationPacket.envelope;
     await assert.rejects(() => decryptObject(calculationPacket.envelope, context, previousKey, owner.identity.signingKey.publicKey),
       "The project's master-data key cannot decrypt its calculation, even if its ciphertext is supplied");
-  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectAccess(ownerClient, user, projectA.id, "write", signal);
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try {
     await required(business.mutate("projects.update", { id: projectA.id, data: { title: "Gezielt freigegebenes Projekt bearbeitet" } }));
     await required(business.mutate("projects.contacts.set", { projectId: projectA.id, contacts: [] }));
     assert.ok((await business.query("contacts.list", {}))[1], "Project editing and clearing links do not require decrypting all contacts");
     assert.ok((await business.mutate("projects.update", { id: projectB.id, data: { title: "Denied other project" } }))[1]);
-  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectAccess(ownerClient, user, projectA.id, "none", signal);
   const canary = "Projektinhalt nach Entzug der Projektfreigabe";
   await required(root.mutate("projects.update", { id: projectA.id, data: { title: canary } }));
@@ -76,16 +76,16 @@ export async function testProjectPermissions(ownerClient: Client, memberClient: 
     const { format: _format, nonce: _nonce, ciphertext: _ciphertext, wrappedKey: _wrapped, signature: _sig, ...context } = changed.envelope;
     await assert.rejects(() => decryptObject(changed.envelope, context, previousKey, owner.identity.signingKey.publicKey));
   } finally { current.close(); }
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try { assert.deepEqual(await required(business.query("projects.list", {})), []); }
-  finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectAccess(ownerClient, user, projectA.id, "read", signal);
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try { assert.equal((await required(business.query("projects.get", { id: projectA.id }))).title, canary); }
-  finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectCreation(ownerClient, user, true, signal);
   assert.equal(await memberProjectCreation(ownerClient, user, signal), true);
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   let created;
   business = createBusinessClient(memberClient, { productDriver: driver });
   try {
@@ -118,31 +118,31 @@ export async function testProjectPermissions(ownerClient: Client, memberClient: 
       if (key.includes(":")) assert.deepEqual(entry.creation?.parent, definition.creation, "Each module binds this exact project root");
     }
     assert.ok((await memberClient.mutate("zerotrust.policy.replace", { tenant: owner.tenant, version: "999999", rules: [], signature: definition.proof }))[1]);
-  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await root.invalidate("projects.list");
   assert.equal((await required(root.query("projects.get", { id: created.id }))).title, "Vom Mitarbeiter verschlüsselt angelegtes Projekt", "The mandatory administrator can read creator-published areas");
   assert.equal((await memberProjectAccess(ownerClient, user, signal))[created.id], "write");
   await changeProjectCreation(ownerClient, user, false, signal);
   assert.equal(await memberProjectCreation(ownerClient, user, signal), false);
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try {
     assert.ok((await business.mutate("projects.create", { title: "No longer allowed to create" }))[1]);
     await required(business.mutate("projects.update", { id: created.id, data: { title: "Bestehendes Projekt bleibt bearbeitbar" } }));
-  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectAccess(ownerClient, user, created.id, "read", signal);
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try {
     assert.equal((await required(business.query("projects.get", { id: created.id }))).title, "Bestehendes Projekt bleibt bearbeitbar");
     assert.ok((await business.mutate("projects.update", { id: created.id, data: { title: "Creator denied by explicit root policy" } }))[1]);
-  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectAccess(ownerClient, user, created.id, "none", signal);
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try { assert.ok((await business.query("projects.get", { id: created.id }))[1]); }
-  finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await changeProjectAccess(ownerClient, user, created.id, "read", signal);
-  await acceptVaultWithKey(member.dataKey, member.vault, false); business = createBusinessClient(memberClient, { productDriver: driver });
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false); business = createBusinessClient(memberClient, { productDriver: driver });
   try { assert.equal((await required(business.query("projects.get", { id: created.id }))).title, "Bestehendes Projekt bleibt bearbeitbar"); }
-  finally { business.dispose(); root.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  finally { business.dispose(); root.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await testProjectCommercialPermissions(ownerClient, memberClient, owner, member, projectA.id, signal);
   await testProjectModulePermissions(ownerClient, memberClient, owner, member, projectA.id, signal);
   await testDeleteOnlyAccess(ownerClient, memberClient, owner, member, driver, signal);

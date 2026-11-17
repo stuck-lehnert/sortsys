@@ -5,7 +5,7 @@ const areas = [{ scope, facet: "master-data" as const }, { scope, facet: "person
 const { setup, authorityKey } = await createTenantSetup(tenant, subject, identity, createRecoveryPhrase());
 const { signature, ...initialPolicy } = setup.policy;
 const policy = await signPolicy({ ...initialPolicy, version: "2", rules: [...initialPolicy.rules, ...areas.map(area => ({ ...area, subject, actions: [...ACTIONS], effect: "allow" as const }))] }, authorityKey.privateKey);
-const vault = await createAccountVault(base64(crypto.getRandomValues(new Uint8Array(64))), tenant, "scenario.admin", identity, {});
+const vault = await createAccountVault(base64(crypto.getRandomValues(new Uint8Array(64))), tenant, subject, identity, {});
 const domains: Awaited<ReturnType<typeof createDomain>>[] = [];
 for (const area of areas) domains.push(await createDomain({ tenant, id: `${area.scope}:${area.facet}`, ...area, generation: "1", policyVersion: "2", authorityGeneration: "1", authorityKey: authorityKey.privateKey,
   recovery: { encryptionKey: setup.authority.recoveryEncryptionKey, signingKey: setup.authority.recoverySigningKey }, readers: [{ subject, identity: await publicIdentity(identity) }] }));

@@ -3,7 +3,7 @@ import { recoveryFixture } from "./support/recoveryFixture";
 import {
   base64, bytes, createAccountVault, createDomain, encryptObject,
   finishOpaqueRegistration, frame, randomSecret, recoveryIdentity,
-  recoveryPageFrame, recoveryTransitionFrame, sign, startOpaqueRegistration,
+  opaqueIdentifiers, recoveryPageFrame, recoveryTransitionFrame, sign, startOpaqueRegistration,
 } from "../src/sortsys";
 import { server } from "@serenity-kit/opaque";
 
@@ -20,14 +20,14 @@ const inspectProbe = {
 const registration = await startOpaqueRegistration(f.password);
 const response = server.createRegistrationResponse({
   serverSetup: f.serverSetup,
-  userIdentifier: "test/scenario.admin",
+  userIdentifier: opaqueIdentifiers("test", f.setup.owner.user).client,
   registrationRequest: registration.registrationRequest,
 });
 const initialAccount = await finishOpaqueRegistration(
-  f.password, "test", "scenario.admin", registration, response.registrationResponse,
+  f.password, "test", f.setup.owner.user, registration, response.registrationResponse,
 );
 const vault = await createAccountVault(
-  initialAccount.exportKey, "test", "scenario.admin", f.owner,
+  initialAccount.exportKey, "test", f.setup.owner.user, f.owner,
   { recoveryGeneration: "1", recoverySigningKey: f.setup.authority.recoverySigningKey },
 );
 const envelope = await encryptObject({

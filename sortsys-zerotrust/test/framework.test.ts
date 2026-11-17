@@ -14,6 +14,7 @@ import {
   InvalidProtectedData,
   type ObjectContext,
   opaqueReady,
+  opaqueIdentifiers,
   openBox,
   type Policy,
   randomSecret,
@@ -326,6 +327,7 @@ test("another application performs two seed recoveries and retains its historica
     tenant: string;
     challengeId: string;
     username: string;
+    subject: string;
     registrationRequest: string;
     proof: string;
   }) => {
@@ -337,12 +339,13 @@ test("another application performs two seed recoveries and retains its historica
         input.tenant,
         input.challengeId,
         input.username,
+        input.subject,
         input.registrationRequest,
       ),
     );
     return server.createRegistrationResponse({
       serverSetup,
-      userIdentifier: `${input.tenant}/${input.username}`,
+      userIdentifier: opaqueIdentifiers(input.tenant, input.subject).client,
       registrationRequest: input.registrationRequest,
     });
   };

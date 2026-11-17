@@ -71,7 +71,7 @@ export default function InvitationPage() {
     account &&
     link &&
     account.tenant === link.invitation.tenant &&
-    account.username === link.invitation.username;
+    account.vault.subject === link.invitation.user;
   useEffect(() => {
     if (!matches || !link || !account) return;
     const current = new AbortController();
@@ -91,7 +91,7 @@ export default function InvitationPage() {
         if (!current.signal.aborted) setPhase("failed");
       });
     return () => current.abort();
-  }, [matches, link, account?.tenant, account?.username, attempt]);
+  }, [matches, link, account?.tenant, account?.vault.subject, attempt]);
   useEffect(() => {
     if (!matches || !["waiting", "ready"].includes(phase)) return;
     const subscription = client

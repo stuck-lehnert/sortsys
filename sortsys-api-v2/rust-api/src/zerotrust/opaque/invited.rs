@@ -41,7 +41,7 @@ async fn start(
     let registration =
         RegistrationRequest::<Suite>::deserialize(&decode(&input.registration_request, 128)?)
             .map_err(|_| invalid())?;
-    let credential_id = format!("{}/{}", input.tenant, account.username);
+    let credential_id = accounts::principal(&input.tenant, account.id).identifier()?;
     let response = ServerRegistration::<Suite>::start(
         &store_setup(&repository).await?,
         registration,
@@ -67,6 +67,7 @@ async fn start(
     )
     .await?;
     Ok(EnrollmentStartOutput {
+        subject: accounts::subject(account.id),
         exchange,
         registration_response: encode(&response.message.serialize()),
         tenant: input.tenant,
@@ -115,7 +116,7 @@ async fn finish(
         || status.epoch != exchange.tenant_epoch
         || account.credential.is_some()
         || input.vault.tenant != tenant
-        || input.vault.username != account.username
+        || input.vault.subject != accounts::subject(account.id)
         || input.claim.revision != "1"
         || input.claim.encryption_key != input.vault.encryption_key
         || input.claim.signing_key != input.vault.signing_key

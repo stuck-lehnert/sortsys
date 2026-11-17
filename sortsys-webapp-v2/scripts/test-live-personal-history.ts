@@ -9,7 +9,7 @@ import { required } from "../app/lib/data/protectedObjects";
  * navigation targets nor shortcut labels are sent to personalization RPCs. */
 export async function testProtectedPersonalHistory(client: Client, driver: () => Promise<DuckDriver>, password: string) {
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "personal-history-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const sent: { path: string; input: unknown }[] = [];
   const observed: Client = { ...client, mutate: (async (path, input, options) => { sent.push({ path, input }); return client.mutate(path, input, options); }) as Client["mutate"] };
   const one = createBusinessClient(observed, { productDriver: driver }), two = createBusinessClient(peer, { productDriver: driver });

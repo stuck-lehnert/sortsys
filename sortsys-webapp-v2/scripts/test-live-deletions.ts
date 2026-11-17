@@ -17,7 +17,7 @@ export async function testDeleteOnlyAccess(ownerClient: Client, memberClient: Cl
   const area = projectCollection(project.id);
   await changeProjectAccess(ownerClient, subject, project.id, "read", signal);
   await changeAreaActionAccesses(ownerClient, subject, [{ area, patch: { delete: true } }], signal);
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   let key: CryptoKey, original: unknown;
   const deletions: MutateInput<"zerotrust.objects.batch">[] = [];
   try {
@@ -50,7 +50,7 @@ export async function testDeleteOnlyAccess(ownerClient: Client, memberClient: Cl
     finally { business.dispose(); }
     const deleted = deletions[0]; assert.ok(deleted); assert.equal(deleted.objects[0]!.envelope.format, TOMBSTONE_FORMAT);
     assert.equal((await required(memberClient.mutate("zerotrust.objects.batch", deleted))).success, true, "An exact deletion replay is idempotent");
-  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   try {
     const current = await protectedCollection(ownerClient, area, signal);
     try {

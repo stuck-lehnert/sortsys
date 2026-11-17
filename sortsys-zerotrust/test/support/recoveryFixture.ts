@@ -6,6 +6,7 @@ import {
   createRecoveryPhrase,
   createTenantSetup,
   opaqueReady,
+  opaqueIdentifiers,
   prepareRecovery,
   randomSecret,
 } from "../../src/sortsys";
@@ -60,12 +61,12 @@ export async function recoveryFixture(options: { context?: string } = {}) {
   const password = "public-synthetic-test-password";
   const register = async (input: {
     tenant: string;
-    username: string;
+    subject: string;
     registrationRequest: string;
   }) =>
     server.createRegistrationResponse({
       serverSetup,
-      userIdentifier: `${input.tenant}/${input.username}`,
+      userIdentifier: opaqueIdentifiers(input.tenant, input.subject).client,
       registrationRequest: input.registrationRequest,
     });
   const { plan, identity } = await prepareRecovery({

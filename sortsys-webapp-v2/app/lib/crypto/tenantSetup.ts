@@ -183,14 +183,14 @@ export async function commitOwner(
         const finished = await worker.call("registrationFinish", {
           password: draft.password,
           tenant: draft.link.tenant,
-          username: draft.username,
+          subject: `user:${draft.userId}`,
           state: registration,
           response: started.registrationResponse,
         });
         const vault = await createAccountVault(
           finished.exportKey,
           draft.link.tenant,
-          draft.username,
+          `user:${draft.userId}`,
           draft.identity,
           {
             recoveryGeneration: draft.setup.authority.generation,
@@ -238,7 +238,7 @@ export async function commitOwner(
             (await digest(accountVaultFrame(vault)))
         )
           throw new InvalidProtectedData();
-        await acceptVault(finished.exportKey, completed.vault);
+        await acceptVault(finished.exportKey, completed.vault, completed.username);
         assertCurrent();
       } finally {
         worker.close();

@@ -1,27 +1,27 @@
 {
   "notice": "Public synthetic test credentials, OPAQUE server setup, account and signed PRF wrapper. No private account key, password export key or PRF output is retained. Never use these credentials in production.",
   "password": "SyntheticPasskeyAccount-261113",
-  "opaqueServerSetup": "U8-8tAN1m0ycrqrCSPHwi_U51-bsO16ry1F2NOwJlYyagl9A9e0YvdJXs181_uzRtuhz9Ml41EbpGifktLnr0fmqSFhToNW1hvTI6MxFC9bEKe6zf46ghAsKPWA4q1kHEDmUWduyJi0eebM-_11TC4v-ITBeA71XE4AjLk-s-Ds",
-  "registrationRecord": "QKIvFbforeH5lilmHTFViK6wiXhuwHXSrAYZKHAhqw5q1vpRI7B0WtWJW46AbiR4ssbJe46jEK8fqUACbNjJxf09evjsBpLg9mmfw3skRG5RVHaR_x_Va7T1HoKAFA36SauOcEalETKI_WsM-xAUFfGlRr9gaCyRBVuAhj2gnj-Iu5sxF1DkhKA_45vT_a839uokGABCK5wS3PECF5RSSz__Zfsx7p0IK_4oYXVjJi6UQSveioLLuNW0qNU1g7kL",
+  "opaqueServerSetup": "kGpjImojcNHpD_p9X-2xkf499YTwDlPniLlqcJa26fZqwjPuA0w3pXABUP_1FG4Z07lZ5cYO-2nGo1-jdLCMP09U5UVSrUvnLRkpk5tPu-niXKaKS6SvQU3ZNWm0Sd0LOIFG6xco10edpVKDFl3acuxY-m-9y05M7LZOA_i13zQ",
+  "registrationRecord": "KLHd3_H_opulfF6RocjcpgtMPDeYnuylf15QVCCjwgOdMT29Zb5YGtrYAXy140pEH9L-9e6n2PbGHQL5TyVitf5kNzjck8gJZWXBaNp6LKMbWkgYoxla6vtGh2Sw6A5wU0AydH4BiRjK1wD4jF47edeMiJ4OBCk5mPRXbwwsB_yoxa0yqpJFQVtjWLfIWZF1Y-QlCA9_9kiL2FOFuHNKz0O2Nn929wvpFO0L-P4RsL-cxziGfyM6anUuw45hMiJo",
   "account": {
     "tenant": "test",
-    "username": "john.doe",
-    "encryptionKey": "tu42QhMUYxWZZ6w6ehQuW7CH5cTvpIWbIKxCwlt9ok4",
-    "signingKey": "3g4WKl7v79KkGUM1gFTFDTtHdnQz6R8ysqjLN7OH0Oc",
-    "format": "sortsys-account-v1",
-    "nonce": "nvuCp9e2i_JFjNp4",
-    "ciphertext": "Hyk9J3ffKial0svJ96ZYZif1sSxmBuziI-0NzsZppXarFhqjab0aYk5a2FuYo0JCOnZSoJtO_euZltojokSKP4LtuN6_k58of-BvOuGKLd420T6CTWHaBOqPhv4Iohw3rTQS_o0vBNSOFROPJOn1tVgT8FaUZz9F4yEMnVrC40ZxIzjPxlLE8qu55514_XWkJ6Z4HXUE85TxNCSVjHLpGDflmdUqFzVhY0g8ClW4ytfi-OO3WCdq",
-    "wrappedKey": "ahPBQK93mZKrrcwn6mqE2oE7HSulIWgnxhYn4AgHXKeYMgqy56rSZQ"
+    "subject": "user:1",
+    "encryptionKey": "sgrXJtCUk9GIPYGmr1NsRYzeSoaznMDTRXoLfQelcBA",
+    "signingKey": "sgP7pExmxL5iiwjv44B02JIuKZj76CQGgKCpids-Sg8",
+    "format": "sortsys-account-v2",
+    "nonce": "4DdhwEhKTUjtynEZ",
+    "ciphertext": "W6EUM-l1nc9B2u8xOEGSMg-gyRGsnQi4MzCBeeMHIewTsiyskimHiIrbDVROJjYRgkuBjalNPMvcrsDTpVH8z_a7tlJJlCLwq4zmyp-HVOEspo10JjCQA7Cg-emN83vrrOKPmGngrPZ9H2At2QrSpLLXCq_Zl_yAFbqZj-RW-6eae-a9b2AfaMpdRlRvZp1DiqZLAnZlKlo9tnRdAd10JEUm9PYZTIJ6w4uMCrbq93c-xFz35yYk",
+    "wrappedKey": "4CDze_tVXNM36t51vCKnLTKVWOYwE3DQ9weLUFZ6uSzK1jR9Uky63w"
   },
   "packet": {
     "tenant": "test",
-    "username": "john.doe",
-    "encryptionKey": "tu42QhMUYxWZZ6w6ehQuW7CH5cTvpIWbIKxCwlt9ok4",
-    "signingKey": "3g4WKl7v79KkGUM1gFTFDTtHdnQz6R8ysqjLN7OH0Oc",
+    "subject": "user:1",
+    "encryptionKey": "sgrXJtCUk9GIPYGmr1NsRYzeSoaznMDTRXoLfQelcBA",
+    "signingKey": "sgP7pExmxL5iiwjv44B02JIuKZj76CQGgKCpids-Sg8",
     "rpId": "example.test",
-    "credentialId": "eVdkeoyXTPuSD_Q9TRo62zEOghiRskc9DLgHq5KZF-s",
-    "format": "sortsys-passkey-vault-v1",
-    "wrappedKey": "ug8vIHN-arUeQGT0_5Y58BCSJ-434jfgaxcH07G_HlOnglXglcZfjA",
-    "signature": "6loRk7b_9BazrdE0jastQ6Bi0J1111RxSxck-tpN0VR3tWw25M-HQwmKAfNa2vGBJyb466Ok6aybQWe1Llc-AA"
+    "credentialId": "sNNJ3JbXNBFV0ZAfGLDj3oFdRCX3vGPPSvCQ9YEyr_s",
+    "format": "sortsys-passkey-vault-v2",
+    "wrappedKey": "5k0AifvapJVhwtW5egUg8Lxl2T2TX4jO9pfHfmm2ifDl6zjbc8HCMg",
+    "signature": "o4S2YwlYhif668yQ1FGl5GYaRbEchu3mt0ekAUDfY7eF_XOOJwEZD4UgnvybBd0nNv7_6DP8afqnMsnjUfvnBQ"
   }
 }

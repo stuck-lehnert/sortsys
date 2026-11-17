@@ -1,4 +1,5 @@
 export * from "./encoding";
+export * from "./credentials";
 export * from "./anchors";
 export * from "./identity";
 export * from "./publicProofs";

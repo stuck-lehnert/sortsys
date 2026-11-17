@@ -19,7 +19,7 @@ export async function testProtectedAbsences(client: Client, source: BusinessData
   const signal = new AbortController().signal;
   await prepareAbsences(client, source, subject, signal, driver); await prepareAbsences(client, source, subject, signal, driver);
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "absences-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const sent: { path: string; input: unknown }[] = []; let lose = false, discard = false;
   const observed: Client = { ...client,
     query: ((path, input, options) => { sent.push({ path, input }); return client.query(path, input, options); }) as Client["query"],

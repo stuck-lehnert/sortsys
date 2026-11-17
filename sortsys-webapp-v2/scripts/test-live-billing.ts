@@ -70,7 +70,7 @@ export async function testProtectedBilling(
     username: account.username,
     password,
   });
-  await acceptVaultWithKey(account.dataKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
   const sent: { path: string; input: unknown }[] = [];
   let loseReply = false;
   let loseInvoiceReply = false;

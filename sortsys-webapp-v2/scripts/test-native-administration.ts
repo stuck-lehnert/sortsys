@@ -142,7 +142,7 @@ async function enroll(
   const password = `Private-password-${username}-2026!`;
   await signInMemberInvitation(client, invitation.link, password, signal);
   await joinMemberInvitation(client, invitation.link, signal);
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, false);
+  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
   await approveMemberInvitation(
     owner,
     invitation.link.invitation.id,
@@ -155,7 +155,7 @@ async function enroll(
     client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
   );
   assert.equal(session.roles.includes(":admin"), false);
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, false);
+  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
   return { subject: `user:${person.id}`, account };
 }
 
@@ -250,6 +250,7 @@ try {
   await acceptVaultWithKey(
     delegated.account.dataKey,
     delegated.account.vault,
+    delegated.account.username,
     false,
   );
   await assert.rejects(() => administratorContext(manager, signal));
@@ -443,6 +444,7 @@ try {
     await acceptVaultWithKey(
       employee.account.dataKey,
       employee.account.vault,
+      employee.account.username,
       false,
     );
     const business = createBusinessClient(reader, {
@@ -461,6 +463,7 @@ try {
     await acceptVaultWithKey(
       delegated.account.dataKey,
       delegated.account.vault,
+      delegated.account.username,
       false,
     );
   }
@@ -548,6 +551,7 @@ try {
   await acceptVaultWithKey(
     employee.account.dataKey,
     employee.account.vault,
+    employee.account.username,
     false,
   );
   const collection = await protectedCollection(
@@ -576,6 +580,7 @@ try {
   await acceptVaultWithKey(
     delegated.account.dataKey,
     delegated.account.vault,
+    delegated.account.username,
     false,
   );
   const readOnly = await candidate(writable, ["read"]);
@@ -697,7 +702,7 @@ try {
   console.log(
     "Native key history: bounded selections retain exact definition/key pairs and reject partial, duplicate, unavailable or unauthorized reads",
   );
-  await acceptVaultWithKey(added.account.dataKey, added.account.vault, false);
+  await acceptVaultWithKey(added.account.dataKey, added.account.vault, added.account.username, false);
   assert.ok(
     (
       await newReader.query(
@@ -710,6 +715,7 @@ try {
   await acceptVaultWithKey(
     delegated.account.dataKey,
     delegated.account.vault,
+    delegated.account.username,
     false,
   );
   const shared = await candidate(retained, ["read"], added.subject);
@@ -884,7 +890,7 @@ try {
       ),
     ),
   };
-  await acceptVaultWithKey(added.account.dataKey, added.account.vault, false);
+  await acceptVaultWithKey(added.account.dataKey, added.account.vault, added.account.username, false);
   const addedBusiness = createBusinessClient(newReader, {
     productDriver: duckDriver,
   });
@@ -917,6 +923,7 @@ try {
   await acceptVaultWithKey(
     delegated.account.dataKey,
     delegated.account.vault,
+    delegated.account.username,
     false,
   );
   const revoked = await candidate(shared, [], added.subject);
@@ -988,7 +995,7 @@ try {
     )[1],
   );
 
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, false);
+  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
   const effective = (
     await verifyPolicy(revoked, { tenant: login.tenant, authority })
   ).permissions;
@@ -1017,6 +1024,7 @@ try {
   await acceptVaultWithKey(
     delegated.account.dataKey,
     delegated.account.vault,
+    delegated.account.username,
     false,
   );
   const stale = await candidate(checkpoint, ["read"]);

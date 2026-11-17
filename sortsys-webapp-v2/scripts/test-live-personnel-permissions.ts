@@ -9,7 +9,7 @@ import { personnelCollection } from "../app/lib/data/personnelData";
 import { required } from "../app/lib/data/protectedObjects";
 
 export async function testPersonnelPermissions(ownerClient: Client, memberClient: Client, owner: UnlockedAccount, member: UnlockedAccount, driver: () => Promise<DuckDriver>, signal: AbortSignal) {
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const actor = await required(memberClient.query("auth.sessionInfo", undefined)), ownerSession = await required(ownerClient.query("auth.sessionInfo", undefined));
   const read = createBusinessClient(ownerClient, { productDriver: driver });
   const people = await required(read.query("users.list", { deactivated: false })), original = people.find(person => person.id !== actor.user.id && person.id !== ownerSession.user.id)!; read.dispose(); assert.ok(original);
@@ -33,7 +33,7 @@ export async function testPersonnelPermissions(ownerClient: Client, memberClient
     if (path === "zerotrust.keys.get" && (input as { domain: string }).domain === master.domain) return Promise.resolve([null, new Error("No name key allowed")]);
     return memberClient.query(path, input, options);
   }) as Client["query"] };
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   const business = createBusinessClient(observed, { productDriver: driver });
   try {
     assert.ok((await business.query("users.get", { id: original.id }))[1]);
@@ -44,7 +44,7 @@ export async function testPersonnelPermissions(ownerClient: Client, memberClient
     assert.ok((await business.mutate("users.update", { id: other.id, data: { costPerHour: 81.375 } }))[1]);
     assert.equal(calls.some(call => call.path === "zerotrust.keys.get" && (call.input as { domain: string }).domain === master.domain), false);
     assert.equal(calls.some(call => call.path.startsWith("users.")), false);
-  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { business.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   const ownerView = createBusinessClient(ownerClient, { productDriver: driver });
   try {
     const changed = await required(ownerView.query("users.get", { id: original.id }));

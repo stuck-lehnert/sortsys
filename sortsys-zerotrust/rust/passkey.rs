@@ -12,7 +12,7 @@ use ts_rs::TS;
 pub struct PasskeyVault {
     pub format: String,
     pub tenant: String,
-    pub username: String,
+    pub subject: String,
     pub rp_id: String,
     pub credential_id: String,
     pub encryption_key: String,
@@ -23,7 +23,7 @@ pub struct PasskeyVault {
 
 impl PasskeyVault {
     pub fn frame(&self) -> Result<Vec<u8>> {
-        if self.format != "sortsys-passkey-vault-v1"
+        if self.format != "sortsys-passkey-vault-v2"
             || self.rp_id.is_empty()
             || self.rp_id.len() > 253
             || !self
@@ -34,7 +34,7 @@ impl PasskeyVault {
             return Err(invalid());
         }
         identifier(&self.tenant)?;
-        identifier(&self.username)?;
+        identifier(&self.subject)?;
         if decode(&self.credential_id, 1024)?.is_empty() {
             return Err(invalid());
         }
@@ -43,11 +43,11 @@ impl PasskeyVault {
         sized::<40>(&self.wrapped_key)?;
         sized::<64>(&self.signature)?;
         Ok(frame(
-            "sortsys/passkey-vault/v1",
+            "sortsys/passkey-vault/v2",
             &[
                 &self.format,
                 &self.tenant,
-                &self.username,
+                &self.subject,
                 &self.rp_id,
                 &self.credential_id,
                 &self.encryption_key,
@@ -67,7 +67,7 @@ impl PasskeyVault {
     ) -> Result<()> {
         account.validate()?;
         if self.tenant != account.tenant
-            || self.username != account.username
+            || self.subject != account.subject
             || self.encryption_key != account.encryption_key
             || self.signing_key != account.signing_key
             || self.rp_id != rp_id
@@ -117,7 +117,7 @@ mod tests {
                 .is_err()
         );
         let mut account = input.account.clone();
-        account.username = "another-user".into();
+        account.subject = "another-user".into();
         assert!(
             input
                 .packet

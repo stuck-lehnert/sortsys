@@ -15,11 +15,11 @@ export async function testMemberLifecycle(administrator: Client, memberClient: C
   if (process.env.SORTSYS_DISPOSABLE_MIGRATION_TEST !== "1" || !location.hostname.startsWith("sortsys-test-api-postgres-")) throw new Error("Disposable tenant required");
   const database = new SQL(location.href), session = await required(administrator.query("auth.sessionInfo", undefined));
   const personal = privateLlmCollection(`user:${id}`), historyId = newAssistantId(), privateText = "Eigene vertrauliche Notiz zur Reaktivierung 63821";
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   try {
     const history = await openPrivateLlm(memberClient, signal);
     try { await history.save("chat", historyId, { text: privateText }); } finally { history.close(); }
-  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   assert.ok((await administrator.query("zerotrust.keys.get", { domain: personal.domain, generation: "1" }, { strategy: "network-only" }))[1]);
   let mode: "normal" | "drop" | "race" | "lost" = "normal";
   const attempts: MutateInput<"zerotrust.objects.batch">[] = [];
@@ -74,7 +74,7 @@ export async function testMemberLifecycle(administrator: Client, memberClient: C
     await database`UPDATE users SET deactivated_at=NULL WHERE id=${addressId(id)}::bigint`;
     await signIn(memberClient, { tenant: member.tenant, username: member.username, password });
     assert.ok((await memberClient.query("zerotrust.domains.list", undefined, { strategy: "network-only" }))[1], "The signed suspension vetoes a restored database login");
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
     await database`UPDATE users SET deactivated_at=${disabled.deactivatedAt}::timestamptz WHERE id=${addressId(id)}::bigint`;
 
     await required(change("archive")); assert.ok((await state()).archivedAt); assert.ok((await profile()).archivedAt);
@@ -92,10 +92,10 @@ export async function testMemberLifecycle(administrator: Client, memberClient: C
       const history = await openPrivateLlm(memberClient, signal);
       try { assert.deepEqual((await history.list("chat")).find(entry => entry.id === historyId)!.value, { text: privateText }); }
       finally { history.close(); }
-    } finally { reader.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+    } finally { reader.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
     const currentPersonal = (await required(administrator.query("zerotrust.domains.list", undefined, { strategy: "network-only" }))).find(domain => domain.id === personal.domain)!;
     assert.ok((await administrator.query("zerotrust.keys.get", { domain: personal.domain, generation: currentPersonal.generation }, { strategy: "network-only" }))[1], "Reactivation must not give the administrator personal-history keys");
     signal.throwIfAborted();
     console.log("Protected account lifecycle verified: atomic profile/auth/policy changes, lost and false ACKs, rollback after a raced public version, self/ordinary-user denial, destroyed sessions, archive/unarchive semantics, operator-restored login veto and reactivation without losing individual grants or private costs.");
-  } finally { mode = "normal"; await database.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { mode = "normal"; await database.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
 }

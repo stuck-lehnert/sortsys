@@ -5,7 +5,7 @@ import { base64, frame } from "./encoding";
 type StoredDevice = {
   id: string;
   tenant: string;
-  username: string;
+  subject: string;
   vault: AccountVault;
   key: CryptoKey;
   nonce: Uint8Array<ArrayBuffer>;
@@ -33,19 +33,19 @@ function open(): Promise<IDBDatabase> {
       reject(new Error("Der lokale Schlüsselspeicher ist belegt."));
   });
 }
-function id(tenant: string, username: string): string {
-  return base64(frame("sortsys/device-account/v1", [tenant, username]));
+function id(tenant: string, subject: string): string {
+  return base64(frame("sortsys/device-account/v1", [tenant, subject]));
 }
 
 async function get(
   tenant: string,
-  username: string,
+  subject: string,
 ): Promise<StoredDevice | undefined> {
   const db = await open();
   try {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction("accounts", "readonly");
-      const request = tx.objectStore("accounts").get(id(tenant, username));
+      const request = tx.objectStore("accounts").get(id(tenant, subject));
       let result: StoredDevice | undefined;
       request.onsuccess = () => {
         result = request.result as StoredDevice | undefined;
@@ -65,10 +65,10 @@ async function get(
 
 export async function hasDeviceVault(
   tenant: string,
-  username: string,
+  subject: string,
 ): Promise<boolean> {
   try {
-    return Boolean(await get(tenant, username));
+    return Boolean(await get(tenant, subject));
   } catch {
     return false;
   }
@@ -78,7 +78,7 @@ export async function hasDeviceVault(
  * make a protected account eligible for automatic plaintext legacy sign-in. */
 export async function hasProtectedAccount(
   tenant: string,
-  username: string,
+  subject: string,
 ): Promise<boolean> {
   let db: IDBDatabase | undefined;
   try {
@@ -88,17 +88,17 @@ export async function hasProtectedAccount(
         ["accounts", "protected-accounts"],
         "readonly",
       );
-      const first = tx.objectStore("accounts").get(id(tenant, username));
-      const second = tx.objectStore("protected-accounts").get(
-        id(tenant, username),
-      );
+      const first = tx.objectStore("accounts").get(id(tenant, subject));
+      const second = tx
+        .objectStore("protected-accounts")
+        .get(id(tenant, subject));
       tx.oncomplete = () => resolve(Boolean(first.result || second.result));
       tx.onabort = () => reject(new Error());
     });
   } catch {
     return true;
-  } // Storage failure cannot authorize a downgrade.
-   finally {
+  } finally {
+    // Storage failure cannot authorize a downgrade.
     db?.close();
   }
 }
@@ -133,19 +133,17 @@ export async function rememberDeviceVault(
           ["accounts", "protected-accounts"],
           "readwrite",
         );
-        tx.objectStore("accounts").put(
-          {
-            id: id(vault.tenant, vault.username),
-            tenant: vault.tenant,
-            username: vault.username,
-            vault,
-            key,
-            nonce,
-            ciphertext,
-          } satisfies StoredDevice,
-        );
+        tx.objectStore("accounts").put({
+          id: id(vault.tenant, vault.subject),
+          tenant: vault.tenant,
+          subject: vault.subject,
+          vault,
+          key,
+          nonce,
+          ciphertext,
+        } satisfies StoredDevice);
         tx.objectStore("protected-accounts").put({
-          id: id(vault.tenant, vault.username),
+          id: id(vault.tenant, vault.subject),
         });
         tx.oncomplete = () => resolve();
         tx.onabort = () => reject(new Error());
@@ -165,17 +163,20 @@ export async function rememberDeviceVault(
 
 export async function restoreDeviceVault(
   tenant: string,
-  username: string,
+  subject: string,
 ): Promise<{ dataKey: CryptoKey; vault: AccountVault } | null> {
   let raw: Uint8Array<ArrayBuffer> | undefined;
   try {
-    const stored = await get(tenant, username);
+    const stored = await get(tenant, subject);
     if (
-      !stored || stored.tenant !== tenant || stored.username !== username ||
+      !stored ||
+      stored.tenant !== tenant ||
+      stored.subject !== subject ||
       stored.key.extractable
-    ) return null;
+    )
+      return null;
     const vault = accountVault(stored.vault);
-    if (vault.tenant !== tenant || vault.username !== username) return null;
+    if (vault.tenant !== tenant || vault.subject !== subject) return null;
     raw = new Uint8Array(
       await crypto.subtle.decrypt(
         {

@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sortsys_zerotrust::crypto::AccountVault;
+use sortsys_zerotrust::{credentials::CredentialPrincipal, crypto::AccountVault};
 
 use super::{Repository, Transaction, key, unavailable};
 use crate::{
@@ -103,6 +103,18 @@ pub fn denied() -> RpcError {
     .with_http_code(401)
 }
 
+/// Public immutable identity shared by password, passkey and vault encryption.
+pub fn subject(user: i64) -> String {
+    format!("user:{}", crate::ids::Id(user).encode())
+}
+
+pub fn principal(tenant: &str, user: i64) -> CredentialPrincipal {
+    CredentialPrincipal {
+        tenant: tenant.into(),
+        subject: subject(user),
+    }
+}
+
 pub fn account_key(user: i64) -> sortsys_zerotrust::metadata::RecordKey {
     key("accounts", &user.to_string())
 }
@@ -164,7 +176,7 @@ pub async fn session_identity(
         return Err(denied());
     }
     if account.credential()?.vault.tenant != tenant
-        || account.credential()?.vault.username != account.username
+        || account.credential()?.vault.subject != subject(account.id)
         || !["de", "en"].contains(&account.locale.as_str())
     {
         return Err(unavailable());
@@ -217,7 +229,7 @@ pub async fn checked_session(
         || account.username != auth.user.username
         || account.roles != auth.roles
         || account.credential()?.vault.tenant != auth.tenant
-        || account.credential()?.vault.username != account.username
+        || account.credential()?.vault.subject != subject(account.id)
         || session.id != session_id
         || session.user_id != user
         || session.account_epoch != account.epoch

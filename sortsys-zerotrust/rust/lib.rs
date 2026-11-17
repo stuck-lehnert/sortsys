@@ -4,6 +4,7 @@
 
 pub mod administration;
 pub mod anchors;
+pub mod credentials;
 pub mod crypto;
 pub mod delegations;
 pub mod domains;

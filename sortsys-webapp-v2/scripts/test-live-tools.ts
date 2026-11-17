@@ -16,7 +16,7 @@ export async function testProtectedTools(client: Client, source: BusinessDatabas
   await prepareTools(client, source, subject, signal);
   await prepareTools(client, source, subject, signal);
   const peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "tools-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const sent: { path: string; input: unknown }[] = []; let lose = false, falseAck = false, race: (() => Promise<void>) | null = null;
   const observed: Client = { ...client, query: ((path, input, options) => { sent.push({ path, input }); return client.query(path, input, options); }) as Client["query"],
     mutate: (async (path, input, options) => {

@@ -58,7 +58,7 @@ export async function testFilePermissions(
     viewKey: `/2/integration/view/${letter.repeat(32)}/`,
   });
   try {
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     assert.ok(
       (await business.query("projects.files.list", { projectId }))[1],
@@ -76,7 +76,7 @@ export async function testFilePermissions(
       "Legacy source access cannot bypass a missing file grant",
     );
     business.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
     await changeProjectAccess(
       rootClient,
       user,
@@ -91,7 +91,7 @@ export async function testFilePermissions(
       undefined,
       room("a"),
     );
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     assert.equal(
       await (await business.files.blob(projectId, id)).text(),
@@ -248,7 +248,7 @@ export async function testFilePermissions(
       "Native authorization denies a validly signed read-only writer too",
     );
     business.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
     await changeProjectAccess(
       rootClient,
       user,
@@ -305,7 +305,7 @@ export async function testFilePermissions(
     } finally {
       collection.close();
     }
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     assert.ok((await business.query("projects.files.list", { projectId }))[1]);
     assert.ok(
@@ -313,7 +313,7 @@ export async function testFilePermissions(
       "Revoking files does not revoke master data",
     );
     business.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
     await changeProjectAccess(
       rootClient,
       user,
@@ -329,7 +329,7 @@ export async function testFilePermissions(
       undefined,
       room("c"),
     );
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     assert.ok((await business.query("projects.get", { id: projectId }))[1]);
     assert.equal(
@@ -365,7 +365,7 @@ export async function testFilePermissions(
       "No project title key required",
     );
     business.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
     await changeProjectAccess(rootClient, user, projectId, "read", signal);
     await changeProjectAccess(
       rootClient,
@@ -403,7 +403,7 @@ export async function testFilePermissions(
       await (await owner.files.blob(projectId, id)).text(),
       "Edited by a file-only collaborator",
     );
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     const priorRead = await business.files.officeStatus(projectId, id);
     assert.equal(priorRead.canEdit, false);
@@ -414,7 +414,7 @@ export async function testFilePermissions(
     );
     assert.equal(priorRead.previousSession, null);
     business.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
     const nextRoom = await owner.files.publishOfficeSession(
       projectId,
       id,
@@ -456,7 +456,7 @@ export async function testFilePermissions(
         new Blob(["Stale editor after policy change"]),
       ),
     );
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     const downgraded = await business.files.officeStatus(projectId, id);
     assert.equal(downgraded.canEdit, false);
@@ -471,7 +471,7 @@ export async function testFilePermissions(
       ),
     );
     business.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
     await owner.files.saveOffice(
       projectId,
       id,
@@ -481,7 +481,7 @@ export async function testFilePermissions(
   } finally {
     business?.dispose();
     owner.dispose();
-    await acceptVaultWithKey(root.dataKey, root.vault, false);
+    await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
   }
   console.log(
     "File grants and private Office sessions verified: independent master/file keys, source bypass denied, read-only signed writes denied, rotation excludes old keys, individually sealed editor capabilities, shared-session winner, read-only downgrade and stale editor-save denial without master-data decryption.",

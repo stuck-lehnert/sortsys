@@ -45,7 +45,7 @@ export async function testProtectedDeliveryNotes(client: Client, source: Busines
   await prepareDeliveryNotes(client, source, subject, signal); await prepareDeliveryNotes(client, source, subject, signal);
   const account = unlockedAccount()!, peerUrl = process.env.SORTSYS_LLM_TEST_PEER!, peer = createClient(peerUrl, "delivery-note-peer");
   await signIn(peer, { tenant: account.tenant, username: account.username, password });
-  await acceptVaultWithKey(account.dataKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
   const requests: { path: string; input: unknown }[] = [];
   let betweenFacets: (() => Promise<void>) | null = null;
   const observed: Client = { ...client,

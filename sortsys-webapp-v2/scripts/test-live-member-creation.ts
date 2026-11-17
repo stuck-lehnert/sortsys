@@ -57,13 +57,13 @@ export async function testMemberCreation(administrator: Client, memberClient: Cl
     assert.equal(sent.some(request => request.path.startsWith("users.")), false);
   } finally { business.dispose(); await database.close(); }
 
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   const colleague = createBusinessClient(memberClient, { productDriver: driver });
   try {
     const person = await required(colleague.query("users.get", { id: input.operationId }));
     assert.equal(person.firstName, input.firstName); assert.equal(person.costPerHour, null); assert.equal(person.vacationDaysPerYear, null);
     assert.ok((await colleague.mutate("users.create", { ...input, operationId: publicId(newProductRowId()), username: `${input.username}.denied` }))[1]);
-  } finally { colleague.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { colleague.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
 
   const invitation = await createMemberInvitation(administrator, { id: input.operationId, username: input.username },
     { catalogue: "none", vendors: "none", prices: "none", customers: "none", contacts: "none", assistant: true }, signal);
@@ -75,16 +75,16 @@ export async function testMemberCreation(administrator: Client, memberClient: Cl
   assert.equal(JSON.stringify(technical).includes(input.firstName), false);
   assert.equal(JSON.stringify(technical).includes(input.email), false);
   assert.equal((await required(newcomer.query("zerotrust.status", undefined))).accessReady, false);
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   await approveMemberInvitation(administrator, invitation.link.invitation.id, signal);
-  await acceptVaultWithKey(joined.dataKey, joined.vault, false);
+  await acceptVaultWithKey(joined.dataKey, joined.vault, joined.username, false);
   const active = createBusinessClient(newcomer, { productDriver: driver });
   try {
     const ownProfile = await required(active.query("users.get", { id: input.operationId }));
     assert.equal(ownProfile.firstName, input.firstName); assert.equal(ownProfile.costPerHour, null);
     assert.equal((await required(newcomer.query("zerotrust.status", undefined))).accessReady, true);
     assert.equal(JSON.stringify(sent).includes(password), false, "The new password must remain in the browser's OPAQUE worker");
-  } finally { active.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { active.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   await testMemberLifecycle(administrator, newcomer, joined, password, input.operationId, driver, signal);
   console.log("Protected account creation verified: technical-only SQL rows, exact creation/profile retries, false/lost replies, duplicate and forged request denial, independent API login via OPAQUE invitation, existing name readers and separate private fields.");
 }

@@ -40,10 +40,11 @@ async function fixture(extraReader = false, suspended = false) {
   const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
   await acceptVault(
     exportKey,
-    await createAccountVault(exportKey, "test", "owner", identity, {
+    await createAccountVault(exportKey, "test", "user:1", identity, {
       recoveryGeneration: "1",
       recoverySigningKey: setup.authority.recoverySigningKey,
     }),
+    "owner",
     false,
   );
   const other = extraReader ? await createIdentity() : null;

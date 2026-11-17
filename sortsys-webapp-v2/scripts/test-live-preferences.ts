@@ -74,7 +74,7 @@ export async function testProtectedPreferences(client: Client, source: BusinessD
 }
 
 export async function testPreferenceReaders(ownerClient: Client, memberClient: Client, owner: UnlockedAccount, member: UnlockedAccount, signal: AbortSignal) {
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   const memberBusiness = createBusinessClient(memberClient);
   let firstSubject: string;
   try {
@@ -85,7 +85,7 @@ export async function testPreferenceReaders(ownerClient: Client, memberClient: C
     const fresh = createBusinessClient(memberClient);
     try { assert.deepEqual(await required(fresh.query("personalization.gaebView.get", undefined)), updated); } finally { fresh.dispose(); }
     assert.ok((await memberBusiness.queryDynamic("personalization.gaebView.get", { userId: owner.username }))[1]);
-  } finally { memberBusiness.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { memberBusiness.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   const candidate = (await invitationMembers(ownerClient, signal)).find(member => member.username === "preferences.reader")!;
   assert.ok(candidate && !candidate.roles.includes(":llm"));
   const invitation = await createMemberInvitation(ownerClient, candidate, { catalogue: "none", customers: "none", contacts: "none", vendors: "none", prices: "none", assistant: false }, signal);
@@ -94,9 +94,9 @@ export async function testPreferenceReaders(ownerClient: Client, memberClient: C
   await joinMemberInvitation(second, invitation.link, signal);
   const { unlockedAccount } = await import("../app/lib/crypto/session");
   const secondaryAccount = unlockedAccount()!;
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   await approveMemberInvitation(ownerClient, invitation.link.invitation.id, signal);
-  await acceptVaultWithKey(secondaryAccount.dataKey, secondaryAccount.vault, false);
+  await acceptVaultWithKey(secondaryAccount.dataKey, secondaryAccount.vault, secondaryAccount.username, false);
   const secondary = createBusinessClient(second);
   try {
     assert.deepEqual(await required(secondary.query("personalization.gaebView.get", undefined)), DEFAULT_GAEB_VIEW);
@@ -108,6 +108,6 @@ export async function testPreferenceReaders(ownerClient: Client, memberClient: C
     assert.ok((await secondary.mutate("llm.chats.create", { title: "Denied without AI access" }))[1]);
     assert.ok((await second.query("zerotrust.keys.get", { domain: preferenceCollection(firstSubject!).domain, generation: "1" }, { strategy: "network-only" }))[1]);
     assert.ok((await secondary.mutateDynamic("personalization.gaebView.set", { ...value, userId: firstSubject }))[1]);
-  } finally { secondary.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, false); }
+  } finally { secondary.dispose(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false); }
   console.log("Personal preferences verified for ordinary users: retained legacy settings, durable saves, cross-account denial and an invitation without AI roles or assistant keys.");
 }

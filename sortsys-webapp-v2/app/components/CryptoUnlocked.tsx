@@ -74,7 +74,11 @@ export function CryptoUnlocked({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         if (status.accountEnrolled)
-          await restoreCryptoSession(status.tenant, session.user.username);
+          await restoreCryptoSession(
+            status.tenant,
+            session.user.username,
+            `user:${session.user.id}`,
+          );
       } catch {
         if (!cancelled)
           setError(
@@ -123,7 +127,7 @@ export function CryptoUnlocked({ children }: { children: ReactNode }) {
   if (
     status.accountEnrolled &&
     account?.tenant === status.tenant &&
-    account.username === session.user.username
+    account.vault.subject === `user:${session.user.id}`
   ) {
     if (!status.accessReady)
       return (

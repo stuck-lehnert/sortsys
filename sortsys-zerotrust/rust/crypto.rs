@@ -95,7 +95,7 @@ pub fn invalid() -> crate::Error {
 pub struct AccountVault {
     pub format: String,
     pub tenant: String,
-    pub username: String,
+    pub subject: String,
     pub encryption_key: String,
     pub signing_key: String,
     pub nonce: String,
@@ -106,11 +106,11 @@ pub struct AccountVault {
 impl AccountVault {
     pub fn frame(&self) -> Vec<u8> {
         frame(
-            "sortsys/account-vault-envelope/v1",
+            "sortsys/account-vault-envelope/v2",
             &[
                 &self.format,
                 &self.tenant,
-                &self.username,
+                &self.subject,
                 &self.encryption_key,
                 &self.signing_key,
                 &self.nonce,
@@ -121,11 +121,11 @@ impl AccountVault {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.format != "sortsys-account-v1" {
+        if self.format != "sortsys-account-v2" {
             return Err(invalid());
         }
         identifier(&self.tenant)?;
-        identifier(&self.username)?;
+        identifier(&self.subject)?;
         sized::<32>(&self.encryption_key)?;
         sized::<32>(&self.signing_key)?;
         sized::<12>(&self.nonce)?;

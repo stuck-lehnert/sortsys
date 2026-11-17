@@ -216,7 +216,13 @@ async fn registration(
 ) -> RpcResult<RegistrationOutput> {
     let _admission = crate::auth_limits::admit_login()?;
     identifier(&input.username)?;
-    if input.username.len() > 63 || !input.username.starts_with("recovery-") {
+    let owner = input
+        .subject
+        .strip_prefix("user:")
+        .and_then(|value| Id::decode(value).ok())
+        .filter(|id| id.0 > 0 && accounts::subject(id.0) == input.subject)
+        .ok_or_else(invalid)?;
+    if input.username != format!("recovery-{}", owner.encode()) {
         return Err(invalid());
     }
     let repository = repository(service, &input.tenant).await?;
@@ -227,11 +233,12 @@ async fn registration(
         &root,
         &input.proof,
         &frame(
-            "sortsys/recovery-registration/v1",
+            "sortsys/recovery-registration/v2",
             &[
                 &input.tenant,
                 &input.challenge_id,
                 &input.username,
+                &input.subject,
                 &input.registration_request,
             ],
         ),
@@ -239,7 +246,7 @@ async fn registration(
     let response = recovery_registration(
         &repository,
         &input.tenant,
-        &input.username,
+        &input.subject,
         &input.registration_request,
     )
     .await?;

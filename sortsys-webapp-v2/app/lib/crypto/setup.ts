@@ -33,7 +33,7 @@ export async function prepareTenantSetup(
 ): Promise<SetupDraft> {
   const current = unlockedAccount();
   const identity =
-    current?.tenant === tenant && current.username === username
+    current?.tenant === tenant && current.vault.subject === subject
       ? current.identity
       : await createIdentity();
   const phrase = createRecoveryPhrase();
@@ -54,7 +54,7 @@ export async function commitTenantSetup(
     recoverySigningKey: draft.setup.authority.recoverySigningKey,
   };
   const current = unlockedAccount();
-  if (current?.tenant === tenant && current.username === username) {
+  if (current?.tenant === tenant && current.vault.subject === draft.setup.owner.user) {
     if (
       current.vault.signingKey !== draft.setup.owner.signingKey ||
       current.vault.encryptionKey !== draft.setup.owner.encryptionKey
@@ -71,6 +71,7 @@ export async function commitTenantSetup(
     await enrollPasswordAccount(client, {
       tenant,
       username,
+      subject: draft.setup.owner.user,
       password,
       identity: draft.identity,
       pins,

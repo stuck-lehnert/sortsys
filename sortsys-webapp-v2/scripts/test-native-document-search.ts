@@ -149,7 +149,7 @@ try {
       .length,
     3,
   );
-  await acceptVaultWithKey(reader.dataKey, reader.vault, false);
+  await acceptVaultWithKey(reader.dataKey, reader.vault, reader.username, false);
   memberBusiness = createBusinessClient(member, { productDriver: duckDriver });
   assert.deepEqual(
     await required(memberBusiness.query("projects.files.search", searchInput)),
@@ -164,7 +164,7 @@ try {
     )[1],
   );
   memberBusiness.dispose();
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, false);
+  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
   await changeProjectAccess(
     owner,
     `user:${person.id}`,
@@ -189,7 +189,7 @@ try {
     },
     context.authority,
   );
-  await acceptVaultWithKey(reader.dataKey, reader.vault, false);
+  await acceptVaultWithKey(reader.dataKey, reader.vault, reader.username, false);
   memberBusiness = createBusinessClient(member, { productDriver: duckDriver });
   const results = await required(
     memberBusiness.query("projects.files.search", searchInput),

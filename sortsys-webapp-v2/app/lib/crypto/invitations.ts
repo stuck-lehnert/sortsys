@@ -259,7 +259,7 @@ export async function joinMemberInvitation(
   live();
   if (
     account.tenant !== link.invitation.tenant ||
-    account.username !== link.invitation.username ||
+    account.vault.subject !== link.invitation.user ||
     `user:${session.user.id}` !== link.invitation.user
   )
     throw new InvalidProtectedData();

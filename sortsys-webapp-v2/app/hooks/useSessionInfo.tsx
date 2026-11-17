@@ -94,7 +94,7 @@ export function SessionInfoProvider({
         )
           return;
         const account = unlockedAccount();
-        if (!data || (account && data.user.username !== account.username)) {
+        if (!data || (account && account.vault.subject !== `user:${data.user.id}`)) {
           setLoaded(null);
           return;
         }

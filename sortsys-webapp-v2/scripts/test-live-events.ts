@@ -242,7 +242,7 @@ export async function testLiveEvents(ownerClient: Client, password: string, driv
     for (const unsubscribe of menuSubscriptions) unsubscribe();
     for (const observer of observers) observer.dispose(); sender.dispose(); globalThis.WebSocket = originalSocket;
     await until(async () => await listeners() === 0, "tenant listener released after last observer");
-    await database.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await database.close(); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   }
   console.log("Encrypted events verified: cross-instance admission, challenge replay denial, one shared tenant listener, live catalogue/chat/preference/supplier/price updates without business polling or plaintext events, targeted refresh, authorized-work continuity, revocation cancellation and listener cleanup.");
 }

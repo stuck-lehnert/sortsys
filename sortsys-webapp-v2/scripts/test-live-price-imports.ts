@@ -8,7 +8,7 @@ import { required } from "../app/lib/data/protectedObjects";
 export async function testProtectedPriceImports(client: Client, driver: () => Promise<DuckDriver>, password: string) {
   const account = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "price-import-peer");
   await signIn(peer, { tenant: account.tenant, username: account.username, password });
-  await acceptVaultWithKey(account.dataKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
   const requests: { path: string; input: unknown }[] = [];
   let lost = false, discard = false, failedStage = false, changedReference = false, stages = 0, inspected = false;
   let largeStarted = 0, preparationMs = 0, uploadMs = 0, publicationMs = 0;

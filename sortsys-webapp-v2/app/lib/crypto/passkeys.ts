@@ -21,7 +21,7 @@ export async function registerPasskey(
     if (!owner) return current === null;
     return (
       current?.tenant === owner.tenant &&
-      current.username === owner.username &&
+      current.vault.subject === owner.vault.subject &&
       current.dataKey === owner.dataKey
     );
   };
@@ -118,23 +118,24 @@ export async function signInWithPasskey(client: Client): Promise<void> {
         : null;
       if (
         vault &&
-        (vault.tenant !== login.tenant || vault.username !== login.username)
+        (vault.tenant !== login.tenant || vault.subject !== login.subject)
       )
         throw new InvalidProtectedData();
       if (login.keyVault && !vault) throw new InvalidProtectedData();
       if (vault && login.keyVault && result.unlock) {
         const opened = await result.unlock.openVault(
-          { tenant: login.tenant, username: login.username },
+          { tenant: login.tenant, subject: login.subject },
           login.keyVault,
           vault,
         );
         assertCurrent();
-        await acceptVaultWithKey(opened.dataKey, vault);
+        await acceptVaultWithKey(opened.dataKey, vault, login.username);
       } else {
-        await restoreCryptoSession(login.tenant, login.username);
+        await restoreCryptoSession(login.tenant, login.username, login.subject);
         assertCurrent();
         const cached = unlockedAccount();
-        if (cached && vault) await acceptVaultWithKey(cached.dataKey, vault);
+        if (cached && vault)
+          await acceptVaultWithKey(cached.dataKey, vault, login.username);
       }
       assertCurrent();
       try {

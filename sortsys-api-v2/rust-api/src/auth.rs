@@ -114,6 +114,24 @@ impl AuthService {
             .ok_or_else(crate::control::unavailable)
     }
 
+    /// Unknown accounts receive an equally stable, opaque-looking identity.
+    /// This avoids making login-start an account-existence oracle.
+    pub(crate) fn dummy_credential_subject(&self, tenant: &str, username: &str) -> String {
+        use hmac::{Hmac, KeyInit, Mac};
+        use sha2::Sha256;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.jwt_secret)
+            .expect("HMAC accepts arbitrary key lengths");
+        mac.update(&sortsys_zerotrust::crypto::frame(
+            "sortsys/unknown-credential/v1",
+            &[tenant, username],
+        ));
+        let digest = mac.finalize().into_bytes();
+        let mut bytes = [0; 8];
+        bytes.copy_from_slice(&digest[..8]);
+        let user = ((u64::from_be_bytes(bytes) & i64::MAX as u64) as i64).max(1);
+        accounts::subject(user)
+    }
+
     pub(crate) async fn reserve_login(
         &self,
         scope: &str,
@@ -419,8 +437,23 @@ struct Claims {
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthUser, McpScope};
+    use super::{AuthService, AuthUser, McpScope, accounts};
     use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+    use std::sync::Arc;
+
+    #[test]
+    fn unknown_credential_subjects_are_stable_across_replicas_and_partitioned() {
+        let secret: Arc<[u8]> = Arc::from(b"synthetic-shared-authentication-secret".as_slice());
+        let first = AuthService::from_credentials(Arc::clone(&secret), "unused".into(), None);
+        let second = AuthService::from_credentials(secret, "unused".into(), None);
+        let subject = first.dummy_credential_subject("tenant", "absent");
+        assert_eq!(subject, second.dummy_credential_subject("tenant", "absent"));
+        assert_ne!(subject, first.dummy_credential_subject("other", "absent"));
+        assert_ne!(subject, first.dummy_credential_subject("tenant", "someone"));
+        let user = crate::ids::Id::decode(subject.strip_prefix("user:").unwrap()).unwrap();
+        assert!(user.0 > 0);
+        assert_eq!(subject, accounts::subject(user.0));
+    }
 
     #[test]
     fn authentication_identity_serializes_no_personnel_fields() {

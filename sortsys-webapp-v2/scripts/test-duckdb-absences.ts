@@ -55,7 +55,7 @@ export async function exerciseNativeAbsences(
       )[1],
     );
     requester.dispose();
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
     const peer = createClient(
       peerEndpoint,
       "native-absence-second-supervisor-session",
@@ -65,7 +65,7 @@ export async function exerciseNativeAbsences(
       username: owner.username,
       password: "Only-owner-knows-this-password-2026!",
     });
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
     const supervisor = createBusinessClient(administrator, {
       productDriver: duckDriver,
     });
@@ -125,6 +125,6 @@ export async function exerciseNativeAbsences(
     );
   } finally {
     requester.dispose();
-    await acceptVaultWithKey(member.dataKey, member.vault, false);
+    await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   }
 }

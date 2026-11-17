@@ -6,24 +6,27 @@ import {
   finishOpaqueRegistration,
   openAccountVault,
   randomSecret,
+  opaqueIdentifiers,
+  opaqueReady,
   startOpaqueRegistration,
 } from "../src/index";
 import { server } from "@serenity-kit/opaque";
 
 // Public test credentials only. The production server never receives the
 // password export key or the authenticator's PRF output.
+await opaqueReady;
 const password = "SyntheticPasskeyAccount-261113";
 const opaqueServerSetup = server.createSetup();
 const started = await startOpaqueRegistration(password);
 const response = server.createRegistrationResponse({
   serverSetup: opaqueServerSetup,
-  userIdentifier: "test/john.doe",
+  userIdentifier: opaqueIdentifiers("test", "user:1").client,
   registrationRequest: started.registrationRequest,
 });
 const registration = await finishOpaqueRegistration(
   password,
   "test",
-  "john.doe",
+  "user:1",
   started,
   response.registrationResponse,
 );
@@ -32,10 +35,10 @@ const exportKey = registration.exportKey;
 const account = await createAccountVault(
   exportKey,
   "test",
-  "john.doe",
+  "user:1",
   identity,
 );
-const opened = await openAccountVault(exportKey, "test", "john.doe", account);
+const opened = await openAccountVault(exportKey, "test", "user:1", account);
 const prf = randomSecret();
 try {
   const packet = await createPasskeyVault(

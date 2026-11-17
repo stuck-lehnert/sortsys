@@ -90,6 +90,7 @@ export async function enrollPasswordAccount(
   input: {
     tenant: string;
     username: string;
+    subject: string;
     password: string;
     identity?: PrivateIdentity;
     pins?: Record<string, string>;
@@ -97,7 +98,7 @@ export async function enrollPasswordAccount(
 ): Promise<void> {
   const current = epoch;
   const matching =
-    account?.tenant === input.tenant && account.username === input.username
+    account?.tenant === input.tenant && account.vault.subject === input.subject
       ? account
       : null;
   const identity =
@@ -129,13 +130,13 @@ export async function enrollPasswordAccount(
     if (
       !exchange ||
       exchange.tenant !== input.tenant ||
-      exchange.username !== input.username
+      exchange.subject !== input.subject
     )
       throw new InvalidProtectedData();
     const registration = await worker.call("registrationFinish", {
       password: input.password,
       tenant: input.tenant,
-      username: input.username,
+      subject: input.subject,
       state: started,
       response: exchange.registrationResponse,
     });
@@ -143,7 +144,7 @@ export async function enrollPasswordAccount(
     const vault = await createAccountVault(
       registration.exportKey,
       input.tenant,
-      input.username,
+      input.subject,
       identity,
       pins,
       existingDataKey,
@@ -151,9 +152,9 @@ export async function enrollPasswordAccount(
     live();
     const previousIdentityProof = await sign(
       identity.signingKey.privateKey,
-      frame("sortsys/account-enroll/v1", [
+      frame("sortsys/account-enroll/v2", [
         input.tenant,
-        input.username,
+        input.subject,
         exchange.exchange,
         await digest(unbase64(registration.registrationRecord, 4096)),
         await digest(accountVaultFrame(vault)),
@@ -168,7 +169,7 @@ export async function enrollPasswordAccount(
     });
     live();
     if (finishError) throw finishError;
-    await acceptVault(registration.exportKey, vault);
+    await acceptVault(registration.exportKey, vault, exchange.username);
     live();
     await client.invalidate("zerotrust.status");
   } finally {
@@ -193,7 +194,7 @@ export async function updateAccountPins(
   }
   if (
     stored.vault.tenant !== current.tenant ||
-    stored.vault.username !== current.username ||
+    stored.vault.subject !== current.vault.subject ||
     stored.vault.encryptionKey !== current.vault.encryptionKey ||
     stored.vault.signingKey !== current.vault.signingKey
   ) {
@@ -206,9 +207,9 @@ export async function updateAccountPins(
   );
   const proof = await sign(
     current.identity.signingKey.privateKey,
-    frame("sortsys/account-vault-update/v1", [
+    frame("sortsys/account-vault-update/v2", [
       current.tenant,
-      current.username,
+      current.vault.subject,
       stored.revision,
       await digest(accountVaultFrame(vault)),
     ]),
@@ -225,7 +226,7 @@ export async function updateAccountPins(
   if (current !== account || version !== epoch) {
     throw new InvalidProtectedData();
   }
-  await acceptVaultWithKey(current.dataKey, vault);
+  await acceptVaultWithKey(current.dataKey, vault, current.username);
 }
 
 export async function changeOwnPassword(
@@ -249,6 +250,7 @@ export async function changeOwnPassword(
   await enrollPasswordAccount(client, {
     tenant: current.tenant,
     username: current.username,
+    subject: current.vault.subject,
     password,
     identity: current.identity,
     pins: current.pins,
@@ -257,6 +259,7 @@ export async function changeOwnPassword(
 export async function acceptVault(
   exportKey: string,
   input: unknown,
+  username: string,
   remember = true,
 ): Promise<void> {
   const vault = accountVault(input);
@@ -264,15 +267,16 @@ export async function acceptVault(
   const opened = await openAccountVault(
     exportKey,
     vault.tenant,
-    vault.username,
+    vault.subject,
     vault,
   );
   if (current !== epoch) throw new InvalidProtectedData();
-  await installOpenedVault(vault, opened, current, remember);
+  await installOpenedVault(vault, opened, current, username, remember);
 }
 export async function acceptVaultWithKey(
   dataKey: CryptoKey,
   input: unknown,
+  username: string,
   remember = true,
 ): Promise<void> {
   const vault = accountVault(input);
@@ -280,21 +284,22 @@ export async function acceptVaultWithKey(
   const opened = await openAccountVaultWithKey(
     dataKey,
     vault.tenant,
-    vault.username,
+    vault.subject,
     vault,
   );
-  await installOpenedVault(vault, opened, current, remember);
+  await installOpenedVault(vault, opened, current, username, remember);
 }
 async function installOpenedVault(
   vault: AccountVault,
   opened: Awaited<ReturnType<typeof openAccountVault>>,
   current: number,
+  username: string,
   remember: boolean,
 ): Promise<void> {
   if (current !== epoch) throw new InvalidProtectedData();
   account = {
     tenant: vault.tenant,
-    username: vault.username,
+    username,
     vault,
     ...opened,
   };
@@ -312,15 +317,19 @@ async function installOpenedVault(
 export async function restoreCryptoSession(
   tenant: string,
   username: string,
+  subject: string,
 ): Promise<boolean> {
-  if (account?.tenant === tenant && account.username === username) return true;
+  if (account?.tenant === tenant && account.vault.subject === subject) {
+    account.username = username;
+    return true;
+  }
   const current = epoch;
-  const stored = await restoreDeviceVault(tenant, username);
+  const stored = await restoreDeviceVault(tenant, subject);
   if (!stored || current !== epoch) return false;
   const opened = await openAccountVaultWithKey(
     stored.dataKey,
     tenant,
-    username,
+    subject,
     stored.vault,
   );
   if (current !== epoch) return false;
@@ -432,7 +441,7 @@ export async function signIn(
       const finished = await worker.call("loginFinish", {
         password: input.password,
         tenant,
-        username,
+        subject: challenge.subject,
         state: started,
         response: challenge.loginResponse,
       });
@@ -454,10 +463,10 @@ export async function signIn(
           login.tenant !== tenant ||
           login.username !== username ||
           login.vault.tenant !== tenant ||
-          login.vault.username !== username
+          login.vault.subject !== challenge.subject
         )
           throw new InvalidProtectedData();
-        await acceptVault(finished.exportKey, login.vault);
+        await acceptVault(finished.exportKey, login.vault, login.username);
       } catch {
         throw new Error(
           uiText(
@@ -511,13 +520,14 @@ export async function registerInvitedPassword(
     if (
       !exchange ||
       exchange.tenant !== tenant ||
-      exchange.username !== username
+      exchange.username !== username ||
+      exchange.subject !== link.invitation.user
     )
       throw new InvalidProtectedData();
     const registration = await worker.call("registrationFinish", {
       password,
       tenant,
-      username,
+      subject: link.invitation.user,
       state: started,
       response: exchange.registrationResponse,
     });
@@ -525,7 +535,7 @@ export async function registerInvitedPassword(
     const vault = await createAccountVault(
       registration.exportKey,
       tenant,
-      username,
+      link.invitation.user,
       identity,
       {
         recoveryGeneration: link.invitation.generation,
@@ -570,7 +580,7 @@ export async function registerInvitedPassword(
         (await digest(accountVaultFrame(vault)))
     )
       throw new InvalidProtectedData();
-    await acceptVault(registration.exportKey, vault);
+    await acceptVault(registration.exportKey, vault, username);
     live();
     await client.invalidate("zerotrust.status");
   } catch (error) {

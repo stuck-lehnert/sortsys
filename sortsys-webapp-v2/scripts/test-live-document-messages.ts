@@ -45,7 +45,7 @@ export async function testDocumentMessages(
     username: owner.username,
     password,
   });
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const signal = new AbortController().signal;
   const eventsLifetime = new AbortController();
   let eventStream: Promise<void> | undefined;
@@ -723,6 +723,6 @@ export async function testDocumentMessages(
     second?.close();
     business.dispose();
     peer.setToken(null);
-    await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   }
 }

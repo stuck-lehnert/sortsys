@@ -12,6 +12,7 @@ use opaque_ke::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use sortsys_zerotrust::credentials::{CredentialPrincipal, OPAQUE_SERVER_IDENTIFIER};
 use ts_rs::TS;
 
 use super::crypto::{self, AccountVault, decode, encode, invalid, random_id};
@@ -46,6 +47,8 @@ mod tests {
     #[serde(rename_all = "camelCase")]
     struct Interop {
         password: String,
+        tenant: String,
+        subject: String,
         setup: String,
         registration_record: String,
         client_login_state: String,
@@ -62,11 +65,17 @@ mod tests {
         let vector: Interop =
             serde_json::from_str(include_str!("../../tests/fixtures/zerotrust-opaque.json"))
                 .unwrap();
+        let credential = CredentialPrincipal {
+            tenant: vector.tenant.clone(),
+            subject: vector.subject.clone(),
+        }
+        .identifier()
+        .unwrap();
         let params = || ServerLoginParameters {
             context: None,
             identifiers: Identifiers {
-                client: Some(b"test/interop"),
-                server: Some(b"sortsys/opaque/v1"),
+                client: Some(credential.as_bytes()),
+                server: Some(OPAQUE_SERVER_IDENTIFIER.as_bytes()),
             },
         };
         let finalized =
@@ -97,7 +106,7 @@ mod tests {
                 &setup,
                 Some(record),
                 request,
-                b"test/interop",
+                credential.as_bytes(),
                 params()
             )
             .is_ok()
@@ -138,6 +147,7 @@ struct EnrollmentStartInput {
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct EnrollmentStartOutput {
+    subject: String,
     exchange: String,
     registration_response: String,
     tenant: String,
@@ -181,6 +191,7 @@ struct LoginStartInput {
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct LoginStartOutput {
+    subject: String,
     exchange: String,
     login_response: String,
 }
@@ -329,7 +340,9 @@ async fn update_vault(
     let auth = service.authenticate(&ctx.headers).await?;
     crypto::revision(&input.revision)?;
     input.vault.validate()?;
-    if input.vault.tenant != auth.tenant || input.vault.username != auth.user.username {
+    if input.vault.tenant != auth.tenant
+        || input.vault.subject != accounts::subject(auth.user.id.parse().map_err(|_| denied())?)
+    {
         return Err(forbidden());
     }
     let repository = service.records()?.tenant(&auth.tenant)?;
@@ -347,10 +360,10 @@ async fn update_vault(
         &crypto::sized::<32>(&account.credential()?.vault.signing_key)?,
         &input.proof,
         &crypto::frame(
-            "sortsys/account-vault-update/v1",
+            "sortsys/account-vault-update/v2",
             &[
                 &auth.tenant,
-                &account.username,
+                &accounts::subject(account.id),
                 &input.revision,
                 &encode(&Sha256::digest(input.vault.frame())),
             ],
@@ -390,12 +403,16 @@ fn rejected_login(reason: &'static str) -> RpcError {
 pub(super) async fn recovery_registration(
     repository: &Repository,
     tenant: &str,
-    username: &str,
+    subject: &str,
     request: &str,
 ) -> RpcResult<String> {
     let request =
         RegistrationRequest::<Suite>::deserialize(&decode(request, 128)?).map_err(|_| invalid())?;
-    let credential = format!("{tenant}/{username}");
+    let credential = CredentialPrincipal {
+        tenant: tenant.into(),
+        subject: subject.into(),
+    }
+    .identifier()?;
     let response = ServerRegistration::<Suite>::start(
         &store_setup(repository).await?,
         request,
@@ -430,6 +447,7 @@ struct StoredExchange<T> {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LoginExchange {
+    subject: String,
     tenant: String,
     username: String,
     state: String,
@@ -555,7 +573,7 @@ async fn enroll_start(
     let registration =
         RegistrationRequest::<Suite>::deserialize(&decode(&input.registration_request, 128)?)
             .map_err(|_| invalid())?;
-    let credential_id = format!("{}/{}", auth.tenant, account.username);
+    let credential_id = accounts::principal(&auth.tenant, account.id).identifier()?;
     let response = ServerRegistration::<Suite>::start(
         &store_setup(&repository).await?,
         registration,
@@ -578,6 +596,7 @@ async fn enroll_start(
     )
     .await?;
     Ok(EnrollmentStartOutput {
+        subject: accounts::subject(account.id),
         exchange,
         registration_response: encode(&response.message.serialize()),
         tenant: auth.tenant,
@@ -592,7 +611,9 @@ async fn enroll_finish(
 ) -> RpcResult<Success> {
     let auth = service.authenticate(&ctx.headers).await?;
     input.vault.validate()?;
-    if input.vault.tenant != auth.tenant || input.vault.username != auth.user.username {
+    if input.vault.tenant != auth.tenant
+        || input.vault.subject != accounts::subject(auth.user.id.parse().map_err(|_| denied())?)
+    {
         return Err(forbidden());
     }
     let upload =
@@ -628,10 +649,10 @@ async fn enroll_finish(
             .as_deref()
             .ok_or_else(forbidden)?,
         &crypto::frame(
-            "sortsys/account-enroll/v1",
+            "sortsys/account-enroll/v2",
             &[
                 &auth.tenant,
-                &account.username,
+                &accounts::subject(account.id),
                 &input.exchange,
                 &encode(&Sha256::digest(&password_record)),
                 &encode(&Sha256::digest(input.vault.frame())),
@@ -723,7 +744,15 @@ async fn login_start(
                 .map_err(|_| crate::control::unavailable())
         })
         .transpose()?;
-    let credential_id = format!("{tenant}/{username}");
+    let subject = match &account {
+        Some(account) => accounts::subject(account.id),
+        None => service.dummy_credential_subject(&tenant, &username),
+    };
+    let credential_id = CredentialPrincipal {
+        tenant: tenant.clone(),
+        subject: subject.clone(),
+    }
+    .identifier()?;
     let response = ServerLogin::<Suite>::start(
         &mut OsRng,
         &store_setup(&repository).await?,
@@ -734,13 +763,14 @@ async fn login_start(
             context: None,
             identifiers: Identifiers {
                 client: Some(credential_id.as_bytes()),
-                server: Some(b"sortsys/opaque/v1"),
+                server: Some(OPAQUE_SERVER_IDENTIFIER.as_bytes()),
             },
         },
     )
     .map_err(|_| denied())?;
     let (attempt_key, attempt_expires_at) = attempt.reservation();
     let payload = LoginExchange {
+        subject: subject.clone(),
         tenant: tenant.clone(),
         username,
         state: encode(&response.state.serialize()),
@@ -765,6 +795,7 @@ async fn login_start(
     )
     .await?;
     Ok(LoginStartOutput {
+        subject,
         exchange,
         login_response: encode(&response.message.serialize()),
     })
@@ -783,7 +814,11 @@ async fn login_finish(
         take_store_exchange(service, &input.exchange, "opaque-login").await?;
     let server = ServerLogin::<Suite>::deserialize(&decode(&exchange.state, 4096)?)
         .map_err(|_| rejected_login("exchange-state"))?;
-    let credential_id = format!("{}/{}", exchange.tenant, exchange.username);
+    let credential_id = CredentialPrincipal {
+        tenant: exchange.tenant.clone(),
+        subject: exchange.subject.clone(),
+    }
+    .identifier()?;
     server
         .finish(
             finalization,
@@ -791,7 +826,7 @@ async fn login_finish(
                 context: None,
                 identifiers: Identifiers {
                     client: Some(credential_id.as_bytes()),
-                    server: Some(b"sortsys/opaque/v1"),
+                    server: Some(OPAQUE_SERVER_IDENTIFIER.as_bytes()),
                 },
             },
         )
@@ -817,6 +852,7 @@ async fn login_finish(
     if !account.active(now)
         || !status.available(now)
         || username.user_id != user
+        || exchange.subject != accounts::subject(account.id)
         || account.username != exchange.username
         || Some(account.credential()?.revision) != exchange.credential_revision
         || Some(account.epoch) != exchange.account_epoch
@@ -826,7 +862,7 @@ async fn login_finish(
     }
     account.credential()?.vault.validate()?;
     if account.credential()?.vault.tenant != exchange.tenant
-        || account.credential()?.vault.username != account.username
+        || account.credential()?.vault.subject != accounts::subject(account.id)
     {
         return Err(denied());
     }

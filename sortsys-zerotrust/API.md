@@ -316,6 +316,26 @@ bisherigen Revision innerhalb derselben Transaktion. Ein optionaler
 OpenTimestamps-Nachweis kann ergänzt werden; sein Ausfall oder Entfernen hebt
 diese Schreibsperre nicht auf.
 
+## Kontokennung und Anmeldename
+
+Passwortanmeldung und Kontotresor verwenden eine unveränderliche Kennung:
+`{ tenant, subject }`. `credentialIdentifier` kodiert beide Bestandteile mit
+eindeutigen Feldgrenzen; `opaqueIdentifiers` liefert die zugehörigen
+OPAQUE-Identifikatoren. Rust stellt dieselbe Kodierung über
+`credentials::CredentialPrincipal::identifier` bereit.
+
+`subject` bezeichnet das Konto und darf nicht aus einem veränderbaren
+Anmeldenamen abgeleitet werden. sortsys verwendet dafür `user:<Kontokennung>`.
+Andere Anwendungen können eigene Kennungen verwenden. Der Anmeldename bleibt
+getrennte Anmeldemetadaten und ist kein Feld des `AccountVault`.
+
+`createAccountVault(exportKey, tenant, subject, identity, pins)` verschlüsselt
+den Kontotresor für diese Kennung. Zum Öffnen müssen Mandant und Kennung erneut
+angegeben werden. Auch der lokale Gerätespeicher sucht über `tenant` und
+`subject`; ein geänderter Anmeldename erfordert deshalb keine neue lokale
+Schlüsselkopie. Die Formate `sortsys-account-v2` und
+`sortsys-passkey-vault-v2` binden diese Felder kryptografisch.
+
 ## Passkeys ohne Übertragung des Entschlüsselungsschlüssels
 
 `createPasskeyCredential` und `getPasskeyCredential` verwenden die WebAuthn-API
@@ -333,7 +353,7 @@ verifizierten WebAuthn-Registrierung. Diese Prüfung ersetzt nicht die Prüfung
 der WebAuthn-Signatur, der Herkunft, der Benutzerbestätigung oder der Challenge.
 
 Bei der Anmeldung öffnet
-`unlock.openVault({ tenant, username }, keyVault, accountVault)` denselben
+`unlock.openVault({ tenant, subject }, keyVault, accountVault)` denselben
 Kontospeicher. Ein Passwortwechsel kann den Kontodatenschlüssel behalten;
 dadurch bleiben die dafür eingerichteten Passkeys verwendbar. Jeder Aufrufer
 muss `unlock.dispose()` in einem `finally`-Block ausführen. Ein `AbortSignal`

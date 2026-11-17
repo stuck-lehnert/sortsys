@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { createClient } from "@sortsys/v2-client";
-import { createAccountVault, createIdentity } from "@sortsys/zerotrust/sortsys";
+import {
+  createAccountVault,
+  createIdentity,
+  finishOpaqueLogin,
+  startOpaqueLogin,
+} from "@sortsys/zerotrust/sortsys";
 import {
   changeOwnPassword,
   lockCryptoSession,
@@ -18,7 +23,7 @@ if (mode === "prepare") {
   const vault = await createAccountVault(
     fixture.exportKey,
     "test",
-    "interop",
+    fixture.subject,
     await createIdentity(),
     {},
   );
@@ -75,6 +80,55 @@ if (mode === "prepare") {
     );
     assert.equal(left.user.username, "interop");
     assert.ok(unlockedAccount());
+    assert.equal(unlockedAccount()!.vault.subject, `user:${left.user.id}`);
+    const unknownSubjects = [];
+    for (const transport of [first, second]) {
+      const started = await startOpaqueLogin(credentials.password);
+      const challenge = await required(
+        transport.mutate("auth.opaque.loginStart", {
+          tenant: credentials.tenant,
+          username: "not.a.registered.account",
+          startLoginRequest: started.startLoginRequest,
+        }),
+      );
+      assert.match(challenge.subject, /^user:[0-9a-v]+$/);
+      assert.notEqual(challenge.subject, unlockedAccount()!.vault.subject);
+      unknownSubjects.push(challenge.subject);
+      await assert.rejects(() =>
+        finishOpaqueLogin(
+          credentials.password,
+          credentials.tenant,
+          challenge.subject,
+          started,
+          challenge.loginResponse,
+        ),
+      );
+    }
+    assert.equal(
+      unknownSubjects[0],
+      unknownSubjects[1],
+      "Unknown accounts receive stable subjects across replicas",
+    );
+    const started = await startOpaqueLogin(credentials.password);
+    const challenge = await required(
+      first.mutate("auth.opaque.loginStart", {
+        tenant: credentials.tenant,
+        username: credentials.username,
+        startLoginRequest: started.startLoginRequest,
+      }),
+    );
+    assert.equal(challenge.subject, unlockedAccount()!.vault.subject);
+    await assert.rejects(
+      () =>
+        finishOpaqueLogin(
+          credentials.password,
+          credentials.tenant,
+          "user:another",
+          started,
+          challenge.loginResponse,
+        ),
+      "An otherwise valid challenge cannot be rebound to a different subject",
+    );
     assert.ok(replay);
     const replayUrl = new URL(replay.url);
     replayUrl.host = new URL(endpoints[1]).host;

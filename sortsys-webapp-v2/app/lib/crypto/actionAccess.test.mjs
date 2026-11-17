@@ -90,10 +90,11 @@ async function fixture() {
   const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
   await acceptVault(
     exportKey,
-    await createAccountVault(exportKey, "test", "owner", owner, {
+    await createAccountVault(exportKey, "test", "user:1", owner, {
       recoveryGeneration: "1",
       recoverySigningKey: setup.authority.recoverySigningKey,
     }),
+    "owner",
     false,
   );
   const snapshots = [];
@@ -416,10 +417,9 @@ test("administration binds independently valid metadata to the same technical ac
       return [{ ...value, subject: "user:3" }, null];
     return [value, null];
   };
-  expect(
-    (await verifiedAccessContext(f.client, new AbortController().signal))
-      .subject,
-  ).toBe("user:3");
+  await expect(
+    verifiedAccessContext(f.client, new AbortController().signal),
+  ).rejects.toThrow();
   await expect(
     administratorPolicyContext(f.client, new AbortController().signal),
   ).rejects.toThrow();

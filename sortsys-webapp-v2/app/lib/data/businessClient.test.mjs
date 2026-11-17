@@ -30,14 +30,14 @@ async function account() {
   const vault = await createAccountVault(
     key,
     "client-test",
-    "owner",
+    "user:1",
     identity,
     {
       recoveryGeneration: setup.authority.generation,
       recoverySigningKey: setup.authority.recoverySigningKey,
     },
   );
-  await acceptVault(key, vault, false);
+  await acceptVault(key, vault, "owner", false);
 }
 function raw() {
   const requests = [];

@@ -423,10 +423,11 @@ window.cryptoFixture = {
     const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       exportKey,
-      await createAccountVault(exportKey, "test", "owner", identity, {
+      await createAccountVault(exportKey, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const artifact = await core.encryptObject(
@@ -549,10 +550,11 @@ window.cryptoFixture = {
       key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", "owner", identity, {
+      await createAccountVault(key, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
@@ -714,10 +716,11 @@ window.cryptoFixture = {
       key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", "owner", identity, {
+      await createAccountVault(key, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
@@ -892,10 +895,11 @@ window.cryptoFixture = {
       key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", "owner", identity, {
+      await createAccountVault(key, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
@@ -1109,10 +1113,11 @@ window.cryptoFixture = {
       key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", "owner", identity, {
+      await createAccountVault(key, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
@@ -1284,10 +1289,11 @@ window.cryptoFixture = {
       key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", "owner", identity, {
+      await createAccountVault(key, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
@@ -1450,10 +1456,11 @@ window.cryptoFixture = {
       key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", "owner", identity, {
+      await createAccountVault(key, "test", "user:1", identity, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const user = { id: "1", username: "owner", locale: "de" },
@@ -1811,10 +1818,11 @@ window.cryptoFixture = {
     const key = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       key,
-      await createAccountVault(key, "test", user.username, owner, {
+      await createAccountVault(key, "test", `user:${user.id}`, owner, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      user.username,
       false,
     );
     window.cryptoFixture.sessionReads = () => ({
@@ -1899,10 +1907,11 @@ window.cryptoFixture = {
       const switchedKey = base64(crypto.getRandomValues(new Uint8Array(64)));
       await acceptVault(
         switchedKey,
-        await createAccountVault(switchedKey, "test", "second", identity, {
+        await createAccountVault(switchedKey, "test", "user:2", identity, {
           recoveryGeneration: "1",
           recoverySigningKey: setup.authority.recoverySigningKey,
         }),
+        "second",
         false,
       );
     };
@@ -1957,10 +1966,11 @@ window.cryptoFixture = {
     const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       exportKey,
-      await createAccountVault(exportKey, "test", "owner", owner, {
+      await createAccountVault(exportKey, "test", "user:1", owner, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const rule = (scope, facet, actions) => ({
@@ -2127,10 +2137,11 @@ window.cryptoFixture = {
       );
       await acceptVault(
         key,
-        await createAccountVault(key, "test", "different", identity, {
+        await createAccountVault(key, "test", "user:2", identity, {
           recoveryGeneration: "1",
           recoverySigningKey: setup.authority.recoverySigningKey,
         }),
+        "different",
         false,
       );
     };
@@ -2318,7 +2329,8 @@ window.cryptoFixture = {
         key = base64(crypto.getRandomValues(new Uint8Array(64)));
       await acceptVault(
         key,
-        await createAccountVault(key, tenant, "owner", identity, {}),
+        await createAccountVault(key, tenant, "user:1", identity, {}),
+        "owner",
         false,
       );
     };
@@ -2805,7 +2817,8 @@ window.cryptoFixture = {
         key = base64(crypto.getRandomValues(new Uint8Array(64)));
       await acceptVault(
         key,
-        await createAccountVault(key, tenant, "owner", identity, {}),
+        await createAccountVault(key, tenant, "user:1", identity, {}),
+        "owner",
         false,
       );
     };
@@ -3446,10 +3459,11 @@ window.cryptoFixture = {
     const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       exportKey,
-      await createAccountVault(exportKey, "test", "owner", owner, {
+      await createAccountVault(exportKey, "test", "user:1", owner, {
         recoveryGeneration: "1",
         recoverySigningKey: setup.authority.recoverySigningKey,
       }),
+      "owner",
       false,
     );
     const { default: OrganizationInvitations } =
@@ -3563,7 +3577,7 @@ window.cryptoFixture = {
       const vault = await createAccountVault(
         exportKey,
         "test",
-        "frank.doe",
+        link.invitation.user,
         identity,
         { recoveryGeneration: "1", recoverySigningKey },
       );
@@ -3631,7 +3645,7 @@ window.cryptoFixture = {
           subscriber.next([{ accessReady: true }, null]);
         }
       };
-      await acceptVault(exportKey, vault, false);
+      await acceptVault(exportKey, vault, link.invitation.username, false);
     }
     const { default: InvitationPage } =
       await import("../../app/routes/auth/invitation");

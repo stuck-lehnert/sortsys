@@ -113,7 +113,7 @@ try {
     signal,
   );
   const colleague = unlockedAccount()!;
-  await acceptVaultWithKey(account.dataKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
   const lease = acquireDataRuntime(owner, signal, duckDriver);
   try {
     await approveMemberInvitation(owner, invitation.link.invitation.id, signal);

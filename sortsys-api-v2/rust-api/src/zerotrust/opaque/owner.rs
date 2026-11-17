@@ -151,7 +151,7 @@ async fn start(service: &crate::auth::AuthService, input: StartInput) -> RpcResu
     let request =
         RegistrationRequest::<Suite>::deserialize(&decode(&input.registration_request, 128)?)
             .map_err(|_| invalid())?;
-    let credential_id = format!("{tenant}/{username}");
+    let credential_id = accounts::principal(&tenant, provisioning.owner_id).identifier()?;
     let response = ServerRegistration::<Suite>::start(
         &store_setup(&repository).await?,
         request,
@@ -203,7 +203,7 @@ async fn finish(
         return Err(denied());
     }
     input.vault.validate()?;
-    if input.vault.tenant != tenant || input.vault.username != owner.username {
+    if input.vault.tenant != tenant || input.vault.subject != accounts::subject(owner.owner_id) {
         return Err(denied());
     }
     let record = validate_registration(&input.registration_record)?;

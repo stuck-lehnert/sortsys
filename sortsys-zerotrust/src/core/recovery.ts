@@ -272,13 +272,16 @@ export function createRecoveryCodec<
     tenant: string,
     challengeId: string,
     username: string,
+    subject: string,
     registrationRequest: string,
   ): Uint8Array<ArrayBuffer> {
-    for (const value of [tenant, challengeId, username]) identifier(value);
-    return frame("sortsys/recovery-registration/v1", [
+    for (const value of [tenant, challengeId, username, subject])
+      identifier(value);
+    return frame("sortsys/recovery-registration/v2", [
       tenant,
       challengeId,
       username,
+      subject,
       registrationRequest,
     ]);
   }
@@ -334,7 +337,7 @@ export function createRecoveryCodec<
       finish: (
         password: string,
         tenant: string,
-        username: string,
+        subject: string,
         state: OpaqueRegistrationStart,
         response: string,
       ) => Promise<OpaqueRegistrationResult>;
@@ -343,6 +346,7 @@ export function createRecoveryCodec<
       tenant: string;
       challengeId: string;
       username: string;
+      subject: string;
       registrationRequest: string;
       proof: string;
     }) => Promise<{ registrationResponse: string }>;
@@ -553,6 +557,7 @@ export function createRecoveryCodec<
       tenant,
       challengeId: source.challengeId,
       username,
+      subject,
       registrationRequest: registration.registrationRequest,
       proof: await sign(
         oldRecovery.signingKey.privateKey,
@@ -560,6 +565,7 @@ export function createRecoveryCodec<
           tenant,
           source.challengeId,
           username,
+          subject,
           registration.registrationRequest,
         ),
       ),
@@ -567,14 +573,14 @@ export function createRecoveryCodec<
     const result = await passwordCrypto.finish(
       input.password,
       tenant,
-      username,
+      subject,
       registration,
       registrationResponse,
     );
     const vault = await createAccountVault(
       result.exportKey,
       tenant,
-      username,
+      subject,
       identity,
       {
         recoveryGeneration: nextGeneration,

@@ -5,6 +5,8 @@ import {
   base64,
   bytes,
   certifyIdentity,
+  credentialIdentifier,
+  createAccountVault,
   createDelegationCodec,
   createIdentity,
   createZeroTrust,
@@ -416,6 +418,16 @@ export async function exerciseFramework() {
     anchored,
   );
   return {
+    credential: credentialIdentifier({
+      tenant: "laboratory:alpha",
+      subject: "researcher:kai",
+    }),
+    accountVault: await createAccountVault(
+      base64(crypto.getRandomValues(new Uint8Array(64))),
+      "laboratory:alpha",
+      "researcher:kai",
+      identity,
+    ),
     inventory,
     payload: { ...payload, content: payloadText },
     signer: (await publicIdentity(identity)).signingKey,

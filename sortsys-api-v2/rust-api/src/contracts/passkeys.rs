@@ -128,6 +128,7 @@ pub struct RequestOptions {
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PasskeyLoginOutput {
+    pub subject: String,
     pub token: String,
     pub tenant: String,
     pub username: String,

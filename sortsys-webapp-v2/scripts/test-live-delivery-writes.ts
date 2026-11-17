@@ -11,7 +11,7 @@ import { protectedCollection, required } from "../app/lib/data/protectedObjects"
 export async function testDeliveryWrites(client: Client, driver: () => Promise<DuckDriver>, password: string) {
   const account = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "delivery-write-peer");
   await signIn(peer, { tenant: account.tenant, username: account.username, password });
-  await acceptVaultWithKey(account.dataKey, account.vault, false);
+  await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
   const requests: {
     path: string;
     input: unknown;

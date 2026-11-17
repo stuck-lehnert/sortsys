@@ -30,7 +30,7 @@ function legacyInput(kind: "d" | "p") {
 }
 export async function testContractAdoption(client: Client, driver: () => Promise<DuckDriver>, processor: GaebXmlProcessor, customerId: string, password: string) {
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "adoption-peer"), signal = new AbortController().signal;
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   let lose = false, race: (() => Promise<void>) | null = null; const requests: { path: string; input: unknown }[] = [];
   const observed: Client = { ...client, query: ((path, input, options) => { requests.push({ path, input }); return client.query(path, input, options); }) as Client["query"],
     mutate: (async (path, input, options) => {

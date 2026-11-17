@@ -13,7 +13,7 @@ export async function testProtectedPersonnel(client: Client, source: BusinessDat
   await preparePersonnel(client, source, `user:${session.user.id}`, signal, driver);
   await preparePersonnel(client, source, `user:${session.user.id}`, signal, driver);
   const originals = await readBusinessRows(source, "users"), peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "personnel-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const sent: { path: string; input: unknown }[] = []; let lost = false, discard = false;
   const observed: Client = { ...client,
     query: ((path, input, options) => { sent.push({ path, input }); return client.query(path, input, options); }) as Client["query"],

@@ -189,7 +189,7 @@ try {
       confirmation: base64(randomSecret()),
     }),
   );
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   await assert.rejects(
     () =>
       approveMemberInvitation(
@@ -199,9 +199,9 @@ try {
       ),
     "A valid account signature cannot replace knowledge of the invitation secret",
   );
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   await required(newcomer.mutate("zerotrust.invitations.join", originalClaim));
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   business.dispose();
   business = null;
   const lease = acquireDataRuntime(administrator, signal, duckDriver);
@@ -243,7 +243,7 @@ try {
   } finally {
     lease.close();
   }
-  await acceptVaultWithKey(member.dataKey, member.vault, false);
+  await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   console.log("Native invitation: reading own personnel profile");
   const reader = createBusinessClient(newcomer, { productDriver: duckDriver });
   try {
@@ -270,7 +270,7 @@ try {
     reader.dispose();
   }
   // Reactivation restores the individual grants, but never the old sessions.
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   let accountWriteMode: "normal" | "discard" | "lose-reply" = "normal";
   let capturedChange: MutateInput<"zerotrust.objects.batch"> | null = null;
   const lifecycle: Client = {
@@ -342,7 +342,7 @@ try {
       password,
     }),
   );
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   business.dispose();
   business = createBusinessClient(administrator, { productDriver: duckDriver });
   await required(business.mutate("users.archive", { id: created.id }));

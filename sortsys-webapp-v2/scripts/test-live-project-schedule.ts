@@ -13,7 +13,7 @@ export async function testProtectedProjectSchedule(client: Client, source: Busin
   const signal = new AbortController().signal;
   await prepareProjectSchedule(client, source, subject, signal); await prepareProjectSchedule(client, source, subject, signal);
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "planning-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const sent: { path: string; input: unknown }[] = []; let lose = false, discard = false;
   const observed: Client = { ...client,
     query: ((path, input, options) => { sent.push({ path, input }); return client.query(path, input, options); }) as Client["query"],

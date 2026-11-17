@@ -3498,8 +3498,8 @@ test("encrypted device keys survive refresh, reject tampering and are erased on 
       "id",
       "key",
       "nonce",
+      "subject",
       "tenant",
-      "username",
       "vault",
     ]);
     await page.evaluate(() => window.cryptoFixture.cachedRecord(true));

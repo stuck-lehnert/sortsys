@@ -14,7 +14,7 @@ export async function testProtectedProjects(client: Client, source: BusinessData
   await prepareProjects(client, source, subject, signal);
   await prepareProjects(client, source, subject, signal);
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "projects-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const requests: unknown[] = [], keys: string[] = []; let lose = false, falseAck = false, raceCustomer = false;
   const observed: Client = { ...client, query: ((path, input, options) => {
     requests.push({ path, input }); if (path === "zerotrust.keys.get") keys.push((input as { domain: string }).domain); return client.query(path, input, options);

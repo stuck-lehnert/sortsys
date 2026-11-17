@@ -14,7 +14,7 @@ import { until } from "./test-live-events";
 
 export async function testCommercialWorkflows(client: Client, driver: () => Promise<DuckDriver>, processor: GaebXmlProcessor, customerId: string, password: string) {
   const signal = new AbortController().signal, owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "workflow-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const requests: { path: string; input: unknown }[] = []; let lose = false, falseAck = false, race: (() => Promise<void>) | null = null;
   const observed: Client = { ...client, query: ((path, input, options) => { requests.push({ path, input }); return client.query(path, input, options); }) as Client["query"],
     mutate: (async (path, input, options) => {

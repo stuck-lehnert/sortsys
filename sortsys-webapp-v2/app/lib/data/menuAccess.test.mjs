@@ -345,10 +345,11 @@ async function fixture() {
   const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
   await acceptVault(
     exportKey,
-    await createAccountVault(exportKey, "test", "owner", identity, {
+    await createAccountVault(exportKey, "test", "user:1", identity, {
       recoveryGeneration: "1",
       recoverySigningKey: setup.authority.recoverySigningKey,
     }),
+    "owner",
     false,
   );
   let permissions = await signPolicy(
@@ -488,7 +489,8 @@ test("cached projections cannot cross account replacement even before an explici
       exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
     await acceptVault(
       exportKey,
-      await createAccountVault(exportKey, "test", "different", other, {}),
+      await createAccountVault(exportKey, "test", "user:2", other, {}),
+      "different",
       false,
     );
     await expect(service.read()).rejects.toThrow();

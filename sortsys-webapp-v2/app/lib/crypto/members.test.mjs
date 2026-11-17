@@ -24,11 +24,11 @@ async function fixture() {
       scopes: [],
     });
   const exportKey = base64(crypto.getRandomValues(new Uint8Array(64))),
-    vault = await createAccountVault(exportKey, "test", "owner", identity, {
+    vault = await createAccountVault(exportKey, "test", "user:1", identity, {
       recoveryGeneration: "1",
       recoverySigningKey: setup.authority.recoverySigningKey,
     });
-  await acceptVault(exportKey, vault, false);
+  await acceptVault(exportKey, vault, "owner", false);
   let saved = null,
     change = null,
     permissions = setup.policy;

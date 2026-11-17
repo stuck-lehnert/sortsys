@@ -146,6 +146,7 @@ async function responseFor(path, input) {
       token: "synthetic-passkey-session",
       tenant,
       username,
+      subject: accountVault.subject,
       accountVault,
       keyVault: packet,
     };
@@ -179,11 +180,11 @@ window.passkeyFixture = {
     accountVault = await createAccountVault(
       exportKey,
       tenant,
-      username,
+      "user:1",
       identity,
     );
     client.setToken("synthetic-owner-session");
-    await acceptVault(exportKey, accountVault, false);
+    await acceptVault(exportKey, accountVault, username, false);
   },
   register() {
     return registerPasskey(client, "Browser authenticator");
@@ -194,13 +195,13 @@ window.passkeyFixture = {
   },
   async rememberDevice() {
     const current = unlockedAccount();
-    await acceptVaultWithKey(current.dataKey, current.vault);
+    await acceptVaultWithKey(current.dataKey, current.vault, current.username);
   },
   async failAfterUnlock() {
     const current = unlockedAccount();
     try {
       await withCryptoSignIn(client, async () => {
-        await acceptVaultWithKey(current.dataKey, current.vault, false);
+        await acceptVaultWithKey(current.dataKey, current.vault, current.username, false);
         throw new Error("Synthetic failure after local decryption");
       });
     } catch {

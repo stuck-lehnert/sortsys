@@ -2,7 +2,8 @@ use serde::Deserialize;
 use sortsys_zerotrust::{
     administration::{PolicyAdministration, PolicyAdministrationRef},
     anchors::RecordAnchor,
-    crypto::{decode, encode, packet_hash, sized},
+    credentials::CredentialPrincipal,
+    crypto::{AccountVault, decode, encode, packet_hash, sized},
     delegations::{DelegationCertificate, DelegationContext},
     domains::{DomainFrameRef, DomainSignerRef},
     immutable,
@@ -75,6 +76,8 @@ impl Policy {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserVector {
+    credential: String,
+    account_vault: AccountVault,
     inventory: RecoveryInventory,
     payload: PayloadVector,
     signer: String,
@@ -158,6 +161,14 @@ impl AsRef<str> for Namespace {
 
 fn main() {
     let vector: BrowserVector = serde_json::from_str(include_str!("browser-vector.json")).unwrap();
+    let principal = CredentialPrincipal {
+        tenant: "laboratory:alpha".into(),
+        subject: "researcher:kai".into(),
+    };
+    assert_eq!(principal.identifier().unwrap(), vector.credential);
+    vector.account_vault.validate().unwrap();
+    assert_eq!(vector.account_vault.tenant, principal.tenant);
+    assert_eq!(vector.account_vault.subject, principal.subject);
     vector.inventory.validate(DEFAULT_RECOVERY_LIMITS).unwrap();
     assert_eq!(vector.inventory.key_generations, 10_003);
     assert!(vector.payload.parts.len() > 1);

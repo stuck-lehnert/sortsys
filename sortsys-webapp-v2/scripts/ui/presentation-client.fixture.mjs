@@ -29,9 +29,10 @@ export async function installPresentationClient() {
     await createAccountVault(
       exportKey,
       "fixture-tenant",
-      "fixture.user",
+      "user:1",
       identity,
     ),
+    "fixture.user",
     false,
   );
   const report = (source, error) => {

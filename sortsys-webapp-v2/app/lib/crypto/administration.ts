@@ -25,7 +25,7 @@ export async function administratorContext(
   live();
   if (
     !session.roles.includes(":admin") ||
-    session.user.username !== account.username
+    account.vault.subject !== `user:${session.user.id}`
   )
     throw new InvalidProtectedData();
   const history = await trustedHistory(client);

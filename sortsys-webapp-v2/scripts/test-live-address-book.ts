@@ -15,7 +15,7 @@ export async function testProtectedAddressBook(client: Client, source: BusinessD
   await prepareAddressBook(client, source, subject, signal);
   const owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "address-book-peer");
   await signIn(peer, { tenant: owner.tenant, username: owner.username, password });
-  await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const requests: unknown[] = [], keys: string[] = [];
   let loseAck = false, falseAck = false, race = false;
   const observed: Client = { ...client, query: ((path, input, options) => {

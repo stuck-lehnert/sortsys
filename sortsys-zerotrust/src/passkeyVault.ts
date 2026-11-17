@@ -18,12 +18,12 @@ import type { PublicIdentity } from "./identity";
 
 export type PasskeyVaultContext = PublicIdentity & {
   tenant: string;
-  username: string;
+  subject: string;
   rpId: string;
   credentialId: string;
 };
 export type PasskeyVault = PasskeyVaultContext & {
-  format: "sortsys-passkey-vault-v1";
+  format: "sortsys-passkey-vault-v2";
   wrappedKey: string;
   signature: string;
 };
@@ -54,8 +54,10 @@ export class PasskeyUnlock {
     try {
       checkedRpId(context.rpId);
       if (
-        owned.length !== 32 || unbase64(context.credentialId, 1024).length === 0
-      ) throw new InvalidProtectedData();
+        owned.length !== 32 ||
+        unbase64(context.credentialId, 1024).length === 0
+      )
+        throw new InvalidProtectedData();
       return new PasskeyUnlock(owned, context.rpId, context.credentialId);
     } catch {
       owned.fill(0);
@@ -76,12 +78,12 @@ export class PasskeyUnlock {
         account,
         this.#rpId,
         this.#credentialId,
-      )
+      ),
     );
   }
 
   openVault(
-    expected: { tenant: string; username: string },
+    expected: { tenant: string; subject: string },
     input: unknown,
     account: unknown,
   ): Promise<OpenedAccountVault> {
@@ -95,7 +97,7 @@ export class PasskeyUnlock {
         },
         input,
         account,
-      )
+      ),
     );
   }
 
@@ -128,7 +130,7 @@ export class PasskeyUnlock {
 const fields = [
   "format",
   "tenant",
-  "username",
+  "subject",
   "rpId",
   "credentialId",
   "encryptionKey",
@@ -140,8 +142,14 @@ const fields = [
 function checkedRpId(value: string): string {
   const url = new URL(`https://${value}`);
   if (
-    !value || value.length > 253 || url.hostname !== value || url.port ||
-    url.username || url.password || url.pathname !== "/" || url.search ||
+    !value ||
+    value.length > 253 ||
+    url.hostname !== value ||
+    url.port ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
     url.hash
   ) {
     throw new InvalidProtectedData();
@@ -158,7 +166,7 @@ export function passkeyPrfInput(rpId: string): Uint8Array<ArrayBuffer> {
 
 export function passkeyVault(input: unknown): PasskeyVault {
   const value = record(input, fields);
-  if (value.format !== "sortsys-passkey-vault-v1") {
+  if (value.format !== "sortsys-passkey-vault-v2") {
     throw new InvalidProtectedData();
   }
   for (const field of fields) {
@@ -168,7 +176,7 @@ export function passkeyVault(input: unknown): PasskeyVault {
   }
   const result = { ...value } as PasskeyVault;
   identifier(result.tenant);
-  identifier(result.username);
+  identifier(result.subject);
   checkedRpId(result.rpId);
   const credential = unbase64(result.credentialId, 1024);
   if (credential.length === 0 || base64(credential) !== result.credentialId) {
@@ -185,10 +193,10 @@ export function passkeyVaultFrame(
   input: PasskeyVault,
 ): Uint8Array<ArrayBuffer> {
   const value = passkeyVault(input);
-  return frame("sortsys/passkey-vault/v1", [
+  return frame("sortsys/passkey-vault/v2", [
     value.format,
     value.tenant,
-    value.username,
+    value.subject,
     value.rpId,
     value.credentialId,
     value.encryptionKey,
@@ -207,9 +215,9 @@ async function wrappingKey(
   const secret = new Uint8Array(prfOutput);
   let raw: Uint8Array<ArrayBuffer> | undefined;
   try {
-    raw = await deriveSecret(secret, "sortsys/passkey-vault-wrapping/v1", [
+    raw = await deriveSecret(secret, "sortsys/passkey-vault-wrapping/v2", [
       context.tenant,
-      context.username,
+      context.subject,
       context.rpId,
       context.credentialId,
       context.encryptionKey,
@@ -236,12 +244,12 @@ export async function createPasskeyVault(
   const opened = await openAccountVaultWithKey(
     dataKey,
     vault.tenant,
-    vault.username,
+    vault.subject,
     vault,
   );
   const header: PasskeyVaultContext = {
     tenant: vault.tenant,
-    username: vault.username,
+    subject: vault.subject,
     encryptionKey: vault.encryptionKey,
     signingKey: vault.signingKey,
     rpId: checkedRpId(rpId),
@@ -250,7 +258,7 @@ export async function createPasskeyVault(
   const key = await wrappingKey(prfOutput, header);
   const value = passkeyVault({
     ...header,
-    format: "sortsys-passkey-vault-v1",
+    format: "sortsys-passkey-vault-v2",
     wrappedKey: base64(
       await crypto.subtle.wrapKey("raw", dataKey, key, "AES-KW"),
     ),
@@ -269,7 +277,7 @@ export async function openPasskeyVault(
   prfOutput: Uint8Array<ArrayBuffer>,
   expected: Pick<
     PasskeyVaultContext,
-    "tenant" | "username" | "rpId" | "credentialId"
+    "tenant" | "subject" | "rpId" | "credentialId"
   >,
   input: unknown,
   account: unknown,
@@ -277,12 +285,14 @@ export async function openPasskeyVault(
   try {
     const value = passkeyVault(input);
     const vault = accountVault(account);
-    const matchingContext = value.tenant === expected.tenant &&
-      value.username === expected.username &&
+    const matchingContext =
+      value.tenant === expected.tenant &&
+      value.subject === expected.subject &&
       value.rpId === expected.rpId &&
       value.credentialId === expected.credentialId;
-    const matchingAccount = value.tenant === vault.tenant &&
-      value.username === vault.username &&
+    const matchingAccount =
+      value.tenant === vault.tenant &&
+      value.subject === vault.subject &&
       value.encryptionKey === vault.encryptionKey &&
       value.signingKey === vault.signingKey;
     if (!matchingContext || !matchingAccount) {
@@ -306,7 +316,7 @@ export async function openPasskeyVault(
     return await openAccountVaultWithKey(
       dataKey,
       expected.tenant,
-      expected.username,
+      expected.subject,
       vault,
     );
   } catch {

@@ -25,7 +25,7 @@ export { native as gaebWorkflowXml };
 
 export async function testGaebDocumentWorkflows(client: Client, source: BusinessDatabase, driver: () => Promise<DuckDriver>, processor: GaebXmlProcessor, password: string) {
   const signal = new AbortController().signal, owner = unlockedAccount()!, peer = createClient(process.env.SORTSYS_LLM_TEST_PEER!, "gaeb-workflow-peer");
-  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, false);
+  await signIn(peer, { tenant: owner.tenant, username: owner.username, password }); await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
   const requests: { path: string; input: unknown }[] = []; let lose = false, raceSource: { caseId: string; id: string } | null = null;
   const observed: Client = { ...client,
     query: ((path, input, options) => { requests.push({ path, input }); return client.query(path, input, options); }) as Client["query"],

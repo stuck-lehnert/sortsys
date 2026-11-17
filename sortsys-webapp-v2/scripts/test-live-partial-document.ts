@@ -35,7 +35,7 @@ export async function testPartialNativeDocument(
   let nextHead;
   let verifiedVersion = "";
   try {
-    await acceptVaultWithKey(owner.account.dataKey, owner.account.vault, false);
+    await acceptVaultWithKey(owner.account.dataKey, owner.account.vault, owner.account.username, false);
     const originalStore = await commercialDocumentStore(
       owner.client,
       scope,
@@ -50,7 +50,7 @@ export async function testPartialNativeDocument(
       originalStore.close();
     }
 
-    await acceptVaultWithKey(member.account.dataKey, member.account.vault, false);
+    await acceptVaultWithKey(member.account.dataKey, member.account.vault, member.account.username, false);
     const memberStore = await commercialDocumentStore(
       member.client,
       scope,
@@ -153,7 +153,7 @@ export async function testPartialNativeDocument(
       memberStore.close();
     }
 
-    await acceptVaultWithKey(owner.account.dataKey, owner.account.vault, false);
+    await acceptVaultWithKey(owner.account.dataKey, owner.account.vault, owner.account.username, false);
     const fullStore = await commercialDocumentStore(
       owner.client,
       scope,
@@ -196,7 +196,7 @@ export async function testPartialNativeDocument(
       writer.close();
     }
 
-    await acceptVaultWithKey(member.account.dataKey, member.account.vault, false);
+    await acceptVaultWithKey(member.account.dataKey, member.account.vault, member.account.username, false);
     const state = await required(
       member.client.query("zerotrust.documents.messages.state", room),
     );
@@ -239,7 +239,7 @@ export async function testPartialNativeDocument(
     assert.equal(error.code, "FORBIDDEN");
     assert.equal(result, null);
 
-    await acceptVaultWithKey(member.account.dataKey, member.account.vault, false);
+    await acceptVaultWithKey(member.account.dataKey, member.account.vault, member.account.username, false);
     const checkedStore = await commercialDocumentStore(
       member.client,
       scope,
@@ -300,6 +300,6 @@ export async function testPartialNativeDocument(
     }
     return BigInt(verifiedVersion);
   } finally {
-    await acceptVaultWithKey(owner.account.dataKey, owner.account.vault, false);
+    await acceptVaultWithKey(owner.account.dataKey, owner.account.vault, owner.account.username, false);
   }
 }

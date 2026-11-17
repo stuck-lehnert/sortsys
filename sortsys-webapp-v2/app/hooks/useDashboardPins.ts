@@ -20,7 +20,7 @@ export function useDashboardPins() {
   const revision = useRef(0),
     failures = useRef({ account, migration: false, write: false });
   useEffect(() => {
-    if (!account || account.username !== session.user.username) return;
+    if (!account || account.vault.subject !== `user:${session.user.id}`) return;
     let active = true;
     revision.current++;
     if (failures.current.account !== account)
@@ -109,7 +109,7 @@ export function useDashboardPins() {
   }
   return {
     rows:
-      account?.username === session.user.username && state?.account === account
+      account?.vault.subject === `user:${session.user.id}` && state?.account === account
         ? (state?.rows ?? [])
         : [],
     error: state?.account === account && state.error,

@@ -326,21 +326,21 @@ test("seed recovery restores historical content, changes all future keys and cre
   const response = server.startLogin({
     serverSetup: f.serverSetup,
     registrationRecord: f.plan.registrationRecord,
-    userIdentifier: `test/${f.plan.username}`,
+    userIdentifier: opaqueIdentifiers("test", f.plan.nextSetup.owner.user).client,
     startLoginRequest: started.startLoginRequest,
-    identifiers: opaqueIdentifiers("test", f.plan.username),
+    identifiers: opaqueIdentifiers("test", f.plan.nextSetup.owner.user),
   });
   const login = await finishOpaqueLogin(
     f.password,
     "test",
-    f.plan.username,
+    f.plan.nextSetup.owner.user,
     started,
     response.loginResponse,
   );
   const opened = await openAccountVault(
     login.exportKey,
     "test",
-    f.plan.username,
+    f.plan.nextSetup.owner.user,
     f.plan.vault,
   );
   expect(await publicIdentity(opened.identity)).toEqual(

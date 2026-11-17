@@ -14,7 +14,8 @@ async function account() {
     identity = await createIdentity();
   await acceptVault(
     key,
-    await createAccountVault(key, "runtime-test", "owner", identity, {}),
+    await createAccountVault(key, "runtime-test", "user:1", identity, {}),
+    "owner",
     false,
   );
 }

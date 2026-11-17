@@ -51,7 +51,7 @@ async function fixture() {
   const prf = crypto.getRandomValues(new Uint8Array(32));
   const expected = {
     tenant: "test",
-    username: "john.doe",
+    subject: "john.doe",
     rpId: "example.test",
     credentialId: base64(crypto.getRandomValues(new Uint8Array(32))),
   };
@@ -137,7 +137,7 @@ test("passkey wrappers bind the exact account, RP, credential, keys and signed c
   for (
     const change of [
       { tenant: "other" },
-      { username: "jane.doe" },
+      { subject: "jane.doe" },
       { rpId: "other.test" },
       { credentialId: base64(new Uint8Array(32)) },
       { wrappedKey: base64(new Uint8Array(40)) },

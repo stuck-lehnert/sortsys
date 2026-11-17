@@ -126,7 +126,7 @@ async function readAccessContext(
     "after",
     "unchanged",
   ]);
-  if (input.username !== account.username) throw new InvalidProtectedData();
+  if (input.subject !== account.vault.subject) throw new InvalidProtectedData();
   if (
     typeof input.subject !== "string" ||
     !Array.isArray(input.domains) ||

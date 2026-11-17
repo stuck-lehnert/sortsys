@@ -183,7 +183,7 @@ impl RecoveryPlan {
         )?;
         self.vault.validate()?;
         validate_registration(&self.registration_record)?;
-        if self.vault.tenant != t.tenant || self.vault.username != self.username {
+        if self.vault.tenant != t.tenant || self.vault.subject != self.next_setup.owner.user {
             return Err(invalid());
         }
         let scopes = self
@@ -271,6 +271,7 @@ struct RecoveryHead {
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RegistrationInput {
+    subject: String,
     tenant: String,
     challenge_id: String,
     username: String,

@@ -2,7 +2,7 @@
 
 export type Access = { generation: string, policyVersion: string, };
 
-export type AccountVault = { format: string, tenant: string, username: string, encryptionKey: string, signingKey: string, nonce: string, ciphertext: string, wrappedKey: string, };
+export type AccountVault = { format: string, tenant: string, subject: string, encryptionKey: string, signingKey: string, nonce: string, ciphertext: string, wrappedKey: string, };
 
 export type Action = "read" | "create" | "update" | "delete" | "approve" | "grant";
 
@@ -150,7 +150,7 @@ export type PartKey = { facet: Facet, generation: string, };
 
 export type PasskeyUser = { id: string, name: string, displayName: string, };
 
-export type PasskeyVault = { format: string, tenant: string, username: string, rpId: string, credentialId: string, encryptionKey: string, signingKey: string, wrappedKey: string, signature: string, };
+export type PasskeyVault = { format: string, tenant: string, subject: string, rpId: string, credentialId: string, encryptionKey: string, signingKey: string, wrappedKey: string, signature: string, };
 
 export type PolicyAdministration<R, F = string> = { root: R, profiles: Array<AdministrativeProfile<F>>, author: IdentityCertificate, previousSignature: string, };
 
@@ -738,7 +738,7 @@ export type MutationInputs = {
   "zerotrust.recovery.commit": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, };
   "zerotrust.recovery.inspect": { tenant: string, generation: string, nonce: string, proof: string, };
   "zerotrust.recovery.page": { tenant: string, generation: string, challengeId: string, snapshot: string, after: string | null, proof: string, };
-  "zerotrust.recovery.registration": { tenant: string, challengeId: string, username: string, registrationRequest: string, proof: string, };
+  "zerotrust.recovery.registration": { subject: string, tenant: string, challengeId: string, username: string, registrationRequest: string, proof: string, };
   "zerotrust.recovery.resume": { tenant: string, operation: string, };
   "zerotrust.recovery.stage": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, content: string, };
   "zerotrust.setup": { authority: AuthorityCertificate, owner: IdentityCertificate, authorityEnvelope: SealedBox, catalog: SealedBox, policy: SignedPolicy, proof: string, };
@@ -773,17 +773,17 @@ export type MutationOutputs = {
   "auth.login": { token: string; };
   "auth.logout": { success: true; };
   "auth.opaque.enrollFinish": { success: true, };
-  "auth.opaque.enrollStart": { exchange: string, registrationResponse: string, tenant: string, username: string, };
+  "auth.opaque.enrollStart": { subject: string, exchange: string, registrationResponse: string, tenant: string, username: string, };
   "auth.opaque.invitationFinish": { token: string, tenant: string, username: string, vault: AccountVault, };
-  "auth.opaque.invitationStart": { exchange: string, registrationResponse: string, tenant: string, username: string, };
+  "auth.opaque.invitationStart": { subject: string, exchange: string, registrationResponse: string, tenant: string, username: string, };
   "auth.opaque.loginFinish": { token: string, tenant: string, username: string, vault: AccountVault, };
-  "auth.opaque.loginStart": { exchange: string, loginResponse: string, };
+  "auth.opaque.loginStart": { subject: string, exchange: string, loginResponse: string, };
   "auth.opaque.vaultUpdate": { success: true, };
   "auth.owner.finish": { token: string, tenant: string, username: string, vault: AccountVault, };
   "auth.owner.inspect": { tenant: string, userId: Id, };
   "auth.owner.start": { exchange: string, registrationResponse: string, tenant: string, username: string, userId: Id, };
   "auth.passkeys.delete": { success: true, };
-  "auth.passkeys.login": { token: string, tenant: string, username: string, accountVault: AccountVault | null, keyVault: PasskeyVault | null, };
+  "auth.passkeys.login": { subject: string, token: string, tenant: string, username: string, accountVault: AccountVault | null, keyVault: PasskeyVault | null, };
   "auth.passkeys.loginOptions": { challengeToken: string, options: RequestOptions, };
   "auth.passkeys.register": { success: true, };
   "auth.passkeys.registerOptions": { challengeToken: string, options: CreationOptions, };
