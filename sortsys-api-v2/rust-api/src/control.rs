@@ -64,6 +64,11 @@ fn expiry_head(record: &RecordKey) -> RecordKey {
     key("control-expiry-heads", &format!("e_{identity}"))
 }
 
+fn protection_name(record: &RecordKey) -> String {
+    let identity = fingerprint(&format!("{}\0{}", record.collection, record.key));
+    format!("record-{identity}")
+}
+
 pub fn key(collection: &str, key: &str) -> RecordKey {
     RecordKey {
         collection: collection.into(),
@@ -543,6 +548,19 @@ impl Transaction {
         Ok(())
     }
 
+    /// Observe planned writes and their durable checkpoints in bounded reads.
+    /// Missing records remain part of the commit's compare-and-swap checks.
+    pub async fn prefetch_protected(&mut self, records: Vec<RecordKey>) -> RpcResult<()> {
+        use sortsys_zerotrust::anchors::ANCHOR_COLLECTION;
+
+        let mut keys = Vec::with_capacity(records.len().saturating_mul(2));
+        for record in records {
+            keys.push(key(ANCHOR_COLLECTION, &protection_name(&record)));
+            keys.push(record);
+        }
+        self.prefetch(keys).await
+    }
+
     async fn encoded(&mut self, record: RecordKey) -> RpcResult<Option<String>> {
         self.observe(record.clone()).await?;
         let identity = (record.collection, record.key);
@@ -631,8 +649,7 @@ impl Transaction {
 
     /// Give one opaque control record a stable checkpoint of its own.
     pub async fn protect_record(&mut self, record: RecordKey) -> RpcResult<()> {
-        let identity = fingerprint(&format!("{}\0{}", record.collection, record.key));
-        self.protect_records(&format!("record-{identity}"), &[record])
+        self.protect_records(&protection_name(&record), &[record])
             .await
     }
 

@@ -70,6 +70,59 @@ fn plan_hash(plan: &RecoveryPlan) -> RpcResult<String> {
         serde_json::to_vec(plan).map_err(internal)?,
     )))
 }
+
+async fn prefetch_publication(
+    transaction: &mut Transaction,
+    plan: &RecoveryPlan,
+    owner: i64,
+) -> RpcResult<()> {
+    let generation = &plan.next_setup.authority.generation;
+    let version = &plan.next_setup.policy.version;
+    let mut protected = vec![
+        accounts::account_key(owner),
+        accounts::tenant_key(),
+        key(
+            "authority-history",
+            &format!("{:020}", revision(generation)?),
+        ),
+        setup::identity_history_key(&plan.next_setup.owner)?,
+        key("policies", version),
+        key("policy-generations", version),
+    ];
+    for envelope in &plan.old_key_envelopes {
+        protected.push(registry::envelope_key(
+            &envelope.object,
+            &envelope.generation,
+            &envelope.recipient,
+        )?);
+    }
+    for definition in &plan.domains {
+        protected.push(registry::definition_key(
+            &definition.id,
+            &definition.generation,
+            generation,
+        )?);
+        for envelope in &definition.envelopes {
+            protected.push(registry::envelope_key(
+                &definition.id,
+                &definition.generation,
+                &envelope.recipient,
+            )?);
+        }
+        protected.push(registry::recovery_key(&registry::RecoveryKeyReference {
+            domain: definition.id.clone(),
+            generation: definition.generation.clone(),
+            authority_generation: generation.clone(),
+        })?);
+    }
+    transaction.prefetch_protected(protected).await?;
+    transaction
+        .prefetch(vec![
+            key("usernames", &plan.username),
+            key("member-directory", &format!("{owner:020}")),
+        ])
+        .await
+}
 async fn public_head(service: &AuthService, input: TenantInput) -> RpcResult<RecoveryHead> {
     let root = setup::public_root(service.records()?, &input.tenant).await?;
     Ok(RecoveryHead {
@@ -232,14 +285,23 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
     if descriptors.len() != input.domains.len() {
         return Err(conflict());
     }
+    transaction
+        .prefetch(
+            descriptors
+                .iter()
+                .map(|descriptor| key("domains", &descriptor.id))
+                .collect(),
+        )
+        .await?;
+    let next_domains = input
+        .domains
+        .iter()
+        .map(|domain| (domain.id.as_str(), domain))
+        .collect::<BTreeMap<_, _>>();
     let mut domains = BTreeMap::new();
     for descriptor in descriptors {
         let current = registry::domain(&mut transaction, &descriptor.id).await?;
-        let next = input
-            .domains
-            .iter()
-            .find(|domain| domain.id == current.id)
-            .ok_or_else(conflict)?;
+        let next = next_domains.get(current.id.as_str()).ok_or_else(conflict)?;
         if current.scope != descriptor.scope
             || current.facet != descriptor.facet
             || current.scope != next.scope
@@ -251,6 +313,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         domains.insert(current.id.clone(), current);
     }
     let owner = input.owner_id()?;
+    prefetch_publication(&mut transaction, &input, owner.0).await?;
     if transaction
         .read::<accounts::Account>(accounts::account_key(owner.0))
         .await?

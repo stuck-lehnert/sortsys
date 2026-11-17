@@ -135,6 +135,18 @@ async fn domain_page(
         )
         .await?;
     let mut items = Vec::new();
+    transaction
+        .prefetch(
+            page.records
+                .iter()
+                .map(|row| {
+                    let descriptor = row.value.as_ref().ok_or_else(invalid)?;
+                    identifier(&descriptor.id)?;
+                    Ok(crate::control::key("domains", &descriptor.id))
+                })
+                .collect::<RpcResult<Vec<_>>>()?,
+        )
+        .await?;
     for row in page.records {
         let descriptor = row.value.ok_or_else(invalid)?;
         let domain = super::super::objects::registry::domain(transaction, &descriptor.id).await?;
@@ -173,16 +185,27 @@ async fn key_page(
     let page = transaction
         .scan_with_limit::<RecoveryKeyReference>(&collection, after, PAGE_SIZE)
         .await?;
+    let mut keys = Vec::with_capacity(page.records.len() * 2);
+    for row in &page.records {
+        let reference = row.value.as_ref().ok_or_else(invalid)?;
+        if reference.authority_generation != *generation
+            || super::super::objects::registry::recovery_key(reference)? != row.record
+        {
+            return Err(invalid());
+        }
+        keys.push(definition_key(
+            &reference.domain,
+            &reference.generation,
+            generation,
+        )?);
+        keys.push(crate::control::key("domains", &reference.domain));
+    }
+    transaction.prefetch(keys).await?;
     let mut items = Vec::new();
     let mut bytes = 0usize;
     let mut last = None;
     for row in page.records {
         let reference = row.value.ok_or_else(invalid)?;
-        if reference.authority_generation != *generation
-            || super::super::objects::registry::recovery_key(&reference)? != row.record
-        {
-            return Err(invalid());
-        }
         let definition: DomainDefinition = transaction
             .read(definition_key(
                 &reference.domain,

@@ -16,6 +16,8 @@ use std::{
 };
 use tokio::{process::Command, task::JoinHandle};
 
+mod batching;
+
 struct ApiTask(JoinHandle<()>);
 impl Drop for ApiTask {
     fn drop(&mut self) {
@@ -1024,7 +1026,8 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
     let config = QuackConfig::from_env().unwrap().unwrap();
     assert!(config.control_url.starts_with("http://127.0.0.1:"));
     assert!(config.token.starts_with("sortsys-disposable-"));
-    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let (store, probe, _proxy) = batching::measured_store(&config).await;
+    let first = Repository::system(store);
     let second = Repository::system(CipherStore::new(config.clone()).unwrap());
     let mut settings = configuration(config);
     settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
@@ -1035,7 +1038,41 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     let endpoints = [first_url, second_url];
     browser("owner-minimal", &root, Some(&endpoints)).await;
+    probe.take_reads();
     browser("recovery", &root, Some(&endpoints)).await;
+    let requests = probe.take_reads();
+    assert!(requests.iter().all(|records| records.len() <= 1024));
+    assert!(
+        requests.iter().any(|records| {
+            let definitions = records
+                .iter()
+                .filter(|record| record.collection == "domain-definitions")
+                .collect::<Vec<_>>();
+            if definitions.len() != 64 {
+                return false;
+            }
+            // Several historical definitions may refer to the same domain.
+            // Its head belongs in the request exactly once.
+            let expected_domains = definitions
+                .iter()
+                .map(|record| {
+                    let (domain_and_generation, _) = record.key.rsplit_once(':')?;
+                    let (domain, _) = domain_and_generation.rsplit_once(':')?;
+                    Some(domain)
+                })
+                .collect::<Option<std::collections::BTreeSet<_>>>();
+            let Some(expected_domains) = expected_domains else {
+                return false;
+            };
+            let domains = records
+                .iter()
+                .filter(|record| record.collection == "domains")
+                .map(|record| record.key.as_str())
+                .collect::<std::collections::BTreeSet<_>>();
+            domains == expected_domains && records.len() == definitions.len() + domains.len()
+        }),
+        "Recovery must read 64 definitions and all their distinct domains in one HTTP request"
+    );
     let tenant = first.tenant("recovery-tenant").unwrap();
     assert_published_catalog_pages(&tenant, 2).await;
     assert_published_catalog_pages(&tenant, 3).await;

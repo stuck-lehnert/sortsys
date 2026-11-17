@@ -79,6 +79,7 @@ pub(super) async fn protect_published_pages(
     let mut after = None;
     loop {
         let page = transaction.scan::<CatalogPage>(&collection, after).await?;
+        let mut published = Vec::new();
         for row in page.records {
             let stored = row.value.ok_or_else(invalid)?;
             if stored.challenge_id != challenge_id {
@@ -95,7 +96,11 @@ pub(super) async fn protect_published_pages(
                 return Err(invalid());
             }
             stored.packet.verify(&signer)?;
-            transaction.protect_record(row.record).await?;
+            published.push(row.record);
+        }
+        transaction.prefetch_protected(published.clone()).await?;
+        for record in published {
+            transaction.protect_record(record).await?;
         }
         after = page.after;
         if after.is_none() {

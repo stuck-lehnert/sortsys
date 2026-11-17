@@ -140,6 +140,14 @@ Ein anderer Wiederherstellungsvorgang benötigt eine neue Challenge. Die Prüfun
 des vollständigen Schlüsselbestands behält vorerst ihre Grenzen von 2.000
 Bereichen und 10.000 Schlüsselständen.
 
+Beim Lesen einer Bestandsseite lädt die API die referenzierten Bereiche und
+Schlüsseldefinitionen gemeinsam aus dem Datendienst. Vor dem Veröffentlichen
+liest sie auch die Schreibziele und deren unabhängige Sicherheitsnachweise in
+begrenzten Sammelanfragen. Die Versionsprüfung umfasst weiterhin jeden
+Datensatz, einschließlich zuvor nicht vorhandener Einträge. Ändert eine zweite
+API-Instanz währenddessen einen dieser Stände, wird die gesamte Veröffentlichung
+abgewiesen.
+
 Auch nach einer positiven Erfolgsantwort liest der Browser die veröffentlichte
 Autorität erneut und prüft Signatur, Generation und die Bindung an den eigenen
 vorbereiteten Plan. Eine bloße Erfolgsantwort bestätigt keine abgeschlossene
@@ -268,6 +276,12 @@ werden abgewiesen. Ein vorher gespeicherter Inhalt bleibt nach beiden Wechseln
 lesbar. Auch eine verlorene Antwort nach dem Commit wird über den
 veröffentlichten Stand aufgelöst. Die beobachteten Anfragen enthalten weder
 Phrase noch Passwort oder Geschäftsinhalt im Klartext.
+
+Ein HTTP-Messtest veröffentlicht 600 geschützte Datensätze atomar. Für die
+Schreibziele und ihre Sicherheitsnachweise benötigt er drei Leseanfragen.
+Doppelte Schlüssel und wiederholtes Vorladen lösen keine weiteren Abrufe aus.
+Konkurrierende Neuanlagen und Änderungen an einem Sicherheitsnachweis führen
+zum Versionskonflikt; keiner der vorbereiteten Datensätze wird dabei verändert.
 
 Ein weiterer Mehrinstanztest erzeugt Schlüsselgenerationen mit dem eigenen
 Signaturschlüssel eines beauftragten Bereichsverwalters. Neue Leser erhalten

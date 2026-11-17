@@ -511,8 +511,11 @@ pub(super) fn transact(
     {
         return Ok(receipt);
     }
-    check_advances(connection, catalog, context, batch)?;
+    // A legitimate concurrent publication can advance both a record and its
+    // witness. Report its stale read set as a conflict before judging the new
+    // anchor against a head that the caller never observed.
     metadata::check_reads(connection, catalog, batch)?;
+    check_advances(connection, catalog, context, batch)?;
     save_intent(connection, context, batch)?;
     let receipt = match metadata::transact_prepared(connection, catalog, batch) {
         Ok(receipt) => receipt,
@@ -871,7 +874,10 @@ mod tests {
         let stale = batch(&connection, "stale", "stale");
         let winning = batch(&connection, "winning", "winning");
         transact(&connection, "tenant", CONTEXT, &winning, false).unwrap();
-        assert!(transact(&connection, "tenant", CONTEXT, &stale, false).is_err());
+        assert!(matches!(
+            transact(&connection, "tenant", CONTEXT, &stale, false),
+            Err(StoreError::Conflict)
+        ));
         assert_eq!(intent_count(&connection), 0);
         admit(&connection, "tenant", CONTEXT).unwrap();
     }
