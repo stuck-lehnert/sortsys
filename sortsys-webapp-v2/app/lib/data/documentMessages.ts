@@ -20,6 +20,7 @@ import { commercialCollection } from "./commercialAreas";
 import { fileCollection } from "./projectFileData";
 import { protectedCollections, required } from "./protectedObjects";
 import { readDocumentMessagePage } from "./documentMessagePages";
+import { mapConcurrent } from "./runtime/concurrentReads";
 
 type Message =
   QueryResult<"zerotrust.documents.messages.read">["messages"][number];
@@ -109,6 +110,11 @@ export async function openDocumentMessages(
       if (plaintext.length > MAX_MESSAGE_BYTES) {
         throw new InvalidProtectedData();
       }
+      // Load independent layer keys together. Encryption itself remains in
+      // order because every layer wraps the preceding layer's ciphertext.
+      await mapConcurrent(stores, 4, ({ store }) =>
+        store.prepareMessageLayer(),
+      );
       const keys: { facet: Facet; generation: string }[] = [];
       for (const layer of stores) {
         const sealed = await layer.store.sealMessageLayer(binding, plaintext);
@@ -209,25 +215,32 @@ export async function openDocumentMessages(
       MAX_MESSAGE_BYTES + stores.length * 68,
     );
     try {
-      for (let index = stores.length - 1; index >= 0; index--) {
-        const key = record(payload.keys[index], ["facet", "generation"]);
-        const layer = stores[index]!;
+      const keys = payload.keys.map((input, index) => {
+        const key = record(input, ["facet", "generation"]);
         if (
-          key.facet !== layer.area.facet ||
+          key.facet !== stores[index]!.area.facet ||
           typeof key.generation !== "string"
         ) {
           throw new InvalidProtectedData();
         }
         revision(key.generation);
+        return { generation: key.generation };
+      });
+      // The independent authorization/key lookups can share RPC batches. All
+      // layers must pass before any inner ciphertext is decrypted.
+      await mapConcurrent(stores, 4, async (layer, index) => {
         await layer.store.verifyMessageAuthor(
           envelope,
           message.authorityGeneration,
-          key.generation,
+          keys[index]!.generation,
           message.kind === "presence" ? "read" : "update",
         );
+      });
+      for (let index = stores.length - 1; index >= 0; index--) {
+        const layer = stores[index]!;
         const opened = await layer.store.openMessageLayer(
           binding,
-          key.generation,
+          keys[index]!.generation,
           plaintext,
         );
         plaintext.fill(0);

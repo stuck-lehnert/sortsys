@@ -389,6 +389,11 @@ function openCollection(
       throw error;
     }
   }
+  async function messageWriteKey() {
+    live();
+    if (!domain || domain.rotationRequired) throw new InvalidProtectedData();
+    return writeKey();
+  }
   async function writeKey() {
     const key = await keyFor(domain!.generation);
     live();
@@ -782,15 +787,16 @@ function openCollection(
       await author.message(envelope, definition, authorityGeneration, action);
       live();
     },
+    async prepareMessageLayer() {
+      await messageWriteKey();
+    },
     async sealMessageLayer(
       binding: string,
       plaintext: Uint8Array<ArrayBuffer>,
     ) {
-      live();
-      if (domain.rotationRequired) throw new InvalidProtectedData();
       const ciphertext = await sealLayer(
         plaintext,
-        await writeKey(),
+        await messageWriteKey(),
         messageContext(binding, domain.generation),
       );
       live();

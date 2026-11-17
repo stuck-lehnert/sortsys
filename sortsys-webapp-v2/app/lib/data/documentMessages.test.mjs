@@ -77,6 +77,56 @@ test("every live encryption layer checks the author's signed update permission, 
   }
 });
 
+test("live-layer key reads overlap within a bounded group before sending and opening", async () => {
+  const tenant = await protectedTenant(
+    COMMERCIAL_FACETS.map((facet) => commercialCollection("4", facet)),
+  );
+  const room = { scope: "commercial:4", document: "5", facet: "opaque" };
+  const signal = new AbortController().signal;
+  let stored;
+  tenant.client.mutate = async (_path, packet) => {
+    stored = { ...structuredClone(packet), sequence: "1" };
+    return [{ success: true }, null];
+  };
+  const writer = await openDocumentMessages(tenant.client, room, signal);
+  let reader;
+  try {
+    const query = tenant.client.query;
+    let active = 0;
+    let maximum = 0;
+    tenant.client.query = async (path, input, options) => {
+      if (path !== "zerotrust.domains.get" && path !== "zerotrust.keys.get")
+        return query(path, input, options);
+      active++;
+      maximum = Math.max(maximum, active);
+      try {
+        await Bun.sleep(2);
+        return await query(path, input, options);
+      } finally {
+        active--;
+      }
+    };
+    await writer.post("update", { data: "Vertraulicher mehrschichtiger Text" });
+    const writeMaximum = maximum;
+    maximum = 0;
+    reader = await openDocumentMessages(tenant.client, room, signal);
+    expect((await reader.open(stored)).value.data).toBe(
+      "Vertraulicher mehrschichtiger Text",
+    );
+    expect(maximum).toBeGreaterThan(1);
+    expect(maximum).toBeLessThanOrEqual(4);
+    expect(writeMaximum).toBeGreaterThan(1);
+    expect(writeMaximum).toBeLessThanOrEqual(4);
+    expect(active).toBe(0);
+    expect(JSON.stringify(stored)).not.toContain(
+      "Vertraulicher mehrschichtiger Text",
+    );
+  } finally {
+    writer.close();
+    reader?.close();
+  }
+});
+
 test("a scope-only member exchanges text without obtaining or querying financial keys", async () => {
   const area = commercialCollection("4", "scope");
   const tenant = await protectedTenant([area]);
