@@ -72,6 +72,6 @@ Browsertest verwendet die tatsächliche Dashboard-Ansicht und DuckDB im Browser.
 Zusätzlich prüft der
 [native Fachadapterlauf](development.md#native-tests-ohne-entwicklungsstack) die
 Bestandsübernahme, gleichzeitige Einträge und Fixierungen über zwei getrennte
-API-Prozesse mit echter Quack-Ablage. Die gespeicherten Verlaufsobjekte bleiben
+API-Instanzen mit echter Quack-Ablage. Die gespeicherten Verlaufsobjekte bleiben
 nach zwei aufeinanderfolgenden Recoveries unverändert lesbar. Ein vollständiger
 Browserlauf über diese beiden Prozesse steht weiterhin aus.

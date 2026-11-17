@@ -44,7 +44,7 @@ Löschmarkierung.
 
 Geöffnete Vermerklisten erhalten technische Änderungshinweise per WebSocket und
 lesen anschließend den signierten Stand neu. Die Aktualisierung über zwei
-unabhängige API-Prozesse ist ebenfalls geprüft; Vermerktexte gehören nicht in
+unabhängige API-Instanzen ist ebenfalls geprüft; Vermerktexte gehören nicht in
 die Änderungshinweise.
 
 Die Bestandsübernahme kopiert die vollständigen ursprünglichen Zeilen. Sie
@@ -56,6 +56,6 @@ Vermerke werden erst nach ihren Projekten, Werkzeugen und Adressbüchern
 Rechteentzug und erneute Freigabe folgen dem Schlüsselwechsel des jeweiligen
 Bereichs. Bereits gelesene oder kopierte Texte lassen sich damit nicht
 zurückholen. Zwei aufeinanderfolgende Seed-Recoveries sind zusammen mit den
-ursprünglichen signierten Vermerken im Test über zwei API-Prozesse geprüft. Die
+ursprünglichen signierten Vermerken im Test über zwei API-Instanzen geprüft. Die
 vollständige Mandantenaktivierung und Bereinigung alter Klartextbestände steht
 weiterhin aus.

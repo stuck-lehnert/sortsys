@@ -14,6 +14,12 @@ vorhandenen Funktionen, nativen Mehrinstanztests und noch offenen Prüfungen.
 Vergleichbare Suchergebnisse oder eine bestimmte Geschwindigkeit werden nicht
 allein aus der Wahl von DuckDB abgeleitet.
 
+Der Produktionsbuild hat alle 18 Browserabläufe bestanden. Der Lauf verwendet
+eine Kopie des separat geprüften Musterbestands und prüft unter anderem
+Abrechnung, gemeinsame GAEB-Bearbeitung sowie Sichtbarkeit und Rechteentzug. Die
+beiden unabhängig konfigurierten API-Instanzen laufen dabei in einem
+Rust-Testprozess. Ein zusätzlicher Nachweis mit getrennten Prozessen fehlt noch.
+
 ## Zugang und Freigaben
 
 **Anmeldung und eigener Passwortwechsel.** Die Passwortanmeldung richtet das
@@ -132,7 +138,7 @@ Browsertests prüfen Sichtbarkeit und Bestätigungsdialog. Rollenänderungen feh
 noch. Abwesenheiten haben einen eigenen Adapter;
 Vorgesetzten- und Vertragswechsel verbinden die Personaländerung mit ihren
 automatisch abgeleiteten Freigaben. Der native Fachadapterlauf prüft
-Profiländerungen und zwei Recoveries über getrennte API-Prozesse. Vollständige
+Profiländerungen und zwei Recoveries über getrennte API-Instanzen. Vollständige
 Textsuchparität steht aus. Siehe
 [Personaldaten](verschluesselte-personaldaten.md).
 
@@ -147,7 +153,7 @@ Entscheidungen entlang aller Vorgesetztenebenen sind angeschlossen.
 Vorgesetztenwechsel erhalten manuelle Ausnahmen und sichern Personal und Rechte
 gemeinsam ab. Der native Fachadapterlauf prüft Bestandsübernahme, Anträge,
 konkurrierende Entscheidungen, Rücknahmen und Zeitnachweise über zwei getrennte
-API-Prozesse. Zwei Recoveries erhalten die Daten; die vollständige Prüfung aller
+API-Instanzen. Zwei Recoveries erhalten die Daten; die vollständige Prüfung aller
 automatischen Vorgesetztenfreigaben steht noch aus. Siehe
 [Abwesenheiten](abwesenheiten-protokoll.md).
 
@@ -309,7 +315,7 @@ projektbezogene Werkzeugnutzung besitzen eigene Schlüsselbereiche. Übernommene
 zugeordnete Rechnungswerte sind unveränderlich und von optionalen OTS-Belegen
 unabhängig. Manuelle Finanzänderungen erscheinen im Projektverlauf.
 Bestandsübernahme, sechs Vergleiche mit PostgreSQL, abgewiesene signierte
-Änderungsversuche über zwei API-Prozesse und zwei Seed-Recoveries sind geprüft.
+Änderungsversuche über zwei API-Instanzen und zwei Seed-Recoveries sind geprüft.
 Neue Rechnungen werden zusammen mit Nummer und XML-Sperre im Projekt gebucht;
 der ergänzende Mehrinstanztest prüft auch Zahlungen und Schlussabrechnungen.
 Siehe [Projektkosten](verschluesselte-projektkosten.md).
@@ -347,7 +353,7 @@ nach erneutem Lesen. Weitere Organisationseinstellungen fehlen noch. Siehe
 verschlüsselt übernommen und automatisch je Konto gespeichert, unabhängig von
 KI-Rechten. Andere normale Benutzer erhalten keinen Zugriff. Kontowechsel
 verwerfen wartende Schreibvorgänge. Der native Fachadapterlauf prüft Speicherung
-und zwei Recoveries über getrennte API-Prozesse. Siehe
+und zwei Recoveries über getrennte API-Instanzen. Siehe
 [Ansichtseinstellungen](verschluesselte-ansichtseinstellungen.md).
 
 **Oberflächensprache.** Deutsch und Englisch lassen sich je Konto wechseln, ohne
@@ -433,7 +439,7 @@ ursprünglichen Urhebern und Zeitpunkten. Feldänderungen und historische Namen
 folgen getrennten Inhaltsfreigaben. Einträge ohne eindeutige Zuordnung bleiben
 vorerst in gesonderten Bereichen der Autorität; deren normale Rechteauswahl und
 gemischte freie Beschreibungen fehlen noch. Der native Fachadapterlauf prüft
-wiederholte Übernahme und zwei Recoveries über getrennte API-Prozesse. Siehe
+wiederholte Übernahme und zwei Recoveries über getrennte API-Instanzen. Siehe
 [persönliche Verläufe](persoenliche-verlaeufe.md) und
 [gemeinsamen Änderungsverlauf](gemeinsamer-aenderungsverlauf.md).
 

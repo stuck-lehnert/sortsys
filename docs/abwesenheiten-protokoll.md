@@ -206,7 +206,7 @@ Der zusätzliche Fachadapterlauf prüft mit dem tatsächlichen Webapp-Code die
 Bestandsübernahme angefragter, genehmigter und abgelehnter Abwesenheiten,
 wiederholbare Anlagen, verlorene und falsche Antworten sowie konkurrierende
 Entscheidungen und bedingte Rücknahmen. Er verwendet zwei getrennte
-API-Prozesse. Abwesenheitsdaten und Originalbelege bleiben nach zwei Recoveries
+API-Instanzen. Abwesenheitsdaten und Originalbelege bleiben nach zwei Recoveries
 lesbar.
 
 Die Fachtests prüfen getrennt davon die Bindung an Antragssignatur und

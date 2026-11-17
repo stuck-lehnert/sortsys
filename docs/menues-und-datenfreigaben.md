@@ -178,7 +178,7 @@ Berichtsbereiche an den ursprünglichen Projektanlagenachweis. Ein bloßes Recht
 neue Projekte anzulegen, reicht für Bereiche eines fremden Projekts nicht aus.
 
 Die lokalen Kryptografie-, Modell- und Browsertests prüfen diese Trennung. Der
-native Lauf über zwei unabhängige API-Prozesse prüft unter anderem
+native Lauf über zwei unabhängige API-Instanzen prüft unter anderem
 verschlüsselte Berichte, Werkzeugbuchungen und die Projektkosten nach der
 Bestandsübernahme und nach zwei Seed-Recoveries. Der zusätzliche Test, der jeden
 Projektbereich einzeln freigibt, entzieht und erneut freigibt, ist vorbereitet;

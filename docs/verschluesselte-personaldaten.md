@@ -175,7 +175,7 @@ weiterhin falsche Angaben signieren. Diese Grenze beschreibt die
 [Datenprüfung](verschluesselung-datenpruefung.md).
 
 Der [native Fachadapterlauf](development.md#native-tests-ohne-entwicklungsstack)
-verwendet getrennte API-Prozesse und einen gemeinsamen DuckDB-Dienst. Der Test
+verwendet getrennte API-Instanzen und einen gemeinsamen DuckDB-Dienst. Der Test
 für Umbenennungen prüft belegte Namen, manipulierte Befehle und konkurrierende
 Änderungen. Nach einer verlorenen Antwort müssen Anmeldename, Stundensatz und
 Vorgesetztenzuordnung gemeinsam lesbar sein. Bestehende Sitzungen und

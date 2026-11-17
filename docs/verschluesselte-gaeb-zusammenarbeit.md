@@ -340,7 +340,7 @@ Der [Browserfall](../sortsys-webapp-v2/scripts/ui/crypto.browser.mjs) verwendet
 drei Verbindungen eines Kontos. Er prüft gleichzeitige Einfügungen
 einschließlich Emoji, den späteren Beitritt und verschlüsselte Textauswahl. Der
 [native Test](../sortsys-webapp-v2/scripts/test-live-document-messages.ts)
-verwendet zwei unabhängige API-Prozesse, echte Datenbanken und lokale
+verwendet zwei unabhängige API-Instanzen, echte Datenbanken und lokale
 Yjs-Instanzen. Er prüft den gemeinsamen Ausgangszustand, die
 Nachrichtenreihenfolge, Textkonvergenz und abgewiesene Absenderfälschungen.
 Modultests prüfen zusätzlich die unabhängige Rechteprüfung im Empfänger und den

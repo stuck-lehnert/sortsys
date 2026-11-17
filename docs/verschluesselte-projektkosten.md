@@ -110,7 +110,7 @@ Der
 [native Vergleichstest](../sortsys-webapp-v2/scripts/test-live-project-costs.ts)
 erfasst vor der Umstellung sechs tatsächliche PostgreSQL-Berichte. Nach der
 Übernahme prüft er dieselben Daten und Zeitfilter im Browser-Datenkern sowie
-Finanzänderungen und Werkzeugbuchungen über zwei unabhängige API-Prozesse. Der
+Finanzänderungen und Werkzeugbuchungen über zwei unabhängige API-Instanzen. Der
 gemeinsame Lauf öffnet den Kostenstand außerdem nach zwei aufeinanderfolgenden
 Seed-Recoveries. Große Datenbestände und schwächere Endgeräte sind noch nicht
 vermessen.

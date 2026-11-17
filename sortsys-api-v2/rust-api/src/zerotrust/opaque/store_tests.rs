@@ -156,14 +156,20 @@ async fn browser_with_tenant(
         );
     }
     // This scenario creates about fifty private commercial workflows, repeats
-    // startup and optionally drives the rendered application. Its overall build
+    // startup and optionally drives the rendered application. Its overall
     // budget is independent of the unchanged per-interaction browser deadlines.
     let deadline = if mode == "recovery-scale" {
         // This load case publishes and recovers over ten thousand actual key
         // generations. Ordinary browser interaction deadlines stay unchanged.
         Duration::from_secs(900)
     } else if mode == "development-seed" {
-        Duration::from_secs(1800)
+        if std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1") {
+            // The complete run includes seed validation and all 18 real-browser
+            // workflows. Keep their individual interaction deadlines unchanged.
+            Duration::from_secs(3600)
+        } else {
+            Duration::from_secs(1800)
+        }
     } else if matches!(
         mode,
         "recovery"

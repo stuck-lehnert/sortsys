@@ -41,7 +41,7 @@ Der persönliche Schlüsselbereich enthält außerdem die verschlüsselten
 eigener Objektpräfix trennt die Editor-Einstellungen von diesen Listen.
 
 Der [native Fachadapterlauf](development.md#native-tests-ohne-entwicklungsstack)
-prüft über zwei getrennte API-Prozesse die übernommenen Werte, das erneute
+prüft über zwei getrennte API-Instanzen die übernommenen Werte, das erneute
 Öffnen und verlorene beziehungsweise falsche Speicherbestätigungen.
 Ansichtseinstellungen und persönliche Verlaufsobjekte liegen dabei gemeinsam im
 selben Schlüsselbereich. Zwei aufeinanderfolgende Recoveries erhalten die

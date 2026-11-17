@@ -73,7 +73,7 @@ bleiben die passenden Vorgangs- und Projektfreigaben erforderlich.
 ## Prüfstand und verbleibende Grenzen
 
 Der [native Abrechnungstest](../sortsys-webapp-v2/scripts/test-live-billing.ts)
-verwendet zwei unabhängige API-Prozesse und den regulären Browseradapter mit
+verwendet zwei unabhängige API-Instanzen und den regulären Browseradapter mit
 lokalem DuckDB und XML-WASM. Geprüft sind bearbeitbare Entwürfe, verlorene
 Bestätigungen bei der Ausstellung und bei Zahlungen, gleichzeitig vorbereitete
 Freigaben, überhöhte Zahlungen und die Schlussabrechnung mehrerer Abschläge. Der

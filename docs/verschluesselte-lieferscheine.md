@@ -78,7 +78,7 @@ Mandantenumstellung erhalten.
 Der [Integrationstest](../sortsys-webapp-v2/scripts/test-live-delivery-notes.ts)
 vergleicht die übernommenen Werte und historischen Kosten mit der bisherigen
 API. Er prüft getrennte Projekt- und Preisrechte, gültig signierte fehlerhafte
-Inhalte und Änderungen über zwei API-Prozesse. Die anschließende
+Inhalte und Änderungen über zwei API-Instanzen. Die anschließende
 Wiederherstellung läuft ohne vorhandene Anmeldung oder entsperrtes Konto mit der
 Seed-Phrase; die verbrauchte Phrase wird danach zurückgewiesen. Der
 [Schreibtest](../sortsys-webapp-v2/scripts/test-live-delivery-writes.ts) ergänzt

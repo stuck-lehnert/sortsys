@@ -257,7 +257,7 @@ Längere Verläufe brauchen eine getrennte, paginierte Verarbeitung.
 
 Der Integrationstest liegt in
 [`test-live-commercial.ts`](../sortsys-webapp-v2/scripts/test-live-commercial.ts).
-Er verwendet den Musterbestand und zwei API-Prozesse. Der ergänzende
+Er verwendet den Musterbestand und zwei API-Instanzen. Der ergänzende
 Dokumenttest verwendet den gemeinsamen
 [`gaebProcessor.ts`](../sortsys-webapp-v2/scripts/lib/gaebProcessor.ts) für die
 XML-Übernahme und den normalen Öffnen-/Speichern-Pfad.

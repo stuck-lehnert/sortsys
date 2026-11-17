@@ -28,8 +28,8 @@ import { commercialDocumentStore } from "../app/lib/data/commercialDocumentConte
 
 type PostedMessage = MutateInput<"zerotrust.documents.messages.post">;
 
-/** Real database acceptance across independent API processes; browser tests
- * separately exercise the complete editor-side connection controller. */
+/** Real database acceptance across independently configured API instances.
+ * Browser tests separately exercise the complete editor-side controller. */
 export async function testDocumentMessages(
   client: Client,
   driver: () => Promise<DuckDriver>,

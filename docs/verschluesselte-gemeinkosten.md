@@ -52,5 +52,5 @@ Die [Adaptertests](../sortsys-webapp-v2/app/lib/data/commonCosts.test.mjs)
 prüfen unter anderem historische Stichtage, getrennte Einzelrechte, parallele
 Änderungen und unterbrochene Speicherantworten. Der
 [native Integrationstest](../sortsys-webapp-v2/scripts/test-live-common-costs.ts)
-verwendet zwei unabhängige API-Prozesse; der gemeinsame Testlauf prüft außerdem
+verwendet zwei unabhängige API-Instanzen; der gemeinsame Testlauf prüft außerdem
 zwei aufeinanderfolgende Seed-Recoveries.

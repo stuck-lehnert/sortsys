@@ -93,7 +93,7 @@ Datensätze und die Reihenfolge bis auf Mikrosekunden. Ein Test hält eine
 muss dann trotz zwischengespeicherter Ergebnisse erscheinen.
 
 Der native Fachadapterlauf enthält die wiederholte Übernahme eines tatsächlichen
-Quellarchivs über PostgreSQL, Quack und zwei unabhängige API-Prozesse. Sein
+Quellarchivs über PostgreSQL, Quack und zwei unabhängige API-Instanzen. Sein
 Ergebnis ist zusammen mit den übrigen Integrationsprüfungen zu beurteilen;
 Modelltests allein belegen weder die vollständige Fachparität noch die
 Geschwindigkeit bei großen Beständen.
