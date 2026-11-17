@@ -5,6 +5,7 @@ import { DrawioEditor } from "../../app/components/DrawioEditor";
 import { I18nProvider } from "../../app/lib/i18n";
 import { Observable } from "rxjs";
 import { ProtectedOfficeEditor } from "../../app/components/ProtectedOfficeEditor";
+import { ProtectedDiagramEditor } from "../../app/components/ProtectedDiagramEditor";
 import { client, gaebDocuments, projectFiles } from "../../app/lib/client";
 import { openExcelExport } from "../../app/lib/officeExports";
 import type { MyModalsInterface } from "../../app/hooks/useMyModals";
@@ -548,6 +549,89 @@ Object.assign(window, {
           createElement(ProtectedOfficeEditor, { projectId: "4", fileId: "5" }),
         ),
       );
+    },
+    protectedDiagram(
+      editorUrl: string,
+      options: { holdLoad?: boolean; holdSave?: boolean } = {},
+    ) {
+      iframe.remove();
+      let allowed = true;
+      let editable = true;
+      let fileId = "5";
+      let revision = 1n;
+      const loads: { fileId: string; complete: () => void }[] = [];
+      const saves: { fileId: string; xml: string; version: string }[] = [];
+      const releases: (() => void)[] = [];
+      client.query = (async (path, input) => {
+        if (path !== "projects.files.drawioConfig")
+          throw new Error("Unexpected diagram query");
+        const id = (input as { fileId: string }).fileId;
+        const value = {
+          editorUrl,
+          fileName: `Plan ${id}.drawio`,
+          xml: `<mxfile><diagram>Private diagram ${id} revision ${revision}</diagram></mxfile>`,
+          version: revision,
+          canEdit: editable,
+        };
+        let complete: () => void = () => {};
+        const held = new Promise<void>((resolve) => {
+          complete = resolve;
+        });
+        const first = loads.length === 0;
+        loads.push({ fileId: id, complete });
+        if (!allowed) return [null, new Error("Diagram access denied")];
+        if (options.holdLoad && first) await held;
+        return [value, null];
+      }) as typeof client.query;
+      client.mutate = (async (path, input) => {
+        if (path !== "projects.files.drawioSave")
+          throw new Error("Unexpected diagram mutation");
+        const value = input as { fileId: string; xml: string; version: bigint };
+        saves.push({ ...value, version: String(value.version) });
+        if (options.holdSave)
+          await new Promise<void>((resolve) => releases.push(resolve));
+        return [{ version: value.version + 1n }, null];
+      }) as typeof client.mutate;
+      const host = document.createElement("div");
+      host.style.height = "100vh";
+      document.body.append(host);
+      const root = createRoot(host);
+      const render = () =>
+        root.render(
+          createElement(
+            I18nProvider,
+            null,
+            createElement(ProtectedDiagramEditor, {
+              projectId: "4",
+              fileId,
+              onClose: () => {},
+            }),
+          ),
+        );
+      Object.assign(window, {
+        diagramAccessFixture: {
+          snapshot: () => ({ loads: loads.map((load) => load.fileId), saves }),
+          releaseLoad: () => loads[0]?.complete(),
+          releaseSave: () => releases.shift()?.(),
+          revoke: async () => {
+            allowed = false;
+            await client.clearCache();
+          },
+          grant: async () => {
+            allowed = true;
+            editable = false;
+            revision++;
+            await client.clearCache();
+          },
+          switchFile(id: string) {
+            fileId = id;
+            revision++;
+            render();
+          },
+          unmount: () => root.unmount(),
+        },
+      });
+      render();
     },
     drawio(editorUrl: string) {
       const container = document.createElement("div");

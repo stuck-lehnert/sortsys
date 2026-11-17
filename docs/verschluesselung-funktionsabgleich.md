@@ -389,8 +389,14 @@ Browsereditoren. Gemeinsame DOCX-Bearbeitung und Lesezugänge sind geprüft;
 weitere Dateifunktionen und laufende Änderungen bei Rechteentzug bleiben offen.
 
 **diagrams.net.** Öffnen und Speichern verwenden die verschlüsselte
-Browserablage; die alte XML-API wird nicht verwendet. Verschlüsselte gemeinsame
-Editor-Updates fehlen noch.
+Browserablage; die alte XML-API wird nicht verwendet. Der Dateidialog verwirft
+seine Darstellung bei Rechteentzug oder Kontowechsel. Verspätete Ladeantworten
+bleiben an Sitzung und Datei gebunden. Bereits erfasste Änderungen dürfen nach
+dem normalen Schließen noch unter dem ursprünglichen Zugriff gespeichert
+werden; ein danach entzogener Zugriff beendet auch diese Arbeit.
+Verschlüsselte gemeinsame Editor-Updates fehlen noch. Die
+[Editorprüfungen](editoren-ohne-klartextserver.md) beschreiben die getrennten
+Browser- und Servernachweise.
 
 ## Assistent, Verläufe und eigene Werkzeuge
 

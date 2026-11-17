@@ -103,6 +103,24 @@ und führt entfernte Stände wieder zusammen. Der
 lädt verschlüsselte Anlagen und entschlüsselt sie im Browser. Die bisherige
 sortsys-Einbettung hat diese Zusammenarbeit noch nicht.
 
+Der [Diagrammdateidialog](../sortsys-webapp-v2/app/components/ProtectedDiagramEditor.tsx)
+bindet seinen Zustand über `useProtectedState` an den aktuellen Inhaltszugriff.
+Nach Rechteentzug oder Kontowechsel wird der bisherige Editor entfernt. Auch
+verspätete Ladeantworten, Speicherbestätigungen und noch wartende Änderungen
+gehören weiterhin zu der Sitzung und Datei, aus der sie stammen. Beim normalen
+Schließen dürfen bereits erfasste Änderungen noch fertig gespeichert werden.
+Ein danach entzogener Zugriff oder Kontowechsel beendet auch diese
+Hintergrundspeicherung. Bereits an die API gesendete Änderungen können zu diesem
+Zeitpunkt schon gespeichert sein.
+
+Die [Diagramm-Browsertests](../sortsys-webapp-v2/scripts/ui/private-editors.browser.mjs)
+prüfen diese Grenzen mit der tatsächlichen sortsys-Komponente und einem
+Testfenster, das das Einbettungsprotokoll spricht. Sie prüfen außerdem den
+Wechsel zwischen zwei Dateien und zurück, das Speichern nach dem normalen
+Schließen sowie das erneute Öffnen mit reinen Leserechten. Die serverseitige
+Rechteprüfung ist davon getrennt durch die nativen Datei- und Editorprüfungen
+abgedeckt.
+
 ## Stand der Umsetzung und Prüfungen
 
 Der Browseradapter

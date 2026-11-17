@@ -1,9 +1,9 @@
 import { downloadFileResource, useFileResource } from "~/lib/fileResources";
 import type { QueryResult } from "@sortsys/v2-client";
 import { Loading, Modal, useNotifications } from "@sortsys/react-components";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import { from } from "rxjs";
-import { DrawioEditor } from "~/components/DrawioEditor";
+import { ProtectedDiagramEditor } from "~/components/ProtectedDiagramEditor";
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
 import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
@@ -30,7 +30,6 @@ const PlanViewer = lazy(() =>
 );
 
 type ProjectFile = QueryResult<"projects.files.list">[number];
-type EditorSession = { kind: "drawio"; value: QueryResult<"projects.files.drawioConfig"> };
 
 function PreviewLoading() {
   return (
@@ -55,114 +54,15 @@ function FileEditor({
   kind: "office" | "drawio";
   onClose: () => void;
 }) {
-  return kind === "office" ? <ProtectedOfficeEditor projectId={projectId} fileId={file.id} />
-    : <DiagramFileEditor file={file} projectId={projectId} onClose={onClose} />;
-}
-function DiagramFileEditor({ file, projectId, onClose }: { file: ProjectFile; projectId: string; onClose: () => void }) {
-  const [session, setSession] = useState<EditorSession | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadSession() {
-      try {
-        const input = { projectId, fileId: file.id };
-
-        {
-          const [value, failure] = await client.query(
-            "projects.files.drawioConfig",
-            input,
-            { strategy: "network-only" },
-          );
-
-          if (failure || !value) {
-            throw (
-              failure ??
-              new Error(
-                uiText(
-                  "Das Diagramm konnte nicht geöffnet werden.",
-                  "The diagram could not be opened.",
-                ),
-              )
-            );
-          }
-
-          if (active) {
-            setSession({ kind: "drawio", value });
-          }
-        }
-      } catch (failure) {
-        if (active) {
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : uiText(
-                  "Die Datei konnte nicht geöffnet werden.",
-                  "The file could not be opened.",
-                ),
-          );
-        }
-      }
-    }
-
-    void loadSession();
-
-    return () => {
-      active = false;
-    };
-  }, [projectId, file.id]);
-
-  const saveDrawio = useCallback(
-    async (xml: string, version: bigint) => {
-      const [result, failure] = await client.mutate(
-        "projects.files.drawioSave",
-        {
-          projectId,
-          fileId: file.id,
-          xml,
-          version,
-        },
-      );
-
-      if (failure || !result) {
-        throw (
-          failure ??
-          new Error(
-            uiText(
-              "Das Diagramm konnte nicht gespeichert werden.",
-              "The diagram could not be saved.",
-            ),
-          )
-        );
-      }
-
-      return result.version;
-    },
-    [projectId, file.id],
-  );
-
+  if (kind === "office") {
+    return <ProtectedOfficeEditor projectId={projectId} fileId={file.id} />;
+  }
   return (
-    <>
-      {error && (
-        <div className="project-files-office-status" role="alert">
-          <MyCallout color="red">{error}</MyCallout>
-        </div>
-      )}
-      {!session && !error && <PreviewLoading />}
-      {session?.kind === "drawio" && (
-        <DrawioEditor
-          editorUrl={session.value.editorUrl}
-          fileName={session.value.fileName}
-          xml={session.value.xml}
-          version={session.value.version}
-          canEdit={session.value.canEdit}
-          onSave={saveDrawio}
-          onClose={onClose}
-          onError={setError}
-        />
-      )}
-    </>
+    <ProtectedDiagramEditor
+      projectId={projectId}
+      fileId={file.id}
+      onClose={onClose}
+    />
   );
 }
 

@@ -678,11 +678,22 @@ addEventListener('message',async event=>{
  }
  if(p.msg?.q==='DOWNLOAD_AS')state.exports.push(p.msg.data);
 });</script>`;
+const diagramHtml = `<!doctype html><script>
+window.state = { loads: [], statuses: [] };
+window.boot = () => parent.postMessage(JSON.stringify({ event: 'init' }), '*');
+window.autosave = xml => parent.postMessage(JSON.stringify({ event: 'autosave', xml }), '*');
+addEventListener('message', event => {
+  let message;
+  try { message = JSON.parse(event.data); } catch { return; }
+  if (message.action === 'load') state.loads.push(message);
+  if (message.action === 'status') state.statuses.push(message);
+});
+</script>`;
 async function serveEditor() {
   const http = createServer((req, res) => {
     requests.push({ url: req.url, method: req.method });
     res.setHeader("Content-Type", "text/html");
-    res.end(editorHtml);
+    res.end(req.url.startsWith("/diagram") ? diagramHtml : editorHtml);
   });
   await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
   return {
@@ -718,6 +729,266 @@ async function open(canEdit = true, key) {
   await frame.waitForFunction(() => window.boot);
   return { context, page, frame };
 }
+
+async function openDiagram(options = {}) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${server.origin}/private-editors.html`);
+  await page.waitForFunction(() => window.privateEditorFixture);
+  await page.evaluate(
+    ({ url, options }) =>
+      window.privateEditorFixture.protectedDiagram(url, options),
+    {
+      url: `${editor.origin}/diagram`,
+      options,
+    },
+  );
+  return { context, page };
+}
+
+async function diagramFrame(page, file = "5") {
+  const target = page.locator(`iframe[title="Plan ${file}.drawio"]`);
+  await target.waitFor({ state: "attached" });
+  const frame = await (await target.elementHandle()).contentFrame();
+  await frame.waitForFunction(() => window.boot);
+  await frame.evaluate(() => window.boot());
+  await frame.waitForFunction(() => window.state.loads.length === 1);
+  return frame;
+}
+
+async function nextPaint(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+}
+
+test("the protected diagram saves edits with the confirmed revision", async () => {
+  const { context, page } = await openDiagram();
+  try {
+    const frame = await diagramFrame(page);
+    assert.equal(
+      await frame.evaluate(() => window.state.loads[0].xml),
+      "<mxfile><diagram>Private diagram 5 revision 1</diagram></mxfile>",
+    );
+    await frame.evaluate(() => window.autosave("<mxfile>First edit</mxfile>"));
+    await frame.waitForFunction(() => window.state.statuses.length === 1);
+    await frame.evaluate(() => window.autosave("<mxfile>Second edit</mxfile>"));
+    await frame.waitForFunction(() => window.state.statuses.length === 2);
+    const state = await page.evaluate(() =>
+      window.diagramAccessFixture.snapshot(),
+    );
+    assert.deepEqual(
+      state.saves.map((save) => [save.xml, save.version]),
+      [
+        ["<mxfile>First edit</mxfile>", "1"],
+        ["<mxfile>Second edit</mxfile>", "2"],
+      ],
+    );
+    assert.equal(new URL(frame.url()).searchParams.get("lockdown"), "1");
+    assert.equal(new URL(frame.url()).searchParams.get("stealth"), "1");
+  } finally {
+    await context.close();
+  }
+});
+
+test("the protected diagram discards a late load after access reset", async () => {
+  const { context, page } = await openDiagram({ holdLoad: true });
+  try {
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().loads.length === 1,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.revoke());
+    await page.evaluate(() => window.diagramAccessFixture.releaseLoad());
+    await nextPaint(page);
+    assert.equal(await page.locator("iframe").count(), 0);
+    assert.deepEqual(
+      await page.evaluate(() => window.diagramAccessFixture.snapshot().saves),
+      [],
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test("the protected diagram drops a queued edit after revocation and reopens only the new read-only session", async () => {
+  const { context, page } = await openDiagram({ holdSave: true });
+  try {
+    const first = await diagramFrame(page);
+    await first.evaluate(() =>
+      window.autosave("<mxfile>Pending edit</mxfile>"),
+    );
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().saves.length === 1,
+    );
+    await first.evaluate(() =>
+      window.autosave("<mxfile>Queued old edit</mxfile>"),
+    );
+    await nextPaint(page);
+    await page.evaluate(() => window.diagramAccessFixture.revoke());
+    await nextPaint(page);
+    assert.equal(first.isDetached(), true);
+    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
+    await nextPaint(page);
+    assert.equal(
+      await page.evaluate(
+        () => window.diagramAccessFixture.snapshot().saves.length,
+      ),
+      1,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.grant());
+    const second = await diagramFrame(page);
+    assert.equal(
+      await second.evaluate(() => window.state.loads[0].autosave),
+      0,
+    );
+    assert.match(
+      await second.evaluate(() => window.state.loads[0].xml),
+      /revision 2/,
+    );
+    await second.evaluate(() =>
+      window.autosave("<mxfile>Denied read-only edit</mxfile>"),
+    );
+    await nextPaint(page);
+    assert.equal(
+      await page.evaluate(
+        () => window.diagramAccessFixture.snapshot().saves.length,
+      ),
+      1,
+    );
+    assert.equal(await page.getByRole("alert").count(), 0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("the protected diagram keeps a late previous file out of the replacement file", async () => {
+  const { context, page } = await openDiagram({ holdLoad: true });
+  try {
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().loads.length === 1,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.switchFile("6"));
+    const frame = await diagramFrame(page, "6");
+    await page.evaluate(() => window.diagramAccessFixture.releaseLoad());
+    await nextPaint(page);
+    assert.equal(
+      await page.locator('iframe[title="Plan 5.drawio"]').count(),
+      0,
+    );
+    assert.match(
+      await frame.evaluate(() => window.state.loads[0].xml),
+      /diagram 6/,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.unmount());
+    assert.equal(frame.isDetached(), true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("the protected diagram rejects an earlier load even after returning to the same file", async () => {
+  const { context, page } = await openDiagram({ holdLoad: true });
+  try {
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().loads.length === 1,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.switchFile("6"));
+    await diagramFrame(page, "6");
+    await page.evaluate(() => window.diagramAccessFixture.switchFile("5"));
+    const current = await diagramFrame(page);
+    assert.match(
+      await current.evaluate(() => window.state.loads[0].xml),
+      /revision 3/,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.releaseLoad());
+    await nextPaint(page);
+    assert.equal(current.isDetached(), false);
+    assert.match(
+      await current.evaluate(() => window.state.loads[0].xml),
+      /revision 3/,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test("the protected diagram finishes captured edits for the original file after normal unmount", async () => {
+  const { context, page } = await openDiagram({ holdSave: true });
+  try {
+    const frame = await diagramFrame(page);
+    await frame.evaluate(() =>
+      window.autosave("<mxfile>Pending edit</mxfile>"),
+    );
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().saves.length === 1,
+    );
+    await frame.evaluate(() =>
+      window.autosave("<mxfile>Queued old edit</mxfile>"),
+    );
+    await nextPaint(page);
+    await page.evaluate(() => window.diagramAccessFixture.unmount());
+    assert.equal(frame.isDetached(), true);
+    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().saves.length === 2,
+    );
+    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
+    await nextPaint(page);
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.diagramAccessFixture.snapshot().saves.map((save) => save.xml),
+      ),
+      ["<mxfile>Pending edit</mxfile>", "<mxfile>Queued old edit</mxfile>"],
+    );
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.diagramAccessFixture
+          .snapshot()
+          .saves.map((save) => [save.fileId, save.version]),
+      ),
+      [
+        ["5", "1"],
+        ["5", "2"],
+      ],
+    );
+    assert.equal(await page.getByRole("alert").count(), 0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("the protected diagram cancels background edits when access expires after closing", async () => {
+  const { context, page } = await openDiagram({ holdSave: true });
+  try {
+    const frame = await diagramFrame(page);
+    await frame.evaluate(() =>
+      window.autosave("<mxfile>Pending edit</mxfile>"),
+    );
+    await page.waitForFunction(
+      () => window.diagramAccessFixture.snapshot().saves.length === 1,
+    );
+    await frame.evaluate(() =>
+      window.autosave("<mxfile>Queued old edit</mxfile>"),
+    );
+    await nextPaint(page);
+    await page.evaluate(() => window.diagramAccessFixture.unmount());
+    await page.evaluate(() => window.diagramAccessFixture.revoke());
+    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
+    await nextPaint(page);
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.diagramAccessFixture.snapshot().saves.map((save) => save.xml),
+      ),
+      ["<mxfile>Pending edit</mxfile>"],
+    );
+    assert.equal(await page.getByRole("alert").count(), 0);
+  } finally {
+    await context.close();
+  }
+});
 
 test("the private editor rejects other windows and commits capabilities before sharing the document", async () => {
   const { context, page, frame } = await open();
