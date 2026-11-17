@@ -695,9 +695,12 @@ function connectChannel(
         send,
         writable,
         epoch,
+        { initializeOnEdit: true },
       );
     } else {
-      options.sharedFields.connect(send, writable, epoch);
+      options.sharedFields.connect(send, writable, epoch, {
+        initializeOnEdit: true,
+      });
     }
   }
   function boot(): Promise<void> {

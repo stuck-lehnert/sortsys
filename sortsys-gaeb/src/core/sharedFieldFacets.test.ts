@@ -106,6 +106,87 @@ test("fields registered before acknowledgement send one initialization candidate
   }
 });
 
+test("lazy facet connections leave unchanged fields out of the log and initialize only the first edit", () => {
+  const state = peer();
+  const messages: Record<string, unknown>[] = [];
+  const send = (message: Record<string, unknown>) => messages.push(message);
+  try {
+    state.connectFacet("scope", send, true, "document", {
+      initializeOnEdit: true,
+    });
+    state.register(fields());
+    state.edit(TEXT, "Text", "Text");
+    assert.equal(messages.length, 0);
+    state.edit(TEXT, "Text", "Neuer Text");
+    assert.deepEqual(
+      messages.map(({ type, key, value, facet }) => ({
+        type,
+        key,
+        value,
+        facet,
+      })),
+      [{ type: "initialize", key: TEXT, value: "Text", facet: "scope" }],
+    );
+    state.register(fields());
+    assert.equal(messages.length, 1);
+    state.receiveInitialization(
+      TEXT,
+      "Text",
+      initializer(TEXT, "Text"),
+      "scope",
+    );
+    assert.equal(state.value(TEXT), "Neuer Text");
+    assert.equal(
+      messages.filter((message) => message.type === "update").length,
+      1,
+    );
+    assert.equal(
+      messages.some((message) => message.facet === "billing"),
+      false,
+    );
+  } finally {
+    state.destroy();
+  }
+});
+
+test("simultaneous first edits on lazy connections converge without duplicating their baseline", () => {
+  const peers = [peer(), peer()];
+  const pending: Record<string, unknown>[] = [];
+  let identity = 100;
+  try {
+    for (const state of peers) {
+      state.connectFacet(
+        "scope",
+        (message) => pending.push(message),
+        true,
+        "document",
+        { initializeOnEdit: true },
+      );
+    }
+    assert.equal(pending.length, 0);
+    peers[0]!.edit(TEXT, "Text", "Links Text");
+    peers[1]!.edit(TEXT, "Text", "Text Rechts");
+    assert.equal(pending.length, 2);
+    while (pending.length) {
+      const message: Record<string, unknown> = pending.shift()!;
+      if (message.type === "initialize") {
+        const key = String(message.key);
+        const value = String(message.value);
+        const data = initializer(key, value, identity++);
+        for (const state of peers)
+          state.receiveInitialization(key, value, data, "scope");
+      } else {
+        assert.equal(message.type, "update");
+        for (const state of peers) state.receive(String(message.data), "scope");
+      }
+    }
+    assert.equal(peers[0]!.value(TEXT), peers[1]!.value(TEXT));
+    assert.equal(peers[0]!.value(TEXT), "Links Text Rechts");
+  } finally {
+    for (const state of peers) state.destroy();
+  }
+});
+
 test("independent facet connections keep their own write rights and survive another channel disconnecting", () => {
   const state = peer();
   const textMessages: Record<string, unknown>[] = [];

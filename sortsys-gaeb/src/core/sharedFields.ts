@@ -8,6 +8,7 @@ import {
   type LiveSelection,
   type SharedFieldChange,
   type SharedFieldReception,
+  type SharedFieldConnectionOptions,
 } from "./sharedFieldPartition";
 
 export {
@@ -25,7 +26,7 @@ type Connection = {
   send: (message: Record<string, unknown>) => void;
   writable: boolean;
   epoch?: string;
-};
+} & SharedFieldConnectionOptions;
 
 /** Legacy XML sessions use one document until migration. Protected sessions
  * enable independent Yjs identities, text and undo histories per content facet.
@@ -165,18 +166,24 @@ export class SharedFields {
       (message) => connection.send({ ...message, facet }),
       connection.writable,
       epoch,
+      { initializeOnEdit: connection.initializeOnEdit },
     );
   }
 
-  connect(send: Connection["send"], writable: boolean, epoch?: string) {
+  connect(
+    send: Connection["send"],
+    writable: boolean,
+    epoch?: string,
+    options: SharedFieldConnectionOptions = {},
+  ) {
     this.active();
     if (this.frozen) {
       return;
     }
-    this.connection = { send, writable, epoch };
+    this.connection = { send, writable, epoch, ...options };
     this.facetConnections.clear();
     if (!this.faceted) {
-      this.fallback.connect(send, writable, epoch);
+      this.fallback.connect(send, writable, epoch, options);
       return;
     }
     for (const [facet, partition] of this.partitions) {
@@ -189,6 +196,7 @@ export class SharedFields {
     send: Connection["send"],
     writable: boolean,
     epoch: string,
+    options: SharedFieldConnectionOptions = {},
   ) {
     this.active();
     if (!this.faceted || this.connection) {
@@ -198,7 +206,7 @@ export class SharedFields {
       return;
     }
     const partition = this.partition(facet);
-    this.facetConnections.set(facet, { send, writable, epoch });
+    this.facetConnections.set(facet, { send, writable, epoch, ...options });
     this.connectPartition(facet, partition);
   }
 

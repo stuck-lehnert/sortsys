@@ -455,10 +455,12 @@ export class DataRuntime {
     minimumHeads?: ReadonlyMap<string, string>,
   ): void {
     if (domains) {
-      const affected = [
-        ...this.resources.values(),
-        ...this.projectedResources.values(),
-      ].some((resource) => domains.has(resource.request.area.domain));
+      // A removed resource has already retired its projected rows. Repeated
+      // hints for it must not restart another area's load; an in-flight reload
+      // of that same area is still protected by loadingDomains below.
+      const affected = [...this.resources.values()].some((resource) =>
+        domains.has(resource.request.area.domain),
+      );
       const loading = [...this.loadingDomains].some((domain) =>
         domains.has(domain),
       );

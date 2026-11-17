@@ -346,12 +346,13 @@ async function revokedDuringRead() {
   const query = session.tenant.client.query;
   try {
     const peer = session.peer("Bearbeiterin");
+    const initial = initializeSharedField(FIELD, "Hallo Welt");
+    await writer.post("initialize", {
+      field: FIELD,
+      value: "Hallo Welt",
+      data: initial,
+    });
     await peer.connection.flush();
-    const initial = (
-      await writer.open(
-        session.messages.find((message) => message.kind === "initialize"),
-      )
-    ).value.data;
     session.state.beforeQuery = async (path) => {
       if (path === "zerotrust.documents.messages.read" && held) {
         entered = true;

@@ -29,8 +29,10 @@ unterschiedlichen API-Instanzen. Jede Instanz liest das dauerhafte
 Änderungsjournal und leitet die betreffenden Hinweise über ihre WebSockets
 weiter. Eine Cursorbewegung löst keine erneute Vorgangsabfrage aus.
 
-Beim Öffnen schlägt der Browser fehlende Ausgangstexte in Gruppen von höchstens
-16 Feldern vor. Pro Inhaltskanal laufen höchstens vier Übertragungen
+Erst bei der ersten Bearbeitung eines Feldes schlägt der Browser dessen
+fehlenden Ausgangstext vor. Das Öffnen und Anzeigen unveränderter Felder erzeugt
+keine Einträge im Textverlauf. Mehrere anstehende Vorschläge werden in Gruppen
+von höchstens 16 Feldern übertragen. Pro Inhaltskanal laufen höchstens vier Übertragungen
 gleichzeitig; anschließend wird ihr gemeinsamer Lesestand abgeglichen. Jeder
 Vorschlag behält seine eigene Signatur und Wiederholungskennung. Die Gruppierung
 verändert weder die Berechtigungsprüfung noch die Reihenfolge im gespeicherten

@@ -105,6 +105,9 @@ wenn sich Suchtext oder Statusfilter unterscheiden. Jede Ansicht filtert und
 kopiert ihr Ergebnis anschließend selbst. Änderungen an einem Bereich, den der
 Datenkern weder geladen hat noch gerade lädt, verwerfen keine unabhängige
 Leseprüfung. Die Meldung erreicht weiterhin alle Beobachter dieses Bereichs.
+Eine wiederholte Meldung für bereits verworfene Daten startet unabhängige Abrufe
+ebenfalls nicht neu. Wird derselbe Bereich gerade erneut geladen, muss dieser
+Abruf den geänderten Stand weiterhin prüfen.
 
 Alte Daten benötigen weiterhin ihre signierten Rechteregeln, Zertifikate und
 Ursprungsnachweise. Diese gehören zur Sicherung des verschlüsselten Bestands und

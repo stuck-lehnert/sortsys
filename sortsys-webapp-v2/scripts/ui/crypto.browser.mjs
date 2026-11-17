@@ -421,6 +421,7 @@ test("encrypted GAEB initialization batches fields and survives a lost reply wit
     const result = await page.evaluate(() =>
       window.cryptoFixture.gaebInitializationBatch(),
     );
+    assert.equal(result.openingCandidates, 0);
     assert.equal(result.candidates, 49);
     assert.equal(result.uniqueKeys, 49);
     assert.ok(
@@ -442,6 +443,7 @@ test("encrypted GAEB fields converge during concurrent typing, preserve a late j
   const { context, page, external } = await open();
   try {
     const result = await page.evaluate(() => window.cryptoFixture.gaebLive());
+    assert.equal(result.openingCandidates, 0);
     assert.ok(
       result.initializerCandidates >= 1 && result.initializerCandidates <= 2,
     );

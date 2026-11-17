@@ -14,6 +14,8 @@ import {
 
 export { InvalidSharedUpdate } from "./sharedFieldUpdates";
 
+export type SharedFieldConnectionOptions = { initializeOnEdit?: boolean };
+
 export type SharedFieldReception = {
   update(
     data: string,
@@ -105,6 +107,7 @@ export class SharedFieldPartition {
   private epoch: string | undefined;
   private online = false;
   private writable = false;
+  private initializeOnEdit = false;
   private frozen = false;
   private selection: LiveSelection = { field: null };
   private commonBaselines = new Map<string, string>();
@@ -153,6 +156,7 @@ export class SharedFieldPartition {
     send: (message: Record<string, unknown>) => void,
     writable: boolean,
     epoch?: string,
+    options: SharedFieldConnectionOptions = {},
   ) {
     if (this.frozen) {
       return;
@@ -170,6 +174,7 @@ export class SharedFieldPartition {
     this.send = send;
     this.online = true;
     this.writable = writable;
+    this.initializeOnEdit = options.initializeOnEdit === true;
     if (this.doc.store.clients.size && writable) {
       send({
         type: "update",
@@ -318,7 +323,10 @@ export class SharedFieldPartition {
     const fields = [...this.fields]
       .filter(
         ([key, field]) =>
-          field.editable && !this.has(key) && !this.initializing.has(key),
+          field.editable &&
+          (!this.initializeOnEdit || field.pending !== undefined) &&
+          !this.has(key) &&
+          !this.initializing.has(key),
       )
       .map(([key, field]) => ({ key, value: field.baseline }));
     // Keep individual websocket messages bounded even for large specifications.
@@ -410,6 +418,7 @@ export class SharedFieldPartition {
     }
   }
   edit(key: string, before: string, value: string) {
+    if (before === value) return;
     if (this.frozen || (this.online && !this.writable)) {
       return;
     }
@@ -420,6 +429,7 @@ export class SharedFieldPartition {
     if (!this.has(key)) {
       field.pendingBaseline ??= before;
       field.pending = value;
+      this.initialize();
       return;
     }
     const text = this.doc.getText(key);

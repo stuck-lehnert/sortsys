@@ -197,12 +197,12 @@ export async function encryptedGaebLiveScenario() {
     const second = session.peer("Zweiter Bearbeiter 892461");
     await first.connection.flush();
     await second.connection.flush();
-    const initializerCandidates = session.messages.filter(
+    const openingCandidates = session.messages.filter(
       (message) => message.kind === "initialize",
     ).length;
     const baseline = [
-      first.sharedFields.value("item-a:text:0"),
-      second.sharedFields.value("item-a:text:0"),
+      first.sharedFields.value("item-a:text:0") ?? "Hallo Welt",
+      second.sharedFields.value("item-a:text:0") ?? "Hallo Welt",
     ];
     first.sharedFields.edit("item-a:text:0", "Hallo Welt", "Hallo schöne Welt");
     second.sharedFields.edit("item-a:text:0", "Hallo Welt", "Hallo 👋 Welt");
@@ -213,6 +213,9 @@ export async function encryptedGaebLiveScenario() {
         first.sharedFields.value("item-a:text:0") ===
         second.sharedFields.value("item-a:text:0"),
     );
+    const initializerCandidates = session.messages.filter(
+      (message) => message.kind === "initialize",
+    ).length;
     const writesBeforeTyping = session.requests.filter(
       (request) => request.kind === "update",
     ).length;
@@ -245,6 +248,7 @@ export async function encryptedGaebLiveScenario() {
     const wire = JSON.stringify(session.requests);
     return {
       initializerCandidates,
+      openingCandidates,
       baseline,
       merged,
       typingWrites,
@@ -293,6 +297,20 @@ export async function batchedGaebInitializationScenario() {
   try {
     const first = session.peer("Bearbeitung", "Hallo Welt", { extraFields });
     await first.connection.flush();
+    const openingCandidates = session.messages.filter(
+      (message) => message.kind === "initialize",
+    ).length;
+    for (const field of [
+      ...extraFields,
+      { key: "item-a:text:0", value: "Hallo Welt" },
+    ]) {
+      first.sharedFields.edit(
+        field.key,
+        field.value,
+        `Erfasst: ${field.value}`,
+      );
+    }
+    await first.connection.flush();
     const initialReads = reads;
     const candidates = session.messages.filter(
       (message) => message.kind === "initialize",
@@ -303,12 +321,13 @@ export async function batchedGaebInitializationScenario() {
     await late.connection.flush();
     first.sharedFields.edit(
       extraFields[0].key,
-      extraFields[0].value,
+      first.sharedFields.value(extraFields[0].key),
       "Gemeinsam bearbeitet",
     );
     await first.connection.flush();
     await late.connection.flush();
     return {
+      openingCandidates,
       candidates: candidates.length,
       uniqueKeys: new Set(candidates.map((message) => message.key)).size,
       initialReads,

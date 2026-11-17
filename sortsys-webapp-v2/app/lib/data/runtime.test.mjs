@@ -667,6 +667,62 @@ test("unloaded preference hints keep an active business view valid while affecte
   }
 }, 15000);
 
+test("a duplicate hint for an already invalidated area does not restart an unrelated load", async () => {
+  const current = fixture();
+  const original = current.storage.open;
+  let openings = 0;
+  let entered;
+  let release;
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise((resolve) => {
+    release = resolve;
+  });
+  try {
+    let oldRow;
+    const changed = new Set([mainArea.domain]);
+    await current.runtime.read([first], (view) => {
+      oldRow = view.row("product_price_records", { id: "1" });
+      current.runtime.invalidate(changed);
+      expect(() => oldRow.require("comment")).toThrow(ProtectedWriteConflict);
+    });
+    current.storage.open = async (...args) => {
+      openings++;
+      if (openings === 1) {
+        entered();
+        await blocked;
+      }
+      return original(...args);
+    };
+    const unrelated = current.runtime.read([second], (view) =>
+      view.row("product_price_records", { id: "1" }).require("price"),
+    );
+    await started;
+    current.runtime.invalidate(changed);
+    release();
+    expect(await unrelated).toBe(87.654);
+    expect(openings).toBe(1);
+    expect(() => oldRow.require("comment")).toThrow();
+    // A fresh request for the invalidated area still reads its new contents.
+    current.seed(mainArea, "main:1", {
+      row: row("product_price_records", {
+        id: "1",
+        product_id: "2",
+        comment: "Current",
+      }),
+    });
+    await current.runtime.read([first], (view) =>
+      expect(
+        view.row("product_price_records", { id: "1" }).require("comment"),
+      ).toBe("Current"),
+    );
+  } finally {
+    release?.();
+    await current.runtime.close();
+  }
+}, 15000);
+
 for (const change of ["unrelated", "related", "all"]) {
   test(`an area change during the first inventory opening ${change === "unrelated" ? "does not restart unrelated work" : `rechecks ${change} affected state`}`, async () => {
     const current = fixture();
