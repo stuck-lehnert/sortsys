@@ -71,6 +71,15 @@ fehlende oder umsortierte Blöcke führen beim Lesen zu einem Fehler. Bestätigt
 Blöcke lassen sich auch durch einen berechtigten Schreiber nicht überschreiben;
 eine Bearbeitung legt neue Blöcke an.
 
+Hochladen, Lesen und Prüfen bearbeiten jeweils höchstens vier Blöcke
+gleichzeitig. Unabhängige Abrufe können dadurch dasselbe RPC-Paket nutzen,
+statt für jeden Block auf einen weiteren Verbindungsumlauf zu warten. Die
+Reihenfolge im Dateiverzeichnis bleibt maßgeblich, auch wenn einzelne Blöcke
+früher eintreffen. Jeder Block wird weiterhin einzeln geprüft. Bei einem Fehler
+oder Abbruch werden keine weiteren Blöcke begonnen; bereits gestartete Arbeiten
+enden, bevor die gemeinsamen Schlüsselressourcen geschlossen werden. Ein
+Dateiverzeichnis wird erst zurückgegeben, wenn alle Blöcke bestätigt sind.
+
 Dateimetadaten, Ordnerzuordnungen und Speicherstände werden vor der Übertragung
 gegen das lokale Datenschema geprüft. Der Server prüft Signaturen, aktuelle
 Berechtigungen und technische Versionen. Eine Speicherung bestätigt der Browser

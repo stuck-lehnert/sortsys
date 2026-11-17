@@ -22,6 +22,15 @@ import {
   signInMemberInvitation,
 } from "../app/lib/crypto/invitations";
 import { testFilePermissions } from "./test-live-file-permissions";
+import {
+  loadFileContent,
+  storeFileContent,
+  verifyFileContent,
+} from "../app/lib/data/fileContent";
+import {
+  chunkCollection,
+  FILE_CHUNK_BYTES,
+} from "../app/lib/data/projectFileData";
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
 const endpoints: unknown = JSON.parse(
@@ -33,10 +42,8 @@ for (const endpoint of endpoints) {
   assert.equal(url.hostname, "127.0.0.1");
   assert.equal(url.protocol, "http:");
 }
-const operator = createClient(endpoints[0], "native-editor-operator");
-const owner = createClient(endpoints[0], "native-editor-owner");
-const member = createClient(endpoints[1], "native-editor-member");
 const sent: { url: string; body: string }[] = [];
+let readChunksOnPeer = false;
 const fetchOriginal = globalThis.fetch;
 globalThis.fetch = new Proxy(fetchOriginal, {
   apply(target, receiver, args) {
@@ -49,9 +56,28 @@ globalThis.fetch = new Proxy(fetchOriginal, {
       url,
       body: typeof options?.body === "string" ? options.body : "",
     });
+    const targetUrl = new URL(url);
+    if (
+      readChunksOnPeer &&
+      targetUrl.pathname
+        .slice(1)
+        .split(",")
+        .includes("zerotrust.fileChunks.get")
+    ) {
+      const peerUrl = new URL(
+        targetUrl.pathname + targetUrl.search,
+        endpoints[1],
+      );
+      return Reflect.apply(target, receiver, [peerUrl, options]);
+    }
     return Reflect.apply(target, receiver, args);
   },
 });
+// Capture fetch only after installing the probe, so RPC traffic participates
+// in both the wire assertions and the independent-instance readback.
+const operator = createClient(endpoints[0], "native-editor-operator");
+const owner = createClient(endpoints[0], "native-editor-owner");
+const member = createClient(endpoints[1], "native-editor-member");
 const controller = new AbortController();
 const signal = controller.signal;
 const business = createBusinessClient(owner, { productDriver: duckDriver });
@@ -113,7 +139,12 @@ try {
     signal,
   );
   const colleague = unlockedAccount()!;
-  await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
+  await acceptVaultWithKey(
+    account.dataKey,
+    account.vault,
+    account.username,
+    false,
+  );
   const lease = acquireDataRuntime(owner, signal, duckDriver);
   try {
     await approveMemberInvitation(owner, invitation.link.invitation.id, signal);
@@ -138,6 +169,7 @@ try {
       title: "Fenstersanierung mit privater Werkplanung",
     }),
   );
+  await checkBatchedFileContent(project.id);
   const document = new Blob(["CONFIDENTIAL_OFFICE_NATIVE_846281"], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
@@ -209,6 +241,7 @@ try {
     "After ordinary file-only edit",
     "Unconfirmed Office draft recovered after key rotation",
     "Stale losing Office handoff",
+    "CONFIDENTIAL_BATCHED_FILE_846281",
     `/2/integration/edit/${"c".repeat(24)}/`,
     `/2/integration/view/${"c".repeat(32)}/`,
   ]) {
@@ -229,4 +262,109 @@ try {
   operator.setToken(null);
   owner.setToken(null);
   member.setToken(null);
+}
+
+async function checkBatchedFileContent(projectId: string) {
+  const bytes = new Uint8Array(8 * FILE_CHUNK_BYTES + 31);
+  for (let index = 0; index < 9; index++) {
+    const offset = index * FILE_CHUNK_BYTES;
+    bytes.fill(index + 1, offset, offset + FILE_CHUNK_BYTES);
+  }
+  bytes.set(new TextEncoder().encode("CONFIDENTIAL_BATCHED_FILE_846281"));
+  const blob = new Blob([bytes]);
+  const file = "3";
+  const version = "c".repeat(32);
+  const manifest = await storeFileContent(
+    owner,
+    projectId,
+    file,
+    blob,
+    version,
+    signal,
+  );
+  assert.equal(manifest.parts.length, 9);
+
+  function readBatches(start: number) {
+    return sent
+      .slice(start)
+      .map((request) => new URL(request.url).pathname.slice(1).split(","))
+      .map((paths) =>
+        paths.filter((path) => path === "zerotrust.fileChunks.get"),
+      )
+      .filter((paths) => paths.length > 0);
+  }
+  function checkReads(start: number) {
+    const batches = readBatches(start);
+    assert.equal(batches[0]?.length, 4);
+    assert.ok(batches.every((paths) => paths.length <= 4));
+    assert.equal(batches.flat().length, 9);
+    assert.ok(batches.length < 9);
+    return batches.map((paths) => paths.length);
+  }
+  readChunksOnPeer = true;
+  try {
+    const loadStart = sent.length;
+    const loaded = await loadFileContent(
+      owner,
+      projectId,
+      file,
+      manifest,
+      "application/octet-stream",
+      signal,
+    );
+    assert.deepEqual(new Uint8Array(await loaded.arrayBuffer()), bytes);
+    const loadBatches = checkReads(loadStart);
+    const verifyStart = sent.length;
+    await verifyFileContent(owner, projectId, file, manifest, blob, signal);
+    const verifyBatches = checkReads(verifyStart);
+    const resumeStart = sent.length;
+    assert.deepEqual(
+      await storeFileContent(owner, projectId, file, blob, version, signal, {
+        resume: true,
+      }),
+      manifest,
+    );
+    assert.ok(
+      sent
+        .slice(resumeStart)
+        .every(
+          (request) =>
+            !new URL(request.url).pathname
+              .split(",")
+              .some((path) => path.endsWith("zerotrust.fileChunks.put")),
+        ),
+    );
+    console.log(
+      `Native file batches: 9 blocks; load HTTP groups ${loadBatches.join(", ")}; verification HTTP groups ${verifyBatches.join(", ")}; resumed without writes; readback through independent API`,
+    );
+  } finally {
+    readChunksOnPeer = false;
+  }
+  const domain = chunkCollection(projectId).domain;
+  const denied = await Promise.all(
+    manifest.parts
+      .slice(0, 4)
+      .map((part) =>
+        member.query(
+          "zerotrust.fileChunks.get",
+          { domain, id: part.id },
+          { strategy: "network-only" },
+        ),
+      ),
+  );
+  assert.ok(denied.every(([, error]) => error?.data?.httpCode === 403));
+  const mixed = await Promise.all([
+    owner.query(
+      "zerotrust.fileChunks.get",
+      { domain, id: manifest.parts[0]!.id },
+      { strategy: "network-only" },
+    ),
+    owner.query(
+      "zerotrust.fileChunks.get",
+      { domain, id: "file-data:999:3:cccccccccccccccccccccccccccccccc:0" },
+      { strategy: "network-only" },
+    ),
+  ]);
+  assert.equal(mixed[0]![0]?.object, manifest.parts[0]!.id);
+  assert.equal(mixed[1]![1]?.data?.httpCode, 403);
 }
