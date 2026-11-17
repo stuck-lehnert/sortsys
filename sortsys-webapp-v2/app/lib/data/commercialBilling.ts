@@ -19,6 +19,7 @@ import {
   commercialCents,
   commercialMoney,
   isInvoice,
+  isAcceptedContract,
   splitCommercialRows,
   wireCommercialCase,
   wireCommercialInvoice,
@@ -205,8 +206,7 @@ export function createCommercialBilling(
     const basis = await hooks.read(id, true);
     const current = wireCommercialCase(basis.values);
     if (
-      !["offer", "variation", "alternative"].includes(current.kind) ||
-      current.status !== "accepted" ||
+      !isAcceptedContract(current) ||
       !current.projectId ||
       !basis.parts.has("billing")
     ) {

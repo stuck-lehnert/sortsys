@@ -14,6 +14,7 @@ export type CommercialCase = QueryResult<"commercial.cases.list">[number];
 export type CommercialDetail = QueryResult<"commercial.cases.get">;
 export type CommercialDocument = CommercialDetail["documents"][number];
 export type CommercialKind = CommercialCase["kind"];
+export { isAcceptedContract } from "./data/commercialData";
 export const kindLabel = (kind: CommercialKind) =>
   ({
     offer: uiText("Angebot", "Offer"),

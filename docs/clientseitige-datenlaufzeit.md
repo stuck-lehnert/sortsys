@@ -83,6 +83,19 @@ Treffermenge führt zu einem erneuten Abruf. Zahlungsstände werden erst mit den
 zugehörigen unveränderlichen Abrechnungsbelegen ausgewertet. Kundennamen werden
 für die Liste gemeinsam geladen.
 
+`commercial.cases.headers` liefert nur Kennung, Referenz, Bezeichnung,
+Projektzuordnung, Dokumentart und Status. Die Vorgangsauswahl und die Vorprüfung
+einer gefilterten Liste verwenden denselben Leser für geprüfte Kopfdaten. Im
+Projekt prüft die Oberfläche damit, ob eine Angebotsgrundlage für Rechnung, Aufmaß oder
+Weitervergabe vorhanden ist. Dafür werden keine Mengen, Preise, Kalkulationen
+oder zugehörigen Dateien geöffnet. Die Ansicht beobachtet Änderungen an den
+Kopfdaten und Berechtigungen; ein fehlgeschlagener Abruf sperrt die abhängigen
+Aktionen bis zu einer erfolgreichen Prüfung.
+Der Kopfstatus einer Rechnung ersetzt keine Auswertung ihrer Zahlungen.
+Angenommene Hauptangebote, Nebenangebote und Nachträge verwenden dabei dieselbe
+Zulässigkeitsprüfung wie die Formulare für Aufmaß und Abrechnung. Ein Entwurf
+schaltet diese Aktionen nicht frei.
+
 Für die Prüfung der angezeigten Dokumentbeträge teilt ein Listenabruf einen
 verifizierten Zugriffskontext. Die Dokumente behalten eigene Sammlungen und
 Schlüssel; das Schließen eines Dokuments beeinträchtigt die anderen nicht.

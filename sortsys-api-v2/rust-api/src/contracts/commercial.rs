@@ -6,12 +6,41 @@ use ts_rs::TS;
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .query_stub::<ListInput, Vec<CommercialCase>>("commercial.cases.list")
+        .query_stub::<HeaderListInput, Vec<CaseHeader>>("commercial.cases.headers")
         .query_stub::<CaseInput, CaseDetail>("commercial.cases.get")
         .mutation_stub::<CreateInput, CreatedId>("commercial.cases.create")
         .mutation_stub::<UpdateInput, Success>("commercial.cases.update")
         .mutation_stub::<TransitionInput, Success>("commercial.cases.transition")
         .mutation_stub::<CaseInput, CreatedId>("commercial.cases.createProject")
 }
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CaseHeader {
+    pub id: Id,
+    pub reference: String,
+    pub title: String,
+    pub project_id: Option<Id>,
+    #[ts(
+        type = "'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice'"
+    )]
+    pub kind: String,
+    #[ts(
+        type = "'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid'"
+    )]
+    pub status: String,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeaderListInput {
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub project_id: Option<Id>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub kind: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CommercialCase {

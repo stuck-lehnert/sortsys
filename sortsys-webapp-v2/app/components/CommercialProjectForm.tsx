@@ -12,6 +12,7 @@ import { uiText } from "~/lib/i18n";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import {
   commercialError,
+  isAcceptedContract,
   deriveChecked,
   loadCommercialDocument,
   storeCommercialDocument,
@@ -60,11 +61,7 @@ export function CommercialProjectForm({
           setError(commercialError(error));
           return;
         }
-        const contracts = (values ?? []).filter(
-          (item) =>
-            ["offer", "variation", "alternative"].includes(item.kind) &&
-            item.status === "accepted",
-        );
+        const contracts = (values ?? []).filter(isAcceptedContract);
         setContracts(contracts);
         setParentId(contracts[0]?.id ?? "");
         setOccupied(

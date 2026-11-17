@@ -137,6 +137,12 @@ function select(domain: string): Collection | null {
   return project ? projectCollection(project) : null;
 }
 
+function checkListScope(data: Record<string, unknown>): void {
+  if (data.projectId != null) addressId(data.projectId);
+  if (data.kind != null && typeof data.kind !== "string")
+    throw new InvalidProtectedData();
+}
+
 export function createProtectedCommercial(
   client: Client,
   signal: AbortSignal,
@@ -224,7 +230,7 @@ export function createProtectedCommercial(
     return value;
   }
   function matchesListScope(
-    value: ReturnType<typeof wireCommercialCase>,
+    value: Pick<ReturnType<typeof wireCommercialCase>, "projectId" | "kind">,
     filter: { projectId?: unknown; kind?: unknown },
   ): boolean {
     if (filter.projectId != null && value.projectId !== filter.projectId)
@@ -232,6 +238,41 @@ export function createProtectedCommercial(
     if (filter.kind === "sales")
       return value.kind === "offer" || value.kind === "alternative";
     return filter.kind == null || value.kind === filter.kind;
+  }
+  function headersInView(
+    view: DataView,
+    requests: readonly DataRequest<CommercialPayload>[],
+    visible: ReadonlySet<string>,
+  ): QueryResult<"commercial.cases.headers"> {
+    return requests.flatMap((request) => {
+      const id = commercialDomain(request.area.domain)!.id;
+      const header = snapshot(view, id, [request], visible, true);
+      if (!header.values.length) return [];
+      const value = wireCommercialCase(header.values);
+      return [
+        {
+          id: value.id,
+          reference: value.reference,
+          title: value.title,
+          projectId: value.projectId,
+          kind: value.kind,
+          status: value.status,
+        },
+      ];
+    });
+  }
+  async function listHeaders(filter: { projectId?: unknown; kind?: unknown }) {
+    const { selected, visible, collections } = await inventory();
+    const headers = selected.filter(
+      (request) => request.area.facet === "master-data",
+    );
+    const values = await runtime.read(
+      [...headers, ...invoiceViewRequests(headers)],
+      (view) => headersInView(view, headers, visible),
+      collections,
+    );
+    live();
+    return values.filter((value) => matchesListScope(value, filter));
   }
   async function list(filter: { projectId?: unknown; kind?: unknown }) {
     const { selected, visible, collections } = await inventory();
@@ -252,13 +293,9 @@ export function createProtectedCommercial(
       const headers = [...master.values()];
       const headerRequests = [...headers, ...invoiceViewRequests(headers)];
       function matchingIds(view: DataView): string[] {
-        return ids.filter((id) => {
-          const header = snapshot(view, id, [master.get(id)!], visible, true);
-          return (
-            header.values.length > 0 &&
-            matchesListScope(wireCommercialCase(header.values), filter)
-          );
-        });
+        return headersInView(view, headers, visible)
+          .filter((value) => matchesListScope(value, filter))
+          .map((value) => value.id);
       }
       for (let attempt = 0; ; attempt++) {
         const candidates = await runtime.read(
@@ -2420,26 +2457,11 @@ export function createProtectedCommercial(
   return {
     nativeDocument,
     async choices() {
-      const { selected, visible, collections } = await inventory();
-      const headers = selected.filter(
-        (request) => request.area.facet === "master-data",
-      );
-      const values = await runtime.read(
-        [...headers, ...invoiceViewRequests(headers)],
-        (view) =>
-          headers.flatMap((request) => {
-            const id = commercialDomain(request.area.domain)!.id;
-            const header = snapshot(view, id, [request], visible, true);
-            if (!header.values.length) return [];
-            const value = wireCommercialCase(header.values);
-            return [
-              { id: value.id, reference: value.reference, title: value.title },
-            ];
-          }),
-        collections,
-      );
-      live();
-      return values;
+      return (await listHeaders({})).map(({ id, reference, title }) => ({
+        id,
+        reference,
+        title,
+      }));
     },
     openDocument(caseId: string, id: string) {
       return loadDocument(caseId, id, true);
@@ -2471,6 +2493,11 @@ export function createProtectedCommercial(
       live();
       if (!COMMERCIAL_QUERIES.has(path)) throw new InvalidProtectedData();
       if (path === "commercial.invoices.context") return billing.context(input);
+      if (path === "commercial.cases.headers") {
+        const data = partialAddressRecord(input ?? {}, ["projectId", "kind"]);
+        checkListScope(data);
+        return listHeaders(data);
+      }
       if (path === "commercial.documents.get") {
         const data = record(input, ["caseId", "id"]);
         return loadDocument(data.caseId as string, data.id as string);
@@ -2496,11 +2523,9 @@ export function createProtectedCommercial(
           "limit",
           "offset",
         ]);
-        if (data.projectId != null) {
-          addressId(data.projectId);
-        }
+        checkListScope(data);
         if (
-          ["kind", "status", "search"].some(
+          ["status", "search"].some(
             (key) => data[key] != null && typeof data[key] !== "string",
           )
         ) {

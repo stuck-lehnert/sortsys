@@ -3919,7 +3919,7 @@ function seedContractorWorkflows(canManage = true) {
     documents = new Map();
   let sequence = 0;
   api.respond("customers.list", [{ id: "b", name: "Fixture Customer" }]);
-  api.respond("commercial.cases.list", (input) =>
+  const caseRows = (input) =>
     [...cases.values()]
       .map((detail) => detail.case)
       .filter(
@@ -3930,7 +3930,19 @@ function seedContractorWorkflows(canManage = true) {
               ? ["offer", "alternative"].includes(row.kind)
               : row.kind === input.kind)) &&
           (!input?.status || row.status === input.status),
-      ),
+      );
+  api.respond("commercial.cases.list", caseRows);
+  api.respond("commercial.cases.headers", (input) =>
+    caseRows(input).map(
+      ({ id, reference, title, projectId, kind, status }) => ({
+        id,
+        reference,
+        title,
+        projectId,
+        kind,
+        status,
+      }),
+    ),
   );
   api.respond("commercial.cases.get", ({ id }) => {
     const detail = cases.get(id);
@@ -7209,6 +7221,119 @@ async function seedExtendedContract() {
   });
   return state;
 }
+
+test("project contract actions follow header updates and discard a failed refresh", async () => {
+  seedContractorWorkflows();
+  let headers = [
+    {
+      id: "main",
+      reference: "ANG-26-7",
+      title: "Contract draft",
+      kind: "offer",
+      status: "draft",
+      projectId: "c",
+    },
+  ];
+  api.respond("commercial.cases.headers", () => headers);
+  await openApplication("/projects/c/contract", "en");
+  const adoption = page.getByRole("button", {
+    name: "Adopt existing contract",
+    exact: true,
+  });
+  await adoption.waitFor();
+  async function checkInvoiceAction(enabled) {
+    await page
+      .getByRole("button", { name: "Create document", exact: true })
+      .click();
+    const menu = page.getByRole("menu", {
+      name: "Create document",
+      exact: true,
+    });
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[role="menu"]')].some((node) =>
+        node.contains(document.activeElement),
+      ),
+    );
+    assert.equal(
+      await page
+        .getByRole("menuitem", { name: "Invoice", exact: true })
+        .isEnabled(),
+      enabled,
+    );
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+  }
+  await checkInvoiceAction(false);
+  const refresh = () =>
+    page.evaluate(() =>
+      window.__sortsysRefreshPresentation("commercial.cases.headers"),
+    );
+  for (const kind of ["alternative", "variation"]) {
+    headers = [
+      {
+        id: "main",
+        reference: "ANG-26-7",
+        title: "Accepted contract header",
+        kind,
+        status: "accepted",
+        projectId: "c",
+      },
+    ];
+    await refresh();
+    await adoption.waitFor({ state: "hidden" });
+    await checkInvoiceAction(true);
+  }
+  const trigger = page.getByRole("button", {
+    name: "Create document",
+    exact: true,
+  });
+  await trigger.click();
+  const openMenu = page.getByRole("menu", {
+    name: "Create document",
+    exact: true,
+  });
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('[role="menu"]')].some((node) =>
+      node.contains(document.activeElement),
+    ),
+  );
+  const beforeFailure = await trigger.boundingBox();
+  api.fail("commercial.cases.headers", "Synthetic header read failed");
+  await refresh();
+  await page
+    .getByText("The contract basis could not be loaded.", { exact: true })
+    .waitFor();
+  assert.equal(
+    await openMenu
+      .getByRole("menuitem", { name: "Invoice", exact: true })
+      .isEnabled(),
+    false,
+  );
+  assert.ok(
+    Math.abs((await trigger.boundingBox()).y - beforeFailure.y) < 1,
+    "A failed background read must not move the open menu's anchor",
+  );
+  await page.keyboard.press("Escape");
+  await openMenu.waitFor({ state: "hidden" });
+  api.recover("commercial.cases.headers");
+  headers = [];
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await adoption.waitFor();
+  await checkInvoiceAction(false);
+  assert.equal(
+    api.requests.some(
+      ({ path, input }) =>
+        path === "commercial.cases.list" && input?.kind === "offer",
+    ),
+    false,
+    "Contract existence must not materialize complete offers",
+  );
+  assert.equal(
+    api.requests.filter(({ path }) => path === "commercial.cases.headers")
+      .length,
+    5,
+  );
+});
 
 test("project creates a native X89 invoice and keeps it inside its fullscreen editor", async () => {
   const state = await seedExtendedContract();

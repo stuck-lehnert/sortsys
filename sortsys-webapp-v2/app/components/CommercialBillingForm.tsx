@@ -15,6 +15,7 @@ import { client } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
 import {
   commercialError,
+  isAcceptedContract,
   documentAmount,
   kindLabel,
   loadCommercialDocument,
@@ -64,11 +65,7 @@ export function CommercialBillingForm({
           setError(commercialError(error));
           return;
         }
-        const contracts = (rows ?? []).filter(
-          (c) =>
-            ["offer", "variation", "alternative"].includes(c.kind) &&
-            c.status === "accepted",
-        );
+        const contracts = (rows ?? []).filter(isAcceptedContract);
         setContracts(contracts);
         setParentId(contracts[0]?.id ?? "");
         setMeasurements(

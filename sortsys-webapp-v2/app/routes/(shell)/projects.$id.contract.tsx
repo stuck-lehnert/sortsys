@@ -13,6 +13,9 @@ import { CommercialBillingForm } from "~/components/CommercialBillingForm";
 import { CommercialProjectForm } from "~/components/CommercialProjectForm";
 import { MyHeader } from "~/components/MyHeader";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { useProtectedState } from "~/hooks/useProtectedState";
+import { MyCallout } from "~/components/MyCallout";
+import { isAcceptedContract } from "~/lib/commercial";
 import { uiText } from "~/lib/i18n";
 import type { Project } from "~/type-helpers";
 export default function ProjectContractPage() {
@@ -22,22 +25,29 @@ export default function ProjectContractPage() {
   const [refresh, setRefresh] = useState(0);
   const [params] = useSearchParams();
   const [action, setAction] = useState(params.get("new") ?? "");
-  const [hasContract, setHasContract] = useState<boolean>();
+  const [contractState, setContractState, context] = useProtectedState<{
+    projectId: string;
+    present: boolean | undefined;
+    error: boolean;
+  } | null>(null);
+  const currentContract =
+    contractState?.projectId === project.id ? contractState : null;
+  const hasContract = currentContract?.present;
   useEffect(() => {
-    let current = true;
-    void client
-      .query(
-        "commercial.cases.list",
-        { projectId: project.id, kind: "offer", limit: 1n },
-        { strategy: "network-only" },
-      )
-      .then(([rows, error]) => {
-        if (current && !error && rows) setHasContract(rows.length > 0);
+    setContractState(null);
+    const subscription = client
+      .streamQuery("commercial.cases.headers", {
+        projectId: project.id,
+      })
+      .subscribe(([rows, error]) => {
+        setContractState({
+          projectId: project.id,
+          present: error || !rows ? undefined : rows.some(isAcceptedContract),
+          error: Boolean(error),
+        });
       });
-    return () => {
-      current = false;
-    };
-  }, [project.id, refresh]);
+    return () => subscription.unsubscribe();
+  }, [project.id, refresh, context, setContractState]);
   const close = () => {
     setAction("");
   };
@@ -107,6 +117,25 @@ export default function ProjectContractPage() {
           )
         }
       />
+      {currentContract?.error && (
+        <MyCallout color="red">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {uiText(
+                "Die Vertragsgrundlage konnte nicht geladen werden.",
+                "The contract basis could not be loaded.",
+              )}
+            </span>
+            <Button
+              kind="ghost"
+              size="sm"
+              onClick={() => setRefresh((value) => value + 1)}
+            >
+              {uiText("Erneut versuchen", "Try again")}
+            </Button>
+          </div>
+        </MyCallout>
+      )}
       {hasContract === false &&
         session.canCreate("commercial") &&
         !project.finishedAt && (
@@ -173,7 +202,10 @@ export default function ProjectContractPage() {
             key={action}
             kind={
               action as
-                "measurement" | "subcontract" | "procurement" | "calculation"
+                | "measurement"
+                | "subcontract"
+                | "procurement"
+                | "calculation"
             }
             projectId={project.id}
             projectTitle={project.title}

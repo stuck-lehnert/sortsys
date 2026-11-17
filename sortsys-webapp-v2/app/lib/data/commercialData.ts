@@ -12,6 +12,7 @@ import { businessSchema, tableDefinition } from "./schema";
 
 export const COMMERCIAL_QUERIES = new Set([
   "commercial.cases.list",
+  "commercial.cases.headers",
   "commercial.cases.get",
   "commercial.documents.get",
   "commercial.documents.download",
@@ -81,6 +82,13 @@ export const COMMERCIAL_STATUSES = [
 export type InvoiceKind = "invoice" | "progress_invoice" | "final_invoice";
 export const isInvoice = (kind: string): kind is InvoiceKind =>
   ["invoice", "progress_invoice", "final_invoice"].includes(kind);
+export function isAcceptedContract(value: {
+  kind: string;
+  status: string;
+}): boolean {
+  if (value.status !== "accepted") return false;
+  return ["offer", "variation", "alternative"].includes(value.kind);
+}
 const keys = (table: string): string[] =>
   table === "commercial_cases"
     ? ["id"]

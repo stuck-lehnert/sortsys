@@ -232,6 +232,32 @@ export async function testBillingPermissions(
       { area: commercialCollection(target.id, "master-data"), access: "read" },
     ]);
     await withBusiness(account, observed, async (business) => {
+      const headers = await required(
+        business.query("commercial.cases.headers", {
+          projectId: target.projectId,
+        }),
+      );
+      assert.equal(headers.length, 1);
+      assert.deepEqual(Object.keys(headers[0]!).sort(), [
+        "id",
+        "kind",
+        "projectId",
+        "reference",
+        "status",
+        "title",
+      ]);
+      assert.equal(headers[0]!.id, target.id);
+      assert.equal(headers[0]!.kind, "invoice");
+      assert.equal(headers[0]!.status, "draft");
+      assert.deepEqual(
+        await required(
+          business.query("commercial.cases.headers", {
+            projectId: target.projectId,
+            kind: "offer",
+          }),
+        ),
+        [],
+      );
       const value = await required(
         business.query("commercial.cases.get", { id: target.id }),
       );

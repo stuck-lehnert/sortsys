@@ -70,6 +70,7 @@ export async function installPresentationClient() {
   client.mutateDynamic = transport.mutateDynamic;
   client.invalidate = transport.invalidate;
   client.invalidateCascading = transport.invalidateCascading;
+  window.__sortsysRefreshPresentation = (path) => transport.invalidate(path);
 
   const signal = new AbortController().signal;
   const access = {

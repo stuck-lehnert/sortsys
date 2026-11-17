@@ -266,6 +266,7 @@ export type QueryInputs = {
   "clientScripts.get": { id: string; };
   "clientScripts.list": undefined | void | { search?: undefined | null | string; includeDisabled?: undefined | false | true; limit?: undefined | number; };
   "commercial.cases.get": { id: Id, };
+  "commercial.cases.headers": { projectId?: Id | null, kind?: string | null, };
   "commercial.cases.list": { projectId?: Id | null, kind?: string | null, status?: string | null, search?: string | null, limit?: bigint | null, offset?: bigint | null, };
   "commercial.documents.download": { caseId: Id, id: Id, };
   "commercial.documents.get": { caseId: Id, id: Id, };
@@ -415,6 +416,7 @@ export type QueryOutputs = {
   "clientScripts.get": null | { id: string; name: string; description: null | string; code: string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; };
   "clientScripts.list": { id: string; name: string; description: null | string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
   "commercial.cases.get": { case: CommercialCase, documents: Array<Document>, events: Array<CaseEvent>, canManage: boolean, invoice: InvoiceDetails | null, };
+  "commercial.cases.headers": Array<{ id: Id, reference: string, title: string, projectId: Id | null, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', }>;
   "commercial.cases.list": Array<{ id: Id, reference: string, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', title: string, existingContract: boolean, projectId: Id | null, projectTitle: string | null, parentCaseId: Id | null, customerId: Id | null, customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, validUntil: string | null, notes: string | null, scopeItemIds: JsonValue, selectedOfferDocumentId: Id | null, acceptedAt: string | null, createdAt: string, modifiedAt: string, }>;
   "commercial.documents.download": { url: string, fileName: string, };
   "commercial.documents.get": { frozen: boolean, xml: string, referenceXml: string | null, fileName: string, version: bigint, canEdit: boolean, liveTicket: string, livePath: string, recoveryScope: string, };
@@ -996,6 +998,7 @@ const queryProcedures = new Set<string>([
   "clientScripts.get",
   "clientScripts.list",
   "commercial.cases.get",
+  "commercial.cases.headers",
   "commercial.cases.list",
   "commercial.documents.download",
   "commercial.documents.get",
