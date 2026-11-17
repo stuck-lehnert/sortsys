@@ -1610,7 +1610,7 @@ export function createBusinessClient(
           reset();
         }
       }
-      notify();
+      notify((query) => QUERIES.has(query));
     }
     if (path.startsWith("deliveryNotes.scan.") || path.startsWith("llm.chats."))
       notify();

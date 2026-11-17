@@ -405,6 +405,56 @@ test("project subscriptions refresh for project and policy changes, not visit pr
   }
 });
 
+test("explicit product invalidation refreshes product subscribers without restarting project subscriptions", async () => {
+  await account();
+  const { base } = raw();
+  const store = products();
+  const client = createBusinessClient(base, {
+    openProducts: async () => store,
+    productDriver: duckDriver,
+  });
+  const subscriptions = [];
+  const projectResults = [];
+  const productResults = [];
+  try {
+    await Promise.all([
+      new Promise((resolve) => {
+        subscriptions.push(
+          client.streamQuery("projects.list", {}).subscribe((reply) => {
+            projectResults.push(reply);
+            resolve();
+          }),
+        );
+      }),
+      new Promise((resolve) => {
+        subscriptions.push(
+          client.streamQuery("products.get", { id: "1" }).subscribe((reply) => {
+            productResults.push(reply);
+            resolve();
+          }),
+        );
+      }),
+    ]);
+    expect(projectResults).toHaveLength(1);
+    expect(productResults).toHaveLength(1);
+    await client.invalidate("products.list");
+    // Await shared reads so any incorrectly restarted subscription also has
+    // time to deliver; this assertion does not depend on an arbitrary sleep.
+    const replies = await Promise.all([
+      client.query("projects.list", {}),
+      client.query("products.get", { id: "1" }),
+    ]);
+    await new Promise((resolve) => queueMicrotask(resolve));
+    expect(replies.every(([, error]) => error === null)).toBe(true);
+    expect(store.counts().refreshes).toBe(1);
+    expect(productResults).toHaveLength(2);
+    expect(projectResults).toHaveLength(1);
+  } finally {
+    for (const subscription of subscriptions) subscription.unsubscribe();
+    client.dispose();
+  }
+});
+
 test("locking while a shared result is copied still prevents plaintext delivery", async () => {
   await account();
   const { base } = raw();
