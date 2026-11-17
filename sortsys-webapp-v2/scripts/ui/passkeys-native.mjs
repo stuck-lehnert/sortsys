@@ -452,6 +452,14 @@ try {
   assert.notEqual(state.error, "");
   assert.equal(state.unlocked, false);
   assert.equal(state.authenticated, false);
+  await page
+    .getByLabel("Passwort", { exact: true })
+    .fill("Recovered-passkey-test-password-2026!");
+  state = await click("Anmelden");
+  assert.equal(state.error, "");
+  assert.deepEqual(state.devices, []);
+  assert.equal((await click("Passkey einrichten")).error, "");
+  await coldSignIn("builder-updated");
   assert.deepEqual(external, []);
   await writeFile(
     join(root, "passkeys-browser-result.json"),

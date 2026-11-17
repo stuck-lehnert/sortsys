@@ -491,6 +491,33 @@ wird weiterhin ein unabhängiges Konto über `createAdministrator` vorbereitet.
 Beide Wege erzeugen neue private Schlüssel und eine neue Seed-Generation;
 historische Signaturen behalten ihre ursprünglichen Zertifikate.
 
+### Weitere Konten mit einer Seed-Recovery wiederherstellen
+
+`prepareRecovery` nimmt optional `members` mit je einem geprüften
+`ExistingRecoveryAccount` und dem neuen Passwort entgegen. Es erzeugt die
+OPAQUE-Registrierung, einen neuen verschlüsselten Kontotresor und ein von der
+neuen Mandantenautorität signiertes Identitätszertifikat. Die Benutzerkennung
+bleibt erhalten; private Schlüssel und Passwörter verlassen den Browser nicht.
+Die Registrierungsfunktion erhält nur den öffentlichen Antrag mit Seed-Nachweis.
+
+`recoveryMemberFrame` bindet die vorherige Kontoabfrage an Mandant,
+Autoritätsgeneration, Anmeldenamen und Zufallswert.
+`recoveryMemberRegistrationFrame` bindet die Registrierung an den genauen
+Kontostand. `recoveredMembersFrame` prüft bis zu acht eindeutige Konten und nimmt
+sämtliche Ersatznachweise in die beidseitig signierte Recovery-Bindung auf. Rust
+bietet dieselben Prüfungen mit `recovery::RecoveredMember` und
+`recovery::recovered_members_frame`. Gemeinsame Browser-Testvektoren prüfen die
+Bytefolge beider Implementierungen.
+
+Der Speicheradapter muss alle ursprünglichen Kontostände, ihre aktiven
+Anmeldenamen und den Recovery-Kopf in derselben Transaktion vergleichen. Er darf
+keine Sperren aufheben oder Mitarbeiter zu Administratoren machen. Beide
+Kontenarten und der Phrase-Wechsel müssen gemeinsam veröffentlicht werden.
+Historische Zertifikate bleiben bestehen; alte Sitzungen und Passkeys werden
+gesperrt. Diese Registrierung verteilt noch keine Inhaltsberechtigungen. Die
+Anwendung muss die weiter geltenden Freigaben anschließend bestätigen und die
+bereits gesicherten Bereichsschlüssel an die neuen Identitäten verteilen.
+
 Ein Speicheradapter muss den Wechsel nach Prüfung der alten und neuen
 Nachweise atomar übernehmen. Die verbrauchte Generation und Challenge dürfen
 nicht erneut verwendet werden. Ein zweiter Aufruf darf nur denselben bereits

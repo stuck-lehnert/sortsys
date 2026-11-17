@@ -256,9 +256,23 @@ erreichbarem neuem Administratorzugang. Ein Fehler nach dem ersten Commit darf
 niemals mit der Aufforderung enden, erneut die bereits verbrauchte Phrase zu
 verwenden. Bereits vor dem Commit gesicherte neue Wörter verhindern diese Lücke.
 
-Ein Passwortreset für ein einzelnes Mitglied ist ein anderer Vorgang als die
-mandantenweite Recovery. Dieser Ablauf ist noch nicht angeschlossen; ein
-Betreiberreset darf keinen Zugang zu den privaten Kontoschlüsseln schaffen.
+Optional kann bei derselben Recovery ein weiteres Mitarbeiterkonto ein neues
+Passwort erhalten. Der Ablauf behält dessen Benutzerkennung bei, ersetzt seine
+privaten Kontoschlüssel und sperrt alte Passkeys. Frühere Signaturen bleiben
+prüfbar. Das Konto erhält keine Administratorrechte; seine fachlichen Freigaben
+werden anschließend über eine neue Einladung bestätigt. Danach sind auch die
+historischen Inhalte seines persönlichen Assistentenbereichs wieder lesbar.
+Sperren, Archivierung und Löschung werden nicht aufgehoben.
+
+Die Lookup-Nachweise binden Mandant, Generation, Anmeldenamen und Zufallswert an
+die Signatur der aktuellen Phrase. Der signierte Recovery-Plan enthält den
+genauen technischen Kontostand, den neuen Kontotresor, die OPAQUE-Registrierung
+und das neue Identitätszertifikat. Änderungen an Passwort, Anmeldenamen oder
+Kontostatus nach der Vorbereitung lassen den Plan scheitern. Die API
+veröffentlicht beide Konten und den Generationswechsel in derselben Transaktion.
+Eine zusätzliche Phrase oder ein Wiederherstellungsschlüssel des Betreibers ist
+nicht vorgesehen. Die Oberfläche bietet ein zusätzliches Konto an; das
+Protokoll begrenzt einen Plan auf acht zusätzliche Konten.
 
 ## Grenzen der Ungültigkeit und Wiederherstellung alter Sicherungen
 

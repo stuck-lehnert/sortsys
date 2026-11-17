@@ -155,6 +155,28 @@ async fn account_lookup(
     transaction.validate().await?;
     Ok(result)
 }
+async fn member_lookup(
+    service: &AuthService,
+    input: MemberLookupInput,
+) -> RpcResult<Option<ExistingAccount>> {
+    let _admission = crate::auth_limits::admit_login()?;
+    let message = sortsys_zerotrust::recovery::member_lookup_frame(
+        &input.tenant,
+        &input.generation,
+        &input.username,
+        &input.nonce,
+    )?;
+    let repository = repository(service, &input.tenant).await?;
+    let mut transaction = repository.transaction()?;
+    let root = setup::metadata_root(&mut transaction, &input.tenant).await?;
+    if input.generation != root.profile.authority.generation {
+        return Err(conflict());
+    }
+    verify_seed(&root, &input.proof, &message)?;
+    let result = super::account::describe_member(&mut transaction, &root, &input.username).await?;
+    transaction.validate().await?;
+    Ok(result)
+}
 async fn source(service: &AuthService, input: InspectInput) -> RpcResult<RecoverySourceHead> {
     let _admission = crate::auth_limits::admit_login()?;
     sized::<32>(&input.nonce)?;
@@ -254,10 +276,20 @@ async fn registration(
     let mut transaction = repository.transaction()?;
     let root = setup::metadata_root(&mut transaction, &input.tenant).await?;
     challenge(&mut transaction, &root, &input.challenge_id).await?;
-    verify_seed(
-        &root,
-        &input.proof,
-        &frame(
+    let message = if input.member == Some(true) {
+        let account = sortsys_zerotrust::recovery::ExistingRecoveryAccount {
+            subject: input.subject.clone(),
+            username: input.username.clone(),
+            version: input.account_version.clone().ok_or_else(invalid)?,
+        };
+        sortsys_zerotrust::recovery::member_registration_frame(
+            &input.tenant,
+            &input.challenge_id,
+            &account,
+            &input.registration_request,
+        )?
+    } else {
+        frame(
             "sortsys/recovery-registration/v3",
             &[
                 &input.tenant,
@@ -267,16 +299,28 @@ async fn registration(
                 &input.registration_request,
                 input.account_version.as_deref().unwrap_or(""),
             ],
-        ),
-    )?;
-    super::account::target(
-        &mut transaction,
-        &root,
-        &input.subject,
-        &input.username,
-        input.account_version.as_deref(),
-    )
-    .await?;
+        )
+    };
+    verify_seed(&root, &input.proof, &message)?;
+    if input.member == Some(true) {
+        super::account::member_target(
+            &mut transaction,
+            &root,
+            &input.subject,
+            &input.username,
+            input.account_version.as_deref().ok_or_else(invalid)?,
+        )
+        .await?;
+    } else {
+        super::account::target(
+            &mut transaction,
+            &root,
+            &input.subject,
+            &input.username,
+            input.account_version.as_deref(),
+        )
+        .await?;
+    }
     let response = recovery_registration(
         &repository,
         &input.tenant,
@@ -364,6 +408,19 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         input.account_version.as_deref(),
     )
     .await?;
+    let mut member_accounts = Vec::new();
+    for member in input.members.iter().flatten() {
+        member_accounts.push(
+            super::account::member_target(
+                &mut transaction,
+                &root,
+                &member.account.subject,
+                &member.account.username,
+                &member.account.version,
+            )
+            .await?,
+        );
+    }
     // The API proves public coverage, not the plaintext inside an envelope.
     let supplied = input
         .old_key_envelopes
@@ -428,6 +485,32 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
             &owner.0,
         )
         .await?;
+    super::super::passkeys::retire_account_credentials(&mut transaction, owner.0).await?;
+    for (member, mut account) in input.members.iter().flatten().zip(member_accounts) {
+        account.epoch = account.epoch.checked_add(1).ok_or_else(conflict)?;
+        account.roles.clear();
+        account.modified_at = now;
+        account.credential = Some(accounts::Credential {
+            revision: account
+                .credential()?
+                .revision
+                .checked_add(1)
+                .ok_or_else(conflict)?,
+            record: encode(&validate_registration(&member.registration_record)?),
+            vault: member.vault.clone(),
+            certificate: serde_json::to_value(&member.certificate).map_err(internal)?,
+        });
+        super::super::passkeys::retire_account_credentials(&mut transaction, account.id).await?;
+        transaction
+            .put_protected(accounts::account_key(account.id), &account)
+            .await?;
+        setup::append_identity(
+            &mut transaction,
+            &member.certificate,
+            &sized::<32>(&input.next_setup.authority.authority_signing_key)?,
+        )
+        .await?;
+    }
     let authority_key = key(
         "authority-history",
         &format!("{:020}", revision(&generation)?),
@@ -602,6 +685,7 @@ pub(crate) fn register(
     let header = Arc::clone(&service);
     let inspect = Arc::clone(&service);
     let lookup = Arc::clone(&service);
+    let member = Arc::clone(&service);
     let enroll = Arc::clone(&service);
     let apply = Arc::clone(&service);
     builder
@@ -621,6 +705,13 @@ pub(crate) fn register(
             move |_, input: InspectInput| {
                 let service = Arc::clone(&lookup);
                 async move { account_lookup(&service, input).await }
+            },
+        )
+        .mutation(
+            "zerotrust.recovery.member",
+            move |_, input: MemberLookupInput| {
+                let service = Arc::clone(&member);
+                async move { member_lookup(&service, input).await }
             },
         )
         .mutation(

@@ -5,6 +5,9 @@ import {
   createTenantSetup,
   importSigningKey,
   recoveryAccountFrame,
+  recoveryMemberFrame,
+  base64,
+  randomSecret,
   verify,
 } from "@sortsys/zerotrust/sortsys";
 import { I18nProvider } from "../../app/lib/i18n";
@@ -16,7 +19,7 @@ import RecoveryPage from "../../app/routes/auth/recovery";
 const phrase =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 
-export async function showRecoveryPage(root) {
+export async function showRecoveryPage(root, options = {}) {
   await lockCryptoSession();
   const { setup } = await createTenantSetup(
     "test",
@@ -34,18 +37,50 @@ export async function showRecoveryPage(root) {
     ];
   };
   client.mutate = async (path, input) => {
-    if (path !== "zerotrust.recovery.account")
+    if (
+      path !== "zerotrust.recovery.account" &&
+      path !== "zerotrust.recovery.member"
+    )
       throw new Error("Unexpected recovery mutation: " + path);
     await verify(
       await importSigningKey(setup.authority.recoverySigningKey),
       input.proof,
-      recoveryAccountFrame(input.tenant, input.generation, input.nonce),
+      path === "zerotrust.recovery.member"
+        ? recoveryMemberFrame(
+            input.tenant,
+            input.generation,
+            input.username,
+            input.nonce,
+          )
+        : recoveryAccountFrame(input.tenant, input.generation, input.nonce),
     );
     calls.push({
       path,
       seedProofValid: true,
-      secretUploaded: JSON.stringify(input).includes(phrase),
+      secretUploaded: [
+        phrase,
+        "Typed-recovery-test-password-2026!",
+        "Typed-member-recovery-password-2026!",
+      ].some((secret) => JSON.stringify(input).includes(secret)),
     });
+    if (path === "zerotrust.recovery.account" && options.administratorAvailable)
+      return [
+        {
+          subject: "user:1",
+          username: "administrator",
+          version: base64(randomSecret()),
+        },
+        null,
+      ];
+    if (path === "zerotrust.recovery.member" && options.memberAvailable)
+      return [
+        {
+          subject: "user:2",
+          username: input.username,
+          version: base64(randomSecret()),
+        },
+        null,
+      ];
     // Exercise the explicit unavailable-account choice before generating a
     // full recovery. Native integration tests cover successful publication.
     return [null, null];

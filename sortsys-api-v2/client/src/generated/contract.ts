@@ -88,6 +88,8 @@ export type Entry = { invitation: Invitation, claim: Claim | null, accepted: boo
 
 export type Evidence = { target: Target, artifact: JsonValue, proofs: Array<string>, };
 
+export type ExistingRecoveryAccount = { subject: string, username: string, version: string, };
+
 export type Facet = "scope" | "contract-quantities" | "measurement" | "offer-prices" | "calculation" | "procurement" | "billing" | "master-data" | "personnel" | "attachment";
 
 export type HistoryOrigin = { source: string, occurredMicros: string, };
@@ -175,6 +177,8 @@ export type ProposalExecutionResult = { path: string, output: JsonValue, };
 export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "deepseek" | "custom";
 
 export type Read = { room: Room, after: string, };
+
+export type RecoveredMember = { account: ExistingRecoveryAccount, registrationRecord: string, vault: AccountVault, certificate: IdentityCertificate, };
 
 export type RecoveryCatalogAccess = { tenant: string, generation: string, challengeId: string, challenge: string, targetGeneration: string, object: string, hash: string, action: CatalogAction, };
 
@@ -735,13 +739,14 @@ export type MutationInputs = {
   "zerotrust.objects.stage": { objects: Array<SaveInput>, };
   "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.recovery.account": { tenant: string, generation: string, nonce: string, proof: string, };
-  "zerotrust.recovery.begin": { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, nextSetup: SetupInput, username: string, accountVersion?: string, registrationRecord: string, vault: AccountVault, oldKeyEnvelopes: Array<SealedBox>, domains: Array<DomainDefinition>, proof: string, nextProof: string, };
+  "zerotrust.recovery.begin": { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, nextSetup: SetupInput, username: string, accountVersion?: string, registrationRecord: string, vault: AccountVault, oldKeyEnvelopes: Array<SealedBox>, domains: Array<DomainDefinition>, proof: string, nextProof: string, members?: Array<RecoveredMember>, };
   "zerotrust.recovery.catalog.read": { access: RecoveryCatalogAccess, proof: string, };
   "zerotrust.recovery.catalog.write": { access: RecoveryCatalogAccess, proof: string, packet: SealedBox, };
   "zerotrust.recovery.commit": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, };
   "zerotrust.recovery.inspect": { tenant: string, generation: string, nonce: string, proof: string, };
+  "zerotrust.recovery.member": { tenant: string, generation: string, username: string, nonce: string, proof: string, };
   "zerotrust.recovery.page": { tenant: string, generation: string, challengeId: string, snapshot: string, after: string | null, proof: string, };
-  "zerotrust.recovery.registration": { subject: string, tenant: string, challengeId: string, username: string, registrationRequest: string, accountVersion?: string, proof: string, };
+  "zerotrust.recovery.registration": { subject: string, tenant: string, challengeId: string, username: string, registrationRequest: string, accountVersion?: string, member?: boolean, proof: string, };
   "zerotrust.recovery.resume": { tenant: string, operation: string, };
   "zerotrust.recovery.stage": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, content: string, };
   "zerotrust.setup": { authority: AuthorityCertificate, owner: IdentityCertificate, authorityEnvelope: SealedBox, catalog: SealedBox, policy: SignedPolicy, proof: string, };
@@ -955,6 +960,7 @@ export type MutationOutputs = {
   "zerotrust.recovery.catalog.write": { success: true, };
   "zerotrust.recovery.commit": { success: true, };
   "zerotrust.recovery.inspect": { challengeId: string, challenge: string, authority: AuthorityCertificate, catalog: SealedBox, catalogVersion: string, policyVersion: string, snapshot: string, };
+  "zerotrust.recovery.member": { subject: string, username: string, version: string, } | null;
   "zerotrust.recovery.page": { snapshot: string, items: Array<RecoveryInventoryItem>, after: string | null, };
   "zerotrust.recovery.registration": { registrationResponse: string, };
   "zerotrust.recovery.resume": { success: true, };
@@ -1319,6 +1325,7 @@ const mutationProcedures = new Set<string>([
   "zerotrust.recovery.catalog.write",
   "zerotrust.recovery.commit",
   "zerotrust.recovery.inspect",
+  "zerotrust.recovery.member",
   "zerotrust.recovery.page",
   "zerotrust.recovery.registration",
   "zerotrust.recovery.resume",

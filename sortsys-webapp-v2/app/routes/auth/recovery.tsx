@@ -12,6 +12,7 @@ import {
   recoveryPlan,
   RecoveryNotStarted,
   RecoveryAccountUnavailable,
+  RecoveryMemberUnavailable,
 } from "~/lib/crypto/recovery";
 import type { RecoveryDraft } from "~/lib/crypto/recovery";
 import { lockCryptoSession } from "~/lib/crypto/session";
@@ -25,10 +26,12 @@ export default function RecoveryPage() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState<RecoveryDraft | null>(null);
   const [prepared, setPrepared] = useState<RecoveryPlan | null>(null);
+  const [restoreMember, setRestoreMember] = useState(false);
   const [completed, setCompleted] = useState<{
     tenant: string;
     username: string;
     restored: boolean;
+    member?: string;
   } | null>(null);
   if (completed)
     return (
@@ -53,6 +56,14 @@ export default function RecoveryPage() {
             {completed.username}@{completed.tenant}
           </strong>
         </p>
+        {completed.member && (
+          <p>
+            {uiText(
+              `Das Konto „${completed.member}“ hat ein neues Passwort erhalten. Seine fachlichen Freigaben müssen durch die Administration erneut bestätigt werden.`,
+              `Account “${completed.member}” has received a new password. Its business access must be approved again by the administrator.`,
+            )}
+          </p>
+        )}
         <MyButton onClick={() => navigate("/auth/login")}>
           {uiText("Anmelden", "Sign in")}
         </MyButton>
@@ -84,6 +95,9 @@ export default function RecoveryPage() {
                 tenant: draft.tenant,
                 username: plan.username,
                 restored: plan.accountVersion !== undefined,
+                ...(draft.member
+                  ? { member: draft.member.account.username }
+                  : {}),
               });
               setDraft(null);
               setPrepared(null);
@@ -110,7 +124,7 @@ export default function RecoveryPage() {
       </p>
       <MyForm
         notifyLoaded={(context) => {
-          context.setValues({ restoreAdministrator: true });
+          context.setValues({ restoreAdministrator: true, restoreMember });
         }}
         onSubmit={async (context) => {
           const values = context.getValues();
@@ -121,6 +135,13 @@ export default function RecoveryPage() {
                 "The passwords do not match.",
               ),
             );
+          if (restoreMember && values.memberPassword !== values.memberRepeat)
+            throw new Error(
+              uiText(
+                "Die Mitarbeiterpasswörter stimmen nicht überein.",
+                "The member passwords do not match.",
+              ),
+            );
           try {
             setDraft(
               await recoveryDraft(
@@ -128,10 +149,27 @@ export default function RecoveryPage() {
                 String(values.tenant).trim().toLowerCase(),
                 values.phrase,
                 values.password,
-                { restoreAdministrator: values.restoreAdministrator === true },
+                {
+                  restoreAdministrator: values.restoreAdministrator === true,
+                  ...(restoreMember
+                    ? {
+                        member: {
+                          username: String(values.memberUsername ?? ""),
+                          password: String(values.memberPassword ?? ""),
+                        },
+                      }
+                    : {}),
+                },
               ),
             );
           } catch (error) {
+            if (error instanceof RecoveryMemberUnavailable)
+              throw new Error(
+                uiText(
+                  "Das Mitarbeiterkonto wurde nicht gefunden oder ist gesperrt. Das primäre Administratorkonto wird über die eigene Auswahl wiederhergestellt.",
+                  "The member account was not found or is disabled. The primary administrator is restored using its separate option.",
+                ),
+              );
             if (error instanceof RecoveryAccountUnavailable)
               throw new Error(
                 uiText(
@@ -190,6 +228,54 @@ export default function RecoveryPage() {
             "Restore existing administrator account",
           )}
         />
+        <MyForm.Checkbox
+          name="restoreMember"
+          labelText={uiText(
+            "Zusätzlich ein Mitarbeiterkonto wiederherstellen",
+            "Also recover a member account",
+          )}
+          onValueChange={setRestoreMember}
+        />
+        {restoreMember && (
+          <>
+            <p>
+              {uiText(
+                "Die Wiederherstellung wechselt die Phrase und beendet sämtliche bisherigen Sitzungen des Mandanten. Das Mitarbeiterkonto behält seine Benutzerkennung, erhält aber erst nach erneuter Freigabe Zugang zu Fachdaten.",
+                "Recovery changes the phrase and ends every existing tenant session. The member retains its user ID but receives business access only after a new approval.",
+              )}
+            </p>
+            <MyForm.Input
+              name="memberUsername"
+              required
+              autoComplete="off"
+              labelText={uiText(
+                "Anmeldename des Mitarbeiterkontos",
+                "Member account username",
+              )}
+            />
+            <MyForm.Input
+              name="memberPassword"
+              required
+              type="password"
+              autoComplete="new-password"
+              labelText={uiText(
+                "Neues Mitarbeiterpasswort",
+                "New member password",
+              )}
+              rules={[MyForm.Input.rules.min(12), MyForm.Input.rules.max(2000)]}
+            />
+            <MyForm.Input
+              name="memberRepeat"
+              required
+              type="password"
+              autoComplete="new-password"
+              labelText={uiText(
+                "Mitarbeiterpasswort wiederholen",
+                "Repeat member password",
+              )}
+            />
+          </>
+        )}
         <MyForm.SubmitButton>
           {uiText(
             "Phrase prüfen und Wiederherstellung vorbereiten",

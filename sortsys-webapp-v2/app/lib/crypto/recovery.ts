@@ -20,6 +20,7 @@ import {
   sealedBox,
   preparePayload,
   recoveryAccountFrame,
+  recoveryMemberFrame,
   existingRecoveryAccount,
 } from "@sortsys/zerotrust/sortsys";
 import type {
@@ -39,10 +40,16 @@ export type RecoveryDraft = {
   password: string;
   generation: string;
   administrator?: ExistingRecoveryAccount;
+  member?: { account: ExistingRecoveryAccount; password: string };
 };
 export class RecoveryAccountUnavailable extends Error {
   constructor() {
     super("The existing recovery administrator is unavailable");
+  }
+}
+export class RecoveryMemberUnavailable extends Error {
+  constructor() {
+    super("The selected recovery member is unavailable");
   }
 }
 export class RecoveryNotStarted extends Error {
@@ -56,7 +63,10 @@ export async function recoveryDraft(
   tenant: string,
   phrase: string,
   password: string,
-  options: { restoreAdministrator?: boolean } = {},
+  options: {
+    restoreAdministrator?: boolean;
+    member?: { username: string; password: string };
+  } = {},
   resumed = false,
 ): Promise<RecoveryDraft> {
   const oldPhrase = normalizeRecoveryPhrase(phrase);
@@ -95,6 +105,25 @@ export async function recoveryDraft(
         identity.signingKey.privateKey,
       )
     : undefined;
+  const member = options.member;
+  if (
+    member &&
+    (member.password.length < 12 || member.password.length > 2000)
+  ) {
+    throw new InvalidProtectedData();
+  }
+  const recoveredMember = member
+    ? {
+        account: await currentRecoveryMember(
+          client,
+          tenant,
+          head.generation,
+          member.username.trim().toLowerCase(),
+          identity.signingKey.privateKey,
+        ),
+        password: member.password,
+      }
+    : undefined;
   return {
     tenant,
     oldPhrase,
@@ -102,6 +131,7 @@ export async function recoveryDraft(
     password,
     generation: head.generation,
     ...(administrator ? { administrator } : {}),
+    ...(recoveredMember ? { member: recoveredMember } : {}),
   };
 }
 
@@ -121,6 +151,31 @@ async function currentRecoveryAdministrator(
   if (error) throw error;
   if (!reply) throw new RecoveryAccountUnavailable();
   return existingRecoveryAccount(reply);
+}
+
+async function currentRecoveryMember(
+  client: Client,
+  tenant: string,
+  generation: string,
+  username: string,
+  key: CryptoKey,
+): Promise<ExistingRecoveryAccount> {
+  const nonce = base64(randomSecret());
+  const [reply, error] = await client.mutate("zerotrust.recovery.member", {
+    tenant,
+    generation,
+    username,
+    nonce,
+    proof: await sign(
+      key,
+      recoveryMemberFrame(tenant, generation, username, nonce),
+    ),
+  });
+  if (error) throw error;
+  if (!reply) throw new RecoveryMemberUnavailable();
+  const account = existingRecoveryAccount(reply);
+  if (account.username !== username) throw new InvalidProtectedData();
+  return account;
 }
 
 export async function recoveryPlan(
@@ -144,6 +199,21 @@ export async function recoveryPlan(
     : undefined;
   if (administrator && administrator.subject !== draft.administrator?.subject)
     throw new InvalidProtectedData();
+  const member = draft.member
+    ? {
+        account: await currentRecoveryMember(
+          client,
+          draft.tenant,
+          draft.generation,
+          draft.member.account.username,
+          identity.signingKey.privateKey,
+        ),
+        password: draft.member.password,
+      }
+    : undefined;
+  if (member && member.account.subject !== draft.member?.account.subject) {
+    throw new InvalidProtectedData();
+  }
   const nonce = base64(randomSecret());
   const proof = await sign(
     identity.signingKey.privateKey,
@@ -264,6 +334,7 @@ export async function recoveryPlan(
       password: draft.password,
       source,
       ...(administrator ? { administrator } : {}),
+      ...(member ? { members: [member] } : {}),
       catalogStorage,
       registrationCrypto: {
         start: (password) => worker.call("registrationStart", { password }),

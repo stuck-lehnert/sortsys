@@ -38,10 +38,14 @@ decken außerdem fehlerhafte CBOR-Pakete, Kurvenpunkte und Authenticator-Flags a
 speichert persönliche Profile verschlüsselt und legt nur technische
 Kontometadaten an der API an. Nach einer Einladung registriert das neue Mitglied
 sein Passwort im Browser über OPAQUE. Identitäten werden vor der
-Bereichsfreigabe bestätigt. Der Passwortverlust eines einzelnen Mitglieds
-braucht noch eine eigene Anbindung. Der bisherige Admin-Reset ist für geschützte
-Konten gesperrt; der Anbieter erhält dadurch keinen Wiederherstellungszugang.
-Siehe [Benutzerzugang](benutzerfreigaben.md).
+Bereichsfreigabe bestätigt. Ein vorhandener Passkey ermöglicht den anschließenden eigenen Passwortwechsel. Fehlt jeder
+lokale Zugang, kann die aktuelle Seed-Phrase bei der mandantenweiten Recovery
+zusätzlich ein Mitarbeiterkonto wiederherstellen. Benutzerkennung,
+Personalprofil und historische Signaturen bleiben erhalten. Das Konto bekommt
+neue private Schlüssel und zunächst keine Fachdatenfreigaben; nach erneuter
+Einladung sind auch seine bisherigen Inhalte wieder lesbar. Der isolierte
+Admin-Reset ohne Phrase bleibt gesperrt; der Anbieter erhält keinen
+Wiederherstellungszugang. Siehe [Benutzerzugang](benutzerfreigaben.md).
 
 Ein bestätigter Signaturschlüsselwechsel ist im Kontoprotokoll angeschlossen.
 Er benötigt beide Benutzerschlüssel und die Zustimmung der Mandantenautorität;
@@ -59,7 +63,10 @@ desselben Kontos, den Erhalt verschlüsselter Inhalte und die Ablehnung alter
 Passwörter und Phrasen. Vorbereitete Pläne scheitern auch nach einem parallelen
 Passwort- oder Namenswechsel. Gelöschte und gesperrte Konten werden nicht
 reaktiviert; die Oberfläche bietet ausdrücklich ein neues Konto als Alternative
-an. Der Einzelkonto-Reset gewöhnlicher Mitglieder ist damit weiterhin offen.
+an. Optional lässt sich in derselben Transaktion ein gewöhnliches Mitglied
+wiederherstellen. Ein eigener Mehrinstanztest prüft dessen unveränderte
+Benutzerkennung, fehlende Administratorrechte, den Erhalt seines persönlichen
+Assistentenverlaufs nach erneuter Freigabe und konkurrierende Passwortwechsel.
 
 **Fein abgestufte Lese- und Schreibrechte.** Getrennte Schlüssel schützen
 Teilinhalte; signierte Regeln begrenzen technische Schreibaktionen. Die

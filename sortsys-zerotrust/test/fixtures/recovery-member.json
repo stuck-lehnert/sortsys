@@ -1,0 +1,323 @@
+{
+  "notice": "Public synthetic recovery plan; no private identity keys or recovery phrases.",
+  "plan": {
+    "challengeId": "zt_nybRv5S71zWqWlnpGTY1PABr-SzkwTkIid2KqLfrWGY",
+    "sourceAuthority": {
+      "tenant": "test",
+      "generation": "1",
+      "recoveryEncryptionKey": "RvI9_SfChUv1TKNmBGeY4aRtOV6RsPEmIpQswyGpFRE",
+      "recoverySigningKey": "MKoF4zl3y9RTzBgrkBH0xTW7Vbc2sVOhG83oZAUOZZs",
+      "authoritySigningKey": "ZdywJMEjIubCtznt6n9PkYRhWWjoUV7MFrrs3vmnEHM",
+      "signature": "OYhVsRGTHeEsi9iey1GiGl1qazrmuUcFGfymHHUtHXrNZoWbzDpF15ej8tJOSj5QpksswFBS48RAnGzbpXsWBw"
+    },
+    "nextSetup": {
+      "authority": {
+        "tenant": "test",
+        "generation": "2",
+        "recoveryEncryptionKey": "J0VziGxxZM1tI9e13LjYpARM5osdr6j9lt8W8dGPEkA",
+        "recoverySigningKey": "_1bvwJh2AKk6txPy6D_mt5rQs3QCU3NDtfdo2sq--jU",
+        "authoritySigningKey": "TH4F9kK35Gcie613Uhg0sjEoc_D7zDEMsIqs8Qy8oT0",
+        "signature": "hRVOcT767rKLfQKjt1ANxUanMept5D8EoC0fm2reFWMVs-DkF6AcZTv7wKTpmgxMouGrh7X9g6asW84_Jj8wDg"
+      },
+      "owner": {
+        "tenant": "test",
+        "generation": "2",
+        "user": "user:2ngrcduo6eiho",
+        "encryptionKey": "hOb8rK3rd-3V8-g-aeFDhbo6CsDjegj5c0nxmvv0DmM",
+        "signingKey": "ZwVkB1DIbYMRiCkRRrgqX5TyYLbxVH0sNeANOh6uSE0",
+        "signature": "JdC7HYa5_GU7pbN0rzoCOvd7hGVO_O_6BDIcbbqbXzCGKsBLZPr94fphelcdOQRVi7IzMpLOKRVy_cj7pukHCA"
+      },
+      "authorityEnvelope": {
+        "tenant": "test",
+        "purpose": "authority-key",
+        "object": "authority:2",
+        "generation": "2",
+        "recipient": "user:2ngrcduo6eiho",
+        "author": "authority:2",
+        "format": "sortsys-hpke-v1",
+        "enc": "j1NAyBa-B4kI_gUxPnPCv7THJi4wsd9WD4VvhPkSpjE",
+        "ciphertext": "A3aMqRdp0TG77M5tmviv3bJOC8idt44I1yBZHjCv6FRpVctyrkG5oJkEmBaMFA4tW7vhU5misgUq_gMR605ESg",
+        "signature": "-wMOZ6lvTKpkbQnCNnfYebJ6AD-D6F4H0cMv9d_AoefeYJXWn5VQNHd9shKDn1gDA3YTeCJp-lGGWJ6y4ry8Cg"
+      },
+      "catalog": {
+        "tenant": "test",
+        "generation": "2",
+        "purpose": "recovery-catalog",
+        "object": "catalog",
+        "recipient": "recovery:2",
+        "author": "authority:2",
+        "format": "sortsys-hpke-v1",
+        "enc": "TrTraU1i4UQZe049RmpZqN5DmcGNivwg662pyIOoSQo",
+        "ciphertext": "HkhoGftehJOCc04AwVz2KEXSHD2dXvnduSrzpAf75uvy-TYDznfVZfp3XZxUCY5ey34c6r_owgp0b1b9M1ZP1iK5J0EuTI4CDFz7THgL-OQ0F0XVf62G1fewCqy-lXOgqGbr2hRgjYVch6q7n2ydeJOKRxGYZrOI6Z2s_YJqyG-E-AisBuHh2aaMtfrzNE9_AE-3ONzjt6g5O3ZchnkGYVf3L0VH4DE1G4B_jMhxIf_Y-x8i7nZh2wBDifHu1ZM",
+        "signature": "MCJPOXyGSlGCNWn8Rkll_tSFS40s8KIHBkG0vfDbfFrGZfTOPJDGZzCQybT5kuY93mOSLIQ2Nb7hcqZuaMptDw"
+      },
+      "policy": {
+        "tenant": "test",
+        "version": "2",
+        "rules": [
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "scope",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "contract-quantities",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "measurement",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "offer-prices",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "calculation",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "procurement",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "billing",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "master-data",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "personnel",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          },
+          {
+            "subject": "user:2ngrcduo6eiho",
+            "scope": "tenant:test",
+            "facet": "attachment",
+            "actions": [
+              "read",
+              "create",
+              "update",
+              "delete",
+              "approve",
+              "grant"
+            ],
+            "effect": "allow"
+          }
+        ],
+        "signature": "-n8Mh7rifBSpb-0CFpxgpKBbFvLGnRTVJX1KaKhHnxP7YlEZWx-n7_hrZrnn8kT0oSXKNa1HKV7M5p6XRh8jBg"
+      },
+      "proof": "mCmw-HVpK3m3EkKhudTkMsJzt2748bGRJR9iO754UoSPWieK4WpK3JqRq3oYH6sdeTw3YK4NKX85mq3KZJOSDw"
+    },
+    "username": "recovery-2ngrcduo6eiho",
+    "registrationRecord": "xqnp9DzXzkPHIBa5bayo7W51ZAsUVid02afgtK2XhGBKKvW20jNyWXcBfmzJt5ugbBzbqKxqtegakZMjpBcbgfzD5sLvp9QTk_7jQ-C3KfAFweaA2oTwAGJC8HnwbiyvefggRIENOGtYsQvuusfqYjJP7qzpNodgxT8pJ4lV5HakgxanIFfy25OCeHauyNCBBEHD0cSW47Is0XJ4a9gI601e13ROa_x0I1eKfziTePXKOVDsy7sSqKHJl8jGdIu3",
+    "vault": {
+      "tenant": "test",
+      "subject": "user:2ngrcduo6eiho",
+      "encryptionKey": "hOb8rK3rd-3V8-g-aeFDhbo6CsDjegj5c0nxmvv0DmM",
+      "signingKey": "ZwVkB1DIbYMRiCkRRrgqX5TyYLbxVH0sNeANOh6uSE0",
+      "format": "sortsys-account-v2",
+      "nonce": "GC6m892V2XKX2sQe",
+      "ciphertext": "6_jIdbDJjTMKc_1wdCOnhgZhp7DigzyGOO_Mr9iQuWlpUB2uWDVEoVKJCQ7bvhS3hbMqMmh0Fnobib-ZiJXzzNALNkziZ_xzLT6BJgLSxzYuw_HO4uI2wilchxh3ltYE7EGjejoAV7mgjIEyxajIjDxOcKupOlVu-LDxfpVrQgAcT0QDQ3wWsRUgkT-qOAqBKzRg2UG8iyMnWBJ5sFIrBdi9wIaDWesHB1NnOBc4Ls930JnavdkYVN1Y10bmpD9KnCbb-qO8FjyYAgVNFVqHNRsjhAX7HKgR8LNNcQ6PVLh77JYMGjU6F8AJQE9fwq8ChxO4roMVkpYGMFTYKPZk7zGW88fDeQoLWO6aL7JVsSM7rw",
+      "wrappedKey": "H1MJeibHaFT6iJ4jHwvqYr05NQWA63R5JHesF_lj0aeXDVBsBPcMhQ"
+    },
+    "oldKeyEnvelopes": [
+      {
+        "tenant": "test",
+        "purpose": "area-key",
+        "object": "domain:calculation",
+        "generation": "1",
+        "recipient": "user:2ngrcduo6eiho",
+        "author": "authority:2",
+        "format": "sortsys-hpke-v1",
+        "enc": "2fSKCVu5pVHkaoDOjFCLnujvVnjlB8zWq5OzrOfJ128",
+        "ciphertext": "VDhc_o6CNmucFjp3XLLquOxA3k44t-Z9UCcd8wXRVwSbLD-Yh5alpPeTpljSKc_D",
+        "signature": "OBr0H8zNoE5Bx_Py9A1VNGthrEern5vcgD0MeC53ufhzGpdLVn2DjB8BNwGn5URWd16DfH3_2QDb9D2q4tFhAw"
+      }
+    ],
+    "domains": [
+      {
+        "tenant": "test",
+        "id": "domain:calculation",
+        "scope": "tenant:test",
+        "facet": "calculation",
+        "generation": "2",
+        "policyVersion": "2",
+        "envelopes": [
+          {
+            "tenant": "test",
+            "purpose": "area-key",
+            "object": "domain:calculation",
+            "generation": "2",
+            "recipient": "user:2ngrcduo6eiho",
+            "author": "authority:2",
+            "format": "sortsys-hpke-v1",
+            "enc": "gw-vwQA69XwSHcW-8imdCQ3pk2BkcC5OsbdOpszAmRM",
+            "ciphertext": "nxJjc0JwIWOhkrc6K2TVi-QSZiUrMz7BBwrWIwA6B4JbwgN7zfSvrdmIiOFLf6_k",
+            "signature": "7r6uwSzAMdg001XQewxWrZG7rnzRO0i45M8_bJu7dTMa3nU9_ZPbEr796STd8iolI_hYW43CEtvo2Nmc1OCJAA"
+          }
+        ],
+        "recoveryEnvelope": {
+          "tenant": "test",
+          "purpose": "area-key",
+          "object": "domain:calculation",
+          "generation": "2",
+          "recipient": "recovery:2",
+          "author": "authority:2",
+          "format": "sortsys-hpke-v1",
+          "enc": "-s2qK33JxRLHClAdNkTANyreA5ST_mkqCaxwtvFzIgI",
+          "ciphertext": "YvyMf9I2ES-fulndYOCDXVSaqlVlyYmN3iI3TMgpWWFjd_pdh3WhuG2Y3DYAXfkv",
+          "signature": "crDfNyLJGp-5XoI7txCzQn7PgJbJBNFdjN9Oc00yiWwUMwFaXBYczjPzim8Qt3K5gW7fXhxi0dHZ24zOcT5jDA"
+        },
+        "proof": "B0r-_3ohs_W6Oka_yQ8QZ2_qKT4GTnITEmNVT-1Yh5SnNQTgXaqA0cZpIUw0azLnnABtv5rAME8rJfmqKSYNCg"
+      }
+    ],
+    "members": [
+      {
+        "account": {
+          "subject": "user:member",
+          "username": "member",
+          "version": "AWI6HaUIu4Bspq-CiEZgHUX7wa83O5VlZ3IX2iRFzqg"
+        },
+        "vault": {
+          "tenant": "test",
+          "subject": "user:member",
+          "encryptionKey": "27QCVLTWCPiLzxHwdNkukewyyCv78h-y7NOiEp86RFQ",
+          "signingKey": "MqTkzMP9KiJ286XoaXQ0ynaB_5lSePVnK1JO92-KO98",
+          "format": "sortsys-account-v2",
+          "nonce": "mJEs_KxazbfJ1URN",
+          "ciphertext": "LhXlB6koX-iXlpPLdgv5flPUt6CM5uoYqKLA63ExUcs6fFedCpbmyhDLXAuuxYdAX00MjZy05Q2lACTuI-Yl8iisw9ff_OC9kAGgn5HVMn5Ump3tlTIpV5rxs6HtW1qCZMAfc36EOlTfaIMQUqCnCE2oz63XgTfnqSduYLBj9gu-Sm86kNLLDpX0nHL-gAHgEIqhavGLu8CjlJZ3GWzFXzKPIE25KZ6tBs3S0kk_32cu1Q9Jf2u0e-iNPl0MqQOrNKk33ClTQd5H5ysnI0JHhgQE3oZd_64HglB8bbe4R3zmu_T6THB24Ihkm3icFpRfISxYiv7KVfyaQjLec4aKraIDyr__mYcMJhdkaJuYIbCVog",
+          "wrappedKey": "XgGQIu5OxgT1qaxNlHGtBqMtYz1p3X30lTNNeh9ebnMNwOT05FhLcw"
+        },
+        "certificate": {
+          "tenant": "test",
+          "generation": "2",
+          "user": "user:member",
+          "encryptionKey": "27QCVLTWCPiLzxHwdNkukewyyCv78h-y7NOiEp86RFQ",
+          "signingKey": "MqTkzMP9KiJ286XoaXQ0ynaB_5lSePVnK1JO92-KO98",
+          "signature": "zF6pUBXkmXCg8599Irbehb9M3vzA1Yby9oaL2LQNsGTb0j9bjwJctGcyhyYNUg55LO26GbWXVKkHUnUJao7vDw"
+        },
+        "registrationRecord": "_twdYZ3lnP46uTpCifFVNopEiAlUKHnLUIKNQus8ghvxGW2IdZ7FDkp7rm3I3MW5M7ul5qYH5xz-irtJhATieis8KjWmX3phrVFV27qxxjdvWrKeI7lnYjCzukUQs7wrv_0_7_Y4Y3i2w5Kow7LWSDOUiIq7g4qTLmcp-U18iZxNTv4UON4vtRh-o_BPHDqR49c-zQZHEu1OUDOUvwQK9N_0mt3kTlqQiffcT_1tLduXc7qc_bHivsqcf8-aNlIk"
+      }
+    ],
+    "transition": {
+      "tenant": "test",
+      "generation": "1",
+      "operation": "zt_aFVER6fnbTsq8RPPcrqojPOwRlNQy8KrqHYzHlKZH2Q",
+      "challenge": "NxYrwEqngF31tgAwB9w6E05WRXS0KwuaeMxbfjKFQxQ",
+      "catalogVersion": "2",
+      "catalogHash": "vKgi3TE1n6mP9xcIxwxa4gHT0kACi7DAI60H6YgbnXA",
+      "previousAuthorityCertificateHash": "PL9WCL83A1CNSNComQcxwUQZ34G2N8KhsCqiGV0nhV0",
+      "nextRecoveryEncryptionKey": "J0VziGxxZM1tI9e13LjYpARM5osdr6j9lt8W8dGPEkA",
+      "nextRecoverySigningKey": "_1bvwJh2AKk6txPy6D_mt5rQs3QCU3NDtfdo2sq--jU",
+      "nextAuthoritySigningKey": "TH4F9kK35Gcie613Uhg0sjEoc_D7zDEMsIqs8Qy8oT0",
+      "nextAdministrator": "user:2ngrcduo6eiho",
+      "nextAdministratorBundleHash": "YB-jbaaToCXlmsuEnm5_E0Z5GCSfam6HCWuDv93fijI"
+    },
+    "proof": "8QPGPj9LkdjXTBW7XSNSBM2EbNaEe-1fKb9M7175UZ-PLgxXGNtrBDH1YJZhId4t4qf_A-jPy3N_qjtotYM_Ag",
+    "nextProof": "OAl7-DBrmGAjjjaP4MO2P216Hm7jIa5eYyoYQq4hVqmgAPMd5lgBWNmE7omz8ABSnW0tuYDGJenxTELte5yYCw"
+  },
+  "membersFrame": "AAAAHHNvcnRzeXMvcmVjb3ZlcmVkLW1lbWJlcnMvdjEAAAArT21sdTFBX3VPYjA4cnZCLXRwRWwxZU9ndFJPUElaX0FFaDdzT0JST2twQQ",
+  "registrationProbe": {
+    "tenant": "test",
+    "challengeId": "zt_nybRv5S71zWqWlnpGTY1PABr-SzkwTkIid2KqLfrWGY",
+    "username": "member",
+    "subject": "user:member",
+    "accountVersion": "AWI6HaUIu4Bspq-CiEZgHUX7wa83O5VlZ3IX2iRFzqg",
+    "member": true,
+    "registrationRequest": "WJt2yt882V92x-l44Us_03OWbsrejGBPfrBE13Ge5EQ",
+    "proof": "I7Dp1KBR-XanTkKFSxQtTOrgh4qy-unbpE7YADQmS4QHGEW9EXFbGJ6oFXQzdHpcdH64vgxcozQ3l1GtGFoMDw"
+  },
+  "registrationFrame": "AAAAJ3NvcnRzeXMvcmVjb3ZlcnktbWVtYmVyLXJlZ2lzdHJhdGlvbi92MQAAAAR0ZXN0AAAALnp0X255YlJ2NVM3MXpXcVdsbnBHVFkxUEFCci1Temt3VGtJaWQyS3FMZnJXR1kAAAAGbWVtYmVyAAAAC3VzZXI6bWVtYmVyAAAAK1dKdDJ5dDg4MlY5MngtbDQ0VXNfMDNPV2JzcmVqR0JQZnJCRTEzR2U1RVEAAAArQVdJNkhhVUl1NEJzcHEtQ2lFWmdIVVg3d2E4M081VmxaM0lYMmlSRnpxZw"
+}

@@ -1,9 +1,20 @@
 import {
+  existingRecoveryAccount,
+  recoveredMember,
+  recoveredMembersFrame,
+  recoveryMemberRegistrationFrame,
+  MAX_RECOVERED_MEMBERS,
+  type ExistingRecoveryAccount,
+  type RecoveredMember,
+} from "../recoveryAccounts";
+import {
   readRecoveryCatalog,
   type RecoveryCatalogStorage,
 } from "../recoveryCatalog";
 import {
   authorityCertificate,
+  certifyIdentity,
+  identityCertificateFrame,
   authorityFrame,
   verifyAuthority,
 } from "./certificates";
@@ -91,11 +102,12 @@ export type RecoveryPlan<
   domains: DomainDefinition<F, C>[];
   proof: string;
   nextProof: string;
+  members?: RecoveredMember[];
 };
 type ArchivedKey = { domain: string; generation: string; key: string };
 
 export type RecoveryAccount = { subject: string; username: string };
-export type ExistingRecoveryAccount = RecoveryAccount & { version: string };
+export type { ExistingRecoveryAccount } from "../recoveryAccounts";
 export type RecoveryOptions = {
   createAdministrator?: () => RecoveryAccount;
   inventoryLimits?: RecoveryLimits;
@@ -191,14 +203,6 @@ export function createRecoveryCodec<
     revision(generation);
     sized(nonce, 32);
     return frame("sortsys/recovery-account/v1", [tenant, generation, nonce]);
-  }
-
-  function existingRecoveryAccount(input: unknown): ExistingRecoveryAccount {
-    const value = record(input, ["subject", "username", "version"]);
-    identifier(value.subject);
-    identifier(value.username);
-    sized(value.version as string, 32);
-    return { ...value } as ExistingRecoveryAccount;
   }
 
   async function loadRecoverySource(input: {
@@ -320,6 +324,7 @@ export function createRecoveryCodec<
       | "vault"
       | "oldKeyEnvelopes"
       | "domains"
+      | "members"
     >,
   ): Promise<string> {
     if (input.accountVersion !== undefined) sized(input.accountVersion, 32);
@@ -333,22 +338,25 @@ export function createRecoveryCodec<
         digest(signedPacketFrame(await domainFrame(domain), domain.proof)),
       ),
     );
-    return digest(
-      frame("sortsys/recovery-bundle/v2", [
-        input.username,
-        input.accountVersion ?? "",
-        await digest(unbase64(input.registrationRecord, 4096)),
-        await digest(
-          signedPacketFrame(
-            await tenantSetupFrame(input.nextSetup),
-            input.nextSetup.proof,
-          ),
+    const fields = [
+      input.username,
+      input.accountVersion ?? "",
+      await digest(unbase64(input.registrationRecord, 4096)),
+      await digest(
+        signedPacketFrame(
+          await tenantSetupFrame(input.nextSetup),
+          input.nextSetup.proof,
         ),
-        await digest(accountVaultFrame(input.vault)),
-        base64(frame("sortsys/archivekeys/v1", oldKeys)),
-        base64(frame("sortsys/new-domains/v1", domains)),
-      ]),
-    );
+      ),
+      await digest(accountVaultFrame(input.vault)),
+      base64(frame("sortsys/archivekeys/v1", oldKeys)),
+      base64(frame("sortsys/new-domains/v1", domains)),
+    ];
+    if (input.members !== undefined) {
+      fields.push(await recoveredMembersFrame(input.members));
+      return digest(frame("sortsys/recovery-bundle/v3", fields));
+    }
+    return digest(frame("sortsys/recovery-bundle/v2", fields));
   }
 
   // The callback receives an OPAQUE registration request and a public-key proof,
@@ -359,6 +367,7 @@ export function createRecoveryCodec<
     password: string;
     source: RecoverySource<F, C>;
     administrator?: ExistingRecoveryAccount;
+    members?: { account: ExistingRecoveryAccount; password: string }[];
     catalogStorage?: RecoveryCatalogStorage;
     registrationCrypto?: {
       start: (password: string) => Promise<OpaqueRegistrationStart>;
@@ -377,10 +386,14 @@ export function createRecoveryCodec<
       subject: string;
       registrationRequest: string;
       accountVersion?: string;
+      member?: boolean;
       proof: string;
     }) => Promise<{ registrationResponse: string }>;
   }): Promise<{ plan: RecoveryPlan<F, O, C>; identity: PrivateIdentity }> {
     const source = recoverySource(input.source);
+    if (input.members && input.members.length > MAX_RECOVERED_MEMBERS) {
+      throw new InvalidProtectedData();
+    }
     const existing =
       input.administrator === undefined
         ? undefined
@@ -622,6 +635,71 @@ export function createRecoveryCodec<
         recoverySigningKey: nextSetup.authority.recoverySigningKey,
       },
     );
+    const members: RecoveredMember[] = [];
+    for (const selected of input.members ?? []) {
+      const account = existingRecoveryAccount(selected.account);
+      if (
+        account.subject === subject ||
+        account.username === username ||
+        selected.password.length < 10 ||
+        selected.password.length > 2000
+      ) {
+        throw new InvalidProtectedData();
+      }
+      const memberIdentity = await createIdentity();
+      const registration = await passwordCrypto.start(selected.password);
+      const request = {
+        tenant,
+        challengeId: source.challengeId,
+        account,
+        registrationRequest: registration.registrationRequest,
+      };
+      const response = await input.register({
+        tenant,
+        challengeId: source.challengeId,
+        username: account.username,
+        subject: account.subject,
+        accountVersion: account.version,
+        member: true,
+        registrationRequest: request.registrationRequest,
+        proof: await sign(
+          oldRecovery.signingKey.privateKey,
+          recoveryMemberRegistrationFrame(request),
+        ),
+      });
+      const registered = await passwordCrypto.finish(
+        selected.password,
+        tenant,
+        account.subject,
+        registration,
+        response.registrationResponse,
+      );
+      members.push(
+        recoveredMember({
+          account,
+          registrationRecord: registered.registrationRecord,
+          vault: await createAccountVault(
+            registered.exportKey,
+            tenant,
+            account.subject,
+            memberIdentity,
+            {
+              recoveryGeneration: nextGeneration,
+              recoverySigningKey: nextSetup.authority.recoverySigningKey,
+            },
+          ),
+          certificate: await certifyIdentity(
+            {
+              tenant,
+              generation: nextGeneration,
+              user: account.subject,
+              ...(await publicIdentity(memberIdentity)),
+            },
+            authorityKey.privateKey,
+          ),
+        }),
+      );
+    }
     const publicKeys = await publicIdentity(identity);
     const currentDomains = new Set(source.domains.map((d) => d.id));
     const oldKeyEnvelopes: SealedBox[] = [];
@@ -681,6 +759,7 @@ export function createRecoveryCodec<
       vault,
       oldKeyEnvelopes,
       domains,
+      ...(members.length ? { members } : {}),
     };
     const transition: RecoveryTransition = {
       tenant,
@@ -759,6 +838,22 @@ export function createRecoveryCodec<
       generation: next.generation,
       recoverySigningKey: t.nextRecoverySigningKey,
     });
+    for (const raw of plan.members ?? []) {
+      const member = recoveredMember(raw);
+      if (
+        member.account.subject === plan.nextSetup.owner.user ||
+        member.account.username === plan.username ||
+        member.certificate.tenant !== t.tenant ||
+        member.certificate.generation !== next.generation
+      ) {
+        throw new InvalidProtectedData();
+      }
+      await verify(
+        await importSigningKey(next.authoritySigningKey),
+        member.certificate.signature,
+        identityCertificateFrame(member.certificate),
+      );
+    }
     const message = recoveryTransitionFrame(t);
     await verify(
       await importSigningKey(plan.sourceAuthority.recoverySigningKey),

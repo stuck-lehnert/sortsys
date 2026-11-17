@@ -378,6 +378,7 @@ window.nativePasskey = {
         "Passkey-preserved-password-2026!",
         "Original-passkey-member-password-2026!",
         "Renewed-passkey-member-password-2026!",
+        "Recovered-passkey-test-password-2026!",
       ].some((value) => wire.includes(value)),
       extensionOutputUploaded: wire.includes("clientExtensionResults"),
     };

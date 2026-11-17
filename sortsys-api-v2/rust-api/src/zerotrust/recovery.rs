@@ -66,7 +66,9 @@ fn recovery_check_permit() -> RpcResult<tokio::sync::OwnedSemaphorePermit> {
         })
 }
 
-use sortsys_zerotrust::recovery::RecoveryTransition as Transition;
+use sortsys_zerotrust::recovery::{
+    RecoveredMember, RecoveryTransition as Transition, recovered_members_frame,
+};
 
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -85,6 +87,9 @@ struct RecoveryPlan {
     domains: Vec<DomainDefinition>,
     proof: String,
     next_proof: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    members: Option<Vec<RecoveredMember>>,
 }
 impl RecoveryPlan {
     fn bundle_hash(&self) -> RpcResult<String> {
@@ -98,25 +103,33 @@ impl RecoveryPlan {
             .iter()
             .map(|d| packet_hash(d.frame()?, &d.proof))
             .collect::<RpcResult<Vec<_>>>()?;
+        let mut fields = vec![
+            self.username.clone(),
+            self.account_version.clone().unwrap_or_default(),
+            encode(&Sha256::digest(decode(&self.registration_record, 4096)?)),
+            packet_hash(self.next_setup.frame()?, &self.next_setup.proof)?,
+            encode(&Sha256::digest(self.vault.frame())),
+            encode(&frame(
+                "sortsys/archivekeys/v1",
+                &old_keys.iter().map(String::as_str).collect::<Vec<_>>(),
+            )),
+            encode(&frame(
+                "sortsys/new-domains/v1",
+                &domains.iter().map(String::as_str).collect::<Vec<_>>(),
+            )),
+        ];
+        let domain = if let Some(members) = &self.members {
+            fields.push(recovered_members_frame(members)?);
+            "sortsys/recovery-bundle/v3"
+        } else {
+            "sortsys/recovery-bundle/v2"
+        };
         Ok(encode(&Sha256::digest(frame(
-            "sortsys/recovery-bundle/v2",
-            &[
-                &self.username,
-                self.account_version.as_deref().unwrap_or(""),
-                &encode(&Sha256::digest(decode(&self.registration_record, 4096)?)),
-                &packet_hash(self.next_setup.frame()?, &self.next_setup.proof)?,
-                &encode(&Sha256::digest(self.vault.frame())),
-                &encode(&frame(
-                    "sortsys/archivekeys/v1",
-                    &old_keys.iter().map(String::as_str).collect::<Vec<_>>(),
-                )),
-                &encode(&frame(
-                    "sortsys/new-domains/v1",
-                    &domains.iter().map(String::as_str).collect::<Vec<_>>(),
-                )),
-            ],
+            domain,
+            &fields.iter().map(String::as_str).collect::<Vec<_>>(),
         ))))
     }
+
     fn owner_id(&self) -> RpcResult<Id> {
         let value = self
             .transition
@@ -211,6 +224,17 @@ impl RecoveryPlan {
             &scopes,
         )?;
         let authority = sized::<32>(&next.authority_signing_key)?;
+        for member in self.members.iter().flatten() {
+            if member.account.subject == self.next_setup.owner.user
+                || member.account.username == self.username
+                || member.certificate.tenant != t.tenant
+                || member.certificate.generation != next.generation
+            {
+                return Err(invalid());
+            }
+            member.certificate.verify(&authority)?;
+            validate_registration(&member.registration_record)?;
+        }
         let author = format!("authority:{generation}");
         let recipient = format!("recovery:{generation}");
         let mut ids = HashSet::new();
@@ -271,6 +295,15 @@ struct InspectInput {
     nonce: String,
     proof: String,
 }
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct MemberLookupInput {
+    tenant: String,
+    generation: String,
+    username: String,
+    nonce: String,
+    proof: String,
+}
 #[derive(Serialize, TS)]
 struct RecoveryHead {
     phase: String,
@@ -289,6 +322,9 @@ struct RegistrationInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     account_version: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    member: Option<bool>,
     proof: String,
 }
 #[derive(Serialize, TS)]
@@ -361,6 +397,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .query_stub::<TenantInput, RecoveryHead>("zerotrust.recovery.head")
         .mutation_stub::<InspectInput, RecoverySourceHead>("zerotrust.recovery.inspect")
         .mutation_stub::<InspectInput, Option<ExistingAccount>>("zerotrust.recovery.account")
+        .mutation_stub::<MemberLookupInput, Option<ExistingAccount>>("zerotrust.recovery.member")
         .mutation_stub::<RegistrationInput, RegistrationOutput>("zerotrust.recovery.registration")
         .mutation_stub::<RecoveryPlan, Success>("zerotrust.recovery.begin")
         .mutation_stub::<ResumeInput, Success>("zerotrust.recovery.resume")
@@ -368,6 +405,46 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_member_recovery_binds_every_credential_and_requires_both_seed_roots() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../sortsys-zerotrust/test/fixtures/recovery-member.json"
+        ))
+        .unwrap();
+        let plan: RecoveryPlan = serde_json::from_value(fixture["plan"].clone()).unwrap();
+        plan.validate().unwrap();
+        for field in ["members", "proof", "nextProof"] {
+            let mut changed = fixture["plan"].clone();
+            if field == "members" {
+                changed.as_object_mut().unwrap().remove(field);
+            } else {
+                changed[field] = Value::String(encode(&[0; 64]));
+            }
+            assert!(
+                serde_json::from_value::<RecoveryPlan>(changed)
+                    .unwrap()
+                    .validate()
+                    .is_err()
+            );
+        }
+        let mut changed = plan.clone();
+        changed.members.as_mut().unwrap()[0].account.version = encode(&[0; 32]);
+        assert!(changed.validate().is_err());
+        let mut changed = plan.clone();
+        changed.members.as_mut().unwrap()[0].vault.wrapped_key = encode(&[0; 40]);
+        assert!(changed.validate().is_err());
+        let mut changed = plan.clone();
+        changed
+            .members
+            .as_mut()
+            .unwrap()
+            .push(plan.members.as_ref().unwrap()[0].clone());
+        assert!(changed.validate().is_err());
+        let mut changed = plan;
+        changed.members = Some(vec![]);
+        assert!(changed.validate().is_err());
+    }
 
     #[test]
     fn an_inventory_cannot_outlive_the_generation_its_seed_proof_authorized() {

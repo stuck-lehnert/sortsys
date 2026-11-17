@@ -99,3 +99,116 @@ pub(super) async fn target(
     }
     Ok(None)
 }
+
+async fn member(
+    transaction: &mut Transaction,
+    root: &RootState,
+    username: &str,
+) -> RpcResult<Option<accounts::Account>> {
+    let Some(alias) = transaction
+        .read::<accounts::Username>(key("usernames", username))
+        .await?
+    else {
+        return Ok(None);
+    };
+    if accounts::subject(alias.user_id) == root.profile.owner.user {
+        return Ok(None);
+    }
+    let Some(account) = transaction
+        .read::<accounts::Account>(accounts::account_key(alias.user_id))
+        .await?
+    else {
+        return Err(invalid());
+    };
+    if !account.active(chrono::Utc::now())
+        || account.deactivated_at.is_some()
+        || account.credential.is_none()
+    {
+        return Ok(None);
+    }
+    let credential = account.credential()?;
+    credential.vault.validate()?;
+    if account.id != alias.user_id
+        || account.username != username
+        || credential.vault.tenant != root.profile.authority.tenant
+        || credential.vault.subject != accounts::subject(account.id)
+    {
+        return Err(invalid());
+    }
+    // A registered invitation can lose its password before its first
+    // approval. It has a protected account/vault but no historical signer.
+    if credential.certificate == serde_json::json!({"format": "pending"}) {
+        return Ok(Some(account));
+    }
+    let certificate: crate::zerotrust::wire::IdentityCertificate =
+        serde_json::from_value(credential.certificate.clone()).map_err(internal)?;
+    let generation = super::revision(&certificate.generation)?;
+    if generation > super::revision(&root.profile.authority.generation)? {
+        return Err(invalid());
+    }
+    let authority = transaction
+        .read::<crate::zerotrust::objects::AuthorityHistory>(key(
+            "authority-history",
+            &format!("{generation:020}"),
+        ))
+        .await?
+        .ok_or_else(invalid)?;
+    authority.certificate.verify()?;
+    certificate.verify(&super::sized::<32>(
+        &authority.certificate.authority_signing_key,
+    )?)?;
+    let stored = transaction
+        .read::<crate::zerotrust::wire::IdentityCertificate>(
+            crate::zerotrust::setup::identity_history_key(&certificate)?,
+        )
+        .await?
+        .ok_or_else(invalid)?;
+    if account.id != alias.user_id
+        || account.username != username
+        || certificate.tenant != root.profile.authority.tenant
+        || authority.certificate.tenant != root.profile.authority.tenant
+        || authority.certificate.generation != certificate.generation
+        || serde_json::to_value(stored).map_err(internal)? != credential.certificate
+        || certificate.user != accounts::subject(account.id)
+        || credential.vault.tenant != certificate.tenant
+        || credential.vault.subject != certificate.user
+        || credential.vault.signing_key != certificate.signing_key
+        || credential.vault.encryption_key != certificate.encryption_key
+    {
+        return Err(invalid());
+    }
+    Ok(Some(account))
+}
+
+pub(super) async fn describe_member(
+    transaction: &mut Transaction,
+    root: &RootState,
+    username: &str,
+) -> RpcResult<Option<ExistingAccount>> {
+    let Some(account) = member(transaction, root, username).await? else {
+        return Ok(None);
+    };
+    Ok(Some(ExistingAccount {
+        subject: accounts::subject(account.id),
+        version: version(&root.profile.authority.tenant, &account)?,
+        username: account.username,
+    }))
+}
+
+pub(super) async fn member_target(
+    transaction: &mut Transaction,
+    root: &RootState,
+    subject: &str,
+    username: &str,
+    expected: &str,
+) -> RpcResult<accounts::Account> {
+    let account = member(transaction, root, username)
+        .await?
+        .ok_or_else(conflict)?;
+    if accounts::subject(account.id) != subject
+        || version(&root.profile.authority.tenant, &account)? != expected
+    {
+        return Err(conflict());
+    }
+    Ok(account)
+}

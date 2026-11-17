@@ -258,10 +258,36 @@ weiter geprüft werden können. Auch eine erneute Einladung behält das aktuelle
 Nachfolgezertifikat bei. Bereichsverwaltung und Anlagenachweise sind dagegen an
 ihren bestätigten Signaturschlüssel gebunden und benötigen nach einem Wechsel
 neue Nachweise. Für die Schlüsselbestätigung fehlt noch der Dialog. Ein
-vergessenes Mitarbeiterpasswort lässt sich über diesen Ablauf weiterhin nicht
+vergessenes Mitarbeiterpasswort lässt sich über diesen Ablauf nicht
 zurücksetzen, weil der bisherige private Schlüssel benötigt wird. Der primäre
 Administrationszugang verwendet für einen Schlüsselwechsel die
 [Seed-Recovery](mandanten-wiederherstellung.md).
+
+## Zugang nach Passwortverlust
+
+Ein vorhandener Passkey kann den Kontotresor öffnen. Anschließend lässt sich
+unter **Einstellungen → Passwort** ein neues Passwort setzen. Dabei bleiben die
+Kontoschlüssel und bisherige Passkeys erhalten.
+
+Ohne Passwort, geeigneten Passkey oder geöffneten Gerätetresor benötigt die
+Wiederherstellung die aktuelle Seed-Phrase. Auf der Wiederherstellungsseite kann
+die Administration **Zusätzlich ein Mitarbeiterkonto wiederherstellen** wählen
+und dessen Anmeldenamen sowie ein neues Passwort eingeben. Das primäre
+Administratorkonto erhält dabei ebenfalls ein neues Passwort.
+
+Dies ist eine mandantenweite Recovery: Die Phrase wechselt, sämtliche bisherigen
+Sitzungen verlieren ihren Zugang und die fachlichen Freigaben werden neu
+bestätigt. Das Mitarbeiterkonto behält seine Benutzerkennung und sein
+Personalprofil; alte Passwörter und Passkeys gelten nicht mehr. Es erhält keine
+Administratorrechte. Nach einer erneuten Einladung und Freigabe mit dem neuen
+Passwort sind auch die bisherigen verschlüsselten Inhalte und der persönliche
+Assistentenverlauf wieder lesbar. Gesperrte, archivierte und gelöschte Konten
+werden nicht auf diesem Weg reaktiviert.
+
+Die API erhält ausschließlich öffentliche Nachweise, OPAQUE-Registrierungen und
+verschlüsselte Kontotresore. Ein vorbereiteter Plan wird abgelehnt, wenn sich das
+Konto zwischenzeitlich geändert hat. Für einen isolierten Einzelkonto-Reset
+steht kein zusätzlicher Betreiberschlüssel bereit.
 
 ## Verbleibender Umbau
 
@@ -276,8 +302,7 @@ Anmeldenamen lassen sich durch die Administration ändern; der technische
 Namensindex und das verschlüsselte Personalprofil werden dabei gemeinsam
 gespeichert. Das Löschen entfernt die drei privaten Profilbereiche und sperrt das
 Konto dauerhaft; noch vorhandene Vorgesetztenzuordnungen müssen vorher geändert
-werden. Rollenänderungen und der Passwortverlust eines einzelnen Mitglieds
-benötigen noch geschützte Abläufe. Eine Einladung
+werden. Rollenänderungen benötigen noch einen geschützten Ablauf. Eine Einladung
 ersetzt kein bereits registriertes Passwort und keinen vorhandenen Kontotresor.
 
 Die vollständige Bestandsumstellung bleibt bis zum Anschluss der übrigen
