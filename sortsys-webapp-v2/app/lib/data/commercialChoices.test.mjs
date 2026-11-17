@@ -7,6 +7,8 @@ import { splitCommercialRows } from "./commercialData";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { announceDataChanges } from "./runtime/changes";
+import { CUSTOMER_COLLECTION } from "./addressBook";
 
 afterEach(() => lockCryptoSession());
 
@@ -186,6 +188,34 @@ test("concurrent searches share one running case inventory and the next search o
     expect(
       (await store.query("commercial.cases.list", { kind: "offer" })).length,
     ).toBe(2);
+    for (const change of [
+      { domains: new Set(["preferences:user:1:master-data"]), detached: false },
+      { domains: new Set([areas[0].domain]), detached: true },
+      { domains: new Set([CUSTOMER_COLLECTION.domain]), detached: true },
+      { options: { control: true, revalidate: true }, detached: true },
+    ]) {
+      let resume;
+      const held = new Promise((resolve) => {
+        resume = resolve;
+      });
+      let inventories = 0;
+      tenant.client.query = async (path, input, options) => {
+        if (path === "zerotrust.access.snapshot") {
+          inventories++;
+          await held;
+        }
+        return original(path, input, options);
+      };
+      const previous = store.query("commercial.cases.list", { kind: "offer" });
+      expect(inventories).toBe(1);
+      announceDataChanges(tenant.client, change.domains, change.options);
+      const current = store.query("commercial.cases.list", { kind: "offer" });
+      expect(inventories).toBe(change.detached ? 2 : 1);
+      resume();
+      expect(
+        (await Promise.all([previous, current])).map((values) => values.length),
+      ).toEqual([2, 2]);
+    }
   } finally {
     release();
     store.close();

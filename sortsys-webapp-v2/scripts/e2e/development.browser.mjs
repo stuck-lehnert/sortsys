@@ -108,6 +108,8 @@ function auditPage(page) {
       "Suchbeleg 519842.pdf",
       "lose Bestandteile",
       "Saugfähigkeit",
+      "Rechnung Innenanstrich Vereinsheim",
+      "Mitarbeiterzahlung Browserprüfung 682143",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -231,15 +233,18 @@ async function selectAccess(page, scope, label, value) {
   await expect(page.getByRole("listbox")).toBeHidden();
 }
 
-async function selectOfferAccess(page, title) {
-  const dialog = await openMemberPermissions(page);
+async function selectOfferAccess(page, title, existingDialog) {
+  const dialog = existingDialog ?? (await openMemberPermissions(page));
   const picker = dialog.getByRole("combobox", {
     name: "Angebot oder Dokument",
     exact: true,
   });
   await expect(picker).toBeEnabled();
   await picker.fill(title);
-  await page.getByRole("option", { name: new RegExp(title) }).click();
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await page
+    .getByRole("option", { name: new RegExp(` – ${escapedTitle}$`) })
+    .click();
   await expect(page.getByRole("listbox")).toBeHidden();
   await expect(
     dialog.getByRole("button", { name: /Bezeichnung und Status/ }),
@@ -247,15 +252,16 @@ async function selectOfferAccess(page, title) {
   return dialog;
 }
 
-async function saveOfferAccess(dialog) {
+async function saveOfferAccess(dialog, timeout = 20_000) {
   await saveResourceAccess(
     dialog,
     "Dokumentzugriff speichern",
     "Bezeichnung und Status",
+    timeout,
   );
 }
 
-async function saveResourceAccess(dialog, label, field) {
+async function saveResourceAccess(dialog, label, field, timeout = 20_000) {
   const save = dialog.getByRole("button", {
     name: label,
     exact: true,
@@ -263,7 +269,7 @@ async function saveResourceAccess(dialog, label, field) {
   await expect(save).toBeEnabled();
   await save.click();
   await expect(save).toHaveAttribute("data-pending", "true");
-  await expect(save).not.toHaveAttribute("data-pending", "true");
+  await expect(save).not.toHaveAttribute("data-pending", "true", { timeout });
   await expect(
     dialog.getByRole("button", { name: new RegExp(field) }),
   ).toBeEnabled();
@@ -1618,6 +1624,293 @@ try {
       memberAudit.assertClean();
     } finally {
       await memberContext.close();
+    }
+  });
+  await scenario("billing-actions-between-users", async (page) => {
+    const memberServer = await applicationServer(
+      new URL("../../build/client", import.meta.url).pathname,
+      endpoints[0],
+    );
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    member.setDefaultTimeout(20_000);
+    const memberAudit = auditPage(member);
+    await memberContext.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    const projectTitle = "Innenanstrich Vereinsheim";
+    const invoiceTitle = `Rechnung ${projectTitle}`;
+    const paymentReference = "Mitarbeiterzahlung Browserprüfung 682143";
+    const publicationTimeout = 60_000;
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      const projectsLink = page.getByRole("link", {
+        name: "Projekte",
+        exact: true,
+      });
+      if (!(await projectsLink.isVisible())) {
+        await page
+          .getByRole("button", { name: "Projektarbeit", exact: true })
+          .click();
+      }
+      await projectsLink.click();
+      const projectRow = page
+        .getByRole("row")
+        .filter({ hasText: projectTitle });
+      // A cold encrypted inventory verifies the full seeded tenant. Keep its
+      // load budget separate from the 20-second limit for individual actions.
+      await expect(projectRow).toBeVisible({ timeout: 60_000 });
+      await projectRow.click();
+      await page
+        .getByRole("tab", { name: "Auftrag & Leistungen", exact: true })
+        .click();
+      await expect(
+        page.getByRole("region", { name: "Vorgangsübersicht", exact: true }),
+      ).toHaveAttribute("aria-busy", "false", { timeout: 60_000 });
+      await page
+        .getByRole("textbox", { name: "Suchen", exact: true })
+        .fill(invoiceTitle);
+      await page.getByRole("row").filter({ hasText: invoiceTitle }).click();
+      await expect(page.locator(".gaeb-editor")).toBeVisible();
+      const invoicePath = new URL(page.url()).pathname;
+      console.log("Billing UI: owner invoice opened");
+
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await member.goto(`${memberServer.origin}${invoicePath}`);
+      await expect(
+        member.getByText("Vorgang nicht geladen", { exact: true }),
+      ).toBeVisible({ timeout: 60_000 });
+      await expect(member.locator('nav a[href="/admin"]')).toHaveCount(0);
+
+      const documentAccess = (dialog) =>
+        dialog
+          .getByRole("heading", {
+            name: "Angebote und Dokumente",
+            exact: true,
+          })
+          .locator("xpath=ancestor::section[1]");
+      let access = await selectOfferAccess(page, invoiceTitle);
+      for (const [label, value] of [
+        ["Bezeichnung und Status", "Lesen und bearbeiten"],
+        ["Leistungsbeschreibungen", "Lesen"],
+        ["Vertragsmengen", "Lesen"],
+        ["Rechnungswerte", "Lesen und bearbeiten"],
+      ])
+        await selectAccess(page, documentAccess(access), label, value);
+      await saveOfferAccess(access, publicationTimeout);
+      await expect(member.locator(".gaeb-editor")).toBeVisible();
+      await expect(
+        member.getByRole("button", {
+          name: "Rechnung ausstellen",
+          exact: true,
+        }),
+      ).toHaveCount(0);
+
+      console.log(
+        "Billing UI: partial invoice granted without issuance rights",
+      );
+      access = await selectOfferAccess(page, projectTitle, access);
+      await selectAccess(
+        page,
+        documentAccess(access),
+        "Bezeichnung und Status",
+        "Lesen",
+      );
+      await selectAccess(
+        page,
+        documentAccess(access),
+        "Rechnungswerte",
+        "Lesen und bearbeiten",
+      );
+      await saveOfferAccess(access, publicationTimeout);
+      const projects = access
+        .getByRole("heading", {
+          name: "Projektzugriff",
+          exact: true,
+        })
+        .locator("xpath=ancestor::section[1]");
+      await projects
+        .getByRole("combobox", { name: "Projekt", exact: true })
+        .fill(projectTitle);
+      await page
+        .getByRole("option", { name: projectTitle, exact: true })
+        .click();
+      await selectAccess(page, projects, "Rechnungswerte", "Individuell");
+      const projectActions = projects.getByRole("group", {
+        name: "Einzelrechte für Rechnungswerte",
+        exact: true,
+      });
+      for (const name of ["Lesen", "Anlegen"]) {
+        const checkbox = projectActions.getByRole("checkbox", {
+          name,
+          exact: true,
+        });
+        await expect(checkbox).not.toBeChecked();
+        await checkbox.focus();
+        await checkbox.press("Space");
+        await expect(checkbox).toBeChecked();
+      }
+      await expect(
+        projectActions.getByRole("checkbox", {
+          name: "Bearbeiten",
+          exact: true,
+        }),
+      ).not.toBeChecked();
+      await saveResourceAccess(
+        projects,
+        "Projektzugriff speichern",
+        "Rechnungswerte",
+        publicationTimeout,
+      );
+      await expect(
+        member.getByRole("button", {
+          name: "Rechnung ausstellen",
+          exact: true,
+        }),
+      ).toHaveCount(0);
+
+      await selectAccess(
+        page,
+        access,
+        "Mandantenweite Rechnungsnummern",
+        "Lesen und bearbeiten",
+      );
+      await saveResourceAccess(
+        access,
+        "Rechnungsnummernfreigabe speichern",
+        "Mandantenweite Rechnungsnummern",
+        publicationTimeout,
+      );
+      const issue = member.getByRole("button", {
+        name: "Rechnung ausstellen",
+        exact: true,
+      });
+      await expect(issue).toBeEnabled();
+      console.log(
+        "Billing UI: exact invoice, contract, project and numbering grants ready",
+      );
+      await issue.click();
+      await expect(
+        member.getByRole("button", { name: "Zahlungseingang", exact: true }),
+      ).toBeEnabled({ timeout: publicationTimeout });
+      await expect(issue).toHaveCount(0);
+      await member.screenshot({
+        path: join(artifacts, "member-invoice-issued.png"),
+        fullPage: true,
+      });
+
+      console.log("Billing UI: partial invoice issued");
+      async function pay(amount, reference) {
+        await member
+          .getByRole("button", { name: "Zahlungseingang", exact: true })
+          .click();
+        const dialog = member.getByRole("dialog", {
+          name: "Zahlungseingänge",
+          exact: true,
+        });
+        await dialog.getByLabel(/^Betrag/).fill(amount);
+        await dialog.getByLabel(/^Verwendungszweck/).fill(reference);
+        return dialog;
+      }
+      let payments = await pay(
+        "99999999",
+        "Zu hohe Zahlung Browserprüfung 682143",
+      );
+      await payments
+        .getByRole("button", { name: "Zahlung erfassen", exact: true })
+        .click();
+      await expect(payments.getByRole("alert")).toBeVisible();
+      await payments
+        .getByRole("button", { name: "Schließen", exact: true })
+        .click();
+      payments = await pay("10,00", paymentReference);
+      await payments
+        .getByRole("button", { name: "Zahlung erfassen", exact: true })
+        .click();
+      await expect(payments).toHaveCount(0);
+      await member
+        .getByRole("button", { name: "Zahlungseingang", exact: true })
+        .click();
+      payments = member.getByRole("dialog", {
+        name: "Zahlungseingänge",
+        exact: true,
+      });
+      await expect(
+        payments.getByText(paymentReference, { exact: false }),
+      ).toBeVisible();
+
+      console.log("Billing UI: payment recorded and visible");
+      access = await selectOfferAccess(page, invoiceTitle, access);
+      await selectAccess(
+        page,
+        documentAccess(access),
+        "Rechnungswerte",
+        "Kein Zugriff",
+      );
+      await saveOfferAccess(access, publicationTimeout);
+      await expect(
+        member.getByText(paymentReference, { exact: false }),
+      ).toHaveCount(0);
+      await expect(
+        member.getByRole("button", { name: "Zahlung erfassen", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        member.getByRole("dialog", { name: "Zahlungseingänge", exact: true }),
+      ).toHaveCount(0);
+      await selectAccess(
+        page,
+        documentAccess(access),
+        "Rechnungswerte",
+        "Lesen",
+      );
+      await saveOfferAccess(access, publicationTimeout);
+      await member.goto(`${memberServer.origin}${invoicePath}`);
+      await expect(member.locator(".gaeb-editor")).toBeVisible({
+        timeout: 60_000,
+      });
+      const view = member.getByRole("button", {
+        name: "Zahlungen ansehen",
+        exact: true,
+      });
+      await expect(view).toBeEnabled();
+      await view.click();
+      payments = member.getByRole("dialog", {
+        name: "Zahlungseingänge",
+        exact: true,
+      });
+      await expect(
+        payments.getByText(paymentReference, { exact: false }),
+      ).toBeVisible();
+      await expect(payments.getByLabel(/^Betrag/)).toBeDisabled();
+      await expect(
+        payments.getByRole("button", { name: "Zahlung erfassen", exact: true }),
+      ).toBeDisabled();
+      await member.screenshot({
+        path: join(artifacts, "member-invoice-readonly-payments.png"),
+        fullPage: true,
+      });
+      memberAudit.assertClean();
+    } finally {
+      await member
+        .screenshot({
+          path: join(artifacts, "member-billing-final.png"),
+          fullPage: true,
+        })
+        .catch(() => {});
+      await memberContext.tracing.stop({
+        path: join(artifacts, "member-billing.zip"),
+      });
+      await memberContext.close();
+      await memberServer.close();
     }
   });
   await scenario("gaeb-editing-between-users", async (page) => {

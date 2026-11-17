@@ -57,7 +57,12 @@ Grunddaten und Abrechnung des Auftrags. Schreibrechte auf Beschreibung,
 Stammdaten oder Nummernvergabe sind für eine reine Preisänderung nicht nötig.
 Ohne lesbaren Auftragszusammenhang bleiben die Rechnungswerte sichtbar, aber
 schreibgeschützt. Das Ausstellen verlangt weiterhin die zusätzlichen Freigaben
-für Nummernvergabe und Projektbuchung.
+für Nummernvergabe und Projektbuchung. Dafür muss nicht jede XML-Erweiterung
+lesbar sein: Beim Nummerieren ändert der Browser nur den Abrechnungsbereich und
+übernimmt die signierten Verweise der übrigen Inhalte unverändert in die
+Dokumentensperre. Beträge, Steuer, Anschriften und Rechnungsstruktur werden im
+lesbaren Teil geprüft; die vollständige XSD-Prüfung bleibt auf vollständig
+lesbare Dokumente beschränkt.
 
 Die Benutzerverwaltung vergibt Rechnungsnummern gesondert. Diese Freigabe öffnet
 die mandantenweiten Zähler und Nummernbelegungen, einschließlich ihrer
@@ -97,8 +102,15 @@ erlaubt noch keine weitere Zahlung. Dafür genügen gesonderte Anlege- und
 Auftragsrechte, ohne Schreibrecht auf das Nummernschema oder bestehende
 Projektbuchungen. Die Aktionsfreigaben der Oberfläche sind zusätzlich über
 [gemeinsame Berechtigungsfunktionen](../sortsys-webapp-v2/app/lib/crypto/invoiceAccess.ts)
-mit Modultests abgesichert. Eine Browserprüfung dieser Rechnungsaktionen mit
-Mitarbeiterkonto steht noch aus.
+mit Modultests abgesichert. Der Ablauf `billing-actions-between-users` im
+[Oberflächentest](../sortsys-webapp-v2/scripts/e2e/development.browser.mjs)
+prüft diese Rechnungsaktionen mit einem Mitarbeiterkonto. Zwei Browserkontexte
+verwenden verschiedene API-Instanzen. Geprüft
+werden die einzelnen Freigaben, das Ausstellen einer Teilansicht, eine abgewiesene
+Überzahlung und eine gültige Zahlung. Nach Rechteentzug schließt sich die
+Zahlungsansicht; eine erneute Lesefreigabe erlaubt nach dem Öffnen des Links nur
+die Einsicht. Beim Erstladen und bei kryptografischen Veröffentlichungen wartet
+der Test jeweils bis zu einer Minute. Er misst keine Ladezeiten.
 
 Die allgemeine Mandantenumstellung bleibt bis zum Abschluss der übrigen
 Fachbereiche gesperrt.

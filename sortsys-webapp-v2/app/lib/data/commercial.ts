@@ -104,6 +104,7 @@ import {
 import type { BusinessRow } from "./rowCodec";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import { pendingReads } from "./runtime/pendingReads";
+import { listenDataChanges } from "./runtime/changes";
 import { commercialRow as row } from "./commercialRows";
 import { commercialRequest, workflowReceiptRequest } from "./commercialModel";
 import { acquireDataRuntime } from "./runtime/session";
@@ -588,6 +589,21 @@ export function createProtectedCommercial(
     // Signed snapshots remain internal. Each returned public row is copied.
     (value) => value,
   );
+  const stopListChanges = listenDataChanges(client, (domains, options) => {
+    if (
+      !domains ||
+      options?.control ||
+      [...domains].some(
+        (domain) =>
+          commercialDomain(domain) ||
+          projectDomainId(domain) ||
+          domain === CUSTOMER_COLLECTION.domain,
+      )
+    ) {
+      pendingListViews.clear();
+    }
+  });
+  signal.addEventListener("abort", stopListChanges, { once: true });
 
   async function readListView(filter: ListScope) {
     const all = await list(filter);
@@ -2429,6 +2445,8 @@ export function createProtectedCommercial(
       return loadDocument(caseId, id, true);
     },
     close() {
+      stopListChanges();
+      signal.removeEventListener("abort", stopListChanges);
       pendingListViews.clear();
       billing.close();
       lease.close();

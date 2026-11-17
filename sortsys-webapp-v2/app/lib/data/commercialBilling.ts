@@ -44,6 +44,7 @@ import type { CommercialFacet } from "./commercialAreas";
 import { commercialRow, copyCommercialRows } from "./commercialRows";
 import { caseGuards, type CaseSnapshot } from "./commercialSnapshot";
 import { createInvoiceNumbers } from "./invoiceNumbers";
+import { financialInputsReadable } from "./documentEditor";
 import { newProductRowId, publicId } from "./products";
 import { financialObject, financialRequest } from "./projectFinancialData";
 import { required } from "./protectedObjects";
@@ -380,7 +381,19 @@ export function createCommercialBilling(
         const previous = await store.head(documentId);
         if (!previous || previous.locked) throw new ProtectedWriteConflict();
         const content = await store.load(previous, processor);
-        if (!content.complete) throw new InvalidProtectedData();
+        if (
+          content.layout.identity.phase !== "89" ||
+          content.layout.signed ||
+          !content.access.writable.includes("billing") ||
+          !financialInputsReadable(
+            content.access,
+            "89",
+            current.kind,
+            content.missing,
+          )
+        ) {
+          throw new InvalidProtectedData();
+        }
         const checked = await validate(basis, content.xml, current.netAmount);
         const plan = await numbers.plan({
           caseId: id,
@@ -393,12 +406,20 @@ export function createCommercialBilling(
           current.netAmount,
           plan.number,
         );
-        const partition = await processor.partition(
+        // Number only the readable billing fragment. Unread extensions retain
+        // their original signed references when the whole document is locked.
+        const partition = await processor.updateView(
           numbered.validated.xml,
           current.kind,
+          {
+            layout: content.layout,
+            fragments: [...content.fragments.values()].flat(),
+          },
+          ["billing"],
           signal,
         );
         if (
+          content.complete &&
           !(
             await processor.validate(
               numbered.validated.xml,

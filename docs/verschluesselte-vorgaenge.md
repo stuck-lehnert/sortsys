@@ -244,8 +244,8 @@ Auftrag. Entwürfe, verworfene Rechnungsentwürfe, Nummernvergabe, Zahlungen und
 Schlussabrechnungen sind angeschlossen. Die
 [Abrechnungsprüfung](verschluesselte-abrechnung.md) beschreibt die Tests über
 zwei API-Instanzen, die Bestandsübernahme und die getrennten
-Mitarbeiterfreigaben. Ein Browserdurchlauf der Rechnungsaktionen mit
-Mitarbeiterkonto steht noch aus.
+Mitarbeiterfreigaben. Der Browserdurchlauf mit Mitarbeiterkonto prüft auch
+Ausstellung, Zahlungen und das erneute Öffnen nach Rechteentzug und Lesefreigabe.
 
 Verlaufseinträge enthalten derzeit noch keinen aufgelösten Mitarbeiternamen. Bei
 neuen Vorgängen verwendet die Referenz vorläufig die Vorgangs-ID hinter Kürzel

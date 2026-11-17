@@ -57,6 +57,12 @@ import {
 
 type Business = ReturnType<typeof createBusinessClient>;
 
+function invoiceAccess(facet: (typeof COMMERCIAL_FACETS)[number]): AccessValue {
+  if (facet === "master-data" || facet === "billing") return "write";
+  if (facet === "scope") return "read";
+  return "none";
+}
+
 /** Ordinary certified accounts use content grants, never administrative or
  * legacy project roles, for issuing invoices and recording payments. */
 export async function testBillingPermissions(
@@ -136,7 +142,12 @@ export async function testBillingPermissions(
     transport: Client,
     work: (business: Business) => Promise<T>,
   ): Promise<T> {
-    await acceptVaultWithKey(identity.dataKey, identity.vault, identity.username, false);
+    await acceptVaultWithKey(
+      identity.dataKey,
+      identity.vault,
+      identity.username,
+      false,
+    );
     const business = createBusinessClient(transport, {
       productDriver: driver,
       gaebProcessor: gaebTestProcessor,
@@ -363,16 +374,8 @@ export async function testBillingPermissions(
         access: "read",
       },
     ]);
-    const financialVersion = await withBusiness(
-      account,
-      observed,
-      (business) =>
-        testFinancialDraftView(
-          observed,
-          business,
-          target.id,
-          target.documentId,
-        ),
+    const financialVersion = await withBusiness(account, observed, (business) =>
+      testFinancialDraftView(observed, business, target.id, target.documentId),
     );
     assert.equal(financialVersion, partialVersion + 2n);
 
@@ -394,11 +397,12 @@ export async function testBillingPermissions(
     stage = "quantity writes without price mutation rights";
     await testQuantityWriter(financialAccounts);
 
-    stage = "full invoice access without numbering rights";
+    stage =
+      "required invoice facets without private extensions or numbering rights";
     await grant([
       ...COMMERCIAL_FACETS.map((facet) => ({
         area: commercialCollection(target.id, facet),
-        access: "write" as const,
+        access: invoiceAccess(facet),
       })),
       {
         area: commercialCollection(target.parentId, "master-data"),
@@ -410,11 +414,14 @@ export async function testBillingPermissions(
       },
     ]);
     await withBusiness(account, observed, async (business) => {
-      const document = await required(
-        business.query("commercial.documents.get", {
-          caseId: target.id,
-          id: target.documentId,
-        }),
+      const document = await business.documents.open(
+        target.id,
+        target.documentId,
+      );
+      assert.equal(document.contentView?.access.complete, false);
+      assert.equal(
+        document.xml.includes("Private estimator note 971846"),
+        false,
       );
       assert.equal(document.canEdit, true);
       assert.ok(
@@ -499,11 +506,14 @@ export async function testBillingPermissions(
       assert.equal(issued.case.status, "sent");
       assert.equal(issued.case.netAmount, "80.00");
       assert.ok(issued.invoice?.invoiceNumber);
-      const document = await required(
-        business.query("commercial.documents.get", {
-          caseId: target.id,
-          id: target.documentId,
-        }),
+      const document = await business.documents.open(
+        target.id,
+        target.documentId,
+      );
+      assert.equal(document.contentView?.access.complete, false);
+      assert.equal(
+        document.xml.includes("Private estimator note 971846"),
+        false,
       );
       assert.equal(document.canEdit, false);
       const request = invoiceSealRequest(target.id);
@@ -516,6 +526,17 @@ export async function testBillingPermissions(
       } finally {
         sealed.close();
       }
+    });
+
+    await withBusiness(owner, ownerClient, async (business) => {
+      const document = await required(
+        business.query("commercial.documents.get", {
+          caseId: target.id,
+          id: target.documentId,
+        }),
+      );
+      assert.ok(document.xml.includes("<!--Private estimator note 971846-->"));
+      assert.equal(document.canEdit, false);
     });
 
     stage = "revocation across every explicit source of financial access";
@@ -627,14 +648,12 @@ export async function testBillingPermissions(
       assert.equal(paid.invoice?.paidAmount, "95.20");
       assert.equal(paid.invoice?.payments.length, 2);
     });
-    for (
-      const secret of [
-        "Private Mitarbeiterrechnung",
-        "Zahlung durch Mitarbeiter",
-        "Zahlung nach Rechteentzug",
-        "<Invoice",
-      ]
-    ) {
+    for (const secret of [
+      "Private Mitarbeiterrechnung",
+      "Zahlung durch Mitarbeiter",
+      "Zahlung nach Rechteentzug",
+      "<Invoice",
+    ]) {
       assert.equal(
         JSON.stringify(requests).includes(secret),
         false,

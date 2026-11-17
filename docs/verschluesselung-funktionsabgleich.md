@@ -164,8 +164,9 @@ angenommene Angebote als neue Projekte und Bestandsaufträge aus X84–X87 samt
 D-/P-Varianten sind angeschlossen. Die
 [Abrechnung](verschluesselte-abrechnung.md) unterstützt Entwürfe, Festschreibung
 und Zahlungen; Bestandsübernahme und getrennte Mitarbeiterfreigaben sind über
-zwei API-Instanzen geprüft. Ein Browserdurchlauf der Rechnungsaktionen mit
-Mitarbeiterkonto steht noch aus. Siehe
+zwei API-Instanzen geprüft. Ein Browserdurchlauf mit Mitarbeiterkonto prüft
+Ausstellung, Zahlungen und Rechteentzug einschließlich der anschließenden
+Lesefreigabe. Siehe
 [Vorgangsadapter](verschluesselte-vorgaenge.md). Vollständige XML-Dateien prüft
 der Client gegen das XSD; Teilansichten erhalten eine begrenzte Struktur- und
 Änderungsprüfung. Die API kann gültig signierte Geschäftsinhalte nicht fachlich

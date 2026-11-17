@@ -17,6 +17,7 @@ use std::{
 use tokio::{process::Command, task::JoinHandle};
 
 mod batching;
+mod billing_permissions;
 mod member_recovery;
 mod passkeys;
 mod recovery_account;
@@ -100,6 +101,7 @@ async fn browser_with_tenant(
             "recovery-account" => "scripts/test-native-existing-recovery.ts",
             "member-recovery" => "scripts/test-native-member-recovery.ts",
             "signing-identity" => "scripts/test-native-signing-identity.ts",
+            "billing-permissions" => "scripts/test-native-billing-permissions.ts",
             "recovery" => "scripts/test-duckdb-recovery.ts",
             "recovery-scale" => "scripts/test-recovery-scale.ts",
             "llm" => "scripts/test-duckdb-llm.ts",
@@ -168,6 +170,7 @@ async fn browser_with_tenant(
             | "recovery-account"
             | "member-recovery"
             | "signing-identity"
+            | "billing-permissions"
             | "document-search"
             | "administration"
             | "llm"
