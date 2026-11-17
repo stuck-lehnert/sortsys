@@ -30,7 +30,7 @@ cargo test --manifest-path sortsys-store/Cargo.toml --locked --test service -- -
   cargo run --locked --quiet --bin generate_contract -- --check
 )
 
-# Real browser cryptography and independent API replicas share one disposable store.
+# Each scenario gets a fresh store, shared by its independent API replicas.
 if [ "${SORTSYS_NATIVE_BROWSER:-0}" = 1 ]; then
   (cd sortsys-webapp-v2 && bunx playwright install --with-deps chromium)
 fi

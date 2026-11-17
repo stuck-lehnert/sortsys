@@ -40,10 +40,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo run --bin generate_contract -- --check
 ```
 
-`../scripts/test-native-auth` startet einen eigenen DuckDB-Dienst und unabhängige
-API-Instanzen. Der Test verwendet denselben Router wie der ausführbare Server
-und den tatsächlichen Webapp-Code für Anmeldung, Freigaben und Recovery.
-Er benötigt Rust, Bun und die festgelegten DuckDB-Erweiterungen.
+`../scripts/test-native-auth` startet für jeden ausgewählten Test einen frischen
+DuckDB-Dienst mit eigenen Mandantendateien. Die unabhängigen API-Instanzen eines
+Tests teilen sich diesen Dienst. Die Tests verwenden denselben Router wie der
+ausführbare Server und den tatsächlichen Webapp-Code für Anmeldung, Freigaben und Recovery.
+Die Suite benötigt Rust, Bun und die festgelegten DuckDB-Erweiterungen. Ergebnisse
+und Laufzeiten stehen in `results.json` im ausgegebenen Protokollordner.
 
 `../scripts/test-api` stellt diese Werkzeuge in einem eigenen Docker- oder
 Podman-Container bereit. Es prüft außerdem die Rust-Pakete, den TypeScript-Client

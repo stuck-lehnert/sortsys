@@ -92,10 +92,20 @@ direkt prüfen:
 ```
 
 Mit Rust, Bun, der festgelegten DuckDB-Bibliothek und ihren Erweiterungen
-startet dieser Test einen eigenen DuckDB-Prozess und zwei unabhängige
-API-Zustände auf Loopback-Ports. Er verwendet den Kryptografie- und
-Datenadaptercode der Webapp. Anmeldung, verschlüsselter Kontospeicher,
+startet die Suite für jeden ausgewählten Test einen eigenen DuckDB-Prozess mit
+frischen Mandantendateien. Die unabhängigen API-Instanzen innerhalb eines Tests
+teilen sich diesen Datenspeicher und verwenden Loopback-Ports. Bereits belegte
+Mandantennamen oder geänderte Betreibereinstellungen aus einem anderen Test
+beeinflussen den nächsten Test dadurch nicht. Die Suite verwendet den
+Kryptografie- und Datenadaptercode der Webapp. Anmeldung, verschlüsselter Kontospeicher,
 Passwortwechsel und Sitzungsentzug werden ohne PostgreSQL geprüft.
+
+Der ausgegebene Protokollordner enthält pro Test ein Unterverzeichnis mit
+`store.log`, `tests.log` und `cleanup.json`. `results.json` ordnet diese
+Verzeichnisse den Testnamen zu und enthält Ergebnis und Laufzeit. Die
+DuckDB-Dateien erfolgreicher Tests werden nach dem Beenden der Dienste entfernt;
+bei einem Fehler bleiben sie zur Untersuchung erhalten. Nach einem fehlgeschlagenen Test laufen die
+übrigen Fälle weiter, sofern dessen Dienste vollständig beendet wurden.
 
 Die Suite richtet außerdem einen neuen Mandanten über den einmaligen
 Einrichtungslink ein. Sie prüft öffentliche Schlüssel und Rechte, gemeinsame

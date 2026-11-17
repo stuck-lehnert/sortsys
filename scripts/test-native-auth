@@ -18,6 +18,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent.parent
 API = ROOT / "sortsys-api-v2"
 STORE = ROOT / "sortsys-store/Cargo.toml"
+TEST_PREFIX = "zerotrust::opaque::store_tests::"
 
 
 def stop(process):
@@ -34,28 +35,38 @@ def stop(process):
             process.wait(timeout=5)
 
 
-def main():
-    bun = shutil.which(os.environ.get("SORTSYS_NATIVE_BUN", "bun"))
-    if bun is None or shutil.which("cargo") is None:
-        raise RuntimeError("Rust und Bun werden benötigt")
-    if not os.environ.get("DUCKDB_EXTENSION_DIRECTORY"):
-        raise RuntimeError("Die festgelegten DuckDB-Erweiterungen werden benötigt")
-    test_filter = os.environ.get("SORTSYS_NATIVE_AUTH_TEST_FILTER", "zerotrust::opaque::store_tests::")
-    if not test_filter.startswith("zerotrust::opaque::store_tests::"):
-        raise RuntimeError("Der Testfilter muss einen nativen Anmeldetest auswählen")
-    log_directory = Path(os.environ.get("SORTSYS_NATIVE_LOG_DIRECTORY", "/tmp"))
-    log_directory.mkdir(parents=True, exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="sortsys-native-auth-", dir=log_directory))
-    print(f"Isolierter Anmeldetest: {directory}", flush=True)
-    env = os.environ.copy()
-    env.update({"SORTSYS_DISPOSABLE_AUTH_TEST": "1", "SORTSYS_NATIVE_AUTH_ROOT": str(directory), "SORTSYS_NATIVE_BUN": bun})
-    # Reserve both ports at once; only this service's loopback listeners are used.
+def selected_tests(env, test_filter, build_log):
+    result = subprocess.run(
+        ["cargo", "test", "--locked", "--lib", test_filter, "--", "--ignored", "--list"],
+        cwd=API,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=build_log,
+        text=True,
+        check=True,
+    )
+    build_log.write(result.stdout)
+    build_log.flush()
+    names = sorted({
+        line.removesuffix(": test")
+        for line in result.stdout.splitlines()
+        if line.startswith(TEST_PREFIX) and line.endswith(": test")
+    })
+    if not names:
+        raise RuntimeError("Der Testfilter hat keinen Test ausgewählt")
+    return names
+
+
+def case_environment(env, directory):
+    case_env = env.copy()
+    # Reserve both ports at once; only this case's loopback listeners are used.
     with contextlib.ExitStack() as stack:
-        ports = [stack.enter_context(socket.socket()) for _ in range(2)]
-        for connection in ports:
+        connections = [stack.enter_context(socket.socket()) for _ in range(2)]
+        for connection in connections:
             connection.bind(("127.0.0.1", 0))
-        quack_port, control_port = [connection.getsockname()[1] for connection in ports]
-    env.update({
+        quack_port, control_port = [connection.getsockname()[1] for connection in connections]
+    case_env.update({
+        "SORTSYS_NATIVE_AUTH_ROOT": str(directory),
         "DUCKDB_QUACK_URI": f"quack:127.0.0.1:{quack_port}",
         "DUCKDB_CONTROL_URL": f"http://127.0.0.1:{control_port}",
         "DUCKDB_QUACK_LISTEN": f"127.0.0.1:{quack_port}",
@@ -64,51 +75,149 @@ def main():
         "DUCKDB_QUACK_DISABLE_SSL": "true",
         "DUCKDB_DATA_DIRECTORY": str(directory / "duckdb"),
     })
+    return case_env
+
+
+def wait_for_store(service, env):
+    deadline = time.monotonic() + 25
+    while True:
+        if service.poll() is not None:
+            raise RuntimeError("DuckDB-Start fehlgeschlagen; store.log prüfen")
+        try:
+            with urllib.request.urlopen(env["DUCKDB_CONTROL_URL"] + "/health", timeout=1) as response:
+                if response.status == 200:
+                    return
+        except (OSError, urllib.error.URLError):
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError("DuckDB-Start hat das Zeitlimit überschritten")
+        time.sleep(0.1)
+
+
+def cleanup_case(processes, directory, success):
+    previous_handlers = {}
+    for signum in [signal.SIGTERM, signal.SIGINT]:
+        previous_handlers[signum] = signal.signal(signum, signal.SIG_IGN)
+    failures = []
+    try:
+        for process in processes:
+            try:
+                stop(process)
+            except (OSError, subprocess.SubprocessError) as error:
+                failures.append(str(error))
+        data = directory / "duckdb"
+        if success and not failures and data.exists():
+            shutil.rmtree(data)
+        (directory / "cleanup.json").write_text(json.dumps({
+            "servicesStopped": not failures,
+            "dataKept": data.exists(),
+            "errors": failures,
+        }) + "\n")
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+    if failures:
+        raise RuntimeError("Die Testdienste konnten nicht vollständig beendet werden")
+
+
+def run_case(binary, env, name, directory):
     service = None
     tests = None
     success = False
-    with (directory / "build.log").open("w") as build_log:
+    with (directory / "store.log").open("w") as store_log, (directory / "tests.log").open("w") as test_log:
         try:
-            subprocess.run(["cargo", "build", "--manifest-path", str(STORE), "--locked", "--bin", "sortsys-duckdb"], cwd=ROOT, env=env, stdout=build_log, stderr=subprocess.STDOUT, check=True)
-            metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--manifest-path", str(STORE), "--no-deps", "--format-version=1"], cwd=ROOT, env=env))
-            binary = Path(metadata["target_directory"]) / "debug/sortsys-duckdb"
-            with (directory / "store.log").open("w") as store_log, (directory / "tests.log").open("w") as test_log:
-                service = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdout=store_log, stderr=subprocess.STDOUT, start_new_session=True)
-                deadline = time.monotonic() + 25
-                while True:
-                    if service.poll() is not None:
-                        raise RuntimeError("DuckDB-Start fehlgeschlagen; store.log prüfen")
-                    try:
-                        with urllib.request.urlopen(env["DUCKDB_CONTROL_URL"] + "/health", timeout=1) as response:
-                            if response.status == 200:
-                                break
-                    except (OSError, urllib.error.URLError):
-                        pass
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("DuckDB-Start hat das Zeitlimit überschritten")
-                    time.sleep(0.1)
-                tests = subprocess.Popen(["cargo", "test", "--locked", "--lib", test_filter, "--", "--ignored", "--nocapture", "--test-threads=1"], cwd=API, env=env, stdout=test_log, stderr=subprocess.STDOUT, start_new_session=True)
-                if tests.wait() != 0:
-                    raise RuntimeError("Anmeldetest fehlgeschlagen; tests.log prüfen")
-                if "running 0 tests" in (directory / "tests.log").read_text():
-                    raise RuntimeError("Der Testfilter hat keinen Test ausgewählt")
-                success = True
-                print((directory / "tests.log").read_text(), end="", flush=True)
+            service = subprocess.Popen(
+                [str(binary)],
+                cwd=ROOT,
+                env=env,
+                stdout=store_log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            wait_for_store(service, env)
+            tests = subprocess.Popen(
+                [
+                    "cargo", "test", "--locked", "--lib", name,
+                    "--", "--exact", "--ignored", "--nocapture", "--test-threads=1",
+                ],
+                cwd=API,
+                env=env,
+                stdout=test_log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            if tests.wait() != 0:
+                raise RuntimeError("Integrationstest fehlgeschlagen; tests.log prüfen")
+            output = (directory / "tests.log").read_text()
+            if "running 1 test\n" not in output:
+                raise RuntimeError("Der einzelne Testfall wurde nicht eindeutig ausgeführt")
+            success = True
+            print(output, end="", flush=True)
         finally:
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-            failures = []
-            for process in [tests, service]:
-                try:
-                    stop(process)
-                except (OSError, subprocess.SubprocessError) as error:
-                    failures.append(str(error))
-            if success and not failures:
-                shutil.rmtree(directory / "duckdb")
-            (directory / "cleanup.json").write_text(json.dumps({"servicesStopped": not failures, "dataKept": not success, "errors": failures}) + "\n")
-            print("Testdienste beendet; Protokolle bleiben erhalten.", flush=True)
-            if failures:
-                raise RuntimeError("Die Testdienste konnten nicht vollständig beendet werden")
+            cleanup_case([tests, service], directory, success)
+
+
+def main():
+    bun = shutil.which(os.environ.get("SORTSYS_NATIVE_BUN", "bun"))
+    if bun is None or shutil.which("cargo") is None:
+        raise RuntimeError("Rust und Bun werden benötigt")
+    if not os.environ.get("DUCKDB_EXTENSION_DIRECTORY"):
+        raise RuntimeError("Die festgelegten DuckDB-Erweiterungen werden benötigt")
+    test_filter = os.environ.get("SORTSYS_NATIVE_AUTH_TEST_FILTER", TEST_PREFIX)
+    if not test_filter.startswith(TEST_PREFIX):
+        raise RuntimeError("Der Testfilter muss einen nativen Anmeldetest auswählen")
+    log_directory = Path(os.environ.get("SORTSYS_NATIVE_LOG_DIRECTORY", "/tmp"))
+    log_directory.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="sortsys-native-auth-", dir=log_directory))
+    print(f"Isolierte Integrationstests: {directory}", flush=True)
+    env = os.environ.copy()
+    env.update({"SORTSYS_DISPOSABLE_AUTH_TEST": "1", "SORTSYS_NATIVE_BUN": bun})
+    with (directory / "build.log").open("w") as build_log:
+        subprocess.run(
+            ["cargo", "build", "--manifest-path", str(STORE), "--locked", "--bin", "sortsys-duckdb"],
+            cwd=ROOT,
+            env=env,
+            stdout=build_log,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+        metadata = json.loads(subprocess.check_output(
+            ["cargo", "metadata", "--manifest-path", str(STORE), "--no-deps", "--format-version=1"],
+            cwd=ROOT,
+            env=env,
+        ))
+        binary = Path(metadata["target_directory"]) / "debug/sortsys-duckdb"
+        names = selected_tests(env, test_filter, build_log)
+    results = []
+    try:
+        for index, name in enumerate(names, start=1):
+            case_directory = Path(tempfile.mkdtemp(prefix=f"sortsys-native-auth-{index:02}-", dir=directory))
+            print(f"[{index}/{len(names)}] {name}\nProtokolle: {case_directory}", flush=True)
+            started = time.monotonic()
+            result = {"name": name, "directory": str(case_directory), "success": False}
+            results.append(result)
+            try:
+                run_case(binary, case_environment(env, case_directory), name, case_directory)
+                result["success"] = True
+            except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+                result["error"] = str(error)
+                print(f"Fehlgeschlagen: {name}: {error}", file=sys.stderr, flush=True)
+                cleanup = case_directory / "cleanup.json"
+                if not cleanup.exists() or not json.loads(cleanup.read_text())["servicesStopped"]:
+                    raise RuntimeError(
+                        "Weitere Tests werden wegen unvollständiger Bereinigung nicht gestartet"
+                    ) from error
+            finally:
+                result["seconds"] = round(time.monotonic() - started, 2)
+    finally:
+        (directory / "results.json").write_text(json.dumps(results, indent=2) + "\n")
+        print(f"Testprotokolle: {directory}", flush=True)
+    failures = [result for result in results if not result["success"]]
+    print(f"{len(results) - len(failures)}/{len(names)} Integrationstests bestanden", flush=True)
+    if failures:
+        raise RuntimeError(
+            f"{len(failures)} Integrationstest(s) fehlgeschlagen; {directory}/results.json prüfen"
+        )
 
 
 def interrupt(_signal, _frame):
