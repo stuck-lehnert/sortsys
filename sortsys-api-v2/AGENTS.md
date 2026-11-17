@@ -28,3 +28,5 @@ The process listens on `0.0.0.0:{PORT}`. Terminate TLS upstream. Never add a pro
 - Container: from the monorepo root, `docker build -f sortsys-api-v2/Dockerfile -t sortsys-api-v2 .`.
 
 Keep tests meaningful: check the real browser cryptography and production handlers, concurrent replicas, denied access and atomic failure. Do not substitute a mock business service for the persistence path being tested. Run suitable checks before describing a path as working.
+
+For browser debugging, `SORTSYS_NATIVE_BROWSER_FIXTURE` can copy a stopped development-seed test's retained data into a fresh test directory. It requires that exact test filter and `SORTSYS_NATIVE_BROWSER=1`; results explicitly use mode `browser-replay`. This mode reruns browser workflows, not seed validation. Ordinary runs always create fresh data.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createClient } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
@@ -32,6 +32,38 @@ const options = {
   signal: new AbortController().signal,
   log: console.log,
 };
+async function exerciseBrowser() {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      "node",
+      ["scripts/e2e/development.browser.mjs", output],
+      {
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          SORTSYS_E2E_OPERATOR_PASSWORD: options.operatorPassword,
+        },
+      },
+    );
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Browser E2E failed: ${signal ?? code}`));
+    });
+  });
+}
+if (process.env.SORTSYS_NATIVE_BROWSER_REPLAY === "1") {
+  assert.equal(process.env.SORTSYS_NATIVE_BROWSER, "1");
+  const fixture = JSON.parse(await readFile(output, "utf8"));
+  assert.equal(fixture.success, true);
+  assert.equal(fixture.seeded, true);
+  assert.equal(fixture.tenant, options.tenant);
+  console.log(
+    "Browserprüfung mit bereits geprüften Seed-Daten; kein erneutes Seeding",
+  );
+  await exerciseBrowser();
+  process.exit(0);
+}
 const requests: string[] = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = new Proxy(originalFetch, {
@@ -302,24 +334,7 @@ try {
     "Development seed verified: ready admin/member, all commercial phases, measured positions, invoice settlement, unique numbers, encrypted files, denied access and idempotent restart.",
   );
   if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(
-        "node",
-        ["scripts/e2e/development.browser.mjs", output],
-        {
-          stdio: "inherit",
-          env: {
-            ...process.env,
-            SORTSYS_E2E_OPERATOR_PASSWORD: options.operatorPassword,
-          },
-        },
-      );
-      child.once("error", reject);
-      child.once("exit", (code, signal) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Browser E2E failed: ${signal ?? code}`));
-      });
-    });
+    await exerciseBrowser();
   }
 } finally {
   globalThis.fetch = originalFetch;

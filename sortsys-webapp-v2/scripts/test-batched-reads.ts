@@ -5,6 +5,7 @@ import {
   required,
   type Collection,
 } from "../app/lib/data/protectedObjects";
+import { verifiedAccessContext } from "../app/lib/crypto/accessContext";
 
 export async function exerciseRpcBatching(
   client: Client,
@@ -106,12 +107,7 @@ export async function exerciseBatchedReads(
     assert.equal(value, null);
     assert.ok(error);
   }
-  for (const substitute of [
-    "subject",
-    "username",
-    "policy",
-    "history",
-  ] as const) {
+  for (const substitute of ["subject", "policy", "history"] as const) {
     let keysRequested = false;
     const observed: Client = {
       ...client,
@@ -124,7 +120,6 @@ export async function exerciseBatchedReads(
           reply[0] as QueryResult<"zerotrust.access.snapshot">,
         );
         if (substitute === "subject") forged.subject += ":substituted";
-        if (substitute === "username") forged.username += ":substituted";
         if (substitute === "policy")
           forged.policy.version = (
             BigInt(forged.policy.version) + 1n
@@ -134,9 +129,36 @@ export async function exerciseBatchedReads(
         return [forged, null];
       }) as Client["query"],
     };
-    await assert.rejects(protectedCollections(observed, signal));
+    await assert.rejects(
+      protectedCollections(observed, signal),
+      `A substituted ${substitute} must be rejected before requesting keys`,
+    );
     assert.equal(keysRequested, false);
   }
+  // Login names can change and are not part of a vault's identity binding.
+  // An untrusted display alias must not choose another principal or policy.
+  const originalContext = await verifiedAccessContext(client, signal);
+  const changedAlias: Client = {
+    ...client,
+    query: (async (path, input, options) => {
+      const reply = await client.query(path, input, options);
+      if (path !== "zerotrust.access.snapshot" || reply[1] || !reply[0])
+        return reply;
+      const changed = structuredClone(
+        reply[0] as QueryResult<"zerotrust.access.snapshot">,
+      );
+      changed.username = "another.login.name";
+      return [changed, null];
+    }) as Client["query"],
+  };
+  const aliasContext = await verifiedAccessContext(changedAlias, signal);
+  assert.equal(aliasContext.account, originalContext.account);
+  assert.equal(aliasContext.subject, originalContext.subject);
+  assert.deepEqual(aliasContext.permissions, originalContext.permissions);
+  assert.deepEqual(
+    aliasContext.history.identityCertificate(aliasContext.subject),
+    originalContext.history.identityCertificate(originalContext.subject),
+  );
   const first = {
     domain: area.domain,
     prefix: "staged:0",

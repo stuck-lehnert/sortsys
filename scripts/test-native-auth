@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 API = ROOT / "sortsys-api-v2"
 STORE = ROOT / "sortsys-store/Cargo.toml"
 TEST_PREFIX = "zerotrust::opaque::store_tests::"
+DEVELOPMENT_TEST = TEST_PREFIX + "development_seed_creates_ready_accounts_and_preserves_manual_edits"
 
 
 def stop(process):
@@ -55,6 +56,29 @@ def selected_tests(env, test_filter, build_log):
     if not names:
         raise RuntimeError("Der Testfilter hat keinen Test ausgewählt")
     return names
+
+
+def browser_fixture(env, test_filter):
+    source = env.get("SORTSYS_NATIVE_BROWSER_FIXTURE")
+    if not source:
+        return None
+    if env.get("SORTSYS_NATIVE_BROWSER") != "1" or test_filter != DEVELOPMENT_TEST:
+        raise RuntimeError("Ein Browser-Fixture benötigt genau den Entwicklungstenant-Test und SORTSYS_NATIVE_BROWSER=1")
+    directory = Path(source).resolve(strict=True)
+    if not directory.name.startswith("sortsys-native-auth-"):
+        raise RuntimeError("Das Browser-Fixture muss aus einem isolierten nativen Test stammen")
+    cleanup = json.loads((directory / "cleanup.json").read_text())
+    report = json.loads((directory / "report.json").read_text())
+    if (
+        cleanup.get("servicesStopped") is not True
+        or cleanup.get("errors") != []
+        or report.get("success") is not True
+        or report.get("seeded") is not True
+        or report.get("tenant") != "development-seed"
+        or not (directory / "duckdb").is_dir()
+    ):
+        raise RuntimeError("Das Browser-Fixture benötigt beendete Dienste und erfolgreich geprüfte Seed-Daten")
+    return directory
 
 
 def case_environment(env, directory):
@@ -166,12 +190,19 @@ def main():
     test_filter = os.environ.get("SORTSYS_NATIVE_AUTH_TEST_FILTER", TEST_PREFIX)
     if not test_filter.startswith(TEST_PREFIX):
         raise RuntimeError("Der Testfilter muss einen nativen Anmeldetest auswählen")
+    fixture = browser_fixture(os.environ, test_filter)
     log_directory = Path(os.environ.get("SORTSYS_NATIVE_LOG_DIRECTORY", "/tmp"))
     log_directory.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="sortsys-native-auth-", dir=log_directory))
     print(f"Isolierte Integrationstests: {directory}", flush=True)
     env = os.environ.copy()
-    env.update({"SORTSYS_DISPOSABLE_AUTH_TEST": "1", "SORTSYS_NATIVE_BUN": bun})
+    env.update({
+        "SORTSYS_DISPOSABLE_AUTH_TEST": "1",
+        "SORTSYS_NATIVE_BUN": bun,
+        "SORTSYS_NATIVE_BROWSER_REPLAY": "1" if fixture else "0",
+    })
+    if fixture:
+        print(f"Nur Browserprüfung; Kopie bereits geprüfter Seed-Daten: {fixture}", flush=True)
     with (directory / "build.log").open("w") as build_log:
         subprocess.run(
             ["cargo", "build", "--manifest-path", str(STORE), "--locked", "--bin", "sortsys-duckdb"],
@@ -192,9 +223,17 @@ def main():
     try:
         for index, name in enumerate(names, start=1):
             case_directory = Path(tempfile.mkdtemp(prefix=f"sortsys-native-auth-{index:02}-", dir=directory))
+            if fixture:
+                shutil.copytree(fixture / "duckdb", case_directory / "duckdb")
+                shutil.copy2(fixture / "report.json", case_directory / "report.json")
             print(f"[{index}/{len(names)}] {name}\nProtokolle: {case_directory}", flush=True)
             started = time.monotonic()
-            result = {"name": name, "directory": str(case_directory), "success": False}
+            result = {
+                "name": name,
+                "directory": str(case_directory),
+                "mode": "browser-replay" if fixture else "full",
+                "success": False,
+            }
             results.append(result)
             try:
                 run_case(binary, case_environment(env, case_directory), name, case_directory)

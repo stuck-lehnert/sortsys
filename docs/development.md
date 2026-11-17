@@ -177,6 +177,19 @@ SORTSYS_NATIVE_AUTH_TEST_FILTER=zerotrust::opaque::store_tests::development_seed
 Desktop verfügbar ist. `bunx playwright show-trace <pfad-zur-trace.zip>` öffnet
 die Aufzeichnung eines einzelnen Szenarios.
 
+Für eine erneute Browserprüfung kann zusätzlich
+`SORTSYS_NATIVE_BROWSER_FIXTURE=<Fallverzeichnis>` auf die erhaltenen Daten eines
+fehlgeschlagenen Entwicklungstenant-Tests zeigen. Dafür müssen dessen
+Seed-Prüfungen bestanden und die Dienste beendet sein. Der Starter kopiert die
+kalten DuckDB-Dateien in ein neues Testverzeichnis; die Quelldateien bleiben
+erhalten. Der Modus benötigt den oben gezeigten genauen Testfilter und
+`SORTSYS_NATIVE_BROWSER=1`. Er wiederholt ausschließlich die Browserfälle und
+erspart die erneute Datenerzeugung. In `results.json` ist er als
+`browser-replay` gekennzeichnet.
+`SORTSYS_E2E_SCENARIO` wählt bei Bedarf einzelne Browserfälle über ihre Namen
+aus; mehrere Namen werden durch Kommas getrennt. Unbekannte Namen lassen den
+Lauf fehlschlagen.
+
 Der [Datendienst](../sortsys-store/README.md#prüfen) hat eigene
 Netzwerkprüfungen für wiederholte Schreibanfragen, wartende Änderungsabfragen
 und die Wiederherstellung aus einer Mandantendatei. Kalenderantworten im

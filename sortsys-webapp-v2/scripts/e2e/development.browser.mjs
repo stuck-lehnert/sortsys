@@ -19,6 +19,12 @@ const server = await applicationServer(
 let browser;
 const servers = new Set([server]);
 const results = [];
+const selectedScenarios = new Set(
+  (process.env.SORTSYS_E2E_SCENARIO ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean),
+);
 let offlineCalendarRequests = 0;
 
 async function applicationContext() {
@@ -127,11 +133,7 @@ function auditPage(page) {
 }
 
 async function scenario(name, run) {
-  if (
-    process.env.SORTSYS_E2E_SCENARIO &&
-    process.env.SORTSYS_E2E_SCENARIO !== name
-  )
-    return;
+  if (selectedScenarios.size > 0 && !selectedScenarios.has(name)) return;
   const context = await applicationContext();
   const page = await context.newPage();
   page.setDefaultTimeout(20_000);
@@ -935,6 +937,19 @@ try {
       ).toHaveCount(0);
       return dialog;
     }
+    async function returnTool(browserPage, origin, path) {
+      await browserPage.goto(`${origin}${path}`);
+      await browserPage
+        .getByRole("main")
+        .getByRole("button", { name: "Aktionen", exact: true })
+        .click();
+      await browserPage
+        .getByRole("menuitem", { name: "Zurückbuchen", exact: true })
+        .click();
+      await expect(
+        browserPage.getByText("verfügbar", { exact: true }),
+      ).toBeVisible();
+    }
     try {
       await login(page, "john.doe");
       await expect(
@@ -1031,6 +1046,10 @@ try {
         path: join(artifacts, "tool-batch-booking-completed.png"),
         fullPage: true,
       });
+      // Later scenarios reuse these tools. Finish both assignments instead of
+      // leaving a successful batch as a hidden prerequisite for the next test.
+      await returnTool(page, server.origin, firstPath);
+      await returnTool(peer, peerServer.origin, secondPath);
       peerAudit.assertClean();
     } finally {
       await peer
@@ -2066,6 +2085,12 @@ try {
     });
   });
   assert.ok(results.length > 0, "The selected browser scenario must exist");
+  for (const name of selectedScenarios) {
+    assert.ok(
+      results.some((result) => result.name === name),
+      `Unknown browser scenario: ${name}`,
+    );
+  }
   await writeFile(
     join(artifacts, "results.json"),
     JSON.stringify({ results }, null, 2),
