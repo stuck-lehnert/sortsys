@@ -13,6 +13,8 @@ import {
   immutableWriteAction,
   InvalidProtectedData,
   MigrationInventory,
+  preparePayload,
+  assemblePayload,
   migrationSealFrame,
   sign,
   signResourceAccess,
@@ -32,6 +34,13 @@ function require(condition: unknown): asserts condition {
 }
 
 export async function exerciseFramework() {
+  const payloadText = "Öffentlicher Laborbericht 🏗️\n".repeat(6000);
+  const payload = preparePayload(payloadText, {
+    context: "laboratory:alpha",
+    operation: "restore:17",
+  });
+  require(payload.parts.length > 1);
+  require(assemblePayload(payload.manifest, payload.parts) === payloadText);
   const security = createZeroTrust({
     facets: ["research-notes", "appointments"],
   });
@@ -402,6 +411,7 @@ export async function exerciseFramework() {
     anchored,
   );
   return {
+    payload: { ...payload, content: payloadText },
     signer: (await publicIdentity(identity)).signingKey,
     delegation,
     accessState,

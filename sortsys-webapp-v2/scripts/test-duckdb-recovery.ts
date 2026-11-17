@@ -6,8 +6,18 @@ import {
   RpcClientError,
   type Client,
   type MutateInput,
+  type MutateResult,
 } from "@sortsys/v2-client";
-import { createRecoveryPhrase } from "@sortsys/zerotrust/sortsys";
+import {
+  base64,
+  createRecoveryPhrase,
+  preparePayload,
+  MAX_PAYLOAD_PART_BYTES,
+  recoveryIdentity,
+  recoveryTransitionFrame,
+  sign,
+} from "@sortsys/zerotrust/sortsys";
+import { mapConcurrent } from "../app/lib/data/runtime/concurrentReads";
 import {
   lockCryptoSession,
   signIn,
@@ -157,15 +167,16 @@ globalThis.fetch = new Proxy(originalFetch, {
         ? args[0]
         : args[0].url,
     );
-    requestPaths.add(url.pathname);
+    const paths = url.pathname.slice(1).split(",");
+    for (const path of paths) requestPaths.add(`/${path}`);
     return Reflect.apply(target, receiver, args).then(
       async (response: Response) => {
         if (
-          url.pathname === "/zerotrust.recovery.begin" &&
+          paths.includes("zerotrust.recovery.commit") &&
           loseNextCommitReply
         ) {
           const reply = await response.clone().json();
-          if (reply[0]?.result) {
+          if (reply[paths.indexOf("zerotrust.recovery.commit")]?.result) {
             loseNextCommitReply = false;
             lostReply = true;
             throw new TypeError(
@@ -258,16 +269,204 @@ try {
     ),
   );
   assert.equal(before.generation, "1");
+  function transfer(candidate: typeof plan) {
+    return {
+      // Identical legal JSON whitespace parts exercise deduplicated storage
+      // reads while the manifest retains their order and full multiplicity.
+      ...preparePayload(
+        " ".repeat(MAX_PAYLOAD_PART_BYTES * 2) + JSON.stringify(candidate),
+        {
+          context: candidate.transition.tenant,
+          operation: candidate.transition.operation,
+        },
+      ),
+      authorization: {
+        challengeId: candidate.challengeId,
+        sourceAuthority: candidate.sourceAuthority,
+        transition: candidate.transition,
+        proof: candidate.proof,
+      },
+    };
+  }
+  // Simulate an incomplete source listing. The normal framework signs a fully
+  // coherent plan for that subset, so public signatures alone cannot reject it.
+  const omitted = "test:recovery:071:master-data";
+  let omittedDomains = 0;
+  let omittedKeys = 0;
+  const incompleteSource: Client = {
+    ...first,
+    mutate: (async (path, input, options) => {
+      const reply = await first.mutate(path, input, options);
+      if (path !== "zerotrust.recovery.page" || reply[1] || reply[0] === null)
+        return reply;
+      const page = structuredClone(
+        reply[0] as MutateResult<"zerotrust.recovery.page">,
+      );
+      page.items = page.items.filter((item) => {
+        if (item.value.id !== omitted) return true;
+        if (item.kind === "domain") omittedDomains++;
+        else omittedKeys++;
+        return false;
+      });
+      return [page, null];
+    }) as Client["mutate"],
+  };
+  const partialPlan = await recoveryPlan(incompleteSource, draft);
+  assert.equal(omittedDomains, 1);
+  assert.ok(omittedKeys > 0);
+  assert.equal(partialPlan.domains.length, plan.domains.length - 1);
+  assert.equal(
+    partialPlan.domains.some((domain) => domain.id === omitted),
+    false,
+  );
+  const partialTransfer = transfer(partialPlan);
+  await mapConcurrent(partialTransfer.parts, 4, async (content, index) => {
+    const endpoint = index % 2 === 0 ? first : second;
+    await required(
+      endpoint.mutate("zerotrust.recovery.stage", {
+        authorization: partialTransfer.authorization,
+        manifest: partialTransfer.manifest,
+        content,
+      }),
+    );
+  });
+  const [partialResult, partialError] = await second.mutate(
+    "zerotrust.recovery.commit",
+    {
+      authorization: partialTransfer.authorization,
+      manifest: partialTransfer.manifest,
+    },
+  );
+  assert.equal(partialResult, null);
+  assert.equal(
+    partialError?.code,
+    "CONFLICT",
+    "Valid signatures must reach the storage-side inventory coverage check, which rejects an omitted area",
+  );
+  const transfers = [plan, competing].map(transfer);
+  assert.equal(
+    transfers[0]!.manifest.parts[0],
+    transfers[0]!.manifest.parts[1],
+  );
+  assert.ok(
+    transfers[0]!.parts.length > 1,
+    "The actual recovery inventory must span multiple upload parts",
+  );
+  const firstPart = {
+    authorization: transfers[0]!.authorization,
+    manifest: transfers[0]!.manifest,
+    content: transfers[0]!.parts[0]!,
+  };
+  for (const invalid of [
+    { ...firstPart, content: firstPart.content + "altered" },
+    {
+      ...firstPart,
+      authorization: {
+        ...firstPart.authorization,
+        proof: base64(new Uint8Array(64)),
+      },
+    },
+    {
+      ...firstPart,
+      manifest: { ...firstPart.manifest, context: "unrelated-tenant" },
+    },
+    { ...firstPart, manifest: transfers[1]!.manifest },
+  ]) {
+    assert.ok((await first.mutate("zerotrust.recovery.stage", invalid))[1]);
+  }
+  const stagedPart = await required(
+    first.mutate("zerotrust.recovery.stage", firstPart),
+  );
+  assert.equal(stagedPart.hash, firstPart.manifest.parts[0]);
+  assert.equal(
+    (await required(second.mutate("zerotrust.recovery.stage", firstPart))).hash,
+    stagedPart.hash,
+  );
+  const secondOperation = structuredClone(firstPart);
+  secondOperation.authorization.transition.operation = crypto.randomUUID();
+  secondOperation.manifest.operation =
+    secondOperation.authorization.transition.operation;
+  const uploadSeed = await recoveryIdentity(source.phrase, source.tenant, "1");
+  secondOperation.authorization.proof = await sign(
+    uploadSeed.signingKey.privateKey,
+    recoveryTransitionFrame(secondOperation.authorization.transition),
+  );
+  const [, secondUpload] = await second.mutate(
+    "zerotrust.recovery.stage",
+    secondOperation,
+  );
+  assert.equal(
+    secondUpload?.code,
+    "CONFLICT",
+    "One challenge cannot allocate a second manifest, even with another valid seed authorization",
+  );
+  assert.ok(
+    (
+      await second.mutate("zerotrust.recovery.commit", {
+        authorization: firstPart.authorization,
+        manifest: firstPart.manifest,
+      })
+    )[1],
+    "A partial upload cannot activate any part of the recovery",
+  );
+  assert.ok(
+    (
+      await second.mutate("zerotrust.recovery.stage", {
+        ...firstPart,
+        manifest: { ...firstPart.manifest, hash: "0".repeat(64) },
+      })
+    )[1],
+    "An operation cannot switch to a different manifest after its first part",
+  );
+  assert.equal(
+    (
+      await required(
+        first.query(
+          "zerotrust.recovery.head",
+          { tenant: source.tenant },
+          { strategy: "network-only" },
+        ),
+      )
+    ).generation,
+    "1",
+  );
+  const uploads = transfers.flatMap((transfer) =>
+    transfer.parts.map((content) => ({
+      authorization: transfer.authorization,
+      manifest: transfer.manifest,
+      content,
+    })),
+  );
+  await mapConcurrent(uploads, 4, async (upload, index) => {
+    const endpoint = index % 2 === 0 ? first : second;
+    const receipt = await required(
+      endpoint.mutate("zerotrust.recovery.stage", upload),
+    );
+    assert.ok(upload.manifest.parts.includes(receipt.hash));
+  });
+  console.log(
+    "Native recovery: signed multi-part uploads remain invisible, repeat across replicas and reject foreign, unsigned, incomplete or substituted manifests",
+  );
   console.log("Native recovery: competing commits on separate API replicas");
   const races = await Promise.all([
-    first.mutate("zerotrust.recovery.begin", plan),
-    second.mutate("zerotrust.recovery.begin", competing),
+    first.mutate("zerotrust.recovery.commit", {
+      authorization: transfers[0]!.authorization,
+      manifest: transfers[0]!.manifest,
+    }),
+    second.mutate("zerotrust.recovery.commit", {
+      authorization: transfers[1]!.authorization,
+      manifest: transfers[1]!.manifest,
+    }),
   ]);
   assert.equal(races.filter(([, error]) => !error).length, 1);
   const wonFirst = races[0][1] === null;
   const winner = wonFirst ? plan : competing;
   const winnerPhrase = wonFirst ? draft.newPhrase : competingDraft.newPhrase;
   const client: Client = wonFirst ? first : second;
+  assert.ok(
+    (await second.mutate("zerotrust.recovery.stage", firstPart))[1],
+    "The old seed proof cannot upload new parts after activation",
+  );
   await required(client.mutate("zerotrust.recovery.begin", winner));
   await required(
     client.mutate("zerotrust.recovery.resume", {

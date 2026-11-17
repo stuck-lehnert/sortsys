@@ -10,6 +10,7 @@ use sortsys_zerotrust::{
     migration::{MigrationInventory, MigrationSeal},
     opentimestamps,
     policy::{Action, Effect, PolicyRef, RuleRef},
+    prepared_payload::PreparedPayloadManifest,
     protocol::{EncryptedObject, SealedBox},
     resource_access::{ResourceAccessContext, ResourceAccessState},
 };
@@ -73,6 +74,7 @@ impl Policy {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserVector {
+    payload: PayloadVector,
     signer: String,
     object: EncryptedObject,
     policy: Policy,
@@ -90,6 +92,13 @@ struct BrowserVector {
     unchanged_administration: Policy,
     administration_revoked: Policy,
     stale_administration: Policy,
+}
+
+#[derive(Deserialize)]
+struct PayloadVector {
+    manifest: PreparedPayloadManifest,
+    parts: Vec<String>,
+    content: String,
 }
 
 #[derive(Clone, Deserialize)]
@@ -147,6 +156,15 @@ impl AsRef<str> for Namespace {
 
 fn main() {
     let vector: BrowserVector = serde_json::from_str(include_str!("browser-vector.json")).unwrap();
+    assert!(vector.payload.parts.len() > 1);
+    assert_eq!(
+        vector
+            .payload
+            .manifest
+            .assemble(&vector.payload.parts)
+            .unwrap(),
+        vector.payload.content
+    );
     vector.anchored.follows(None).unwrap();
     vector.replacement.follows(Some(&vector.anchored)).unwrap();
     assert_eq!(

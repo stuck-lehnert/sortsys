@@ -50,5 +50,6 @@ export {
 export * from "./migrationCompletion";
 export * from "./recoveryCatalog";
 export * from "./metadata";
+export * from "./preparedPayload";
 export * from "./journal";
 export * from "./initialization";

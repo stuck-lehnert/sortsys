@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryResult } from "@sortsys/v2-client";
 import {
   base64,
   createRecoveryPhrase,
@@ -18,6 +18,7 @@ import {
   signedPacketFrame,
   recoveryCatalogAccessFrame,
   sealedBox,
+  preparePayload,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   RecoveryPlan,
@@ -25,6 +26,8 @@ import type {
   SealedBox,
 } from "@sortsys/zerotrust/sortsys";
 import { passwordWorker } from "./session";
+import { mapConcurrent } from "../data/runtime/concurrentReads";
+import { required } from "../data/protectedObjects";
 
 export type RecoveryDraft = {
   tenant: string;
@@ -239,39 +242,90 @@ export async function recoveryPlan(
   }
 }
 
-/** A lost response is resolved by the immutable, seed-authorized operation. */
+async function isActivatedRecovery(
+  head: QueryResult<"zerotrust.recovery.head">,
+  plan: RecoveryPlan,
+): Promise<boolean> {
+  let expected = plan.sourceAuthority;
+  let activated = false;
+  if (head.generation === plan.nextSetup.authority.generation) {
+    expected = plan.nextSetup.authority;
+    activated = true;
+  } else if (head.generation !== plan.transition.generation) {
+    throw new InvalidProtectedData();
+  }
+  const authority = await verifyAuthority(head.authority, {
+    tenant: plan.transition.tenant,
+    generation: expected.generation,
+    recoverySigningKey: expected.recoverySigningKey,
+  });
+  if (authority.signature !== expected.signature)
+    throw new InvalidProtectedData();
+  return activated;
+}
+
+/** Staging is invisible. The activated authority is always verified again,
+ * including after a positive acknowledgement or a lost publication response. */
 export async function commitRecovery(
   client: Client,
   plan: RecoveryPlan,
 ): Promise<void> {
-  const [, error] = await client.mutate("zerotrust.recovery.begin", plan);
-  if (!error) return;
+  const before = await required(
+    client.query(
+      "zerotrust.recovery.head",
+      {
+        tenant: plan.transition.tenant,
+      },
+      { strategy: "network-only" },
+    ),
+  );
+  if (await isActivatedRecovery(before, plan)) return;
+  let failure: unknown;
+  try {
+    const { manifest, parts } = preparePayload(JSON.stringify(plan), {
+      context: plan.transition.tenant,
+      operation: plan.transition.operation,
+    });
+    const authorization = {
+      challengeId: plan.challengeId,
+      sourceAuthority: plan.sourceAuthority,
+      transition: plan.transition,
+      proof: plan.proof,
+    };
+    await mapConcurrent(parts, 4, async (content, index) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const receipt = await required(
+            client.mutate("zerotrust.recovery.stage", {
+              authorization,
+              manifest,
+              content,
+            }),
+          );
+          if (receipt.hash !== manifest.parts[index])
+            throw new InvalidProtectedData();
+          return;
+        } catch (error) {
+          if (error instanceof InvalidProtectedData || attempt >= 1)
+            throw error;
+        }
+      }
+    });
+    const result = await required(
+      client.mutate("zerotrust.recovery.commit", { authorization, manifest }),
+    );
+    if (result.success !== true) throw new InvalidProtectedData();
+  } catch (error) {
+    failure = error;
+  }
   const [head] = await client.query(
     "zerotrust.recovery.head",
     { tenant: plan.transition.tenant },
     { strategy: "network-only" },
   );
-  if (head?.operation === plan.transition.operation) {
-    const [, resumeError] = await client.mutate("zerotrust.recovery.resume", {
-      tenant: plan.transition.tenant,
-      operation: plan.transition.operation,
-    });
-    if (resumeError) throw resumeError;
-    return;
-  }
-  if (
-    head?.authority.recoverySigningKey ===
-      plan.nextSetup.authority.recoverySigningKey &&
-    head.generation === plan.nextSetup.authority.generation
-  )
-    return;
-  if (
-    head &&
-    !head.operation &&
-    head.generation === plan.transition.generation &&
-    head.authority.recoverySigningKey ===
-      plan.sourceAuthority.recoverySigningKey
-  )
+  if (head) {
+    if (await isActivatedRecovery(head, plan)) return;
     throw new RecoveryNotStarted();
-  throw error;
+  }
+  throw failure ?? new InvalidProtectedData();
 }

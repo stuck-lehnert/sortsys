@@ -1,0 +1,16 @@
+{
+  "manifest": {
+    "format": "sortsys-prepared-payload-v1",
+    "context": "laboratory:alpha",
+    "operation": "restore:17",
+    "bytes": 43,
+    "hash": "2c29fc94013644ba0bd7d80c89fbd9a8d2ee9de54e1cfef96af4f96c5f2c8fb3",
+    "parts": [
+      "a8ad5dd1a84820892e02bb36ffc09f8e73218cbb5e95a6f689b4270abe53ddba",
+      "62d9317057b005983617202a1ee1e4b92fa07d044194a06460089623b86352ab",
+      "066f4c983410722e2e876fb75a79bbf70ba3595bcbd2368f691c71ac0797403e"
+    ]
+  },
+  "parts": ["Grüße ", "🏗️ Baustelle\n", "Wiederherstellung"],
+  "content": "Grüße 🏗️ Baustelle\nWiederherstellung"
+}

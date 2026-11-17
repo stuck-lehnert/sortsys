@@ -130,6 +130,21 @@ ihn anschließend in einer einzigen Transaktion in der DuckDB-Mandantendatei.
    Phrase kann dann keinen weiteren Vorgang starten. Ein konkurrierender Plan
    verliert seine Versionsprüfung und veröffentlicht keine Teiländerungen.
 
+Der fertige Plan wird in hashgeprüften Teilen von höchstens 128 KiB übertragen.
+Jeder Teil benötigt den Seed-Nachweis für denselben Vorgang. Eine andere
+API-Instanz kann die Übertragung fortsetzen; fehlende oder abweichende Teile
+verhindern die Veröffentlichung. Die temporären Datensätze verändern keine
+aktiven Konten oder Schlüssel und laufen mit der Challenge ab. Der Transport
+erlaubt je Challenge genau ein Manifest mit höchstens 512 Teilen und 64 MiB.
+Ein anderer Wiederherstellungsvorgang benötigt eine neue Challenge. Die Prüfung
+des vollständigen Schlüsselbestands behält vorerst ihre Grenzen von 2.000
+Bereichen und 10.000 Schlüsselständen.
+
+Auch nach einer positiven Erfolgsantwort liest der Browser die veröffentlichte
+Autorität erneut und prüft Signatur, Generation und die Bindung an den eigenen
+vorbereiteten Plan. Eine bloße Erfolgsantwort bestätigt keine abgeschlossene
+Wiederherstellung.
+
 Das neue Administrationskonto erhält einen eigenen privaten Bereich für seine
 Einladungen. Persönliche Verläufe bleiben den bisherigen Benutzerkonten
 zugeordnet. Bestehende Mitglieder können über eine neue Einladung erneut

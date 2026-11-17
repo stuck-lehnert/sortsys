@@ -160,6 +160,8 @@ export type PolicyTransaction = { author: string, previousSignature: string, pac
 
 export type Position = { id: string, shortText: string, description: string, unit: string, sourceFile: string, };
 
+export type PreparedPayloadManifest = { format: string, context: string, operation: string, bytes: number, hash: string, parts: Array<string>, };
+
 export type PriceListScanResult = { supplier: string | null, documentNumber: string | null, effectiveDate: string | null, rows: Array<ScannedPriceRow>, warnings: Array<string>, };
 
 export type PriorInvoice = { id: Id, invoiceNumber: string, invoiceDate: string, netAmount: string, grossAmount: string, paidAmount: string, vatRate: string, };
@@ -233,6 +235,8 @@ export type ToolBookingSelection = { id: Id, expectedTrackingId: Id | null, };
 export type ToolBookingTool = { id: Id, customId: number, brand: string, category: string, label: string | null, };
 
 export type TrustHistory = { authorities: Array<AuthorityHistory>, identities: Array<IdentityCertificate>, };
+
+export type UploadAuthorization = { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, proof: string, };
 
 export type QueryInputs = {
   "admin.errors.list": { tenant?: string, limit?: number, } | void;
@@ -731,10 +735,12 @@ export type MutationInputs = {
   "zerotrust.recovery.begin": { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, nextSetup: SetupInput, username: string, registrationRecord: string, vault: AccountVault, oldKeyEnvelopes: Array<SealedBox>, domains: Array<DomainDefinition>, proof: string, nextProof: string, };
   "zerotrust.recovery.catalog.read": { access: RecoveryCatalogAccess, proof: string, };
   "zerotrust.recovery.catalog.write": { access: RecoveryCatalogAccess, proof: string, packet: SealedBox, };
+  "zerotrust.recovery.commit": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, };
   "zerotrust.recovery.inspect": { tenant: string, generation: string, nonce: string, proof: string, };
   "zerotrust.recovery.page": { tenant: string, generation: string, challengeId: string, snapshot: string, after: string | null, proof: string, };
   "zerotrust.recovery.registration": { tenant: string, challengeId: string, username: string, registrationRequest: string, proof: string, };
   "zerotrust.recovery.resume": { tenant: string, operation: string, };
+  "zerotrust.recovery.stage": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, content: string, };
   "zerotrust.setup": { authority: AuthorityCertificate, owner: IdentityCertificate, authorityEnvelope: SealedBox, catalog: SealedBox, policy: SignedPolicy, proof: string, };
   "zerotrust.setup.backup.begin": { tenant: string, context: string, generation: string, author: string, manifest: string, objectSignature: string, sourceSignature?: string, signature: string, };
   "zerotrust.setup.backup.complete": { tenant: string, context: string, generation: string, author: string, manifest: string, objectSignature: string, sourceSignature?: string, signature: string, };
@@ -943,10 +949,12 @@ export type MutationOutputs = {
   "zerotrust.recovery.begin": { success: true, };
   "zerotrust.recovery.catalog.read": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
   "zerotrust.recovery.catalog.write": { success: true, };
+  "zerotrust.recovery.commit": { success: true, };
   "zerotrust.recovery.inspect": { challengeId: string, challenge: string, authority: AuthorityCertificate, catalog: SealedBox, catalogVersion: string, policyVersion: string, snapshot: string, };
   "zerotrust.recovery.page": { snapshot: string, items: Array<RecoveryInventoryItem>, after: string | null, };
   "zerotrust.recovery.registration": { registrationResponse: string, };
   "zerotrust.recovery.resume": { success: true, };
+  "zerotrust.recovery.stage": { hash: string, };
   "zerotrust.setup": { success: true, };
   "zerotrust.setup.backup.begin": { success: true, };
   "zerotrust.setup.backup.complete": { success: true, };
@@ -1304,10 +1312,12 @@ const mutationProcedures = new Set<string>([
   "zerotrust.recovery.begin",
   "zerotrust.recovery.catalog.read",
   "zerotrust.recovery.catalog.write",
+  "zerotrust.recovery.commit",
   "zerotrust.recovery.inspect",
   "zerotrust.recovery.page",
   "zerotrust.recovery.registration",
   "zerotrust.recovery.resume",
+  "zerotrust.recovery.stage",
   "zerotrust.setup",
   "zerotrust.setup.backup.begin",
   "zerotrust.setup.backup.complete",

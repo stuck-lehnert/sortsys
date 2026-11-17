@@ -434,9 +434,35 @@ dem zuvor gelesenen Kopf. `recoveryPageFrame` beziehungsweise Rusts
 Challenge, Snapshot und Cursor. Der Transport-Callback erhält keine Seed-Phrase.
 
 Der bestehende Recovery-Plan und sein verschlüsseltes Schlüsselarchiv haben
-weiterhin Grenzen von 2.000 Bereichen und 10.000 Schlüsselständen. Die
-Seitenlesung hebt diese Grenzen nicht auf; dafür müssen auch Archiv und
-Planübertragung aufgeteilt werden. Unvollständige Bestände werden abgelehnt.
+weiterhin Grenzen von 2.000 Bereichen und 10.000 Schlüsselständen. Weder die
+Seitenlesung noch eine aufgeteilte Planübertragung hebt diese Grenzen auf. Die
+vollständige Vorbereitung und Veröffentlichung muss den gesamten Bestand
+prüfen; unvollständige Bestände werden abgelehnt.
+
+## Größere signierte Pakete übertragen
+
+`preparePayload(text, { context, operation })` zerlegt einen bereits erzeugten
+Text in UTF-8-Teile von höchstens 128 KiB. Das Ergebnis enthält die Teile und
+ein Manifest mit ihrer Reihenfolge, ihren SHA-256-Prüfsummen, der Gesamtgröße
+und der Prüfsumme des vollständigen Texts. Ein Transfer darf höchstens 512
+Teile und 64 MiB umfassen. Identische Teile dürfen mehrfach vorkommen; ihre
+Reihenfolge und Anzahl bleiben im Manifest erhalten.
+
+`assemblePayload(manifest, parts)` prüft dieselben Grenzen und rekonstruiert
+erst nach Prüfung aller Teile den Text. Rust verwendet dafür
+`prepared_payload::PreparedPayloadManifest::assemble`. Die Anwendung bleibt für
+die Berechtigung zur Übertragung und die Signaturen des zusammengesetzten
+Pakets zuständig. Eine Prüfsumme allein belegt keinen berechtigten Absender.
+
+Sortsys verwendet diesen Transport für Recovery-Pläne. Jede Übertragung ist
+durch den alten Seed-Nachweis an eine kurzlebige Challenge und genau einen
+Wiederherstellungsvorgang gebunden. Teile können über verschiedene
+API-Instanzen gespeichert und wiederholt werden. Eine Challenge legt dabei
+genau ein Manifest fest; ein zweiter Vorgang benötigt eine neue Challenge.
+Die Teile verändern noch keine
+Konten oder Schlüssel. Erst der vollständige Plan mit beiden Seed-Nachweisen
+wird atomar veröffentlicht; anschließend prüft der Browser die erwartete neue
+Autorität erneut. Die temporären Teile laufen mit der Challenge ab.
 
 ## Nachweise für übernommene Dateien
 

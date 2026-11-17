@@ -17,6 +17,7 @@ pub mod opentimestamps;
 pub mod pagination;
 pub mod passkey;
 pub mod policy;
+pub mod prepared_payload;
 pub mod protocol;
 pub mod recovery;
 pub mod resource_access;

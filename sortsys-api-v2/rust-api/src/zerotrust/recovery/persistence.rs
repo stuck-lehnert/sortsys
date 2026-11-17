@@ -194,7 +194,7 @@ async fn registration(
         registration_response: response,
     })
 }
-async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResult<Success> {
+pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResult<Success> {
     let _admission = crate::auth_limits::admit_login()?;
     identifier(&input.transition.operation)?;
     // Public proofs are checked before reading the full key inventory.
@@ -483,6 +483,7 @@ pub(crate) fn register(
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
     let builder = pages::register(builder, Arc::clone(&service));
+    let builder = uploads::register(builder, Arc::clone(&service));
     let builder = catalog::register(builder, Arc::clone(&service));
     let header = Arc::clone(&service);
     let inspect = Arc::clone(&service);

@@ -11,9 +11,13 @@ test("the generated contract classifies crypto queries and mutations without acc
   ]) {
     expect(contractProcedureKind(path)).toBe("query");
   }
-  expect(contractProcedureKind("zerotrust.keyAuthorities.register")).toBe(
-    "mutation",
-  );
+  for (const path of [
+    "zerotrust.keyAuthorities.register",
+    "zerotrust.recovery.stage",
+    "zerotrust.recovery.commit",
+  ]) {
+    expect(contractProcedureKind(path)).toBe("mutation");
+  }
   // A typed business operation is not necessarily a server handler. The browser
   // facade still owns that distinction and keeps these operations local.
   expect(contractProcedureKind("products.list")).toBe("query");

@@ -407,8 +407,11 @@ Gesamtgrenzen noch nicht: Registrierung, weitere Verwaltungsabrufe und
 Wiederherstellungspläne begrenzen weiterhin den gesamten Bestand auf
 2.000 Inhaltsbereiche beziehungsweise 10.000 bisherige Schlüsselhüllen je
 Recovery-Plan. Diese Werte begrenzen reale Bestände, nicht nur einzelne
-Netzwerkpakete. Seitenweise Objektabrufe und gebündelte Übertragungen heben die
-Grenzen nicht auf. Ein Lastnachweis für größere Mandanten fehlt.
+Netzwerkpakete. Der fertige Plan wird inzwischen in hashgeprüften Teilen von
+höchstens 128 KiB übertragen und erst vollständig aktiviert. Dieser Transport
+ist auf 512 Teile und 64 MiB begrenzt. Er beseitigt die einzelne große
+Plananfrage, erweitert aber noch nicht die zulässige Bestandsgröße. Ein
+Lastnachweis für größere Mandanten fehlt.
 
 Die Prüfung betrifft die heutigen Browseradapter für
 [Produkte](../sortsys-webapp-v2/app/lib/data/products.ts),

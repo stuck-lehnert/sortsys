@@ -237,8 +237,8 @@ export function createRecoveryCodec<
           throw new InvalidProtectedData();
         }
       }
-      // Until plan uploads and the encrypted archive are segmented as well,
-      // retain their explicit admission bounds rather than returning a prefix.
+      // Source preparation and publication still validate a complete inventory.
+      // Keep their admission bounds explicit instead of returning a prefix.
       if (source.domains.length > 2000 || source.keys.length > 10000) {
         throw new InvalidProtectedData();
       }

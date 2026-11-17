@@ -30,6 +30,7 @@ use ts_rs::TS;
 mod catalog;
 mod pages;
 mod persistence;
+mod uploads;
 pub(crate) use persistence::register as register_metadata;
 
 fn conflict() -> RpcError {
@@ -43,12 +44,7 @@ fn conflict() -> RpcError {
 static RECOVERY_CHECKS: LazyLock<Arc<tokio::sync::Semaphore>> =
     LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(4)));
 async fn validate_plan(input: &RecoveryPlan) -> RpcResult<()> {
-    let permit = Arc::clone(&RECOVERY_CHECKS)
-        .try_acquire_owned()
-        .map_err(|_| {
-            RpcError::new(ErrorCode::TooManyRequests, "Recovery checks are busy")
-                .with_http_code(429)
-        })?;
+    let permit = recovery_check_permit()?;
     let input = input.clone();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
@@ -56,6 +52,15 @@ async fn validate_plan(input: &RecoveryPlan) -> RpcResult<()> {
     })
     .await
     .map_err(internal)?
+}
+
+fn recovery_check_permit() -> RpcResult<tokio::sync::OwnedSemaphorePermit> {
+    Arc::clone(&RECOVERY_CHECKS)
+        .try_acquire_owned()
+        .map_err(|_| {
+            RpcError::new(ErrorCode::TooManyRequests, "Recovery checks are busy")
+                .with_http_code(429)
+        })
 }
 
 use sortsys_zerotrust::recovery::RecoveryTransition as Transition;
@@ -327,7 +332,9 @@ impl InventorySnapshot {
 }
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    catalog::register_contract(pages::register_contract(builder))
+    let builder = pages::register_contract(builder);
+    let builder = catalog::register_contract(builder);
+    uploads::register_contract(builder)
         .query_stub::<TenantInput, RecoveryHead>("zerotrust.recovery.head")
         .mutation_stub::<InspectInput, RecoverySourceHead>("zerotrust.recovery.inspect")
         .mutation_stub::<RegistrationInput, RegistrationOutput>("zerotrust.recovery.registration")

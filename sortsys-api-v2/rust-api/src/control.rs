@@ -1,6 +1,6 @@
 //! Typed API control records in the shared DuckDB service. Business plaintext
 //! never belongs here. A transaction guards everything it read at publication.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -526,14 +526,13 @@ impl Transaction {
     }
 
     pub async fn prefetch(&mut self, keys: Vec<RecordKey>) -> RpcResult<()> {
+        let mut selected = HashSet::new();
         let missing = keys
-            .iter()
+            .into_iter()
             .filter(|key| {
-                !self
-                    .read
-                    .contains_key(&(key.collection.clone(), key.key.clone()))
+                let identity = (key.collection.clone(), key.key.clone());
+                !self.read.contains_key(&identity) && selected.insert(identity)
             })
-            .cloned()
             .collect::<Vec<_>>();
         for group in missing.chunks(sortsys_zerotrust::metadata::MAX_OPERATIONS) {
             for row in self.repository.read_records(group.to_vec()).await? {
