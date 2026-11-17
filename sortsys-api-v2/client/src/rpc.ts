@@ -55,7 +55,7 @@ const MAX_BATCH_OPERATIONS = 32;
 // Keep combined inputs below the API's ordinary 2 MiB body limit. An operation
 // that is larger on its own travels alone and retains its endpoint's own limit.
 const MAX_BATCH_BODY_BYTES = 1024 * 1024;
-const QUERY_BATCH_WINDOW_MS = 4;
+const BATCH_WINDOW_MS = 4;
 const encoder = new TextEncoder();
 
 interface PendingOperation {
@@ -64,6 +64,7 @@ interface PendingOperation {
   inputBytes: number;
   headers: Headers;
   headerKey: string;
+  signal?: AbortSignal;
   resolve(value: unknown): void;
   reject(error: unknown): void;
 }
@@ -114,11 +115,13 @@ export class RpcBatchClient {
     query: [],
     mutation: [],
   };
-  private readonly scheduled: Record<OperationKind, boolean> = {
-    query: false,
-    mutation: false,
+  private readonly timers: Record<
+    OperationKind,
+    ReturnType<typeof setTimeout> | undefined
+  > = {
+    query: undefined,
+    mutation: undefined,
   };
-  private queryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(endpoint: string, options: RpcBatchClientOptions = {}) {
     this.endpoint = endpoint.replace(/\/+$/, "");
@@ -130,16 +133,22 @@ export class RpcBatchClient {
     return this.enqueue("query", path, input);
   }
 
-  mutation<T>(path: string, input: unknown): Promise<T> {
-    return this.enqueue("mutation", path, input);
+  mutation<T>(
+    path: string,
+    input: unknown,
+    options?: { signal?: AbortSignal },
+  ): Promise<T> {
+    return this.enqueue("mutation", path, input, options?.signal);
   }
 
   private enqueue<T>(
     kind: OperationKind,
     path: string,
     input: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
     const result = new Promise<T>((resolve, reject) => {
+      signal?.throwIfAborted();
       const headers = new Headers(this.headers());
       const headerEntries: [string, string][] = [];
       headers.forEach((value, name) => headerEntries.push([name, value]));
@@ -161,44 +170,46 @@ export class RpcBatchClient {
         inputBytes,
         headers,
         headerKey,
+        signal,
         resolve,
         reject,
       });
     });
 
-    if (kind === "query" && this.queues.query.length >= MAX_BATCH_OPERATIONS) {
+    if (this.queues[kind].length >= MAX_BATCH_OPERATIONS) {
       this.flush(kind);
       return result;
     }
-    if (!this.scheduled[kind]) {
-      this.scheduled[kind] = true;
-      if (kind === "query") {
-        // Independent cache reads, cryptographic checks and event handlers can
-        // finish in separate tasks. Keep a short, fixed window from the first
-        // read; later reads never extend it. Full batches leave immediately.
-        this.queryTimer = setTimeout(
-          () => this.flush(kind),
-          QUERY_BATCH_WINDOW_MS,
-        );
-      } else {
-        queueMicrotask(() => this.flush(kind));
-      }
+    if (this.timers[kind] === undefined) {
+      // Independent reads and signed/encrypted writes can become ready in
+      // separate tasks. Keep a fixed window from the first operation; later
+      // operations never extend it. Full batches leave immediately. A caller
+      // awaiting a write still waits for its response before queuing a dependent
+      // operation: transport batching does not make writes atomic or ordered.
+      this.timers[kind] = setTimeout(() => this.flush(kind), BATCH_WINDOW_MS);
     }
     return result;
   }
 
   private flush(kind: OperationKind) {
-    if (kind === "query" && this.queryTimer !== undefined) {
-      clearTimeout(this.queryTimer);
-      this.queryTimer = undefined;
+    const timer = this.timers[kind];
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.timers[kind] = undefined;
     }
-    this.scheduled[kind] = false;
-    const operations = this.queues[kind].splice(0);
-    if (operations.length === 0) return;
+    const pending = this.queues[kind].splice(0);
     // Credentials belong to the moment an operation was requested. Reading
     // headers only at flush time could send an old user's write as a new user.
     const batches = new Map<string, PendingOperation[]>();
-    for (const operation of operations) {
+    for (const operation of pending) {
+      // An unsent write can still be cancelled without aborting the shared
+      // HTTP request of its peers. Once sent, a write may already commit.
+      try {
+        operation.signal?.throwIfAborted();
+      } catch (error) {
+        operation.reject(error);
+        continue;
+      }
       const batch = batches.get(operation.headerKey) ?? [];
       batch.push(operation);
       batches.set(operation.headerKey, batch);

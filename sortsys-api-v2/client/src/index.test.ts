@@ -15,50 +15,63 @@ function success(data: unknown) {
   );
 }
 
-test("independent asynchronous reads share one authenticated request through the public client", async () => {
-  const requests: Array<{ authorization: string | null; paths: string[] }> = [];
-  const client = createClient("https://api.example.test", "async-batching", {
-    cache: memoryCache().cache,
-    fetch: (async (input, options) => {
-      const url = new URL(String(input));
-      const encoded = JSON.parse(url.searchParams.get("input")!);
-      requests.push({
-        authorization: new Headers(options?.headers).get("Authorization"),
-        paths: url.pathname.slice(1).split(","),
-      });
-      return new Response(
-        JSON.stringify(
-          Object.values(encoded).map((data) => ({ result: { data } })),
-        ),
-      );
-    }) as typeof globalThis.fetch,
-  });
-  client.setToken("current-session");
-  const pending = [];
-  for (let id = 0; id < 8; id++) {
-    pending.push(
-      client.queryDynamic(
-        "testing.read",
-        { id },
-        {
-          strategy: "network-only",
-        },
-      ),
+for (const kind of ["query", "mutation"] as const) {
+  test(`40 independent asynchronous ${kind} calls use two authenticated requests through the public client`, async () => {
+    const requests: Array<{ authorization: string | null; paths: string[] }> =
+      [];
+    const client = createClient("https://api.example.test", "async-batching", {
+      cache: memoryCache().cache,
+      fetch: (async (input, options) => {
+        const url = new URL(String(input));
+        const encoded = JSON.parse(
+          options?.method === "POST"
+            ? String(options.body)
+            : url.searchParams.get("input")!,
+        );
+        requests.push({
+          authorization: new Headers(options?.headers).get("Authorization"),
+          paths: url.pathname.slice(1).split(","),
+        });
+        return new Response(
+          JSON.stringify(
+            Object.values(encoded).map((data) => ({ result: { data } })),
+          ),
+        );
+      }) as typeof globalThis.fetch,
+    });
+    client.setToken("current-session");
+    const pending = [];
+    for (let id = 0; id < 40; id++) {
+      if (kind === "query") {
+        pending.push(
+          client.queryDynamic(
+            "testing.echo",
+            { id },
+            { strategy: "network-only" },
+          ),
+        );
+      } else {
+        pending.push(client.mutateDynamic("testing.echo", { id }));
+      }
+      // Let the earlier call reach the transport before starting the next call.
+      // Microtask-only batching would already have sent it by this point.
+      await Promise.resolve();
+    }
+    expect(await Promise.all(pending)).toEqual(
+      Array.from({ length: 40 }, (_, id) => [{ id }, null]),
     );
-    // Let the earlier call reach the transport before starting the next read.
-    // Microtask-only batching would already have sent it by this point.
-    await Promise.resolve();
-  }
-  expect(await Promise.all(pending)).toEqual(
-    Array.from({ length: 8 }, (_, id) => [{ id }, null]),
-  );
-  expect(requests).toEqual([
-    {
-      authorization: "Bearer current-session",
-      paths: Array.from({ length: 8 }, () => "testing.read"),
-    },
-  ]);
-});
+    expect(requests).toEqual([
+      {
+        authorization: "Bearer current-session",
+        paths: Array.from({ length: 32 }, () => "testing.echo"),
+      },
+      {
+        authorization: "Bearer current-session",
+        paths: Array.from({ length: 8 }, () => "testing.echo"),
+      },
+    ]);
+  });
+}
 
 test("excluded responses never use or populate the cache, including stream refreshes and fallback", async () => {
   const { cache, values } = memoryCache();
@@ -263,6 +276,33 @@ test("an already aborted mutation sends no request", async () => {
   expect(value).toBeNull();
   expect(error?.name).toBe("AbortError");
   expect(calls).toBe(0);
+});
+
+test("a login cancelled while queued is never sent and leaves its peer intact", async () => {
+  const paths: string[][] = [];
+  const client = createClient(
+    "https://api.example.test",
+    "cancelled-queued-login",
+    {
+      cache: memoryCache().cache,
+      fetch: (async (input) => {
+        paths.push(new URL(String(input)).pathname.slice(1).split(","));
+        return success({ success: true });
+      }) as typeof globalThis.fetch,
+    },
+  );
+  const controller = new AbortController();
+  const login = client.mutate(
+    "auth.login",
+    { tenant: "test", username: "owner", password: "synthetic" },
+    { signal: controller.signal },
+  );
+  controller.abort();
+  const peer = client.mutateDynamic("test.peer", {});
+  expect((await login)[1]?.name).toBe("AbortError");
+  expect(await peer).toEqual([{ success: true }, null]);
+  expect(paths).toEqual([["test.peer"]]);
+  expect(client.loggedIn()).toBe(false);
 });
 
 test("cancelled login results cannot replace auth state or cancel a peer in the same batch", async () => {

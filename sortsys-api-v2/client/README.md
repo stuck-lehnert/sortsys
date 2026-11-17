@@ -52,12 +52,16 @@ eine fehlgeschlagene Anfrage verwendet. Laufende identische Anfragen dürfen
 weiterhin dieselbe Antwort teilen. Die Webapp nutzt dies für Sicherheitsmetadaten,
 die ihre Zugriffsprüfungen stets frisch laden.
 
-Der Client sammelt Leseanfragen über ein festes Fenster von vier Millisekunden.
+Der Client sammelt Lese- und Schreibanfragen getrennt über ein festes Fenster
+von vier Millisekunden.
 Damit können auch unabhängige Aufrufe nach asynchronen Prüfungen dieselbe
 HTTP-Anfrage nutzen. Sobald 32 Operationen warten, wird der Stapel sofort
-gesendet. Weitere Aufrufe verlängern das Sammelfenster nicht. Schreibanfragen
-werden weiterhin in der nächsten Microtask gesendet und warten nicht auf dieses
-Fenster. Die Bündelung mehrerer Operationen stellt keine gemeinsame
+gesendet. Weitere Aufrufe verlängern das Sammelfenster nicht. So können auch
+unabhängig vorbereitete Signaturen und verschlüsselte Änderungen gemeinsam
+übertragen werden. Ein vor dem Versand abgebrochener Schreibaufruf wird aus
+dem Stapel entfernt; die übrigen Aufrufe werden weiter gesendet. Nach dem
+Versand kann eine Änderung trotz Abbruch bereits wirksam geworden sein.
+Die Bündelung mehrerer Operationen stellt keine gemeinsame
 Datenbanktransaktion her; atomare Änderungen verwenden die dafür vorgesehenen
 API-Operationen.
 

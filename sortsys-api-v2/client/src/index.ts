@@ -695,7 +695,7 @@ export function createClient(
 
       try {
         const data = await withRequestSignal(
-          () => rpc.mutation<unknown>(path, input),
+          () => rpc.mutation<unknown>(path, input, { signal: opts?.signal }),
           opts?.signal,
         );
         opts?.signal?.throwIfAborted();

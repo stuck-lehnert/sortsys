@@ -30,76 +30,166 @@ function echoTransport(
   }) as typeof globalThis.fetch;
 }
 
-test("reads from separate tasks share a fixed window that later reads cannot extend", async () => {
-  jest.useFakeTimers();
-  const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
-  const client = new RpcBatchClient("https://api.example.test", {
-    fetch: echoTransport(requests),
-  });
-  const pending = [client.query("items.get", { id: 0 })];
-  for (let id = 1; id <= 3; id++) {
+for (const kind of ["query", "mutation"] as const) {
+  test(`${kind} operations from separate tasks share a fixed window that later calls cannot extend`, async () => {
+    jest.useFakeTimers();
+    const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+    const client = new RpcBatchClient("https://api.example.test", {
+      fetch: echoTransport(requests),
+    });
+    const pending = [client[kind]("items.echo", { id: 0 })];
+    for (let id = 1; id <= 3; id++) {
+      jest.advanceTimersByTime(1);
+      pending.push(client[kind]("items.echo", { id }));
+    }
+    expect(requests).toHaveLength(0);
     jest.advanceTimersByTime(1);
-    pending.push(client.query("items.get", { id }));
-  }
-  expect(requests).toHaveLength(0);
-  jest.advanceTimersByTime(1);
-  expect(requests).toHaveLength(1);
-  expect(requests[0]!.inputs).toEqual([
-    { id: 0 },
-    { id: 1 },
-    { id: 2 },
-    { id: 3 },
-  ]);
-  expect(await Promise.all(pending)).toEqual(requests[0]!.inputs);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.inputs).toEqual([
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    expect(await Promise.all(pending)).toEqual(requests[0]!.inputs);
 
-  const next = client.query("items.get", { id: 4 });
-  jest.advanceTimersByTime(3);
-  expect(requests).toHaveLength(1);
-  jest.advanceTimersByTime(1);
-  expect(await next).toEqual({ id: 4 });
-  expect(requests).toHaveLength(2);
-});
-
-test("a full read batch leaves immediately and its cancelled timer cannot flush the next batch early", async () => {
-  jest.useFakeTimers();
-  const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
-  const client = new RpcBatchClient("https://api.example.test", {
-    fetch: echoTransport(requests),
+    const next = client[kind]("items.echo", { id: 4 });
+    jest.advanceTimersByTime(3);
+    expect(requests).toHaveLength(1);
+    jest.advanceTimersByTime(1);
+    expect(await next).toEqual({ id: 4 });
+    expect(requests).toHaveLength(2);
   });
-  const pending = Array.from({ length: 31 }, (_, id) =>
-    client.query("items.get", { id }),
-  );
-  jest.advanceTimersByTime(3);
-  pending.push(client.query("items.get", { id: 31 }));
-  expect(requests).toHaveLength(1);
-  expect(requests[0]!.inputs).toHaveLength(32);
-  pending.push(client.query("items.get", { id: 32 }));
-  jest.advanceTimersByTime(1);
-  expect(requests).toHaveLength(1);
-  jest.advanceTimersByTime(3);
-  expect(requests).toHaveLength(2);
-  expect(requests[1]!.inputs).toEqual([{ id: 32 }]);
-  expect(await Promise.all(pending)).toEqual(
-    Array.from({ length: 33 }, (_, id) => ({ id })),
-  );
-});
 
-test("writes leave in the next microtask while a read batch is waiting", async () => {
+  test(`a full ${kind} batch leaves immediately and its cancelled timer cannot flush the next batch early`, async () => {
+    jest.useFakeTimers();
+    const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+    const client = new RpcBatchClient("https://api.example.test", {
+      fetch: echoTransport(requests),
+    });
+    const pending = Array.from({ length: 31 }, (_, id) =>
+      client[kind]("items.echo", { id }),
+    );
+    jest.advanceTimersByTime(3);
+    pending.push(client[kind]("items.echo", { id: 31 }));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.inputs).toHaveLength(32);
+    pending.push(client[kind]("items.echo", { id: 32 }));
+    jest.advanceTimersByTime(1);
+    expect(requests).toHaveLength(1);
+    jest.advanceTimersByTime(3);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.inputs).toEqual([{ id: 32 }]);
+    expect(await Promise.all(pending)).toEqual(
+      Array.from({ length: 33 }, (_, id) => ({ id })),
+    );
+  });
+}
+
+test("read and write windows have independent deadlines and never share a batch", async () => {
   jest.useFakeTimers();
   const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
   const client = new RpcBatchClient("https://api.example.test", {
     fetch: echoTransport(requests),
   });
   const read = client.query("items.get", { id: 1 });
+  jest.advanceTimersByTime(2);
   const write = client.mutation("items.save", { id: 2 });
-  expect(await write).toEqual({ id: 2 });
-  expect(requests.map((request) => request.paths)).toEqual([["items.save"]]);
-  jest.advanceTimersByTime(4);
+  jest.advanceTimersByTime(2);
   expect(await read).toEqual({ id: 1 });
+  expect(requests.map((request) => request.paths)).toEqual([["items.get"]]);
+  jest.advanceTimersByTime(2);
+  expect(await write).toEqual({ id: 2 });
   expect(requests.map((request) => request.paths)).toEqual([
-    ["items.save"],
     ["items.get"],
+    ["items.save"],
   ]);
+});
+
+test("a dependent write waits for the preceding acknowledgement before entering a new batch", async () => {
+  jest.useFakeTimers();
+  const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+  const echo = echoTransport(requests);
+  let acknowledge!: () => void;
+  const acknowledgement = new Promise<void>((resolve) => {
+    acknowledge = resolve;
+  });
+  const client = new RpcBatchClient("https://api.example.test", {
+    fetch: (async (input, options) => {
+      const reply = await echo(input, options);
+      if (requests.length === 1) await acknowledgement;
+      return reply;
+    }) as typeof globalThis.fetch,
+  });
+  const saved = client.mutation("items.create", { id: 1 });
+  const dependent = saved.then(() =>
+    client.mutation("items.update", { id: 1 }),
+  );
+  jest.advanceTimersByTime(4);
+  expect(requests.map((request) => request.paths)).toEqual([["items.create"]]);
+  jest.advanceTimersByTime(100);
+  expect(requests).toHaveLength(1);
+  acknowledge();
+  await saved;
+  jest.advanceTimersByTime(4);
+  expect(await dependent).toEqual({ id: 1 });
+  expect(requests.map((request) => request.paths)).toEqual([
+    ["items.create"],
+    ["items.update"],
+  ]);
+});
+
+test("a queued cancellation removes only its own write and keeps wire indices contiguous", async () => {
+  jest.useFakeTimers();
+  const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+  const client = new RpcBatchClient("https://api.example.test", {
+    fetch: echoTransport(requests),
+  });
+  const controller = new AbortController();
+  const pending = [
+    client.mutation("items.first", { id: 0 }),
+    client.mutation(
+      "items.cancelled",
+      { id: 1 },
+      { signal: controller.signal },
+    ),
+    client.mutation("items.last", { id: 2 }),
+  ];
+  const results = Promise.allSettled(pending);
+  controller.abort();
+  jest.advanceTimersByTime(4);
+  expect(requests).toEqual([
+    { paths: ["items.first", "items.last"], inputs: [{ id: 0 }, { id: 2 }] },
+  ]);
+  const replies = await results;
+  expect(replies[0]).toEqual({ status: "fulfilled", value: { id: 0 } });
+  expect(replies[1]).toEqual({
+    status: "rejected",
+    reason: controller.signal.reason,
+  });
+  expect(replies[2]).toEqual({ status: "fulfilled", value: { id: 2 } });
+});
+
+test("a fully cancelled batch sends nothing and cannot flush the next batch early", async () => {
+  jest.useFakeTimers();
+  const requests: Array<{ paths: string[]; inputs: unknown[] }> = [];
+  const client = new RpcBatchClient("https://api.example.test", {
+    fetch: echoTransport(requests),
+  });
+  const controller = new AbortController();
+  const cancelled = Promise.allSettled([
+    client.mutation("items.cancelled", {}, { signal: controller.signal }),
+  ]);
+  controller.abort();
+  jest.advanceTimersByTime(4);
+  expect((await cancelled)[0]!.status).toBe("rejected");
+  expect(requests).toHaveLength(0);
+  const next = client.mutation("items.next", { id: 1 });
+  jest.advanceTimersByTime(3);
+  expect(requests).toHaveLength(0);
+  jest.advanceTimersByTime(1);
+  expect(await next).toEqual({ id: 1 });
+  expect(requests).toHaveLength(1);
 });
 
 for (const kind of ["query", "mutation"] as const) {
@@ -124,32 +214,34 @@ for (const kind of ["query", "mutation"] as const) {
   });
 }
 
-test("a denied operation keeps its error without discarding successful peers", async () => {
-  const client = new RpcBatchClient("https://api.example.test", {
-    fetch: (async (_input: string | URL | Request, _options?: RequestInit) =>
-      new Response(
-        JSON.stringify([
-          {
-            error: superjson.serialize({
-              message: "Read denied",
-              code: -32003,
-              data: { code: "FORBIDDEN", httpCode: 403 },
-            }),
-          },
-          { result: { data: superjson.serialize({ id: 2 }) } },
-        ]),
-      )) as typeof globalThis.fetch,
+for (const kind of ["query", "mutation"] as const) {
+  test(`a denied ${kind} operation keeps its error without discarding successful peers`, async () => {
+    const client = new RpcBatchClient("https://api.example.test", {
+      fetch: (async (_input: string | URL | Request, _options?: RequestInit) =>
+        new Response(
+          JSON.stringify([
+            {
+              error: superjson.serialize({
+                message: "Read denied",
+                code: -32003,
+                data: { code: "FORBIDDEN", httpCode: 403 },
+              }),
+            },
+            { result: { data: superjson.serialize({ id: 2 }) } },
+          ]),
+        )) as typeof globalThis.fetch,
+    });
+    const replies = await Promise.allSettled([
+      client[kind]("items.echo", { id: 1 }),
+      client[kind]("items.echo", { id: 2 }),
+    ]);
+    expect(replies[0]!.status).toBe("rejected");
+    if (replies[0]!.status !== "rejected") throw new Error("Expected a denial");
+    expect(replies[0]!.reason).toBeInstanceOf(RpcClientError);
+    expect(replies[0]!.reason.code).toBe("FORBIDDEN");
+    expect(replies[1]).toEqual({ status: "fulfilled", value: { id: 2 } });
   });
-  const replies = await Promise.allSettled([
-    client.query("items.get", { id: 1 }),
-    client.query("items.get", { id: 2 }),
-  ]);
-  expect(replies[0]!.status).toBe("rejected");
-  if (replies[0]!.status !== "rejected") throw new Error("Expected a denial");
-  expect(replies[0]!.reason).toBeInstanceOf(RpcClientError);
-  expect(replies[0]!.reason.code).toBe("FORBIDDEN");
-  expect(replies[1]).toEqual({ status: "fulfilled", value: { id: 2 } });
-});
+}
 
 for (const kind of ["query", "mutation"] as const) {
   test(`${kind} batches preserve the credentials at the time each operation was queued`, async () => {

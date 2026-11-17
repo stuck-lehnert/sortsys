@@ -511,12 +511,18 @@ veröffentlicht die vorbereiteten Schlüsselkopien ebenfalls über
 gespeicherten Pakete. Der Zugriff auf eine ungültige Schlüsselhistorie wird
 abgebrochen, bevor deren vorbereitete Kopien veröffentlicht werden.
 
-Der RPC-Transport bündelt Leseanfragen in einem festen Fenster von vier
-Millisekunden. Ein Paket enthält höchstens 32 Operationen; die zusammengefassten
-Eingaben belegen höchstens ein MiB. Größere Einzeloperationen werden separat
-übertragen und unterliegen der Grenze ihres Endpunkts. Schreibanfragen warten
-nur bis zum nächsten Microtask. Operationen verschiedener Anmeldesitzungen
-werden getrennt, und jede Operation behält ihre eigene Berechtigungsprüfung.
+Der RPC-Transport bündelt Lese- und Schreibanfragen getrennt in einem festen
+Fenster von vier Millisekunden. Ein Paket enthält höchstens 32 Operationen;
+die zusammengefassten Eingaben belegen höchstens ein MiB. Größere
+Einzeloperationen werden separat
+übertragen und unterliegen der Grenze ihres Endpunkts. Auch unabhängig
+vorbereitete Signaturen und verschlüsselte Änderungen können dadurch gemeinsam
+übertragen werden, wenn sie in getrennten Tasks fertig werden. Volle Pakete
+werden sofort versendet. Spätere Anfragen verlängern das Zeitfenster nicht.
+Vor dem Versand abgebrochene Schreibaufrufe werden ausgelassen. Nach dem
+Versand kann eine Änderung trotz Abbruch bereits wirksam geworden sein.
+Operationen verschiedener Anmeldesitzungen werden getrennt, und jede Operation
+behält ihre eigene Berechtigungsprüfung.
 Ein Transportpaket garantiert keine gemeinsame Transaktion. Die atomare
 Veröffentlichung gehört ausdrücklich zu `zerotrust.access.publish`.
 
