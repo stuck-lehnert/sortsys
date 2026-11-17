@@ -1,6 +1,13 @@
+import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import type { MasterRecord } from "../crypto/masterRecord";
-import { assistantId } from "./privateLlm";
+import {
+  assistantId,
+  assistantPayload,
+  privateLlmCollection,
+} from "./privateLlm";
+import { copyProtectedCollection } from "./copyCollection";
+import { prepareOwnerCollections } from "./prepareCollections";
 import { publicId } from "./products";
 import { legacyScanState, scanEntry } from "./scanHistoryData";
 import { validateScanResult, type ScanResult } from "./scanResult";
@@ -52,6 +59,13 @@ type SourceRecord = {
   id: string;
   origin: { kind: string; collection?: string; row?: string };
 };
+
+export function importHistoryOrigin(source: MasterRecord) {
+  return {
+    id: publicId(source.values.id),
+    origin: { kind: "record", collection: "scans", row: source.values.id! },
+  };
+}
 
 export function legacyImportEntry(
   record: MasterRecord,
@@ -115,4 +129,60 @@ export function legacyImportEntry(
     legacy: { migration, source: source.id, state, issue },
   });
   return { subject, id, entry };
+}
+
+export function importHistoryCollection(subject: string) {
+  return { ...privateLlmCollection(subject), prefix: "assistant:scan:" };
+}
+
+function migratedImportPart(input: unknown, object: string) {
+  const payload = assistantPayload(input, object, "scan");
+  return {
+    format: "sortsys-assistant-v1",
+    kind: "scan",
+    id: payload.id,
+    value: scanEntry(payload.value),
+  };
+}
+
+/** Only the selected tenant's archived source reaches this adapter. Each old
+ * user's entries keep their own assistant area, independently of chat prefixes. */
+export async function prepareImportHistory(
+  client: Client,
+  records: readonly MasterRecord[],
+  owner: string,
+  context: string,
+  signal: AbortSignal,
+) {
+  const users = new Map<string, { id: string; value: unknown }[]>();
+  for (const source of records) {
+    signal.throwIfAborted();
+    const { subject, id, entry } = legacyImportEntry(
+      source,
+      importHistoryOrigin(source),
+      context,
+    );
+    const entries = users.get(subject) ?? [];
+    entries.push({
+      id: `assistant:scan:${id}`,
+      value: { format: "sortsys-assistant-v1", kind: "scan", id, value: entry },
+    });
+    users.set(subject, entries);
+  }
+  if (!users.size) return;
+  await prepareOwnerCollections(
+    client,
+    owner,
+    [...users.keys()].map(importHistoryCollection),
+    signal,
+  );
+  for (const [subject, entries] of users) {
+    await copyProtectedCollection(
+      client,
+      importHistoryCollection(subject),
+      entries,
+      migratedImportPart,
+      signal,
+    );
+  }
 }

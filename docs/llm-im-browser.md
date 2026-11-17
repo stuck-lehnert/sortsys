@@ -199,12 +199,14 @@ Fachadapter nicht verfügbar ist; er erhält dadurch keine Ausführungsfreigabe.
 Altdaten gelangen bei der
 [Ersteinrichtung eines neuen Mandanten](bestandsumstellung.md) über eine
 Sicherungsdatei in das System. PostgreSQL wird dafür nicht als laufender Dienst
-benötigt. Die Chatübernahme ist mit dieser Einrichtung verbunden. Für frühere
-Einleseverläufe gibt es einen geprüften Konverter; dessen Anbindung an die
-Einrichtung fehlt noch. Er erhält Dateinamen, Benutzerzuordnung und genaue
-Zeitpunkte und unterscheidet abgeschlossene, unterbrochene und fehlerhafte
-Vorgänge. Ein Verlauf aus der früheren Verwaltungsdatenbank ist in einer reinen
-Mandantensicherung nicht enthalten und braucht eine eigene Quelle.
+benötigt. Chatverläufe werden mit dieser Einrichtung übernommen. Für frühere
+Einleseverläufe lässt sich zusätzlich die Verwaltungsdatensicherung auswählen.
+Die Webapp liest nur die ausdrücklich gewählte Organisation, prüft die
+Benutzerzuordnung gegen die Mandantensicherung und archiviert deren Datensätze
+verschlüsselt. Dateinamen und Zeitpunkte mit Mikrosekunden bleiben erhalten.
+Abgeschlossene Ergebnisse lassen sich öffnen; frühere wartende und laufende
+Vorgänge erscheinen als unterbrochen. Ein Verlauf aus der Verwaltungsdatenbank
+ist in einer reinen Mandantensicherung nicht enthalten.
 
 Der Integrationstest mit einem lokalen Modell-Testdienst prüft den Transport,
 Produktsuche aus dem entschlüsselnden Client, Originaldateien in mehreren

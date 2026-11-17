@@ -10,12 +10,18 @@ import {
 } from "../crypto/session";
 import { openPostgresBackup } from "./business";
 import { backupObjects, localBackupFiles } from "./files";
+import {
+  checkImportHistoryUsers,
+  selectImportHistory,
+  type ImportHistorySelection,
+} from "./importHistory";
 
 export type BackupSelection = {
   sql: File;
   files: File[];
   ownerId: string;
   username: string;
+  history?: ImportHistorySelection;
 };
 export type BackupOwner = { id: string; username: string; name: string };
 let pending: {
@@ -110,6 +116,14 @@ export async function validateBackupSelection(
     const files = localBackupFiles(selection.files);
     for (const object of await backupObjects(opened.database))
       await files.read(object, signal);
+    if (selection.history) {
+      const history = await selectImportHistory(
+        selection.history.file,
+        selection.history.tenant,
+        signal,
+      );
+      await checkImportHistoryUsers(history, opened.database);
+    }
   } finally {
     await opened.database.close();
   }

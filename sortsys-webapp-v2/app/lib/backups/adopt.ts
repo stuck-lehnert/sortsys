@@ -175,6 +175,17 @@ export async function adoptBackup(
       async run() {
         const { prepareChats } = await import("../data/migrateChats");
         await prepareChats(client, database, subject, signal);
+        if (opened.history) {
+          const { prepareImportHistory } =
+            await import("../data/migrateImportHistory");
+          await prepareImportHistory(
+            client,
+            opened.history.records,
+            subject,
+            state.context,
+            signal,
+          );
+        }
         const { preparePreferences } =
           await import("../data/migratePreferences");
         await preparePreferences(client, database, subject, signal);

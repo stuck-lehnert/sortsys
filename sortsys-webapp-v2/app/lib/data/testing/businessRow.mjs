@@ -38,3 +38,25 @@ export function row(table, overrides = {}) {
     values,
   };
 }
+
+/** PostgreSQL COPY text for local backup tests, including its byte escapes. */
+export function sourceSql(records) {
+  return records
+    .map((record) => {
+      const columns = tableDefinition(record.table).columns;
+      const values = columns.map((column) => {
+        const value = record.values[column.name];
+        if (value === null) return "\\N";
+        let text = String(value);
+        if (column.type === "bool") text = value ? "t" : "f";
+        if (column.type.startsWith("_")) text = "{}";
+        return text
+          .replaceAll("\\", "\\\\")
+          .replaceAll("\t", "\\t")
+          .replaceAll("\n", "\\n")
+          .replaceAll("\r", "\\r");
+      });
+      return `COPY public.${record.table} (${columns.map((column) => column.name).join(", ")}) FROM stdin;\n${values.join("\t")}\n\\.\n`;
+    })
+    .join("\n");
+}

@@ -7,6 +7,8 @@ import {
 } from "~/lib/backups/selection";
 import { uiText } from "~/lib/i18n";
 import { MyCallout } from "./MyCallout";
+import { BackupHistoryPicker } from "./BackupHistoryPicker";
+import type { ImportHistorySelection } from "~/lib/backups/importHistory";
 
 export function BackupPicker({
   onChange,
@@ -19,6 +21,9 @@ export function BackupPicker({
   const [owners, setOwners] = useState<BackupOwner[] | null>(null);
   const [ownerId, setOwnerId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<
+    ImportHistorySelection | null | undefined
+  >(null);
   useEffect(() => {
     const controller = new AbortController();
     setError(null);
@@ -50,11 +55,17 @@ export function BackupPicker({
     }
     const owner = owners?.find((owner) => owner.id === ownerId);
     onChange(
-      owner
-        ? { sql, files, ownerId: owner.id, username: owner.username }
+      owner && history !== undefined
+        ? {
+            sql,
+            files,
+            ownerId: owner.id,
+            username: owner.username,
+            ...(history ? { history } : {}),
+          }
         : undefined,
     );
-  }, [sql, files, owners, ownerId, onChange]);
+  }, [sql, files, owners, ownerId, history, onChange]);
   return (
     <div className="flex flex-col gap-4">
       <label htmlFor={`${id}-sql`} className="flex flex-col gap-2 text-sm">
@@ -66,7 +77,10 @@ export function BackupPicker({
           id={`${id}-sql`}
           type="file"
           accept=".sql,.gz"
-          onChange={(event) => setSql(event.target.files?.[0] ?? null)}
+          onChange={(event) => {
+            setHistory(null);
+            setSql(event.target.files?.[0] ?? null);
+          }}
         />
       </label>
       {sql && !owners && !error && (
@@ -122,6 +136,7 @@ export function BackupPicker({
               "SQL backups contain neither stored attachments nor the company address from the former administration database. Attachments are restored from the selected directory; the address can be added under Administration → Organization afterwards. Old passwords and roles are not restored.",
             )}
           </p>
+          <BackupHistoryPicker onChange={setHistory} />
         </>
       )}
     </div>

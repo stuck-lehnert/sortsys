@@ -369,6 +369,11 @@ try {
         "Private Werkzeugdaten 651297",
         "1287.25",
         "11.625",
+        "Private Lieferung 486219",
+        "Private old credential 219453",
+        "Other tenant secret 742963",
+        "Private scan error 739182",
+        "invalid original result 619243",
       ]) {
         assert.equal(
           body.includes(marker),

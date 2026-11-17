@@ -143,6 +143,11 @@ window.cryptoFixture = {
       await import("./tenant-initialization.fixture.jsx");
     await showTenantInitialization(root, options);
   },
+  async showBackupSelection() {
+    const { showBackupSelection } =
+      await import("./backup-selection.fixture.jsx");
+    showBackupSelection(root);
+  },
   async showChatHistory(options) {
     const { showAssistantHistory } =
       await import("./assistant-history.fixture.jsx");

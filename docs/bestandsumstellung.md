@@ -23,11 +23,15 @@ oder eine vorhandene Sicherung auswählen:
    verweist. Objektpfade müssen erhalten bleiben; die Webapp akzeptiert den
    Objektpfad selbst oder `Bucket/Objektpfad` unter dem gewählten Ordner.
    Fehlende oder mehrdeutige Dateien stoppen die Prüfung vor der Registrierung.
-4. Ein neues Passwort festlegen und die erzeugte Wiederherstellungsphrase
+4. Für den bisherigen Einleseverlauf zusätzlich unter **Einleseverlauf aus
+   Verwaltungsdatenbank** die damalige Verwaltungsdatensicherung auswählen und
+   darin ausdrücklich die bisherige Organisation wählen. Dieser Schritt ist
+   optional; ein Einleseverlauf ist in der Mandantensicherung selbst nicht enthalten.
+5. Ein neues Passwort festlegen und die erzeugte Wiederherstellungsphrase
    sichern. Das erste Konto erhält die Administratorrolle und die
    kryptografischen Zugriffe für die Einrichtung. Alte Passwörter, Sitzungen und
    Rollen werden nicht als Zugänge oder Freigaben übernommen.
-5. Die Übernahme im Browser abschließen. Die Fachansichten bleiben bis dahin
+6. Die Übernahme im Browser abschließen. Die Fachansichten bleiben bis dahin
    gesperrt. Weitere Benutzer erhalten anschließend neue Einladungen; ihre
    bisherigen Kennungen und archivierten beziehungsweise deaktivierten
    Kontozustände bleiben erhalten.
@@ -38,6 +42,8 @@ Zielobjekte werden geprüft und weiterverwendet. Sobald das verschlüsselte
 Quellarchiv vollständig vorliegt, ist keine erneute Dateiauswahl nötig. Vor
 diesem Zeitpunkt müssen dieselbe Sicherung und derselbe Dateiordner erneut
 gewählt werden. Abweichende Quellen überschreiben keinen bestätigten Stand.
+Wurde zusätzlich ein Einleseverlauf ausgewählt, wird vor Abschluss des
+Quellarchivs auch dessen Verwaltungsdatensicherung erneut benötigt.
 
 ## Datenbank und Dateien gehören zusammen
 
@@ -50,8 +56,20 @@ bleiben im verschlüsselten Archiv.
 Unternehmensanschrift und weitere Angaben aus der früheren Verwaltungsdatenbank
 sind in einer reinen Mandantensicherung nicht enthalten. Die Anschrift muss
 anschließend unter **Verwaltung → Organisation** ergänzt werden. Auch ein
-Einleseverlauf, der ausschließlich in der Verwaltungsdatenbank gespeichert war,
-lässt sich daraus nicht wiederherstellen.
+Einleseverlauf braucht eine eigene Quelle. Die zusätzliche Dateiauswahl liest
+dafür ausschließlich `public.__delivery_note_scans` und übernimmt nur die
+gewählte Organisation. Einträge anderer Mandanten und Zugangsdaten aus der
+Verwaltungsdatenbank werden nicht archiviert. Einträge mit unbekannter
+Benutzerkennung stoppen die Übernahme, statt einen fremden Benutzerbereich
+anzulegen.
+
+Erfolgreiche Einleseergebnisse lassen sich anschließend wieder öffnen. Früher
+wartende oder laufende Anfragen erscheinen als unterbrochen; sie werden nicht
+erneut an ein Modell geschickt. Fehlerhafte Ergebnisse bleiben als solche
+sichtbar. Die ausgewählten Originaldatensätze werden verschlüsselt archiviert,
+einschließlich genauer Zeitpunkte und nicht verwendbarer Ergebnisse. Jeder
+Verlauf bleibt dem ursprünglichen Benutzerkonto zugeordnet. Die Auswahl ist auf
+20.000 Einträge und 64 MiB begrenzt.
 
 Die Webapp übernimmt die Fachdaten über dieselben verschlüsselten Adapter wie
 bei der normalen Bearbeitung. Dazu gehören Personal, Abwesenheiten, Produkte,

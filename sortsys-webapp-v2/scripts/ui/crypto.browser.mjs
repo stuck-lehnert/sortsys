@@ -55,6 +55,86 @@ async function revealField(page, field) {
   );
 }
 
+test("backup history selection requires an explicit source organization and clears invalid or removed files", async () => {
+  const { context, page, external } = await open();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await page.evaluate(() => window.cryptoFixture.showBackupSelection());
+    const files = await page.evaluate(() =>
+      window.cryptoFixture.backupSelectionFiles(),
+    );
+    const start = page.getByRole("button", { name: "Übernahme starten" });
+    assert.equal(await start.isDisabled(), true);
+    await page
+      .getByLabel("Vorhandene Sicherung übernehmen (optional)", { exact: true })
+      .setInputFiles({
+        name: "tenant.sql",
+        mimeType: "application/sql",
+        buffer: Buffer.from(files.sql),
+      });
+    await page.waitForFunction(
+      () =>
+        ![...document.querySelectorAll("button")].find(
+          (button) => button.textContent === "Übernahme starten",
+        )?.disabled,
+    );
+    const historyFile = page.getByLabel(
+      "Einleseverlauf aus Verwaltungsdatenbank (optional)",
+      { exact: true },
+    );
+    await historyFile.setInputFiles({
+      name: "administration.sql",
+      mimeType: "application/sql",
+      buffer: Buffer.from(files.history),
+    });
+    const organization = page.getByRole("combobox", {
+      name: "Bisherige Organisation im Einleseverlauf",
+    });
+    await organization.waitFor();
+    assert.equal(await organization.inputValue(), "");
+    assert.equal(await start.isDisabled(), true);
+    assert.equal(await organization.locator("option").count(), 3);
+    await organization.selectOption("old-tenant");
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="Ausgewählte Sicherung"]')
+        ?.textContent.includes('"historyTenant":"old-tenant"'),
+    );
+    assert.equal(await start.isEnabled(), true);
+    await page.screenshot({
+      path: "/tmp/sortsys-backup-history-picker.png",
+      fullPage: true,
+    });
+    await historyFile.setInputFiles({
+      name: "wrong.sql",
+      mimeType: "application/sql",
+      buffer: Buffer.from(
+        "COPY public.__tenants (name) FROM stdin;\nold-tenant\n\\.\n",
+      ),
+    });
+    await page
+      .getByText("Die Sicherung enthält keinen Einleseverlauf.", {
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(await start.isDisabled(), true);
+    await page
+      .getByRole("button", { name: "Einleseverlauf weglassen" })
+      .click();
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="Ausgewählte Sicherung"]')
+        ?.textContent.includes('"historyTenant":null'),
+    );
+    assert.equal(await start.isEnabled(), true);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("native document authors are checked before XML rendering or content-key access", async () => {
   const { context, page, external } = await open();
   try {

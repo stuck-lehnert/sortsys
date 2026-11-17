@@ -99,6 +99,7 @@ export function BackupInitialization({
                   rows: opened.rows,
                   ownerId: selection.ownerId,
                   files: localBackupFiles(selection.files),
+                  history: selection.history,
                 },
                 signal,
                 (done, total) => {

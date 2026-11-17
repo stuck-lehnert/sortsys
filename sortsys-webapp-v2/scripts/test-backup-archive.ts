@@ -23,6 +23,18 @@ import { commercialDocumentStore } from "../app/lib/data/commercialDocumentConte
 import { allocateDeliveryNote } from "../app/lib/data/deliveryRegistry";
 import { administratorContext } from "../app/lib/crypto/administration";
 import { deliveryAdoptionFrame } from "../app/lib/backups/deliveryNumbers";
+import {
+  oldScan,
+  scanResult,
+  scanSourceSql,
+} from "../app/lib/data/testing/importHistory.mjs";
+import {
+  importHistoryCollection,
+  prepareImportHistory,
+} from "../app/lib/data/migrateImportHistory";
+import { assistantPayload } from "../app/lib/data/privateLlm";
+import { scanEntry } from "../app/lib/data/scanHistoryData";
+import { importResult } from "../app/lib/data/imports";
 
 export async function exerciseBackupArchive(
   owner: Client,
@@ -43,6 +55,41 @@ export async function exerciseBackupArchive(
   const gaebFile = new File([xml], "innenputz.x84", {
     type: "application/xml",
   });
+  const history = {
+    file: new File(
+      [
+        "COPY public.__tenants (name,password) FROM stdin;\nother-tenant\tPrivate old credential 219453\n\\.\n",
+        scanSourceSql([
+          oldScan(),
+          oldScan({ id: "20", state: "queued", result: null }),
+          oldScan({ id: "21", state: "matching", result: null, user_id: "89" }),
+          oldScan({
+            id: "22",
+            state: "failed",
+            result: null,
+            error: "Private scan error 739182",
+          }),
+          oldScan({
+            id: "23",
+            state: "completed",
+            result: "invalid original result 619243",
+          }),
+          oldScan({ id: "24", state: "ocr", result: null }),
+          oldScan({
+            id: "25",
+            result: JSON.stringify(scanResult.deliveryNote),
+          }),
+          oldScan({
+            tenant_name: "other-tenant",
+            file_name: "Other tenant secret 742963.png",
+          }),
+        ]),
+      ],
+      "administration.sql",
+      { type: "application/sql" },
+    ),
+    tenant: "old-tenant",
+  };
   const sql = new Blob([
     sourceSql([
       row("users", {
@@ -153,6 +200,7 @@ export async function exerciseBackupArchive(
         database: source.database,
         rows: source.rows,
         files: localBackupFiles([file, gaebFile]),
+        history,
       },
       signal,
     );
@@ -163,6 +211,7 @@ export async function exerciseBackupArchive(
         database: source.database,
         rows: source.rows,
         files: localBackupFiles([file, gaebFile]),
+        history,
       },
       signal,
     );
@@ -180,6 +229,13 @@ export async function exerciseBackupArchive(
       await digest(original),
     );
     assert.equal(reopened.rows, 12n);
+    assert.equal(reopened.history?.tenant, history.tenant);
+    assert.equal(reopened.history?.records.length, 7);
+    assert.ok(
+      reopened.history?.records.every(
+        (record) => record.values.tenant_name === history.tenant,
+      ),
+    );
   } finally {
     await reopened.database.close();
   }
@@ -208,6 +264,29 @@ export async function exerciseBackupArchive(
   await initializeTenant(owner, signal, duckDriver);
   const business = createBusinessClient(peer, { productDriver: duckDriver });
   try {
+    const scans = await required(
+      business.query("deliveryNotes.scan.list", undefined),
+    );
+    assert.equal(
+      scans.length,
+      6,
+      "A second user's scan must stay in its own area",
+    );
+    assert.ok(
+      scans.some((scan) => scan.id === "j" && scan.state === "completed"),
+    );
+    assert.match(scans.find((scan) => scan.id === "k")!.error!, /unterbrochen/);
+    assert.equal(
+      scans.find((scan) => scan.id === "m")!.error,
+      "Private scan error 739182",
+    );
+    assert.match(
+      scans.find((scan) => scan.id === "n")!.error!,
+      /nicht verwendbar/,
+    );
+    assert.deepEqual(await importResult(peer, "j", signal), scanResult);
+    assert.deepEqual(await importResult(peer, "p", signal), scanResult);
+    await assert.rejects(importResult(peer, "k", signal), /unterbrochen/);
     const user = await required(business.query("users.get", { id: "2n" }));
     assert.equal(user.firstName, "Franz");
     assert.equal(user.costPerHour, 73.25);
@@ -249,6 +328,42 @@ export async function exerciseBackupArchive(
     assert.equal(bookings[0]!.toolUsageCostPerDay, 11.625);
   } finally {
     business.dispose();
+  }
+  const coworkerArea = importHistoryCollection("user:2p");
+  const coworkerHistory = await protectedCollection(
+    owner,
+    coworkerArea,
+    signal,
+  );
+  try {
+    const entries = await coworkerHistory.read();
+    assert.equal(entries.length, 1);
+    const entry = scanEntry(
+      assistantPayload(entries[0]!.value, entries[0]!.envelope.object, "scan")
+        .value,
+    );
+    assert.equal(entry.format, "sortsys-scan-v2");
+    assert.equal(entry.legacy.state, "matching");
+    assert.equal(entry.createdAt, "2026-11-12T10:00:00.123456Z");
+  } finally {
+    coworkerHistory.close();
+  }
+  const archivedSource = await openBackupArchive(
+    peer,
+    signal,
+    await duckDriver(),
+  );
+  try {
+    // An exact retry remains harmless, even after the source is sealed.
+    await prepareImportHistory(
+      peer,
+      archivedSource.history!.records,
+      `user:${draft.userId}`,
+      draft.setup.authority.context!,
+      signal,
+    );
+  } finally {
+    await archivedSource.database.close();
   }
   const area = fileCollection("2s");
   const files = await protectedCollection(owner, area, signal);
@@ -320,6 +435,6 @@ export async function exerciseBackupArchive(
     )[1],
   );
   console.log(
-    "Local backup archive verified: encrypted SQL and static PDF, source readback on a second replica, preserved user identities and lifecycle, interrupted adoption resumed from ciphertext, all business adapters, description search and exact attachment bytes.",
+    "Local backup archive verified: encrypted SQL and static PDF, source readback on a second replica, preserved user identities and lifecycle, interrupted adoption resumed from ciphertext, all business adapters, description search, exact attachment bytes and isolated per-user scan histories from the explicitly selected original tenant.",
   );
 }

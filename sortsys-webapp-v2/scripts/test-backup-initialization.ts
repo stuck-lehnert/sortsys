@@ -7,9 +7,8 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
-import { row } from "../app/lib/data/testing/businessRow.mjs";
-import { tableDefinition } from "../app/lib/data/schema";
-import type { BusinessRow } from "../app/lib/data/rowCodec";
+import { row, sourceSql } from "../app/lib/data/testing/businessRow.mjs";
+export { sourceSql } from "../app/lib/data/testing/businessRow.mjs";
 import { openPostgresBackup } from "../app/lib/backups/business";
 import { prepareProductCatalog } from "../app/lib/data/migrateProducts";
 import { preparePersonnel } from "../app/lib/data/migratePersonnel";
@@ -25,27 +24,6 @@ import {
 import { readInitializationSource } from "../app/lib/crypto/initializationSource";
 import { openAuthority } from "../app/lib/crypto/setup";
 import type { OwnerDraft } from "../app/lib/crypto/tenantSetup";
-
-export function sourceSql(records: BusinessRow[]): string {
-  return records
-    .map((record) => {
-      const columns = tableDefinition(record.table).columns;
-      const values = columns.map((column) => {
-        const value = record.values[column.name];
-        if (value === null) return "\\N";
-        let text = String(value);
-        if (column.type === "bool") text = value ? "t" : "f";
-        if (column.type.startsWith("_")) text = "{}";
-        return text
-          .replaceAll("\\", "\\\\")
-          .replaceAll("\t", "\\t")
-          .replaceAll("\n", "\\n")
-          .replaceAll("\r", "\\r");
-      });
-      return `COPY public.${record.table} (${columns.map((column) => column.name).join(", ")}) FROM stdin;\n${values.join("\t")}\n\\.\n`;
-    })
-    .join("\n");
-}
 
 export async function exerciseBackupInitialization(
   owner: Client,

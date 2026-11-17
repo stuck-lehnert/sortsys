@@ -27,8 +27,17 @@ import { administratorContext } from "../crypto/administration";
 import { readInitializationSource } from "../crypto/initializationSource";
 import { backupObjects, type BackupFiles, type BackupObject } from "./files";
 import { openPostgresBackup } from "./business";
+import {
+  checkedImportHistory,
+  checkImportHistoryUsers,
+  selectImportHistory,
+  importHistoryBlob,
+  MAX_IMPORT_HISTORY_SOURCE_BYTES,
+  type ImportHistorySource,
+} from "./importHistory";
 
 const SOURCE_VERSION = "00000000000000000000000000000001";
+const HISTORY_SOURCE_VERSION = "00000000000000000000000000000002";
 const PAGE_SIZE = 32;
 type ArchivedObject = BackupObject & { id: string; content: FileContent };
 type PageReference = { id: string; signature: string };
@@ -38,6 +47,7 @@ type BackupManifest = {
   rows: string;
   ownerId: string;
   sql: FileContent;
+  history: FileContent | null;
   files: PageReference[];
 };
 
@@ -57,6 +67,7 @@ function manifestValue(input: unknown, context: string): BackupManifest {
     "rows",
     "ownerId",
     "sql",
+    "history",
     "files",
   ]);
   if (
@@ -74,6 +85,8 @@ function manifestValue(input: unknown, context: string): BackupManifest {
     rows: value.rows,
     ownerId: value.ownerId,
     sql: content(value.sql, context, "1"),
+    history:
+      value.history === null ? null : content(value.history, context, "1"),
     files: value.files.map((input, index) => {
       const page = record(input, ["id", "signature"]);
       if (
@@ -97,6 +110,7 @@ export async function archiveBackup(
     rows: bigint;
     files: BackupFiles;
     ownerId?: string;
+    history?: { file: Blob; tenant: string };
   },
   signal: AbortSignal,
   progress: (done: number, total: number) => void = () => {},
@@ -112,6 +126,15 @@ export async function archiveBackup(
     ownerId !== admin.session.user.id
   )
     throw new InvalidProtectedData();
+  let historySource: ImportHistorySource | null = null;
+  if (input.history) {
+    historySource = await selectImportHistory(
+      input.history.file,
+      input.history.tenant,
+      signal,
+    );
+    await checkImportHistoryUsers(historySource, input.database);
+  }
   await provisionOwnedCollections(
     client,
     subject,
@@ -138,6 +161,22 @@ export async function archiveBackup(
     input.sql,
     signal,
   );
+  let history: FileContent | null = null;
+  if (historySource) {
+    // Only the selected rows are archived. The global source dump, including
+    // other tenants and credentials, never leaves the local file reader.
+    const blob = importHistoryBlob(historySource);
+    history = await storeFileContent(
+      client,
+      state.context,
+      "1",
+      blob,
+      HISTORY_SOURCE_VERSION,
+      signal,
+      { resume: true },
+    );
+    await verifyFileContent(client, state.context, "1", history, blob, signal);
+  }
   const collection = await protectedCollection(client, area, signal);
   try {
     await collection.read();
@@ -193,6 +232,7 @@ export async function archiveBackup(
       rows: input.rows.toString(),
       ownerId,
       sql: sourceSql,
+      history,
       files: pages,
     };
     const previous = await collection.selected([id]);
@@ -267,6 +307,21 @@ export async function openBackupArchive(
     try {
       if (opened.rows.toString() !== manifest.rows)
         throw new InvalidProtectedData();
+      let history: ImportHistorySource | null = null;
+      if (manifest.history) {
+        if (manifest.history.size > MAX_IMPORT_HISTORY_SOURCE_BYTES)
+          throw new InvalidProtectedData();
+        const blob = await loadFileContent(
+          client,
+          state.context,
+          "1",
+          manifest.history,
+          "application/json",
+          signal,
+        );
+        history = checkedImportHistory(JSON.parse(await blob.text()));
+        await checkImportHistoryUsers(history, opened.database);
+      }
       const objects = new Map<string, ArchivedObject>();
       for (const page of manifest.files) {
         const entries = await collection.selected([page.id]);
@@ -339,7 +394,7 @@ export async function openBackupArchive(
           );
         },
       };
-      return { ...opened, manifest, files, source: state.source };
+      return { ...opened, manifest, files, history, source: state.source };
     } catch (error) {
       await opened.database.close();
       throw error;
