@@ -18,8 +18,9 @@ import { legacyChatSources } from "../../app/lib/data/testing/chatSources.mjs";
 import { signPolicy } from "@sortsys/zerotrust/sortsys";
 import { announceDataChanges } from "../../app/lib/data/runtime/changes";
 import { lockCryptoSession } from "../../app/lib/crypto/session";
+import { normalizeScanResult } from "../../app/lib/data/scanResult";
 
-export async function showChatHistory(
+export async function showAssistantHistory(
   root,
   {
     locale = "de",
@@ -28,6 +29,7 @@ export async function showChatHistory(
     readonly = false,
     hold = false,
     historyOnly = false,
+    importPage = false,
   } = {},
 ) {
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -43,7 +45,7 @@ export async function showChatHistory(
     },
     { backup: !readonly },
   );
-  tenant.state.roles = [":llm", "view:products", "manage:products"];
+  tenant.state.roles = [];
   const lifetime = new AbortController();
   if (readonly) {
     for (const [subject, entries] of chatSources(legacyChatSources())) {
@@ -52,6 +54,47 @@ export async function showChatHistory(
     }
   } else {
     await copyChats(tenant.client, legacyChatSources(), lifetime.signal);
+  }
+  if (importPage) {
+    const result = normalizeScanResult(
+      {
+        documentType: "deliveryNote",
+        supplier: null,
+        documentNumber: "782169",
+        documentDate: "2026-11-17",
+        comment: null,
+        lines: [
+          {
+            sourceText: "Zwei Eimer Farbe",
+            name: "Farbe",
+            brand: null,
+            description: null,
+            quantity: 2,
+            unit: "Eimer",
+            baseUnit: "Eimer",
+            unitConversions: [],
+            productId: null,
+            pricePerUnit: null,
+            confidence: 1,
+            comment: null,
+          },
+        ],
+      },
+      [],
+    );
+    await tenant.seed(own, "assistant:scan:1", {
+      format: "sortsys-assistant-v1",
+      kind: "scan",
+      id: "1",
+      value: {
+        format: "sortsys-scan-v1",
+        fileNames: ["Vertraulicher Lieferschein 782169.pdf"],
+        createdAt: "2026-11-17T10:00:00Z",
+        updatedAt: "2026-11-17T10:00:00Z",
+        result,
+        error: null,
+      },
+    });
   }
   const [currentPolicy] = await tenant.client.query("zerotrust.policy.get");
   const { signature, ...policy } = currentPolicy;
@@ -114,6 +157,7 @@ export async function showChatHistory(
   Object.assign(protectedContent, business.context);
   let release;
   let captured = false;
+  let delivered = false;
   const gate = new Promise((resolve) => {
     release = resolve;
   });
@@ -125,7 +169,15 @@ export async function showChatHistory(
     }
     return result;
   };
-  client.mutate = business.mutate;
+  client.mutate = async (path, input, options) => {
+    const result = await business.mutate(path, input, options);
+    if (path === "deliveryNotes.scan.complete" && hold) {
+      captured = true;
+      await gate;
+      delivered = true;
+    }
+    return result;
+  };
   client.streamQuery = business.streamQuery;
   client.invalidate = business.invalidate;
   client.loggedIn = () => true;
@@ -154,6 +206,7 @@ export async function showChatHistory(
   window.cryptoFixture.chatHistoryState = () => ({
     calls: tenant.calls,
     captured,
+    delivered,
   });
   window.cryptoFixture.releaseChatHistory = () => {
     hold = false;
@@ -167,26 +220,31 @@ export async function showChatHistory(
       revalidate: true,
     });
   };
-  const { default: LlmPage } = await import("../../app/routes/(shell)/llm");
-  const { LlmChatHistory } =
-    await import("../../app/components/LlmChatHistory");
-  let view = <LlmPage />;
-  if (historyOnly)
-    view = (
-      <>
-        <h1>Chatverläufe</h1>
-        <LlmChatHistory onNewChat={() => {}} />
-      </>
-    );
+  let view;
+  if (importPage) {
+    const { default: ImportPage } =
+      await import("../../app/routes/(shell)/products.deliveryNotes.import");
+    view = <ImportPage />;
+  } else if (historyOnly) {
+    const { default: ChatsPage } =
+      await import("../../app/routes/(shell)/llm.chats");
+    view = <ChatsPage />;
+  } else {
+    const { default: LlmPage } = await import("../../app/routes/(shell)/llm");
+    view = <LlmPage />;
+  }
   root.render(
     <I18nProvider>
-      <MemoryRouter initialEntries={["/llm/a"]}>
+      <MemoryRouter initialEntries={[importPage ? "/import" : "/llm/a"]}>
         <SessionInfoProvider sessionClient={sessionClient} access={access}>
           <NotificationProvider>
             <MyModalsProvider>
               <main className="p-3">
                 <Routes>
-                  <Route path="/llm/:chatId?" element={view} />
+                  <Route
+                    path={importPage ? "/import" : "/llm/:chatId?"}
+                    element={view}
+                  />
                 </Routes>
               </main>
             </MyModalsProvider>

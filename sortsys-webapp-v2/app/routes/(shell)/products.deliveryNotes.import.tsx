@@ -1,11 +1,13 @@
 import { Button as UIAction } from "@sortsys/react-components";
 import type { MutateResult, QueryResult } from "@sortsys/v2-client";
 import { Heading, Tile } from "@sortsys/react-components";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyHeader } from "~/components/MyHeader";
 import { useMyModals } from "~/hooks/useMyModals";
+import { useProtectedState } from "~/hooks/useProtectedState";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { API_ENDPOINT, client } from "~/lib/client";
 import { readSelectedDocuments } from "~/lib/data/imports";
 import { importMime } from "~/lib/importFiles";
@@ -34,7 +36,7 @@ const scanMimeTypes = new Set([
 const maxScanBytes = 20 * 1024 * 1024;
 const maxScanFiles = 20;
 const maxScanTotalBytes = 100 * 1024 * 1024;
-
+const NO_FILES: File[] = [];
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: uiText("Einlesen", "Import") }];
@@ -50,12 +52,18 @@ function deliveryDate(value: string | null) {
 function formatFileSize(size: number) {
   if (size < 1_000) return size + " " + uiText("Bytes", "bytes");
   if (size < 1_000_000) {
-    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
-      .format(size / 1_000) + " KB";
+    return (
+      new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(
+        size / 1_000,
+      ) + " KB"
+    );
   }
 
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
-    .format(size / 1_000_000) + " MB";
+  return (
+    new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(
+      size / 1_000_000,
+    ) + " MB"
+  );
 }
 
 function scanStateLabel(state: ScanEntry["state"]) {
@@ -89,47 +97,68 @@ function scanDocumentLabel(type: ScanEntry["documentType"]) {
 export default function ImportDeliveryNotePage() {
   const { localeTag } = useI18n();
   const modals = useMyModals();
+  const session = useSessionInfo();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
-  const [phase, setPhase] = useState<ProcessingPhase>("idle");
-  const [history, setHistory] = useState<ScanEntry[] | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [openingScanId, setOpeningScanId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [files, setFiles, context] = useProtectedState(NO_FILES);
+  const [phase, setPhase] = useProtectedState<ProcessingPhase>("idle");
+  const [history, setHistory] = useProtectedState<ScanEntry[] | null>(null);
+  const [historyError, setHistoryError] = useProtectedState<string | null>(
+    null,
+  );
+  const [openingScanId, setOpeningScanId] = useProtectedState<string | null>(
+    null,
+  );
+  const [error, setError] = useProtectedState<string | null>(null);
   const isProcessing = phase !== "idle";
+  const canImport = session.canDo(":llm") && session.canDo("view:products");
 
   useEffect(() => {
-    const subscription = client.streamQuery("deliveryNotes.scan.list", undefined, { strategy: "network-only" }).subscribe(([scans, error]) => {
-      if (error) setHistoryError(error.message);
-      else { setHistory(scans ?? []); setHistoryError(null); }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    let active = true;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    const subscription = client
+      .streamQuery("deliveryNotes.scan.list", undefined, {
+        strategy: "network-only",
+      })
+      .subscribe(([scans, error]) => {
+        if (!active || context.aborted) return;
+        setHistory(error ? null : (scans ?? []));
+        setHistoryError(error?.message ?? null);
+      });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [context, setHistory, setHistoryError]);
 
   function selectFiles(selected: Iterable<File>) {
-    if (isProcessing) return;
+    if (isProcessing || !canImport || context.aborted) return;
 
     const additions = Array.from(selected);
     if (additions.length === 0) return;
 
-    if (additions.some(file => !scanMimeTypes.has(importMime(file)))) {
-      setError(uiText(
-        "Erlaubt sind PDF-, XLSX-, JPG-, PNG- und WebP-Dateien.",
-        "PDF, XLSX, JPG, PNG, and WebP files are allowed.",
-      ));
+    if (additions.some((file) => !scanMimeTypes.has(importMime(file)))) {
+      setError(
+        uiText(
+          "Erlaubt sind PDF-, XLSX-, JPG-, PNG- und WebP-Dateien.",
+          "PDF, XLSX, JPG, PNG, and WebP files are allowed.",
+        ),
+      );
       return;
     }
 
-    if (additions.some(file => file.size > maxScanBytes)) {
-      setError(uiText(
-        "Eine Datei darf höchstens 20 MB groß sein.",
-        "Each file must not exceed 20 MB.",
-      ));
+    if (additions.some((file) => file.size > maxScanBytes)) {
+      setError(
+        uiText(
+          "Eine Datei darf höchstens 20 MB groß sein.",
+          "Each file must not exceed 20 MB.",
+        ),
+      );
       return;
     }
 
-    const known = new Set(files.map(file => fileKey(file)));
+    const known = new Set(files.map((file) => fileKey(file)));
     const next = [...files];
 
     for (const file of additions) {
@@ -140,19 +169,23 @@ export default function ImportDeliveryNotePage() {
     }
 
     if (next.length > maxScanFiles) {
-      setError(uiText(
-        "Pro Scan sind höchstens 20 Dateien möglich.",
-        "A scan can contain at most 20 files.",
-      ));
+      setError(
+        uiText(
+          "Pro Scan sind höchstens 20 Dateien möglich.",
+          "A scan can contain at most 20 files.",
+        ),
+      );
       return;
     }
 
     const totalBytes = next.reduce((sum, file) => sum + file.size, 0);
     if (totalBytes > maxScanTotalBytes) {
-      setError(uiText(
-        "Die Dateien dürfen zusammen höchstens 100 MB groß sein.",
-        "The files must not exceed 100 MB in total.",
-      ));
+      setError(
+        uiText(
+          "Die Dateien dürfen zusammen höchstens 100 MB groß sein.",
+          "The files must not exceed 100 MB in total.",
+        ),
+      );
       return;
     }
 
@@ -161,44 +194,49 @@ export default function ImportDeliveryNotePage() {
   }
 
   function openFilePicker(input: HTMLInputElement | null) {
-    if (!input || isProcessing) return;
+    if (!input || isProcessing || !canImport || context.aborted) return;
 
     // Choosing the same file again must still trigger the input event.
     input.value = "";
     input.click();
   }
 
-  async function buildPrefill(result: DeliveryNoteScanResult): Promise<DeliveryNotePrefill> {
-    const records = await Promise.all(result.records.map(async record => {
-      const [product, productError] = await client.query(
-        "products.get",
-        { id: record.productId },
-        { strategy: "cache-first" },
-      );
-      if (productError) throw productError;
-      if (!product) {
-        throw new Error(uiText(
-          "Ein erkanntes Produkt ist nicht mehr vorhanden.",
-          "A recognized product no longer exists.",
-        ));
-      }
+  async function buildPrefill(
+    result: DeliveryNoteScanResult,
+  ): Promise<DeliveryNotePrefill> {
+    const records = await Promise.all(
+      result.records.map(async (record) => {
+        const [product, productError] = await client.query(
+          "products.get",
+          { id: record.productId },
+          { strategy: "cache-first" },
+        );
+        if (productError) throw productError;
+        if (!product) {
+          throw new Error(
+            uiText(
+              "Ein erkanntes Produkt ist nicht mehr vorhanden.",
+              "A recognized product no longer exists.",
+            ),
+          );
+        }
 
-      return {
-        product,
-        amount: record.displayQuantity,
-        unit: record.unit,
-        comment: record.comment,
-      };
-    }));
+        return {
+          product,
+          amount: record.displayQuantity,
+          unit: record.unit,
+          comment: record.comment,
+        };
+      }),
+    );
     const comment = [
-      result.supplier && uiText(
-        "Lieferant: " + result.supplier,
-        "Supplier: " + result.supplier,
-      ),
-      result.deliveryNumber && uiText(
-        "Lieferscheinnummer: " + result.deliveryNumber,
-        "Delivery note number: " + result.deliveryNumber,
-      ),
+      result.supplier &&
+        uiText("Lieferant: " + result.supplier, "Supplier: " + result.supplier),
+      result.deliveryNumber &&
+        uiText(
+          "Lieferscheinnummer: " + result.deliveryNumber,
+          "Delivery note number: " + result.deliveryNumber,
+        ),
       result.comment,
     ].filter((value): value is string => Boolean(value));
 
@@ -206,7 +244,7 @@ export default function ImportDeliveryNotePage() {
       deliveryDate: deliveryDate(result.deliveryDate),
       comment: comment.join(" · "),
       records,
-      specialRecords: result.specialRecords.map(record => ({
+      specialRecords: result.specialRecords.map((record) => ({
         name: record.name,
         unit: record.unit,
         amount: record.amount,
@@ -218,11 +256,12 @@ export default function ImportDeliveryNotePage() {
   }
 
   async function openScan(scan: ScanEntry) {
+    if (context.aborted) return;
     if (scan.state === "failed") {
-      setError(scan.error ?? uiText(
-        "Der Scan ist fehlgeschlagen.",
-        "The scan failed.",
-      ));
+      setError(
+        scan.error ??
+          uiText("Der Scan ist fehlgeschlagen.", "The scan failed."),
+      );
       return;
     }
     if (scan.state !== "completed" || openingScanId) return;
@@ -235,51 +274,66 @@ export default function ImportDeliveryNotePage() {
         "deliveryNotes.scan.complete",
         { scanId: scan.id },
       );
+      if (context.aborted) return;
       if (resultError) throw resultError;
-      if (!result) throw new Error(uiText(
-        "Das Scan-Ergebnis konnte nicht geladen werden.",
-        "Could not load the scan result.",
-      ));
+      if (!result)
+        throw new Error(
+          uiText(
+            "Das Scan-Ergebnis konnte nicht geladen werden.",
+            "Could not load the scan result.",
+          ),
+        );
 
       if (result.documentType === "deliveryNote" && result.deliveryNote) {
-        showCreateDeliveryNoteModal(modals, await buildPrefill(result.deliveryNote));
+        const prefill = await buildPrefill(result.deliveryNote);
+        if (context.aborted) return;
+        showCreateDeliveryNoteModal(modals, prefill);
       } else if (result.priceList) {
         showPriceImportModal(modals, result.priceList, result.documentType);
       } else {
-        throw new Error(uiText(
-          "Das erkannte Dokument enthält kein verwendbares Ergebnis.",
-          "The recognized document contains no usable result.",
-        ));
+        throw new Error(
+          uiText(
+            "Das erkannte Dokument enthält kein verwendbares Ergebnis.",
+            "The recognized document contains no usable result.",
+          ),
+        );
       }
     } catch (cause) {
-      setError(cause instanceof Error
-        ? cause.message
-        : uiText(
-            "Das Scan-Ergebnis konnte nicht geöffnet werden.",
-            "Could not open the scan result.",
-          ));
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : uiText(
+              "Das Scan-Ergebnis konnte nicht geöffnet werden.",
+              "Could not open the scan result.",
+            ),
+      );
     } finally {
       setOpeningScanId(null);
     }
   }
 
   async function parseFiles() {
-    if (files.length === 0 || isProcessing) return;
+    if (files.length === 0 || isProcessing || !canImport || context.aborted)
+      return;
 
     setError(null);
     setPhase("processing");
 
     try {
-      await processImport((signal, progress) => readSelectedDocuments(client, API_ENDPOINT, files, signal, progress));
+      await processImport((signal, progress) =>
+        readSelectedDocuments(client, API_ENDPOINT, files, signal, progress),
+      );
 
       setFiles([]);
     } catch (cause) {
-      setError(cause instanceof Error
-        ? cause.message
-        : uiText(
-            "Das Dokument konnte nicht eingelesen werden.",
-            "Could not read the document.",
-          ));
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : uiText(
+              "Das Dokument konnte nicht eingelesen werden.",
+              "Could not read the document.",
+            ),
+      );
     } finally {
       setPhase("idle");
     }
@@ -303,6 +357,7 @@ export default function ImportDeliveryNotePage() {
           className="hidden"
           type="file"
           multiple
+          disabled={!canImport || isProcessing}
           accept="application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,image/jpeg,image/png,image/webp"
           onChange={(event) =>
             selectFiles(Array.from(event.currentTarget.files ?? []))
@@ -312,6 +367,7 @@ export default function ImportDeliveryNotePage() {
           ref={cameraInputRef}
           className="hidden"
           type="file"
+          disabled={!canImport || isProcessing}
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
           onChange={(event) =>
@@ -350,7 +406,7 @@ export default function ImportDeliveryNotePage() {
                     <UIAction
                       kind="ghost"
                       type="button"
-                      disabled={isProcessing}
+                      disabled={isProcessing || !canImport}
                       aria-label={uiText(
                         `${file.name} entfernen`,
                         `Remove ${file.name}`,
@@ -382,7 +438,7 @@ export default function ImportDeliveryNotePage() {
             <MyButton
               kind={files.length ? "ghost" : "secondary"}
               renderIcon={Icons.Upload}
-              disabled={isProcessing}
+              disabled={isProcessing || !canImport}
               onClick={() => openFilePicker(fileInputRef.current)}
             >
               {files.length
@@ -392,7 +448,7 @@ export default function ImportDeliveryNotePage() {
             <MyButton
               kind={files.length ? "ghost" : "secondary"}
               renderIcon={Icons.Camera}
-              disabled={isProcessing}
+              disabled={isProcessing || !canImport}
               onClick={() => openFilePicker(cameraInputRef.current)}
             >
               {uiText("Foto aufnehmen", "Take photo")}
@@ -404,12 +460,16 @@ export default function ImportDeliveryNotePage() {
           <div className="delivery-scan-start">
             {isProcessing && (
               <span className="light">
-                {uiText("Dokumente werden verarbeitet …", "Processing documents…")}
+                {uiText(
+                  "Dokumente werden verarbeitet …",
+                  "Processing documents…",
+                )}
               </span>
             )}
             <MyButton
               renderIcon={Icons.DeliveryNote}
               loading={isProcessing}
+              disabled={!canImport}
               onClick={() => void parseFiles()}
             >
               {uiText("Einlesen", "Scan")}

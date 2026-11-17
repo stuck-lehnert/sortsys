@@ -136,8 +136,14 @@ window.cryptoFixture = {
     await showTenantInitialization(root, options);
   },
   async showChatHistory(options) {
-    const { showChatHistory } = await import("./chat-history.fixture.jsx");
-    await showChatHistory(root, options);
+    const { showAssistantHistory } =
+      await import("./assistant-history.fixture.jsx");
+    await showAssistantHistory(root, options);
+  },
+  async showImportHistory(options) {
+    const { showAssistantHistory } =
+      await import("./assistant-history.fixture.jsx");
+    await showAssistantHistory(root, { ...options, importPage: true });
   },
   async showLogo(options) {
     const { showLogo } = await import("./logo.fixture.jsx");

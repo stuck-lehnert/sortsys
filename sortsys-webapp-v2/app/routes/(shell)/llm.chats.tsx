@@ -21,18 +21,11 @@ export default function LlmChatsPage() {
     [],
   );
 
+  let unavailableReason: string | null = null;
   if (status && !status.available) {
-    const reason = !status.hasRole
-      ? t("llm.missingRole")
-      : !status.tenantEnabled
-        ? t("llm.tenantDisabled")
-        : t("llm.providerMissing");
-
-    return (
-      <MyCallout icon={Icons.Info} color="blue">
-        {reason}
-      </MyCallout>
-    );
+    if (!status.hasRole) unavailableReason = t("llm.missingRole");
+    else if (!status.tenantEnabled) unavailableReason = t("llm.tenantDisabled");
+    else unavailableReason = t("llm.providerMissing");
   }
 
   return (
@@ -41,6 +34,11 @@ export default function LlmChatsPage() {
       className="mx-auto flex h-[calc(100dvh-7rem)] w-full max-w-3xl flex-col gap-3 p-3"
     >
       <h1 className="sr-only">{t("llm.chats")}</h1>
+      {unavailableReason && (
+        <MyCallout icon={Icons.Info} color="blue">
+          {unavailableReason}
+        </MyCallout>
+      )}
       {!!statusError && (
         <MyCallout icon={Icons.Deny} color="red">
           {statusError.message}

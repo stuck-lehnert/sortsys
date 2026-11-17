@@ -125,6 +125,12 @@ Schreibrechte. Ein Entzug des Katalogzugriffs verhindert neue Einleseanfragen;
 bereits gespeicherte persönliche Ergebnisse bleiben mit ihrer eigenen
 Lesefreigabe zugänglich.
 
+Der Einleseverlauf und die Dateiauswahl sind an den aktuellen Inhaltszugang
+gebunden. Ein Kontowechsel oder eine Rechteänderung verwirft den geladenen
+Stand. Verspätete Antworten können ihn nicht wieder anzeigen oder einen
+Ergebnisdialog öffnen. Reine Leserechte lassen frühere Ergebnisse sichtbar,
+sperren aber die Auswahl neuer Dateien.
+
 Bei einem Rechteentzug prüft eine laufende Anfrage die aktuelle Freigabe über
 den gemeinsamen Änderungsstrom erneut. Die API verwirft die Modellanfrage und
 offene Werkzeugaufrufe, auch wenn der Browser seine Verbindung offen hält.
