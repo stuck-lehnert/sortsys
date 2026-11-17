@@ -135,6 +135,7 @@ async function fixture(extraReader = false, suspended = false) {
     identity.signingKey.privateKey,
   );
   const state = {
+    openingRequests: 0,
     keyRequests: 0,
     definitionRequests: 0,
     failKey: false,
@@ -142,8 +143,10 @@ async function fixture(extraReader = false, suspended = false) {
     corrupt: false,
     invalidJson: false,
     conflict: false,
+    bundledOpenings: false,
     head: "1",
     beforeKey: async () => {},
+    transformOpenings: (openings) => openings,
     transformPage: (page) => page,
     pages: [],
   };
@@ -185,6 +188,22 @@ async function fixture(extraReader = false, suspended = false) {
         state.definitionRequests++;
         return [domain.definition, null];
       }
+      if (path === "zerotrust.keys.history") {
+        state.openingRequests++;
+        expect(input).toEqual({ domain: AREA.domain, generations: ["1"] });
+        await state.beforeKey();
+        if (state.failKey) return [null, new Error("Key request failed")];
+        return [
+          state.transformOpenings([
+            {
+              generation: "1",
+              definition: domain.definition,
+              envelope: domain.definition.envelopes[0],
+            },
+          ]),
+          null,
+        ];
+      }
       if (path === "zerotrust.keys.get") {
         state.keyRequests++;
         await state.beforeKey();
@@ -223,15 +242,22 @@ async function fixture(extraReader = false, suspended = false) {
             object.object === invalidJson.object ? invalidJson : object,
           );
         if (state.reverse) page = page.slice().reverse();
-        return [
-          state.transformPage({
-            snapshot: state.head,
-            keyGeneration: "1",
-            objects: page,
-            after: input.after === null ? page.at(-1).object : null,
-          }),
-          null,
-        ];
+        const result = {
+          snapshot: state.head,
+          keyGeneration: "1",
+          objects: page,
+          after: input.after === null ? page.at(-1).object : null,
+        };
+        if (state.bundledOpenings) {
+          result.openings = [
+            {
+              generation: "1",
+              definition: domain.definition,
+              envelope: domain.definition.envelopes[0],
+            },
+          ];
+        }
+        return [state.transformPage(result), null];
       }
       throw new Error("Unexpected protected read " + path);
     },
@@ -307,20 +333,75 @@ test("the receiving collection rejects an authentic reader forgery inserted into
   }
 });
 
-test("parallel object decryption preserves order and shares one verified key request across pages", async () => {
+test("parallel object decryption shares one combined opening request across pages", async () => {
   const { state, collection } = await fixture();
   try {
     const objects = await collection.read();
     expect(objects.map((object) => object.value.index)).toEqual(
       Array.from({ length: 48 }, (_, index) => index),
     );
-    expect(state.keyRequests).toBe(1);
-    expect(state.definitionRequests).toBe(1);
+    expect(state.openingRequests).toBe(1);
+    expect(state.keyRequests).toBe(0);
+    expect(state.definitionRequests).toBe(0);
     expect(state.pages).toEqual([null, "1"]);
   } finally {
     collection.close();
   }
 });
+
+test("verified openings bundled with object pages need no separate key request", async () => {
+  const { state, collection } = await fixture();
+  state.bundledOpenings = true;
+  try {
+    expect(await collection.read()).toHaveLength(48);
+    expect(state.openingRequests).toBe(0);
+    expect(state.keyRequests).toBe(0);
+    expect(state.definitionRequests).toBe(0);
+  } finally {
+    collection.close();
+  }
+});
+
+test.each([
+  ["a non-array response", () => ({ length: 1 })],
+  ["an empty response", () => []],
+  ["a null entry", () => [null]],
+  ["additional entries", (entries) => [...entries, entries[0]]],
+  ["a different generation", ([entry]) => [{ ...entry, generation: "2" }]],
+  ["a missing recipient key", ([entry]) => [{ ...entry, envelope: null }]],
+  [
+    "a different domain definition",
+    ([entry]) => [
+      { ...entry, definition: { ...entry.definition, id: "other" } },
+    ],
+  ],
+  [
+    "a different key recipient",
+    ([entry]) => [
+      { ...entry, envelope: { ...entry.envelope, recipient: "user:2" } },
+    ],
+  ],
+])(
+  "combined openings reject %s without falling back to separate key reads",
+  async (_name, transform) => {
+    const { state, collection } = await fixture();
+    state.transformOpenings = transform;
+    try {
+      await expect(collection.read()).rejects.toBeInstanceOf(
+        InvalidProtectedData,
+      );
+      expect(state.openingRequests).toBe(1);
+      expect(state.keyRequests).toBe(0);
+      expect(state.definitionRequests).toBe(0);
+      expect(() => collection.snapshot()).toThrow();
+      state.transformOpenings = (entries) => entries;
+      expect(await collection.read()).toHaveLength(48);
+      expect(state.openingRequests).toBe(2);
+    } finally {
+      collection.close();
+    }
+  },
+);
 
 test("a false rotation flag cannot authorize new ciphertext for a suspended reader's old key", async () => {
   const allowed = await fixture(true, false);
@@ -344,7 +425,7 @@ test("a false rotation flag cannot authorize new ciphertext for a suspended read
         text: "Do not send this to an old reader",
       }),
     ).rejects.toBeInstanceOf(InvalidProtectedData);
-    expect(blocked.state.definitionRequests).toBe(1); // A cached read key must still undergo the audience check.
+    expect(blocked.state.openingRequests).toBe(1); // A cached read key must still undergo the audience check.
   } finally {
     blocked.collection.close();
   }
@@ -357,7 +438,7 @@ test("corrupt or unordered pages cannot supply a verified snapshot", async () =>
     try {
       await expect(collection.read()).rejects.toThrow();
       expect(() => collection.snapshot()).toThrow();
-      if (issue === "reverse") expect(state.keyRequests).toBe(0);
+      if (issue === "reverse") expect(state.openingRequests).toBe(0);
       state[issue] = false;
       expect((await collection.read()).length).toBe(48);
       expect(collection.snapshot()).toBe("1");
@@ -372,10 +453,12 @@ test("a shared failed key request is retryable and a closed collection rejects l
   first.state.failKey = true;
   try {
     await expect(first.collection.read()).rejects.toThrow("Key request failed");
-    expect(first.state.keyRequests).toBe(1);
+    expect(first.state.openingRequests).toBe(1);
+    expect(first.state.keyRequests).toBe(0);
+    expect(first.state.definitionRequests).toBe(0);
     first.state.failKey = false;
     expect((await first.collection.read()).length).toBe(48);
-    expect(first.state.keyRequests).toBe(2);
+    expect(first.state.openingRequests).toBe(2);
   } finally {
     first.collection.close();
   }
@@ -402,7 +485,7 @@ test("a changed page snapshot discards the old attempt before publishing the rep
     ).toEqual(Array.from({ length: 48 }, (_, index) => index));
     expect(state.pages).toEqual([null, "1", null, "2"]);
     expect(collection.snapshot()).toBe("2");
-    expect(state.keyRequests).toBe(1);
+    expect(state.openingRequests).toBe(1);
   } finally {
     collection.close();
   }
@@ -448,7 +531,7 @@ test("malformed or oversized pages are rejected before requesting decryption key
       await expect(collection.read()).rejects.toBeInstanceOf(
         InvalidProtectedData,
       );
-      expect(state.keyRequests).toBe(0);
+      expect(state.openingRequests).toBe(0);
       expect(() => collection.snapshot()).toThrow();
     }
     state.transformPage = (page) => page;

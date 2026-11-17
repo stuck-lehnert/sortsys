@@ -9,6 +9,7 @@ import { createBusinessDatabase } from "./database";
 import { projectCompleteRows } from "./projection";
 import { prepareDailyReports } from "./migrateDailyReports";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { row } from "./rowCodec.test.mjs";
 import { reportFixture } from "./dailyReportData.test.mjs";
@@ -100,7 +101,7 @@ test("editing hours without cost access preserves encrypted costs and sends no b
     );
     expect(
       f.calls
-        .filter((call) => call.path === "zerotrust.keys.get")
+        .filter((call) => isKeyEnvelopeQuery(call.path))
         .every((call) => call.input.domain !== f.cost.domain),
     ).toBe(true);
     await expect(
@@ -534,7 +535,7 @@ test("deleting a daily report needs no update or private-cost grant, including a
     ).toEqual([]);
     expect(
       f.calls
-        .filter((call) => call.path === "zerotrust.keys.get")
+        .filter((call) => isKeyEnvelopeQuery(call.path))
         .every((call) => call.input.domain !== f.cost.domain),
     ).toBe(true);
   } finally {

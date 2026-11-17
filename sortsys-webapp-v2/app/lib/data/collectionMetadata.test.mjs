@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedCollections } from "./protectedObjects";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { defineDataModel } from "./runtime/model";
 import { DataRuntime } from "./runtime/runtime";
 import { encryptedDataStorage } from "./runtime/storage";
@@ -237,7 +238,7 @@ test("one combined metadata response produces no usable context before verificat
   expect(
     context.areas((domain) => (domain === area.domain ? area : null)),
   ).toEqual([area]);
-  expect(fixture.calls.some((call) => call.path === "zerotrust.keys.get")).toBe(
+  expect(fixture.calls.some((call) => isKeyEnvelopeQuery(call.path))).toBe(
     false,
   );
 });
@@ -255,7 +256,7 @@ test("account replacement during concurrent metadata loading cannot return a lat
   expect(
     fixture.calls.some(
       (call) =>
-        call.path === "zerotrust.keys.get" ||
+        isKeyEnvelopeQuery(call.path) ||
         call.path.startsWith("zerotrust.objects."),
     ),
   ).toBe(false);
@@ -289,7 +290,7 @@ test("selected inventories reject unrelated or duplicate domains before requesti
       protectedCollections(fixture.client, signal, [area.domain]),
     ).rejects.toThrow();
   }
-  expect(fixture.calls.some((call) => call.path === "zerotrust.keys.get")).toBe(
+  expect(fixture.calls.some((call) => isKeyEnvelopeQuery(call.path))).toBe(
     false,
   );
 });

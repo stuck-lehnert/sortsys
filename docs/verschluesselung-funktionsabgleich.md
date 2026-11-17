@@ -541,6 +541,12 @@ DuckDB-Dienst. Mehrere API-Instanzen vergleichen dabei die gelesenen Datensätze
 und Katalogstände mit dem Stand beim Speichern. Geheime Produktinhalte werden
 dafür nicht gelesen.
 
+Fehlen die Schlüsselpakete in einer Objektseite, liest der Browser den
+Bereichsnachweis und die eigene Schlüsselhülle gemeinsam unter derselben
+Berechtigungsprüfung. Bereits mitgelieferte Pakete benötigen keinen weiteren
+Abruf. Fehlerhafte oder fehlende Pakete werden abgewiesen; sie lösen keine
+zusätzlichen Einzelabrufe aus.
+
 Schreibanfragen nennen außerdem den vollständig geprüften Katalogstand. Zwei
 reguläre Clients können dadurch nicht gleichzeitig dieselbe Artikelnummer für
 verschiedene Produkte auf Grundlage eines veralteten Stands vergeben. Ein

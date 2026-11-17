@@ -317,23 +317,43 @@ function openCollection(
       generation,
     ]);
   }
+  async function readOpening(
+    generation: string,
+  ): Promise<NonNullable<ObjectPage["openings"]>[number]> {
+    const bundled = openings.get(generation);
+    if (bundled) return bundled;
+    // The definition and this recipient's wrapped key belong to one authorized
+    // snapshot. Do not add two sequential reads when a page omitted its keys.
+    const entries = await required(
+      client.query(
+        "zerotrust.keys.history",
+        { domain: collection.domain, generations: [generation] },
+        { strategy: "network-only" },
+      ),
+    );
+    live();
+    if (
+      !Array.isArray(entries) ||
+      entries.length !== 1 ||
+      entries[0]?.generation !== generation ||
+      !entries[0].envelope
+    ) {
+      throw new InvalidProtectedData();
+    }
+    return {
+      generation,
+      definition: entries[0].definition,
+      envelope: entries[0].envelope,
+    };
+  }
   async function keyFor(generation: string): Promise<CryptoKey> {
     live();
     let loading = keys.get(generation);
     if (!loading) {
       loading = (async () => {
-        const bundled = openings.get(generation);
-        const definition =
-          bundled?.definition ??
-          (await required(
-            client.query(
-              "zerotrust.domains.get",
-              { domain: collection.domain, generation },
-              { strategy: "network-only" },
-            ),
-          ));
+        const opening = await readOpening(generation);
         live();
-        const verified = await author.definition(definition, {
+        const verified = await author.definition(opening.definition, {
           tenant: account!.tenant,
           id: collection.domain,
           scope: collection.scope,
@@ -341,22 +361,14 @@ function openCollection(
           generation,
         });
         definitions.set(generation, verified);
-        const box =
-          bundled?.envelope ??
-          (await required(
-            client.query(
-              "zerotrust.keys.get",
-              { domain: collection.domain, generation },
-              { strategy: "network-only" },
-            ),
-          ));
+        const box = opening.envelope;
         live();
         const keyAuthority = await readBoxKeyAuthority(client, {
           box,
           definition: verified,
           history,
           live,
-          keyAuthority: bundled?.keyAuthority,
+          keyAuthority: opening.keyAuthority,
         });
         const raw = await openBox(
           box,

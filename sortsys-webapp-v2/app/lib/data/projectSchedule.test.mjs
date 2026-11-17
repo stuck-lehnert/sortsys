@@ -16,6 +16,7 @@ import {
 } from "./projectScheduleData";
 import { row } from "./rowCodec.test.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 afterEach(() => lockCryptoSession());
 const range = { from: "2026-03-01T00:00:00Z", to: "2026-04-01T00:00:00Z" };
@@ -171,7 +172,7 @@ test("planning filters use half-open instant ranges, inclusive calendar days and
     ).toEqual([]);
     expect(
       f.calls
-        .filter((call) => call.path === "zerotrust.keys.get")
+        .filter((call) => isKeyEnvelopeQuery(call.path))
         .some((call) => call.input.domain === f.hidden.domain),
     ).toBe(false);
     expect(JSON.stringify(f.calls)).not.toContain("Zugang gesperrt");

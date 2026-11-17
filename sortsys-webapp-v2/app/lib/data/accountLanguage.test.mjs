@@ -107,17 +107,31 @@ test("lost replies are confirmed by own-session metadata and false acknowledgeme
 test("a response for a different authenticated account never confirms the language change", async () => {
   const f = await fixture();
   try {
-    f.metadata.username = "other";
+    f.metadata.id = "2";
     await expect(f.store.setLanguage({ locale: "en" })).rejects.toThrow();
     expect(f.calls.some((call) => call.path === "settings.language.set")).toBe(
       false,
     );
-    f.metadata.username = "owner";
+    f.metadata.id = "1";
     f.metadata.afterSave = async () => {
       f.metadata.id = "2";
     };
     await expect(f.store.setLanguage({ locale: "en" })).rejects.toThrow();
     expect(f.invalidate).toEqual([]);
+  } finally {
+    f.store.close();
+  }
+});
+
+test("a renamed account keeps its language preference through its stable identity", async () => {
+  const f = await fixture();
+  try {
+    f.metadata.username = "renamed-owner";
+    await expect(f.store.setLanguage({ locale: "en" })).resolves.toEqual({
+      success: true,
+    });
+    expect(f.metadata.locale).toBe("en");
+    expect(f.invalidate).toEqual(["auth.sessionInfo"]);
   } finally {
     f.store.close();
   }

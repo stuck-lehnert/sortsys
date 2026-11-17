@@ -24,6 +24,7 @@ import {
   verifyTrustHistory,
 } from "@sortsys/zerotrust/sortsys";
 import { createObjectAuthorVerifier } from "./objectAuthors";
+import { isKeyEnvelopeQuery } from "../data/testing/keyQueries.mjs";
 
 const PHRASE =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
@@ -762,9 +763,9 @@ test("signed control records reject a certified reader and retain historical wri
         ),
       ).rejects.toThrow();
     }
-    expect(
-      current.calls.some((call) => call.path === "zerotrust.keys.get"),
-    ).toBe(false);
+    expect(current.calls.some((call) => isKeyEnvelopeQuery(call.path))).toBe(
+      false,
+    );
   }
   const current = await fixture(["read", "update"]);
   current.roots.set("3", {

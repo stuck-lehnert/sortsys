@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { row } from "./rowCodec.test.mjs";
 import { regieFixture } from "./regieReportData.test.mjs";
@@ -111,7 +112,7 @@ test("regie material edits neither read nor replace hidden hours or prices", asy
     expect(f.objects.get(f.timeArea.prefix + "3")).toEqual(hours);
     expect(
       f.calls
-        .filter((call) => call.path === "zerotrust.keys.get")
+        .filter((call) => isKeyEnvelopeQuery(call.path))
         .some(
           (call) =>
             call.input.domain === f.timeArea.domain ||
@@ -464,7 +465,7 @@ test("deleting a regie report uses only its read/delete grant and retains hidden
     ).toEqual([]);
     expect(
       f.calls
-        .filter((call) => call.path === "zerotrust.keys.get")
+        .filter((call) => isKeyEnvelopeQuery(call.path))
         .every(
           (call) =>
             ![f.timeArea.domain, PRICE_COLLECTION.domain].includes(

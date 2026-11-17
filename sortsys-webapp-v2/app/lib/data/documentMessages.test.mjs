@@ -6,6 +6,7 @@ import {
   openDocumentMessages,
 } from "./documentMessages";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
+import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 
 afterEach(() => lockCryptoSession());
 
@@ -95,8 +96,7 @@ test("live-layer key reads overlap within a bounded group before sending and ope
     let active = 0;
     let maximum = 0;
     tenant.client.query = async (path, input, options) => {
-      if (path !== "zerotrust.domains.get" && path !== "zerotrust.keys.get")
-        return query(path, input, options);
+      if (!isKeyEnvelopeQuery(path)) return query(path, input, options);
       active++;
       maximum = Math.max(maximum, active);
       try {
@@ -151,7 +151,7 @@ test("a scope-only member exchanges text without obtaining or querying financial
       "Vertraulicher Text 572918",
     );
     const domains = tenant.calls
-      .filter((call) => call.path === "zerotrust.keys.get")
+      .filter((call) => isKeyEnvelopeQuery(call.path))
       .map((call) => call.input.domain);
     expect(domains.length).toBeGreaterThan(0);
     expect(new Set(domains)).toEqual(new Set([area.domain]));

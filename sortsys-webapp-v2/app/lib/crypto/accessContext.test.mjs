@@ -8,6 +8,7 @@ import {
 import { verifiedAccessContext } from "./accessContext";
 import { lockCryptoSession } from "./session";
 import { protectedTenant } from "../data/testing/protectedTenant.mjs";
+import { isKeyEnvelopeQuery } from "../data/testing/keyQueries.mjs";
 
 afterEach(() => lockCryptoSession());
 
@@ -164,7 +165,7 @@ test("access inventories consume bounded pages without requesting content keys",
     after: "2",
     includeDomains: true,
   });
-  expect(fixture.calls.some((call) => call.path === "zerotrust.keys.get")).toBe(
+  expect(fixture.calls.some((call) => isKeyEnvelopeQuery(call.path))).toBe(
     false,
   );
 });
@@ -214,7 +215,7 @@ test("a continuation rejects substituted snapshots, repeated cursors, duplicates
       verifiedAccessContext(fixture.client, signal()),
     ).rejects.toThrow();
   }
-  expect(fixture.calls.some((call) => call.path === "zerotrust.keys.get")).toBe(
+  expect(fixture.calls.some((call) => isKeyEnvelopeQuery(call.path))).toBe(
     false,
   );
 });
