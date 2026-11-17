@@ -133,6 +133,27 @@ async fn public_head(service: &AuthService, input: TenantInput) -> RpcResult<Rec
         operation: None,
     })
 }
+async fn account_lookup(
+    service: &AuthService,
+    input: InspectInput,
+) -> RpcResult<Option<ExistingAccount>> {
+    let _admission = crate::auth_limits::admit_login()?;
+    let message = sortsys_zerotrust::recovery::account_lookup_frame(
+        &input.tenant,
+        &input.generation,
+        &input.nonce,
+    )?;
+    let repository = repository(service, &input.tenant).await?;
+    let mut transaction = repository.transaction()?;
+    let root = setup::metadata_root(&mut transaction, &input.tenant).await?;
+    if input.generation != root.profile.authority.generation {
+        return Err(conflict());
+    }
+    verify_seed(&root, &input.proof, &message)?;
+    let result = super::account::describe(&mut transaction, &root).await?;
+    transaction.validate().await?;
+    Ok(result)
+}
 async fn source(service: &AuthService, input: InspectInput) -> RpcResult<RecoverySourceHead> {
     let _admission = crate::auth_limits::admit_login()?;
     sized::<32>(&input.nonce)?;
@@ -214,6 +235,9 @@ async fn registration(
     service: &AuthService,
     input: RegistrationInput,
 ) -> RpcResult<RegistrationOutput> {
+    if let Some(version) = &input.account_version {
+        sized::<32>(version)?;
+    }
     let _admission = crate::auth_limits::admit_login()?;
     identifier(&input.username)?;
     let owner = input
@@ -222,7 +246,7 @@ async fn registration(
         .and_then(|value| Id::decode(value).ok())
         .filter(|id| id.0 > 0 && accounts::subject(id.0) == input.subject)
         .ok_or_else(invalid)?;
-    if input.username != format!("recovery-{}", owner.encode()) {
+    if input.account_version.is_none() && input.username != format!("recovery-{}", owner.encode()) {
         return Err(invalid());
     }
     let repository = repository(service, &input.tenant).await?;
@@ -233,16 +257,25 @@ async fn registration(
         &root,
         &input.proof,
         &frame(
-            "sortsys/recovery-registration/v2",
+            "sortsys/recovery-registration/v3",
             &[
                 &input.tenant,
                 &input.challenge_id,
                 &input.username,
                 &input.subject,
                 &input.registration_request,
+                input.account_version.as_deref().unwrap_or(""),
             ],
         ),
     )?;
+    super::account::target(
+        &mut transaction,
+        &root,
+        &input.subject,
+        &input.username,
+        input.account_version.as_deref(),
+    )
+    .await?;
     let response = recovery_registration(
         &repository,
         &input.tenant,
@@ -322,17 +355,14 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
     }
     let owner = input.owner_id()?;
     prefetch_publication(&mut transaction, &input, owner.0).await?;
-    if transaction
-        .read::<accounts::Account>(accounts::account_key(owner.0))
-        .await?
-        .is_some()
-        || transaction
-            .read::<accounts::Username>(key("usernames", &input.username))
-            .await?
-            .is_some()
-    {
-        return Err(conflict());
-    }
+    let previous_account = super::account::target(
+        &mut transaction,
+        &root,
+        &input.next_setup.owner.user,
+        &input.username,
+        input.account_version.as_deref(),
+    )
+    .await?;
     // The API proves public coverage, not the plaintext inside an envelope.
     let supplied = input
         .old_key_envelopes
@@ -354,24 +384,34 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
     super::inventory::reserve_recovery(&mut transaction, domains.len(), expected.len()).await?;
     let generation = input.next_setup.authority.generation.clone();
     let now = Utc::now();
-    let account = accounts::Account {
+    let credential_revision = match &previous_account {
+        Some(account) => account.credential()?.revision,
+        None => 0,
+    }
+    .checked_add(1)
+    .ok_or_else(conflict)?;
+    let mut account = previous_account.unwrap_or_else(|| accounts::Account {
         id: owner.0,
         username: input.username.clone(),
         locale: "de".into(),
-        epoch: 1,
-        roles: vec![":admin".into()],
+        epoch: 0,
+        roles: vec![],
         created_at: now,
         modified_at: now,
         deactivated_at: None,
         archived_at: None,
         deleted_at: None,
-        credential: Some(accounts::Credential {
-            revision: 1,
-            record: encode(&validate_registration(&input.registration_record)?),
-            vault: input.vault.clone(),
-            certificate: serde_json::to_value(&input.next_setup.owner).map_err(internal)?,
-        }),
-    };
+        credential: None,
+    });
+    account.epoch = account.epoch.checked_add(1).ok_or_else(conflict)?;
+    account.roles = vec![":admin".into()];
+    account.modified_at = now;
+    account.credential = Some(accounts::Credential {
+        revision: credential_revision,
+        record: encode(&validate_registration(&input.registration_record)?),
+        vault: input.vault.clone(),
+        certificate: serde_json::to_value(&input.next_setup.owner).map_err(internal)?,
+    });
     transaction
         .put_protected(accounts::account_key(owner.0), &account)
         .await?;
@@ -560,6 +600,7 @@ pub(crate) fn register(
     let builder = catalog::register(builder, Arc::clone(&service));
     let header = Arc::clone(&service);
     let inspect = Arc::clone(&service);
+    let lookup = Arc::clone(&service);
     let enroll = Arc::clone(&service);
     let apply = Arc::clone(&service);
     builder
@@ -572,6 +613,13 @@ pub(crate) fn register(
             move |_, input: InspectInput| {
                 let service = Arc::clone(&inspect);
                 async move { source(&service, input).await }
+            },
+        )
+        .mutation(
+            "zerotrust.recovery.account",
+            move |_, input: InspectInput| {
+                let service = Arc::clone(&lookup);
+                async move { account_lookup(&service, input).await }
             },
         )
         .mutation(

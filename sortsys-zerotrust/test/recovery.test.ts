@@ -22,13 +22,140 @@ import {
   publicIdentity,
   randomSecret,
   recoveryBundleHash,
+  recoveryAccountFrame,
   recoveryIdentity,
+  recoveryRegistrationFrame,
+  sign,
   startOpaqueLogin,
   utf8,
+  verify,
   verifyRecoveryTransition,
   verifyTrustHistory,
 } from "../src/sortsys";
 import { server } from "@serenity-kit/opaque";
+
+test("recovery can retain an existing principal while replacing its credential and signing keys", async () => {
+  const f = await recoveryFixture();
+  const administrator = {
+    subject: f.setup.owner.user,
+    username: "administrator.unchanged",
+    version: base64(randomSecret()),
+  };
+  let requests = 0;
+  const { plan, identity } = await prepareRecovery({
+    oldPhrase: f.phrase,
+    newPhrase: f.newPhrase,
+    password: f.password,
+    source: f.source,
+    administrator,
+    register: async (input) => {
+      requests++;
+      expect(input.subject).toBe(administrator.subject);
+      expect(input.username).toBe(administrator.username);
+      expect(input.accountVersion).toBe(administrator.version);
+      const key = await importSigningKey(f.setup.authority.recoverySigningKey);
+      const registrationFrame = (version?: string) =>
+        recoveryRegistrationFrame(
+          input.tenant,
+          input.challengeId,
+          input.username,
+          input.subject,
+          input.registrationRequest,
+          version,
+        );
+      await verify(key, input.proof, registrationFrame(administrator.version));
+      await expect(
+        verify(key, input.proof, registrationFrame()),
+      ).rejects.toThrow();
+      await expect(
+        verify(key, input.proof, registrationFrame(base64(randomSecret()))),
+      ).rejects.toThrow();
+      return f.register(input);
+    },
+  });
+  expect(requests).toBe(1);
+  expect(plan.nextSetup.owner.user).toBe(administrator.subject);
+  expect(plan.vault.subject).toBe(administrator.subject);
+  expect(plan.username).toBe(administrator.username);
+  expect(plan.accountVersion).toBe(administrator.version);
+  expect(plan.nextSetup.owner.signingKey).not.toBe(f.setup.owner.signingKey);
+  expect(plan.nextSetup.owner.encryptionKey).not.toBe(
+    f.setup.owner.encryptionKey,
+  );
+  expect(await publicIdentity(identity)).toMatchObject({
+    signingKey: plan.nextSetup.owner.signingKey,
+    encryptionKey: plan.nextSetup.owner.encryptionKey,
+  });
+  await verifyRecoveryTransition(plan);
+  for (const version of [undefined, base64(randomSecret())]) {
+    const changed = { ...plan };
+    if (version === undefined) delete changed.accountVersion;
+    else changed.accountVersion = version;
+    expect(await recoveryBundleHash(changed)).not.toBe(
+      plan.transition.nextAdministratorBundleHash,
+    );
+    await expect(verifyRecoveryTransition(changed)).rejects.toThrow();
+  }
+});
+
+test("a malformed existing-account descriptor never reaches registration", async () => {
+  const f = await recoveryFixture();
+  const valid = {
+    subject: f.setup.owner.user,
+    username: "administrator",
+    version: base64(randomSecret()),
+  };
+  const register = async () => {
+    throw new Error("Registration must not run");
+  };
+  for (const administrator of [
+    { ...valid, version: "short" },
+    { ...valid, subject: "" },
+    { ...valid, username: "" },
+    { ...valid, untrusted: true },
+  ]) {
+    await expect(
+      prepareRecovery({
+        oldPhrase: f.phrase,
+        newPhrase: f.newPhrase,
+        password: f.password,
+        source: f.source,
+        administrator,
+        register,
+      }),
+    ).rejects.toBeInstanceOf(InvalidProtectedData);
+  }
+});
+
+test("seed proofs for account lookup bind tenant, generation and nonce and cannot register a password", async () => {
+  const f = await recoveryFixture();
+  const recovery = await recoveryIdentity(f.phrase, "test", "1");
+  const nonce = base64(randomSecret());
+  const proof = await sign(
+    recovery.signingKey.privateKey,
+    recoveryAccountFrame("test", "1", nonce),
+  );
+  await verify(
+    recovery.signingKey.publicKey,
+    proof,
+    recoveryAccountFrame("test", "1", nonce),
+  );
+  for (const binding of [
+    recoveryAccountFrame("other", "1", nonce),
+    recoveryAccountFrame("test", "2", nonce),
+    recoveryAccountFrame("test", "1", base64(randomSecret())),
+    recoveryRegistrationFrame(
+      "test",
+      "challenge:one",
+      "administrator",
+      f.setup.owner.user,
+      nonce,
+    ),
+  ])
+    await expect(
+      verify(recovery.signingKey.publicKey, proof, binding),
+    ).rejects.toThrow();
+});
 
 async function rejectsBeforeRegistration(
   fixture: Awaited<ReturnType<typeof recoveryFixture>>,
@@ -326,7 +453,8 @@ test("seed recovery restores historical content, changes all future keys and cre
   const response = server.startLogin({
     serverSetup: f.serverSetup,
     registrationRecord: f.plan.registrationRecord,
-    userIdentifier: opaqueIdentifiers("test", f.plan.nextSetup.owner.user).client,
+    userIdentifier: opaqueIdentifiers("test", f.plan.nextSetup.owner.user)
+      .client,
     startLoginRequest: started.startLoginRequest,
     identifiers: opaqueIdentifiers("test", f.plan.nextSetup.owner.user),
   });

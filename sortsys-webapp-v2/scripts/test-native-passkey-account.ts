@@ -68,14 +68,22 @@ try {
       tenant,
       source.phrase,
       "Recovered-passkey-test-password-2026!",
+      { restoreAdministrator: true },
     );
+    assert.equal(draft.administrator?.username, "builder-updated");
     const plan = await recoveryPlan(client, draft);
+    assert.equal(plan.nextSetup.owner.user, draft.administrator?.subject);
+    assert.equal(plan.username, "builder-updated");
     await commitRecovery(client, plan);
     await signIn(client, {
       tenant,
       username: plan.username,
       password: draft.password,
     });
+    const restored = await required(
+      client.query("auth.sessionInfo", undefined),
+    );
+    assert.equal(`user:${restored.user.id}`, draft.administrator?.subject);
     process.stdout.write(
       JSON.stringify({ success: true, username: plan.username }) + "\n",
     );

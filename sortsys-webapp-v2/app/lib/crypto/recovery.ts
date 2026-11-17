@@ -19,11 +19,14 @@ import {
   recoveryCatalogAccessFrame,
   sealedBox,
   preparePayload,
+  recoveryAccountFrame,
+  existingRecoveryAccount,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   RecoveryPlan,
   RecoveryCatalogStorage,
   SealedBox,
+  ExistingRecoveryAccount,
 } from "@sortsys/zerotrust/sortsys";
 import { passwordWorker } from "./session";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
@@ -35,7 +38,13 @@ export type RecoveryDraft = {
   newPhrase: string;
   password: string;
   generation: string;
+  administrator?: ExistingRecoveryAccount;
 };
+export class RecoveryAccountUnavailable extends Error {
+  constructor() {
+    super("The existing recovery administrator is unavailable");
+  }
+}
 export class RecoveryNotStarted extends Error {
   constructor() {
     super("Recovery has not started");
@@ -47,6 +56,7 @@ export async function recoveryDraft(
   tenant: string,
   phrase: string,
   password: string,
+  options: { restoreAdministrator?: boolean } = {},
   resumed = false,
 ): Promise<RecoveryDraft> {
   const oldPhrase = normalizeRecoveryPhrase(phrase);
@@ -66,7 +76,7 @@ export async function recoveryDraft(
       operation: head.operation,
     });
     if (failure) throw failure;
-    return recoveryDraft(client, tenant, phrase, password, true);
+    return recoveryDraft(client, tenant, phrase, password, options, true);
   }
   const identity = await recoveryIdentity(oldPhrase, tenant, head.generation);
   const pub = await publicIdentity(identity);
@@ -77,13 +87,40 @@ export async function recoveryDraft(
   });
   if (authority.recoveryEncryptionKey !== pub.encryptionKey)
     throw new InvalidProtectedData();
+  const administrator = options.restoreAdministrator
+    ? await currentRecoveryAdministrator(
+        client,
+        tenant,
+        head.generation,
+        identity.signingKey.privateKey,
+      )
+    : undefined;
   return {
     tenant,
     oldPhrase,
     newPhrase: createRecoveryPhrase(),
     password,
     generation: head.generation,
+    ...(administrator ? { administrator } : {}),
   };
+}
+
+async function currentRecoveryAdministrator(
+  client: Client,
+  tenant: string,
+  generation: string,
+  key: CryptoKey,
+): Promise<ExistingRecoveryAccount> {
+  const nonce = base64(randomSecret());
+  const [reply, error] = await client.mutate("zerotrust.recovery.account", {
+    tenant,
+    generation,
+    nonce,
+    proof: await sign(key, recoveryAccountFrame(tenant, generation, nonce)),
+  });
+  if (error) throw error;
+  if (!reply) throw new RecoveryAccountUnavailable();
+  return existingRecoveryAccount(reply);
 }
 
 export async function recoveryPlan(
@@ -95,6 +132,18 @@ export async function recoveryPlan(
     draft.tenant,
     draft.generation,
   );
+  // Refresh the account fingerprint on retry. The API checks it again during
+  // registration and publication; a concurrent password change is never lost.
+  const administrator = draft.administrator
+    ? await currentRecoveryAdministrator(
+        client,
+        draft.tenant,
+        draft.generation,
+        identity.signingKey.privateKey,
+      )
+    : undefined;
+  if (administrator && administrator.subject !== draft.administrator?.subject)
+    throw new InvalidProtectedData();
   const nonce = base64(randomSecret());
   const proof = await sign(
     identity.signingKey.privateKey,
@@ -214,6 +263,7 @@ export async function recoveryPlan(
       newPhrase: draft.newPhrase,
       password: draft.password,
       source,
+      ...(administrator ? { administrator } : {}),
       catalogStorage,
       registrationCrypto: {
         start: (password) => worker.call("registrationStart", { password }),

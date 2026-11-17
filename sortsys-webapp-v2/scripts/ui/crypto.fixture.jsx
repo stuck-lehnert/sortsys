@@ -59,6 +59,10 @@ function beginLLM(kind) {
 }
 
 window.cryptoFixture = {
+  async showRecoveryPage() {
+    const { showRecoveryPage } = await import("./recovery.fixture.jsx");
+    return showRecoveryPage(root);
+  },
   async showModalAccess() {
     const { showModalAccess } = await import("./modal-access.fixture.jsx");
     showModalAccess(root);

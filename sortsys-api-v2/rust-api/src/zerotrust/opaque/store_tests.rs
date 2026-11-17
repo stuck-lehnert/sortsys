@@ -18,6 +18,7 @@ use tokio::{process::Command, task::JoinHandle};
 
 mod batching;
 mod passkeys;
+mod recovery_account;
 
 struct ApiTask(JoinHandle<()>);
 impl Drop for ApiTask {
@@ -94,6 +95,7 @@ async fn browser_with_tenant(
             "invitations" => "scripts/test-duckdb-invitations.ts",
             "member-renames" => "scripts/test-native-member-renames.ts",
             "member-deletion" => "scripts/test-native-member-deletion.ts",
+            "recovery-account" => "scripts/test-native-existing-recovery.ts",
             "recovery" => "scripts/test-duckdb-recovery.ts",
             "recovery-scale" => "scripts/test-recovery-scale.ts",
             "llm" => "scripts/test-duckdb-llm.ts",
@@ -159,6 +161,7 @@ async fn browser_with_tenant(
     } else if matches!(
         mode,
         "recovery"
+            | "recovery-account"
             | "document-search"
             | "administration"
             | "llm"

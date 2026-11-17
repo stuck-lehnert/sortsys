@@ -58,9 +58,18 @@ Generationen. Er enthält keine Passwörter oder privaten Identitätsschlüssel
 anderer Benutzer. Eine Recovery stellt den Zugriff auf betriebliche Inhalte
 wieder her; sie übernimmt nicht die Identität aller Mitarbeiter.
 
+Die Wiederherstellungsseite behält standardmäßig das bestehende primäre
+Administratorkonto bei. Anmeldename und Benutzerkennung bleiben erhalten;
+Passwort und private Schlüssel werden neu eingerichtet. Das Konto behält sein
+Personalprofil und seine historischen Urheberzuordnungen. Die Signaturen
+früherer Schlüsselgenerationen bleiben über die geprüfte Vertrauenskette
+nachweisbar. Ein gelöschtes, archiviertes oder deaktiviertes Konto wird dabei
+nicht wieder aktiviert. Ist es nicht mehr verfügbar, kann ausdrücklich ein
+neues Administratorkonto angelegt werden.
+
 Ein vorhandenes Mitarbeiterpasswort bleibt von der Mandantenfreigabe getrennt.
-Nach einer Recovery müssen die Konten unter der neuen Mandantenautorität erneut
-eingeladen und bestätigt werden. Die Rechteverwaltung bietet für diese Konten
+Nach einer Recovery müssen die anderen Konten unter der neuen Mandantenautorität
+erneut eingeladen und bestätigt werden. Die Rechteverwaltung bietet für diese Konten
 die Einladung an, auch wenn bereits ein Passwort besteht. Nach der Bestätigung
 gelten die neu erteilten Rechte; frühere Buchungsfreigaben werden nicht pauschal
 wiederhergestellt. Auch technische Rollen der vorherigen Autorität werden bei
@@ -108,8 +117,8 @@ ihn anschließend in einer einzigen Transaktion in der DuckDB-Mandantendatei.
    Wortliste und Prüfsumme und öffnet den verschlüsselten Recovery-Katalog.
 2. Der Browser erzeugt eine unabhängige neue Phrase, neue Administratorschlüssel
    und eine neue Signaturautorität. Die neue Phrase wird vor dem verbindlichen
-   Start gesichert und durch eine lokale Wortabfrage bestätigt. Das neue Konto
-   wird über OPAQUE vorbereitet.
+   Start gesichert und durch eine lokale Wortabfrage bestätigt. Das neue Passwort
+   wird über OPAQUE vorbereitet, auch beim Beibehalten der Benutzerkennung.
 3. Der Client verpackt die bisherigen Schlüssel für die neue Phrase. Größere
    Kataloge werden als verschlüsselte Seiten abgelegt und vor der
    Veröffentlichung zurückgelesen. Dabei erhält die API keine Schlüssel im
@@ -120,7 +129,7 @@ ihn anschließend in einer einzigen Transaktion in der DuckDB-Mandantendatei.
    weder auf ein anderes Konto noch auf einen anderen Katalog übertragen werden.
 5. Die gemeinsame Transaktion prüft den aktuellen Stand und die vollständige
    Abdeckung aller veröffentlichten Schlüsselgenerationen. Sie speichert das
-   neue Konto, die neue Autorität, Richtlinien, Bereichsschlüssel und
+   erneuerten Kontozugang, die neue Autorität, Richtlinien, Bereichsschlüssel und
    historische Schlüsselzugänge. Gleichzeitig verbraucht sie die Challenge und
    widerruft sämtliche bisherigen Sitzungen.
 6. Der Datendienst sichert den vorbereiteten Auftrag in `control.duckdb`,
@@ -140,6 +149,14 @@ Ein anderer Wiederherstellungsvorgang benötigt eine neue Challenge. Die Prüfun
 des vollständigen Schlüsselbestands erlaubt vorerst höchstens 2.000 Bereiche
 und 50.000 Schlüsselstände. Das Berechtigungsmodell begrenzt die Bereichszahl
 weiterhin unabhängig von der übertragenen Paketgröße.
+
+Beim Beibehalten eines Kontos enthält der signierte Plan außerdem einen
+Prüfwert seines technischen Stands. Dieser bindet auch Passwortregistrierung,
+Anmeldenamen und Kontostatus. Die API prüft ihn vor der Registrierung und erneut
+innerhalb der Veröffentlichungstransaktion. Eine parallele Kontoänderung über
+eine andere Instanz verwirft den alten Plan; sie wird nicht überschrieben. Der
+Browser liest den aktuellen Stand bei einem erneuten Versuch neu ein. Solange
+kein Wechsel veröffentlicht wurde, bleibt die bisherige Phrase gültig.
 
 Die API führt dafür einen geschützten Bestandszähler. Neue Bereiche,
 Schlüsselwechsel und Recoveries aktualisieren ihn gemeinsam mit den
@@ -163,7 +180,7 @@ aktuellen Bereichsgeneration. Sie bindet die Bereichszuordnung und den Inhaltsty
 an die exakte Recovery-Hülle. Eine veränderte Zuordnung kann dadurch nicht allein
 mit einem unveränderten Schlüsselpaket in den neuen Plan übernommen werden.
 Auch historische Verwalter- und Anlagenachweise werden geprüft. Diese Prüfung
-beginnt vor der Registrierung des neuen Administratorkontos; Vollständigkeit
+beginnt vor der Registrierung des erneuerten Administrationszugangs; Vollständigkeit
 und Versionsstand prüft weiterhin die gemeinsame Veröffentlichung.
 
 Auch nach einer positiven Erfolgsantwort liest der Browser die veröffentlichte
@@ -171,8 +188,8 @@ Autorität erneut und prüft Signatur, Generation und die Bindung an den eigenen
 vorbereiteten Plan. Eine bloße Erfolgsantwort bestätigt keine abgeschlossene
 Wiederherstellung.
 
-Das neue Administrationskonto erhält einen eigenen privaten Bereich für seine
-Einladungen. Persönliche Verläufe bleiben den bisherigen Benutzerkonten
+Der Administrationszugang erhält einen privaten Bereich für seine
+Einladungen. Persönliche Verläufe bleiben den jeweiligen Benutzerkonten
 zugeordnet. Bestehende Mitglieder können über eine neue Einladung erneut
 freigegeben werden und melden sich dabei mit ihrem vorhandenen Passwort an. Die
 Freigabe umfasst auch frühere Schlüsselgenerationen ihres eigenen KI-Bereichs,
@@ -192,7 +209,7 @@ Ein Abbruch vor dem Commit lässt den bisherigen Stand unverändert. Geht nur di
 Antwort nach dem Commit verloren, prüft der Browser die veröffentlichte neue
 Generation. Die Recovery-ID bestätigt ausschließlich den bereits gespeicherten
 Plan; sie erlaubt keinen anderen Administrator und liefert keinen
-Sitzungsschlüssel. Das neue Konto meldet sich anschließend mit seinem im Browser
+Sitzungsschlüssel. Das Konto meldet sich anschließend mit seinem im Browser
 eingerichteten OPAQUE-Passwort an. Benachrichtigungen aktualisieren die
 Oberfläche; die Versionsprüfung des Datenspeichers entscheidet über die
 Gültigkeit einer Anfrage.
@@ -208,15 +225,15 @@ weder unter alten Bereichsschlüsseln noch für alte Recovery-Schlüssel
 veröffentlicht werden.
 
 Die bisherige Signaturautorität bleibt nur zur Prüfung historischer Vorgänge
-erhalten. Sie darf keine neuen Identitäten, Freigaben oder Geräte zulassen. Der
-neue Administrator bestätigt die weiter geltenden Benutzeridentitäten und Rechte
+erhalten. Sie darf keine neuen Identitäten, Freigaben oder Geräte zulassen. Die
+Administration bestätigt die weiter geltenden Benutzeridentitäten und Rechte
 unter der neuen Autorität. Alte Administratorrechte werden dabei nicht ungeprüft
 übernommen. Benutzerkonten können mit ihren bisherigen Passwörtern erhalten
 bleiben; ihre Schlüsselpakete werden erst nach erneuter Bestätigung
 veröffentlicht. Kompromittierte Identitäten müssen ersetzt werden.
 
-Die neue Richtlinie gibt zunächst ausschließlich dem neuen Administrator
-Zugriff. Weitere Benutzer werden unter der neuen Autorität erneut bestätigt.
+Die neue Richtlinie gibt zunächst ausschließlich dem wiederhergestellten
+Administrationszugang Zugriff. Weitere Benutzer werden unter der neuen Autorität erneut bestätigt.
 Historische Zertifikate bleiben für die Prüfung alter Inhalte erhalten,
 berechtigen aber nicht zu neuen Schlüsselabrufen.
 
@@ -286,6 +303,16 @@ bleiben Bestandteil der regulären Sicherung. Der Recovery-Katalog wird nach
 vertraulichen Inhalte bleiben unter dem aktuellen Recovery-Schlüssel geschützt.
 
 ## Nachweise vor produktiver Nutzung
+
+Ein eigener Mehrinstanztest behält das primäre Administratorkonto bei. Er
+verwirft vorbereitete Pläne nach Passwort- und Namensänderungen über eine zweite
+API-Instanz. Nach zwei erfolgreichen Wiederherstellungen sind Benutzerkennung,
+Personalprofil und verschlüsselte Artikel erhalten. Alte Passwörter und
+verbrauchte Phrasen funktionieren nicht mehr. Ein Chromium-Test prüft außerdem
+die Vorauswahl des bestehenden Kontos und die bewusste Entscheidung für ein
+neues Konto, wenn der bisherige Zugang nicht verfügbar ist. Der native
+Passkey-Test weist nach, dass eine zuvor funktionierende Passkey-Anmeldung
+nach dem Wechsel auch unter derselben Benutzerkennung abgewiesen wird.
 
 Der eigenständige DuckDB-Test verbindet den Webapp-Kryptografiecode mit zwei
 API-Instanzen. Er prüft konkurrierende Pläne, verschlüsselte Katalogseiten und

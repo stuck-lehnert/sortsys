@@ -7,6 +7,7 @@ import { sortsysDomainCodec } from "./domains";
 import { sortsysSetupCodec } from "./setup";
 import { type Facet, FACETS } from "./objects";
 import type { CreationOrigin } from "./creation";
+export type { ExistingRecoveryAccount } from "./core/recovery";
 
 export type RecoverySource = CoreRecoverySource<Facet, CreationOrigin>;
 export type RecoveryPlan = CoreRecoveryPlan<
@@ -23,6 +24,8 @@ export const {
   recoverySource,
   loadRecoverySource,
   recoveryInspectFrame,
+  recoveryAccountFrame,
+  existingRecoveryAccount,
   recoveryRegistrationFrame,
   recoveryBundleHash,
   prepareRecovery,

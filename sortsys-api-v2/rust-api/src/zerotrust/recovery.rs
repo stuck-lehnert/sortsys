@@ -28,6 +28,7 @@ use std::{
 };
 use ts_rs::TS;
 
+mod account;
 mod catalog;
 pub(in crate::zerotrust) mod inventory;
 mod pages;
@@ -75,6 +76,9 @@ struct RecoveryPlan {
     transition: Transition,
     next_setup: SetupInput,
     username: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    account_version: Option<String>,
     registration_record: String,
     vault: AccountVault,
     old_key_envelopes: Vec<SealedBox>,
@@ -95,9 +99,10 @@ impl RecoveryPlan {
             .map(|d| packet_hash(d.frame()?, &d.proof))
             .collect::<RpcResult<Vec<_>>>()?;
         Ok(encode(&Sha256::digest(frame(
-            "sortsys/recovery-bundle/v1",
+            "sortsys/recovery-bundle/v2",
             &[
                 &self.username,
+                self.account_version.as_deref().unwrap_or(""),
                 &encode(&Sha256::digest(decode(&self.registration_record, 4096)?)),
                 &packet_hash(self.next_setup.frame()?, &self.next_setup.proof)?,
                 &encode(&Sha256::digest(self.vault.frame())),
@@ -132,8 +137,13 @@ impl RecoveryPlan {
             .ok_or_else(invalid)?;
         let policy = revision(&self.next_setup.policy.version)?;
         let owner = self.owner_id()?;
-        if self.username != format!("recovery-{}", owner.encode())
-            || self.domains.len() > DEFAULT_RECOVERY_LIMITS.domains as usize
+        identifier(&self.username)?;
+        if let Some(version) = &self.account_version {
+            sized::<32>(version)?;
+        } else if self.username != format!("recovery-{}", owner.encode()) {
+            return Err(invalid());
+        }
+        if self.domains.len() > DEFAULT_RECOVERY_LIMITS.domains as usize
             || self.old_key_envelopes.len() > DEFAULT_RECOVERY_LIMITS.key_generations as usize
         {
             return Err(invalid());
@@ -276,7 +286,17 @@ struct RegistrationInput {
     challenge_id: String,
     username: String,
     registration_request: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    account_version: Option<String>,
     proof: String,
+}
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct ExistingAccount {
+    subject: String,
+    username: String,
+    version: String,
 }
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -340,6 +360,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
     uploads::register_contract(builder)
         .query_stub::<TenantInput, RecoveryHead>("zerotrust.recovery.head")
         .mutation_stub::<InspectInput, RecoverySourceHead>("zerotrust.recovery.inspect")
+        .mutation_stub::<InspectInput, Option<ExistingAccount>>("zerotrust.recovery.account")
         .mutation_stub::<RegistrationInput, RegistrationOutput>("zerotrust.recovery.registration")
         .mutation_stub::<RecoveryPlan, Success>("zerotrust.recovery.begin")
         .mutation_stub::<ResumeInput, Success>("zerotrust.recovery.resume")
@@ -388,5 +409,31 @@ mod tests {
         let mut changed = fixture["plan"].clone();
         changed["seedPhrase"] = serde_json::json!("unaccepted secret");
         assert!(serde_json::from_value::<RecoveryPlan>(changed).is_err());
+        let existing: RecoveryPlan =
+            serde_json::from_value(fixture["existingAccountPlan"].clone()).unwrap();
+        existing.validate().unwrap();
+        assert_eq!(existing.username, "interop");
+        assert_eq!(
+            existing.next_setup.owner.user,
+            fixture["initialSetup"]["owner"]["user"]
+        );
+        let mut unbound = existing.clone();
+        unbound.account_version = None;
+        assert!(unbound.validate().is_err());
+        let mut substituted = existing.clone();
+        substituted.account_version = Some(encode(&[19; 32]));
+        assert!(substituted.validate().is_err());
+        let probe = &fixture["accountProbe"];
+        verify(
+            &sized::<32>(&existing.source_authority.recovery_signing_key).unwrap(),
+            probe["proof"].as_str().unwrap(),
+            &sortsys_zerotrust::recovery::account_lookup_frame(
+                probe["tenant"].as_str().unwrap(),
+                probe["generation"].as_str().unwrap(),
+                probe["nonce"].as_str().unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     }
 }

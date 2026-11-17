@@ -732,13 +732,14 @@ export type MutationInputs = {
   "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, };
   "zerotrust.objects.stage": { objects: Array<SaveInput>, };
   "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
-  "zerotrust.recovery.begin": { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, nextSetup: SetupInput, username: string, registrationRecord: string, vault: AccountVault, oldKeyEnvelopes: Array<SealedBox>, domains: Array<DomainDefinition>, proof: string, nextProof: string, };
+  "zerotrust.recovery.account": { tenant: string, generation: string, nonce: string, proof: string, };
+  "zerotrust.recovery.begin": { challengeId: string, sourceAuthority: AuthorityCertificate, transition: RecoveryTransition, nextSetup: SetupInput, username: string, accountVersion?: string, registrationRecord: string, vault: AccountVault, oldKeyEnvelopes: Array<SealedBox>, domains: Array<DomainDefinition>, proof: string, nextProof: string, };
   "zerotrust.recovery.catalog.read": { access: RecoveryCatalogAccess, proof: string, };
   "zerotrust.recovery.catalog.write": { access: RecoveryCatalogAccess, proof: string, packet: SealedBox, };
   "zerotrust.recovery.commit": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, };
   "zerotrust.recovery.inspect": { tenant: string, generation: string, nonce: string, proof: string, };
   "zerotrust.recovery.page": { tenant: string, generation: string, challengeId: string, snapshot: string, after: string | null, proof: string, };
-  "zerotrust.recovery.registration": { subject: string, tenant: string, challengeId: string, username: string, registrationRequest: string, proof: string, };
+  "zerotrust.recovery.registration": { subject: string, tenant: string, challengeId: string, username: string, registrationRequest: string, accountVersion?: string, proof: string, };
   "zerotrust.recovery.resume": { tenant: string, operation: string, };
   "zerotrust.recovery.stage": { authorization: UploadAuthorization, manifest: PreparedPayloadManifest, content: string, };
   "zerotrust.setup": { authority: AuthorityCertificate, owner: IdentityCertificate, authorityEnvelope: SealedBox, catalog: SealedBox, policy: SignedPolicy, proof: string, };
@@ -946,6 +947,7 @@ export type MutationOutputs = {
   "zerotrust.objects.save": { success: true, };
   "zerotrust.objects.stage": { id: string, };
   "zerotrust.policy.replace": { success: true, };
+  "zerotrust.recovery.account": { subject: string, username: string, version: string, } | null;
   "zerotrust.recovery.begin": { success: true, };
   "zerotrust.recovery.catalog.read": { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
   "zerotrust.recovery.catalog.write": { success: true, };
@@ -1309,6 +1311,7 @@ const mutationProcedures = new Set<string>([
   "zerotrust.objects.save",
   "zerotrust.objects.stage",
   "zerotrust.policy.replace",
+  "zerotrust.recovery.account",
   "zerotrust.recovery.begin",
   "zerotrust.recovery.catalog.read",
   "zerotrust.recovery.catalog.write",

@@ -451,6 +451,22 @@ Bereichsschlüssel bleiben im Browser. Für eigene Kontokennungen kann
 `recovery.createAdministrator` beim Einrichten des Frameworks vorgegeben werden.
 Die Passwortableitung kann über `registrationCrypto` in einen Worker verlegt werden.
 
+Mit `administrator: { subject, username, version }` kann ein vorhandenes Konto
+beibehalten werden. `existingRecoveryAccount` prüft diese Beschreibung;
+`recoveryAccountFrame` beziehungsweise Rusts `recovery::account_lookup_frame`
+liefern den zweckgebundenen Seed-Nachweis für ihren Abruf. Der Adapter liefert
+als `version` einen undurchsichtigen Prüfwert des aktuellen technischen
+Kontostands. Er muss das zulässige Ziel selbst bestimmen und gelöschte oder
+gesperrte Konten ausschließen.
+
+Die OPAQUE-Registrierung und der vollständige Recovery-Plan binden diesen Wert
+über `accountVersion` an ihre Signaturen. Der Adapter vergleicht ihn auch in der
+abschließenden Transaktion. So kann ein alter Plan weder eine parallele
+Passwortänderung noch eine Umbenennung überschreiben. Fehlt `administrator`,
+wird weiterhin ein unabhängiges Konto über `createAdministrator` vorbereitet.
+Beide Wege erzeugen neue private Schlüssel und eine neue Seed-Generation;
+historische Signaturen behalten ihre ursprünglichen Zertifikate.
+
 Ein Speicheradapter muss den Wechsel nach Prüfung der alten und neuen
 Nachweise atomar übernehmen. Die verbrauchte Generation und Challenge dürfen
 nicht erneut verwendet werden. Ein zweiter Aufruf darf nur denselben bereits

@@ -329,6 +329,7 @@ test("another application performs two seed recoveries and retains its historica
     username: string;
     subject: string;
     registrationRequest: string;
+    accountVersion?: string;
     proof: string;
   }) => {
     transmitted.push(JSON.stringify(input));
@@ -341,6 +342,7 @@ test("another application performs two seed recoveries and retains its historica
         input.username,
         input.subject,
         input.registrationRequest,
+        input.accountVersion,
       ),
     );
     return server.createRegistrationResponse({
@@ -475,6 +477,11 @@ test("another application performs two seed recoveries and retains its historica
     newPhrase: thirdPhrase,
     password,
     register,
+    administrator: {
+      subject: first.plan.nextSetup.owner.user,
+      username: first.plan.username,
+      version: base64(randomSecret()),
+    },
     source: {
       challengeId: `challenge:${base64(randomSecret())}`,
       challenge: base64(randomSecret()),
@@ -493,7 +500,12 @@ test("another application performs two seed recoveries and retains its historica
     },
   });
   await framework.recovery.verifyRecoveryTransition(second.plan);
-  expect(second.plan.nextSetup.owner.user).toBe("doctor:recovered-2");
+  expect(second.plan.nextSetup.owner.user).toBe("doctor:recovered-1");
+  expect(second.plan.username).toBe(first.plan.username);
+  expect(second.plan.accountVersion).toBeDefined();
+  expect(second.plan.nextSetup.owner.signingKey).not.toBe(
+    first.plan.nextSetup.owner.signingKey,
+  );
   expect(
     second.plan.oldKeyEnvelopes.map((envelope) => envelope.generation).sort(),
   ).toEqual(["1", "2"]);

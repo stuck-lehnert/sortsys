@@ -5,6 +5,16 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
+pub fn account_lookup_frame(tenant: &str, generation: &str, nonce: &str) -> Result<Vec<u8>> {
+    identifier(tenant)?;
+    revision(generation)?;
+    sized::<32>(nonce)?;
+    Ok(frame(
+        "sortsys/recovery-account/v1",
+        &[tenant, generation, nonce],
+    ))
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

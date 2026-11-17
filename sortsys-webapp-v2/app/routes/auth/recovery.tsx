@@ -11,6 +11,7 @@ import {
   recoveryDraft,
   recoveryPlan,
   RecoveryNotStarted,
+  RecoveryAccountUnavailable,
 } from "~/lib/crypto/recovery";
 import type { RecoveryDraft } from "~/lib/crypto/recovery";
 import { lockCryptoSession } from "~/lib/crypto/session";
@@ -27,6 +28,7 @@ export default function RecoveryPage() {
   const [completed, setCompleted] = useState<{
     tenant: string;
     username: string;
+    restored: boolean;
   } | null>(null);
   if (completed)
     return (
@@ -40,13 +42,19 @@ export default function RecoveryPage() {
           )}
         </p>
         <p>
-          {uiText("Neues Administratorkonto", "New administrator account")}:{" "}
+          {completed.restored
+            ? uiText(
+                "Wiederhergestelltes Administratorkonto",
+                "Restored administrator account",
+              )
+            : uiText("Neues Administratorkonto", "New administrator account")}
+          :{" "}
           <strong className="select-all">
             {completed.username}@{completed.tenant}
           </strong>
         </p>
         <MyButton onClick={() => navigate("/auth/login")}>
-          {uiText("Mit neuem Konto anmelden", "Sign in with new account")}
+          {uiText("Anmelden", "Sign in")}
         </MyButton>
       </AuthLayout>
     );
@@ -72,7 +80,11 @@ export default function RecoveryPage() {
               await commitRecovery(client, plan);
               await lockCryptoSession(true);
               client.setToken(null);
-              setCompleted({ tenant: draft.tenant, username: plan.username });
+              setCompleted({
+                tenant: draft.tenant,
+                username: plan.username,
+                restored: plan.accountVersion !== undefined,
+              });
               setDraft(null);
               setPrepared(null);
             } catch (error) {
@@ -92,11 +104,14 @@ export default function RecoveryPage() {
     <AuthLayout title={uiText("Mandant wiederherstellen", "Recover tenant")}>
       <p>
         {uiText(
-          "Die aktuelle Wiederherstellungsphrase ersetzt die bisherigen Zugangsschlüssel. Danach gelten ein neues Administratorkonto und eine neue Phrase. Der Betreiber erhält keinen Schlüssel.",
-          "The current recovery phrase replaces the existing access keys. A new administrator account and a new phrase then apply. The provider receives no key.",
+          "Die aktuelle Wiederherstellungsphrase ersetzt die bisherigen Zugangsschlüssel und legt ein neues Passwort für die Administration fest. Anschließend gilt eine neue Phrase. Der Betreiber erhält keinen Schlüssel.",
+          "The current recovery phrase replaces the existing access keys and sets a new administrator password. A new phrase then applies. The provider receives no key.",
         )}
       </p>
       <MyForm
+        notifyLoaded={(context) => {
+          context.setValues({ restoreAdministrator: true });
+        }}
         onSubmit={async (context) => {
           const values = context.getValues();
           if (values.password !== values.repeat)
@@ -113,9 +128,17 @@ export default function RecoveryPage() {
                 String(values.tenant).trim().toLowerCase(),
                 values.phrase,
                 values.password,
+                { restoreAdministrator: values.restoreAdministrator === true },
               ),
             );
-          } catch {
+          } catch (error) {
+            if (error instanceof RecoveryAccountUnavailable)
+              throw new Error(
+                uiText(
+                  "Das bisherige Administratorkonto kann nicht wiederhergestellt werden. Ohne die Auswahl „Vorhandenes Administratorkonto wiederherstellen“ wird ein neues Konto angelegt.",
+                  "The previous administrator account cannot be restored. Clear “Restore existing administrator account” to create a new account.",
+                ),
+              );
             throw new Error(
               uiText(
                 "Mandant oder Wiederherstellungsphrase stimmen nicht überein. Nach einer bereits begonnenen Wiederherstellung die neue Phrase verwenden.",
@@ -145,8 +168,8 @@ export default function RecoveryPage() {
         <MyForm.Input
           name="password"
           labelText={uiText(
-            "Passwort für das neue Administratorkonto",
-            "Password for the new administrator account",
+            "Neues Administratorpasswort",
+            "New administrator password",
           )}
           type="password"
           autoComplete="new-password"
@@ -159,6 +182,13 @@ export default function RecoveryPage() {
           type="password"
           autoComplete="new-password"
           required
+        />
+        <MyForm.Checkbox
+          name="restoreAdministrator"
+          labelText={uiText(
+            "Vorhandenes Administratorkonto wiederherstellen",
+            "Restore existing administrator account",
+          )}
         />
         <MyForm.SubmitButton>
           {uiText(

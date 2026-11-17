@@ -43,6 +43,16 @@ braucht noch eine eigene Anbindung. Der bisherige Admin-Reset ist für geschütz
 Konten gesperrt; der Anbieter erhält dadurch keinen Wiederherstellungszugang.
 Siehe [Benutzerzugang](benutzerfreigaben.md).
 
+**Administrationszugang nach Passwortverlust.** Die aktuelle Seed-Phrase kann
+das primäre Administratorkonto unter derselben Benutzerkennung
+wiederherstellen. Passwort, private Schlüssel und Phrase wechseln; frühere
+Signaturen bleiben prüfbar. Ein Mehrinstanztest prüft zwei Wiederherstellungen
+desselben Kontos, den Erhalt verschlüsselter Inhalte und die Ablehnung alter
+Passwörter und Phrasen. Vorbereitete Pläne scheitern auch nach einem parallelen
+Passwort- oder Namenswechsel. Gelöschte und gesperrte Konten werden nicht
+reaktiviert; die Oberfläche bietet ausdrücklich ein neues Konto als Alternative
+an. Der Einzelkonto-Reset gewöhnlicher Mitglieder ist damit weiterhin offen.
+
 **Fein abgestufte Lese- und Schreibrechte.** Getrennte Schlüssel schützen
 Teilinhalte; signierte Regeln begrenzen technische Schreibaktionen. Die
 gemeinsame Rechteauswahl für Stammdaten, Projekte, Personal und Werkzeuge erlaubt
