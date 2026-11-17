@@ -36,7 +36,7 @@ import { llmActivity } from "../../app/lib/llmActivity";
 import { processImport } from "../../app/lib/importProcessing";
 import { prepareImportFiles } from "../../app/lib/importFiles";
 import { prepareImportImage } from "../../app/lib/importImage";
-import { Link, MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { accessSnapshotFixture } from "../../app/lib/data/testing/accessSnapshot.mjs";
 import { initializationFrame } from "../../app/lib/crypto/initializeTenant";
 
@@ -1299,8 +1299,11 @@ window.cryptoFixture = {
     const user = { id: "1", username: "owner", locale: "de" },
       deleting = mode.startsWith("delete"),
       fullDeletionRights = deleting && mode !== "delete-limited",
-      costActions = (mode === "cost" || fullDeletionRights ? [...ACTIONS] : ["read"])
-        .filter((action) => mode !== "delete-without-cost-read" || action !== "read"),
+      costActions = (
+        mode === "cost" || fullDeletionRights ? [...ACTIONS] : ["read"]
+      ).filter(
+        (action) => mode !== "delete-without-cost-read" || action !== "read",
+      ),
       personId = mode === "delete-self" ? "1" : "4",
       rule = (facet, actions) => ({
         subject: "user:1",
@@ -1378,7 +1381,10 @@ window.cryptoFixture = {
         email: null,
         phone: null,
         contractType: "internal",
-        costPerHour: mode === "basic" || mode === "delete-without-cost-read" ? null : 73.87654321,
+        costPerHour:
+          mode === "basic" || mode === "delete-without-cost-read"
+            ? null
+            : 73.87654321,
         vacationDaysPerYear: mode === "basic" ? null : 30,
         supervisorUserId: null,
         createdAt: new Date(),
@@ -1980,13 +1986,50 @@ window.cryptoFixture = {
       </I18nProvider>,
     );
   },
-  async showMenuAccess() {
+  async showMenuAccess({ technicalRoles, showActions = false } = {}) {
     const { SessionInfoProvider, useSessionInfo } =
       await import("../../app/hooks/useSessionInfo");
     const { createContentAccess } =
       await import("../../app/lib/data/menuAccess");
     const { acceptVault } = await import("../../app/lib/crypto/session");
-    const { projectFiles } = await import("../../app/lib/client");
+    const { client, projectFiles } = await import("../../app/lib/client");
+    const roles = technicalRoles ?? [
+      ":admin",
+      "manage:products",
+      "manage:productPriceRecords",
+      ":llm",
+    ];
+    let ImportActions = () => null;
+    if (showActions) {
+      const { useUserActions } = await import("../../app/lib/userActions");
+      const originalStreamQuery = client.streamQuery.bind(client);
+      client.streamQuery = (path, input, options) => {
+        if (path !== "llm.status")
+          return originalStreamQuery(path, input, options);
+        return new Observable((subscriber) => {
+          subscriber.next([
+            { tenantEnabled: true, scanProviderConfigured: true },
+            null,
+          ]);
+        });
+      };
+      ImportActions = function ImportActions() {
+        const { visibleActions } = useUserActions();
+        const location = useLocation();
+        return (
+          <>
+            <output aria-label="Aktuelle Seite">{location.pathname}</output>
+            {visibleActions
+              .filter((action) => action.id === "deliveryNotes.scan")
+              .map((action) => (
+                <button key={action.id} onClick={action.run}>
+                  {action.label}
+                </button>
+              ))}
+          </>
+        );
+      };
+    }
     const owner = await createIdentity(),
       { setup, authorityKey } = await createTenantSetup(
         "test",
@@ -2035,12 +2078,7 @@ window.cryptoFixture = {
             {
               user,
               tenant: { objectStorageEnabled: false },
-              roles: [
-                ":admin",
-                "manage:products",
-                "manage:productPriceRecords",
-                ":llm",
-              ],
+              roles,
             },
             null,
           ]);
@@ -2052,7 +2090,7 @@ window.cryptoFixture = {
         )
           return accessSnapshotFixture(raw, input);
         if (path === "auth.sessionInfo") {
-          return [{ user, roles: [":admin"] }, null];
+          return [{ user, roles }, null];
         }
         if (path === "zerotrust.trust.history") {
           return [
@@ -2107,6 +2145,7 @@ window.cryptoFixture = {
           <button disabled={!rights.supplierEdit}>Lieferant bearbeiten</button>
           <button disabled={!rights.priceEdit}>Preis bearbeiten</button>
           <button disabled={!rights.createOffer}>Angebot erstellen</button>
+          <ImportActions />
         </>
       );
     }
@@ -2152,6 +2191,11 @@ window.cryptoFixture = {
         ];
       } else if (kind === "assistant") {
         rules = [rule("assistant:user:1", "master-data", [...ACTIONS])];
+      } else if (kind === "assistant-catalogue") {
+        rules = [
+          rule("assistant:user:1", "master-data", [...ACTIONS]),
+          rule("catalog:products", "master-data", ["read"]),
+        ];
       }
       permissions = await signPolicy(
         { tenant: "test", version: String(++version), rules },
@@ -2186,9 +2230,11 @@ window.cryptoFixture = {
     };
     root.render(
       <I18nProvider>
-        <SessionInfoProvider sessionClient={raw} access={access}>
-          <Rights />
-        </SessionInfoProvider>
+        <MemoryRouter>
+          <SessionInfoProvider sessionClient={raw} access={access}>
+            <Rights />
+          </SessionInfoProvider>
+        </MemoryRouter>
       </I18nProvider>,
     );
   },

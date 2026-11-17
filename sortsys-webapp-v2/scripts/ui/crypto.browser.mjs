@@ -1579,6 +1579,69 @@ test("assistant navigation follows signed permissions instead of raw LLM or admi
   }
 });
 
+test("document import is visible with signed assistant and catalogue read access without technical roles", async () => {
+  const { context, page, external } = await open();
+  try {
+    await page.evaluate(() =>
+      window.cryptoFixture.showMenuAccess({
+        technicalRoles: [],
+        showActions: true,
+      }),
+    );
+    const waitForRights = async (assistant, productRead) => {
+      await page.waitForFunction(
+        ({ assistant, productRead }) => {
+          const rights = JSON.parse(
+            document.querySelector('output[aria-label="Menüfreigaben"]')
+              ?.textContent ?? "{}",
+          );
+          return (
+            rights.assistant === assistant && rights.productRead === productRead
+          );
+        },
+        { assistant, productRead },
+      );
+    };
+    const importButton = page.getByRole("button", {
+      name: "Einlesen",
+      exact: true,
+    });
+    await waitForRights(false, false);
+    assert.equal(await importButton.count(), 0);
+    await page.evaluate(() => window.cryptoFixture.menuChange("assistant"));
+    await waitForRights(true, false);
+    assert.equal(await importButton.count(), 0);
+    await page.evaluate(() =>
+      window.cryptoFixture.menuChange("assistant-catalogue"),
+    );
+    await importButton.waitFor();
+    const rights = JSON.parse(
+      await page.locator('output[aria-label="Menüfreigaben"]').textContent(),
+    );
+    assert.equal(rights.admin, false);
+    assert.equal(rights.productRead, true);
+    assert.equal(rights.productEdit, false);
+    assert.equal(rights.priceEdit, false);
+    assert.equal(rights.roles.includes("manage:deliveryNotes"), false);
+    await importButton.click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('output[aria-label="Aktuelle Seite"]')
+          ?.textContent === "/import",
+    );
+    assert.equal(
+      await page.locator('output[aria-label="Aktuelle Seite"]').textContent(),
+      "/import",
+    );
+    await page.evaluate(() => window.cryptoFixture.menuChange("assistant"));
+    await waitForRights(true, false);
+    assert.equal(await importButton.count(), 0);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("revoked and replaced accounts cannot regain menu actions from a delayed policy response", async () => {
   const { context, page } = await open();
   try {

@@ -31,10 +31,7 @@ export default function DeliverNotesPage() {
         title={uiText("Lieferscheine")}
         actions={
           <div className="list-page-actions">
-            {sessionInfo.canDo("manage:deliveryNotes") &&
-              sessionInfo.canDo("manage:products") &&
-              sessionInfo.canDo("view:productVendors") &&
-              sessionInfo.canDo("view:productPriceRecords") &&
+            {sessionInfo.canDo("view:products") &&
               sessionInfo.canDo(":llm") &&
               sessionInfo.supportsProjectFiles() &&
               llmStatus?.tenantEnabled &&

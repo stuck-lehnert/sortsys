@@ -371,18 +371,23 @@ Editor-Updates fehlen noch.
 **LLM-Chat, Einlesen und MCP-Katalogsuche.** Chat und Einlesen verwenden
 Live-MCP und verschlüsselte Benutzerverläufe. Produktvorschläge werden lokal
 geprüft und bei Annahme zusammen mit ihrem Ausführungsnachweis gespeichert.
-Frühere Chat- und Einleseverläufe werden aus dem verschlüsselten Archiv
-benutzerbezogen übernommen. Historische Annahmen ohne Ergebnisprotokoll bleiben
-erkennbar und werden nicht erneut ausgeführt. Weitere Chat-Werkzeuge und die
-Übernahme in weitere Fachabläufe sind noch umzustellen. Die Klartextausnahme
-bleibt auf den freigegebenen Kontext der laufenden Anfrage begrenzt.
+Die Chatübernahme aus einer alten Sicherung erhält die Benutzerzuordnung.
+Historische Annahmen ohne Ergebnisprotokoll bleiben erkennbar und werden nicht
+erneut ausgeführt. Der Konverter für frühere Einleseverläufe ist geprüft, aber
+noch nicht mit der Ersteinrichtung verbunden. Neue Anfragen brauchen die
+signierten Rechte des persönlichen Assistentenbereichs; Katalogsuche,
+Preiszugriff und Schreibwerkzeuge bleiben getrennt. Konten ohne technische
+Rollen können mit den passenden Freigaben chatten und Dokumente einlesen. Ein
+Mehrinstanztest prüft diese Adapter einschließlich Rechteentzug und erhaltenem
+persönlichem Verlauf. Weitere Chat-Werkzeuge und die Übernahme in weitere
+Fachabläufe sind noch zu ergänzen. Die Klartextausnahme bleibt auf den
+freigegebenen Kontext der laufenden Anfrage begrenzt.
 
 **Laufende LLM-Anfragen beim Seitenwechsel.** Eine gemeinsame Laufzeitverwaltung
 hält Anfragen im geöffneten Tab. Beim Einlesen bleibt der nicht schließbare
 Dialog bis zum geprüften und verschlüsselt gespeicherten Ergebnis offen. Neue
-Anfragen brauchen keine serverseitigen Hintergrundjobs. Bei der Umstellung
-unterbrochene alte Aufträge bleiben mit einer entsprechenden Meldung im
-verschlüsselten Verlauf erhalten.
+Anfragen brauchen keine serverseitigen Hintergrundjobs. Der noch nicht
+angebundene Konverter kennzeichnet unterbrochene alte Einlesevorgänge als solche.
 
 **Listen, zuletzt geändert und zuletzt besucht.** Persönliche Besuche,
 Aktionsverläufe und Dashboard-Fixierungen verwenden den verschlüsselten

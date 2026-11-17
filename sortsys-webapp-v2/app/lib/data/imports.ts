@@ -5,7 +5,8 @@ import { runLiveLlm } from "../liveLlm";
 import { uiText } from "../i18n";
 import { openPrivateLlm, newAssistantId, assistantId } from "./privateLlm";
 import { required } from "./protectedObjects";
-import { productMatches } from "./products";
+import { PRODUCT_COLLECTION, productMatches } from "./products";
+import { readAssistantAccess } from "./assistantStore";
 import {
   normalizeScanResult,
   parseRawScan,
@@ -20,22 +21,10 @@ import {
 } from "./scanHistoryData";
 
 type History = QueryResult<"deliveryNotes.scan.list">;
-async function authorize(client: Client) {
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
-  if (
-    !session.roles.includes(":admin") &&
-    (!session.roles.includes(":llm") ||
-      !session.roles.includes("manage:deliveryNotes"))
-  )
-    throw new InvalidProtectedData();
-}
 export async function importHistory(
   client: Client,
   signal: AbortSignal,
 ): Promise<History> {
-  await authorize(client);
   signal.throwIfAborted();
   const history = await openPrivateLlm(client, signal);
   try {
@@ -67,7 +56,6 @@ export async function importResult(
   id: string,
   signal: AbortSignal,
 ): Promise<ScanResult> {
-  await authorize(client);
   signal.throwIfAborted();
   assistantId(id);
   const history = await openPrivateLlm(client, signal);
@@ -156,7 +144,11 @@ export async function readSelectedDocuments(
     live?: typeof runLiveLlm;
   } = {},
 ): Promise<string> {
-  await authorize(client);
+  const access = await readAssistantAccess(client, signal, [
+    PRODUCT_COLLECTION.domain,
+  ]);
+  if (!access.allows(PRODUCT_COLLECTION.scope, "master-data", "read"))
+    throw new InvalidProtectedData();
   signal.throwIfAborted();
   const admitted = await openPrivateLlm(client, signal);
   admitted.close();

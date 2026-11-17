@@ -1,11 +1,8 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import {
-  protectedCollection,
-  required,
-  type OpenedObject,
-} from "./protectedObjects";
-import { privateLlmCollection, assistantId } from "./privateLlm";
+import { type OpenedObject } from "./protectedObjects";
+import { assistantId } from "./privateLlm";
+import { openAssistantCollection } from "./assistantStore";
 import {
   chatHead,
   chatMessage,
@@ -71,17 +68,10 @@ function validate(value: unknown, object: string): ChatPart {
 }
 
 export async function openChatStore(client: Client, signal: AbortSignal) {
-  signal.throwIfAborted();
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
-  if (!session.roles.includes(":admin") && !session.roles.includes(":llm"))
-    throw new InvalidProtectedData();
-  const domain = privateLlmCollection(`user:${session.user.id}`);
-  const collection = await protectedCollection(
+  const { collection, area } = await openAssistantCollection(
     client,
-    { ...domain, prefix: CHAT_PREFIX },
     signal,
+    CHAT_PREFIX,
   );
   return {
     async list() {
@@ -201,7 +191,7 @@ export async function openChatStore(client: Client, signal: AbortSignal) {
       );
       return {
         packets,
-        head: { domain: domain.domain, sequence: snapshot },
+        head: { domain: area.domain, sequence: snapshot },
         async verify() {
           for (const packet of packets) {
             const rows = await collection.read(packet.envelope.object);

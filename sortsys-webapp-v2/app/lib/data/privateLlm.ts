@@ -1,9 +1,8 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
-import { protectedCollection, required } from "./protectedObjects";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { unlockedAccount } from "../crypto/session";
 import { privateLlmCollection } from "./assistantArea";
+import { openAssistantCollection } from "./assistantStore";
 export { privateLlmCollection } from "./assistantArea";
 
 export async function preparePrivateLlm(
@@ -57,21 +56,10 @@ export function assistantPayload(
 /** Each user's selected model context and results have an independent domain.
  * Catalogue access, even with its master-data key, cannot decrypt this history. */
 export async function openPrivateLlm(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
-  const subject = `user:${session.user.id}`;
-  const collection = await protectedCollection(
+  const { subject, collection, live } = await openAssistantCollection(
     client,
-    privateLlmCollection(subject),
     signal,
   );
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account) throw new InvalidProtectedData();
-  };
   return {
     subject,
     async list(kind: "scan" | "chat") {

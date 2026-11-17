@@ -19,6 +19,7 @@ import { required } from "../app/lib/data/protectedObjects";
 import { acquireDataRuntime } from "../app/lib/data/runtime/session";
 import { runLiveLlm } from "../app/lib/liveLlm";
 import type { DuckDriver } from "../app/lib/data/database";
+import { exerciseMemberAssistantWorkflows } from "./test-member-assistant";
 
 type ProviderBody = { messages: { role: string; content: unknown }[] };
 export function memberModelFixture() {
@@ -117,7 +118,12 @@ export async function testMemberLlm(
   const account = unlockedAccount()!;
   let socket: WebSocket | null = null;
   try {
-    await acceptVaultWithKey(original.dataKey, original.vault, original.username, false);
+    await acceptVaultWithKey(
+      original.dataKey,
+      original.vault,
+      original.username,
+      false,
+    );
     const lease = acquireDataRuntime(owner, signal, driver);
     try {
       await approveMemberInvitation(
@@ -128,7 +134,12 @@ export async function testMemberLlm(
     } finally {
       lease.close();
     }
-    await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
+    await acceptVaultWithKey(
+      account.dataKey,
+      account.vault,
+      account.username,
+      false,
+    );
     await member.clearCache();
     assert.equal(
       (
@@ -205,6 +216,16 @@ export async function testMemberLlm(
       )[1],
     );
 
+    await exerciseMemberAssistantWorkflows(
+      owner,
+      member,
+      original,
+      account,
+      created.id,
+      driver,
+      endpoint,
+    );
+
     const admission = await required(
       member.mutate("zerotrust.llm.open", {
         kind: "chat",
@@ -248,7 +269,12 @@ export async function testMemberLlm(
 
     // Keep the raw connection open while an administrator on the other API
     // revokes access. This proves server enforcement without a cooperative UI.
-    await acceptVaultWithKey(original.dataKey, original.vault, original.username, false);
+    await acceptVaultWithKey(
+      original.dataKey,
+      original.vault,
+      original.username,
+      false,
+    );
     await changeMemberAccess(
       owner,
       `user:${created.id}`,
@@ -270,7 +296,12 @@ export async function testMemberLlm(
     );
     socket.close();
     socket = null;
-    await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
+    await acceptVaultWithKey(
+      account.dataKey,
+      account.vault,
+      account.username,
+      false,
+    );
     await member.clearCache();
     assert.equal(
       (
@@ -291,12 +322,22 @@ export async function testMemberLlm(
       )[1],
     );
 
-    await acceptVaultWithKey(original.dataKey, original.vault, original.username, false);
+    await acceptVaultWithKey(
+      original.dataKey,
+      original.vault,
+      original.username,
+      false,
+    );
     await changeMemberAccess(owner, `user:${created.id}`, access, signal, {
       actions: {},
       assistant: true,
     });
-    await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
+    await acceptVaultWithKey(
+      account.dataKey,
+      account.vault,
+      account.username,
+      false,
+    );
     await member.clearCache();
     assert.equal(
       (
@@ -322,6 +363,11 @@ export async function testMemberLlm(
   } finally {
     socket?.close();
     member.setToken(null);
-    await acceptVaultWithKey(original.dataKey, original.vault, original.username, false);
+    await acceptVaultWithKey(
+      original.dataKey,
+      original.vault,
+      original.username,
+      false,
+    );
   }
 }

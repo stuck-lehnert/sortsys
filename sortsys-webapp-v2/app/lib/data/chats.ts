@@ -1,11 +1,7 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
-import {
-  compilePolicy,
-  InvalidProtectedData,
-  record,
-} from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
-import { readVerifiedPolicy } from "../crypto/policy";
+import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import { unlockedAccount } from "../crypto/session";
+import { readAssistantAccess } from "./assistantStore";
 import { llmActivity } from "../llmActivity";
 import { runLiveLlm } from "../liveLlm";
 import { uiText } from "../i18n";
@@ -103,47 +99,27 @@ export function createProtectedChats(
   function touched(head: ChatHead, at: string): ChatHead {
     return { ...head, updatedAt: head.updatedAt > at ? head.updatedAt : at };
   }
-  async function capabilities() {
-    live();
-    const session = await required(
-      transport.query("auth.sessionInfo", undefined, {
-        strategy: "network-only",
-      }),
-    );
-    const history = await trustedHistory(transport);
-    const { permissions } = await readVerifiedPolicy(transport, {
-      account: account!,
-      history,
-      live,
-    });
-    const access = compilePolicy(permissions, [`user:${session.user.id}`]);
-    const can = (role: string) =>
-      session.roles.some(
-        (value) =>
-          value === ":admin" ||
-          value === role ||
-          (role.startsWith("view:") && value === `manage:${role.slice(5)}`),
-      );
+  async function capabilities(signal: AbortSignal) {
+    live(signal);
+    const access = await readAssistantAccess(transport, signal, [
+      PRODUCT_COLLECTION.domain,
+      PRICE_COLLECTION.domain,
+    ]);
+    live(signal);
     const permitted = access.allows;
-    const read =
-      can("view:products") &&
-      permitted(PRODUCT_COLLECTION.scope, "master-data", "read");
+    const read = permitted(PRODUCT_COLLECTION.scope, "master-data", "read");
     const queries = read ? [...PRODUCT_QUERIES] : [];
-    if (
-      can("view:productPriceRecords") &&
-      permitted(PRICE_COLLECTION.scope, "procurement", "read")
-    )
+    if (permitted(PRICE_COLLECTION.scope, "procurement", "read"))
       queries.push("products.priceRecords.list");
-    const mutations =
-      read && can("manage:products")
-        ? PRODUCT_MUTATIONS.filter((path) =>
-            permitted(
-              PRODUCT_COLLECTION.scope,
-              "master-data",
-              path === "products.create" ? "create" : "update",
-            ),
-          )
-        : [];
+    const mutations = read
+      ? PRODUCT_MUTATIONS.filter((path) =>
+          permitted(
+            PRODUCT_COLLECTION.scope,
+            "master-data",
+            path === "products.create" ? "create" : "update",
+          ),
+        )
+      : [];
     return { queries, mutations };
   }
   async function answer(
@@ -154,7 +130,7 @@ export function createProtectedChats(
   ) {
     live(signal);
     const before = await get(id),
-      access = await capabilities();
+      access = await capabilities(signal);
     live(signal);
     const messageId = newAssistantId(),
       proposed: ChatProposal[] = [];
@@ -507,7 +483,7 @@ export function createProtectedChats(
           throw new ProtectedWriteConflict();
         const now = nextChatDate(state.head.updatedAt);
         if (target === "accepted") {
-          const access = await capabilities();
+          const access = await capabilities(signal);
           if (
             proposal.operations.some(
               (operation) =>

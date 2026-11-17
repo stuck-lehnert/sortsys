@@ -79,14 +79,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         ),
         group: "work",
         icon: Icons.Upload,
-        requiredRoles: [
-          "manage:deliveryNotes",
-          "view:products",
-          "manage:products",
-          "view:productVendors",
-          "view:productPriceRecords",
-          ":llm",
-        ],
+        requiredRoles: ["view:products", ":llm"],
         href: "/import",
         available:
           sessionInfo.supportsProjectFiles() &&

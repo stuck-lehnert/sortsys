@@ -14,7 +14,7 @@ Browser beim Verlassen der Seite zusätzlich eine Bestätigung an, soweit er
 solche Dialoge zulässt. Wird die Navigation abgebrochen, läuft die Anfrage
 weiter. Ein Wechsel zu einem anderen Browser-Tab beendet sie ebenfalls nicht.
 
-## Was bereits umgesetzt ist
+## Laufzeit und Fortschrittsdialog
 
 Die [Laufzeitverwaltung](../sortsys-webapp-v2/app/lib/llmActivity.ts) hält nur
 Fortschrittsangaben im Speicher. Beim tatsächlichen Verlassen des Dokuments oder
@@ -108,24 +108,28 @@ Benutzer. Der Produktschlüssel öffnet diesen Verlauf nicht. Ein fehlgeschlagen
 Vorgang bekommt eine feste Meldung; Fehlermeldungen des Providers werden nicht
 in den Verlauf kopiert. Ein erneuter Client kann fertige Ergebnisse aus dem
 verschlüsselten Speicher öffnen. Die Liste aktualisiert sich nach einem
-Abschluss ohne das bisherige Status-Polling. Die
-[Benutzereinladung](benutzerfreigaben.md) kann einen eigenen Bereich für den
-persönlichen Assistentenbereich bereitstellen. Dessen signierte Lese- und
-Schreibrechte steuern auch die Nutzung des Assistenten. Für die Produktsuche
-beim Einlesen wird zusätzlich Katalogzugriff geprüft. Eine Freigabe für den
-Assistenten öffnet keine weiteren Fachdaten.
+Abschluss ohne Status-Polling.
+
+Die [Benutzereinladung](benutzerfreigaben.md) kann einen persönlichen
+Assistentenbereich bereitstellen. Seine signierten Rechte zum Lesen, Anlegen
+und Bearbeiten erlauben neue Modellanfragen. Eine zusätzliche technische Rolle
+ist dafür nicht nötig. Das Lesen gespeicherter Verläufe braucht nur das
+Leserecht für diesen Bereich.
+
+Für das Einlesen kommt das Leserecht am Produktkatalog hinzu. So kann etwa ein
+Mitarbeiter Lieferpositionen erkennen lassen, ohne Produkte, Lieferanten oder
+Preise bearbeiten zu dürfen. Die Schaltfläche **Einlesen** berücksichtigt diese
+Freigaben und die Verfügbarkeit des Modellanbieters. Das spätere Anlegen eines
+Lieferscheins oder einer Preisaufzeichnung benötigt weiterhin die jeweiligen
+Schreibrechte. Ein Entzug des Katalogzugriffs verhindert neue Einleseanfragen;
+bereits gespeicherte persönliche Ergebnisse bleiben mit ihrer eigenen
+Lesefreigabe zugänglich.
 
 Bei einem Rechteentzug prüft eine laufende Anfrage die aktuelle Freigabe über
 den gemeinsamen Änderungsstrom erneut. Die API verwirft die Modellanfrage und
 offene Werkzeugaufrufe, auch wenn der Browser seine Verbindung offen hält.
 Dieser Abgleich nutzt denselben Mandantenstrom wie die
 WebSocket-Benachrichtigungen.
-
-Die Übernahme persönlicher Einleseverläufe aus einer alten Sicherung muss noch
-an die [Ersteinrichtung eines Mandanten](bestandsumstellung.md) angeschlossen
-werden. Dazu gehören Dateinamen, Benutzerzuordnung, genaue Zeitpunkte und die
-Unterscheidung zwischen abgeschlossenen, unterbrochenen und fehlerhaften
-Vorgängen.
 
 ## Chat und freigegebene Änderungen
 
@@ -139,7 +143,10 @@ sie erhalten.
 Aktuell kann der Chat den geschützten Produktkatalog durchsuchen und Vorschläge
 zum Anlegen, Bearbeiten und Verschlagworten von Produkten vorbereiten. Die
 Webapp prüft einen Vorschlag vor seiner Anzeige gegen das lokale Datenschema.
-Erst die Annahme führt die Änderungen aus. Fachänderungen und
+Die Werkzeugauswahl folgt den signierten Inhaltsrechten: Katalogsuche,
+Preiszugriff sowie Anlegen und Bearbeiten werden getrennt freigegeben.
+Bei der Annahme eines Vorschlags prüft der Client die aktuellen Rechte erneut.
+Erst dann führt er die Änderungen aus. Fachänderungen und
 Ausführungsnachweis werden gemeinsam gespeichert, damit eine verlorene Antwort
 keine doppelte Ausführung verursacht. Ändert ein anderer Client zwischen Prüfung
 und Speicherung den Katalog, wird das gesamte Schreibpaket abgewiesen. Ein
@@ -181,34 +188,17 @@ diesen persönlichen Bereich. Weitere Chat-Werkzeuge brauchen zuerst ihre
 geschützten Fachadapter. Ein gespeicherter Vorschlag bleibt lesbar, wenn sein
 Fachadapter nicht verfügbar ist; er erhält dadurch keine Ausführungsfreigabe.
 
-## Noch offener Umbau
+## Übernahme und Prüfung
 
-Die bisherigen Scan-Routen laden Originale in den Objektspeicher und starten
-serverseitige Hintergrundjobs. Das ist kein geeigneter Transport für geschützte
-Mandantendaten. Der neue Browser-Client sperrt diesen Rückfallweg. Die
-Einlesen-Seite verwendet den privaten
-[Browser-Adapter](../sortsys-webapp-v2/app/lib/liveLlm.ts). Auch das Übernehmen
-eines Ergebnisses in einen Lieferschein oder in Preisaufzeichnungen braucht die
-entsprechenden geschützten Fachadapter.
-
-Die Bestandsumstellung archiviert alte Einleseergebnisse, Jobdaten und frühere
-LLM-Nutzungsdatensätze verschlüsselt. Eine gemeinsame Sperre in PostgreSQL
-wartet vorherige Master-Schreibzugriffe ab. Danach weisen API-Instanzen weitere
-Aufträge für die bisherigen serverseitigen Verarbeitungspfade zurück. Neue
-Job-Übernahmen sowie spätere Ergebnis- und Fehleränderungen sind gesperrt. Neue
-technische Nutzungsdaten bleiben möglich; ein Providerfehler darf dabei nur als
-fester Code gespeichert werden. Der Browser prüft das Archiv nach dem
-Entschlüsseln erneut, auch nach einer Mandanten-Recovery.
-
-Originale noch offener Einlesevorgänge werden ebenfalls übernommen. Bei
-abgeschlossenen oder fehlgeschlagenen Vorgängen hat die bisherige Verarbeitung
-ihre temporären Uploads bereits zur Löschung vorgesehen; solche Pfade sind keine
-dauerhaften Dateianhänge. Eine verspätete Fehlerbereinigung darf während der
-Übernahme keine offenen Originale löschen.
-
-Vor der Aktivierung fehlen die vollständige Abstimmung mit laufenden Medien- und
-Uploadvorgängen sowie die abschließende Klartextbereinigung. Das Archiv ersetzt
-diese Schritte nicht.
+Altdaten gelangen bei der
+[Ersteinrichtung eines neuen Mandanten](bestandsumstellung.md) über eine
+Sicherungsdatei in das System. PostgreSQL wird dafür nicht als laufender Dienst
+benötigt. Die Chatübernahme ist mit dieser Einrichtung verbunden. Für frühere
+Einleseverläufe gibt es einen geprüften Konverter; dessen Anbindung an die
+Einrichtung fehlt noch. Er erhält Dateinamen, Benutzerzuordnung und genaue
+Zeitpunkte und unterscheidet abgeschlossene, unterbrochene und fehlerhafte
+Vorgänge. Ein Verlauf aus der früheren Verwaltungsdatenbank ist in einer reinen
+Mandantensicherung nicht enthalten und braucht eine eigene Quelle.
 
 Der Integrationstest mit einem lokalen Modell-Testdienst prüft den Transport,
 Produktsuche aus dem entschlüsselnden Client, Originaldateien in mehreren
@@ -221,5 +211,12 @@ Chat kommen Annahme nach verlorener Bestätigung, gleichzeitige Änderungen,
 Ablehnung, Überarbeitung und erneutes Öffnen hinzu. Der native Test zur
 Chatübernahme prüft außerdem ursprüngliche Entscheidungen, konkurrierende
 Annahmen, getrennte Benutzerbereiche und die erneute Freigabe eines bestehenden
-Mitgliedskontos nach zwei Mandanten-Recoveries. Ein vollständiger Vergleich
-aller Chat-Werkzeuge und Folgeabläufe steht noch aus.
+Mitgliedskontos nach zwei Mandanten-Recoveries. Ein weiterer Test verwendet die
+normalen Chat- und Einleseadapter mit einem Konto ohne technische Rollen. Er
+prüft Katalogsuche über authentifiziertes MCP, Einlesen mit reinem
+Katalog-Leserecht, abgewiesene Schreibzugriffe und den erhaltenen persönlichen
+Verlauf nach einem Rechteentzug. Dabei laufen zwei API-Instanzen gegen denselben
+DuckDB-Dienst. Der Modellanbieter wird durch einen lokalen Testdienst ersetzt.
+Ein Browsertest prüft zusätzlich die Sichtbarkeit der Einlesen-Aktion nach
+Freigabe und Entzug. Ein vollständiger Vergleich aller Chat-Werkzeuge und
+Folgeabläufe steht noch aus.
