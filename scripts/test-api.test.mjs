@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 function harness(t, options = {}) {
@@ -95,6 +96,72 @@ if (args[0] === process.env.FAIL_COMMAND) process.exit(37);
 function cleanupEvents(events) {
   return events.filter((event) => event[0] === "rm");
 }
+
+test("native selection never counts disabled browser tests as executed", (t) => {
+  const program = String.raw`
+import contextlib
+import io
+import runpy
+import subprocess
+import sys
+from unittest.mock import patch
+
+module = runpy.run_path(sys.argv[1])
+prefix = module["TEST_PREFIX"]
+native = prefix + "first_administrator_finishes_setup_before_business_access"
+browser = prefix + "passkeys::browser_passkeys_unlock_cold_vaults_and_reject_replay_across_api_instances"
+
+def select(names, env):
+    listing = "\n".join(name + ": test" for name in names)
+    response = subprocess.CompletedProcess([], 0, stdout=listing)
+    output = io.StringIO()
+    build_log = io.StringIO()
+    with patch.object(module["subprocess"], "run", return_value=response) as call:
+        with contextlib.redirect_stdout(output):
+            selected = module["selected_tests"](env, prefix, build_log)
+    assert call.call_count == 1
+    assert call.call_args.args[0][-2:] == ["--ignored", "--list"]
+    assert build_log.getvalue() == listing
+    return selected, output.getvalue()
+
+selected, output = select([browser, native], {"SORTSYS_NATIVE_BROWSER": "0"})
+assert selected == [native]
+assert "Nicht ausgeführt" in output and browser in output
+selected, output = select([browser, native], {"SORTSYS_NATIVE_BROWSER": "1"})
+assert selected == sorted([native, browser])
+assert output == ""
+for env in [{}, {"SORTSYS_NATIVE_BROWSER": "0"}]:
+    try:
+        select([browser], env)
+    except RuntimeError as error:
+        assert "SORTSYS_NATIVE_BROWSER=1" in str(error)
+    else:
+        raise AssertionError("A browser-only selection must not succeed without its prerequisite")
+selected, output = select([native], {})
+assert selected == [native] and output == ""
+selected, output = select([browser], {"SORTSYS_NATIVE_BROWSER": "1"})
+assert selected == [browser] and output == ""
+try:
+    select([], {})
+except RuntimeError as error:
+    assert "keinen Test" in str(error)
+else:
+    raise AssertionError("An empty selection must still fail")
+print("Native selection verified: disabled browser tests are excluded, explicit browser-only runs require the browser flag.")
+`;
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      program,
+      fileURLToPath(new URL("./test-native-auth", import.meta.url)),
+    ],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Native selection verified/);
+  t.diagnostic(result.stdout.trim());
+});
 
 test("one isolated native test container receives sources without secrets or build output", (t) => {
   const { result, events, logDirectory } = harness(t);

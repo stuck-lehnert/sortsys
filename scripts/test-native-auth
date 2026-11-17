@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 API = ROOT / "sortsys-api-v2"
 STORE = ROOT / "sortsys-store/Cargo.toml"
 TEST_PREFIX = "zerotrust::opaque::store_tests::"
+BROWSER_TEST_PREFIX = TEST_PREFIX + "passkeys::"
 DEVELOPMENT_TEST = TEST_PREFIX + "development_seed_creates_ready_accounts_and_preserves_manual_edits"
 
 
@@ -55,6 +56,13 @@ def selected_tests(env, test_filter, build_log):
     })
     if not names:
         raise RuntimeError("Der Testfilter hat keinen Test ausgewählt")
+    if env.get("SORTSYS_NATIVE_BROWSER") != "1":
+        browser_tests = [name for name in names if name.startswith(BROWSER_TEST_PREFIX)]
+        if len(browser_tests) == len(names):
+            raise RuntimeError("Die ausgewählten Tests benötigen SORTSYS_NATIVE_BROWSER=1")
+        for name in browser_tests:
+            print(f"Nicht ausgeführt (benötigt SORTSYS_NATIVE_BROWSER=1): {name}", flush=True)
+        names = [name for name in names if name not in browser_tests]
     return names
 
 

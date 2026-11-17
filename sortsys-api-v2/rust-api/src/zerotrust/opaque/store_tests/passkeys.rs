@@ -4,12 +4,11 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 #[tokio::test]
 #[ignore = "scripts/test-native-auth with SORTSYS_NATIVE_BROWSER=1 provides disposable services and Chromium"]
 async fn browser_passkeys_unlock_cold_vaults_and_reject_replay_across_api_instances() {
-    if std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() != Ok("1") {
-        eprintln!(
-            "Native WebAuthn browser test requires SORTSYS_NATIVE_BROWSER=1; the regular native API suite remains selected."
-        );
-        return;
-    }
+    assert_eq!(
+        std::env::var("SORTSYS_NATIVE_BROWSER").as_deref(),
+        Ok("1"),
+        "Native WebAuthn browser tests require SORTSYS_NATIVE_BROWSER=1"
+    );
     assert_eq!(
         std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
         Ok("1")
