@@ -89,6 +89,13 @@ export default function ToolDetailPage() {
 
   const activeTracking =
     sortedTrackings?.find((tracking) => !tracking.endedAt) ?? null;
+  const trackingHistoryTitle =
+    sortedTrackings && !trackingsError
+      ? uiText(
+          `Buchungshistorie (${sortedTrackings.length})`,
+          `Booking history (${sortedTrackings.length})`,
+        )
+      : uiText("Buchungshistorie", "Booking history");
   const latestInventory = sortedInventories?.[0];
   const toolScope = `tool:${id}`;
   const canEditTool = sessionInfo.canAccess(toolScope, "master-data", "update");
@@ -330,13 +337,7 @@ export default function ToolDetailPage() {
 
       <EntityActivityTimeline resourceType="tool" resourceId={tool.id} />
 
-      <MyExpandable
-        initiallyExpanded
-        title={uiText(
-          `Buchungshistorie (${sortedTrackings?.length ?? 0})`,
-          `Booking history (${sortedTrackings?.length ?? 0})`,
-        )}
-      >
+      <MyExpandable initiallyExpanded title={trackingHistoryTitle}>
         <TrackingTable
           trackings={sortedTrackings ?? []}
           loading={!trackings}

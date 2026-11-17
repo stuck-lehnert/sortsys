@@ -1257,6 +1257,19 @@ try {
         page.getByRole("heading", { name: /Bohrhammer 1/ }),
       ).toBeVisible();
       const path = new URL(page.url()).pathname;
+      const historyHeading = page.getByRole("button", {
+        name: /^Buchungshistorie \(\d+\)$/,
+      });
+      await expect(historyHeading).toBeVisible();
+      const historyLabel = await historyHeading.innerText();
+      const historyMatch = /^Buchungshistorie \((\d+)\)$/.exec(
+        historyLabel.trim(),
+      );
+      assert.ok(
+        historyMatch,
+        "The tool must expose its existing booking count",
+      );
+      const expectedHistoryCount = Number(historyMatch[1]) + 1;
       await login(member, "frank.doe", "123456", memberServer.origin);
       await expect(
         member.getByRole("link", { name: "Einstellungen", exact: true }),
@@ -1362,7 +1375,9 @@ try {
       await page.goto(`${server.origin}${path}`);
       await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
       await expect(
-        page.getByText("Buchungshistorie (1)", { exact: true }),
+        page.getByText(`Buchungshistorie (${expectedHistoryCount})`, {
+          exact: true,
+        }),
       ).toBeVisible();
 
       access = await openMemberPermissions(page);
@@ -1412,7 +1427,9 @@ try {
       await page.goto(`${server.origin}${path}`);
       await expect(page.getByText("verfügbar", { exact: true })).toBeVisible();
       await expect(
-        page.getByText("Buchungshistorie (1)", { exact: true }),
+        page.getByText(`Buchungshistorie (${expectedHistoryCount})`, {
+          exact: true,
+        }),
       ).toBeVisible();
       await member.screenshot({
         path: join(
@@ -1421,6 +1438,21 @@ try {
         ),
         fullPage: true,
       });
+      // The following access test starts without a master-data grant. Closing
+      // the booking retains its own history, so only the tool grant is removed.
+      access = await selectToolAccess(page, "Bohrhammer 1");
+      await selectAccess(page, access, "Werkzeugstammdaten", "Kein Zugriff");
+      await saveResourceAccess(
+        access,
+        "Werkzeugzugriff speichern",
+        "Werkzeugstammdaten",
+      );
+      await expect(
+        member.getByText(
+          "Die angeforderte Ressource konnte nicht aufgelöst werden.",
+          { exact: true },
+        ),
+      ).toBeVisible();
       memberAudit.assertClean();
     } finally {
       await member

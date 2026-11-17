@@ -13,6 +13,7 @@ import GlobalAdminDatabasesPage from "../../app/routes/(admin)/__admin.databases
 import GlobalAdminLlmPage from "../../app/routes/(admin)/__admin.llm";
 import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
+import ToolDetailPage from "../../app/routes/(shell)/tools.$id";
 import {
   showCreateUserModal,
   showModifyUserModal,
@@ -204,6 +205,7 @@ export function ApplicationFixture() {
           <ApplicationFrame>
             <Routes>
               <Route path="/customers/:id" element={<CustomerPage />} />
+              <Route path="/tools/:id" element={<ToolDetailPage />} />
               <Route path="/fixtures/forms" element={<FormEntrypoints />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/deployments" element={<DeploymentsPage />} />

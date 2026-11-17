@@ -18,6 +18,16 @@ import {
  * Their HTTP responses are synthetic; they do not exercise encryption or the
  * browser database. crypto.browser.mjs and native E2E cover those real paths. */
 export async function installPresentationClient() {
+  // Hold delivery at the business boundary: encrypted streams can finish
+  // decrypting independently even when their HTTP requests share a batch.
+  const heldStream = new URLSearchParams(window.location.search).get(
+    "holdStream",
+  );
+  let releaseStream;
+  const streamReleased = new Promise((resolve) => {
+    releaseStream = resolve;
+  });
+  window.__sortsysReleasePresentationStream = () => releaseStream();
   const transport = createClient(API_ENDPOINT, "presentation-fixture", {
     cache: ramCache(),
   });
@@ -60,7 +70,13 @@ export async function installPresentationClient() {
       transport.streamQuery(...args).subscribe({
         next(reply) {
           report("client.streamQuery", reply[1]);
-          subscriber.next(reply);
+          if (args[0] === heldStream) {
+            void streamReleased.then(() => {
+              if (!subscriber.closed) subscriber.next(reply);
+            });
+          } else {
+            subscriber.next(reply);
+          }
         },
         error: (error) => subscriber.error(error),
         complete: () => subscriber.complete(),
@@ -96,6 +112,7 @@ export async function installPresentationClient() {
         canCreate: () => administrator,
         canAny: () => administrator,
         canSeeOffers: () => administrator,
+        canBookTool: () => administrator,
       };
     },
   };

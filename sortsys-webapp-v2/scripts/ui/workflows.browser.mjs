@@ -2671,6 +2671,83 @@ test("two GAEB editors autosave parallel changes and reconnect without overwriti
   }
 });
 
+for (const locale of ["de", "en"]) {
+  for (const outcome of ["empty", "history", "error"]) {
+    test(`actual tool history distinguishes pending, empty and failed results in ${locale}: ${outcome}`, async () => {
+      const date = new Date("2026-11-17T08:00:00Z");
+      api.respond("tools.get", {
+        id: "j",
+        customId: 11,
+        brand: "Hilti",
+        category: "Bohrhammer",
+        label: "TE 60 ATC AVR",
+        status: null,
+        available: true,
+        activeTrackingId: null,
+        archivedSince: null,
+      });
+      api.respond("tools.inventories.list", []);
+      api.respond("remarks.list", []);
+      const trackings = ["m", "n"].map((id) => ({
+        id,
+        toolId: "j",
+        projectId: null,
+        responsibleUserId: null,
+        startedByUserId: null,
+        startedAt: date,
+        endedAt: date,
+      }));
+      api.respond(
+        "tools.trackings.list",
+        outcome === "history" ? trackings : [],
+      );
+      if (outcome === "error") {
+        api.fail("tools.trackings.list", "Synthetic booking history failure");
+      }
+      const title = locale === "de" ? "Buchungshistorie" : "Booking history";
+      const loading =
+        locale === "de" ? "Einträge werden geladen …" : "Loading entries …";
+      try {
+        await openApplication(
+          "/tools/j?holdStream=tools.trackings.list",
+          locale,
+        );
+        await page.getByText(loading, { exact: true }).waitFor();
+        assert.equal(
+          await page
+            .getByRole("button", { name: `${title} (0)`, exact: true })
+            .count(),
+          0,
+          "A pending booking query must not claim an empty history",
+        );
+        await page.getByRole("button", { name: title, exact: true }).waitFor();
+        await page.evaluate(() => window.__sortsysReleasePresentationStream());
+        if (outcome === "error") {
+          const failure =
+            locale === "de"
+              ? "Einträge konnten nicht geladen werden."
+              : "Entries could not be loaded.";
+          await page.getByRole("alert").filter({ hasText: failure }).waitFor();
+          assert.equal(
+            await page
+              .getByRole("button", { name: `${title} (0)`, exact: true })
+              .count(),
+            0,
+            "A failed booking query must not claim an empty history",
+          );
+        } else {
+          const count = outcome === "history" ? trackings.length : 0;
+          await page
+            .getByRole("button", { name: `${title} (${count})`, exact: true })
+            .waitFor();
+        }
+      } finally {
+        await page.evaluate(() => window.__sortsysReleasePresentationStream());
+      }
+    });
+  }
+}
+
 test("actual attachments announce loading and a single empty result", async () => {
   populateAttachments();
   api.respond("projects.files.list", []);
