@@ -633,7 +633,20 @@ export class DataRuntime {
     );
     try {
       if (requests.length) {
-        open = supplied ?? (await this.storage.open(this.controller.signal));
+        // readable() below checks every retained resource. Include those areas
+        // as well as the new requests; a narrow inventory must not evict an
+        // unrelated cached area merely because it was omitted from the read.
+        const domains = [
+          ...new Set([
+            ...requests.map((request) => request.area.domain),
+            ...[...next.values()].map(
+              (resource) => resource.request.area.domain,
+            ),
+          ]),
+        ];
+        open =
+          supplied ??
+          (await this.storage.open(this.controller.signal, domains));
       }
       await open?.prefetch?.(
         requests
@@ -1120,7 +1133,9 @@ export class DataRuntime {
       }
       // A retry may find the signed tombstone rather than an ordinary model.
       // Absence alone must not turn a failed deletion into a success.
-      const opened = await this.storage.open(this.controller.signal);
+      const opened = await this.storage.open(this.controller.signal, [
+        request.area.domain,
+      ]);
       const collection = opened(request.area);
       try {
         const deleted = await collection.get(id);

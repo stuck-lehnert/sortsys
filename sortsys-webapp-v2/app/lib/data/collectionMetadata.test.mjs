@@ -5,6 +5,7 @@ import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { defineDataModel } from "./runtime/model";
 import { DataRuntime } from "./runtime/runtime";
 import { encryptedDataStorage } from "./runtime/storage";
+import { signPolicy } from "@sortsys/zerotrust/sortsys";
 
 afterEach(() => lockCryptoSession());
 
@@ -15,6 +16,127 @@ const area = {
   prefix: "product:",
 };
 const metadataPaths = new Set(["zerotrust.access.snapshot"]);
+
+const metadataModel = defineDataModel({
+  name: "selected-metadata-test",
+  decode: (value) => value,
+  sources: () => [],
+  tables: [],
+});
+
+function metadataRequests(count) {
+  return Array.from({ length: count }, (_, index) => {
+    const scope = `testing:entries${index + 1}`;
+    return {
+      model: metadataModel,
+      area: {
+        domain: `${scope}:master-data`,
+        scope,
+        facet: "master-data",
+        prefix: `${scope}:`,
+      },
+    };
+  });
+}
+
+test("small runtime reads select new and retained areas and discard a revoked retained area", async () => {
+  const requests = metadataRequests(3);
+  const [first, second, third] = requests;
+  const fixture = await protectedTenant(
+    requests.map((request) => request.area),
+  );
+  for (const [index, request] of requests.entries()) {
+    await fixture.seed(request.area, `${request.area.prefix}1`, {
+      title: `Private entry ${index + 1}`,
+    });
+  }
+  fixture.calls.length = 0;
+  const runtime = new DataRuntime(
+    encryptedDataStorage(fixture.client),
+    () => {},
+  );
+  const values = (view, request) =>
+    view.documents(request).map((document) => document.value.title);
+  try {
+    expect(await runtime.read([first], (view) => values(view, first))).toEqual([
+      "Private entry 1",
+    ]);
+    expect(
+      await runtime.read([second], (view) => [
+        values(view, first),
+        values(view, second),
+      ]),
+    ).toEqual([["Private entry 1"], ["Private entry 2"]]);
+    expect(
+      fixture.calls
+        .filter((call) => metadataPaths.has(call.path))
+        .map((call) => call.input),
+    ).toEqual([
+      { domains: [first.area.domain] },
+      { domains: [second.area.domain, first.area.domain] },
+    ]);
+
+    const [previous] = await fixture.client.query("zerotrust.policy.get");
+    const { signature, ...unsigned } = previous;
+    const policy = await signPolicy(
+      {
+        ...unsigned,
+        version: "3",
+        rules: unsigned.rules.filter((rule) => rule.scope !== first.area.scope),
+      },
+      fixture.authorityKey.privateKey,
+    );
+    const query = fixture.client.query;
+    fixture.client.query = (path, input, options) => {
+      if (path === "zerotrust.policy.get")
+        return Promise.resolve([policy, null]);
+      return query(path, input, options);
+    };
+    await runtime.read([third], (view) => {
+      expect(() => view.documents(first)).toThrow();
+      expect(values(view, second)).toEqual(["Private entry 2"]);
+      expect(values(view, third)).toEqual(["Private entry 3"]);
+    });
+    const last = fixture.calls
+      .filter((call) => metadataPaths.has(call.path))
+      .at(-1);
+    expect(last.input.domains).toEqual([
+      third.area.domain,
+      first.area.domain,
+      second.area.domain,
+    ]);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("runtime selections beyond the server limit use the complete verified inventory", async () => {
+  const requests = metadataRequests(17);
+  const fixture = await protectedTenant(
+    requests.map((request) => request.area),
+  );
+  const runtime = new DataRuntime(
+    encryptedDataStorage(fixture.client),
+    () => {},
+  );
+  try {
+    await runtime.read(requests.slice(0, 16), (view) => {
+      for (const request of requests.slice(0, 16))
+        expect(view.documents(request)).toEqual([]);
+    });
+    await runtime.read([requests[16]], (view) => {
+      for (const request of requests)
+        expect(view.documents(request)).toEqual([]);
+    });
+    const inputs = fixture.calls
+      .filter((call) => metadataPaths.has(call.path))
+      .map((call) => call.input);
+    expect(inputs[0].domains).toHaveLength(16);
+    expect(inputs[1].domains).toBeUndefined();
+  } finally {
+    await runtime.close();
+  }
+});
 
 test("a business read reuses verified metadata while still checking encrypted objects and account lifetime", async () => {
   const entries = {

@@ -21,7 +21,10 @@ export type DataCollections = ((area: Collection) => DataCollection) & {
   prefetch?(selections: readonly CollectionPageRequest[]): Promise<void>;
 };
 export interface DataStorage {
-  open(signal: AbortSignal): Promise<DataCollections>;
+  open(
+    signal: AbortSignal,
+    domains?: readonly string[],
+  ): Promise<DataCollections>;
   commit(
     groups: PreparedWrites[],
     guards: PreparedWrites["head"][],
@@ -34,7 +37,15 @@ export interface DataStorage {
 }
 export function encryptedDataStorage(client: Client): DataStorage {
   return {
-    open: (signal) => protectedCollections(client, signal),
+    open: (signal, domains) => {
+      // Selected inventories fit in one security snapshot. Larger selections
+      // keep the paged inventory rather than combine unrelated snapshots.
+      const selected =
+        domains && domains.length > 0 && domains.length <= 16
+          ? domains
+          : undefined;
+      return protectedCollections(client, signal, selected);
+    },
     commit: (groups, guards, signal) =>
       commitProtectedWrites(client, groups, signal, guards),
     async verifyPublished(packets, signal) {

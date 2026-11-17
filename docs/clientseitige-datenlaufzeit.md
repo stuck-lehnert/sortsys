@@ -42,6 +42,11 @@ Erst nach der Prüfung aller Signaturen und Generationen kann ein Inhaltsbereich
 geöffnet werden. Ein Abbruch oder Kontowechsel verwirft auch späte Sammelantworten.
 Für einen einzelnen Bereich ist ein begrenzter Abruf möglich; die Navigation
 benötigt kein zusätzliches Bereichsverzeichnis.
+Der Datenkern verwendet diesen gezielten Abruf, solange neu benötigte und noch
+gehaltene Bereiche zusammen höchstens 16 Einträge ergeben. Vorhandene Bereiche
+bleiben Teil der Rechteprüfung. Ein Nachladen entfernt deshalb keine weiterhin
+erlaubten Daten; ein zwischenzeitlicher Rechteentzug wird trotzdem erkannt.
+Bei größeren Auswahlen bleibt die gemeinsame Seitenabfrage erhalten.
 Das öffentliche Verzeichnis wird in Seiten mit höchstens 128 Bereichen gelesen.
 Jede Folgeseite muss zum selben Berechtigungsstand und zur selben Sitzung gehören.
 
@@ -91,6 +96,8 @@ Wiederverwendung mathematisch geprüfter öffentlicher Signaturen bleibt davon
 getrennt und ersetzt keine Aktualitätsprüfung.
 
 Identische, gleichzeitig laufende Fachabfragen teilen ihre lokale Leseprüfung.
+Das gilt auch für Listen mit `bigint`-Werten für Seitengröße und Offset; Zahlen,
+Zeichenketten und gleich aussehende Objekte bleiben als Eingaben unterscheidbar.
 So benötigen etwa Verantwortlicher und Herausgeber derselben Buchung nur einen
 Abruf desselben Benutzerprofils. Jeder Aufrufer erhält eine eigene Ergebniskopie;
 nach Abschluss bleibt kein Ergebnis in dieser Ablage. Änderungsmeldungen und

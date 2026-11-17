@@ -1,11 +1,16 @@
 type ReadInput = { path: string; input: unknown };
 
-// Share only ordinary JSON inputs. Dates, custom objects, sparse arrays and
-// accessors keep the existing direct path rather than risk matching an input
-// with different validation semantics.
+// Share ordinary data inputs, including bigint pagination values. Dates,
+// custom objects, sparse arrays and accessors keep the direct path rather than
+// risk matching an input with different validation semantics.
 function shareable(input: unknown, seen = new Set<object>()): boolean {
   if (input === null) return true;
-  if (typeof input === "string" || typeof input === "boolean") return true;
+  if (
+    typeof input === "string" ||
+    typeof input === "boolean" ||
+    typeof input === "bigint"
+  )
+    return true;
   if (typeof input === "number")
     return Number.isFinite(input) && !Object.is(input, -0);
   if (typeof input !== "object" || seen.has(input)) return false;
@@ -36,6 +41,20 @@ function shareable(input: unknown, seen = new Set<object>()): boolean {
   );
 }
 
+// Tag every container so a bigint cannot alias a string, number or a caller's
+// object/array that happens to look like our bigint representation.
+function keyValue(input: unknown): unknown {
+  if (typeof input === "bigint") return ["bigint", input.toString()];
+  if (Array.isArray(input)) return ["array", input.map(keyValue)];
+  if (input !== null && typeof input === "object") {
+    return [
+      "object",
+      Object.entries(input).map(([name, value]) => [name, keyValue(value)]),
+    ];
+  }
+  return input;
+}
+
 /** Identical local reads may share unfinished work, never a completed result.
  * Invalidation detaches old reads without cancelling their original callers. */
 export function pendingReads<T>(
@@ -57,7 +76,11 @@ export function pendingReads<T>(
       let key: string | undefined;
       let request: ReadInput = { path, input };
       if (input === undefined || shareable(input)) {
-        const encoded = JSON.stringify([path, input === undefined, input]);
+        const encoded = JSON.stringify([
+          path,
+          input === undefined,
+          keyValue(input),
+        ]);
         if (encoded.length <= 65_536) {
           key = encoded;
           request = { path, input: structuredClone(input) };

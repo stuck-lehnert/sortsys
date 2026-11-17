@@ -29,6 +29,9 @@ import {
   required,
 } from "../app/lib/data/protectedObjects";
 import { newProductRowId, publicId } from "../app/lib/data/products";
+import { defineDataModel } from "../app/lib/data/runtime/model";
+import { DataRuntime } from "../app/lib/data/runtime/runtime";
+import { encryptedDataStorage } from "../app/lib/data/runtime/storage";
 
 type RequestHook = (
   url: URL,
@@ -262,6 +265,64 @@ export async function exerciseNativeAccessPages(
       true,
       "Business writes preserve the conditional inventory",
     );
+
+    const metadataReads: { path: string; input: unknown }[] = [];
+    const observed: Client = {
+      ...owner,
+      query: ((path, input, options) => {
+        if (
+          path === "zerotrust.access.snapshot" ||
+          path === "zerotrust.access.page"
+        )
+          metadataReads.push({ path, input: structuredClone(input) });
+        return owner.query(path, input, options);
+      }) as Client["query"],
+    };
+    const model = defineDataModel({
+      name: "native-selected-inventory",
+      decode: (value) => value,
+      sources: () => [],
+      tables: [],
+    });
+    const firstRequest = { model, area: areas[0]! };
+    const lastRequest = { model, area: areas.at(-1)! };
+    const runtime = new DataRuntime(
+      encryptedDataStorage(observed),
+      context.live,
+    );
+    try {
+      const firstValues = await runtime.read([firstRequest], (view) =>
+        view.documents(firstRequest).map((document) => document.value),
+      );
+      assert.deepEqual(firstValues, [
+        { private: "Private page inventory fixture 861329" },
+      ]);
+      await runtime.read([lastRequest], (view) => {
+        assert.deepEqual(view.documents(lastRequest), []);
+        assert.deepEqual(
+          view.documents(firstRequest).map((document) => document.value),
+          firstValues,
+          "A narrow reload must preserve previously verified areas",
+        );
+      });
+      assert.deepEqual(metadataReads, [
+        {
+          path: "zerotrust.access.snapshot",
+          input: { domains: [firstRequest.area.domain] },
+        },
+        {
+          path: "zerotrust.access.snapshot",
+          input: {
+            domains: [lastRequest.area.domain, firstRequest.area.domain],
+          },
+        },
+      ]);
+      console.log(
+        "Native selected inventories: two runtime reads use one bounded metadata request each across 258 certified areas and retain the first private record",
+      );
+    } finally {
+      await runtime.close();
+    }
 
     // Grants and policy publications are structural, unlike object revisions.
     const definition = await required(

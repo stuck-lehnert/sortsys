@@ -31,6 +31,44 @@ test("identical unfinished reads share work and return independent values withou
   expect(calls).toHaveLength(2);
 });
 
+test("bigint pagination shares work without aliasing other input types", async () => {
+  const source = deferred();
+  const calls = [];
+  const reads = pendingReads((path, input) => {
+    calls.push({ path, input });
+    return source.promise;
+  }, structuredClone);
+  const input = { limit: 50n, offset: 9_007_199_254_740_993n };
+  const first = reads.get("projects.list", input);
+  const second = reads.get("projects.list", { ...input });
+  input.offset = 0n;
+  expect(calls).toEqual([
+    {
+      path: "projects.list",
+      input: { limit: 50n, offset: 9_007_199_254_740_993n },
+    },
+  ]);
+
+  const distinct = [
+    1n,
+    -1n,
+    1,
+    "1",
+    ["bigint", "1"],
+    { bigint: "1" },
+    { $bigint: "1" },
+    { nested: [1n] },
+    { nested: [["bigint", "1"]] },
+  ];
+  const requests = distinct.flatMap((value) => [
+    reads.get("testing", value),
+    reads.get("testing", structuredClone(value)),
+  ]);
+  expect(calls).toHaveLength(distinct.length + 1);
+  source.resolve({ rows: [] });
+  await Promise.all([first, second, ...requests]);
+});
+
 test("invalidation starts a fresh read and an older completion cannot remove its replacement", async () => {
   const calls = [];
   const reads = pendingReads(() => {
@@ -119,7 +157,6 @@ test("unsupported inputs retain their own validation and cannot alias ordinary J
   cycle.self = cycle;
   const inputs = [
     new Date(),
-    1n,
     { id: undefined },
     sparse,
     accessor,
