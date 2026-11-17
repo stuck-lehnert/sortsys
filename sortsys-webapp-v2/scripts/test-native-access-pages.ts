@@ -71,7 +71,7 @@ export async function exerciseNativeAccessPages(
       prefix: `${scope}:master-data:record`,
     };
   };
-  const areas = Array.from({ length: 130 }, makeArea);
+  const areas = Array.from({ length: 258 }, makeArea);
 
   // Continue the same authenticated session on the other production router.
   // No sticky session, shared process memory or mock handler participates.
@@ -93,7 +93,7 @@ export async function exerciseNativeAccessPages(
   });
   try {
     await createResourceAreas(owner, areas, "tool", signal);
-    assert.deepEqual(definitionCounts, [32, 32, 32, 32, 2]);
+    assert.deepEqual(definitionCounts, [...Array(8).fill(32), 2]);
     const oversized = await Promise.all(
       areas
         .slice(0, 33)
@@ -127,8 +127,8 @@ export async function exerciseNativeAccessPages(
       );
       const domains = [...first.domains];
       const origins = [...first.origins];
-      assert.ok(first.domains.length <= 64);
-      assert.ok(first.origins.length <= 64);
+      assert.ok(first.domains.length <= 128);
+      assert.ok(first.origins.length <= 128);
       let page: Pick<
         QueryResult<"zerotrust.access.page">,
         "snapshot" | "after"
@@ -148,8 +148,8 @@ export async function exerciseNativeAccessPages(
           ),
         );
         assert.equal(next.snapshot, first.snapshot);
-        assert.ok(next.domains.length <= 64);
-        assert.ok(next.origins.length <= 64);
+        assert.ok(next.domains.length <= 128);
+        assert.ok(next.origins.length <= 128);
         domains.push(...next.domains);
         origins.push(...next.origins);
         page = next;
@@ -182,7 +182,7 @@ export async function exerciseNativeAccessPages(
     assert.deepEqual(unchanged.domains, []);
     assert.deepEqual(unchanged.origins, []);
     assert.equal(unchanged.after, null);
-    assert.ok(complete.origins.length >= 130);
+    assert.ok(complete.origins.length >= 258);
     assert.deepEqual(
       complete.domains,
       await required(
@@ -496,7 +496,7 @@ export async function exerciseNativeAccessPages(
     assert.equal(selected.domains.length, 1);
     assert.ok(routed >= 10);
     console.log(
-      "Native access pages: 130 certified origins across two API instances; content saves and equivalent key grants preserve snapshots; changed rotation state, policy and registration invalidate them; wrong session and request context are rejected",
+      "Native access pages: 258 certified origins across two API instances; content saves and equivalent key grants preserve snapshots; changed rotation state, policy and registration invalidate them; wrong session and request context are rejected",
     );
   } finally {
     setRequestHook(null);

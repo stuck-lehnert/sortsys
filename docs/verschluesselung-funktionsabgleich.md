@@ -449,7 +449,7 @@ die Seed-Recovery ersetzt keine Datensicherung. Siehe
 Servermigrationen betreffen nur öffentliche Hüllen und Referenzen.
 
 Die Browser lesen Berechtigungsverzeichnisse inzwischen in geprüften Seiten
-mit höchstens 64 Bereichen. Die Vertrauenskette und die signierten Regeln
+mit höchstens 128 Bereichen. Die Vertrauenskette und die signierten Regeln
 werden nur mit der ersten Seite übertragen. Das behebt die bisherigen
 Gesamtgrenzen noch nicht: Registrierung, weitere Verwaltungsabrufe und
 Wiederherstellungspläne begrenzen weiterhin den gesamten Bestand auf

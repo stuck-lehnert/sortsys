@@ -342,7 +342,7 @@ test("saving visit preferences preserves unrelated in-flight reads", async () =>
   try {
     const first = client.query("products.list", {});
     await entered;
-    announceDataChanges(base, new Set(["preferences:user:1"]));
+    announceDataChanges(base, new Set(["preferences:user:1:master-data"]));
     // Cross both the synchronous invalidation and the queued subscription notice.
     await new Promise((resolve) => queueMicrotask(resolve));
     const second = client.query("products.list", {});
@@ -379,7 +379,7 @@ test("project subscriptions refresh for project and policy changes, not visit pr
     await received;
     expect(results).toEqual([[[], null]]);
 
-    announceDataChanges(base, new Set(["preferences:user:1"]));
+    announceDataChanges(base, new Set(["preferences:user:1:master-data"]));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(results).toHaveLength(1);
 

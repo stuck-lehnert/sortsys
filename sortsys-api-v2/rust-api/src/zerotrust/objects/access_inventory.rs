@@ -3,7 +3,9 @@
 use super::*;
 use crate::zerotrust::access::{MetadataContext, MetadataRequest, metadata_context_for_domains};
 
-const PAGE_SIZE: usize = 64;
+// Public access metadata is small compared with encrypted object pages. A
+// bounded larger page avoids a round trip for each handful of project facets.
+const PAGE_SIZE: usize = 128;
 
 async fn inventory_page(
     service: &crate::auth::AuthService,

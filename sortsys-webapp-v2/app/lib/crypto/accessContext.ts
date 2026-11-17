@@ -16,6 +16,7 @@ import { verifyPolicySnapshot } from "./policy";
 import { verifyCreatedAccess } from "./createdAccess";
 
 type AccessOptions = Omit<QueryInput<"zerotrust.access.snapshot">, "known">;
+const MAX_ACCESS_PAGE_ITEMS = 128;
 type Inventory = Pick<
   QueryResult<"zerotrust.access.snapshot">,
   "domains" | "origins"
@@ -174,7 +175,7 @@ async function readAccessContext(
   } else {
     const returned = new Set<string>();
     for await (const page of readSnapshotPages<InventoryEntry>({
-      maxItems: 128,
+      maxItems: MAX_ACCESS_PAGE_ITEMS * 2,
       signal,
       read: async ({ snapshot, after }) => {
         live();
@@ -197,9 +198,9 @@ async function readAccessContext(
           record(result, ["snapshot", "origins", "domains", "after"]);
         if (
           !Array.isArray(result.domains) ||
-          result.domains.length > 64 ||
+          result.domains.length > MAX_ACCESS_PAGE_ITEMS ||
           !Array.isArray(result.origins) ||
-          result.origins.length > 64
+          result.origins.length > MAX_ACCESS_PAGE_ITEMS
         )
           throw new InvalidProtectedData();
         return {

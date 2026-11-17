@@ -42,6 +42,8 @@ Erst nach der Prüfung aller Signaturen und Generationen kann ein Inhaltsbereich
 geöffnet werden. Ein Abbruch oder Kontowechsel verwirft auch späte Sammelantworten.
 Für einen einzelnen Bereich ist ein begrenzter Abruf möglich; die Navigation
 benötigt kein zusätzliches Bereichsverzeichnis.
+Das öffentliche Verzeichnis wird in Seiten mit höchstens 128 Bereichen gelesen.
+Jede Folgeseite muss zum selben Berechtigungsstand und zur selben Sitzung gehören.
 
 Die Laufzeit ruft bis zu 16 Sammlungsseiten gemeinsam über
 `zerotrust.objects.pages` ab. Die API prüft deren Rechte, verschlüsselte Inhalte

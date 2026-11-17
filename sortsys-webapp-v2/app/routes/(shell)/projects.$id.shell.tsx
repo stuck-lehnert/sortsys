@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
+import { from } from "rxjs";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDropdown } from "~/components/MyDropdown";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
@@ -38,18 +39,28 @@ export default function ProjectDetailShell() {
 
   const path = useLocation().pathname;
   const navigate = useNavigate();
+  const isOverviewTab = path === `/projects/${id}`;
+  const isCostsTab = path.startsWith(`/projects/${id}/costs`);
+  const isRegieReportsTab = path.startsWith(`/projects/${id}/regieReports`);
+  const isDailyReportsTab = path.startsWith(`/projects/${id}/dailyReports`);
 
   const [project, err] = useClientStream(
     () => client.streamQuery("projects.get", { id: id! }),
     [id],
   );
   const [deliveryNotes] = useClientStream(
-    () => client.streamQuery("deliveryNotes.list", { projectId: id! }),
-    [id],
+    () =>
+      isCostsTab && sessionInfo.canDo("view:deliveryNotes")
+        ? client.streamQuery("deliveryNotes.list", { projectId: id! })
+        : from([[null, null] as [null, null]]),
+    [id, isCostsTab, sessionInfo.canDo("view:deliveryNotes")],
   );
   const [regieReports] = useClientStream(
-    () => client.streamQuery("regieReports.list", { projectId: id! }),
-    [id],
+    () =>
+      isRegieReportsTab && sessionInfo.canDo("view:regieReports")
+        ? client.streamQuery("regieReports.list", { projectId: id! })
+        : from([[null, null] as [null, null]]),
+    [id, isRegieReportsTab, sessionInfo.canDo("view:regieReports")],
   );
 
   useTitle(
@@ -115,10 +126,6 @@ export default function ProjectDetailShell() {
   );
   const archivedAt =
     (project as any).archivedAt ?? (project as any).archivedSince ?? null;
-  const isOverviewTab = path === `/projects/${id}`;
-  const isCostsTab = path.startsWith(`/projects/${id}/costs`);
-  const isRegieReportsTab = path.startsWith(`/projects/${id}/regieReports`);
-  const isDailyReportsTab = path.startsWith(`/projects/${id}/dailyReports`);
   const hasDeliveryNotes = (deliveryNotes?.length ?? 0) > 0;
   const hasRegieReports = (regieReports?.length ?? 0) > 0;
 

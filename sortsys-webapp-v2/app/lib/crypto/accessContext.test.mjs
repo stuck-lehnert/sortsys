@@ -13,8 +13,8 @@ afterEach(() => lockCryptoSession());
 
 const signal = () => new AbortController().signal;
 
-async function inventory() {
-  const areas = Array.from({ length: 5 }, (_, index) => ({
+async function inventory(count = 5, pageSize = 2) {
+  const areas = Array.from({ length: count }, (_, index) => ({
     domain: `tool:${index + 1}:master-data`,
     scope: `tool:${index + 1}`,
     facet: "master-data",
@@ -29,10 +29,19 @@ async function inventory() {
   fixture.client.query = async (path, input) => {
     if (path === "zerotrust.access.snapshot") {
       [complete] = await original(path, input);
+      if (complete.after !== null) {
+        // This fixture supplies its own page boundaries below.
+        const [domains] = await original("zerotrust.domains.list");
+        complete = { ...complete, domains };
+      }
       calls.push({ path, input });
       return [
         head(
-          { ...complete, domains: complete.domains.slice(0, 2), after: "2" },
+          {
+            ...complete,
+            domains: complete.domains.slice(0, pageSize),
+            after: String(pageSize),
+          },
           input,
         ),
         null,
@@ -43,9 +52,12 @@ async function inventory() {
       const offset = Number(input.after);
       const page = {
         snapshot: complete.snapshot,
-        domains: complete.domains.slice(offset, offset + 2),
+        domains: complete.domains.slice(offset, offset + pageSize),
         origins: [],
-        after: offset + 2 < complete.domains.length ? String(offset + 2) : null,
+        after:
+          offset + pageSize < complete.domains.length
+            ? String(offset + pageSize)
+            : null,
       };
       return transform(page, input);
     }
@@ -171,6 +183,19 @@ test("pages with no visible areas still advance to later permitted areas", async
   ]);
 });
 
+test("128-area pages preserve every verified domain across the next page", async () => {
+  const fixture = await inventory(129, 128);
+  const context = await verifiedAccessContext(fixture.client, signal());
+  expect(context.domains.map((domain) => domain.id)).toEqual(
+    fixture.areas.map((area) => area.domain),
+  );
+  expect(fixture.pageCalls.map((call) => call.path)).toEqual([
+    "zerotrust.access.snapshot",
+    "zerotrust.access.page",
+  ]);
+  expect(fixture.pageCalls[1].input.after).toBe("128");
+});
+
 test("a continuation rejects substituted snapshots, repeated cursors, duplicates and oversized pages", async () => {
   const fixture = await inventory();
   for (const forge of [
@@ -180,7 +205,8 @@ test("a continuation rejects substituted snapshots, repeated cursors, duplicates
       ...page,
       domains: [{ ...page.domains[0], id: fixture.areas[0].domain }],
     }),
-    (page) => ({ ...page, domains: Array(65).fill(page.domains[0]) }),
+    (page) => ({ ...page, domains: Array(129).fill(page.domains[0]) }),
+    (page) => ({ ...page, origins: Array(129).fill({}) }),
     (page) => ({ ...page, policy: fixture.setup.policy }),
   ]) {
     fixture.change((page) => [forge(page), null]);

@@ -385,7 +385,7 @@ keine zusätzlichen SQL-Tabellen:
 | `objects-*`, `object-history`, `object-changes` | Referenzen auf signierte Chiffrate, Vorgängerversionen und eindeutige Nachrichten-IDs |
 | `recovery-inventory-*`, `recovery-challenges`, `recovery-operations` | Verzeichnis früherer Schlüsselhüllen, zeitlich begrenzte Challenges und Nachweise abgeschlossener Wiederherstellungen |
 
-Das Berechtigungsverzeichnis wird in Seiten mit höchstens 64 Bereichen gelesen.
+Das Berechtigungsverzeichnis wird in Seiten mit höchstens 128 Bereichen gelesen.
 Die erste Antwort enthält außerdem die Vertrauenskette und die signierte
 Regelversion; Fortsetzungen wiederholen diese Nachweise nicht. Jede Seite wird
 in einer eigenen Transaktion gegen Sitzung und aktuelle Rechte geprüft. Ein
