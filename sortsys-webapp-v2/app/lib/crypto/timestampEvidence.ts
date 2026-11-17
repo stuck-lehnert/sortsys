@@ -6,7 +6,6 @@ import {
   documentTimestampTarget,
   encryptedObject,
   evaluateOtsProof,
-  importSigningKey,
   InvalidProtectedData,
   mergeOtsNodes,
   objectFrame,
@@ -67,8 +66,11 @@ export async function checkTimestampEvidence(
   let packet: Uint8Array<ArrayBuffer>;
   if (target.kind === "document") {
     const head = documentHead(value.artifact);
-    const signer = await importSigningKey(
-      history.identityCertificate(head.author, head.generation).signingKey,
+    const signer = await history.proofSigner(
+      head.author,
+      head.generation,
+      head.signature,
+      await documentHeadFrame(head),
     );
     actual = await documentTimestampTarget(head, signer);
     packet = signedPacketFrame(await documentHeadFrame(head), head.signature);

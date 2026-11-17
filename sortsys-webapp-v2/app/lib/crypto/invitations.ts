@@ -23,7 +23,11 @@ import {
   verifyInvitationClaim,
   verifyTrustHistory,
 } from "@sortsys/zerotrust/sortsys";
-import type { InvitationLink, Rule } from "@sortsys/zerotrust/sortsys";
+import type {
+  IdentityCertificate,
+  InvitationLink,
+  Rule,
+} from "@sortsys/zerotrust/sortsys";
 import {
   unlockedAccount,
   trustedHistory,
@@ -353,16 +357,35 @@ export async function approveMemberInvitation(
     );
   context.live();
   const claimHash = await invitationClaimHash(claim, signed);
-  const certificate = await certifyIdentity(
-    {
-      tenant: signed.tenant,
-      generation: signed.generation,
-      user: signed.user,
-      encryptionKey: claim.encryptionKey,
-      signingKey: claim.signingKey,
-    },
-    context.authority,
-  );
+  let existingCertificate: IdentityCertificate | undefined;
+  try {
+    existingCertificate = context.history.identityCertificate(
+      signed.user,
+      signed.generation,
+    );
+  } catch (error) {
+    // A first invitation has no certified identity in this generation yet.
+    if (!(error instanceof InvalidProtectedData)) throw error;
+  }
+  if (
+    existingCertificate &&
+    (existingCertificate.encryptionKey !== claim.encryptionKey ||
+      existingCertificate.signingKey !== claim.signingKey)
+  ) {
+    throw new InvalidProtectedData();
+  }
+  const certificate =
+    existingCertificate ??
+    (await certifyIdentity(
+      {
+        tenant: signed.tenant,
+        generation: signed.generation,
+        user: signed.user,
+        encryptionKey: claim.encryptionKey,
+        signingKey: claim.signingKey,
+      },
+      context.authority,
+    ));
   const proof = await sign(
     context.authority,
     invitationApprovalFrame(signed, claimHash),

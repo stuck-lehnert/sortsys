@@ -11,6 +11,8 @@ import {
   frame,
   InvalidProtectedData,
   invitationRegistrationFrame,
+  identityCertificate,
+  identityCertificateFrame,
   openAccountVault,
   openAccountVaultWithKey,
   publicIdentity,
@@ -20,11 +22,13 @@ import {
   unbase64,
   updateAccountVault,
   verifyTrustHistory,
+  verify,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   AccountVault,
   InvitationLink,
   PrivateIdentity,
+  IdentityCertificate,
 } from "@sortsys/zerotrust/sortsys";
 import { OpaqueWorkerClient } from "@sortsys/zerotrust/worker";
 import { uiText } from "../i18n";
@@ -94,6 +98,7 @@ export async function enrollPasswordAccount(
     password: string;
     identity?: PrivateIdentity;
     pins?: Record<string, string>;
+    replacementCertificate?: IdentityCertificate;
   },
 ): Promise<void> {
   const current = epoch;
@@ -104,11 +109,39 @@ export async function enrollPasswordAccount(
   const identity =
     input.identity ?? matching?.identity ?? (await createIdentity());
   const publicKeys = await publicIdentity(identity);
+  const replacement =
+    input.replacementCertificate === undefined
+      ? undefined
+      : identityCertificate(input.replacementCertificate);
+  if (replacement) {
+    if (!matching) throw new InvalidProtectedData();
+    const history = await trustedHistory(client);
+    const previous = history.identityCertificate(input.subject);
+    if (
+      current !== epoch ||
+      replacement.tenant !== input.tenant ||
+      replacement.user !== input.subject ||
+      replacement.generation !== history.current.generation ||
+      replacement.previousSignature !== previous.signature ||
+      replacement.signingKey !== publicKeys.signingKey ||
+      replacement.encryptionKey !== publicKeys.encryptionKey ||
+      replacement.encryptionKey !== matching.vault.encryptionKey ||
+      replacement.signingKey === previous.signingKey
+    ) {
+      throw new InvalidProtectedData();
+    }
+    await verify(
+      history.authority(replacement.generation),
+      replacement.signature,
+      identityCertificateFrame(replacement),
+    );
+  }
   let existingDataKey: CryptoKey | undefined;
   if (
     matching &&
     matching.vault.encryptionKey === publicKeys.encryptionKey &&
-    matching.vault.signingKey === publicKeys.signingKey
+    (matching.vault.signingKey === publicKeys.signingKey ||
+      replacement !== undefined)
   ) {
     existingDataKey = matching.dataKey;
   }
@@ -150,25 +183,74 @@ export async function enrollPasswordAccount(
       existingDataKey,
     );
     live();
+    const fields = [
+      input.tenant,
+      input.subject,
+      exchange.exchange,
+      await digest(unbase64(registration.registrationRecord, 4096)),
+      await digest(accountVaultFrame(vault)),
+    ];
+    if (replacement) fields.push(replacement.signature);
+    const message = frame(
+      replacement ? "sortsys/account-enroll/v3" : "sortsys/account-enroll/v2",
+      fields,
+    );
     const previousIdentityProof = await sign(
-      identity.signingKey.privateKey,
-      frame("sortsys/account-enroll/v2", [
-        input.tenant,
-        input.subject,
-        exchange.exchange,
-        await digest(unbase64(registration.registrationRecord, 4096)),
-        await digest(accountVaultFrame(vault)),
-      ]),
+      (matching?.identity ?? identity).signingKey.privateKey,
+      message,
     );
     live();
-    const [, finishError] = await client.mutate("auth.opaque.enrollFinish", {
-      exchange: exchange.exchange,
-      registrationRecord: registration.registrationRecord,
-      vault,
-      previousIdentityProof,
-    });
+    let finishError: unknown;
+    try {
+      const [, error] = await client.mutate("auth.opaque.enrollFinish", {
+        exchange: exchange.exchange,
+        registrationRecord: registration.registrationRecord,
+        vault,
+        previousIdentityProof,
+        ...(replacement
+          ? {
+              replacement: {
+                certificate: replacement,
+                newIdentityProof: await sign(
+                  identity.signingKey.privateKey,
+                  message,
+                ),
+              },
+            }
+          : {}),
+      });
+      finishError = error;
+    } catch (error) {
+      finishError = error;
+    }
     live();
-    if (finishError) throw finishError;
+    if (replacement) {
+      try {
+        const [saved, error] = await client.query(
+          "auth.opaque.vault",
+          undefined,
+          { strategy: "network-only" },
+        );
+        live();
+        if (error) throw error;
+        if (
+          !saved ||
+          (await digest(accountVaultFrame(accountVault(saved.vault)))) !==
+            fields[4]
+        )
+          throw new InvalidProtectedData();
+        const history = await trustedHistory(client);
+        live();
+        if (
+          history.identityCertificate(input.subject).signature !==
+          replacement.signature
+        )
+          throw new InvalidProtectedData();
+      } catch (error) {
+        live();
+        throw finishError ?? error;
+      }
+    } else if (finishError) throw finishError;
     await acceptVault(registration.exportKey, vault, exchange.username);
     live();
     await client.invalidate("zerotrust.status");

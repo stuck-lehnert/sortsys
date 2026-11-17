@@ -2,6 +2,8 @@ import {
   authorityCertificate,
   authorityFrame,
   identityCertificateFrame,
+  identityCertificate,
+  identityCertificateHeads,
   verifyAuthority,
 } from "./certificates";
 import type { AuthorityCertificate, IdentityCertificate } from "./certificates";
@@ -36,6 +38,12 @@ export function createTrustHistoryVerifier<F extends string>(
     current: AuthorityCertificate;
     authority: (generation: string) => CryptoKey;
     signer: (envelope: EncryptedObject<F>) => Promise<CryptoKey>;
+    proofSigner: (
+      subject: string,
+      generation: string,
+      proof: string,
+      message: Uint8Array<ArrayBuffer>,
+    ) => Promise<CryptoKey>;
     verifyIdentityProof: (
       subject: string,
       generation: string,
@@ -125,17 +133,13 @@ export function createTrustHistoryVerifier<F extends string>(
         pinned.recoverySigningKey
     )
       throw new InvalidProtectedData();
-    const identities = new Map<string, CryptoKey[]>();
+    const identities = new Map<
+      string,
+      { generation: string; key: CryptoKey }[]
+    >();
     const certificates: IdentityCertificate[] = [];
     for (const value of data.identities) {
-      const cert = record(value, [
-        "tenant",
-        "generation",
-        "user",
-        "encryptionKey",
-        "signingKey",
-        "signature",
-      ]) as IdentityCertificate;
+      const cert = identityCertificate(value);
       const root = authorities.get(cert.generation);
       if (!root || cert.tenant !== pinned.tenant) {
         throw new InvalidProtectedData();
@@ -143,13 +147,45 @@ export function createTrustHistoryVerifier<F extends string>(
       await verify(root.key, cert.signature, identityCertificateFrame(cert));
       certificates.push({ ...cert });
       const signers = identities.get(cert.user) ?? [];
-      signers.push(await importSigningKey(cert.signingKey));
+      signers.push({
+        generation: cert.generation,
+        key: await importSigningKey(cert.signingKey),
+      });
       identities.set(cert.user, signers);
+    }
+    const heads = identityCertificateHeads(certificates);
+    async function findSigner(
+      subject: string,
+      proof: string,
+      message: Uint8Array<ArrayBuffer>,
+      generation?: string,
+    ): Promise<CryptoKey> {
+      for (const candidate of identities.get(subject) ?? []) {
+        if (generation !== undefined && candidate.generation !== generation)
+          continue;
+        try {
+          await verify(candidate.key, proof, message);
+          return candidate.key;
+        } catch {
+          // A retired key can still authenticate a historical record.
+        }
+      }
+      throw new InvalidProtectedData();
+    }
+    async function proofSigner(
+      subject: string,
+      generation: string,
+      proof: string,
+      message: Uint8Array<ArrayBuffer>,
+    ) {
+      revision(generation);
+      return findSigner(subject, proof, message, generation);
     }
     return {
       current: previous,
+      proofSigner,
       identityCertificate: (subject, generation = previous!.generation) => {
-        const matches = certificates.filter(
+        const matches = heads.filter(
           (certificate) =>
             certificate.user === subject &&
             certificate.generation === generation,
@@ -163,41 +199,15 @@ export function createTrustHistoryVerifier<F extends string>(
         return root.key;
       },
       verifyIdentityProof: async (subject, generation, proof, message) => {
-        revision(generation);
-        for (const certificate of certificates) {
-          if (
-            certificate.user !== subject ||
-            certificate.generation !== generation
-          )
-            continue;
-          try {
-            await verify(
-              await importSigningKey(certificate.signingKey),
-              proof,
-              message,
-            );
-            return;
-          } catch {
-            /* another certified identity may exist in this generation */
-          }
-        }
-        throw new InvalidProtectedData();
+        await proofSigner(subject, generation, proof, message);
       },
       signer: async (envelope) => {
         if (envelope.tenant !== pinned.tenant) throw new InvalidProtectedData();
-        for (const key of identities.get(envelope.author) ?? []) {
-          try {
-            await verify(
-              key,
-              envelope.signature,
-              objects.objectFrame(objects.encryptedObject(envelope)),
-            );
-            return key;
-          } catch {
-            /* try another certified historical key */
-          }
-        }
-        throw new InvalidProtectedData();
+        return findSigner(
+          envelope.author,
+          envelope.signature,
+          objects.objectFrame(objects.encryptedObject(envelope)),
+        );
       },
     };
   }

@@ -77,6 +77,9 @@ let lastLogin = null;
 let busy = false;
 let error = "";
 const signers = new Map();
+function signerId(account) {
+  return JSON.stringify([account.tenant, account.vault.subject]);
+}
 const root = document.getElementById("root");
 root.innerHTML = `<h1>Passkey-Anmeldung</h1><form id="login"><label>Organisation <input name="tenant" value="passkey-tenant-a" /></label><label>Anmeldename <input name="username" value="builder" /></label><label>Passwort <input name="password" type="password" /></label><button>Anmelden</button></form><label>Gerätename <input id="label" value="Browser authenticator" /></label><button id="register">Passkey einrichten</button><button id="cold">Lokalen Zugang schließen</button><button id="passkey">Mit Passkey anmelden</button><ul aria-label="Passkeys"></ul><p role="alert"></p><output aria-label="Anmeldestatus"></output>`;
 async function required(promise) {
@@ -103,7 +106,7 @@ function render() {
     tenant: account?.tenant ?? null,
     subject: account?.vault.subject ?? null,
     identityMatches: Boolean(
-      account && signers.get(account.tenant) === account.vault.signingKey,
+      account && signers.get(signerId(account)) === account.vault.signingKey,
     ),
     devices: devices.map(({ id, label, opensData }) => ({
       id,
@@ -142,7 +145,7 @@ async function password(tenant, username, value) {
   await signIn(clients[selected], { tenant, username, password: value });
   const account = unlockedAccount();
   if (!account) throw new Error("Kontotresor nicht geöffnet");
-  if (!signers.has(tenant)) signers.set(tenant, account.vault.signingKey);
+  signers.set(signerId(account), account.vault.signingKey);
   await refresh();
   render();
 }
@@ -173,7 +176,7 @@ async function passkey() {
       account.vault.subject,
     ]);
     await verify(
-      await importSigningKey(signers.get(account.tenant)),
+      await importSigningKey(signers.get(signerId(account))),
       await sign(account.identity.signingKey.privateKey, message),
       message,
     );
@@ -373,6 +376,8 @@ window.nativePasskey = {
       passwordLeaked: [
         "Only-owner-knows-this-password-2026!",
         "Passkey-preserved-password-2026!",
+        "Original-passkey-member-password-2026!",
+        "Renewed-passkey-member-password-2026!",
       ].some((value) => wire.includes(value)),
       extensionOutputUploaded: wire.includes("clientExtensionResults"),
     };

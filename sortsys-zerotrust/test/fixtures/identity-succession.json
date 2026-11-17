@@ -1,0 +1,67 @@
+{
+  "notice": "Synthetic public certificates and signed ciphertext only; no private keys or recovery phrases.",
+  "authority": {
+    "tenant": "test",
+    "generation": "1",
+    "recoveryEncryptionKey": "ISVou2mu9QoB3OzRpw-6N6VS_8cv-LEZQXeWRDAl7iM",
+    "recoverySigningKey": "27piEna3T4CbkASdTJWElzIYmYC4jhC3oN3AVYkmGak",
+    "authoritySigningKey": "YQJpSNUg2E4tPUYtIeo4pp4O_QbwggBERW5kyh_iaqk",
+    "signature": "Pw5T-6qnnxDFwIQ6Vcayi3CsGqKkjzwd0nfFgLyWA27YE5AucGcRup4jZV3YKKAqgwmhE8A-PhhtDsQ7b_WSDQ"
+  },
+  "initial": {
+    "tenant": "test",
+    "generation": "1",
+    "user": "account:member",
+    "encryptionKey": "KHWRAPHSd9_0eEWm9Shp2QUwJznuQtXkrO7Q2kaVlk8",
+    "signingKey": "ePor05YIRO9iow-fvQunEJLdgNbBnT42h0QtiZUDv9o",
+    "signature": "7g0PSH014ZNwiEjo-j0Oa5asrnUCoii7WCx9ge_CR1wYZ_Y2hH-byx3m9n1rrqanWYQ1oFvIKBv_ntpKUSVqAA"
+  },
+  "next": {
+    "tenant": "test",
+    "generation": "1",
+    "user": "account:member",
+    "encryptionKey": "KHWRAPHSd9_0eEWm9Shp2QUwJznuQtXkrO7Q2kaVlk8",
+    "signingKey": "NBO56X-zL37RT_djF5zT_lT9xE2tVWaB8H358hdvQsk",
+    "previousSignature": "7g0PSH014ZNwiEjo-j0Oa5asrnUCoii7WCx9ge_CR1wYZ_Y2hH-byx3m9n1rrqanWYQ1oFvIKBv_ntpKUSVqAA",
+    "signature": "bGiQF0dIo5TxyUoDqUJxqEfcnL8ZxFw_X2nWY54Io544LMhJ2T5tM0IfUPd7JxDPkV400FzI3OotjsqCfnp1Bg"
+  },
+  "latest": {
+    "tenant": "test",
+    "generation": "1",
+    "user": "account:member",
+    "encryptionKey": "KHWRAPHSd9_0eEWm9Shp2QUwJznuQtXkrO7Q2kaVlk8",
+    "signingKey": "J7C-_gHZZraInBACDGuriULNK-ATZYNbyDxzvVQTKpI",
+    "previousSignature": "bGiQF0dIo5TxyUoDqUJxqEfcnL8ZxFw_X2nWY54Io544LMhJ2T5tM0IfUPd7JxDPkV400FzI3OotjsqCfnp1Bg",
+    "signature": "83rjXWb83blMrbPN2cLN3tzPv5M23fNU5lHc4-8v7YQjV0dXC9EMHXOvoGYIBX69YKAvbBs4VEI6XdGBG5bzAQ"
+  },
+  "oldObject": {
+    "tenant": "test",
+    "scope": "tenant:test",
+    "facet": "master-data",
+    "object": "record:original",
+    "generation": "1",
+    "policyVersion": "1",
+    "revision": "1",
+    "author": "account:member",
+    "format": "sortsys-object-v1",
+    "nonce": "Sp38MRf3n2fDes0k",
+    "ciphertext": "XsPpuSduOvJlKnw85rSralLMCKkgp-I6Fe5L7Si2HccnaiX6Rqa_KwLP1NtMbZ9DVKg",
+    "wrappedKey": "bdbdWYpJoekZyQhE3gJEowvxscUynk9pPySEdAJ1UUIT2SHffbgSjQ",
+    "signature": "VNVugjNo6sxzAk19eTiv_jEMvmHwNz0ayYmVxT-peWfxprRD98Apk0MUz54NLRUjFNczQaqzx5McYpWz-xt9Cw"
+  },
+  "newObject": {
+    "tenant": "test",
+    "scope": "tenant:test",
+    "facet": "master-data",
+    "object": "record:original",
+    "generation": "1",
+    "policyVersion": "1",
+    "revision": "2",
+    "author": "account:member",
+    "format": "sortsys-object-v1",
+    "nonce": "xtWF-69iIY1uq1Sg",
+    "ciphertext": "TcaWqOr2znZ628JEJbOo6tyQ91dxWW7t-7YIMXdR95TbBU_DWEDMDcFOvicJIy7h06vmGw",
+    "wrappedKey": "nuo28aULVF7pcEM_O7Y6EoIDaVFcuW7ju3aXYsp2edE8Zzu1JwzbPA",
+    "signature": "XnXrO2JxtPV8ELXNM4_n4aI6vVk_gVeZRmFCZ9mdh5XDGLOyMa5BOcfaCUfUTTKzSRnnXAX7m8IJIq_AVnhkDA"
+  }
+}

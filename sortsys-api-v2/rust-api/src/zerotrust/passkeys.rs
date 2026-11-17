@@ -338,6 +338,35 @@ fn security_event(transaction: &mut Transaction, subject: &str) -> RpcResult<()>
     transaction.notify("account", &serde_json::json!({"subject": subject}))
 }
 
+/// Retire device credentials in the same transaction as a signing-key change.
+pub(in crate::zerotrust) async fn retire_account_credentials(
+    transaction: &mut Transaction,
+    user: i64,
+) -> RpcResult<()> {
+    let records = directory(transaction, user).await?;
+    if records.is_empty() {
+        return Ok(());
+    }
+    let mut keys = records
+        .iter()
+        .map(|record| passkey_key(record.id))
+        .collect::<Vec<_>>();
+    keys.push(directory_key(user));
+    transaction.prefetch_protected(keys).await?;
+    let now = Utc::now();
+    for mut record in records {
+        if record.deleted_at.is_none() {
+            record.deleted_at = Some(now);
+            transaction
+                .put_protected(passkey_key(record.id), &record)
+                .await?;
+        }
+    }
+    transaction
+        .put_protected(directory_key(user), &Vec::<i64>::new())
+        .await
+}
+
 pub(crate) fn register(
     builder: ProcedureRegistryBuilder,
     service: Arc<AuthService>,

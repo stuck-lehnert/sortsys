@@ -8,8 +8,8 @@ import {
   compileReadership,
   createDomain,
   identityCertificateFrame,
+  identityCertificate,
   InvalidProtectedData,
-  record,
   verify,
   verifyDomain,
   type Facet,
@@ -56,14 +56,7 @@ async function memberDirectory(client: Client, context: Context) {
   context.live();
   const certificates = new Map<string, IdentityCertificate>();
   for (const identity of identities) {
-    const certificate = record(identity.certificate, [
-      "tenant",
-      "generation",
-      "user",
-      "encryptionKey",
-      "signingKey",
-      "signature",
-    ]) as IdentityCertificate;
+    const certificate = identityCertificate(identity.certificate);
     if (
       certificates.has(identity.subject) ||
       certificate.tenant !== context.account.tenant ||

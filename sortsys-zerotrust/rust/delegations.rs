@@ -128,6 +128,7 @@ mod tests {
             tenant: context().tenant.into(),
             generation: context().generation.into(),
             user: user.into(),
+            previous_signature: None,
             encryption_key: encode(&[seed; 32]),
             signing_key: encode(
                 SigningKey::from_bytes(&[seed; 32])

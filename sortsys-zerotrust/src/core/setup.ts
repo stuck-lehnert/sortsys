@@ -7,6 +7,7 @@ import {
   certifyAuthority,
   certifyIdentity,
   identityCertificateFrame,
+  identityCertificate,
   verifyAuthority,
 } from "./certificates";
 import type { AuthorityCertificate, IdentityCertificate } from "./certificates";
@@ -63,17 +64,11 @@ export function createSetupCodec<F extends string, O extends string = never>(
     ]);
     const authority = await verifyAuthority(obj.authority, pinned);
     const key = await importSigningKey(authority.authoritySigningKey);
-    const owner = record(obj.owner, [
-      "tenant",
-      "generation",
-      "user",
-      "encryptionKey",
-      "signingKey",
-      "signature",
-    ]) as IdentityCertificate;
+    const owner = identityCertificate(obj.owner);
     if (
       owner.tenant !== pinned.tenant ||
-      owner.generation !== pinned.generation
+      owner.generation !== pinned.generation ||
+      owner.previousSignature !== undefined
     )
       throw new InvalidProtectedData();
     await verify(key, owner.signature, identityCertificateFrame(owner));

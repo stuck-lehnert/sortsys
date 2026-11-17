@@ -43,6 +43,14 @@ braucht noch eine eigene Anbindung. Der bisherige Admin-Reset ist für geschütz
 Konten gesperrt; der Anbieter erhält dadurch keinen Wiederherstellungszugang.
 Siehe [Benutzerzugang](benutzerfreigaben.md).
 
+Ein bestätigter Signaturschlüsselwechsel ist im Kontoprotokoll angeschlossen.
+Er benötigt beide Benutzerschlüssel und die Zustimmung der Mandantenautorität;
+Passwortverlust deckt er dadurch noch nicht ab. Ein nativer Mehrinstanztest
+prüft unvollständige und gefälschte Nachweise, verlorene und falsche Antworten,
+das Schreiben nach der Erneuerung und die Ablehnung des alten Signaturschlüssels.
+Historische Zertifikate und Inhalte bleiben auch nach einer Seed-Recovery
+prüfbar. Ein Dialog für diesen Ablauf fehlt noch.
+
 **Administrationszugang nach Passwortverlust.** Die aktuelle Seed-Phrase kann
 das primäre Administratorkonto unter derselben Benutzerkennung
 wiederherstellen. Passwort, private Schlüssel und Phrase wechseln; frühere

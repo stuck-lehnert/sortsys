@@ -1,7 +1,6 @@
 import type { Client } from "@sortsys/v2-client";
 import {
   digest,
-  importSigningKey,
   InvalidProtectedData,
   objectFrame,
   record,
@@ -10,6 +9,7 @@ import {
   signedPacketFrame,
   stockBinding,
   stockDeletion,
+  stockDeletionFrame,
   stockKind,
   stockReferenceFrame,
   stockReferences,
@@ -26,6 +26,7 @@ import type { trustedHistory, UnlockedAccount } from "../crypto/session";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 
 type History = Awaited<ReturnType<typeof trustedHistory>>;
+type ProofSigner = History["proofSigner"];
 export type StockState = {
   references: StockReferences;
   vendorDeletion: StockDeletion | null;
@@ -104,20 +105,18 @@ async function deletionProof(
   input: unknown,
   history: History,
   tenant: string,
-  key?: (author: string, generation: string) => Promise<CryptoKey>,
+  key: ProofSigner = history.proofSigner,
 ) {
   const deletion = stockDeletion(input);
   if (deletion.tenant !== tenant) throw new InvalidProtectedData();
   return verifyStockDeletion(
     deletion,
-    key
-      ? await key(deletion.author, deletion.authorityGeneration)
-      : await importSigningKey(
-          history.identityCertificate(
-            deletion.author,
-            deletion.authorityGeneration,
-          ).signingKey,
-        ),
+    await key(
+      deletion.author,
+      deletion.authorityGeneration,
+      deletion.signature,
+      stockDeletionFrame(deletion),
+    ),
   );
 }
 export async function checkStockObjects(
@@ -131,13 +130,11 @@ export async function checkStockObjects(
   );
   const signingKeys = new Map<string, Promise<CryptoKey>>(),
     checked: { object: Opened; state: StockState }[] = [];
-  const signingKey = (author: string, generation: string) => {
-    const id = JSON.stringify([author, generation]);
+  const signingKey: ProofSigner = (author, generation, signature, message) => {
+    const id = JSON.stringify([author, generation, signature]);
     let key = signingKeys.get(id);
     if (!key) {
-      key = importSigningKey(
-        history.identityCertificate(author, generation).signingKey,
-      );
+      key = history.proofSigner(author, generation, signature, message);
       signingKeys.set(id, key);
     }
     return key;
@@ -165,7 +162,12 @@ export async function checkStockObjects(
       const references = await verifyStockReferences(
         raw,
         object.envelope,
-        await signingKey(raw.author, raw.authorityGeneration),
+        await signingKey(
+          raw.author,
+          raw.authorityGeneration,
+          raw.signature,
+          stockReferenceFrame(raw),
+        ),
       );
       live();
       const actual = stockReferenceData(object.envelope.object, object.value);
@@ -238,11 +240,11 @@ export async function deleteStockObject(
     const proof = await deletionProof(state.deletion, history, account.tenant);
     live();
     const reference = stockReferences(state.references);
-    const key = await importSigningKey(
-      history.identityCertificate(
-        reference.author,
-        reference.authorityGeneration,
-      ).signingKey,
+    const key = await history.proofSigner(
+      reference.author,
+      reference.authorityGeneration,
+      reference.signature,
+      stockReferenceFrame(reference),
     );
     // The declaration itself is signed even when its ciphertext is no longer
     // visible. Binding is checked against the caller's envelope when present.

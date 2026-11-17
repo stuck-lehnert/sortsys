@@ -17,6 +17,9 @@ import {
   encryptObject,
   encryptTombstone,
   publicIdentity,
+  publicSigningKey,
+  signingPair,
+  objectFrame,
   signPolicy,
   verifyTrustHistory,
 } from "@sortsys/zerotrust/sortsys";
@@ -209,6 +212,42 @@ async function fixture(
     },
   };
 }
+
+test("historical and current writer proofs choose their own certified key after a same-generation signing renewal", async () => {
+  const f = await fixture(["read", "create", "update"]);
+  const previous = f.context.history.identityCertificate("user:2");
+  const replacementKey = await signingPair();
+  const { signature, ...fields } = previous;
+  const certificate = await certifyIdentity(
+    {
+      ...fields,
+      signingKey: await publicSigningKey(replacementKey.publicKey),
+      previousSignature: signature,
+    },
+    f.authorityKey.privateKey,
+  );
+  f.context.history = await verifyTrustHistory(
+    {
+      authorities: [{ certificate: f.setup.authority, transition: null }],
+      identities: [certificate, f.setup.owner, previous],
+    },
+    {
+      tenant: "test",
+      generation: "1",
+      recoverySigningKey: f.setup.authority.recoverySigningKey,
+    },
+  );
+  const historical = await f.envelope();
+  const current = {
+    ...historical,
+    signature: await sign(replacementKey.privateKey, objectFrame(historical)),
+  };
+  expect(await f.verifier(historical, f.domain.definition)).toBeTruthy();
+  expect(await f.verifier(current, f.domain.definition)).toBeTruthy();
+  expect(f.context.history.identityCertificate("user:2").signature).toBe(
+    certificate.signature,
+  );
+});
 
 test("a genuinely signed and decryptable reader forgery is rejected before it can become business data", async () => {
   const f = await fixture();

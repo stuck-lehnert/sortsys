@@ -367,6 +367,69 @@ try {
   assert.equal(privacy.extensionOutputUploaded, false);
 
   console.log(
+    "Native passkey: signing-key renewal revokes old devices and permits a fresh credential",
+  );
+  await lifecycle("create-member");
+  await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
+  authenticatorId = await authenticator();
+  await click("Lokalen Zugang schließen");
+  await page
+    .getByLabel("Organisation", { exact: true })
+    .fill("passkey-tenant-a");
+  await page.getByLabel("Anmeldename", { exact: true }).fill("passkey.member");
+  await page
+    .getByLabel("Passwort", { exact: true })
+    .fill("Original-passkey-member-password-2026!");
+  assert.equal((await click("Anmelden")).error, "");
+  assert.equal((await click("Passkey einrichten")).error, "");
+  await coldSignIn("passkey.member");
+  const formerMemberCredentials = (
+    await cdp.send("WebAuthn.getCredentials", { authenticatorId })
+  ).credentials.map((credential) => credential.credentialId);
+  await lifecycle("renew-member");
+  await click("Lokalen Zugang schließen");
+  state = await click("Mit Passkey anmelden");
+  assert.notEqual(state.error, "");
+  assert.equal(state.unlocked, false);
+  await page
+    .getByLabel("Passwort", { exact: true })
+    .fill("Renewed-passkey-member-password-2026!");
+  state = await click("Anmelden");
+  assert.equal(state.error, "");
+  assert.deepEqual(state.devices, []);
+  assert.equal((await click("Passkey einrichten")).error, "");
+  const renewedMemberCredentials = (
+    await cdp.send("WebAuthn.getCredentials", { authenticatorId })
+  ).credentials;
+  assert.ok(
+    renewedMemberCredentials.some(
+      (credential) =>
+        !formerMemberCredentials.includes(credential.credentialId),
+    ),
+  );
+  for (const credential of renewedMemberCredentials) {
+    if (formerMemberCredentials.includes(credential.credentialId)) {
+      await cdp.send("WebAuthn.removeCredential", {
+        authenticatorId,
+        credentialId: credential.credentialId,
+      });
+    }
+  }
+  await coldSignIn("passkey.member");
+  await click("Lokalen Zugang schließen");
+  await page.getByLabel("Anmeldename", { exact: true }).fill("builder-updated");
+  await page
+    .getByLabel("Passwort", { exact: true })
+    .fill("Passkey-preserved-password-2026!");
+  assert.equal((await click("Anmelden")).error, "");
+  const afterRenewalPrivacy = await page.evaluate(() =>
+    window.nativePasskey.privacy(),
+  );
+  assert.equal(afterRenewalPrivacy.secretLeaked, false);
+  assert.equal(afterRenewalPrivacy.passwordLeaked, false);
+  assert.equal(afterRenewalPrivacy.extensionOutputUploaded, false);
+
+  console.log(
     "Native passkey: seed-only recovery invalidates the former passkey generation",
   );
   // A fresh credential is first confirmed usable, so the later denial cannot
@@ -397,6 +460,7 @@ try {
       privacy,
       zeroCounterReplayRejected: true,
       recoveryRevokedPasskeys: true,
+      signingRenewalRevokedPasskeys: true,
     }),
   );
 } finally {

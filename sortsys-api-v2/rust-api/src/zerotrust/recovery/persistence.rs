@@ -87,6 +87,7 @@ async fn prefetch_publication(
             &format!("{:020}", revision(generation)?),
         ),
         setup::identity_history_key(&plan.next_setup.owner)?,
+        setup::identity_head_key(&plan.next_setup.owner)?,
         key("policies", version),
         key("policy-generations", version),
     ];
@@ -442,12 +443,12 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         certificate: input.next_setup.authority.clone(),
         transition: Some(serde_json::json!({"sourceAuthority": input.source_authority, "transition": input.transition, "proof": input.proof, "nextProof": input.next_proof})),
     }).await?;
-    transaction
-        .put_protected(
-            setup::identity_history_key(&input.next_setup.owner)?,
-            &input.next_setup.owner,
-        )
-        .await?;
+    setup::append_identity(
+        &mut transaction,
+        &input.next_setup.owner,
+        &sized::<32>(&input.next_setup.authority.authority_signing_key)?,
+    )
+    .await?;
     let version = &input.next_setup.policy.version;
     if transaction
         .read::<Value>(key("policies", version))

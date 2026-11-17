@@ -161,6 +161,16 @@ struct EnrollmentFinishInput {
     registration_record: String,
     vault: AccountVault,
     previous_identity_proof: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    replacement: Option<IdentityReplacement>,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct IdentityReplacement {
+    certificate: super::wire::IdentityCertificate,
+    new_identity_proof: String,
 }
 
 #[derive(Deserialize, TS)]
@@ -637,28 +647,69 @@ async fn enroll_finish(
         return Err(denied());
     }
     let current = &account.credential()?.vault;
-    if current.signing_key != input.vault.signing_key
-        || current.encryption_key != input.vault.encryption_key
-    {
+    if current.encryption_key != input.vault.encryption_key {
         return Err(forbidden());
     }
+    let replacing = input.replacement.is_some();
+    if (current.signing_key != input.vault.signing_key) != replacing {
+        return Err(forbidden());
+    }
+    let record_hash = encode(&Sha256::digest(&password_record));
+    let vault_hash = encode(&Sha256::digest(input.vault.frame()));
+    let subject = accounts::subject(account.id);
+    let mut fields = vec![
+        auth.tenant.as_str(),
+        subject.as_str(),
+        input.exchange.as_str(),
+        record_hash.as_str(),
+        vault_hash.as_str(),
+    ];
+    let domain = if let Some(replacement) = &input.replacement {
+        fields.push(replacement.certificate.signature.as_str());
+        "sortsys/account-enroll/v3"
+    } else {
+        "sortsys/account-enroll/v2"
+    };
+    let message = crypto::frame(domain, &fields);
     crypto::verify(
         &crypto::sized::<32>(&current.signing_key)?,
         input
             .previous_identity_proof
             .as_deref()
             .ok_or_else(forbidden)?,
-        &crypto::frame(
-            "sortsys/account-enroll/v2",
-            &[
-                &auth.tenant,
-                &accounts::subject(account.id),
-                &input.exchange,
-                &encode(&Sha256::digest(&password_record)),
-                &encode(&Sha256::digest(input.vault.frame())),
-            ],
-        ),
+        &message,
     )?;
+    if let Some(replacement) = &input.replacement {
+        let root = super::setup::metadata_root(&mut transaction, &auth.tenant).await?;
+        let authority = crypto::sized::<32>(&root.profile.authority.authority_signing_key)?;
+        let previous: super::wire::IdentityCertificate =
+            serde_json::from_value(account.credential()?.certificate.clone())
+                .map_err(|_| forbidden())?;
+        previous.verify(&authority)?;
+        let certificate = &replacement.certificate;
+        certificate.succeeds(&previous)?;
+        if root.profile.owner.user == subject
+            || previous.user != subject
+            || previous.tenant != auth.tenant
+            || previous.generation != root.profile.authority.generation
+            || previous.signing_key != current.signing_key
+            || previous.encryption_key != current.encryption_key
+            || certificate.signing_key != input.vault.signing_key
+            || certificate.encryption_key != input.vault.encryption_key
+        {
+            return Err(forbidden());
+        }
+        crypto::verify(
+            &crypto::sized::<32>(&certificate.signing_key)?,
+            &replacement.new_identity_proof,
+            &message,
+        )?;
+        super::setup::append_identity(&mut transaction, certificate, &authority).await?;
+        super::passkeys::retire_account_credentials(&mut transaction, account.id).await?;
+        account.credential_mut()?.certificate =
+            serde_json::to_value(certificate).map_err(internal)?;
+        transaction.notify("account", &json!({"subject": subject}))?;
+    }
     account.credential_mut()?.record = encode(&password_record);
     account.credential_mut()?.vault = input.vault;
     account.credential_mut()?.revision = account

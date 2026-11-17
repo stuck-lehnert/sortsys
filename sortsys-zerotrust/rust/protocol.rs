@@ -55,6 +55,9 @@ pub struct IdentityCertificate {
     pub tenant: String,
     pub generation: String,
     pub user: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub previous_signature: Option<String>,
     pub encryption_key: String,
     pub signing_key: String,
     pub signature: String,
@@ -66,16 +69,33 @@ impl IdentityCertificate {
         revision(&self.generation)?;
         sized::<32>(&self.encryption_key)?;
         sized::<32>(&self.signing_key)?;
-        Ok(frame(
-            "sortsys/identity-certificate/v1",
-            &[
-                &self.tenant,
-                &self.generation,
-                &self.user,
-                &self.encryption_key,
-                &self.signing_key,
-            ],
-        ))
+        let mut fields = vec![
+            self.tenant.as_str(),
+            self.generation.as_str(),
+            self.user.as_str(),
+            self.encryption_key.as_str(),
+            self.signing_key.as_str(),
+        ];
+        if let Some(previous) = &self.previous_signature {
+            sized::<64>(previous)?;
+            fields.push(previous);
+            return Ok(frame("sortsys/identity-certificate/v2", &fields));
+        }
+        Ok(frame("sortsys/identity-certificate/v1", &fields))
+    }
+
+    pub fn succeeds(&self, previous: &Self) -> Result<()> {
+        self.frame()?;
+        previous.frame()?;
+        sized::<64>(&previous.signature)?;
+        if self.tenant != previous.tenant
+            || self.generation != previous.generation
+            || self.user != previous.user
+            || self.previous_signature.as_deref() != Some(&previous.signature)
+        {
+            return Err(invalid());
+        }
+        Ok(())
     }
     pub fn verify(&self, key: &[u8]) -> Result<()> {
         verify(key, &self.signature, &self.frame()?)
@@ -201,5 +221,58 @@ impl<F: AsRef<str>> EncryptedObject<F> {
     }
     pub fn verify(&self, key: &[u8]) -> Result<()> {
         verify(key, &self.signature, &self.frame()?)
+    }
+}
+
+#[cfg(test)]
+mod identity_succession_tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn browser_certificate_successors_bind_exact_scope_and_preserve_old_signatures() {
+        let vector: Value =
+            serde_json::from_str(include_str!("../test/fixtures/identity-succession.json"))
+                .unwrap();
+        let authority: AuthorityCertificate =
+            serde_json::from_value(vector["authority"].clone()).unwrap();
+        authority.verify().unwrap();
+        let root = sized::<32>(&authority.authority_signing_key).unwrap();
+        let initial: IdentityCertificate =
+            serde_json::from_value(vector["initial"].clone()).unwrap();
+        let next: IdentityCertificate = serde_json::from_value(vector["next"].clone()).unwrap();
+        let latest: IdentityCertificate = serde_json::from_value(vector["latest"].clone()).unwrap();
+        for certificate in [&initial, &next, &latest] {
+            certificate.verify(&root).unwrap();
+        }
+        next.succeeds(&initial).unwrap();
+        latest.succeeds(&next).unwrap();
+        assert!(latest.succeeds(&initial).is_err());
+        for field in ["tenant", "generation", "user", "previousSignature"] {
+            let mut changed = vector["next"].clone();
+            changed[field] = match field {
+                "tenant" => Value::from("different"),
+                "generation" => Value::from("2"),
+                "user" => Value::from("account:someone-else"),
+                _ => Value::from(latest.signature.clone()),
+            };
+            let changed: IdentityCertificate = serde_json::from_value(changed).unwrap();
+            assert!(changed.succeeds(&initial).is_err());
+            assert!(changed.verify(&root).is_err());
+        }
+        let old: EncryptedObject = serde_json::from_value(vector["oldObject"].clone()).unwrap();
+        let new: EncryptedObject = serde_json::from_value(vector["newObject"].clone()).unwrap();
+        old.verify(&sized::<32>(&initial.signing_key).unwrap())
+            .unwrap();
+        new.verify(&sized::<32>(&latest.signing_key).unwrap())
+            .unwrap();
+        assert!(
+            old.verify(&sized::<32>(&latest.signing_key).unwrap())
+                .is_err()
+        );
+        assert!(
+            new.verify(&sized::<32>(&initial.signing_key).unwrap())
+                .is_err()
+        );
     }
 }

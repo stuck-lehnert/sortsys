@@ -242,6 +242,27 @@ Weitergeben von Rechten. Dafür ist eine ausdrückliche Verwaltungsfreigabe der
 Hauptadministration erforderlich. Eine neue Wiederherstellungsgeneration macht
 alte Einladungen ungültig.
 
+## Signaturschlüssel erneuern
+
+Das Kontoprotokoll unterstützt außerdem einen bestätigten Wechsel des
+Signaturschlüssels. Dafür werden der bisherige und der neue private Schlüssel
+sowie ein von der Mandantenautorität ausgestelltes Nachfolgezertifikat benötigt.
+Benutzerkennung und Verschlüsselungsschlüssel bleiben erhalten. Die API
+veröffentlicht Passwortregistrierung, Kontotresor, Zertifikat und Gerätesperren
+in derselben Transaktion. Andere Sitzungen und bisherige Passkeys verlieren
+ihren Zugang. Eine verlorene Erfolgsbestätigung lässt sich durch Rücklesen
+auflösen; eine bloße Erfolgsantwort schaltet den lokalen Schlüssel nicht um.
+
+Frühere Zertifikate bleiben gespeichert, damit alte Inhalte und Unterschriften
+weiter geprüft werden können. Auch eine erneute Einladung behält das aktuelle
+Nachfolgezertifikat bei. Bereichsverwaltung und Anlagenachweise sind dagegen an
+ihren bestätigten Signaturschlüssel gebunden und benötigen nach einem Wechsel
+neue Nachweise. Für die Schlüsselbestätigung fehlt noch der Dialog. Ein
+vergessenes Mitarbeiterpasswort lässt sich über diesen Ablauf weiterhin nicht
+zurücksetzen, weil der bisherige private Schlüssel benötigt wird. Der primäre
+Administrationszugang verwendet für einen Schlüsselwechsel die
+[Seed-Recovery](mandanten-wiederherstellung.md).
+
 ## Verbleibender Umbau
 
 Aktivieren, Deaktivieren, Archivieren und Entarchivieren verbinden das

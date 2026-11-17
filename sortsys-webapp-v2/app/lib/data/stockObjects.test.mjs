@@ -8,6 +8,7 @@ import {
   signStockDeletion,
   signStockReferences,
   stockBinding,
+  verify,
 } from "@sortsys/zerotrust/sortsys";
 import {
   checkStockObjects,
@@ -26,6 +27,12 @@ async function fixture() {
       if (author !== "user:1" || generation !== "2")
         throw new Error("Unknown identity");
       return keys;
+    },
+    async proofSigner(author, generation, signature, message) {
+      if (author !== "user:1" || generation !== "2")
+        throw new Error("Unknown identity");
+      await verify(identity.signingKey.publicKey, signature, message);
+      return identity.signingKey.publicKey;
     },
   };
   const value = {

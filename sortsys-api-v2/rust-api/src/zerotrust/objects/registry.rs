@@ -855,16 +855,7 @@ pub(in crate::zerotrust) async fn install_identity(
     transaction
         .put_protected(accounts::account_key(user.0), &account)
         .await?;
-    let history_key = super::super::setup::identity_history_key(input)?;
-    if let Some(previous) = transaction
-        .read::<IdentityCertificate>(history_key.clone())
-        .await?
-        && serde_json::to_value(previous).map_err(internal)?
-            != serde_json::to_value(input).map_err(internal)?
-    {
-        return Err(conflict());
-    }
-    transaction.put_protected(history_key, input).await?;
+    super::super::setup::append_identity(transaction, input, &guard.authority).await?;
     transaction.notify("account", &serde_json::json!({"subject": input.user}))?;
     Ok(())
 }

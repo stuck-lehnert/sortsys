@@ -6,7 +6,7 @@ import {
   documentChannelKeys,
   documentChannelOuter,
   encryptedObject,
-  importSigningKey,
+  objectFrame,
   InvalidProtectedData,
   randomSecret,
   record,
@@ -181,16 +181,18 @@ export async function openDocumentMessages(
     live();
     const envelope = encryptedObject(message.envelope);
     const binding = documentMessageObject(room, message.kind, message.key);
-    let certificate;
+    let signer;
     try {
-      certificate = context.identityCertificate(
+      context.identityCertificate(envelope.author, message.authorityGeneration);
+      signer = await context.proofSigner(
         envelope.author,
         message.authorityGeneration,
+        envelope.signature,
+        objectFrame(envelope),
       );
     } catch {
       throw new UnknownDocumentMessageAuthor();
     }
-    const signer = await importSigningKey(certificate.signingKey);
     const payload = record(
       await outer.store.openMessage(envelope, binding, signer),
       ["format", "room", "kind", "key", "authorityGeneration", "keys", "data"],

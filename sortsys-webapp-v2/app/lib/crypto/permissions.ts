@@ -12,6 +12,7 @@ import {
   randomSecret,
   InvalidProtectedData,
   identityCertificateFrame,
+  identityCertificate,
   record,
   verify,
 } from "@sortsys/zerotrust/sortsys";
@@ -414,14 +415,7 @@ export async function changeCreationAccesses(
     const certificate = async (subject: string) => {
       const entry = identities.find((identity) => identity.subject === subject);
       if (!entry) throw new InvalidProtectedData();
-      const cert = record(entry.certificate, [
-        "tenant",
-        "generation",
-        "user",
-        "encryptionKey",
-        "signingKey",
-        "signature",
-      ]) as IdentityCertificate;
+      const cert = identityCertificate(entry.certificate);
       if (
         cert.tenant !== context.account.tenant ||
         cert.generation !== context.history.current.generation ||
@@ -660,14 +654,7 @@ async function certifiedMember(
   const identity = identities.find((identity) => identity.subject === user);
   if (!identity) return false;
   try {
-    const cert = record(identity.certificate, [
-      "tenant",
-      "generation",
-      "user",
-      "encryptionKey",
-      "signingKey",
-      "signature",
-    ]) as IdentityCertificate;
+    const cert = identityCertificate(identity.certificate);
     if (
       cert.tenant !== context.account.tenant ||
       cert.generation !== context.history.current.generation ||

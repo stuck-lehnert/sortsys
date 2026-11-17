@@ -301,6 +301,30 @@ HPKE-Schlüsselpakete. `AccountVault` prüft das öffentliche Format eines
 verschlüsselten Kontospeichers. Das optionale Cargo-Feature `typescript` ergänzt
 `ts-rs`-Typen für eine API-Vertragsgenerierung.
 
+## Signaturschlüssel erneuern
+
+Ein Identitätszertifikat kann mit `previousSignature` seinen unmittelbaren
+Vorgänger derselben Mandanten-, Autoritäts- und Benutzerkennung benennen.
+`identityCertificateFrame` bindet diesen Verweis an die Signatur der Autorität.
+Rust prüft dieselben Bytes mit `protocol::IdentityCertificate::frame`; `succeeds`
+prüft die genaue Nachfolgebeziehung. Ein initiales Zertifikat hat keinen
+Vorgänger.
+
+`identityCertificateHeads` prüft vollständige, unverzweigte Ketten unabhängig
+von ihrer Eingabereihenfolge. Die Signaturen müssen vorher geprüft werden.
+`verifyTrustHistory` erledigt beides und gibt mit `identityCertificate` das
+aktuelle Zertifikat zurück. `proofSigner(subject, generation, signature, frame)`
+findet dagegen den passenden historischen Prüfschlüssel für genau diesen
+Nachweis. `verifyIdentityProof` verwendet denselben Prüfer. Ein altes Zertifikat
+bleibt so für historische Inhalte nutzbar, ohne wieder zum aktuellen Schlüssel
+zu werden.
+
+Ein Speicheradapter darf Zertifikate nicht überschreiben. Er muss den
+bisherigen aktiven Kopf und den Kontostand innerhalb derselben Transaktion
+vergleichen, bevor er einen Nachfolger aktiviert. Die Anwendung prüft
+zusätzlich die Berechtigung zur Erneuerung; eine historische Signatur allein
+autorisiert keinen neuen Schreibzugriff.
+
 ## Unveränderliche Datensätze
 
 `immutableObject(scope, facet, kind, id)` bildet einen Objektnamen für dauerhaft

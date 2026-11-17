@@ -4,14 +4,14 @@ import {
   objectWriteAction,
   compilePolicy,
   creationRules,
-  importSigningKey,
   InvalidProtectedData,
   objectFrame,
   revision,
-  verify,
   verifyDomain,
   verifyDomainProof,
   verifyPolicy,
+  stockDeletionFrame,
+  type StockDeletion,
   type Action,
   type DomainDefinition,
   type EncryptedObject,
@@ -115,7 +115,6 @@ export function createObjectAuthorVerifier(
   }
   const policies = new Map<string, Promise<CheckedPolicy>>();
   const origins = new Map<string, Promise<DomainDefinition>>();
-  const signers = new Map<string, Promise<CryptoKey>>();
   const accessViews = new Map<string, ReturnType<typeof compilePolicy>>();
   const publicDefinitions = new Map<string, Promise<BirthProof>>();
   async function verifyKeyManagement(
@@ -242,16 +241,18 @@ export function createObjectAuthorVerifier(
       throw error;
     }
   }
-  async function signer(author: string, generation: string) {
-    const id = `${generation}/${author}`;
-    let key = signers.get(id);
-    if (!key) {
-      key = importSigningKey(
-        context.history.identityCertificate(author, generation).signingKey,
-      );
-      signers.set(id, key);
-    }
-    const value = await key;
+  async function signer(
+    author: string,
+    generation: string,
+    signature: string,
+    message: Uint8Array<ArrayBuffer>,
+  ) {
+    const value = await context.history.proofSigner(
+      author,
+      generation,
+      signature,
+      message,
+    );
     context.live();
     return value;
   }
@@ -375,8 +376,12 @@ export function createObjectAuthorVerifier(
     if (!canWrite && !canStageFirstUpdate) {
       throw new InvalidProtectedData();
     }
-    const key = await signer(envelope.author, checked.generation);
-    await verify(key, envelope.signature, objectFrame(envelope));
+    const key = await signer(
+      envelope.author,
+      checked.generation,
+      envelope.signature,
+      objectFrame(envelope),
+    );
     context.live();
     return key;
   };
@@ -444,8 +449,12 @@ export function createObjectAuthorVerifier(
           throw new InvalidProtectedData();
         }
       }
-      const key = await signer(value.author, checked.generation);
-      await verify(key, value.signature, signedFrame);
+      const key = await signer(
+        value.author,
+        checked.generation,
+        value.signature,
+        signedFrame,
+      );
       context.live();
       return key;
     },
@@ -484,19 +493,17 @@ export function createObjectAuthorVerifier(
       ) {
         throw new InvalidProtectedData();
       }
-      const key = await signer(envelope.author, checked.generation);
-      await verify(key, envelope.signature, objectFrame(envelope));
+      await signer(
+        envelope.author,
+        checked.generation,
+        envelope.signature,
+        objectFrame(envelope),
+      );
       context.live();
     },
     /** Catalogue deletions have an independently signed frame, not a new data
      * envelope. Catalogue rules are root-managed and have no creation grants. */
-    async catalogueDeletion(value: {
-      tenant: string;
-      domain: string;
-      policyVersion: string;
-      authorityGeneration: string;
-      author: string;
-    }) {
+    async catalogueDeletion(value: StockDeletion) {
       const match =
         /^catalog:(products|vendors):(master-data|procurement)$/.exec(
           value.domain,
@@ -517,7 +524,12 @@ export function createObjectAuthorVerifier(
       ) {
         throw new InvalidProtectedData();
       }
-      return signer(value.author, checked.generation);
+      return signer(
+        value.author,
+        checked.generation,
+        value.signature,
+        stockDeletionFrame(value),
+      );
     },
   });
 }

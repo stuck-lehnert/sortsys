@@ -267,6 +267,7 @@ mod object_tombstone_tests {
             tenant: "frame-test".into(),
             generation: "1".into(),
             user: "user:1".into(),
+            previous_signature: None,
             encryption_key: encode(&[0; 32]),
             signing_key: encode(&[0; 32]),
             signature: encode(&[0; 64]),

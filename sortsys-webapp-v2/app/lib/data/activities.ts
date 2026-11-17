@@ -2,7 +2,7 @@ import type { Client, QueryResult } from "@sortsys/v2-client";
 import {
   encryptedObject,
   historyInstant,
-  importSigningKey,
+  stockReferenceFrame,
   InvalidProtectedData,
   stockDeletion,
   stockReferences,
@@ -521,11 +521,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         await verifyStockReferences(
           references,
           envelope,
-          await importSigningKey(
-            context.identityCertificate(
-              references.author,
-              references.authorityGeneration,
-            ).signingKey,
+          await context.proofSigner(
+            references.author,
+            references.authorityGeneration,
+            references.signature,
+            stockReferenceFrame(references),
           ),
         );
         assertCurrentAccess();

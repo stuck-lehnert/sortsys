@@ -12,6 +12,24 @@ import { lockCryptoSession, signIn } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import {
+  certifyIdentity,
+  publicIdentity,
+  signingPair,
+} from "@sortsys/zerotrust/sortsys";
+import { administratorContext } from "../app/lib/crypto/administration";
+import {
+  acceptVaultWithKey,
+  enrollPasswordAccount,
+  trustedHistory,
+  unlockedAccount,
+} from "../app/lib/crypto/session";
+import {
+  approveMemberInvitation,
+  createMemberInvitation,
+  joinMemberInvitation,
+  signInMemberInvitation,
+} from "../app/lib/crypto/invitations";
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
 const endpoints: unknown = JSON.parse(
@@ -52,6 +70,92 @@ try {
     process.stdout.write(
       JSON.stringify({ success: true, username: "builder-updated" }) + "\n",
     );
+  } else if (mode === "create-member" || mode === "renew-member") {
+    await signIn(client, {
+      tenant,
+      username: "builder-updated",
+      password: "Passkey-preserved-password-2026!",
+    });
+    await initializeTenant(client, signal, duckDriver);
+    const administrator = unlockedAccount()!;
+    const context = await administratorContext(client, signal);
+    const password = "Original-passkey-member-password-2026!";
+    if (mode === "create-member") {
+      const business = createBusinessClient(client, {
+        productDriver: duckDriver,
+      });
+      let member;
+      try {
+        member = await required(
+          business.mutate("users.create", {
+            username: "passkey.member",
+            firstName: "Passkey",
+            contractType: "internal",
+          }),
+        );
+      } finally {
+        business.dispose();
+      }
+      const invitation = await createMemberInvitation(
+        client,
+        { id: member.id, username: "passkey.member" },
+        {
+          catalogue: "none",
+          customers: "none",
+          contacts: "none",
+          vendors: "none",
+          prices: "none",
+          assistant: false,
+        },
+        signal,
+      );
+      await signInMemberInvitation(client, invitation.link, password, signal);
+      await joinMemberInvitation(client, invitation.link, signal);
+      await acceptVaultWithKey(
+        administrator.dataKey,
+        administrator.vault,
+        administrator.username,
+        false,
+      );
+      // The invitation login replaced this transport's token as well.
+      await signIn(client, {
+        tenant,
+        username: "builder-updated",
+        password: "Passkey-preserved-password-2026!",
+      });
+      await approveMemberInvitation(
+        client,
+        invitation.link.invitation.id,
+        signal,
+        duckDriver,
+      );
+    } else {
+      await signIn(client, { tenant, username: "passkey.member", password });
+      const account = unlockedAccount()!;
+      const previous = (await trustedHistory(client)).identityCertificate(
+        account.vault.subject,
+      );
+      const identity = { ...account.identity, signingKey: await signingPair() };
+      const replacementCertificate = await certifyIdentity(
+        {
+          tenant,
+          generation: previous.generation,
+          user: previous.user,
+          previousSignature: previous.signature,
+          ...(await publicIdentity(identity)),
+        },
+        context.authority,
+      );
+      await enrollPasswordAccount(client, {
+        tenant,
+        username: "passkey.member",
+        subject: previous.user,
+        password: "Renewed-passkey-member-password-2026!",
+        identity,
+        replacementCertificate,
+      });
+    }
+    process.stdout.write(JSON.stringify({ success: true }) + "\n");
   } else if (mode === "recover") {
     const root = process.env.SORTSYS_NATIVE_AUTH_ROOT;
     assert.ok(

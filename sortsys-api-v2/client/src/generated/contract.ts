@@ -94,7 +94,9 @@ export type HistoryOrigin = { source: string, occurredMicros: string, };
 
 export type Id = string;
 
-export type IdentityCertificate = { tenant: string, generation: string, user: string, encryptionKey: string, signingKey: string, signature: string, };
+export type IdentityCertificate = { tenant: string, generation: string, user: string, previousSignature?: string, encryptionKey: string, signingKey: string, signature: string, };
+
+export type IdentityReplacement = { certificate: IdentityCertificate, newIdentityProof: string, };
 
 export type InitialMemberState = { context: string, locale: string, createdMicros: string, modifiedMicros: string, deactivatedMicros: string | null, archivedMicros: string | null, };
 
@@ -507,7 +509,7 @@ export type QueryOutputs = {
   "zerotrust.fileChunks.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.history.get": { access: Access, sequence: string, orderId: string, publication: string, initialPublication: string, domain: string, envelope: EncryptedObject<Facet>, previous: EncryptedObject<Facet> | null, migrationOrigin: MigrationOrigin | null, deletion: JsonValue | null, references: JsonValue | null, occurredAt: Date, occurredMicros: string, } | null;
   "zerotrust.history.list": { access: Access, current: string, total: string, snapshot: string, after: string | null, afterMicros: string | null, afterOrder: string | null, unchanged: boolean, changes: Array<Change>, };
-  "zerotrust.identities.get": { tenant: string, generation: string, user: string, encryptionKey: string, signingKey: string, signature: string, } | null;
+  "zerotrust.identities.get": { tenant: string, generation: string, user: string, previousSignature?: string, encryptionKey: string, signingKey: string, signature: string, } | null;
   "zerotrust.identities.list": Array<{ subject: string, encryptionKey: string, signingKey: string, certificate: JsonValue, }>;
   "zerotrust.identities.recipients": { rows: Array<Id>, after: Id | null, };
   "zerotrust.invitations.get": { entry: Entry, history: TrustHistory, };
@@ -558,7 +560,7 @@ export type MutationInputs = {
   "admin.users.setAdmin": { tenant: string; userId: string; admin: boolean; };
   "auth.login": { tenant: string; username: string; password: string; };
   "auth.logout": void;
-  "auth.opaque.enrollFinish": { exchange: string, registrationRecord: string, vault: AccountVault, previousIdentityProof: string | null, };
+  "auth.opaque.enrollFinish": { exchange: string, registrationRecord: string, vault: AccountVault, previousIdentityProof: string | null, replacement?: IdentityReplacement, };
   "auth.opaque.enrollStart": { registrationRequest: string, };
   "auth.opaque.invitationFinish": { exchange: string, registrationRecord: string, vault: AccountVault, claim: Claim, proof: string, };
   "auth.opaque.invitationStart": { tenant: string, invitation: string, registrationRequest: string, };
@@ -717,7 +719,7 @@ export type MutationInputs = {
   "zerotrust.domains.putMany": { domains: Array<DomainDefinition>, };
   "zerotrust.events.open": void;
   "zerotrust.fileChunks.put": { domain: string, envelope: EncryptedObject<Facet>, };
-  "zerotrust.identities.certify": { tenant: string, generation: string, user: string, encryptionKey: string, signingKey: string, signature: string, };
+  "zerotrust.identities.certify": { tenant: string, generation: string, user: string, previousSignature?: string, encryptionKey: string, signingKey: string, signature: string, };
   "zerotrust.invitations.approve": { id: string, claimHash: string, certificate: IdentityCertificate, proof: string, };
   "zerotrust.invitations.complete": { id: string, claimHash: string, proof: string, };
   "zerotrust.invitations.create": { tenant: string, id: string, generation: string, user: string, username: string, validUntil: string, verifier: string, signature: string, };

@@ -150,16 +150,8 @@ pub(super) struct RootState {
 pub(super) fn root_key() -> sortsys_zerotrust::metadata::RecordKey {
     key("crypto-root", "current")
 }
-pub(super) fn identity_history_key(
-    certificate: &IdentityCertificate,
-) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
-    super::crypto::identifier(&certificate.user)?;
-    let generation = super::crypto::revision(&certificate.generation)?;
-    Ok(key(
-        "identity-history",
-        &format!("{generation:020}:{}", certificate.user),
-    ))
-}
+mod identity_history;
+pub(super) use identity_history::{append_identity, identity_head_key, identity_history_key};
 
 pub(crate) fn register_root_queries(
     builder: ProcedureRegistryBuilder,
@@ -292,9 +284,12 @@ pub(super) async fn install_initial(
             },
         )
         .await?;
-    transaction
-        .put_protected(identity_history_key(&input.owner)?, &input.owner)
-        .await
+    append_identity(
+        transaction,
+        &input.owner,
+        &sized::<32>(&input.authority.authority_signing_key)?,
+    )
+    .await
 }
 
 pub(super) async fn public_root(system: &Repository, tenant: &str) -> RpcResult<RootState> {
@@ -437,6 +432,7 @@ impl SetupInput {
             || self.owner.tenant != tenant
             || self.owner.generation != generation.to_string()
             || self.owner.user != subject
+            || self.owner.previous_signature.is_some()
             || sized::<32>(&self.owner.encryption_key)?.as_slice() != encryption_key
             || sized::<32>(&self.owner.signing_key)?.as_slice() != signing_key
             || self.policy.tenant != tenant

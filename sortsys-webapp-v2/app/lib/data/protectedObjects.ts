@@ -206,6 +206,7 @@ export async function protectedCollections(
       tenant: context.account.tenant,
       authority: context.history.authority,
       identityCertificate: context.history.identityCertificate,
+      proofSigner: context.history.proofSigner,
       catalogueDeletion: context.author.catalogueDeletion,
       controlAuthor: context.author.control,
       root: {

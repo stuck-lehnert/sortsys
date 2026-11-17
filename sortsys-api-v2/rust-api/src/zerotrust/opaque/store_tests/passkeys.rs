@@ -124,6 +124,7 @@ async fn browser_passkeys_unlock_cold_vaults_and_reject_replay_across_api_instan
     assert_eq!(result["success"], true);
     assert_eq!(result["zeroCounterReplayRejected"], true);
     assert_eq!(result["recoveryRevokedPasskeys"], true);
+    assert_eq!(result["signingRenewalRevokedPasskeys"], true);
     let tenant = first.tenant("passkey-tenant-a").unwrap();
     assert_protected_collection(&tenant, "passkeys").await;
     assert_protected_collection(&tenant, "passkey-users").await;

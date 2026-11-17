@@ -100,10 +100,15 @@ export type IdentityCertificate = PublicIdentity & {
   tenant: string;
   generation: string;
   user: string;
+  previousSignature?: string;
   signature: string;
 };
 
 export function identityCertificate(input: unknown): IdentityCertificate {
+  const hasPrevious =
+    !!input &&
+    typeof input === "object" &&
+    Object.hasOwn(input, "previousSignature");
   const value = record(input, [
     "tenant",
     "generation",
@@ -111,6 +116,7 @@ export function identityCertificate(input: unknown): IdentityCertificate {
     "encryptionKey",
     "signingKey",
     "signature",
+    ...(hasPrevious ? ["previousSignature"] : []),
   ]) as IdentityCertificate;
   identityCertificateFrame(value);
   sized(value.signature, 64);
@@ -125,13 +131,64 @@ export function identityCertificateFrame(
   revision(input.generation);
   sized(input.encryptionKey, 32);
   sized(input.signingKey, 32);
-  return frame("sortsys/identity-certificate/v1", [
+  const fields = [
     input.tenant,
     input.generation,
     input.user,
     input.encryptionKey,
     input.signingKey,
-  ]);
+  ];
+  if (input.previousSignature !== undefined) {
+    sized(input.previousSignature, 64);
+    fields.push(input.previousSignature);
+    return frame("sortsys/identity-certificate/v2", fields);
+  }
+  return frame("sortsys/identity-certificate/v1", fields);
+}
+
+/** Select the last certificate of each complete, unbranched identity chain.
+ * Authority signatures must be verified before trusting the returned heads. */
+export function identityCertificateHeads(
+  input: readonly IdentityCertificate[],
+): IdentityCertificate[] {
+  const groups = new Map<string, Map<string, IdentityCertificate>>();
+  for (const raw of input) {
+    const certificate = identityCertificate(raw);
+    const key = `${certificate.tenant}\0${certificate.generation}\0${certificate.user}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = new Map();
+      groups.set(key, group);
+    }
+    if (group.has(certificate.signature)) throw new InvalidProtectedData();
+    group.set(certificate.signature, certificate);
+  }
+  const heads: IdentityCertificate[] = [];
+  for (const group of groups.values()) {
+    const successors = new Map<string, IdentityCertificate>();
+    let first: IdentityCertificate | undefined;
+    for (const certificate of group.values()) {
+      const previous = certificate.previousSignature;
+      if (previous === undefined) {
+        if (first) throw new InvalidProtectedData();
+        first = certificate;
+      } else {
+        if (!group.has(previous) || successors.has(previous))
+          throw new InvalidProtectedData();
+        successors.set(previous, certificate);
+      }
+    }
+    if (!first) throw new InvalidProtectedData();
+    let head = first;
+    let visited = 1;
+    while (successors.has(head.signature)) {
+      head = successors.get(head.signature)!;
+      if (++visited > group.size) throw new InvalidProtectedData();
+    }
+    if (visited !== group.size) throw new InvalidProtectedData();
+    heads.push({ ...head });
+  }
+  return heads;
 }
 
 export async function certifyIdentity(
