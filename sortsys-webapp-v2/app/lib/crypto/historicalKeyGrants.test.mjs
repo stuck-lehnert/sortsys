@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import {
   createDomain,
+  DEFAULT_RECOVERY_LIMITS,
   createIdentity,
   openBox,
   publicIdentity,
@@ -263,7 +264,13 @@ test("a longer history uses at most 16 generations per read with no individual d
 
 test("invalid and oversized histories fail before any request", async () => {
   const f = await fixture();
-  for (const generation of ["0", "01", "-1", "1.5", "10001"]) {
+  for (const generation of [
+    "0",
+    "01",
+    "-1",
+    "1.5",
+    String(DEFAULT_RECOVERY_LIMITS.keyGenerations + 1),
+  ]) {
     await expect(
       prepareHistoricalKeyGrants(f.client, {
         ...f.input,

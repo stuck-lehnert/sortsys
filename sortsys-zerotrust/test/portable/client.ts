@@ -22,6 +22,7 @@ import {
   OpenTimestampUnavailable,
   publicIdentity,
   record,
+  reserveRecoveryInventory,
   serializeOtsTree,
   signedPacketFrame,
   sized,
@@ -34,6 +35,10 @@ function require(condition: unknown): asserts condition {
 }
 
 export async function exerciseFramework() {
+  const inventory = reserveRecoveryInventory(
+    { domains: 2, keyGenerations: 10_001 },
+    { domains: 0, keyGenerations: 2 },
+  );
   const payloadText = "Öffentlicher Laborbericht 🏗️\n".repeat(6000);
   const payload = preparePayload(payloadText, {
     context: "laboratory:alpha",
@@ -411,6 +416,7 @@ export async function exerciseFramework() {
     anchored,
   );
   return {
+    inventory,
     payload: { ...payload, content: payloadText },
     signer: (await publicIdentity(identity)).signingKey,
     delegation,

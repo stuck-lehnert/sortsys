@@ -20,6 +20,7 @@ pub mod policy;
 pub mod prepared_payload;
 pub mod protocol;
 pub mod recovery;
+pub mod recovery_inventory;
 pub mod resource_access;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

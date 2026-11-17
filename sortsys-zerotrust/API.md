@@ -433,11 +433,21 @@ dem zuvor gelesenen Kopf. `recoveryPageFrame` beziehungsweise Rusts
 `recovery::RecoveryPageAccess::frame` binden eine Anfrage an Mandant, Generation,
 Challenge, Snapshot und Cursor. Der Transport-Callback erhält keine Seed-Phrase.
 
-Der bestehende Recovery-Plan und sein verschlüsseltes Schlüsselarchiv haben
-weiterhin Grenzen von 2.000 Bereichen und 10.000 Schlüsselständen. Weder die
-Seitenlesung noch eine aufgeteilte Planübertragung hebt diese Grenzen auf. Die
-vollständige Vorbereitung und Veröffentlichung muss den gesamten Bestand
-prüfen; unvollständige Bestände werden abgelehnt.
+Die Standardkapazität beträgt 2.000 Bereiche und 50.000 Schlüsselstände.
+`RecoveryInventory` zählt Bereiche und veröffentlichte Schlüsselgenerationen;
+ältere Generationen bleiben nach einem Phrase-Wechsel mitgezählt. Rusts
+`RecoveryInventory::reserve` und TypeScripts `reserveRecoveryInventory` prüfen
+dieselben Grenzen und lassen zusätzlich Platz für eine vollständige
+Schlüsselrotation. Der Speicheradapter muss den neuen Zähler zusammen mit den
+Schlüsseln gegen den gelesenen Stand veröffentlichen. Ein gewöhnlicher Zähler
+im Speicher eines API-Prozesses reicht dafür nicht aus.
+
+Andere Anwendungen können `recovery.inventoryLimits` bei `createZeroTrust`
+angeben und dieselben `RecoveryLimits` an ihren Rust-Adapter übergeben. Die
+Konfiguration wird beim Erzeugen des Codecs kopiert. Die Kapazitätsgrenzen
+ersetzen keine Prüfung der tatsächlichen Datensatz- und Transportgrößen.
+Insbesondere bleibt die vollständige Vorbereitung und Veröffentlichung auf den
+gesamten Bestand bezogen; unvollständige Bestände werden abgelehnt.
 
 ## Größere signierte Pakete übertragen
 

@@ -278,7 +278,10 @@ pub(super) async fn install_initial(
         .put_protected(key("policy-generations", "1"), &"1")
         .await?;
     transaction
-        .put(key("domain-inventory", "current"), &0u32)
+        .put_protected(
+            super::recovery::inventory::record_key(),
+            &sortsys_zerotrust::recovery_inventory::RecoveryInventory::default(),
+        )
         .await?;
     transaction
         .put_protected(

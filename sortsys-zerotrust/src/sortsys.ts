@@ -4,6 +4,7 @@ export * from "./publicProofs";
 export * from "./objects";
 export * from "./boxes";
 export * from "./recovery";
+export * from "./recoveryInventory";
 export * from "./policy";
 export * from "./vault";
 export * from "./passkeyVault";

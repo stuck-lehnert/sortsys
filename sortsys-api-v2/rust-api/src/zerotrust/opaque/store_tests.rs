@@ -90,6 +90,7 @@ async fn browser_with_tenant(
             | "owner-backup-archive" => "scripts/test-owner-setup.ts",
             "invitations" => "scripts/test-duckdb-invitations.ts",
             "recovery" => "scripts/test-duckdb-recovery.ts",
+            "recovery-scale" => "scripts/test-recovery-scale.ts",
             "llm" => "scripts/test-duckdb-llm.ts",
             "editors" => "scripts/test-duckdb-editors.ts",
             "document-search" => "scripts/test-native-document-search.ts",
@@ -144,7 +145,11 @@ async fn browser_with_tenant(
     // This scenario creates about fifty private commercial workflows, repeats
     // startup and optionally drives the rendered application. Its overall build
     // budget is independent of the unchanged per-interaction browser deadlines.
-    let deadline = if mode == "development-seed" {
+    let deadline = if mode == "recovery-scale" {
+        // This load case publishes and recovers over ten thousand actual key
+        // generations. Ordinary browser interaction deadlines stay unchanged.
+        Duration::from_secs(900)
+    } else if mode == "development-seed" {
         Duration::from_secs(1800)
     } else if matches!(
         mode,
@@ -1077,6 +1082,7 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
     assert_published_catalog_pages(&tenant, 2).await;
     assert_published_catalog_pages(&tenant, 3).await;
     for collection in [
+        "domain-inventory",
         "recovery-inventory-3",
         "authority-history",
         "accounts",
@@ -1085,6 +1091,51 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
     ] {
         assert_protected_collection(&tenant, collection).await;
     }
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn seed_recovery_preserves_more_than_ten_thousand_key_generations() {
+    use sortsys_zerotrust::recovery_inventory::RecoveryInventory;
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    assert!(config.token.starts_with("sortsys-disposable-"));
+    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let mut settings = configuration(config);
+    settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first.clone())).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    let endpoints = [first_url, second_url];
+    browser("owner-minimal", &root, Some(&endpoints)).await;
+    browser("recovery-scale", &root, Some(&endpoints)).await;
+    let report: Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("report.json")).unwrap()).unwrap();
+    assert!(report["originalKeys"].as_u64().unwrap() > 10_000);
+    let tenant = first.tenant("recovery-tenant").unwrap();
+    let inventory = tenant
+        .read::<RecoveryInventory>(crate::zerotrust::recovery::inventory::record_key())
+        .await
+        .unwrap()
+        .value
+        .unwrap();
+    assert_eq!(
+        u64::from(inventory.domains),
+        report["domains"].as_u64().unwrap()
+    );
+    assert_eq!(
+        u64::from(inventory.key_generations),
+        report["finalKeys"].as_u64().unwrap()
+    );
+    assert_protected_collection(&tenant, "domain-inventory").await;
 }
 
 #[tokio::test]

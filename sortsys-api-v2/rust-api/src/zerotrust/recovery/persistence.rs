@@ -81,6 +81,7 @@ async fn prefetch_publication(
     let mut protected = vec![
         accounts::account_key(owner),
         accounts::tenant_key(),
+        super::inventory::record_key(),
         key(
             "authority-history",
             &format!("{:020}", revision(generation)?),
@@ -343,6 +344,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
     if supplied != expected {
         return Err(invalid());
     }
+    super::inventory::reserve_recovery(&mut transaction, domains.len(), expected.len()).await?;
     let generation = input.next_setup.authority.generation.clone();
     let now = Utc::now();
     let account = accounts::Account {

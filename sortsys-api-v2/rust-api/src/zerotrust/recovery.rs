@@ -21,6 +21,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use sortsys_zerotrust::recovery_inventory::DEFAULT_RECOVERY_LIMITS;
 use std::{
     collections::HashSet,
     sync::{Arc, LazyLock},
@@ -28,6 +29,7 @@ use std::{
 use ts_rs::TS;
 
 mod catalog;
+pub(in crate::zerotrust) mod inventory;
 mod pages;
 mod persistence;
 mod uploads;
@@ -131,8 +133,8 @@ impl RecoveryPlan {
         let policy = revision(&self.next_setup.policy.version)?;
         let owner = self.owner_id()?;
         if self.username != format!("recovery-{}", owner.encode())
-            || self.domains.len() > 2000
-            || self.old_key_envelopes.len() > 10000
+            || self.domains.len() > DEFAULT_RECOVERY_LIMITS.domains as usize
+            || self.old_key_envelopes.len() > DEFAULT_RECOVERY_LIMITS.key_generations as usize
         {
             return Err(invalid());
         }

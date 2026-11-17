@@ -373,7 +373,12 @@ pub(super) async fn metadata_origins(
         }
         selected
     } else {
-        transaction.all::<CreationOrigin>(&collection, 2000).await?
+        transaction
+            .all::<CreationOrigin>(
+                &collection,
+                sortsys_zerotrust::recovery_inventory::DEFAULT_RECOVERY_LIMITS.domains as usize,
+            )
+            .await?
     };
     let mut visible = Vec::new();
     for origin in origins {

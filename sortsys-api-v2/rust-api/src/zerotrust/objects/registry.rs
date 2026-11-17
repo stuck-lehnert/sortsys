@@ -6,6 +6,7 @@ use crate::{
     auth::{AuthResult, AuthService},
     control::{Transaction, accounts, key},
 };
+use sortsys_zerotrust::recovery_inventory::DEFAULT_RECOVERY_LIMITS;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -52,7 +53,9 @@ pub(in crate::zerotrust) fn recovery_key(
 pub(in crate::zerotrust) async fn catalog(
     transaction: &mut Transaction,
 ) -> RpcResult<Vec<DomainDescriptor>> {
-    transaction.all("domain-catalog", 2000).await
+    transaction
+        .all("domain-catalog", DEFAULT_RECOVERY_LIMITS.domains as usize)
+        .await
 }
 pub(in crate::zerotrust) async fn has_key(
     transaction: &mut Transaction,
@@ -364,7 +367,7 @@ pub(super) async fn list_domains(
     } else {
         context
             .transaction
-            .all::<DomainRecord>("domains", 2000)
+            .all::<DomainRecord>("domains", DEFAULT_RECOVERY_LIMITS.domains as usize)
             .await?
     };
     let mut result = Vec::new();
@@ -1432,6 +1435,7 @@ async fn put_domains(
         return Err(invalid());
     }
     let mut context = context(service, request).await?;
+    prefetch_domain_publication(&mut context, &inputs).await?;
     let mut changed = false;
     for input in inputs {
         changed |= put_domain_in_transaction(&mut context, input).await?;
@@ -1442,6 +1446,35 @@ async fn put_domains(
         context.transaction.validate().await?;
     }
     Ok(Success { success: true })
+}
+
+async fn prefetch_domain_publication(
+    context: &mut MetadataContext,
+    inputs: &[DomainDefinition],
+) -> RpcResult<()> {
+    let generation = context.security.root.generation.to_string();
+    let mut protected = vec![super::super::recovery::inventory::record_key()];
+    let mut records = Vec::with_capacity(inputs.len() * 2);
+    for input in inputs {
+        identifier(&input.id)?;
+        records.push(key("domains", &input.id));
+        records.push(key("domain-catalog", &input.id));
+        protected.push(definition_key(&input.id, &input.generation, &generation)?);
+        protected.push(recovery_key(&RecoveryKeyReference {
+            domain: input.id.clone(),
+            generation: input.generation.clone(),
+            authority_generation: generation.clone(),
+        })?);
+        for envelope in &input.envelopes {
+            protected.push(envelope_key(
+                &input.id,
+                &input.generation,
+                &envelope.recipient,
+            )?);
+        }
+    }
+    context.transaction.prefetch(records).await?;
+    context.transaction.prefetch_protected(protected).await
 }
 
 async fn put_domain_in_transaction(
@@ -1565,18 +1598,9 @@ async fn put_domain_in_transaction(
         .read(super::super::setup::root_key())
         .await?
         .ok_or_else(forbidden)?;
+    super::super::recovery::inventory::reserve_key(&mut context.transaction, current.is_none())
+        .await?;
     if current.is_none() {
-        let count: u32 = context
-            .transaction
-            .read(key("domain-inventory", "current"))
-            .await?
-            .ok_or_else(invalid)?;
-        if count >= 2000 {
-            return Err(RpcError::new(
-                ErrorCode::BadRequest,
-                "Protected tenant area limit reached",
-            ));
-        }
         context
             .transaction
             .put(
@@ -1587,10 +1611,6 @@ async fn put_domain_in_transaction(
                     facet: input.facet,
                 },
             )
-            .await?;
-        context
-            .transaction
-            .put(key("domain-inventory", "current"), &(count + 1))
             .await?;
     }
     let mut area = match current {
@@ -1828,6 +1848,9 @@ async fn publish_access(
     let mut context = metadata_context_for_domains(service, request, Some(&selected)).await?;
     if context.security.policy.version != input.policy_version {
         return Err(conflict());
+    }
+    if !input.domains.is_empty() {
+        prefetch_domain_publication(&mut context, &input.domains).await?;
     }
     let has_grants = !input.grants.is_empty();
     for grant in input.grants {

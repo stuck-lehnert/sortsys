@@ -338,6 +338,7 @@ try {
     },
   );
   assert.equal(partialResult, null);
+  assert.ok(partialError instanceof RpcClientError);
   assert.equal(
     partialError?.code,
     "CONFLICT",
@@ -395,6 +396,7 @@ try {
     "zerotrust.recovery.stage",
     secondOperation,
   );
+  assert.ok(secondUpload instanceof RpcClientError);
   assert.equal(
     secondUpload?.code,
     "CONFLICT",

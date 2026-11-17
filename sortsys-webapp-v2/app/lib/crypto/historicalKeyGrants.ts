@@ -1,6 +1,7 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
 import {
   InvalidProtectedData,
+  DEFAULT_RECOVERY_LIMITS,
   record,
   rewrapDomainKey,
   verifyDomain,
@@ -34,7 +35,8 @@ export async function prepareHistoricalKeyGrants(
     throw new InvalidProtectedData();
   }
   const count = BigInt(input.area.generation);
-  if (count > 10000n) throw new InvalidProtectedData();
+  if (count > BigInt(DEFAULT_RECOVERY_LIMITS.keyGenerations))
+    throw new InvalidProtectedData();
   const generations = Array.from({ length: Number(count) }, (_, index) =>
     String(index + 1),
   );

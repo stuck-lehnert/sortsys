@@ -1,0 +1,53 @@
+{
+  "limits": { "domains": 2000, "keyGenerations": 50000 },
+  "cases": [
+    {
+      "name": "first published key",
+      "current": { "domains": 0, "keyGenerations": 0 },
+      "addition": { "domains": 1, "keyGenerations": 1 },
+      "expected": { "domains": 1, "keyGenerations": 1 }
+    },
+    {
+      "name": "history beyond the former ten thousand limit",
+      "current": { "domains": 72, "keyGenerations": 10001 },
+      "addition": { "domains": 0, "keyGenerations": 72 },
+      "expected": { "domains": 72, "keyGenerations": 10073 }
+    },
+    {
+      "name": "last ordinary generation with recovery headroom",
+      "current": { "domains": 2000, "keyGenerations": 47999 },
+      "addition": { "domains": 0, "keyGenerations": 1 },
+      "expected": { "domains": 2000, "keyGenerations": 48000 }
+    },
+    {
+      "name": "a key rotation must not consume reserved recovery capacity",
+      "current": { "domains": 2000, "keyGenerations": 48000 },
+      "addition": { "domains": 0, "keyGenerations": 1 },
+      "expected": null
+    },
+    {
+      "name": "a domain must publish its first key",
+      "current": { "domains": 4, "keyGenerations": 20 },
+      "addition": { "domains": 1, "keyGenerations": 0 },
+      "expected": null
+    },
+    {
+      "name": "domain capacity remains independent of key history",
+      "current": { "domains": 2000, "keyGenerations": 2000 },
+      "addition": { "domains": 1, "keyGenerations": 1 },
+      "expected": null
+    },
+    {
+      "name": "an inconsistent current inventory cannot be advanced",
+      "current": { "domains": 20, "keyGenerations": 10 },
+      "addition": { "domains": 0, "keyGenerations": 20 },
+      "expected": null
+    },
+    {
+      "name": "recovery must not publish a next inventory above its capacity",
+      "current": { "domains": 2000, "keyGenerations": 48000 },
+      "addition": { "domains": 0, "keyGenerations": 2000 },
+      "expected": null
+    }
+  ]
+}

@@ -137,8 +137,18 @@ verhindern die Veröffentlichung. Die temporären Datensätze verändern keine
 aktiven Konten oder Schlüssel und laufen mit der Challenge ab. Der Transport
 erlaubt je Challenge genau ein Manifest mit höchstens 512 Teilen und 64 MiB.
 Ein anderer Wiederherstellungsvorgang benötigt eine neue Challenge. Die Prüfung
-des vollständigen Schlüsselbestands behält vorerst ihre Grenzen von 2.000
-Bereichen und 10.000 Schlüsselständen.
+des vollständigen Schlüsselbestands erlaubt vorerst höchstens 2.000 Bereiche
+und 50.000 Schlüsselstände. Das Berechtigungsmodell begrenzt die Bereichszahl
+weiterhin unabhängig von der übertragenen Paketgröße.
+
+Die API führt dafür einen geschützten Bestandszähler. Neue Bereiche,
+Schlüsselwechsel und Recoveries aktualisieren ihn gemeinsam mit den
+Schlüsselveröffentlichungen. Auch historische Generationen zählen weiter.
+Vor einer Recovery vergleicht die API den Zähler mit dem vollständigen
+veröffentlichten Bestand. Abweichungen und überschrittene Kapazitäten verhindern
+den Commit. Die aktuelle Phrase und die bisherigen Konten bleiben dann aktiv.
+Die gemeinsame Kapazitätsprüfung hält außerdem Platz für eine weitere
+vollständige Schlüsselrotation frei. Das hebt die Gesamtgrenze nicht auf.
 
 Beim Lesen einer Bestandsseite lädt die API die referenzierten Bereiche und
 Schlüsseldefinitionen gemeinsam aus dem Datendienst. Vor dem Veröffentlichen
@@ -282,6 +292,14 @@ Schreibziele und ihre Sicherheitsnachweise benötigt er drei Leseanfragen.
 Doppelte Schlüssel und wiederholtes Vorladen lösen keine weiteren Abrufe aus.
 Konkurrierende Neuanlagen und Änderungen an einem Sicherheitsnachweis führen
 zum Versionskonflikt; keiner der vorbereiteten Datensätze wird dabei verändert.
+
+Der native Lasttest legt 96 Bereiche mit jeweils 105 Generationen über die
+regulären API-Endpunkte an. Eine anschließende Seed-Recovery übernimmt alle
+10.080 historischen Schlüsselstände. Die zuvor unter der ersten und letzten
+Generation gespeicherten Inhalte bleiben lesbar; der geschützte Bestandszähler
+enthält danach auch die neuen Recovery-Generationen. Der Test prüft damit
+Schlüsselbestände oberhalb der früheren 10.000er-Grenze, aber keine größere
+Zahl von Inhaltsbereichen.
 
 Ein weiterer Mehrinstanztest erzeugt Schlüsselgenerationen mit dem eigenen
 Signaturschlüssel eines beauftragten Bereichsverwalters. Neue Leser erhalten

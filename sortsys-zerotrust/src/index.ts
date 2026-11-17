@@ -4,6 +4,7 @@ export * from "./identity";
 export * from "./publicProofs";
 export * from "./boxes";
 export * from "./recovery";
+export * from "./recoveryInventory";
 export * from "./vault";
 export * from "./passkeyVault";
 export * from "./webauthn";

@@ -12,6 +12,7 @@ use sortsys_zerotrust::{
     policy::{Action, Effect, PolicyRef, RuleRef},
     prepared_payload::PreparedPayloadManifest,
     protocol::{EncryptedObject, SealedBox},
+    recovery_inventory::{DEFAULT_RECOVERY_LIMITS, RecoveryInventory},
     resource_access::{ResourceAccessContext, ResourceAccessState},
 };
 
@@ -74,6 +75,7 @@ impl Policy {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserVector {
+    inventory: RecoveryInventory,
     payload: PayloadVector,
     signer: String,
     object: EncryptedObject,
@@ -156,6 +158,8 @@ impl AsRef<str> for Namespace {
 
 fn main() {
     let vector: BrowserVector = serde_json::from_str(include_str!("browser-vector.json")).unwrap();
+    vector.inventory.validate(DEFAULT_RECOVERY_LIMITS).unwrap();
+    assert_eq!(vector.inventory.key_generations, 10_003);
     assert!(vector.payload.parts.len() > 1);
     assert_eq!(
         vector

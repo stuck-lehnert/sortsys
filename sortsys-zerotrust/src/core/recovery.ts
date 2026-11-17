@@ -49,6 +49,12 @@ import { accountVaultFrame, createAccountVault } from "../vault";
 import type { AccountVault } from "../vault";
 import { readSnapshotPages, validatePageToken } from "../snapshotPages";
 import type { SnapshotPage, SnapshotPageRequest } from "../snapshotPages";
+import {
+  DEFAULT_RECOVERY_LIMITS,
+  recoveryInventory,
+  reserveRecoveryInventory,
+  type RecoveryLimits,
+} from "../recoveryInventory";
 
 export type RecoverySource<
   F extends string = string,
@@ -88,7 +94,10 @@ export type RecoveryPlan<
 type ArchivedKey = { domain: string; generation: string; key: string };
 
 export type RecoveryAccount = { subject: string; username: string };
-export type RecoveryOptions = { createAdministrator?: () => RecoveryAccount };
+export type RecoveryOptions = {
+  createAdministrator?: () => RecoveryAccount;
+  inventoryLimits?: RecoveryLimits;
+};
 
 export function createRecoveryCodec<
   F extends string,
@@ -103,6 +112,10 @@ export function createRecoveryCodec<
   const allowedFacets = facetVocabulary(facets);
   const createAdministrator =
     options.createAdministrator ?? defaultRecoveryAccount;
+  const inventoryLimits = Object.freeze({
+    ...(options.inventoryLimits ?? DEFAULT_RECOVERY_LIMITS),
+  });
+  recoveryInventory({ domains: 0, keyGenerations: 0 }, inventoryLimits);
   const { createDomain, domainFrame, domainBoxSigner, verifyDomain } =
     domainCodec;
   const { createTenantSetup, tenantSetupFrame } = setupCodec;
@@ -126,9 +139,9 @@ export function createRecoveryCodec<
     const authority = authorityCertificate(source.authority);
     if (
       !Array.isArray(source.domains) ||
-      source.domains.length > 2000 ||
+      source.domains.length > inventoryLimits.domains ||
       !Array.isArray(source.keys) ||
-      source.keys.length > 10000 ||
+      source.keys.length > inventoryLimits.keyGenerations ||
       !Array.isArray(source.delegatedDomains) ||
       source.delegatedDomains.length > source.keys.length
     )
@@ -239,7 +252,10 @@ export function createRecoveryCodec<
       }
       // Source preparation and publication still validate a complete inventory.
       // Keep their admission bounds explicit instead of returning a prefix.
-      if (source.domains.length > 2000 || source.keys.length > 10000) {
+      if (
+        source.domains.length > inventoryLimits.domains ||
+        source.keys.length > inventoryLimits.keyGenerations
+      ) {
         throw new InvalidProtectedData();
       }
     }
@@ -344,8 +360,8 @@ export function createRecoveryCodec<
       source.domains.map((domain) => [domain.id, domain]),
     );
     if (
-      source.domains.length > 2000 ||
-      source.keys.length > 10000 ||
+      source.domains.length > inventoryLimits.domains ||
+      source.keys.length > inventoryLimits.keyGenerations ||
       publishedDomains.size !== source.domains.length
     )
       throw new InvalidProtectedData();
@@ -431,7 +447,8 @@ export function createRecoveryCodec<
         throw new InvalidProtectedData();
       }
       archived.set(id, current);
-      if (archived.size > 10000) throw new InvalidProtectedData();
+      if (archived.size > inventoryLimits.keyGenerations)
+        throw new InvalidProtectedData();
     };
     for await (const key of readRecoveryCatalog(source.catalog, {
       tenant,
@@ -485,6 +502,11 @@ export function createRecoveryCodec<
         throw new InvalidProtectedData();
       }
     }
+    reserveRecoveryInventory(
+      { domains: source.domains.length, keyGenerations: archived.size },
+      { domains: 0, keyGenerations: source.domains.length },
+      inventoryLimits,
+    );
     const { subject, username } = createAdministrator();
     identifier(subject);
     identifier(username);
