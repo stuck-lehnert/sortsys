@@ -3,8 +3,10 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type RefObject,
 } from "react";
 import { useForceUpdate } from "./useForceUpdate";
@@ -13,12 +15,20 @@ import { Modal } from "@sortsys/react-components";
 import { useFormFieldCount } from "@sortsys/react-components/my-form";
 import { MyForm, type MyPublicFormContext } from "~/components/MyForm";
 import type { PromiseOr } from "~/type-helpers";
-import { useLocation, useNavigate } from "react-router";
+import {
+  useLocation,
+  useNavigate,
+  type NavigateFunction,
+  type NavigateOptions,
+  type To,
+} from "react-router";
 import { useLoading } from "./useLoading";
 import { MyCallout } from "~/components/MyCallout";
+import { dataSession } from "~/lib/client";
 
 type MyModal = {
   id: string;
+  context: AbortSignal;
   render: (props: {
     id: string;
     hide: () => void;
@@ -61,8 +71,52 @@ function ModalActionError({ message }: { message: string | null }) {
   ) : null;
 }
 
-export function useMyModals() {
-  return useContext(MyModalsContext);
+export function useMyModals(): MyModalsInterface {
+  const modals = useContext(MyModalsContext);
+  const context = useDataContext();
+  return useMemo(() => {
+    if (!modals) return modals;
+    // A handle retained by an asynchronous action cannot open a dialog in a
+    // replacement account or after the action's data access was revoked.
+    return {
+      show: (...args) => {
+        if (currentDataContext(context)) modals.show(...args);
+      },
+      showDefault: (...args) => {
+        if (currentDataContext(context)) modals.showDefault(...args);
+      },
+      showForm: (...args) => {
+        if (currentDataContext(context)) modals.showForm(...args);
+      },
+      trackLocation: (...args) => {
+        if (currentDataContext(context)) return modals.trackLocation(...args);
+        return { close() {}, update() {} };
+      },
+    } satisfies MyModalsInterface;
+  }, [context, modals]);
+}
+
+function useDataContext() {
+  return useSyncExternalStore(
+    dataSession.listenContext,
+    dataSession.context,
+    dataSession.context,
+  );
+}
+
+function currentDataContext(context: AbortSignal): boolean {
+  return !context.aborted && dataSession.context() === context;
+}
+
+function contextNavigation(
+  navigate: NavigateFunction,
+  context: AbortSignal,
+): NavigateFunction {
+  return (to: To | number, options?: NavigateOptions) => {
+    if (!currentDataContext(context)) return;
+    if (typeof to === "number") return navigate(to);
+    return navigate(to, options);
+  };
 }
 
 export function MyModalsProvider({ children }: { children: React.ReactNode }) {
@@ -152,6 +206,7 @@ export interface MyModalsInterface {
 }
 
 function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
+  const dataContext = useDataContext();
   const forceUpdate = useForceUpdate();
   const modalsRef = useRef<MyModal[]>([]);
   const restoringBack = useRef(false);
@@ -162,6 +217,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     modal: MyModal,
     location: { url: string; backgroundUrl: string },
   ) => {
+    if (!modal.visible || !currentDataContext(modal.context)) return;
     const target = new URL(location.url, window.location.href).href;
     if (modal.location) {
       if (window.location.href === modal.location.url)
@@ -201,7 +257,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     modal.visible = false;
     if (modal.location && window.location.href === modal.location.url) {
       if (restoringBack.current) closeAfterRestore.current = true;
-      else {
+      else if (!closingHistory.current) {
         closingHistory.current = true;
         history.back();
       }
@@ -218,8 +274,10 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     render: MyModal["render"],
     options?: MyModal["options"],
   ) => {
+    if (!currentDataContext(dataContext)) return null;
     const modal: MyModal = {
       id: generateId(),
+      context: dataContext,
       visible: true,
       render,
       options,
@@ -235,6 +293,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     },
     trackLocation: (location, onRequestClose) => {
       const modal = registerModal(() => null, { location, onRequestClose });
+      if (!modal) return { close() {}, update() {} };
       return {
         close: () => hideModal(modal),
         update: (next) => setLocation(modal, next),
@@ -243,7 +302,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
 
     showDefault: (props, options) => {
       _interface.show(({ visible, hide, replace }) => {
-        const navigate = useNavigate();
+        const navigate = contextNavigation(useNavigate(), dataContext);
         const pathname = useLocation().pathname;
 
         const [loading, process] = useLoading();
@@ -263,6 +322,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
         const onRequestSubmit = submitAction
           ? () =>
               process(async () => {
+                if (!currentDataContext(dataContext)) return;
                 setActionError(null);
 
                 try {
@@ -372,7 +432,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
       };
 
       _interface.show(({ id, visible, hide, replace, setLocation }) => {
-        const navigate = useNavigate();
+        const navigate = contextNavigation(useNavigate(), dataContext);
         const pathname = useLocation().pathname;
         const [submissionError, setSubmissionError] = useState<string | null>(
           null,
@@ -381,6 +441,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
         return (
           <MyForm
             onSubmit={async (context) => {
+              if (!currentDataContext(dataContext)) return;
               if (props.modalProps?.({ hide, context }).primaryButtonDisabled)
                 return;
               setSubmissionError(null);
@@ -410,6 +471,18 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
   useEffect(() => {
     const listener = (e: PopStateEvent) => {
       if (closingHistory.current) {
+        const expiredDocument =
+          history.state?.sortsysModal === true &&
+          modals().some(
+            (modal) =>
+              modal.location?.url === window.location.href &&
+              !currentDataContext(modal.context),
+          );
+        if (expiredDocument) {
+          e.stopImmediatePropagation();
+          history.back();
+          return;
+        }
         closingHistory.current = false;
         window.dispatchEvent(
           new CustomEvent("sortsys:modal-location", {
@@ -430,7 +503,7 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
       }
       let active: MyModal | null = null;
       for (const modal of modals()) {
-        if (modal.visible) active = modal;
+        if (modal.visible && currentDataContext(modal.context)) active = modal;
       }
 
       if (!active) {
@@ -469,7 +542,8 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     };
 
     window.addEventListener("popstate", listener, { capture: true });
-    return () => window.removeEventListener("popstate", listener);
+    return () =>
+      window.removeEventListener("popstate", listener, { capture: true });
   });
 
   return (
@@ -480,13 +554,17 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
         return (
           <_MyModal
             key={modal.id}
+            context={modal.context}
             render={modal.render}
             props={{
               hide,
               replace: (callback) => {
+                if (!currentDataContext(modal.context)) return;
                 modalsRef.current = modals().filter((m) => m.id !== modal.id);
                 forceUpdate();
-                window.setTimeout(callback, 0);
+                window.setTimeout(() => {
+                  if (currentDataContext(modal.context)) callback();
+                }, 0);
               },
               id: modal.id,
               visible: modal.visible,
@@ -500,6 +578,26 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
 }
 
 function _MyModal({
+  context,
+  props,
+  render,
+}: {
+  context: AbortSignal;
+  render: MyModal["render"];
+  props: Parameters<MyModal["render"]>[0];
+}) {
+  const current = useDataContext();
+  const active = context === current && !context.aborted;
+  useEffect(() => {
+    if (!active) props.hide();
+  }, [active, props.hide]);
+  if (!active) return null;
+  // Render callbacks may use hooks. Their component must unmount as a whole
+  // when the context expires, rather than conditionally omitting those hooks.
+  return <_ModalContent props={props} render={render} />;
+}
+
+function _ModalContent({
   props,
   render,
 }: {

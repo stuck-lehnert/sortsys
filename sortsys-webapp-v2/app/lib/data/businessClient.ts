@@ -268,7 +268,7 @@ export function createBusinessClient(
   let deliveryNotes: Promise<DeliveryNotes> | null = null;
   let tools: Promise<Tools> | null = null;
   let positionIndex: Promise<PositionIndex> | null = null;
-  const fileContextListeners = new Set<() => void>();
+  const dataSessionListeners = new Set<() => void>();
   const editorContextListeners = new Set<() => void>();
   let editorController = new AbortController();
   function resetEditors() {
@@ -784,7 +784,7 @@ export function createBusinessClient(
     const oldTools = tools;
     tools = null;
     void oldTools?.then((store) => store.close()).catch(() => undefined);
-    for (const listener of fileContextListeners) listener();
+    for (const listener of dataSessionListeners) listener();
   }
   const unsubscribe = listenCryptoSession(() => {
     if (account !== unlockedAccount()) {
@@ -1682,16 +1682,21 @@ export function createBusinessClient(
       if (positionIndex === previous) positionIndex = null;
     }
   }
+  const dataSession = {
+    // Access loss and account changes invalidate decoded content. A policy
+    // refresh alone does not replace this session lifetime.
+    context: () => controller.signal,
+    listenContext(listener: () => void) {
+      dataSessionListeners.add(listener);
+      return () => {
+        dataSessionListeners.delete(listener);
+      };
+    },
+  };
   const fileActions = {
     // Resource URIs contain document identifiers, not credentials. A reset must
     // also evict already decoded previews, including when the URI is unchanged.
-    context: () => controller.signal,
-    listenContext(listener: () => void) {
-      fileContextListeners.add(listener);
-      return () => {
-        fileContextListeners.delete(listener);
-      };
-    },
+    ...dataSession,
     editorContext: () => editorController.signal,
     listenEditorContext(listener: () => void) {
       editorContextListeners.add(listener);
@@ -2070,6 +2075,7 @@ export function createBusinessClient(
   };
   const facade: Client & {
     context: typeof contentContext;
+    dataSession: typeof dataSession;
     commonCosts: typeof commonCostActions;
     dashboard: typeof dashboardActions;
     access: typeof contentAccess;
@@ -2081,7 +2087,9 @@ export function createBusinessClient(
     templates: typeof templateActions;
     dispose(): void;
   } = {
+    ...base,
     context: contentContext,
+    dataSession,
     commonCosts: commonCostActions,
     dashboard: dashboardActions,
     access: contentAccess,
@@ -2091,7 +2099,6 @@ export function createBusinessClient(
     organization: organizationActions,
     logo: logoActions,
     templates: templateActions,
-    ...base,
     query: ((path, input, opts) =>
       technical(path)
         ? base.query(path, input, opts)
@@ -2143,7 +2150,7 @@ export function createBusinessClient(
       unsubscribeAuth();
       notify();
       listeners.clear();
-      fileContextListeners.clear();
+      dataSessionListeners.clear();
       editorContextListeners.clear();
     },
   };

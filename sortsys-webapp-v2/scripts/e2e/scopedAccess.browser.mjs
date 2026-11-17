@@ -53,6 +53,7 @@ async function pageFor(name) {
     for (const secret of [
       "VERTRAULICHES_PRODUKT_681942",
       "VERTRAULICHE_BESCHREIBUNG_681942",
+      "LOKALER_PRIVATER_ENTWURF_681942",
     ])
       if (wire.includes(secret)) leaks.push(url.pathname);
   });
@@ -153,14 +154,45 @@ try {
     path: join(artifacts, "member-readable.png"),
     fullPage: true,
   });
+  const update = manager.getByRole("checkbox", {
+    name: "Bearbeiten",
+    exact: true,
+  });
+  await manager.getByText("Bearbeiten", { exact: true }).click();
+  await expect(update).toBeChecked();
+  await save(manager, update);
+  await member
+    .getByText("VERTRAULICHES_PRODUKT_681942", { exact: true })
+    .click();
+  await member.getByRole("button", { name: "Aktionen", exact: true }).click();
+  await member
+    .getByRole("menuitem", { name: "Bearbeiten", exact: true })
+    .click();
+  const editDialog = member.getByRole("dialog");
+  const description = editDialog.getByRole("textbox", {
+    name: "Beschreibung",
+    exact: true,
+  });
+  await expect(description).toHaveValue("VERTRAULICHE_BESCHREIBUNG_681942");
+  await description.fill("LOKALER_PRIVATER_ENTWURF_681942");
+  await member.screenshot({
+    path: join(artifacts, "member-private-dialog.png"),
+    fullPage: true,
+  });
   await manager.getByText("Lesen", { exact: true }).click();
   await expect(read).not.toBeChecked();
+  await manager.getByText("Bearbeiten", { exact: true }).click();
+  await expect(update).not.toBeChecked();
   await save(manager, read);
+  await expect(editDialog).toHaveCount(0);
+  await expect(description).toHaveCount(0);
   await expect(
     member.getByText("VERTRAULICHES_PRODUKT_681942", { exact: true }),
   ).toHaveCount(0);
   await expect(member.locator('nav a[href="/products"]')).toHaveCount(0);
-  console.log("Scoped access UI: delegated revocation cleared visible content");
+  console.log(
+    "Scoped access UI: delegated revocation cleared visible content and the open private edit dialog",
+  );
 
   await login(
     owner,

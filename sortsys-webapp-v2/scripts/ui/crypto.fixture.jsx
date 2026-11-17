@@ -59,6 +59,10 @@ function beginLLM(kind) {
 }
 
 window.cryptoFixture = {
+  async showModalAccess() {
+    const { showModalAccess } = await import("./modal-access.fixture.jsx");
+    showModalAccess(root);
+  },
   async documentSearchWorker() {
     const { searchDocuments } =
       await import("../../app/lib/search/documentSearch");

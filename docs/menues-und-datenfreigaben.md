@@ -113,6 +113,30 @@ Die technischen Verwaltungsrollen und die Inhaltsfreigaben bleiben getrennt. Der
 vollständige Funktionsabgleich muss weiterhin die einzelnen Aktionen der
 Dokumenteditoren und ihre Verweise auf andere Fachbereiche prüfen.
 
+## Offene Dialoge bei Rechteverlust
+
+Die gemeinsame Dialogverwaltung bindet Formulare und Detailansichten an die
+aktuelle Datensitzung. Ein Kontowechsel oder ein Rechteverlust beendet diese
+Sitzung. Offene Dialoge entfernen dann ihre geladenen Werte. Ein zurückgehaltener
+Dialog-Handle kann weder einen alten Dialog erneut öffnen noch dessen Adresse
+ändern. Das gilt auch für verzögerte Ersatzdialoge und die Weiterleitung nach
+einem Formularabschluss. Zusätzliche Freigaben im laufenden Änderungsstrom
+erhalten die Sitzung und bereits eingegebene Formularwerte. Nach einer
+unterbrochenen Verbindung wird ein abweichender Zugriffsstand vorsorglich neu
+aufgebaut.
+
+Für Dokumentdialoge wird dabei die aufrufende Seite wiederhergestellt. Bei
+verschachtelten Dialogen werden die betroffenen Adresseneinträge nacheinander
+geschlossen; eine alte Rückfrage zum Speichern darf den Rechteentzug nicht
+aufhalten. Die Datenadapter und die API prüfen Schreibvorgänge weiterhin
+unabhängig von der Dialoganzeige.
+
+Browsertests prüfen offene Werte, alte Formularaufrufe, verspätete Antworten und
+verschachtelte Dokumentadressen mit der tatsächlichen Dialogverwaltung. Der
+native Mehrinstanztest entzieht einem Mitarbeiter den Katalogzugriff, während
+sein Produktformular mit einem ungespeicherten Entwurf geöffnet ist. Formular
+und Kataloginhalte müssen daraufhin aus seiner Oberfläche verschwinden.
+
 ## Bautagesberichte und Arbeitskosten
 
 Ein Projekt kann Bautagesberichte und Arbeitszeiten freigeben, ohne seine

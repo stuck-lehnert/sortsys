@@ -22,6 +22,12 @@ export async function installPresentationClient() {
     cache: ramCache(),
   });
   transport.setToken("sortsys-ui-synthetic-session");
+  const [session, sessionError] = await transport.query(
+    "auth.sessionInfo",
+    undefined,
+  );
+  if (sessionError) throw sessionError;
+  if (!session) throw new Error("The presentation fixture needs a session");
   const identity = await createIdentity();
   const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
   await acceptVault(
@@ -29,10 +35,10 @@ export async function installPresentationClient() {
     await createAccountVault(
       exportKey,
       "fixture-tenant",
-      "user:1",
+      `user:${session.user.id}`,
       identity,
     ),
-    "fixture.user",
+    session.user.username,
     false,
   );
   const report = (source, error) => {

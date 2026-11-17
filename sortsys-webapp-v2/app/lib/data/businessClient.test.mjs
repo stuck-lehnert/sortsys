@@ -458,10 +458,10 @@ test("access observers restart against the replacement account lifetime after a 
   await account();
   const { base } = raw(),
     client = createBusinessClient(base),
-    previous = client.files.context();
+    previous = client.dataSession.context();
   let observed, result;
   const stop = client.access.subscribe(() => {
-    observed = client.files.context();
+    observed = client.dataSession.context();
     result = client.access.read().then(
       () => true,
       () => false,
@@ -472,7 +472,44 @@ test("access observers restart against the replacement account lifetime after a 
     expect(previous.aborted).toBe(true);
     expect(observed).not.toBe(previous);
     expect(observed).toBe(client.files.context());
+    expect(observed).toBe(client.dataSession.context());
     expect(await result).toBe(true);
+  } finally {
+    stop();
+    client.dispose();
+  }
+});
+
+test("policy revalidation preserves the data session while an account lock invalidates every observer", async () => {
+  await account();
+  const { base: transport } = raw();
+  const foreignContext = AbortSignal.abort();
+  const base = {
+    ...transport,
+    dataSession: {
+      context: () => foreignContext,
+      listenContext: () => () => {},
+    },
+  };
+  const client = createBusinessClient(base);
+  const previous = client.dataSession.context();
+  expect(previous).not.toBe(foreignContext);
+  const notifications = [];
+  const stop = client.dataSession.listenContext(() => {
+    notifications.push(client.dataSession.context());
+  });
+  try {
+    announceDataChanges(base, undefined, { control: true, revalidate: true });
+    await new Promise((resolve) => queueMicrotask(resolve));
+    expect(previous.aborted).toBe(false);
+    expect(client.dataSession.context()).toBe(previous);
+    expect(client.files.context()).toBe(previous);
+    expect(notifications).toEqual([]);
+    await lockCryptoSession();
+    expect(previous.aborted).toBe(true);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toBe(client.dataSession.context());
+    expect(notifications[0]).not.toBe(previous);
   } finally {
     stop();
     client.dispose();
