@@ -11,6 +11,7 @@ import { acceptVault, lockCryptoSession } from "../crypto/session";
 import { createBusinessClient } from "./businessClient";
 import { ramCache } from "./ramCache";
 import { announceDataChanges } from "./runtime/changes";
+import { duckDriver } from "./testing/duckDriver.mjs";
 
 let setup = null;
 afterEach(async () => {
@@ -312,6 +313,94 @@ test("an announced change prevents a new caller from joining an old unfinished l
     expect((await previous)[0]).toEqual([{ name: "Before the change" }]);
   } finally {
     release();
+    client.dispose();
+  }
+});
+
+test("saving visit preferences preserves unrelated in-flight reads", async () => {
+  await account();
+  const { base } = raw();
+  const store = products();
+  let release;
+  let started;
+  let calls = 0;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise((resolve) => {
+    started = resolve;
+  });
+  store.list = async () => {
+    calls++;
+    started();
+    await held;
+    return [{ name: "Profil" }];
+  };
+  const client = createBusinessClient(base, {
+    openProducts: async () => store,
+  });
+  try {
+    const first = client.query("products.list", {});
+    await entered;
+    announceDataChanges(base, new Set(["preferences:user:1"]));
+    // Cross both the synchronous invalidation and the queued subscription notice.
+    await new Promise((resolve) => queueMicrotask(resolve));
+    const second = client.query("products.list", {});
+    release();
+    const results = await Promise.all([first, second]);
+    expect(results.map(([value, error]) => ({ value, error }))).toEqual([
+      { value: [{ name: "Profil" }], error: null },
+      { value: [{ name: "Profil" }], error: null },
+    ]);
+    expect(calls).toBe(1);
+  } finally {
+    release();
+    client.dispose();
+  }
+});
+
+test("project subscriptions refresh for project and policy changes, not visit preferences", async () => {
+  await account();
+  const { base } = raw();
+  const client = createBusinessClient(base, { productDriver: duckDriver });
+  let subscription;
+  const results = [];
+  let nextResult;
+  let received = new Promise((resolve) => {
+    nextResult = resolve;
+  });
+  try {
+    subscription = client
+      .streamQuery("projects.list", {})
+      .subscribe((value) => {
+        results.push(value);
+        nextResult();
+      });
+    await received;
+    expect(results).toEqual([[[], null]]);
+
+    announceDataChanges(base, new Set(["preferences:user:1"]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(results).toHaveLength(1);
+
+    received = new Promise((resolve) => {
+      nextResult = resolve;
+    });
+    announceDataChanges(base, new Set(["project:1:master-data"]));
+    await received;
+    expect(results).toHaveLength(2);
+
+    received = new Promise((resolve) => {
+      nextResult = resolve;
+    });
+    announceDataChanges(base, undefined, { control: true, revalidate: true });
+    await received;
+    expect(results).toHaveLength(3);
+    expect(
+      results.every(([value, error]) => error === null && value.length === 0),
+    ).toBe(true);
+  } finally {
+    subscription?.unsubscribe();
     client.dispose();
   }
 });

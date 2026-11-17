@@ -419,6 +419,7 @@ export class DataRuntime {
   private generation = 0;
   private projectedGeneration = -1;
   private stale = new Set<string>();
+  private loadingDomains = new Set<string>();
   private closed = false;
   private listeners = new Set<(domains?: ReadonlySet<string>) => void>();
   constructor(
@@ -453,6 +454,21 @@ export class DataRuntime {
     domains?: ReadonlySet<string>,
     minimumHeads?: ReadonlyMap<string, string>,
   ): void {
+    if (domains) {
+      const affected = [
+        ...this.resources.values(),
+        ...this.projectedResources.values(),
+      ].some((resource) => domains.has(resource.request.area.domain));
+      const loading = [...this.loadingDomains].some((domain) =>
+        domains.has(domain),
+      );
+      if (!affected && !loading) {
+        // For example, saving visit preferences must not restart a commercial
+        // snapshot. Still notify observers that may begin reading this area.
+        for (const listener of this.listeners) listener(domains);
+        return;
+      }
+    }
     if (
       domains &&
       minimumHeads &&
@@ -610,10 +626,13 @@ export class DataRuntime {
     const next = new Map(this.resources);
     const reads = opened ?? new Map<string, DataCollection>();
     let open: DataCollections | null = null;
-    if (requests.length) {
-      open = supplied ?? (await this.storage.open(this.controller.signal));
-    }
+    this.loadingDomains = new Set(
+      requests.map((request) => request.area.domain),
+    );
     try {
+      if (requests.length) {
+        open = supplied ?? (await this.storage.open(this.controller.signal));
+      }
       await open?.prefetch?.(
         requests
           .filter((request) => request.ids === undefined)
@@ -763,6 +782,7 @@ export class DataRuntime {
       for (const request of requests)
         this.stale.delete(dataAreaKey(request.area));
     } finally {
+      this.loadingDomains.clear();
       if (!opened) for (const read of reads.values()) read.close();
     }
   }

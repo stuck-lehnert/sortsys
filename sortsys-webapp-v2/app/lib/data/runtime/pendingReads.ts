@@ -42,10 +42,16 @@ export function pendingReads<T>(
   read: (path: string, input: unknown) => Promise<T>,
   copy: (value: T) => T,
 ) {
-  const pending = new Map<string, Promise<T>>();
+  const pending = new Map<string, { path: string; work: Promise<T> }>();
   return {
-    clear() {
-      pending.clear();
+    clear(matches?: (path: string) => boolean) {
+      if (!matches) {
+        pending.clear();
+        return;
+      }
+      for (const [key, entry] of pending) {
+        if (matches(entry.path)) pending.delete(key);
+      }
     },
     async get(path: string, input: unknown): Promise<T> {
       let key: string | undefined;
@@ -57,15 +63,15 @@ export function pendingReads<T>(
           request = { path, input: structuredClone(input) };
         }
       }
-      let work = key === undefined ? undefined : pending.get(key);
+      let work = key === undefined ? undefined : pending.get(key)?.work;
       if (!work) {
         work = read(request.path, request.input);
         if (key !== undefined && pending.size < 256) {
           const entryKey = key;
           const entry = work.finally(() => {
-            if (pending.get(entryKey) === entry) pending.delete(entryKey);
+            if (pending.get(entryKey)?.work === entry) pending.delete(entryKey);
           });
-          pending.set(entryKey, entry);
+          pending.set(entryKey, { path: request.path, work: entry });
           work = entry;
         }
       }

@@ -99,3 +99,95 @@ test("document choices batch only verified headers and never open price or calcu
     store.close();
   }
 });
+
+test("concurrent searches share one running case inventory and the next search observes a fresh read", async () => {
+  const areas = ["34", "35"].map((id) =>
+    commercialCollection(id, "master-data"),
+  );
+  const tenant = await protectedTenant(areas);
+  for (const [index, area] of areas.entries()) {
+    const values = splitCommercialRows(area.prefix.split(":")[1], [
+      row("commercial_cases", {
+        id: String(100 + index),
+        title: index === 0 ? "Innenputz" : "Außenputz",
+        reference: `ANG-26-${index + 1}`,
+        kind: "offer",
+        status: "draft",
+        scope_item_ids: "[]",
+      }),
+    ]);
+    await tenant.seed(area, `${area.prefix}case`, values.get("master-data"));
+  }
+  const original = tenant.client.query;
+  let scans = 0;
+  let release;
+  const blocked = new Promise((resolve) => {
+    release = resolve;
+  });
+  tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.access.snapshot") {
+      scans++;
+      await blocked;
+    }
+    return original(path, input, options);
+  };
+  const store = createProtectedCommercial(
+    tenant.client,
+    new AbortController().signal,
+    unusedDependency,
+    unusedDependency,
+    duckDriver,
+  );
+  try {
+    const first = store.query("commercial.cases.list", {
+      kind: "offer",
+      search: "Innen",
+    });
+    const second = store.query("commercial.cases.list", {
+      kind: "offer",
+      search: "Außen",
+    });
+    expect(scans).toBe(1);
+    release();
+    const complete = store.query("commercial.cases.list", {
+      kind: "offer",
+      search: "putz",
+    });
+    const [inside, outside, all] = await Promise.all([first, second, complete]);
+    expect(inside.map((value) => value.title)).toEqual(["Innenputz"]);
+    expect(outside.map((value) => value.title)).toEqual(["Außenputz"]);
+    inside[0].scopeItemIds.push("changed-by-one-reader");
+    expect(all.find((value) => value.id === inside[0].id).scopeItemIds).toEqual(
+      [],
+    );
+    await store.query("commercial.cases.list", {
+      kind: "offer",
+      search: "putz",
+    });
+    expect(scans).toBe(2);
+    const failure = new Error("Inventory temporarily unavailable");
+    tenant.client.query = async (path, input, options) => {
+      if (path === "zerotrust.access.snapshot") {
+        scans++;
+        return [null, failure];
+      }
+      return original(path, input, options);
+    };
+    const rejected = await Promise.allSettled([
+      store.query("commercial.cases.list", { kind: "offer", search: "Innen" }),
+      store.query("commercial.cases.list", { kind: "offer", search: "Außen" }),
+    ]);
+    expect(scans).toBe(3);
+    expect(rejected.map((value) => value.status)).toEqual([
+      "rejected",
+      "rejected",
+    ]);
+    tenant.client.query = original;
+    expect(
+      (await store.query("commercial.cases.list", { kind: "offer" })).length,
+    ).toBe(2);
+  } finally {
+    release();
+    store.close();
+  }
+});

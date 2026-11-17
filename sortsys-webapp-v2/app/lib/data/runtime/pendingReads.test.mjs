@@ -71,6 +71,38 @@ test("failed work is released and a later caller can retry", async () => {
   expect(await retry).toBe("allowed");
 });
 
+test("selective invalidation preserves unrelated unfinished reads", async () => {
+  const calls = [];
+  const reads = pendingReads((path) => {
+    const request = deferred();
+    calls.push({ path, ...request });
+    return request.promise;
+  }, structuredClone);
+  const project = reads.get("projects.get", { id: "1" });
+  const preference = reads.get("personalization.preferences.get", {});
+
+  reads.clear((path) => path.startsWith("personalization."));
+  const sameProject = reads.get("projects.get", { id: "1" });
+  const freshPreference = reads.get("personalization.preferences.get", {});
+  expect(calls.map((call) => call.path)).toEqual([
+    "projects.get",
+    "personalization.preferences.get",
+    "personalization.preferences.get",
+  ]);
+
+  calls[0].resolve("project");
+  calls[1].resolve("previous preference");
+  calls[2].resolve("updated preference");
+  expect(
+    await Promise.all([project, preference, sameProject, freshPreference]),
+  ).toEqual([
+    "project",
+    "previous preference",
+    "project",
+    "updated preference",
+  ]);
+});
+
 test("unsupported inputs retain their own validation and cannot alias ordinary JSON requests", async () => {
   const source = deferred();
   let calls = 0;

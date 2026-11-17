@@ -641,6 +641,77 @@ test("cache reuse, invalidation and account revocation are common to all model r
   }
 }, 15000);
 
+test("unloaded preference hints keep an active business view valid while affected hints invalidate it", async () => {
+  const current = fixture();
+  const notices = [];
+  const stop = current.runtime.listen((domains) => notices.push([...domains]));
+  try {
+    await current.runtime.read([first], (view) => {
+      const preferences = new Set(["preferences:user:1:master-data"]);
+      current.runtime.invalidate(preferences);
+      expect(
+        view.row("product_price_records", { id: "1" }).require("comment"),
+      ).toBe("Vorher");
+      current.runtime.invalidate(new Set([mainArea.domain]));
+      expect(() => view.rows("product_price_records")).toThrow(
+        ProtectedWriteConflict,
+      );
+    });
+    expect(notices).toEqual([
+      ["preferences:user:1:master-data"],
+      [mainArea.domain],
+    ]);
+  } finally {
+    stop();
+    await current.runtime.close();
+  }
+}, 15000);
+
+for (const change of ["unrelated", "related", "all"]) {
+  test(`an area change during the first inventory opening ${change === "unrelated" ? "does not restart unrelated work" : `rechecks ${change} affected state`}`, async () => {
+    const current = fixture();
+    const original = current.storage.open;
+    let entered;
+    let release;
+    const started = new Promise((resolve) => {
+      entered = resolve;
+    });
+    const blocked = new Promise((resolve) => {
+      release = resolve;
+    });
+    let openings = 0;
+    current.storage.open = async (...args) => {
+      openings++;
+      if (openings === 1) {
+        entered();
+        await blocked;
+      }
+      return original(...args);
+    };
+    try {
+      const read = current.runtime.read([first], (view) =>
+        view.row("product_price_records", { id: "1" }).require("comment"),
+      );
+      await started;
+      if (change === "all") current.runtime.invalidate();
+      else
+        current.runtime.invalidate(
+          new Set([
+            change === "related"
+              ? mainArea.domain
+              : "preferences:user:1:master-data",
+          ]),
+        );
+      release();
+      expect(await read).toBe("Vorher");
+      expect(openings).toBe(change === "unrelated" ? 1 : 2);
+    } finally {
+      release();
+      await current.runtime.close();
+    }
+  }, 15000);
+}
+
 test("a tool handover is an ordinary multi-row command with state checks and one atomic publication", async () => {
   const f = fixture();
   const model = defineDataModel({

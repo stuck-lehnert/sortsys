@@ -286,7 +286,7 @@ export function createBusinessClient(
     ([value, error]) => [value === null ? null : structuredClone(value), error],
   );
   const notify = (matches?: (path: string) => boolean) => {
-    reads.clear();
+    reads.clear(matches);
     for (const [listener, path] of listeners)
       if (!matches || matches(path)) listener();
   };
@@ -453,38 +453,61 @@ export function createBusinessClient(
         throw unavailable();
     },
   );
+  function affectedQueries(changed?: ReadonlySet<string>, control = false) {
+    if (!changed || control) return (_path: string) => true;
+    const domains = new Set(changed);
+    const selected = [...domains];
+    const catalogue = domains.has("catalog:products:master-data");
+    const prices = domains.has("catalog:products:procurement");
+    const personal = selected.some((domain) =>
+      domain.startsWith("assistant:user:"),
+    );
+    const customers = domains.has(CUSTOMER_COLLECTION.domain);
+    const contacts = domains.has(CONTACT_COLLECTION.domain);
+    const project = selected.some((domain) => projectDomainId(domain));
+    const cases = selected.some((domain) => commercialDomain(domain));
+    const filesChanged = selected.some((domain) => fileDomainId(domain));
+    const organizationChanged = ORGANIZATION_AREAS.some((area) =>
+      domains.has(area.domain),
+    );
+    const preferencesChanged = selected.some(preferenceDomain);
+    const deliveriesChanged = prices || selected.some(deliveryDomain);
+    return (path: string) =>
+      (catalogue &&
+        path.startsWith("products.") &&
+        path !== "products.priceRecords.list") ||
+      (prices && path === "products.priceRecords.list") ||
+      (personal &&
+        (path.startsWith("llm.chats.") ||
+          path.startsWith("deliveryNotes.scan."))) ||
+      (customers &&
+        (path.startsWith("customers.") ||
+          path === "contacts.customers.list")) ||
+      (contacts &&
+        (path.startsWith("contacts.") ||
+          path === "customers.contacts.list" ||
+          path === "projects.contacts.list")) ||
+      (project && PROJECT_QUERIES.has(path)) ||
+      (filesChanged && FILE_QUERIES.has(path)) ||
+      ((cases || customers || project) && COMMERCIAL_QUERIES.has(path)) ||
+      (organizationChanged && ORGANIZATION_QUERIES.has(path)) ||
+      (preferencesChanged && PREFERENCE_QUERIES.has(path)) ||
+      (deliveriesChanged && DELIVERY_QUERIES.has(path)) ||
+      (domains.has(VENDOR_COLLECTION.domain) && VENDOR_QUERIES.has(path)) ||
+      (domains.has(PRINT_COLLECTION.domain) &&
+        (TEMPLATE_QUERIES.has(path) || LOGO_QUERIES.has(path))) ||
+      toolQueryAffected(path, domains) ||
+      adapters.affected(path, domains, false);
+  }
   const stopDataChanges = listenDataChanges(base, (domains, options) => {
-    reads.clear();
+    const affected = affectedQueries(domains, options?.control === true);
+    reads.clear(affected);
     queueMicrotask(() => {
       if (options?.control && !closed) {
         resetEditors();
         contentAccess.refresh();
       }
-      const catalogue = !domains || domains.has("catalog:products:master-data");
-      const cases =
-        !domains ||
-        domains.has(CUSTOMER_COLLECTION.domain) ||
-        [...domains].some(
-          (domain) => commercialDomain(domain) || projectDomainId(domain),
-        );
-      const templatesChanged = !domains || domains.has(PRINT_COLLECTION.domain);
-      if (!closed)
-        notify(
-          (path) =>
-            (QUERIES.has(path) &&
-              (catalogue || path === "products.priceRecords.list")) ||
-            VENDOR_QUERIES.has(path) ||
-            PREFERENCE_QUERIES.has(path) ||
-            DELIVERY_QUERIES.has(path) ||
-            ORGANIZATION_QUERIES.has(path) ||
-            ADDRESS_QUERIES.has(path) ||
-            PROJECT_QUERIES.has(path) ||
-            (cases && COMMERCIAL_QUERIES.has(path)) ||
-            toolQueryAffected(path, domains) ||
-            (templatesChanged &&
-              (TEMPLATE_QUERIES.has(path) || LOGO_QUERIES.has(path))) ||
-            adapters.affected(path, domains),
-        );
+      if (!closed) notify(affected);
     });
   });
   let synchronization: Promise<void> = Promise.resolve();
@@ -663,76 +686,8 @@ export function createBusinessClient(
           notify();
           return;
         }
-        const catalogue = Object.hasOwn(
-          change.domains,
-          "catalog:products:master-data",
-        );
-        const prices = Object.hasOwn(
-          change.domains,
-          "catalog:products:procurement",
-        );
-        const personal = Object.keys(change.domains).some((domain) =>
-          domain.startsWith("assistant:user:"),
-        );
-        const customers = Object.hasOwn(
-            change.domains,
-            CUSTOMER_COLLECTION.domain,
-          ),
-          contacts = Object.hasOwn(change.domains, CONTACT_COLLECTION.domain);
-        const file = Object.keys(change.domains).some((domain) =>
-          fileDomainId(domain),
-        );
-        const project = Object.keys(change.domains).some((domain) =>
-          projectDomainId(domain),
-        );
-        const cases =
-          change.control ||
-          Object.keys(change.domains).some((domain) =>
-            commercialDomain(domain),
-          );
-        const organizationChanged =
-          change.control ||
-          ORGANIZATION_AREAS.some((area) =>
-            Object.hasOwn(change.domains, area.domain),
-          );
-        const preferenceChanged =
-          change.control || Object.keys(change.domains).some(preferenceDomain);
         notify(
-          (path) =>
-            (catalogue &&
-              path.startsWith("products.") &&
-              path !== "products.priceRecords.list") ||
-            (prices && path === "products.priceRecords.list") ||
-            (personal &&
-              (path.startsWith("llm.chats.") ||
-                path.startsWith("deliveryNotes.scan."))) ||
-            (customers &&
-              (path.startsWith("customers.") ||
-                path === "contacts.customers.list")) ||
-            (contacts &&
-              (path.startsWith("contacts.") ||
-                path === "customers.contacts.list" ||
-                path === "projects.contacts.list")) ||
-            (project && PROJECT_QUERIES.has(path)) ||
-            (file && FILE_QUERIES.has(path)) ||
-            ((cases || customers || project) && COMMERCIAL_QUERIES.has(path)) ||
-            (organizationChanged && ORGANIZATION_QUERIES.has(path)) ||
-            (preferenceChanged && PREFERENCE_QUERIES.has(path)) ||
-            adapters.affected(
-              path,
-              new Set(Object.keys(change.domains)),
-              change.control,
-            ) ||
-            ((change.control ||
-              prices ||
-              Object.keys(change.domains).some(deliveryDomain)) &&
-              DELIVERY_QUERIES.has(path)) ||
-            ((change.control ||
-              Object.hasOwn(change.domains, VENDOR_COLLECTION.domain)) &&
-              VENDOR_QUERIES.has(path)) ||
-            ((change.control ||
-              Object.hasOwn(change.domains, PRINT_COLLECTION.domain)) &&
-              (TEMPLATE_QUERIES.has(path) || LOGO_QUERIES.has(path))),
+          affectedQueries(new Set(Object.keys(change.domains)), change.control),
         );
       });
   }

@@ -103,6 +103,7 @@ import {
 } from "./protectedObjects";
 import type { BusinessRow } from "./rowCodec";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import { pendingReads } from "./runtime/pendingReads";
 import { commercialRow as row } from "./commercialRows";
 import { commercialRequest, workflowReceiptRequest } from "./commercialModel";
 import { acquireDataRuntime } from "./runtime/session";
@@ -581,6 +582,62 @@ export function createProtectedCommercial(
         : null,
     });
   }
+  type ListScope = { projectId?: unknown; kind?: unknown };
+  const pendingListViews = pendingReads(
+    (_path, input) => readListView(input as ListScope),
+    // Signed snapshots remain internal. Each returned public row is copied.
+    (value) => value,
+  );
+
+  async function readListView(filter: ListScope) {
+    const all = await list(filter);
+    const projectIds = [
+      ...new Set(
+        all.flatMap((basis) => {
+          const id = wireCommercialCase(basis.values).projectId;
+          return id && basis.visible.has(projectCollection(id).domain)
+            ? [id]
+            : [];
+        }),
+      ),
+    ];
+    const relatedProjects = projectIds.length
+      ? await (await projects()).getMany(projectIds)
+      : [];
+    const titles = new Map(
+      relatedProjects.map((project) => [project.id, project.title]),
+    );
+    const needsCustomers = all.some(
+      (basis) =>
+        wireCommercialCase(basis.values).customerId &&
+        basis.visible.has(CUSTOMER_COLLECTION.domain),
+    );
+    const customers = needsCustomers
+      ? ((await (
+          await directory()
+        ).query("customers.list", {})) as QueryResult<"customers.list">)
+      : [];
+    const customerNames = new Map(
+      customers.map((customer) => [customer.id, customer.name]),
+    );
+    const values = await Promise.all(
+      all.map((rows) => labels(rows, titles, customerNames)),
+    );
+    live();
+    return { all, values };
+  }
+
+  async function listView(filter: ListScope) {
+    // Search/status changes need the same verified rows. Share only work that
+    // is still running; the next completed-query cycle reads fresh snapshots.
+    const values = await pendingListViews.get("commercial-list", {
+      projectId: filter.projectId ?? null,
+      kind: filter.kind ?? null,
+    });
+    live();
+    return values;
+  }
+
   async function persistCases(
     changes: {
       snapshot: CaseSnapshot;
@@ -2372,11 +2429,13 @@ export function createProtectedCommercial(
       return loadDocument(caseId, id, true);
     },
     close() {
+      pendingListViews.clear();
       billing.close();
       lease.close();
     },
     async refresh(domains?: Record<string, string | null>) {
       live();
+      pendingListViews.clear();
       if (!domains) {
         runtime.revalidate();
         return;
@@ -2442,39 +2501,7 @@ export function createProtectedCommercial(
             throw new InvalidProtectedData();
           }
         }
-        const all = await list(data);
-        const projectIds = [
-          ...new Set(
-            all.flatMap((basis) => {
-              const id = wireCommercialCase(basis.values).projectId;
-              return id && basis.visible.has(projectCollection(id).domain)
-                ? [id]
-                : [];
-            }),
-          ),
-        ];
-        const relatedProjects = projectIds.length
-          ? await (await projects()).getMany(projectIds)
-          : [];
-        const titles = new Map(
-          relatedProjects.map((project) => [project.id, project.title]),
-        );
-        const needsCustomers = all.some(
-          (basis) =>
-            wireCommercialCase(basis.values).customerId &&
-            basis.visible.has(CUSTOMER_COLLECTION.domain),
-        );
-        const customers = needsCustomers
-          ? ((await (
-              await directory()
-            ).query("customers.list", {})) as QueryResult<"customers.list">)
-          : [];
-        const customerNames = new Map(
-          customers.map((customer) => [customer.id, customer.name]),
-        );
-        const values = await Promise.all(
-          all.map((rows) => labels(rows, titles, customerNames)),
-        );
+        const { all, values } = await listView(data);
         const search =
           (data.search as string | undefined)?.trim().toLocaleLowerCase() ?? "";
         const filtered = values
@@ -2535,7 +2562,7 @@ export function createProtectedCommercial(
           }
           const calculated = await calculatedCaseRows(basis, openStore);
           return {
-            ...value,
+            ...structuredClone(value),
             netAmount: wireCommercialCase(calculated).netAmount,
           };
         });

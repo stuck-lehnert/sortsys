@@ -92,8 +92,17 @@ Identische, gleichzeitig laufende Fachabfragen teilen ihre lokale Leseprüfung.
 So benötigen etwa Verantwortlicher und Herausgeber derselben Buchung nur einen
 Abruf desselben Benutzerprofils. Jeder Aufrufer erhält eine eigene Ergebniskopie;
 nach Abschluss bleibt kein Ergebnis in dieser Ablage. Änderungsmeldungen und
-Kontowechsel lösen laufende Einträge sofort aus der Wiederverwendung. Eine später
-begonnene Abfrage liest damit wieder frisch.
+Kontowechsel lösen betroffene laufende Einträge sofort aus der Wiederverwendung.
+Eine später begonnene Abfrage liest damit wieder frisch. Lokale Schreibvorgänge
+und WebSocket-Meldungen verwenden dieselben Abhängigkeiten. Das Speichern einer
+besuchten Seite startet deshalb keine Projektliste neu; eine Änderung an den
+Projektdaten oder Berechtigungen löst weiterhin eine neue Prüfung aus.
+
+Vorgangslisten teilen auch dann die noch laufende Aufbereitung ihrer Grunddaten,
+wenn sich Suchtext oder Statusfilter unterscheiden. Jede Ansicht filtert und
+kopiert ihr Ergebnis anschließend selbst. Änderungen an einem Bereich, den der
+Datenkern weder geladen hat noch gerade lädt, verwerfen keine unabhängige
+Leseprüfung. Die Meldung erreicht weiterhin alle Beobachter dieses Bereichs.
 
 Alte Daten benötigen weiterhin ihre signierten Rechteregeln, Zertifikate und
 Ursprungsnachweise. Diese gehören zur Sicherung des verschlüsselten Bestands und
