@@ -405,6 +405,9 @@ export async function approveMemberInvitation(
     await import("../data/planningRecipients")
   ).refreshPlanningRecipientKeys(client, certificate.user, signal);
   await (
+    await import("./toolResponsibilityDefaults")
+  ).synchronizeToolResponsibilityDefaults(client, signal, driver);
+  await (
     await import("./absenceDefaults")
   ).synchronizeAbsenceDefaults(client, signal, driver);
   context.live();

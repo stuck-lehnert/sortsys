@@ -1,5 +1,5 @@
 import {
-  creationAssignmentBinding,
+  creationResourceBinding,
   InvalidProtectedData,
   signResourceAccess,
   type CreationOrigin,
@@ -18,11 +18,20 @@ function bookingValue(
   value: unknown,
 ) {
   if (
-    !origin.assignee ||
+    origin.capability.namespace !== "tool-tracking" ||
     envelope.object !== `${origin.scope}:master-data:record`
   )
     return null;
   if (envelope.format === TOMBSTONE_FORMAT) return { active: false };
+  if (
+    !origin.assignee &&
+    !origin.access &&
+    (value === null ||
+      typeof value !== "object" ||
+      !("format" in value) ||
+      value.format !== "sortsys-tool-part-v1")
+  )
+    return null;
   const part = TOOL_MODEL.decode(value, envelope.object, {
     domain: origin.id,
     scope: origin.scope,
@@ -32,11 +41,12 @@ function bookingValue(
   if (part.deleted) return { active: false };
   const row = part.rows[0]!.values;
   if (
-    row.responsible_user_id === null ||
-    `user:${publicId(row.responsible_user_id)}` !== origin.assignee.user
+    origin.assignee &&
+    (row.responsible_user_id === null ||
+      `user:${publicId(row.responsible_user_id)}` !== origin.assignee.user)
   )
     throw new InvalidProtectedData();
-  return { active: row.ended_at === null };
+  return { active: row.ended_at === null && row.responsible_user_id !== null };
 }
 
 export async function toolResponsibilityPacket(
@@ -56,7 +66,7 @@ export async function toolResponsibilityPacket(
       object: envelope.object,
       revision: envelope.revision,
       generation: origin.capability.generation,
-      binding: await creationAssignmentBinding(origin),
+      binding: await creationResourceBinding(origin),
       active: booking.active,
       packetSignature: envelope.signature,
       author,
@@ -71,10 +81,13 @@ export function checkToolResponsibility(
   value: unknown,
   historical = false,
 ) {
-  if (!origin) return;
+  if (!origin || historical) return;
   const booking = bookingValue(origin, envelope, value);
-  if (!booking || historical) return;
+  if (!booking) return;
   const state = origin.access;
+  // A pre-existing booking without any conditional recipient can be read
+  // before its administrator publishes the first live-state checkpoint.
+  if (!state && !origin.assignee) return;
   if (
     !state ||
     state.revision !== envelope.revision ||

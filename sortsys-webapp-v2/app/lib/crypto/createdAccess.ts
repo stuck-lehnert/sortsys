@@ -72,7 +72,7 @@ export async function verifyCreatedAccess(
     )
       throw new InvalidProtectedData();
     seen.add(origin.id);
-    inherited.push(...creationRules(origin));
+    inherited.push(...creationRules(origin, permissions));
   }
   signal.throwIfAborted();
   return { ...permissions, rules: [...permissions.rules, ...inherited] };

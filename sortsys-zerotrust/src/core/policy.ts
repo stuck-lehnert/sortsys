@@ -40,6 +40,46 @@ export type Rule<F extends string = string, O extends string = never> = {
   effect: "allow" | "deny";
   origin?: O;
 };
+
+/** Reconcile one application's derived rules without reordering unrelated
+ * grants or re-signing a policy merely because JSON field order changed. */
+export function reconcilePolicyRules<
+  F extends string,
+  O extends string = never,
+>(
+  current: readonly Rule<F, O>[],
+  desired: readonly Rule<F, O>[],
+  managed: (rule: Rule<F, O>) => boolean,
+): Rule<F, O>[] {
+  const key = (rule: Rule<F, O>) =>
+    JSON.stringify([
+      rule.subject,
+      rule.scope,
+      rule.facet,
+      rule.effect,
+      rule.origin ?? null,
+      ACTIONS.filter((action) => rule.actions.includes(action)),
+    ]);
+  const pending = new Map<string, Rule<F, O>>();
+  for (const rule of desired) {
+    const identity = key(rule);
+    if (!managed(rule) || pending.has(identity))
+      throw new InvalidProtectedData();
+    pending.set(identity, rule);
+  }
+  const result: Rule<F, O>[] = [];
+  for (const rule of current) {
+    if (!managed(rule)) {
+      result.push(rule);
+      continue;
+    }
+    const identity = key(rule);
+    if (pending.delete(identity)) result.push(rule);
+  }
+  result.push(...pending.values());
+  return result.map((rule) => ({ ...rule, actions: [...rule.actions] }));
+}
+
 export type Policy<F extends string = string, O extends string = never> = {
   tenant: string;
   version: string;

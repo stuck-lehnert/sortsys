@@ -61,6 +61,16 @@ Ein ausdrückliches Verbot gewinnt; gesperrte Konten erhalten keine Rechte.
 Untergruppen und Rollen müssen durch signierte Regeln abgebildet werden.
 Aus ähnlich benannten Bereichen leitet der Kern keine Rechte ab.
 
+`reconcilePolicyRules(current, desired, managed)` gleicht einen abgegrenzten
+Bestand automatisch abgeleiteter Regeln ab. `managed` bestimmt, welche Regeln
+die Anwendung dabei ersetzen darf. Unabhängige Freigaben und Sperren bleiben an
+ihrer bisherigen Stelle. Fachlich identische Regeln behalten auch ihre bisherige
+Darstellung, wenn die Feldreihenfolge einer JSON-Antwort oder die Reihenfolge
+der Aktionen abweicht. Dadurch erfordern wiederholte Abgleiche keine neue
+Regelsignatur. Veraltete und doppelte eigene Regeln werden entfernt; neue kommen
+hinzu. Die Funktion signiert und veröffentlicht nichts. Die Eingaben müssen
+weiterhin mit dem konfigurierten Regelcodec geprüft werden.
+
 `signPolicyTransaction` verbindet eine Rechteänderung mit den verschlüsselten
 Paketen und den Ausgangsversionen, auf denen sie beruht. Für bis zu 64 Pakete
 enthält der Nachweis deren Signaturen. Bei größeren Mengen speichert er deren

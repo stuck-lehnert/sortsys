@@ -3,6 +3,7 @@ import {
   ACTIONS,
   InvalidProtectedData,
   policy,
+  reconcilePolicyRules,
   type Policy,
   type Rule,
 } from "@sortsys/zerotrust/sortsys";
@@ -133,10 +134,11 @@ export function withAbsenceDefaults(
   return policy({
     ...current,
     version: (BigInt(current.version) + 1n).toString(),
-    rules: [
-      ...current.rules.filter((rule) => rule.origin !== "absence-default"),
-      ...absenceDefaultRules(people, certified, fallback),
-    ],
+    rules: reconcilePolicyRules(
+      current.rules,
+      absenceDefaultRules(people, certified, fallback),
+      (rule) => rule.origin === "absence-default",
+    ),
   });
 }
 

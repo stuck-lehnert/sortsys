@@ -6,6 +6,9 @@ import {
   createIdentity,
   createOrigin,
   creationAssignmentBinding,
+  creationResourceBinding,
+  activeBookingReadScope,
+  compilePolicy,
   creationRules,
   encryptObject,
   publicIdentity,
@@ -16,6 +19,7 @@ import {
   openBox,
   areaKey,
   decryptObject,
+  type Policy,
 } from "../src/sortsys";
 import { creationFixture } from "./support/creationFixture";
 
@@ -158,6 +162,106 @@ test("an assignee receives read access only through an authenticated active stat
   await expect(
     verifyCreationOrigin(
       { ...f.origin, access: { ...closed, active: true } },
+      () => f.authorityKey.publicKey,
+    ),
+  ).rejects.toThrow();
+});
+
+test("a later certified reader needs both a root intent and the authenticated active booking state", async () => {
+  const f = await creationFixture("tool-tracking");
+  const intent = activeBookingReadScope(f.origin.scope);
+  const permissions = {
+    tenant: "test",
+    version: "1",
+    rules: [
+      {
+        subject: "user:3",
+        scope: intent,
+        facet: "master-data" as const,
+        actions: ["read" as const],
+        effect: "allow" as const,
+      },
+    ],
+  };
+  const allowed = (origin: typeof f.origin, source: Policy = permissions) =>
+    compilePolicy(
+      {
+        ...source,
+        rules: [...source.rules, ...creationRules(origin, source)],
+      },
+      ["user:3"],
+    );
+  expect(allowed(f.origin).allows(f.origin.scope, "master-data", "read")).toBe(
+    false,
+  );
+  expect(
+    compilePolicy(permissions, ["user:3"]).allows(
+      f.origin.scope,
+      "master-data",
+      "read",
+    ),
+  ).toBe(false);
+  await expect(creationAssignmentBinding(f.origin)).rejects.toThrow();
+  const access = await signResourceAccess(
+    {
+      tenant: "test",
+      resource: f.origin.scope,
+      object: `${f.origin.scope}:master-data:record`,
+      generation: "1",
+      revision: "7",
+      binding: await creationResourceBinding(f.origin),
+      active: true,
+      packetSignature: base64(new Uint8Array(64)),
+      author: f.origin.capability.creator,
+    },
+    f.creator.signingKey.privateKey,
+  );
+  const verified = await verifyCreationOrigin(
+    { ...f.origin, access },
+    () => f.authorityKey.publicKey,
+  );
+  expect(() =>
+    creationRules(verified, { ...permissions, tenant: "other" }),
+  ).toThrow();
+  expect(allowed(verified).allows(f.origin.scope, "master-data", "read")).toBe(
+    true,
+  );
+  for (const action of ["create", "update", "delete", "grant"] as const) {
+    expect(
+      allowed(verified).allows(f.origin.scope, "master-data", action),
+    ).toBe(false);
+  }
+  expect(allowed(verified).allows(f.origin.scope, "procurement", "read")).toBe(
+    false,
+  );
+  const ended = await verifyCreationOrigin(
+    {
+      ...f.origin,
+      access: await signResourceAccess(
+        { ...access, active: false, revision: "8" },
+        f.creator.signingKey.privateKey,
+      ),
+    },
+    () => f.authorityKey.publicKey,
+  );
+  expect(allowed(ended).allows(f.origin.scope, "master-data", "read")).toBe(
+    false,
+  );
+  for (const scope of [intent, f.origin.scope]) {
+    const denied = {
+      ...permissions,
+      rules: [
+        ...permissions.rules,
+        { ...permissions.rules[0]!, scope, effect: "deny" as const },
+      ],
+    };
+    expect(
+      allowed(verified, denied).allows(f.origin.scope, "master-data", "read"),
+    ).toBe(false);
+  }
+  await expect(
+    verifyCreationOrigin(
+      { ...f.origin, access: { ...access, active: false } },
       () => f.authorityKey.publicKey,
     ),
   ).rejects.toThrow();

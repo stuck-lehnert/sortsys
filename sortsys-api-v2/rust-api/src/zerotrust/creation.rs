@@ -233,7 +233,10 @@ impl CreationOrigin {
                 return Err(invalid());
             }
             fields.push(packet_hash(assignee.frame()?, &assignee.signature)?);
-        } else if self.access.is_some() {
+        } else if self.access.is_some()
+            && (self.capability.namespace != "tool-tracking"
+                || !matches!(self.facet, Facet::MasterData | Facet::Scope))
+        {
             return Err(invalid());
         }
         Ok(frame(
@@ -262,7 +265,7 @@ impl CreationOrigin {
                     resource: &self.scope,
                     object: &format!("{}:master-data:record", self.scope),
                     generation: &self.capability.generation,
-                    binding: &self.assignment_binding()?,
+                    binding: &self.resource_binding()?,
                 },
                 authority,
             )?;
@@ -344,6 +347,49 @@ impl CreationOrigin {
             ],
         ))))
     }
+
+    pub fn resource_binding(&self) -> RpcResult<String> {
+        if self.assignee.is_some() {
+            return self.assignment_binding();
+        }
+        if self.capability.namespace != "tool-tracking"
+            || !matches!(self.facet, Facet::MasterData | Facet::Scope)
+        {
+            return Err(invalid());
+        }
+        Ok(super::crypto::encode(&Sha256::digest(frame(
+            "sortsys/created-booking-state/v1",
+            &[&self.tenant, &self.scope, &self.capability.signature],
+        ))))
+    }
+
+    pub fn active_booking_rules(&self, policy: &super::wire::SignedPolicy) -> Vec<Rule> {
+        if self.capability.namespace != "tool-tracking"
+            || !matches!(self.facet, Facet::MasterData | Facet::Scope)
+            || !self.access.as_ref().is_some_and(|access| access.active)
+        {
+            return Vec::new();
+        }
+        let intent = format!("active-tool:{}", self.scope);
+        let subjects: std::collections::BTreeSet<_> = policy
+            .rules
+            .iter()
+            .filter(|rule| rule.scope == intent && rule.facet == self.facet)
+            .map(|rule| rule.subject.clone())
+            .collect();
+        subjects
+            .into_iter()
+            .filter(|subject| policy.allows(subject, &intent, self.facet, Action::Read))
+            .map(|subject| Rule {
+                origin: None,
+                subject,
+                scope: self.scope.clone(),
+                facet: self.facet,
+                effect: Effect::Allow,
+                actions: vec![Action::Read],
+            })
+            .collect()
+    }
 }
 
 pub(super) async fn metadata_origins(
@@ -401,7 +447,10 @@ pub(super) async fn metadata_origins(
             &origin.scope,
             origin.facet,
             super::wire::Action::Read,
-        );
+        ) || origin
+            .active_booking_rules(policy)
+            .iter()
+            .any(|rule| rule.subject == subject);
         // A later recipient needs the same public creation proof as the
         // original participants to derive the area's complete writer set.
         if auth.is_admin() || original_participant || currently_shared {

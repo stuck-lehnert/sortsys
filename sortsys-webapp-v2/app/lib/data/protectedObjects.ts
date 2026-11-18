@@ -502,7 +502,7 @@ function openCollection(
       live();
       if (
         !historical &&
-        origin?.assignee &&
+        origin?.capability.namespace === "tool-tracking" &&
         id === `${origin.scope}:master-data:record` &&
         origin.access?.packetSignature !== envelope.signature
       ) {
@@ -520,7 +520,7 @@ function openCollection(
         if (
           fresh.id !== origin.id ||
           fresh.signature !== origin.signature ||
-          fresh.assignee?.signature !== origin.assignee.signature
+          fresh.assignee?.signature !== origin.assignee?.signature
         )
           throw new InvalidProtectedData();
         origin = fresh;

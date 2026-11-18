@@ -393,6 +393,9 @@ try {
     await exerciseToolBookingBatches(owner, peer, (hook) => {
       requestHook = hook;
     });
+    const { exerciseLateToolResponsibility } =
+      await import("./test-native-late-tool-responsibility");
+    await exerciseLateToolResponsibility(owner, peer);
   } else if (mode === "owner-backup-archive") {
     const { exerciseBackupArchive } = await import("./test-backup-archive");
     await exerciseBackupArchive(owner, peer, draft);
@@ -425,6 +428,11 @@ try {
         "1127.25",
         "917.25",
         "11.375",
+        "Privater Werkzeugbestand 571943",
+        "Vertrauliche Ausgabe vor der Registrierung",
+        "Private Ergänzung nach der Rückgabe 681527",
+        "1479.25",
+        "23.875",
       ]) {
         assert.equal(
           body.includes(marker),

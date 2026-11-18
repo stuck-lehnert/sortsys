@@ -54,6 +54,22 @@ Werkzeugbezeichnung. Damit bleibt sie auch ohne Freigabe der Werkzeugstammdaten
 verständlich. Ein Link zu deren Detailansicht erscheint nur bei lesbaren
 Stammdaten.
 
+Wurde die Buchung vor der Registrierung des Mitarbeiters angelegt, führt die
+Bestätigung seiner Einladung die Lesefreigabe nach. Beim ersten Werkzeugabruf
+eines Administrators werden auch aktive Buchungen bereits registrierter
+Mitarbeiter abgeglichen. Dafür wird die zuständige Person aus dem entschlüsselten
+Buchungsdatensatz gelesen. Fehlt dessen Aktivitätsnachweis noch, erhält derselbe
+Inhalt eine neue signierte Fassung. Eine wiederholte Prüfung verändert weder
+die Buchung noch die Freigaben erneut. Bereits zurückgegebene Werkzeuge bleiben
+für diesen Zugang gesperrt.
+
+Die nachträgliche Freigabe ist an einen eigenen, signierten Auftrag und den
+aktuellen Aktivitätsnachweis der Buchung gebunden. Der Auftrag allein öffnet
+keinen Datenbereich. Er erlaubt nur Lesen von Buchungsdaten und
+Umbuchungsanfragen; Kosten und Werkzeugstammdaten bleiben getrennt. Ein
+ausdrückliches Verbot bleibt wirksam. Die Rückgabe beendet das abgeleitete
+Leserecht auch dann, wenn der ursprüngliche Auftrag noch gespeichert ist.
+
 Ein signierter Zuständigkeitsnachweis ist an die genaue verschlüsselte
 Buchungsrevision gebunden. Er wird gemeinsam mit der Buchung veröffentlicht.
 Die Rückgabe oder Umbuchung beendet das abgeleitete Leserecht. Ein fehlender
@@ -67,6 +83,15 @@ Ein Browserlauf mit getrennten Sitzungen prüft die automatische Freigabe in
 Tabelle und Kartenansicht, den fehlenden Link zu gesperrten Werkzeugstammdaten
 und den Entzug nach der Rückgabe. Der Schlüsselwechsel verwirft dabei nicht den
 unveränderten Zugriffskontext des Administrators.
+
+Der native Sammelbuchungstest prüft außerdem die nachträgliche Freigabe bei
+Einladungsbestätigung. Mit `SORTSYS_NATIVE_BROWSER=1` öffnet er dafür die
+Produktionsoberfläche an der zweiten API-Instanz. Die aktive Buchung muss
+sichtbar sein, die zurückgegebene Buchung und der Link zu den Werkzeugstammdaten
+müssen fehlen. Nach der Rückgabe durch die erste Instanz verschwindet die
+Buchung auch im bereits geöffneten Browser. Ein anschließendes Neuladen darf
+sie nicht wieder anzeigen. Beide API-Router laufen in diesem Test in einem
+Rust-Prozess; der Ablauf prüft keine getrennten Betriebssystemprozesse.
 
 Ein nativer Test durchläuft außerdem zwei Mandantenwiederherstellungen mit
 aktiven und zurückgegebenen Werkzeugbuchungen. Der neue Administrator kann die
@@ -121,10 +146,9 @@ die API prüft Signaturen, Schreibrechte und technische Versionsstände.
 
 Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
 
-- Bereits vorhandene Buchungen erhalten die automatische Mitarbeiterfreigabe
-  noch nicht nachträglich. Mitarbeiter ohne bestätigte Verschlüsselungsidentität
-  können ein Werkzeug erhalten; meldet sich ein solcher Mitarbeiter später an,
-  muss dessen Lesefreigabe noch ausdrücklich eingerichtet werden.
+- Der nachträgliche Abgleich benötigt einen aktuellen zertifizierten
+  Anlagenachweis der Buchung. Für nach einer Mandanten-Recovery erneut
+  eingeladene Mitarbeiter ist der Anschluss an alte Buchungen weiterhin offen.
 - Rechte zum Rückgeben oder Umbuchen folgen noch nicht automatisch aus der
   Zuständigkeit. Schließt ein berechtigter Benutzer ohne Administrationsrecht
   die Buchung, bleibt der nötige Schlüsselwechsel zur administrativen

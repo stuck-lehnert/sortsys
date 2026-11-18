@@ -259,8 +259,13 @@ Ein weiterer nativer Ablauf prüft diese Buchungen über zwei Recoveries hinweg:
 historische Inhalte und Kosten bleiben erhalten, alte Schlüssel öffnen keine
 späteren Änderungen, und eine erneute Einladung stellt alte Buchungsrechte nicht
 automatisch wieder her. Neue Ausgaben erhalten die neue Freigabe.
-Automatische Rechte für ältere Buchungen, später registrierte Mitarbeiter sowie
-Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch. Ohne
+Die Bestätigung einer späteren Einladung führt Leserechte für vorher angelegte,
+noch aktive Buchungen nach. Ein administrativer Werkzeugabruf gleicht außerdem
+Buchungen bereits registrierter Mitarbeiter ab. Ein nativer Test prüft den
+fehlenden ursprünglichen Aktivitätsnachweis, die spätere Freigabe, verborgene
+Kosten, einen gültig signierten abgewiesenen Schreibversuch und den Entzug nach
+Rückgabe. Für nach Recovery erneut eingeladene Mitarbeiter sowie für
+Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch Anschlüsse. Ohne
 Administrationsrecht bleibt der Schlüsselwechsel nach einer Rückgabe vorgemerkt.
 Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
 aus. Siehe

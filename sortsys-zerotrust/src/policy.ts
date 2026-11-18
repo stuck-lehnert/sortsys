@@ -13,6 +13,7 @@ import type {
 } from "./core/policy";
 
 export { type Action, ACTIONS } from "./core/policy";
+export { reconcilePolicyRules } from "./core/policy";
 export { administrativeProfileKey } from "./core/administration";
 export type Rule = CoreRule<Facet, "absence-default">;
 export type Policy = CorePolicy<Facet, "absence-default">;

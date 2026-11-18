@@ -38,23 +38,24 @@ pub(super) async fn save(
     let collection = registry::origin_collection(context.security.root.generation);
     let master_key = key(&collection, &packet.domain);
     let original: Option<CreationOrigin> = context.transaction.read(master_key.clone()).await?;
-    let Some(original) = original.filter(|origin| origin.assignee.is_some()) else {
+    let Some(original) = original else {
         if packet.resource_access.is_some() {
             return Err(invalid());
         }
         return Ok(false);
     };
+    if packet.resource_access.is_none() && original.assignee.is_none() && original.access.is_none()
+    {
+        return Ok(false);
+    }
     let state = packet.resource_access.as_ref().ok_or_else(invalid)?;
     if envelope.is_tombstone() && state.active {
         return Err(invalid());
     }
-    if state.active {
-        registry::check_member(
-            &mut context.transaction,
-            &context.security,
-            original.assignee.as_ref().ok_or_else(invalid)?,
-        )
-        .await?;
+    if state.active
+        && let Some(assignee) = &original.assignee
+    {
+        registry::check_member(&mut context.transaction, &context.security, assignee).await?;
     }
     state.verify(
         &sortsys_zerotrust::resource_access::ResourceAccessContext {
@@ -62,7 +63,7 @@ pub(super) async fn save(
             resource: &original.scope,
             object: &envelope.object,
             generation: &original.capability.generation,
-            binding: &original.assignment_binding()?,
+            binding: &original.resource_binding()?,
         },
         &context.security.authority,
     )?;
@@ -87,7 +88,7 @@ pub(super) async fn save(
         {
             return Err(conflict());
         }
-    } else if state.revision != "1" {
+    } else if original.assignee.is_some() && state.revision != "1" {
         return Err(conflict());
     }
     for facet in [Facet::MasterData, Facet::Scope] {

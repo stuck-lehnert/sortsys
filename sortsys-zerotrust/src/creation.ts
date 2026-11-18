@@ -14,7 +14,7 @@ import {
   createDelegationCodec,
   type DelegationCertificate,
 } from "./core/delegations";
-import type { Rule } from "./policy";
+import { compilePolicy, type Policy, type Rule } from "./policy";
 import type { Facet } from "./objects";
 import {
   identityCertificate,
@@ -193,7 +193,11 @@ export function creationOrigin(input: unknown): CreationOrigin {
       throw new InvalidProtectedData();
   }
   if (hasAccess) {
-    if (!assignee) throw new InvalidProtectedData();
+    if (
+      resource.namespace !== "tool-tracking" ||
+      !["master-data", "scope"].includes(value.facet as string)
+    )
+      throw new InvalidProtectedData();
     access = resourceAccessState(value.access);
   }
   if (resource.module) {
@@ -313,7 +317,7 @@ export async function verifyCreationOrigin(
         resource: value.scope,
         object: `${value.scope}:master-data:record`,
         generation: value.capability.generation,
-        binding: await creationAssignmentBinding(value),
+        binding: await creationResourceBinding(value),
       },
       authority,
     );
@@ -332,6 +336,26 @@ export async function creationAssignmentBinding(
     ]),
   );
 }
+
+/** A booking can predate its assignee's certified identity. Its signed live
+ * state remains bound to the certified resource even before a reader exists. */
+export async function creationResourceBinding(
+  origin: CreationOrigin,
+): Promise<string> {
+  if (origin.assignee) return creationAssignmentBinding(origin);
+  if (
+    creationResource(origin.scope)?.namespace !== "tool-tracking" ||
+    !["master-data", "scope"].includes(origin.facet)
+  )
+    throw new InvalidProtectedData();
+  return digest(
+    frame("sortsys/created-booking-state/v1", [
+      origin.tenant,
+      origin.scope,
+      origin.capability.signature,
+    ]),
+  );
+}
 export function creationRecipients(
   origin: CreationOrigin,
 ): IdentityCertificate[] {
@@ -341,7 +365,20 @@ export function creationRecipients(
     ...(origin.assignee ? [origin.assignee] : []),
   ];
 }
-export function creationRules(origin: CreationOrigin): Rule[] {
+export function activeBookingReadScope(scope: string): string {
+  if (creationResource(scope)?.namespace !== "tool-tracking") {
+    throw new InvalidProtectedData();
+  }
+  return `active-tool:${scope}`;
+}
+
+export function creationRules(
+  origin: CreationOrigin,
+  permissions?: Policy,
+): Rule[] {
+  if (permissions && permissions.tenant !== origin.tenant) {
+    throw new InvalidProtectedData();
+  }
   const rules: Rule[] = [
     ...new Set([
       origin.capability.creator.user,
@@ -362,6 +399,38 @@ export function creationRules(origin: CreationOrigin): Rule[] {
       effect: "allow",
       actions: ["read"],
     });
+  if (
+    permissions &&
+    origin.access?.active &&
+    origin.capability.namespace === "tool-tracking" &&
+    ["master-data", "scope"].includes(origin.facet)
+  ) {
+    // The root-signed intent names a separate capability scope. It grants no
+    // ordinary domain access until this verified live state activates it.
+    const intent = activeBookingReadScope(origin.scope);
+    const subjects = new Set(
+      permissions.rules
+        .filter((rule) => rule.scope === intent && rule.facet === origin.facet)
+        .map((rule) => rule.subject),
+    );
+    for (const subject of subjects) {
+      if (
+        compilePolicy(permissions, [subject]).allows(
+          intent,
+          origin.facet,
+          "read",
+        )
+      ) {
+        rules.push({
+          subject,
+          scope: origin.scope,
+          facet: origin.facet,
+          effect: "allow",
+          actions: ["read"],
+        });
+      }
+    }
+  }
   return rules;
 }
 export function creationAuthor(origin: CreationOrigin): string {

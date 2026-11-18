@@ -108,7 +108,11 @@ async fn metadata_security_for_selection(
     .await?;
     let inherited = origins
         .iter()
-        .flat_map(super::creation::CreationOrigin::rules)
+        .flat_map(|origin| {
+            let mut rules = origin.rules();
+            rules.extend(origin.active_booking_rules(&policy));
+            rules
+        })
         .collect();
     sized::<32>(&certificate.recovery_encryption_key)?;
     sized::<32>(&certificate.recovery_signing_key)?;

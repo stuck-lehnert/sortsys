@@ -281,6 +281,23 @@ export function createProtectedTools(
     live();
     return session;
   };
+  let responsibilityDefaults: Promise<void> | undefined;
+  async function ensureResponsibilityDefaults() {
+    responsibilityDefaults ??= (async () => {
+      const session = await actor();
+      if (!session.roles.includes(":admin")) return;
+      const { synchronizeToolResponsibilityDefaults } =
+        await import("../crypto/toolResponsibilityDefaults");
+      await synchronizeToolResponsibilityDefaults(client, signal, driver);
+      live();
+    })();
+    try {
+      await responsibilityDefaults;
+    } catch (error) {
+      responsibilityDefaults = undefined;
+      throw error;
+    }
+  }
   async function reference(projectId: unknown) {
     if (projectId == null) return [];
     addressId(projectId);
@@ -403,6 +420,7 @@ export function createProtectedTools(
     async query(path: string, input: unknown): Promise<unknown> {
       live();
       if (!TOOL_QUERIES.has(path)) throw new InvalidProtectedData();
+      await ensureResponsibilityDefaults();
       if (path === "tools.suggestNextCustomId") {
         return runtime.read([toolIndexRequest], (view) => {
           const value = view.documents(toolIndexRequest);
