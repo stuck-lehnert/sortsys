@@ -20,6 +20,7 @@ mod batching;
 mod billing_permissions;
 mod member_recovery;
 mod passkeys;
+mod processes;
 mod recovery_account;
 mod signing_identity;
 
@@ -1399,8 +1400,6 @@ async fn first_administrator_finishes_setup_before_business_access() {
     let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
     let config = QuackConfig::from_env().unwrap().unwrap();
     assert!(config.control_url.starts_with("http://127.0.0.1:"));
-    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
-    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
     let mut settings = configuration(config);
     // Other scenarios deliberately exhaust the operator's shared login quota.
     // This independently configured installation keeps its own admission scope.
@@ -1409,9 +1408,27 @@ async fn first_administrator_finishes_setup_before_business_access() {
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
-    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
-    browser("owner-bootstrap", &root, Some(&[first_url, second_url])).await;
+    let mut first = processes::ApiProcess::start(&settings, &root, "first").await;
+    let mut second = processes::ApiProcess::start(&settings, &root, "second").await;
+    assert_ne!(first.pid, second.pid);
+    assert_ne!(first.endpoint, second.endpoint);
+    let mut report = serde_json::json!({
+        "parentPid": std::process::id(),
+        "apiPids": [first.pid, second.pid],
+        "endpoints": [first.endpoint, second.endpoint],
+        "stopped": false,
+    });
+    std::fs::write(root.join("api-processes.json"), report.to_string()).unwrap();
+    browser(
+        "owner-bootstrap",
+        &root,
+        Some(&[first.endpoint.clone(), second.endpoint.clone()]),
+    )
+    .await;
+    first.stop().await;
+    second.stop().await;
+    report["stopped"] = serde_json::json!(true);
+    std::fs::write(root.join("api-processes.json"), report.to_string()).unwrap();
 }
 
 #[tokio::test]

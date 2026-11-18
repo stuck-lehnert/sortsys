@@ -21,6 +21,7 @@ STORE = ROOT / "sortsys-store/Cargo.toml"
 TEST_PREFIX = "zerotrust::opaque::store_tests::"
 BROWSER_TEST_PREFIX = TEST_PREFIX + "passkeys::"
 DEVELOPMENT_TEST = TEST_PREFIX + "development_seed_creates_ready_accounts_and_preserves_manual_edits"
+PROCESS_TEST = TEST_PREFIX + "first_administrator_finishes_setup_before_business_access"
 
 
 def stop(process):
@@ -227,6 +228,23 @@ def main():
         ))
         binary = Path(metadata["target_directory"]) / "debug/sortsys-duckdb"
         names = selected_tests(env, test_filter, build_log)
+        if PROCESS_TEST in names:
+            subprocess.run(
+                ["cargo", "build", "--locked", "--example", "isolated-api"],
+                cwd=API,
+                env=env,
+                stdout=build_log,
+                stderr=subprocess.STDOUT,
+                check=True,
+            )
+            api_metadata = json.loads(subprocess.check_output(
+                ["cargo", "metadata", "--no-deps", "--format-version=1"],
+                cwd=API,
+                env=env,
+            ))
+            env["SORTSYS_NATIVE_API_EXECUTABLE"] = str(
+                Path(api_metadata["target_directory"]) / "debug/examples/isolated-api"
+            )
     results = []
     try:
         for index, name in enumerate(names, start=1):

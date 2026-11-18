@@ -1,6 +1,6 @@
 # Funktionsstand der verschlüsselten Anwendung
 
-Dieser Abgleich beschreibt den Stand vom 17. November 2026. Die API speichert
+Dieser Abgleich beschreibt den Stand vom 18. November 2026. Die API speichert
 verschlüsselte Geschäftsdaten und prüft öffentliche Zugriffsnachweise. Suche,
 Berechnungen und fachliche Inhaltsprüfungen laufen im Browser. Es gibt weder
 eine Trusted Execution Environment noch eine vorübergehende Entschlüsselung
@@ -18,7 +18,13 @@ Der Produktionsbuild hat alle 18 Browserabläufe bestanden. Der Lauf verwendet
 eine Kopie des separat geprüften Musterbestands und prüft unter anderem
 Abrechnung, gemeinsame GAEB-Bearbeitung sowie Sichtbarkeit und Rechteentzug. Die
 beiden unabhängig konfigurierten API-Instanzen laufen dabei in einem
-Rust-Testprozess. Ein zusätzlicher Nachweis mit getrennten Prozessen fehlt noch.
+Rust-Testprozess. Ein zusätzlicher nativer Lauf verwendet zwei getrennte
+API-Prozesse mit demselben DuckDB-Dienst. Er prüft die Ersteinrichtung,
+Lieferscheine, Berichte, Einsatzänderungen und gemeinsame GAEB-Dokumente.
+Gewöhnliche HTTP-Anfragen wechseln zwischen beiden Prozessen; gemeinsame
+Dokumentänderungen werden über den ersten geschrieben und über den WebSocket
+des zweiten empfangen. Dieser Prozessnachweis umfasst nicht sämtliche
+18 Browserabläufe.
 
 ## Zugang und Freigaben
 

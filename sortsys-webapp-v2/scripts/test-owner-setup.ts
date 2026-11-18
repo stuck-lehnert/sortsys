@@ -40,17 +40,70 @@ type RequestHook = (
 ) => Promise<Response>;
 let requestHook: RequestHook | null = null;
 const originalFetch = globalThis.fetch;
+const originalWebSocket = globalThis.WebSocket;
 const requests: string[] = [];
 const rpcTransmissions: string[][] = [];
+const isolatedProcesses =
+  mode === "owner-bootstrap" && !!process.env.SORTSYS_NATIVE_API_EXECUTABLE;
+const apiOrigins = endpoints.map((endpoint) => new URL(endpoint).origin);
+const rpcOrigins = new Set<string>();
+const eventOrigins = new Set<string>();
+const documentWriteOrigins = new Set<string>();
+let nextReplica = 0;
 let rejectOneSetup = false;
 let loseOneSetupReply = false;
 let committedRequest: Request | null = null;
+if (isolatedProcesses) {
+  globalThis.WebSocket = new Proxy(originalWebSocket, {
+    construct(target, args, newTarget) {
+      const url = new URL(String(args[0]));
+      const httpOrigin = url.origin.replace(/^ws/, "http");
+      if (
+        url.pathname === "/zerotrust/events" &&
+        apiOrigins.includes(httpOrigin)
+      ) {
+        const destination = new URL(url.pathname + url.search, endpoints[1]);
+        eventOrigins.add(destination.origin);
+        destination.protocol = "ws:";
+        args = [destination.href, ...args.slice(1)];
+      }
+      return Reflect.construct(target, args, newTarget);
+    },
+  });
+}
 globalThis.fetch = new Proxy(originalFetch, {
   apply(target, receiver, args) {
     const [input, options] = args;
     const url = new URL(
       typeof input === "string" || input instanceof URL ? input : input.url,
     );
+    const transmit = (replacement?: URL, replacementOptions = options) => {
+      let destination = replacement ?? url;
+      if (isolatedProcesses && apiOrigins.includes(destination.origin)) {
+        const paths = destination.pathname.slice(1).split(",");
+        if (paths.includes("zerotrust.documents.messages.post")) {
+          destination = new URL(
+            destination.pathname + destination.search,
+            endpoints[0],
+          );
+          documentWriteOrigins.add(destination.origin);
+        } else if (!replacement) {
+          destination = new URL(
+            destination.pathname + destination.search,
+            endpoints[nextReplica++ % endpoints.length],
+          );
+        }
+        rpcOrigins.add(destination.origin);
+      }
+      let request = input;
+      if (destination.href !== url.href) {
+        request =
+          input instanceof Request
+            ? new Request(destination, input)
+            : destination;
+      }
+      return Reflect.apply(target, receiver, [request, replacementOptions]);
+    };
     const body = options?.body;
     if (typeof body === "string") requests.push(body);
     if (
@@ -67,29 +120,18 @@ globalThis.fetch = new Proxy(originalFetch, {
       rpcTransmissions.push(url.pathname.slice(1).split(","));
     }
     if (requestHook)
-      return requestHook(
-        url,
-        (replacement) =>
-          Reflect.apply(
-            target,
-            receiver,
-            replacement ? [replacement, options] : args,
-          ),
-        options,
-      );
+      return requestHook(url, (replacement) => transmit(replacement), options);
     if (url.pathname === "/auth.owner.finish" && loseOneSetupReply) {
       loseOneSetupReply = false;
       // Start on one replica and complete on the other. Losing only the
       // successful response must be resolved through ordinary PAKE sign-in.
       const peerUrl = new URL(url.pathname + url.search, endpoints[0]);
       committedRequest = new Request(peerUrl, options);
-      return Reflect.apply(target, receiver, [peerUrl, options]).then(
-        async (response: Response) => {
-          const reply = await response.json();
-          assert.ok(reply[0]?.result?.data?.json?.token);
-          throw new TypeError("Simulated connection loss after owner commit");
-        },
-      );
+      return transmit(peerUrl).then(async (response: Response) => {
+        const reply = await response.json();
+        assert.ok(reply[0]?.result?.data?.json?.token);
+        throw new TypeError("Simulated connection loss after owner commit");
+      });
     }
     if (
       url.pathname === "/auth.owner.finish" &&
@@ -99,12 +141,9 @@ globalThis.fetch = new Proxy(originalFetch, {
       rejectOneSetup = false;
       const changed = JSON.parse(body);
       changed["0"].json.setup.owner.user = "user:someone-else";
-      return Reflect.apply(target, receiver, [
-        input,
-        { ...options, body: JSON.stringify(changed) },
-      ]);
+      return transmit(undefined, { ...options, body: JSON.stringify(changed) });
     }
-    return Reflect.apply(target, receiver, args);
+    return transmit();
   },
 });
 const operator = createClient(endpoints[0], "owner-setup-operator");
@@ -388,6 +427,20 @@ try {
     JSON.stringify({ tenant: draft.link.tenant, phrase: draft.phrase }),
     { mode: 0o600 },
   );
+  if (isolatedProcesses) {
+    assert.deepEqual([...rpcOrigins].sort(), [...apiOrigins].sort());
+    assert.deepEqual([...eventOrigins], [apiOrigins[1]]);
+    assert.deepEqual([...documentWriteOrigins], [apiOrigins[0]]);
+    await writeFile(
+      join(dirname(outputPath), "api-process-traffic.json"),
+      JSON.stringify({
+        ordinaryRequestsAlternated: true,
+        rpcOrigins: [...rpcOrigins],
+        eventOrigins: [...eventOrigins],
+        documentWriteOrigins: [...documentWriteOrigins],
+      }),
+    );
+  }
   await writeFile(
     outputPath,
     JSON.stringify({
@@ -398,6 +451,7 @@ try {
   );
 } finally {
   globalThis.fetch = originalFetch;
+  globalThis.WebSocket = originalWebSocket;
   await lockCryptoSession();
   operator.setToken(null);
   owner.setToken(null);
