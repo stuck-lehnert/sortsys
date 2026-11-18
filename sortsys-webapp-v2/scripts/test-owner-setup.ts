@@ -336,6 +336,17 @@ try {
         member: recovered.member,
       });
     }
+  } else if (mode === "owner-print-templates") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseNativePrintTemplates } =
+      await import("./test-native-print-templates");
+    currentRecoveryPhrase = await exerciseNativePrintTemplates(
+      owner,
+      peer,
+      draft,
+    );
   } else if (mode === "owner-staging") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");

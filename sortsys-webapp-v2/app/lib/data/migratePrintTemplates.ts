@@ -40,8 +40,8 @@ async function original(
   }
   return new Blob([source], { type: mime });
 }
-/** Ready legacy assets are converted without changing their original bytes.
- * Incomplete/retired rows remain in the frozen archive for final cleanup. */
+/** Copy complete template assets from a setup backup without changing bytes.
+ * The source archive remains unchanged; incomplete uploads are not published. */
 export async function preparePrintTemplates(
   client: Client,
   source: BusinessDatabase,

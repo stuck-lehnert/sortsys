@@ -150,8 +150,6 @@ export type MigrationOrigin = { generation: string, signature: string, history?:
 
 export type PacketCommitment = { count: number, digest: string, };
 
-export type ParseScanInput = { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };
-
 export type PartKey = { facet: Facet, generation: string, };
 
 export type PasskeyUser = { id: string, name: string, displayName: string, };
@@ -290,13 +288,11 @@ export type QueryInputs = {
   "deliveryNotes.get": { id: string; } | { autoId: unknown; };
   "deliveryNotes.list": { projectId?: undefined | null | string; createdByUserId?: undefined | null | string; };
   "deliveryNotes.scan.list": void;
-  "deliveryNotes.scan.status": { scanId: Id, };
   "gaeb.positions.search": { query: string, };
   "llm.admin.usage": void;
   "llm.chats.get": { chatId: Id, };
   "llm.chats.list": void;
   "llm.status": void;
-  "office.exports.officeConfig": { sessionToken: string, };
   "personalization.actions.list": undefined | void | { limit?: undefined | number; };
   "personalization.activity.list": { latestPerResource?: boolean, cursor?: Id | null, limit?: number, resourceType?: ActivityResourceType | null, resourceId?: Id | null, contextId?: Id | null, includeProjectContext?: boolean, } | void;
   "personalization.gaebView.get": void;
@@ -320,7 +316,6 @@ export type QueryInputs = {
   "projects.deployments.list": { from: unknown; to: unknown; since?: unknown; projectId?: undefined | null | string; userId?: undefined | null | string; };
   "projects.files.folders.list": { projectId: Id, };
   "projects.files.list": { projectId: string; };
-  "projects.files.officeConfig": { projectId: Id, fileId: Id, };
   "projects.files.search": { query: string, projectId?: Id | null, limit: bigint, };
   "projects.files.xmlContent": { projectId: Id, fileId: Id, };
   "projects.get": { id: string; };
@@ -441,13 +436,11 @@ export type QueryOutputs = {
   "deliveryNotes.get": { revision?: string; priceRevision?: string; id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; };
   "deliveryNotes.list": { revision?: string; priceRevision?: string; id: string; autoId: number; projectId: string; comment: null | string; createdByUserId: null | string; createdAt: Date; effectiveTimestamp: Date; records: { id: string; noteId: string; productId: string; quantity: number; unit: string; comment: null | string; }[]; specialRecords: { id: string; noteId: string; name: string; unit: string; amount: number; pricePerUnit: null | number; comment: null | string; }[]; }[];
   "deliveryNotes.scan.list": Array<{ id: Id, fileName: string, fileNames: Array<string>, state: ScanJobState, documentType: ScanDocumentType | null, error: string | null, createdAt: Date, updatedAt: Date, }>;
-  "deliveryNotes.scan.status": { state: ScanJobState, error: string | null, };
   "gaeb.positions.search": { items: Array<Position>, indexing: boolean, };
   "llm.admin.usage": Array<{ tenant: string, provider: string, model: string, purpose: string, requestCount: bigint, inputTokens: bigint, outputTokens: bigint, totalTokens: bigint, failedRequests: bigint, }>;
   "llm.chats.get": { chat: ChatSummary, messages: Array<ChatMessage>, proposals: Array<ChangeProposal>, };
   "llm.chats.list": Array<{ id: Id, title: string, createdAt: Date, updatedAt: Date, }>;
   "llm.status": { available: boolean, hasRole: boolean, tenantEnabled: boolean, providerConfigured: boolean, scanProviderConfigured: boolean, provider: string | null, model: string | null, monthlyTokenQuota: bigint | null, usedTokens: bigint, };
-  "office.exports.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
   "personalization.actions.list": { id: string; actionId: string; label: string; href: null | string; usedAt: Date; }[];
   "personalization.activity.list": Array<{ id: Id, entityTable: string, entityId: string, changedColumns: Array<string>, actorUserId: Id | null, actorKind: string, actorName: string | null, isImported: boolean, resourceType: ActivityResourceType, resourceId: Id, contextId: Id | null, contextTitle: string | null, contextDate: Date | null, title: string, resourceTitle: string | null, description: string | null, action: "created" | "updated" | "deleted" | "completed" | "resumed", occurredAt: Date, createdAt: Date, modifiedAt: Date | null, }>;
   "personalization.gaebView.get": { showFields: boolean, outlineOpen: boolean, outlineWidth: number, ribbonCollapsed: boolean, zoom: number | null, };
@@ -471,7 +464,6 @@ export type QueryOutputs = {
   "projects.deployments.list": { revision?: string; id: string; projectId: string; projectTitle?: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[];
   "projects.files.folders.list": Array<{ id: Id, projectId: Id, parentFolderId: Id | null, name: string, createdByUserId: Id | null, createdAt: Date, modifiedAt: Date, }>;
   "projects.files.list": { id: string; projectId: string; folderId: null | string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; textExtractionStatus: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[];
-  "projects.files.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
   "projects.files.search": Array<{ id: Id, projectId: Id, projectTitle: string, fileName: string, mimeType: string, textExtractionStatus: string, excerpt: DocumentExcerpt | null, rank: number, modifiedAt: Date, }>;
   "projects.files.xmlContent": { frozen: boolean, recoveryScope: string, liveTicket: string, livePath: string, canEdit: boolean, fileName: string, version: bigint, xml: string, };
   "projects.get": { id: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId: null | string; responsibleProjectLeaderUserId: null | string; orderReceivedAt: null | Date; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; finishedAt: null | Date; };
@@ -617,16 +609,12 @@ export type MutationInputs = {
   "deliveryNotes.create": { requestId?: string; projectId: string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | { productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | { name: string; unit: string; amount: number; pricePerUnit: null | number; comment?: undefined | null | string; }[]; };
   "deliveryNotes.delete": { id: string; };
   "deliveryNotes.scan.complete": { scanId: Id, };
-  "deliveryNotes.scan.createUpload": { fileName: string, mimeType: string, sizeBytes: number, };
-  "deliveryNotes.scan.parse": { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };
-  "deliveryNotes.scan.start": { documents: Array<ParseScanInput>, };
   "deliveryNotes.update": { expectedRevision?: string; expectedPriceRevision?: string; id: string; data: { projectId?: undefined | null | string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | null | { id?: string; productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | null | { id?: string; name: string; unit: string; amount: number; pricePerUnit?: null | number; comment?: undefined | null | string; }[]; }; };
   "errorReports.report": { source: string, message: string, level?: Level, stack?: string | null, path?: string | null, componentStack?: string | null, metadata: TechnicalMetadata, };
   "llm.chats.create": { title?: string | null, };
   "llm.chats.delete": { chatId: Id, };
   "llm.messages.send": { chatId: Id, content: string, locale?: AssistantLocale, };
   "llm.proposals.review": { proposalId: Id, decision: ProposalDecision, comment?: string | null, executionResults?: Array<ProposalExecutionResult> | null, continueConversation?: boolean, };
-  "office.exports.createUpload": { fileName: string, mimeType: string, sizeBytes: number, };
   "personalization.actions.append": { actionId: string; label: string; href?: undefined | null | string; };
   "personalization.gaebView.set": { showFields: boolean, outlineOpen: boolean, outlineWidth: number, ribbonCollapsed: boolean, zoom: number | null, };
   "personalization.visits.append": { path: string; title?: undefined | null | string; };
@@ -684,8 +672,6 @@ export type MutationInputs = {
   "settings.costs.delete": { type: "fgk" | "mgk" | "ngk"; effectiveAt: unknown; };
   "settings.costs.set": { type: "fgk" | "mgk" | "ngk"; effectiveAt: unknown; relativeFactor: number; constant: number; };
   "settings.costs.update": { productOverheadFactor?: undefined | number; workHourOverheadFactor?: undefined | number; specialRecordOverheadFactor?: undefined | number; toolOverheadFactor?: undefined | number; };
-  "settings.documentTemplate.assets.completeUpload": { id: Id, };
-  "settings.documentTemplate.assets.createUpload": { name: string, mimeType: string, sizeBytes: number, };
   "settings.documentTemplate.assets.delete": { id: Id, };
   "settings.documentTemplate.set": { source: string, expectedRevision: string, };
   "settings.global.delete": { key: string; };
@@ -832,16 +818,12 @@ export type MutationOutputs = {
   "deliveryNotes.create": { id: string; };
   "deliveryNotes.delete": { success: true; };
   "deliveryNotes.scan.complete": { documentType: ScanDocumentType, deliveryNote: DeliveryNoteScanResult | null, priceList: PriceListScanResult | null, };
-  "deliveryNotes.scan.createUpload": { objectKey: string, uploadUrl: string, expiresAt: Date, };
-  "deliveryNotes.scan.parse": { documentType: ScanDocumentType, deliveryNote: DeliveryNoteScanResult | null, priceList: PriceListScanResult | null, };
-  "deliveryNotes.scan.start": { scanId: Id, };
   "deliveryNotes.update": { success: true; };
   "errorReports.report": { success: true, };
   "llm.chats.create": { id: Id, title: string, createdAt: Date, updatedAt: Date, };
   "llm.chats.delete": { success: true, };
   "llm.messages.send": { chat: ChatSummary, messages: Array<ChatMessage>, proposals: Array<ChangeProposal>, };
   "llm.proposals.review": { success: true, };
-  "office.exports.createUpload": { uploadUrl: string, uploadMethod: string, uploadHeaders: { [key in string]: string }, expiresAt: string, sessionToken: string, };
   "personalization.actions.append": { success: true; };
   "personalization.gaebView.set": { success: true, };
   "personalization.visits.append": { success: true; };
@@ -899,8 +881,6 @@ export type MutationOutputs = {
   "settings.costs.delete": { success: true; };
   "settings.costs.set": { success: true; };
   "settings.costs.update": { success: true; };
-  "settings.documentTemplate.assets.completeUpload": { success: true, };
-  "settings.documentTemplate.assets.createUpload": { id: Id, uploadUrl: string, uploadMethod: string, uploadHeaders: { [key in string]: string }, };
   "settings.documentTemplate.assets.delete": { success: true, };
   "settings.documentTemplate.set": { source: string | null, revision: string, };
   "settings.global.delete": { success: true; };
@@ -1022,13 +1002,11 @@ const queryProcedures = new Set<string>([
   "deliveryNotes.get",
   "deliveryNotes.list",
   "deliveryNotes.scan.list",
-  "deliveryNotes.scan.status",
   "gaeb.positions.search",
   "llm.admin.usage",
   "llm.chats.get",
   "llm.chats.list",
   "llm.status",
-  "office.exports.officeConfig",
   "personalization.actions.list",
   "personalization.activity.list",
   "personalization.gaebView.get",
@@ -1052,7 +1030,6 @@ const queryProcedures = new Set<string>([
   "projects.deployments.list",
   "projects.files.folders.list",
   "projects.files.list",
-  "projects.files.officeConfig",
   "projects.files.search",
   "projects.files.xmlContent",
   "projects.get",
@@ -1198,16 +1175,12 @@ const mutationProcedures = new Set<string>([
   "deliveryNotes.create",
   "deliveryNotes.delete",
   "deliveryNotes.scan.complete",
-  "deliveryNotes.scan.createUpload",
-  "deliveryNotes.scan.parse",
-  "deliveryNotes.scan.start",
   "deliveryNotes.update",
   "errorReports.report",
   "llm.chats.create",
   "llm.chats.delete",
   "llm.messages.send",
   "llm.proposals.review",
-  "office.exports.createUpload",
   "personalization.actions.append",
   "personalization.gaebView.set",
   "personalization.visits.append",
@@ -1265,8 +1238,6 @@ const mutationProcedures = new Set<string>([
   "settings.costs.delete",
   "settings.costs.set",
   "settings.costs.update",
-  "settings.documentTemplate.assets.completeUpload",
-  "settings.documentTemplate.assets.createUpload",
   "settings.documentTemplate.assets.delete",
   "settings.documentTemplate.set",
   "settings.global.delete",

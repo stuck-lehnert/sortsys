@@ -6,54 +6,8 @@ use std::collections::HashMap;
 use ts_rs::TS;
 #[derive(Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateScanUploadInput {
-    pub file_name: String,
-    pub mime_type: String,
-    #[ts(type = "number")]
-    pub size_bytes: i64,
-}
-#[derive(Debug, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanUpload {
-    pub object_key: String,
-    pub upload_url: String,
-    #[ts(type = "Date")]
-    pub expires_at: DateTime<Utc>,
-}
-#[derive(Debug, Clone, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ParseScanInput {
-    pub object_key: String,
-    pub file_name: String,
-    pub mime_type: String,
-    #[ts(type = "number")]
-    pub size_bytes: i64,
-}
-#[derive(Debug, Deserialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct StartScanInput {
-    pub documents: Vec<ParseScanInput>,
-}
-#[derive(Debug, Deserialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ScanJobInput {
-    pub scan_id: Id,
-}
-#[derive(Debug, Deserialize, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CompleteScanInput {
     pub scan_id: Id,
-}
-#[derive(Debug, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanJob {
-    pub scan_id: Id,
-}
-#[derive(Debug, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanJobStatus {
-    pub state: ScanJobState,
-    pub error: Option<String>,
 }
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -154,13 +108,8 @@ pub struct ScannedSpecialRecord {
     pub confidence: f64,
     pub comment: Option<String>,
 }
-pub fn register_contract(mut builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    builder = builder
-        .mutation_stub::<CreateScanUploadInput, ScanUpload>("deliveryNotes.scan.createUpload");
-    builder = builder
+pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
+    builder
         .query_stub::<(), Vec<ScanHistoryEntry>>("deliveryNotes.scan.list")
-        .mutation_stub::<StartScanInput, ScanJob>("deliveryNotes.scan.start")
-        .query_stub::<ScanJobInput, ScanJobStatus>("deliveryNotes.scan.status")
-        .mutation_stub::<CompleteScanInput, DocumentScanResult>("deliveryNotes.scan.complete");
-    builder.mutation_stub::<ParseScanInput, DocumentScanResult>("deliveryNotes.scan.parse")
+        .mutation_stub::<CompleteScanInput, DocumentScanResult>("deliveryNotes.scan.complete")
 }

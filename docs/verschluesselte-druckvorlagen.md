@@ -46,6 +46,10 @@ die Prüfsummen der zugehörigen Blöcke. Die API erhält keine Dateinamen, Medi
 oder Typst-Inhalte im Klartext. Ihre Aufgabe beschränkt sich auf Freigaben,
 Signaturen und technische Versionen.
 
+Ein neuer Mandant enthält bereits einen leeren Vorlagenkatalog. Die Verwaltung
+und der Druck funktionieren damit auch vor der ersten eigenen Vorlage. Ein
+erneuter Einrichtungsabschluss setzt vorhandenen Code und Anlagen nicht zurück.
+
 Die normale Einladung gibt diesen Bereich zum Lesen frei. Mitarbeitende können
 damit die Unternehmensvorlage beim Drucken verwenden. Änderungen verlangen eine
 signierte Schreibfreigabe; eine alte Administrationsrolle allein genügt nicht. Das
@@ -84,10 +88,23 @@ verschlüsselten Original erhalten. Die Größenprüfung erlaubt höchstens 20 M
 100 Seiten je PDF und 128 MiB an vorbereiteten Bilddaten pro Drucklauf. Ein
 Anlagenverzeichnis enthält höchstens 1.000 Dateien.
 
-Die Bestandsübernahme kopiert den gespeicherten Typst-Code und die aktuell
-freigegebenen Anlagen aus dem eingefrorenen Altbestand. Bild- und PDF-Originale
-bleiben bytegetreu erhalten. Nicht abgeschlossene Uploads und ersetzte
-Altdateien bleiben zunächst im bisherigen Bestand erhalten. Die vollständige
-Umstellung mit Freigabe und Löschung der alten Klartextbestände ist noch nicht
-abgeschlossen. Die API kann gültig signierte, aber fachlich fehlerhafte Inhalte
-weiterhin nicht selbst prüfen.
+Beim Anlegen eines Mandanten können Typst-Code und fertig gespeicherte Anlagen
+aus einer Sicherung übernommen werden. Bild- und PDF-Originale bleiben dabei
+bytegetreu erhalten. Nicht abgeschlossene Uploads werden nicht als Anlage
+veröffentlicht; die Quelldatei der Sicherung bleibt unverändert. Die API kann
+gültig signierte, aber fachlich fehlerhafte Inhalte weiterhin nicht selbst prüfen.
+
+## Prüfungen
+
+Der [native Dateitest](../sortsys-webapp-v2/scripts/test-native-print-templates.ts)
+verwendet zwei API-Instanzen mit demselben DuckDB-Dienst. Er prüft die
+Ersteinrichtung, Bild- und PDF-Bytes, manipulierte Prüfsummen, konkurrierende
+Änderungen sowie verlorene und vorgetäuschte Speicherbestätigungen. Ein normales
+Lesekonto kann die Vorlage verwenden, aber weder Code noch Anlagen ändern.
+Nach einem Rechteentzug sind auch die Dateiblöcke nicht mehr abrufbar. Zwei
+aufeinanderfolgende Recoveries erhalten Code und Anlagen; die jeweils vorherige
+Phrase wird abgewiesen.
+
+Der Browser-Komponententest bedient zusätzlich den tatsächlichen Monaco-Editor
+und die Typst-Vorschau mit Bild- und PDF-Anlagen. Seine Fachantworten sind
+synthetisch; die verschlüsselte Ablage prüft der native Test separat.

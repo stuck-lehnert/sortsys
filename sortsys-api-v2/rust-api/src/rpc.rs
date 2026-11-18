@@ -966,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_contract_contains_registered_procedures() {
+    fn generated_contract_describes_current_client_boundary() {
         let contract = registry().typescript_contract();
         assert!(contract.contains("\"ping\": void;"));
         assert!(contract.contains("\"ping\": string;"));
@@ -974,10 +974,21 @@ mod tests {
         let full_contract = crate::api::contract_registry().typescript_contract();
 
         assert!(full_contract.contains(
-            "\"deliveryNotes.scan.createUpload\": { fileName: string, mimeType: string, sizeBytes: number, };"
+            "\"zerotrust.fileChunks.put\": { domain: string, envelope: EncryptedObject<Facet>, };"
         ));
-        assert!(full_contract.contains(
-            "\"deliveryNotes.scan.parse\": { objectKey: string, fileName: string, mimeType: string, sizeBytes: number, };"
-        ));
+        assert!(full_contract.contains("\"deliveryNotes.scan.complete\": { scanId: Id, };"));
+        for retired in [
+            "deliveryNotes.scan.createUpload",
+            "deliveryNotes.scan.parse",
+            "deliveryNotes.scan.start",
+            "deliveryNotes.scan.status",
+            "office.exports.createUpload",
+            "office.exports.officeConfig",
+            "projects.files.officeConfig",
+            "settings.documentTemplate.assets.createUpload",
+            "settings.documentTemplate.assets.completeUpload",
+        ] {
+            assert!(!full_contract.contains(retired), "{retired}");
+        }
     }
 }

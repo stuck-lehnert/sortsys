@@ -91,6 +91,7 @@ async fn browser_with_tenant(
             | "owner-minimal"
             | "owner-bootstrap"
             | "owner-staging"
+            | "owner-print-templates"
             | "owner-planning-recipients"
             | "owner-tool-batches"
             | "owner-access-pages"
@@ -129,6 +130,9 @@ async fn browser_with_tenant(
     }
     if mode == "owner-staging" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "staging-tenant");
+    }
+    if mode == "owner-print-templates" {
+        command.env("SORTSYS_NATIVE_AUTH_TENANT", "print-templates-tenant");
     }
     if mode == "owner-access-publications" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "access-publications-tenant");
@@ -184,6 +188,7 @@ async fn browser_with_tenant(
             | "llm"
             | "editors"
             | "owner-staging"
+            | "owner-print-templates"
             | "owner-tool-batches"
             | "owner-planning-recipients"
             | "owner-access-pages"
@@ -1451,6 +1456,32 @@ async fn prepared_business_changes_publish_atomically_across_api_instances() {
     let (first_url, _first_api) = api(auth_service(&settings, first)).await;
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     browser("owner-staging", &root, Some(&[first_url, second_url])).await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn print_templates_preserve_encrypted_assets_and_permissions_across_api_instances() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let mut settings = configuration(config);
+    settings.jwt_secret = Arc::from(b"disposable-print-template-signing-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
+    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
+    browser(
+        "owner-print-templates",
+        &root,
+        Some(&[first_url, second_url]),
+    )
+    .await;
 }
 
 #[tokio::test]

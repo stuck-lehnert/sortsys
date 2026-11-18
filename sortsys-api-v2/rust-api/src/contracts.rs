@@ -8,8 +8,6 @@ pub mod delivery_notes;
 pub mod document_templates;
 pub mod gaeb_positions;
 pub mod llm;
-pub mod office_exports;
-pub mod onlyoffice;
 pub mod passkeys;
 pub mod personalization;
 pub mod products;
@@ -37,7 +35,5 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = delivery_notes::register_contract(builder);
     let builder = products::register_contract(builder);
     let builder = project_files::register_contract(builder);
-    let builder = xml_documents::register_contract(builder);
-    let builder = office_exports::register_contract(builder);
-    onlyoffice::register_contract(builder)
+    xml_documents::register_contract(builder)
 }

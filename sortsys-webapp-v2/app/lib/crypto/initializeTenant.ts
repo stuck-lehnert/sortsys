@@ -16,7 +16,9 @@ import {
   organizationArea,
   organizationObject,
   organizationPayload,
+  PRINT_COLLECTION,
 } from "../data/organizationData";
+import { PRINT_OBJECT, printTemplatePayload } from "../data/printTemplateData";
 import { initializeDeliveryRegistry } from "../data/deliveryRegistry";
 import { TOOL_INDEX, TOOL_INDEX_MODEL } from "../data/toolData";
 import { createProtectedPersonnel } from "../data/personnel";
@@ -33,6 +35,39 @@ import {
 
 type Completion = MutateInput<"zerotrust.setup.complete">;
 type Status = QueryResult<"zerotrust.status">;
+
+function initialRecords() {
+  const organization = [
+    ["profile", { companyName: null, address: null }],
+    ["numbering", { scheme: "sequential", startNumber: "1" }],
+  ] as const;
+  return [
+    ...organization.map(([kind, value]) => ({
+      area: organizationArea(kind),
+      id: organizationObject(kind),
+      value: { format: "sortsys-organization-v1", kind, value },
+      validate(input: unknown) {
+        organizationPayload(input, organizationObject(kind), kind);
+      },
+    })),
+    {
+      area: PRINT_COLLECTION,
+      id: PRINT_OBJECT,
+      value: { format: "sortsys-print-template-v1", source: null, assets: [] },
+      validate(input: unknown) {
+        printTemplatePayload(input, PRINT_OBJECT);
+      },
+    },
+    {
+      area: TOOL_INDEX,
+      id: TOOL_INDEX.prefix,
+      value: { format: "sortsys-tool-index-v1", entries: [] },
+      validate(input: unknown) {
+        TOOL_INDEX_MODEL.decode(input, TOOL_INDEX.prefix, TOOL_INDEX);
+      },
+    },
+  ];
+}
 
 export function initializationFrame(
   input: Omit<Completion, "signature">,
@@ -122,27 +157,18 @@ export async function initializeTenant(
   const collections = initialOwnerCollections(session.user.id);
   await provisionOwnedCollections(client, subject, collections, signal);
   live();
-  for (const [kind, value] of [
-    ["profile", { companyName: null, address: null }],
-    ["numbering", { scheme: "sequential", startNumber: "1" }],
-  ] as const) {
-    const id = organizationObject(kind);
-    const area = await protectedCollection(
-      client,
-      organizationArea(kind),
-      signal,
-    );
+  // One list drives both creation and the signed completion inventory.
+  // Existing backup contents are validated and retained, never reset.
+  const records = initialRecords();
+  for (const record of records) {
+    const area = await protectedCollection(client, record.area, signal);
     try {
-      const existing = await area.read(id);
+      const existing = await area.read(record.id);
       if (existing.length) {
         if (existing.length !== 1) throw new InvalidProtectedData();
-        organizationPayload(existing[0]!.value, id, kind);
+        record.validate(existing[0]!.value);
       } else {
-        const packet = await area.packet(id, {
-          format: "sortsys-organization-v1",
-          kind,
-          value,
-        });
+        const packet = await area.packet(record.id, record.value);
         await area.write([packet]);
       }
     } finally {
@@ -156,27 +182,6 @@ export async function initializeTenant(
   } finally {
     personnel.close();
   }
-  const tools = await protectedCollection(client, TOOL_INDEX, signal);
-  try {
-    const existing = await tools.read(TOOL_INDEX.prefix);
-    if (existing.length > 1) throw new InvalidProtectedData();
-    if (existing.length === 1) {
-      TOOL_INDEX_MODEL.decode(
-        existing[0]!.value,
-        TOOL_INDEX.prefix,
-        TOOL_INDEX,
-      );
-    } else {
-      const packet = await tools.packet(TOOL_INDEX.prefix, {
-        format: "sortsys-tool-index-v1",
-        entries: [],
-      });
-      await tools.write([packet]);
-    }
-  } finally {
-    tools.close();
-  }
-  live();
   const policyContext = { account, history, authority, live };
   const { permissions } = await readVerifiedPolicy(client, policyContext);
   const missingCreationRules = OWNER_CREATION_NAMESPACES.filter(
@@ -243,9 +248,7 @@ export async function initializeTenant(
     policyVersion: current.version,
     domains: collections.map((area) => area.domain).sort(),
     objects: [
-      organizationObject("profile"),
-      organizationObject("numbering"),
-      TOOL_INDEX.prefix,
+      ...records.map((record) => record.id),
       ...PERSONNEL_FACETS.map(
         (facet) => personnelCollection(session.user.id, facet).prefix,
       ),

@@ -111,6 +111,7 @@ export async function installPresentationClient() {
         can: () => administrator,
         canCreate: () => administrator,
         canAny: () => administrator,
+        canManagePermissions: () => administrator,
         canSeeOffers: () => administrator,
         canBookTool: () => administrator,
       };
@@ -201,7 +202,7 @@ export async function installPresentationClient() {
   };
   templateAssets.upload = async (file) => {
     const [upload, createError] = await transport.mutateDynamic(
-      "settings.documentTemplate.assets.createUpload",
+      "fixture.documentTemplate.assets.createUpload",
       { fileName: file.name, mimeType: file.type, sizeBytes: file.size },
     );
     if (createError) throw createError;
@@ -212,7 +213,7 @@ export async function installPresentationClient() {
     });
     if (!response.ok) throw new Error("Synthetic asset upload failed");
     const [, completeError] = await transport.mutateDynamic(
-      "settings.documentTemplate.assets.completeUpload",
+      "fixture.documentTemplate.assets.completeUpload",
       { id: upload.id },
     );
     if (completeError) throw completeError;

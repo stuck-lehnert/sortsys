@@ -5181,7 +5181,7 @@ test(
       };
       return { source: template.source, revision: template.revision };
     });
-    api.respond("settings.documentTemplate.assets.createUpload", (input) => {
+    api.respond("fixture.documentTemplate.assets.createUpload", (input) => {
       const id = (uploaded.size + 10).toString(32);
       const url = `${server.origin}/template-test/${id}`;
       uploaded.set(id, {
@@ -5197,7 +5197,7 @@ test(
         uploadHeaders: { "Content-Type": input.mimeType },
       };
     });
-    api.respond("settings.documentTemplate.assets.completeUpload", ({ id }) => {
+    api.respond("fixture.documentTemplate.assets.completeUpload", ({ id }) => {
       const { buffer, ...asset } = uploaded.get(id);
       template.assets.push(asset);
       return { success: true };
