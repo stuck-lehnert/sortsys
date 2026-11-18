@@ -317,7 +317,7 @@ try {
     const { exerciseRpcBatching } = await import("./test-batched-reads");
     await exerciseRpcBatching(owner, rpcTransmissions);
     const { exerciseNativeStaging } = await import("./test-native-staging");
-    await exerciseNativeStaging(owner, peer, draft);
+    await exerciseNativeStaging(owner, peer, draft, rpcTransmissions);
   } else if (mode === "owner-access-publications") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");

@@ -186,35 +186,41 @@ async function publishProtectedWrites(
       ) >
         24 * 1024 * 1024)
   ) {
-    const parts: string[] = [];
+    const chunks: (typeof packets)[] = [];
     let chunk: typeof packets = [];
     let size = 0;
-    const upload = async () => {
+    for (const packet of packets) {
+      if (
+        chunk.length &&
+        (chunk.length === 64 ||
+          size + packet.envelope.ciphertext.length > 16 * 1024 * 1024)
+      ) {
+        chunks.push(chunk);
+        chunk = [];
+        size = 0;
+      }
+      chunk.push(packet);
+      size += packet.envelope.ciphertext.length;
+    }
+    if (chunk.length) chunks.push(chunk);
+    // These immutable uploads are independent. A bounded group lets small
+    // parts share the transport's HTTP batch without flooding the API with
+    // large ciphertext requests. Wait for every started upload before failure
+    // cleanup; only the final transaction makes any of these objects visible.
+    const parts = await mapConcurrent(chunks, 4, async (objects) => {
       signal.throwIfAborted();
       const [part, failed] = await client.mutate(
         "zerotrust.objects.stage",
-        { objects: chunk },
+        { objects },
         { signal },
       );
       signal.throwIfAborted();
       if (failed) throw failed;
       if (!part || !/^[a-f0-9]{64}$/.test(part.id))
         throw new InvalidProtectedData();
-      parts.push(part.id);
-      chunk = [];
-      size = 0;
-    };
-    for (const packet of packets) {
-      if (
-        chunk.length &&
-        (chunk.length === 64 ||
-          size + packet.envelope.ciphertext.length > 16 * 1024 * 1024)
-      )
-        await upload();
-      chunk.push(packet);
-      size += packet.envelope.ciphertext.length;
-    }
-    if (chunk.length) await upload();
+      return part.id;
+    });
+    signal.throwIfAborted();
     try {
       [, error] = await client.mutate(
         "zerotrust.objects.commit",

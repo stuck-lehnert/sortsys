@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { Client, MutateInput } from "@sortsys/v2-client";
+import { base64 } from "@sortsys/zerotrust/sortsys";
 import type { OwnerDraft } from "../app/lib/crypto/tenantSetup";
 import { provisionOwnedCollections } from "../app/lib/data/prepareCollections";
 import {
@@ -21,6 +22,7 @@ export async function exerciseNativeStaging(
   owner: Client,
   peer: Client,
   draft: OwnerDraft,
+  transmissions: readonly string[][],
 ) {
   const controller = new AbortController();
   const signal = controller.signal;
@@ -46,6 +48,45 @@ export async function exerciseNativeStaging(
     }
     const head = { domain: area.domain, sequence: collection.snapshot()! };
     const publishedSequence = (BigInt(head.sequence) + 1n).toString();
+    let firstStage = true;
+    let attemptedCommit = false;
+    const rejected: Client = {
+      ...owner,
+      mutate: (async (path, input, options) => {
+        if (path === "zerotrust.objects.commit") attemptedCommit = true;
+        if (path === "zerotrust.objects.stage" && firstStage) {
+          firstStage = false;
+          const changed = structuredClone(
+            input as MutateInput<"zerotrust.objects.stage">,
+          );
+          changed.objects[0]!.envelope.signature = base64(new Uint8Array(64));
+          return owner.mutate("zerotrust.objects.stage", changed, options);
+        }
+        return owner.mutate(path, input, options);
+      }) as Client["mutate"],
+    };
+    await assert.rejects(
+      commitProtectedWrites(
+        rejected,
+        [{ head, packets, verify: async () => true, close() {} }],
+        signal,
+      ),
+    );
+    assert.equal(attemptedCommit, false);
+    const unpublished = await required(
+      peer.query(
+        "zerotrust.objects.list",
+        {
+          domain: area.domain,
+          prefix: area.prefix,
+          after: null,
+          snapshot: null,
+        },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.equal(unpublished.objects.length, 0);
+    assert.equal(unpublished.snapshot, head.sequence);
     const parts: string[] = [];
     let commitInput: MutateInput<"zerotrust.objects.commit"> | null = null;
     let lost = false;
@@ -104,10 +145,21 @@ export async function exerciseNativeStaging(
         reopened.close();
       }
     };
+    const transmissionStart = transmissions.length;
     await commitProtectedWrites(
       observed,
       [{ head, packets, verify, close() {} }],
       signal,
+    );
+    const stageBatches = transmissions
+      .slice(transmissionStart)
+      .map((paths) =>
+        paths.filter((path) => path === "zerotrust.objects.stage"),
+      )
+      .filter((paths) => paths.length > 0);
+    assert.deepEqual(
+      stageBatches.map((paths) => paths.length),
+      [4, 1],
     );
     assert.equal(parts.length, 5);
     assert.equal(lost, true);
@@ -118,7 +170,7 @@ export async function exerciseNativeStaging(
     assert.equal(repeated.heads[0]!.sequence, publishedSequence);
     assert.equal(await verify(), true);
     console.log(
-      "Native staging: 320 encrypted records, invisible parts, cross-instance publication, lost reply and exact retry verified",
+      "Native staging: 320 encrypted records use two upload requests (4/1 parts); a forged signature prevents publication; invisible parts, cross-instance commit, lost reply and exact retry verified",
     );
     await exerciseBatchedReads(owner, peer, area, publishedSequence, signal);
 

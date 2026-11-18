@@ -1,9 +1,22 @@
 import { expect, test } from "bun:test";
+import { createClient } from "@sortsys/v2-client";
+import superjson from "superjson";
 import {
   commitProtectedWrites,
   mergePreparedWrites,
   ProtectedWriteConflict,
 } from "./atomicWrites";
+import { ramCache } from "./ramCache";
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
 
 test("disjoint changes to one domain retain both verifications and reject overlapping writes or heads", async () => {
   const first = group(1);
@@ -205,6 +218,171 @@ test("large encrypted batches upload bounded parts and publish only once", async
   expect(calls[3].input.parts).toHaveLength(3);
 });
 
+test("staged writes share real HTTP transport batches before the separate final commit", async () => {
+  const transmissions = [];
+  const source = group(150);
+  let verified = false;
+  source.verify = async () => {
+    verified = true;
+    return true;
+  };
+  // Exercise the production RPC serializer and batch window. This transport
+  // fixture acknowledges opaque packets; native tests cover the API checks.
+  const client = createClient("https://staged-writes.test", "staging-test", {
+    cache: ramCache(),
+    fetch: async (input, options) => {
+      const paths = new URL(String(input)).pathname.slice(1).split(",");
+      const encoded = JSON.parse(String(options.body));
+      const inputs = paths.map((_, index) =>
+        superjson.deserialize(encoded[index]),
+      );
+      transmissions.push({ paths, inputs });
+      return new Response(
+        JSON.stringify(
+          paths.map((path, index) => ({
+            result: {
+              data: superjson.serialize(
+                path === "zerotrust.objects.stage"
+                  ? { id: String(index + 1).padStart(64, "0") }
+                  : { success: true },
+              ),
+            },
+          })),
+        ),
+      );
+    },
+  });
+  client.setToken("disposable-staging-session");
+  await commitProtectedWrites(client, [source], new AbortController().signal);
+  expect(transmissions.map((request) => request.paths)).toEqual([
+    Array(3).fill("zerotrust.objects.stage"),
+    ["zerotrust.objects.commit"],
+  ]);
+  expect(transmissions[0].inputs.map((input) => input.objects.length)).toEqual([
+    64, 64, 22,
+  ]);
+  expect(transmissions[1].inputs[0].parts).toEqual([
+    "1".padStart(64, "0"),
+    "2".padStart(64, "0"),
+    "3".padStart(64, "0"),
+  ]);
+  expect(transmissions[1].inputs[0].heads).toEqual([source.head]);
+  expect(verified).toBe(true);
+});
+
+test("concurrent stage acknowledgements retain part order and stay within four in-flight uploads", async () => {
+  const source = group(64 * 9);
+  const gates = Array.from({ length: 9 }, deferred);
+  const started = Array.from({ length: 9 }, deferred);
+  const releases = [3, 2, 1, 0, 7, 6, 5, 4, 8];
+  const calls = [];
+  let active = 0;
+  let maximum = 0;
+  let committed = false;
+  const client = {
+    async mutate(path, input) {
+      if (path === "zerotrust.objects.commit") {
+        expect(active).toBe(0);
+        expect(input.parts).toEqual(
+          gates.map((_, index) => String(index + 1).padStart(64, "0")),
+        );
+        committed = true;
+        return [{ success: true }, null];
+      }
+      const index = calls.length;
+      calls.push(input.objects);
+      active++;
+      maximum = Math.max(maximum, active);
+      started[index].resolve();
+      try {
+        await gates[index].promise;
+        return [{ id: String(index + 1).padStart(64, "0") }, null];
+      } finally {
+        active--;
+      }
+    },
+    async invalidate() {},
+  };
+  const result = commitProtectedWrites(
+    client,
+    [source],
+    new AbortController().signal,
+  );
+  await started[3].promise;
+  expect(calls).toHaveLength(4);
+  for (const index of releases) {
+    await started[index].promise;
+    expect(committed).toBe(false);
+    gates[index].resolve();
+  }
+  await result;
+  expect(committed).toBe(true);
+  expect(maximum).toBe(4);
+  expect(calls.flat()).toEqual(source.packets);
+});
+
+for (const failureKind of ["denied", "invalid-receipt", "cancelled"]) {
+  test(`${failureKind} staging stops queued uploads, drains started peers and never publishes`, async () => {
+    const source = group(64 * 9);
+    const gates = Array.from({ length: 4 }, deferred);
+    const started = deferred();
+    const controller = new AbortController();
+    const failure = new Error("Stage denied");
+    const calls = [];
+    let active = 0;
+    let settled = false;
+    let verified = false;
+    source.verify = async () => {
+      verified = true;
+      return true;
+    };
+    const client = {
+      async mutate(path) {
+        const index = calls.length;
+        calls.push(path);
+        active++;
+        if (active === 4) started.resolve();
+        try {
+          await gates[index].promise;
+          if (index === 0) {
+            if (failureKind === "denied") return [null, failure];
+            if (failureKind === "invalid-receipt") return [{ id: "bad" }, null];
+            controller.abort(failure);
+          }
+          return [{ id: String(index + 1).padStart(64, "0") }, null];
+        } finally {
+          active--;
+        }
+      },
+      async invalidate() {},
+    };
+    const result = commitProtectedWrites(client, [source], controller.signal);
+    const outcome = result.then(
+      () => {
+        settled = true;
+        return { success: true };
+      },
+      (error) => {
+        settled = true;
+        return { error };
+      },
+    );
+    await started.promise;
+    gates[0].resolve();
+    // Leave the three started peers pending while the first failure settles.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(active).toBe(3);
+    expect(calls).toEqual(Array(4).fill("zerotrust.objects.stage"));
+    for (const gate of gates.slice(1)) gate.resolve();
+    const finished = await outcome;
+    expect(finished.error).toBeInstanceOf(Error);
+    expect(active).toBe(0);
+    expect(verified).toBe(false);
+    expect(calls).toEqual(Array(4).fill("zerotrust.objects.stage"));
+  });
+}
+
 test("a small write with many read prerequisites uses one prepared publication and retains every guard", async () => {
   const source = group(1);
   const guards = Array.from({ length: 128 }, (_, index) => ({
@@ -252,7 +430,9 @@ test("a failed or cancelled stage never attempts publication", async () => {
     await expect(
       commitProtectedWrites(client, [group(70)], controller.signal),
     ).rejects.toThrow();
-    expect(paths).toEqual(["zerotrust.objects.stage"]);
+    expect(paths).toEqual(
+      Array(cancel ? 1 : 2).fill("zerotrust.objects.stage"),
+    );
   }
 });
 

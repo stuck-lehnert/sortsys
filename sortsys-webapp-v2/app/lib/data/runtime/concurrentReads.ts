@@ -1,5 +1,5 @@
-/** Bound independent reads and preserve their input order. On failure, wait
- * for every started read before the caller closes its shared resources. */
+/** Bound independent operations and preserve their input order. On failure,
+ * wait for every started operation before the caller closes shared resources. */
 export async function mapConcurrent<T, R>(
   values: readonly T[],
   limit: number,
