@@ -57,6 +57,7 @@ import {
   permitsDocumentSource,
 } from "./commercialDocumentRules";
 import { commercialDocumentUrl } from "./commercialDocumentUrl";
+import { includeRetainedDocuments } from "./commercialRegistrations";
 import { adoptionInput } from "./commercialAdoption";
 import {
   transitionInput,
@@ -227,7 +228,7 @@ export function createProtectedCommercial(
       collections,
     );
     live();
-    return value;
+    return includeRetainedDocuments(client, signal, value, collections);
   }
   function matchesListScope(
     value: Pick<ReturnType<typeof wireCommercialCase>, "projectId" | "kind">,
@@ -743,7 +744,14 @@ export function createProtectedCommercial(
       (tx) => {
         live();
         for (const { snapshot, values, facets, extra = [] } of changes) {
-          const split = splitCommercialRows(snapshot.id, values);
+          const split = splitCommercialRows(
+            snapshot.id,
+            values.filter(
+              (row) =>
+                row.table !== "commercial_documents" ||
+                !snapshot.retainedDocuments?.has(publicId(row.values.id)),
+            ),
+          );
           for (const part of snapshot.parts.values()) {
             if (tx.head(part.request).sequence !== part.head.sequence) {
               throw new ProtectedWriteConflict();

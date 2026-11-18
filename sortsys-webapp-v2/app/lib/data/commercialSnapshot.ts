@@ -28,6 +28,7 @@ export type CaseSnapshot = {
   parts: Map<CommercialFacet, CasePart>;
   visible: ReadonlySet<string>;
   seal: InvoiceSeal | null;
+  retainedDocuments?: ReadonlySet<string>;
 };
 export const caseGuards = (snapshot: CaseSnapshot) =>
   [...snapshot.parts.values()].map((part) => part.head);

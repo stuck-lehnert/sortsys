@@ -61,12 +61,14 @@ Entscheidung. Die Sperre hängt nicht davon ab, ob bereits ein externer
 Zeitstempel vorliegt. Das Rückspielen einer älteren Mandantendatei darf diese
 späteren Festschreibungen nicht verschwinden lassen.
 
-Enthält eine Sicherung den Entwurf einer später abgeschlossenen
-Auftragsbestätigung, bleibt die abgeschlossene Fassung abrufbar. Die API liest
-ihre verschlüsselten Teile und die signierte Versionskette aus dem Fachstand,
-in dem sie festgeschrieben wurde. Fehlt in der Sicherung schon die erste
-Dokumentversion, verweigert die API die Freigabe. Der ältere Vorgang könnte
-sonst ohne den verschlüsselten Eintrag für das abgeschlossene Dokument erscheinen.
+Eine abgeschlossene Auftragsbestätigung bleibt auch dann abrufbar, wenn sie
+erst nach der Sicherung angelegt wurde. Der Vorgang muss in der Sicherung
+enthalten sein. Der Browser übernimmt den einzelnen Dokumenteintrag aus dem
+verschlüsselten Stand zum Zeitpunkt der Festschreibung. Die übrigen Einträge
+des Vorgangs stammen aus der Sicherung. Die Teile des Dokuments und seine
+signierte Versionskette bleiben unter den aktuellen Leserechten verfügbar.
+Bei älteren Festschreibungen ohne diesen zusätzlichen Nachweis muss die
+erste Dokumentversion weiterhin in der Sicherung liegen.
 
 Die API kann einen vorbereiteten älteren Fachstand unter Beibehaltung der
 aktuellen Recovery- und Berechtigungsnachweise freigeben. Dafür sind eine
@@ -100,16 +102,19 @@ Der Browser prüft die Signaturen und das Datenmodell der lesbaren Projekte
 und Adressdaten. Er zeigt deren Anzahl sowie fehlende Verknüpfungen zu Kunden
 oder Kontakten an, soweit deren Kataloge lesbar sind. Bei lesbaren laufenden
 Werkzeugbuchungen prüft er auch, ob Werkzeug, Buchung und Projekt zusammenpassen.
-Fehlende Leserechte weist die Vorschau aus. Weitere verschlüsselte Fachdaten
-und ihre Verknüpfungen sind in dieser Vorschau noch nicht abgedeckt.
+Für erhaltene Auftragsbestätigungen prüft er den Bezugsauftrag in der
+Sicherung. Fehlt der lesbare Auftrag oder ist seine Version zu alt, hält der
+Browser die Freigabe an. Fehlende Leserechte weist die Vorschau aus. Weitere
+verschlüsselte Fachdaten und ihre Verknüpfungen sind in dieser Vorschau noch
+nicht abgedeckt.
 Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die
 Freigabe erfordert die Administratorrolle und den Schlüssel der
 Mandantenautorität im Browser. Der Browser signiert nach der Prüfung eine
 Bestätigung für genau diese Sicherung und den beobachteten Stand. Ändern sich
-die Berechtigungen, der Schlüsselkatalog oder die Werkzeugbuchungen, muss die
-Prüfung wiederholt werden. Die API vergleicht den beobachteten Stand in der gleichen
-Transaktion, die die Rücksicherung freigibt. Die Bestätigung enthält keine
-entschlüsselten Daten oder Verknüpfungen.
+die Berechtigungen, der Schlüsselkatalog, die Werkzeugbuchungen oder die
+Festschreibungen, muss die Prüfung wiederholt werden. Die API vergleicht den
+beobachteten Stand in derselben Transaktion, die die Rücksicherung freigibt.
+Die Bestätigung enthält keine entschlüsselten Daten oder Verknüpfungen.
 
 Bei der Freigabe prüft die API die öffentlich prüfbaren Verweise von
 abgeschlossenen Dokumenten, persönlichen Einsatzzuweisungen und

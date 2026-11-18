@@ -1,4 +1,7 @@
 //! Signed public document revision vectors. Payloads stay encrypted in Quack.
+mod registrations;
+pub(super) use registrations::COLLECTION as REGISTRATIONS;
+
 use super::{
     crypto::{encode, frame, identifier, invalid, revision, sized, verify},
     objects::{conflict, packet_hash},
@@ -280,6 +283,9 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
     builder
         .query_stub::<GetInput, Option<DocumentHead>>("zerotrust.documents.get")
         .query_stub::<HistoryInput, Vec<DocumentHead>>("zerotrust.documents.history")
+        .query_stub::<registrations::ListInput, registrations::Page>(
+            "zerotrust.documents.registrations",
+        )
 }
 
 fn metadata_history_key(
@@ -304,26 +310,33 @@ async fn history_records(
     transaction.many(keys).await
 }
 
-pub(super) async fn check_restore_origin(
+async fn first_publication_missing(
     transaction: &mut crate::control::Transaction,
     locked: &DocumentHead,
-) -> RpcResult<()> {
+) -> RpcResult<bool> {
     let first = metadata_history_key(&locked.id, "1")?;
-    // The case and its document index are encrypted. An older view must at
-    // least contain the original document publication on the same branch.
-    let selected: DocumentHead = transaction
-        .read_in_selected_epoch(first.clone())
-        .await?
-        .ok_or_else(super::objects::conflict)?;
+    let selected: Option<DocumentHead> = transaction.read_in_selected_epoch(first.clone()).await?;
     let retained = history_records(transaction, locked, vec![first])
         .await?
         .pop()
         .flatten()
         .ok_or_else(invalid)?;
-    if selected != retained {
-        return Err(super::objects::conflict());
+    match selected {
+        Some(selected) if selected != retained => Err(conflict()),
+        Some(_) => Ok(false),
+        None => Ok(true),
     }
-    Ok(())
+}
+
+pub(super) async fn check_restore_origin(
+    transaction: &mut crate::control::Transaction,
+    locked: &DocumentHead,
+) -> RpcResult<bool> {
+    let missing = first_publication_missing(transaction, locked).await?;
+    if missing {
+        registrations::require_restore_registration(transaction, locked).await?;
+    }
+    Ok(missing)
 }
 
 pub(crate) fn register_metadata(
@@ -331,7 +344,15 @@ pub(crate) fn register_metadata(
     service: Arc<crate::auth::AuthService>,
 ) -> ProcedureRegistryBuilder {
     let get = Arc::clone(&service);
+    let registry = Arc::clone(&service);
     builder
+        .query(
+            "zerotrust.documents.registrations",
+            move |ctx, input: registrations::ListInput| {
+                let service = Arc::clone(&registry);
+                async move { registrations::list(&service, &ctx, input).await }
+            },
+        )
         .query("zerotrust.documents.get", move |ctx, input: GetInput| {
             let service = Arc::clone(&get);
             async move {
@@ -569,6 +590,9 @@ pub(super) async fn metadata_commit(
     let current = key("documents", &head.id);
     context.transaction.put(current.clone(), head).await?;
     context.transaction.put(historical.clone(), head).await?;
+    if head.locked {
+        registrations::capture(&mut context.transaction, head).await?;
+    }
     super::timestamps::metadata_record_document(
         &mut context.transaction,
         head,

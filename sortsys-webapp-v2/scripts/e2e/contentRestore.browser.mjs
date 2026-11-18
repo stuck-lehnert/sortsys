@@ -85,6 +85,9 @@ try {
   });
   await expect(confirm).toBeEnabled();
   await expect(dialog.getByText("Projekte", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText("Erhaltene Dokumente", { exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: join(artifacts, "restore-preview.png") });
   await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
   await expect(dialog).toHaveCount(0);

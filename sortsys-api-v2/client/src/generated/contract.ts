@@ -156,6 +156,8 @@ export type MigrationOrigin = { generation: string, signature: string, history?:
 
 export type ObjectPage = { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, };
 
+export type OpenedRegistration = { head: DocumentHead, facets: Array<EncryptedObject<Facet>>, };
+
 export type PacketCommitment = { count: number, digest: string, };
 
 export type PartKey = { facet: Facet, generation: string, };
@@ -173,6 +175,8 @@ export type PolicyTransaction = { author: string, previousSignature: string, pac
 export type Position = { id: string, shortText: string, description: string, unit: string, sourceFile: string, };
 
 export type PreparedPayloadManifest = { format: string, context: string, operation: string, bytes: number, hash: string, parts: Array<string>, };
+
+export type PreparedView = { operation: string, approval: ContentEpoch, };
 
 export type PriceListScanResult = { supplier: string | null, documentNumber: string | null, effectiveDate: string | null, rows: Array<ScannedPriceRow>, warnings: Array<string>, };
 
@@ -372,6 +376,7 @@ export type QueryInputs = {
   "zerotrust.documents.messages.pages": { selections: Array<Read>, };
   "zerotrust.documents.messages.read": { room: Room, after: string, content?: string, };
   "zerotrust.documents.messages.state": { scope: string, document: string, facet: string, };
+  "zerotrust.documents.registrations": { scope: string, sequence?: string, after?: string, prepared?: PreparedView, };
   "zerotrust.domains.get": { domain: string, generation: string, };
   "zerotrust.domains.list": void;
   "zerotrust.domains.proof": { domain: string, generation: string, };
@@ -512,7 +517,7 @@ export type QueryOutputs = {
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
   "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
   "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, };
-  "zerotrust.content.inspect": { pages: Array<ObjectPage>, stamp: string, };
+  "zerotrust.content.inspect": { pages: Array<ObjectPage>, stamp: string, restoredDocumentScopes: Array<string>, uncheckedDocuments: number, };
   "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, }>;
@@ -524,6 +529,7 @@ export type QueryOutputs = {
   "zerotrust.documents.messages.pages": Array<{ messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, }>;
   "zerotrust.documents.messages.read": { messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, };
   "zerotrust.documents.messages.state": { current: string, checkpoint: LiveCheckpoint | null, content: string | null, };
+  "zerotrust.documents.registrations": { documents: Array<OpenedRegistration>, after: string | null, };
   "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.list": Array<{ id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, }>;
   "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
@@ -1102,6 +1108,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.documents.messages.pages",
   "zerotrust.documents.messages.read",
   "zerotrust.documents.messages.state",
+  "zerotrust.documents.registrations",
   "zerotrust.domains.get",
   "zerotrust.domains.list",
   "zerotrust.domains.proof",

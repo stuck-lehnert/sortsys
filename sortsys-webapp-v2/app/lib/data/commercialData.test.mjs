@@ -2,6 +2,10 @@ import { expect, test } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
 import { COMMERCIAL_FACETS } from "./commercialAreas";
 import { commercialAmountFacet, commercialCents, commercialFacetPayload, commercialMoney, joinCommercialFacets, splitCommercialRows, wireCommercialCase, wireCommercialInvoice } from "./commercialData";
+import {
+  checkConfirmationSources,
+  RestoreDocumentConflict,
+} from "./commercialRegistrations";
 
 function source(kind = "offer") {
   return [row("commercial_cases", { id: "100", title: "Fenstersanierung", kind, status: "draft", scope_item_ids: '["window-1"]', notes: "Interner Lohnansatz 53,71", net_amount: "1234567890123.45" }),
@@ -78,4 +82,38 @@ test("invoice details and payments stay in billing and retain exact decimal sums
   for (const other of COMMERCIAL_FACETS.filter(facet => facet !== "billing")) expect(JSON.stringify(parts.get(other))).not.toContain("Restbetrag");
   expect(commercialMoney(commercialCents("-0.05") + commercialCents("1.1"))).toBe("1.05");
   for (const invalid of [1.23, "1,23", "1.234", "NaN", "1e3"]) expect(() => commercialCents(invalid)).toThrow();
+});
+
+test("a retained confirmation requires the referenced order version in the same restored case", () => {
+  const order = row("commercial_documents", {
+    id: "101",
+    case_id: "100",
+    phase: "86",
+    purpose: "order",
+    version: "2",
+  });
+  const confirmation = row("commercial_documents", {
+    id: "102",
+    case_id: "100",
+    phase: "87",
+    purpose: "confirmation",
+    source_document_id: "101",
+    source_version: "2",
+  });
+  const retained = new Map([["confirmation", confirmation]]);
+  expect(() => checkConfirmationSources([order], retained)).not.toThrow();
+  expect(() => checkConfirmationSources([], retained)).toThrow(
+    RestoreDocumentConflict,
+  );
+  const invalidOrders = [
+    { version: "1" },
+    { case_id: "200" },
+    { phase: "84", purpose: "offer" },
+  ];
+  for (const fields of invalidOrders) {
+    const values = { ...order.values, ...fields };
+    expect(() =>
+      checkConfirmationSources([{ ...order, values }], retained),
+    ).toThrow(RestoreDocumentConflict);
+  }
 });

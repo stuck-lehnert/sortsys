@@ -21,9 +21,13 @@ import {
 import { trustedHistory } from "../app/lib/crypto/session";
 import { openAuthority } from "../app/lib/crypto/setup";
 import type { createBusinessClient } from "../app/lib/data/businessClient";
+import { commercialCollection } from "../app/lib/data/commercialAreas";
+import { commercialFacetPayload } from "../app/lib/data/commercialData";
+import { commercialDocumentStore } from "../app/lib/data/commercialDocumentContent";
 import type { EncryptedChange } from "../app/lib/data/events";
 import { openDocumentMessages } from "../app/lib/data/documentMessages";
 import { prepareLivePublication } from "../app/lib/data/liveCheckpoints";
+import { newProductRowId, publicId } from "../app/lib/data/products";
 import { fileObject } from "../app/lib/data/projectFileData";
 import { projectCollection, projectPayload } from "../app/lib/data/projectData";
 import {
@@ -43,11 +47,13 @@ import {
   rejectRestoreWithoutBookingParents,
 } from "./test-tool-booking-restore";
 
+const originalOrderTitle = "Vertraulicher Auftrag zur Rücksicherung";
+
 async function adoptOrder(owner: Client, projectId: string) {
   const contract = await required(
     owner.mutate("commercial.cases.adoptContract", {
       projectId,
-      title: "Vertraulicher Auftrag zur Rücksicherung",
+      title: originalOrderTitle,
       sourcePhase: "86",
       sourceXml: gaebWorkflowXml("86"),
       sourceFileName: "Auftrag.x86",
@@ -84,11 +90,36 @@ async function createConfirmation(
   return { target: { caseId, id: confirmation.id }, draft };
 }
 
+async function changeStoredCaseTitle(owner: Client, id: string) {
+  const area = commercialCollection(id, "master-data");
+  const key = `${area.prefix}case`;
+  const collection = await protectedCollection(
+    owner,
+    area,
+    new AbortController().signal,
+  );
+  try {
+    const [saved] = await collection.read(key);
+    assert.ok(saved);
+    const value = commercialFacetPayload(saved.value, id, "master-data");
+    const row = value.rows.find((entry) => entry.table === "commercial_cases");
+    assert.ok(row);
+    assert.equal(row.values.title, originalOrderTitle);
+    row.values.title = "Späterer Titel des Vorgangs";
+    await collection.write([
+      await collection.packet(key, value, saved.envelope),
+    ]);
+  } finally {
+    collection.close();
+  }
+}
+
 async function prepareConfirmation(owner: Client, projectId: string) {
   const basis = await adoptOrder(owner, projectId);
-  const { target, draft } = await createConfirmation(owner, basis);
-  const headInput = { scope: `commercial:${target.caseId}`, id: target.id };
   return async (peer: Client) => {
+    await changeStoredCaseTitle(owner, basis.caseId);
+    const { target, draft } = await createConfirmation(owner, basis);
+    const headInput = { scope: `commercial:${target.caseId}`, id: target.id };
     const changed = draft.replace(
       "Fensterlaibung verputzen.",
       "Vertrauliche Ausführung nach der Sicherung.",
@@ -177,6 +208,7 @@ async function prepareConfirmation(owner: Client, projectId: string) {
       const row = listing.documents.find(({ id }) => id === target.id);
       assert.equal(row?.version, finalized.version);
       assert.equal(row?.readOnly, true);
+      assert.equal(listing.case.title, originalOrderTitle);
       const [replaced, error] = await peer.mutate("commercial.documents.save", {
         ...target,
         version: restored.version,
@@ -189,7 +221,7 @@ async function prepareConfirmation(owner: Client, projectId: string) {
   };
 }
 
-async function rejectSnapshotWithoutLockedDocument(
+async function rejectSnapshotWithoutLockedCase(
   tenant: string,
   owner: Client,
   peer: Client,
@@ -200,13 +232,13 @@ async function rejectSnapshotWithoutLockedDocument(
       title: "Auftrag ohne Bestätigung im Sicherungsstand",
     }),
   );
-  const basis = await adoptOrder(owner, project.id);
   const snapshot = await required(
     operator.mutate("admin.storage.snapshots.create", {
       tenant,
       operation: base64(randomSecret()),
     }),
   );
+  const basis = await adoptOrder(owner, project.id);
   const { target } = await createConfirmation(owner, basis);
   await required(
     owner.mutate("commercial.documents.finalize", { ...target, version: 1n }),
@@ -386,6 +418,44 @@ async function holdEditorPackets(
   };
 }
 
+async function exerciseGaebBlockBatches(
+  owner: Client,
+  peer: Client,
+  caseId: string,
+  transmissions: readonly string[][],
+) {
+  const signal = new AbortController().signal;
+  const scope = `commercial:${caseId}`;
+  const stagedDocumentId = publicId(newProductRowId());
+  const writer = await commercialDocumentStore(owner, scope, signal);
+  const reader = await commercialDocumentStore(peer, scope, signal);
+  const original = { description: "Fläche für Überarbeitung\n".repeat(62_000) };
+  try {
+    const start = transmissions.length;
+    const part = await writer.stage(stagedDocumentId, "scope", original);
+    assert.equal(
+      transmissions
+        .slice(start)
+        .filter((paths) => paths.includes("zerotrust.objects.batch")).length,
+      3,
+    );
+    const download = transmissions.length;
+    assert.deepEqual(await reader.read(part), original);
+    const get = "zerotrust.objects.get";
+    assert.deepEqual(
+      transmissions
+        .slice(download)
+        .map((paths) => paths.filter((path) => path === get).length)
+        .filter((count) => count > 0),
+      [1, 4, 3],
+    );
+    console.log("GAEB block batching: 3 uploads and 3 downloads for 7 blocks and their manifest");
+  } finally {
+    writer.close();
+    reader.close();
+  }
+}
+
 export async function exerciseContentPreparation(
   owner: Client,
   peer: ReturnType<typeof createBusinessClient>,
@@ -396,6 +466,7 @@ export async function exerciseContentPreparation(
   changes: readonly EncryptedChange[],
   ownerCredentials: { username: string; password: string },
   member: Client,
+  transmissions: readonly string[][],
 ) {
   const originalTitle = "Vertrauliche Projektfassung im Sicherungsbestand";
   const currentTitle = "Vertrauliche Projektfassung nach der Sicherung";
@@ -473,6 +544,7 @@ export async function exerciseContentPreparation(
   assert.ok(snapshot.bytes);
   const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
+  await exerciseGaebBlockBatches(owner, peer, confirmation.caseId, transmissions);
   const foreignTenant = `${tenant}-other`;
   const foreign = await tenantSetupRequest(foreignTenant);
   await required(operator.mutate("admin.tenants.create", foreign.request));
@@ -624,6 +696,8 @@ export async function exerciseContentPreparation(
   assert.equal(reportPreview.contacts, 1);
   assert.equal(reportPreview.missingReferences, 0);
   assert.equal(reportPreview.uncheckedReferences, 0);
+  assert.equal(reportPreview.retainedDocuments, 1);
+  assert.equal(reportPreview.uncheckedDocuments, 0);
   const preview = await protectedReadView(
     peer,
     previewSignal,
@@ -1042,7 +1116,7 @@ export async function exerciseContentPreparation(
     );
     assert.equal(restoredInBrowser.title, originalTitle);
   }
-  await rejectSnapshotWithoutLockedDocument(tenant, owner, peer, operator);
+  await rejectSnapshotWithoutLockedCase(tenant, owner, peer, operator);
   await booking.checkMemberAndReturn();
   await rejectRestoreWithoutBookingParents(
     tenant,

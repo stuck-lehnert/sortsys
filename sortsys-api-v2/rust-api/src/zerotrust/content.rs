@@ -64,9 +64,12 @@ struct InspectContentInput {
 }
 
 #[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 struct Inspection {
     pages: Vec<ObjectPage>,
     stamp: String,
+    restored_document_scopes: Vec<String>,
+    unchecked_documents: u32,
 }
 
 #[derive(Clone, Deserialize, Serialize, TS)]
@@ -207,6 +210,10 @@ async fn review_stamp(
         .transaction
         .collection_version(super::resource_access::REVIEWED_BOOKINGS)
         .await?;
+    let registrations = context
+        .transaction
+        .collection_version(super::documents::REGISTRATIONS)
+        .await?;
     let catalog =
         super::setup::metadata_root(&mut context.transaction, &context.auth.tenant).await?;
     let content = approval.fingerprint()?;
@@ -219,6 +226,7 @@ async fn review_stamp(
                 &context.security.policy.signature,
                 &catalog.catalog_version,
                 &booking_version,
+                &registrations,
             ],
         ),
     )))
@@ -244,16 +252,34 @@ async fn inspect(
     verify_signed_view(&context, &input.operation, &input.approval)?;
     select_ready_view(&mut context, &input.operation, &input.approval).await?;
     let stamp = review_stamp(&mut context, &input.operation, &input.approval).await?;
+    let mut documents = checks::RestoredDocuments::default();
     let pages = if let Some(pages) = input.pages {
         persistence::selected_pages(&mut context, pages).await?
     } else {
         if !start {
-            checks::dependencies(&mut context).await?;
+            let registrations = checks::dependencies(&mut context).await?;
+            documents = checks::visible_registrations(&mut context, registrations).await?;
         }
         Vec::new()
     };
     context.transaction.validate().await?;
-    Ok(Inspection { pages, stamp })
+    Ok(Inspection {
+        pages,
+        stamp,
+        restored_document_scopes: documents.scopes,
+        unchecked_documents: documents.unchecked,
+    })
+}
+
+pub(super) async fn select_for_inspection(
+    context: super::access::MetadataContext,
+    operation: &str,
+    approval: &ContentEpoch,
+) -> RpcResult<super::access::MetadataContext> {
+    let mut context = require_admin(context)?;
+    verify_signed_view(&context, operation, approval)?;
+    select_ready_view(&mut context, operation, approval).await?;
+    Ok(context)
 }
 
 async fn activation_receipt(

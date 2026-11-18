@@ -631,6 +631,11 @@ export type ObjectPage = {
     openings?: Array<DomainOpening>;
 };
 
+export type OpenedRegistration = {
+    head: DocumentHead;
+    facets: Array<EncryptedObject<Facet>>;
+};
+
 export type PacketCommitment = {
     count: number;
     digest: string;
@@ -695,6 +700,11 @@ export type PreparedPayloadManifest = {
     bytes: number;
     hash: string;
     parts: Array<string>;
+};
+
+export type PreparedView = {
+    operation: string;
+    approval: ContentEpoch;
 };
 
 export type PriceListScanResult = {
@@ -1389,6 +1399,12 @@ export type QueryInputs = {
         scope: string;
         document: string;
         facet: string;
+    };
+    "zerotrust.documents.registrations": {
+        scope: string;
+        sequence?: string;
+        after?: string;
+        prepared?: PreparedView;
     };
     "zerotrust.domains.get": {
         domain: string;
@@ -2821,6 +2837,8 @@ export type QueryOutputs = {
     "zerotrust.content.inspect": {
         pages: Array<ObjectPage>;
         stamp: string;
+        restoredDocumentScopes: Array<string>;
+        uncheckedDocuments: number;
     };
     "zerotrust.content.snapshots": {
         rows: Array<TenantSnapshot>;
@@ -2914,6 +2932,10 @@ export type QueryOutputs = {
         current: string;
         checkpoint: LiveCheckpoint | null;
         content: string | null;
+    };
+    "zerotrust.documents.registrations": {
+        documents: Array<OpenedRegistration>;
+        after: string | null;
     };
     "zerotrust.domains.get": {
         tenant: string;

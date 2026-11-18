@@ -24,6 +24,20 @@ impl Security {
     }
 }
 
+pub(super) fn inherited_rules(
+    origins: &[super::creation::CreationOrigin],
+    policy: &SignedPolicy,
+) -> Vec<Rule> {
+    origins
+        .iter()
+        .flat_map(|origin| {
+            let mut rules = origin.rules();
+            rules.extend(origin.active_booking_rules(policy));
+            rules
+        })
+        .collect()
+}
+
 /// Load the public authorization context from the same tenant file as the
 /// account and ciphertext references. Every observation participates in CAS.
 pub(super) async fn metadata_security(
@@ -107,14 +121,7 @@ async fn metadata_security_for_selection(
         domains,
     )
     .await?;
-    let inherited = origins
-        .iter()
-        .flat_map(|origin| {
-            let mut rules = origin.rules();
-            rules.extend(origin.active_booking_rules(&policy));
-            rules
-        })
-        .collect();
+    let inherited = inherited_rules(&origins, &policy);
     sized::<32>(&certificate.recovery_encryption_key)?;
     sized::<32>(&certificate.recovery_signing_key)?;
     Ok(Security {

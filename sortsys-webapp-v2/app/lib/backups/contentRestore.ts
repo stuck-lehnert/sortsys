@@ -25,7 +25,14 @@ import {
   projectPayload,
 } from "../data/projectData";
 import { publicId } from "../data/products";
+import { commercialCollection, commercialDomain } from "../data/commercialAreas";
+import { joinCommercialFacets } from "../data/commercialData";
 import {
+  checkConfirmationSources,
+  readRetainedDocumentRows,
+} from "../data/commercialRegistrations";
+import {
+  protectedCollections,
   protectedReadView,
   required,
   type Collection,
@@ -278,8 +285,52 @@ export async function inspectPreparedContent(
     }),
   );
   live();
-  if (dependencies.pages.length !== 0 || dependencies.stamp !== stamp)
+  if (
+    dependencies.pages.length !== 0 ||
+    dependencies.stamp !== stamp ||
+    !Array.isArray(dependencies.restoredDocumentScopes) ||
+    !Number.isSafeInteger(dependencies.uncheckedDocuments) ||
+    dependencies.uncheckedDocuments < 0
+  )
     throw new InvalidProtectedData();
+  let retainedDocuments = 0;
+  const scopes = dependencies.restoredDocumentScopes.map((scope) => {
+    if (typeof scope !== "string") throw new InvalidProtectedData();
+    const domain = commercialDomain(`${scope}:master-data`);
+    if (!domain) throw new InvalidProtectedData();
+    return commercialCollection(domain.id, "master-data");
+  });
+  if (new Set(scopes.map((area) => area.scope)).size !== scopes.length)
+    throw new InvalidProtectedData();
+  for (let offset = 0; offset < scopes.length; offset += 16) {
+    const areas = scopes.slice(offset, offset + 16);
+    const readCases = areas.map((area) => ({
+      ...area,
+      prefix: `${area.prefix}case`,
+    }));
+    const [collections] = await Promise.all([
+      protectedCollections(client, signal, areas.map((area) => area.domain)),
+      view.prefetch(readCases.map((area) => ({ area }))),
+    ]);
+    const counts = await mapConcurrent(readCases, 4, async (area) => {
+      const id = commercialDomain(area.domain)!.id;
+      const [saved, retained] = await Promise.all([
+        view.read(area),
+        readRetainedDocumentRows(client, signal, id, collections, {
+          prepared: check,
+        }),
+      ]);
+      if (saved.length !== 1 || !retained.size)
+        throw new InvalidProtectedData();
+      const values = joinCommercialFacets(
+        id,
+        new Map([["master-data", saved[0]!.value]]),
+      );
+      checkConfirmationSources(values, retained);
+      return retained.size;
+    });
+    retainedDocuments += counts.reduce((total, count) => total + count, 0);
+  }
   const context = await administratorContext(client, signal);
   live();
   const review = await signContentReview(
@@ -297,6 +348,8 @@ export async function inspectPreparedContent(
     missingReferences,
     uncheckedReferences,
     uncheckedBookings,
+    retainedDocuments,
+    uncheckedDocuments: dependencies.uncheckedDocuments,
     review,
   };
 }

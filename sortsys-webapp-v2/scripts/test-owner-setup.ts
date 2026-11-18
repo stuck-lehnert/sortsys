@@ -120,7 +120,11 @@ globalThis.fetch = new Proxy(originalFetch, {
       requests.push(url.searchParams.get("input")!);
     }
     if (
-      (mode === "owner-staging" || mode === "owner-backup-archive") &&
+      [
+        "owner-staging",
+        "owner-backup-archive",
+        "owner-content-preparation",
+      ].includes(mode) &&
       url.searchParams.get("batch") === "1"
     ) {
       rpcTransmissions.push(url.pathname.slice(1).split(","));
@@ -331,6 +335,7 @@ try {
       contentChanges,
       { username: draft.username, password: draft.password },
       createClient(endpoints[0], "owner-restore-tool-member"),
+      rpcTransmissions,
     );
   } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =

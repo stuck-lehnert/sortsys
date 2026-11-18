@@ -1,14 +1,61 @@
 //! Public dependencies that cross from the selected view to current controls.
 use super::super::{
-    access::MetadataContext,
-    creation::CreationOrigin,
+    access::{MetadataContext, inherited_rules},
+    creation::{CreationOrigin, metadata_origins},
     crypto::{invalid, sized},
     documents::DocumentHead,
     object_shares::{RecipientAccess, verify_access},
     objects::{conflict, metadata_object, metadata_read, packet_hash, registry},
-    wire::{EncryptedObject, Facet},
+    wire::{Action, EncryptedObject, Facet},
 };
 use crate::error::RpcResult;
+use std::collections::BTreeMap;
+
+#[derive(Default)]
+pub(super) struct RestoredDocuments {
+    pub scopes: Vec<String>,
+    pub unchecked: u32,
+}
+
+pub(super) async fn visible_registrations(
+    context: &mut MetadataContext,
+    registrations: BTreeMap<String, u32>,
+) -> RpcResult<RestoredDocuments> {
+    let mut report = RestoredDocuments::default();
+    let selected = registrations.into_iter().collect::<Vec<_>>();
+    let security = &context.security;
+    for cases in selected.chunks(16) {
+        let domains = cases
+            .iter()
+            .map(|(scope, _)| format!("{scope}:master-data"))
+            .collect::<Vec<_>>();
+        let origins = metadata_origins(
+            &mut context.transaction,
+            &context.auth,
+            security.root.generation,
+            &security.authority,
+            &security.subject,
+            &security.policy,
+            Some(&domains),
+        )
+        .await?;
+        let inherited = inherited_rules(&origins, &security.policy);
+        for (scope, count) in cases {
+            if security.policy.allows_with(
+                &inherited,
+                &security.subject,
+                scope,
+                Facet::MasterData,
+                Action::Read,
+            ) {
+                report.scopes.push(scope.clone());
+            } else {
+                report.unchecked = report.unchecked.checked_add(*count).ok_or_else(invalid)?;
+            }
+        }
+    }
+    Ok(report)
+}
 
 async fn record(context: &mut MetadataContext, id: &str) -> RpcResult<EncryptedObject> {
     let record = metadata_object(&mut context.transaction, id)
@@ -121,7 +168,8 @@ async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
     }
 }
 
-async fn closed_documents(context: &mut MetadataContext) -> RpcResult<()> {
+async fn closed_documents(context: &mut MetadataContext) -> RpcResult<BTreeMap<String, u32>> {
+    let mut restored = BTreeMap::<String, u32>::new();
     let mut after = None;
     loop {
         let page = context
@@ -137,7 +185,12 @@ async fn closed_documents(context: &mut MetadataContext) -> RpcResult<()> {
             if head.id != row.record.key || head.tenant != context.auth.tenant {
                 return Err(invalid());
             }
-            super::super::documents::check_restore_origin(&mut context.transaction, &head).await?;
+            if super::super::documents::check_restore_origin(&mut context.transaction, &head)
+                .await?
+            {
+                let count = restored.entry(head.scope.clone()).or_default();
+                *count = count.checked_add(1).ok_or_else(invalid)?;
+            }
             let case = record(context, &format!("{}:master-data:case", head.scope)).await?;
             if case.is_tombstone() || case.scope != head.scope || case.facet != Facet::MasterData {
                 return Err(conflict());
@@ -162,13 +215,15 @@ async fn closed_documents(context: &mut MetadataContext) -> RpcResult<()> {
             }
         }
         let Some(next) = page.after else {
-            return Ok(());
+            return Ok(restored);
         };
         after = Some(next);
     }
 }
 
-pub(super) async fn dependencies(context: &mut MetadataContext) -> RpcResult<()> {
+pub(super) async fn dependencies(
+    context: &mut MetadataContext,
+) -> RpcResult<BTreeMap<String, u32>> {
     assignments(context).await?;
     responsible_bookings(context).await?;
     closed_documents(context).await

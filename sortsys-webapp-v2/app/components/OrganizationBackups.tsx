@@ -14,6 +14,7 @@ import {
 } from "~/lib/backups/contentRestore";
 import { client } from "~/lib/client";
 import { unlockedAccount } from "~/lib/crypto/session";
+import { RestoreDocumentConflict } from "~/lib/data/commercialRegistrations";
 import { required } from "~/lib/data/protectedObjects";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 
@@ -30,7 +31,7 @@ type Review =
       status: "failed";
       backup: Backup;
       operation: string;
-      bookingConflict: boolean;
+      problem: "booking" | "document" | null;
     }
   | { status: "checked"; checked: CheckedBackup };
 type Publication =
@@ -58,6 +59,23 @@ function backupDate(backup: Backup) {
   }).format(backup.createdAt);
 }
 
+function reviewFailure(problem: "booking" | "document" | null) {
+  if (problem === "booking")
+    return uiText(
+      "Die Sicherung passt nicht zu den laufenden Werkzeugbuchungen. Prüfen Sie eine neuere Sicherung oder klären Sie die betroffenen Buchungen.",
+      "This backup is incompatible with the active tool bookings. Check a more recent backup or resolve the affected bookings.",
+    );
+  if (problem === "document")
+    return uiText(
+      "In dieser Sicherung fehlt der Bezugsauftrag einer abgeschlossenen Auftragsbestätigung oder die benötigte Auftragsversion.",
+      "This backup is missing the order or order version referenced by a finalized order confirmation.",
+    );
+  return uiText(
+    "Die Sicherung konnte nicht geprüft werden.",
+    "The backup could not be checked.",
+  );
+}
+
 function RestoreCounts({ report }: { report: Verification }) {
   const count = new Intl.NumberFormat(currentLocaleTag());
   const entries = [
@@ -65,9 +83,17 @@ function RestoreCounts({ report }: { report: Verification }) {
     { label: uiText("Kunden", "Customers"), value: report.customers },
     { label: uiText("Kontakte", "Contacts"), value: report.contacts },
   ];
+  if (report.retainedDocuments > 0) {
+    entries.push({
+      label: uiText("Erhaltene Dokumente", "Retained documents"),
+      value: report.retainedDocuments,
+    });
+  }
   return (
     <>
-      <dl className="grid grid-cols-3 gap-4 rounded-md border border-border p-3">
+      <dl
+        className={`grid gap-4 rounded-md border border-border p-3 ${entries.length === 4 ? "grid-cols-2" : "grid-cols-3"}`}
+      >
         {entries.map(({ label, value }) => (
           <div key={label}>
             <dt className="text-sm text-muted">{label}</dt>
@@ -101,6 +127,14 @@ function RestoreCounts({ report }: { report: Verification }) {
           {uiText(
             "Für einige Verknüpfungen laufender Werkzeugbuchungen fehlt die Lesefreigabe zur Prüfung.",
             "Some active tool booking links could not be checked with the current read access.",
+          )}
+        </p>
+      )}
+      {report.uncheckedDocuments > 0 && (
+        <p className="text-sm text-muted">
+          {uiText(
+            "Für einige erhaltene Dokumente fehlt die Lesefreigabe zur Prüfung.",
+            "Some retained documents could not be checked with the current read access.",
           )}
         </p>
       )}
@@ -197,10 +231,13 @@ export default function OrganizationBackups() {
       if (!controller.signal.aborted) {
         const conflict =
           error instanceof RpcClientError && error.code === "CONFLICT";
+        let problem: "booking" | "document" | null = null;
+        if (error instanceof RestoreBookingConflict) problem = "booking";
+        else if (error instanceof RestoreDocumentConflict) problem = "document";
         setReview({
           status: "failed",
           backup,
-          bookingConflict: error instanceof RestoreBookingConflict,
+          problem,
           operation: conflict ? crypto.randomUUID() : operation,
         });
       }
@@ -378,15 +415,7 @@ export default function OrganizationBackups() {
             )}
             {failedReview && (
               <MyCallout color="red">
-                {failedReview.bookingConflict
-                  ? uiText(
-                      "Die Sicherung passt nicht zu den laufenden Werkzeugbuchungen. Prüfen Sie eine neuere Sicherung oder klären Sie die betroffenen Buchungen.",
-                      "This backup is incompatible with the active tool bookings. Check a more recent backup or resolve the affected bookings.",
-                    )
-                  : uiText(
-                      "Die Sicherung konnte nicht geprüft werden.",
-                      "The backup could not be checked.",
-                    )}
+                {reviewFailure(failedReview.problem)}
                 <MyButton
                   kind="ghost"
                   onClick={() =>
