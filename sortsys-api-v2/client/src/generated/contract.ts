@@ -367,6 +367,7 @@ export type QueryInputs = {
   "zerotrust.domains.proof": { domain: string, generation: string, };
   "zerotrust.editors.config": void;
   "zerotrust.fileChunks.get": { domain: string, id: string, };
+  "zerotrust.fileChunks.getMany": { domain: string, ids: Array<string>, };
   "zerotrust.history.get": { id: string, revision: string | null, };
   "zerotrust.history.list": { prefixes: Array<string>, before: string | null, snapshot: string | null, known: string | null, knownTotal: string | null, };
   "zerotrust.identities.get": { subject: string, };
@@ -515,6 +516,7 @@ export type QueryOutputs = {
   "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.editors.config": { officeOrigin: string | null, };
   "zerotrust.fileChunks.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
+  "zerotrust.fileChunks.getMany": Array<{ tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, }>;
   "zerotrust.history.get": { access: Access, sequence: string, orderId: string, publication: string, initialPublication: string, domain: string, envelope: EncryptedObject<Facet>, previous: EncryptedObject<Facet> | null, migrationOrigin: MigrationOrigin | null, deletion: JsonValue | null, references: JsonValue | null, occurredAt: Date, occurredMicros: string, } | null;
   "zerotrust.history.list": { access: Access, current: string, total: string, snapshot: string, after: string | null, afterMicros: string | null, afterOrder: string | null, unchanged: boolean, changes: Array<Change>, };
   "zerotrust.identities.get": { tenant: string, generation: string, user: string, previousSignature?: string, encryptionKey: string, signingKey: string, signature: string, } | null;
@@ -1085,6 +1087,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.domains.proof",
   "zerotrust.editors.config",
   "zerotrust.fileChunks.get",
+  "zerotrust.fileChunks.getMany",
   "zerotrust.history.get",
   "zerotrust.history.list",
   "zerotrust.identities.get",

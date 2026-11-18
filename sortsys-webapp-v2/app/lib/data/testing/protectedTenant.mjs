@@ -298,9 +298,11 @@ export async function protectedTenant(
                 null,
                 Object.assign(new Error("Missing"), { code: "NOT_FOUND" }),
               ];
-        case "zerotrust.fileChunks.get": {
-          const saved = chunks.get(input.id);
-          if (!saved || saved.domain !== input.domain) {
+        case "zerotrust.fileChunks.get":
+        case "zerotrust.fileChunks.getMany": {
+          const ids = path.endsWith(".getMany") ? input.ids : [input.id];
+          const saved = ids.map((id) => chunks.get(id));
+          if (saved.some((chunk) => !chunk || chunk.domain !== input.domain)) {
             return [
               null,
               new RpcClientError({
@@ -310,7 +312,10 @@ export async function protectedTenant(
               }),
             ];
           }
-          return [structuredClone(saved.envelope), null];
+          const envelopes = saved.map((chunk) =>
+            structuredClone(chunk.envelope),
+          );
+          return [path.endsWith(".getMany") ? envelopes : envelopes[0], null];
         }
         case "zerotrust.objects.list": {
           const domain = domains.get(input.domain);

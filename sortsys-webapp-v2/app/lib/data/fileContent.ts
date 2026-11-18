@@ -22,8 +22,30 @@ import {
 import { mapConcurrent } from "./runtime/concurrentReads";
 
 // Bound ciphertext, plaintext and crypto work as well as the network requests.
-// Independent blocks can share an RPC batch without buffering the whole file.
+// Work on one group at a time to bound the bytes in flight for large files.
 const CONCURRENT_FILE_BLOCKS = 4;
+
+async function fetchFileBlocks(
+  client: Client,
+  domain: string,
+  ids: string[],
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const packets = await required(
+    client.query(
+      "zerotrust.fileChunks.getMany",
+      { domain, ids },
+      {
+        strategy: "network-only",
+      },
+    ),
+  );
+  signal.throwIfAborted();
+  if (!Array.isArray(packets) || packets.length !== ids.length)
+    throw new InvalidProtectedData();
+  return packets;
+}
 
 async function packetHash(input: unknown): Promise<string> {
   const envelope = encryptedObject(input);
@@ -68,70 +90,96 @@ export async function storeFileContent(
       { length: Math.ceil(blob.size / FILE_CHUNK_BYTES) },
       (_, index) => index,
     );
-    const parts = await mapConcurrent(
-      indices,
-      CONCURRENT_FILE_BLOCKS,
-      async (index) => {
-        signal.throwIfAborted();
-        const offset = index * FILE_CHUNK_BYTES;
-        const id = contentId(namespace, file, version, index);
-        const raw = new Uint8Array(
-          await blob.slice(offset, offset + FILE_CHUNK_BYTES).arrayBuffer(),
-        );
-        try {
+    const parts: FileContent["parts"] = [];
+    for (
+      let start = 0;
+      start < indices.length;
+      start += CONCURRENT_FILE_BLOCKS
+    ) {
+      const group = indices.slice(start, start + CONCURRENT_FILE_BLOCKS);
+      const staged = await mapConcurrent(
+        group,
+        CONCURRENT_FILE_BLOCKS,
+        async (index) => {
           signal.throwIfAborted();
-          if (options.resume || version.startsWith("legacy")) {
-            const [previous, error] = await client.query(
-              "zerotrust.fileChunks.get",
-              { domain: area.domain, id },
-              { strategy: "network-only" },
+          const offset = index * FILE_CHUNK_BYTES;
+          const id = contentId(namespace, file, version, index);
+          const raw = new Uint8Array(
+            await blob.slice(offset, offset + FILE_CHUNK_BYTES).arrayBuffer(),
+          );
+          try {
+            signal.throwIfAborted();
+            if (options.resume || version.startsWith("legacy")) {
+              const [previous, error] = await client.query(
+                "zerotrust.fileChunks.get",
+                { domain: area.domain, id },
+                { strategy: "network-only" },
+              );
+              signal.throwIfAborted();
+              if (error && !notFound(error)) throw error;
+              if (previous) {
+                const old = block(
+                  (await collection.open(previous, id)).value,
+                  raw.length,
+                );
+                try {
+                  if ((await digest(old)) !== (await digest(raw)))
+                    throw new InvalidProtectedData();
+                } finally {
+                  old.fill(0);
+                }
+                return {
+                  id,
+                  hash: await packetHash(previous),
+                  confirmed: true,
+                  error: null,
+                };
+              }
+            }
+            const packet = await collection.packet(
+              id,
+              { format: "sortsys-file-block-v1", data: base64(raw) },
+              undefined,
+              true,
             );
             signal.throwIfAborted();
-            if (error && !notFound(error)) throw error;
-            if (previous) {
-              const old = block(
-                (await collection.open(previous, id)).value,
-                raw.length,
-              );
-              try {
-                if ((await digest(old)) !== (await digest(raw)))
-                  throw new InvalidProtectedData();
-              } finally {
-                old.fill(0);
-              }
-              return { id, hash: await packetHash(previous) };
-            }
+            const [, error] = await client.mutate("zerotrust.fileChunks.put", {
+              domain: area.domain,
+              envelope: packet.envelope,
+            });
+            signal.throwIfAborted();
+            return {
+              id,
+              hash: await packetHash(packet.envelope),
+              confirmed: false,
+              error,
+            };
+          } finally {
+            raw.fill(0);
           }
-          const packet = await collection.packet(
-            id,
-            { format: "sortsys-file-block-v1", data: base64(raw) },
-            undefined,
-            true,
-          );
+        },
+      );
+      const pending = staged.filter((part) => !part.confirmed);
+      if (pending.length > 0) {
+        const ids = pending.map((part) => part.id);
+        let saved;
+        try {
+          saved = await fetchFileBlocks(client, area.domain, ids, signal);
+        } catch (error) {
           signal.throwIfAborted();
-          const [, error] = await client.mutate("zerotrust.fileChunks.put", {
-            domain: area.domain,
-            envelope: packet.envelope,
-          });
-          signal.throwIfAborted();
-          const [saved, readError] = await client.query(
-            "zerotrust.fileChunks.get",
-            { domain: area.domain, id },
-            { strategy: "network-only" },
-          );
-          signal.throwIfAborted();
-          if (
-            !saved ||
-            (await packetHash(saved)) !== (await packetHash(packet.envelope))
-          ) {
-            throw error ?? readError ?? new InvalidProtectedData();
-          }
-          return { id, hash: await packetHash(saved) };
-        } finally {
-          raw.fill(0);
+          throw pending.find((part) => part.error)?.error ?? error;
         }
-      },
-    );
+        await mapConcurrent(
+          pending,
+          CONCURRENT_FILE_BLOCKS,
+          async (part, index) => {
+            if ((await packetHash(saved[index])) !== part.hash)
+              throw part.error ?? new InvalidProtectedData();
+          },
+        );
+      }
+      for (const { id, hash } of staged) parts.push({ id, hash });
+    }
     signal.throwIfAborted();
     if (!collection.can("read")) throw new InvalidProtectedData();
     return content({ version, size: blob.size, parts }, namespace, file);
@@ -172,33 +220,44 @@ async function readFileBlocks<T>(
   const area = chunkCollection(namespace);
   const collection = await protectedCollection(client, area, signal);
   try {
-    const result = await mapConcurrent(
-      manifest.parts,
-      CONCURRENT_FILE_BLOCKS,
-      async (part, index) => {
-        signal.throwIfAborted();
-        const envelope = await required(
-          client.query(
-            "zerotrust.fileChunks.get",
-            { domain: area.domain, id: part.id },
-            { strategy: "network-only" },
-          ),
-        );
-        signal.throwIfAborted();
-        if ((await packetHash(envelope)) !== part.hash)
-          throw new InvalidProtectedData();
-        const raw = block(
-          (await collection.open(envelope, part.id)).value,
-          Math.min(FILE_CHUNK_BYTES, manifest.size - index * FILE_CHUNK_BYTES),
-        );
-        try {
-          signal.throwIfAborted();
-          return await consume(raw, index);
-        } finally {
-          raw.fill(0);
-        }
-      },
-    );
+    const result: T[] = [];
+    for (
+      let start = 0;
+      start < manifest.parts.length;
+      start += CONCURRENT_FILE_BLOCKS
+    ) {
+      const group = manifest.parts.slice(start, start + CONCURRENT_FILE_BLOCKS);
+      const packets = await fetchFileBlocks(
+        client,
+        area.domain,
+        group.map((part) => part.id),
+        signal,
+      );
+      const consumed = await mapConcurrent(
+        group,
+        CONCURRENT_FILE_BLOCKS,
+        async (part, offset) => {
+          const index = start + offset;
+          const envelope = packets[offset];
+          if ((await packetHash(envelope)) !== part.hash)
+            throw new InvalidProtectedData();
+          const raw = block(
+            (await collection.open(envelope, part.id)).value,
+            Math.min(
+              FILE_CHUNK_BYTES,
+              manifest.size - index * FILE_CHUNK_BYTES,
+            ),
+          );
+          try {
+            signal.throwIfAborted();
+            return await consume(raw, index);
+          } finally {
+            raw.fill(0);
+          }
+        },
+      );
+      result.push(...consumed);
+    }
     signal.throwIfAborted();
     if (!collection.can("read")) throw new InvalidProtectedData();
     return result;

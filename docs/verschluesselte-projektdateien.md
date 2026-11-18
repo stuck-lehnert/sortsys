@@ -71,14 +71,14 @@ fehlende oder umsortierte Blöcke führen beim Lesen zu einem Fehler. Bestätigt
 Blöcke lassen sich auch durch einen berechtigten Schreiber nicht überschreiben;
 eine Bearbeitung legt neue Blöcke an.
 
-Hochladen, Lesen und Prüfen bearbeiten jeweils höchstens vier Blöcke
-gleichzeitig. Unabhängige Abrufe können dadurch dasselbe RPC-Paket nutzen,
-statt für jeden Block auf einen weiteren Verbindungsumlauf zu warten. Die
-Reihenfolge im Dateiverzeichnis bleibt maßgeblich, auch wenn einzelne Blöcke
-früher eintreffen. Jeder Block wird weiterhin einzeln geprüft. Bei einem Fehler
-oder Abbruch werden keine weiteren Blöcke begonnen; bereits gestartete Arbeiten
-enden, bevor die gemeinsamen Schlüsselressourcen geschlossen werden. Ein
-Dateiverzeichnis wird erst zurückgegeben, wenn alle Blöcke bestätigt sind.
+Der Browser lädt verschlüsselte Blöcke in Gruppen von bis zu vier. Dieselbe
+Schnittstelle bestätigt nach einem Upload, welche Blöcke tatsächlich abgelegt
+wurden. Die API prüft die Leseberechtigung pro Gruppe und ruft die Blöcke
+gemeinsam beim Datendienst ab. Der Browser prüft weiterhin den Hash jedes
+Blocks in der Reihenfolge des Dateiverzeichnisses. Bei einem Fehler oder Abbruch
+beginnt keine weitere Gruppe. Bereits gestartete Arbeiten enden, bevor der
+Browser den gemeinsamen Schlüsselzugriff schließt. Das Dateiverzeichnis wird
+erst nach Bestätigung aller Blöcke veröffentlicht.
 
 Dateimetadaten, Ordnerzuordnungen und Speicherstände werden vor der Übertragung
 gegen das lokale Datenschema geprüft. Der Server prüft Signaturen, aktuelle

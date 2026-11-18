@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import superjson from "superjson";
 import { createClient } from "@sortsys/v2-client";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
@@ -62,7 +63,7 @@ globalThis.fetch = new Proxy(fetchOriginal, {
       targetUrl.pathname
         .slice(1)
         .split(",")
-        .includes("zerotrust.fileChunks.get")
+        .includes("zerotrust.fileChunks.getMany")
     ) {
       const peerUrl = new URL(
         targetUrl.pathname + targetUrl.search,
@@ -264,6 +265,7 @@ async function checkBatchedFileContent(projectId: string) {
   const blob = new Blob([bytes]);
   const file = "3";
   const version = "c".repeat(32);
+  const uploadStart = sent.length;
   const manifest = await storeFileContent(
     owner,
     projectId,
@@ -275,22 +277,24 @@ async function checkBatchedFileContent(projectId: string) {
   assert.equal(manifest.parts.length, 9);
 
   function readBatches(start: number) {
-    return sent
-      .slice(start)
-      .map((request) => new URL(request.url).pathname.slice(1).split(","))
-      .map((paths) =>
-        paths.filter((path) => path === "zerotrust.fileChunks.get"),
-      )
-      .filter((paths) => paths.length > 0);
+    return sent.slice(start).flatMap((request) => {
+      const url = new URL(request.url);
+      const paths = url.pathname.slice(1).split(",");
+      const index = paths.indexOf("zerotrust.fileChunks.getMany");
+      if (index < 0) return [];
+      const encoded = JSON.parse(
+        request.body || url.searchParams.get("input")!,
+      );
+      const input = superjson.deserialize<{ ids: string[] }>(encoded[index]);
+      return [input.ids.length];
+    });
   }
   function checkReads(start: number) {
     const batches = readBatches(start);
-    assert.equal(batches[0]?.length, 4);
-    assert.ok(batches.every((paths) => paths.length <= 4));
-    assert.equal(batches.flat().length, 9);
-    assert.ok(batches.length < 9);
-    return batches.map((paths) => paths.length);
+    assert.deepEqual(batches, [4, 4, 1]);
+    return batches;
   }
+  const confirmationBatches = checkReads(uploadStart);
   readChunksOnPeer = true;
   try {
     const loadStart = sent.length;
@@ -325,36 +329,56 @@ async function checkBatchedFileContent(projectId: string) {
         ),
     );
     console.log(
-      `Native file batches: 9 blocks; load HTTP groups ${loadBatches.join(", ")}; verification HTTP groups ${verifyBatches.join(", ")}; resumed without writes; readback through independent API`,
+      `Native file batches: 9 blocks; upload confirmations ${confirmationBatches.join(", ")}; load ${loadBatches.join(", ")}; verification ${verifyBatches.join(", ")}; resumed without writes; readback through independent API`,
     );
   } finally {
     readChunksOnPeer = false;
   }
   const domain = chunkCollection(projectId).domain;
-  const denied = await Promise.all(
-    manifest.parts
-      .slice(0, 4)
-      .map((part) =>
-        member.query(
-          "zerotrust.fileChunks.get",
-          { domain, id: part.id },
-          { strategy: "network-only" },
-        ),
-      ),
+  const ids = manifest.parts.map((part) => part.id);
+  const [denied, deniedError] = await member.query(
+    "zerotrust.fileChunks.getMany",
+    { domain, ids: ids.slice(0, 4) },
+    { strategy: "network-only" },
   );
-  assert.ok(denied.every(([, error]) => error?.data?.httpCode === 403));
-  const mixed = await Promise.all([
+  assert.equal(denied, null);
+  assert.equal(deniedError?.data?.httpCode, 403);
+  const requested = [ids[3]!, ids[0]!, ids[8]!];
+  const ordered = await required(
     owner.query(
-      "zerotrust.fileChunks.get",
-      { domain, id: manifest.parts[0]!.id },
+      "zerotrust.fileChunks.getMany",
+      { domain, ids: requested },
       { strategy: "network-only" },
     ),
-    owner.query(
-      "zerotrust.fileChunks.get",
-      { domain, id: "file-data:999:3:cccccccccccccccccccccccccccccccc:0" },
+  );
+  assert.deepEqual(
+    ordered.map((packet) => packet.object),
+    requested,
+  );
+  const [, foreignError] = await owner.query(
+    "zerotrust.fileChunks.getMany",
+    {
+      domain,
+      ids: [ids[0]!, "file-data:999:3:cccccccccccccccccccccccccccccccc:0"],
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(foreignError?.data?.httpCode, 403);
+  for (const invalidIds of [[], ids.slice(0, 5), [ids[0]!, ids[0]!]]) {
+    const [data, error] = await owner.query(
+      "zerotrust.fileChunks.getMany",
+      { domain, ids: invalidIds },
       { strategy: "network-only" },
-    ),
-  ]);
-  assert.equal(mixed[0]![0]?.object, manifest.parts[0]!.id);
-  assert.equal(mixed[1]![1]?.data?.httpCode, 403);
+    );
+    assert.equal(data, null);
+    assert.equal(error?.code, "BAD_REQUEST");
+  }
+  const missing = `${ids[0]!.slice(0, -1)}99`;
+  const [partial, missingError] = await owner.query(
+    "zerotrust.fileChunks.getMany",
+    { domain, ids: [ids[0]!, missing] },
+    { strategy: "network-only" },
+  );
+  assert.equal(partial, null);
+  assert.equal(missingError?.data?.httpCode, 404);
 }

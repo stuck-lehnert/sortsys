@@ -44,11 +44,11 @@ function source(blocks = 9) {
   return new Blob([bytes], { type: "application/octet-stream" });
 }
 
-async function fixture() {
+async function fixture(blocks = 9) {
   const tenant = await protectedTenant([area]);
   const controller = new AbortController();
   const signal = controller.signal;
-  const blob = source();
+  const blob = source(blocks);
   const manifest = await storeFileContent(
     tenant.client,
     namespace,
@@ -104,11 +104,11 @@ function wireClient(tenant) {
 }
 
 function blockReads(requests) {
-  return requests
-    .map((request) =>
-      request.paths.filter((path) => path === "zerotrust.fileChunks.get"),
-    )
-    .filter((paths) => paths.length > 0);
+  return requests.flatMap(({ paths, inputs }) =>
+    inputs
+      .filter((_, index) => paths[index] === "zerotrust.fileChunks.getMany")
+      .map((input) => input.ids.length),
+  );
 }
 
 test("file reads and verification share bounded HTTP batches and preserve byte order", async () => {
@@ -140,11 +140,12 @@ test("file reads and verification share bounded HTTP batches and preserve byte o
           tenant.signal,
         );
       }
-      const reads = blockReads(requests);
-      expect(reads[0]).toHaveLength(4);
-      expect(reads.length).toBeLessThan(tenant.manifest.parts.length);
-      expect(reads.every((paths) => paths.length <= 4)).toBe(true);
-      expect(reads.flat()).toHaveLength(tenant.manifest.parts.length);
+      expect(blockReads(requests)).toEqual([4, 4, 1]);
+      expect(
+        requests.some((request) =>
+          request.paths.includes("zerotrust.fileChunks.get"),
+        ),
+      ).toBe(false);
       expect(JSON.stringify(requests)).not.toContain("Private file block");
     }
   } finally {
@@ -182,6 +183,7 @@ test("parallel staging verifies lost acknowledgements and resumes without replac
     expect(maximum).toBeLessThanOrEqual(4);
     expect(active).toBe(0);
     expect(tenant.chunks.size).toBe(manifest.parts.length);
+    expect(blockReads(requests)).toEqual([4, 4, 1]);
     const writes = tenant.calls.filter(
       (call) => call.path === "zerotrust.fileChunks.put",
     ).length;
@@ -244,59 +246,31 @@ test("parallel staging verifies lost acknowledgements and resumes without replac
   }
 });
 
-test("a failed read stops new blocks and waits for started peers before closing their shared keys", async () => {
+test("a failed block batch stops the download before requesting the next group", async () => {
   const tenant = await fixture();
   const original = tenant.client.query.bind(tenant.client);
-  const entered = deferred();
-  const release = deferred();
   const reads = [];
-  let active = 0;
   tenant.client.query = async (path, input, options) => {
-    if (path !== "zerotrust.fileChunks.get")
+    if (path !== "zerotrust.fileChunks.getMany")
       return original(path, input, options);
-    reads.push(input.id);
-    if (input.id === tenant.manifest.parts[0].id) {
-      return [null, new Error("Denied file block")];
-    }
-    active++;
-    if (active === 3) entered.resolve();
-    await release.promise;
-    const result = await original(path, input, options);
-    active--;
-    return result;
+    reads.push(...input.ids);
+    return [null, new Error("Denied file block")];
   };
-  let settled = false;
-  const pending = loadFileContent(
-    tenant.client,
-    namespace,
-    file,
-    tenant.manifest,
-    tenant.blob.type,
-    tenant.signal,
-  );
-  const outcome = pending.then(
-    () => {
-      settled = true;
-      return null;
-    },
-    (error) => {
-      settled = true;
-      return error;
-    },
-  );
   try {
-    await entered.promise;
-    expect(active).toBe(3);
-    expect(settled).toBe(false);
-    release.resolve();
-    expect((await outcome).message).toBe("Denied file block");
-    expect(active).toBe(0);
+    await expect(
+      loadFileContent(
+        tenant.client,
+        namespace,
+        file,
+        tenant.manifest,
+        tenant.blob.type,
+        tenant.signal,
+      ),
+    ).rejects.toThrow("Denied file block");
     expect(reads).toEqual(
       tenant.manifest.parts.slice(0, 4).map((part) => part.id),
     );
   } finally {
-    release.resolve();
-    await outcome;
     tenant.close();
   }
 });
@@ -310,9 +284,9 @@ test("cancellation and account replacement discard late parallel reads", async (
     const release = deferred();
     let reads = 0;
     tenant.client.query = async (path, input, options) => {
-      if (path !== "zerotrust.fileChunks.get")
+      if (path !== "zerotrust.fileChunks.getMany")
         return original(path, input, options);
-      reads++;
+      reads += input.ids.length;
       if (reads === 4) entered.resolve();
       await release.promise;
       return original(path, input, options);
@@ -408,7 +382,7 @@ test("cancelled parallel uploads drain started writes and erase their plaintext 
 });
 
 test("parallel reads reject changed hashes, forged signatures and signed blocks of the wrong length", async () => {
-  const tenant = await fixture();
+  const tenant = await fixture(2);
   const original = structuredClone(
     tenant.chunks.get(tenant.manifest.parts[0].id),
   );

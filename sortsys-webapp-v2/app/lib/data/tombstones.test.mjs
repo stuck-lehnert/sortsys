@@ -198,7 +198,7 @@ test("project files and empty folders use delete-only proofs without opening the
     expect(f.objects.get(file).format).toBe(TOMBSTONE_FORMAT);
     expect(f.objects.get(folder).format).toBe(TOMBSTONE_FORMAT);
     expect(
-      f.calls.some((call) => call.path === "zerotrust.fileChunks.get"),
+      f.calls.some((call) => call.path.startsWith("zerotrust.fileChunks.get")),
     ).toBe(false);
   } finally {
     await store.close();

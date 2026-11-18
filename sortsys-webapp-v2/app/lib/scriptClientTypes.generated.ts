@@ -1365,6 +1365,10 @@ export type QueryInputs = {
         domain: string;
         id: string;
     };
+    "zerotrust.fileChunks.getMany": {
+        domain: string;
+        ids: Array<string>;
+    };
     "zerotrust.history.get": {
         id: string;
         revision: string | null;
@@ -2905,6 +2909,21 @@ export type QueryOutputs = {
         wrappedKey: string;
         signature: string;
     };
+    "zerotrust.fileChunks.getMany": Array<{
+        tenant: string;
+        scope: string;
+        facet: Facet;
+        object: string;
+        revision: string;
+        generation: string;
+        policyVersion: string;
+        author: string;
+        format: string;
+        nonce: string;
+        ciphertext: string;
+        wrappedKey: string;
+        signature: string;
+    }>;
     "zerotrust.history.get": {
         access: Access;
         sequence: string;
