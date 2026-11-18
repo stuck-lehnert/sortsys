@@ -157,6 +157,31 @@ test("file reads and verification share bounded HTTP batches and preserve byte o
   }
 });
 
+test("successful grouped uploads return verified hashes without downloading blocks", async () => {
+  const tenant = await protectedTenant([area]);
+  const { client, requests } = wireClient(tenant);
+  const signal = new AbortController().signal;
+  try {
+    const manifest = await storeFileContent(
+      client,
+      namespace,
+      file,
+      source(),
+      version,
+      signal,
+    );
+    expect(manifest.parts).toHaveLength(9);
+    expect(blockReads(requests)).toEqual([]);
+    expect(
+      requests
+        .filter(({ paths }) => paths.includes("zerotrust.fileChunks.putMany"))
+        .map(({ inputs }) => inputs[0].envelopes.length),
+    ).toEqual([4, 4, 1]);
+  } finally {
+    client.setToken(null);
+  }
+}, 15_000);
+
 test("bounded upload groups verify lost acknowledgements and resume without replacing blocks", async () => {
   const tenant = await protectedTenant([area]);
   const { client, requests } = wireClient(tenant);

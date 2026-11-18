@@ -962,7 +962,7 @@ export type MutationOutputs = {
   "zerotrust.domains.putMany": { success: true, };
   "zerotrust.events.open": { ticket: string, subject: string, generation: string, };
   "zerotrust.fileChunks.put": { success: true, };
-  "zerotrust.fileChunks.putMany": { success: true, };
+  "zerotrust.fileChunks.putMany": { success: true, hashes: Array<string>, };
   "zerotrust.identities.certify": { success: true, };
   "zerotrust.invitations.approve": { success: true, };
   "zerotrust.invitations.complete": { success: true, };

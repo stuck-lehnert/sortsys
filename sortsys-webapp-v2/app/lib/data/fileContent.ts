@@ -227,43 +227,56 @@ export async function storeFileContents(
       const pending = staged.flatMap(({ id, hash, upload }) =>
         upload ? [{ id, hash, ...upload }] : [],
       );
-      if (pending.length) {
+      if (pending.length > 0) {
         signal.throwIfAborted();
-        const [, error] = await client.mutate("zerotrust.fileChunks.putMany", {
-          domain: area.domain,
-          envelopes: pending.map((part) => part.envelope),
-        });
-        signal.throwIfAborted();
-        let saved;
-        try {
-          saved = await fetchFileBlocks(
-            client,
-            area.domain,
-            pending.map((part) => part.id),
-            signal,
-          );
-        } catch (readError) {
-          signal.throwIfAborted();
-          throw error ?? readError;
-        }
-        await mapConcurrent(
-          pending,
-          CONCURRENT_FILE_BLOCKS,
-          async (part, index) => {
-            if ((await packetHash(saved[index])) !== part.hash)
-              throw error ?? new InvalidProtectedData();
-            // Use the confirmation read for the plaintext check as well.
-            if (part.expectedPlaintextHash !== null) {
-              await checkBlockBytes(
-                collection,
-                saved[index],
-                part.id,
-                part.size,
-                part.expectedPlaintextHash,
-              );
-            }
+        const [receipt, error] = await client.mutate(
+          "zerotrust.fileChunks.putMany",
+          {
+            domain: area.domain,
+            envelopes: pending.map((part) => part.envelope),
           },
         );
+        signal.throwIfAborted();
+        const confirmed =
+          !error &&
+          receipt?.success === true &&
+          Array.isArray(receipt.hashes) &&
+          receipt.hashes.length === pending.length &&
+          pending.every((part, index) => receipt.hashes[index] === part.hash);
+        // An ambiguous acknowledgement may follow a committed batch. Read
+        // it back before publishing the manifest. Archive restoration can
+        // additionally request an end-to-end check of the stored bytes.
+        if (!confirmed || options.verifyStoredBytes) {
+          let saved;
+          try {
+            saved = await fetchFileBlocks(
+              client,
+              area.domain,
+              pending.map((part) => part.id),
+              signal,
+            );
+          } catch (readError) {
+            signal.throwIfAborted();
+            throw error ?? readError;
+          }
+          await mapConcurrent(
+            pending,
+            CONCURRENT_FILE_BLOCKS,
+            async (part, index) => {
+              if ((await packetHash(saved[index])) !== part.hash)
+                throw error ?? new InvalidProtectedData();
+              if (part.expectedPlaintextHash !== null) {
+                await checkBlockBytes(
+                  collection,
+                  saved[index],
+                  part.id,
+                  part.size,
+                  part.expectedPlaintextHash,
+                );
+              }
+            },
+          );
+        }
       }
       for (const { source, id, hash } of staged) source.parts.push({ id, hash });
     }

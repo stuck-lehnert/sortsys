@@ -73,14 +73,15 @@ eine Bearbeitung legt neue Blöcke an.
 
 Der Browser überträgt jeweils bis zu vier verschlüsselte Blöcke gemeinsam.
 Bei einem Bild können Blöcke des Originals und des Vorschaubilds dieselbe
-Gruppe nutzen.
-Beim Upload prüft die API die Berechtigung und jede Signatur, speichert die
-Blöcke gemeinsam im Datendienst und veröffentlicht ihre Verweise in einer
-Transaktion. Anschließend liest der Browser die Gruppe zurück und prüft jeden
-Hash. Eine Datei wird erst im Verzeichnis sichtbar, sobald alle Blöcke
-bestätigt sind. Bei einem Fehler oder Abbruch beginnt keine weitere Gruppe.
-Der Browser wartet auf den laufenden Schreibvorgang, bevor er den Zugriff auf
-die Dateischlüssel schließt.
+Gruppe nutzen. Die API prüft die Berechtigung und jede Signatur, speichert die
+Blöcke im Datendienst und veröffentlicht ihre Verweise in einer Transaktion.
+Danach antwortet sie mit den Hashes der gespeicherten Pakete. Der Browser
+gleicht sie mit den gesendeten Paketen ab. Fehlt die Bestätigung oder weicht
+sie ab, liest er die Gruppe zurück und prüft die gespeicherten Pakete. Sobald
+alle Blöcke bestätigt sind, kann die Datei im Verzeichnis erscheinen. Bei
+einem ungeklärten Fehler oder Abbruch beginnt keine weitere Gruppe. Der Browser
+wartet auf den laufenden Schreibvorgang, bevor er den Zugriff auf die
+Dateischlüssel schließt.
 
 Auch beim Download prüft die API die Leseberechtigung für die Gruppe und
 ruft ihre Blöcke gemeinsam beim Datendienst ab. Der Browser prüft die Hashes
@@ -88,8 +89,8 @@ in der Reihenfolge des Dateiverzeichnisses.
 
 Dateimetadaten, Ordnerzuordnungen und Speicherstände werden vor der Übertragung
 gegen das lokale Datenschema geprüft. Der Server prüft Signaturen, aktuelle
-Berechtigungen und technische Versionen. Eine Speicherung bestätigt der Browser
-erst nach erneutem Lesen des tatsächlich abgelegten Pakets. Der Ablauf verträgt
+Berechtigungen und technische Versionen. Den neuen Verzeichniseintrag bestätigt
+der Browser nach erneutem Lesen des abgelegten Pakets. Der Ablauf verträgt
 verlorene Antwortbestätigungen und verhindert, dass eine ältere Editorversion
 einen neueren Stand überschreibt. Die Versionsprüfung gilt auch über mehrere
 API-Instanzen hinweg.

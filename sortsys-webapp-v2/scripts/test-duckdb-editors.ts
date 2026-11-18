@@ -8,7 +8,13 @@ import {
   protectedCollection,
   required,
 } from "../app/lib/data/protectedObjects";
-import { base64 } from "@sortsys/zerotrust/sortsys";
+import {
+  base64,
+  digest,
+  encryptedObject,
+  objectFrame,
+  signedPacketFrame,
+} from "@sortsys/zerotrust/sortsys";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
 import { changeProjectAccess } from "../app/lib/crypto/permissions";
 import {
@@ -50,6 +56,7 @@ for (const endpoint of endpoints) {
 }
 const sent: { url: string; body: string }[] = [];
 let readChunksOnPeer = false;
+let dropChunkWriteReply = false;
 const fetchOriginal = globalThis.fetch;
 globalThis.fetch = new Proxy(fetchOriginal, {
   apply(target, receiver, args) {
@@ -63,16 +70,23 @@ globalThis.fetch = new Proxy(fetchOriginal, {
       body: typeof options?.body === "string" ? options.body : "",
     });
     const targetUrl = new URL(url);
+    const paths = targetUrl.pathname.slice(1).split(",");
+    if (dropChunkWriteReply && paths.includes("zerotrust.fileChunks.putMany")) {
+      dropChunkWriteReply = false;
+      return Reflect.apply(target, receiver, args).then(
+        async (reply: Response) => {
+          await reply.arrayBuffer();
+          throw new TypeError("File chunk acknowledgement lost after commit");
+        },
+      );
+    }
     if (
       readChunksOnPeer &&
-      targetUrl.pathname
-        .slice(1)
-        .split(",")
-        .some(
-          (path) =>
-            path === "zerotrust.fileChunks.getMany" ||
-            path === "zerotrust.fileChunks.findMany",
-        )
+      paths.some(
+        (path) =>
+          path === "zerotrust.fileChunks.getMany" ||
+          path === "zerotrust.fileChunks.findMany",
+      )
     ) {
       const peerUrl = new URL(
         targetUrl.pathname + targetUrl.search,
@@ -312,7 +326,7 @@ async function checkBatchedFileContent(projectId: string) {
   ).map((request) => request.envelopes.length);
   assert.deepEqual(uploadBatches, [4, 4, 1]);
   assert.deepEqual(chunkRequests(uploadStart, "put"), []);
-  const confirmationBatches = checkReads(uploadStart);
+  assert.deepEqual(chunkRequests(uploadStart, "getMany"), []);
   readChunksOnPeer = true;
   try {
     const loadStart = sent.length;
@@ -340,7 +354,7 @@ async function checkBatchedFileContent(projectId: string) {
     assert.deepEqual(chunkRequests(resumeStart, "put"), []);
     assert.deepEqual(chunkRequests(resumeStart, "putMany"), []);
     console.log(
-      `Native file batches: 9 blocks; writes ${uploadBatches.join(", ")}; upload confirmations ${confirmationBatches.join(", ")}; load ${loadBatches.join(", ")}; verification ${verifyBatches.join(", ")}; resume ${resumeBatches.join(", ")} without writes; readback through independent API`,
+      `Native file batches: 9 blocks; writes ${uploadBatches.join(", ")} with hash receipts and no readback; load ${loadBatches.join(", ")}; verification ${verifyBatches.join(", ")}; resume ${resumeBatches.join(", ")} without writes; reads through independent API`,
     );
   } finally {
     readChunksOnPeer = false;
@@ -367,9 +381,7 @@ async function checkBatchedFileContent(projectId: string) {
     const writtenIds = writes[0]!.envelopes.map(({ object }) => object);
     assert.equal(writtenIds.length, 2);
     assert.equal(new Set(writtenIds).size, 2);
-    assert.deepEqual(chunkRequests(imageStart, "getMany"), [
-      { domain: chunkCollection(projectId).domain, ids: writtenIds },
-    ]);
+    assert.deepEqual(chunkRequests(imageStart, "getMany"), []);
     const original = await business.files.blob(projectId, imageId);
     const preview = await business.files.blob(
       projectId,
@@ -381,9 +393,30 @@ async function checkBatchedFileContent(projectId: string) {
     assert.equal(await preview.text(), await thumbnail.text());
     assert.equal(preview.type, thumbnail.type);
     console.log(
-      "Native image upload: original and thumbnail share one upload and one confirmation; both open across the second API",
+      "Native image upload: original and thumbnail share one request; both open across the second API",
+    );
+    const retryStart = sent.length;
+    dropChunkWriteReply = true;
+    const recovered = await storeFileContent(
+      owner,
+      projectId,
+      file,
+      image,
+      "e".repeat(32),
+      signal,
+    );
+    assert.equal(chunkRequests(retryStart, "putMany").length, 1);
+    assert.deepEqual(chunkRequests(retryStart, "getMany"), [
+      {
+        domain: chunkCollection(projectId).domain,
+        ids: recovered.parts.map((part) => part.id),
+      },
+    ]);
+    console.log(
+      "Native image upload: lost acknowledgement recovered by reading committed ciphertext from the second API",
     );
   } finally {
+    dropChunkWriteReply = false;
     readChunksOnPeer = false;
   }
   const domain = chunkCollection(projectId).domain;
@@ -515,13 +548,21 @@ async function checkBatchedFileContent(projectId: string) {
   );
   assert.equal(unpublished, null);
   const packets = [newPacket.envelope, existingPacket];
+  const expectedHashes = await Promise.all(
+    packets.map((input) => {
+      const packet = encryptedObject(input);
+      return digest(signedPacketFrame(objectFrame(packet), packet.signature));
+    }),
+  );
   for (let attempt = 0; attempt < 2; attempt++) {
-    await required(
+    const receipt = await required(
       owner.mutate("zerotrust.fileChunks.putMany", {
         domain,
         envelopes: packets,
       }),
     );
+    assert.equal(receipt.success, true);
+    assert.deepEqual(receipt.hashes, expectedHashes);
   }
   readChunksOnPeer = true;
   try {

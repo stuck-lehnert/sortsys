@@ -5323,6 +5323,7 @@ export type MutationOutputs = {
     };
     "zerotrust.fileChunks.putMany": {
         success: true;
+        hashes: Array<string>;
     };
     "zerotrust.identities.certify": {
         success: true;

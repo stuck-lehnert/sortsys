@@ -8,10 +8,13 @@ import {
   createIdentity,
   createTenantSetup,
   decryptObject,
+  digest,
   domainProof,
   encryptObject,
+  objectFrame,
   publicIdentity,
   signInitializationSource,
+  signedPacketFrame,
   signPolicy,
   stockKind,
   verifyPolicy,
@@ -397,7 +400,16 @@ export async function protectedTenant(
         }
         if (state.loseChunkReply)
           return [null, new Error("Lost file block acknowledgement")];
-        return [{ success: true }, null];
+        const hashes = state.discardChunk
+          ? []
+          : await Promise.all(
+              input.envelopes.map((envelope) =>
+                digest(
+                  signedPacketFrame(objectFrame(envelope), envelope.signature),
+                ),
+              ),
+            );
+        return [{ success: true, hashes }, null];
       }
       if (path !== "zerotrust.objects.batch") {
         throw new Error("Unexpected mutation " + path);

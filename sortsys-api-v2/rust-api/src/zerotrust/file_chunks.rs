@@ -1,7 +1,7 @@
 //! Immutable ciphertext blocks. File names, contents and manifests stay private.
 use super::{
     access::metadata_context_for_domains,
-    crypto::{identifier, invalid},
+    crypto::{identifier, invalid, packet_hash, verify},
     objects::{conflict, registry},
     wire::{Action, EncryptedObject, Facet},
 };
@@ -31,6 +31,12 @@ struct Put {
 struct PutMany {
     domain: String,
     envelopes: Vec<EncryptedObject>,
+}
+#[derive(Serialize, TS)]
+struct ChunkWriteReceipt {
+    #[ts(type = "true")]
+    success: bool,
+    hashes: Vec<String>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -85,7 +91,10 @@ pub(super) fn register(
                 domain: input.domain,
                 envelopes: vec![input.envelope],
             };
-            async move { put_chunks(&service, &ctx, batch).await }
+            async move {
+                put_chunks(&service, &ctx, batch).await?;
+                Ok(Success { success: true })
+            }
         })
         .mutation(
             "zerotrust.fileChunks.putMany",
@@ -118,7 +127,7 @@ async fn put_chunks(
     service: &AuthService,
     ctx: &RequestContext,
     input: PutMany,
-) -> RpcResult<Success> {
+) -> RpcResult<ChunkWriteReceipt> {
     identifier(&input.domain)?;
     if input.envelopes.is_empty() || input.envelopes.len() > MAX_CHUNKS {
         return Err(invalid());
@@ -152,6 +161,7 @@ async fn put_chunks(
         return Err(forbidden());
     }
     let mut record_keys = Vec::with_capacity(input.envelopes.len());
+    let mut hashes = Vec::with_capacity(input.envelopes.len());
     for envelope in &input.envelopes {
         if envelope.facet != Facet::Attachment
             || envelope.scope != area.scope
@@ -163,7 +173,9 @@ async fn put_chunks(
         {
             return Err(forbidden());
         }
-        envelope.verify(&context.security.signing_key)?;
+        let frame = envelope.frame()?;
+        verify(&context.security.signing_key, &envelope.signature, &frame)?;
+        hashes.push(packet_hash(frame, &envelope.signature)?);
         record_keys.push(key("file-chunks", &envelope.object));
     }
     let previous = context
@@ -195,24 +207,28 @@ async fn put_chunks(
     }
     if new_records.is_empty() {
         context.transaction.validate().await?;
-        return Ok(Success { success: true });
+    } else {
+        super::bootstrap::check_archive_write(&mut context, &area.scope, "1").await?;
+        let mut rotation = registry::RotationChecks::new(&context.security);
+        if rotation
+            .required(&mut context.transaction, &context.security, &area)
+            .await?
+        {
+            return Err(conflict());
+        }
+        // DuckDB verifies the ciphertext hashes inside its write transaction.
+        // Publish the references only after it commits. A rejected CAS leaves
+        // the new blocks unreachable.
+        context.repository.put_ciphertexts(ciphertexts).await?;
+        for (record_key, record) in new_records {
+            context.transaction.put(record_key, &record).await?;
+        }
+        context.transaction.commit().await?;
     }
-    super::bootstrap::check_archive_write(&mut context, &area.scope, "1").await?;
-    let mut rotation = registry::RotationChecks::new(&context.security);
-    if rotation
-        .required(&mut context.transaction, &context.security, &area)
-        .await?
-    {
-        return Err(conflict());
-    }
-    // The content write is immutable. Publication and all permission reads are
-    // guarded together; a rejected CAS can leave only unreachable blocks.
-    context.repository.put_ciphertexts(ciphertexts).await?;
-    for (record_key, record) in new_records {
-        context.transaction.put(record_key, &record).await?;
-    }
-    context.transaction.commit().await?;
-    Ok(Success { success: true })
+    Ok(ChunkWriteReceipt {
+        success: true,
+        hashes,
+    })
 }
 
 async fn get_chunk(
@@ -324,7 +340,7 @@ async fn lookup_chunks(
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .mutation_stub::<Put, Success>("zerotrust.fileChunks.put")
-        .mutation_stub::<PutMany, Success>("zerotrust.fileChunks.putMany")
+        .mutation_stub::<PutMany, ChunkWriteReceipt>("zerotrust.fileChunks.putMany")
         .query_stub::<Get, EncryptedObject>("zerotrust.fileChunks.get")
         .query_stub::<GetMany, Vec<EncryptedObject>>("zerotrust.fileChunks.getMany")
         .query_stub::<GetMany, Vec<Option<EncryptedObject>>>("zerotrust.fileChunks.findMany")
