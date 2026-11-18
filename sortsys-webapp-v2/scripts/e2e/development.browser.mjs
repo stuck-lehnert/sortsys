@@ -254,9 +254,17 @@ async function selectOfferAccess(
   await expect(picker).toBeEnabled();
   await picker.fill(title);
   const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  await page
-    .getByRole("option", { name: new RegExp(` – ${escapedTitle}$`) })
-    .click({ timeout });
+  const option = page.getByRole("option", {
+    name: new RegExp(` – ${escapedTitle}$`),
+  });
+  await expect
+    .poll(async () => {
+      if ((await picker.getAttribute("aria-expanded")) !== "true")
+        await picker.press("ArrowDown");
+      return option.isVisible();
+    }, { timeout })
+    .toBe(true);
+  await option.click();
   await expect(page.getByRole("listbox")).toBeHidden();
   await expect(
     dialog.getByRole("button", { name: /Bezeichnung und Status/ }),
@@ -358,6 +366,18 @@ async function changeGaebText(page, key, value) {
   const input = page.locator("textarea.gaeb-canvas-input");
   await input.fill(value);
   await input.press("Tab");
+}
+
+function rpcInput(request, procedure) {
+  const url = new URL(request.url());
+  const paths = decodeURIComponent(url.pathname).split("/").at(-1).split(",");
+  const index = paths.indexOf(procedure);
+  if (index === -1) return;
+  const encoded = url.searchParams.get("input");
+  const wire = encoded === null ? request.postDataJSON() : JSON.parse(encoded);
+  return url.searchParams.get("batch") === "1"
+    ? wire?.[String(index)]?.json
+    : wire?.json;
 }
 
 async function deferGaebRequests(editors, procedure, shouldWait, work) {
@@ -2350,8 +2370,49 @@ try {
       } finally {
         page.off("request", countUpdates);
       }
-      await member.reload();
-      await receivedLongText();
+      const cursors = [];
+      const watchScope = (request) => {
+        const page = rpcInput(request, "zerotrust.documents.messages.read");
+        const batch = rpcInput(request, "zerotrust.documents.messages.pages");
+        for (const selection of page ? [page] : (batch?.selections ?? [])) {
+          if (selection.room?.facet === "scope") cursors.push(selection.after);
+        }
+      };
+      member.on("request", watchScope);
+      try {
+        await member.reload();
+        await receivedLongText();
+        await expect(member.locator(".gaeb-editor")).toHaveAttribute(
+          "data-connection-state",
+          "online",
+          { timeout: caseLoadTimeout },
+        );
+        assert.ok(cursors.length > 0);
+        assert.ok(
+          BigInt(cursors[0]) > 0n,
+          "The cold editor must start after its verified replay checkpoint",
+        );
+      } finally {
+        member.off("request", watchScope);
+      }
+
+      const continued = longText + " Der Untergrund ist jetzt vorbereitet.";
+      await shareTextBeforePublication(
+        editors,
+        async () => {
+          await changeGaebText(page, firstKey, continued);
+          await expect
+            .poll(
+              async () =>
+                (await gaebField(member, firstKey).getAttribute(
+                  "aria-description",
+                )) === continued,
+              { timeout: caseLoadTimeout },
+            )
+            .toBe(true);
+        },
+        caseLoadTimeout,
+      );
       memberAudit.assertClean();
     } finally {
       await memberContext.tracing.stop({

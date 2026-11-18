@@ -19,5 +19,35 @@
     "signature": "8asBU9XmT4GZjP_2TiSIEQltyVoR359biMOqxKsOnYc4w8AUDVv5f9e4vp_rbPBY3fbtys60SfE5BqNfC-LlDg"
   },
   "frame": "AAAAGnNvcnRzeXMvbGl2ZS1jaGVja3BvaW50L3YyAAAAC3RlbmFudC10ZXN0AAAADmNvbW1lcmNpYWw6MTIzAAAAAzQ1NgAAAAVzY29wZQAAABA5MDA3MTk5MjU0NzQwOTkzAAAAEDkwMDcxOTkyNTQ3NDA5OTIAAAArSjl6WG43Wm83bTl3NDN1ZWFHV0gyNzRPOUlYVldIVUdOVHRkc0xud1FQNAAAAAEyAAAAATMAAAAHdXNlcjoxMg",
-  "publicKey": "m6FDh3HESKesRp3K4kAq15RBhQLzDjeVLeILY-qD61s"
+  "publicKey": "m6FDh3HESKesRp3K4kAq15RBhQLzDjeVLeILY-qD61s",
+  "replayVector": {
+    "checkpoint": {
+      "tenant": "tenant-test",
+      "scope": "commercial:123",
+      "document": "456",
+      "facet": "scope",
+      "sequence": "9007199254740993",
+      "covered": "9007199254740993",
+      "target": "J9zXn7Zo7m9w43ueaGWH274O9IXVWHUGNTtdsLnwQP4",
+      "generation": "2",
+      "policyVersion": "3",
+      "author": "user:12",
+      "content": "_djNp7N66DwLsT17MJ-8Uc_P7bQWU-V_V-8FyBiHBAE",
+      "replay": {
+        "facet": "scope",
+        "object": "commercial:123:scope:document:456:abababababababababababababababab:manifest",
+        "hash": "AeYdgPUaD4IQuiTgLSgeuKsL0ya9tqRSCsc5pQNanZw",
+        "keys": [
+          {
+            "facet": "scope",
+            "generation": "4"
+          }
+        ]
+      },
+      "format": "sortsys-live-checkpoint-v4",
+      "signature": "RLHX8SEXSZSaMTqdtoQVe5iB53mZvw_iV-o7dxhj3hIEd2TtJkqddKLmsIWAA-YC1s0JlknLVJ6CB2r7Z-sQBQ"
+    },
+    "frame": "AAAAGnNvcnRzeXMvbGl2ZS1jaGVja3BvaW50L3Y0AAAAC3RlbmFudC10ZXN0AAAADmNvbW1lcmNpYWw6MTIzAAAAAzQ1NgAAAAVzY29wZQAAABA5MDA3MTk5MjU0NzQwOTkzAAAAEDkwMDcxOTkyNTQ3NDA5OTMAAAArSjl6WG43Wm83bTl3NDN1ZWFHV0gyNzRPOUlYVldIVUdOVHRkc0xud1FQNAAAAAEyAAAAATMAAAAHdXNlcjoxMgAAACtfZGpOcDdONjZEd0xzVDE3TUotOFVjX1A3YlFXVS1WX1YtOEZ5QmlIQkFFAAAABXNjb3BlAAAAS2NvbW1lcmNpYWw6MTIzOnNjb3BlOmRvY3VtZW50OjQ1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYjptYW5pZmVzdAAAACtBZVlkZ1BVYUQ0SVF1aVRnTFNnZXVLc0wweWE5dHFSU0NzYzVwUU5hblp3AAAAATEAAAAFc2NvcGUAAAABNA",
+    "publicKey": "Zs1gi5KLiOUODv6qM_rxxDzv4HKUsLh-n-CrpqPPdjM"
+  }
 }

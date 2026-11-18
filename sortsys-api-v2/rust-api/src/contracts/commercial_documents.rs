@@ -54,6 +54,8 @@ pub struct SaveInput {
     pub live_sequence: Option<String>,
     #[ts(optional)]
     pub live_positions: Option<std::collections::BTreeMap<String, String>>,
+    #[ts(optional)]
+    pub live_replay: Option<std::collections::BTreeMap<String, String>>,
     #[serde(default)]
     #[ts(optional = nullable)]
     pub net_amount: Option<String>,

@@ -20,7 +20,11 @@ import {
   liveSequence,
   type DocumentChannel,
 } from "@sortsys/zerotrust/sortsys";
-import type { LivePositions } from "./liveCheckpoints";
+import {
+  type LivePositions,
+  type LiveReplay,
+  MAX_LIVE_REPLAY,
+} from "./liveCheckpoints";
 import { listenDataChanges } from "./runtime/changes";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import { partialAddressRecord } from "./addressBook";
@@ -47,7 +51,10 @@ import {
 
 export type ProtectedGaebLiveOptions = {
   room: DocumentRoom;
-  initial: LiveSnapshot & { fileName: string };
+  initial: LiveSnapshot & {
+    fileName: string;
+    liveTarget?: (facet: GaebContentFacet) => Promise<string>;
+  };
   sharedFields: SharedFields;
   signal: AbortSignal;
   name: string;
@@ -182,6 +189,7 @@ export function connectProtectedGaebLive(
   const presenceKey = base64(randomSecret());
   let selectedFacet: GaebContentFacet | undefined;
   let content: string | null | undefined;
+  let replay: LiveReplay = {};
 
   function bindContent(next: string | null) {
     if (content !== undefined && content !== next) {
@@ -247,28 +255,33 @@ export function connectProtectedGaebLive(
       selectedFacet = facet;
     },
     saved(_value: LiveSnapshot) {},
+    replay: () => replay,
     async flush(): Promise<string | LivePositions> {
       const positions: LivePositions = {};
+      const captured: LiveReplay = {};
       const snapshots = await mapConcurrent(
         [...channels],
         4,
         async ([facet, channel]) => ({
           facet,
           channel,
-          sequence: await channel.flush(),
+          snapshot: await channel.flush(),
         }),
       );
-      for (const { facet, channel, sequence } of snapshots) {
+      for (const { facet, channel, snapshot } of snapshots) {
         if (!commercial) {
-          return sequence;
+          return snapshot.position;
         }
         if (channel.canWrite()) {
-          positions[facet] = sequence;
+          positions[facet] = snapshot.position;
+          if (snapshot.replay) captured[facet] = snapshot.replay;
         }
       }
+      replay = captured;
       return positions;
     },
     close() {
+      replay = {};
       for (const channel of channels.values()) {
         channel.close();
       }
@@ -772,7 +785,25 @@ function connectChannel(
       return Promise.resolve();
     }
     booting = (async () => {
-      await currentTransport();
+      const source = await currentTransport();
+      if (commercial && after === "0" && options.initial.liveTarget) {
+        try {
+          const target = await options.initial.liveTarget(options.room.facet);
+          const resume = await source.resume(target);
+          live();
+          if (
+            source === transport &&
+            resume &&
+            options.sharedFields.restoreReplay(options.room.facet, resume.data)
+          ) {
+            after = resume.position;
+          }
+        } catch {
+          live();
+          // The full verified log remains available when a replay record is
+          // unavailable or does not match the opened native revision.
+        }
+      }
       await refresh();
       live();
       connected = true;
@@ -878,7 +909,19 @@ function connectChannel(
     async flush() {
       try {
         await synchronize();
-        return content == null ? after : `${content}:${after}`;
+        const position = content == null ? after : `${content}:${after}`;
+        if (
+          !commercial ||
+          !options.initial.liveTarget ||
+          after === "0" ||
+          !inbox.canCheckpoint() ||
+          pendingWork.length
+        ) {
+          return { position };
+        }
+        const replay = options.sharedFields.captureReplay(options.room.facet);
+        if (!replay || replay.length > MAX_LIVE_REPLAY) return { position };
+        return { position, replay };
       } catch (error) {
         failed(error);
         throw error;

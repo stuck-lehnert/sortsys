@@ -8,6 +8,9 @@ import {
   encryptedObject,
   objectFrame,
   InvalidProtectedData,
+  liveCheckpoint,
+  liveCheckpointFrame,
+  liveSequence,
   randomSecret,
   record,
   revision,
@@ -18,6 +21,8 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { commercialCollection } from "./commercialAreas";
+import { commercialDocumentStore } from "./commercialDocumentContent";
+import { MAX_LIVE_REPLAY } from "./liveCheckpoints";
 import { fileCollection } from "./projectFileData";
 import { protectedCollections, required } from "./protectedObjects";
 import { readDocumentMessagePage } from "./documentMessagePages";
@@ -311,6 +316,60 @@ export async function openDocumentMessages(
     post,
     open,
     content,
+    async resume(target: string) {
+      live();
+      if (!commercial || !state.checkpoint?.replay) return;
+      const proof = liveCheckpoint(state.checkpoint);
+      const replay = proof.replay;
+      if (!replay) return;
+      liveSequence(state.current);
+      if (
+        proof.tenant !== account!.tenant ||
+        proof.scope !== room.scope ||
+        proof.document !== room.document ||
+        proof.facet !== room.facet ||
+        proof.target !== target ||
+        (proof.content ?? null) !== content ||
+        BigInt(proof.covered) > BigInt(state.current)
+      ) {
+        return;
+      }
+      await context.controlAuthor(proof, liveCheckpointFrame(proof), {
+        all: [...documentChannelKeys(room)].map((facet) => ({
+          facet,
+          action: "update",
+        })),
+      });
+      live();
+      const store = await commercialDocumentStore(
+        client,
+        room.scope,
+        signal,
+        context,
+      );
+      try {
+        const payload = record(await store.readReplay(replay), [
+          "format",
+          "target",
+          "sequence",
+          "data",
+        ]);
+        live();
+        if (
+          payload.format !== "sortsys-gaeb-replay-v1" ||
+          payload.target !== proof.target ||
+          payload.sequence !== proof.covered ||
+          typeof payload.data !== "string" ||
+          !payload.data ||
+          payload.data.length > MAX_LIVE_REPLAY
+        ) {
+          throw new InvalidProtectedData();
+        }
+        return { position: proof.covered, data: payload.data };
+      } finally {
+        store.close();
+      }
+    },
     async read(after = "0") {
       live();
       const page = await readDocumentMessagePage(

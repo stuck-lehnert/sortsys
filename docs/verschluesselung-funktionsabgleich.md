@@ -201,9 +201,10 @@ einschließlich Textabgleich vor der XML-Veröffentlichung und erneutem Öffnen
 nach dem Speichern. Mit John und Frank ist auch die gemeinsame Änderung des
 Feldes „Bauvorhaben“ ohne Preisfreigabe über zwei API-Instanzen geprüft, ebenso
 Rechteentzug und erneute Nur-Lesen-Freigabe. Ein eigener Browserfall prüft zwei
-gleichzeitig bearbeitete Absätze einer X83-Position. Dauerhafte
-Wiederanlaufpunkte und das spätere Zusammenführen heruntergeladener Teilentwürfe
-brauchen weitere Arbeit.
+gleichzeitig bearbeitete Absätze einer X83-Position. Bei Vorgangsdokumenten kann
+ein signierter, verschlüsselter Wiederanlaufpunkt das Nachlesen auf die neueren
+Nachrichten begrenzen. Für Projektdateien und das spätere Zusammenführen
+heruntergeladener Teilentwürfe fehlen noch Anschlüsse.
 
 **Projektgrunddaten und Projektkontakte.** Getrennte Bereiche je Projekt,
 Grunddaten, Kontaktbezeichnungen und Statuswechsel sind angeschlossen.

@@ -45,6 +45,8 @@ import {
 import { protectedCollections, required } from "./protectedObjects";
 import {
   type LivePositions,
+  type LiveReplay,
+  MAX_LIVE_REPLAY,
   prepareDocumentLivePublications,
 } from "./liveCheckpoints";
 import { createDocumentHeadVerifier } from "../crypto/documentHeads";
@@ -78,6 +80,7 @@ type PreparationOptions = {
   readOnly?: boolean;
   locked: boolean;
   livePositions?: LivePositions;
+  liveReplay?: LiveReplay;
 };
 function fragmentsByFacet(fragments: readonly GaebXmlFragment[]) {
   const groups = new Map<GaebPrivateFacet, GaebXmlFragment[]>();
@@ -423,7 +426,7 @@ function openDocumentStore(
     live();
     return structuredClone(value);
   }
-  async function readPart(part: DocumentPart) {
+  async function readPart(part: DocumentPart, maxBytes = MAX_BYTES) {
     live();
     const binding = documentBlob(part.object);
     if (
@@ -461,7 +464,7 @@ function openDocumentStore(
       typeof m.size !== "number" ||
       !Number.isSafeInteger(m.size) ||
       m.size < 1 ||
-      m.size > MAX_BYTES ||
+      m.size > maxBytes ||
       !Array.isArray(m.parts) ||
       m.parts.length !== Math.ceil(m.size / CHUNK)
     ) {
@@ -558,7 +561,37 @@ function openDocumentStore(
       output.fill(0);
     }
   }
+  async function prepareLive(
+    next: DocumentHead,
+    previous?: DocumentHead,
+    positions?: LivePositions,
+    replay?: LiveReplay,
+  ) {
+    return prepareDocumentLivePublications(
+      client,
+      next,
+      previous,
+      signal,
+      positions,
+      replay &&
+        (async (facet, target, sequence) => {
+          const data = replay[facet];
+          if (!data) return;
+          return stage(next.id, facet, {
+            format: "sortsys-gaeb-replay-v1",
+            target,
+            sequence,
+            data,
+          });
+        }),
+    );
+  }
+
   return {
+    prepareLive,
+    async readReplay(part: DocumentPart) {
+      return (await readPart(part, MAX_LIVE_REPLAY + 512)).value;
+    },
     head,
     read,
     stage,
@@ -770,12 +803,11 @@ function openDocumentStore(
       live();
       return {
         head: signed,
-        live: await prepareDocumentLivePublications(
-          client,
+        live: await prepareLive(
           signed,
           previous,
-          signal,
           options.livePositions,
+          options.liveReplay,
         ),
         async verify() {
           return (await head(id))?.signature === signed.signature;

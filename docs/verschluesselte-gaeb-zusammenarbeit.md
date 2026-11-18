@@ -81,6 +81,28 @@ Verschlüsselung höchstens 64 KiB. Der Browser fügt Nachrichten bis zu zwei Mi
 zusammen und hält pro Kanal bis zu acht unvollständige Gruppen vor. Muss er
 eine ältere Gruppe verwerfen, erscheint im Editor ein Hinweis.
 
+## Wiederanlauf nach dem Speichern
+
+Beim Speichern eines Vorgangsdokuments kann der Browser den gemeinsamen
+Yjs-Stand verschlüsselt ablegen. Dafür müssen alle Teilpakete des betreffenden
+Kanals vorliegen und seine Texte zum gespeicherten XML passen. Der signierte
+Speicherbeleg bindet den verschlüsselten Stand an den Kanal, die abgedeckte
+Nachrichtenfolge und den exakten nativen Dokumentteil. Beleg und native
+Änderung werden in derselben Transaktion bestätigt.
+
+Beim Öffnen prüft der Browser die Signatur, die damaligen Schreibrechte und
+die Bindung an den geöffneten Fachstand. Nach dem Entschlüsseln vergleicht er
+die enthaltenen Texte mit seiner lesbaren XML-Ansicht. Passt der Stand, liest
+der Browser nur die späteren Nachrichten und behält die ursprünglichen
+Yjs-Kennungen für weitere gemeinsame Änderungen. Fehlt ein passender
+Wiederanlaufpunkt, etwa nach einer Rücksicherung, liest der Browser den
+vollständigen Nachrichtenverlauf. Die bisherigen Nachrichten bleiben für
+diesen Fall gespeichert.
+
+Der Mehrinstanztest stellt eine X83 mit einem älteren Beleg wieder her. Nach
+dem Nachlesen kann der Adapter den Wiederanlaufpunkt für den wiederhergestellten
+Fachstand bestätigen. Die Revisionsnummer der X83 bleibt dabei erhalten.
+
 ## Rechte gelten auch beim Empfangen
 
 Die API prüft den angemeldeten Benutzer, dessen Signatur, die aktuelle
@@ -475,7 +497,9 @@ ursprüngliche Menge.
 
 Anschließend fügt John rund 81.000 Zeichen ein. Der Test hält die Veröffentlichung
 der X83 erneut an. Frank empfängt den vollständigen Text über mehrere
-verschlüsselte Pakete und sieht ihn nach dem Speichern auch beim erneuten Öffnen.
+verschlüsselte Pakete. Beim erneuten Öffnen setzt sein Browser hinter dem
+gespeicherten Wiederanlaufpunkt an. Eine weitere Änderung erreicht ihn über
+die zweite API-Instanz, während die nächste X83-Fassung noch unveröffentlicht ist.
 
 Der Textabgleich berücksichtigt auch Eingaben während des Verbindungsaufbaus.
 Deren Ausgangspunkt ist der sichtbare Dokumentstand, selbst wenn der gemeinsame
@@ -485,8 +509,6 @@ Dokumenttext wird beim Registrieren der Eingabefelder nicht nochmals als lokale
 
 Vor der Freigabe fehlen insbesondere:
 
-- Der dauerhafte Nachrichtenverlauf braucht bestätigte Zwischenstände und eine
-  begrenzte Wiederanlaufzeit.
-- Projektdateien und Wiederverbindungen nach längeren Unterbrechungen brauchen
-  weitere gemeinsame Browser- und Mehrinstanztests. Die geprüften Angebotsabläufe
-  decken diese Fälle noch nicht ab.
+- Projektdateien benötigen eigene Wiederanlaufpunkte. Für Wiederverbindungen
+  nach längeren Unterbrechungen fehlen weitere gemeinsame Browser- und
+  Mehrinstanztests.

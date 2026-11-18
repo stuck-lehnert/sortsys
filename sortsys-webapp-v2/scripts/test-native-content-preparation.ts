@@ -46,6 +46,10 @@ import {
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
+import {
+  checkGaebReplayAfterRestore,
+  prepareGaebReplay,
+} from "./test-native-gaeb-replay";
 import { invoiceXml } from "./test-live-billing";
 import {
   prepareToolBookingRestore,
@@ -824,6 +828,7 @@ export async function exerciseContentPreparation(
   } finally {
     originalProject.close();
   }
+  const replay = await prepareGaebReplay(owner);
   const snapshot = await required(
     operator.mutate("admin.storage.snapshots.create", {
       tenant,
@@ -1222,6 +1227,7 @@ export async function exerciseContentPreparation(
   assert.equal(editor.aborted, true);
   assert.equal(peer.context.context().aborted, false);
   await checkEditors(await contentEpochFingerprint(approval));
+  await checkGaebReplayAfterRestore(peer, replay, published.content);
   await confirmation.check();
   await invoice.check();
   await booking.check();

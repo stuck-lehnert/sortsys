@@ -144,7 +144,7 @@ export function documentBlob(value: string): {
   }
   return { scope: scope!, id: id!, facet, token: token!, suffix: suffix! };
 }
-function parseDocumentPart(
+export function documentPart(
   input: unknown,
   scope: string,
   id: string,
@@ -191,6 +191,17 @@ function parseDocumentPart(
     keys,
   };
 }
+
+export function documentPartFields(part: DocumentPart): string[] {
+  return [
+    part.facet,
+    part.object,
+    part.hash,
+    String(part.keys.length),
+    ...part.keys.flatMap((key) => [key.facet, key.generation]),
+  ];
+}
+
 export function documentHead(input: unknown): DocumentHead {
   const value = record(input, [
     "format",
@@ -240,7 +251,7 @@ export function documentHead(input: unknown): DocumentHead {
     sized(value.previous, 32);
   }
   const parts = value.parts.map((input) =>
-    parseDocumentPart(input, value.scope as string, value.id as string),
+    documentPart(input, value.scope as string, value.id as string),
   );
   const hasLayout = parts.some((part) => part.facet === "scope");
   if (!hasLayout) {
@@ -259,16 +270,9 @@ export async function documentHeadFrame(
 ): Promise<Uint8Array<ArrayBuffer>> {
   const head = documentHead({ ...input, signature: "" });
   const partHashes = await Promise.all(
-    head.parts.map((part) => {
-      const fields = [
-        part.facet,
-        part.object,
-        part.hash,
-        String(part.keys.length),
-        ...part.keys.flatMap((key) => [key.facet, key.generation]),
-      ];
-      return digest(frame("sortsys/document-part/v1", fields));
-    }),
+    head.parts.map((part) =>
+      digest(frame("sortsys/document-part/v1", documentPartFields(part))),
+    ),
   );
   return frame("sortsys/document-head/v1", [
     head.tenant,

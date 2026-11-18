@@ -1,4 +1,5 @@
 import type { QueryResult } from "@sortsys/v2-client";
+import type { DocumentFacet } from "@sortsys/zerotrust/sortsys";
 import type {
   GaebContentAccess,
   GaebEditorProps,
@@ -25,6 +26,7 @@ export type DocumentPrintContext = {
 export type DocumentEditorSession = QueryResult<"projects.files.xmlContent"> & {
   referenceXml?: string | null;
   contentView?: DocumentContentView;
+  liveTarget?: (facet: DocumentFacet) => Promise<string>;
 };
 
 /** A dialog may retain these callbacks after a policy change. Bind both worker

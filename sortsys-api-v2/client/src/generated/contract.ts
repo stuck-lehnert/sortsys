@@ -136,7 +136,7 @@ export type ListBatchInput = { selections: Array<ListInput>, };
 
 export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
 
-export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, content?: string, signature: string, };
+export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, content?: string, replay?: DocumentPart, signature: string, };
 
 export type LiveKind = "chat" | "document_import";
 
@@ -620,7 +620,7 @@ export type MutationInputs = {
   "commercial.cases.update": { id: Id, title: string, customerId: Id | null, counterpartyName: string | null, validUntil: string | null, notes: string | null, };
   "commercial.documents.create": { caseId: Id, purpose: string, fileName: string, xml: string, readOnly: boolean, netAmount?: string | null, partnerName?: string | null, sourceDocumentId?: Id | null, sourceVersion?: bigint | null, replaceDocumentId?: Id | null, expectedVersion?: bigint | null, };
   "commercial.documents.finalize": { caseId: Id, id: Id, version: bigint, };
-  "commercial.documents.save": { caseId: Id, id: Id, version: bigint, xml: string, liveSequence?: string, livePositions?: { [key in string]: string }, netAmount?: string | null, };
+  "commercial.documents.save": { caseId: Id, id: Id, version: bigint, xml: string, liveSequence?: string, livePositions?: { [key in string]: string }, liveReplay?: { [key in string]: string }, netAmount?: string | null, };
   "commercial.invoices.issue": { id: Id, };
   "commercial.invoices.recordPayment": { id: Id, amount: string, paidOn: string, reference: string, operationId?: Id, };
   "contacts.create": { salutation?: undefined | null | string; firstName?: undefined | null | string; lastName?: undefined | null | string; address?: undefined | null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers?: undefined | { number: string; name?: undefined | null | string; }[]; emailAddresses?: undefined | { email: string; name?: undefined | null | string; }[]; };

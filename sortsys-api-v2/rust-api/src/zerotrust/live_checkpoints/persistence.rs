@@ -157,6 +157,34 @@ pub(in crate::zerotrust) async fn prepare(
                 return Err(conflict());
             }
         }
+        if let Some(replay) = &proof.replay
+            && existing.is_none()
+        {
+            if target.frozen || target.deletion {
+                return Err(conflict());
+            }
+            for key in &replay.keys {
+                let area = super::super::objects::metadata_current_domain(
+                    &mut context.transaction,
+                    guard,
+                    &format!("{}:{}", target.room.scope, key.facet.name()),
+                )
+                .await?;
+                if area.scope != target.room.scope
+                    || area.facet != key.facet
+                    || area.generation != key.generation
+                {
+                    return Err(conflict());
+                }
+            }
+            super::super::documents::verify_part_reference(
+                &mut context.transaction,
+                &context.repository,
+                &target.room.scope,
+                replay,
+            )
+            .await?;
+        }
         accepted.push(proof.clone());
     }
     Ok(Prepared { proofs: accepted })

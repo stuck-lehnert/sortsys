@@ -7,11 +7,19 @@ import {
   sized,
 } from "./encoding";
 import { sign, verify } from "./identity";
-import { documentId } from "./documents";
+import {
+  documentId,
+  documentPart,
+  documentPartFields,
+  type DocumentPart,
+} from "./documents";
 import { documentChannel, type DocumentChannel } from "./documentChannels";
 
 export type LiveCheckpoint = {
-  format: "sortsys-live-checkpoint-v2" | "sortsys-live-checkpoint-v3";
+  format:
+    | "sortsys-live-checkpoint-v2"
+    | "sortsys-live-checkpoint-v3"
+    | "sortsys-live-checkpoint-v4";
   tenant: string;
   scope: string;
   document: string;
@@ -23,8 +31,16 @@ export type LiveCheckpoint = {
   policyVersion: string;
   author: string;
   content?: string;
+  replay?: DocumentPart;
   signature: string;
 };
+
+function checkpointFormat(replay: unknown, content: unknown) {
+  if (replay !== undefined) return "sortsys-live-checkpoint-v4";
+  return content === undefined
+    ? "sortsys-live-checkpoint-v2"
+    : "sortsys-live-checkpoint-v3";
+}
 
 export function liveSequence(value: unknown): asserts value is string {
   if (value !== "0") {
@@ -71,14 +87,16 @@ export function liveCheckpoint(input: unknown): LiveCheckpoint {
   if (input && typeof input === "object" && Object.hasOwn(input, "content")) {
     fields.push("content");
   }
+  if (input && typeof input === "object" && Object.hasOwn(input, "replay")) {
+    fields.push("replay");
+  }
   const value = record(input, fields);
-  if (value.format === "sortsys-live-checkpoint-v3") {
+  if (value.content !== undefined) {
     if (typeof value.content !== "string") throw new InvalidProtectedData();
     sized(value.content, 32);
-  } else if (
-    value.format !== "sortsys-live-checkpoint-v2" ||
-    value.content !== undefined
-  ) {
+  }
+  const format = checkpointFormat(value.replay, value.content);
+  if (value.format !== format) {
     throw new InvalidProtectedData();
   }
   identifier(value.tenant);
@@ -103,6 +121,21 @@ export function liveCheckpoint(input: unknown): LiveCheckpoint {
     throw new InvalidProtectedData();
   }
   sized(value.target, 32);
+  if (value.replay !== undefined) {
+    const replay = documentPart(
+      value.replay,
+      value.scope as string,
+      value.document as string,
+    );
+    if (
+      replay.facet !== value.facet ||
+      value.sequence === "0" ||
+      value.covered !== value.sequence
+    ) {
+      throw new InvalidProtectedData();
+    }
+    return { ...value, replay } as LiveCheckpoint;
+  }
   return value as LiveCheckpoint;
 }
 
@@ -122,6 +155,10 @@ export function liveCheckpointFrame(
     value.policyVersion,
     value.author,
   ];
+  if (value.replay !== undefined) {
+    fields.push(value.content ?? "", ...documentPartFields(value.replay));
+    return frame("sortsys/live-checkpoint/v4", fields);
+  }
   if (value.content !== undefined) {
     fields.push(value.content);
     return frame("sortsys/live-checkpoint/v3", fields);
@@ -133,10 +170,7 @@ export async function signLiveCheckpoint(
   input: Omit<LiveCheckpoint, "format" | "signature">,
   key: CryptoKey,
 ): Promise<LiveCheckpoint> {
-  const format =
-    input.content === undefined
-      ? "sortsys-live-checkpoint-v2"
-      : "sortsys-live-checkpoint-v3";
+  const format = checkpointFormat(input.replay, input.content);
   const value: Omit<LiveCheckpoint, "signature"> = { ...input, format };
   return liveCheckpoint({
     ...value,

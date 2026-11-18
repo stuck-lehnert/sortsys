@@ -564,6 +564,7 @@ export type LiveCheckpoint = {
     policyVersion: string;
     author: string;
     content?: string;
+    replay?: DocumentPart;
     signature: string;
 };
 
@@ -3535,6 +3536,9 @@ export type MutationInputs = {
         xml: string;
         liveSequence?: string;
         livePositions?: {
+            [key in string]: string;
+        };
+        liveReplay?: {
             [key in string]: string;
         };
         netAmount?: string | null;

@@ -166,3 +166,23 @@ test("the native checkpoint vector preserves its signature, channel and exact la
     ),
   ).toEqual(checkpoint);
 });
+
+test("a replay manifest is bound to a fully covered native cursor and the exact channel", async () => {
+  const { checkpoint, publicKey, frame } = native.replayVector;
+  const signer = await importSigningKey(publicKey);
+  const verified = await verifyLiveCheckpoint(checkpoint, checkpoint, signer);
+  expect(base64(liveCheckpointFrame(verified))).toBe(frame);
+  const invalid = [
+    { covered: "1" },
+    { format: "sortsys-live-checkpoint-v3" },
+    { replay: { ...checkpoint.replay, facet: "offer-prices" } },
+    { replay: { ...checkpoint.replay, hash: await digest(bytes("new hash")) } },
+    { replay: { ...checkpoint.replay, keys: [{ facet: "scope", generation: "5" }] } },
+    { content: undefined },
+  ];
+  for (const change of invalid) {
+    await expect(
+      verifyLiveCheckpoint({ ...checkpoint, ...change }, checkpoint, signer),
+    ).rejects.toThrow();
+  }
+});

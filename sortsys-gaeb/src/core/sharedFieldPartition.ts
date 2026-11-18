@@ -113,6 +113,8 @@ export class SharedFieldPartition {
   private commonBaselines = new Map<string, string>();
   private initializing = new Set<string>();
   private send: ((message: Record<string, unknown>) => void) | undefined;
+  private resumed = false;
+  private resumeEdits: string[] = [];
   constructor(private readonly allowsField?: (key: string) => boolean) {
     this.observeUpdates();
     this.observeHistory();
@@ -147,8 +149,11 @@ export class SharedFieldPartition {
   }
   private observeUpdates() {
     this.doc.on("update", (update: Uint8Array, origin: unknown) => {
-      if (origin !== "remote" && this.online && this.writable) {
+      if (origin === "remote") return;
+      if (this.online && this.writable) {
         this.send?.({ type: "update", data: encodeUpdate(update) });
+      } else if (this.resumed && origin === "local") {
+        this.resumeEdits.push(encodeUpdate(update));
       }
     });
   }
@@ -175,7 +180,13 @@ export class SharedFieldPartition {
     this.online = true;
     this.writable = writable;
     this.initializeOnEdit = options.initializeOnEdit === true;
-    if (this.doc.store.clients.size && writable) {
+    if (this.resumed) {
+      this.resumed = false;
+      const edits = this.resumeEdits.splice(0);
+      if (writable) {
+        for (const data of edits) send({ type: "update", data });
+      }
+    } else if (this.doc.store.clients.size && writable) {
       send({
         type: "update",
         data: encodeUpdate(Y.encodeStateAsUpdate(this.doc)),
@@ -185,6 +196,8 @@ export class SharedFieldPartition {
   }
   private newSession() {
     this.online = false;
+    this.resumed = false;
+    this.resumeEdits.length = 0;
     this.initializing.clear();
     // Carry text drafts, not identifiers from a room which no longer exists.
     // An unseen external replacement remains subject to the native merge.
@@ -230,6 +243,8 @@ export class SharedFieldPartition {
     this.writable = false;
     this.frozen = true;
     this.send = undefined;
+    this.resumed = false;
+    this.resumeEdits.length = 0;
     this.undoManager.destroy();
     this.doc.destroy();
     this.doc = new Y.Doc();
@@ -521,6 +536,56 @@ export class SharedFieldPartition {
       throw new InvalidSharedUpdate();
     }
   }
+  captureReplay(): string | undefined {
+    if (this.frozen || this.doc.getMap("__fields").size === 0) return;
+    return encodeUpdate(Y.encodeStateAsUpdate(this.doc));
+  }
+
+  matchesReplay(data: string, model: GaebDocument): boolean {
+    const empty = new Y.Doc();
+    try {
+      const checked = this.checkedUpdate(empty, readSharedUpdate(data));
+      try {
+        const fields = checked.getMap("__fields");
+        if (fields.size === 0) return false;
+        for (const field of fields.keys()) {
+          if (this.nativeValue(model, field) !== checked.getText(field).toString())
+            return false;
+        }
+        return true;
+      } finally {
+        checked.destroy();
+      }
+    } catch (error) {
+      if (error instanceof InvalidSharedUpdate) return false;
+      throw error;
+    } finally {
+      empty.destroy();
+    }
+  }
+
+  restoreReplay(data: string): boolean {
+    if (
+      this.frozen ||
+      this.online ||
+      this.doc.store.clients.size > 0 ||
+      !this.native ||
+      !this.matchesReplay(data, this.native)
+    ) {
+      return false;
+    }
+    this.resumed = true;
+    try {
+      this.receive(data);
+      return true;
+    } catch (error) {
+      this.resumed = false;
+      this.resumeEdits.length = 0;
+      if (error instanceof InvalidSharedUpdate) return false;
+      throw error;
+    }
+  }
+
   /** Stage a log page without changing text, pending input or common baselines.
    * The caller may discard this batch after a failed network read. */
   beginReceive(): SharedFieldReception {
@@ -867,6 +932,7 @@ export class SharedFieldPartition {
     this.send = undefined;
     this.native = undefined;
     this.fields.clear();
+    this.resumeEdits.length = 0;
     this.initializing.clear();
     this.commonBaselines.clear();
     this.selection = { field: null };

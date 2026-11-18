@@ -109,7 +109,11 @@ function parsePart(input: unknown) {
  * old cursor with exactly the same incomplete groups and CRDT state. */
 export function gaebLivePayloadInbox() {
   let pending = new Map<string, PendingGroup>();
+  let lost = false;
   return {
+    canCheckpoint() {
+      return pending.size === 0 && !lost;
+    },
     clear() {
       pending.clear();
     },
@@ -165,6 +169,7 @@ export function gaebLivePayloadInbox() {
         },
         commit() {
           pending = staged;
+          lost ||= discarded;
         },
         discarded() {
           return discarded;

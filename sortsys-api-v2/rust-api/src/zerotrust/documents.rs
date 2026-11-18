@@ -141,6 +141,81 @@ pub(super) fn facet(value: &str) -> RpcResult<Facet> {
         _ => Err(invalid()),
     }
 }
+pub(super) async fn verify_part_reference(
+    transaction: &mut crate::control::Transaction,
+    repository: &crate::control::Repository,
+    scope: &str,
+    part: &DocumentPart,
+) -> RpcResult<()> {
+    let record = super::objects::metadata_object(transaction, &part.object)
+        .await?
+        .filter(|record| !record.deleted)
+        .ok_or_else(invalid)?;
+    let owner = if part.facet == "opaque" {
+        "scope"
+    } else {
+        &part.facet
+    };
+    if record.domain != format!("{}:{owner}", scope) {
+        return Err(invalid());
+    }
+    let envelope = super::objects::metadata_read(repository, &record.reference).await?;
+    if envelope.object != part.object
+        || envelope.scope != scope
+        || envelope.facet.name() != owner
+        || !part
+            .keys
+            .iter()
+            .any(|key| key.facet.name() == owner && key.generation == envelope.generation)
+        || packet_hash(envelope.frame()?, &envelope.signature)? != part.hash
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+impl DocumentPart {
+    pub(super) fn fields<'a>(
+        &'a self,
+        scope: &str,
+        id: &str,
+        count: &'a str,
+    ) -> RpcResult<Vec<&'a str>> {
+        sized::<32>(&self.hash)?;
+        let object = blob(&self.object)?.ok_or_else(invalid)?;
+        if object.scope != scope
+            || object.id != id
+            || object.facet != self.facet
+            || !object.manifest
+        {
+            return Err(invalid());
+        }
+        let mut expected = if self.facet == "opaque" {
+            super::creation::COMMERCIAL_FACETS.to_vec()
+        } else {
+            vec![facet(&self.facet)?]
+        };
+        expected.sort_by_key(|facet| facet.name());
+        if self.keys.len() != expected.len() {
+            return Err(invalid());
+        }
+        let mut fields = vec![
+            self.facet.as_str(),
+            self.object.as_str(),
+            self.hash.as_str(),
+            count,
+        ];
+        for (key, expected) in self.keys.iter().zip(expected) {
+            if key.facet != expected {
+                return Err(invalid());
+            }
+            revision(&key.generation)?;
+            fields.extend([key.facet.name(), &key.generation]);
+        }
+        Ok(fields)
+    }
+}
+
 impl DocumentHead {
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
         identifier(&self.tenant)?;
@@ -170,38 +245,8 @@ impl DocumentHead {
                 return Err(invalid());
             }
             previous = &part.facet;
-            sized::<32>(&part.hash)?;
-            let object = blob(&part.object)?.ok_or_else(invalid)?;
-            if object.scope != self.scope
-                || object.id != self.id
-                || object.facet != part.facet
-                || !object.manifest
-            {
-                return Err(invalid());
-            }
-            let mut expected = if part.facet == "opaque" {
-                super::creation::COMMERCIAL_FACETS.to_vec()
-            } else {
-                vec![facet(&part.facet)?]
-            };
-            expected.sort_by_key(|facet| facet.name());
-            if part.keys.len() != expected.len() {
-                return Err(invalid());
-            }
             let count = part.keys.len().to_string();
-            let mut fields = vec![
-                part.facet.as_str(),
-                part.object.as_str(),
-                part.hash.as_str(),
-                count.as_str(),
-            ];
-            for (key, expected) in part.keys.iter().zip(expected) {
-                if key.facet != expected {
-                    return Err(invalid());
-                }
-                revision(&key.generation)?;
-                fields.extend([key.facet.name(), &key.generation]);
-            }
+            let fields = part.fields(&self.scope, &self.id, &count)?;
             hashes.push(encode(&Sha256::digest(frame(
                 "sortsys/document-part/v1",
                 &fields,
@@ -552,31 +597,13 @@ pub(super) async fn metadata_commit(
                 return Err(conflict());
             }
         }
-        let record = super::objects::metadata_object(&mut context.transaction, &part.object)
-            .await?
-            .filter(|record| !record.deleted)
-            .ok_or_else(invalid)?;
-        let owner = if part.facet == "opaque" {
-            "scope"
-        } else {
-            &part.facet
-        };
-        if record.domain != format!("{}:{owner}", head.scope) {
-            return Err(invalid());
-        }
-        let envelope =
-            super::objects::metadata_read(&context.repository, &record.reference).await?;
-        if envelope.object != part.object
-            || envelope.scope != head.scope
-            || envelope.facet.name() != owner
-            || !part
-                .keys
-                .iter()
-                .any(|key| key.facet.name() == owner && key.generation == envelope.generation)
-            || packet_hash(envelope.frame()?, &envelope.signature)? != part.hash
-        {
-            return Err(invalid());
-        }
+        verify_part_reference(
+            &mut context.transaction,
+            &context.repository,
+            &head.scope,
+            part,
+        )
+        .await?;
     }
     let historical = metadata_history_key(&head.id, &head.version)?;
     if context

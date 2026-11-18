@@ -13,6 +13,7 @@ import { Button, Loading, Modal } from "@sortsys/react-components";
 import {
   GaebEditor,
   GaebDocument,
+  GAEB_CONTENT_FACETS,
   gaebNetAmount,
   mergeGaebDocuments,
   validateGaebInBrowser,
@@ -35,6 +36,7 @@ import { uiText, useI18n } from "~/lib/i18n";
 import type { CommercialDetail } from "~/lib/commercial";
 import { isWriteConflict } from "~/lib/data/atomicWrites";
 import type { connectProtectedGaebLive } from "~/lib/data/gaebLive";
+import type { LiveReplay } from "~/lib/data/liveCheckpoints";
 import type {
   DocumentEditorSession,
   DocumentContentView,
@@ -410,7 +412,8 @@ export default function GaebFileModal({
   const save = useCallback(
     async (source: string, base: string) => {
       for (let attempt = 0; attempt < 5; attempt++) {
-        const liveProgress = await live.current?.flush();
+        const connection = live.current;
+        const liveProgress = await connection?.flush();
         const liveSequence =
           typeof liveProgress === "string" ? liveProgress : undefined;
         const livePositions =
@@ -443,6 +446,24 @@ export default function GaebFileModal({
         if (merged === current.xml && liveProgress === undefined) {
           return merged;
         }
+        let liveReplay: LiveReplay | undefined;
+        if (
+          caseId &&
+          connection &&
+          "replay" in connection &&
+          typeof connection.replay === "function"
+        ) {
+          const proposed = connection.replay();
+          if (Object.keys(proposed).length > 0) {
+            const model = new GaebDocument(merged, current.fileName);
+            liveReplay = {};
+            for (const facet of GAEB_CONTENT_FACETS) {
+              const data = proposed[facet];
+              if (data && sharedFields.matchesReplay(facet, data, model))
+                liveReplay[facet] = data;
+            }
+          }
+        }
         const [value, error] =
           caseId && documentId
             ? await client.mutate("commercial.documents.save", {
@@ -460,6 +481,7 @@ export default function GaebFileModal({
                     : gaebNetAmount(merged, current.referenceXml ?? undefined),
                 liveSequence,
                 livePositions,
+                liveReplay,
               })
             : await client.mutate("projects.files.xmlSave", {
                 projectId: projectId!,

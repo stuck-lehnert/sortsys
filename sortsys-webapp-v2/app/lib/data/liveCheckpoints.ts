@@ -15,6 +15,7 @@ import {
   type DocumentChannel,
   type DocumentFacet,
   type DocumentHead,
+  type DocumentPart,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { required } from "./protectedObjects";
@@ -32,6 +33,23 @@ export type LivePublication = {
   verify(): Promise<boolean>;
 };
 export type LivePositions = Partial<Record<DocumentFacet, string>>;
+export type LiveReplay = Partial<Record<DocumentFacet, string>>;
+export const MAX_LIVE_REPLAY = 2 * 1024 * 1024;
+
+export function liveReplay(input: unknown): LiveReplay {
+  const value = partialAddressRecord(input, [...DOCUMENT_FACETS]);
+  for (const data of Object.values(value)) {
+    if (typeof data !== "string" || !data || data.length > MAX_LIVE_REPLAY)
+      throw new InvalidProtectedData();
+  }
+  return value as LiveReplay;
+}
+
+type StageReplay = (
+  facet: DocumentFacet,
+  target: string,
+  position: string,
+) => Promise<DocumentPart | undefined>;
 
 export function livePositions(input: unknown): LivePositions {
   const value = partialAddressRecord(input, [...DOCUMENT_FACETS]);
@@ -49,6 +67,7 @@ export async function prepareDocumentLivePublications(
   previous: DocumentHead | undefined,
   signal: AbortSignal,
   positions: LivePositions = {},
+  stageReplay?: StageReplay,
 ): Promise<LivePublication[]> {
   if (!previous) {
     return [];
@@ -83,6 +102,7 @@ export async function prepareDocumentLivePublications(
         {
           sequence,
           retainUnchanged: unchanged && !head.locked && !head.readOnly,
+          replay: head.locked || head.readOnly ? undefined : stageReplay,
         },
         context,
       );
@@ -142,7 +162,12 @@ async function prepareWithContext(
   target: string,
   previousTarget: string | undefined,
   signal: AbortSignal,
-  options: { sequence?: string; preserve?: boolean; retainUnchanged?: boolean },
+  options: {
+    sequence?: string;
+    preserve?: boolean;
+    retainUnchanged?: boolean;
+    replay?: StageReplay;
+  },
   context: () => ReturnType<typeof publicationContext>,
 ): Promise<LivePublication | null> {
   if (!previousTarget) {
@@ -212,6 +237,7 @@ async function prepareWithContext(
     return value;
   }
   let covered = "0";
+  let prior: LiveCheckpoint | undefined;
   if (state.checkpoint) {
     const checkpoint = await checkReceipt(state.checkpoint);
     if (checkpoint.target !== previousTarget) {
@@ -221,6 +247,7 @@ async function prepareWithContext(
       throw new InvalidProtectedData();
     }
     covered = checkpoint.covered;
+    prior = checkpoint;
   }
   if (retainPrevious) {
     // This native part is byte-for-byte unchanged. Keep its existing receipt
@@ -228,10 +255,17 @@ async function prepareWithContext(
     // caller incorporated messages arriving after its snapshot.
     return null;
   }
+  const stageReplay =
+    position !== undefined &&
+    state.current !== "0" &&
+    position.sequence === state.current
+      ? options.replay
+      : undefined;
   if (
     target === previousTarget &&
-    state.checkpoint &&
-    covered === state.current
+    prior &&
+    covered === state.current &&
+    (!stageReplay || (prior.replay && (prior.content ?? null) === content))
   ) {
     // A verified receipt already covers this exact native part and cursor.
     // A second editor need not sign and confirm the same state again.
@@ -247,6 +281,10 @@ async function prepareWithContext(
     // It need not be signed again by an author without this channel's keys.
     return null;
   }
+  const replay = await stageReplay?.(room.facet, target, covered);
+  if (target === previousTarget && prior?.covered === covered && !replay) {
+    return null;
+  }
   const session = await required(client.query("auth.sessionInfo", undefined));
   live();
   const checkpoint = await signLiveCheckpoint(
@@ -260,6 +298,7 @@ async function prepareWithContext(
       policyVersion: policy.version,
       author: `user:${session.user.id}`,
       ...(content === null ? {} : { content }),
+      ...(replay === undefined ? {} : { replay }),
     },
     account.identity.signingKey.privateKey,
   );

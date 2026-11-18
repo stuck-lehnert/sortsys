@@ -3,7 +3,7 @@ pub(super) mod persistence;
 use super::{
     crypto::{frame, identifier, invalid, revision, sized, verify},
     document_messages::Room,
-    documents::DocumentHead,
+    documents::{DocumentHead, DocumentPart},
     objects::{SaveInput, conflict, packet_hash},
 };
 use crate::{error::RpcResult, error::forbidden, ids::Id, rpc::ProcedureRegistryBuilder};
@@ -28,6 +28,9 @@ pub(super) struct LiveCheckpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    replay: Option<DocumentPart>,
     signature: String,
 }
 pub(super) fn position(value: &str) -> RpcResult<i64> {
@@ -79,12 +82,29 @@ impl LiveCheckpoint {
             &self.policy_version,
             &self.author,
         ];
-        let protocol = match (self.format.as_str(), self.content.as_deref()) {
-            ("sortsys-live-checkpoint-v2", None) => "sortsys/live-checkpoint/v2",
-            ("sortsys-live-checkpoint-v3", Some(content)) => {
+        let part_key_count = self.replay.as_ref().map(|part| part.keys.len().to_string());
+        let protocol = match (self.format.as_str(), self.content.as_deref(), &self.replay) {
+            ("sortsys-live-checkpoint-v2", None, None) => "sortsys/live-checkpoint/v2",
+            ("sortsys-live-checkpoint-v3", Some(content), None) => {
                 sized::<32>(content)?;
                 fields.push(content);
                 "sortsys/live-checkpoint/v3"
+            }
+            ("sortsys-live-checkpoint-v4", content, Some(part)) => {
+                if part.facet != self.facet || self.sequence == "0" || self.covered != self.sequence
+                {
+                    return Err(invalid());
+                }
+                if let Some(content) = content {
+                    sized::<32>(content)?;
+                }
+                fields.push(content.unwrap_or(""));
+                fields.extend(part.fields(
+                    &self.scope,
+                    &self.document,
+                    part_key_count.as_deref().ok_or_else(invalid)?,
+                )?);
+                "sortsys/live-checkpoint/v4"
             }
             _ => return Err(invalid()),
         };
@@ -230,5 +250,25 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn replay_checkpoint_matches_the_browser_vector_and_binds_its_manifest() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/zerotrust-live-channels.json"
+        ))
+        .unwrap();
+        let vector = &fixture["replayVector"];
+        let mut checkpoint: LiveCheckpoint =
+            serde_json::from_value(vector["checkpoint"].clone()).unwrap();
+        let key = sized::<32>(vector["publicKey"].as_str().unwrap()).unwrap();
+        assert_eq!(encode(&checkpoint.frame().unwrap()), vector["frame"]);
+        verify(&key, &checkpoint.signature, &checkpoint.frame().unwrap()).unwrap();
+
+        let mut modified = checkpoint.clone();
+        modified.replay.as_mut().unwrap().keys[0].generation = "7".into();
+        assert!(verify(&key, &modified.signature, &modified.frame().unwrap()).is_err());
+        checkpoint.covered = "1".into();
+        assert!(checkpoint.frame().is_err());
     }
 }

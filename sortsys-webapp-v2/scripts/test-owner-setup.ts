@@ -412,6 +412,9 @@ try {
     const { exerciseGaebCaseBatches } =
       await import("./test-native-content-preparation");
     await exerciseGaebCaseBatches(owner, peer, rpcTransmissions);
+    const { exerciseGaebReplayReceipt } =
+      await import("./test-native-gaeb-replay");
+    await exerciseGaebReplayReceipt(owner, peer);
   } else if (mode === "owner-access-publications") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");

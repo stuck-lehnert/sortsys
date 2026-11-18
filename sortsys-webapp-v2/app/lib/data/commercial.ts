@@ -8,6 +8,7 @@ import {
   digest,
   type DocumentHead,
   documentHeadHash,
+  documentPartTarget,
   documentTimestamp,
   InvalidProtectedData,
   record,
@@ -92,7 +93,7 @@ import {
 import { createResourceAreas } from "./createProjectArea";
 import {
   livePositions,
-  prepareDocumentLivePublications,
+  liveReplay,
 } from "./liveCheckpoints";
 import type { DuckDriver } from "./database";
 import { newProductRowId, publicId } from "./products";
@@ -1301,6 +1302,9 @@ export function createProtectedCommercial(
         livePath: "",
         recoveryScope: "",
         contentView,
+        liveTarget: forEditor
+          ? (facet) => documentPartTarget(head, facet)
+          : undefined,
       };
     } finally {
       store.close();
@@ -1315,6 +1319,7 @@ export function createProtectedCommercial(
       "netAmount",
       "liveSequence",
       "livePositions",
+      "liveReplay",
     ]);
     const caseId = data.caseId as string;
     const id = data.id as string;
@@ -1324,6 +1329,13 @@ export function createProtectedCommercial(
       throw new InvalidProtectedData();
     }
     let source = data.xml;
+    const positions =
+      data.livePositions === undefined
+        ? undefined
+        : livePositions(data.livePositions);
+    const replay =
+      data.liveReplay === undefined ? undefined : liveReplay(data.liveReplay);
+    if (replay && !positions) throw new InvalidProtectedData();
     const basis = await read(caseId, true);
     const values = basis.values;
     const selected = documentRow(values, id);
@@ -1458,13 +1470,12 @@ export function createProtectedCommercial(
         old.xml === source &&
         (amount === undefined || amount === selected.values.net_amount)
       ) {
-        if (data.livePositions !== undefined) {
-          const checkpoints = await prepareDocumentLivePublications(
-            client,
+        if (positions) {
+          const checkpoints = await store.prepareLive(
             previous,
             previous,
-            signal,
-            livePositions(data.livePositions),
+            positions,
+            replay,
           );
           if (checkpoints.length) {
             await commitProtectedWrites(client, [], signal, [], {
@@ -1569,10 +1580,8 @@ export function createProtectedCommercial(
         previous,
         modifiedAt: now,
         locked: false,
-        livePositions:
-          data.livePositions === undefined
-            ? undefined
-            : livePositions(data.livePositions),
+        livePositions: positions,
+        liveReplay: replay,
       });
       const refreshed = await afterStaging(basis);
       await verifySourceVersion();
@@ -1607,13 +1616,12 @@ export function createProtectedCommercial(
         if (!currentContent.complete || currentContent.xml !== source)
           throw error;
         await verifySourceVersion();
-        if (data.livePositions !== undefined) {
-          const checkpoints = await prepareDocumentLivePublications(
-            client,
+        if (positions) {
+          const checkpoints = await store.prepareLive(
             currentHead,
             currentHead,
-            signal,
-            livePositions(data.livePositions),
+            positions,
+            replay,
           );
           if (checkpoints.length) {
             await commitProtectedWrites(client, [], signal, [], {

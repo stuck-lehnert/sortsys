@@ -431,6 +431,25 @@ export class SharedFields {
     }
   }
 
+  captureReplay(facet: GaebContentFacet) {
+    this.active();
+    return this.partitions.get(facet)?.captureReplay();
+  }
+
+  matchesReplay(
+    facet: GaebContentFacet,
+    data: string,
+    model: GaebDocument,
+  ) {
+    this.active();
+    return this.partition(facet).matchesReplay(data, model);
+  }
+
+  restoreReplay(facet: GaebContentFacet, data: string) {
+    this.active();
+    return this.partition(facet).restoreReplay(data);
+  }
+
   freeze(xml: string, fileName: string) {
     this.active();
     this.frozen = true;
