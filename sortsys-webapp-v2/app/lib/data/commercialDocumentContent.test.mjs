@@ -110,6 +110,54 @@ test("verified immutable parts are reused within one live store without exposing
   }
 });
 
+test("large document parts group writes and reads and recover a lost batch acknowledgement", async () => {
+  const scope = commercialCollection("a", "scope");
+  const fixture = await protectedTenant([first, scope]);
+  const { mutate, query } = fixture.client;
+  const writes = [];
+  let readsInFlight = 0;
+  let parallelReads = 0;
+  fixture.client.mutate = async (path, input) => {
+    const result = await mutate(path, input);
+    if (path !== "zerotrust.objects.batch") return result;
+    writes.push(input.objects.map(({ envelope }) => envelope.object));
+    if (writes.length === 1 && !result[1])
+      return [null, new Error("Lost batch acknowledgement")];
+    return result;
+  };
+  fixture.client.query = async (path, input) => {
+    if (path !== "zerotrust.objects.get") return query(path, input);
+    readsInFlight++;
+    parallelReads = Math.max(parallelReads, readsInFlight);
+    try {
+      return await query(path, input);
+    } finally {
+      readsInFlight--;
+    }
+  };
+  const store = await commercialDocumentStore(
+    fixture.client,
+    first.scope,
+    new AbortController().signal,
+  );
+  const original = { description: "Fläche für Überarbeitung\n".repeat(62_000) };
+  try {
+    const part = await store.stage("3", "scope", original);
+    expect(writes.map((group) => group.length)).toEqual([3, 3, 2]);
+    expect(writes.at(-1).at(-1)).toBe(part.object);
+    expect(parallelReads).toBe(3);
+
+    parallelReads = 0;
+    expect(await store.read(part)).toEqual(original);
+    expect(parallelReads).toBe(4);
+
+    fixture.objects.delete(writes[1][0]);
+    await expect(store.read(part)).rejects.toThrow();
+  } finally {
+    store.close();
+  }
+});
+
 test("document scopes share one verified inventory and keep independent lifetimes", async () => {
   const fixture = await protectedTenant([first, second]);
   const query = fixture.client.query;

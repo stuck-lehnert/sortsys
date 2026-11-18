@@ -535,6 +535,14 @@ Reihenfolge der Auswahl bleibt erhalten; fehlende Datensätze werden ausgelassen
 Ein Fehler verwirft die gesamte Auswahl. Bereits laufende Abrufe enden vor der
 Freigabe ihrer gemeinsam verwendeten Ressourcen.
 
+Bei GAEB-Dokumenten lädt der Editor nach dem signierten Manifest je vier
+verschlüsselte Blöcke zusammen. Beim Schreiben fasst er bis zu drei Blöcke
+pro Transaktion zusammen und legt das Manifest mit den letzten Blöcken ab.
+Ein Dokumentteil mit sieben Blöcken braucht so drei Schreibanfragen statt
+acht. Geht eine Antwort verloren, gleicht der Browser die Signaturen aller
+Blöcke des Pakets mit den gespeicherten Fassungen ab. Die neue Dokumentversion
+wird erst veröffentlicht, wenn sämtliche Teile vollständig vorliegen.
+
 Beim Aktualisieren von Übersichten kann der Browser die zuletzt geprüften
 Datenstände für bis zu 16 Bereiche gemeinsam anfragen. Für einen unveränderten
 Bereich liefert die API nur den Datenstand. Bei einer Änderung liefert sie in

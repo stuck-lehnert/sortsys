@@ -53,6 +53,9 @@ import { mapConcurrent } from "./runtime/concurrentReads";
 // Chunks stay below the signed object limit even after nine binary encryption
 // layers and the one outer JSON/base64 envelope. No plaintext content hashes.
 const CHUNK = 256 * 1024;
+// Three twice-encoded chunks and a manifest fit in the ordinary 2 MiB RPC body.
+const WRITE_CHUNKS = 3;
+const READ_CHUNKS = 4;
 const MAX_BYTES = 128 * 1024 * 1024;
 const MAX_CACHED_PART_BYTES = 1024 * 1024;
 const MAX_CACHED_PARTS = 16;
@@ -309,62 +312,80 @@ function openDocumentStore(
       // A lost response must not turn an acknowledged immutable write into an
       // overwrite. Read every signed envelope back before accepting success.
       try {
-        for (const packet of packets) {
-          if (
-            (await store.get(packet.envelope.object)).envelope.signature !==
-            packet.envelope.signature
-          ) {
-            throw failure;
-          }
-        }
+        const saved = await store.selected(
+          packets.map((packet) => packet.envelope.object),
+        );
+        if (
+          saved.length !== packets.length ||
+          saved.some(
+            ({ envelope }, index) =>
+              envelope.signature !== packets[index]!.envelope.signature,
+          )
+        )
+          throw failure;
         await store.read(`${scope}:${owner(facet)}:case`);
         live();
       } catch {
         throw failure;
       }
     }
-    try {
-      for (let offset = 0; offset < raw.length; offset += CHUNK) {
-        live();
-        const index = manifest.parts.length;
-        const object = documentObject(scope, id, facet, nonce, String(index));
-        let chunk = raw.slice(offset, offset + CHUNK);
-        try {
-          if (facet === "opaque") {
-            for (const layer of layers) {
-              const next = await layer.sealOpaqueLayer(object, chunk);
-              chunk.fill(0);
-              chunk = next.ciphertext;
-            }
+    async function prepareChunk(index: number) {
+      live();
+      const offset = index * CHUNK;
+      const object = documentObject(scope, id, facet, nonce, String(index));
+      let chunk = raw.slice(offset, offset + CHUNK);
+      try {
+        if (facet === "opaque") {
+          for (const layer of layers) {
+            const next = await layer.sealOpaqueLayer(object, chunk);
+            chunk.fill(0);
+            chunk = next.ciphertext;
           }
-          const packet = await store.packet(
-            object,
-            {
-              format: "sortsys-document-bytes-v1",
-              scope,
-              document: id,
-              facet,
-              token: nonce,
-              index,
-              data: base64(chunk),
-            },
-            undefined,
-            true,
-          );
-          await write([packet]);
-          manifest.parts.push({
+        }
+        const packet = await store.packet(
+          object,
+          {
+            format: "sortsys-document-bytes-v1",
+            scope,
+            document: id,
+            facet,
+            token: nonce,
+            index,
+            data: base64(chunk),
+          },
+          undefined,
+          true,
+        );
+        return {
+          packet,
+          entry: {
             id: object,
             hash: await envelopeHash(packet.envelope),
             size: Math.min(CHUNK, raw.length - offset),
-          });
-        } finally {
-          chunk.fill(0);
-        }
+          },
+        };
+      } finally {
+        chunk.fill(0);
       }
+    }
+    try {
       const object = documentObject(scope, id, facet, nonce, "manifest");
-      const packet = await store.packet(object, manifest, undefined, true);
-      await write([packet]);
-      return { facet, object, hash: await envelopeHash(packet.envelope), keys };
+      const chunkCount = Math.ceil(raw.length / CHUNK);
+      for (let first = 0; first < chunkCount; first += WRITE_CHUNKS) {
+        const count = Math.min(WRITE_CHUNKS, chunkCount - first);
+        const indexes = Array.from({ length: count }, (_, index) => first + index);
+        const prepared = await mapConcurrent(indexes, count, prepareChunk);
+        manifest.parts.push(...prepared.map(({ entry }) => entry));
+        const packets = prepared.map(({ packet }) => packet);
+        if (first + count < chunkCount) {
+          await write(packets);
+          continue;
+        }
+        const packet = await store.packet(object, manifest, undefined, true);
+        await write([...packets, packet]);
+        return { facet, object, hash: await envelopeHash(packet.envelope), keys };
+      }
+      throw new InvalidProtectedData();
     } finally {
       raw.fill(0);
     }
@@ -441,66 +462,87 @@ function openDocumentStore(
     ) {
       throw new InvalidProtectedData();
     }
+    const size = m.size;
+    const entries = m.parts.map((entry, index) => {
+      const { id, hash, size: length } = record(entry, ["id", "hash", "size"]);
+      const object = documentObject(
+        scope,
+        binding.id,
+        part.facet,
+        binding.token,
+        String(index),
+      );
+      if (
+        id !== object ||
+        length !== Math.min(CHUNK, size - index * CHUNK) ||
+        typeof hash !== "string"
+      ) {
+        throw new InvalidProtectedData();
+      }
+      return { object, hash, length };
+    });
     const output = new Uint8Array(m.size);
     try {
-      for (let index = 0; index < m.parts.length; index++) {
-        const p = record(m.parts[index], ["id", "hash", "size"]);
-        const object = documentObject(
-          scope,
-          binding.id,
-          part.facet,
-          binding.token,
-          String(index),
-        );
-        const size = Math.min(CHUNK, m.size - index * CHUNK);
-        if (p.id !== object || p.size !== size || typeof p.hash !== "string") {
-          throw new InvalidProtectedData();
-        }
-        const opened = await store.get(object);
-        live();
-        if ((await envelopeHash(opened.envelope)) !== p.hash) {
-          throw new InvalidProtectedData();
-        }
-        const c = record(opened.value, [
-          "format",
-          "scope",
-          "document",
-          "facet",
-          "token",
-          "index",
-          "data",
-        ]);
-        if (
-          c.format !== "sortsys-document-bytes-v1" ||
-          c.scope !== scope ||
-          c.document !== binding.id ||
-          c.facet !== part.facet ||
-          c.token !== binding.token ||
-          c.index !== index ||
-          typeof c.data !== "string"
-        ) {
-          throw new InvalidProtectedData();
-        }
-        let chunk = unbase64(c.data, CHUNK + COMMERCIAL_FACETS.length * 68);
-        try {
-          if (part.facet === "opaque") {
-            for (let i = layers.length - 1; i >= 0; i--) {
-              const next = await layers[i]!.openOpaqueLayer(
-                object,
-                part.keys[i]!.generation,
-                chunk,
-              );
-              chunk.fill(0);
-              chunk = next;
+      for (let first = 0; first < entries.length; first += READ_CHUNKS) {
+        const group = entries.slice(first, first + READ_CHUNKS);
+        const blocks = await store.selected(group.map(({ object }) => object));
+        if (blocks.length !== group.length) throw new InvalidProtectedData();
+        await mapConcurrent(
+          blocks,
+          READ_CHUNKS,
+          async (opened, offset) => {
+            live();
+            const { object, hash, length } = group[offset]!;
+            const index = first + offset;
+            if (
+              opened.envelope.object !== object ||
+              (await envelopeHash(opened.envelope)) !== hash
+            ) {
+              throw new InvalidProtectedData();
             }
-          }
-          if (chunk.length !== size) {
-            throw new InvalidProtectedData();
-          }
-          output.set(chunk, index * CHUNK);
-        } finally {
-          chunk.fill(0);
-        }
+            const chunkValue = record(opened.value, [
+              "format",
+              "scope",
+              "document",
+              "facet",
+              "token",
+              "index",
+              "data",
+            ]);
+            if (
+              chunkValue.format !== "sortsys-document-bytes-v1" ||
+              chunkValue.scope !== scope ||
+              chunkValue.document !== binding.id ||
+              chunkValue.facet !== part.facet ||
+              chunkValue.token !== binding.token ||
+              chunkValue.index !== index ||
+              typeof chunkValue.data !== "string"
+            ) {
+              throw new InvalidProtectedData();
+            }
+            let chunk = unbase64(
+              chunkValue.data,
+              CHUNK + COMMERCIAL_FACETS.length * 68,
+            );
+            try {
+              if (part.facet === "opaque") {
+                for (let i = layers.length - 1; i >= 0; i--) {
+                  const next = await layers[i]!.openOpaqueLayer(
+                    object,
+                    part.keys[i]!.generation,
+                    chunk,
+                  );
+                  chunk.fill(0);
+                  chunk = next;
+                }
+              }
+              if (chunk.length !== length) throw new InvalidProtectedData();
+              output.set(chunk, index * CHUNK);
+            } finally {
+              chunk.fill(0);
+            }
+          },
+        );
       }
       live();
       return {
