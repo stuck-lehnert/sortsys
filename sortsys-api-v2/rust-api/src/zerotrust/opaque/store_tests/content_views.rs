@@ -42,12 +42,12 @@ async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) =
-        api(auth_service(&settings, Repository::system(first.clone()))).await;
-    let (second_url, _second_api) =
-        api(auth_service(&settings, Repository::system(second.clone()))).await;
+    let mut first_api = processes::ApiProcess::start(&settings, &root, "first").await;
+    let mut second_api = processes::ApiProcess::start(&settings, &root, "second").await;
+    assert_ne!(first_api.pid, second_api.pid);
+    assert_ne!(first_api.endpoint, second_api.endpoint);
     let tenant = "content-preparation";
-    let endpoints = [first_url, second_url];
+    let endpoints = [first_api.endpoint.clone(), second_api.endpoint.clone()];
     tokio::join!(
         browser_with_tenant(
             "owner-content-preparation",
@@ -57,6 +57,15 @@ async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
         ),
         inspect_prepared_copy(&root, tenant, &first, &second),
     );
+    first_api.stop().await;
+    second_api.stop().await;
+    let processes = serde_json::json!({
+        "parentPid": std::process::id(),
+        "apiPids": [first_api.pid, second_api.pid],
+        "endpoints": endpoints,
+        "stopped": true,
+    });
+    std::fs::write(root.join("api-processes.json"), processes.to_string()).unwrap();
 }
 
 async fn inspect_prepared_copy(

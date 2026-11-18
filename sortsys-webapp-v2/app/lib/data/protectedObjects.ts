@@ -81,6 +81,9 @@ export type CollectionPageRequest = {
   headOnly?: boolean;
 };
 type ObjectPage = QueryResult<"zerotrust.objects.list">;
+type PageSource = (
+  request: QueryInput<"zerotrust.objects.pages">,
+) => Promise<ObjectPage[]>;
 
 function pageRequest(
   area: Pick<Collection, "domain" | "prefix">,
@@ -138,7 +141,44 @@ export async function protectedCollections(
   signal: AbortSignal,
   selectedDomains?: readonly string[],
 ) {
-  const context = await collectionContext(client, signal, selectedDomains);
+  return bindCollections(client, signal, selectedDomains);
+}
+
+/** A read-only content view uses live access proofs and its own page source.
+ * It cannot open an ordinary collection or seal a write for the active view. */
+export async function protectedReadView(
+  client: Client,
+  signal: AbortSignal,
+  source: PageSource,
+) {
+  const open = await bindCollections(client, signal, undefined, source);
+  return {
+    areas: open.areas,
+    readable: open.readable,
+    prefetch: open.prefetch,
+    async read(area: Collection) {
+      const collection = open(area);
+      try {
+        return await collection.read();
+      } finally {
+        collection.close();
+      }
+    },
+  };
+}
+
+async function bindCollections(
+  client: Client,
+  signal: AbortSignal,
+  selectedDomains?: readonly string[],
+  source?: PageSource,
+) {
+  const context = await collectionContext(
+    client,
+    signal,
+    selectedDomains,
+    source,
+  );
   function live() {
     if (signal.aborted || unlockedAccount() !== context.account)
       throw new InvalidProtectedData();
@@ -171,13 +211,14 @@ export async function protectedCollections(
       );
       let pages: ObjectPage[];
       try {
-        pages = await required(
-          client.query(
-            "zerotrust.objects.pages",
-            { selections: requests },
-            { strategy: "network-only" },
-          ),
-        );
+        const input = { selections: requests };
+        pages = source
+          ? await source(input)
+          : await required(
+              client.query("zerotrust.objects.pages", input, {
+                strategy: "network-only",
+              }),
+            );
       } catch (error) {
         if (!(error instanceof RpcClientError) || error.data?.httpCode !== 413)
           throw error;
@@ -246,6 +287,7 @@ async function collectionContext(
   client: Client,
   signal: AbortSignal,
   selection?: string | readonly string[],
+  source?: PageSource,
 ) {
   let options: QueryInput<"zerotrust.access.snapshot"> = {};
   if (typeof selection === "string") {
@@ -270,6 +312,7 @@ async function collectionContext(
   );
   return {
     pages: new Map<string, ObjectPage>(),
+    source,
     account,
     history,
     subject,
@@ -558,6 +601,12 @@ function openCollection(
         return cached;
       }
     }
+    if (context.source) {
+      const pages = await context.source({ selections: [input] });
+      if (!Array.isArray(pages) || pages.length !== 1 || !pages[0])
+        throw new InvalidProtectedData();
+      return pages[0];
+    }
     return required(
       client.query("zerotrust.objects.list", input, {
         strategy: "network-only",
@@ -700,7 +749,7 @@ function openCollection(
           throw error;
         // Drop the previous attempt's page state before restarting; an
         // outstanding request must not bridge two collection snapshots.
-        await client.invalidate("zerotrust.objects.list");
+        if (!context.source) await client.invalidate("zerotrust.objects.list");
       }
     }
     throw new InvalidProtectedData();

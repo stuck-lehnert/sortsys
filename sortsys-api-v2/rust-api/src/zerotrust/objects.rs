@@ -283,7 +283,7 @@ struct ListInput {
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-struct ListBatchInput {
+pub(super) struct ListBatchInput {
     selections: Vec<ListInput>,
 }
 #[derive(Serialize, TS)]
@@ -297,7 +297,7 @@ struct DomainOpening {
 }
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-struct ObjectPage {
+pub(super) struct ObjectPage {
     snapshot: String,
     key_generation: String,
     objects: Vec<EncryptedObject>,

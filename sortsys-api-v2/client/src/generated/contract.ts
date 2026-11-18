@@ -130,6 +130,8 @@ export type Kind = "initialize" | "update" | "presence";
 
 export type Level = "error" | "warning";
 
+export type ListBatchInput = { selections: Array<ListInput>, };
+
 export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
 
 export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, content?: string, signature: string, };
@@ -239,6 +241,8 @@ export type StockReferences = { tenant: string, domain: string, object: string, 
 export type Target = { format: string, kind: string, tenant: string, scope: string, object: string, revision: string, signature: string, digest: string, };
 
 export type TechnicalMetadata = { revision: string, status?: number, };
+
+export type TenantSnapshot = { id: string, createdAt: Date, bytes: string, };
 
 export type ToolBookingData = { projectId?: Id | null, responsibleUserId?: Id | null, deadlineAt?: Date | null, comment?: string | null, };
 
@@ -352,6 +356,8 @@ export type QueryInputs = {
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
   "zerotrust.access.page": { snapshot: string, after: string, includeDomains: boolean, };
   "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, };
+  "zerotrust.content.inspect": { operation: string, approval: ContentEpoch, pages?: ListBatchInput, };
+  "zerotrust.content.snapshots": { after?: string, };
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
   "zerotrust.creations.list": void;
   "zerotrust.creations.origin": { domain: string, };
@@ -501,6 +507,8 @@ export type QueryOutputs = {
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
   "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
   "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, };
+  "zerotrust.content.inspect": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, }>;
+  "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, }>;
   "zerotrust.creations.origin": { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, } | null;
@@ -1074,6 +1082,8 @@ const queryProcedures = new Set<string>([
   "users.vacations.list",
   "zerotrust.access.page",
   "zerotrust.access.snapshot",
+  "zerotrust.content.inspect",
+  "zerotrust.content.snapshots",
   "zerotrust.creations.capability",
   "zerotrust.creations.list",
   "zerotrust.creations.origin",

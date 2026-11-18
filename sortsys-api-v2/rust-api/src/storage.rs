@@ -65,6 +65,28 @@ struct SnapshotPage {
     version: String,
 }
 
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TenantSnapshotInput {
+    #[ts(optional)]
+    after: Option<String>,
+}
+
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct TenantSnapshot {
+    id: String,
+    #[ts(type = "Date")]
+    created_at: DateTime<Utc>,
+    bytes: String,
+}
+
+#[derive(Serialize, TS)]
+pub(crate) struct TenantSnapshotPage {
+    rows: Vec<TenantSnapshot>,
+    after: Option<String>,
+}
+
 fn record_key(tenant: &str, operation: &str) -> sortsys_zerotrust::metadata::RecordKey {
     key(COLLECTION, &format!("{tenant}:{operation}"))
 }
@@ -275,21 +297,83 @@ pub(crate) async fn published_file(
     tenant: &str,
     operation: &str,
 ) -> RpcResult<(String, u64)> {
-    let expected_file = sortsys_store::snapshot_id(tenant, operation)
-        .map_err(|_| bad_request("Invalid snapshot operation"))?;
+    let expected_file = checked_snapshot_id(tenant, operation)?;
     let record: SnapshotRecord = system
         .read(record_key(tenant, operation))
         .await?
         .value
         .ok_or_else(not_found)?;
+    let (file_id, bytes) =
+        published_summary(&record, tenant, operation, &expected_file)?.ok_or_else(not_found)?;
+    Ok((file_id.to_owned(), bytes))
+}
+
+fn checked_snapshot_id(tenant: &str, operation: &str) -> RpcResult<String> {
+    sortsys_store::snapshot_id(tenant, operation)
+        .map_err(|_| bad_request("Invalid snapshot operation"))
+}
+
+fn published_summary<'a>(
+    record: &'a SnapshotRecord,
+    tenant: &str,
+    operation: &str,
+    expected_file: &str,
+) -> RpcResult<Option<(&'a str, u64)>> {
     if record.summary.tenant != tenant || record.summary.id != operation {
         return Err(unavailable());
     }
-    let file_id = record.file_id.ok_or_else(not_found)?;
-    if file_id != expected_file {
-        return Err(unavailable());
+    match (&record.file_id, record.summary.bytes) {
+        (None, None) => Ok(None),
+        (Some(file), Some(bytes)) if file == expected_file => Ok(Some((file, bytes))),
+        _ => Err(unavailable()),
     }
-    Ok((file_id, record.summary.bytes.ok_or_else(unavailable)?))
+}
+
+pub(crate) async fn tenant_snapshots(
+    system: &Repository,
+    tenant: &str,
+    input: TenantSnapshotInput,
+) -> RpcResult<TenantSnapshotPage> {
+    let prefix = format!("{tenant}:");
+    let after = if let Some(operation) = input.after {
+        checked_snapshot_id(tenant, &operation)?;
+        Some(format!("{prefix}{operation}"))
+    } else {
+        None
+    };
+    // Operation identifiers are immutable. Scope each keyset to this tenant;
+    // the version of the system-wide snapshot registry is private to operators.
+    let page = system
+        .scan_prefix::<SnapshotRecord>(COLLECTION, Some(&prefix), after, None, 100)
+        .await?;
+    let mut rows = Vec::with_capacity(page.records.len());
+    for entry in page.records {
+        let operation = entry
+            .record
+            .key
+            .strip_prefix(&prefix)
+            .ok_or_else(unavailable)?;
+        let record = entry.value.ok_or_else(unavailable)?;
+        let expected = checked_snapshot_id(tenant, operation)?;
+        if let Some((_, bytes)) = published_summary(&record, tenant, operation, &expected)? {
+            rows.push(TenantSnapshot {
+                id: record.summary.id,
+                created_at: record.summary.created_at,
+                bytes: bytes.to_string(),
+            });
+        }
+    }
+    let after = page
+        .after
+        .as_deref()
+        .map(|cursor| {
+            cursor
+                .strip_prefix(&prefix)
+                .map(str::to_owned)
+                .ok_or_else(unavailable)
+        })
+        .transpose()?;
+    Ok(TenantSnapshotPage { rows, after })
 }
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {

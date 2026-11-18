@@ -267,24 +267,39 @@ async fn list_object_pages(
     request: &RequestContext,
     input: ListBatchInput,
 ) -> RpcResult<Vec<ObjectPage>> {
+    let domains = selected_domains(&input)?;
+    let mut context = metadata_context_for_domains(service, request, Some(&domains)).await?;
+    let pages = selected_pages(&mut context, input).await?;
+    // Every page, key package and authorization record belongs to this same
+    // verified read. A race discards the entire response, never just one page.
+    context.transaction.validate().await?;
+    Ok(pages)
+}
+
+pub(in crate::zerotrust) fn selected_domains(input: &ListBatchInput) -> RpcResult<Vec<String>> {
     if input.selections.is_empty() || input.selections.len() > 16 {
         return Err(invalid());
     }
     for selection in &input.selections {
         validate_list_input(selection)?;
     }
-    let domains = input
+    Ok(input
         .selections
         .iter()
         .map(|selection| selection.domain.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect::<Vec<_>>();
-    let mut context = metadata_context_for_domains(service, request, Some(&domains)).await?;
+        .collect())
+}
+
+pub(in crate::zerotrust) async fn selected_pages(
+    context: &mut MetadataContext,
+    input: ListBatchInput,
+) -> RpcResult<Vec<ObjectPage>> {
     let mut pages = Vec::with_capacity(input.selections.len());
     let mut bytes = 0usize;
     for selection in input.selections {
-        let page = object_page(&mut context, selection).await?;
+        let page = object_page(context, selection).await?;
         bytes += serde_json::to_vec(&page).map_err(internal)?.len();
         if bytes > 32 * 1024 * 1024 {
             return Err(RpcError::new(
@@ -295,9 +310,6 @@ async fn list_object_pages(
         }
         pages.push(page);
     }
-    // Every page, key package and authorization record belongs to this same
-    // verified read. A race discards the entire response, never just one page.
-    context.transaction.validate().await?;
     Ok(pages)
 }
 

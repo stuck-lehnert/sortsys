@@ -488,9 +488,11 @@ unabhängige Kontrolldatei und die Office-Stände gehören zusätzlich zur
 vollständigen Sicherung. Alte Recovery- und Rechtezustände werden
 zurückgewiesen. Laufende Bereichsfreigaben, Schlüsselzuordnungen und
 Anlagenachweise erhalten ebenfalls unabhängige Nachweise. Der veränderliche
-Inhaltscursor bleibt davon getrennt. Die Rücksicherung eines älteren
-Fachstands ist noch nicht angeschlossen. Die Seed-Recovery ersetzt keine
-Datensicherung. Siehe
+Inhaltscursor bleibt davon getrennt. Die Organisationsverwaltung kann einen
+älteren Fachstand prüfen und freigeben. Die Vorschau prüft die lesbaren
+Projekte und Adressdaten, einschließlich ihrer Verknüpfungen untereinander.
+Ein vollständiger Abgleich der verschlüsselten Fachdaten steht noch aus.
+Die Seed-Recovery ersetzt keine Datensicherung. Siehe
 [verschlüsselte Sicherungen](verschluesselte-sicherungen.md).
 
 **Migrationen über Inhaltsfelder.** Berechtigte Clients migrieren Inhalte.

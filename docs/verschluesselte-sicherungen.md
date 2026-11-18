@@ -68,11 +68,20 @@ Lesestand aller Bereiche, auch wenn sich deren Schlüssel und Berechtigungen
 nicht ändern. Alte Einträge im Browser können dadurch nicht als aktuell
 bestätigt werden.
 
-Die API kann eine fertig registrierte Sicherung für einen neuen Fachstand
-vorbereiten. Der Datendienst kopiert die ausgewählten technischen Datensätze
-und prüft beim Kopieren die Inhaltsadressen der Chiffrate. Ein unterbrochener
-Auftrag lässt sich mit derselben Kennung über jede API-Instanz fortsetzen.
-Währenddessen bearbeiten Mitarbeiter weiterhin den aktuellen Stand.
+Unter **Verwaltung → Organisation → Sicherungen** stehen die fertigen
+Sicherungen des eigenen Mandanten zur Auswahl. **Sicherung prüfen** bereitet
+eine Kopie vor, während Mitarbeiter mit dem aktiven Stand weiterarbeiten. Der
+Datendienst prüft beim Kopieren die Inhaltsadressen der Chiffrate. Ein
+unterbrochener Auftrag lässt sich mit derselben Kennung über jede
+API-Instanz fortsetzen.
+
+Der Browser prüft die Signaturen und das Datenmodell der lesbaren Projekte
+und Adressdaten. Er zeigt deren Anzahl sowie fehlende Verknüpfungen zu Kunden
+oder Kontakten an, soweit deren Kataloge lesbar sind. Andere verschlüsselte
+Fachdaten und ihre Verknüpfungen sind in dieser Vorschau noch nicht abgedeckt.
+Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die
+Freigabe erfordert die Administratorrolle und den Schlüssel der
+Mandantenautorität im Browser.
 
 Bei der Freigabe prüft die API die öffentlich prüfbaren Verweise von
 abgeschlossenen Dokumenten, persönlichen Einsatzzuweisungen und
@@ -86,9 +95,7 @@ werden gemeinsam gespeichert. Verbundene Editoren erkennen den Wechsel und
 Bei delegierten Regeln bindet die Mandantenautorität den Übergang an die
 bisherige Richtliniensignatur und den neuen Fachstand. Die ursprünglichen
 Signaturen der Profile bleiben erhalten. Berechtigte Verwalter können danach
-wie gewohnt einzelne Profile ändern. Die Bedienoberfläche für Mandanten und
-der Abgleich von Verweisen innerhalb verschlüsselter Fachdaten im Browser
-stehen noch aus.
+wie gewohnt einzelne Profile ändern.
 
 ## Erstellung und Nachweise
 
@@ -113,3 +120,10 @@ Die
 [Browser-E2E-Suite](../sortsys-webapp-v2/scripts/e2e/development.browser.mjs)
 legt eine Sicherung des Musterbestands an, lädt sie herunter und prüft ihre
 Sichtbarkeit nach einem Neuladen.
+
+Der [Rücksicherungstest](../sortsys-webapp-v2/scripts/e2e/contentRestore.browser.mjs)
+nutzt die gebaute Webapp und zwei getrennte API-Prozesse an derselben DuckDB.
+Er prüft, dass ein Abbruch den aktuellen Projektstand erhält und die
+Bestätigung danach den älteren Stand sichtbar macht. Der zugehörige
+[API-Test](../sortsys-webapp-v2/scripts/test-native-content-preparation.ts)
+prüft auch die Trennung der Sicherungslisten verschiedener Mandanten.

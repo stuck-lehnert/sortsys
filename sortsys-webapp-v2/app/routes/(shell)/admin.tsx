@@ -31,6 +31,9 @@ const DocumentTemplateEditor = lazy(
 const OrganizationEncryption = lazy(
   () => import("~/components/OrganizationEncryption"),
 );
+const OrganizationBackups = lazy(
+  () => import("~/components/OrganizationBackups"),
+);
 const ScopedAccessAdministration = lazy(
   () => import("~/components/ScopedAccessAdministration"),
 );
@@ -94,6 +97,7 @@ function OrganizationAdministration() {
   const tabs = [
     { id: "organization", label: uiText("Stammdaten", "Company details") },
     { id: "security", label: uiText("Datenschutz", "Data protection") },
+    { id: "backups", label: uiText("Sicherungen", "Backups") },
     { id: "invoices", label: uiText("Rechnungsnummern", "Invoice numbers") },
     {
       id: "templates",
@@ -231,6 +235,20 @@ function OrganizationAdministration() {
             </Suspense>
           )}
         </HeroTabs.Panel>
+        {selected === "backups" && (
+          <HeroTabs.Panel id="backups" className="pt-4">
+            <Suspense
+              fallback={
+                <Loading
+                  active
+                  description={uiText("Sicherungen laden", "Loading backups")}
+                />
+              }
+            >
+              <OrganizationBackups />
+            </Suspense>
+          </HeroTabs.Panel>
+        )}
         <HeroTabs.Panel
           id="invoices"
           shouldForceMount

@@ -532,6 +532,10 @@ export type Kind = "initialize" | "update" | "presence";
 
 export type Level = "error" | "warning";
 
+export type ListBatchInput = {
+    selections: Array<ListInput>;
+};
+
 export type ListInput = {
     domain: string;
     prefix: string;
@@ -963,6 +967,12 @@ export type TechnicalMetadata = {
     status?: number;
 };
 
+export type TenantSnapshot = {
+    id: string;
+    createdAt: Date;
+    bytes: string;
+};
+
 export type ToolBookingData = {
     projectId?: Id | null;
     responsibleUserId?: Id | null;
@@ -1317,6 +1327,14 @@ export type QueryInputs = {
         domain?: string;
         domains?: Array<string>;
         includeDomains?: boolean;
+    };
+    "zerotrust.content.inspect": {
+        operation: string;
+        approval: ContentEpoch;
+        pages?: ListBatchInput;
+    };
+    "zerotrust.content.snapshots": {
+        after?: string;
     };
     "zerotrust.creations.capability": {
         namespace: 'project' | 'commercial' | 'tool' | 'tool-tracking';
@@ -2775,6 +2793,18 @@ export type QueryOutputs = {
         snapshot: string;
         after: string | null;
         unchanged: boolean;
+    };
+    "zerotrust.content.inspect": Array<{
+        snapshot: string;
+        keyGeneration: string;
+        objects: Array<EncryptedObject<Facet>>;
+        after: string | null;
+        recipientAccess: Array<RecipientAccess>;
+        openings?: Array<DomainOpening>;
+    }>;
+    "zerotrust.content.snapshots": {
+        rows: Array<TenantSnapshot>;
+        after: string | null;
     };
     "zerotrust.creations.capability": {
         tenant: string;

@@ -304,13 +304,24 @@ try {
     await initializeTenant(owner, new AbortController().signal, duckDriver);
     const { exerciseContentPreparation } =
       await import("./test-native-content-preparation");
+    const probeEndpoint = endpoints[0];
+    function operatorProbe() {
+      const probe = createClient(
+        probeEndpoint,
+        `restore-probe-${crypto.randomUUID()}`,
+      );
+      probe.setToken(login.token);
+      return probe;
+    }
     await exerciseContentPreparation(
       owner,
       peer,
-      { client: operator, token: login.token },
+      operator,
+      operatorProbe,
       tenant,
       dirname(outputPath),
       contentChanges,
+      { username: draft.username, password: draft.password },
     );
   } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =

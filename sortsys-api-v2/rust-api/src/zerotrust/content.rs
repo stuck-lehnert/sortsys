@@ -4,7 +4,7 @@ mod checks;
 
 use super::{
     crypto::{identifier, invalid, revision, sized},
-    objects::{AuthorityHistory, conflict, registry},
+    objects::{AuthorityHistory, ListBatchInput, ObjectPage, conflict, persistence, registry},
     wire::{AuthorityCertificate, SignedPolicy},
 };
 use crate::{
@@ -12,6 +12,7 @@ use crate::{
     control::{Transaction, key},
     error::{RpcError, RpcResult, bad_request, forbidden},
     rpc::{ProcedureRegistryBuilder, RequestContext},
+    storage::{TenantSnapshotInput, TenantSnapshotPage},
 };
 use serde::{Deserialize, Serialize};
 use sortsys_zerotrust::content_epoch::{ContentEpoch, logical_record};
@@ -48,6 +49,15 @@ struct ActivateInput {
     policy: SignedPolicy,
 }
 
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct InspectContentInput {
+    operation: String,
+    approval: ContentEpoch,
+    #[ts(optional)]
+    pages: Option<ListBatchInput>,
+}
+
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ContentActivation {
@@ -61,13 +71,39 @@ pub(super) fn register(
     builder: ProcedureRegistryBuilder,
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
+    let listing = service.clone();
     let preparing = service.clone();
+    let inspecting = service.clone();
     builder
+        .query(
+            "zerotrust.content.snapshots",
+            move |request: RequestContext, input: TenantSnapshotInput| {
+                let service = listing.clone();
+                async move {
+                    let context = admin_context(&service, &request).await?;
+                    let page = crate::storage::tenant_snapshots(
+                        service.records()?,
+                        &context.auth.tenant,
+                        input,
+                    )
+                    .await?;
+                    context.transaction.validate().await?;
+                    Ok(page)
+                }
+            },
+        )
         .mutation(
             "zerotrust.content.prepare",
             move |request: RequestContext, input: PrepareInput| {
                 let service = preparing.clone();
                 async move { prepare(&service, &request, input).await }
+            },
+        )
+        .query(
+            "zerotrust.content.inspect",
+            move |request: RequestContext, input: InspectContentInput| {
+                let service = inspecting.clone();
+                async move { inspect(&service, &request, input).await }
             },
         )
         .mutation(
@@ -81,7 +117,9 @@ pub(super) fn register(
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
+        .query_stub::<TenantSnapshotInput, TenantSnapshotPage>("zerotrust.content.snapshots")
         .mutation_stub::<PrepareInput, PreparedContent>("zerotrust.content.prepare")
+        .query_stub::<InspectContentInput, Vec<ObjectPage>>("zerotrust.content.inspect")
         .mutation_stub::<ActivateInput, ContentActivation>("zerotrust.content.activate")
 }
 
@@ -117,19 +155,53 @@ fn verify_approval(
     context: &super::access::MetadataContext,
     input: &ActivateInput,
 ) -> RpcResult<()> {
-    identifier(&input.operation)?;
+    verify_signed_view(context, &input.operation, &input.approval)?;
+    if input.policy.tenant != context.auth.tenant {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
+fn verify_signed_view(
+    context: &super::access::MetadataContext,
+    operation: &str,
+    approval: &ContentEpoch,
+) -> RpcResult<()> {
+    identifier(operation)?;
     let security = &context.security;
     let generation = security.root.generation.to_string();
-    input.approval.verify(
+    approval.verify(
         &context.auth.tenant,
         Some(&generation),
         Some(&security.subject),
         &security.authority,
     )?;
-    if input.policy.tenant != context.auth.tenant {
-        return Err(forbidden());
-    }
     Ok(())
+}
+
+async fn inspect(
+    service: &AuthService,
+    request: &RequestContext,
+    input: InspectContentInput,
+) -> RpcResult<Vec<ObjectPage>> {
+    let mut context = if let Some(pages) = &input.pages {
+        let domains = persistence::selected_domains(pages)?;
+        let context =
+            super::access::metadata_context_for_domains(service, request, Some(&domains)).await?;
+        require_admin(context)?
+    } else {
+        admin_context(service, request).await?
+    };
+    verify_signed_view(&context, &input.operation, &input.approval)?;
+    select_ready_view(&mut context, &input.operation, &input.approval).await?;
+    let pages = if let Some(pages) = input.pages {
+        persistence::selected_pages(&mut context, pages).await?
+    } else {
+        checks::dependencies(&mut context).await?;
+        Vec::new()
+    };
+    context.transaction.validate().await?;
+    Ok(pages)
 }
 
 async fn activation_receipt(
@@ -183,44 +255,9 @@ async fn activate_once(
         context.transaction.validate().await?;
         return Ok(receipt);
     }
-    let historical_head = history_key(&head.number)?;
-
-    let preparation: sortsys_store::content::Preparation = context
-        .transaction
-        .read(sortsys_store::content::preparation_key(&head.number).map_err(storage_error)?)
-        .await?
-        .ok_or_else(conflict)?;
-    if preparation.phase != sortsys_store::content::Phase::Ready
-        || preparation.operation != input.operation
-        || preparation.number != head.number
-        || preparation.previous != head.previous
-        || preparation.snapshot != head.snapshot
-        || preparation.source_number != head.source_number
-        || preparation.source_head != head.source_head
-        || context
-            .transaction
-            .read::<ContentEpoch>(historical_head.clone())
-            .await?
-            .is_some()
-    {
-        return Err(conflict());
-    }
-    let previous = context.transaction.content_epoch().await?;
-    let source = if head.source_number == "0" {
-        None
-    } else {
-        Some(
-            context
-                .transaction
-                .read::<ContentEpoch>(history_key(&head.source_number)?)
-                .await?
-                .ok_or_else(conflict)?,
-        )
-    };
-    head.follows(previous.as_ref(), source.as_ref())?;
+    select_ready_view(&mut context, &input.operation, head).await?;
 
     let content = head.fingerprint()?;
-    context.transaction.select_prepared_content(head).await?;
     checks::dependencies(&mut context).await?;
     // Publish the same authority and delegated profiles at a new write
     // version. The head and the new policy share the transaction's read set.
@@ -240,7 +277,7 @@ async fn activate_once(
     };
     context
         .transaction
-        .put_protected(historical_head, head)
+        .put_protected(history_key(&head.number)?, head)
         .await?;
     context
         .transaction
@@ -252,6 +289,48 @@ async fn activate_once(
         .await?;
     context.transaction.commit().await?;
     Ok(receipt)
+}
+
+async fn select_ready_view(
+    context: &mut super::access::MetadataContext,
+    operation: &str,
+    head: &ContentEpoch,
+) -> RpcResult<()> {
+    let preparation: sortsys_store::content::Preparation = context
+        .transaction
+        .read(sortsys_store::content::preparation_key(&head.number).map_err(storage_error)?)
+        .await?
+        .ok_or_else(conflict)?;
+    if preparation.phase != sortsys_store::content::Phase::Ready
+        || preparation.operation != operation
+        || preparation.number != head.number
+        || preparation.previous != head.previous
+        || preparation.snapshot != head.snapshot
+        || preparation.source_number != head.source_number
+        || preparation.source_head != head.source_head
+        || context
+            .transaction
+            .read::<ContentEpoch>(history_key(&head.number)?)
+            .await?
+            .is_some()
+    {
+        return Err(conflict());
+    }
+    let previous = context.transaction.content_epoch().await?;
+    let source = if head.source_number == "0" {
+        None
+    } else {
+        Some(
+            context
+                .transaction
+                .read::<ContentEpoch>(history_key(&head.source_number)?)
+                .await?
+                .ok_or_else(conflict)?,
+        )
+    };
+    head.follows(previous.as_ref(), source.as_ref())?;
+
+    context.transaction.select_prepared_content(head).await
 }
 
 fn history_key(number: &str) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
@@ -351,6 +430,12 @@ async fn admin_context(
         .await?
         .authorize_origins(&[])
         .await?;
+    require_admin(context)
+}
+
+fn require_admin(
+    context: super::access::MetadataContext,
+) -> RpcResult<super::access::MetadataContext> {
     if !context.auth.is_admin() {
         return Err(forbidden());
     }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { access, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Client, MutateInput } from "@sortsys/v2-client";
@@ -20,12 +21,18 @@ import type { EncryptedChange } from "../app/lib/data/events";
 import { openDocumentMessages } from "../app/lib/data/documentMessages";
 import { prepareLivePublication } from "../app/lib/data/liveCheckpoints";
 import { fileObject } from "../app/lib/data/projectFileData";
-import { projectCollection } from "../app/lib/data/projectData";
+import { projectCollection, projectPayload } from "../app/lib/data/projectData";
 import {
   protectedCollection,
+  protectedReadView,
   required,
 } from "../app/lib/data/protectedObjects";
+import {
+  approvePreparedContent,
+  inspectPreparedContent,
+} from "../app/lib/backups/contentRestore";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
+import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 
 async function holdEditorPackets(
   client: ReturnType<typeof createBusinessClient>,
@@ -157,16 +164,34 @@ async function holdEditorPackets(
 export async function exerciseContentPreparation(
   owner: Client,
   peer: ReturnType<typeof createBusinessClient>,
-  infrastructure: { client: Client; token: string },
+  operator: Client,
+  operatorProbe: () => Client,
   tenant: string,
   directory: string,
   changes: readonly EncryptedChange[],
+  ownerCredentials: { username: string; password: string },
 ) {
-  const { client: operator, token: operatorToken } = infrastructure;
   const originalTitle = "Vertrauliche Projektfassung im Sicherungsbestand";
   const currentTitle = "Vertrauliche Projektfassung nach der Sicherung";
+  const customer = await required(
+    owner.mutate("customers.create", { name: "Vertraulicher Sicherungskunde" }),
+  );
+  const contact = await required(
+    owner.mutate("contacts.create", {
+      lastName: "Vertraulicher Sicherungskontakt",
+    }),
+  );
   const project = await required(
-    owner.mutate("projects.create", { title: originalTitle }),
+    owner.mutate("projects.create", {
+      title: originalTitle,
+      customerId: customer.id,
+    }),
+  );
+  await required(
+    owner.mutate("projects.contacts.add", {
+      projectId: project.id,
+      contactId: contact.id,
+    }),
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
   const ownerSession = await required(
@@ -209,6 +234,41 @@ export async function exerciseContentPreparation(
     }),
   );
   assert.ok(snapshot.bytes);
+  const foreignTenant = `${tenant}-other`;
+  const foreign = await tenantSetupRequest(foreignTenant);
+  await required(operator.mutate("admin.tenants.create", foreign.request));
+  const otherSnapshot = await required(
+    operator.mutate("admin.storage.snapshots.create", {
+      tenant: foreignTenant,
+      operation: base64(randomSecret()),
+    }),
+  );
+  const [operatorInventory, inventoryDenied] = await operatorProbe().query(
+    "zerotrust.content.snapshots",
+    {},
+    { strategy: "network-only" },
+  );
+  assert.equal(operatorInventory, null);
+  assert.ok(inventoryDenied);
+  const inventory = await required(
+    peer.query("zerotrust.content.snapshots", {}, { strategy: "network-only" }),
+  );
+  assert.deepEqual(inventory.rows, [
+    {
+      id: snapshot.id,
+      bytes: String(snapshot.bytes),
+      createdAt: snapshot.createdAt,
+    },
+  ]);
+  assert.equal(inventory.after, null);
+  assert.ok(!inventory.rows.some((row) => row.id === otherSnapshot.id));
+  const [forgedInventory, forgedInventoryError] = await peer.queryDynamic(
+    "zerotrust.content.snapshots",
+    { tenant: foreignTenant },
+    { strategy: "network-only" },
+  );
+  assert.equal(forgedInventory, null);
+  assert.ok(forgedInventoryError);
   const currentAssignment = "Zuweisung mit aktueller Freigabe";
   await required(
     owner.mutate("projects.deployments.update", {
@@ -230,7 +290,7 @@ export async function exerciseContentPreparation(
 
   const operation = base64(randomSecret());
   const input = { snapshotOperation: snapshot.id, operation };
-  const [, operatorError] = await operator.mutate(
+  const [, operatorError] = await operatorProbe().mutate(
     "zerotrust.content.prepare",
     input,
   );
@@ -238,7 +298,6 @@ export async function exerciseContentPreparation(
     operatorError,
     "Infrastructure credentials cannot prepare a tenant content view",
   );
-  operator.setToken(operatorToken);
   const [, missingError] = await owner.mutate("zerotrust.content.prepare", {
     ...input,
     snapshotOperation: "absent-snapshot",
@@ -303,6 +362,58 @@ export async function exerciseContentPreparation(
     actor: setup.owner.user,
   };
   const approval = await signContentEpoch(epoch, authority);
+  const previewSignal = new AbortController().signal;
+  const approvalInput = await approvePreparedContent(
+    peer,
+    prepared,
+    previewSignal,
+  );
+  const reportPreview = await inspectPreparedContent(
+    peer,
+    approvalInput,
+    previewSignal,
+  );
+  assert.equal(reportPreview.projects, 1);
+  assert.equal(reportPreview.customers, 1);
+  assert.equal(reportPreview.contacts, 1);
+  assert.equal(reportPreview.missingReferences, 0);
+  assert.equal(reportPreview.uncheckedReferences, 0);
+  const preview = await protectedReadView(peer, previewSignal, (pages) =>
+    required(
+      peer.query(
+        "zerotrust.content.inspect",
+        {
+          operation,
+          approval,
+          pages,
+        },
+        { strategy: "network-only" },
+      ),
+    ),
+  );
+  const [olderProject] = await preview.read(projectArea);
+  assert.ok(olderProject);
+  const older = projectPayload(
+    olderProject.value,
+    olderProject.envelope.object,
+    project.id,
+  );
+  assert.equal(older.project?.values.title, originalTitle);
+  const [substituted, deniedPreview] = await peer.query(
+    "zerotrust.content.inspect",
+    {
+      operation: base64(randomSecret()),
+      approval,
+      pages: { selections: [objectSelection] },
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(substituted, null);
+  assert.equal(deniedPreview?.code, "CONFLICT");
+  assert.equal(
+    (await required(peer.query("projects.get", { id: project.id }))).title,
+    currentTitle,
+  );
   const currentPolicy = await required(
     peer.query("zerotrust.policy.get", undefined, { strategy: "network-only" }),
   );
@@ -355,12 +466,11 @@ export async function exerciseContentPreparation(
     assert.ok(Date.now() < checkDeadline, "The hidden copy was not inspected");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  const [, denied] = await operator.mutate(
+  const [, denied] = await operatorProbe().mutate(
     "zerotrust.content.activate",
     activate,
   );
   assert.ok(denied);
-  operator.setToken(operatorToken);
   const wrong = await signContentEpoch(
     { ...epoch, snapshot: base64(randomSecret()) },
     authority,
@@ -399,6 +509,10 @@ export async function exerciseContentPreparation(
       projectId: later.id,
       note: "Zuweisung ohne Projekt im Sicherungsbestand",
     }),
+  );
+  await assert.rejects(
+    () => inspectPreparedContent(peer, approvalInput, previewSignal),
+    { code: "CONFLICT" },
   );
   const [unbound, dependencyError] = await peer.mutate(
     "zerotrust.content.activate",
@@ -574,4 +688,44 @@ export async function exerciseContentPreparation(
     ),
   );
   assert.equal(restoredAgain.title, originalTitle);
+
+  if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+    await required(
+      owner.mutate("projects.update", {
+        id: project.id,
+        data: { title: newTitle },
+      }),
+    );
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        "node",
+        ["scripts/e2e/contentRestore.browser.mjs", directory],
+        {
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            SORTSYS_RESTORE_E2E_USER: ownerCredentials.username,
+            SORTSYS_RESTORE_E2E_PASSWORD: ownerCredentials.password,
+            SORTSYS_RESTORE_E2E_PROJECT: project.id,
+            SORTSYS_RESTORE_E2E_BEFORE: newTitle,
+            SORTSYS_RESTORE_E2E_AFTER: originalTitle,
+          },
+        },
+      );
+      child.once("error", reject);
+      child.once("exit", (status, signal) => {
+        if (status === 0) resolve();
+        else
+          reject(new Error(`Browser restore test failed: ${signal ?? status}`));
+      });
+    });
+    const restoredInBrowser = await required(
+      peer.query(
+        "projects.get",
+        { id: project.id },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.equal(restoredInBrowser.title, originalTitle);
+  }
 }
