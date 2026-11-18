@@ -1591,12 +1591,17 @@ export type QueryOutputs = {
         deletedAt: Date | null;
     };
     "admin.tenants.list": Array<{
+        "availability": "available";
         name: string;
         createdAt: Date;
         ownerRegistered: boolean;
         lockedAt: Date | null;
         deactivatedAt: Date | null;
         deletedAt: Date | null;
+    } | {
+        "availability": "unavailable";
+        name: string;
+        createdAt: Date;
     }>;
     "admin.users.list": {
         id: string;

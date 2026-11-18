@@ -394,11 +394,14 @@ weiter, sein Konto erhält dadurch aber keinen Zugriff auf die administrative
 Mitgliederliste. Die Nachweise für weitere Arbeitsabläufe sind im
 [Funktionsabgleich](verschluesselung-funktionsabgleich.md) aufgeführt.
 
-Der [Wiederherstellungstest des Datendienstes](../sortsys-store/src/witness.rs)
-weist eine alte Mandantendatei nach einem Recovery-Wechsel zurück. Für den
-vollständigen Verlust des Datendienstes fehlen noch Ausfalltests. Bei größeren
-Beständen muss auch der erweiterte Schreibweg in diesen Tests durchlaufen
-werden.
+Der [Wiederanlauftest](../sortsys-webapp-v2/scripts/test-native-cold-restore.ts)
+verwendet drei getrennte DuckDB-Dienste mit je zwei neuen API-Prozessen. Eine
+vor dem Phrase-Wechsel heruntergeladene Mandantendatei wird mit den aktuellen
+Nachweisen abgewiesen. Aus dem vollständigen Dateisatz lassen sich ein Projekt
+und sein Anhang wieder öffnen. Die alte Phrase und die alte Sitzung bleiben
+gesperrt. Die gültige Phrase kann nach dem Neustart erneut ersetzt werden.
+Der Test umfasst den DuckDB-Dateisatz. Das Office-Volume und ein gleichzeitiger
+Verlust sämtlicher aktueller Nachweise liegen außerhalb dieses Tests.
 
 - Zwei API-Instanzen versuchen gleichzeitig dieselbe Phrase zu verwenden. Genau
   eine Operation startet; die andere darf weder einen zweiten Administrator

@@ -99,6 +99,10 @@ async function ownerAccount(
     }),
   );
   const existing = tenants.find((tenant) => tenant.name === options.tenant);
+  if (existing?.availability === "unavailable")
+    throw new Error(
+      "Der Datenspeicher des Entwicklungsmandanten ist nicht verfügbar.",
+    );
   if (!existing?.ownerRegistered) {
     const setup = await tenantSetupRequest(options.tenant);
     await required(

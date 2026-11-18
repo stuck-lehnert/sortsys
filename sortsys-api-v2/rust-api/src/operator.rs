@@ -13,7 +13,7 @@ use crate::{
     auth::AuthService,
     control::{
         accounts::{self, TenantStatus},
-        tenants::{self, ProvisionRequest, RegistryEntry, Summary},
+        tenants::{self, ListedTenant, ProvisionRequest, RegistryEntry, Summary},
     },
     error::{ErrorCode, RpcError, RpcResult},
     rpc::{ProcedureRegistryBuilder, RequestContext},
@@ -80,7 +80,18 @@ pub(crate) fn register_operator(
                 version = Some(page.version);
                 for record in page.records {
                     let entry = record.value.ok_or_else(crate::control::unavailable)?;
-                    rows.push(tenants::summary(system, &entry.name).await?);
+                    if entry.name != record.record.key {
+                        return Err(crate::control::unavailable());
+                    }
+                    let listed = match tenants::summary_for_entry(system, &entry).await {
+                        Ok(summary) => ListedTenant::Available { summary },
+                        Err(error) if error.http_code == Some(503) => ListedTenant::Unavailable {
+                            name: entry.name,
+                            created_at: entry.created_at,
+                        },
+                        Err(error) => return Err(error),
+                    };
+                    rows.push(listed);
                 }
                 after = page.after;
                 if after.is_none() {
@@ -171,7 +182,7 @@ async fn operator(service: &AuthService, context: &RequestContext) -> RpcResult<
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     let mut builder = builder
         .mutation_stub::<AdminLoginInput, AdminLoginOutput>("admin.login")
-        .query_stub::<(), Vec<Summary>>("admin.tenants.list")
+        .query_stub::<(), Vec<ListedTenant>>("admin.tenants.list")
         .query_stub::<TenantNameInput, Summary>("admin.tenants.get")
         .mutation_stub::<ProvisionRequest, Summary>("admin.tenants.create")
         .mutation_stub::<ProvisionRequest, Summary>("admin.tenants.setupLink");

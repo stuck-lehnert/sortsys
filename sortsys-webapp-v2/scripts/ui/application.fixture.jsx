@@ -11,6 +11,7 @@ import { installPresentationClient } from "./presentation-client.fixture.mjs";
 import GlobalAdminErrorsPage from "../../app/routes/(admin)/__admin.errors";
 import GlobalAdminDatabasesPage from "../../app/routes/(admin)/__admin.databases";
 import GlobalAdminLlmPage from "../../app/routes/(admin)/__admin.llm";
+import GlobalAdminTenantsPage from "../../app/routes/(admin)/__admin.tenants";
 import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
 import ToolDetailPage from "../../app/routes/(shell)/tools.$id";
@@ -237,6 +238,10 @@ export function ApplicationFixture() {
               <Route
                 path="/__admin/databases"
                 element={<GlobalAdminDatabasesPage />}
+              />
+              <Route
+                path="/__admin/tenants"
+                element={<GlobalAdminTenantsPage />}
               />
               <Route path="/__admin/llm" element={<GlobalAdminLlmPage />} />
               <Route path="/scripts" element={<ClientScriptsPage />} />

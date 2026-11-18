@@ -21,7 +21,13 @@ function formatBytes(bytes: number) {
   }).format(bytes / 1_000_000);
 }
 
-function SnapshotList({ tenant }: { tenant: string }) {
+function SnapshotList({
+  tenant,
+  canCreate,
+}: {
+  tenant: string;
+  canCreate: boolean;
+}) {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -109,7 +115,7 @@ function SnapshotList({ tenant }: { tenant: string }) {
         title={uiText(`Sicherungen: ${tenant}`, `Backups: ${tenant}`)}
         actions={
           <MyButton
-            disabled={pending}
+            disabled={pending || !canCreate}
             loading={pending}
             renderIcon={Icons.Plus}
             onClick={() => void createSnapshot()}
@@ -169,7 +175,7 @@ function SnapshotList({ tenant }: { tenant: string }) {
               row.bytes === null ? (
                 <MyButton
                   kind="ghost"
-                  disabled={pending}
+                  disabled={pending || !canCreate}
                   onClick={() => void createSnapshot(row.id)}
                 >
                   {uiText("Fortsetzen", "Resume")}
@@ -226,6 +232,7 @@ export default function GlobalAdminDatabasesPage() {
       }),
     [],
   );
+  const selected = tenants?.find((tenant) => tenant.name === selectedTenant);
   return (
     <>
       <MyHeader title={uiText("Datenspeicher", "Datastore")} />
@@ -255,10 +262,16 @@ export default function GlobalAdminDatabasesPage() {
           },
           {
             label: uiText("Einrichtung", "Setup"),
-            render: (row) =>
-              row.ownerRegistered
+            render: (row) => {
+              if (row.availability === "unavailable")
+                return uiText(
+                  "Datenspeicher nicht verfügbar",
+                  "Datastore unavailable",
+                );
+              return row.ownerRegistered
                 ? uiText("Inhaber registriert", "Owner registered")
-                : uiText("Einladung offen", "Invitation pending"),
+                : uiText("Einladung offen", "Invitation pending");
+            },
           },
           {
             label: uiText("Aktionen", "Actions"),
@@ -275,7 +288,11 @@ export default function GlobalAdminDatabasesPage() {
         autoConvertSmallViewport
       />
       {!!selectedTenant && (
-        <SnapshotList key={selectedTenant} tenant={selectedTenant} />
+        <SnapshotList
+          key={selectedTenant}
+          tenant={selectedTenant}
+          canCreate={selected?.availability === "available"}
+        />
       )}
     </>
   );

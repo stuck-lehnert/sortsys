@@ -423,7 +423,7 @@ export type QueryOutputs = {
   "admin.llm.useCases.list": Array<{ useCase: "chat" | "documentImport", provider: string | null, model: string | null, }>;
   "admin.storage.snapshots.list": { rows: Array<SnapshotSummary>, after: string | null, version: string, };
   "admin.tenants.get": { name: string, createdAt: Date, ownerRegistered: boolean, lockedAt: Date | null, deactivatedAt: Date | null, deletedAt: Date | null, };
-  "admin.tenants.list": Array<{ name: string, createdAt: Date, ownerRegistered: boolean, lockedAt: Date | null, deactivatedAt: Date | null, deletedAt: Date | null, }>;
+  "admin.tenants.list": Array<{ "availability": "available", name: string, createdAt: Date, ownerRegistered: boolean, lockedAt: Date | null, deactivatedAt: Date | null, deletedAt: Date | null, } | { "availability": "unavailable", name: string, createdAt: Date, }>;
   "admin.users.list": { id: string; username: string; firstName: string; lastName: null | string; email: null | string; deactivatedAt: null | Date; archivedAt: null | Date; isAdmin: boolean; }[];
   "auth.check": { success: true; };
   "auth.opaque.invitation": { invitation: Invitation, history: TrustHistory, enrolled: boolean, };

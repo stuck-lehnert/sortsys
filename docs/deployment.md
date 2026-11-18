@@ -68,11 +68,34 @@ Die API-Instanzen greifen auf denselben DuckDB-Datendienst zu. Nur dieser öffne
 die Mandantendateien. Für mehrere API-Instanzen hinter einem Load Balancer gilt
 [Skalierung und Zusammenarbeit](../sortsys-api-v2/README.md#skalierung-und-zusammenarbeit).
 
-Die Betreiberverwaltung erstellt und lädt
-[verschlüsselte Mandantensicherungen](verschluesselte-sicherungen.md). Die
-Kontrolldatei und verschlüsselten Office-Stände gehören zusätzlich zum
-vollständigen Sicherungsbestand; eine sichere Rücksicherung älterer Fachstände
-ist noch in Arbeit.
+## Sicherungen und Wiederanlauf
+
+Für einen älteren Fachstand eines einzelnen Mandanten stehen
+[registrierte Mandantensicherungen](verschluesselte-sicherungen.md) zur
+Auswahl. Die dortige Rücksicherung setzt auf dem laufenden Datendienst auf und
+behält dessen aktuelle Sicherheitsnachweise.
+
+Für den Ausfall des gesamten Datendienstes braucht es einen zusammengehörigen
+Dateisatz. Vor einer Kopie auf Dateiebene alle API-Instanzen und den
+Office-Dienst anhalten. Danach den Datendienst regulär beenden und das Volume
+`duckdb-data` vollständig sichern. Darin liegen `control.duckdb`, die
+Mandantendateien unter `tenants/` und die registrierten Dateikopien unter
+`snapshots/`. Vorhandene Begleitdateien zusammen mit ihrem jeweiligen
+Datenbankstand sichern. Das Volume `private-office-data` enthält zusätzlich
+die verschlüsselten Bearbeitungssitzungen.
+
+Beim Wiederanlauf die zusammengehörigen Volumes im gestoppten Stack
+bereitstellen und Dateinamen sowie Zugriffsrechte beibehalten. Zuerst DuckDB
+starten, danach die API-Instanzen und den Office-Dienst. Mit einem
+Mandantenkonto Anmeldung, Projektzugriff und einen Anhang prüfen. Die
+Recovery-Phrase verbleibt beim Mandanten.
+
+Eine alte Mandantendatei mit einer neueren Kontrolldatei wird gesperrt, sobald
+Sicherheitsnachweise auseinanderlaufen. Wenn ein kompletter Dateisatz auf
+einen früheren Stand zurückfällt, braucht es einen unabhängig aufbewahrten
+aktuellen Nachweis, um den Rückstand erkennen zu können. Der
+[Recovery-Leitfaden](mandanten-wiederherstellung.md#grenzen-der-ungültigkeit-und-wiederherstellung-alter-sicherungen)
+beschreibt diese Grenze.
 
 ## Veröffentlichungen und Rückkehr zu älteren Ständen
 
@@ -85,7 +108,6 @@ festlegen, bevorzugt per Digest.
 
 Persistente Daten vor Aktualisierungen sichern. Volumes beim Image-Wechsel
 behalten; `compose down --volumes` löscht Daten. Ein älteres Image muss das
-Dateiformat des gesicherten Bestands verstehen. Die unabhängige Sicherung des
-aktuellen Recovery-Stands ist zusätzlich nötig, damit eine alte
-Mandantensicherung keine verbrauchte Phrase reaktiviert; dieser
-Wiederherstellungsweg ist noch im Aufbau.
+Dateiformat des gesicherten Bestands verstehen. Für einen älteren Fachstand
+gelten dieselben Anforderungen an die aktuellen Recovery-Nachweise wie beim
+Wiederanlauf.

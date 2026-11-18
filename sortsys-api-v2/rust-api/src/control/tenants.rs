@@ -78,6 +78,21 @@ pub struct Summary {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Serialize, TS)]
+#[serde(tag = "availability", rename_all = "camelCase")]
+pub enum ListedTenant {
+    Available {
+        #[serde(flatten)]
+        summary: Summary,
+    },
+    Unavailable {
+        name: String,
+        #[serde(rename = "createdAt")]
+        #[ts(type = "Date")]
+        created_at: DateTime<Utc>,
+    },
+}
+
 pub fn normalized_name(value: &str) -> RpcResult<String> {
     let name = value.trim().to_lowercase();
     if name.is_empty()
@@ -231,29 +246,44 @@ pub async fn summary(system: &Repository, name: &str) -> RpcResult<Summary> {
         .await?
         .value
         .ok_or_else(|| RpcError::new(ErrorCode::NotFound, "Tenant not found"))?;
-    let tenant = system.tenant(&name)?;
-    let provisioning = tenant
-        .read::<Provisioning>(provisioning_key())
-        .await?
-        .value
-        .ok_or_else(unavailable)?;
-    let status = tenant
-        .read::<TenantStatus>(accounts::tenant_key())
-        .await?
-        .value
-        .ok_or_else(unavailable)?;
-    if entry.name != name || provisioning.name != name || entry.operation != provisioning.operation
-    {
+    if entry.name != name {
         return Err(unavailable());
     }
-    Ok(Summary {
-        name,
-        created_at: entry.created_at,
-        owner_registered: provisioning.registered_at.is_some(),
-        locked_at: status.locked_at,
-        deactivated_at: status.deactivated_at,
-        deleted_at: status.deleted_at,
+    summary_for_entry(system, &entry).await
+}
+
+pub(crate) async fn summary_for_entry(
+    system: &Repository,
+    entry: &RegistryEntry,
+) -> RpcResult<Summary> {
+    let tenant = system.tenant(&entry.name)?;
+    super::read_snapshot(|| async {
+        let mut transaction = tenant.transaction()?;
+        transaction
+            .prefetch(vec![provisioning_key(), accounts::tenant_key()])
+            .await?;
+        let provisioning: Provisioning = transaction
+            .read(provisioning_key())
+            .await?
+            .ok_or_else(unavailable)?;
+        let status: TenantStatus = transaction
+            .read(accounts::tenant_key())
+            .await?
+            .ok_or_else(unavailable)?;
+        if provisioning.name != entry.name || provisioning.operation != entry.operation {
+            return Err(unavailable());
+        }
+        transaction.validate().await?;
+        Ok(Summary {
+            name: entry.name.clone(),
+            created_at: entry.created_at,
+            owner_registered: provisioning.registered_at.is_some(),
+            locked_at: status.locked_at,
+            deactivated_at: status.deactivated_at,
+            deleted_at: status.deleted_at,
+        })
     })
+    .await
 }
 
 pub async fn renew_setup(system: &Repository, input: &ProvisionRequest) -> RpcResult<Summary> {

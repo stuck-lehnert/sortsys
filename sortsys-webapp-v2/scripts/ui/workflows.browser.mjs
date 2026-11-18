@@ -3671,7 +3671,13 @@ for (const { locale, theme, width } of [
     };
     api.respond("admin.tenants.list", [
       {
+        availability: "unavailable",
         name: tenant,
+        createdAt: snapshot.createdAt,
+      },
+      {
+        availability: "available",
+        name: "healthy-tenant",
         ownerRegistered: true,
         createdAt: snapshot.createdAt,
         lockedAt: null,
@@ -3685,8 +3691,25 @@ for (const { locale, theme, width } of [
       version: "1",
     });
     await page.setViewportSize({ width, height: 1000 });
+    await openApplication("/__admin/tenants", locale, theme);
+    const unavailableText =
+      locale === "de" ? "Datenspeicher nicht verfügbar" : "Datastore unavailable";
+    const tenantRow = (name) =>
+      page.locator("tr, .ss-tile").filter({
+        has: page.getByText(name, { exact: true }),
+      });
+    const affected = tenantRow(tenant);
+    const healthy = tenantRow("healthy-tenant");
+    await affected.getByText(unavailableText, { exact: true }).waitFor();
+    assert.equal(
+      await affected.getByRole("button", { name: /^(Sperren|Lock)$/ }).count(),
+      0,
+    );
+    await healthy.getByRole("button", { name: /^(Sperren|Lock)$/ }).waitFor();
+
     await openApplication("/__admin/databases", locale, theme);
-    await page
+    await affected.getByText(unavailableText, { exact: true }).waitFor();
+    await affected
       .getByRole("button", {
         name: locale === "de" ? "Sicherungen" : "Backups",
         exact: true,
@@ -3703,6 +3726,12 @@ for (const { locale, theme, width } of [
       })
       .waitFor();
     await backups.getByText(snapshot.id, { exact: true }).waitFor();
+    assert.equal(
+      await backups.getByRole("button", {
+        name: locale === "de" ? "Sicherung erstellen" : "Create backup",
+      }).isDisabled(),
+      true,
+    );
     assert.equal(await page.getByText(/Postgres|S3|Admin-Passwort/).count(), 0);
     await checkPageLayout(`encrypted-datastore-${locale}`);
   });

@@ -133,6 +133,19 @@ Entwicklungsstack oder eine PostgreSQL-Instanz werden nicht angesprochen.
 Protokolle und das Ergebnis der Dienstbereinigung bleiben unter dem ausgegebenen
 Tempverzeichnis erhalten.
 
+Der Wiederanlauf lässt sich separat ausführen:
+
+```bash
+SORTSYS_NATIVE_AUTH_TEST_FILTER=zerotrust::opaque::store_tests::cold_restore::reopened_store_preserves_recovery_and_encrypted_files \
+  ./scripts/test-native-auth
+```
+
+Der erste Dienst erzeugt eine Mandantensicherung und wechselt die
+Recovery-Phrase. Zwei weitere Dienste öffnen getrennte Kopien seiner
+DuckDB-Dateien. Der erste erhält absichtlich die alte Mandantendatei und
+blockiert sie. Der zweite öffnet den zu den Sicherheitsnachweisen passenden
+Dateisatz. `cold-restore-processes.json` hält die Prozesskennungen fest.
+
 ## Browser-E2E mit echten Diensten
 
 Nach `bun run build` in `sortsys-webapp-v2` führt

@@ -71,6 +71,11 @@ function restorePending(): Pending | null {
 }
 
 function state(tenant: Tenant) {
+  if (tenant.availability === "unavailable")
+    return {
+      type: "red" as const,
+      text: uiText("Datenspeicher nicht verfügbar", "Datastore unavailable"),
+    };
   if (tenant.deletedAt)
     return { type: "purple" as const, text: uiText("Gelöscht", "Deleted") };
   if (tenant.lockedAt)
@@ -311,7 +316,7 @@ export default function TenantsPage() {
           },
           {
             label: uiText("Aktionen", "Actions"),
-            render: (tenant) => (
+            render: (tenant) => tenant.availability === "available" && (
               <div className="flex flex-wrap gap-2">
                 {!tenant.ownerRegistered && !tenant.deletedAt && (
                   <MyButton

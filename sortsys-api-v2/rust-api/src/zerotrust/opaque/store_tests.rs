@@ -18,6 +18,7 @@ use tokio::{process::Command, task::JoinHandle};
 
 mod batching;
 mod billing_permissions;
+mod cold_restore;
 mod content_views;
 mod member_recovery;
 mod passkeys;
@@ -104,6 +105,7 @@ async fn browser_with_tenant(
             "member-renames" => "scripts/test-native-member-renames.ts",
             "member-deletion" => "scripts/test-native-member-deletion.ts",
             "recovery-account" => "scripts/test-native-existing-recovery.ts",
+            "cold-restore" => "scripts/test-native-cold-restore.ts",
             "member-recovery" => "scripts/test-native-member-recovery.ts",
             "signing-identity" => "scripts/test-native-signing-identity.ts",
             "billing-permissions" => "scripts/test-native-billing-permissions.ts",
@@ -187,6 +189,7 @@ async fn browser_with_tenant(
     } else if matches!(
         mode,
         "recovery"
+            | "cold-restore"
             | "recovery-account"
             | "member-recovery"
             | "signing-identity"

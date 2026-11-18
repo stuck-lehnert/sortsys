@@ -492,8 +492,11 @@ Inhaltscursor bleibt davon getrennt. Die Organisationsverwaltung kann einen
 älteren Fachstand prüfen und freigeben. Die Vorschau prüft die lesbaren
 Projekte und Adressdaten, einschließlich ihrer Verknüpfungen untereinander.
 Ein vollständiger Abgleich der verschlüsselten Fachdaten steht noch aus.
-Die Seed-Recovery ersetzt keine Datensicherung. Siehe
-[verschlüsselte Sicherungen](verschluesselte-sicherungen.md).
+Ein Test startet den Datendienst aus einem vollständigen DuckDB-Dateisatz neu
+und prüft Anmeldung, ein Projekt, dessen Anhang und einen weiteren
+Phrase-Wechsel. Die [Betriebsdokumentation](deployment.md#sicherungen-und-wiederanlauf)
+beschreibt die getrennte Office-Ablage und die Aufbewahrung aktueller
+Sicherheitsnachweise.
 
 **Migrationen über Inhaltsfelder.** Berechtigte Clients migrieren Inhalte.
 Servermigrationen betreffen nur öffentliche Hüllen und Referenzen.
@@ -718,9 +721,10 @@ Ersteinrichtung, Schlüsselregister, Objekt- und Dokumentstände,
 Kataloglöschungen, Live-LLM-Sitzungen und die OpenTimestamps-Warteschlange
 laufen über diesen Speicher. Der optionale Backupweg verwendet eine lokale
 SQL-Quelle, keine laufende alte Datenbank. Der Datendienst verweigert inzwischen
-eine Mandantendatei mit älteren Recovery- oder Sicherheitsnachweisen. Die
-vollständige Prüfung aller Fachabläufe und der Rücksicherungsablauf mit dem
-aktuellen verschlüsselten Recovery-Katalog sind weiterhin offen.
+eine Mandantendatei mit älteren Recovery- oder Sicherheitsnachweisen. Im
+[Wiederanlauftest](mandanten-wiederherstellung.md#nachweise-vor-produktiver-nutzung)
+bleibt ein zweiter Mandant in diesem Fall erreichbar. Die vollständige
+Prüfung aller Fachabläufe nach einem Wiederanlauf steht noch aus.
 
 Die [Betreiberverwaltung](verschluesselte-sicherungen.md) erstellt mit
 `COPY FROM DATABASE` eine eigene DuckDB-Datei und schließt sie vor der

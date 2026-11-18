@@ -19,6 +19,11 @@ zu vermischen. Ein globaler Betreiberzugang ist für Aufträge, Listen und
 Downloads erforderlich. Mandantenadministratoren und mandantenspezifische
 Betreiberzugänge können diese Infrastrukturdateien nicht lesen.
 
+Kann der Datendienst den aktuellen Stand eines Mandanten nicht bestätigen,
+zeigt die Betreiberübersicht dessen Datenspeicher als nicht verfügbar an.
+Bereits registrierte Sicherungen bleiben zum Herunterladen erreichbar. Die
+Betreiberverwaltung kann die übrigen Mandanten weiter verwalten.
+
 ## Was zur vollständigen Wiederherstellung gehört
 
 Eine einzelne Mandantendatei ersetzt keine vollständige Sicherung des

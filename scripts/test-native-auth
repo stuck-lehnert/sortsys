@@ -21,10 +21,12 @@ STORE = ROOT / "sortsys-store/Cargo.toml"
 TEST_PREFIX = "zerotrust::opaque::store_tests::"
 BROWSER_TEST_PREFIX = TEST_PREFIX + "passkeys::"
 DEVELOPMENT_TEST = TEST_PREFIX + "development_seed_creates_ready_accounts_and_preserves_manual_edits"
+COLD_RESTORE_TEST = TEST_PREFIX + "cold_restore::reopened_store_preserves_recovery_and_encrypted_files"
 PROCESS_TESTS = {
     TEST_PREFIX + "first_administrator_finishes_setup_before_business_access",
     TEST_PREFIX + "content_views::tenant_prepares_an_encrypted_snapshot_across_api_instances",
     TEST_PREFIX + "delegated_administration_uses_own_keys_and_revokes_across_independent_api_instances",
+    COLD_RESTORE_TEST,
 }
 
 
@@ -157,7 +159,7 @@ def cleanup_case(processes, directory, success, keep_data=False):
         raise RuntimeError("Die Testdienste konnten nicht vollständig beendet werden")
 
 
-def run_case(binary, env, name, directory):
+def run_case(binary, env, name, directory, keep_data=False):
     service = None
     tests = None
     success = False
@@ -191,7 +193,77 @@ def run_case(binary, env, name, directory):
             success = True
             print(output, end="", flush=True)
         finally:
-            cleanup_case([tests, service], directory, success, env.get("SORTSYS_NATIVE_KEEP_DATA") == "1")
+            cleanup_case(
+                [tests, service],
+                directory,
+                success,
+                keep_data or env.get("SORTSYS_NATIVE_KEEP_DATA") == "1",
+            )
+    return {"storePid": service.pid, "storeExitCode": service.returncode}
+
+
+def run_cold_restore_case(binary, env, name, directory):
+    source_data = directory / "source" / "duckdb"
+    retired_tenant = directory / "retired-tenant.duckdb"
+    secrets_path = directory / "recovery-fixture.json"
+    started = []
+    processes = {}
+    completed = False
+    try:
+        for phase in ("source", "stale", "restored"):
+            stage = directory / phase
+            stage.mkdir()
+            data = stage / "duckdb"
+            if phase != "source":
+                tenants = {
+                    path.name for path in (source_data / "tenants").glob("*.duckdb")
+                    if path.is_file()
+                }
+                tenant_file = processes["source"]["tenantFile"]
+                if (
+                    len(tenants) != 2
+                    or tenant_file not in tenants
+                    or not (source_data / "control.duckdb").is_file()
+                ):
+                    raise RuntimeError("Die Sicherung muss die Kontrolldatei und beide Testmandanten enthalten")
+                shutil.copytree(source_data, data)
+                if phase == "stale":
+                    shutil.copyfile(retired_tenant, data / "tenants" / tenant_file)
+                    # A log from the current tenant file does not belong to the old snapshot.
+                    (data / "tenants" / (tenant_file + ".wal")).unlink(missing_ok=True)
+            phase_env = case_environment(env, stage)
+            phase_env.update({
+                "SORTSYS_NATIVE_COLD_RESTORE_PHASE": phase,
+                "SORTSYS_NATIVE_COLD_RESTORE_ROOT": str(directory),
+            })
+            print(f"Datendienstphase: {phase}; Protokolle: {stage}", flush=True)
+            started.append(stage)
+            store = run_case(binary, phase_env, name, stage, keep_data=phase == "source")
+            if store["storeExitCode"] != 0:
+                raise RuntimeError("Der Datendienst wurde nicht regulär beendet")
+            processes[phase] = {**store, **json.loads((stage / "api-processes.json").read_text())}
+        store_pids = {stage["storePid"] for stage in processes.values()}
+        api_pids = {pid for stage in processes.values() for pid in stage["apiPids"]}
+        if len(store_pids) != 3 or len(api_pids) != 6 or store_pids & api_pids:
+            raise RuntimeError("Jede Phase benötigt einen eigenen Datendienst und zwei neue API-Prozesse")
+        completed = True
+    finally:
+        secrets_path.unlink(missing_ok=True)
+        retired_tenant.unlink(missing_ok=True)
+        stages = []
+        for stage in started:
+            cleanup = stage / "cleanup.json"
+            if cleanup.exists():
+                stages.append(json.loads(cleanup.read_text()))
+        stopped = len(stages) == len(started) and all(item["servicesStopped"] for item in stages)
+        if completed and stopped and env.get("SORTSYS_NATIVE_KEEP_DATA") != "1":
+            shutil.rmtree(source_data)
+        (directory / "cleanup.json").write_text(json.dumps({
+            "servicesStopped": stopped,
+            "dataKept": any((stage / "duckdb").exists() for stage in started),
+            "errors": [error for item in stages for error in item["errors"]],
+        }) + "\n")
+        (directory / "cold-restore-processes.json").write_text(json.dumps(processes, indent=2) + "\n")
 
 
 def main():
@@ -266,7 +338,10 @@ def main():
             }
             results.append(result)
             try:
-                run_case(binary, case_environment(env, case_directory), name, case_directory)
+                if name == COLD_RESTORE_TEST:
+                    run_cold_restore_case(binary, env, name, case_directory)
+                else:
+                    run_case(binary, case_environment(env, case_directory), name, case_directory)
                 result["success"] = True
             except (RuntimeError, OSError, subprocess.SubprocessError) as error:
                 result["error"] = str(error)
