@@ -198,4 +198,60 @@ async fn protected_write_batches_preserve_missing_record_and_checkpoint_guards()
         second.read::<u64>(records[0].clone()).await.unwrap().value,
         Some(0)
     );
+
+    // Production Repository clones share the store's pending-read queue. The
+    // same logical record may be requested by several independent RPC handlers;
+    // it is read once per transport batch, never served from a completed cache.
+    probe.take_reads();
+    let selections = (0..40)
+        .map(|index| records[index % 3].clone())
+        .collect::<Vec<_>>();
+    let results = futures_util::future::join_all(
+        selections
+            .iter()
+            .map(|record| first.read::<u64>(record.clone())),
+    )
+    .await;
+    for (index, result) in results.into_iter().enumerate() {
+        let result = result.unwrap();
+        assert_eq!(result.record, selections[index]);
+        assert_eq!(result.value, Some((index % 3) as u64));
+    }
+    let requests = probe.take_reads();
+    assert!(requests.len() < selections.len());
+    assert!(requests.iter().all(|records| records.len() <= 3));
+    println!(
+        "40 unabhängige Kontrolllesezugriffe: {} HTTP-Anfragen, {} tatsächlich angeforderte Datensätze",
+        requests.len(),
+        requests.iter().map(Vec::len).sum::<usize>(),
+    );
+
+    let other_tenant = first.tenant("batching-other-tenant").unwrap();
+    let mut publication = other_tenant.transaction().unwrap();
+    publication
+        .put_protected(records[0].clone(), &77_u64)
+        .await
+        .unwrap();
+    publication.commit().await.unwrap();
+    let (alpha, beta) = tokio::join!(
+        first.read::<u64>(records[0].clone()),
+        other_tenant.read::<u64>(records[0].clone()),
+    );
+    assert_eq!(alpha.unwrap().value, Some(0));
+    assert_eq!(beta.unwrap().value, Some(77));
+
+    let mut publication = second.transaction().unwrap();
+    publication
+        .put_protected(records[0].clone(), &88_u64)
+        .await
+        .unwrap();
+    publication.commit().await.unwrap();
+    let (changed, absent) = tokio::join!(
+        first.read::<u64>(records[0].clone()),
+        first.read::<u64>(key("test-batched-records", "still-absent")),
+    );
+    assert_eq!(changed.unwrap().value, Some(88));
+    let absent = absent.unwrap();
+    assert!(absent.value.is_none());
+    assert!(absent.version.is_none());
 }

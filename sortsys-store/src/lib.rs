@@ -26,7 +26,7 @@ pub struct QuackConfig {
     pub disable_ssl: bool,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("invalid DuckDB service configuration: {0}")]
     Configuration(&'static str),

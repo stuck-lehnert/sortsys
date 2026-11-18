@@ -16,6 +16,16 @@ gegen denselben Datenbankstand. Es verändert weder Datensätze noch Schreibbele
 oder das Änderungsjournal. Dadurch benötigt eine konsistente Leseabfrage keinen
 Schreibvorgang.
 
+Der Rust-Client bündelt gleichzeitig anstehende Metadatenlesezugriffe desselben
+Mandanten bis zum nächsten Scheduler-Durchlauf; volle Gruppen werden sofort
+versendet. Eine Gruppe enthält höchstens 32 Aufrufe und 1.024 angeforderte
+Datensatzkennungen. Überschneidungen werden einmal gelesen; Reihenfolge,
+Mehrfachnennungen und fehlende Datensätze bleiben in jeder Antwort erhalten.
+Systemdaten und verschiedene Mandanten werden getrennt abgefragt. Abgeschlossene
+Ergebnisse werden nicht zwischengespeichert. Jede API-Transaktion prüft ihre
+eigenen gelesenen Versionen weiterhin vor dem Abschluss; das Bündeln macht
+unabhängige Schreibvorgänge weder atomar noch geordnet.
+
 Größere Transaktionen laden zunächst unsichtbare UTF-8-Fragmente über
 `POST /metadata/prepared/part` hoch. Der Client prüft deren Inhaltsadressen und
 übergibt anschließend das vollständige Manifest an

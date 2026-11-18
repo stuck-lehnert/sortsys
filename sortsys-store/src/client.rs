@@ -12,6 +12,8 @@ use super::{
     MAX_CIPHERTEXT_BYTES, QuackConfig, StoreError, content_id, remote::Remote, tenant_id, valid_id,
 };
 
+mod reads;
+
 #[derive(Clone)]
 pub struct CipherStore(Arc<Inner>);
 struct Inner {
@@ -20,6 +22,7 @@ struct Inner {
     slots: Arc<Semaphore>,
     connections: Mutex<Vec<Remote>>,
     tenants: Mutex<HashSet<String>>,
+    reads: Mutex<reads::ReadQueue>,
 }
 #[derive(Serialize)]
 struct TenantRequest<'a> {
@@ -54,6 +57,7 @@ impl CipherStore {
             slots: Arc::new(Semaphore::new(4)),
             connections: Mutex::new(Vec::new()),
             tenants: Mutex::new(HashSet::new()),
+            reads: Mutex::default(),
         })))
     }
     async fn provision(&self, tenant: &str) -> Result<String, StoreError> {
@@ -485,8 +489,7 @@ impl CipherStore {
         target: super::metadata::Target,
         records: Vec<sortsys_zerotrust::metadata::RecordKey>,
     ) -> Result<Vec<sortsys_zerotrust::metadata::MetadataRecord>, StoreError> {
-        self.metadata_request("read", &super::metadata::ReadRequest { target, records })
-            .await
+        self.read_batched(target, records).await
     }
     pub async fn metadata_transact(
         &self,
