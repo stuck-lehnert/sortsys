@@ -127,7 +127,7 @@ def wait_for_store(service, env):
         time.sleep(0.1)
 
 
-def cleanup_case(processes, directory, success):
+def cleanup_case(processes, directory, success, keep_data=False):
     previous_handlers = {}
     for signum in [signal.SIGTERM, signal.SIGINT]:
         previous_handlers[signum] = signal.signal(signum, signal.SIG_IGN)
@@ -139,7 +139,7 @@ def cleanup_case(processes, directory, success):
             except (OSError, subprocess.SubprocessError) as error:
                 failures.append(str(error))
         data = directory / "duckdb"
-        if success and not failures and data.exists():
+        if success and not failures and data.exists() and not keep_data:
             shutil.rmtree(data)
         (directory / "cleanup.json").write_text(json.dumps({
             "servicesStopped": not failures,
@@ -187,7 +187,7 @@ def run_case(binary, env, name, directory):
             success = True
             print(output, end="", flush=True)
         finally:
-            cleanup_case([tests, service], directory, success)
+            cleanup_case([tests, service], directory, success, env.get("SORTSYS_NATIVE_KEEP_DATA") == "1")
 
 
 def main():

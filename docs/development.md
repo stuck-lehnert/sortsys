@@ -104,7 +104,11 @@ Der ausgegebene Protokollordner enthält pro Test ein Unterverzeichnis mit
 `store.log`, `tests.log` und `cleanup.json`. `results.json` ordnet diese
 Verzeichnisse den Testnamen zu und enthält Ergebnis und Laufzeit. Die
 DuckDB-Dateien erfolgreicher Tests werden nach dem Beenden der Dienste entfernt;
-bei einem Fehler bleiben sie zur Untersuchung erhalten. Nach einem fehlgeschlagenen Test laufen die
+bei einem Fehler bleiben sie zur Untersuchung erhalten.
+`SORTSYS_NATIVE_KEEP_DATA=1` erhält auf Wunsch auch erfolgreiche Testbestände.
+Die Dienste werden trotzdem beendet. Damit kann ein frisch geprüfter Musterbestand
+für die nachfolgend beschriebene Browserprüfung wiederverwendet werden, ohne ihn
+erneut aufzubauen. Nach einem fehlgeschlagenen Test laufen die
 übrigen Fälle weiter, sofern dessen Dienste vollständig beendet wurden.
 
 Die Suite richtet außerdem einen neuen Mandanten über den einmaligen

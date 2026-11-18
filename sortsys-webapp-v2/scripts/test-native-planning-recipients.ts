@@ -41,6 +41,14 @@ import { readOwnAssignments } from "../app/lib/data/planningRecipients";
 import { acquireDataRuntime } from "../app/lib/data/runtime/session";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 
+const MEMBER_PASSWORD = "Renewed-private-planning-password-2026!";
+export type PlanningScenario = {
+  tenant: string;
+  member: { id: string; username: string; password: string };
+  project: { id: string; title: string };
+  hiddenProjectId: string;
+};
+
 async function until(predicate: () => boolean, message: string) {
   const deadline = Date.now() + 8000;
   while (!predicate()) {
@@ -230,7 +238,7 @@ export async function exerciseNativePlanningRecipients(
       tenant: colleague.tenant,
       username: colleague.username,
       subject: `user:${person.id}`,
-      password: "Renewed-private-planning-password-2026!",
+      password: MEMBER_PASSWORD,
       identity: renewedIdentity,
       replacementCertificate: renewedCertificate,
     });
@@ -457,6 +465,16 @@ export async function exerciseNativePlanningRecipients(
     console.log(
       "Own planning: pre-enrollment assignments become readable after approval without parent keys; signing renewal retains access; other records and writes are denied; stripped proofs publish nothing; cross-instance events, project captions, updates, moves, reassignment and deletion verified",
     );
+    return {
+      tenant: ownerAccount.tenant,
+      member: {
+        id: person.id,
+        username: "planning.member",
+        password: MEMBER_PASSWORD,
+      },
+      project: { id: target.id, title: "Zielbaustelle 381694" },
+      hiddenProjectId: project.id,
+    } satisfies PlanningScenario;
   } finally {
     controller.abort();
     await restoreOwner();

@@ -14,7 +14,7 @@ vorhandenen Funktionen, nativen Mehrinstanztests und noch offenen Prüfungen.
 Vergleichbare Suchergebnisse oder eine bestimmte Geschwindigkeit werden nicht
 allein aus der Wahl von DuckDB abgeleitet.
 
-Der Produktionsbuild hat alle 18 Browserabläufe bestanden. Der Lauf verwendet
+Ein früherer Produktionsbuild hat alle 18 Browserabläufe bestanden. Der Lauf verwendet
 eine Kopie des separat geprüften Musterbestands und prüft unter anderem
 Abrechnung, gemeinsame GAEB-Bearbeitung sowie Sichtbarkeit und Rechteentzug. Die
 beiden unabhängig konfigurierten API-Instanzen laufen dabei in einem
@@ -275,13 +275,18 @@ Bereichsschlüssel verteilt. Ein weiterer nativer Test prüft zwei Benutzerkonte
 die Einladungsfreigabe bestehender Einsätze, verweigerte Fremdzugriffe,
 ausdrückliche Lesesperren und den Signaturschlüsselwechsel. Änderungen über die
 erste API erreichen die Eigenansicht am WebSocket der zweiten. Die beiden
-Instanzen dieses Tests laufen in einem Rust-Prozess. Ein Browsernachweis der
-Eigenansicht fehlt noch; ohne Projektstammdaten verwendet sie eine verschlüsselte
-Kopie der Projektbezeichnung, die reine Umbenennungen noch nicht nachführt. Persönliche
+Instanzen dieses Tests laufen in einem Rust-Prozess. Zwei Recoveries erhalten
+Einsätze und Benutzerkennungen; alte Zugänge, Phrasen und Schlüssel werden
+abgewiesen. Nach erneuter Einladung ist die Eigenansicht wieder lesbar. Der
+zugehörige Browsertest prüft die fertige Webapp nach der zweiten Recovery mit
+zwei getrennten Sitzungen: eigene und verborgene fremde Einsätze, fehlende
+Planungsaktionen, automatische Aktualisierung, Löschung und Neuladen. Ohne
+Projektstammdaten verwendet die Eigenansicht eine verschlüsselte Kopie der
+Projektbezeichnung, die reine Umbenennungen noch nicht nachführt. Persönliche
 Abwesenheiten kommen aus dem eigenen verschlüsselten Adapter. Atomare
 Baustellenwechsel, Wiederholungen, veraltete Formulare und verlorene oder
 falsche Speicherantworten sind über zwei echte API-Instanzen geprüft. Die
-anschließende Recovery dieser Daten steht noch aus. Siehe
+Recovery der Baustellensperren ist dabei noch nicht gesondert geprüft. Siehe
 [Einsatzplanung](verschluesselte-einsatzplanung.md).
 
 ## Katalog, Kontakte und Kosten

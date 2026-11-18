@@ -92,8 +92,7 @@ verbindet zwei echte API-Instanzen. Er prüft eine wiederholte Anlage, atomare
 Baustellenwechsel und Rückwechsel, veraltete Formulare, Löschen sowie verlorene
 und fälschlich erfolgreiche Speicherantworten. Die Clients dieses Tests
 verwenden kein WebSocket; sie laden den Stand der anderen Instanz ausdrücklich
-neu. Die anschließende Recovery dieser Planungsdaten ist noch nicht
-nachgewiesen.
+neu. Der zusätzliche Test der Eigenansicht prüft inzwischen auch die Recovery.
 
 Der [native Test der Eigenansicht](../sortsys-webapp-v2/scripts/test-native-planning-recipients.ts)
 verwendet zwei API-Instanzen im selben Rust-Testprozess und zwei Benutzerkonten.
@@ -101,8 +100,22 @@ Er prüft Einsätze vor der Einladung, eigene Inhalte ohne Bereichsschlüssel,
 abgewiesene Fremdzugriffe und Schreibversuche sowie fehlende oder manipulierte
 Empfängernachweise. Auch ausdrückliche Lesesperren, Signaturschlüsselwechsel,
 Baustellenwechsel, Neuzuweisung und Löschung werden geprüft. Änderungen der ersten
-API erreichen die Eigenansicht über den WebSocket der zweiten. Ein gesonderter
-Browsernachweis für diese Eigenansicht und deren Recovery stehen noch aus.
+API erreichen den gewöhnlichen Planungsstream über den WebSocket der zweiten.
+
+Derselbe Test führt zwei Recoveries mit der jeweils aktuellen Phrase durch.
+Einsätze und Benutzerkennungen bleiben erhalten. Alte Phrasen, Sitzungen und
+Passwörter werden abgewiesen; die alten privaten Schlüssel können die erneuerten
+Empfängerpakete nicht öffnen. Eine erneute Einladungsfreigabe stellt die
+Eigenansicht ohne Bereichsschlüssel wieder her.
+
+Mit `SORTSYS_NATIVE_BROWSER=1` prüft dieser Ablauf außerdem die fertig gebaute
+Webapp nach der zweiten Recovery in zwei getrennten Chromium-Sitzungen. Die
+Mitarbeitersicht zeigt den eigenen Einsatz mit Projektbezeichnung, verbirgt
+fremde Einsätze und bietet keine Planungsaktionen an. Änderungen und Löschungen
+aus der anderen Sitzung werden ohne manuelles Neuladen sichtbar. Abschließend
+prüft der Test einen Seitenreload und sucht im HTTP-Verkehr nach unverschlüsselten
+Testinhalten. Screenshots, Traces und Ergebnisse liegen im ausgegebenen
+Testverzeichnis unter `browser-artifacts/own-planning`.
 
 Eine Bereichsfreigabe öffnet weiterhin alle Einsätze dieser Baustelle. Persönliche
 [Abwesenheiten samt Urlaubskontingent und Genehmigung](abwesenheiten-protokoll.md)

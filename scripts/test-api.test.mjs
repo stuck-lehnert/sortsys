@@ -97,6 +97,49 @@ function cleanupEvents(events) {
   return events.filter((event) => event[0] === "rm");
 }
 
+test("retaining native test data still stops every service and defaults to deletion after success", () => {
+  const program = String.raw`
+import json
+import runpy
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+cleanup = runpy.run_path(sys.argv[1])["cleanup_case"]
+for success, keep_data, retained in [(True, False, False), (True, True, True), (False, False, True)]:
+    with tempfile.TemporaryDirectory(prefix="sortsys-cleanup-fixture-") as temporary:
+        directory = Path(temporary)
+        data = directory / "duckdb"
+        data.mkdir()
+        (data / "synthetic-fixture").write_text("disposable test data")
+        stopped = []
+        def stop(process):
+            assert data.exists(), "Services must stop before test data is removed"
+            stopped.append(process)
+        with patch.dict(cleanup.__globals__, {"stop": stop}):
+            cleanup(["api-test", "duckdb-test"], directory, success, keep_data)
+        assert stopped == ["api-test", "duckdb-test"]
+        assert data.exists() is retained
+        assert json.loads((directory / "cleanup.json").read_text()) == {
+            "servicesStopped": True, "dataKept": retained, "errors": []
+        }
+`;
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      program,
+      fileURLToPath(new URL("./test-native-auth", import.meta.url)),
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test("native selection never counts disabled browser tests as executed", (t) => {
   const program = String.raw`
 import contextlib

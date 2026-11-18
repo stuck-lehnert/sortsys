@@ -43,6 +43,7 @@ const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
 const requests: string[] = [];
 const rpcTransmissions: string[][] = [];
+let currentRecoveryPhrase: string | undefined;
 const isolatedProcesses =
   mode === "owner-bootstrap" && !!process.env.SORTSYS_NATIVE_API_EXECUTABLE;
 const apiOrigins = endpoints.map((endpoint) => new URL(endpoint).origin);
@@ -317,7 +318,24 @@ try {
     await initializeTenant(owner, new AbortController().signal, duckDriver);
     const { exerciseNativePlanningRecipients } =
       await import("./test-native-planning-recipients");
-    await exerciseNativePlanningRecipients(owner, peer);
+    const scenario = await exerciseNativePlanningRecipients(owner, peer);
+    const { exercisePlanningRecovery } =
+      await import("./test-native-planning-recovery");
+    const recovered = await exercisePlanningRecovery(
+      owner,
+      peer,
+      scenario,
+      draft.phrase,
+    );
+    currentRecoveryPhrase = recovered.phrase;
+    if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+      const { exercisePlanningBrowser } =
+        await import("./test-planning-browser");
+      await exercisePlanningBrowser(owner, recovered.owner, {
+        ...scenario,
+        member: recovered.member,
+      });
+    }
   } else if (mode === "owner-staging") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");
@@ -446,7 +464,10 @@ try {
   }
   await writeFile(
     join(dirname(outputPath), "owner-recovery.json"),
-    JSON.stringify({ tenant: draft.link.tenant, phrase: draft.phrase }),
+    JSON.stringify({
+      tenant: draft.link.tenant,
+      phrase: currentRecoveryPhrase ?? draft.phrase,
+    }),
     { mode: 0o600 },
   );
   if (isolatedProcesses) {

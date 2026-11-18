@@ -185,6 +185,7 @@ async fn browser_with_tenant(
             | "editors"
             | "owner-staging"
             | "owner-tool-batches"
+            | "owner-planning-recipients"
             | "owner-access-pages"
             | "owner-access-publications"
             | "owner-backup"
