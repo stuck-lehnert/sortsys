@@ -149,10 +149,12 @@ vor dem Kopieren und bestätigt die fertige Datei durch einen Versionsvergleich.
 Ein verlorener Abschluss kann dadurch wiederaufgenommen werden.
 
 Die API streamt den Download; sie wandelt die Datei nicht in Base64 oder ein
-RPC-Ergebnis um. Das Dienstkennwort bleibt intern. Der Browser fordert die Datei
-mit dem Betreiberzugang an und bietet sie als Download an; dabei hält er sie
-vorübergehend als Blob im Speicher. Für sehr große Sicherungen ist ein direkter
-Dateischreibweg noch offen.
+RPC-Ergebnis um. Das Dienstkennwort bleibt intern. Unterstützt der Browser
+einen Speicherdialog für Webanwendungen, fließt die Sicherung nach der
+Dateiauswahl direkt an das gewählte Ziel. Der Browser schließt die Datei erst
+nach Erhalt der erwarteten Bytezahl ab. Bei Abbruch der Dateiauswahl beginnt
+kein Download. Andere Browser laden die Datei über den üblichen Download und
+halten sie dafür vorübergehend als Blob im Speicher.
 
 Der [Datendiensttest](../sortsys-store/tests/service.rs) prüft konkurrierende
 Aufträge und eine Wiederholung nach weiteren Änderungen. Der

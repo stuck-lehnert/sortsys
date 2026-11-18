@@ -1,13 +1,14 @@
 import { uiText, currentLocaleTag } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
 import { InlineLoading } from "@sortsys/react-components";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyHeader } from "~/components/MyHeader";
 import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
 import { adminClient } from "~/lib/adminClient";
+import { backupFilePicker, downloadBackup } from "~/lib/backups/download";
 import { Icons } from "~/lib/icons";
 
 type Snapshot = QueryResult<"admin.storage.snapshots.list">["rows"][number];
@@ -31,6 +32,8 @@ function SnapshotList({
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const download = useRef<AbortController | null>(null);
+  useEffect(() => () => download.current?.abort(), []);
   // Keep the operation after a failed request. Retrying must not create another
   // file merely because the first response was lost on its way to the browser.
   const [operation, setOperation] = useState<string | null>(null);
@@ -77,34 +80,46 @@ function SnapshotList({
   }
 
   async function downloadSnapshot(snapshot: Snapshot) {
+    if (download.current) return;
+    const controller = new AbortController();
+    download.current = controller;
+    const unsubscribe = adminClient.listenAuthState(() => controller.abort());
     setPending(true);
     setActionError(null);
     try {
-      const response = await adminClient.resource(
-        `/operator/snapshots/${tenant}/${snapshot.id}`,
+      if (snapshot.bytes === null) throw new Error("Missing backup size");
+      const name = `${tenant}-${snapshot.id}.duckdb`;
+      const signal = controller.signal;
+      const blob = await downloadBackup(
+        name,
+        snapshot.bytes,
+        () =>
+          adminClient.resource(`/operator/snapshots/${tenant}/${snapshot.id}`, {
+            signal,
+          }),
+        signal,
+        backupFilePicker(),
       );
-      if (!response.ok)
-        throw new Error(
+      if (!blob || signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.click();
+      // The browser needs the object URL until its download has started.
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch {
+      if (!controller.signal.aborted) {
+        setActionError(
           uiText(
             "Sicherung konnte nicht geladen werden",
             "The backup could not be downloaded",
           ),
         );
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${tenant}-${snapshot.id}.duckdb`;
-      link.click();
-      // The browser needs the object URL until its download has started.
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : uiText("Download fehlgeschlagen", "Download failed"),
-      );
+      }
     } finally {
+      unsubscribe();
+      download.current = null;
       setPending(false);
     }
   }

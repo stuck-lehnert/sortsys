@@ -1442,27 +1442,7 @@ async fn first_administrator_finishes_setup_before_business_access() {
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let mut first = processes::ApiProcess::start(&settings, &root, "first").await;
-    let mut second = processes::ApiProcess::start(&settings, &root, "second").await;
-    assert_ne!(first.pid, second.pid);
-    assert_ne!(first.endpoint, second.endpoint);
-    let mut report = serde_json::json!({
-        "parentPid": std::process::id(),
-        "apiPids": [first.pid, second.pid],
-        "endpoints": [first.endpoint, second.endpoint],
-        "stopped": false,
-    });
-    std::fs::write(root.join("api-processes.json"), report.to_string()).unwrap();
-    browser(
-        "owner-bootstrap",
-        &root,
-        Some(&[first.endpoint.clone(), second.endpoint.clone()]),
-    )
-    .await;
-    first.stop().await;
-    second.stop().await;
-    report["stopped"] = serde_json::json!(true);
-    std::fs::write(root.join("api-processes.json"), report.to_string()).unwrap();
+    processes::run_browser(&settings, &root, "owner-bootstrap").await;
 }
 
 #[tokio::test]
@@ -1694,16 +1674,12 @@ async fn development_seed_creates_ready_accounts_and_preserves_manual_edits() {
     let store = QuackConfig::from_env().unwrap().unwrap();
     assert!(store.control_url.starts_with("http://127.0.0.1:"));
     assert!(store.token.starts_with("sortsys-disposable-"));
-    let first = Repository::system(CipherStore::new(store.clone()).unwrap());
-    let second = Repository::system(CipherStore::new(store.clone()).unwrap());
     let mut settings = configuration(store);
     settings.jwt_secret = Arc::from(b"disposable-development-seed-secret-2026".as_slice());
     settings.admin_hash = bcrypt::hash("Disposable-development-operator-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
-    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
-    browser("development-seed", &root, Some(&[first_url, second_url])).await;
+    processes::run_browser(&settings, &root, "development-seed").await;
 }
 
 #[tokio::test]

@@ -1,5 +1,33 @@
 use super::*;
+use futures_util::FutureExt;
+use std::panic::{AssertUnwindSafe, resume_unwind};
 use tokio::{io::AsyncBufReadExt, process::Child};
+
+pub(super) async fn run_browser(settings: &Config, root: &Path, mode: &str) {
+    let mut first = ApiProcess::start(settings, root, "first").await;
+    let mut second = ApiProcess::start(settings, root, "second").await;
+    assert_ne!(first.pid, second.pid);
+    assert_ne!(first.endpoint, second.endpoint);
+    let endpoints = [first.endpoint.clone(), second.endpoint.clone()];
+    let path = root.join("api-processes.json");
+    let mut report = serde_json::json!({
+        "parentPid": std::process::id(),
+        "apiPids": [first.pid, second.pid],
+        "endpoints": endpoints,
+        "stopped": false,
+    });
+    std::fs::write(&path, report.to_string()).unwrap();
+    let result = AssertUnwindSafe(browser(mode, root, Some(&endpoints)))
+        .catch_unwind()
+        .await;
+    first.stop().await;
+    second.stop().await;
+    report["stopped"] = serde_json::json!(true);
+    std::fs::write(path, report.to_string()).unwrap();
+    if let Err(failure) = result {
+        resume_unwind(failure);
+    }
+}
 
 pub(super) struct ApiProcess {
     pub endpoint: String,

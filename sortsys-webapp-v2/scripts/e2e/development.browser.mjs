@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { chromium, expect as playwrightExpect } from "playwright/test";
@@ -12,8 +13,11 @@ assert.equal(seeded.success, true);
 const endpoints = JSON.parse(process.env.SORTSYS_AUTH_TEST_ENDPOINTS);
 const artifacts = join(dirname(reportPath), "browser-artifacts");
 await mkdir(artifacts, { recursive: true });
+const applicationBuild =
+  process.env.SORTSYS_E2E_APPLICATION_BUILD ??
+  new URL("../../build/client", import.meta.url).pathname;
 const server = await applicationServer(
-  new URL("../../build/client", import.meta.url).pathname,
+  applicationBuild,
   endpoints[1],
 );
 let browser;
@@ -490,7 +494,7 @@ try {
   });
   await scenario("gaeb-editing-and-replica-synchronization", async (page) => {
     const peerServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(peerServer);
@@ -734,7 +738,7 @@ try {
     ).toBeVisible();
 
     const peerServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(peerServer);
@@ -896,7 +900,7 @@ try {
   });
   await scenario("tool-batch-booking-dialog", async (page) => {
     const peerServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(peerServer);
@@ -1077,7 +1081,7 @@ try {
 
   await scenario("tool-responsibility-between-users", async (page, audit) => {
     const memberServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(memberServer);
@@ -1197,7 +1201,7 @@ try {
 
   await scenario("tool-booking-creation-between-users", async (page) => {
     const memberServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(memberServer);
@@ -1473,7 +1477,7 @@ try {
   });
   await scenario("tool-access-between-users", async (page) => {
     const memberServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(memberServer);
@@ -1660,7 +1664,7 @@ try {
   });
   await scenario("billing-actions-between-users", async (page) => {
     const memberServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(memberServer);
@@ -1947,7 +1951,7 @@ try {
   });
   await scenario("gaeb-editing-between-users", async (page) => {
     const memberServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(memberServer);
@@ -2083,7 +2087,7 @@ try {
   });
   await scenario("grant-and-revoke-across-api-instances", async (page) => {
     const memberServer = await applicationServer(
-      new URL("../../build/client", import.meta.url).pathname,
+      applicationBuild,
       endpoints[0],
     );
     servers.add(memberServer);
@@ -2165,7 +2169,7 @@ try {
     "default-supervisor-controls-approval-across-instances",
     async (page) => {
       const memberServer = await applicationServer(
-        new URL("../../build/client", import.meta.url).pathname,
+        applicationBuild,
         endpoints[0],
       );
       servers.add(memberServer);
@@ -2369,6 +2373,12 @@ try {
       exact: true,
     });
     await expect(download).toBeVisible();
+    await page.evaluate(() => {
+      Object.defineProperty(window, "showSaveFilePicker", {
+        configurable: true,
+        value: undefined,
+      });
+    });
     const received = page.waitForEvent("download");
     await download.click();
     const file = await received;
@@ -2391,6 +2401,39 @@ try {
         false,
         "No business plaintext in the downloaded database",
       );
+    }
+    if (process.env.SORTSYS_E2E_STREAMED_BACKUP === "1") {
+      const suggestedName = file.suggestedFilename();
+      await page.evaluate(() => {
+        Object.defineProperty(window, "showSaveFilePicker", {
+          configurable: true,
+          async value({ suggestedName }) {
+            if (!navigator.userActivation.isActive) {
+              throw new Error("Backup picker must open from a user gesture");
+            }
+            const directory = await navigator.storage.getDirectory();
+            return directory.getFileHandle(suggestedName, { create: true });
+          },
+        });
+      });
+      await download.click();
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      await expect
+        .poll(() => page.evaluate(async (name) => {
+          try {
+            const directory = await navigator.storage.getDirectory();
+            const handle = await directory.getFileHandle(name);
+            const file = await handle.getFile();
+            const hash = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+            return [...new Uint8Array(hash)]
+              .map((byte) => byte.toString(16).padStart(2, "0"))
+              .join("");
+          } catch {
+            return null;
+          }
+        }, suggestedName))
+        .toBe(digest);
+      console.log("Chromium saved the authenticated stream byte-for-byte.");
     }
     await page.reload();
     const reloadedRow = page
