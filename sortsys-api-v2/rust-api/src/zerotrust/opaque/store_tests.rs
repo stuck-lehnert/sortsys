@@ -18,6 +18,7 @@ use tokio::{process::Command, task::JoinHandle};
 
 mod batching;
 mod billing_permissions;
+mod content_views;
 mod member_recovery;
 mod passkeys;
 mod processes;

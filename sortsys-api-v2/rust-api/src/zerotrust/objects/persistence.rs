@@ -63,6 +63,25 @@ pub(in crate::zerotrust) fn record_key(
 ) -> sortsys_zerotrust::metadata::RecordKey {
     key(&collection(domain), object)
 }
+
+fn publication_records(
+    input: &SaveInput,
+) -> RpcResult<[sortsys_zerotrust::metadata::RecordKey; 4]> {
+    Ok([
+        key("object-locations", &input.envelope.object),
+        record_key(&input.domain, &input.envelope.object),
+        key("object-changes", &input.message_id),
+        history_key(&input.envelope.object, &input.envelope.revision)?,
+    ])
+}
+
+fn preserves_numbering(envelope: &EncryptedObject) -> bool {
+    envelope.scope == "organization:invoicing"
+        && envelope.facet == Facet::Billing
+        && envelope
+            .object
+            .starts_with("organization:invoicing:billing:counter:")
+}
 pub(in crate::zerotrust) async fn object(
     transaction: &mut Transaction,
     id: &str,
@@ -453,16 +472,17 @@ async fn commit_batch_inner(
     if preuploaded {
         let mut records = Vec::with_capacity(input.objects.len() * 4);
         for packet in &input.objects {
-            records.push(key("object-locations", &packet.envelope.object));
-            records.push(record_key(&packet.domain, &packet.envelope.object));
-            records.push(key("object-changes", &packet.message_id));
-            records.push(history_key(
-                &packet.envelope.object,
-                &packet.envelope.revision,
-            )?);
+            records.extend(publication_records(packet)?);
         }
         context.transaction.prefetch(records).await?;
     }
+    let mut retained = Vec::new();
+    for packet in &input.objects {
+        if preserves_numbering(&packet.envelope) {
+            retained.extend(publication_records(packet)?);
+        }
+    }
+    context.transaction.prefetch_protected(retained).await?;
     let checkpoints = super::super::live_checkpoints::persistence::prepare(
         &mut context,
         input.documents.as_deref().unwrap_or_default(),
@@ -869,17 +889,21 @@ async fn save(
         &change,
     )?;
 
+    let retained = publication_records(input)?;
     super::super::timestamps::metadata_record_object(
         &mut context.transaction,
         envelope,
         serde_json::json!({"format":"sortsys-quack-ref-v1","id":record.reference}),
-        &[
-            key("object-locations", &envelope.object),
-            record_key(&input.domain, &envelope.object),
-            key("object-changes", &input.message_id),
-            history,
-        ],
+        &retained,
     )
     .await?;
+    if preserves_numbering(envelope) {
+        // Counters remain mutable, but a content restore must not rewind them.
+        // Each record has its own checkpoint: collecting every invoice's two
+        // history keys in one growing checkpoint would hit the 64-key limit.
+        for record in retained {
+            context.transaction.protect_record(record).await?;
+        }
+    }
     Ok(true)
 }

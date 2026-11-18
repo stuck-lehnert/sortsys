@@ -311,6 +311,7 @@ pub(super) async fn metadata_root(
     transaction
         .prefetch(vec![
             root_key(),
+            crate::control::content::head_key(),
             key(ANCHOR_COLLECTION, "authority"),
             key(ANCHOR_COLLECTION, "security"),
         ])

@@ -55,6 +55,20 @@ weiterhin ab. Auch eine gemeinsame Rücksetzung von Mandanten- und Kontrolldatei
 auf einen alten Stand braucht unabhängige aktuelle Nachweise, um erkennbar zu
 bleiben.
 
+Der API-Speicherzugriff unterstützt dafür getrennte Ablagen je Fachstand.
+Konten samt Freigaben und Schlüsseln behalten ihren aktuellen Stand. Die Zähler
+für Rechnungen und Lieferscheine werden weitergeführt. Festgeschriebene Datensätze
+behalten ihre bisherige Ablage; Listen und
+Einzelabrufe berücksichtigen sie auch dann, wenn der ausgewählte ältere Stand
+sie noch nicht enthält. Die API prüft die Signatur der Mandantenautorität für
+den ausgewählten Fachstand. Begonnene Lese- und Schreibvorgänge müssen beim
+Abschluss weiterhin zu diesem Stand passen.
+
+Für eine vollständige Rücksicherung muss der Dienst die gewählte Sicherung noch
+in diese Ablage übernehmen und ihre Abhängigkeiten prüfen. Die erhaltenen
+Metadatenverweise ersetzen die referenzierten Chiffrate nicht. Verbundene
+Editoren müssen den neuen Stand laden; dieser Ablauf ist noch nicht implementiert.
+
 ## Erstellung und Nachweise
 
 Der gemeinsame Datendienst erstellt die Kopie mit `COPY FROM DATABASE`, schließt

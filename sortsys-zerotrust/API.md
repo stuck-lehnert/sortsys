@@ -875,10 +875,13 @@ Objektkennungen bleiben erhalten. Die Anwendung legt ausdrücklich fest, welche
 Sammlungen Geschäftsdaten enthalten. Konten, Berechtigungen, Recovery-Nachweise
 und ihre unabhängigen Zeugen müssen beim aktuellen Stand bleiben.
 
-Ein `ContentPin` bindet einen unveränderlichen Datensatz an seine genaue
+Ein `ContentPin` bindet einen aufzubewahrenden Datensatz dauerhaft an seine genaue
 physische Sammlung. `contentPinKey` liefert dafür eine nach logischen Kennungen
 sortierbare Ablagekennung. Der Adapter muss diese Bindung selbst gegen Änderungen
 schützen, beim Lesen berücksichtigen und die referenzierten Chiffrate erhalten.
+Ob der Inhalt endgültig gesperrt ist oder berechtigt fortgeschrieben werden darf,
+prüft die Anwendung weiterhin. So kann beispielsweise ein Rechnungszähler seinen
+aktuellen Stand behalten und trotzdem die nächste Nummer vergeben.
 Die Funktionen führen noch keine Rücksicherung durch. Insbesondere ersetzen sie
 weder einen atomaren Speicherwechsel noch die Behandlung laufender
 Dokumentsitzungen und fachlicher Abhängigkeiten.

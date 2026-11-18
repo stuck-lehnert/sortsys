@@ -56,6 +56,7 @@ async fn metadata_security_for_selection(
     let (account, _) = accounts::checked_session(transaction, auth).await?;
     let stored = super::setup::metadata_root(transaction, &auth.tenant).await?;
     let certificate = &stored.profile.authority;
+    super::content::verify_view(transaction, &auth.tenant, certificate).await?;
     let generation = super::crypto::revision(&certificate.generation)?;
     let authority = sized::<32>(&certificate.authority_signing_key)?.to_vec();
     let mut records = vec![key("policies", &stored.policy_version)];

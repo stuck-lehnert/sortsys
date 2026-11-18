@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import {
   base64,
+  certifyAuthority,
   contentEpochFingerprint,
   contentEpochFrame,
   contentPinKey,
@@ -10,8 +11,25 @@ import {
   signContentEpoch,
 } from "../src/index";
 
-const original = await createIdentity(),
-  current = await createIdentity();
+const original = await createIdentity();
+const current = await createIdentity();
+const recovery = await createIdentity();
+const recoveryPublic = await publicIdentity(recovery);
+const certificates = await Promise.all(
+  [original, current].map(async (identity, index) => {
+    const authority = await publicIdentity(identity);
+    return certifyAuthority(
+      {
+        tenant: "laboratory",
+        generation: String(index + 1),
+        recoveryEncryptionKey: recoveryPublic.encryptionKey,
+        recoverySigningKey: recoveryPublic.signingKey,
+        authoritySigningKey: authority.signingKey,
+      },
+      recovery.signingKey.privateKey,
+    );
+  }),
+);
 const first = await signContentEpoch(
   {
     format: "zt-content-epoch-v1",
@@ -52,6 +70,7 @@ await writeFile(
         "1": (await publicIdentity(original)).signingKey,
         "2": (await publicIdentity(current)).signingKey,
       },
+      certificates,
       epochs: [first, second, third],
       frames: [first, second, third].map((value) =>
         base64(contentEpochFrame(value)),

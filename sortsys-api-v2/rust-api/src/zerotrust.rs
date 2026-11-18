@@ -4,6 +4,7 @@
 mod absences;
 mod access;
 mod bootstrap;
+mod content;
 mod creation;
 mod crypto;
 mod delivery;

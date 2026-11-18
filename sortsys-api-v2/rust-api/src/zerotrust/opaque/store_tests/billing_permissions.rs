@@ -31,6 +31,25 @@ async fn ordinary_members_issue_partial_invoices_without_private_extension_keys(
         serde_json::from_str(&std::fs::read_to_string(root.join("report.json")).unwrap()).unwrap();
     assert_eq!(result["success"], true);
     assert_eq!(result["partialInvoiceIssued"], true);
+    assert_eq!(result["repeatedNumberAllocation"], true);
     let tenant = first.tenant("billing-permissions-tenant").unwrap();
     assert_protected_collection(&tenant, "accounts").await;
+    let counter = "organization:invoicing:billing:counter:global";
+    let head =
+        crate::zerotrust::objects::metadata_record_key("organization:invoicing:billing", counter);
+    let current: crate::zerotrust::objects::ObjectRecord =
+        tenant.read(head.clone()).await.unwrap().value.unwrap();
+    assert!(super::super::super::crypto::revision(&current.revision).unwrap() > 1);
+    for logical in [head, key("object-locations", counter)] {
+        let pin: sortsys_zerotrust::content_epoch::ContentPin = tenant
+            .read(sortsys_zerotrust::content_epoch::content_pin_key(&logical).unwrap())
+            .await
+            .unwrap()
+            .value
+            .unwrap();
+        pin.validate().unwrap();
+        assert_eq!(pin.record, logical);
+        assert_eq!(pin.physical, logical);
+        assert_eq!(pin.number, "0");
+    }
 }

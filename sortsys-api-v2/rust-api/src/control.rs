@@ -17,6 +17,7 @@ use sortsys_zerotrust::metadata::{
 use crate::error::{ErrorCode, RpcError, RpcResult};
 
 pub mod accounts;
+pub(crate) mod content;
 pub mod tenants;
 
 #[derive(Clone)]
@@ -45,6 +46,7 @@ pub struct Transaction {
     changes: BTreeMap<(String, String), Option<String>>,
     hints: Vec<MetadataHint>,
     journal: Vec<sortsys_zerotrust::journal::JournalAppend>,
+    content: content::ContentState,
 }
 
 #[derive(Deserialize, Serialize, PartialEq)]
@@ -150,6 +152,23 @@ impl Repository {
     }
 
     pub async fn read<T: DeserializeOwned>(&self, record: RecordKey) -> RpcResult<Read<T>> {
+        if record.collection.starts_with("zt-data:") {
+            return Err(unavailable());
+        }
+        if content::collection(&record.collection) {
+            let mut transaction = self.transaction()?;
+            let physical = transaction.physical_record(&record).await?;
+            let value = transaction.read(record.clone()).await?;
+            let version = transaction.read[&(physical.collection, physical.key)]
+                .version
+                .clone();
+            transaction.validate().await?;
+            return Ok(Read {
+                record,
+                version,
+                value,
+            });
+        }
         let mut rows = self.read_records(vec![record]).await?;
         let row = rows.remove(0);
         Ok(Read {
@@ -187,6 +206,32 @@ impl Repository {
     }
 
     pub async fn scan_prefix<T: DeserializeOwned>(
+        &self,
+        collection: &str,
+        prefix: Option<&str>,
+        after: Option<String>,
+        version: Option<String>,
+        limit: usize,
+    ) -> RpcResult<Page<T>> {
+        if collection.starts_with("zt-data:") {
+            return Err(unavailable());
+        }
+        if content::collection(collection) {
+            let mut transaction = self.transaction()?;
+            let page = transaction
+                .scan_filtered(collection, prefix, after, limit)
+                .await?;
+            if version.is_some_and(|version| version != page.version) {
+                return Err(conflict());
+            }
+            transaction.validate().await?;
+            return Ok(page);
+        }
+        self.scan_records(collection, prefix, after, version, limit)
+            .await
+    }
+
+    async fn scan_records<T: DeserializeOwned>(
         &self,
         collection: &str,
         prefix: Option<&str>,
@@ -270,6 +315,7 @@ impl Repository {
             changes: BTreeMap::new(),
             hints: vec![],
             journal: vec![],
+            content: content::ContentState::default(),
         })
     }
 
@@ -457,6 +503,9 @@ impl Transaction {
     /// Observe a collection's version without enumerating its full inventory.
     /// The observation participates in this transaction's CAS validation.
     pub async fn collection_version(&mut self, collection: &str) -> RpcResult<String> {
+        if let Some(version) = self.content.versions.get(collection) {
+            return Ok(version.clone());
+        }
         if let Some(version) = self.collections.get(collection) {
             return Ok(version.clone());
         }
@@ -484,6 +533,22 @@ impl Transaction {
         after: Option<String>,
         limit: usize,
     ) -> RpcResult<Page<T>> {
+        if collection.starts_with("zt-data:") {
+            return Err(unavailable());
+        }
+        if content::collection(collection) {
+            return self.scan_content(collection, prefix, after, limit).await;
+        }
+        self.scan_raw(collection, prefix, after, limit).await
+    }
+
+    async fn scan_raw<T: DeserializeOwned>(
+        &mut self,
+        collection: &str,
+        prefix: Option<&str>,
+        after: Option<String>,
+        limit: usize,
+    ) -> RpcResult<Page<T>> {
         if self
             .changes
             .keys()
@@ -494,7 +559,7 @@ impl Transaction {
         let version = self.collections.get(collection).cloned();
         let page = self
             .repository
-            .scan_prefix(collection, prefix, after, version, limit)
+            .scan_records(collection, prefix, after, version, limit)
             .await?;
         self.collections
             .insert(collection.into(), page.version.clone());
@@ -530,7 +595,7 @@ impl Transaction {
         Ok(values)
     }
 
-    pub async fn prefetch(&mut self, keys: Vec<RecordKey>) -> RpcResult<()> {
+    async fn prefetch_raw(&mut self, keys: Vec<RecordKey>) -> RpcResult<()> {
         let mut selected = HashSet::new();
         let missing = keys
             .into_iter()
@@ -556,12 +621,22 @@ impl Transaction {
         let mut keys = Vec::with_capacity(records.len().saturating_mul(2));
         for record in records {
             keys.push(key(ANCHOR_COLLECTION, &protection_name(&record)));
+            if content::collection(&record.collection) {
+                let pin = sortsys_zerotrust::content_epoch::content_pin_key(&record)?;
+                keys.push(key(ANCHOR_COLLECTION, &protection_name(&pin)));
+                keys.push(pin);
+            }
             keys.push(record);
         }
         self.prefetch(keys).await
     }
 
     async fn encoded(&mut self, record: RecordKey) -> RpcResult<Option<String>> {
+        let record = self.physical_record(&record).await?;
+        self.encoded_raw(record).await
+    }
+
+    async fn encoded_raw(&mut self, record: RecordKey) -> RpcResult<Option<String>> {
         self.observe(record.clone()).await?;
         let identity = (record.collection, record.key);
         let value = match self.changes.get(&identity) {
@@ -572,6 +647,15 @@ impl Transaction {
     }
 
     pub async fn put<T: Serialize + ?Sized>(
+        &mut self,
+        record: RecordKey,
+        value: &T,
+    ) -> RpcResult<()> {
+        let record = self.physical_record(&record).await?;
+        self.put_raw(record, value).await
+    }
+
+    async fn put_raw<T: Serialize + ?Sized>(
         &mut self,
         record: RecordKey,
         value: &T,
@@ -602,7 +686,7 @@ impl Transaction {
             Some(previous) => previous.next(payload)?,
             None => RecordAnchor::initial(payload)?,
         };
-        self.put(record, &next).await
+        self.put_raw(record, &next).await
     }
 
     /// Bind opaque values to an independent checkpoint in the same publication.
@@ -613,6 +697,7 @@ impl Transaction {
             ANCHOR_COLLECTION, RecordAnchor, RecordBinding, RecordCheckpoint,
         };
 
+        self.prefetch_protected(records.to_vec()).await?;
         let anchor_key = key(ANCHOR_COLLECTION, name);
         let previous = self.read::<RecordAnchor>(anchor_key).await?;
         let previous = previous
@@ -635,12 +720,14 @@ impl Transaction {
             }
         }
         for record in records {
+            let physical = self.physical_record(record).await?;
             let value = self
-                .encoded(record.clone())
+                .encoded_raw(physical.clone())
                 .await?
                 .ok_or_else(unavailable)?;
-            let binding = RecordBinding::bind(record.clone(), &value)?;
-            bindings.insert((record.collection.clone(), record.key.clone()), binding);
+            let binding = RecordBinding::bind(physical.clone(), &value)?;
+            bindings.insert((physical.collection.clone(), physical.key.clone()), binding);
+            self.pin_content_record(record, &physical).await?;
         }
         let checkpoint = RecordCheckpoint::new(bindings.into_values().collect())?;
         checkpoint.follows(previous.as_ref())?;
@@ -690,6 +777,7 @@ impl Transaction {
     }
 
     pub async fn delete(&mut self, record: RecordKey) -> RpcResult<()> {
+        let record = self.physical_record(&record).await?;
         self.observe(record.clone()).await?;
         self.changes.insert((record.collection, record.key), None);
         Ok(())
