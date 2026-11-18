@@ -5,7 +5,7 @@ use super::super::access::{
 use super::*;
 use crate::{
     auth::AuthService,
-    control::{Repository, Transaction, key},
+    control::{Repository, ScanRange, Transaction, key},
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -349,6 +349,7 @@ pub(in crate::zerotrust) async fn selected_pages(
     for selection in input.selections {
         reads.push(plan_object_page(context, selection).await?);
     }
+    scan_object_pages(context, &mut reads).await?;
     // Fetch only authorized, visible references. Empty and head-only pages
     // don't consume a storage read or a slot in the ciphertext batch.
     let groups = reads
@@ -405,7 +406,9 @@ pub(in crate::zerotrust) async fn selected_pages(
 }
 
 async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResult<ObjectPage> {
-    let read = plan_object_page(context, input).await?;
+    let mut reads = [plan_object_page(context, input).await?];
+    scan_object_pages(context, &mut reads).await?;
+    let [read] = reads;
     let data = if read.references.is_empty() {
         Vec::new()
     } else {
@@ -420,6 +423,7 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
 struct ObjectPageRead {
     area: DomainRecord,
     sequence: String,
+    range: Option<ScanRange>,
     references: Vec<ObjectRecord>,
     after: Option<String>,
     include_openings: bool,
@@ -455,35 +459,62 @@ async fn plan_object_page(
         return Ok(ObjectPageRead {
             area,
             sequence,
+            range: None,
             references: Vec::new(),
             after: None,
             include_openings: false,
         });
     }
-    let page = context
-        .transaction
-        .scan_prefix::<ObjectRecord>(&collection(&input.domain), &input.prefix, input.after, 32)
-        .await?;
-    let mut references = Vec::new();
-    for row in page.records {
-        let record = row.value.ok_or_else(invalid)?;
-        if record.object != row.record.key || record.domain != input.domain {
-            return Err(invalid());
-        }
-        references.push(record);
-    }
-    super::super::stock::metadata_apply_visibility(&mut context.transaction, &mut references)
-        .await?;
-    super::super::delivery::metadata_apply_visibility(&mut context.transaction, &mut references)
-        .await?;
-    references.retain(|record| !record.deleted);
     Ok(ObjectPageRead {
         area,
         sequence,
-        references,
-        after: page.after,
+        range: Some(ScanRange {
+            collection: collection(&input.domain),
+            prefix: Some(input.prefix),
+            after: input.after,
+            limit: 32,
+        }),
+        references: Vec::new(),
+        after: None,
         include_openings: input.include_openings == Some(true),
     })
+}
+
+async fn scan_object_pages(
+    context: &mut MetadataContext,
+    reads: &mut [ObjectPageRead],
+) -> RpcResult<()> {
+    let (indexes, ranges): (Vec<_>, Vec<_>) = reads
+        .iter_mut()
+        .enumerate()
+        .filter_map(|(index, read)| read.range.take().map(|range| (index, range)))
+        .unzip();
+    let pages = context
+        .transaction
+        .scan_content_pages::<ObjectRecord>(ranges)
+        .await?;
+    for (index, page) in indexes.into_iter().zip(pages) {
+        let read = &mut reads[index];
+        let mut references = Vec::with_capacity(page.records.len());
+        for row in page.records {
+            let record = row.value.ok_or_else(invalid)?;
+            if record.object != row.record.key || record.domain != read.area.id {
+                return Err(invalid());
+            }
+            references.push(record);
+        }
+        super::super::stock::metadata_apply_visibility(&mut context.transaction, &mut references)
+            .await?;
+        super::super::delivery::metadata_apply_visibility(
+            &mut context.transaction,
+            &mut references,
+        )
+        .await?;
+        references.retain(|record| !record.deleted);
+        read.references = references;
+        read.after = page.after;
+    }
+    Ok(())
 }
 
 async fn finish_object_page(
@@ -497,6 +528,7 @@ async fn finish_object_page(
         references,
         after,
         include_openings,
+        ..
     } = read;
     if data.is_empty() != references.is_empty() || data.len() > references.len() {
         return Err(invalid());

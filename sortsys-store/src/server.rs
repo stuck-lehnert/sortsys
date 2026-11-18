@@ -124,6 +124,7 @@ impl IntoResponse for StoreError {
             Self::Integrity => StatusCode::BAD_REQUEST,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict => StatusCode::CONFLICT,
+            Self::BatchTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             _ => StatusCode::SERVICE_UNAVAILABLE,
         };
         (
@@ -718,6 +719,44 @@ async fn metadata_scan(
         })
         .await
 }
+
+async fn metadata_scan_batch(
+    State(state): State<Control>,
+    Json(inputs): Json<Vec<super::metadata::ScanRequest>>,
+) -> Result<Json<Vec<super::metadata::RecordPage>>, StoreError> {
+    let target = inputs.first().ok_or(StoreError::Integrity)?.target.clone();
+    if inputs.len() > super::metadata::MAX_SCAN_BATCH
+        || inputs.iter().any(|input| input.target != target)
+    {
+        return Err(StoreError::Integrity);
+    }
+    state
+        .blocking(move |connection, directory, initialized| {
+            let context = target.context()?;
+            let catalog = metadata_catalog(connection, directory, target, initialized)?;
+            super::metadata::read_transaction(connection, || {
+                let mut pages = Vec::with_capacity(inputs.len());
+                let mut bytes = 0_usize;
+                for input in inputs {
+                    let page = super::metadata::scan(connection, &catalog, &input)?;
+                    for row in &page.records {
+                        bytes += row.value.as_ref().ok_or(StoreError::Integrity)?.len();
+                        if bytes > sortsys_zerotrust::metadata::MAX_BATCH_BYTES {
+                            return Err(StoreError::BatchTooLarge);
+                        }
+                    }
+                    pages.push(page);
+                }
+                let records = pages
+                    .iter()
+                    .flat_map(|page| page.records.iter().cloned())
+                    .collect::<Vec<_>>();
+                super::witness::validate_records(connection, &context, &records)?;
+                Ok(Json(pages))
+            })
+        })
+        .await
+}
 async fn metadata_validate(
     State(state): State<Control>,
     Json(input): Json<super::metadata::BatchRequest>,
@@ -775,6 +814,7 @@ pub async fn run(
             post(metadata_validate_prepared),
         )
         .route("/metadata/scan", post(metadata_scan))
+        .route("/metadata/scan/batch", post(metadata_scan_batch))
         .route("/metadata/events", post(metadata_events))
         .route("/metadata/changes", post(metadata_changes))
         // A byte in a valid record string may become six JSON bytes (\u0000).

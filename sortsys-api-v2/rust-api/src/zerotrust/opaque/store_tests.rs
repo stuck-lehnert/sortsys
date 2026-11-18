@@ -1455,7 +1455,8 @@ async fn prepared_business_changes_publish_atomically_across_api_instances() {
     let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
     let config = QuackConfig::from_env().unwrap().unwrap();
     let first = Repository::system(CipherStore::new(config.clone()).unwrap());
-    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let (store, probe, _proxy) = batching::measured_store(&config).await;
+    let second = Repository::system(store);
     let mut settings = configuration(config);
     settings.jwt_secret = Arc::from(b"disposable-prepared-metadata-signing-secret-2026".as_slice());
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
@@ -1464,6 +1465,10 @@ async fn prepared_business_changes_publish_atomically_across_api_instances() {
     let (first_url, _first_api) = api(auth_service(&settings, first)).await;
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     browser("owner-staging", &root, Some(&[first_url, second_url])).await;
+    assert!(
+        probe.take_scans().contains(&2),
+        "the grouped object-page RPC must send two ranges in one store request"
+    );
 }
 
 #[tokio::test]

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use sortsys_store::{
     CipherStore, StoreError,
-    metadata::{ScanRequest, Target},
+    metadata::{RecordPage, ScanRequest, Target},
 };
 use sortsys_zerotrust::metadata::{
     CollectionCheck, MetadataBatch, MetadataHint, MetadataReceipt, MetadataRecord, RecordCheck,
@@ -36,6 +36,14 @@ pub struct Page<T> {
     pub version: String,
     pub records: Vec<Read<T>>,
     pub after: Option<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ScanRange {
+    pub collection: String,
+    pub prefix: Option<String>,
+    pub after: Option<String>,
+    pub limit: usize,
 }
 
 pub struct Transaction {
@@ -239,21 +247,83 @@ impl Repository {
         version: Option<String>,
         limit: usize,
     ) -> RpcResult<Page<T>> {
-        let page = self
-            .store
-            .metadata_scan(&ScanRequest {
-                target: self.target.clone(),
-                collection: collection.into(),
-                after,
-                version,
-                prefix: prefix.map(str::to_owned),
-                limit: Some(limit),
+        let input = ScanRequest {
+            target: self.target.clone(),
+            collection: collection.into(),
+            after,
+            version,
+            prefix: prefix.map(str::to_owned),
+            limit: Some(limit),
+        };
+        self.scan_record_page(&input).await
+    }
+
+    async fn scan_record_page<T: DeserializeOwned>(
+        &self,
+        input: &ScanRequest,
+    ) -> RpcResult<Page<T>> {
+        let page = self.store.metadata_scan(input).await.map_err(storage)?;
+        Self::decode_page(page, input)
+    }
+
+    async fn scan_record_pages<T: DeserializeOwned>(
+        &self,
+        inputs: &[ScanRequest],
+    ) -> RpcResult<Vec<Page<T>>> {
+        match inputs {
+            [] => return Ok(Vec::new()),
+            [input] => return Ok(vec![self.scan_record_page(input).await?]),
+            _ => {}
+        }
+        let pages = match self.store.metadata_scan_batch(inputs).await {
+            Ok(pages) => pages,
+            Err(StoreError::BatchTooLarge) => {
+                // Decode each bounded page before fetching the next one.
+                let mut pages = Vec::with_capacity(inputs.len());
+                for input in inputs {
+                    pages.push(self.scan_record_page(input).await?);
+                }
+                return Ok(pages);
+            }
+            Err(error) => return Err(storage(error)),
+        };
+        if pages.len() != inputs.len() {
+            return Err(unavailable());
+        }
+        pages
+            .into_iter()
+            .zip(inputs)
+            .map(|(page, input)| Self::decode_page(page, input))
+            .collect()
+    }
+
+    fn decode_page<T: DeserializeOwned>(
+        page: RecordPage,
+        input: &ScanRequest,
+    ) -> RpcResult<Page<T>> {
+        let limit = input.limit.unwrap_or(128);
+        if page.records.len() > limit
+            || page
+                .records
+                .windows(2)
+                .any(|rows| rows[0].record.key >= rows[1].record.key)
+            || page.after.as_deref().is_some_and(|after| {
+                page.records.len() != limit
+                    || page.records.last().map(|row| row.record.key.as_str()) != Some(after)
             })
-            .await
-            .map_err(storage)?;
+        {
+            return Err(unavailable());
+        }
         let mut records = Vec::with_capacity(page.records.len());
+        let prefix = input.prefix.as_deref().unwrap_or("");
+        let lower = input.after.as_deref().unwrap_or("");
         for row in page.records {
-            if row.record.collection != collection || row.version.is_none() || row.value.is_none() {
+            if row.record.collection != input.collection
+                || !row.record.key.starts_with(prefix)
+                || row.record.key.as_str() <= lower
+                || row.version.is_none()
+                || row.value.is_none()
+            {
                 return Err(unavailable());
             }
             let value = row.value.as_deref().map(decode).transpose()?;
@@ -583,21 +653,52 @@ impl Transaction {
         after: Option<String>,
         limit: usize,
     ) -> RpcResult<Page<T>> {
-        if self
-            .changes
-            .keys()
-            .any(|(changed, _)| changed == collection)
-        {
-            return Err(conflict());
+        self.scan_raw_pages(vec![ScanRange {
+            collection: collection.into(),
+            prefix: prefix.map(str::to_owned),
+            after,
+            limit,
+        }])
+        .await?
+        .pop()
+        .ok_or_else(unavailable)
+    }
+
+    async fn scan_raw_pages<T: DeserializeOwned>(
+        &mut self,
+        ranges: Vec<ScanRange>,
+    ) -> RpcResult<Vec<Page<T>>> {
+        let mut inputs = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            if self
+                .changes
+                .keys()
+                .any(|(changed, _)| *changed == range.collection)
+            {
+                return Err(conflict());
+            }
+            inputs.push(ScanRequest {
+                target: self.repository.target.clone(),
+                version: self.collections.get(&range.collection).cloned(),
+                collection: range.collection,
+                prefix: range.prefix,
+                after: range.after,
+                limit: Some(range.limit),
+            });
         }
-        let version = self.collections.get(collection).cloned();
-        let page = self
-            .repository
-            .scan_records(collection, prefix, after, version, limit)
-            .await?;
-        self.collections
-            .insert(collection.into(), page.version.clone());
-        Ok(page)
+        let pages = self.repository.scan_record_pages(&inputs).await?;
+        for (input, page) in inputs.into_iter().zip(&pages) {
+            if self
+                .collections
+                .get(&input.collection)
+                .is_some_and(|version| version != &page.version)
+            {
+                return Err(conflict());
+            }
+            self.collections
+                .insert(input.collection, page.version.clone());
+        }
+        Ok(pages)
     }
 
     async fn observe(&mut self, record: RecordKey) -> RpcResult<()> {

@@ -62,10 +62,13 @@ Eine Sammelantwort enthält höchstens 32 MiB. Überschreitet sie diese Grenze,
 teilt der Client die Anfrage auf. Berechtigungsfehler, beschädigte Nachweise und
 Versionskonflikte lösen diese Ausweichbehandlung nicht aus. Umfangreiche
 historische Schlüsselverzeichnisse können weiterhin einzeln geladen werden.
-Bei mehreren Seiten mit Inhalt fragt die API die Größen der benötigten
-Chiffrate gemeinsam in DuckDB ab. Passen sie in die Antwort, liest sie die
-ausgewählten Chiffrate ebenfalls gemeinsam. Seiten, die nur einen Speicherstand
-liefern, benötigen keinen Abruf von Chiffraten.
+Für mehrere Seiten mit Inhalt liest der Datendienst die Metadatenbereiche in
+einer Sammelabfrage. Nach einer Rücksicherung enthält die Abfrage auch die
+Verweise auf dauerhaft erhaltene Datensätze. Jeder Bereich behält seinen
+eigenen Cursor und seine Versionsprüfung. Die API fragt anschließend gemeinsam
+die Größen der benötigten Chiffrate ab und liest die Chiffrate gebündelt, wenn
+sie in die Antwort passen. Seiten, die nur einen Speicherstand liefern,
+benötigen keinen Abruf von Chiffraten.
 
 Vor der gemeinsamen Ansicht werden die gelesenen Bereichsstände erneut geprüft.
 Dafür genügt der Vergleich mit den zuvor bestätigten Versionen; unveränderte

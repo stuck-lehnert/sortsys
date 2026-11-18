@@ -19,11 +19,16 @@ pub(super) struct ReadProbe {
     upstream: Arc<str>,
     client: reqwest::Client,
     reads: Arc<Mutex<Vec<Vec<RecordKey>>>>,
+    scans: Arc<Mutex<Vec<usize>>>,
 }
 
 impl ReadProbe {
     pub(super) fn take_reads(&self) -> Vec<Vec<RecordKey>> {
         std::mem::take(&mut *self.reads.lock().unwrap())
+    }
+
+    pub(super) fn take_scans(&self) -> Vec<usize> {
+        std::mem::take(&mut *self.scans.lock().unwrap())
     }
 }
 
@@ -36,6 +41,13 @@ async fn forward_metadata(
     if path == "metadata/read" {
         let input: sortsys_store::metadata::ReadRequest = serde_json::from_slice(&body).unwrap();
         probe.reads.lock().unwrap().push(input.records);
+    }
+    if path == "metadata/scan/batch" {
+        let inputs: Vec<sortsys_store::metadata::ScanRequest> =
+            serde_json::from_slice(&body).unwrap();
+        probe.scans.lock().unwrap().push(inputs.len());
+    } else if path == "metadata/scan" {
+        probe.scans.lock().unwrap().push(1);
     }
     let response = probe
         .client
@@ -58,6 +70,7 @@ pub(super) async fn measured_store(config: &QuackConfig) -> (CipherStore, ReadPr
         upstream: config.control_url.clone(),
         client: reqwest::Client::new(),
         reads: Arc::default(),
+        scans: Arc::default(),
     };
     let router = Router::new()
         .route("/{*path}", post(forward_metadata))
@@ -70,6 +83,142 @@ pub(super) async fn measured_store(config: &QuackConfig) -> (CipherStore, ReadPr
     let mut measured = config.clone();
     measured.control_url = Arc::from(format!("http://{address}"));
     (CipherStore::new(measured).unwrap(), probe, task)
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB and loopback listeners"]
+async fn collection_ranges_share_one_request_before_and_after_content_restore() {
+    use crate::control::ScanRange;
+    use ed25519_dalek::{Signer, SigningKey};
+    use sortsys_zerotrust::{content_epoch::ContentEpoch, crypto::encode};
+
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let tenant = "scan-batching-tenant";
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    assert!(config.token.starts_with("sortsys-disposable-"));
+    let (store, probe, _proxy) = measured_store(&config).await;
+    let first = Repository::system(store).tenant(tenant).unwrap();
+    let second = Repository::system(CipherStore::new(config).unwrap())
+        .tenant(tenant)
+        .unwrap();
+    let ranges = || {
+        vec![
+            ScanRange {
+                collection: "documents".into(),
+                prefix: Some("invoice:".into()),
+                after: None,
+                limit: 1,
+            },
+            ScanRange {
+                collection: "object-changes".into(),
+                prefix: Some("log:".into()),
+                after: None,
+                limit: 2,
+            },
+        ]
+    };
+
+    let mut create = second.transaction().unwrap();
+    create
+        .put_protected(key("documents", "invoice:1"), &"retained")
+        .await
+        .unwrap();
+    create
+        .put(key("documents", "invoice:2"), &"original")
+        .await
+        .unwrap();
+    create
+        .put(key("object-changes", "log:1"), &"original log")
+        .await
+        .unwrap();
+    create.commit().await.unwrap();
+
+    let mut original = first.transaction().unwrap();
+    let pages = original
+        .scan_content_pages::<String>(ranges())
+        .await
+        .unwrap();
+    assert_eq!(probe.take_scans(), [2]);
+    assert_eq!(pages[0].after.as_deref(), Some("invoice:1"));
+    assert_eq!(pages[0].records[0].value.as_deref(), Some("retained"));
+    assert_eq!(pages[1].records[0].value.as_deref(), Some("original log"));
+    original.validate().await.unwrap();
+
+    let signer = SigningKey::from_bytes(&[71; 32]);
+    let mut head = ContentEpoch {
+        format: "zt-content-epoch-v1".into(),
+        tenant: tenant.into(),
+        authority_generation: "1".into(),
+        number: "1".into(),
+        previous: None,
+        source_number: "0".into(),
+        source_head: None,
+        snapshot: encode(&[15; 32]),
+        actor: "test-authority".into(),
+        signature: String::new(),
+    };
+    head.signature = encode(&signer.sign(&head.frame().unwrap()).to_bytes());
+    let mut restore = second.transaction().unwrap();
+    restore
+        .put(sortsys_zerotrust::content_epoch::head_key(), &head)
+        .await
+        .unwrap();
+    restore.commit().await.unwrap();
+    let mut create = second.transaction().unwrap();
+    create
+        .put(key("documents", "invoice:3"), &"restored")
+        .await
+        .unwrap();
+    create
+        .put(key("object-changes", "log:2"), &"restored log")
+        .await
+        .unwrap();
+    create.commit().await.unwrap();
+
+    let mut restored = first.transaction().unwrap();
+    let pages = restored
+        .scan_content_pages::<String>(ranges())
+        .await
+        .unwrap();
+    assert_eq!(probe.take_scans(), [4]);
+    assert_eq!(pages[0].after.as_deref(), Some("invoice:1"));
+    assert_eq!(pages[0].records[0].value.as_deref(), Some("retained"));
+    assert_eq!(pages[1].records[0].record.key, "log:2");
+    assert_eq!(pages[1].records[0].value.as_deref(), Some("restored log"));
+    let mut remaining = ranges();
+    remaining[0].after = pages[0].after.clone();
+    let next = restored
+        .scan_content_pages::<String>(remaining)
+        .await
+        .unwrap();
+    assert_eq!(probe.take_scans(), [4]);
+    assert_eq!(next[0].version, pages[0].version);
+    assert!(next[0].after.is_none());
+    assert_eq!(next[0].records[0].record.key, "invoice:3");
+    assert_eq!(next[0].records[0].value.as_deref(), Some("restored"));
+
+    let mut competing = second.transaction().unwrap();
+    competing
+        .put(key("object-changes", "unrelated:1"), &"new")
+        .await
+        .unwrap();
+    competing.commit().await.unwrap();
+    assert_eq!(
+        restored
+            .scan_content_pages::<String>(ranges())
+            .await
+            .err()
+            .unwrap()
+            .code,
+        ErrorCode::Conflict,
+    );
+    println!(
+        "Two selected ranges use one HTTP request in either epoch; retained rows, cursors and concurrent writes are checked."
+    );
 }
 
 #[tokio::test]

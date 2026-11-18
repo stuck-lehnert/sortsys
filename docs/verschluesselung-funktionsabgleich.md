@@ -14,17 +14,18 @@ vorhandenen Funktionen, nativen Mehrinstanztests und noch offenen Prüfungen.
 Vergleichbare Suchergebnisse oder eine bestimmte Geschwindigkeit werden nicht
 allein aus der Wahl von DuckDB abgeleitet.
 
-Ein früherer Produktionsbuild hat alle 18 Browserabläufe bestanden. Der Lauf verwendet
-eine Kopie des separat geprüften Musterbestands und prüft unter anderem
-Abrechnung, gemeinsame GAEB-Bearbeitung sowie Sichtbarkeit und Rechteentzug. Die
-beiden unabhängig konfigurierten API-Instanzen laufen dabei in einem
-Rust-Testprozess. Ein zusätzlicher nativer Lauf verwendet zwei getrennte
-API-Prozesse mit demselben DuckDB-Dienst. Er prüft die Ersteinrichtung,
-Lieferscheine, Berichte, Einsatzänderungen und gemeinsame GAEB-Dokumente.
-Gewöhnliche HTTP-Anfragen wechseln zwischen beiden Prozessen; gemeinsame
-Dokumentänderungen werden über den ersten geschrieben und über den WebSocket
-des zweiten empfangen. Dieser Prozessnachweis umfasst nicht sämtliche
-18 Browserabläufe.
+Ein früherer Produktionsbuild hat alle 18 Browserabläufe mit zwei API-Instanzen
+in einem Rust-Testprozess bestanden. Für die aktuelle Fassung baut der Test den
+Musterbestand mit zwei getrennten API-Prozessen und einem gemeinsamen
+DuckDB-Dienst auf. Der frische Aufbau prüft beide Beispielkonten und 50
+Geschäftsvorgänge sowie den Erhalt manueller Änderungen nach einem Neustart
+des Seedings.
+
+Der Browserlauf mit einer Kopie dieses Bestands hat Anmeldung, GAEB-Autosave
+und gemeinsame Bearbeitung, Projektanhänge, Dokumentensuche und gesperrte
+Direktlinks geprüft. Ein Zeitüberschritt beim Neuladen einer Werkzeugansicht
+beendete den Lauf. Ein vollständiger Durchlauf aller Browserabläufe steht für
+die aktuelle Fassung aus.
 
 ## Zugang und Freigaben
 

@@ -317,63 +317,110 @@ impl Transaction {
         after: Option<String>,
         limit: usize,
     ) -> RpcResult<Page<T>> {
-        if matches!(self.repository.target, Target::System) {
-            return self.scan_raw(collection, prefix, after, limit).await;
+        self.scan_content_pages(vec![ScanRange {
+            collection: collection.into(),
+            prefix: prefix.map(str::to_owned),
+            after,
+            limit,
+        }])
+        .await?
+        .pop()
+        .ok_or_else(unavailable)
+    }
+
+    pub(crate) async fn scan_content_pages<T: DeserializeOwned>(
+        &mut self,
+        ranges: Vec<ScanRange>,
+    ) -> RpcResult<Vec<Page<T>>> {
+        if ranges.is_empty() {
+            return Ok(Vec::new());
         }
-        if self
-            .content
-            .resolved
-            .iter()
-            .any(|((logical, _), physical)| {
-                logical == collection
+        for range in &ranges {
+            if !collection(&range.collection) {
+                return Err(unavailable());
+            }
+            if self.content.resolved.iter().any(|((name, _), physical)| {
+                name == &range.collection
                     && self
                         .changes
                         .contains_key(&(physical.collection.clone(), physical.key.clone()))
-            })
-        {
-            return Err(conflict());
+            }) {
+                return Err(conflict());
+            }
+        }
+        if matches!(self.repository.target, Target::System) {
+            return self.scan_raw_pages(ranges).await;
         }
         let head = self.content_head().await?;
-        let number = head.as_ref().map_or("0", |head| head.number.as_str());
-        let sample = key(collection, "sample");
-        let physical = namespace_record(&sample, number)?.collection;
-        if number == "0" {
-            let current = self.scan_raw::<T>(&physical, prefix, after, limit).await?;
-            self.content
-                .versions
-                .insert(collection.into(), current.version.clone());
-            return Ok(current);
+        let Some(head) = head else {
+            let names = ranges
+                .iter()
+                .map(|range| range.collection.clone())
+                .collect::<Vec<_>>();
+            let pages = self.scan_raw_pages(ranges).await?;
+            for (name, page) in names.into_iter().zip(&pages) {
+                self.content.versions.insert(name, page.version.clone());
+            }
+            return Ok(pages);
+        };
+
+        let mut physical = Vec::with_capacity(ranges.len() * 2);
+        for range in &ranges {
+            let sample = key(&range.collection, "sample");
+            physical.push(ScanRange {
+                collection: namespace_record(&sample, &head.number)?.collection,
+                ..range.clone()
+            });
+            physical.push(ScanRange {
+                collection: content_pin_key(&sample)?.collection,
+                ..range.clone()
+            });
         }
-        let current = self
-            .scan_raw::<serde_json::Value>(&physical, prefix, after.clone(), limit)
-            .await?;
-        let pin_collection = content_pin_key(&sample)?.collection;
-        let pins = self
-            .scan_raw::<ContentPin>(&pin_collection, prefix, after, limit)
-            .await?;
-        let has_more = current.after.is_some() || pins.after.is_some();
-        let mut selected = BTreeMap::new();
-        for row in current.records {
-            selected.insert(row.record.key.clone(), ContentCandidate::Current(row));
+        let mut pages = self
+            .scan_raw_pages::<serde_json::Value>(physical)
+            .await?
+            .into_iter();
+        let mut merged = Vec::with_capacity(ranges.len());
+        let head_record = head_key();
+        let head_version = self.read[&(head_record.collection, head_record.key)]
+            .version
+            .as_deref()
+            .unwrap_or("0");
+        for range in ranges {
+            let current = pages.next().ok_or_else(unavailable)?;
+            let pins = pages.next().ok_or_else(unavailable)?;
+            merged.push(merge_content_pages(
+                range,
+                current,
+                pins,
+                &head.number,
+                head_version,
+            )?);
         }
-        for row in pins.records {
-            let pin = row.value.ok_or_else(unavailable)?;
-            check_pin(&pin, &key(collection, &row.record.key), number)?;
-            selected.insert(pin.record.key.clone(), ContentCandidate::Pinned(pin));
-        }
-        let has_more = has_more || selected.len() > limit;
-        let selected = selected.into_iter().take(limit).collect::<Vec<_>>();
-        let reads = selected
+        let retained = merged
             .iter()
-            .filter_map(|(_, candidate)| match candidate {
-                ContentCandidate::Pinned(pin) => Some(pin.physical.clone()),
-                ContentCandidate::Current(_) => None,
+            .flat_map(|page| {
+                page.rows.values().filter_map(|candidate| match candidate {
+                    ContentCandidate::Pinned(pin) => Some(pin.physical.clone()),
+                    ContentCandidate::Current(_) => None,
+                })
             })
             .collect();
-        self.prefetch_raw(reads).await?;
-        let mut records = Vec::new();
-        for (id, candidate) in selected {
-            let logical = key(collection, &id);
+        self.prefetch_raw(retained).await?;
+        let mut results = Vec::with_capacity(merged.len());
+        for page in merged {
+            results.push(self.resolve_merged_content(page).await?);
+        }
+        Ok(results)
+    }
+
+    async fn resolve_merged_content<T: DeserializeOwned>(
+        &mut self,
+        page: ContentScan,
+    ) -> RpcResult<Page<T>> {
+        let mut records = Vec::with_capacity(page.rows.len());
+        for (id, candidate) in page.rows {
+            let logical = key(&page.collection, &id);
             let (physical, value, version) = match candidate {
                 ContentCandidate::Pinned(pin) => {
                     let value = self
@@ -394,46 +441,67 @@ impl Transaction {
             };
             self.content
                 .resolved
-                .insert((collection.into(), id), physical);
+                .insert((page.collection.clone(), id), physical);
             records.push(Read {
                 record: logical,
                 version,
                 value: Some(value),
             });
         }
-        // Both source collections and the view head are independently guarded.
-        // Their greatest global revision is a stable scalar page version.
-        let head_record = head_key();
-        let head_version = self.read[&(head_record.collection, head_record.key)]
-            .version
-            .as_deref()
-            .unwrap_or("0");
-        let version = [
-            current.version.as_str(),
-            pins.version.as_str(),
-            head_version,
-        ]
-        .into_iter()
-        .map(content_number)
-        .collect::<RpcResult<Vec<_>>>()?
-        .into_iter()
-        .max()
-        .ok_or_else(unavailable)?
-        .to_string();
         self.content
             .versions
-            .insert(collection.into(), version.clone());
-        let after = if has_more {
+            .insert(page.collection, page.version.clone());
+        let after = if page.has_more {
             records.last().map(|row| row.record.key.clone())
         } else {
             None
         };
         Ok(Page {
-            version,
+            version: page.version,
             records,
             after,
         })
     }
+}
+
+struct ContentScan {
+    collection: String,
+    rows: BTreeMap<String, ContentCandidate>,
+    has_more: bool,
+    version: String,
+}
+
+fn merge_content_pages(
+    range: ScanRange,
+    current: Page<serde_json::Value>,
+    pins: Page<serde_json::Value>,
+    number: &str,
+    head_version: &str,
+) -> RpcResult<ContentScan> {
+    let has_more = current.after.is_some() || pins.after.is_some();
+    let mut rows = BTreeMap::new();
+    for row in current.records {
+        rows.insert(row.record.key.clone(), ContentCandidate::Current(row));
+    }
+    for row in pins.records {
+        let pin: ContentPin = serde_json::from_value(row.value.ok_or_else(unavailable)?)
+            .map_err(|_| unavailable())?;
+        check_pin(&pin, &key(&range.collection, &row.record.key), number)?;
+        rows.insert(pin.record.key.clone(), ContentCandidate::Pinned(pin));
+    }
+    let has_more = has_more || rows.len() > range.limit;
+    // Both source collections and the view head are independently guarded.
+    // Their greatest global revision is a stable scalar page version.
+    let version = content_number(&current.version)?
+        .max(content_number(&pins.version)?)
+        .max(content_number(head_version)?)
+        .to_string();
+    Ok(ContentScan {
+        collection: range.collection,
+        rows: rows.into_iter().take(range.limit).collect(),
+        has_more,
+        version,
+    })
 }
 
 fn content_number(number: &str) -> RpcResult<i64> {

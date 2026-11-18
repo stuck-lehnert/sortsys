@@ -585,6 +585,9 @@ impl CipherStore {
         if response.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(StoreError::Integrity);
         }
+        if response.status() == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
+            return Err(StoreError::BatchTooLarge);
+        }
         if !response.status().is_success() {
             return Err(StoreError::Unavailable("metadata-response"));
         }
@@ -686,6 +689,12 @@ impl CipherStore {
         input: &super::metadata::ScanRequest,
     ) -> Result<super::metadata::RecordPage, StoreError> {
         self.metadata_request("scan", input).await
+    }
+    pub async fn metadata_scan_batch(
+        &self,
+        inputs: &[super::metadata::ScanRequest],
+    ) -> Result<Vec<super::metadata::RecordPage>, StoreError> {
+        self.metadata_request("scan/batch", inputs).await
     }
     pub async fn metadata_validate(
         &self,

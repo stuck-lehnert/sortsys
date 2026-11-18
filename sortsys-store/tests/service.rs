@@ -8,7 +8,9 @@ use std::{
 };
 
 use sortsys_store::{
-    CipherStore, QuackConfig, StoreError, content_id, metadata::Target, tenant_id,
+    CipherStore, QuackConfig, StoreError, content_id,
+    metadata::{ScanRequest, Target},
+    tenant_id,
 };
 use sortsys_zerotrust::metadata::{MetadataBatch, RecordCheck, RecordKey, RecordPut};
 
@@ -143,6 +145,24 @@ async fn independent_api_clients_share_atomic_tenant_files_and_restorable_backup
     let target = Target::Tenant {
         tenant: "first".into(),
     };
+    let scan = |target| ScanRequest {
+        target,
+        collection: "technical-records".into(),
+        after: None,
+        version: None,
+        prefix: None,
+        limit: Some(1),
+    };
+    let mixed_tenants = [
+        scan(target.clone()),
+        scan(Target::Tenant {
+            tenant: "second".into(),
+        }),
+    ];
+    assert!(matches!(
+        first.metadata_scan_batch(&mixed_tenants).await,
+        Err(StoreError::Integrity)
+    ));
     let other = Target::Tenant {
         tenant: "second".into(),
     };

@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use sortsys_zerotrust::metadata::{MetadataBatch, MetadataReceipt, MetadataRecord, RecordKey};
 use std::collections::BTreeSet;
 
+pub const MAX_SCAN_BATCH: usize = 32;
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Target {
