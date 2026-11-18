@@ -958,7 +958,14 @@ try {
         .click();
       await expect(
         browserPage.getByText("verfügbar", { exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 45_000 });
+    }
+    async function expectBookingHistory(browserPage, count) {
+      // The full history is loaded separately from availability through the
+      // unoptimized local API. Assert the result while both sessions are live.
+      await expect(
+        browserPage.getByText(`Buchungshistorie (${count})`, { exact: true }),
+      ).toBeVisible({ timeout: 45_000 });
     }
     try {
       await login(page, "john.doe");
@@ -988,9 +995,7 @@ try {
         .getByRole("button", { name: "Buchen", exact: true })
         .click();
       await expect(competing).toBeHidden({ timeout: 45_000 });
-      await expect(
-        peer.getByText("Buchungshistorie (1)", { exact: true }),
-      ).toBeVisible();
+      await expectBookingHistory(peer, 1);
 
       await dialog.getByRole("button", { name: "Buchen", exact: true }).click();
       await expect(
@@ -1011,9 +1016,7 @@ try {
       });
       await peer.goto(`${peerServer.origin}${firstPath}`);
       await expect(peer.getByText("verfügbar", { exact: true })).toBeVisible();
-      await expect(
-        peer.getByText("Buchungshistorie (0)", { exact: true }),
-      ).toBeVisible();
+      await expectBookingHistory(peer, 0);
 
       await dialog.getByRole("button", { name: /^Entfernen 910002 / }).click();
       await tools.fill("Rührwerk 2");
@@ -1036,19 +1039,13 @@ try {
       // its durable signatures form one asynchronous submission.
       await expect(dialog).toBeHidden({ timeout: 45_000 });
       await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
-      await expect(
-        page.getByText("Buchungshistorie (1)", { exact: true }),
-      ).toBeVisible();
+      await expectBookingHistory(page, 1);
       await peer.goto(`${peerServer.origin}${secondPath}`);
       await expect(peer.getByText("gebucht", { exact: true })).toBeVisible();
-      await expect(
-        peer.getByText("Buchungshistorie (2)", { exact: true }),
-      ).toBeVisible();
+      await expectBookingHistory(peer, 2);
       await page.reload();
       await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
-      await expect(
-        page.getByText("Buchungshistorie (1)", { exact: true }),
-      ).toBeVisible();
+      await expectBookingHistory(page, 1);
       await expect(
         page.getByRole("link", { name: "Doe, John", exact: true }),
       ).toHaveCount(2);

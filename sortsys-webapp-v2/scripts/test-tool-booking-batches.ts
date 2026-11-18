@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { Client, MutateInput } from "@sortsys/v2-client";
-import type { Action } from "@sortsys/zerotrust/sortsys";
+import { immutableObject, type Action } from "@sortsys/zerotrust/sortsys";
 import { publicId, newProductRowId } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 import { toolCollection } from "../app/lib/data/toolData";
@@ -15,7 +15,33 @@ import {
 type RequestHook = (
   url: URL,
   next: () => Promise<Response>,
+  options?: RequestInit,
 ) => Promise<Response>;
+
+function isBookingPublication(
+  url: URL,
+  options: RequestInit | undefined,
+  operationId: string,
+) {
+  if (
+    !url.pathname.endsWith("/zerotrust.objects.batch") ||
+    typeof options?.body !== "string"
+  ) {
+    return false;
+  }
+  const receipt = immutableObject(
+    `tool-tracking:${operationId}`,
+    "master-data",
+    "tool-booking",
+    operationId,
+  );
+  const calls = Object.values(JSON.parse(options.body)) as {
+    json: MutateInput<"zerotrust.objects.batch">;
+  }[];
+  return calls.some(({ json }) =>
+    json.objects?.some(({ envelope }) => envelope.object === receipt),
+  );
+}
 
 export async function exerciseToolBookingBatches(
   owner: Client,
@@ -153,8 +179,8 @@ export async function exerciseToolBookingBatches(
     await denyAction(deniedScope, "update", false);
 
     let pretend = true;
-    install(async (url, next) => {
-      if (pretend && url.pathname.endsWith("/zerotrust.objects.batch")) {
+    install(async (url, next, options) => {
+      if (pretend && isBookingPublication(url, options, input.operationId)) {
         pretend = false;
         return Response.json([
           { result: { data: { json: { success: true } } } },
@@ -190,8 +216,8 @@ export async function exerciseToolBookingBatches(
 
     let winner: string | null = null;
     let race = true;
-    install(async (url, next) => {
-      if (race && url.pathname.endsWith("/zerotrust.objects.batch")) {
+    install(async (url, next, options) => {
+      if (race && isBookingPublication(url, options, input.operationId)) {
         race = false;
         winner = (
           await required(
@@ -223,8 +249,8 @@ export async function exerciseToolBookingBatches(
       ],
     };
     let lost = true;
-    install(async (url, next) => {
-      if (lost && url.pathname.endsWith("/zerotrust.objects.batch")) {
+    install(async (url, next, options) => {
+      if (lost && isBookingPublication(url, options, input.operationId)) {
         lost = false;
         const response = await next();
         assert.equal(response.ok, true);

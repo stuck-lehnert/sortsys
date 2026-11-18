@@ -84,6 +84,12 @@ function raw() {
                   ],
                   identities: [setup.owner],
                 };
+              } else if (path === "zerotrust.events.open") {
+                value = {
+                  ticket: "disposable-test-ticket",
+                  subject: "user:1",
+                  generation: setup.authority.generation,
+                };
               } else if (path === "zerotrust.policy.get") {
                 value = setup.policy;
               } else if (path === "zerotrust.creations.list") {
@@ -746,6 +752,75 @@ test("requests waiting for synchronization cannot execute under a replacement be
     expect(opened).toBe(0);
   } finally {
     client.dispose();
+  }
+});
+
+test("a remote change refreshes each active read once after synchronization", async () => {
+  await account();
+  const { base } = raw();
+  const store = products();
+  let reads = 0;
+  store.list = async () => [{ reads: ++reads }];
+  const fingerprint = base64(new Uint8Array(32).fill(5));
+  const previousSocket = globalThis.WebSocket;
+  let socket;
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    constructor() {
+      socket = this;
+      queueMicrotask(() =>
+        this.message({ type: "challenge", nonce: "disposable-challenge" }),
+      );
+    }
+    message(value) {
+      this.onmessage?.({ data: JSON.stringify(value) });
+    }
+    send() {
+      this.message({ type: "ready", fingerprint });
+    }
+    close() {
+      this.readyState = 3;
+      this.onclose?.();
+    }
+  };
+  const client = createBusinessClient(base, {
+    endpoint: "https://private-client.test",
+    realtime: true,
+    openProducts: async () => store,
+  });
+  const initial = Promise.withResolvers();
+  const refreshed = Promise.withResolvers();
+  const results = [];
+  const subscription = client.streamQuery("products.list", {}).subscribe(
+    ([rows, error]) => {
+      if (error) {
+        if (results.length === 0) initial.reject(error);
+        else refreshed.reject(error);
+        return;
+      }
+      results.push(rows);
+      if (results.length === 1) initial.resolve();
+      if (results.length === 2) refreshed.resolve();
+    },
+  );
+  try {
+    await initial.promise;
+    socket.message({
+      type: "changed",
+      reset: false,
+      all: false,
+      control: false,
+      domains: { "catalog:products:master-data": "2" },
+      fingerprint,
+    });
+    await refreshed.promise;
+    expect(store.counts().refreshes).toBe(1);
+    expect(results).toEqual([[{ reads: 1 }], [{ reads: 2 }]]);
+  } finally {
+    subscription.unsubscribe();
+    client.dispose();
+    globalThis.WebSocket = previousSocket;
   }
 });
 

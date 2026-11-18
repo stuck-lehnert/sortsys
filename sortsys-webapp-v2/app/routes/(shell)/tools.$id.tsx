@@ -10,6 +10,7 @@ import {
   Tile,
 } from "@sortsys/react-components";
 import { useParams } from "react-router";
+import { of } from "rxjs";
 import { MyHeader } from "~/components/MyHeader";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
@@ -59,13 +60,22 @@ export default function ToolDetailPage() {
     () => client.streamQuery("tools.get", { id: id! }),
     [id],
   );
+  const toolIsReady = !!tool && tool.id === id && !err;
+  // A booking-history load can span many encrypted areas. Let the current
+  // tool and its availability finish before those queries join the queue.
   const [inventories, inventoriesError] = useClientStream(
-    () => client.streamQuery("tools.inventories.list", { toolId: id! }),
-    [id],
+    () =>
+      toolIsReady
+        ? client.streamQuery("tools.inventories.list", { toolId: id! })
+        : of<[null, null]>([null, null]),
+    [id, toolIsReady],
   );
   const [trackings, trackingsError] = useClientStream(
-    () => client.streamQuery("tools.trackings.list", { toolId: id! }),
-    [id],
+    () =>
+      toolIsReady
+        ? client.streamQuery("tools.trackings.list", { toolId: id! })
+        : of<[null, null]>([null, null]),
+    [id, toolIsReady],
   );
 
   useTitle(
@@ -154,7 +164,7 @@ export default function ToolDetailPage() {
   });
 
   if (err) return <NotFound reason="resourceNotFound" />;
-  if (!tool) return <Loading withOverlay />;
+  if (!toolIsReady) return <Loading withOverlay />;
 
   return (
     <>

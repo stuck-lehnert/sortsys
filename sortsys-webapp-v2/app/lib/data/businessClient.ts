@@ -507,6 +507,8 @@ export function createBusinessClient(
         resetEditors();
         contentAccess.refresh();
       }
+      // Remote change handling installs its synchronization barrier before the
+      // microtask runs. These reads wait for it without a second notification.
       if (!closed) notify(affected);
     });
   });
@@ -677,19 +679,6 @@ export function createBusinessClient(
       }
     });
     synchronization = work.catch(() => undefined);
-    if (change.reset)
-      notify(); // New queries wait for the invalidation barrier.
-    else
-      void synchronization.then(() => {
-        if (closed || signal.aborted || expected !== unlockedAccount()) return;
-        if (change.all) {
-          notify();
-          return;
-        }
-        notify(
-          affectedQueries(new Set(Object.keys(change.domains)), change.control),
-        );
-      });
   }
   function reset() {
     reads.clear();

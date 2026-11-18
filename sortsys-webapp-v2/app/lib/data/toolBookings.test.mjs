@@ -184,6 +184,13 @@ test("a mixed batch ends old bookings, denies transfers and creates every bookin
     f.tenant.calls.length = 0;
     const output = await f.store.mutate("tools.trackMany", f.input);
     expect(output.trackings).toEqual(f.targets);
+    const access = f.tenant.calls.find(
+      (call) => call.path === "zerotrust.access.snapshot",
+    );
+    expect(access.input.domains).toContain(f.master.domain);
+    expect(access.input.domains).toContain(f.second.domain);
+    expect(access.input.domains).toContain(f.oldScope.domain);
+    expect(access.input.domains).not.toContain(f.oldPrice.domain);
     const commits = f.tenant.calls.filter(
       (call) => call.path === "zerotrust.objects.batch",
     );

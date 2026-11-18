@@ -268,6 +268,73 @@ export function createProtectedTools(
       prepared.close();
     }
   }
+  async function returnTool(resource: string, actorId: string, now: string) {
+    const toolId = addressId(resource);
+    const master = toolRequest("tool", resource, "master-data");
+    const booking = toolBookingRequest(resource);
+    const basis = await runtime.read([master, booking], (view) => {
+      values(view, master);
+      return {
+        head: view.head(master),
+        trackingId: activeToolBooking(view, document(view, master)!.value),
+      };
+    });
+    const checkTool = (tx: DataTransaction) => {
+      if (
+        tx.head(master).sequence !== basis.head.sequence ||
+        activeToolBooking(tx, document(tx, master)!.value) !== basis.trackingId
+      ) {
+        throw new ProtectedWriteConflict();
+      }
+    };
+    if (basis.trackingId === null) {
+      await persist([master, booking], (tx) => {
+        checkTool(tx);
+        setActiveToolBooking(tx, resource, null);
+      });
+      return;
+    }
+    const trackingId = basis.trackingId;
+    const tracking = toolRequest("tool-tracking", trackingId, "master-data");
+    const transfers = toolRequest("tool-tracking", trackingId, "scope");
+    const active = await runtime.read([tracking], (view) => {
+      const row = values(view, tracking);
+      if (row.tool_id !== toolId || row.ended_at !== null) {
+        throw new InvalidProtectedData();
+      }
+      return {
+        head: view.head(tracking),
+        row: { table: "tool_trackings", values: row },
+      };
+    });
+    const usage = toolUsageRequests(active.row, ["master-data"]);
+    await persist([master, booking, tracking, transfers, ...usage], (tx) => {
+      checkTool(tx);
+      if (tx.head(tracking).sequence !== active.head.sequence) {
+        throw new ProtectedWriteConflict();
+      }
+      tx.patch(
+        "tool_trackings",
+        { id: addressId(trackingId) },
+        {
+          ended_at: now,
+          ended_by_user_id: actorId,
+          modified_at: now,
+        },
+      );
+      syncToolUsage(
+        tx,
+        { table: "tool_trackings", values: values(tx, tracking) },
+        ["master-data"],
+      );
+      tx.edit(transfers, transfers.area.prefix, (value) => {
+        for (const row of value.rows)
+          if (row.values.status === "open") row.values.status = "denied";
+      });
+      setActiveToolBooking(tx, resource, null);
+    });
+  }
+
   async function provision(
     namespace: ToolNamespace,
     resource: string,
@@ -291,23 +358,6 @@ export function createProtectedTools(
     live();
     return session;
   };
-  let responsibilityDefaults: Promise<void> | undefined;
-  async function ensureResponsibilityDefaults() {
-    responsibilityDefaults ??= (async () => {
-      const session = await actor();
-      if (!session.roles.includes(":admin")) return;
-      const { synchronizeToolResponsibilityDefaults } =
-        await import("../crypto/toolResponsibilityDefaults");
-      await synchronizeToolResponsibilityDefaults(client, signal, driver);
-      live();
-    })();
-    try {
-      await responsibilityDefaults;
-    } catch (error) {
-      responsibilityDefaults = undefined;
-      throw error;
-    }
-  }
   async function reference(projectId: unknown) {
     if (projectId == null) return [];
     addressId(projectId);
@@ -430,7 +480,6 @@ export function createProtectedTools(
     async query(path: string, input: unknown): Promise<unknown> {
       live();
       if (!TOOL_QUERIES.has(path)) throw new InvalidProtectedData();
-      await ensureResponsibilityDefaults();
       if (path === "tools.suggestNextCustomId") {
         return runtime.read([toolIndexRequest], (view) => {
           const value = view.documents(toolIndexRequest);
@@ -450,6 +499,15 @@ export function createProtectedTools(
         selectedDomains = ["master-data", "procurement"].map(
           (facet) => `tool:${selection.id}:${facet}`,
         );
+      } else if (path === "tools.inventories.list") {
+        const selection = partialAddressRecord(input ?? {}, ["toolId"]);
+        if (selection.toolId != null) {
+          addressId(selection.toolId);
+          selectedDomains = [
+            toolCollection("tool", selection.toolId as string, "measurement")
+              .domain,
+          ];
+        }
       }
       return readAll(
         (view, selected) => {
@@ -991,8 +1049,13 @@ export function createProtectedTools(
         });
         return { success: true };
       }
+      if (path === "tools.untrack") {
+        const { id } = record(input, ["id"]);
+        await returnTool(id as string, actorId, now);
+        return { success: true };
+      }
       const selected = await requests();
-      if (path === "tools.untrack" || path === "tools.delete") {
+      if (path === "tools.delete") {
         const p = record(input, ["id"]);
         const resource = p.id as string;
         addressId(resource);
@@ -1012,9 +1075,7 @@ export function createProtectedTools(
             (request) =>
               document(view, request, true) &&
               !document(view, request)!.value.deleted &&
-              values(view, request).tool_id === addressId(resource) &&
-              (path === "tools.delete" ||
-                values(view, request).ended_at === null),
+              values(view, request).tool_id === addressId(resource),
           );
           return {
             head: view.head(master),
@@ -1031,32 +1092,13 @@ export function createProtectedTools(
         });
         const related = selected.filter((request) => {
           const part = toolDomain(request.area.domain)!;
-          if (
-            part.namespace === "tool"
-              ? part.id !== resource
-              : !basis.tracking.has(part.id)
-          )
-            return false;
-          return (
-            path === "tools.delete" ||
-            (part.namespace === "tool"
-              ? part.facet === "master-data"
-              : part.facet !== "procurement")
-          );
+          return part.namespace === "tool"
+            ? part.id === resource
+            : basis.tracking.has(part.id);
         });
-        const usage = basis.rows.flatMap((row) =>
-          toolUsageRequests(
-            row,
-            path === "tools.delete" ? undefined : ["master-data"],
-          ),
-        );
+        const usage = basis.rows.flatMap((row) => toolUsageRequests(row));
         await persist(
-          [
-            ...(path === "tools.delete" ? [toolIndexRequest] : []),
-            toolBookingRequest(resource),
-            ...related,
-            ...usage,
-          ],
+          [toolIndexRequest, toolBookingRequest(resource), ...related, ...usage],
           (tx) => {
             if (tx.head(master).sequence !== basis.head.sequence)
               throw new ProtectedWriteConflict();
@@ -1075,67 +1117,33 @@ export function createProtectedTools(
               )
             )
               throw new InvalidProtectedData();
-            for (const request of tracking) {
-              const trackingId = document(tx, request)!.value.id;
-              if (
-                path === "tools.untrack" &&
-                values(tx, request).ended_at === null
-              ) {
-                tx.patch(
-                  "tool_trackings",
-                  { id: addressId(trackingId) },
-                  {
-                    ended_at: now,
-                    ended_by_user_id: actorId,
-                    modified_at: now,
-                  },
-                );
-                syncToolUsage(
-                  tx,
-                  { table: "tool_trackings", values: values(tx, request) },
-                  ["master-data"],
-                );
-                const transfers = toolRequest(
-                  "tool-tracking",
-                  trackingId,
-                  "scope",
-                );
-                tx.edit(transfers, transfers.area.prefix, (value) => {
-                  for (const row of value.rows)
-                    if (row.values.status === "open")
-                      row.values.status = "denied";
-                });
-              }
-            }
             setActiveToolBooking(tx, resource, null);
-            if (path === "tools.delete") {
-              for (const request of tracking)
-                deleteToolUsage(tx, {
-                  table: "tool_trackings",
-                  values: values(tx, request),
-                });
-              const trackingIds = new Set(
-                tracking.map((request) => document(tx, request)!.value.id),
-              );
-              for (const facet of CREATION_FACETS.tool)
-                document(tx, toolRequest("tool", resource, facet));
-              for (const trackingId of trackingIds)
-                for (const facet of CREATION_FACETS["tool-tracking"])
-                  document(tx, toolRequest("tool-tracking", trackingId, facet));
-              for (const request of related) {
-                tx.require(request, "delete");
-                tx.edit(request, request.area.prefix, (value) => {
-                  value.deleted = true;
-                  value.rows = [];
-                  value.activeTrackingId = null;
-                });
-              }
-              tx.edit(toolIndexRequest, TOOL_INDEX.prefix, (value) => {
-                value.entries = value.entries.filter(
-                  (entry) => entry.id !== resource,
-                );
+            for (const request of tracking)
+              deleteToolUsage(tx, {
+                table: "tool_trackings",
+                values: values(tx, request),
+              });
+            const trackingIds = new Set(
+              tracking.map((request) => document(tx, request)!.value.id),
+            );
+            for (const facet of CREATION_FACETS.tool)
+              document(tx, toolRequest("tool", resource, facet));
+            for (const trackingId of trackingIds)
+              for (const facet of CREATION_FACETS["tool-tracking"])
+                document(tx, toolRequest("tool-tracking", trackingId, facet));
+            for (const request of related) {
+              tx.require(request, "delete");
+              tx.edit(request, request.area.prefix, (value) => {
+                value.deleted = true;
+                value.rows = [];
+                value.activeTrackingId = null;
               });
             }
+            tx.edit(toolIndexRequest, TOOL_INDEX.prefix, (value) => {
+              value.entries = value.entries.filter(
+                (entry) => entry.id !== resource,
+              );
+            });
           },
         );
         return { success: true };

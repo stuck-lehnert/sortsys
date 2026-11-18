@@ -73,5 +73,6 @@ export async function administratorPolicyContext(
     inventorySnapshot: verified.snapshot,
     effective: verified.permissions,
     domains: verified.domains,
+    origins: verified.origins,
   };
 }

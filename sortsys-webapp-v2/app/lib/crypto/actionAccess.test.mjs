@@ -433,7 +433,7 @@ test("scoped completion checks only edited areas and preserves another pending r
   expect(f.definitions.has(`${f.a.domain}:2`)).toBe(true);
   expect(f.definitions.has(`${f.b.domain}:2`)).toBe(false);
   expect(f.pending.has(f.b.domain)).toBe(true);
-  expect(f.snapshots.length).toBeGreaterThan(0);
+  expect(f.snapshots).toHaveLength(2);
   expect(
     f.snapshots.every(
       (input) => input.domains?.length === 1 && input.domains[0] === f.a.domain,

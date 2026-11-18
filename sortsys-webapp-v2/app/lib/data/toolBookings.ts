@@ -312,11 +312,6 @@ export async function bookProtectedTools(
       throw new InvalidProtectedData();
     return { trackings: receipt.trackings };
   }
-  let collections = await protectedCollections(client, signal);
-  if (collections.readable(receiptRequest.area)) {
-    const previous = await runtime.read([receiptRequest], saved, collections);
-    if (previous) return previous;
-  }
   const selected = data.tools.map((selection, index) => ({
     ...selection,
     trackingId: trackings[index]!.trackingId,
@@ -350,6 +345,21 @@ export async function bookProtectedTools(
       ? [selection.previous.master, selection.previous.scope]
       : []),
   ]);
+  const next = selected.flatMap((selection) => selection.next);
+  const domains = [
+    ...new Set(
+      [...sources, ...next, receiptRequest].map((request) => request.area.domain),
+    ),
+  ];
+  const collections = await protectedCollections(
+    client,
+    signal,
+    domains.length <= 16 ? domains : undefined,
+  );
+  if (collections.readable(receiptRequest.area)) {
+    const previous = await runtime.read([receiptRequest], saved, collections);
+    if (previous) return previous;
+  }
   const basis = await runtime.read(
     sources,
     (view) => {
@@ -412,7 +422,6 @@ export async function bookProtectedTools(
       })),
     );
   }
-  const next = selected.flatMap((selection) => selection.next);
   const missing = next.filter((request) => !collections.readable(request.area));
   if (missing.length) {
     await createResourceAreas(
@@ -539,9 +548,13 @@ export async function bookProtectedTools(
     // already returned the tool. Current booking contents are not its receipt.
     runtime.revalidate();
     try {
-      collections = await protectedCollections(client, signal);
-      const previous = await runtime.read([receiptRequest], saved, collections);
-      if (previous) return previous;
+      const receipts = await protectedCollections(client, signal, [
+        receiptRequest.area.domain,
+      ]);
+      if (receipts.readable(receiptRequest.area)) {
+        const previous = await runtime.read([receiptRequest], saved, receipts);
+        if (previous) return previous;
+      }
     } catch {
       /* Preserve the original publication or validation failure. */
     }

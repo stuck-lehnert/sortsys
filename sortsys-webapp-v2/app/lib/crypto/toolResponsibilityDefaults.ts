@@ -6,7 +6,6 @@ import {
   reconcilePolicyRules,
   type Policy,
   type Rule,
-  type CreationOrigin,
 } from "@sortsys/zerotrust/sortsys";
 import { administratorPolicyContext } from "./administration";
 import { preparePolicyPublication } from "./policy";
@@ -67,13 +66,7 @@ export async function synchronizeToolResponsibilityDefaults(
   driver?: () => Promise<DuckDriver>,
 ): Promise<void> {
   let context = await administratorPolicyContext(client, signal);
-  const origins = new Map<string, CreationOrigin>();
-  // The verified inventory owns both the actual domains and their current
-  // creation proofs. No public identifier or server role supplies a data key.
-  const { verifiedAccessContext } = await import("./accessContext");
-  const access = await verifiedAccessContext(client, signal);
-  context.live();
-  for (const origin of access.origins) origins.set(origin.id, origin);
+  let origins = new Map(context.origins.map((origin) => [origin.id, origin]));
   if (
     await renewToolResponsibilityOrigins(
       client,
@@ -84,10 +77,7 @@ export async function synchronizeToolResponsibilityDefaults(
     )
   ) {
     context = await administratorPolicyContext(client, signal);
-    const refreshed = await verifiedAccessContext(client, signal);
-    context.live();
-    origins.clear();
-    for (const origin of refreshed.origins) origins.set(origin.id, origin);
+    origins = new Map(context.origins.map((origin) => [origin.id, origin]));
   }
   const selected = context.domains.flatMap((domain) => {
     const part = toolDomain(domain.id);

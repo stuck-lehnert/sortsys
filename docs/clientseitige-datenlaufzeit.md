@@ -126,6 +126,8 @@ Eine später begonnene Abfrage liest damit wieder frisch. Lokale Schreibvorgäng
 und WebSocket-Meldungen verwenden dieselben Abhängigkeiten. Das Speichern einer
 besuchten Seite startet deshalb keine Projektliste neu; eine Änderung an den
 Projektdaten oder Berechtigungen löst weiterhin eine neue Prüfung aus.
+Eine WebSocket-Meldung stößt die betroffenen Abfragen einmal an. Diese warten
+mit dem Lesen, bis der lokale Datenstand aktualisiert ist.
 
 Vorgangslisten teilen auch dann die noch laufende Aufbereitung ihrer Grunddaten,
 wenn sich Suchtext oder Statusfilter unterscheiden. Jede Ansicht filtert und

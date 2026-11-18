@@ -26,6 +26,16 @@ für ein anderes Werkzeug schalten diese Aktionen nicht frei. Die Auswahl lädt
 nur freigegebene Stammdaten und verwendet für die dabei gelesenen Bereiche einen
 gemeinsam geprüften Berechtigungsstand.
 
+Beim Öffnen der Detailansicht werden zuerst die Stammdaten und der Status des
+Werkzeugs geladen. Der Inventurabruf bleibt auf dieses Werkzeug beschränkt.
+Die Buchungshistorie und die dafür benötigten Freigaben werden anschließend
+gelesen. Das Öffnen der Historie löst keine Änderungen an Buchungsfreigaben aus.
+
+Bei der Rückgabe öffnet der Browser die aktive Buchung über den gespeicherten
+Verweis am Werkzeug. Er beendet die Buchung, schließt offene Umbuchungsanfragen
+und setzt den Werkzeugstatus in derselben Veröffentlichung. Hat eine zweite
+Sitzung die Buchung inzwischen geändert, wird die Rückgabe abgewiesen.
+
 Unter „Anlageberechtigungen“ erlaubt „Neue Werkzeugbuchungen anlegen“ die Ausgabe
 und eine angenommene Umbuchung. Diese Freigabe öffnet keine bestehenden Werkzeuge
 und ersetzt deren nötige Einzelrechte nicht. Ein Entzug verhindert neue
@@ -55,13 +65,11 @@ verständlich. Ein Link zu deren Detailansicht erscheint nur bei lesbaren
 Stammdaten.
 
 Wurde die Buchung vor der Registrierung des Mitarbeiters angelegt, führt die
-Bestätigung seiner Einladung die Lesefreigabe nach. Beim ersten Werkzeugabruf
-eines Administrators werden auch aktive Buchungen bereits registrierter
-Mitarbeiter abgeglichen. Dafür wird die zuständige Person aus dem entschlüsselten
-Buchungsdatensatz gelesen. Fehlt dessen Aktivitätsnachweis noch, erhält derselbe
-Inhalt eine neue signierte Fassung. Eine wiederholte Prüfung verändert weder
-die Buchung noch die Freigaben erneut. Bereits zurückgegebene Werkzeuge bleiben
-für diesen Zugang gesperrt.
+Bestätigung seiner Einladung die Lesefreigabe nach. Der Browser des Administrators
+liest dafür die zuständige Person aus dem entschlüsselten Buchungsdatensatz.
+Fehlt dessen Aktivitätsnachweis noch, erhält derselbe Inhalt eine neue signierte
+Fassung. Eine wiederholte Prüfung verändert weder die Buchung noch die Freigaben
+erneut. Bereits zurückgegebene Werkzeuge bleiben für diesen Zugang gesperrt.
 
 Die nachträgliche Freigabe ist an einen eigenen, signierten Auftrag und den
 aktuellen Aktivitätsnachweis der Buchung gebunden. Der Auftrag allein öffnet
@@ -125,6 +133,10 @@ Auswahl im Sammeldialog: Fehlt bei einem Werkzeug oder im betroffenen Projekt
 ein Schreibrecht, wird keines der ausgewählten Werkzeuge umgebucht. Wurde eine
 Buchung seit der Auswahl verändert, bleibt die Auswahl mit einer Fehlermeldung
 offen. Die betreffende Auswahl lässt sich anschließend aktualisieren.
+Bei einer kleinen Auswahl fragt der Browser die Zugriffsrechte für die
+betroffenen Werkzeuge, bisherigen Buchungen und neuen Buchungsbereiche gemeinsam
+ab. Bei einem Verbindungsabbruch ruft er gezielt den Bereich mit der
+unveränderlichen Bestätigung ab.
 
 Eine Umbuchung beendet die alte Buchung, legt eine Fortsetzung an und übernimmt
 die aktuellen Nutzungskosten.

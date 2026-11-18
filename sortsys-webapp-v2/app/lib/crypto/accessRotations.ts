@@ -267,22 +267,10 @@ export async function finishAccessChanges(
   let conflictRetries = 0;
   let directory: Awaited<ReturnType<typeof memberDirectory>> | undefined;
   for (let count = 0; count < 2001; count++) {
-    const verified = await verifiedAccessContext(client, signal, options);
-    context.live();
-    if (verified.rootPolicy.version !== context.permissions.version) {
-      context = await readContext();
-      directory = undefined;
-      continue;
-    }
-    context = {
-      ...context,
-      effective: verified.permissions,
-      domains: verified.domains,
-    };
-    const pending = pendingDomains(verified.domains, context, selected);
+    const pending = pendingDomains(context.domains, context, selected);
     if (!pending.length) {
       const latest = await readVerifiedPolicy(client, context);
-      if (latest.permissions.version !== context.permissions.version) {
+      if (latest.signature !== context.policySignature) {
         context = await readContext();
         directory = undefined;
         continue;
@@ -331,6 +319,31 @@ export async function finishAccessChanges(
       // never a retry of an old recipient set against a replacement policy.
       context = latest;
       directory = undefined;
+      continue;
+    }
+    const verified = await verifiedAccessContext(client, signal, options);
+    context.live();
+    if (
+      verified.account !== context.account ||
+      verified.subject !== `user:${context.session.user.id}`
+    ) {
+      throw new InvalidProtectedData();
+    }
+    if (
+      verified.rootPolicySignature !== context.policySignature ||
+      verified.history.current.signature !== context.history.current.signature
+    ) {
+      context = await readContext();
+      directory = undefined;
+    } else {
+      context = {
+        ...context,
+        history: verified.history,
+        effective: verified.permissions,
+        domains: verified.domains,
+        origins: verified.origins,
+        inventorySnapshot: verified.snapshot,
+      };
     }
   }
   throw new InvalidProtectedData();
