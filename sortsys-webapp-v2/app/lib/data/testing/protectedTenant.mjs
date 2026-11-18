@@ -18,7 +18,12 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { stockPacket } from "../stockObjects";
 import { accessSnapshotFixture } from "./accessSnapshot.mjs";
-import { acceptVault } from "../../crypto/session";
+import {
+  acceptVault,
+  trustedHistory,
+  unlockedAccount,
+} from "../../crypto/session";
+import { planningRecipientWriter } from "../planningRecipients";
 
 const PHRASE =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
@@ -103,6 +108,7 @@ export async function protectedTenant(
   const objects = new Map();
   const chunks = new Map();
   const stocks = new Map();
+  const recipients = new Map();
   const calls = [];
   const deliveryAllocations = new Map();
   for (const area of areas) {
@@ -187,6 +193,44 @@ export async function protectedTenant(
             },
             null,
           ];
+        case "zerotrust.identities.get":
+          return [input.subject === subject ? setup.owner : null, null];
+        case "zerotrust.objects.recipientAccess":
+          return [
+            input.objects.map((object) =>
+              structuredClone(recipients.get(object) ?? null),
+            ),
+            null,
+          ];
+        case "zerotrust.objects.shared": {
+          const values = [...recipients.values()].filter(
+            (state) =>
+              state.access.active &&
+              state.recipientKey?.recipient.user === subject &&
+              state.access.object.startsWith(input.prefix) &&
+              (input.after == null || state.access.object > input.after),
+          );
+          values.sort((left, right) =>
+            compareText(left.access.object, right.access.object),
+          );
+          const entries = [];
+          for (const state of values.slice(0, 32)) {
+            const envelope = objects.get(state.access.object);
+            entries.push({
+              envelope: structuredClone(envelope),
+              access: structuredClone(state),
+              proofs: [await domainProof(domains.get(state.domain).definition)],
+            });
+          }
+          return [
+            {
+              snapshot: "fixture-shared",
+              objects: entries,
+              after: values.length > 32 ? values[31].access.object : null,
+            },
+            null,
+          ];
+        }
         case "zerotrust.policy.get":
           return [policy, null];
         case "zerotrust.policy.getVersion":
@@ -279,7 +323,13 @@ export async function protectedTenant(
               return [null, new Error("Head check requires a known snapshot")];
             }
             return [
-              { snapshot: head, keyGeneration: "1", after: null, objects: [] },
+              {
+                snapshot: head,
+                keyGeneration: "1",
+                after: null,
+                objects: [],
+                recipientAccess: [],
+              },
               null,
             ];
           }
@@ -298,6 +348,13 @@ export async function protectedTenant(
               keyGeneration: "1",
               after: values.length > 32 ? values[31].object : null,
               objects: structuredClone(values.slice(0, 32)),
+              recipientAccess: values
+                .slice(0, 32)
+                .flatMap((value) =>
+                  recipients.has(value.object)
+                    ? [structuredClone(recipients.get(value.object))]
+                    : [],
+                ),
             },
             null,
           ];
@@ -378,6 +435,19 @@ export async function protectedTenant(
       }
       for (const packet of input.objects) {
         objects.set(packet.envelope.object, structuredClone(packet.envelope));
+        if (
+          packet.resourceAccess &&
+          packet.envelope.object.startsWith("schedule:")
+        ) {
+          recipients.set(
+            packet.envelope.object,
+            structuredClone({
+              domain: packet.domain,
+              access: packet.resourceAccess,
+              recipientKey: packet.recipientKey ?? null,
+            }),
+          );
+        }
         if (packet.references) {
           stocks.set(
             packet.envelope.object,
@@ -411,7 +481,7 @@ export async function protectedTenant(
       ];
     },
   };
-  async function seed(area, id, value) {
+  async function seed(area, id, value, options = {}) {
     if (value.format === "sortsys-delivery-note-v1") {
       const note = value.note.values;
       deliveryAllocations.set(id, {
@@ -430,7 +500,7 @@ export async function protectedTenant(
         object: id,
         revision: String(BigInt(previous?.revision ?? "0") + 1n),
         generation: "1",
-        policyVersion: "1",
+        policyVersion: options.policyVersion ?? "1",
         author: subject,
       },
       bytes(JSON.stringify(value)),
@@ -442,6 +512,26 @@ export async function protectedTenant(
         id,
         await stockPacket(envelope, value, "1", identity.signingKey.privateKey),
       );
+    }
+    if (id.startsWith("schedule:") && id.split(":")[2] === "deployment") {
+      const history = await trustedHistory(client);
+      const checked = await verifyPolicy(policy, {
+        tenant: "test",
+        authority: authorityKey.publicKey,
+      });
+      const prepare = planningRecipientWriter(client, {
+        account: unlockedAccount(),
+        history,
+        subject,
+        permissions: checked.permissions,
+        live() {},
+      });
+      const prepared = await prepare(envelope, value, domain.key);
+      recipients.set(id, {
+        domain: area.domain,
+        access: prepared.resourceAccess,
+        recipientKey: prepared.recipientKey ?? null,
+      });
     }
     objects.set(id, envelope);
     domain.head++;
@@ -508,6 +598,7 @@ export async function protectedTenant(
   }
   return {
     client,
+    recipients,
     calls,
     domains,
     objects,

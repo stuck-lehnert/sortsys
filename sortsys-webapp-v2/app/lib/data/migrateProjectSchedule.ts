@@ -51,7 +51,11 @@ export async function prepareProjectSchedule(
         return {
           id: object,
           value: schedulePayload(
-            { format: "sortsys-project-schedule-v1", row },
+            {
+              format: "sortsys-project-schedule-v1",
+              row,
+              projectTitle: project.values.title,
+            },
             object,
             id,
           ),

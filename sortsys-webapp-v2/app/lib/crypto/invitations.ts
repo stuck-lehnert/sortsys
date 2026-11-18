@@ -402,6 +402,9 @@ export async function approveMemberInvitation(
   context.live();
   await grantInvitationAccess(client, context, saved, certificate, signal);
   await (
+    await import("../data/planningRecipients")
+  ).refreshPlanningRecipientKeys(client, certificate.user, signal);
+  await (
     await import("./absenceDefaults")
   ).synchronizeAbsenceDefaults(client, signal, driver);
   context.live();

@@ -54,6 +54,10 @@ import {
   checkToolResponsibility,
   toolResponsibilityPacket,
 } from "./toolResponsibility";
+import {
+  checkPlanningRecipients,
+  planningRecipientWriter,
+} from "./planningRecipients";
 
 export async function required<T>(
   request: Promise<[T | null, Error | null]>,
@@ -82,6 +86,9 @@ export type OpenedObject = {
   envelope: EncryptedObject;
   value: unknown;
   stock?: StockState;
+  recipientAccess?: NonNullable<
+    QueryResult<"zerotrust.objects.recipientAccess">[number]
+  >;
 };
 
 /** Only signed, explicitly bound domains may supply collection keys. Names and
@@ -278,6 +285,13 @@ function openCollection(
     if (closed || signal.aborted || unlockedAccount() !== account)
       throw new InvalidProtectedData();
   };
+  const planningRecipient = planningRecipientWriter(client, {
+    account,
+    history,
+    subject,
+    permissions,
+    live,
+  });
   live();
   const permitted = (
     action: "read" | "create" | "update" | "delete" | "approve",
@@ -619,8 +633,9 @@ function openCollection(
               throw new InvalidProtectedData();
             previousId = envelope.object;
           }
+          const opened: OpenedObject[] = [];
           for (let offset = 0; offset < envelopes.length; offset += 16) {
-            result.push(
+            opened.push(
               ...(await Promise.all(
                 envelopes
                   .slice(offset, offset + 16)
@@ -629,6 +644,14 @@ function openCollection(
             );
             live();
           }
+          await checkPlanningRecipients(
+            client,
+            opened,
+            history,
+            live,
+            page.recipientAccess ?? [],
+          );
+          result.push(...opened);
           after = page.after;
         } while (after !== null);
         await checkStockObjects(client, result, history, live);
@@ -754,6 +777,8 @@ function openCollection(
         history.identityCertificate(subject),
         account.identity.signingKey.privateKey,
       );
+      const planning = await planningRecipient(envelope, value, key);
+      if (resourceAccess && planning) throw new InvalidProtectedData();
       live();
       return {
         domain: collection.domain,
@@ -761,6 +786,7 @@ function openCollection(
         envelope,
         ...(references ? { references } : {}),
         ...(resourceAccess ? { resourceAccess } : {}),
+        ...planning,
       };
     } finally {
       plain?.fill(0);
@@ -942,6 +968,7 @@ function openCollection(
       }
       await checkStockObjects(client, objects, history, live);
       await checkDeliveryObjects(client, objects, live);
+      await checkPlanningRecipients(client, objects, history, live);
       live();
       return objects.filter(
         (object) => object.envelope.format !== TOMBSTONE_FORMAT,
@@ -951,6 +978,7 @@ function openCollection(
       const object = await openEnvelope(input, id);
       await checkStockObjects(client, [object], history, live);
       await checkDeliveryObjects(client, [object], live);
+      await checkPlanningRecipients(client, [object], history, live);
       return object;
     },
     // Historical callers validate the model after checking this exact signed
@@ -972,6 +1000,7 @@ function openCollection(
       );
       await checkStockObjects(client, [object], history, live);
       await checkDeliveryObjects(client, [object], live);
+      await checkPlanningRecipients(client, [object], history, live);
       return object;
     },
     async read(prefix = collection.prefix): Promise<OpenedObject[]> {

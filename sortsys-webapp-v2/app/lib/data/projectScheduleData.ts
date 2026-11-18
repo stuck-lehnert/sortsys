@@ -22,6 +22,7 @@ export type ScheduleKind = "deployment" | "unavailability";
 export type SchedulePayload = {
   format: "sortsys-project-schedule-v1";
   row: BusinessRow;
+  projectTitle?: string;
 };
 export const SCHEDULE_TABLES = {
   deployment: "project_deployments",
@@ -104,7 +105,15 @@ export function schedulePayload(
   object: string,
   project: string,
 ): SchedulePayload {
-  const value = record(input, ["format", "row"]),
+  const hasTitle =
+    input !== null &&
+    typeof input === "object" &&
+    Object.hasOwn(input, "projectTitle");
+  const value = record(input, [
+      "format",
+      "row",
+      ...(hasTitle ? ["projectTitle"] : []),
+    ]),
     row = decodeBusinessRow(value.row);
   const kind =
     row.table === SCHEDULE_TABLES.deployment
@@ -129,7 +138,14 @@ export function schedulePayload(
     addressText(row.values.reason, true, 127);
   }
   scheduleRange(row.values.from, row.values.to, kind);
-  return { format: value.format, row };
+  const projectTitle = hasTitle
+    ? addressText(value.projectTitle, true, 127)
+    : undefined;
+  return {
+    format: value.format,
+    row,
+    ...(projectTitle ? { projectTitle } : {}),
+  };
 }
 export const SCHEDULE_MODEL = defineDataModel<SchedulePayload>({
   name: "project-schedule",
@@ -163,6 +179,7 @@ export function wireSchedule(payload: SchedulePayload, version: string) {
   return {
     id: publicId(r.id),
     projectId: publicId(r.project_id),
+    ...(payload.projectTitle ? { projectTitle: payload.projectTitle } : {}),
     from: new Date(`${r.from}${deployment ? "" : "T00:00:00.000Z"}`),
     to: new Date(`${r.to}${deployment ? "" : "T00:00:00.000Z"}`),
     note: r.note as string | null,

@@ -37,6 +37,7 @@ pub const WS_PATH: &str = "/zerotrust/events";
 #[derive(Clone)]
 enum Event {
     Objects(String, i64, bool),
+    ObjectRecipient(String, String),
     Domain(String),
     Access,
     Account(String),
@@ -50,6 +51,7 @@ struct PendingChanges {
     refresh: bool,
     visible: bool,
     domains: HashMap<String, Option<i64>>,
+    recipient_domains: HashSet<String>,
     document_messages: HashSet<Room>,
 }
 impl PendingChanges {
@@ -75,6 +77,12 @@ impl PendingChanges {
                 self.visible = true;
                 self.all = true;
                 self.refresh = true;
+            }
+            Event::ObjectRecipient(user, domain) if user == subject => {
+                self.visible = true;
+                self.refresh = true;
+                self.domains.insert(domain.clone(), None);
+                self.recipient_domains.insert(domain);
             }
             Event::Objects(domain, sequence, staged) => {
                 self.visible |= !staged;
@@ -261,6 +269,7 @@ fn parse_hint(channel: &str, input: &str) -> Option<Event> {
                 staging_hint(&data)?,
             ))
         }
+        "object-recipient" => recipient_hint(&data),
         "document-message" => {
             let mut data = data;
             data.as_object_mut()?
@@ -305,8 +314,20 @@ fn parse(input: &str) -> Option<Event> {
         }
         "policy" | "recovery" | "activation" => Some(Event::Access),
         "account" => Some(Event::Account(data.get("user")?.as_str()?.to_owned())),
+        "object-recipient" => recipient_hint(&data),
         _ => None,
     }
+}
+
+fn recipient_hint(data: &Value) -> Option<Event> {
+    let subject = data.get("subject")?.as_str()?;
+    let domain = data.get("domain")?.as_str()?;
+    super::crypto::identifier(subject).ok()?;
+    super::crypto::identifier(domain).ok()?;
+    Some(Event::ObjectRecipient(
+        subject.to_owned(),
+        domain.to_owned(),
+    ))
 }
 
 fn staging_hint(data: &Value) -> Option<bool> {
@@ -676,6 +697,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             refresh,
             visible,
             mut domains,
+            recipient_domains,
             document_messages,
         } = pending;
         let mut reset = false;
@@ -688,7 +710,9 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
                 return Err(forbidden());
             }
         }
-        domains.retain(|domain, _| current.allowed.contains(domain));
+        domains.retain(|domain, _| {
+            current.allowed.contains(domain) || recipient_domains.contains(domain)
+        });
         // A new key generation requires fresh authorization and a reload of
         // that domain. Only an actual access change invalidates every view.
         let control = all || reset;
@@ -730,6 +754,26 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recipient_hints_only_refresh_the_intended_members_object_view() {
+        let domain = "project:2:planning:master-data";
+        let hint = serde_json::json!({"subject": "user:1", "domain": domain});
+        let event = parse_hint("object-recipient", &hint.to_string()).unwrap();
+        let mut other = PendingChanges::default();
+        other.include(event.clone(), "user:2");
+        assert!(!other.visible);
+        assert!(!other.refresh);
+        assert!(other.domains.is_empty());
+        assert!(other.recipient_domains.is_empty());
+        let mut own = PendingChanges::default();
+        own.include(event, "user:1");
+        assert!(own.visible);
+        assert!(own.refresh);
+        assert!(!own.all);
+        assert_eq!(own.domains[domain], None);
+        assert!(own.recipient_domains.contains(domain));
+        assert!(parse_hint("object-recipient", r#"{"subject":"user:1"}"#).is_none());
+    }
     #[test]
     fn domain_key_hints_recheck_authorization_without_invalidating_unrelated_views() {
         let mut changes = PendingChanges::default();

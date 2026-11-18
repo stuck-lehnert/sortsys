@@ -32,6 +32,7 @@ import {
   type SchedulePayload,
 } from "./projectScheduleData";
 import { timestampMicros } from "./timestamps";
+import { readOwnAssignments } from "./planningRecipients";
 
 function find(
   view: DataView,
@@ -67,14 +68,15 @@ export function createProtectedProjectSchedule(
 ) {
   const lease = acquireDataRuntime(client, signal, driver),
     { runtime, live } = lease;
-  async function requests(project?: string) {
+  async function requests(project?: string, requireArea = true) {
     if (project !== undefined) addressId(project);
     const areas = await readableAreas(client, signal, (domain) => {
       const id = scheduleDomain(domain);
       return id && (!project || project === id) ? scheduleCollection(id) : null;
     });
     live();
-    if (project && !areas.length) throw new InvalidProtectedData();
+    if (requireArea && project && !areas.length)
+      throw new InvalidProtectedData();
     return areas.map((area) => ({ model: SCHEDULE_MODEL, area }));
   }
   return {
@@ -115,45 +117,80 @@ export function createProtectedProjectSchedule(
             : timestampMicros(timestampInstant(data.since)),
         selected = await requests(
           (data.projectId as string | undefined) ?? undefined,
+          kind !== "deployment",
         );
-      const values = await runtime.read(selected, (view) =>
-        selected
-          .flatMap((request) => view.documents(request))
-          .filter(({ value }) => {
-            const r = value.row.values;
-            if (
-              value.row.table !== SCHEDULE_TABLES[kind] ||
-              (data.userId != null && publicId(r.user_id) !== data.userId) ||
-              (since !== null &&
-                timestampMicros(r.modified_at as string) <= since)
+      const [ordinary, own] = await Promise.all([
+        runtime.read(selected, (view) =>
+          selected.flatMap((request) => view.documents(request)),
+        ),
+        kind === "deployment"
+          ? readOwnAssignments(
+              client,
+              signal,
+              (data.projectId as string | undefined) ?? undefined,
             )
-              return false;
-            return kind === "deployment"
-              ? timestampMicros(r.to as string) > timestampMicros(from!) &&
-                  timestampMicros(r.from as string) < timestampMicros(to!)
-              : (!from || (r.to as string) >= from) &&
-                  (!to || (r.from as string) <= to);
-          })
-          .sort((a, b) => {
-            const first = a.value.row.values,
-              second = b.value.row.values;
-            const diff =
-              kind === "deployment"
-                ? timestampMicros(second.from as string) -
-                  timestampMicros(first.from as string)
-                : (second.from as string).localeCompare(first.from as string);
-            return diff < 0
-              ? -1
-              : diff > 0
-                ? 1
-                : addressId(publicId(second.id)) < addressId(publicId(first.id))
-                  ? -1
-                  : 1;
-          })
-          .map((document) =>
-            wireSchedule(document.value, scheduleVersion(document)),
-          ),
-      );
+          : [],
+      ]);
+      live();
+      const documents = new Map<
+        string,
+        {
+          id: string;
+          revision: string;
+          signature?: string;
+          value: SchedulePayload;
+        }
+      >(ordinary.map((document) => [document.id, document]));
+      for (const document of own) {
+        const existing = documents.get(document.id);
+        if (
+          existing &&
+          (existing.revision !== document.revision ||
+            existing.signature !== document.signature)
+        )
+          throw new ProtectedWriteConflict();
+        if (!existing) documents.set(document.id, document);
+      }
+      const rowIds = new Set<string>();
+      for (const document of documents.values()) {
+        const id = `${document.value.row.table}:${publicId(document.value.row.values.id)}`;
+        if (rowIds.has(id)) throw new ProtectedWriteConflict();
+        rowIds.add(id);
+      }
+      const values = [...documents.values()]
+        .filter(({ value }) => {
+          const r = value.row.values;
+          if (
+            value.row.table !== SCHEDULE_TABLES[kind] ||
+            (data.userId != null && publicId(r.user_id) !== data.userId) ||
+            (since !== null &&
+              timestampMicros(r.modified_at as string) <= since)
+          )
+            return false;
+          return kind === "deployment"
+            ? timestampMicros(r.to as string) > timestampMicros(from!) &&
+                timestampMicros(r.from as string) < timestampMicros(to!)
+            : (!from || (r.to as string) >= from) &&
+                (!to || (r.from as string) <= to);
+        })
+        .sort((a, b) => {
+          const first = a.value.row.values,
+            second = b.value.row.values;
+          const diff =
+            kind === "deployment"
+              ? timestampMicros(second.from as string) -
+                timestampMicros(first.from as string)
+              : (second.from as string).localeCompare(first.from as string);
+          if (diff < 0) return -1;
+          if (diff > 0) return 1;
+          const firstId = addressId(publicId(first.id));
+          const secondId = addressId(publicId(second.id));
+          if (firstId === secondId) return 0;
+          return secondId < firstId ? -1 : 1;
+        })
+        .map((document) =>
+          wireSchedule(document.value, scheduleVersion(document)),
+        );
       live();
       return values;
     },
@@ -252,6 +289,10 @@ export function createProtectedProjectSchedule(
           !tx.documents(projectRef).some((doc) => doc.value.project)
         )
           throw new InvalidProtectedData();
+        const projectTitle = checkProject
+          ? tx.documents(projectRef).find((document) => document.value.project)
+              ?.value.project?.values.title
+          : baseline?.value.projectTitle;
         if (userRef) {
           const user = tx.row("users", { id: changes.user_id });
           if (user.require("archived_at") || user.require("deactivated_at"))
@@ -297,7 +338,11 @@ export function createProtectedProjectSchedule(
             target,
             storage,
             schedulePayload(
-              { format: "sortsys-project-schedule-v1", row },
+              {
+                format: "sortsys-project-schedule-v1",
+                row,
+                ...(projectTitle ? { projectTitle } : {}),
+              },
               storage,
               project,
             ),
@@ -322,7 +367,11 @@ export function createProtectedProjectSchedule(
             target,
             storage,
             schedulePayload(
-              { format: "sortsys-project-schedule-v1", row },
+              {
+                format: "sortsys-project-schedule-v1",
+                row,
+                ...(projectTitle ? { projectTitle } : {}),
+              },
               storage,
               project,
             ),

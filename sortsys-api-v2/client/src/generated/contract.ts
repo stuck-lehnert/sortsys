@@ -80,6 +80,8 @@ export type DomainInfo = { id: string, scope: string, facet: string, generation:
 
 export type DomainOpening = { generation: string, definition: DomainDefinition, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
 
+export type DomainProof = { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
+
 export type Effect = "allow" | "deny";
 
 export type EncryptedObject<F = string> = { tenant: string, scope: string, facet: F, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
@@ -178,6 +180,10 @@ export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "dee
 
 export type Read = { room: Room, after: string, };
 
+export type RecipientAccess = { domain: string, access: ResourceAccessState, recipientKey: RecipientKey | null, };
+
+export type RecipientKey = { recipient: IdentityCertificate, envelope: SealedBox, };
+
 export type RecoveredMember = { account: ExistingRecoveryAccount, registrationRecord: string, vault: AccountVault, certificate: IdentityCertificate, };
 
 export type RecoveryCatalogAccess = { tenant: string, generation: string, challengeId: string, challenge: string, targetGeneration: string, object: string, hash: string, action: CatalogAction, };
@@ -202,7 +208,7 @@ export type Rule = { subject: string, scope: string, facet: Facet, actions: Arra
 
 export type RuleOrigin = "absence-default";
 
-export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, };
+export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, };
 
 export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
 
@@ -217,6 +223,8 @@ export type ScannedSpecialRecord = { sourceText: string, name: string, unit: str
 export type SealedBox = { tenant: string, purpose: string, object: string, generation: string, recipient: string, author: string, format: string, enc: string, ciphertext: string, signature: string, };
 
 export type SetupInput = { authority: AuthorityCertificate, owner: IdentityCertificate, authorityEnvelope: SealedBox, catalog: SealedBox, policy: SignedPolicy, proof: string, };
+
+export type SharedObject = { envelope: EncryptedObject<Facet>, access: RecipientAccess, proofs: Array<DomainProof>, };
 
 export type SignedPolicy = { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
 
@@ -383,6 +391,8 @@ export type QueryInputs = {
   "zerotrust.objects.get": { id: string, };
   "zerotrust.objects.list": { domain: string, prefix: string, after: string | null, snapshot: string | null, includeOpenings?: boolean, headOnly?: boolean, };
   "zerotrust.objects.pages": { selections: Array<ListInput>, };
+  "zerotrust.objects.recipientAccess": { objects: Array<string>, };
+  "zerotrust.objects.shared": { prefix: string, snapshot: string | null, after: string | null, };
   "zerotrust.policy.get": void;
   "zerotrust.policy.getVersion": { version: string, };
   "zerotrust.recovery.head": { tenant: string, };
@@ -459,7 +469,7 @@ export type QueryOutputs = {
   "projects.costs.overview": { projectId: string; title: string; address: null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; costs: null | number; offersTotal: null | number; invoicesTotal: null | number; gainOrLoss: null | number; hasInvoices: null | boolean; accessError?: null | string; finishedAt: null | Date; responsibleProjectLeaderUserId: null | string; }[];
   "projects.dailyReports.get": { revision?: string; costRevision?: string; id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: "internal" | "external" | "subcontractor"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; };
   "projects.dailyReports.list": { revision?: string; costRevision?: string; id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: "internal" | "external" | "subcontractor"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }[];
-  "projects.deployments.list": { revision?: string; id: string; projectId: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[];
+  "projects.deployments.list": { revision?: string; id: string; projectId: string; projectTitle?: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[];
   "projects.files.drawioConfig": { editorUrl: string, canEdit: boolean, fileName: string, version: bigint, xml: string, };
   "projects.files.folders.list": Array<{ id: Id, projectId: Id, parentFolderId: Id | null, name: string, createdByUserId: Id | null, createdAt: Date, modifiedAt: Date, }>;
   "projects.files.list": { id: string; projectId: string; folderId: null | string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; textExtractionStatus: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[];
@@ -531,8 +541,10 @@ export type QueryOutputs = {
   "zerotrust.members.list": { rows: Array<Member>, after: Id | null, };
   "zerotrust.members.status": { username: string, id: Id, version: string, atMicros: string, deactivatedMicros: string | null, archivedMicros: string | null, deletedMicros: string | null, };
   "zerotrust.objects.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
-  "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, openings?: Array<DomainOpening>, };
-  "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, openings?: Array<DomainOpening>, }>;
+  "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, };
+  "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, }>;
+  "zerotrust.objects.recipientAccess": Array<{ domain: string, access: ResourceAccessState, recipientKey: RecipientKey | null, } | null>;
+  "zerotrust.objects.shared": { snapshot: string, objects: Array<SharedObject>, after: string | null, };
   "zerotrust.policy.get": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.policy.getVersion": { generation: string, policy: SignedPolicy, };
   "zerotrust.recovery.head": { phase: string, generation: string, authority: AuthorityCertificate, operation: string | null, };
@@ -737,7 +749,7 @@ export type MutationInputs = {
   "zerotrust.members.create": { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
   "zerotrust.objects.batch": { objects: Array<SaveInput>, heads?: Array<DomainHead>, documents?: Array<DocumentHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
   "zerotrust.objects.commit": { parts: Array<string>, heads: Array<DomainHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
-  "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, };
+  "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, };
   "zerotrust.objects.stage": { objects: Array<SaveInput>, };
   "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.recovery.account": { tenant: string, generation: string, nonce: string, proof: string, };
@@ -1115,6 +1127,8 @@ const queryProcedures = new Set<string>([
   "zerotrust.objects.get",
   "zerotrust.objects.list",
   "zerotrust.objects.pages",
+  "zerotrust.objects.recipientAccess",
+  "zerotrust.objects.shared",
   "zerotrust.policy.get",
   "zerotrust.policy.getVersion",
   "zerotrust.recovery.head",

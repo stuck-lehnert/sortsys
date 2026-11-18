@@ -594,7 +594,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         path: "projects.deployments.list",
         kind: ProcedureKind::Query,
         input_ts: "{ from: unknown; to: unknown; since?: unknown; projectId?: undefined | null | string; userId?: undefined | null | string; }",
-        output_ts: "{ revision?: string; id: string; projectId: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[]",
+        output_ts: "{ revision?: string; id: string; projectId: string; projectTitle?: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[]",
     },
     RawContractSpec {
         path: "projects.deployments.update",

@@ -17,6 +17,13 @@ pub(super) async fn save(
     written: bool,
 ) -> RpcResult<bool> {
     let envelope = &packet.envelope;
+    if super::object_shares::is_assignment(envelope)? {
+        super::object_shares::save(context, packet, written).await?;
+        return Ok(false);
+    }
+    if packet.recipient_key.is_some() {
+        return Err(invalid());
+    }
     let canonical = super::creation::initial_record_creation_scope(
         &envelope.scope,
         envelope.facet,

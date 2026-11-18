@@ -269,7 +269,10 @@ export default function DeploymentsPage() {
             deployment,
             from,
             to,
-            projectLabel: project?.title ?? uiText("Unbekanntes Projekt"),
+            projectLabel:
+              project?.title ??
+              deployment.projectTitle ??
+              uiText("Unbekanntes Projekt"),
             userLabel: user
               ? userFullName(user)
               : uiText("Unbekannter Benutzer"),

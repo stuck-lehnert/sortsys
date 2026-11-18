@@ -282,6 +282,7 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
             snapshot: area.sequence,
             key_generation: area.generation,
             objects: Vec::new(),
+            recipient_access: Vec::new(),
             after: None,
             openings: None,
         });
@@ -383,11 +384,14 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     } else {
         None
     };
+    let recipient_access =
+        super::super::object_shares::states(&mut context.transaction, &objects).await?;
     Ok(ObjectPage {
         snapshot: area.sequence,
         key_generation: area.generation,
         objects,
         after,
+        recipient_access,
         openings,
     })
 }

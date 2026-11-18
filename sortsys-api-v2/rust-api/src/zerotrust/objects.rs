@@ -235,6 +235,8 @@ pub(super) struct SaveInput {
     pub migration_origin: Option<super::history::MigrationOrigin>,
     #[ts(optional)]
     pub resource_access: Option<sortsys_zerotrust::resource_access::ResourceAccessState>,
+    #[ts(optional)]
+    pub recipient_key: Option<super::object_shares::RecipientKey>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -296,6 +298,7 @@ struct ObjectPage {
     key_generation: String,
     objects: Vec<EncryptedObject>,
     after: Option<String>,
+    recipient_access: Vec<super::object_shares::RecipientAccess>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     openings: Option<Vec<DomainOpening>>,
@@ -1001,6 +1004,7 @@ mod permission_tests {
             references: None,
             migration_origin: None,
             resource_access: None,
+            recipient_key: None,
         };
         tombstone_binding(&input).unwrap();
         for id in [
@@ -1035,6 +1039,7 @@ mod permission_tests {
             references: None,
             migration_origin: None,
             resource_access: None,
+            recipient_key: None,
         };
         tool_object_binding(&input).unwrap();
         for object in [
@@ -1074,6 +1079,7 @@ mod permission_tests {
             references: None,
             migration_origin: None,
             resource_access: None,
+            recipient_key: None,
         };
         assert!(import_receipt(&input, "user:1").unwrap());
         assert!(import_receipt(&input, "user:2").is_err());

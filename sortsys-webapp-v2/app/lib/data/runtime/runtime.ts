@@ -1085,6 +1085,12 @@ export class DataRuntime {
               if (closed) throw new InvalidProtectedData();
               if (object.envelope.signature !== packet.envelope.signature)
                 return false;
+              if (
+                (packet.recipientKey || object.recipientAccess) &&
+                object.recipientAccess?.access.signature !==
+                  packet.resourceAccess?.signature
+              )
+                return false;
               if (packet.envelope.format === TOMBSTONE_FORMAT) {
                 if (
                   object.envelope.format !== TOMBSTONE_FORMAT ||

@@ -18,6 +18,7 @@ mod initialization;
 mod invitations;
 mod live_checkpoints;
 mod members;
+mod object_shares;
 mod objects;
 mod opaque;
 mod ots;
@@ -45,6 +46,7 @@ pub(crate) fn register_native(
     let builder = initialization::register(builder, Arc::clone(&service));
     let builder = bootstrap::register(builder, Arc::clone(&service));
     let builder = objects::register_metadata(builder, Arc::clone(&service));
+    let builder = object_shares::register(builder, Arc::clone(&service));
     let builder = staged::register_metadata(builder, Arc::clone(&service));
     let builder = recovery::register_metadata(builder, Arc::clone(&service));
     let builder = members::register_metadata(builder, Arc::clone(&service));
@@ -179,6 +181,7 @@ pub(crate) async fn verify_live_identity(
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     let builder = bootstrap::register_contract(builder);
+    let builder = object_shares::register_contract(builder);
     let builder =
         builder.query_stub::<(), crate::editors::EditorConfig>("zerotrust.editors.config");
     let builder = documents::register_contract(builder);

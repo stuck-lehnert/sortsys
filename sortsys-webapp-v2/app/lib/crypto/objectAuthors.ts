@@ -330,11 +330,17 @@ export function createObjectAuthorVerifier(
       throw error;
     }
   }
-  const object = async (
+  async function authorizeObject(
     envelope: EncryptedObject,
-    definition: DomainDefinition,
-    staged = false,
-  ): Promise<CryptoKey> => {
+    definition: BirthProof & {
+      tenant: string;
+      scope: string;
+      facet: Facet;
+      generation: string;
+    },
+    first: BirthProof,
+    staged: boolean,
+  ): Promise<CryptoKey> {
     context.live();
     if (
       envelope.tenant !== context.account.tenant ||
@@ -347,7 +353,6 @@ export function createObjectAuthorVerifier(
       throw new InvalidProtectedData();
     }
     const checked = await policy(envelope.policyVersion);
-    const first = await initial(definition);
     const access = accessFor(
       envelope.author,
       envelope.policyVersion,
@@ -384,9 +389,41 @@ export function createObjectAuthorVerifier(
     );
     context.live();
     return key;
-  };
+  }
+  const object = async (
+    envelope: EncryptedObject,
+    definition: DomainDefinition,
+    staged = false,
+  ): Promise<CryptoKey> =>
+    authorizeObject(envelope, definition, await initial(definition), staged);
   return Object.assign(object, {
     definition,
+    /** A per-object reader receives signed public proofs, never the containing
+     * area's key packages. Apply exactly the ordinary writer authorization. */
+    async fromProofs(envelope: EncryptedObject, inputs: readonly unknown[]) {
+      const generations = [...new Set(["1", envelope.generation])];
+      if (!Array.isArray(inputs) || inputs.length !== generations.length)
+        throw new InvalidProtectedData();
+      const proofs = [];
+      for (const [index, generation] of generations.entries()) {
+        const proof = await verifyDomainProof(
+          inputs[index],
+          {
+            tenant: context.account.tenant,
+            id: `${envelope.scope}:${envelope.facet}`,
+            scope: envelope.scope,
+            facet: envelope.facet,
+            generation,
+          },
+          context.history.authority,
+        );
+        await verifyKeyManagement(proof, proof.scope, proof.facet);
+        context.live();
+        rememberProof(proof.id, proof.generation, proof);
+        proofs.push(proof);
+      }
+      return authorizeObject(envelope, proofs.at(-1)!, proofs[0]!, false);
+    },
     /** Native heads and receipts have their own signed frames. Their authors
      * still need the historical root policy and each area's certified origin. */
     async control(

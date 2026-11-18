@@ -23,6 +23,28 @@ Anlageberechtigung für neue Projekte erlaubt keine Erweiterung einer fremden
 Baustelle. Bei der Bestandsumstellung wird auch für Projekte ohne bisherige
 Einsätze ein Bereich vorbereitet.
 
+## Eigene Einsätze
+
+Mitarbeitende können ihre zugewiesenen Einsätze ohne Leserecht für die gesamte
+Baustellenplanung öffnen. Beim Speichern verschlüsselt der Browser den Schlüssel
+der einzelnen Einsatzrevision zusätzlich für die zugewiesene Person. Dieser
+Schlüssel öffnet weder andere Einsätze noch spätere Revisionen. Ausdrückliche
+Lesesperren und Kontosperren gelten auch für diese automatische Freigabe.
+
+Ein Einsatz kann bereits vor der ersten Anmeldung angelegt werden. Bei der
+Bestätigung der Einladung ergänzt der freigebende Verwalter die Schlüsselpakete
+für bestehende Einsätze in den Planungsbereichen, die er lesen und bearbeiten
+darf. Dafür bleibt der Klartext im Browser. Eine Neuzuweisung oder Löschung
+entfernt die bisherige Freigabe in derselben Transaktion wie die Planungsänderung.
+Bereits gelesene Inhalte lassen sich dadurch nicht nachträglich entziehen.
+
+Die Eigenansicht ist über das gewöhnliche Planungsmenü erreichbar. Fehlt die
+Freigabe der Projektstammdaten, zeigt sie die bei Anlage oder Baustellenwechsel
+mitverschlüsselte Projektbezeichnung. Eine spätere reine Projektumbenennung
+aktualisiert diese Kopie noch nicht automatisch. Die API kennt die technischen
+Zuordnungen zwischen Projekt, Einsatz und Empfänger; Zeiten, Kommentare und
+Projektbezeichnungen bleiben verschlüsselt.
+
 ## Verschieben und gemeinsam planen
 
 Ein Einsatz kann auf eine andere Baustelle wechseln und später zurückkehren.
@@ -73,9 +95,16 @@ verwenden kein WebSocket; sie laden den Stand der anderen Instanz ausdrücklich
 neu. Die anschließende Recovery dieser Planungsdaten ist noch nicht
 nachgewiesen.
 
-Eine Lesefreigabe für die Planung öffnet die Einsätze dieser Baustelle. Die
-bisherige automatische Ansicht ausschließlich eigener Einsätze benötigt noch
-eine eigene Verteilung von Leseschlüsseln. Persönliche
+Der [native Test der Eigenansicht](../sortsys-webapp-v2/scripts/test-native-planning-recipients.ts)
+verwendet zwei API-Instanzen im selben Rust-Testprozess und zwei Benutzerkonten.
+Er prüft Einsätze vor der Einladung, eigene Inhalte ohne Bereichsschlüssel,
+abgewiesene Fremdzugriffe und Schreibversuche sowie fehlende oder manipulierte
+Empfängernachweise. Auch ausdrückliche Lesesperren, Signaturschlüsselwechsel,
+Baustellenwechsel, Neuzuweisung und Löschung werden geprüft. Änderungen der ersten
+API erreichen die Eigenansicht über den WebSocket der zweiten. Ein gesonderter
+Browsernachweis für diese Eigenansicht und deren Recovery stehen noch aus.
+
+Eine Bereichsfreigabe öffnet weiterhin alle Einsätze dieser Baustelle. Persönliche
 [Abwesenheiten samt Urlaubskontingent und Genehmigung](abwesenheiten-protokoll.md)
 haben inzwischen einen eigenen verschlüsselten Adapter. Die vollständige
 Verfügbarkeitsdarstellung braucht noch einen gemeinsamen Vergleich dieser

@@ -343,6 +343,29 @@ pub(in crate::zerotrust) async fn check_member(
     Ok(())
 }
 
+/// A signing-key renewal does not invalidate an HPKE envelope when the current
+/// certified member still owns its encryption key. The old certificate must
+/// belong to the approved identity history, not merely have the same user ID.
+pub(in crate::zerotrust) async fn check_encryption_recipient(
+    transaction: &mut Transaction,
+    guard: &Security,
+    expected: &IdentityCertificate,
+) -> RpcResult<()> {
+    let current = checked_member(transaction, guard, &expected.user).await?;
+    if current.encryption_key != expected.encryption_key {
+        return Err(forbidden());
+    }
+    expected.verify(&guard.authority)?;
+    let previous: IdentityCertificate = transaction
+        .read(super::super::setup::identity_history_key(expected)?)
+        .await?
+        .ok_or_else(forbidden)?;
+    if previous.signature != expected.signature || previous.frame()? != expected.frame()? {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
 /// Both the standalone inventory and the combined access snapshot retain the
 /// same visibility and key-rotation checks, inside their caller's transaction.
 pub(super) async fn list_domains(

@@ -72,7 +72,8 @@ export default Authenticated(function () {
   const lastVisitKeyRef = useRef<string | null>(null);
   const canViewProjects = sessionInfo.canDo("view:projects");
   const canViewRegieReports = sessionInfo.canDo("view:regieReports");
-  const canSearchDocuments = sessionInfo.supportsProjectFiles() && sessionInfo.canSearchProjectFiles();
+  const canSearchDocuments =
+    sessionInfo.supportsProjectFiles() && sessionInfo.canSearchProjectFiles();
   const canViewTools = sessionInfo.canDo("view:tools");
   const canViewToolTrackings = sessionInfo.canDo("view:toolTrackings");
   const canViewUsers = sessionInfo.canDo("view:users");
@@ -83,7 +84,6 @@ export default Authenticated(function () {
   const canViewCustomers = sessionInfo.canDo("view:customers");
   const canViewContacts = sessionInfo.canDo("view:contacts");
   const canViewToolInventories = sessionInfo.canDo("view:toolInventories");
-  const canViewDeployments = sessionInfo.canDo("view:projectDeployments");
   const canViewVacations =
     sessionInfo.canDo("view:userVacations") ||
     sessionInfo.canDo("manage:userVacations");
@@ -314,7 +314,13 @@ export default Authenticated(function () {
               isPathActive("/vacations")
             }
           >
-            {sessionInfo.canSeeOffers() && <MySideNavLink icon={Icons.DocumentAdd} href="/offers" title={uiText("Angebote", "Offers")} />}
+            {sessionInfo.canSeeOffers() && (
+              <MySideNavLink
+                icon={Icons.DocumentAdd}
+                href="/offers"
+                title={uiText("Angebote", "Offers")}
+              />
+            )}
             {canViewProjects && (
               <MySideNavLink
                 icon={Icons.Project}
@@ -336,13 +342,11 @@ export default Authenticated(function () {
                 title={t("shell.documents")}
               />
             )}
-            {canViewDeployments && (
-              <MySideNavLink
-                icon={Icons.DailyReport}
-                href="/deployments"
-                title={t("shell.deployments")}
-              />
-            )}
+            <MySideNavLink
+              icon={Icons.DailyReport}
+              href="/deployments"
+              title={t("shell.deployments")}
+            />
             {canViewVacations && (
               <MySideNavLink
                 icon={Icons.User}

@@ -3,7 +3,7 @@ use super::{
     access::metadata_context_for_domains,
     creation::CreationOrigin,
     crypto::{identifier, revision},
-    objects::{KeyAuthority, packet_hash, registry},
+    objects::{DomainDefinition, KeyAuthority, packet_hash, registry},
     wire::{Action, Facet, SealedBox},
 };
 use crate::{
@@ -25,7 +25,7 @@ struct ProofInput {
 
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-struct DomainProof {
+pub(super) struct DomainProof {
     format: String,
     tenant: String,
     id: String,
@@ -81,6 +81,14 @@ async fn get(
     if !reads_area && !reads_commercial_head {
         return Err(forbidden());
     }
+    let proof = public_proof(definition)?;
+    context.transaction.validate().await?;
+    Ok(proof)
+}
+
+/// The same authenticated writer evidence is used for area readers and for
+/// recipients of a single record. Recipient key envelopes are never included.
+pub(super) fn public_proof(definition: DomainDefinition) -> RpcResult<DomainProof> {
     definition.frame()?;
     let envelope_hashes = definition
         .envelopes
@@ -101,7 +109,6 @@ async fn get(
         creation: definition.creation,
         key_authority: definition.key_authority,
     };
-    context.transaction.validate().await?;
     Ok(proof)
 }
 

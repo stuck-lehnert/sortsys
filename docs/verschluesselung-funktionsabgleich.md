@@ -269,8 +269,15 @@ aus. Siehe
 **Einsatzplanung und Baustellensperren.** Bestandsübernahme, Listen, Anlage,
 Änderungen, Löschen und atomare Projektwechsel verwenden einen eigenen
 Schlüsselbereich je Projekt und die gemeinsame Datenlaufzeit. Die Oberfläche
-erhält aktualisierte Listen über verschlüsselte Ereignisse. Automatische
-Lesefreigaben ausschließlich eigener Einsätze fehlen noch. Persönliche
+erhält aktualisierte Listen über verschlüsselte Ereignisse. Eigene Einsätze
+verwenden zusätzliche Schlüsselpakete je Datensatzrevision; dafür wird kein
+Bereichsschlüssel verteilt. Ein weiterer nativer Test prüft zwei Benutzerkonten,
+die Einladungsfreigabe bestehender Einsätze, verweigerte Fremdzugriffe,
+ausdrückliche Lesesperren und den Signaturschlüsselwechsel. Änderungen über die
+erste API erreichen die Eigenansicht am WebSocket der zweiten. Die beiden
+Instanzen dieses Tests laufen in einem Rust-Prozess. Ein Browsernachweis der
+Eigenansicht fehlt noch; ohne Projektstammdaten verwendet sie eine verschlüsselte
+Kopie der Projektbezeichnung, die reine Umbenennungen noch nicht nachführt. Persönliche
 Abwesenheiten kommen aus dem eigenen verschlüsselten Adapter. Atomare
 Baustellenwechsel, Wiederholungen, veraltete Formulare und verlorene oder
 falsche Speicherantworten sind über zwei echte API-Instanzen geprüft. Die

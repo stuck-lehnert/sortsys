@@ -111,6 +111,7 @@ globalThis.fetch = new Proxy(originalFetch, {
         "owner-tool-batches",
         "owner-access-pages",
         "owner-access-publications",
+        "owner-planning-recipients",
       ].includes(mode) &&
       url.searchParams.has("input")
     ) {
@@ -310,6 +311,13 @@ try {
     const { testDocumentMessages } =
       await import("./test-live-document-messages");
     await testDocumentMessages(owner, duckDriver, draft.password);
+  } else if (mode === "owner-planning-recipients") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseNativePlanningRecipients } =
+      await import("./test-native-planning-recipients");
+    await exerciseNativePlanningRecipients(owner, peer);
   } else if (mode === "owner-staging") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");
@@ -402,6 +410,20 @@ try {
         body.includes("Private page inventory fixture 861329"),
         false,
       );
+    }
+    if (mode === "owner-planning-recipients") {
+      for (const privateValue of [
+        "Private own planning 816294",
+        "Other person's private planning 749281",
+        "Updated private own planning 163829",
+        "Private Baustelle 647823",
+        "Zielbaustelle 381694",
+      ])
+        assert.equal(
+          body.includes(privateValue),
+          false,
+          "Planning contents must remain encrypted on the native transport",
+        );
     }
     if (mode === "owner-backup-archive") {
       for (const marker of [
