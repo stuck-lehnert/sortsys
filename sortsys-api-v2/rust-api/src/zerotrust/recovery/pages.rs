@@ -135,18 +135,13 @@ async fn domain_page(
         )
         .await?;
     let mut items = Vec::new();
-    transaction
-        .prefetch(
-            page.records
-                .iter()
-                .map(|row| {
-                    let descriptor = row.value.as_ref().ok_or_else(invalid)?;
-                    identifier(&descriptor.id)?;
-                    Ok(crate::control::key("domains", &descriptor.id))
-                })
-                .collect::<RpcResult<Vec<_>>>()?,
-        )
-        .await?;
+    let mut heads = Vec::with_capacity(page.records.len() * 2);
+    for row in &page.records {
+        let descriptor = row.value.as_ref().ok_or_else(invalid)?;
+        identifier(&descriptor.id)?;
+        heads.extend(super::super::objects::registry::domain_keys(&descriptor.id));
+    }
+    transaction.prefetch(heads).await?;
     for row in page.records {
         let descriptor = row.value.ok_or_else(invalid)?;
         let domain = super::super::objects::registry::domain(transaction, &descriptor.id).await?;
@@ -198,7 +193,9 @@ async fn key_page(
             &reference.generation,
             generation,
         )?);
-        keys.push(crate::control::key("domains", &reference.domain));
+        keys.extend(super::super::objects::registry::domain_keys(
+            &reference.domain,
+        ));
     }
     transaction.prefetch(keys).await?;
     let mut items = Vec::new();

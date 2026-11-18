@@ -117,10 +117,14 @@ pub(crate) async fn live_access(
         .is_some();
     if assistant {
         let domain = format!("{scope}:master-data");
+        transaction
+            .prefetch(objects::registry::domain_keys(&domain).into())
+            .await?;
         let saved: Option<objects::registry::DomainRecord> = transaction
             .read(crate::control::key("domains", &domain))
             .await?;
-        if let Some(area) = saved {
+        if saved.is_some() {
+            let area = objects::registry::domain(transaction, &domain).await?;
             if area.id != domain || area.scope != scope || area.facet != wire::Facet::MasterData {
                 return Err(crypto::invalid());
             }

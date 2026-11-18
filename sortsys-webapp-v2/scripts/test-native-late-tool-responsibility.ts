@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   createClient,
   RpcClientError,
@@ -185,6 +187,17 @@ export async function exerciseLateToolResponsibility(
     assert.equal(
       BigInt(checkpoint.access.revision),
       BigInt(original.revision) + 1n,
+    );
+    const root = process.env.SORTSYS_NATIVE_AUTH_ROOT;
+    assert.ok(root);
+    await writeFile(
+      join(root, "tool-authorization-witness.json"),
+      JSON.stringify({
+        tenant: checkpoint.tenant,
+        domain: area.domain,
+        origin: checkpoint,
+      }),
+      { mode: 0o600 },
     );
     const policy = await required(
       peer.query("zerotrust.policy.get", undefined, {

@@ -10,6 +10,7 @@ pub(super) use registry::{
 };
 mod access_inventory;
 mod creation_renewals;
+mod domain_access;
 pub(super) use access_inventory::check_snapshot as metadata_check_inventory_snapshot;
 pub(super) mod registry;
 

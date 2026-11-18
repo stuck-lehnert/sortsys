@@ -486,8 +486,11 @@ des angemeldeten Kontos beschränkt.
 geschlossene verschlüsselte Mandantendateien und bietet sie zum Download an. Die
 unabhängige Kontrolldatei und die Office-Stände gehören zusätzlich zur
 vollständigen Sicherung. Alte Recovery- und Rechtezustände werden
-zurückgewiesen. Ein allgemeiner sicherer Rücksicherungsablauf ist noch offen;
-die Seed-Recovery ersetzt keine Datensicherung. Siehe
+zurückgewiesen. Laufende Bereichsfreigaben, Schlüsselzuordnungen und
+Anlagenachweise erhalten ebenfalls unabhängige Nachweise. Der veränderliche
+Inhaltscursor bleibt davon getrennt. Die Rücksicherung eines älteren
+Fachstands ist noch nicht angeschlossen. Die Seed-Recovery ersetzt keine
+Datensicherung. Siehe
 [verschlüsselte Sicherungen](verschluesselte-sicherungen.md).
 
 **Migrationen über Inhaltsfelder.** Berechtigte Clients migrieren Inhalte.

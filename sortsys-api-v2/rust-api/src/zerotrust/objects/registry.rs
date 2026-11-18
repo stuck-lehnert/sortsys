@@ -125,7 +125,23 @@ pub(in crate::zerotrust) async fn domain(
     if record.id != id {
         return Err(invalid());
     }
+    super::domain_access::check(transaction, &record).await?;
     Ok(record)
+}
+
+pub(in crate::zerotrust) fn domain_keys(id: &str) -> [sortsys_zerotrust::metadata::RecordKey; 2] {
+    [key("domains", id), domain_access_key(id)]
+}
+
+pub(in crate::zerotrust) fn domain_access_key(id: &str) -> sortsys_zerotrust::metadata::RecordKey {
+    super::domain_access::record(id)
+}
+
+pub(in crate::zerotrust) async fn publish_domain(
+    transaction: &mut Transaction,
+    area: &DomainRecord,
+) -> RpcResult<()> {
+    super::domain_access::publish(transaction, area).await
 }
 async fn authority_at(
     transaction: &mut Transaction,
@@ -395,7 +411,17 @@ pub(super) async fn list_domains(
     };
     let mut result = Vec::new();
     let mut rotation = RotationChecks::new(&context.security);
+    context
+        .transaction
+        .prefetch(
+            areas
+                .iter()
+                .map(|area| domain_access_key(&area.id))
+                .collect(),
+        )
+        .await?;
     for area in areas {
+        super::domain_access::check(&mut context.transaction, &area).await?;
         if context.auth.is_admin()
             || context.security.allows(
                 &context.security.subject,
@@ -1471,8 +1497,15 @@ async fn prefetch_domain_publication(
     let mut records = Vec::with_capacity(inputs.len() * 2);
     for input in inputs {
         identifier(&input.id)?;
-        records.push(key("domains", &input.id));
+        records.extend(domain_keys(&input.id));
         records.push(key("domain-catalog", &input.id));
+        protected.push(domain_access_key(&input.id));
+        if let Some(origin) = &input.creation {
+            protected.push(key(
+                &origin_collection(context.security.root.generation),
+                &origin.id,
+            ));
+        }
         protected.push(definition_key(&input.id, &input.generation, &generation)?);
         protected.push(recovery_key(&RecoveryKeyReference {
             domain: input.id.clone(),
@@ -1523,6 +1556,7 @@ async fn put_domain_in_transaction(
     }
     let current: Option<DomainRecord> = context.transaction.read(key("domains", &input.id)).await?;
     if let Some(area) = &current {
+        super::domain_access::check(&mut context.transaction, area).await?;
         if area.scope == input.scope
             && area.facet == input.facet
             && area.generation == input.generation
@@ -1693,7 +1727,7 @@ async fn put_domain_in_transaction(
     if let Some(origin) = &input.creation {
         context
             .transaction
-            .put(
+            .put_protected(
                 key(&origin_collection(guard.root.generation), &input.id),
                 origin,
             )
@@ -1703,10 +1737,7 @@ async fn put_domain_in_transaction(
             &serde_json::json!({"policy": guard.policy.version}),
         )?;
     }
-    context
-        .transaction
-        .put(key("domains", &input.id), &area)
-        .await?;
+    publish_domain(&mut context.transaction, &area).await?;
     super::super::setup::advance_catalog(&mut context.transaction, &context.auth.tenant).await?;
     context.transaction.notify(
         "domain",
@@ -1791,10 +1822,7 @@ async fn grant_key_in_transaction(context: &mut MetadataContext, input: KeyGrant
     let current_rotation = rotation
         .required(&mut context.transaction, guard, &area)
         .await?;
-    context
-        .transaction
-        .put(key("domains", &input.domain), &area)
-        .await?;
+    publish_domain(&mut context.transaction, &area).await?;
     // Historical grants and replacement envelopes do not change the public
     // inventory. Only invalidate it when the advertised rotation state changes.
     if previous_rotation != current_rotation {
@@ -2079,7 +2107,7 @@ pub(in crate::zerotrust) fn register_creation(
                     }
                     context
                         .transaction
-                        .put(capability_key(&input), &input)
+                        .put_protected(capability_key(&input), &input)
                         .await?;
                     context.transaction.notify(
                         "access",

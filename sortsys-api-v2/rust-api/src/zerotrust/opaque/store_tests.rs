@@ -1219,9 +1219,16 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
                 .filter(|record| record.collection == "domains")
                 .map(|record| record.key.as_str())
                 .collect::<std::collections::BTreeSet<_>>();
-            domains == expected_domains && records.len() == definitions.len() + domains.len()
+            let access = records
+                .iter()
+                .filter(|record| record.collection == "domain-access")
+                .map(|record| record.key.as_str())
+                .collect::<std::collections::BTreeSet<_>>();
+            domains == expected_domains
+                && access == domains
+                && records.len() == definitions.len() + domains.len() + access.len()
         }),
-        "Recovery must read 64 definitions and all their distinct domains in one HTTP request"
+        "Recovery must read 64 definitions, their distinct domains and protected access states in one HTTP request"
     );
     let tenant = first.tenant("recovery-tenant").unwrap();
     assert_published_catalog_pages(&tenant, 2).await;
@@ -1233,6 +1240,7 @@ async fn seed_recovery_is_atomic_across_independent_api_instances() {
         "accounts",
         "domain-definitions",
         "key-envelopes",
+        "domain-access",
     ] {
         assert_protected_collection(&tenant, collection).await;
     }
@@ -1526,9 +1534,86 @@ async fn tool_booking_batches_publish_atomically_across_api_instances() {
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
+    let (first_url, _first_api) = api(auth_service(&settings, first.clone())).await;
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     browser("owner-tool-batches", &root, Some(&[first_url, second_url])).await;
+    let fixture: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("tool-authorization-witness.json")).unwrap(),
+    )
+    .unwrap();
+    let tenant = first.tenant(fixture["tenant"].as_str().unwrap()).unwrap();
+    for collection in ["domain-access", "creation-capabilities", "created-areas-1"] {
+        assert_protected_collection(&tenant, collection).await;
+    }
+    let domain = fixture["domain"].as_str().unwrap();
+    let original: crate::zerotrust::creation::CreationOrigin =
+        serde_json::from_value(fixture["origin"].clone()).unwrap();
+    let security = tenant
+        .read::<crate::zerotrust::setup::RootState>(crate::zerotrust::setup::root_key())
+        .await
+        .unwrap()
+        .value
+        .unwrap();
+    original
+        .verify(
+            &crate::zerotrust::crypto::sized::<32>(
+                &security.profile.authority.authority_signing_key,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(original.access.as_ref().unwrap().active);
+    let record = key("created-areas-1", domain);
+    let current = tenant.read::<Value>(record.clone()).await.unwrap();
+    assert_eq!(current.value.as_ref().unwrap()["access"]["active"], false);
+    let mut replay = tenant.transaction().unwrap();
+    replay.put(record.clone(), &original).await.unwrap();
+    assert!(
+        replay.commit().await.is_err(),
+        "A valid earlier active proof must not overwrite its independent current witness"
+    );
+    let retained = tenant.read::<Value>(record).await.unwrap();
+    assert_eq!(retained.value, current.value);
+    assert_eq!(retained.version, current.version);
+    let mut read = tenant.transaction().unwrap();
+    let area = crate::zerotrust::objects::registry::domain(&mut read, domain)
+        .await
+        .unwrap();
+    let access = tenant
+        .read::<Value>(key("domain-access", domain))
+        .await
+        .unwrap();
+    let mut altered = area.clone();
+    altered.recipients.clear();
+    let mut substitution = tenant.transaction().unwrap();
+    substitution
+        .put(key("domains", domain), &altered)
+        .await
+        .unwrap();
+    substitution.commit().await.unwrap();
+    let mut rejected = tenant.transaction().unwrap();
+    assert!(
+        crate::zerotrust::objects::registry::domain(&mut rejected, domain)
+            .await
+            .is_err(),
+        "A restored or substituted membership must not bypass its independent access state"
+    );
+    let mut cursor = area.clone();
+    cursor.sequence = (cursor.sequence.parse::<u64>().unwrap() + 1).to_string();
+    let mut advance = tenant.transaction().unwrap();
+    advance.put(key("domains", domain), &cursor).await.unwrap();
+    advance.commit().await.unwrap();
+    let mut current = tenant.transaction().unwrap();
+    let restored = crate::zerotrust::objects::registry::domain(&mut current, domain)
+        .await
+        .unwrap();
+    assert_eq!(restored.sequence, cursor.sequence);
+    let retained_access = tenant
+        .read::<Value>(key("domain-access", domain))
+        .await
+        .unwrap();
+    assert_eq!(retained_access.value, access.value);
+    assert_eq!(retained_access.version, access.version);
 }
 
 #[tokio::test]

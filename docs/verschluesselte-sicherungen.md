@@ -29,6 +29,16 @@ dass eine alte Mandantendatei eine verbrauchte Recovery-Phrase oder einen
 verschlüsselte Bearbeitungsstände; die [Betriebsdokumentation](deployment.md)
 beschreibt diese Ablage.
 
+Die unabhängigen Nachweise halten auch die aktuellen Schlüsselgenerationen und
+Empfängerzuordnungen der Datenbereiche sowie Anlagenachweise und
+delegierte Berechtigungen zum Anlegen neuer Bereiche fest. Ein früher gültiger
+Zuständigkeitsnachweis darf eine bereits beendete Werkzeugbuchung dadurch nicht
+wieder freigeben. Die API
+vergleicht den gelesenen Bereich mit seinem geschützten Freigabestand, bevor
+sie einen Schlüssel oder eine Bereichsdefinition verwendet. Der Inhaltscursor
+ist davon getrennt: Gewöhnliche Dokumentänderungen schreiben ihn fort, ohne
+deshalb eine neue Freigabe zu erzeugen.
+
 Auch endgültige Dokumentsperren, unveränderliche Datensätze und
 Abwesenheitsentscheidungen erhalten unabhängige Nachweise. Sobald ein
 OpenTimestamps-Nachweis gespeichert wurde, wird auch dieser aufbewahrt. Ein

@@ -99,6 +99,7 @@ async fn prefetch_publication(
         )?);
     }
     for definition in &plan.domains {
+        protected.push(registry::domain_access_key(&definition.id));
         protected.push(registry::definition_key(
             &definition.id,
             &definition.generation,
@@ -375,7 +376,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         .prefetch(
             descriptors
                 .iter()
-                .map(|descriptor| key("domains", &descriptor.id))
+                .flat_map(|descriptor| registry::domain_keys(&descriptor.id))
                 .collect(),
         )
         .await?;
@@ -608,9 +609,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         transaction
             .put_protected(registry::recovery_key(&reference)?, &reference)
             .await?;
-        transaction
-            .put(key("domains", &definition.id), domain)
-            .await?;
+        registry::publish_domain(&mut transaction, domain).await?;
     }
     let mut status: accounts::TenantStatus = transaction
         .read(accounts::tenant_key())

@@ -91,6 +91,15 @@ pub(super) async fn save(
     } else if original.assignee.is_some() && state.revision != "1" {
         return Err(conflict());
     }
+    context
+        .transaction
+        .prefetch_protected(
+            [Facet::MasterData, Facet::Scope]
+                .into_iter()
+                .map(|facet| key(&collection, &format!("{}:{}", original.scope, facet.name())))
+                .collect(),
+        )
+        .await?;
     for facet in [Facet::MasterData, Facet::Scope] {
         let record = key(&collection, &format!("{}:{}", original.scope, facet.name()));
         let Some(mut origin) = context
@@ -110,7 +119,7 @@ pub(super) async fn save(
             return Err(invalid());
         }
         origin.access = Some(state.clone());
-        context.transaction.put(record, &origin).await?;
+        context.transaction.put_protected(record, &origin).await?;
     }
     let changed_access =
         original.access.as_ref().map(|previous| previous.active) != Some(state.active);

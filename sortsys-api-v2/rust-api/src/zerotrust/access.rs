@@ -64,7 +64,7 @@ async fn metadata_security_for_selection(
         for domain in domains {
             records.push(key(&origins, domain));
             if matches!(domain_reads, DomainReads::WithHeads) {
-                records.push(key("domains", domain));
+                records.extend(super::objects::registry::domain_keys(domain));
             }
         }
     }

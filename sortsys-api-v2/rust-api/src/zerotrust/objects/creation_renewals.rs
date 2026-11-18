@@ -79,10 +79,20 @@ pub(super) async fn renew(
     if envelope.signature != input.packet_signature {
         return Err(conflict());
     }
+    context
+        .transaction
+        .prefetch_protected(
+            input
+                .origins
+                .iter()
+                .map(|origin| key(&collection, &origin.id))
+                .collect(),
+        )
+        .await?;
     for origin in &input.origins {
         context
             .transaction
-            .put(key(&collection, &origin.id), origin)
+            .put_protected(key(&collection, &origin.id), origin)
             .await?;
     }
     crate::zerotrust::setup::advance_catalog(&mut context.transaction, &context.auth.tenant)
