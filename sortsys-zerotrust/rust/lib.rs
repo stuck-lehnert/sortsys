@@ -14,6 +14,7 @@ pub mod journal;
 pub mod key_authorities;
 pub mod metadata;
 pub mod migration;
+pub mod object_shares;
 pub mod opentimestamps;
 pub mod pagination;
 pub mod passkey;

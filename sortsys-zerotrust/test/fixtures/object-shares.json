@@ -1,0 +1,105 @@
+{
+  "source": {
+    "tenant": "practice:alpha",
+    "scope": "calendar:private",
+    "facet": "appointments",
+    "object": "appointment:17",
+    "revision": "4",
+    "generation": "7",
+    "policyVersion": "12",
+    "author": "doctor:writer",
+    "format": "sortsys-object-v1",
+    "nonce": "4mSQE5fSVeHWGgcq",
+    "ciphertext": "rGFfcx2XrvctuW9SR_wpRyR0pXWL0XMPzc_AW2L3aznze5pAl_cXmpsFjCtKnUI7eLgF9VS6S9tKNKy3ZcNWA3zF36uYP4Tl_lA",
+    "wrappedKey": "H1oB67BVrjNE5SbDEZhUTK7-sdFGruaetBucNDmM0BbVD97MzuhKGQ",
+    "signature": "nYHfK5anXjexpasFFsTBxh5IpDEWOtn4FPuDPJ73goyMs6HLmUjfw_q9sSwGd4pNQP4Phg-aEBWUl8BFrNe5BQ"
+  },
+  "share": {
+    "tenant": "practice:alpha",
+    "purpose": "object-key",
+    "object": "object-key:WOxbFt8xZD370PtPZ1tpu5O0Ct-H40rA5PjE-EASREA",
+    "generation": "3",
+    "recipient": "patient:recipient",
+    "author": "doctor:manager",
+    "format": "sortsys-hpke-v1",
+    "enc": "tmcLuE1cRb5rve3220S01NvzBamkweA8HibUEwi8nBs",
+    "ciphertext": "kyaQDa7umcMhycGS4IkalEgnDiu7qPw27e2kVxgWpeOyy9s-62cyUy2oSOkU9K0R",
+    "signature": "IDQEOXkkiqgr2jwsVFU-36BMc7OJKk4Fa43FIfQAR6MP9cycmx544OFp796GuWCQbGl_kZKdikSp_E0GmC5ADg"
+  },
+  "context": {
+    "authorityGeneration": "3",
+    "recipient": "patient:recipient",
+    "author": "doctor:manager"
+  },
+  "sourceSigner": "w8jRy8lmlmxv8ltGF2TJSmWMH-Pg5M2y-_t-FX-jtX4",
+  "grantSigner": "CN8p5mUWAXiV58ePQQNHxIgAgyj_QFC89_bsClePcLo",
+  "malformedKeys": [
+    {
+      "tenant": "practice:alpha",
+      "purpose": "object-key",
+      "object": "object-key:WOxbFt8xZD370PtPZ1tpu5O0Ct-H40rA5PjE-EASREA",
+      "generation": "3",
+      "recipient": "patient:recipient",
+      "author": "doctor:manager",
+      "format": "sortsys-hpke-v1",
+      "enc": "kcVNEPK-y2qGWbcSgzYfvAInO02sH5x17qNUIy-6bm0",
+      "ciphertext": "-h3AAWfd_GmoWrTvoak6siDGs0-0WRJkF6Q4Cb8JxNc",
+      "signature": "PLjVAgF6XdioGqkWrSYagUAi49KP6PFJE4pcpbXrQgYIuyZ23KiKEzrNR5ARkHn-nOCksnn0LgV8HD2VAvvUAw"
+    },
+    {
+      "tenant": "practice:alpha",
+      "purpose": "object-key",
+      "object": "object-key:WOxbFt8xZD370PtPZ1tpu5O0Ct-H40rA5PjE-EASREA",
+      "generation": "3",
+      "recipient": "patient:recipient",
+      "author": "doctor:manager",
+      "format": "sortsys-hpke-v1",
+      "enc": "gYWwSD5UraoAnnerIDd4JIK5HocRspUER7WKHv1paBw",
+      "ciphertext": "QYH8yTSwp8WHWvW2vCK8GzkBzUM25tCkdS-xdvnWRsUzp2jkyAd3xCT2FDd1bBcIPmzlYkdlhWRhL1-GV5tlHQ",
+      "signature": "wBowhcArvVSd2PGg-DB-fSS7WNDQHW7RnTIDDp_7_gwNU38YcX0EW7vrYzQXhGycK1SrvfbqKEl9l2mhhxb-Cg"
+    }
+  ],
+  "differentObjects": [
+    {
+      "tenant": "practice:alpha",
+      "scope": "calendar:private",
+      "facet": "appointments",
+      "object": "appointment:18",
+      "revision": "4",
+      "generation": "7",
+      "policyVersion": "12",
+      "author": "doctor:writer",
+      "format": "sortsys-object-v1",
+      "nonce": "IWT7Msc9BVcVJJF9",
+      "ciphertext": "K6gblj3CeHf-G5lAwnDCXebS3iicUEhSblSe4lqz38rjTqRO2-kbQF4O0HxupO_y7fbr5sF085pmHVY3jBBi1T_C8j-rHkbhJRg",
+      "wrappedKey": "osp6va_a68iP5j3lzbRBYniekTaF6p-WARZriziTmIfrs9rHd-FuDw",
+      "signature": "6hC97C05iEclHFX90Yi0YdxLWnl-Af61bIqarXR03Pn8sY-Ejmb3_uF6pGMbV30RUMtOrZXTCQocm8YYILaGAg"
+    },
+    {
+      "tenant": "practice:alpha",
+      "scope": "calendar:private",
+      "facet": "appointments",
+      "object": "appointment:17",
+      "revision": "5",
+      "generation": "7",
+      "policyVersion": "12",
+      "author": "doctor:writer",
+      "format": "sortsys-object-v1",
+      "nonce": "BWZSZZ01Hl26oMYD",
+      "ciphertext": "ywhDX4IYBmWmT3xTV-A5NSYicMX1K5uWKMjlU3qhFjOJ0WT6OiLcPJR3hKtT5YeYhXIXJFqOCXYrVH9zVAbWkkCAlHPl2hCNxUE",
+      "wrappedKey": "NaO6kGr5K75V456HHt342nivPKAuMx0yzKTIsZ0i3nmPdJAGxOiYqg",
+      "signature": "VuahtqPrtnH3WBqHrbSVixrPtY5b4npc9Y1CEVK8oHzCFh9b0SsUz0ghgOgxRM765QXWF7IIBWGwMRq_c6H1AA"
+    }
+  ],
+  "recipientCertificate": {
+    "tenant": "practice:alpha",
+    "generation": "3",
+    "user": "patient:recipient",
+    "encryptionKey": "pLwzssTY6JqyaZDv9tnYrpE4Tj7lY05S-vkaz9kFBFo",
+    "signingKey": "UiKNjpqJX6Cr5H3T0e70magqgcpHINlJN6lUWeNwuFI",
+    "signature": "dAAX5Nk02R5lLdSw4zIo-3rQrEFi_siIJi3wRzyBGenypFZRbq3Vto_jtgPhit27DcXMuyo6YjCXIoflbJFlDg"
+  },
+  "authority": "F0vhdOU1aVqiXfSHJ1gLLPY4BLjVW8AKwCX9a1UV-PY",
+  "recipientBinding": "5eGuqIQsW-WO8WrRaZihjsPF-51_dwyDwn2wSYEw7Ww",
+  "emptyBinding": "iPTmp-lpFjxkLulby4ZmhsMRK3GmbucG2mZdnA-qHj0"
+}

@@ -77,6 +77,75 @@ geprüft werden. Ohne diese Erweiterung werden Regeln mit `origin` abgelehnt.
 Benutzerkennungsformats. Dieselben fachlichen Beschränkungen müssen auch auf
 der Serverseite gelten.
 
+## Einzelne Datensätze freigeben
+
+Ein Bereich kann mehrere vertrauliche Datensätze enthalten, von denen eine
+Person nur einen sehen soll. `security.objects.shareObjectKey` verpackt dafür
+den zufälligen Schlüssel dieses Datensatzes für den Empfänger. Der
+Bereichsschlüssel wird nicht weitergegeben. Empfänger öffnen mit
+`decryptSharedObject` dasselbe signierte Chiffrat; eine zusätzliche Klartextkopie
+ist nicht erforderlich.
+
+Das Beispiel verwendet die zuvor verschlüsselte Notiz.
+`verifiedRecipientKey` ist der öffentliche X25519-Schlüssel als `CryptoKey`;
+dessen Zertifikat und aktueller Zugang müssen bereits geprüft sein.
+
+```ts
+const share = {
+  authorityGeneration: "1",
+  recipient: "patient:ada",
+  author: "doctor:lee",
+};
+const envelope = await security.objects.shareObjectKey({
+  object: encrypted,
+  expected: context,
+  wrappingKey: key,
+  objectSigner: identity.signingKey.publicKey,
+  share,
+  recipientKey: verifiedRecipientKey,
+  signingKey: identity.signingKey.privateKey,
+});
+```
+
+Beim Öffnen werden `object`, `expected`, `objectSigner`, `envelope` und `share`
+an `decryptSharedObject` übergeben. `recipientKey` ist dann der private
+Entschlüsselungsschlüssel des Empfängers; `grantSigner` ist der geprüfte
+öffentliche Signaturschlüssel des Ausstellers. Ein anderer Aussteller als der
+ursprüngliche Objektautor ist möglich, etwa für eine spätere zulässige Freigabe.
+
+Das Schlüsselpaket verwendet den Zweck `object-key` und bindet die vollständige
+signierte Chiffratrevision einschließlich Mandant, Bereich und Inhaltsart. Jede
+neue Revision besitzt bereits einen neuen zufälligen Datensatzschlüssel. Eine
+frühere Freigabe öffnet deshalb weder einen anderen Datensatz noch dessen neue
+Revision. Löschmarkierungen lassen sich nicht freigeben. Die
+Autoritätsgeneration in `share` ist unabhängig von der Schlüsselgeneration des
+Datensatzes und muss aus dem aktuellen vertrauenswürdigen Sicherheitsstand
+stammen.
+
+Rust prüft denselben Nachweis mit `object_shares::verify`. Die Anwendung muss
+Aussteller und Empfänger zertifizieren und deren aktuelle Berechtigungen prüfen.
+Die Freigabe gehört zusammen mit der jeweiligen Objektversion in dieselbe
+Speichertransaktion. Beim Lesen muss der Server die aktuelle Freigabe und
+Objektversion auswählen; eine gültige frühere Signatur allein erlaubt kein
+erneutes Öffnen. Ein bereits entschlüsselter früherer Stand lässt sich nicht
+zurückholen.
+
+`objectKeyRecipientBinding(recipient, envelope)` bindet das genaue
+Empfängerzertifikat und Schlüsselpaket an das Feld `binding` eines
+`ResourceAccessState`. `null, null` ergibt eine ausdrückliche leere Bindung;
+nur einen der beiden Werte wegzulassen ist ungültig. Rust berechnet denselben
+Wert mit `object_shares::recipient_binding`. Der Speicheradapter muss diesen
+signierten Zugriffsstand für jedes freigabefähige Objekt verlangen, auch wenn
+aktuell kein Empfänger vorgesehen ist. Sonst ließe sich eine Freigabe aus der
+Speicheranfrage entfernen, während das Chiffrat trotzdem gespeichert und
+bestätigt wird. Ein vorhandener aktiver Nachweis passt nach dem Entfernen des
+Schlüsselpakets nicht mehr zur leeren Bindung.
+
+Bei einer Recovery bleibt der Datensatz über den vorhandenen Bereichsschlüssel
+wiederherstellbar. Freigaben an erneuerte Empfängerschlüssel benötigen neue
+Schlüsselpakete unter der aktuellen Autoritätsgeneration. Die Bibliothek
+entscheidet nicht, welche früheren Empfänger wieder Zugang erhalten dürfen.
+
 ## Rechteverwaltung delegieren
 
 Ein primär mit `signPolicy` signierter Stand kann einem zertifizierten Verwalter

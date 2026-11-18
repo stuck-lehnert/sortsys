@@ -85,6 +85,8 @@ struct BrowserVector {
     payload: PayloadVector,
     signer: String,
     object: EncryptedObject,
+    object_share: SealedBox,
+    object_share_binding: String,
     policy: Policy,
     permanent: EncryptedObject,
     migration: MigrationSeal,
@@ -376,6 +378,21 @@ fn main() {
     substituted.readers[0].user = "researcher:intruder".into();
     assert!(substituted.verify(&expected, &signer).is_err());
     vector.object.verify(&signer).unwrap();
+    assert_eq!(sortsys_zerotrust::object_shares::recipient_binding(
+        Some(&vector.delegation.creator), Some(&vector.object_share),
+    ).unwrap(), vector.object_share_binding);
+    sortsys_zerotrust::object_shares::verify(
+        &vector.object_share,
+        &vector.object,
+        &sortsys_zerotrust::object_shares::ObjectShareContext {
+            authority_generation: "1",
+            recipient: "researcher:kai",
+            author: &vector.object.author,
+        },
+        &signer,
+        &signer,
+    )
+    .unwrap();
     assert_eq!(vector.object.facet, "research-notes");
     let rules = vector
         .policy

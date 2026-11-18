@@ -1,15 +1,24 @@
 import {
   base64,
+  digest,
   frame,
   identifier,
   InvalidProtectedData,
   randomSecret,
   record,
   revision,
+  signedPacketFrame,
   sized,
   unbase64,
 } from "../encoding";
 import { sign, verify } from "../identity";
+import {
+  openBox,
+  sealBox,
+  sealedBox,
+  type BoxContext,
+  type SealedBox,
+} from "../boxes";
 import { facetVocabulary } from "./vocabulary";
 
 export const TOMBSTONE_FORMAT = "sortsys-object-tombstone-v1";
@@ -31,6 +40,14 @@ export type EncryptedObject<F extends string = string> = ObjectContext<F> & {
   ciphertext: string;
   wrappedKey: string;
   signature: string;
+};
+
+/** The caller verifies certified identities and live sharing rights. This
+ * context binds one recipient key envelope to the current authority epoch. */
+export type ObjectShareContext = {
+  authorityGeneration: string;
+  recipient: string;
+  author: string;
 };
 
 const contextKeys = [
@@ -98,9 +115,12 @@ export function createObjectCodec<const F extends string>(
     if (obj.format !== "sortsys-object-v1" && obj.format !== TOMBSTONE_FORMAT) {
       throw new InvalidProtectedData();
     }
-    for (
-      const key of ["nonce", "ciphertext", "wrappedKey", "signature"] as const
-    ) {
+    for (const key of [
+      "nonce",
+      "ciphertext",
+      "wrappedKey",
+      "signature",
+    ] as const) {
       if (typeof obj[key] !== "string") throw new InvalidProtectedData();
     }
     sized(obj.nonce as string, 12);
@@ -112,9 +132,10 @@ export function createObjectCodec<const F extends string>(
     );
     if (
       ciphertext.length < 16 ||
-      obj.format === TOMBSTONE_FORMAT &&
-        (ciphertext.length !== 16 || obj.revision === "1")
-    ) throw new InvalidProtectedData();
+      (obj.format === TOMBSTONE_FORMAT &&
+        (ciphertext.length !== 16 || obj.revision === "1"))
+    )
+      throw new InvalidProtectedData();
     return { ...obj } as EncryptedObject<F>;
   }
 
@@ -198,12 +219,7 @@ export function createObjectCodec<const F extends string>(
     author: CryptoKey,
   ): Promise<Uint8Array<ArrayBuffer>> {
     try {
-      const obj = encryptedObject(input);
-      objectContext(expected);
-      if (contextKeys.some((name) => obj[name] !== expected[name])) {
-        throw new InvalidProtectedData();
-      }
-      await verify(author, obj.signature, objectFrame(obj));
+      const obj = await verifiedObject(input, expected, author);
       const dataKey = await crypto.subtle.unwrapKey(
         "raw",
         sized(obj.wrappedKey, 40),
@@ -213,20 +229,145 @@ export function createObjectCodec<const F extends string>(
         false,
         ["decrypt"],
       );
-      return new Uint8Array(
-        await crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv: sized(obj.nonce, 12),
-            additionalData: contextFrame(expected),
-            tagLength: 128,
-          },
-          dataKey,
-          unbase64(obj.ciphertext, MAX_CONTENT_BYTES + 16),
-        ),
-      );
+      return await openPayload(obj, expected, dataKey);
     } catch {
       throw new InvalidProtectedData();
+    }
+  }
+
+  async function verifiedObject(
+    input: unknown,
+    expected: ObjectContext<F>,
+    author: CryptoKey,
+  ) {
+    const obj = encryptedObject(input);
+    objectContext(expected);
+    if (contextKeys.some((name) => obj[name] !== expected[name])) {
+      throw new InvalidProtectedData();
+    }
+    await verify(author, obj.signature, objectFrame(obj));
+    return obj;
+  }
+
+  async function openPayload(
+    obj: EncryptedObject<F>,
+    expected: ObjectContext<F>,
+    key: CryptoKey,
+  ) {
+    return new Uint8Array(
+      await crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: sized(obj.nonce, 12),
+          additionalData: contextFrame(expected),
+          tagLength: 128,
+        },
+        key,
+        unbase64(obj.ciphertext, MAX_CONTENT_BYTES + 16),
+      ),
+    );
+  }
+
+  async function objectKeyShareContext(
+    input: unknown,
+    share: ObjectShareContext,
+  ): Promise<BoxContext> {
+    const obj = encryptedObject(input);
+    const context = {
+      ...record(share, ["authorityGeneration", "recipient", "author"]),
+    };
+    if (obj.format === TOMBSTONE_FORMAT) throw new InvalidProtectedData();
+    revision(context.authorityGeneration);
+    identifier(context.recipient);
+    identifier(context.author);
+    const binding = await digest(
+      signedPacketFrame(objectFrame(obj), obj.signature),
+    );
+    return {
+      tenant: obj.tenant,
+      purpose: "object-key",
+      object: `object-key:${binding}`,
+      generation: context.authorityGeneration,
+      recipient: context.recipient,
+      author: context.author,
+    };
+  }
+
+  /** Share a record's random AES key, never its containing area's wrapping key.
+   * Each revision has a fresh record key and therefore needs a new envelope. */
+  async function shareObjectKey(input: {
+    object: unknown;
+    expected: ObjectContext<F>;
+    wrappingKey: CryptoKey;
+    objectSigner: CryptoKey;
+    share: ObjectShareContext;
+    recipientKey: CryptoKey;
+    signingKey: CryptoKey;
+  }): Promise<SealedBox> {
+    let raw: Uint8Array<ArrayBuffer> | undefined;
+    try {
+      const object = await verifiedObject(
+        input.object,
+        input.expected,
+        input.objectSigner,
+      );
+      const context = await objectKeyShareContext(object, input.share);
+      const key = await crypto.subtle.unwrapKey(
+        "raw",
+        sized(object.wrappedKey, 40),
+        input.wrappingKey,
+        "AES-KW",
+        "AES-GCM",
+        true,
+        ["decrypt"],
+      );
+      raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+      return await sealBox(context, raw, input.recipientKey, input.signingKey);
+    } catch {
+      throw new InvalidProtectedData();
+    } finally {
+      raw?.fill(0);
+    }
+  }
+
+  /** Opens exactly the signed source ciphertext. Obtaining this key envelope
+   * grants neither another object nor a later revision in the same area. */
+  async function decryptSharedObject(input: {
+    object: unknown;
+    expected: ObjectContext<F>;
+    objectSigner: CryptoKey;
+    envelope: unknown;
+    share: ObjectShareContext;
+    recipientKey: CryptoKey;
+    grantSigner: CryptoKey;
+  }): Promise<Uint8Array<ArrayBuffer>> {
+    let raw: Uint8Array<ArrayBuffer> | undefined;
+    try {
+      const object = await verifiedObject(
+        input.object,
+        input.expected,
+        input.objectSigner,
+      );
+      const context = await objectKeyShareContext(object, input.share);
+      const envelope = sealedBox(input.envelope);
+      if (unbase64(envelope.ciphertext, 48).length !== 48) {
+        throw new InvalidProtectedData();
+      }
+      raw = await openBox(
+        envelope,
+        context,
+        input.recipientKey,
+        input.grantSigner,
+      );
+      if (raw.length !== 32) throw new InvalidProtectedData();
+      const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, [
+        "decrypt",
+      ]);
+      return await openPayload(object, input.expected, key);
+    } catch {
+      throw new InvalidProtectedData();
+    } finally {
+      raw?.fill(0);
     }
   }
 
@@ -238,6 +379,9 @@ export function createObjectCodec<const F extends string>(
     encryptObject,
     encryptTombstone,
     decryptObject,
+    objectKeyShareContext,
+    shareObjectKey,
+    decryptSharedObject,
   });
 }
 

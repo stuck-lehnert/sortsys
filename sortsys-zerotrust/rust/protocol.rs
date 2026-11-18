@@ -127,6 +127,7 @@ impl SealedBox {
         if self.format != "sortsys-hpke-v1"
             || ![
                 "area-key",
+                "object-key",
                 "authority-key",
                 "recovery-catalog",
                 "validation-request",

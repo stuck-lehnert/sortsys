@@ -10,6 +10,7 @@ import {
   createDelegationCodec,
   createIdentity,
   createZeroTrust,
+  objectKeyRecipientBinding,
   digest,
   immutableObject,
   immutableWriteAction,
@@ -165,6 +166,38 @@ export async function exerciseFramework() {
     identity.signingKey.privateKey,
   );
   const first = await store.receive(context.object, object);
+  const shareContext = {
+    authorityGeneration: "1",
+    recipient: "researcher:kai",
+    author: context.author,
+  };
+  const objectShare = await security.objects.shareObjectKey({
+    object,
+    expected: context,
+    wrappingKey: key,
+    objectSigner: identity.signingKey.publicKey,
+    share: shareContext,
+    recipientKey: delegate.encryptionKey.publicKey,
+    signingKey: identity.signingKey.privateKey,
+  });
+  const shared = await security.objects.decryptSharedObject({
+    object,
+    expected: context,
+    objectSigner: identity.signingKey.publicKey,
+    envelope: objectShare,
+    share: shareContext,
+    recipientKey: delegate.encryptionKey.privateKey,
+    grantSigner: identity.signingKey.publicKey,
+  });
+  const objectShareBinding = await objectKeyRecipientBinding(
+    delegation.creator,
+    objectShare,
+  );
+  require(objectShareBinding !== (await objectKeyRecipientBinding(null, null)));
+  require(
+    new TextDecoder().decode(shared) ===
+      JSON.stringify({ observation: "Sample remains stable" }),
+  );
   const accessState = await signResourceAccess(
     {
       tenant: context.tenant,
@@ -475,6 +508,8 @@ export async function exerciseFramework() {
     delegation,
     accessState,
     object,
+    objectShare,
+    objectShareBinding,
     policy,
     administrativePolicy,
     unchangedAdministration,

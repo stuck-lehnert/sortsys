@@ -4,6 +4,7 @@ export * from "./passkeyRegistration";
 export * from "./identity";
 export * from "./publicProofs";
 export * from "./objects";
+export * from "./core/objectShares";
 export * from "./boxes";
 export * from "./recovery";
 export * from "./recoveryAccounts";

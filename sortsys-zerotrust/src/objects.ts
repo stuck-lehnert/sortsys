@@ -4,6 +4,7 @@ import type {
   ObjectContext as CoreObjectContext,
 } from "./core/objects";
 export { TOMBSTONE_FORMAT } from "./core/objects";
+export type { ObjectShareContext } from "./core/objects";
 
 export const FACETS = [
   "scope",
@@ -17,7 +18,7 @@ export const FACETS = [
   "personnel",
   "attachment",
 ] as const;
-export type Facet = typeof FACETS[number];
+export type Facet = (typeof FACETS)[number];
 export type ObjectContext = CoreObjectContext<Facet>;
 export type EncryptedObject = CoreEncryptedObject<Facet>;
 
@@ -29,4 +30,7 @@ export const {
   encryptObject,
   encryptTombstone,
   decryptObject,
+  objectKeyShareContext,
+  shareObjectKey,
+  decryptSharedObject,
 } = createObjectCodec(FACETS);

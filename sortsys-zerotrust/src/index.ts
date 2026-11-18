@@ -19,6 +19,7 @@ export * from "./opaque";
 export * from "./deviceVault";
 export * from "./policyTransactions";
 export * from "./core/objects";
+export * from "./core/objectShares";
 export * from "./core/policy";
 export * from "./core/administration";
 export * from "./core/keyAuthorities";
