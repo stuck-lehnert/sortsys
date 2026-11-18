@@ -42,6 +42,9 @@ pub struct PolicyAdministration<R, F = String> {
     pub profiles: Vec<AdministrativeProfile<F>>,
     pub author: IdentityCertificate,
     pub previous_signature: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub continuation: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -63,6 +66,7 @@ pub struct PolicyAdministrationRef<'a> {
     pub profiles: Vec<AdministrativeProfileRef<'a>>,
     pub author: &'a IdentityCertificate,
     pub previous_signature: &'a str,
+    pub continuation: Option<&'a str>,
 }
 
 fn signed_certificate(certificate: &IdentityCertificate) -> Result<String> {
@@ -207,13 +211,20 @@ impl PolicyAdministrationRef<'_> {
             signed_certificate(self.author)?,
             self.previous_signature.to_owned(),
         ];
+        let purpose = if let Some(binding) = self.continuation {
+            sized::<32>(binding)?;
+            fields.push(binding.to_owned());
+            "sortsys/delegated-policy-continuation/v1"
+        } else {
+            "sortsys/delegated-policy/v1"
+        };
         fields.extend(
             self.profiles
                 .iter()
                 .map(|profile| profile.signature.to_owned()),
         );
         Ok(frame(
-            "sortsys/delegated-policy/v1",
+            purpose,
             &fields.iter().map(String::as_str).collect::<Vec<_>>(),
         ))
     }
@@ -224,6 +235,7 @@ impl PolicyAdministrationRef<'_> {
             || self.author.tenant != current.tenant
             || revision(self.root.version)? >= revision(current.version)?
             || self.root.suspended != current.suspended
+            || self.continuation.is_some() && current.transaction.is_some()
         {
             return Err(invalid());
         }
@@ -271,10 +283,14 @@ impl PolicyAdministrationRef<'_> {
         if expected != actual {
             return Err(invalid());
         }
+        let permissions = current.frame()?;
+        if self.continuation.is_some() {
+            return verify(authority, signature, &permissions);
+        }
         verify(
             &sized::<32>(&self.author.signing_key)?,
             signature,
-            &current.frame()?,
+            &permissions,
         )
     }
 
@@ -328,7 +344,8 @@ impl PolicyAdministrationRef<'_> {
         actor: &IdentityCertificate,
         version: &str,
     ) -> Result<bool> {
-        if self.author.signature != actor.signature
+        if self.continuation.is_some()
+            || self.author.signature != actor.signature
             || self.previous_signature != previous_signature
             || revision(previous.version)?.checked_add(1) != Some(revision(version)?)
         {
@@ -356,5 +373,22 @@ impl PolicyAdministrationRef<'_> {
             }
         }
         Ok(changed && remaining.is_empty())
+    }
+
+    pub(super) fn continues(
+        &self,
+        previous: &Self,
+        previous_signature: &str,
+        binding: &str,
+    ) -> bool {
+        self.continuation == Some(binding)
+            && self.previous_signature == previous_signature
+            && self.root_signature == previous.root_signature
+            && self.author.signature == previous.author.signature
+            && self
+                .profiles
+                .iter()
+                .map(|profile| profile.signature)
+                .eq(previous.profiles.iter().map(|profile| profile.signature))
     }
 }

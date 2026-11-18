@@ -216,6 +216,15 @@ primäre Signatur kann die effektiven Mitarbeiterrechte übernehmen und zugleich
 ein Verwaltungsrecht entfernen. Sie ersetzt dann die Profile; es entsteht keine
 wachsende Kette früherer Berechtigungsstände.
 
+Beim Wechsel auf einen älteren Fachstand kann die Anwendung die Schreibversion
+mit `signPolicyContinuation(previous, binding, authorityKey)` erhöhen.
+Bei delegierten Regeln bindet die Signatur den bisherigen Richtlinienstand und
+den Fingerabdruck des neuen Fachstands. Die vorhandenen Profile, ihre
+Unterzeichner und der primäre Stand bleiben erhalten. Rust prüft die Bindung
+mit `PolicyRef::continues` nach der Signaturprüfung beider Richtlinien.
+Der Speicheradapter darf diesen Übergang nur gemeinsam mit dem zugehörigen
+Fachstand veröffentlichen.
+
 Die Rechteprüfung verteilt noch keine Inhaltsschlüssel. Neue Leser und ein
 kryptografischer Leserentzug benötigen zusätzlich geprüfte Schlüsselpakete und
 gegebenenfalls einen Schlüsselwechsel durch den Speicheradapter.

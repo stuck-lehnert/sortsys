@@ -10,7 +10,7 @@ use super::{
 use crate::{
     auth::AuthService,
     control::{Transaction, key},
-    error::{RpcError, RpcResult, bad_request, forbidden, internal},
+    error::{RpcError, RpcResult, bad_request, forbidden},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,6 @@ fn verify_approval(
         Some(&security.subject),
         &security.authority,
     )?;
-    input.policy.verify(&security.authority)?;
     if input.policy.tenant != context.auth.tenant {
         return Err(forbidden());
     }
@@ -142,6 +141,9 @@ async fn activation_receipt(
         .transaction
         .read::<ContentActivation>(activation_key(&head.number)?)
         .await?;
+    if receipt.is_some() {
+        input.policy.verify(&context.security.authority)?;
+    }
     if let Some(receipt) = &receipt
         && (receipt.operation != input.operation
             || receipt.content != head.fingerprint()?
@@ -217,34 +219,22 @@ async fn activate_once(
     };
     head.follows(previous.as_ref(), source.as_ref())?;
 
-    // Advance the signed write version in the same publication so previously
-    // signed object/document/file mutations cannot be replayed into this view.
-    // A delegated policy needs a continuation proof that keeps its profiles.
-    if context.security.policy.administration.is_some() {
-        return Err(bad_request(
-            "A delegated policy needs a signed continuation before restoring",
-        ));
-    }
-    if input.policy.administration.is_some()
-        || input.policy.transaction.is_some()
-        || serde_json::to_value(&input.policy.rules).map_err(internal)?
-            != serde_json::to_value(&context.security.policy.rules).map_err(internal)?
-    {
-        return Err(forbidden());
-    }
+    let content = head.fingerprint()?;
     context.transaction.select_prepared_content(head).await?;
     checks::dependencies(&mut context).await?;
-    registry::replace_policy(
+    // Publish the same authority and delegated profiles at a new write
+    // version. The head and the new policy share the transaction's read set.
+    registry::continue_policy(
         &mut context.transaction,
         &context.security,
         &input.policy,
-        false,
+        &content,
     )
     .await?;
 
     let receipt = ContentActivation {
         operation: input.operation.clone(),
-        content: head.fingerprint()?,
+        content,
         policy_version: input.policy.version.clone(),
         policy_signature: input.policy.signature.clone(),
     };

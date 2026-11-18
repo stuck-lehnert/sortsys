@@ -37,6 +37,7 @@ import {
   VerifiedStore,
   signContentEpoch,
   contentEpochFrame,
+  contentEpochFingerprint,
   contentEpochFollows,
   namespaceRecord,
   logicalRecord,
@@ -371,6 +372,37 @@ export async function exerciseFramework() {
     administrativePolicy,
     { tenant: context.tenant, authority: identity.signingKey.publicKey },
   );
+  const continuedAdministration =
+    await security.policies.signPolicyContinuation(
+      administrativePolicy,
+      await contentEpochFingerprint(restoredContent),
+      identity.signingKey.privateKey,
+    );
+  const { signature: _profileSignature, ...profileFields } = profile;
+  const reissuedProfile = await security.policies.administrativeProfiles.sign(
+    { ...profileFields, version: continuedAdministration.version },
+    delegate.signingKey.privateKey,
+  );
+  const alteredAdministration = {
+    ...continuedAdministration.administration!,
+    profiles: [reissuedProfile],
+  };
+  const continuedPermissions = {
+    ...checkedAdministration.permissions,
+    version: continuedAdministration.version,
+  };
+  const reissuedAdministration = {
+    ...continuedPermissions,
+    administration: alteredAdministration,
+    signature: await sign(
+      identity.signingKey.privateKey,
+      security.policies.policyFrame(
+        continuedPermissions,
+        undefined,
+        alteredAdministration,
+      ),
+    ),
+  };
   const unchangedAdministration =
     await security.policies.signAdministrativePolicy(
       {
@@ -553,6 +585,8 @@ export async function exerciseFramework() {
     objectShareBinding,
     policy,
     administrativePolicy,
+    continuedAdministration,
+    reissuedAdministration,
     unchangedAdministration,
     managedDomain: managedDomain.definition,
     administrationRevoked,

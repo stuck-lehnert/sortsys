@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import { open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { createClient, type Client, type QueryInput } from "@sortsys/v2-client";
+import {
+  createClient,
+  RpcClientError,
+  type Client,
+  type QueryInput,
+} from "@sortsys/v2-client";
 import {
   administrativeProfiles,
   administrativeProfileKey,
+  base64,
   compilePolicy,
   compileReadership,
+  contentEpoch,
+  contentEpochFingerprint,
   createManagedDomain,
   decryptObject,
   areaKey,
@@ -17,6 +25,8 @@ import {
   sign,
   signAdministrativePolicy,
   signPolicy,
+  signPolicyContinuation,
+  randomSecret,
   verifyPolicy,
   type Action,
   type SignedPolicy,
@@ -26,6 +36,7 @@ import {
   administratorPolicyContext,
 } from "../app/lib/crypto/administration";
 import { verifiedAccessContext } from "../app/lib/crypto/accessContext";
+import { approvePreparedContent } from "../app/lib/backups/contentRestore";
 import { prepareHistoricalKeyGrants } from "../app/lib/crypto/historicalKeyGrants";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
 import {
@@ -995,15 +1006,138 @@ try {
     )[1],
   );
 
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
+  const operator = createClient(endpoints[1], "administration-restore-storage");
+  const storageLogin = await required(
+    operator.mutate("admin.login", {
+      tenant: null,
+      password: "Disposable-operator-password-2026!",
+    }),
+  );
+  operator.setToken(storageLogin.token);
+  const backup = await required(
+    operator.mutate("admin.storage.snapshots.create", {
+      tenant,
+      operation: base64(randomSecret()),
+    }),
+  );
+  operator.setToken(null);
+  await edit("AENDERUNG_NACH_SICHERUNG_681942", true);
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
+  const prepared = await required(
+    owner.mutate("zerotrust.content.prepare", {
+      operation: base64(randomSecret()),
+      snapshotOperation: backup.id,
+    }),
+  );
+  const restore = await approvePreparedContent(owner, prepared, signal);
+  const restoredContent = await contentEpochFingerprint(
+    contentEpoch(restore.approval),
+  );
+  const beforeRestore = await verifyPolicy(revoked, { tenant, authority });
+  assert.deepEqual(
+    restore.policy.administration?.profiles,
+    revoked.administration?.profiles,
+  );
+  const stripped = await signPolicy(
+    { ...beforeRestore.permissions, version: restore.policy.version },
+    primary.authority,
+  );
+  const differentContent = await signPolicyContinuation(
+    revoked,
+    base64(randomSecret()),
+    primary.authority,
+  );
+  const alternative = await signAdministrativePolicy(
+    {
+      ...revoked.administration!,
+      previousSignature: revoked.signature,
+      version: revoked.version,
+    },
+    managerKey,
+  );
+  const differentPolicy = await signPolicyContinuation(
+    alternative,
+    restoredContent,
+    primary.authority,
+  );
+  for (const invalidPolicy of [stripped, differentContent, differentPolicy]) {
+    const [value, denial] = await owner.mutate("zerotrust.content.activate", {
+      ...restore,
+      policy: invalidPolicy,
+    });
+    assert.equal(value, null);
+    assert.ok(denial instanceof RpcClientError);
+    assert.equal(denial.code, "FORBIDDEN");
+  }
+  assert.equal((await current(owner)).signature, revoked.signature);
+  const [managerActivation, managerDenial] = await manager.mutate(
+    "zerotrust.content.activate",
+    restore,
+  );
+  assert.equal(managerActivation, null);
+  assert.ok(managerDenial instanceof RpcClientError);
+  assert.equal(managerDenial.code, "FORBIDDEN");
+  const signed = await verifyPolicy(restore.policy, { tenant, authority });
+  const { permissions: restoredPermissions, ...restoredEvidence } = signed;
+  const continued = { ...restoredPermissions, ...restoredEvidence };
+  await rejected(owner, continued);
+  const publication = await required(
+    owner.mutate("zerotrust.content.activate", restore),
+  );
+  assert.equal(publication.content, restoredContent);
+  assert.equal((await current(manager)).signature, continued.signature);
+  const restoredBusiness = createBusinessClient(owner, {
+    productDriver: duckDriver,
+  });
+  try {
+    const productAfter = await required(
+      restoredBusiness.query("products.get", { id: product.id }),
+    );
+    assert.equal(productAfter.description, "NEUE_SCHLUESSELGENERATION_681942");
+  } finally {
+    restoredBusiness.dispose();
+  }
+  await acceptVaultWithKey(
+    delegated.account.dataKey,
+    delegated.account.vault,
+    delegated.account.username,
+    false,
+  );
+  const regranted = await candidate(continued, ["read"], added.subject);
+  await required(manager.mutate("zerotrust.policy.replace", regranted));
+  const restoredRevocation = await candidate(regranted, [], added.subject);
+  await required(
+    manager.mutate("zerotrust.policy.replace", restoredRevocation),
+  );
+  assert.equal((await current(owner)).signature, restoredRevocation.signature);
+  console.log(
+    "Native content restore preserved scoped profiles and their subsequent grant and revocation",
+  );
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
   const effective = (
-    await verifyPolicy(revoked, { tenant: login.tenant, authority })
+    await verifyPolicy(restoredRevocation, { tenant: login.tenant, authority })
   ).permissions;
   const checkpoint = await signPolicy(
     {
       ...effective,
-      version: (BigInt(revoked.version) + 1n).toString(),
-      rules: revoked.rules
+      version: (BigInt(restoredRevocation.version) + 1n).toString(),
+      rules: restoredRevocation.rules
         .map((rule) => {
           if (rule.subject !== delegated.subject) return rule;
           return {
@@ -1126,6 +1260,7 @@ try {
     "VERZOEGERTER_SCHREIBAUFTRAG_681942",
     "AENDERUNG_NACH_VERWALTERENTZUG_681942",
     "NEUE_SCHLUESSELGENERATION_681942",
+    "AENDERUNG_NACH_SICHERUNG_681942",
     ...recoverySecrets,
   ]) {
     assert.equal(

@@ -449,6 +449,11 @@ impl SetupInput {
             || sized::<32>(&self.owner.signing_key)?.as_slice() != signing_key
             || self.policy.tenant != tenant
             || self.policy.version != policy_version.to_string()
+            || self
+                .policy
+                .administration
+                .as_ref()
+                .is_some_and(|entry| entry.continuation.is_some())
         {
             return Err(invalid());
         }

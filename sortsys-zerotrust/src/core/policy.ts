@@ -320,7 +320,7 @@ export function createPolicyCodec<
     else if (current.suspended !== undefined) domain = "sortsys/policy/v2";
     const primaryFrame = frame(domain, fields);
     if (administration === undefined) return primaryFrame;
-    return frame("sortsys/delegated-policy/v1", [
+    const fieldsOfDelegation = [
       base64(primaryFrame),
       administration.root.signature,
       base64(
@@ -330,8 +330,18 @@ export function createPolicyCodec<
         ),
       ),
       administration.previousSignature,
+    ];
+    let purpose = "sortsys/delegated-policy/v1";
+    if (administration.continuation !== undefined) {
+      sized(administration.continuation, 32);
+      if (transaction !== undefined) throw new InvalidProtectedData();
+      fieldsOfDelegation.push(administration.continuation);
+      purpose = "sortsys/delegated-policy-continuation/v1";
+    }
+    fieldsOfDelegation.push(
       ...administration.profiles.map((profile) => profile.signature),
-    ]);
+    );
+    return frame(purpose, fieldsOfDelegation);
   }
 
   const administrativeProfiles = createAdministrativeProfileCodec<F, O>(
@@ -372,11 +382,16 @@ export function createPolicyCodec<
       : undefined;
     let administration: PolicyAdministration<F, O> | undefined;
     if (hasAdministration) {
+      const hasContinuation =
+        administrationInput &&
+        typeof administrationInput === "object" &&
+        Object.hasOwn(administrationInput, "continuation");
       const source = record(administrationInput, [
         "root",
         "profiles",
         "author",
         "previousSignature",
+        ...(hasContinuation ? ["continuation"] : []),
       ]);
       if (!Array.isArray(source.profiles) || source.profiles.length > 10000)
         throw new InvalidProtectedData();
@@ -414,6 +429,12 @@ export function createPolicyCodec<
         author,
         previousSignature: source.previousSignature as string,
       };
+      if (hasContinuation) {
+        if (typeof source.continuation !== "string" || transaction)
+          throw new InvalidProtectedData();
+        sized(source.continuation, 32);
+        administration.continuation = source.continuation;
+      }
       if (
         transaction &&
         (transaction.author !== author.user ||
@@ -447,7 +468,7 @@ export function createPolicyCodec<
   }
 
   async function signAdministrativePolicy(
-    input: PolicyAdministration<F, O> & {
+    input: Omit<PolicyAdministration<F, O>, "continuation"> & {
       version: string;
       transaction?: PolicyTransaction;
     },
@@ -495,6 +516,7 @@ export function createPolicyCodec<
     const administration = candidate.administration;
     if (
       !administration ||
+      administration.continuation !== undefined ||
       BigInt(candidate.version) !== BigInt(current.version) + 1n ||
       administration.author.signature !== actor.signature ||
       administration.previousSignature !== current.signature
@@ -519,6 +541,32 @@ export function createPolicyCodec<
       ...permissions,
       signature: await sign(authority, policyFrame(permissions)),
     };
+  }
+
+  /** Advance the write version of an already verified policy. Delegated
+   * profiles keep their original signatures and authority checkpoint. */
+  async function signPolicyContinuation(
+    previous: SignedPolicy<F, O>,
+    binding: string,
+    authority: CryptoKey,
+  ): Promise<SignedPolicy<F, O>> {
+    sized(binding, 32);
+    const current = parseSigned(previous);
+    const permissions = {
+      ...unsignedPolicy(current),
+      version: (BigInt(current.version) + 1n).toString(),
+    };
+    if (!current.administration) return signPolicy(permissions, authority);
+    const administration = {
+      ...current.administration,
+      previousSignature: current.signature,
+      continuation: binding,
+    };
+    const signature = await sign(
+      authority,
+      policyFrame(permissions, undefined, administration),
+    );
+    return parseSigned({ ...permissions, administration, signature });
   }
 
   async function signPolicyTransaction(
@@ -570,7 +618,9 @@ export function createPolicyCodec<
           ),
         );
       }
-      signer = await importSigningKey(administration.author.signingKey);
+      if (administration.continuation === undefined) {
+        signer = await importSigningKey(administration.author.signingKey);
+      }
     }
     await verify(
       signer,
@@ -592,6 +642,7 @@ export function createPolicyCodec<
     allows,
     policyFrame,
     signPolicy,
+    signPolicyContinuation,
     signPolicyTransaction,
     verifyPolicy,
     administrativeProfiles,

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   ACTIONS,
+  base64,
   certifyIdentity,
   createIdentity,
   createZeroTrust,
@@ -177,6 +178,61 @@ test("a manager changes an ordinary profile with its own key and an independentl
       })
     ).signature,
   ).toBe(f.delegated.signature);
+});
+
+test("only the authority can continue delegated profiles at a new write version", async () => {
+  const f = await fixture();
+  const binding = base64(crypto.getRandomValues(new Uint8Array(32)));
+  const expected = {
+    tenant: f.root.tenant,
+    authority: f.authority.signingKey.publicKey,
+  };
+  const before = await f.framework.policies.verifyPolicy(f.delegated, expected);
+  const continued = await f.framework.policies.signPolicyContinuation(
+    f.delegated,
+    binding,
+    f.authority.signingKey.privateKey,
+  );
+  const after = await f.framework.policies.verifyPolicy(continued, expected);
+  expect(after.permissions).toEqual({ ...before.permissions, version: "3" });
+  expect(after.administration).toEqual({
+    ...before.administration!,
+    continuation: binding,
+    previousSignature: before.signature,
+  });
+  const forged = await f.framework.policies.signPolicyContinuation(
+    f.delegated,
+    binding,
+    f.manager.identity.signingKey.privateKey,
+  );
+  await expect(
+    f.framework.policies.verifyPolicy(forged, expected),
+  ).rejects.toThrow();
+  expect(
+    f.framework.policies.administrativeReplacement(
+      f.delegated,
+      continued,
+      f.manager.certificate,
+    ),
+  ).toBe(false);
+  const subsequent = await f.framework.policies.signAdministrativePolicy(
+    {
+      root: f.root,
+      profiles: [await f.profile(["read"], "4")],
+      author: f.manager.certificate,
+      previousSignature: continued.signature,
+      version: "4",
+    },
+    f.manager.identity.signingKey.privateKey,
+  );
+  expect(
+    f.framework.policies.administrativeReplacement(
+      continued,
+      subsequent,
+      f.manager.certificate,
+    ),
+  ).toBe(true);
+  await f.framework.policies.verifyPolicy(subsequent, expected);
 });
 
 test("a delegated replacement must change at least one authorized profile", async () => {

@@ -81,6 +81,37 @@ impl PolicyRef<'_> {
         verify(key, signature, &self.frame()?)
     }
 
+    /// Compare independently verified policies at an application checkpoint.
+    /// The new version retains the same authority and profile provenance.
+    pub fn continues(
+        &self,
+        previous: &Self,
+        previous_signature: &str,
+        binding: &str,
+    ) -> Result<bool> {
+        sized::<32>(binding)?;
+        if self.tenant != previous.tenant
+            || revision(previous.version)?.checked_add(1) != Some(revision(self.version)?)
+            || self.transaction.is_some()
+            || self.suspended != previous.suspended
+            || self.rules.len() != previous.rules.len()
+        {
+            return Ok(false);
+        }
+        for (current, previous) in self.rules.iter().zip(&previous.rules) {
+            if current.frame()? != previous.frame()? {
+                return Ok(false);
+            }
+        }
+        Ok(match (&self.administration, &previous.administration) {
+            (None, None) => true,
+            (Some(current), Some(previous)) => {
+                current.continues(previous, previous_signature, binding)
+            }
+            _ => false,
+        })
+    }
+
     /// Evaluate an already verified policy. Extra rules must have their own
     /// authenticated provenance; hierarchy is never inferred from scope names.
     pub fn allows_with(

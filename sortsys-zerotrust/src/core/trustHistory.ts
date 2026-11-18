@@ -37,6 +37,7 @@ export function createTrustHistoryVerifier<F extends string>(
   ): Promise<{
     current: AuthorityCertificate;
     authority: (generation: string) => CryptoKey;
+    authorityCertificate: (generation: string) => AuthorityCertificate;
     signer: (envelope: EncryptedObject<F>) => Promise<CryptoKey>;
     proofSigner: (
       subject: string,
@@ -197,6 +198,11 @@ export function createTrustHistoryVerifier<F extends string>(
         const root = authorities.get(generation);
         if (!root) throw new InvalidProtectedData();
         return root.key;
+      },
+      authorityCertificate: (generation) => {
+        const root = authorities.get(generation);
+        if (!root) throw new InvalidProtectedData();
+        return { ...root.certificate };
       },
       verifyIdentityProof: async (subject, generation, proof, message) => {
         await proofSigner(subject, generation, proof, message);

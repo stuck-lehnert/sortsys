@@ -833,6 +833,29 @@ pub(in crate::zerotrust) async fn replace_policy(
     {
         return Err(conflict());
     }
+    publish_policy_version(transaction, guard, input).await
+}
+
+/// Advance write admission during an already authorized content switch. The
+/// tenant authority cannot use this path to change or flatten the live grants.
+pub(in crate::zerotrust) async fn continue_policy(
+    transaction: &mut Transaction,
+    guard: &Security,
+    input: &SignedPolicy,
+    binding: &str,
+) -> RpcResult<()> {
+    input.verify(&guard.authority)?;
+    if !input.continues(&guard.policy, binding)? {
+        return Err(forbidden());
+    }
+    publish_policy_version(transaction, guard, input).await
+}
+
+async fn publish_policy_version(
+    transaction: &mut Transaction,
+    guard: &Security,
+    input: &SignedPolicy,
+) -> RpcResult<()> {
     if input
         .rules
         .iter()

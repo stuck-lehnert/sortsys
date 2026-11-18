@@ -84,6 +84,7 @@ export const {
   allows,
   policyFrame,
   signPolicy,
+  signPolicyContinuation,
   signPolicyTransaction,
   verifyPolicy,
   administrativeProfiles,

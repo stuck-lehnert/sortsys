@@ -83,11 +83,12 @@ abweisen. Die aktivierte Auswahl, der Freigabebeleg und die Schreibversion
 werden gemeinsam gespeichert. Verbundene Editoren erkennen den Wechsel und
 öffnen den neuen Stand.
 
-Die Freigabe setzt derzeit einen direkt von der Mandantenautorität signierten
-Berechtigungsstand voraus. Für delegierte Regeln fehlt ein signierter
-Fortsetzungsnachweis. Auch die Bedienoberfläche für Mandanten und der
-clientseitige Abgleich von Verweisen innerhalb verschlüsselter Fachdaten stehen
-noch aus.
+Bei delegierten Regeln bindet die Mandantenautorität den Übergang an die
+bisherige Richtliniensignatur und den neuen Fachstand. Die ursprünglichen
+Signaturen der Profile bleiben erhalten. Berechtigte Verwalter können danach
+wie gewohnt einzelne Profile ändern. Die Bedienoberfläche für Mandanten und
+der Abgleich von Verweisen innerhalb verschlüsselter Fachdaten im Browser
+stehen noch aus.
 
 ## Erstellung und Nachweise
 

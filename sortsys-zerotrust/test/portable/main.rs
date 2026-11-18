@@ -71,6 +71,7 @@ impl Policy {
                         .collect(),
                     author: &value.author,
                     previous_signature: &value.previous_signature,
+                    continuation: value.continuation.as_deref(),
                 }),
         }
     }
@@ -103,6 +104,8 @@ struct BrowserVector {
     delegation: DelegationCertificate<Namespace>,
     access_state: ResourceAccessState,
     administrative_policy: Policy,
+    continued_administration: Policy,
+    reissued_administration: Policy,
     managed_domain: ManagedDomain,
     unchanged_administration: Policy,
     administration_revoked: Policy,
@@ -299,6 +302,51 @@ fn main() {
     substituted.scope = "experiment:other".into();
     assert!(substituted.frame().is_err());
     let administrative = vector.administrative_policy.as_protocol();
+    let continued = vector.continued_administration.as_protocol();
+    continued
+        .verify(&signer, &vector.continued_administration.signature)
+        .unwrap();
+    let content = vector.restored_content.fingerprint().unwrap();
+    assert!(
+        continued
+            .continues(
+                &administrative,
+                &vector.administrative_policy.signature,
+                &content
+            )
+            .unwrap()
+    );
+    assert!(
+        !continued
+            .continues(
+                &administrative,
+                &vector.administrative_policy.signature,
+                &encode(&[55; 32])
+            )
+            .unwrap()
+    );
+    let reissued = vector.reissued_administration.as_protocol();
+    reissued
+        .verify(&signer, &vector.reissued_administration.signature)
+        .unwrap();
+    assert!(
+        !reissued
+            .continues(
+                &administrative,
+                &vector.administrative_policy.signature,
+                &content
+            )
+            .unwrap()
+    );
+    assert!(
+        !continued
+            .continues(
+                &administrative,
+                &vector.continued_administration.signature,
+                &content
+            )
+            .unwrap()
+    );
     administrative
         .verify(&signer, &vector.administrative_policy.signature)
         .unwrap();

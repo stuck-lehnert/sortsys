@@ -170,6 +170,7 @@ impl SignedPolicy {
                         .collect(),
                     author: &value.author,
                     previous_signature: &value.previous_signature,
+                    continuation: value.continuation.as_deref(),
                 }
             }),
         }
@@ -222,6 +223,12 @@ impl SignedPolicy {
                 actor,
                 &self.version,
             )
+            .map_err(Into::into)
+    }
+
+    pub fn continues(&self, previous: &Self, binding: &str) -> RpcResult<bool> {
+        self.as_protocol()
+            .continues(&previous.as_protocol(), &previous.signature, binding)
             .map_err(Into::into)
     }
 
@@ -299,6 +306,7 @@ mod object_tombstone_tests {
                 profiles: Vec::new(),
                 author: certificate,
                 previous_signature: root.signature.clone(),
+                continuation: None,
             }),
             signature: root.signature.clone(),
         };

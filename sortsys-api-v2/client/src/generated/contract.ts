@@ -158,7 +158,7 @@ export type PasskeyUser = { id: string, name: string, displayName: string, };
 
 export type PasskeyVault = { format: string, tenant: string, subject: string, rpId: string, credentialId: string, encryptionKey: string, signingKey: string, wrappedKey: string, signature: string, };
 
-export type PolicyAdministration<R, F = string> = { root: R, profiles: Array<AdministrativeProfile<F>>, author: IdentityCertificate, previousSignature: string, };
+export type PolicyAdministration<R, F = string> = { root: R, profiles: Array<AdministrativeProfile<F>>, author: IdentityCertificate, previousSignature: string, continuation?: string, };
 
 export type PolicyHead = { domain: string, sequence: string, };
 

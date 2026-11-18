@@ -645,6 +645,7 @@ export type PolicyAdministration<R, F = string> = {
     profiles: Array<AdministrativeProfile<F>>;
     author: IdentityCertificate;
     previousSignature: string;
+    continuation?: string;
 };
 
 export type PolicyHead = {

@@ -46,6 +46,7 @@ export type PolicyAdministration<
   profiles: AdministrativeProfile<F>[];
   author: IdentityCertificate;
   previousSignature: string;
+  continuation?: string;
 };
 
 export function administrativeProfileKey(
