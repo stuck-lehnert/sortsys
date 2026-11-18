@@ -61,6 +61,15 @@ Die API prüft damit, ob ein Preis auf vorhandene Produkte und Lieferanten verwe
 Der Browser prüft zusätzlich, ob diese öffentlichen Verweise mit der entschlüsselten
 Zeile übereinstimmen. Namen, Beschreibungen und Beträge bleiben verschlüsselt.
 
+Beim Lesen fordert der Browser die Erklärungen für jeweils höchstens 64 Einträge
+an. Vier solche Abrufe können eine HTTP-Anfrage teilen; anschließend werden
+höchstens 16 Signaturen gleichzeitig geprüft. Für 320 Einträge sind dadurch zwei
+HTTP-Anfragen für diese Nachweise nötig. Erst nach der vollständigen Prüfung
+erhält die geladene Sammlung ihre bestätigten Beziehungen. Fehlt ein Nachweis
+oder widerspricht er einer verschlüsselten Zeile, wird die gesamte Prüfung
+abgebrochen. Bereits laufende Abrufe werden dabei vor der Fehlerbehandlung
+abgeschlossen.
+
 Ein Löschauftrag nennt die aktuelle Objektfassung und wird vom Konto signiert.
 Eine gemeinsame Transaktion sperrt die betroffenen Bereiche über alle API-Instanzen.
 Bei einer Lieferantenlöschung wird der Preistext nicht neu geschrieben: Der Leser

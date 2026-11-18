@@ -24,6 +24,7 @@ import type {
 } from "@sortsys/zerotrust/sortsys";
 import type { trustedHistory, UnlockedAccount } from "../crypto/session";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
+import { mapConcurrent } from "./runtime/concurrentReads";
 
 type History = Awaited<ReturnType<typeof trustedHistory>>;
 type ProofSigner = History["proofSigner"];
@@ -139,66 +140,82 @@ export async function checkStockObjects(
     }
     return key;
   };
-  for (let offset = 0; offset < selected.length; offset += 64) {
-    const chunk = selected.slice(offset, offset + 64);
-    const states = await required(
-      client.query(
-        "zerotrust.stock.references",
-        { objects: chunk.map((object) => object.envelope.object) },
-        { strategy: "network-only" },
-      ),
-    );
-    live();
-    if (
-      states.length !== chunk.length ||
-      new Set(states.map((state) => state.object)).size !== chunk.length
-    )
-      throw new InvalidProtectedData();
-    const byId = new Map(states.map((state) => [state.object, state]));
-    const check = async (object: Opened) => {
-      const state = byId.get(object.envelope.object);
-      if (!state) throw new InvalidProtectedData();
-      const raw = stockReferences(state.references);
-      const references = await verifyStockReferences(
-        raw,
-        object.envelope,
-        await signingKey(
-          raw.author,
-          raw.authorityGeneration,
-          raw.signature,
-          stockReferenceFrame(raw),
+  // Four independent metadata reads can share one HTTP batch. Keep the next
+  // window bounded, and retain the existing limit of 16 cryptographic checks
+  // across the entire window rather than multiplying it by the read count.
+  for (let offset = 0; offset < selected.length; offset += 256) {
+    const window = selected.slice(offset, offset + 256);
+    const chunks: Opened[][] = [];
+    for (let start = 0; start < window.length; start += 64) {
+      chunks.push(window.slice(start, start + 64));
+    }
+    const responses = await mapConcurrent(chunks, 4, async (chunk) => {
+      live();
+      const states = await required(
+        client.query(
+          "zerotrust.stock.references",
+          { objects: chunk.map((object) => object.envelope.object) },
+          { strategy: "network-only" },
         ),
       );
       live();
-      const actual = stockReferenceData(object.envelope.object, object.value);
       if (
-        actual.product !== references.product ||
-        actual.vendor !== references.vendor
-      )
+        states.length !== chunk.length ||
+        new Set(states.map((state) => state.object)).size !== chunk.length
+      ) {
         throw new InvalidProtectedData();
-      const vendorDeletion =
-        state.vendorDeletion === null
-          ? null
-          : await deletionProof(
-              state.vendorDeletion,
-              history,
-              references.tenant,
-              signingKey,
-            );
-      live();
-      if (
-        vendorDeletion &&
-        (references.kind !== "price" ||
-          vendorDeletion.kind !== "vendor" ||
-          vendorDeletion.object !== references.vendor)
-      )
-        throw new InvalidProtectedData();
-      return { object, state: { references, vendorDeletion } };
-    };
-    for (let offset = 0; offset < chunk.length; offset += 16)
-      checked.push(
-        ...(await Promise.all(chunk.slice(offset, offset + 16).map(check))),
-      );
+      }
+      const byId = new Map(states.map((state) => [state.object, state]));
+      return chunk.map((object) => {
+        const state = byId.get(object.envelope.object);
+        if (!state) throw new InvalidProtectedData();
+        return { object, state };
+      });
+    });
+    const verified = await mapConcurrent(
+      responses.flat(),
+      16,
+      async ({ object, state }) => {
+        live();
+        const raw = stockReferences(state.references);
+        const references = await verifyStockReferences(
+          raw,
+          object.envelope,
+          await signingKey(
+            raw.author,
+            raw.authorityGeneration,
+            raw.signature,
+            stockReferenceFrame(raw),
+          ),
+        );
+        live();
+        const actual = stockReferenceData(object.envelope.object, object.value);
+        if (
+          actual.product !== references.product ||
+          actual.vendor !== references.vendor
+        )
+          throw new InvalidProtectedData();
+        const vendorDeletion =
+          state.vendorDeletion === null
+            ? null
+            : await deletionProof(
+                state.vendorDeletion,
+                history,
+                references.tenant,
+                signingKey,
+              );
+        live();
+        if (
+          vendorDeletion &&
+          (references.kind !== "price" ||
+            vendorDeletion.kind !== "vendor" ||
+            vendorDeletion.object !== references.vendor)
+        )
+          throw new InvalidProtectedData();
+        return { object, state: { references, vendorDeletion } };
+      },
+    );
+    checked.push(...verified);
   }
   live();
   for (const { object, state } of checked) object.stock = state;
