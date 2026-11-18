@@ -47,6 +47,13 @@ Entscheidung. Die Sperre hängt nicht davon ab, ob bereits ein externer
 Zeitstempel vorliegt. Das Rückspielen einer älteren Mandantendatei darf diese
 späteren Festschreibungen nicht verschwinden lassen.
 
+Enthält eine Sicherung den Entwurf einer später abgeschlossenen
+Auftragsbestätigung, bleibt die abgeschlossene Fassung abrufbar. Die API liest
+ihre verschlüsselten Teile und die signierte Versionskette aus dem Fachstand,
+in dem sie festgeschrieben wurde. Fehlt in der Sicherung schon die erste
+Dokumentversion, verweigert die API die Freigabe. Der ältere Vorgang könnte
+sonst ohne den verschlüsselten Eintrag für das abgeschlossene Dokument erscheinen.
+
 Die API kann einen vorbereiteten älteren Fachstand unter Beibehaltung der
 aktuellen Recovery- und Berechtigungsnachweise freigeben. Dafür sind eine
 aktive Administratorsitzung des Mandanten und eine Signatur der

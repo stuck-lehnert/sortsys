@@ -137,6 +137,7 @@ async fn closed_documents(context: &mut MetadataContext) -> RpcResult<()> {
             if head.id != row.record.key || head.tenant != context.auth.tenant {
                 return Err(invalid());
             }
+            super::super::documents::check_restore_origin(&mut context.transaction, &head).await?;
             let case = record(context, &format!("{}:master-data:case", head.scope)).await?;
             if case.is_tombstone() || case.scope != head.scope || case.facet != Facet::MasterData {
                 return Err(conflict());

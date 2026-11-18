@@ -291,6 +291,41 @@ fn metadata_history_key(
         &format!("{id}:{:020}", revision(version)?),
     ))
 }
+
+async fn history_records(
+    transaction: &mut crate::control::Transaction,
+    current: &DocumentHead,
+    keys: Vec<sortsys_zerotrust::metadata::RecordKey>,
+) -> RpcResult<Vec<Option<DocumentHead>>> {
+    if current.locked {
+        let witness = crate::control::key("documents", &current.id);
+        return transaction.many_at_retained_epoch(&witness, keys).await;
+    }
+    transaction.many(keys).await
+}
+
+pub(super) async fn check_restore_origin(
+    transaction: &mut crate::control::Transaction,
+    locked: &DocumentHead,
+) -> RpcResult<()> {
+    let first = metadata_history_key(&locked.id, "1")?;
+    // The case and its document index are encrypted. An older view must at
+    // least contain the original document publication on the same branch.
+    let selected: DocumentHead = transaction
+        .read_in_selected_epoch(first.clone())
+        .await?
+        .ok_or_else(super::objects::conflict)?;
+    let retained = history_records(transaction, locked, vec![first])
+        .await?
+        .pop()
+        .flatten()
+        .ok_or_else(invalid)?;
+    if selected != retained {
+        return Err(super::objects::conflict());
+    }
+    Ok(())
+}
+
 pub(crate) fn register_metadata(
     builder: ProcedureRegistryBuilder,
     service: Arc<crate::auth::AuthService>,
@@ -330,10 +365,11 @@ pub(crate) fn register_metadata(
                     return Err(forbidden());
                 }
                 let result: Option<DocumentHead> = if let Some(version) = input.version {
-                    context
-                        .transaction
-                        .read(metadata_history_key(&input.id, &version)?)
+                    let key = metadata_history_key(&input.id, &version)?;
+                    history_records(&mut context.transaction, &current, vec![key])
                         .await?
+                        .pop()
+                        .flatten()
                 } else {
                     Some(current)
                 };
@@ -383,9 +419,7 @@ pub(crate) fn register_metadata(
                             )?);
                         }
                     }
-                    let result = context
-                        .transaction
-                        .many::<DocumentHead>(keys)
+                    let result = history_records(&mut context.transaction, &current, keys)
                         .await?
                         .into_iter()
                         .map(|value| value.ok_or_else(invalid))

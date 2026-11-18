@@ -9,9 +9,11 @@ const env = process.env;
 const endpoints = JSON.parse(env.SORTSYS_AUTH_TEST_ENDPOINTS);
 assert.equal(endpoints.length, 2);
 const project = env.SORTSYS_RESTORE_E2E_PROJECT;
+const confirmationCase = env.SORTSYS_RESTORE_E2E_CONFIRMATION_CASE;
+const finalizedText = "Vertrauliche Ausführung nach der Sicherung.";
 const before = env.SORTSYS_RESTORE_E2E_BEFORE;
 const after = env.SORTSYS_RESTORE_E2E_AFTER;
-assert.ok(project && before && after);
+assert.ok(project && confirmationCase && before && after);
 const artifacts = join(process.argv[2], "browser-artifacts", "content-restore");
 await mkdir(artifacts, { recursive: true });
 const server = await applicationServer(
@@ -46,7 +48,9 @@ try {
     if (!url.pathname.startsWith("/api/v2/")) return;
     if (url.pathname.includes("zerotrust.content.activate")) activations++;
     const wire = (request.postData() ?? "") + decodeURIComponent(url.search);
-    if (wire.includes(before) || wire.includes(after)) leaks.push(url.pathname);
+    if ([before, after, finalizedText].some((text) => wire.includes(text))) {
+      leaks.push(url.pathname);
+    }
   });
 
   const backupsUrl = server.origin + "/admin?tab=backups";
@@ -100,6 +104,22 @@ try {
   await expect(
     page.getByRole("heading", { name: after, exact: true }),
   ).toBeVisible();
+  await page.goto(`${server.origin}/gaeb/${confirmationCase}`);
+  await page
+    .getByRole("button", {
+      name: "Auftragsbestätigung öffnen",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator("canvas").first()).toBeVisible();
+  const finalParagraph = page.locator(
+    `[data-gaeb-field][aria-description="${finalizedText}"]`,
+  );
+  await expect(finalParagraph).toBeVisible();
+  await expect(finalParagraph).toBeDisabled();
+  await page.screenshot({
+    path: join(artifacts, "restored-locked-confirmation.png"),
+  });
   assert.equal(activations, 1);
   assert.deepEqual(errors, []);
   assert.deepEqual(leaks, []);
@@ -110,6 +130,7 @@ try {
       visibleBackups: 2,
       previewCancelled: true,
       activations,
+      lockedConfirmationVisible: true,
       errors,
       leaks,
     }),

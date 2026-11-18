@@ -150,15 +150,20 @@ globalThis.fetch = new Proxy(originalFetch, {
   },
 });
 const operator = createClient(endpoints[0], "owner-setup-operator");
+const gaebProcessor =
+  mode === "owner-content-preparation"
+    ? (await import("./lib/gaebProcessor")).cliGaebProcessor
+    : undefined;
 const owner = createBusinessClient(
   createClient(endpoints[1], "owner-setup-user"),
-  { productDriver: duckDriver },
+  { productDriver: duckDriver, gaebProcessor },
 );
 const contentChanges: EncryptedChange[] = [];
 const peer = createBusinessClient(
   createClient(endpoints[0], "owner-setup-peer"),
   {
     productDriver: duckDriver,
+    gaebProcessor,
     endpoint: endpoints[0],
     realtime: mode === "owner-content-preparation",
     onRemoteChange:

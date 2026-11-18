@@ -7,6 +7,8 @@ import { RpcClientError } from "@sortsys/v2-client";
 import {
   base64,
   contentEpochFingerprint,
+  documentHead,
+  documentHeadHash,
   encryptedObject,
   randomSecret,
   signContentEpoch,
@@ -33,6 +35,202 @@ import {
 } from "../app/lib/backups/contentRestore";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
+import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
+
+async function adoptOrder(owner: Client, projectId: string) {
+  const contract = await required(
+    owner.mutate("commercial.cases.adoptContract", {
+      projectId,
+      title: "Vertraulicher Auftrag zur Rücksicherung",
+      sourcePhase: "86",
+      sourceXml: gaebWorkflowXml("86"),
+      sourceFileName: "Auftrag.x86",
+      offerXml: gaebWorkflowXml("84"),
+      referenceXml: null,
+      netAmount: "1776.00",
+    }),
+  );
+  const workflow = await required(
+    owner.query("commercial.cases.get", contract),
+  );
+  const order = workflow.documents.find((item) => item.purpose === "order");
+  assert.ok(order);
+  return { caseId: contract.id, order };
+}
+
+async function createConfirmation(
+  owner: Client,
+  basis: Awaited<ReturnType<typeof adoptOrder>>,
+) {
+  const { caseId, order } = basis;
+  const draft = gaebWorkflowXml("87");
+  const confirmation = await required(
+    owner.mutate("commercial.documents.create", {
+      caseId,
+      purpose: "confirmation",
+      fileName: "Auftragsbestaetigung.x87",
+      xml: draft,
+      readOnly: false,
+      sourceDocumentId: order.id,
+      sourceVersion: order.version,
+    }),
+  );
+  return { target: { caseId, id: confirmation.id }, draft };
+}
+
+async function prepareConfirmation(owner: Client, projectId: string) {
+  const basis = await adoptOrder(owner, projectId);
+  const { target, draft } = await createConfirmation(owner, basis);
+  const headInput = { scope: `commercial:${target.caseId}`, id: target.id };
+  return async (peer: Client) => {
+    const changed = draft.replace(
+      "Fensterlaibung verputzen.",
+      "Vertrauliche Ausführung nach der Sicherung.",
+    );
+    const saved = await required(
+      owner.mutate("commercial.documents.save", {
+        ...target,
+        version: 1n,
+        xml: changed,
+      }),
+    );
+    const finalized = await required(
+      owner.mutate("commercial.documents.finalize", {
+        ...target,
+        version: saved.version,
+      }),
+    );
+    const locked = await required(
+      peer.query("zerotrust.documents.get", headInput, {
+        strategy: "network-only",
+      }),
+    );
+    const hash = await documentHeadHash(documentHead(locked));
+    assert.equal(locked.version, finalized.version.toString());
+    assert.equal(locked.locked, true);
+    const timestampInput = {
+      scope: headInput.scope,
+      object: target.id,
+      revision: locked.version,
+    };
+    const published = await required(
+      peer.query("commercial.documents.get", target, {
+        strategy: "network-only",
+      }),
+    );
+    assert.match(published.xml, /Vertrauliche Ausführung nach der Sicherung/);
+    async function check() {
+      const head = await required(
+        peer.query("zerotrust.documents.get", headInput, {
+          strategy: "network-only",
+        }),
+      );
+      assert.equal(await documentHeadHash(documentHead(head)), hash);
+      const proof = await required(
+        peer.query("zerotrust.timestamps.get", timestampInput, {
+          strategy: "network-only",
+        }),
+      );
+      assert.equal(proof.target.digest, hash);
+      assert.deepEqual(proof.artifact, locked);
+      const history = await required(
+        peer.query(
+          "zerotrust.documents.history",
+          {
+            ...headInput,
+            before: locked.version,
+          },
+          { strategy: "network-only" },
+        ),
+      );
+      assert.deepEqual(
+        history.map(({ version }) => version),
+        ["2", "1"],
+      );
+      assert.equal(
+        await documentHeadHash(documentHead(history[0])),
+        locked.previous,
+      );
+      const restored = await required(
+        peer.query("commercial.documents.get", target, {
+          strategy: "network-only",
+        }),
+      );
+      assert.equal(restored.xml, published.xml);
+      assert.equal(restored.version, finalized.version);
+      assert.equal(restored.canEdit, false);
+      const listing = await required(
+        peer.query(
+          "commercial.cases.get",
+          { id: target.caseId },
+          {
+            strategy: "network-only",
+          },
+        ),
+      );
+      const row = listing.documents.find(({ id }) => id === target.id);
+      assert.equal(row?.version, finalized.version);
+      assert.equal(row?.readOnly, true);
+      const [replaced, error] = await peer.mutate("commercial.documents.save", {
+        ...target,
+        version: restored.version,
+        xml: draft,
+      });
+      assert.equal(replaced, null);
+      assert.ok(error);
+    }
+    return { caseId: target.caseId, check };
+  };
+}
+
+async function rejectSnapshotWithoutLockedDocument(
+  tenant: string,
+  owner: Client,
+  peer: Client,
+  operator: Client,
+) {
+  const project = await required(
+    owner.mutate("projects.create", {
+      title: "Auftrag ohne Bestätigung im Sicherungsstand",
+    }),
+  );
+  const basis = await adoptOrder(owner, project.id);
+  const snapshot = await required(
+    operator.mutate("admin.storage.snapshots.create", {
+      tenant,
+      operation: base64(randomSecret()),
+    }),
+  );
+  const { target } = await createConfirmation(owner, basis);
+  await required(
+    owner.mutate("commercial.documents.finalize", { ...target, version: 1n }),
+  );
+  const prepared = await required(
+    peer.mutate("zerotrust.content.prepare", {
+      snapshotOperation: snapshot.id,
+      operation: crypto.randomUUID(),
+    }),
+  );
+  const signal = new AbortController().signal;
+  const signed = await approvePreparedContent(peer, prepared, signal);
+  await assert.rejects(() => inspectPreparedContent(peer, signed, signal), {
+    code: "CONFLICT",
+  });
+  const [activated, error] = await peer.mutate(
+    "zerotrust.content.activate",
+    signed,
+  );
+  assert.equal(activated, null);
+  assert.ok(error instanceof RpcClientError);
+  assert.equal(error.code, "CONFLICT");
+  const stillVisible = await required(
+    peer.query("commercial.documents.get", target, {
+      strategy: "network-only",
+    }),
+  );
+  assert.equal(stillVisible.version, 2n);
+  assert.equal(stillVisible.canEdit, false);
+}
 
 async function holdEditorPackets(
   client: ReturnType<typeof createBusinessClient>,
@@ -194,6 +392,7 @@ export async function exerciseContentPreparation(
     }),
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
+  const finalizeConfirmation = await prepareConfirmation(owner, project.id);
   const ownerSession = await required(
     owner.query("auth.sessionInfo", undefined),
   );
@@ -234,6 +433,7 @@ export async function exerciseContentPreparation(
     }),
   );
   assert.ok(snapshot.bytes);
+  const confirmation = await finalizeConfirmation(peer);
   const foreignTenant = `${tenant}-other`;
   const foreign = await tenantSetupRequest(foreignTenant);
   await required(operator.mutate("admin.tenants.create", foreign.request));
@@ -556,6 +756,7 @@ export async function exerciseContentPreparation(
   assert.equal(editor.aborted, true);
   assert.equal(peer.context.context().aborted, false);
   await checkEditors(await contentEpochFingerprint(approval));
+  await confirmation.check();
   const [samePage, stalePage] = await peer.query(
     "zerotrust.objects.list",
     {
@@ -695,6 +896,7 @@ export async function exerciseContentPreparation(
     ),
   );
   assert.equal(restoredAgain.title, originalTitle);
+  await confirmation.check();
 
   if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
     await required(
@@ -714,6 +916,7 @@ export async function exerciseContentPreparation(
             SORTSYS_RESTORE_E2E_USER: ownerCredentials.username,
             SORTSYS_RESTORE_E2E_PASSWORD: ownerCredentials.password,
             SORTSYS_RESTORE_E2E_PROJECT: project.id,
+            SORTSYS_RESTORE_E2E_CONFIRMATION_CASE: confirmation.caseId,
             SORTSYS_RESTORE_E2E_BEFORE: newTitle,
             SORTSYS_RESTORE_E2E_AFTER: originalTitle,
           },
@@ -735,4 +938,5 @@ export async function exerciseContentPreparation(
     );
     assert.equal(restoredInBrowser.title, originalTitle);
   }
+  await rejectSnapshotWithoutLockedDocument(tenant, owner, peer, operator);
 }

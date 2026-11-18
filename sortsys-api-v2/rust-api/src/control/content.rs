@@ -211,6 +211,60 @@ impl Transaction {
         Ok(pin)
     }
 
+    /// Read dependencies of an immutable record from the epoch where it was
+    /// retained. The caller identifies the witness and validates the dependency
+    /// against it. All physical reads still participate in the transaction.
+    pub(crate) async fn many_at_retained_epoch<T: serde::de::DeserializeOwned>(
+        &mut self,
+        witness: &RecordKey,
+        records: Vec<RecordKey>,
+    ) -> RpcResult<Vec<Option<T>>> {
+        self.content_head().await?;
+        let pin = self.read_pin(witness).await?.ok_or_else(unavailable)?;
+        self.many_in_content_epoch(&pin.number, records).await
+    }
+
+    pub(crate) async fn read_in_selected_epoch<T: serde::de::DeserializeOwned>(
+        &mut self,
+        record: RecordKey,
+    ) -> RpcResult<Option<T>> {
+        self.content_head().await?;
+        let number = self.content.head.number()?.to_owned();
+        Ok(self
+            .many_in_content_epoch(&number, vec![record])
+            .await?
+            .pop()
+            .flatten())
+    }
+
+    async fn many_in_content_epoch<T: serde::de::DeserializeOwned>(
+        &mut self,
+        number: &str,
+        records: Vec<RecordKey>,
+    ) -> RpcResult<Vec<Option<T>>> {
+        let physical = records
+            .iter()
+            .map(|record| {
+                if !collection(&record.collection) {
+                    return Err(unavailable());
+                }
+                Ok(namespace_record(record, number)?)
+            })
+            .collect::<RpcResult<Vec<_>>>()?;
+        self.prefetch_raw(physical.clone()).await?;
+        let mut values = Vec::with_capacity(physical.len());
+        for record in physical {
+            values.push(
+                self.encoded_raw(record)
+                    .await?
+                    .as_deref()
+                    .map(decode)
+                    .transpose()?,
+            );
+        }
+        Ok(values)
+    }
+
     pub(super) async fn pin_content_record(
         &mut self,
         logical: &RecordKey,

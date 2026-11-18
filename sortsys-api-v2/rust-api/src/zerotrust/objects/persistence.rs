@@ -42,6 +42,35 @@ pub(in crate::zerotrust) async fn raw_object(
     id: &str,
 ) -> RpcResult<Option<ObjectRecord>> {
     identifier(id)?;
+    if let Some(blob) = super::super::documents::blob(id)? {
+        let witness = key("documents", blob.id);
+        let head: Option<super::super::documents::DocumentHead> =
+            transaction.read(witness.clone()).await?;
+        if let Some(head) = head.filter(|head| head.locked) {
+            if head.id != blob.id || head.scope != blob.scope {
+                return Err(invalid());
+            }
+            let owner = if blob.facet == "opaque" {
+                "scope"
+            } else {
+                blob.facet
+            };
+            let domain = format!("{}:{owner}", blob.scope);
+            let records = vec![record_key(&domain, id)];
+            let record: Option<ObjectRecord> = transaction
+                .many_at_retained_epoch(&witness, records)
+                .await?
+                .pop()
+                .flatten();
+            if record
+                .as_ref()
+                .is_some_and(|record| record.object != id || record.domain != domain)
+            {
+                return Err(invalid());
+            }
+            return Ok(record);
+        }
+    }
     let Some(domain) = transaction
         .read::<String>(key("object-locations", id))
         .await?
