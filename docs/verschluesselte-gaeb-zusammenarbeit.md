@@ -443,6 +443,15 @@ nativen Dokuments. Der Test prüft das erneute Öffnen, das Entfernen der Ansich
 nach einem Rechteentzug und eine spätere reine Lesefreigabe. Inhalte, die John
 nach dem Entzug ergänzt, bleiben bis zur erneuten Freigabe verborgen.
 
+Für eine neu erstellte X83 umfasst die Prüfung auch das Anlegen einer Position
+mit zwei Absätzen. John und Frank ergänzen verschiedene Absätze derselben
+Position, während die Veröffentlichung der nativen Datei angehalten ist.
+Beide sehen die zusammengeführten Texte schon über den Live-Kanal. Franks
+Freigabe umfasst das Lesen der Vertragsmenge. Die Gliederung bleibt gesperrt.
+Nach dem Speichern zeigt Franks Browser beide Texte auch nach einem Neuladen.
+Die heruntergeladene X83 enthält sie als zwei native Absätze und behält die
+ursprüngliche Menge.
+
 Der Textabgleich berücksichtigt auch Eingaben während des Verbindungsaufbaus.
 Deren Ausgangspunkt ist der sichtbare Dokumentstand, selbst wenn der gemeinsame
 Nachrichtenverlauf mit einem älteren Text beginnt. Ein bereits nachgelesener

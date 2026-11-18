@@ -101,6 +101,9 @@ function auditPage(page) {
       "Haftgrund, manuell angepasst",
       "Treppenhausrenovierung Musterstraße",
       "Treppenhaus im Live-Abgleich",
+      "Gemeinsam bearbeiteter Leistungsumfang",
+      "Altanstrich und lose Beschichtungen entfernen",
+      "Fensterbänke und angrenzende Bauteile abdecken",
       "Antrag vor Standardfreigabe",
       "Antrag mit Standardfreigabe",
       "Gemeinsames Auftrags-LV von John und Frank",
@@ -276,7 +279,7 @@ async function saveResourceAccess(dialog, label, field, timeout = 20_000) {
   await expect(save).not.toHaveAttribute("data-pending", "true", { timeout });
   await expect(
     dialog.getByRole("button", { name: new RegExp(field) }),
-  ).toBeEnabled();
+  ).toBeEnabled({ timeout });
   await expect(save).toBeDisabled();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
 }
@@ -339,52 +342,74 @@ async function changePrice(editor, value) {
   );
 }
 
-async function changeTextBeforePublication(writer, reader, value) {
-  let release;
-  const released = new Promise((resolve) => {
-    release = resolve;
-  });
+function gaebField(page, key) {
+  return page.locator(`[data-gaeb-field=${JSON.stringify(key)}]`);
+}
+
+async function changeGaebText(page, key, value) {
+  const field = gaebField(page, key);
+  await expect(field).toBeEnabled();
+  await field.focus();
+  const input = page.locator("textarea.gaeb-canvas-input");
+  await input.fill(value);
+  await input.press("Tab");
+}
+
+async function deferGaebRequests(editors, procedure, shouldWait, work) {
+  const gate = Promise.withResolvers();
   const match = (url) =>
     decodeURIComponent(url.pathname)
       .split("/")
       .at(-1)
       .split(",")
-      .includes("zerotrust.objects.batch");
+      .includes(procedure);
   const handler = async (route) => {
     const body = route.request().postDataJSON();
-    const publishesDocument = Object.values(body).some(
-      (entry) => entry?.json?.documents?.length > 0,
-    );
-    if (publishesDocument) {
-      await released;
+    if (Object.values(body).some((entry) => shouldWait(entry?.json))) {
+      await gate.promise;
     }
     await route.continue();
   };
-  await writer.route(match, handler);
-  await reader.route(match, handler);
-  const field = (editor) => editor.locator('[data-gaeb-field="project:title"]');
+  await Promise.all(editors.map((editor) => editor.route(match, handler)));
   try {
-    await field(writer).focus();
-    const input = writer.locator("textarea.gaeb-canvas-input");
-    await input.fill(value);
-    await input.press("Tab");
-    await expect(field(writer)).toHaveAttribute("aria-description", value);
-    await expect(field(reader)).toHaveAttribute("aria-description", value);
+    await work();
   } finally {
-    release();
-    await writer.unroute(match, handler);
-    await reader.unroute(match, handler);
+    gate.resolve();
+    await Promise.all(editors.map((editor) => editor.unroute(match, handler)));
   }
+}
+
+async function shareTextBeforePublication(editors, work, saveTimeout = 20_000) {
+  await deferGaebRequests(
+    editors,
+    "zerotrust.objects.batch",
+    (input) => input?.documents?.length > 0,
+    work,
+  );
   // The production save deadline starts after the test releases its own gate.
   // The earlier ordinary price saves retain their unchanged cold-save deadline.
   await Promise.all(
-    [writer, reader].map((editor) =>
+    editors.map((editor) =>
       expect(editor.locator(".gaeb-editor")).toHaveAttribute(
         "data-save-state",
         "saved",
+        { timeout: saveTimeout },
       ),
     ),
   );
+}
+
+async function changeProjectTitleBeforePublication(writer, peer, value) {
+  const editors = [writer, peer];
+  const key = "project:title";
+  await shareTextBeforePublication(editors, async () => {
+    await changeGaebText(writer, key, value);
+    await Promise.all(
+      editors.map((editor) =>
+        expect(gaebField(editor, key)).toHaveAttribute("aria-description", value),
+      ),
+    );
+  });
 }
 
 try {
@@ -550,7 +575,7 @@ try {
           "online",
         );
       }
-      await changeTextBeforePublication(
+      await changeProjectTitleBeforePublication(
         page,
         peer,
         "Treppenhaus im Live-Abgleich",
@@ -2002,7 +2027,7 @@ try {
           "online",
         );
       }
-      await changeTextBeforePublication(
+      await changeProjectTitleBeforePublication(
         member,
         page,
         "Gemeinsames Auftrags-LV von John und Frank",
@@ -2077,6 +2102,186 @@ try {
         .catch(() => {});
       await memberContext.tracing.stop({
         path: join(artifacts, "member-gaeb.zip"),
+      });
+      await memberContext.close();
+      await memberServer.close();
+    }
+  });
+  await scenario("gaeb-position-paragraphs-between-users", async (page) => {
+    const memberServer = await applicationServer(applicationBuild, endpoints[0]);
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const memberAudit = auditPage(member);
+    await memberContext.tracing.start({ screenshots: true, snapshots: true });
+    const title = "Gemeinsam bearbeiteter Leistungsumfang";
+    const customerName = "Nürnberger Wohnbau GmbH";
+    const caseLoadTimeout = 60_000;
+    try {
+      await login(page, "john.doe");
+      await expect(
+        page.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await page.goto(`${server.origin}/offers`);
+      await expect(
+        page.getByRole("region", { name: "Angebotsübersicht", exact: true }),
+      ).toHaveAttribute("aria-busy", "false", { timeout: caseLoadTimeout });
+      await page
+        .getByRole("main")
+        .getByRole("button", { name: "Angebot erstellen", exact: true })
+        .click();
+      const creation = page.getByRole("dialog", { name: "Angebot erstellen" });
+      await creation.getByRole("textbox", { name: /^Bezeichnung/ }).fill(title);
+      await creation.getByRole("combobox", { name: /^Kunde/ }).fill(customerName);
+      await page.getByRole("option", { name: customerName, exact: true }).click();
+      await creation
+        .getByRole("button", { name: "Angebot erstellen", exact: true })
+        .click();
+      const editor = page.locator(".gaeb-editor");
+      await expect(editor).toBeVisible({ timeout: caseLoadTimeout });
+      const path = new URL(page.url()).pathname;
+      assert.match(path, /^\/gaeb\/[1-9a-v][0-9a-v]{0,12}$/);
+      await editor.getByRole("tab", { name: "Einfügen", exact: true }).click();
+      await editor
+        .getByRole("button", { name: "Position hinzufügen", exact: true })
+        .click();
+      const first = editor.locator(
+        '[data-gaeb-field^="item-"][data-gaeb-field$=":text:0"]',
+      );
+      await expect(first).toBeEnabled();
+      const firstKey = await first.getAttribute("data-gaeb-field");
+      assert.ok(firstKey);
+      await first.focus();
+      await editor.getByRole("tab", { name: "Start", exact: true }).click();
+      await editor
+        .getByRole("button", { name: "Absatz hinzufügen", exact: true })
+        .click();
+      await expect(first).toHaveAttribute("aria-description", /\n$/);
+      const firstParagraph = "Oberfläche vorbereiten.";
+      const secondParagraph = "Untergrund prüfen.";
+      const initialText = `${firstParagraph}\n${secondParagraph}`;
+      await changeGaebText(page, firstKey, initialText);
+      await expect(editor).toHaveAttribute("data-save-state", "saved", {
+        timeout: caseLoadTimeout,
+      });
+
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await member.goto(`${memberServer.origin}${path}`);
+      await expect(
+        member.getByText("Vorgang nicht geladen", { exact: true }),
+      ).toBeVisible({ timeout: caseLoadTimeout });
+
+      const access = await selectOfferAccess(page, title);
+      await selectAccess(page, access, "Bezeichnung und Status", "Lesen");
+      await selectAccess(
+        page,
+        access,
+        "Leistungsbeschreibungen",
+        "Lesen und bearbeiten",
+      );
+      await selectAccess(page, access, "Vertragsmengen", "Lesen");
+      await saveOfferAccess(access, caseLoadTimeout);
+      await page.goto(`${server.origin}${path}`);
+      for (const browserPage of [page, member]) {
+        await expect(browserPage.locator(".gaeb-editor")).toHaveAttribute(
+          "data-connection-state",
+          "online",
+          { timeout: caseLoadTimeout },
+        );
+      }
+      const quantity = member.locator('[data-gaeb-field$=":Qty"]');
+      await expect(quantity).toBeDisabled();
+      await member
+        .getByRole("tab", { name: "Einfügen", exact: true })
+        .click();
+      await expect(
+        member.getByRole("button", { name: "Position hinzufügen", exact: true }),
+      ).toBeDisabled();
+      const firstAddition = "Altanstrich und lose Beschichtungen entfernen. ";
+      const secondAddition = " Fensterbänke und angrenzende Bauteile abdecken.";
+      const agreedText = firstAddition + initialText + secondAddition;
+      const editors = [page, member];
+      async function insertText(browserPage, position, text, expected) {
+        const field = gaebField(browserPage, firstKey);
+        await expect(field).toHaveAttribute("aria-description", initialText);
+        await field.focus();
+        const input = browserPage.locator("textarea.gaeb-canvas-input");
+        await input.press(position);
+        await browserPage.keyboard.insertText(text);
+        await input.press("Tab");
+        await expect(field).toHaveAttribute("aria-description", expected);
+      }
+      const mergeParagraphs = async () => {
+        await deferGaebRequests(
+          editors,
+          "zerotrust.documents.messages.post",
+          (input) => input?.kind === "update",
+          async () => {
+            await Promise.all([
+              insertText(
+                page,
+                "Control+Home",
+                firstAddition,
+                firstAddition + initialText,
+              ),
+              insertText(
+                member,
+                "Control+End",
+                secondAddition,
+                initialText + secondAddition,
+              ),
+            ]);
+          },
+        );
+        await Promise.all(
+          editors.map((browserPage) =>
+            expect(gaebField(browserPage, firstKey)).toHaveAttribute(
+              "aria-description",
+              agreedText,
+            ),
+          ),
+        );
+      };
+      await shareTextBeforePublication(
+        editors,
+        mergeParagraphs,
+        caseLoadTimeout,
+      );
+      await member.reload();
+      await expect(gaebField(member, firstKey)).toHaveAttribute(
+        "aria-description",
+        agreedText,
+        { timeout: caseLoadTimeout },
+      );
+      await expect(quantity).toBeDisabled();
+      const received = page.waitForEvent("download", {
+        timeout: caseLoadTimeout,
+      });
+      await page
+        .getByRole("button", { name: "Herunterladen", exact: true })
+        .click();
+      const download = await received;
+      assert.match(download.suggestedFilename(), /\.x83$/i);
+      const xml = await readFile(await download.path(), "utf8");
+      const detail = /<DetailTxt><Text>([\s\S]*?)<\/Text><\/DetailTxt>/.exec(
+        xml,
+      )?.[1];
+      assert.ok(detail);
+      const paragraphs = [...detail.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(
+        ([, content]) => content.replace(/<[^>]+>/g, ""),
+      );
+      assert.deepEqual(paragraphs, [
+        firstAddition + firstParagraph,
+        secondParagraph + secondAddition,
+      ]);
+      assert.match(xml, /<Qty>0(?:\.0+)?<\/Qty>/);
+      memberAudit.assertClean();
+    } finally {
+      await memberContext.tracing.stop({
+        path: join(artifacts, "member-gaeb-paragraphs.zip"),
       });
       await memberContext.close();
       await memberServer.close();

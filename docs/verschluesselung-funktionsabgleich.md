@@ -200,9 +200,10 @@ Browser mit demselben Konto sind gegen getrennte API-Instanzen geprüft,
 einschließlich Textabgleich vor der XML-Veröffentlichung und erneutem Öffnen
 nach dem Speichern. Mit John und Frank ist auch die gemeinsame Änderung des
 Feldes „Bauvorhaben“ ohne Preisfreigabe über zwei API-Instanzen geprüft, ebenso
-Rechteentzug und erneute Nur-Lesen-Freigabe. Dieser Nachweis deckt noch nicht die
-gemeinsame Bearbeitung aller Positionsabsätze ab. Dauerhafte Wiederanlaufpunkte
-und das spätere Zusammenführen heruntergeladener Teilentwürfe brauchen weitere Arbeit.
+Rechteentzug und erneute Nur-Lesen-Freigabe. Ein eigener Browserfall prüft zwei
+gleichzeitig bearbeitete Absätze einer X83-Position. Dauerhafte
+Wiederanlaufpunkte und das spätere Zusammenführen heruntergeladener Teilentwürfe
+brauchen weitere Arbeit.
 
 **Projektgrunddaten und Projektkontakte.** Getrennte Bereiche je Projekt,
 Grunddaten, Kontaktbezeichnungen und Statuswechsel sind angeschlossen.

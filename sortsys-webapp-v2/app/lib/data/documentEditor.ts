@@ -10,6 +10,7 @@ import type {
   GaebXmlProcessor,
 } from "@sortsys/gaeb";
 import {
+  GAEB_CONTENT_FACETS,
   gaebAmountFacet,
   gaebQuantityFacet,
   phaseHasPrices,
@@ -76,6 +77,18 @@ export function documentEditorAccess(
   phase?: GaebPhase,
   financialContextReadable = true,
 ): DocumentContentView["access"] {
+  const unpriced = phase !== undefined && !phaseHasPrices(phase);
+  // In an unpriced document a structural change can rearrange the complete
+  // layout. Keep the verified grants required to publish that structure.
+  if (
+    unpriced &&
+    access.complete &&
+    GAEB_CONTENT_FACETS.every(
+      (facet) => access.readable.includes(facet) && access.writable.includes(facet),
+    )
+  ) {
+    return { ...access, pricingSupported };
+  }
   if (pricingSupported && financialContextReadable) {
     return { ...access, pricingSupported };
   }
@@ -85,9 +98,7 @@ export function documentEditorAccess(
     writable: access.writable.filter(
       (facet) =>
         ["scope", "measurement", "attachment"].includes(facet) ||
-        (facet === "contract-quantities" &&
-          phase !== undefined &&
-          !phaseHasPrices(phase)),
+        (facet === "contract-quantities" && unpriced),
     ),
   };
 }

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { GAEB_CONTENT_FACETS } from "@sortsys/gaeb";
 import {
   checkedFinancialView,
   checkedPrintAssessment,
@@ -153,6 +154,34 @@ test("price edits need readable inputs, not unrelated opaque contents", () => {
     pricingSupported: true,
   });
   expect(documentEditorAccess(access, false, "84").writable).toEqual([]);
+});
+
+test("a complete unpriced inquiry retains the verified rights for its hierarchy", () => {
+  const access = {
+    complete: true,
+    readable: GAEB_CONTENT_FACETS,
+    writable: GAEB_CONTENT_FACETS,
+  };
+  expect(documentEditorAccess(access, false, "83")).toEqual({
+    ...access,
+    pricingSupported: false,
+  });
+  for (const restricted of [
+    { ...access, complete: false },
+    { ...access, writable: access.writable.filter((facet) => facet !== "opaque") },
+  ]) {
+    expect(documentEditorAccess(restricted, false, "83").writable).toEqual([
+      "scope",
+      "contract-quantities",
+      "measurement",
+      "attachment",
+    ]);
+  }
+  expect(documentEditorAccess(access, false, "84").writable).toEqual([
+    "scope",
+    "measurement",
+    "attachment",
+  ]);
 });
 
 test("a readable reference needs actual contractual quantities, including any measurement basis", () => {
