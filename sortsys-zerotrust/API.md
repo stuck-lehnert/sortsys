@@ -851,6 +851,38 @@ kann dieser Mechanismus den neueren Stand nicht mehr erkennen. Er ersetzt daher
 keine unabhängige Aufbewahrung des aktuellen Sicherheitsstands und keine Prüfung
 des vollständigen Rücksicherungsablaufs.
 
+### Fachstände getrennt zurücksetzen
+
+Eine Rücksicherung von Geschäftsdaten darf keine zurückgezogenen Freigaben oder
+alten Anmeldedaten wieder aktivieren. `ContentEpoch` beschreibt deshalb einen
+eigenen, durch die Mandantenautorität signierten Wechsel des Fachstands. Der
+Nachweis bindet Mandant, ausführende Person, aktuelle Autoritätsgeneration,
+Vorgänger, gewählten Ausgangsstand und den SHA-256-Hash der geschlossenen
+Sicherungsdatei. `signContentEpoch`, `verifyContentEpoch` und
+`contentEpochFollows` erzeugen und prüfen diese Nachweise. Rust bietet dieselben
+Prüfungen über `content_epoch::ContentEpoch`.
+
+Der Ausgangsstand hat die Nummer `0`; jede Rücksicherung erhöht die Nummer um
+eins. Auch ein älterer veröffentlichter Stand kann erneut als Quelle dienen.
+Der Adapter muss Vorgänger und Quelle aus seiner bereits geprüften Historie
+laden. Eine gültige Signatur eines nie veröffentlichten Seitenzweigs genügt
+nicht. Autorisierung, Prüfung der Sicherungsdatei und Veröffentlichung des
+neuen Kopfes gehören in denselben atomaren Ablauf.
+
+`namespaceRecord(record, number)` bildet eine logische Metadatenkennung auf
+eine getrennte Sammlung ab; `logicalRecord` prüft die umgekehrte Zuordnung.
+Objektkennungen bleiben erhalten. Die Anwendung legt ausdrücklich fest, welche
+Sammlungen Geschäftsdaten enthalten. Konten, Berechtigungen, Recovery-Nachweise
+und ihre unabhängigen Zeugen müssen beim aktuellen Stand bleiben.
+
+Ein `ContentPin` bindet einen unveränderlichen Datensatz an seine genaue
+physische Sammlung. `contentPinKey` liefert dafür eine nach logischen Kennungen
+sortierbare Ablagekennung. Der Adapter muss diese Bindung selbst gegen Änderungen
+schützen, beim Lesen berücksichtigen und die referenzierten Chiffrate erhalten.
+Die Funktionen führen noch keine Rücksicherung durch. Insbesondere ersetzen sie
+weder einen atomaren Speicherwechsel noch die Behandlung laufender
+Dokumentsitzungen und fachlicher Abhängigkeiten.
+
 ## Unveränderliche Ereignisse lesen
 
 Das Modul `journal` beschreibt Ereignisse, die zusammen mit einem `MetadataBatch`

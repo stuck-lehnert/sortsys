@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use sortsys_zerotrust::{
     administration::{PolicyAdministration, PolicyAdministrationRef},
     anchors::RecordAnchor,
+    content_epoch::{ContentEpoch, ContentPin, content_pin_key},
     credentials::CredentialPrincipal,
     crypto::{AccountVault, decode, encode, packet_hash, sized},
     delegations::{DelegationCertificate, DelegationContext},
@@ -78,6 +79,10 @@ impl Policy {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserVector {
+    restored_content: ContentEpoch,
+    restored_content_frame: String,
+    pinned_content: ContentPin,
+    pinned_content_key: sortsys_zerotrust::metadata::RecordKey,
     passkey: PasskeyVector,
     credential: String,
     account_vault: AccountVault,
@@ -212,6 +217,25 @@ fn main() {
         vector.anchor_digest
     );
     let signer = sized::<32>(&vector.signer).unwrap();
+    vector
+        .restored_content
+        .verify(
+            "laboratory:alpha",
+            Some("1"),
+            Some("researcher:lee"),
+            &signer,
+        )
+        .unwrap();
+    vector.restored_content.follows(None, None).unwrap();
+    assert_eq!(
+        encode(&vector.restored_content.frame().unwrap()),
+        vector.restored_content_frame
+    );
+    vector.pinned_content.validate().unwrap();
+    assert_eq!(
+        content_pin_key(&vector.pinned_content.record).unwrap(),
+        vector.pinned_content_key
+    );
     let passkey = &vector.passkey;
     let binding = &passkey.binding;
     let enrollment = webauthn::RegistrationBinding {
@@ -378,9 +402,14 @@ fn main() {
     substituted.readers[0].user = "researcher:intruder".into();
     assert!(substituted.verify(&expected, &signer).is_err());
     vector.object.verify(&signer).unwrap();
-    assert_eq!(sortsys_zerotrust::object_shares::recipient_binding(
-        Some(&vector.delegation.creator), Some(&vector.object_share),
-    ).unwrap(), vector.object_share_binding);
+    assert_eq!(
+        sortsys_zerotrust::object_shares::recipient_binding(
+            Some(&vector.delegation.creator),
+            Some(&vector.object_share),
+        )
+        .unwrap(),
+        vector.object_share_binding
+    );
     sortsys_zerotrust::object_shares::verify(
         &vector.object_share,
         &vector.object,

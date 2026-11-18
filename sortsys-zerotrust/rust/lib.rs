@@ -4,6 +4,7 @@
 
 pub mod administration;
 pub mod anchors;
+pub mod content_epoch;
 pub mod credentials;
 pub mod crypto;
 pub mod delegations;

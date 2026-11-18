@@ -35,6 +35,13 @@ import {
   sized,
   stampOtsDigest,
   VerifiedStore,
+  signContentEpoch,
+  contentEpochFrame,
+  contentEpochFollows,
+  namespaceRecord,
+  logicalRecord,
+  contentPin,
+  contentPinKey,
 } from "@sortsys/zerotrust";
 
 function require(condition: unknown): asserts condition {
@@ -94,6 +101,36 @@ export async function exerciseFramework() {
     ),
   };
   const delegate = await createIdentity();
+  const restoredContent = await signContentEpoch(
+    {
+      format: "zt-content-epoch-v1",
+      tenant: "laboratory:alpha",
+      authorityGeneration: "1",
+      number: "1",
+      previous: null,
+      sourceNumber: "0",
+      sourceHead: null,
+      snapshot: await digest(bytes("closed ciphertext snapshot")),
+      actor: "researcher:lee",
+    },
+    identity.signingKey.privateKey,
+  );
+  await contentEpochFollows(restoredContent, null, null);
+  const logicalContent = { collection: "research-notes", key: "note:1" };
+  const restoredRecord = namespaceRecord(
+    logicalContent,
+    restoredContent.number,
+  );
+  require(
+    logicalRecord(restoredRecord, restoredContent.number).key ===
+      logicalContent.key,
+  );
+  const pinnedContent = contentPin({
+    format: "zt-content-pin-v1",
+    record: logicalContent,
+    number: restoredContent.number,
+    physical: restoredRecord,
+  });
   const delegations = createDelegationCodec(["experiment", "appointment"]);
   const delegation = await delegations.certify(
     {
@@ -492,6 +529,10 @@ export async function exerciseFramework() {
   );
   return {
     passkey,
+    restoredContent,
+    restoredContentFrame: base64(contentEpochFrame(restoredContent)),
+    pinnedContent,
+    pinnedContentKey: await contentPinKey(logicalContent),
     credential: credentialIdentifier({
       tenant: "laboratory:alpha",
       subject: "researcher:kai",

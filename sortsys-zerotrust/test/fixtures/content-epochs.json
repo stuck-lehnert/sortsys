@@ -1,0 +1,78 @@
+{
+  "authorities": {
+    "1": "O6d0_Z0i5GA4Dq8hoGAYslSbguBpvKCADWU0bWAnzsE",
+    "2": "IJrtPC6PjKOUQzZlrDO1f3XA_Wgl6UNJhFUJK3AWgNI"
+  },
+  "epochs": [
+    {
+      "format": "zt-content-epoch-v1",
+      "tenant": "laboratory",
+      "authorityGeneration": "1",
+      "number": "1",
+      "previous": null,
+      "sourceNumber": "0",
+      "sourceHead": null,
+      "snapshot": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+      "actor": "researcher:admin",
+      "signature": "uQhj9o0KIXPYLnrFk_v8dvsHsU92TcUl92j7T9IH6QdmuPfoCjlaesKTYPcDTNtph7CVbnPZPvRmloWygPXKCA"
+    },
+    {
+      "format": "zt-content-epoch-v1",
+      "tenant": "laboratory",
+      "authorityGeneration": "2",
+      "number": "2",
+      "previous": "WR1Zm7dqxvvSnM8MhqJ0hgmqsOo4yxByhLNiTHiGJxo",
+      "sourceNumber": "1",
+      "sourceHead": "WR1Zm7dqxvvSnM8MhqJ0hgmqsOo4yxByhLNiTHiGJxo",
+      "snapshot": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+      "actor": "researcher:admin",
+      "signature": "29pmLVCilv912GkIU47037mFOKKwUQi19l2kUy3rRm23_CElrtUMq8jE1hLFOLivFYiye7dfALuHjUQ9EmqAAQ"
+    },
+    {
+      "format": "zt-content-epoch-v1",
+      "tenant": "laboratory",
+      "authorityGeneration": "2",
+      "number": "3",
+      "previous": "WTU-RvaDPF05LODuaEZXKGi44yPVl-dj_FIcyyULsX4",
+      "sourceNumber": "1",
+      "sourceHead": "WR1Zm7dqxvvSnM8MhqJ0hgmqsOo4yxByhLNiTHiGJxo",
+      "snapshot": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+      "actor": "researcher:admin",
+      "signature": "lw8llxfEq8-YGqJOvhiMy3OsSlp8rQn3qz3CEMUNq_tOIMQXA3ieSQirz7DKpN5RFaXHcQ1vbVs75zu8m6brDA"
+    }
+  ],
+  "frames": [
+    "AAAAE3p0L2NvbnRlbnQtZXBvY2gvdjEAAAAKbGFib3JhdG9yeQAAAAExAAAAATEAAAAAAAAAATAAAAAAAAAAK0FRRUJBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUUAAAAQcmVzZWFyY2hlcjphZG1pbg",
+    "AAAAE3p0L2NvbnRlbnQtZXBvY2gvdjEAAAAKbGFib3JhdG9yeQAAAAEyAAAAATIAAAArV1IxWm03ZHF4dnZTbk04TWhxSjBoZ21xc09vNHl4QnloTE5pVEhpR0p4bwAAAAExAAAAK1dSMVptN2RxeHZ2U25NOE1ocUowaGdtcXNPbzR5eEJ5aExOaVRIaUdKeG8AAAArQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSQAAABByZXNlYXJjaGVyOmFkbWlu",
+    "AAAAE3p0L2NvbnRlbnQtZXBvY2gvdjEAAAAKbGFib3JhdG9yeQAAAAEyAAAAATMAAAArV1RVLVJ2YURQRjA1TE9EdWFFWlhLR2k0NHlQVmwtZGpfRkljeXlVTHNYNAAAAAExAAAAK1dSMVptN2RxeHZ2U25NOE1ocUowaGdtcXNPbzR5eEJ5aExOaVRIaUdKeG8AAAArQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSQAAABByZXNlYXJjaGVyOmFkbWlu"
+  ],
+  "fingerprints": [
+    "WR1Zm7dqxvvSnM8MhqJ0hgmqsOo4yxByhLNiTHiGJxo",
+    "WTU-RvaDPF05LODuaEZXKGi44yPVl-dj_FIcyyULsX4",
+    "R5pBfzK2QO_QYdSSku4qVrG07fK3mc3Vfv1sN6Rauj0"
+  ],
+  "logical": {
+    "collection": "notes",
+    "key": "record:01"
+  },
+  "physical": {
+    "collection": "zt-data:2:notes",
+    "key": "record:01"
+  },
+  "pin": {
+    "format": "zt-content-pin-v1",
+    "record": {
+      "collection": "notes",
+      "key": "record:01"
+    },
+    "number": "2",
+    "physical": {
+      "collection": "zt-data:2:notes",
+      "key": "record:01"
+    }
+  },
+  "pinKey": {
+    "collection": "zt-content-pins-owv-A0RQsV6kJ9im3X22zhHwORei2Njxa9es3jdhlms",
+    "key": "record:01"
+  }
+}

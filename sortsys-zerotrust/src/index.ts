@@ -42,3 +42,4 @@ export * from "./metadata";
 export * from "./preparedPayload";
 export * from "./journal";
 export * from "./initialization";
+export * from "./contentEpoch";
