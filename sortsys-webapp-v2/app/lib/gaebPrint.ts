@@ -12,6 +12,7 @@ import { client, templateAssets } from "./client";
 import { readTemplateResource } from "./data/printTemplateData";
 import { renderPrintSvg, validatePrintAssetBytes } from "./data/printAssetBytes";
 import { uiText } from "./i18n";
+import { organizationSender } from "./organizationSender";
 import type { QueryResult } from "@sortsys/v2-client";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import release from "../../vendor/pdfjs/release.json";
@@ -172,31 +173,24 @@ export async function renderGaebPdf(
 ) {
   const assets = await prepareTemplateAssets(context.template.assets, signal);
   try {
-  const address = context.organization.address;
-  const sender = {
-    name: context.organization.companyName ?? "",
-    address: address
-      ? [
-          address.streetAddress,
-          [address.zip, address.city].filter(Boolean).join(" "),
-          address.country ?? "",
-        ].filter(Boolean)
-      : [],
-  };
-  const code = buildGaebTypst(xml, fileName, locale, referenceXml, {
-    template: source ?? context.template.source ?? undefined,
-    assetPaths: assets.paths,
-    sender,
-    projectTitle: context.projectTitle,
-    documentKind: context.documentKind,
-  });
-  const result = await compileTypst(
-    code,
-    { ...assets.files, ...gaebEmbeddedImageFiles(xml, referenceXml) },
-    assets.context,
-  );
-  assets.context.throwIfAborted(); return result;
-  } finally { assets.dispose(); }
+    const sender = organizationSender(context.organization);
+    const code = buildGaebTypst(xml, fileName, locale, referenceXml, {
+      template: source ?? context.template.source ?? undefined,
+      assetPaths: assets.paths,
+      sender: { name: sender?.name ?? "", address: sender?.lines ?? [] },
+      projectTitle: context.projectTitle,
+      documentKind: context.documentKind,
+    });
+    const result = await compileTypst(
+      code,
+      { ...assets.files, ...gaebEmbeddedImageFiles(xml, referenceXml) },
+      assets.context,
+    );
+    assets.context.throwIfAborted();
+    return result;
+  } finally {
+    assets.dispose();
+  }
 }
 export async function exportGaebPdf(
   xml: string,

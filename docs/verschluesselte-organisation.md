@@ -6,6 +6,12 @@ Angebotsaufforderung steht damit dieselbe hinterlegte Unternehmensanschrift zur
 Verfügung wie im Organisationsformular. Die Anschrift muss beim Beginn der
 Kalkulation nicht erneut eingegeben werden.
 
+Auch der Dokumentdruck verwendet das entschlüsselte Organisationsprofil als
+Absender. Firmenname, Straße, Postleitzahl, Ort und Land werden für GAEB-Dateien
+und andere strukturierte PDFs gleich aufbereitet. Ein ausdrücklich im Dokument
+hinterlegter Absender bleibt erhalten. Ist das Organisationsprofil nicht lesbar
+oder noch leer, bleibt das Dokument ohne diesen ergänzten Briefkopf druckbar.
+
 Firmenname und Anschrift gehören zum Bereich `organization:master-data`. Das
 Rechnungsnummernschema liegt mit eigenem Schlüssel in `organization:billing`.
 Eine normale Einladung gibt die Anschrift zum Lesen frei, einschließlich der

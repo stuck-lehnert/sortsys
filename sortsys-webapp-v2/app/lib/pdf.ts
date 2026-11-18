@@ -10,6 +10,7 @@ import {
   type PdfDocumentLayout,
 } from "./pdfLayout";
 import { PDF_FONT_FAMILY, PDF_FONT_URLS } from "./pdfFonts";
+import { organizationSender } from "./organizationSender";
 export type {
   PdfAddress,
   PdfInformation,
@@ -955,21 +956,26 @@ export function buildPdfBatchDocument(
   return lines.join("\n");
 }
 
-async function withTenantSender(documents: PreparedStructuredPdfDocument[]) {
+export async function withOrganizationSender(
+  documents: PreparedStructuredPdfDocument[],
+) {
   if (documents.every((document) => document.layout?.sender)) return documents;
   try {
-    const [tenant] = await client.query("settings.tenantName.get", undefined, {
-      strategy: "cache-first",
-    });
-    if (!tenant?.companyName) return documents;
+    const [profile, error] = await client.query(
+      "settings.organization.get",
+      undefined,
+      {
+        strategy: "network-first",
+      },
+    );
+    if (error || !profile) return documents;
+    const sender = organizationSender(profile);
+    if (!sender) return documents;
     return documents.map((document) => ({
       ...document,
       layout: {
         ...document.layout,
-        sender: document.layout?.sender ?? {
-          name: tenant.companyName!,
-          lines: [],
-        },
+        sender: document.layout?.sender ?? sender,
       },
     }));
   } catch {
@@ -995,7 +1001,7 @@ export async function renderStructuredPdfBatch(
 
   try {
     const mainContent = buildPdfBatchDocument(
-      { documents: await withTenantSender(preparedImages.documents) },
+      { documents: await withOrganizationSender(preparedImages.documents) },
       logoShadowPath,
     );
     const pdfData = await $typst.pdf({ mainContent });

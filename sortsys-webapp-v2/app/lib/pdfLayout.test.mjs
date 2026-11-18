@@ -7,8 +7,18 @@ import { fileURLToPath } from "node:url";
 import { typstString, wrapPdfDocument } from "./pdfLayout.ts";
 import { PDF_FONT_FAMILY, PDF_FONT_URLS } from "./pdfFonts.ts";
 
+const organizationQueries = [];
+let organizationReply = [null, null];
+let organizationFailure = null;
 mock.module("./client", () => ({
-  client: { query: async () => [null, null] },
+  client: {
+    query: async (path, input, options) => {
+      if (path !== "settings.organization.get") return [null, null];
+      organizationQueries.push({ path, input, options });
+      if (organizationFailure) throw organizationFailure;
+      return organizationReply;
+    },
+  },
   gaebDocuments: {
     blob() {
       throw new Error("Document storage is not used by these PDF builders");
@@ -25,8 +35,12 @@ mock.module("./client", () => ({
     },
   },
 }));
-const { buildPdfBatchDocument, buildPdfProductSection, renderStructuredPdf } =
-  await import("./pdf.ts");
+const {
+  buildPdfBatchDocument,
+  buildPdfProductSection,
+  renderStructuredPdf,
+  withOrganizationSender,
+} = await import("./pdf.ts");
 const { buildRegieReportPdfDocument } = await import("./regieReportPdf.ts");
 const { buildTablePdfDocument } = await import("./pdfTableExport.ts");
 const { buildWeeklyProjectCostsPdfDocument } =
@@ -65,6 +79,72 @@ const letter = (form) => ({
 });
 
 describe("DIN document data", () => {
+  test("uses the protected organization address as sender without changing explicitly supplied senders", async () => {
+    organizationQueries.length = 0;
+    organizationReply = [
+      {
+        companyName: "Musterbau Nürnberg GmbH",
+        address: {
+          streetAddress: "Handwerkerstraße 12",
+          zip: "90402",
+          city: "Nürnberg",
+          country: "Deutschland",
+        },
+      },
+      null,
+    ];
+    const implicit = letter("B");
+    delete implicit.layout.sender;
+    const explicit = letter("B");
+    const prepared = await withOrganizationSender([implicit, explicit]);
+    expect(prepared[0].layout.sender).toEqual({
+      name: "Musterbau Nürnberg GmbH",
+      lines: ["Handwerkerstraße 12", "90402 Nürnberg", "Deutschland"],
+    });
+    expect(prepared[1].layout.sender).toBe(explicit.layout.sender);
+    expect(implicit.layout.sender).toBeUndefined();
+    expect(organizationQueries).toEqual([
+      {
+        path: "settings.organization.get",
+        input: undefined,
+        options: { strategy: "network-first" },
+      },
+    ]);
+    const source = buildPdfBatchDocument({ documents: [prepared[0]] }, null);
+    for (const text of [
+      "Musterbau Nürnberg GmbH",
+      "Handwerkerstraße 12",
+      "90402 Nürnberg",
+      "Deutschland",
+    ]) {
+      expect(source).toContain(text);
+    }
+    const complete = [explicit];
+    expect(await withOrganizationSender(complete)).toBe(complete);
+    expect(organizationQueries).toHaveLength(1);
+  });
+
+  test("keeps documents printable when the organization is empty, unavailable or not readable", async () => {
+    const document = letter("B");
+    delete document.layout.sender;
+    const documents = [document];
+    try {
+      for (const reply of [
+        [null, null],
+        [{ companyName: null, address: null }, null],
+        [null, new Error("Organization access denied")],
+      ]) {
+        organizationReply = reply;
+        expect(await withOrganizationSender(documents)).toBe(documents);
+      }
+      organizationFailure = new Error("Connection lost");
+      expect(await withOrganizationSender(documents)).toBe(documents);
+    } finally {
+      organizationFailure = null;
+      organizationReply = [null, null];
+    }
+  });
+
   test("fails clearly when a required font cannot be loaded", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => new Response(null, { status: 404 });
