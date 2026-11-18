@@ -103,8 +103,11 @@ export async function commercialDocumentStore(
   client: Client,
   scope: string,
   signal: AbortSignal,
+  collections?: Awaited<ReturnType<typeof protectedCollections>>,
 ) {
-  return (await commercialDocumentStores(client, signal, [scope]))(scope);
+  return (
+    await commercialDocumentStores(client, signal, [scope], collections)
+  )(scope);
 }
 
 /** A list can inspect many documents under one verified access snapshot.
@@ -114,6 +117,7 @@ export async function commercialDocumentStores(
   client: Client,
   signal: AbortSignal,
   selectedScopes?: readonly string[],
+  collections?: Awaited<ReturnType<typeof protectedCollections>>,
 ) {
   const account = unlockedAccount();
   if (!account) {
@@ -132,7 +136,8 @@ export async function commercialDocumentStores(
       (facet) => commercialCollection(area.id, facet).domain,
     );
   });
-  const open = await protectedCollections(client, signal, selectedDomains);
+  const open =
+    collections ?? (await protectedCollections(client, signal, selectedDomains));
   live();
   const areas = open.areas((domain) => {
     const part = commercialDomain(domain);

@@ -158,7 +158,7 @@ globalThis.fetch = new Proxy(originalFetch, {
 });
 const operator = createClient(endpoints[0], "owner-setup-operator");
 const gaebProcessor =
-  mode === "owner-content-preparation"
+  mode === "owner-content-preparation" || mode === "owner-staging"
     ? (await import("./lib/gaebProcessor")).cliGaebProcessor
     : undefined;
 const owner = createBusinessClient(
@@ -409,6 +409,9 @@ try {
     const { exerciseNativeStockBatching } =
       await import("./test-native-stock-batching");
     await exerciseNativeStockBatching(owner, peer, rpcTransmissions);
+    const { exerciseGaebCaseBatches } =
+      await import("./test-native-content-preparation");
+    await exerciseGaebCaseBatches(owner, peer, rpcTransmissions);
   } else if (mode === "owner-access-publications") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");

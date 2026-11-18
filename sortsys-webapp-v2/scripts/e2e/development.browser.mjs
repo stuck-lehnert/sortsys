@@ -490,6 +490,12 @@ try {
       path: join(artifacts, "administrator-offers.png"),
       fullPage: true,
     });
+  });
+  await scenario("seeded-gaeb-link-and-download", async (page) => {
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
     await page.goto(`${server.origin}/gaeb/${seeded.caseId}`);
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.locator("canvas").first()).toBeVisible();
@@ -497,6 +503,18 @@ try {
       path: join(artifacts, "administrator-document.png"),
       fullPage: true,
     });
+    const ready = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Herunterladen", exact: true })
+      .click();
+    const download = await ready;
+    assert.match(download.suggestedFilename(), /\.x84$/i);
+    const xml = await readFile(await download.path(), "utf8");
+    assert.match(xml, /<GAEB\b/);
+    assert.match(xml, /<DP>84<\/DP>/);
+    await expect(
+      page.getByRole("button", { name: "Auftrag prüfen", exact: true }),
+    ).toBeEnabled();
   });
   await scenario("gaeb-autosave-and-reload", async (page) => {
     await login(page, "john.doe");

@@ -50,6 +50,37 @@ test("opening one document requests only its own facets and origin proofs", asyn
   }
 });
 
+test("opening a document after its case read reuses the checked grants", async () => {
+  const fixture = await protectedTenant([first, second], (area) =>
+    area.domain === first.domain ? [...ACTIONS] : [],
+  );
+  const access = new AbortController();
+  const collections = await protectedCollections(fixture.client, access.signal);
+  fixture.calls.length = 0;
+  const store = await commercialDocumentStore(
+    fixture.client,
+    first.scope,
+    access.signal,
+    collections,
+  );
+  try {
+    expect(fixture.calls).toEqual([]);
+    await expect(
+      commercialDocumentStore(
+        fixture.client,
+        second.scope,
+        access.signal,
+        collections,
+      ),
+    ).rejects.toThrow();
+    access.abort();
+    await expect(store.head("3")).rejects.toThrow();
+    expect(fixture.calls).toEqual([]);
+  } finally {
+    store.close();
+  }
+});
+
 test("verified immutable parts are reused within one live store without exposing mutable cached contents", async () => {
   const scope = commercialCollection("a", "scope");
   const fixture = await protectedTenant([first, scope]);

@@ -45,7 +45,7 @@ import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useProtectedState } from "~/hooks/useProtectedState";
-import { client } from "~/lib/client";
+import { client, gaebDocuments } from "~/lib/client";
 import { invoiceActionAccess } from "~/lib/crypto/invoiceAccess";
 import { newProductRowId, publicId } from "~/lib/data/products";
 import { uiText } from "~/lib/i18n";
@@ -65,6 +65,7 @@ import {
   type CommercialDocument,
 } from "~/lib/commercial";
 import { formatDate } from "~/lib/format";
+import { downloadBlob } from "~/lib/utils";
 const GaebWorkspace = lazy(() => import("~/components/GaebFileModal"));
 
 export type CommercialWorkspaceHandle = { requestClose: () => void };
@@ -108,6 +109,8 @@ export default function CommercialWorkspace({
   const detailRef = useRef(detail);
   detailRef.current = detail;
   const [activeId, setActiveId] = useState<string>();
+  const [documentSettled, setDocumentSettled] = useState(false);
+  const markDocumentSettled = useCallback(() => setDocumentSettled(true), []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"accept" | "award" | null>(null);
@@ -228,6 +231,7 @@ export default function CommercialWorkspace({
   useEffect(() => {
     setDetail(undefined);
     setActiveId(undefined);
+    setDocumentSettled(false);
     setError("");
     setReviewKey("");
     setDifferences([]);
@@ -251,7 +255,10 @@ export default function CommercialWorkspace({
       active = false;
     };
   }, [refresh]);
-  const run = async (action: () => Promise<void>) => {
+  const run = async (
+    action: () => Promise<void>,
+    { refreshCase = true }: { refreshCase?: boolean } = {},
+  ) => {
     if (busy) return;
     setBusy(true);
     setError("");
@@ -259,8 +266,10 @@ export default function CommercialWorkspace({
       if (workspace.current && !(await workspace.current.save()))
         throw new Error("save-failed");
       await action();
-      await client.invalidate("commercial.cases.get");
-      await refresh();
+      if (refreshCase) {
+        await client.invalidate("commercial.cases.get");
+        await refresh();
+      }
     } catch (error) {
       setError(commercialError(error));
     } finally {
@@ -345,7 +354,8 @@ export default function CommercialWorkspace({
       !item ||
       ["subcontract", "procurement"].includes(item.kind) ||
       !order ||
-      !offer
+      !offer ||
+      !documentSettled
     )
       return;
     let active = true;
@@ -366,7 +376,14 @@ export default function CommercialWorkspace({
     return () => {
       active = false;
     };
-  }, [item?.id, order?.id, order?.version, offer?.id, offer?.version]);
+  }, [
+    item?.id,
+    order?.id,
+    order?.version,
+    offer?.id,
+    offer?.version,
+    documentSettled,
+  ]);
   const transition = async (
     status: string,
     extra: { selectedOfferDocumentId?: string; awardedItemIds?: string[] } = {},
@@ -551,17 +568,19 @@ export default function CommercialWorkspace({
       setSupplierImportOpen(false);
     });
   const download = (document: CommercialDocument) =>
-    run(async () => {
-      if (!item) return;
-      const [value, error] = await client.query(
-        "commercial.documents.download",
-        { caseId: item.id, id: document.id },
-        { strategy: "network-only" },
-      );
-      if (error || !value) throw error ?? new Error("download-failed");
-      const { downloadFileResource } = await import("~/lib/fileResources");
-      await downloadFileResource(value.url, value.fileName);
-    });
+    run(
+      async () => {
+        if (!item) return;
+        const { blob, fileName } = await gaebDocuments.download(
+          item.id,
+          document.id,
+          context,
+        );
+        context.throwIfAborted();
+        downloadBlob(blob, fileName);
+      },
+      { refreshCase: false },
+    );
   if (!detail) {
     const pending = error ? (
       <MyCallout
@@ -949,6 +968,7 @@ export default function CommercialWorkspace({
         onClose={() => {
           if (!busy) onClose();
         }}
+        onDocumentSettled={markDocumentSettled}
         onSaved={documentSaved}
         onCaseChange={setDetail}
         review={{

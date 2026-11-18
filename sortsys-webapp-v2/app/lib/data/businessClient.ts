@@ -1,6 +1,7 @@
 import { contractProcedureKind } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
 import type { Client } from "@sortsys/v2-client";
+import { revision } from "@sortsys/zerotrust/sortsys";
 import { Observable } from "rxjs";
 import {
   changeOwnPassword,
@@ -1734,6 +1735,36 @@ export function createBusinessClient(
       );
     },
   };
+  async function documentFile(
+    caseId: string,
+    id: string,
+    version: string | undefined,
+    cancellation?: AbortSignal,
+  ) {
+    addressId(caseId);
+    addressId(id);
+    const expected = account;
+    const session = controller.signal;
+    const context = editorController.signal;
+    const assertCurrent = () => {
+      cancellation?.throwIfAborted();
+      session.throwIfAborted();
+      context.throwIfAborted();
+      if (closed || expected !== unlockedAccount()) throw unavailable();
+    };
+    assertCurrent();
+    await synchronized();
+    assertCurrent();
+    const store = await commercialStore();
+    const content = await store.nativeDocument(caseId, id, version);
+    assertCurrent();
+    if (version !== undefined && content.version.toString() !== version)
+      throw unavailable();
+    return {
+      blob: new Blob([content.xml], { type: "application/xml;charset=utf-8" }),
+      fileName: content.fileName,
+    };
+  }
   const documentActions = {
     choices(cancellation?: AbortSignal) {
       return readResourceChoices(
@@ -1808,27 +1839,11 @@ export function createBusinessClient(
       version: string,
       cancellation?: AbortSignal,
     ) {
-      addressId(caseId);
-      addressId(id);
-      cancellation?.throwIfAborted();
-      await synchronized();
-      const expected = account,
-        signal = controller.signal;
-      const context = editorController.signal;
-      context.throwIfAborted();
-      const content = await (
-        await commercialStore()
-      ).nativeDocument(caseId, id, version);
-      cancellation?.throwIfAborted();
-      if (
-        closed ||
-        signal.aborted ||
-        context.aborted ||
-        expected !== unlockedAccount() ||
-        content.version.toString() !== version
-      )
-        throw unavailable();
-      return new Blob([content.xml], { type: "application/xml;charset=utf-8" });
+      revision(version);
+      return (await documentFile(caseId, id, version, cancellation)).blob;
+    },
+    download(caseId: string, id: string, cancellation?: AbortSignal) {
+      return documentFile(caseId, id, undefined, cancellation);
     },
   };
   async function editOrganization<

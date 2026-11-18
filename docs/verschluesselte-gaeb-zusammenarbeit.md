@@ -171,6 +171,17 @@ Eine unvollständige X-Datei wird dagegen nicht als Original angeboten. Für
 ausgestellte Rechnungen gilt beim Download dieselbe Prüfung des
 festgeschriebenen Dokumentstands wie beim Öffnen.
 
+Die Vorgangsansicht fragt die signierten Stände ihrer Dateien gebündelt ab. Die
+Betragsanzeige und die Dateiliste verwenden dieselben geprüften Stände.
+Beim Öffnen hat die aktive Datei Vorrang vor dem Auftragsvergleich. Wenn der
+Vergleich mehrere Dateien desselben Vorgangs öffnet, teilen sie sich den
+laufenden Abruf der Vorgangsdaten.
+
+Beim Download aus dem Menüband liest der Browser Dateiname und Inhalt in einem
+Vorgang. Er verwendet den geprüften Zugriff auf den Vorgang für die
+Inhaltsprüfung weiter. Ein Wechsel des Kontos oder der Freigabe bricht die
+Ausgabe einer noch laufenden Anfrage ab.
+
 Beim Drucken prüft der XML-Worker dagegen, ob alle tatsächlich dargestellten
 Inhalte lesbar sind. Verborgene interne Notizen neben einer Position verhindern
 den Druck nicht. Ein ungelesenes Bild oder ein unbekannter Zusatz innerhalb der

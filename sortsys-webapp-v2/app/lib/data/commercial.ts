@@ -211,11 +211,10 @@ export function createProtectedCommercial(
       : [];
     return issuedCaseSnapshot(view, { id, values, parts, visible, seal: null });
   }
-  async function read(
+  async function readCaseView(
     id: string,
-    fresh = false,
-    empty = false,
-  ): Promise<CaseSnapshot> {
+    { fresh = false, empty = false }: { fresh?: boolean; empty?: boolean } = {},
+  ) {
     addressId(id);
     if (fresh) runtime.revalidate();
     const { selected, visible, collections } = await inventory();
@@ -228,7 +227,26 @@ export function createProtectedCommercial(
       collections,
     );
     live();
-    return includeRetainedDocuments(client, signal, value, collections);
+    const basis = await includeRetainedDocuments(
+      client,
+      signal,
+      value,
+      collections,
+    );
+    return { basis, collections };
+  }
+  // The editor and the order comparison can open several files from the same
+  // case at once. Keep one verified case view only while its request is pending.
+  const pendingDocumentCases = pendingReads(
+    (id) => readCaseView(id),
+    (value) => value,
+  );
+  async function read(
+    id: string,
+    fresh = false,
+    empty = false,
+  ): Promise<CaseSnapshot> {
+    return (await readCaseView(id, { fresh, empty })).basis;
   }
   function matchesListScope(
     value: Pick<ReturnType<typeof wireCommercialCase>, "projectId" | "kind">,
@@ -385,8 +403,21 @@ export function createProtectedCommercial(
     if (!changed) {
       return content;
     }
+    return recalculateContent(content, kind, referenceXml);
+  }
+
+  async function recalculateContent(
+    content: DocumentContent,
+    kind: string,
+    referenceXml?: string,
+  ): Promise<DocumentContent> {
     if (
-      !financialInputsReadable(content.access, phase, kind, content.missing) ||
+      !financialInputsReadable(
+        content.access,
+        content.layout.identity.phase,
+        kind,
+        content.missing,
+      ) ||
       !processor.recalculate
     ) {
       return {
@@ -441,6 +472,7 @@ export function createProtectedCommercial(
     openStore: (scope: string) => Promise<DocumentStore> = (scope) =>
       commercialDocumentStore(client, scope, signal),
     amount: "case" | "all" = "all",
+    knownHeads?: ReadonlyMap<string, DocumentHead>,
   ): Promise<BusinessRow[]> {
     if (basis.values.length === 0) {
       return basis.values;
@@ -485,7 +517,7 @@ export function createProtectedCommercial(
     try {
       for (const selected of documents) {
         const id = publicId(selected.values.id);
-        const head = await store.head(id);
+        const head = knownHeads ? knownHeads.get(id) : await store.head(id);
         if (!head) {
           continue;
         }
@@ -638,15 +670,20 @@ export function createProtectedCommercial(
     (value) => value,
   );
   const stopListChanges = listenDataChanges(client, (domains, options) => {
-    if (
+    const commercialChanged =
       !domains ||
       options?.control ||
-      [...domains].some(
-        (domain) =>
-          commercialDomain(domain) ||
-          projectDomainId(domain) ||
-          domain === CUSTOMER_COLLECTION.domain,
-      )
+      [...domains].some((domain) => commercialDomain(domain));
+    if (commercialChanged) {
+      pendingDocumentCases.clear();
+    }
+    if (
+      commercialChanged ||
+      (domains &&
+        [...domains].some(
+          (domain) =>
+            projectDomainId(domain) || domain === CUSTOMER_COLLECTION.domain,
+        ))
     ) {
       pendingListViews.clear();
     }
@@ -1052,17 +1089,20 @@ export function createProtectedCommercial(
     );
   }
 
-  async function nativeDocument(caseId: string, id: string, version: string) {
-    const basis = await read(caseId);
+  async function nativeDocument(caseId: string, id: string, version?: string) {
+    const { basis, collections } = await readCaseView(caseId, {
+      fresh: version === undefined,
+    });
     const selected = documentRow(basis.values, id);
     const store = await commercialDocumentStore(
       client,
       `commercial:${caseId}`,
       signal,
+      collections,
     );
     try {
       const head = await store.head(id);
-      if (!head || head.version !== version) {
+      if (!head || (version !== undefined && head.version !== version)) {
         throw new ProtectedWriteConflict();
       }
       await verifyIssuedDocument(basis, id, head);
@@ -1094,9 +1134,7 @@ export function createProtectedCommercial(
             true,
             store,
           );
-          content = await materializedContent(
-            store,
-            head,
+          content = await recalculateContent(
             content,
             current.kind,
             reference.xml ?? undefined,
@@ -1106,7 +1144,12 @@ export function createProtectedCommercial(
           }
         }
       }
-      return { xml: content.xml, version: BigInt(head.version) };
+      live();
+      return {
+        xml: content.xml,
+        version: BigInt(head.version),
+        fileName: selected.values.file_name as string,
+      };
     } finally {
       store.close();
     }
@@ -1116,7 +1159,10 @@ export function createProtectedCommercial(
     id: string,
     forEditor = false,
   ): Promise<DocumentEditorSession> {
-    const basis = await read(caseId);
+    const { basis, collections } = await pendingDocumentCases.get(
+      caseId,
+      undefined,
+    );
     const values = basis.values;
     const selected = documentRow(values, id);
     const current = wireCommercialCase(values);
@@ -1124,6 +1170,7 @@ export function createProtectedCommercial(
       client,
       `commercial:${caseId}`,
       signal,
+      collections,
     );
     try {
       const head = await store.head(id);
@@ -2488,12 +2535,14 @@ export function createProtectedCommercial(
     close() {
       stopListChanges();
       signal.removeEventListener("abort", stopListChanges);
+      pendingDocumentCases.clear();
       pendingListViews.clear();
       billing.close();
       lease.close();
     },
     async refresh(domains?: Record<string, string | null>) {
       live();
+      pendingDocumentCases.clear();
       pendingListViews.clear();
       if (!domains) {
         runtime.revalidate();
@@ -2654,28 +2703,33 @@ export function createProtectedCommercial(
       }
       const data = record(input, ["id"]);
       const id = data.id as string;
-      const basis = await read(id);
-      const values = await calculatedCaseRows(basis);
-      const current = await labels({ values, visible: basis.visible });
+      const { basis, collections } = await readCaseView(id);
+      const openStore = (scope: string) =>
+        commercialDocumentStore(client, scope, signal, collections);
       const documentHeads = new Map<string, DocumentHead>();
-      const documentRows = values.filter(
+      const documentRows = basis.values.filter(
         (row) => row.table === "commercial_documents",
       );
       if (documentRows.length) {
-        const documentStore = await commercialDocumentStore(
-          client,
-          `commercial:${id}`,
-          signal,
-        );
+        const documentStore = await openStore(`commercial:${id}`);
         try {
-          for (const row of documentRows) {
-            const head = await documentStore.head(publicId(row.values.id));
+          const heads = await mapConcurrent(documentRows, 8, (row) =>
+            documentStore.head(publicId(row.values.id)),
+          );
+          for (const head of heads) {
             if (head) documentHeads.set(head.id, head);
           }
         } finally {
           documentStore.close();
         }
       }
+      const values = await calculatedCaseRows(
+        basis,
+        openStore,
+        "all",
+        documentHeads,
+      );
+      const current = await labels({ values, visible: basis.visible });
       const documents = values
         .filter((row) => row.table === "commercial_documents")
         .map((row) => {

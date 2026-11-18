@@ -209,15 +209,6 @@ Object.assign(window, {
                 null,
               ];
         }
-        if (path === "commercial.documents.download") {
-          return [
-            {
-              url: "sortsys-private-gaeb:1/2/1",
-              fileName: detail.documents[0]!.fileName,
-            },
-            null,
-          ];
-        }
         return [null, new Error("Unexpected fixture query")];
       }) as typeof client.query;
       client.streamQuery = ((path: string) =>
@@ -234,12 +225,15 @@ Object.assign(window, {
           ]),
         )) as typeof client.streamQuery;
       mockCommercialDocumentReader();
-      gaebDocuments.blob = async () => {
+      gaebDocuments.download = async () => {
         reads++;
         if (held) {
           await new Promise<void>((resolve) => pending.push(resolve));
         }
-        return new Blob([xml], { type: "application/xml" });
+        return {
+          blob: new Blob([xml], { type: "application/xml" }),
+          fileName: detail.documents[0]!.fileName,
+        };
       };
       Object.assign(window, {
         privateGaebDownload: {

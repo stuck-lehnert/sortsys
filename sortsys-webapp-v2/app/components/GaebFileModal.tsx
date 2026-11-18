@@ -64,6 +64,7 @@ type Props = (
   documentKind?: string;
   editable?: boolean;
   workspaceRef?: React.Ref<GaebWorkspaceHandle>;
+  onDocumentSettled?: () => void;
   onSaved?: (revision: GaebSavedRevision) => void;
   onCaseChange?: (detail: CommercialDetail) => void;
   toolbarActions?: React.ReactNode;
@@ -82,6 +83,7 @@ export default function GaebFileModal({
   documentKind,
   editable,
   workspaceRef,
+  onDocumentSettled,
   onSaved,
   onCaseChange,
   toolbarActions,
@@ -257,11 +259,16 @@ export default function GaebFileModal({
             ),
           );
         }
+      })
+      .finally(() => {
+        if (active && !context.aborted && documentId) {
+          onDocumentSettled?.();
+        }
       });
     return () => {
       active = false;
     };
-  }, [loadCurrent, retry]);
+  }, [loadCurrent, retry, context, documentId, onDocumentSettled]);
   useEffect(() => {
     if (!session) {
       return;

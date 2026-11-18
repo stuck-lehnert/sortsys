@@ -580,6 +580,14 @@ test("the commercial ribbon downloads private native XML locally and blocks a la
       exact: true,
     });
     await button.waitFor();
+    const caseReads = () =>
+      page.evaluate(
+        () =>
+          window.privateGaebDownload
+            .snapshot()
+            .paths.filter((path) => path === "commercial.cases.get").length,
+      );
+    const initialReads = await caseReads();
     const ready = page.waitForEvent("download");
     await button.click();
     const downloaded = await ready;
@@ -588,7 +596,8 @@ test("the commercial ribbon downloads private native XML locally and blocks a la
       state = await page.evaluate(() => window.privateGaebDownload.snapshot());
     assert.equal(content, state.xml);
     assert.equal(state.reads, 1);
-    assert.ok(state.paths.includes("commercial.documents.download"));
+    assert.equal(state.paths.includes("commercial.documents.download"), false);
+    assert.equal(await caseReads(), initialReads);
     assert.equal(
       urls.some((url) => url.startsWith("sortsys-private-gaeb:")),
       false,

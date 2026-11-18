@@ -688,6 +688,62 @@ async function exerciseGaebBlockBatches(
   }
 }
 
+export async function exerciseGaebCaseBatches(
+  owner: Client,
+  peer: ReturnType<typeof createBusinessClient>,
+  transmissions: readonly string[][],
+) {
+  const project = await required(
+    owner.mutate("projects.create", { title: "Betriebsgebäude im GAEB-Batchtest" }),
+  );
+  const contract = await adoptOrder(owner, project.id);
+  const firstCaseRead = transmissions.length;
+  const detail = await required(
+    peer.query(
+      "commercial.cases.get",
+      { id: contract.caseId },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.ok(detail.documents.length > 1);
+  const documentLookups = transmissions
+    .slice(firstCaseRead)
+    .map(
+      (paths) => paths.filter((path) => path === "zerotrust.documents.get").length,
+    )
+    .filter((count) => count > 0);
+  assert.deepEqual(documentLookups, [detail.documents.length]);
+  const firstDocumentRead = transmissions.length;
+  const sessions = await Promise.all(
+    detail.documents.map(({ id }) => peer.documents.open(contract.caseId, id)),
+  );
+  assert.deepEqual(
+    sessions.map(({ fileName }) => fileName),
+    detail.documents.map(({ fileName }) => fileName),
+  );
+  const registrations = "zerotrust.documents.registrations";
+  const openedRegistrations = transmissions
+    .slice(firstDocumentRead)
+    .flat()
+    .filter((path) => path === registrations);
+  assert.equal(openedRegistrations.length, 1);
+  const firstDownload = transmissions.length;
+  const download = await peer.documents.download(
+    contract.caseId,
+    contract.order.id,
+  );
+  assert.equal(download.fileName, "Auftrag.x86");
+  assert.equal(await download.blob.text(), gaebWorkflowXml("86"));
+  const registrationLookups = transmissions
+    .slice(firstDownload)
+    .flat()
+    .filter((path) => path === registrations);
+  assert.equal(registrationLookups.length, 1);
+  console.log(
+    `GAEB: ${detail.documents.length} document heads share one HTTP request. Parallel opening and download each check the case registrations once.`,
+  );
+}
+
 export async function exerciseContentPreparation(
   owner: Client,
   peer: ReturnType<typeof createBusinessClient>,

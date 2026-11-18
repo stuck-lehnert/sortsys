@@ -64,6 +64,9 @@ export async function testSignedOfferView(options: FinancialTestAccounts) {
     );
     const native = await business.documents.blob(offer.id, document.id, "1");
     assert.equal(await native.text(), original);
+    const download = await business.documents.download(offer.id, document.id);
+    assert.equal(download.fileName, "Signiertes Fensterangebot.x84");
+    assert.equal(await download.blob.text(), original);
     return { caseId: offer.id, documentId: document.id };
   });
   const readableFacets = [
@@ -241,6 +244,9 @@ export async function testReferencedOfferView(options: FinancialTestAccounts) {
       assert.equal(details.case.netAmount, "36.00");
       await assert.rejects(() =>
         business.documents.blob(target.caseId, target.quoteId, "1")
+      );
+      await assert.rejects(() =>
+        business.documents.download(target.caseId, target.quoteId),
       );
       return after.signature;
     } finally {

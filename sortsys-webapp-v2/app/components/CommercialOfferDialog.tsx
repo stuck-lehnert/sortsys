@@ -61,6 +61,7 @@ export function CommercialOfferDialog({
   sourceStale,
   workspace,
   onClose,
+  onDocumentSettled,
   onSaved,
   onCaseChange,
   actions,
@@ -74,6 +75,7 @@ export function CommercialOfferDialog({
   sourceStale: boolean;
   workspace: RefObject<GaebWorkspaceHandle | null>;
   onClose: () => void;
+  onDocumentSettled: () => void;
   onSaved: (revision: import("./GaebFileModal").GaebSavedRevision) => void;
   onCaseChange: (detail: CommercialDetail) => void;
   actions: Actions;
@@ -368,6 +370,7 @@ export function CommercialOfferDialog({
             }
             workspaceRef={workspace}
             onClose={onClose}
+            onDocumentSettled={onDocumentSettled}
             onSaved={onSaved}
             documentTitle={current.title}
             projectTitle={current.projectTitle ?? undefined}
