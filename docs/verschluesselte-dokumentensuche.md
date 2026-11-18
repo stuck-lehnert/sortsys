@@ -31,16 +31,20 @@ eine LLM-Anfrage. Nach einer Dateiänderung wird ein veralteter Textstand entfer
 ein erneutes Auslesen nach jeder Bearbeitung ist noch nicht angeschlossen.
 
 Eine Dateifreigabe öffnet keine Projektstammdaten. Fehlt deren Leserecht, erscheint
-der Treffer ohne Projektbezeichnung. Dateien aus nicht freigegebenen Bereichen
-liefern weder Treffer noch Ausschnitte.
+der Treffer ohne Projektbezeichnung. Ein Klick auf den Treffer öffnet die Datei
+in der eingeschränkten Ansicht **Projektanhänge**. Dateien aus nicht
+freigegebenen Bereichen liefern weder Treffer noch Ausschnitte.
 
 Die API erhält verschlüsselte Datensätze und technische Kennungen. Suchbegriffe,
 Dateinamen und Ausschnitte bleiben im Client. Der erste Abruf mehrerer
 Dateisammlungen wird gebündelt; weitere Abrufe prüfen deren Änderungsstand.
 Die Textauswertung läuft in einem eigenen Worker. Eine neue Suchanfrage oder das
-Ende der Sitzung beendet den vorherigen Worker. Vor der Ausgabe werden die
-Freigaben erneut geprüft, damit zwischenzeitlich entzogene Bereiche nicht aus
-dem bereits gefüllten Cache erscheinen.
+Ende der Sitzung beendet den vorherigen Worker. Der Browser liest die
+Projektbezeichnungen gebündelt für die angezeigten Treffer. Vor der Ausgabe
+prüft er die Freigaben und Stände aller durchsuchten Dateisammlungen erneut.
+Wird eine Datei während der Suche geändert oder gelöscht, wertet der Browser
+den neuen Stand aus. Fortlaufende Änderungen können den Abruf mit einem
+Hinweis auf die geänderten Daten beenden.
 
 Auf einem neuen Gerät müssen zunächst alle freigegebenen Suchdaten geladen
 werden. Originaldateien werden dafür nicht erneut heruntergeladen. Die
@@ -61,5 +65,6 @@ vollständigen Übereinstimmung mit `websearch_to_tsquery` und `ts_rank_cd`.
 Die [Vergleichsfälle](../sortsys-webapp-v2/app/lib/search/documentQuery.test.mjs)
 prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
 [native Mehrinstanztest](../sortsys-webapp-v2/scripts/test-native-document-search.ts)
-prüft getrennte Dateifreigaben und den Rechteentzug bei geöffnetem Client-Cache.
+prüft getrennte Dateifreigaben, eine Löschung während der Suche und den
+Entzug einer Projekt- oder Dateifreigabe bei geöffnetem Client-Cache.
 Browsertests verwenden den tatsächlichen Worker und eine lokal ausgelesene PDF.

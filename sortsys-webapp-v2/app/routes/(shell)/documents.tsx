@@ -167,10 +167,14 @@ export default function DocumentsPage() {
                   </Link>
                 </h2>
                 <p className="documents-search__metadata">
-                  <Link to={"/projects/" + result.projectId}>
-                    {result.projectTitle}
-                  </Link>
-                  <span aria-hidden="true">·</span>
+                  {result.projectTitle && (
+                    <>
+                      <Link to={"/projects/" + result.projectId}>
+                        {result.projectTitle}
+                      </Link>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
                   <span>{formatDate(result.modifiedAt)}</span>
                 </p>
 

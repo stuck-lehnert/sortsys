@@ -152,7 +152,9 @@ function ensureUniqueFileName(fileName: string, usedNames: Set<string>) {
 }
 
 export default function ProjectFilesPage() {
-  const { project } = useOutletContext<{ project: Project }>();
+  const { project } = useOutletContext<{
+    project: Pick<Project, "id" | "title">;
+  }>();
   const sessionInfo = useSessionInfo();
   const modals = useMyModals();
   const notifications = useNotifications();
@@ -233,10 +235,10 @@ export default function ProjectFilesPage() {
 
   useTitle(
     () =>
-      project
+      project.title
         ? uiText(`Anhänge – ${project.title}`, `Attachments – ${project.title}`)
-        : null,
-    [JSON.stringify(project)],
+        : uiText("Projektanhänge", "Project attachments"),
+    [project.title],
   );
 
   const attachments = useMemo(() => {

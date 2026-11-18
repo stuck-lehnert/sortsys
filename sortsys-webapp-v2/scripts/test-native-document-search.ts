@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import { createClient } from "@sortsys/v2-client";
 import { signPolicy } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { createProtectedProjectFiles } from "../app/lib/data/projectFiles";
 import { required } from "../app/lib/data/protectedObjects";
 import { fileCollection } from "../app/lib/data/projectFileData";
+import { projectCollection } from "../app/lib/data/projectData";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
 import { administratorPolicyContext } from "../app/lib/crypto/administration";
@@ -57,6 +60,8 @@ const login = {
 const query = "Fenster Wand";
 const searchInput = { query, limit: 50n };
 const secret = "VERTRAULICHER_SUCHINHALT_519842";
+const readerPassword = "Document-search-member-password-519842!";
+const visibleTitle = "Freigegebene Suchbaustelle 519842";
 let ownerBusiness: ReturnType<typeof createBusinessClient> | undefined;
 let memberBusiness: ReturnType<typeof createBusinessClient> | undefined;
 try {
@@ -86,7 +91,7 @@ try {
   await signInMemberInvitation(
     member,
     invitation.link,
-    "Document-search-member-password-519842!",
+    readerPassword,
     signal,
   );
   await joinMemberInvitation(member, invitation.link, signal);
@@ -100,7 +105,7 @@ try {
   await signIn(member, {
     tenant: login.tenant,
     username: "document.reader",
-    password: "Document-search-member-password-519842!",
+    password: readerPassword,
   });
   const reader = unlockedAccount()!;
   await signIn(owner, login);
@@ -110,7 +115,7 @@ try {
   ownerBusiness = createBusinessClient(owner, { productDriver: duckDriver });
   const visible = await required(
     ownerBusiness.mutate("projects.create", {
-      title: "Freigegebene Suchbaustelle 519842",
+      title: visibleTitle,
     }),
   );
   const hidden = await required(
@@ -149,6 +154,46 @@ try {
       .length,
     3,
   );
+
+  const changing = await upload(visible.id, "Zwischenstand.txt", "Eichentür");
+  let projectLookups = 0;
+  let deletedDuringSearch = false;
+  const racingSearch = createProtectedProjectFiles(
+    owner,
+    signal,
+    async (ids) => {
+      projectLookups++;
+      assert.deepEqual(ids, [visible.id]);
+      const project = await required(
+        ownerBusiness!.query("projects.get", { id: visible.id }),
+      );
+      await required(
+        ownerBusiness!.mutate("projects.files.delete", {
+          projectId: visible.id,
+          fileId: changing,
+        }),
+      );
+      deletedDuringSearch = true;
+      return [project];
+    },
+    duckDriver,
+  );
+  try {
+    assert.deepEqual(
+      await racingSearch.query("projects.files.search", { query: "Kupferdach" }),
+      [],
+    );
+    assert.equal(projectLookups, 0);
+    assert.deepEqual(
+      await racingSearch.query("projects.files.search", { query: "Eichentür" }),
+      [],
+    );
+    assert.equal(projectLookups, 1, "Only matched projects get a title lookup");
+    assert.equal(deletedDuringSearch, true);
+  } finally {
+    await racingSearch.close();
+  }
+
   await acceptVaultWithKey(reader.dataKey, reader.vault, reader.username, false);
   memberBusiness = createBusinessClient(member, { productDriver: duckDriver });
   assert.deepEqual(
@@ -172,22 +217,6 @@ try {
     "read",
     signal,
     "attachment",
-  );
-  const context = await administratorPolicyContext(owner, signal);
-  const revocation = await signPolicy(
-    {
-      ...context.permissions,
-      version: (BigInt(context.permissions.version) + 1n).toString(),
-      rules: context.permissions.rules.filter(
-        (rule) =>
-          !(
-            rule.subject === `user:${person.id}` &&
-            rule.scope === fileCollection(visible.id).scope &&
-            rule.facet === "attachment"
-          ),
-      ),
-    },
-    context.authority,
   );
   await acceptVaultWithKey(reader.dataKey, reader.vault, reader.username, false);
   memberBusiness = createBusinessClient(member, { productDriver: duckDriver });
@@ -219,10 +248,81 @@ try {
     excluded.map((result) => result.id),
     [sparse],
   );
-  // The other API applies an already signed public change while the reader's
-  // account and cached search data remain open. No client-side logout or mock
-  // access notice makes this negative check pass.
-  await required(owner.mutate("zerotrust.policy.replace", revocation));
+
+  memberBusiness.dispose();
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
+  await changeProjectAccess(
+    owner,
+    `user:${person.id}`,
+    visible.id,
+    "read",
+    signal,
+  );
+  const context = await administratorPolicyContext(owner, signal);
+  const nextVersion = BigInt(context.permissions.version) + 1n;
+  const withoutTitle = {
+    ...context.permissions,
+    version: nextVersion.toString(),
+    rules: context.permissions.rules.filter(
+      (rule) =>
+        rule.subject !== `user:${person.id}` ||
+        rule.scope !== projectCollection(visible.id).scope ||
+        rule.facet !== "master-data",
+    ),
+  };
+  const titleRevocation = await signPolicy(withoutTitle, context.authority);
+  const fileRevocation = await signPolicy(
+    {
+      ...withoutTitle,
+      version: (nextVersion + 1n).toString(),
+      rules: withoutTitle.rules.filter(
+        (rule) =>
+          rule.subject !== `user:${person.id}` ||
+          rule.scope !== fileCollection(visible.id).scope ||
+          rule.facet !== "attachment",
+      ),
+    },
+    context.authority,
+  );
+  // Keep the reader's account and search cache open. Only the other API
+  // applies the signed revocation after the reader has loaded the title.
+  await acceptVaultWithKey(reader.dataKey, reader.vault, reader.username, false);
+  memberBusiness = createBusinessClient(member, { productDriver: duckDriver });
+  let revokedDuringSearch = false;
+  const titleRace = createProtectedProjectFiles(
+    member,
+    signal,
+    async (ids) => {
+      assert.deepEqual(ids, [visible.id]);
+      const project = await required(
+        memberBusiness!.query("projects.get", { id: visible.id }),
+      );
+      assert.equal(project.title, visibleTitle);
+      await required(owner.mutate("zerotrust.policy.replace", titleRevocation));
+      revokedDuringSearch = true;
+      return [project];
+    },
+    duckDriver,
+  );
+  try {
+    const found = (await titleRace.query("projects.files.search", searchInput)) as {
+      id: string;
+      projectTitle: string;
+    }[];
+    assert.equal(revokedDuringSearch, true);
+    assert.deepEqual(
+      found.map(({ id, projectTitle }) => [id, projectTitle]),
+      [[dense, ""], [sparse, ""]],
+    );
+  } finally {
+    await titleRace.close();
+  }
+  await required(owner.mutate("zerotrust.policy.replace", fileRevocation));
   const emptyFiles = createProtectedProjectFiles(
     member,
     signal,
@@ -259,7 +359,7 @@ try {
     query,
     secret,
     "Vertrauliche Preise.txt",
-    "Freigegebene Suchbaustelle 519842",
+    visibleTitle,
   ]) {
     assert.equal(
       wire.includes(privateText),
@@ -268,8 +368,59 @@ try {
     );
   }
   console.log(
-    "Native document search verified across two APIs: local inflections, phrases, ranking, excerpts, denied files and master data, and immediate revocation with an already populated client cache.",
+    "Native document search verified across two APIs: local ranking and excerpts, deleted files and revoked titles during search, and attachment revocation with an already populated client cache.",
   );
+  if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+    await acceptVaultWithKey(
+      administrator.dataKey,
+      administrator.vault,
+      administrator.username,
+      false,
+    );
+    ownerBusiness.dispose();
+    ownerBusiness = createBusinessClient(owner, { productDriver: duckDriver });
+    await changeProjectAccess(
+      owner,
+      `user:${person.id}`,
+      visible.id,
+      "read",
+      signal,
+      "attachment",
+    );
+    const fileName = "Freigegebener Plan 519842.pdf";
+    const pdf = await readFile(
+      new URL("../../sortsys-api-v2/seed-assets/materialfreigabe.pdf", import.meta.url),
+    );
+    const fileId = await ownerBusiness.files.upload({
+      projectId: visible.id,
+      name: fileName,
+      mime: "application/pdf",
+      blob: new Blob([pdf], { type: "application/pdf" }),
+      inspect: async () => ({ text: "Suchfenster" }),
+    });
+    const fixture = process.argv[4]!;
+    await writeFile(fixture, JSON.stringify({
+      success: true,
+      tenant,
+      projectId: visible.id,
+      projectTitle: visibleTitle,
+      fileId,
+      fileName,
+      deniedProjectId: hidden.id,
+      deniedFileId: forbidden,
+    }));
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("node", ["scripts/e2e/documentAccess.browser.mjs", fixture], {
+        stdio: "inherit",
+        env: { ...process.env, SORTSYS_E2E_READER_PASSWORD: readerPassword },
+      });
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Document access browser test failed: ${signal ?? code}`));
+      });
+    });
+  }
 } finally {
   globalThis.fetch = originalFetch;
   memberBusiness?.dispose();

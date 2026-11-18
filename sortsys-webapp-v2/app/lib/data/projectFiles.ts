@@ -1,4 +1,9 @@
-import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
+import {
+  RpcClientError,
+  type Client,
+  type MutateInput,
+  type QueryResult,
+} from "@sortsys/v2-client";
 import {
   encryptedObject,
   InvalidProtectedData,
@@ -16,6 +21,7 @@ import {
   protectedCollection,
   protectedCollections,
   required,
+  type CollectionPageRequest,
   type OpenedObject,
 } from "./protectedObjects";
 import { businessSchema, tableDefinition } from "./schema";
@@ -144,7 +150,7 @@ function tree(store: Store) {
 export function createProtectedProjectFiles(
   client: Client,
   signal: AbortSignal,
-  project: (id: string) => Promise<Project>,
+  projects: (ids: string[]) => Promise<Project[]>,
   driver?: () => Promise<DuckDriver>,
 ) {
   const account = unlockedAccount();
@@ -339,15 +345,13 @@ export function createProtectedProjectFiles(
     }
     return stores.get(projectId)!;
   }
-  async function all(open: Collections) {
-    const ids = open
+  function readableProjectsWithFiles(open: Collections) {
+    return open
       .areas((domain) => {
         const id = fileDomainId(domain);
         return id ? fileCollection(id) : null;
       })
       .map((area) => fileDomainId(area.domain)!);
-    await reload(ids, new Set(ids), open);
-    return ids;
   }
   async function projectReference(id: string) {
     const area = projectCollection(id);
@@ -774,6 +778,158 @@ export function createProtectedProjectFiles(
       return { version: update.version, savedAt: update.savedAt };
     });
   }
+  async function search(input: unknown, active: AbortSignal) {
+    const data = partialAddressRecord(input, ["query", "projectId", "limit"]);
+    const query = addressText(data.query, true, 1000)!;
+    const limit = data.limit === undefined ? 50 : Number(data.limit);
+    const projectId =
+      data.projectId == null ? null : publicId(addressId(data.projectId));
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      throw new InvalidProtectedData();
+    }
+    if (!createDocumentMatcher(query).hasTerms) return [];
+
+    for (let attempt = 0; ; attempt++) {
+      active.throwIfAborted();
+      try {
+        return await searchSnapshot(query, projectId, limit, active);
+      } catch (error) {
+        active.throwIfAborted();
+        if (attempt >= 2 || !isWriteConflict(error)) throw error;
+      }
+    }
+  }
+
+  async function searchSnapshot(
+    query: string,
+    projectId: string | null,
+    limit: number,
+    active: AbortSignal,
+  ) {
+    const access = await protectedCollections(client, active);
+    if (projectId !== null && !access.readable(fileCollection(projectId))) {
+      throw new InvalidProtectedData();
+    }
+    const ids =
+      projectId === null ? readableProjectsWithFiles(access) : [projectId];
+    await reload(ids, projectId === null ? new Set(ids) : undefined, access);
+    const documents: SearchDocument[] = [];
+    const entries = new Map<
+      string,
+      Omit<
+        QueryResult<"projects.files.search">[number],
+        "rank" | "excerpt" | "projectTitle"
+      >
+    >();
+    for (const id of ids) {
+      active.throwIfAborted();
+      const store = stores.get(id)!;
+      for (const payload of store.files.values()) {
+        const values = payload.file?.values;
+        if (values?.status !== "uploaded") continue;
+        const fileId = publicId(values.id);
+        const key = `${id}:${fileId}`;
+        const name = values.file_name as string;
+        documents.push({
+          id: key,
+          name,
+          text:
+            typeof values.extracted_text === "string"
+              ? values.extracted_text
+              : null,
+        });
+        entries.set(key, {
+          id: fileId,
+          projectId: id,
+          fileName: name,
+          mimeType: values.mime_type as string,
+          textExtractionStatus: values.text_extraction_status as string,
+          modifiedAt: new Date(values.modified_at as string),
+        });
+      }
+    }
+    const matches = await searchDocuments(documents, query, active);
+    const ranked = matches
+      .map(({ id, rank, excerpt }) => ({ ...entries.get(id)!, rank, excerpt }))
+      .sort(
+        (a, b) =>
+          b.rank - a.rank ||
+          b.modifiedAt.getTime() - a.modifiedAt.getTime() ||
+          a.id.localeCompare(b.id) ||
+          a.projectId.localeCompare(b.projectId),
+      )
+      .slice(0, limit);
+
+    // Only the displayed matches need a project title. File-only grants
+    // neither request the master-data keys nor reveal a title.
+    const titleIds = [...new Set(ranked.map(({ projectId }) => projectId))]
+      .filter((id) => access.readable(projectCollection(id)));
+    const titles = new Map<string, string>();
+    if (titleIds.length) {
+      try {
+        for (const project of await projects(titleIds)) {
+          titles.set(project.id, project.title);
+        }
+      } catch {
+        // Optional labels must not hide otherwise valid attachment matches.
+        live();
+        active.throwIfAborted();
+      }
+    }
+
+    // The file worker and title lookup can outlast a peer write or an access
+    // change. Compare every searched head, including collections with no
+    // matches, before returning a ranked result for this snapshot.
+    const current = await protectedCollections(client, active);
+    const currentIds = new Set(
+      projectId === null
+        ? readableProjectsWithFiles(current)
+        : ids.filter((id) => current.readable(fileCollection(id))),
+    );
+    const removed = [...stores.keys()].filter(
+      (id) => !current.readable(fileCollection(id)),
+    );
+    if (removed.length) {
+      const retained = new Set(stores.keys());
+      for (const id of removed) retained.delete(id);
+      await reload([], retained, current);
+    }
+    if (currentIds.size !== ids.length || ids.some((id) => !currentIds.has(id))) {
+      throw new ProtectedWriteConflict();
+    }
+    const expected: CollectionPageRequest[] = ids.map((id) => ({
+      area: fileCollection(id),
+      snapshot: stores.get(id)!.head,
+      headOnly: true,
+    }));
+    for (const id of titles.keys()) {
+      const area = projectCollection(id);
+      if (current.readable(area)) expected.push({ area, headOnly: true });
+      else titles.delete(id);
+    }
+    try {
+      await current.prefetch(expected);
+      await mapConcurrent(expected, 4, async ({ area, snapshot }) => {
+        const collection = current(area);
+        try {
+          await collection.inspect(snapshot);
+        } finally {
+          collection.close();
+        }
+      });
+    } catch (error) {
+      // Grants can also change between the inventory and the guarded read.
+      if (error instanceof RpcClientError && error.code === "FORBIDDEN") {
+        throw new ProtectedWriteConflict();
+      }
+      throw error;
+    }
+    active.throwIfAborted();
+    return ranked.map((item) => ({
+      ...item,
+      projectTitle: titles.get(item.projectId) ?? "",
+    }));
+  }
   return {
     close,
     async refresh(domains?: Record<string, string | null>) {
@@ -1108,103 +1264,7 @@ export function createProtectedProjectFiles(
         searchSignal = AbortSignal.any([signal, searchController.signal]);
       }
       return queue(async () => {
-        if (path === "projects.files.search") {
-          const data = partialAddressRecord(input, [
-            "query",
-            "projectId",
-            "limit",
-          ]);
-          const query = addressText(data.query, true, 1000)!;
-          const limit = data.limit === undefined ? 50 : Number(data.limit);
-          if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
-            throw new InvalidProtectedData();
-          }
-          if (!createDocumentMatcher(query).hasTerms) return [];
-          const access = await protectedCollections(client, searchSignal!);
-          const ids =
-            data.projectId == null
-              ? await all(access)
-              : [data.projectId as string];
-          if (data.projectId != null) {
-            if (!access.readable(fileCollection(data.projectId as string)))
-              throw new InvalidProtectedData();
-            await reload(ids, undefined, access);
-          }
-          const documents: SearchDocument[] = [];
-          const entries = new Map<
-            string,
-            Omit<
-              QueryResult<"projects.files.search">[number],
-              "rank" | "excerpt"
-            >
-          >();
-          for (const id of ids) {
-            searchSignal!.throwIfAborted();
-            const store = await get(id);
-            let title = "";
-            try {
-              title = (await project(id)).title;
-            } catch {
-              live();
-            }
-            for (const payload of store.files.values()) {
-              if (payload.file?.values.status === "uploaded") {
-                const v = payload.file.values;
-                const key = `${id}:${publicId(v.id)}`;
-                documents.push({
-                  id: key,
-                  name: v.file_name as string,
-                  text:
-                    typeof v.extracted_text === "string"
-                      ? v.extracted_text
-                      : null,
-                });
-                entries.set(key, {
-                  id: publicId(v.id),
-                  projectId: id,
-                  projectTitle: title,
-                  fileName: v.file_name as string,
-                  mimeType: v.mime_type as string,
-                  textExtractionStatus: v.text_extraction_status as string,
-                  modifiedAt: new Date(v.modified_at as string),
-                });
-              }
-            }
-          }
-          const matches = await searchDocuments(
-            documents,
-            query,
-            searchSignal!,
-          );
-          live();
-          searchSignal!.throwIfAborted();
-          // A long worker pass must not publish a scope revoked meanwhile.
-          // This is an eligibility check, never a second text/label filter.
-          const currentAccess = await protectedCollections(
-            client,
-            searchSignal!,
-          );
-          const currentIds = new Set(
-            ids.filter((id) => currentAccess.readable(fileCollection(id))),
-          );
-          if (currentIds.size !== ids.length)
-            await reload([], currentIds, currentAccess);
-          return matches
-            .filter((match) => currentIds.has(entries.get(match.id)!.projectId))
-            .map((match) => ({
-              ...entries.get(match.id)!,
-              rank: match.rank,
-              excerpt: match.excerpt,
-            }))
-            .sort(
-              (a, b) =>
-                b.rank - a.rank ||
-                b.modifiedAt.getTime() - a.modifiedAt.getTime() ||
-                a.id.localeCompare(b.id) ||
-                a.projectId.localeCompare(b.projectId),
-            )
-            .slice(0, limit);
-        }
+        if (searchSignal) return search(input, searchSignal);
         const data = record(input, ["projectId"]);
         const id = data.projectId as string;
         const store = await get(id);

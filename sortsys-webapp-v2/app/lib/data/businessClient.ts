@@ -831,12 +831,7 @@ export function createBusinessClient(
       module.createProtectedProjectFiles(
         base,
         signal,
-        async (id) =>
-          (await (
-            await projectStore()
-          ).query("projects.get", {
-            id,
-          })) as import("@sortsys/v2-client").QueryResult<"projects.get">,
+        async (ids) => (await projectStore()).getMany(ids),
         options.productDriver,
       ),
     );

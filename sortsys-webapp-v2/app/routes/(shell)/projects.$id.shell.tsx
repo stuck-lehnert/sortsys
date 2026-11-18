@@ -40,32 +40,53 @@ export default function ProjectDetailShell() {
   const path = useLocation().pathname;
   const navigate = useNavigate();
   const isOverviewTab = path === `/projects/${id}`;
+  const filesPath = `/projects/${id}/files`;
+  const isFilesTab = path === filesPath || path.startsWith(`${filesPath}/`);
   const isCostsTab = path.startsWith(`/projects/${id}/costs`);
   const isRegieReportsTab = path.startsWith(`/projects/${id}/regieReports`);
   const isDailyReportsTab = path.startsWith(`/projects/${id}/dailyReports`);
+  const canReadProject = sessionInfo.canAccess(
+    `project:${id}`,
+    "master-data",
+    "read",
+  );
+  const canReadFiles =
+    supportsProjectFiles &&
+    sessionInfo.canAccess(`project:${id}`, "attachment", "read");
 
   const [project, err] = useClientStream(
-    () => client.streamQuery("projects.get", { id: id! }),
-    [id],
+    () =>
+      canReadProject && id
+        ? client.streamQuery("projects.get", { id })
+        : from([[null, null] as [null, null]]),
+    [id, canReadProject],
   );
   const [deliveryNotes] = useClientStream(
     () =>
-      isCostsTab && sessionInfo.canDo("view:deliveryNotes")
+      canReadProject && isCostsTab && sessionInfo.canDo("view:deliveryNotes")
         ? client.streamQuery("deliveryNotes.list", { projectId: id! })
         : from([[null, null] as [null, null]]),
-    [id, isCostsTab, sessionInfo.canDo("view:deliveryNotes")],
+    [id, canReadProject, isCostsTab, sessionInfo.canDo("view:deliveryNotes")],
   );
   const [regieReports] = useClientStream(
     () =>
-      isRegieReportsTab && sessionInfo.canDo("view:regieReports")
+      canReadProject &&
+      isRegieReportsTab &&
+      sessionInfo.canDo("view:regieReports")
         ? client.streamQuery("regieReports.list", { projectId: id! })
         : from([[null, null] as [null, null]]),
-    [id, isRegieReportsTab, sessionInfo.canDo("view:regieReports")],
+    [
+      id,
+      canReadProject,
+      isRegieReportsTab,
+      sessionInfo.canDo("view:regieReports"),
+    ],
   );
 
   useTitle(
-    () => project?.title || visitLabel({ path }),
-    [project?.title, path],
+    () =>
+      canReadProject && project?.title ? project.title : visitLabel({ path }),
+    [canReadProject, project?.title, path],
   );
 
   useShortcut("Control+e", (e) => {
@@ -78,7 +99,20 @@ export default function ProjectDetailShell() {
     showModifyProjectModal(modals, project);
   });
 
-  if (err) return <NotFound reason="resourceNotFound" />;
+  if (sessionInfo.contentAccessState() === "loading") return null;
+  if (!canReadProject && isFilesTab && canReadFiles && id) {
+    return (
+      <>
+        <MyHeader title={uiText("Projektanhänge", "Project attachments")} />
+        <ScopedErrorBoundary scope="project.content" resetKey={path}>
+          <Outlet context={{ project: { id, title: "" } }} />
+        </ScopedErrorBoundary>
+      </>
+    );
+  }
+  if (!canReadProject || err || (isFilesTab && !canReadFiles)) {
+    return <NotFound reason="resourceNotFound" />;
+  }
   if (!project) return;
 
   const tabs = [
@@ -93,11 +127,9 @@ export default function ProjectDetailShell() {
       hideIf: !sessionInfo.canDo("view:projects"),
     },
     {
-      path: `/projects/${id}/files`,
+      path: filesPath,
       label: uiText("Anhänge"),
-      hideIf:
-        !supportsProjectFiles ||
-        !sessionInfo.canAccess(`project:${id}`, "attachment", "read"),
+      hideIf: !canReadFiles,
     },
     {
       path: `/projects/${id}/costs`,
