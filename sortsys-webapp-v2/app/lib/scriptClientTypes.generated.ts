@@ -2838,6 +2838,7 @@ export type QueryOutputs = {
         pages: Array<ObjectPage>;
         stamp: string;
         restoredDocumentScopes: Array<string>;
+        sealedInvoiceScopes: Array<string>;
         uncheckedDocuments: number;
     };
     "zerotrust.content.snapshots": {

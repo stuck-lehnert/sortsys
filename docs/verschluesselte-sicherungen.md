@@ -71,11 +71,11 @@ Bei älteren Festschreibungen ohne diesen zusätzlichen Nachweis muss die
 erste Dokumentversion weiterhin in der Sicherung liegen.
 
 Die Abrechnungsübersicht eines Auftrags führt ausgestellte Rechnungen und ihre
-Zahlungsstände über die Rücksicherung hinweg weiter. Entwürfe kehren auf den
-Stand der Sicherung zurück. So steht ein ausgestellter Abschlag weiterhin
-für die Schlussrechnung zur Verfügung, auch wenn die Rechnung beim Erstellen
-der Sicherung noch im Entwurf war. Für diesen Ablauf müssen Auftrag und
-Rechnungsvorgang im gewählten Fachstand enthalten sein.
+Zahlungsstände über die Rücksicherung hinweg weiter. Der festgeschriebene
+Rechnungsvorgang bleibt auch dann abrufbar, wenn er erst nach der Sicherung
+angelegt wurde. Für die Schlussrechnung steht ein ausgestellter Abschlag
+weiterhin zum Abzug bereit. Entwürfe kehren auf den Stand der Sicherung
+zurück.
 
 Die API kann einen vorbereiteten älteren Fachstand unter Beibehaltung der
 aktuellen Recovery- und Berechtigungsnachweise freigeben. Dafür sind eine
@@ -110,8 +110,10 @@ und Adressdaten. Er zeigt deren Anzahl sowie fehlende Verknüpfungen zu Kunden
 oder Kontakten an, soweit deren Kataloge lesbar sind. Bei lesbaren laufenden
 Werkzeugbuchungen prüft er auch, ob Werkzeug, Buchung und Projekt zusammenpassen.
 Für erhaltene Auftragsbestätigungen prüft er den Bezugsauftrag in der
-Sicherung. Fehlt der lesbare Auftrag oder ist seine Version zu alt, hält der
-Browser die Freigabe an. Fehlende Leserechte weist die Vorschau aus. Weitere
+Sicherung. Für ausgestellte Rechnungen prüft er das Projekt, den angenommenen
+Auftrag und die benötigte Version des Bezugsdokuments, soweit diese Daten
+lesbar sind. Bei einer fehlenden Verknüpfung oder einer zu alten Version
+hält der Browser die Freigabe an. Fehlende Leserechte weist die Vorschau aus. Weitere
 verschlüsselte Fachdaten und ihre Verknüpfungen sind in dieser Vorschau noch
 nicht abgedeckt.
 Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die

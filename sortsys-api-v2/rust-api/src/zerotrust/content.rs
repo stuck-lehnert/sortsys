@@ -69,6 +69,7 @@ struct Inspection {
     pages: Vec<ObjectPage>,
     stamp: String,
     restored_document_scopes: Vec<String>,
+    sealed_invoice_scopes: Vec<String>,
     unchecked_documents: u32,
 }
 
@@ -267,6 +268,7 @@ async fn inspect(
         pages,
         stamp,
         restored_document_scopes: documents.scopes,
+        sealed_invoice_scopes: documents.invoices,
         unchecked_documents: documents.unchecked,
     })
 }

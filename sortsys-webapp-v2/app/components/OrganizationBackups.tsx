@@ -11,6 +11,7 @@ import {
   approvePreparedContent,
   inspectPreparedContent,
   RestoreBookingConflict,
+  RestoreInvoiceConflict,
 } from "~/lib/backups/contentRestore";
 import { client } from "~/lib/client";
 import { unlockedAccount } from "~/lib/crypto/session";
@@ -25,13 +26,14 @@ type CheckedBackup = {
   input: MutateInput<"zerotrust.content.activate">;
   report: Verification;
 };
+type ReviewProblem = "booking" | "document" | "invoice" | null;
 type Review =
   | { status: "checking"; backup: Backup; operation: string }
   | {
       status: "failed";
       backup: Backup;
       operation: string;
-      problem: "booking" | "document" | null;
+      problem: ReviewProblem;
     }
   | { status: "checked"; checked: CheckedBackup };
 type Publication =
@@ -59,7 +61,7 @@ function backupDate(backup: Backup) {
   }).format(backup.createdAt);
 }
 
-function reviewFailure(problem: "booking" | "document" | null) {
+function reviewFailure(problem: ReviewProblem) {
   if (problem === "booking")
     return uiText(
       "Die Sicherung passt nicht zu den laufenden Werkzeugbuchungen. Prüfen Sie eine neuere Sicherung oder klären Sie die betroffenen Buchungen.",
@@ -69,6 +71,11 @@ function reviewFailure(problem: "booking" | "document" | null) {
     return uiText(
       "In dieser Sicherung fehlt der Bezugsauftrag einer abgeschlossenen Auftragsbestätigung oder die benötigte Auftragsversion.",
       "This backup is missing the order or order version referenced by a finalized order confirmation.",
+    );
+  if (problem === "invoice")
+    return uiText(
+      "In dieser Sicherung fehlt für eine ausgestellte Rechnung das Projekt, der Auftrag oder die benötigte Version eines Bezugsdokuments.",
+      "This backup lacks the project, contract or required source document version for an issued invoice.",
     );
   return uiText(
     "Die Sicherung konnte nicht geprüft werden.",
@@ -231,9 +238,10 @@ export default function OrganizationBackups() {
       if (!controller.signal.aborted) {
         const conflict =
           error instanceof RpcClientError && error.code === "CONFLICT";
-        let problem: "booking" | "document" | null = null;
+        let problem: ReviewProblem = null;
         if (error instanceof RestoreBookingConflict) problem = "booking";
         else if (error instanceof RestoreDocumentConflict) problem = "document";
+        else if (error instanceof RestoreInvoiceConflict) problem = "invoice";
         setReview({
           status: "failed",
           backup,

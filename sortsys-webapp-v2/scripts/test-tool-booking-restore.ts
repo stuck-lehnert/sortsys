@@ -130,6 +130,18 @@ export async function prepareToolBookingRestore(
     });
   }
   const originalBooking = (await required(book(originalLabel))).trackings[0]!;
+  async function asMember<T>(
+    check: (business: ReturnType<typeof createBusinessClient>, transport: Client) => Promise<T>,
+  ): Promise<T> {
+    await signIn(member, memberLogin);
+    const business = createBusinessClient(member, { productDriver: duckDriver });
+    try {
+      return await check(business, member);
+    } finally {
+      business.dispose();
+      await signIn(owner, login);
+    }
+  }
   return async function replaceAfterBackup() {
     await required(owner.mutate("tools.untrack", { id: tool.id }));
     await required(
@@ -152,6 +164,8 @@ export async function prepareToolBookingRestore(
     );
 
     return {
+      asMember,
+      memberId: person.id,
       async check() {
         const restored = await required(
           peer.query("tools.get", { id: tool.id }, fresh),
@@ -178,11 +192,7 @@ export async function prepareToolBookingRestore(
         assert.equal(projectBooking?.endedAt, null);
       },
       async checkMemberAndReturn() {
-        await signIn(member, memberLogin);
-        const business = createBusinessClient(member, {
-          productDriver: duckDriver,
-        });
-        try {
+        await asMember(async (business, transport) => {
           const bookings = await required(
             business.query("tools.trackings.list", {}, fresh),
           );
@@ -202,7 +212,7 @@ export async function prepareToolBookingRestore(
             expense.prefix,
             projectCost.prefix + current.trackingId,
           ]) {
-            const [packet, error] = await member.query(
+            const [packet, error] = await transport.query(
               "zerotrust.objects.get",
               { id },
               fresh,
@@ -210,10 +220,7 @@ export async function prepareToolBookingRestore(
             assert.equal(packet, null);
             assert.equal(error?.data?.httpCode, 403);
           }
-        } finally {
-          business.dispose();
-          await signIn(owner, login);
-        }
+        });
         const [stale, error] = await book(
           currentLabel,
           originalBooking.trackingId,

@@ -5,6 +5,8 @@ import {
   contentEpoch,
   contentEpochFingerprint,
   contentEpochFollows,
+  documentHead,
+  documentHeadHash,
   InvalidProtectedData,
   signContentEpoch,
   signContentReview,
@@ -26,7 +28,19 @@ import {
 } from "../data/projectData";
 import { publicId } from "../data/products";
 import { commercialCollection, commercialDomain } from "../data/commercialAreas";
-import { joinCommercialFacets } from "../data/commercialData";
+import {
+  isAcceptedContract,
+  joinCommercialFacets,
+  wireCommercialCase,
+} from "../data/commercialData";
+import {
+  INVOICE_SEAL_MODEL,
+  invoiceSealObject,
+  invoiceSealRequest,
+  type InvoiceSeal,
+} from "../data/commercialBillingData";
+import { permitsDocumentSource } from "../data/commercialDocumentRules";
+import type { BusinessRow } from "../data/rowCodec";
 import {
   checkConfirmationSources,
   readRetainedDocumentRows,
@@ -52,6 +66,7 @@ type Proposal = Omit<Activation, "review">;
 type ReadView = Awaited<ReturnType<typeof protectedReadView>>;
 
 export class RestoreBookingConflict extends Error {}
+export class RestoreInvoiceConflict extends Error {}
 
 async function readAreas(
   view: ReadView,
@@ -65,6 +80,156 @@ async function readAreas(
       for (const object of await view.read(area)) visit(area, object);
     });
   }
+}
+
+function commercialMasterArea(id: string): Collection {
+  const area = commercialCollection(id, "master-data");
+  return { ...area, prefix: `${area.prefix}case` };
+}
+
+function inspectedCommercialAreas(scopes: string[]): Collection[] {
+  if (!Array.isArray(scopes) || new Set(scopes).size !== scopes.length)
+    throw new InvalidProtectedData();
+  return scopes.map((scope) => {
+    if (typeof scope !== "string") throw new InvalidProtectedData();
+    const area = commercialDomain(`${scope}:master-data`);
+    if (!area) throw new InvalidProtectedData();
+    return commercialMasterArea(area.id);
+  });
+}
+
+async function verifySealedInvoices(
+  client: Client,
+  view: ReadView,
+  scopes: string[],
+  projectIds: ReadonlySet<string>,
+) {
+  const seals = new Map<string, InvoiceSeal>();
+  const sealAreas = inspectedCommercialAreas(scopes).map((area) => {
+    const { id } = commercialDomain(area.domain)!;
+    return { ...invoiceSealRequest(id).area, prefix: invoiceSealObject(id) };
+  });
+  await readAreas(view, sealAreas, (area, { envelope, value }) => {
+    const seal = INVOICE_SEAL_MODEL.decode(value, envelope.object, area);
+    if (seals.has(seal.caseId)) throw new InvalidProtectedData();
+    seals.set(seal.caseId, seal);
+  });
+  if (seals.size !== scopes.length) throw new InvalidProtectedData();
+  const fresh = { strategy: "network-only" } as const;
+  const invoices = await mapConcurrent([...seals.values()], 4, async (seal) => {
+    const { id, version, hash } = seal.document;
+    const scope = `commercial:${seal.caseId}`;
+    const value = await required(
+      client.query("zerotrust.documents.get", { id, scope }, fresh),
+    );
+    const head = documentHead(value);
+    if (
+      head.scope !== scope ||
+      head.id !== id ||
+      !head.locked ||
+      head.version !== version ||
+      (await documentHeadHash(head)) !== hash
+    )
+      throw new InvalidProtectedData();
+    const rows = joinCommercialFacets(
+      seal.caseId,
+      new Map([["master-data", seal.master]]),
+    );
+    const invoice = wireCommercialCase(rows);
+    if (!invoice.parentCaseId || !invoice.projectId)
+      throw new InvalidProtectedData();
+    const document = rows.find(
+      (row) =>
+        row.table === "commercial_documents" && publicId(row.values.id) === id,
+    );
+    if (!document) throw new InvalidProtectedData();
+    return { invoice, document, parent: invoice.parentCaseId, project: invoice.projectId };
+  });
+
+  const cases = new Map<string, BusinessRow[]>();
+  const docs = new Map<string, { row: BusinessRow; caseId: string }>();
+  function storeCase(area: Collection, { envelope, value }: OpenedObject) {
+    const { id } = commercialDomain(area.domain)!;
+    if (envelope.object !== area.prefix || cases.has(id))
+      throw new InvalidProtectedData();
+    const rows = joinCommercialFacets(id, new Map([["master-data", value]]));
+    cases.set(id, rows);
+    for (const row of rows) {
+      if (row.table !== "commercial_documents") continue;
+      const document = publicId(row.values.id);
+      if (docs.has(document)) throw new InvalidProtectedData();
+      docs.set(document, { row, caseId: id });
+    }
+  }
+  const parents = [...new Set(invoices.map(({ parent }) => parent))]
+    .map(commercialMasterArea)
+    .filter(view.readable);
+  await readAreas(view, parents, storeCase);
+  const crossCaseSources = invoices.some(({ document }) => {
+    const source = document.values.source_document_id;
+    return source !== null && !docs.has(publicId(source));
+  });
+  if (crossCaseSources) {
+    // A signed invoice can refer to another accepted case in the same project.
+    // Resolve that ID in the prepared view, including a source that only exists
+    // on the selected older branch.
+    const others = view.areas((domain) => {
+      const area = commercialDomain(domain);
+      return area?.facet === "master-data" && !cases.has(area.id)
+        ? commercialMasterArea(area.id)
+        : null;
+    });
+    await readAreas(view, others, storeCase);
+  }
+
+  const checks = await mapConcurrent(invoices, 4, async (binding) => {
+    const { invoice, document, parent, project } = binding;
+    let unchecked = false;
+    if (!view.readable(projectCollection(project))) unchecked = true;
+    else if (!projectIds.has(project)) throw new RestoreInvoiceConflict();
+    const parentRows = cases.get(parent);
+    if (!parentRows) {
+      if (view.readable(commercialMasterArea(parent)))
+        throw new RestoreInvoiceConflict();
+      unchecked = true;
+    } else {
+      const contract = wireCommercialCase(parentRows);
+      if (!isAcceptedContract(contract) || contract.projectId !== project)
+        throw new RestoreInvoiceConflict();
+    }
+
+    if (document.values.source_document_id !== null) {
+      const id = publicId(document.values.source_document_id);
+      const source = docs.get(id);
+      if (!source) {
+        // The API only resolves the existing technical document ID here. A
+        // denial can account for a source missing from the readable inventory.
+        const [, error] = await client.query(
+          "zerotrust.documents.get",
+          { id },
+          fresh,
+        );
+        if (error?.code === "FORBIDDEN") unchecked = true;
+        else if (error) throw error;
+        else throw new RestoreInvoiceConflict();
+      } else {
+        const sourceCase = wireCommercialCase(cases.get(source.caseId)!);
+        if (
+          !permitsDocumentSource(
+            invoice,
+            "invoice",
+            sourceCase,
+            source.row.values.phase as string,
+          ) ||
+          BigInt(source.row.values.version as string) <
+            BigInt(document.values.source_version as string)
+        )
+          throw new RestoreInvoiceConflict();
+      }
+    }
+    return unchecked ? 1 : 0;
+  });
+  return checks.reduce<number>((sum, count) => sum + count, 0);
 }
 
 async function verifyActiveBookings(
@@ -288,28 +453,16 @@ export async function inspectPreparedContent(
   if (
     dependencies.pages.length !== 0 ||
     dependencies.stamp !== stamp ||
-    !Array.isArray(dependencies.restoredDocumentScopes) ||
     !Number.isSafeInteger(dependencies.uncheckedDocuments) ||
     dependencies.uncheckedDocuments < 0
   )
     throw new InvalidProtectedData();
   let retainedDocuments = 0;
-  const scopes = dependencies.restoredDocumentScopes.map((scope) => {
-    if (typeof scope !== "string") throw new InvalidProtectedData();
-    const domain = commercialDomain(`${scope}:master-data`);
-    if (!domain) throw new InvalidProtectedData();
-    return commercialCollection(domain.id, "master-data");
-  });
-  if (new Set(scopes.map((area) => area.scope)).size !== scopes.length)
-    throw new InvalidProtectedData();
+  const scopes = inspectedCommercialAreas(dependencies.restoredDocumentScopes);
   for (let offset = 0; offset < scopes.length; offset += 16) {
-    const areas = scopes.slice(offset, offset + 16);
-    const readCases = areas.map((area) => ({
-      ...area,
-      prefix: `${area.prefix}case`,
-    }));
+    const readCases = scopes.slice(offset, offset + 16);
     const [collections] = await Promise.all([
-      protectedCollections(client, signal, areas.map((area) => area.domain)),
+      protectedCollections(client, signal, readCases.map((area) => area.domain)),
       view.prefetch(readCases.map((area) => ({ area }))),
     ]);
     const counts = await mapConcurrent(readCases, 4, async (area) => {
@@ -331,6 +484,12 @@ export async function inspectPreparedContent(
     });
     retainedDocuments += counts.reduce((total, count) => total + count, 0);
   }
+  const uncheckedInvoices = await verifySealedInvoices(
+    client,
+    view,
+    dependencies.sealedInvoiceScopes,
+    projectIds,
+  );
   const context = await administratorContext(client, signal);
   live();
   const review = await signContentReview(
@@ -349,7 +508,7 @@ export async function inspectPreparedContent(
     uncheckedReferences,
     uncheckedBookings,
     retainedDocuments,
-    uncheckedDocuments: dependencies.uncheckedDocuments,
+    uncheckedDocuments: dependencies.uncheckedDocuments + uncheckedInvoices,
     review,
   };
 }

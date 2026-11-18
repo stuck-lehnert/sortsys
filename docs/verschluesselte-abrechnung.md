@@ -54,9 +54,11 @@ Die Freigabe dieses Bereichs erlaubt folglich Einsicht in diese Auftragssummen.
 Bei einer Rücksicherung stammen Entwürfe aus dem gewählten Fachstand.
 Der Browser ergänzt die ausgestellten Rechnungen und
 ihre Zahlungsstände aus dem aktuellen, verschlüsselten Abrechnungsregister.
-War ein Abschlag zum Zeitpunkt der Sicherung noch ein Entwurf, erscheint er
-danach mit seiner endgültigen Nummer und dem bereits bezahlten Betrag. Die
-Schlussrechnung zieht ihn weiterhin ab. Siehe
+Auch ein erst nach der Sicherung angelegter und ausgestellter Abschlag
+erscheint mit seiner endgültigen Nummer und den erfassten Zahlungen. Die
+Schlussrechnung zieht ihn weiterhin ab. Mit reinen Stammdatenrechten bleibt
+der Status „teilweise bezahlt“ oder „bezahlt“ sichtbar. Beträge und
+Zahlungsreferenzen benötigen die Abrechnungsfreigabe. Siehe
 [Rücksicherung](verschluesselte-sicherungen.md).
 
 Ein Rechnungsentwurf kann auch ohne Zugriff auf unbekannte XML-Erweiterungen

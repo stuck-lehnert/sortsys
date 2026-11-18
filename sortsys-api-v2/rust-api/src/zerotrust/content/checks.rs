@@ -5,7 +5,7 @@ use super::super::{
     crypto::{invalid, sized},
     documents::DocumentHead,
     object_shares::{RecipientAccess, verify_access},
-    objects::{conflict, metadata_object, metadata_read, packet_hash, registry},
+    objects::{conflict, invoice_case, metadata_object, metadata_read, packet_hash, registry},
     wire::{Action, EncryptedObject, Facet},
 };
 use crate::error::RpcResult;
@@ -14,12 +14,19 @@ use std::collections::BTreeMap;
 #[derive(Default)]
 pub(super) struct RestoredDocuments {
     pub scopes: Vec<String>,
+    pub invoices: Vec<String>,
     pub unchecked: u32,
+}
+
+#[derive(Default)]
+pub(super) struct CaseDependencies {
+    missing_publications: u32,
+    invoice: bool,
 }
 
 pub(super) async fn visible_registrations(
     context: &mut MetadataContext,
-    registrations: BTreeMap<String, u32>,
+    registrations: BTreeMap<String, CaseDependencies>,
 ) -> RpcResult<RestoredDocuments> {
     let mut report = RestoredDocuments::default();
     let selected = registrations.into_iter().collect::<Vec<_>>();
@@ -40,7 +47,7 @@ pub(super) async fn visible_registrations(
         )
         .await?;
         let inherited = inherited_rules(&origins, &security.policy);
-        for (scope, count) in cases {
+        for (scope, dependencies) in cases {
             if security.policy.allows_with(
                 &inherited,
                 &security.subject,
@@ -48,9 +55,17 @@ pub(super) async fn visible_registrations(
                 Facet::MasterData,
                 Action::Read,
             ) {
-                report.scopes.push(scope.clone());
+                if dependencies.missing_publications > 0 {
+                    report.scopes.push(scope.clone());
+                }
+                if dependencies.invoice {
+                    report.invoices.push(scope.clone());
+                }
             } else {
-                report.unchecked = report.unchecked.checked_add(*count).ok_or_else(invalid)?;
+                let count = dependencies
+                    .missing_publications
+                    .max(u32::from(dependencies.invoice));
+                report.unchecked = report.unchecked.checked_add(count).ok_or_else(invalid)?;
             }
         }
     }
@@ -168,8 +183,10 @@ async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
     }
 }
 
-async fn closed_documents(context: &mut MetadataContext) -> RpcResult<BTreeMap<String, u32>> {
-    let mut restored = BTreeMap::<String, u32>::new();
+async fn closed_documents(
+    context: &mut MetadataContext,
+) -> RpcResult<BTreeMap<String, CaseDependencies>> {
+    let mut restored = BTreeMap::<String, CaseDependencies>::new();
     let mut after = None;
     loop {
         let page = context
@@ -185,11 +202,19 @@ async fn closed_documents(context: &mut MetadataContext) -> RpcResult<BTreeMap<S
             if head.id != row.record.key || head.tenant != context.auth.tenant {
                 return Err(invalid());
             }
-            if super::super::documents::check_restore_origin(&mut context.transaction, &head)
-                .await?
-            {
-                let count = restored.entry(head.scope.clone()).or_default();
-                *count = count.checked_add(1).ok_or_else(invalid)?;
+            let missing =
+                super::super::documents::check_restore_origin(&mut context.transaction, &head)
+                    .await?;
+            let invoice = invoice_case::sealed(&mut context.transaction, &head.scope).await?;
+            if missing || invoice {
+                let dependencies = restored.entry(head.scope.clone()).or_default();
+                dependencies.invoice |= invoice;
+                if missing {
+                    dependencies.missing_publications = dependencies
+                        .missing_publications
+                        .checked_add(1)
+                        .ok_or_else(invalid)?;
+                }
             }
             let case = record(context, &format!("{}:master-data:case", head.scope)).await?;
             if case.is_tombstone() || case.scope != head.scope || case.facet != Facet::MasterData {
@@ -223,7 +248,7 @@ async fn closed_documents(context: &mut MetadataContext) -> RpcResult<BTreeMap<S
 
 pub(super) async fn dependencies(
     context: &mut MetadataContext,
-) -> RpcResult<BTreeMap<String, u32>> {
+) -> RpcResult<BTreeMap<String, CaseDependencies>> {
     assignments(context).await?;
     responsible_bookings(context).await?;
     closed_documents(context).await

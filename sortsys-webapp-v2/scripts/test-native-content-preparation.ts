@@ -19,9 +19,12 @@ import {
   verifyPolicy,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory } from "../app/lib/crypto/session";
+import { changeAreaActionAccesses } from "../app/lib/crypto/permissions";
+import { profilePatch } from "../app/lib/crypto/accessProfiles";
 import { openAuthority } from "../app/lib/crypto/setup";
 import type { createBusinessClient } from "../app/lib/data/businessClient";
 import { commercialCollection } from "../app/lib/data/commercialAreas";
+import { invoiceBillingObject } from "../app/lib/data/commercialBillingData";
 import { commercialFacetPayload } from "../app/lib/data/commercialData";
 import { commercialDocumentStore } from "../app/lib/data/commercialDocumentContent";
 import type { EncryptedChange } from "../app/lib/data/events";
@@ -38,6 +41,7 @@ import {
 import {
   approvePreparedContent,
   inspectPreparedContent,
+  RestoreInvoiceConflict,
 } from "../app/lib/backups/contentRestore";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
@@ -91,7 +95,12 @@ async function createConfirmation(
   return { target: { caseId, id: confirmation.id }, draft };
 }
 
-async function changeStoredCaseTitle(owner: Client, id: string) {
+async function changeStoredCaseTitle(
+  owner: Client,
+  id: string,
+  previous: string,
+  next: string,
+) {
   const area = commercialCollection(id, "master-data");
   const key = `${area.prefix}case`;
   const collection = await protectedCollection(
@@ -105,8 +114,8 @@ async function changeStoredCaseTitle(owner: Client, id: string) {
     const value = commercialFacetPayload(saved.value, id, "master-data");
     const row = value.rows.find((entry) => entry.table === "commercial_cases");
     assert.ok(row);
-    assert.equal(row.values.title, originalOrderTitle);
-    row.values.title = "Späterer Titel des Vorgangs";
+    assert.equal(row.values.title, previous);
+    row.values.title = next;
     await collection.write([
       await collection.packet(key, value, saved.envelope),
     ]);
@@ -120,7 +129,12 @@ function prepareConfirmation(
   basis: Awaited<ReturnType<typeof adoptOrder>>,
 ) {
   return async (peer: Client) => {
-    await changeStoredCaseTitle(owner, basis.caseId);
+    await changeStoredCaseTitle(
+      owner,
+      basis.caseId,
+      originalOrderTitle,
+      "Späterer Titel des Vorgangs",
+    );
     const { target, draft } = await createConfirmation(owner, basis);
     const headInput = { scope: `commercial:${target.caseId}`, id: target.id };
     const changed = draft.replace(
@@ -224,14 +238,14 @@ function prepareConfirmation(
   };
 }
 
-async function prepareInvoiceRestore(
+async function createRestorableInvoice(
   owner: Client,
   projectId: string,
-  contractCaseId: string,
+  contract: Awaited<ReturnType<typeof adoptOrder>>,
 ) {
   const fields = {
     projectId,
-    parentCaseId: contractCaseId,
+    parentCaseId: contract.caseId,
     scopeItemIds: [],
     vatRate: "19.00",
   };
@@ -250,113 +264,193 @@ async function prepareInvoiceRestore(
       xml: invoiceXml("progress_invoice", "40.00", "47.60"),
       netAmount: "40.00",
       readOnly: false,
+      sourceDocumentId: contract.order.id,
+      sourceVersion: contract.order.version,
     }),
   );
   const document = { caseId: id, id: draft.id };
-  const contextInput = { contractCaseId };
+  return { id, document, fields };
+}
+
+async function issueInvoiceAfterBackup(
+  owner: Client,
+  peer: Client,
+  projectId: string,
+  contract: Awaited<ReturnType<typeof adoptOrder>>,
+) {
+  const { id, document, fields } = await createRestorableInvoice(owner, projectId, contract);
+  const contextInput = { contractCaseId: contract.caseId };
   const fresh = { strategy: "network-only" } as const;
-  return async (peer: Client) => {
-    await required(owner.mutate("commercial.invoices.issue", { id }));
-    await required(
-      owner.mutate("commercial.invoices.recordPayment", {
+  await required(owner.mutate("commercial.invoices.issue", { id }));
+  await required(
+    owner.mutate("commercial.invoices.recordPayment", {
+      id,
+      amount: "20.00",
+      paidOn: "2026-11-12",
+      reference: "Anzahlung vom Bauherrn 736284",
+      operationId: "pdf1",
+    }),
+  );
+  const published = await required(
+    peer.query("commercial.documents.get", document, fresh),
+  );
+  const detail = await required(
+    peer.query("commercial.cases.get", { id }, fresh),
+  );
+  const number = detail.invoice?.invoiceNumber;
+  assert.ok(number);
+  assert.equal(detail.invoice?.paidAmount, "20.00");
+  await assert.rejects(
+    () =>
+      changeStoredCaseTitle(
+        owner, id, "Abschlag für die Fensterarbeiten", "Nachträgliche Änderung",
+      ),
+    { code: "CONFLICT" },
+  );
+  const later = await required(
+    owner.mutate("commercial.cases.create", {
+      ...fields,
+      kind: "final_invoice",
+      title: "Schlussrechnung, die noch Entwurf ist",
+    }),
+  );
+  assert.ok(later.id);
+  const beforeRestore = await required(
+    peer.query("commercial.invoices.context", contextInput, fresh),
+  );
+  assert.equal(beforeRestore.hasFinalInvoice, true);
+  return {
+    caseId: id,
+    async check() {
+      const context = await required(
+        peer.query("commercial.invoices.context", contextInput, fresh),
+      );
+      assert.equal(
+        context.hasFinalInvoice,
+        false,
+        "The later draft must not survive",
+      );
+      assert.equal(context.progressInvoices.length, 1);
+      assert.equal(context.progressInvoices[0]?.id, id);
+      assert.equal(context.progressInvoices[0]?.invoiceNumber, number);
+      assert.equal(context.progressInvoices[0]?.paidAmount, "20.00");
+      const headers = await required(
+        peer.query("commercial.cases.headers", { projectId }, fresh),
+      );
+      assert.equal(headers.find((row) => row.id === id)?.status, "partially_paid");
+      const recovered = await required(
+        peer.query("commercial.documents.get", document, fresh),
+      );
+      assert.equal(recovered.xml, published.xml);
+      assert.equal(recovered.version, published.version);
+      assert.equal(recovered.canEdit, false);
+    },
+    async settle() {
+      const payment = {
         id,
-        amount: "20.00",
+        amount: "27.60",
         paidOn: "2026-11-12",
-        reference: "Anzahlung vom Bauherrn 736284",
-        operationId: "pdf1",
-      }),
-    );
-    const published = await required(
-      peer.query("commercial.documents.get", document, fresh),
-    );
-    const detail = await required(
-      peer.query("commercial.cases.get", { id }, fresh),
-    );
-    const number = detail.invoice?.invoiceNumber;
-    assert.ok(number);
-    assert.equal(detail.invoice?.paidAmount, "20.00");
-    const later = await required(
-      owner.mutate("commercial.cases.create", {
-        ...fields,
-        kind: "final_invoice",
-        title: "Schlussrechnung, die noch Entwurf ist",
-      }),
-    );
-    assert.ok(later.id);
-    const beforeRestore = await required(
-      peer.query("commercial.invoices.context", contextInput, fresh),
-    );
-    assert.equal(beforeRestore.hasFinalInvoice, true);
-    return {
-      caseId: id,
-      async check() {
-        const context = await required(
-          peer.query("commercial.invoices.context", contextInput, fresh),
-        );
-        assert.equal(
-          context.hasFinalInvoice,
-          false,
-          "The later draft must not survive",
-        );
-        assert.equal(context.progressInvoices.length, 1);
-        assert.equal(context.progressInvoices[0]?.id, id);
-        assert.equal(context.progressInvoices[0]?.invoiceNumber, number);
-        assert.equal(context.progressInvoices[0]?.paidAmount, "20.00");
-        const recovered = await required(
-          peer.query("commercial.documents.get", document, fresh),
-        );
-        assert.equal(recovered.xml, published.xml);
-        assert.equal(recovered.version, published.version);
-        assert.equal(recovered.canEdit, false);
-      },
-      async settle() {
-        const payment = {
-          id,
-          amount: "27.60",
-          paidOn: "2026-11-12",
-          reference: "Restzahlung nach Rücksicherung",
-          operationId: "pdf2",
-        };
-        await required(peer.mutate("commercial.invoices.recordPayment", payment));
-        await required(owner.mutate("commercial.invoices.recordPayment", payment));
-        const settled = await required(
-          owner.query("commercial.cases.get", { id }, fresh),
-        );
-        assert.equal(settled.case.status, "paid");
-        assert.equal(settled.invoice?.paidAmount, "47.60");
-        assert.equal(settled.invoice?.payments.length, 2);
-        const context = await required(
-          owner.query("commercial.invoices.context", contextInput, fresh),
-        );
-        assert.equal(context.progressInvoices[0]?.paidAmount, "47.60");
-        const final = await required(
-          owner.mutate("commercial.cases.create", {
-            ...fields,
-            kind: "final_invoice",
-            title: "Schlussrechnung nach Rücksicherung",
-          }),
-        );
-        await required(
-          owner.mutate("commercial.documents.create", {
-            caseId: final.id,
-            purpose: "invoice",
-            fileName: "Schlussrechnung.x89",
-            xml: invoiceXml("final_invoice", "150.00", "130.90", "47.60"),
-            netAmount: "110.00",
-            readOnly: false,
-          }),
-        );
-        await required(peer.mutate("commercial.invoices.issue", { id: final.id }));
-        const result = await required(
-          owner.query("commercial.cases.get", { id: final.id }, fresh),
-        );
-        assert.equal(result.invoice?.deductedNet, "40.00");
-        assert.equal(result.case.status, "sent");
-        assert.notEqual(result.invoice?.invoiceNumber, number);
-        console.log("Invoice restore preserved issuance and payments and allowed final settlement");
-      },
-    };
+        reference: "Restzahlung nach Rücksicherung",
+        operationId: "pdf2",
+      };
+      await required(peer.mutate("commercial.invoices.recordPayment", payment));
+      await required(owner.mutate("commercial.invoices.recordPayment", payment));
+      const settled = await required(
+        owner.query("commercial.cases.get", { id }, fresh),
+      );
+      assert.equal(settled.case.status, "paid");
+      assert.equal(settled.invoice?.paidAmount, "47.60");
+      assert.equal(settled.invoice?.payments.length, 2);
+      const context = await required(
+        owner.query("commercial.invoices.context", contextInput, fresh),
+      );
+      assert.equal(context.progressInvoices[0]?.paidAmount, "47.60");
+      const final = await required(
+        owner.mutate("commercial.cases.create", {
+          ...fields,
+          kind: "final_invoice",
+          title: "Schlussrechnung nach Rücksicherung",
+        }),
+      );
+      await required(
+        owner.mutate("commercial.documents.create", {
+          caseId: final.id,
+          purpose: "invoice",
+          fileName: "Schlussrechnung.x89",
+          xml: invoiceXml("final_invoice", "150.00", "130.90", "47.60"),
+          netAmount: "110.00",
+          readOnly: false,
+        }),
+      );
+      await required(peer.mutate("commercial.invoices.issue", { id: final.id }));
+      const result = await required(
+        owner.query("commercial.cases.get", { id: final.id }, fresh),
+      );
+      assert.equal(result.invoice?.deductedNet, "40.00");
+      assert.equal(result.case.status, "sent");
+      assert.notEqual(result.invoice?.invoiceNumber, number);
+      console.log("Invoice restore preserved issuance and payments and allowed final settlement");
+    },
   };
+}
+
+async function rejectInvoiceWithoutContract(
+  tenant: string,
+  owner: Client,
+  peer: Client,
+  operator: Client,
+) {
+  const { id: project } = await required(
+    owner.mutate("projects.create", {
+      title: "Rechnungsprojekt vor dem Bezugsauftrag",
+    }),
+  );
+  function snapshot() {
+    return required(
+      operator.mutate("admin.storage.snapshots.create", {
+        tenant,
+        operation: crypto.randomUUID(),
+      }),
+    );
+  }
+  const withoutContract = await snapshot();
+  const contract = await adoptOrder(owner, project);
+  const olderOrder = await snapshot();
+  await required(
+    owner.mutate("commercial.documents.create", {
+      caseId: contract.caseId,
+      purpose: "order",
+      replaceDocumentId: contract.order.id,
+      expectedVersion: contract.order.version,
+      fileName: "Auftrag mit Neufassung.x86",
+      xml: gaebWorkflowXml("86").replace(
+        "Fensterlaibung verputzen.",
+        "Fensterlaibung mit Kalkputz verputzen.",
+      ),
+      readOnly: true,
+    }),
+  );
+  const order = await required(
+    peer.query("commercial.documents.get", { caseId: contract.caseId, id: contract.order.id }),
+  );
+  assert.ok(order.version > contract.order.version);
+  contract.order.version = order.version;
+  const { id } = await createRestorableInvoice(owner, project, contract);
+  await required(owner.mutate("commercial.invoices.issue", { id }));
+  for (const backup of [withoutContract, olderOrder]) {
+    const prepared = await required(
+      peer.mutate("zerotrust.content.prepare", {
+        snapshotOperation: backup.id,
+        operation: crypto.randomUUID(),
+      }),
+    );
+    const signal = new AbortController().signal;
+    const approval = await approvePreparedContent(peer, prepared, signal);
+    await assert.rejects(
+      () => inspectPreparedContent(peer, approval, signal),
+      RestoreInvoiceConflict,
+    );
+  }
 }
 
 async function rejectSnapshotWithoutLockedCase(
@@ -641,11 +735,6 @@ export async function exerciseContentPreparation(
   const checkEditors = await holdEditorPackets(peer, project.id);
   const contract = await adoptOrder(owner, project.id);
   const finalizeConfirmation = prepareConfirmation(owner, contract);
-  const issueInvoice = await prepareInvoiceRestore(
-    owner,
-    project.id,
-    contract.caseId,
-  );
   const ownerSession = await required(
     owner.query("auth.sessionInfo", undefined),
   );
@@ -688,7 +777,13 @@ export async function exerciseContentPreparation(
   assert.ok(snapshot.bytes);
   const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
-  const invoice = await issueInvoice(peer);
+  const invoice = await issueInvoiceAfterBackup(owner, peer, project.id, contract);
+  await changeAreaActionAccesses(
+    owner,
+    `user:${booking.memberId}`,
+    [{ area: commercialCollection(invoice.caseId, "master-data"), patch: profilePatch("read") }],
+    new AbortController().signal,
+  );
   await exerciseGaebBlockBatches(owner, peer, confirmation.caseId, transmissions);
   const foreignTenant = `${tenant}-other`;
   const foreign = await tenantSetupRequest(foreignTenant);
@@ -841,7 +936,7 @@ export async function exerciseContentPreparation(
   assert.equal(reportPreview.contacts, 1);
   assert.equal(reportPreview.missingReferences, 0);
   assert.equal(reportPreview.uncheckedReferences, 0);
-  assert.equal(reportPreview.retainedDocuments, 1);
+  assert.equal(reportPreview.retainedDocuments, 2);
   assert.equal(reportPreview.uncheckedDocuments, 0);
   const preview = await protectedReadView(
     peer,
@@ -1273,5 +1368,20 @@ export async function exerciseContentPreparation(
     operator,
     project.id,
   );
+  await booking.asMember(async (business, transport) => {
+    const id = invoice.caseId;
+    const detail = await required(business.query("commercial.cases.get", { id }));
+    assert.equal(detail.case.status, "partially_paid");
+    assert.equal(detail.case.netAmount, null);
+    assert.equal(detail.invoice, null);
+    const headers = await required(business.query("commercial.cases.headers", {}));
+    assert.equal(headers.find((row) => row.id === id)?.status, "partially_paid");
+    const [packet, error] = await transport.query(
+      "zerotrust.objects.get", { id: invoiceBillingObject(id) },
+    );
+    assert.equal(packet, null);
+    assert.equal(error?.data?.httpCode, 403);
+  });
   await invoice.settle();
+  await rejectInvoiceWithoutContract(tenant, owner, peer, operator);
 }

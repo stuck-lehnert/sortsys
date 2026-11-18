@@ -169,7 +169,7 @@ pub(in crate::zerotrust) fn journal_id(message_id: &str) -> String {
         super::super::crypto::encode(&Sha256::digest(message_id.as_bytes()))
     )
 }
-fn history_key(
+pub(super) fn history_key(
     object: &str,
     revision_number: &str,
 ) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
@@ -675,6 +675,7 @@ async fn commit_batch_inner(
     let mut changed_domains = BTreeSet::new();
     let mut visible_domains = BTreeSet::new();
     let mut changed_metadata = BTreeSet::new();
+    let mut written_packets = Vec::new();
     let mut wrote = checkpoints.commit(&mut context.transaction).await?;
     let mut changed_access = false;
     for packet in &input.objects {
@@ -696,6 +697,7 @@ async fn commit_batch_inner(
         )
         .await?;
         if written {
+            written_packets.push(packet);
             changed_domains.insert(packet.domain.clone());
             if let Some(domain) = super::super::delivery::deletion_price_domain(packet)? {
                 changed_domains.insert(domain.clone());
@@ -741,6 +743,12 @@ async fn commit_batch_inner(
             wrote = true;
         }
     }
+    super::invoice_case::retain(
+        &mut context,
+        &written_packets,
+        input.documents.as_deref().unwrap_or_default(),
+    )
+    .await?;
     if let Some(policy) = &input.policy {
         registry::replace_policy(&mut context.transaction, &context.security, policy, false)
             .await?;
