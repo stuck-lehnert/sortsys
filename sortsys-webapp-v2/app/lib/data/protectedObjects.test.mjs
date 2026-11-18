@@ -146,6 +146,9 @@ async function fixture(extraReader = false, suspended = false) {
     bundledOpenings: false,
     head: "1",
     beforeKey: async () => {},
+    beforeObject: async () => {},
+    transformObject: (object) => object,
+    objectRequests: [],
     transformOpenings: (openings) => openings,
     transformPage: (page) => page,
     pages: [],
@@ -210,6 +213,18 @@ async function fixture(extraReader = false, suspended = false) {
         return state.failKey
           ? [null, new Error("Key request failed")]
           : [domain.definition.envelopes[0], null];
+      }
+      if (path === "zerotrust.objects.get") {
+        state.objectRequests.push(input.id);
+        await state.beforeObject(input.id);
+        const object = objects.find((object) => object.object === input.id);
+        if (!object) {
+          return [
+            null,
+            Object.assign(new Error("Not found"), { code: "NOT_FOUND" }),
+          ];
+        }
+        return [state.transformObject(object), null];
       }
       if (path === "zerotrust.objects.list") {
         state.pages.push(input.snapshot);
@@ -346,6 +361,115 @@ test("parallel object decryption shares one combined opening request across page
     expect(state.pages).toEqual([null, "1"]);
   } finally {
     collection.close();
+  }
+});
+
+test("selected reads fill the transport batch before opening ciphertexts and preserve selection order", async () => {
+  const { state, collection } = await fixture();
+  const ids = Array.from(
+    { length: 48 },
+    (_, index) => `item:${String(47 - index).padStart(3, "0")}`,
+  );
+  state.beforeKey = async () => {
+    expect(state.objectRequests).toEqual(ids.slice(0, 32));
+  };
+  try {
+    expect(await collection.selected([])).toEqual([]);
+    expect(state.objectRequests).toEqual([]);
+    const objects = await collection.selected([...ids, "item:missing"]);
+    expect(objects.map((object) => object.envelope.object)).toEqual(ids);
+    expect(objects.map((object) => object.value.index)).toEqual(
+      Array.from({ length: 48 }, (_, index) => 47 - index),
+    );
+    expect(state.objectRequests).toEqual([...ids, "item:missing"]);
+    expect(state.openingRequests).toBe(1);
+    expect(state.keyRequests).toBe(0);
+    expect(state.pages).toEqual([]);
+  } finally {
+    collection.close();
+  }
+});
+
+test("a failed selected read drains its in-flight batch and starts neither crypto nor another batch", async () => {
+  const { state, collection } = await fixture();
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  let active = 0;
+  state.beforeObject = async (id) => {
+    if (id === "item:000") throw new Error("Selected read failed");
+    active++;
+    await held;
+    active--;
+  };
+  const ids = Array.from(
+    { length: 48 },
+    (_, index) => `item:${String(index).padStart(3, "0")}`,
+  );
+  let settled = false;
+  const failed = collection.selected(ids).then(
+    () => {
+      throw new Error("The failed batch must not return partial data");
+    },
+    (error) => {
+      settled = true;
+      return error;
+    },
+  );
+  try {
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(state.objectRequests).toEqual(ids.slice(0, 32));
+    expect(active).toBe(31);
+    expect(settled).toBe(false);
+    expect(state.openingRequests).toBe(0);
+    release();
+    expect((await failed).message).toBe("Selected read failed");
+    expect(active).toBe(0);
+    expect(state.objectRequests).toHaveLength(32);
+    expect(state.openingRequests).toBe(0);
+  } finally {
+    release();
+    await failed;
+    collection.close();
+  }
+});
+
+test("selected reads reject duplicate or foreign identifiers before making requests", async () => {
+  const { state, collection } = await fixture();
+  try {
+    for (const ids of [["item:000", "item:000"], ["other:000"]]) {
+      await expect(collection.selected(ids)).rejects.toBeInstanceOf(
+        InvalidProtectedData,
+      );
+    }
+    expect(state.objectRequests).toEqual([]);
+  } finally {
+    collection.close();
+  }
+});
+
+test("selected batches authenticate each returned object and reject signed changes by a reader", async () => {
+  const f = await fixture(true, false);
+  try {
+    const forged = await f.readerForgery();
+    for (const substitute of [
+      () => forged,
+      (object) => ({ ...object, signature: base64(new Uint8Array(64)) }),
+      (object) => ({ ...object, object: "item:other" }),
+    ]) {
+      f.state.transformObject = substitute;
+      await expect(f.collection.selected(["item:007"])).rejects.toBeInstanceOf(
+        InvalidProtectedData,
+      );
+    }
+    f.state.transformObject = (object) => object;
+    expect((await f.collection.selected(["item:007"]))[0].value).toEqual({
+      index: 7,
+    });
+  } finally {
+    f.collection.close();
   }
 });
 

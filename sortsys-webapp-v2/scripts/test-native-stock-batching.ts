@@ -91,6 +91,38 @@ export async function exerciseNativeStockBatching(
                 Array(4).fill("zerotrust.stock.references"),
                 ["zerotrust.stock.references"],
               ]);
+              const selectedIds = packets
+                .map((packet) => packet.envelope.object)
+                .reverse();
+              const selectedStart = transmissions.length;
+              const selected = await reader.selected(selectedIds);
+              assert.deepEqual(
+                selected.map((object) => object.envelope.object),
+                selectedIds,
+              );
+              for (const object of selected) {
+                const packet = expected.get(object.envelope.object)!;
+                assert.equal(
+                  object.envelope.signature,
+                  packet.envelope.signature,
+                );
+                assert.equal(
+                  object.stock?.references.signature,
+                  packet.references?.signature,
+                );
+              }
+              const objectBatches = transmissions
+                .slice(selectedStart)
+                .map((paths) =>
+                  paths.filter((path) => path === "zerotrust.objects.get"),
+                )
+                .filter((paths) => paths.length > 0);
+              assert.deepEqual(
+                objectBatches.map((paths) => paths.length),
+                Array(10).fill(32),
+                "320 selected records fill ten transport batches instead of twenty half-full batches",
+              );
+              assert.deepEqual(await reader.selected(["product:missing"]), []);
               verified = true;
               return true;
             } finally {
@@ -103,7 +135,7 @@ export async function exerciseNativeStockBatching(
     );
     assert.equal(verified, true);
     console.log(
-      "Native stock batching: 320 encrypted products and individually verified stock proofs cross API replicas in two metadata HTTP requests",
+      "Native stock batching: 320 encrypted products cross API replicas in ten selected-read HTTP requests, with individually verified stock proofs in two metadata requests",
     );
   } finally {
     collection.close();

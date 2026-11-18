@@ -526,6 +526,15 @@ behält ihre eigene Berechtigungsprüfung.
 Ein Transportpaket garantiert keine gemeinsame Transaktion. Die atomare
 Veröffentlichung gehört ausdrücklich zu `zerotrust.access.publish`.
 
+Beim gezielten Laden bekannter Datensatzkennungen werden jeweils 32 Abrufe
+gemeinsam vorbereitet. Erst nach deren Antworten öffnet der Browser die
+Chiffrate mit höchstens 16 parallelen Prüfungen. Damit belegt die Auswahl von
+320 Datensätzen zehn HTTP-Anfragen für deren Inhalte statt zwanzig. Zusätzliche
+Schlüssel- und Bestandsnachweise werden weiterhin getrennt geprüft. Die
+Reihenfolge der Auswahl bleibt erhalten; fehlende Datensätze werden ausgelassen.
+Ein Fehler verwirft die gesamte Auswahl. Bereits laufende Abrufe enden vor der
+Freigabe ihrer gemeinsam verwendeten Ressourcen.
+
 Aktuelle Schlüsselzertifikate werden mit `zerotrust.keyAuthorities.forAreas` für
 bis zu 32 Bereiche in einem gemeinsamen, versionsgeprüften Stand gelesen. Die
 API bündelt auch die zugehörigen Metadatenabrufe beim Datendienst. Alle Einträge

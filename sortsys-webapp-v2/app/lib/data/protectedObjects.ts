@@ -947,21 +947,27 @@ function openCollection(
       )
         throw new InvalidProtectedData();
       const objects: OpenedObject[] = [];
-      for (let offset = 0; offset < ids.length; offset += 16) {
-        const part = await Promise.all(
-          ids.slice(offset, offset + 16).map(async (id) => {
-            const [value, error] = await client.query(
-              "zerotrust.objects.get",
-              { id },
-              { strategy: "network-only" },
-            );
-            live();
-            if (error && error.code === "NOT_FOUND") return null;
-            if (error) throw error;
-            if (!value) throw new InvalidProtectedData();
-            return openEnvelope(value, id);
-          }),
-        );
+      // Fill a complete transport batch before opening its ciphertexts. Crypto
+      // work must not delay peers entering the same four-millisecond window.
+      for (let offset = 0; offset < ids.length; offset += 32) {
+        const selectedIds = ids.slice(offset, offset + 32);
+        const envelopes = await mapConcurrent(selectedIds, 32, async (id) => {
+          const [value, error] = await client.query(
+            "zerotrust.objects.get",
+            { id },
+            { strategy: "network-only" },
+          );
+          live();
+          if (error && error.code === "NOT_FOUND") return null;
+          if (error) throw error;
+          if (!value) throw new InvalidProtectedData();
+          return value;
+        });
+        const part = await mapConcurrent(envelopes, 16, (envelope, index) => {
+          live();
+          if (envelope === null) return Promise.resolve(null);
+          return openEnvelope(envelope, selectedIds[index]!);
+        });
         objects.push(
           ...part.filter((object): object is OpenedObject => object !== null),
         );
