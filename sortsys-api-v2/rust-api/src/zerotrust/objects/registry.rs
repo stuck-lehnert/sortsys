@@ -22,6 +22,17 @@ pub(in crate::zerotrust) struct DomainRecord {
     pub recipients: BTreeMap<String, BTreeSet<String>>,
 }
 
+impl DomainRecord {
+    /// The raw counter stays with the current grants. The visible counter
+    /// also advances when the tenant selects another content namespace.
+    pub(in crate::zerotrust) fn content_sequence(&self, content_number: i64) -> RpcResult<String> {
+        let sequence = revision(&self.sequence)?
+            .checked_add(content_number)
+            .ok_or_else(conflict)?;
+        Ok(sequence.to_string())
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::zerotrust) struct DomainDescriptor {
@@ -1739,9 +1750,10 @@ async fn put_domain_in_transaction(
     }
     publish_domain(&mut context.transaction, &area).await?;
     super::super::setup::advance_catalog(&mut context.transaction, &context.auth.tenant).await?;
+    let content_number = super::super::content::content_number(&mut context.transaction).await?;
     context.transaction.notify(
         "domain",
-        &serde_json::json!({"domain": input.id, "sequence": area.sequence}),
+        &serde_json::json!({"domain": input.id, "sequence": area.content_sequence(content_number)?}),
     )?;
     Ok(true)
 }

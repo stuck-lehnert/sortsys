@@ -62,7 +62,10 @@ behalten ihre bisherige Ablage; Listen und
 Einzelabrufe berücksichtigen sie auch dann, wenn der ausgewählte ältere Stand
 sie noch nicht enthält. Die API prüft die Signatur der Mandantenautorität für
 den ausgewählten Fachstand. Begonnene Lese- und Schreibvorgänge müssen beim
-Abschluss weiterhin zu diesem Stand passen.
+Abschluss weiterhin zu diesem Stand passen. Ein Fachstandswechsel erhöht den
+Lesestand aller Bereiche, auch wenn sich deren Schlüssel und Berechtigungen
+nicht ändern. Alte Einträge im Browser können dadurch nicht als aktuell
+bestätigt werden.
 
 Die API kann eine fertig registrierte Sicherung für einen neuen Fachstand
 vorbereiten. Der Datendienst kopiert die ausgewählten technischen Datensätze
@@ -72,7 +75,8 @@ Währenddessen bearbeiten Mitarbeiter weiterhin den aktuellen Stand.
 
 Die Freigabe des vorbereiteten Stands fehlt noch. Vor dem Wechsel müssen
 Fachreferenzen mit den erhaltenen Datensätzen abgeglichen werden. Verbundene
-Editoren müssen den neuen Stand laden.
+Editoren erkennen den Wechsel bereits. Ihre ausstehenden Live-Nachrichten
+und Speicherbelege bleiben an den vorherigen Fachstand gebunden.
 
 ## Erstellung und Nachweise
 

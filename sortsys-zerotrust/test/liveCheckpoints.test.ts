@@ -8,6 +8,7 @@ import {
   liveCheckpointFrame,
   base64,
   importSigningKey,
+  livePosition,
   liveSequence,
   signLiveCheckpoint,
   verifyLiveCheckpoint,
@@ -112,6 +113,40 @@ test("an empty room can confirm its native target without inventing a text edit"
   expect(
     await verifyLiveCheckpoint(empty, room, signer.signingKey.publicKey),
   ).toEqual(empty);
+});
+
+test("restored channels bind positions and signed receipts to the same content fingerprint", async () => {
+  const { signer, room, checkpoint } = await signedCheckpoint();
+  const content = await digest(bytes("restored content head"));
+  const other = await digest(bytes("another content head"));
+  const restored = await signLiveCheckpoint(
+    { ...checkpoint, content },
+    signer.signingKey.privateKey,
+  );
+  expect(livePosition(`${content}:${restored.sequence}`)).toEqual({
+    content,
+    sequence: restored.sequence,
+  });
+  expect(livePosition(checkpoint.sequence).content).toBeNull();
+  expect(() => livePosition(`${content}:01`)).toThrow();
+  expect(() => livePosition(`wrong:${checkpoint.sequence}`)).toThrow();
+  expect(
+    await verifyLiveCheckpoint(restored, room, signer.signingKey.publicKey),
+  ).toEqual(restored);
+  await expect(
+    verifyLiveCheckpoint(
+      { ...restored, content: other },
+      room,
+      signer.signingKey.publicKey,
+    ),
+  ).rejects.toThrow();
+  await expect(
+    verifyLiveCheckpoint(
+      { ...checkpoint, content },
+      room,
+      signer.signingKey.publicKey,
+    ),
+  ).rejects.toThrow();
 });
 
 test("the native checkpoint vector preserves its signature, channel and exact large counters", async () => {

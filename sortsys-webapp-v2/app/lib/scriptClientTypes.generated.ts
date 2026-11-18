@@ -553,6 +553,7 @@ export type LiveCheckpoint = {
     generation: string;
     policyVersion: string;
     author: string;
+    content?: string;
     signature: string;
 };
 
@@ -601,6 +602,7 @@ export type Message = {
     kind: Kind;
     key: string;
     authorityGeneration: string;
+    content?: string;
     envelope: EncryptedObject<Facet>;
 };
 
@@ -705,6 +707,7 @@ export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "dee
 export type Read = {
     room: Room;
     after: string;
+    content?: string;
 };
 
 export type RecipientAccess = {
@@ -1345,6 +1348,7 @@ export type QueryInputs = {
     "zerotrust.documents.messages.read": {
         room: Room;
         after: string;
+        content?: string;
     };
     "zerotrust.documents.messages.state": {
         scope: string;
@@ -2856,6 +2860,7 @@ export type QueryOutputs = {
     "zerotrust.documents.messages.state": {
         current: string;
         checkpoint: LiveCheckpoint | null;
+        content: string | null;
     };
     "zerotrust.domains.get": {
         tenant: string;
@@ -4289,6 +4294,7 @@ export type MutationInputs = {
         kind: Kind;
         key: string;
         authorityGeneration: string;
+        content?: string;
         envelope: EncryptedObject<Facet>;
     };
     "zerotrust.domains.put": {

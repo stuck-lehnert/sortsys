@@ -11,6 +11,7 @@ import {
   randomSecret,
   record,
   revision,
+  sized,
   unbase64,
   type Facet,
   type DocumentChannel,
@@ -43,10 +44,13 @@ export class UnknownDocumentMessageAuthor extends RejectedDocumentMessage {
   }
 }
 
+export class DocumentContentChanged extends InvalidProtectedData {}
+
 export function documentMessageObject(
   room: DocumentChannel,
   kind: DocumentMessageKind,
   key: string,
+  content?: string | null,
 ) {
   const channel = documentChannel(room);
   if (
@@ -55,7 +59,12 @@ export function documentMessageObject(
   ) {
     throw new InvalidProtectedData();
   }
-  return `live:v2:${channel.scope}:${channel.document}:${channel.facet}:${kind}:${key}`;
+  const channelPath = `${channel.scope}:${channel.document}:${channel.facet}:${kind}:${key}`;
+  if (content != null) {
+    sized(content, 32);
+    return `live:v3:${channelPath}:${content}`;
+  }
+  return `live:v2:${channelPath}`;
 }
 
 /** Each commercial channel requires its own content key. Unknown XML requires
@@ -71,7 +80,15 @@ export async function openDocumentMessages(
   if (!account) {
     throw new InvalidProtectedData();
   }
-  documentMessageObject(room, "update", base64(randomSecret()));
+  signal.throwIfAborted();
+  const state = await required(
+    client.query("zerotrust.documents.messages.state", room, {
+      strategy: "network-only",
+    }),
+  );
+  if (unlockedAccount() !== account) throw new InvalidProtectedData();
+  const content = state.content ?? null;
+  if (content !== null) sized(content, 32);
   const commercial = room.scope.startsWith("commercial:");
   const areas = commercial
     ? [...documentChannelKeys(room)]
@@ -104,7 +121,7 @@ export async function openDocumentMessages(
     revision = "1",
   ) {
     live();
-    const binding = documentMessageObject(room, kind, key);
+    const binding = documentMessageObject(room, kind, key, content);
     let plaintext = bytes(JSON.stringify(value));
     try {
       if (plaintext.length > MAX_MESSAGE_BYTES) {
@@ -141,6 +158,7 @@ export async function openDocumentMessages(
         kind,
         key,
         authorityGeneration: context.root.generation,
+        ...(content === null ? {} : { content }),
         envelope,
       };
       for (let attempt = 0; ; attempt++) {
@@ -180,7 +198,15 @@ export async function openDocumentMessages(
   async function openChecked(message: Message) {
     live();
     const envelope = encryptedObject(message.envelope);
-    const binding = documentMessageObject(room, message.kind, message.key);
+    if (message.kind === "presence" && (message.content ?? null) !== content) {
+      throw new InvalidProtectedData();
+    }
+    const binding = documentMessageObject(
+      room,
+      message.kind,
+      message.key,
+      message.content,
+    );
     let signer;
     try {
       context.identityCertificate(envelope.author, message.authorityGeneration);
@@ -284,11 +310,12 @@ export async function openDocumentMessages(
   return {
     post,
     open,
+    content,
     async read(after = "0") {
       live();
       const page = await readDocumentMessagePage(
         client,
-        { room, after },
+        { room, after, ...(content === null ? {} : { content }) },
         live,
         account,
       );

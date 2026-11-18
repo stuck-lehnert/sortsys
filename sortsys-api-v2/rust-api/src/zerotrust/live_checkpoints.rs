@@ -25,6 +25,9 @@ pub(super) struct LiveCheckpoint {
     generation: String,
     policy_version: String,
     author: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    content: Option<String>,
     signature: String,
 }
 pub(super) fn position(value: &str) -> RpcResult<i64> {
@@ -58,29 +61,34 @@ impl LiveCheckpoint {
             facet: self.facet.clone(),
         }
         .keys()?;
-        if self.format != "sortsys-live-checkpoint-v2"
-            || position(&self.covered)? > position(&self.sequence)?
-        {
+        if position(&self.covered)? > position(&self.sequence)? {
             return Err(invalid());
         }
         revision(&self.generation)?;
         revision(&self.policy_version)?;
         sized::<32>(&self.target)?;
-        Ok(frame(
-            "sortsys/live-checkpoint/v2",
-            &[
-                &self.tenant,
-                &self.scope,
-                &self.document,
-                &self.facet,
-                &self.sequence,
-                &self.covered,
-                &self.target,
-                &self.generation,
-                &self.policy_version,
-                &self.author,
-            ],
-        ))
+        let mut fields: Vec<&str> = vec![
+            &self.tenant,
+            &self.scope,
+            &self.document,
+            &self.facet,
+            &self.sequence,
+            &self.covered,
+            &self.target,
+            &self.generation,
+            &self.policy_version,
+            &self.author,
+        ];
+        let protocol = match (self.format.as_str(), self.content.as_deref()) {
+            ("sortsys-live-checkpoint-v2", None) => "sortsys/live-checkpoint/v2",
+            ("sortsys-live-checkpoint-v3", Some(content)) => {
+                sized::<32>(content)?;
+                fields.push(content);
+                "sortsys/live-checkpoint/v3"
+            }
+            _ => return Err(invalid()),
+        };
+        Ok(frame(protocol, &fields))
     }
 }
 
@@ -88,6 +96,7 @@ impl LiveCheckpoint {
 pub(super) struct LiveState {
     current: String,
     checkpoint: Option<LiveCheckpoint>,
+    content: Option<String>,
 }
 
 struct Target {

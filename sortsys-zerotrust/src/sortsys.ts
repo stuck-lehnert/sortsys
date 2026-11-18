@@ -48,6 +48,7 @@ export {
   liveSequence,
   liveCheckpoint,
   liveCheckpointFrame,
+  livePosition,
   signLiveCheckpoint,
   verifyLiveCheckpoint,
   type LiveCheckpoint,

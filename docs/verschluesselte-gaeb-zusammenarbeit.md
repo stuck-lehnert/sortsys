@@ -45,6 +45,14 @@ aufgeteilt. Ein Berechtigungs- oder Versionsfehler verwirft dagegen den gesamten
 betroffenen Abruf. Die Warteschlangen sind nach Konto getrennt, damit eine alte,
 noch hängende Verbindung nach einem Kontowechsel keine neue blockiert.
 
+Eine Rücksicherung erhält einen eigenen, signierten Fachstand. Neue
+Live-Nachrichten und Speicherbelege enthalten dessen Fingerabdruck in ihrer
+Signatur. Ein vor dem Wechsel geöffnetes Dokument behält seinen bisherigen
+Fachstand auch bei einer unterbrochenen Verbindung. Die API weist verspätete
+Schreibvorgänge und Abrufe mit einem alten Lesestand zurück. Ein neu geöffneter
+Editor liest die übernommenen Nachrichten weiter. Anwesenheitsmeldungen aus dem
+alten Fachstand erscheinen dort nicht.
+
 Vorbereitete verschlüsselte Dokumentteile lösen noch kein Neuladen der
 Vorgangsübersicht aus. Erst der veröffentlichte Dokumentkopf macht sie zum neuen
 Speicherstand. Treffen während einer laufenden Listenabfrage mehrere Hinweise

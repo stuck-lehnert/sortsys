@@ -7,8 +7,10 @@ import {
   InvalidProtectedData,
   liveCheckpoint,
   liveCheckpointFrame,
+  livePosition,
   liveSequence,
   signLiveCheckpoint,
+  sized,
   type LiveCheckpoint,
   type DocumentChannel,
   type DocumentFacet,
@@ -34,7 +36,7 @@ export type LivePositions = Partial<Record<DocumentFacet, string>>;
 export function livePositions(input: unknown): LivePositions {
   const value = partialAddressRecord(input, [...DOCUMENT_FACETS]);
   for (const sequence of Object.values(value)) {
-    liveSequence(sequence);
+    livePosition(sequence);
   }
   return value as LivePositions;
 }
@@ -164,14 +166,18 @@ async function prepareWithContext(
   );
   live();
   liveSequence(state.current);
+  const content = state.content ?? null;
+  if (content !== null) sized(content, 32);
+  const position =
+    options.sequence === undefined ? undefined : livePosition(options.sequence);
   let retainPrevious = false;
-  if (options.sequence !== undefined) {
-    liveSequence(options.sequence);
-    if (options.sequence !== state.current) {
+  if (position !== undefined) {
+    if (position.content !== content) throw new ProtectedWriteConflict();
+    if (position.sequence !== state.current) {
       if (
         options.retainUnchanged &&
         target === previousTarget &&
-        BigInt(options.sequence) < BigInt(state.current)
+        BigInt(position.sequence) < BigInt(state.current)
       ) {
         retainPrevious = true;
       } else {
@@ -231,8 +237,8 @@ async function prepareWithContext(
     // A second editor need not sign and confirm the same state again.
     return null;
   }
-  if (options.sequence !== undefined) {
-    covered = options.sequence;
+  if (position !== undefined) {
+    covered = position.sequence;
   } else if (!options.preserve && covered !== state.current) {
     throw new ProtectedWriteConflict();
   }
@@ -253,6 +259,7 @@ async function prepareWithContext(
       generation: history.current.generation,
       policyVersion: policy.version,
       author: `user:${session.user.id}`,
+      ...(content === null ? {} : { content }),
     },
     account.identity.signingKey.privateKey,
   );
@@ -267,7 +274,7 @@ async function prepareWithContext(
         }),
       );
       live();
-      if (!current.checkpoint) {
+      if (!current.checkpoint || (current.content ?? null) !== content) {
         return false;
       }
       const checked = await checkReceipt(current.checkpoint);

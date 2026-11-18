@@ -797,7 +797,10 @@ function openCollection(
   function messageContext(binding: string, generation: string) {
     identifier(binding);
     checkedRevision(generation);
-    if (!binding.startsWith(`live:v2:${collection.scope}:`)) {
+    if (
+      !binding.startsWith(`live:v2:${collection.scope}:`) &&
+      !binding.startsWith(`live:v3:${collection.scope}:`)
+    ) {
       throw new InvalidProtectedData();
     }
     return frame("sortsys/document-message-layer/v1", [

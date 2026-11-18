@@ -132,7 +132,7 @@ export type Level = "error" | "warning";
 
 export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, includeOpenings?: boolean, headOnly?: boolean, };
 
-export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, signature: string, };
+export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, content?: string, signature: string, };
 
 export type LiveKind = "chat" | "document_import";
 
@@ -146,7 +146,7 @@ export type MemberChange = { tenant: string, generation: string, author: string,
 
 export type MemberCreation = { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
 
-export type Message = { sequence: string, kind: Kind, key: string, authorityGeneration: string, envelope: EncryptedObject<Facet>, };
+export type Message = { sequence: string, kind: Kind, key: string, authorityGeneration: string, content?: string, envelope: EncryptedObject<Facet>, };
 
 export type MigrationOrigin = { generation: string, signature: string, history?: HistoryOrigin, };
 
@@ -178,7 +178,7 @@ export type ProposalExecutionResult = { path: string, output: JsonValue, };
 
 export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "deepseek" | "custom";
 
-export type Read = { room: Room, after: string, };
+export type Read = { room: Room, after: string, content?: string, };
 
 export type RecipientAccess = { domain: string, access: ResourceAccessState, recipientKey: RecipientKey | null, };
 
@@ -360,7 +360,7 @@ export type QueryInputs = {
   "zerotrust.documents.get": { id: string, scope?: string, version?: string, };
   "zerotrust.documents.history": { scope: string, id: string, before: string, };
   "zerotrust.documents.messages.pages": { selections: Array<Read>, };
-  "zerotrust.documents.messages.read": { room: Room, after: string, };
+  "zerotrust.documents.messages.read": { room: Room, after: string, content?: string, };
   "zerotrust.documents.messages.state": { scope: string, document: string, facet: string, };
   "zerotrust.domains.get": { domain: string, generation: string, };
   "zerotrust.domains.list": void;
@@ -510,7 +510,7 @@ export type QueryOutputs = {
   "zerotrust.documents.history": Array<{ format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, }>;
   "zerotrust.documents.messages.pages": Array<{ messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, }>;
   "zerotrust.documents.messages.read": { messages: Array<Message>, presence: Array<Message>, after: string, more: boolean, };
-  "zerotrust.documents.messages.state": { current: string, checkpoint: LiveCheckpoint | null, };
+  "zerotrust.documents.messages.state": { current: string, checkpoint: LiveCheckpoint | null, content: string | null, };
   "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.list": Array<{ id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, }>;
   "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
@@ -721,7 +721,7 @@ export type MutationInputs = {
   "zerotrust.deliveryNotes.adopt": { context: string, generation: string, policyVersion: string, allocations: Array<DeliveryAllocation>, proof: string, };
   "zerotrust.deliveryNotes.allocate": { projectId: Id, requestId: string, generation: string, policyVersion: string, proof: string, };
   "zerotrust.deliveryNotes.initialize": { generation: string, policyVersion: string, proof: string, };
-  "zerotrust.documents.messages.post": { room: Room, kind: Kind, key: string, authorityGeneration: string, envelope: EncryptedObject<Facet>, };
+  "zerotrust.documents.messages.post": { room: Room, kind: Kind, key: string, authorityGeneration: string, content?: string, envelope: EncryptedObject<Facet>, };
   "zerotrust.domains.put": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.putMany": { domains: Array<DomainDefinition>, };
   "zerotrust.events.open": void;

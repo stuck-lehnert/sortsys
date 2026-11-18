@@ -290,16 +290,18 @@ async fn list_object_pages(
 async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResult<ObjectPage> {
     let area = registry::domain(&mut context.transaction, &input.domain).await?;
     require_read(&context.security, &area)?;
+    let content_number = super::super::content::content_number(&mut context.transaction).await?;
+    let sequence = area.content_sequence(content_number)?;
     if input
         .snapshot
         .as_ref()
-        .is_some_and(|snapshot| snapshot != &area.sequence)
+        .is_some_and(|snapshot| snapshot != &sequence)
     {
         return Err(conflict());
     }
     if input.head_only == Some(true) {
         return Ok(ObjectPage {
-            snapshot: area.sequence,
+            snapshot: sequence,
             key_generation: area.generation,
             objects: Vec::new(),
             recipient_access: Vec::new(),
@@ -409,7 +411,7 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     let recipient_access =
         super::super::object_shares::states(&mut context.transaction, &objects).await?;
     Ok(ObjectPage {
-        snapshot: area.sequence,
+        snapshot: sequence,
         key_generation: area.generation,
         objects,
         after,
@@ -469,6 +471,7 @@ async fn commit_batch_inner(
     } else {
         metadata_context_for_domains(service, request, Some(&domains)).await?
     };
+    let content_number = super::super::content::content_number(&mut context.transaction).await?;
     if preuploaded {
         let mut records = Vec::with_capacity(input.objects.len() * 4);
         for packet in &input.objects {
@@ -552,7 +555,7 @@ async fn commit_batch_inner(
         for head in heads {
             let area = areas.get(&head.domain).ok_or_else(invalid)?;
             require_read(&context.security, area)?;
-            stale |= area.sequence != head.sequence;
+            stale |= area.content_sequence(content_number)? != head.sequence;
         }
     }
     if stale {
@@ -684,7 +687,7 @@ async fn commit_batch_inner(
             "object",
             &serde_json::json!({
                 "domain": domain,
-                "sequence": area.sequence,
+                "sequence": area.content_sequence(content_number)?,
                 "staged": !visible_domains.contains(domain),
             }),
         )?;
@@ -696,7 +699,7 @@ async fn commit_batch_inner(
             let area = areas.get(&domain).ok_or_else(invalid)?;
             Ok(DomainHead {
                 domain,
-                sequence: area.sequence.clone(),
+                sequence: area.content_sequence(content_number)?,
             })
         })
         .collect::<RpcResult<Vec<_>>>()?;

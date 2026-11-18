@@ -30,6 +30,7 @@ pub(in crate::zerotrust) async fn state(
     Ok(LiveState {
         current: channel.current,
         checkpoint,
+        content: super::super::content::fingerprint(transaction).await?,
     })
 }
 
@@ -106,6 +107,9 @@ pub(in crate::zerotrust) async fn prepare(
             }
             return Err(conflict());
         };
+        if proof.content != current.content {
+            return Err(conflict());
+        }
         messages::authorize(context, &target.room, false).await?;
         let guard = &context.security;
         if target.room.keys()?.into_iter().any(|facet| {

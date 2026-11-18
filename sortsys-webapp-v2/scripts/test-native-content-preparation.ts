@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Client } from "@sortsys/v2-client";
+import type { Client, MutateInput } from "@sortsys/v2-client";
+import { RpcClientError } from "@sortsys/v2-client";
 import {
   base64,
+  contentEpochFingerprint,
+  encryptedObject,
   randomSecret,
   signContentEpoch,
   sized,
@@ -12,7 +15,138 @@ import { trustedHistory } from "../app/lib/crypto/session";
 import { openAuthority } from "../app/lib/crypto/setup";
 import type { createBusinessClient } from "../app/lib/data/businessClient";
 import type { EncryptedChange } from "../app/lib/data/events";
+import { openDocumentMessages } from "../app/lib/data/documentMessages";
+import { prepareLivePublication } from "../app/lib/data/liveCheckpoints";
+import { fileObject } from "../app/lib/data/projectFileData";
 import { required } from "../app/lib/data/protectedObjects";
+import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
+
+async function holdEditorPackets(
+  client: ReturnType<typeof createBusinessClient>,
+  project: string,
+) {
+  const file = await client.files.upload({
+    projectId: project,
+    name: "Werkplanung.txt",
+    mime: "text/plain",
+    blob: new Blob(["Vertraulicher Dateiinhalt"]),
+  });
+  const signal = new AbortController().signal;
+  const room = {
+    scope: `project:${project}`,
+    document: file,
+    facet: "attachment",
+  } as const;
+  const old = await openDocumentMessages(client, room, signal);
+  await old.post("update", { text: "Vor dem Sicherungsstand aufgenommen" });
+  await old.post("presence", { name: "Alter Editor" });
+  const target = await stockEnvelopeHash(
+    encryptedObject(
+      await required(
+        client.query(
+          "zerotrust.objects.get",
+          { id: fileObject(project, file) },
+          { strategy: "network-only" },
+        ),
+      ),
+    ),
+  );
+  const original = await old.read();
+  assert.equal(original.after, "1");
+  assert.equal(original.presence.length, 1);
+  const receipt = await prepareLivePublication(
+    client,
+    room,
+    target,
+    target,
+    signal,
+    { sequence: original.after },
+  );
+  assert.ok(receipt);
+
+  type PostedMessage = MutateInput<"zerotrust.documents.messages.post">;
+  const held: PostedMessage[] = [];
+  const deferred = new Proxy(client, {
+    get(source, property, receiver) {
+      if (property !== "mutate") return Reflect.get(source, property, receiver);
+      return async (path: string, input: PostedMessage) => {
+        assert.equal(path, "zerotrust.documents.messages.post");
+        held.push(input);
+        return [{ success: true }, null];
+      };
+    },
+  });
+  const queued = await openDocumentMessages(deferred, room, signal);
+  await queued.post("update", { text: "Vor dem Wechsel zurückgehalten" });
+  await queued.post("presence", { name: "Verspätete Anwesenheit" });
+  queued.close();
+
+  return async (content: string) => {
+    try {
+      for (const packet of held) {
+        for (const submitted of [packet, { ...packet, content }]) {
+          const [data, error] = await client.mutate(
+            "zerotrust.documents.messages.post",
+            submitted,
+          );
+          assert.equal(data, null);
+          assert.ok(error instanceof RpcClientError);
+          assert.equal(error.code, "CONFLICT");
+        }
+      }
+      await assert.rejects(() => old.read(), { code: "CONFLICT" });
+      const [, staleReceipt] = await client.mutate("zerotrust.objects.batch", {
+        objects: [],
+        liveCheckpoints: [receipt.checkpoint],
+      });
+      assert.ok(staleReceipt instanceof RpcClientError);
+      assert.equal(staleReceipt.code, "CONFLICT");
+      await assert.rejects(() =>
+        prepareLivePublication(client, room, target, target, signal, {
+          sequence: original.after,
+        }),
+      );
+      const fresh = await openDocumentMessages(client, room, signal);
+      try {
+        assert.equal(fresh.content, content);
+        const restored = await fresh.read();
+        assert.equal(restored.after, original.after);
+        assert.deepEqual(restored.presence, []);
+        assert.deepEqual((await fresh.open(restored.messages[0]!)).value, {
+          text: "Vor dem Sicherungsstand aufgenommen",
+        });
+        await fresh.post("update", { text: "Im neuen Fachstand geschrieben" });
+        const page = await fresh.read(restored.after);
+        assert.equal(page.after, "2");
+        assert.equal(page.messages[0]?.content, content);
+        assert.deepEqual((await fresh.open(page.messages[0]!)).value, {
+          text: "Im neuen Fachstand geschrieben",
+        });
+        const next = await prepareLivePublication(
+          client,
+          room,
+          target,
+          target,
+          signal,
+          { sequence: `${content}:${page.after}` },
+        );
+        assert.equal(next?.checkpoint.content, content);
+        assert.ok(next);
+        await required(
+          client.mutate("zerotrust.objects.batch", {
+            objects: [],
+            liveCheckpoints: [next.checkpoint],
+          }),
+        );
+        assert.equal(await next.verify(), true);
+      } finally {
+        fresh.close();
+      }
+    } finally {
+      old.close();
+    }
+  };
+}
 
 export async function exerciseContentPreparation(
   owner: Client,
@@ -27,6 +161,7 @@ export async function exerciseContentPreparation(
   const project = await required(
     owner.mutate("projects.create", { title: originalTitle }),
   );
+  const checkEditors = await holdEditorPackets(peer, project.id);
   const snapshot = await required(
     operator.mutate("admin.storage.snapshots.create", {
       tenant,
@@ -90,6 +225,18 @@ export async function exerciseContentPreparation(
     ),
   );
   assert.equal(current.title, currentTitle);
+  const objectSelection = {
+    domain: `project:${project.id}:master-data`,
+    prefix: `project:${project.id}`,
+    after: null,
+    snapshot: null,
+    includeOpenings: false,
+  };
+  const beforeObjects = await required(
+    peer.query("zerotrust.objects.list", objectSelection, {
+      strategy: "network-only",
+    }),
+  );
   const status = await required(
     peer.query("zerotrust.status", undefined, { strategy: "network-only" }),
   );
@@ -152,6 +299,28 @@ export async function exerciseContentPreparation(
   }
   assert.equal(editor.aborted, true);
   assert.equal(peer.context.context().aborted, false);
+  await checkEditors(await contentEpochFingerprint(approval));
+  const [samePage, stalePage] = await peer.query(
+    "zerotrust.objects.list",
+    {
+      ...objectSelection,
+      snapshot: beforeObjects.snapshot,
+      headOnly: true,
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(samePage, null);
+  assert.ok(stalePage instanceof RpcClientError);
+  assert.equal(stalePage.code, "CONFLICT");
+  const afterObjects = await required(
+    peer.query("zerotrust.objects.list", objectSelection, {
+      strategy: "network-only",
+    }),
+  );
+  assert.equal(
+    BigInt(afterObjects.snapshot),
+    BigInt(beforeObjects.snapshot) + 1n,
+  );
   const restored = await required(
     peer.query(
       "projects.get",

@@ -28,6 +28,8 @@ struct StoredMessage {
     kind: Kind,
     key: String,
     authority_generation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
     signature: String,
     reference: String,
 }
@@ -66,7 +68,7 @@ fn message_key(
     kind: Kind,
     key_value: &str,
 ) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
-    message_object(room, kind, key_value)?;
+    message_object(room, kind, key_value, None)?;
     Ok(key(
         "live-message-receipts",
         &format!("{}:{}:{key_value}", room_key(room)?, kind.name()),
@@ -197,13 +199,20 @@ async fn post_attempt(
     request: &RequestContext,
     input: &Post,
 ) -> RpcResult<bool> {
-    let object = message_object(&input.room, input.kind, &input.key)?;
+    let object = message_object(
+        &input.room,
+        input.kind,
+        &input.key,
+        input.content.as_deref(),
+    )?;
     if input.envelope.ciphertext.len() > 192 * 1024 {
         return Err(invalid());
     }
     let mut context = context(service, request, &input.room).await?;
     let (facet, generation) =
         authorize(&mut context, &input.room, input.kind != Kind::Presence).await?;
+    super::super::content::require_current(&mut context.transaction, input.content.as_deref())
+        .await?;
     let envelope = &input.envelope;
     let guard = &context.security;
     envelope.verify(&guard.signing_key)?;
@@ -226,7 +235,9 @@ async fn post_attempt(
             &format!("p_{}", input.key),
         );
         let previous: Option<Presence> = context.transaction.read(record.clone()).await?;
-        if let Some(previous) = previous {
+        if let Some(previous) = previous
+            && previous.message.content == input.content
+        {
             if previous.subject != guard.subject || previous.session != context.auth.session.id {
                 return Err(conflict());
             }
@@ -256,6 +267,7 @@ async fn post_attempt(
                 kind: Kind::Presence,
                 key: input.key.clone(),
                 authority_generation: input.authority_generation.clone(),
+                content: input.content.clone(),
                 envelope: envelope.clone(),
             },
         };
@@ -289,6 +301,7 @@ async fn post_attempt(
             kind: input.kind,
             key: input.key.clone(),
             authority_generation: input.authority_generation.clone(),
+            content: input.content.clone(),
             signature: envelope.signature.clone(),
             reference,
         };
@@ -375,6 +388,8 @@ async fn read_pages(
 async fn read_page(context: &mut MetadataContext, input: Read) -> RpcResult<Page> {
     let after = super::super::live_checkpoints::position(&input.after)?;
     authorize(context, &input.room, false).await?;
+    super::super::content::require_current(&mut context.transaction, input.content.as_deref())
+        .await?;
     let page = context
         .transaction
         .scan_with_limit::<StoredMessage>(
@@ -393,13 +408,24 @@ async fn read_page(context: &mut MetadataContext, input: Read) -> RpcResult<Page
         {
             return Err(invalid());
         }
+        let envelope = persistence::read(&context.repository, &stored.reference).await?;
+        let object = message_object(
+            &input.room,
+            stored.kind,
+            &stored.key,
+            stored.content.as_deref(),
+        )?;
+        if envelope.object != object || envelope.signature != stored.signature {
+            return Err(invalid());
+        }
         after = stored.sequence.clone();
         messages.push(Message {
             sequence: stored.sequence,
             kind: stored.kind,
             key: stored.key,
             authority_generation: stored.authority_generation,
-            envelope: persistence::read(&context.repository, &stored.reference).await?,
+            content: stored.content,
+            envelope,
         });
     }
     let now = Utc::now();
@@ -412,7 +438,7 @@ async fn read_page(context: &mut MetadataContext, input: Read) -> RpcResult<Page
             .await?;
         for row in page.records {
             let stored = row.value.ok_or_else(invalid)?;
-            if stored.expires_at > now {
+            if stored.expires_at > now && stored.message.content == input.content {
                 presence.push(stored.message);
                 if presence.len() == 32 {
                     break;

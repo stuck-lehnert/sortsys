@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { base64 } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { COMMERCIAL_FACETS, commercialCollection } from "./commercialAreas";
 import {
@@ -225,5 +226,41 @@ test("live packets bind room, purpose, author and ciphertext before exposing the
     }
   } finally {
     session.messages.close();
+  }
+});
+
+test("restored live messages bind both encryption layers to the active content", async () => {
+  const tenant = await protectedTenant([commercialCollection("4", "scope")]);
+  const room = { scope: "commercial:4", document: "5", facet: "scope" };
+  const query = tenant.client.query;
+  const content = base64(crypto.getRandomValues(new Uint8Array(32)));
+  tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.documents.messages.state")
+      return [{ current: "0", checkpoint: null, content }, null];
+    return query(path, input, options);
+  };
+  let message;
+  tenant.client.mutate = async (_path, packet) => {
+    message = { ...packet, sequence: "1" };
+    return [{ success: true }, null];
+  };
+  const session = await openDocumentMessages(
+    tenant.client,
+    room,
+    new AbortController().signal,
+  );
+  try {
+    await session.post("update", { text: "Aktuelle Bearbeitung" });
+    expect(message.content).toBe(content);
+    expect(message.envelope.object.endsWith(`:${content}`)).toBe(true);
+    expect((await session.open(message)).value.text).toBe(
+      "Aktuelle Bearbeitung",
+    );
+    const other = base64(crypto.getRandomValues(new Uint8Array(32)));
+    await expect(
+      session.open({ ...message, content: other }),
+    ).rejects.toThrow();
+  } finally {
+    session.close();
   }
 });

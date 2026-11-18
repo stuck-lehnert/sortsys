@@ -632,6 +632,7 @@ async fn metadata_delete(
     if input.kind != StockKind::Price {
         domains.insert(StockKind::Price.domain());
     }
+    let content_number = super::content::content_number(&mut context.transaction).await?;
     for domain in domains {
         if let Some(mut area) = context
             .transaction
@@ -648,7 +649,7 @@ async fn metadata_delete(
                 .await?;
             context.transaction.notify(
                 "object",
-                &serde_json::json!({"domain": domain, "sequence": area.sequence}),
+                &serde_json::json!({"domain": domain, "sequence": area.content_sequence(content_number)?}),
             )?;
         }
     }

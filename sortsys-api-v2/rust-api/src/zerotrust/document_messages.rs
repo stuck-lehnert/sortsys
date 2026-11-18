@@ -2,7 +2,7 @@
 //! interprets field names, Yjs updates, selections or participant display names.
 pub(super) mod persistence;
 use super::{
-    crypto::{identifier, invalid, revision},
+    crypto::{identifier, invalid, revision, sized},
     documents::DocumentHead,
     objects::conflict,
     wire::{Action, EncryptedObject, Facet},
@@ -94,6 +94,9 @@ struct Post {
     kind: Kind,
     key: String,
     authority_generation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    content: Option<String>,
     envelope: EncryptedObject,
 }
 #[derive(Deserialize, TS)]
@@ -101,6 +104,9 @@ struct Post {
 struct Read {
     room: Room,
     after: String,
+    #[serde(default)]
+    #[ts(optional)]
+    content: Option<String>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -127,6 +133,9 @@ struct Message {
     kind: Kind,
     key: String,
     authority_generation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    content: Option<String>,
     envelope: EncryptedObject,
 }
 #[derive(Serialize, TS)]
@@ -143,7 +152,7 @@ fn checked_id(value: &str) -> RpcResult<()> {
     }
     Ok(())
 }
-fn message_object(room: &Room, kind: Kind, key: &str) -> RpcResult<String> {
+fn message_object(room: &Room, kind: Kind, key: &str, content: Option<&str>) -> RpcResult<String> {
     room.keys()?;
     if key.len() != 43
         || !key
@@ -152,13 +161,19 @@ fn message_object(room: &Room, kind: Kind, key: &str) -> RpcResult<String> {
     {
         return Err(invalid());
     }
-    let object = format!(
-        "live:v2:{}:{}:{}:{}:{key}",
+    let channel = format!(
+        "{}:{}:{}:{}:{key}",
         room.scope,
         room.document,
         room.facet,
         kind.name()
     );
+    let object = if let Some(content) = content {
+        sized::<32>(content)?;
+        format!("live:v3:{channel}:{content}")
+    } else {
+        format!("live:v2:{channel}")
+    };
     identifier(&object)?;
     Ok(object)
 }
@@ -184,6 +199,7 @@ mod batch_tests {
                         facet: "scope".into(),
                     },
                     after: index.to_string(),
+                    content: None,
                 })
                 .collect(),
         }

@@ -11,7 +11,7 @@ import { documentId } from "./documents";
 import { documentChannel, type DocumentChannel } from "./documentChannels";
 
 export type LiveCheckpoint = {
-  format: "sortsys-live-checkpoint-v2";
+  format: "sortsys-live-checkpoint-v2" | "sortsys-live-checkpoint-v3";
   tenant: string;
   scope: string;
   document: string;
@@ -22,6 +22,7 @@ export type LiveCheckpoint = {
   generation: string;
   policyVersion: string;
   author: string;
+  content?: string;
   signature: string;
 };
 
@@ -34,8 +35,26 @@ export function liveSequence(value: unknown): asserts value is string {
   }
 }
 
+/** A cursor from a restored view also identifies the view its editor read. */
+export function livePosition(input: unknown): {
+  sequence: string;
+  content: string | null;
+} {
+  if (typeof input !== "string") throw new InvalidProtectedData();
+  const separator = input.indexOf(":");
+  if (separator === -1) {
+    liveSequence(input);
+    return { sequence: input, content: null };
+  }
+  const content = input.slice(0, separator);
+  const sequence = input.slice(separator + 1);
+  sized(content, 32);
+  liveSequence(sequence);
+  return { sequence, content };
+}
+
 export function liveCheckpoint(input: unknown): LiveCheckpoint {
-  const value = record(input, [
+  const fields = [
     "format",
     "tenant",
     "scope",
@@ -48,8 +67,18 @@ export function liveCheckpoint(input: unknown): LiveCheckpoint {
     "policyVersion",
     "author",
     "signature",
-  ]);
-  if (value.format !== "sortsys-live-checkpoint-v2") {
+  ];
+  if (input && typeof input === "object" && Object.hasOwn(input, "content")) {
+    fields.push("content");
+  }
+  const value = record(input, fields);
+  if (value.format === "sortsys-live-checkpoint-v3") {
+    if (typeof value.content !== "string") throw new InvalidProtectedData();
+    sized(value.content, 32);
+  } else if (
+    value.format !== "sortsys-live-checkpoint-v2" ||
+    value.content !== undefined
+  ) {
     throw new InvalidProtectedData();
   }
   identifier(value.tenant);
@@ -81,7 +110,7 @@ export function liveCheckpointFrame(
   input: Omit<LiveCheckpoint, "signature">,
 ): Uint8Array<ArrayBuffer> {
   const value = liveCheckpoint({ ...input, signature: "" });
-  return frame("sortsys/live-checkpoint/v2", [
+  const fields = [
     value.tenant,
     value.scope,
     value.document,
@@ -92,14 +121,23 @@ export function liveCheckpointFrame(
     value.generation,
     value.policyVersion,
     value.author,
-  ]);
+  ];
+  if (value.content !== undefined) {
+    fields.push(value.content);
+    return frame("sortsys/live-checkpoint/v3", fields);
+  }
+  return frame("sortsys/live-checkpoint/v2", fields);
 }
 
 export async function signLiveCheckpoint(
   input: Omit<LiveCheckpoint, "format" | "signature">,
   key: CryptoKey,
 ): Promise<LiveCheckpoint> {
-  const value = { ...input, format: "sortsys-live-checkpoint-v2" as const };
+  const format =
+    input.content === undefined
+      ? "sortsys-live-checkpoint-v2"
+      : "sortsys-live-checkpoint-v3";
+  const value: Omit<LiveCheckpoint, "signature"> = { ...input, format };
   return liveCheckpoint({
     ...value,
     signature: await sign(key, liveCheckpointFrame(value)),

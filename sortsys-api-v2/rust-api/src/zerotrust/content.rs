@@ -322,3 +322,29 @@ pub(super) async fn verify_view(
     )?;
     Ok(())
 }
+
+pub(super) async fn fingerprint(transaction: &mut Transaction) -> RpcResult<Option<String>> {
+    Ok(transaction
+        .content_epoch()
+        .await?
+        .as_ref()
+        .map(ContentEpoch::fingerprint)
+        .transpose()?)
+}
+
+pub(super) async fn require_current(
+    transaction: &mut Transaction,
+    expected: Option<&str>,
+) -> RpcResult<()> {
+    if fingerprint(transaction).await?.as_deref() != expected {
+        return Err(super::objects::conflict());
+    }
+    Ok(())
+}
+
+pub(super) async fn content_number(transaction: &mut Transaction) -> RpcResult<i64> {
+    match transaction.content_epoch().await? {
+        Some(head) => revision(&head.number),
+        None => Ok(0),
+    }
+}

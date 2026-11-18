@@ -34,6 +34,7 @@ import {
   type DocumentRoom,
 } from "./documentMessageHints";
 import {
+  DocumentContentChanged,
   RejectedDocumentMessage,
   UnknownDocumentMessageAuthor,
   openDocumentMessages,
@@ -173,6 +174,14 @@ export function connectProtectedGaebLive(
   const participants = new Map<GaebContentFacet, Collaborator[]>();
   const presenceKey = base64(randomSecret());
   let selectedFacet: GaebContentFacet | undefined;
+  let content: string | null | undefined;
+
+  function bindContent(next: string | null) {
+    if (content !== undefined && content !== next) {
+      throw new DocumentContentChanged();
+    }
+    content = next;
+  }
 
   function reportStatus() {
     if ([...statuses.values()].includes("offline")) {
@@ -199,6 +208,7 @@ export function connectProtectedGaebLive(
       ...options,
       room: { ...options.room, facet },
       presenceKey,
+      bindContent,
       onStatus(status) {
         statuses.set(facet, status);
         reportStatus();
@@ -263,6 +273,7 @@ function connectChannel(
   client: Client,
   options: Omit<ProtectedGaebLiveOptions, "room"> & {
     room: DocumentChannel;
+    bindContent(content: string | null): void;
     presenceKey: string;
   },
 ) {
@@ -274,6 +285,7 @@ function connectChannel(
   type Transport = Awaited<ReturnType<typeof openDocumentMessages>>;
   const presenceKey = options.presenceKey;
   let transport: Transport | undefined;
+  let content: string | null | undefined;
   let opening: Promise<Transport> | undefined;
   let booting: Promise<void> | undefined;
   let connected = false;
@@ -340,6 +352,8 @@ function connectChannel(
           if (accessEpoch !== expectedAccessEpoch) {
             throw new MessageProofUnavailable(new StaleMessageProof());
           }
+          options.bindContent(value.content);
+          content = value.content;
           transport = value;
           return value;
         } catch (error) {
@@ -356,12 +370,17 @@ function connectChannel(
     transport?.close();
     transport = undefined;
   }
-  function failed(_error: unknown) {
+  function failed(error: unknown) {
     if (stopped) {
       return;
     }
     if (options.signal.aborted || unlockedAccount() !== account) {
       close();
+      return;
+    }
+    if (error instanceof DocumentContentChanged) {
+      close();
+      options.onStatus("offline");
       return;
     }
     connected = false;
@@ -816,7 +835,7 @@ function connectChannel(
     async flush() {
       try {
         await synchronize();
-        return after;
+        return content == null ? after : `${content}:${after}`;
       } catch (error) {
         failed(error);
         throw error;
