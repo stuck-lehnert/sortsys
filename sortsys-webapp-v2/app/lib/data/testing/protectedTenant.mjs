@@ -299,10 +299,14 @@ export async function protectedTenant(
                 Object.assign(new Error("Missing"), { code: "NOT_FOUND" }),
               ];
         case "zerotrust.fileChunks.get":
-        case "zerotrust.fileChunks.getMany": {
-          const ids = path.endsWith(".getMany") ? input.ids : [input.id];
-          const saved = ids.map((id) => chunks.get(id));
-          if (saved.some((chunk) => !chunk || chunk.domain !== input.domain)) {
+        case "zerotrust.fileChunks.getMany":
+        case "zerotrust.fileChunks.findMany": {
+          const ids = input.ids ?? [input.id];
+          const saved = ids.map((id) => {
+            const chunk = chunks.get(id);
+            return chunk?.domain === input.domain ? chunk.envelope : null;
+          });
+          if (!path.endsWith(".findMany") && saved.includes(null)) {
             return [
               null,
               new RpcClientError({
@@ -312,10 +316,7 @@ export async function protectedTenant(
               }),
             ];
           }
-          const envelopes = saved.map((chunk) =>
-            structuredClone(chunk.envelope),
-          );
-          return [path.endsWith(".getMany") ? envelopes : envelopes[0], null];
+          return [structuredClone(input.ids ? saved : saved[0]), null];
         }
         case "zerotrust.objects.list": {
           const domain = domains.get(input.domain);
@@ -379,13 +380,21 @@ export async function protectedTenant(
     },
     async mutate(path, input) {
       calls.push({ path, input: structuredClone(input) });
-      if (path === "zerotrust.fileChunks.put") {
-        await state.beforeChunk();
-        const previous = chunks.get(input.envelope.object);
-        if (previous && JSON.stringify(previous) !== JSON.stringify(input))
-          return conflict();
-        if (!state.discardChunk)
-          chunks.set(input.envelope.object, structuredClone(input));
+      if (path === "zerotrust.fileChunks.putMany") {
+        await state.beforeChunk(input.envelopes);
+        const records = input.envelopes.map((envelope) => ({
+          domain: input.domain,
+          envelope,
+        }));
+        for (const record of records) {
+          const previous = chunks.get(record.envelope.object);
+          if (previous && JSON.stringify(previous) !== JSON.stringify(record))
+            return conflict();
+        }
+        if (!state.discardChunk) {
+          for (const record of records)
+            chunks.set(record.envelope.object, structuredClone(record));
+        }
         if (state.loseChunkReply)
           return [null, new Error("Lost file block acknowledgement")];
         return [{ success: true }, null];

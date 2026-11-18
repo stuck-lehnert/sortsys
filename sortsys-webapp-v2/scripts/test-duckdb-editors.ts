@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import superjson from "superjson";
-import { createClient } from "@sortsys/v2-client";
+import { createClient, RpcClientError } from "@sortsys/v2-client";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import { acquireDataRuntime } from "../app/lib/data/runtime/session";
-import { required } from "../app/lib/data/protectedObjects";
+import {
+  protectedCollection,
+  required,
+} from "../app/lib/data/protectedObjects";
+import { base64 } from "@sortsys/zerotrust/sortsys";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
 import { changeProjectAccess } from "../app/lib/crypto/permissions";
 import {
@@ -30,6 +34,7 @@ import {
 } from "../app/lib/data/fileContent";
 import {
   chunkCollection,
+  contentId,
   FILE_CHUNK_BYTES,
 } from "../app/lib/data/projectFileData";
 
@@ -63,7 +68,11 @@ globalThis.fetch = new Proxy(fetchOriginal, {
       targetUrl.pathname
         .slice(1)
         .split(",")
-        .includes("zerotrust.fileChunks.getMany")
+        .some(
+          (path) =>
+            path === "zerotrust.fileChunks.getMany" ||
+            path === "zerotrust.fileChunks.findMany",
+        )
     ) {
       const peerUrl = new URL(
         targetUrl.pathname + targetUrl.search,
@@ -276,24 +285,31 @@ async function checkBatchedFileContent(projectId: string) {
   );
   assert.equal(manifest.parts.length, 9);
 
-  function readBatches(start: number) {
+  function chunkRequests<T>(start: number, procedure: string): T[] {
     return sent.slice(start).flatMap((request) => {
       const url = new URL(request.url);
       const paths = url.pathname.slice(1).split(",");
-      const index = paths.indexOf("zerotrust.fileChunks.getMany");
+      const index = paths.indexOf(`zerotrust.fileChunks.${procedure}`);
       if (index < 0) return [];
       const encoded = JSON.parse(
         request.body || url.searchParams.get("input")!,
       );
-      const input = superjson.deserialize<{ ids: string[] }>(encoded[index]);
-      return [input.ids.length];
+      return [superjson.deserialize<T>(encoded[index])];
     });
   }
-  function checkReads(start: number) {
-    const batches = readBatches(start);
+  function checkReads(start: number, procedure = "getMany") {
+    const batches = chunkRequests<{ ids: string[] }>(start, procedure).map(
+      (request) => request.ids.length,
+    );
     assert.deepEqual(batches, [4, 4, 1]);
     return batches;
   }
+  const uploadBatches = chunkRequests<{ envelopes: unknown[] }>(
+    uploadStart,
+    "putMany",
+  ).map((request) => request.envelopes.length);
+  assert.deepEqual(uploadBatches, [4, 4, 1]);
+  assert.deepEqual(chunkRequests(uploadStart, "put"), []);
   const confirmationBatches = checkReads(uploadStart);
   readChunksOnPeer = true;
   try {
@@ -318,18 +334,11 @@ async function checkBatchedFileContent(projectId: string) {
       }),
       manifest,
     );
-    assert.ok(
-      sent
-        .slice(resumeStart)
-        .every(
-          (request) =>
-            !new URL(request.url).pathname
-              .split(",")
-              .some((path) => path.endsWith("zerotrust.fileChunks.put")),
-        ),
-    );
+    const resumeBatches = checkReads(resumeStart, "findMany");
+    assert.deepEqual(chunkRequests(resumeStart, "put"), []);
+    assert.deepEqual(chunkRequests(resumeStart, "putMany"), []);
     console.log(
-      `Native file batches: 9 blocks; upload confirmations ${confirmationBatches.join(", ")}; load ${loadBatches.join(", ")}; verification ${verifyBatches.join(", ")}; resumed without writes; readback through independent API`,
+      `Native file batches: 9 blocks; writes ${uploadBatches.join(", ")}; upload confirmations ${confirmationBatches.join(", ")}; load ${loadBatches.join(", ")}; verification ${verifyBatches.join(", ")}; resume ${resumeBatches.join(", ")} without writes; readback through independent API`,
     );
   } finally {
     readChunksOnPeer = false;
@@ -381,4 +390,107 @@ async function checkBatchedFileContent(projectId: string) {
   );
   assert.equal(partial, null);
   assert.equal(missingError?.data?.httpCode, 404);
+
+  const lookup = await required(
+    owner.query(
+      "zerotrust.fileChunks.findMany",
+      { domain, ids: [missing, ids[8]!, ids[0]!] },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.deepEqual(
+    lookup.map((packet) => packet?.object ?? null),
+    [null, ids[8]!, ids[0]!],
+  );
+  const [, lookupDenied] = await member.query(
+    "zerotrust.fileChunks.findMany",
+    { domain, ids: [missing, ids[0]!] },
+    { strategy: "network-only" },
+  );
+  assert.equal(lookupDenied?.data?.httpCode, 403);
+
+  const newId = contentId(projectId, file, "f".repeat(32), 0);
+  const existingPacket = ordered[0]!;
+  const collection = await protectedCollection(
+    owner,
+    chunkCollection(projectId),
+    signal,
+  );
+  const differentBytes = {
+    format: "sortsys-file-block-v1",
+    data: base64(new Uint8Array([4, 5, 6])),
+  };
+  let newPacket;
+  let conflictingPacket;
+  try {
+    newPacket = await collection.packet(newId, differentBytes, undefined, true);
+    conflictingPacket = await collection.packet(
+      existingPacket.object,
+      differentBytes,
+      undefined,
+      true,
+    );
+  } finally {
+    collection.close();
+  }
+  const forged = { ...existingPacket, signature: base64(new Uint8Array(64)) };
+  const [badWrite, badWriteError] = await owner.mutate(
+    "zerotrust.fileChunks.putMany",
+    { domain, envelopes: [newPacket.envelope, forged] },
+  );
+  assert.equal(badWrite, null);
+  assert.ok(badWriteError);
+  const [, conflict] = await owner.mutate("zerotrust.fileChunks.putMany", {
+    domain,
+    envelopes: [newPacket.envelope, conflictingPacket.envelope],
+  });
+  assert.ok(conflict instanceof RpcClientError);
+  assert.equal(conflict.code, "CONFLICT");
+  const [, writeDenied] = await member.mutate("zerotrust.fileChunks.putMany", {
+    domain,
+    envelopes: [newPacket.envelope],
+  });
+  assert.ok(writeDenied instanceof RpcClientError);
+  assert.equal(writeDenied.data?.httpCode, 403);
+  for (const envelopes of [[], [newPacket.envelope, newPacket.envelope]]) {
+    const [, invalidWrite] = await owner.mutate(
+      "zerotrust.fileChunks.putMany",
+      {
+        domain,
+        envelopes,
+      },
+    );
+    assert.ok(invalidWrite instanceof RpcClientError);
+    assert.equal(invalidWrite.code, "BAD_REQUEST");
+  }
+  const [unpublished] = await required(
+    owner.query(
+      "zerotrust.fileChunks.findMany",
+      { domain, ids: [newId] },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.equal(unpublished, null);
+  const packets = [newPacket.envelope, existingPacket];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await required(
+      owner.mutate("zerotrust.fileChunks.putMany", {
+        domain,
+        envelopes: packets,
+      }),
+    );
+  }
+  readChunksOnPeer = true;
+  try {
+    const stored = await required(
+      owner.query(
+        "zerotrust.fileChunks.getMany",
+        { domain, ids: packets.map((packet) => packet.object) },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.deepEqual(stored, packets);
+  } finally {
+    readChunksOnPeer = false;
+  }
 }

@@ -286,7 +286,7 @@ test("stable migrated content resumes verified blocks without rewriting and reje
       { resume: true },
     );
     const published = tenant.calls.filter(
-      (call) => call.path === "zerotrust.fileChunks.put",
+      (call) => call.path === "zerotrust.fileChunks.putMany",
     ).length;
     const resumed = await storeFileContent(
       tenant.client,
@@ -299,7 +299,7 @@ test("stable migrated content resumes verified blocks without rewriting and reje
     );
     expect(resumed).toEqual(original);
     expect(
-      tenant.calls.filter((call) => call.path === "zerotrust.fileChunks.put"),
+      tenant.calls.filter((call) => call.path === "zerotrust.fileChunks.putMany"),
     ).toHaveLength(published);
     await verifyFileContent(
       tenant.client,

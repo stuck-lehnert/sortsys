@@ -71,14 +71,18 @@ fehlende oder umsortierte Blöcke führen beim Lesen zu einem Fehler. Bestätigt
 Blöcke lassen sich auch durch einen berechtigten Schreiber nicht überschreiben;
 eine Bearbeitung legt neue Blöcke an.
 
-Der Browser lädt verschlüsselte Blöcke in Gruppen von bis zu vier. Dieselbe
-Schnittstelle bestätigt nach einem Upload, welche Blöcke tatsächlich abgelegt
-wurden. Die API prüft die Leseberechtigung pro Gruppe und ruft die Blöcke
-gemeinsam beim Datendienst ab. Der Browser prüft weiterhin den Hash jedes
-Blocks in der Reihenfolge des Dateiverzeichnisses. Bei einem Fehler oder Abbruch
-beginnt keine weitere Gruppe. Bereits gestartete Arbeiten enden, bevor der
-Browser den gemeinsamen Schlüsselzugriff schließt. Das Dateiverzeichnis wird
-erst nach Bestätigung aller Blöcke veröffentlicht.
+Der Browser überträgt jeweils bis zu vier verschlüsselte Blöcke gemeinsam.
+Beim Upload prüft die API die Berechtigung und jede Signatur, speichert die
+Blöcke gemeinsam im Datendienst und veröffentlicht ihre Verweise in einer
+Transaktion. Anschließend liest der Browser die Gruppe zurück und prüft jeden
+Hash. Eine Datei wird erst im Verzeichnis sichtbar, sobald alle Blöcke
+bestätigt sind. Bei einem Fehler oder Abbruch beginnt keine weitere Gruppe.
+Der Browser wartet auf den laufenden Schreibvorgang, bevor er den Zugriff auf
+die Dateischlüssel schließt.
+
+Auch beim Download prüft die API die Leseberechtigung für die Gruppe und
+ruft ihre Blöcke gemeinsam beim Datendienst ab. Der Browser prüft die Hashes
+in der Reihenfolge des Dateiverzeichnisses.
 
 Dateimetadaten, Ordnerzuordnungen und Speicherstände werden vor der Übertragung
 gegen das lokale Datenschema geprüft. Der Server prüft Signaturen, aktuelle
@@ -102,8 +106,9 @@ Bei der Einrichtung eines neuen Mandanten kann ein gesicherter Dateiordner
 zusammen mit der alten SQL-Sicherung ausgewählt werden. Die Webapp ordnet die
 Originale ihren Objektpfaden zu und prüft ihre Größen, bevor das erste Konto
 registriert wird. Die Dateiübernahme verwendet dieselben verschlüsselten Blöcke
-wie neue Uploads. Ein unterbrochener Vorgang kann bereits bestätigte Blöcke
-weiterverwenden.
+wie neue Uploads. Beim Fortsetzen sucht der Browser gruppenweise nach bereits
+abgelegten Blöcken. Er gleicht deren Inhalt mit der lokalen Quelle ab und lädt
+nur fehlende Blöcke hoch.
 
 Die Quelle wird ausschließlich lokal gelesen. Eine laufende alte Datenbank,
 S3-Schreibfreigaben oder frühere Hintergrundjobs werden dafür nicht

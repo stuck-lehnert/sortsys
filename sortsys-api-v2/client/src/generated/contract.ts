@@ -372,6 +372,7 @@ export type QueryInputs = {
   "zerotrust.domains.list": void;
   "zerotrust.domains.proof": { domain: string, generation: string, };
   "zerotrust.editors.config": void;
+  "zerotrust.fileChunks.findMany": { domain: string, ids: Array<string>, };
   "zerotrust.fileChunks.get": { domain: string, id: string, };
   "zerotrust.fileChunks.getMany": { domain: string, ids: Array<string>, };
   "zerotrust.history.get": { id: string, revision: string | null, };
@@ -523,6 +524,7 @@ export type QueryOutputs = {
   "zerotrust.domains.list": Array<{ id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, }>;
   "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.editors.config": { officeOrigin: string | null, };
+  "zerotrust.fileChunks.findMany": Array<{ tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, } | null>;
   "zerotrust.fileChunks.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.fileChunks.getMany": Array<{ tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, }>;
   "zerotrust.history.get": { access: Access, sequence: string, orderId: string, publication: string, initialPublication: string, domain: string, envelope: EncryptedObject<Facet>, previous: EncryptedObject<Facet> | null, migrationOrigin: MigrationOrigin | null, deletion: JsonValue | null, references: JsonValue | null, occurredAt: Date, occurredMicros: string, } | null;
@@ -735,6 +737,7 @@ export type MutationInputs = {
   "zerotrust.domains.putMany": { domains: Array<DomainDefinition>, };
   "zerotrust.events.open": void;
   "zerotrust.fileChunks.put": { domain: string, envelope: EncryptedObject<Facet>, };
+  "zerotrust.fileChunks.putMany": { domain: string, envelopes: Array<EncryptedObject<Facet>>, };
   "zerotrust.identities.certify": { tenant: string, generation: string, user: string, previousSignature?: string, encryptionKey: string, signingKey: string, signature: string, };
   "zerotrust.invitations.approve": { id: string, claimHash: string, certificate: IdentityCertificate, proof: string, };
   "zerotrust.invitations.complete": { id: string, claimHash: string, proof: string, };
@@ -947,6 +950,7 @@ export type MutationOutputs = {
   "zerotrust.domains.putMany": { success: true, };
   "zerotrust.events.open": { ticket: string, subject: string, generation: string, };
   "zerotrust.fileChunks.put": { success: true, };
+  "zerotrust.fileChunks.putMany": { success: true, };
   "zerotrust.identities.certify": { success: true, };
   "zerotrust.invitations.approve": { success: true, };
   "zerotrust.invitations.complete": { success: true, };
@@ -1098,6 +1102,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.domains.list",
   "zerotrust.domains.proof",
   "zerotrust.editors.config",
+  "zerotrust.fileChunks.findMany",
   "zerotrust.fileChunks.get",
   "zerotrust.fileChunks.getMany",
   "zerotrust.history.get",
@@ -1310,6 +1315,7 @@ const mutationProcedures = new Set<string>([
   "zerotrust.domains.putMany",
   "zerotrust.events.open",
   "zerotrust.fileChunks.put",
+  "zerotrust.fileChunks.putMany",
   "zerotrust.identities.certify",
   "zerotrust.invitations.approve",
   "zerotrust.invitations.complete",

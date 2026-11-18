@@ -1385,6 +1385,10 @@ export type QueryInputs = {
         generation: string;
     };
     "zerotrust.editors.config": void;
+    "zerotrust.fileChunks.findMany": {
+        domain: string;
+        ids: Array<string>;
+    };
     "zerotrust.fileChunks.get": {
         domain: string;
         id: string;
@@ -2932,6 +2936,21 @@ export type QueryOutputs = {
     "zerotrust.editors.config": {
         officeOrigin: string | null;
     };
+    "zerotrust.fileChunks.findMany": Array<{
+        tenant: string;
+        scope: string;
+        facet: Facet;
+        object: string;
+        revision: string;
+        generation: string;
+        policyVersion: string;
+        author: string;
+        format: string;
+        nonce: string;
+        ciphertext: string;
+        wrappedKey: string;
+        signature: string;
+    } | null>;
     "zerotrust.fileChunks.get": {
         tenant: string;
         scope: string;
@@ -4356,6 +4375,10 @@ export type MutationInputs = {
         domain: string;
         envelope: EncryptedObject<Facet>;
     };
+    "zerotrust.fileChunks.putMany": {
+        domain: string;
+        envelopes: Array<EncryptedObject<Facet>>;
+    };
     "zerotrust.identities.certify": {
         tenant: string;
         generation: string;
@@ -5231,6 +5254,9 @@ export type MutationOutputs = {
         generation: string;
     };
     "zerotrust.fileChunks.put": {
+        success: true;
+    };
+    "zerotrust.fileChunks.putMany": {
         success: true;
     };
     "zerotrust.identities.certify": {

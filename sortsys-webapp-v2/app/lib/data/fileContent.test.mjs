@@ -84,7 +84,7 @@ function wireClient(tenant) {
       requests.push({ paths, inputs, body: String(options?.body ?? "") });
       const replies = await Promise.all(
         paths.map(async (path, index) => {
-          const call = path.endsWith(".put") ? "mutate" : "query";
+          const call = path.endsWith(".putMany") ? "mutate" : "query";
           const [result, error] = await tenant.client[call](
             path,
             inputs[index],
@@ -103,10 +103,12 @@ function wireClient(tenant) {
   return { client, requests };
 }
 
-function blockReads(requests) {
+function blockReads(requests, procedure = "getMany") {
   return requests.flatMap(({ paths, inputs }) =>
     inputs
-      .filter((_, index) => paths[index] === "zerotrust.fileChunks.getMany")
+      .filter(
+        (_, index) => paths[index] === `zerotrust.fileChunks.${procedure}`,
+      )
       .map((input) => input.ids.length),
   );
 }
@@ -154,21 +156,11 @@ test("file reads and verification share bounded HTTP batches and preserve byte o
   }
 });
 
-test("parallel staging verifies lost acknowledgements and resumes without replacing blocks", async () => {
+test("bounded upload groups verify lost acknowledgements and resume without replacing blocks", async () => {
   const tenant = await protectedTenant([area]);
   const { client, requests } = wireClient(tenant);
   const controller = new AbortController();
   const blob = source();
-  const firstWave = deferred();
-  let active = 0;
-  let maximum = 0;
-  tenant.state.beforeChunk = async () => {
-    active++;
-    maximum = Math.max(maximum, active);
-    if (active === 4) firstWave.resolve();
-    await firstWave.promise;
-    active--;
-  };
   tenant.state.loseChunkReply = true;
   try {
     const manifest = await storeFileContent(
@@ -179,14 +171,12 @@ test("parallel staging verifies lost acknowledgements and resumes without replac
       version,
       controller.signal,
     );
-    expect(maximum).toBeGreaterThan(1);
-    expect(maximum).toBeLessThanOrEqual(4);
-    expect(active).toBe(0);
     expect(tenant.chunks.size).toBe(manifest.parts.length);
     expect(blockReads(requests)).toEqual([4, 4, 1]);
     const writes = tenant.calls.filter(
-      (call) => call.path === "zerotrust.fileChunks.put",
+      (call) => call.path === "zerotrust.fileChunks.putMany",
     ).length;
+    expect(writes).toBe(3);
     expect(
       await storeFileContent(
         client,
@@ -199,23 +189,21 @@ test("parallel staging verifies lost acknowledgements and resumes without replac
       ),
     ).toEqual(manifest);
     expect(
-      tenant.calls.filter((call) => call.path === "zerotrust.fileChunks.put"),
+      tenant.calls.filter(
+        (call) => call.path === "zerotrust.fileChunks.putMany",
+      ),
     ).toHaveLength(writes);
-    await verifyFileContent(
-      client,
-      namespace,
-      file,
-      manifest,
-      blob,
-      controller.signal,
-    );
+    expect(blockReads(requests, "findMany")).toEqual([4, 4, 1]);
     const uploads = requests.filter((request) =>
-      request.paths.includes("zerotrust.fileChunks.put"),
+      request.paths.includes("zerotrust.fileChunks.putMany"),
     );
+    expect(uploads.map(({ inputs }) => inputs[0].envelopes.length)).toEqual([
+      4, 4, 1,
+    ]);
     expect(
       uploads.every(
         (request) =>
-          new TextEncoder().encode(request.body).length <= 1024 * 1024,
+          new TextEncoder().encode(request.body).length <= 2 * 1024 * 1024,
       ),
     ).toBe(true);
     expect(JSON.stringify(requests)).not.toContain("Private file block");
@@ -238,10 +226,45 @@ test("parallel staging verifies lost acknowledgements and resumes without replac
       ),
     ).rejects.toThrow();
     expect(
-      tenant.calls.filter((call) => call.path === "zerotrust.fileChunks.put"),
+      tenant.calls.filter(
+        (call) => call.path === "zerotrust.fileChunks.putMany",
+      ),
     ).toHaveLength(writes);
   } finally {
     controller.abort();
+    client.setToken(null);
+  }
+}, 15_000);
+
+test("resuming an incomplete group uploads only the missing block", async () => {
+  const tenant = await fixture(4);
+  const { blob, manifest, signal } = tenant;
+  const { client, requests } = wireClient(tenant);
+  const missing = manifest.parts[2].id;
+  tenant.chunks.delete(missing);
+  try {
+    const resumed = await storeFileContent(
+      client,
+      namespace,
+      file,
+      blob,
+      version,
+      signal,
+      { resume: true },
+    );
+    expect(resumed.parts.filter((_, index) => index !== 2)).toEqual(
+      manifest.parts.filter((_, index) => index !== 2),
+    );
+    const uploads = requests.filter(({ paths }) =>
+      paths.includes("zerotrust.fileChunks.putMany"),
+    );
+    expect(uploads).toHaveLength(1);
+    expect(
+      uploads[0].inputs[0].envelopes.map((envelope) => envelope.object),
+    ).toEqual([missing]);
+    await verifyFileContent(client, namespace, file, resumed, blob, signal);
+  } finally {
+    tenant.close();
     client.setToken(null);
   }
 });
@@ -315,7 +338,7 @@ test("cancellation and account replacement discard late parallel reads", async (
   }
 });
 
-test("cancelled parallel uploads drain started writes and erase their plaintext buffers", async () => {
+test("cancelled uploads drain the in-flight group and erase its plaintext buffers", async () => {
   const tenant = await protectedTenant([area]);
   const controller = new AbortController();
   const entered = deferred();
@@ -337,10 +360,10 @@ test("cancelled parallel uploads drain started writes and erase their plaintext 
   let started = 0;
   let active = 0;
   let settled = false;
-  tenant.state.beforeChunk = async () => {
-    started++;
+  tenant.state.beforeChunk = async (envelopes) => {
+    started += envelopes.length;
     active++;
-    if (started === 4) entered.resolve();
+    entered.resolve();
     await release.promise;
     active--;
   };
