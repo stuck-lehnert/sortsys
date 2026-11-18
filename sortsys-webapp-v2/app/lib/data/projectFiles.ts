@@ -35,7 +35,11 @@ import {
 import { stockEnvelopeHash } from "./stockObjects";
 import { projectCollection, projectPayload } from "./projectData";
 import { readableProjectAreas } from "./projectAreas";
-import { loadFileContent, storeFileContent } from "./fileContent";
+import {
+  loadFileContent,
+  storeFileContent,
+  storeFileContents,
+} from "./fileContent";
 import {
   openOfficeSession,
   sameOfficeContext,
@@ -852,25 +856,21 @@ export function createProtectedProjectFiles(
         const id = publicId(newProductRowId());
         const now = new Date().toISOString();
         const inspection = (await input.inspect?.()) ?? {};
-        const original = await storeFileContent(
+        const sources = [{ file: id, blob: input.blob, version: uuid() }];
+        if (inspection.thumbnail) {
+          sources.push({
+            file: id,
+            blob: inspection.thumbnail,
+            version: uuid(),
+          });
+        }
+        const [original, thumbnail = null] = await storeFileContents(
           client,
           input.projectId,
-          id,
-          input.blob,
-          uuid(),
+          sources,
           signal,
         );
         live();
-        const thumbnail = inspection.thumbnail
-          ? await storeFileContent(
-              client,
-              input.projectId,
-              id,
-              inspection.thumbnail,
-              uuid(),
-              signal,
-            )
-          : null;
         const isImage =
           mime.toLowerCase().startsWith("image/") &&
           !name.toLowerCase().endsWith(".dwg");
@@ -928,7 +928,7 @@ export function createProtectedProjectFiles(
         const payload: FilePayload = {
           format: "sortsys-project-file-v1",
           file: row("project_files", values),
-          original,
+          original: original!,
           thumbnail,
           office: null,
         };

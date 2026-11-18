@@ -72,6 +72,8 @@ Blöcke lassen sich auch durch einen berechtigten Schreiber nicht überschreiben
 eine Bearbeitung legt neue Blöcke an.
 
 Der Browser überträgt jeweils bis zu vier verschlüsselte Blöcke gemeinsam.
+Bei einem Bild können Blöcke des Originals und des Vorschaubilds dieselbe
+Gruppe nutzen.
 Beim Upload prüft die API die Berechtigung und jede Signatur, speichert die
 Blöcke gemeinsam im Datendienst und veröffentlicht ihre Verweise in einer
 Transaktion. Anschließend liest der Browser die Gruppe zurück und prüft jeden
@@ -105,10 +107,11 @@ Diese Grenze gehört zur vereinbarten
 Bei der Einrichtung eines neuen Mandanten kann ein gesicherter Dateiordner
 zusammen mit der alten SQL-Sicherung ausgewählt werden. Die Webapp ordnet die
 Originale ihren Objektpfaden zu und prüft ihre Größen, bevor das erste Konto
-registriert wird. Die Dateiübernahme verwendet dieselben verschlüsselten Blöcke
-wie neue Uploads. Beim Fortsetzen sucht der Browser gruppenweise nach bereits
-abgelegten Blöcken. Er gleicht deren Inhalt mit der lokalen Quelle ab und lädt
-nur fehlende Blöcke hoch.
+registriert wird. Bei der Übernahme können sich kleine Dateien eine Gruppe von
+bis zu vier verschlüsselten Blöcken teilen. Der Browser prüft die gespeicherten
+Bytes gegen die lokale Quelle, wenn er die Gruppe zur Bestätigung zurückliest.
+Beim Fortsetzen prüft er bereits vorhandene Blöcke direkt beim Nachschlagen und
+lädt nur die fehlenden hoch.
 
 Die Quelle wird ausschließlich lokal gelesen. Eine laufende alte Datenbank,
 S3-Schreibfreigaben oder frühere Hintergrundjobs werden dafür nicht

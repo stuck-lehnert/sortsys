@@ -242,6 +242,8 @@ try {
     "Unconfirmed Office draft recovered after key rotation",
     "Stale losing Office handoff",
     "CONFIDENTIAL_BATCHED_FILE_846281",
+    "CONFIDENTIAL_PREVIEW_UPLOAD_846281",
+    "CONFIDENTIAL_PREVIEW_THUMBNAIL_846281",
     `/2/integration/edit/${"c".repeat(24)}/`,
     `/2/integration/view/${"c".repeat(32)}/`,
   ]) {
@@ -339,6 +341,47 @@ async function checkBatchedFileContent(projectId: string) {
     assert.deepEqual(chunkRequests(resumeStart, "putMany"), []);
     console.log(
       `Native file batches: 9 blocks; writes ${uploadBatches.join(", ")}; upload confirmations ${confirmationBatches.join(", ")}; load ${loadBatches.join(", ")}; verification ${verifyBatches.join(", ")}; resume ${resumeBatches.join(", ")} without writes; readback through independent API`,
+    );
+  } finally {
+    readChunksOnPeer = false;
+  }
+  const image = new Blob(["CONFIDENTIAL_PREVIEW_UPLOAD_846281"]);
+  const thumbnail = new Blob(["CONFIDENTIAL_PREVIEW_THUMBNAIL_846281"], {
+    type: "image/webp",
+  });
+  const imageStart = sent.length;
+  readChunksOnPeer = true;
+  try {
+    const imageId = await business.files.upload({
+      projectId,
+      name: "Fassadendetail.png",
+      mime: "image/png",
+      blob: image,
+      inspect: async () => ({ thumbnail, width: 32, height: 32 }),
+    });
+    const writes = chunkRequests<{ envelopes: { object: string }[] }>(
+      imageStart,
+      "putMany",
+    );
+    assert.equal(writes.length, 1);
+    const writtenIds = writes[0]!.envelopes.map(({ object }) => object);
+    assert.equal(writtenIds.length, 2);
+    assert.equal(new Set(writtenIds).size, 2);
+    assert.deepEqual(chunkRequests(imageStart, "getMany"), [
+      { domain: chunkCollection(projectId).domain, ids: writtenIds },
+    ]);
+    const original = await business.files.blob(projectId, imageId);
+    const preview = await business.files.blob(
+      projectId,
+      imageId,
+      undefined,
+      true,
+    );
+    assert.equal(await original.text(), await image.text());
+    assert.equal(await preview.text(), await thumbnail.text());
+    assert.equal(preview.type, thumbnail.type);
+    console.log(
+      "Native image upload: original and thumbnail share one upload and one confirmation; both open across the second API",
     );
   } finally {
     readChunksOnPeer = false;

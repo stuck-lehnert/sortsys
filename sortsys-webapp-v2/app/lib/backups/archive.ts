@@ -9,11 +9,12 @@ import type { BusinessDatabase, DuckDriver } from "../data/database";
 import {
   loadFileContent,
   storeFileContent,
-  verifyFileContent,
+  storeFileContents,
 } from "../data/fileContent";
 import {
   chunkCollection,
   content,
+  FILE_CHUNK_BYTES,
   type FileContent,
 } from "../data/projectFileData";
 import { provisionOwnedCollections } from "../data/prepareCollections";
@@ -39,6 +40,7 @@ import {
 const SOURCE_VERSION = "00000000000000000000000000000001";
 const HISTORY_SOURCE_VERSION = "00000000000000000000000000000002";
 const PAGE_SIZE = 32;
+const ARCHIVE_FILE_BATCH = 4;
 type ArchivedObject = BackupObject & { id: string; content: FileContent };
 type PageReference = { id: string; signature: string };
 type BackupManifest = {
@@ -50,6 +52,20 @@ type BackupManifest = {
   history: FileContent | null;
   files: PageReference[];
 };
+
+function archiveGroupEnd(originals: readonly BackupObject[], start: number) {
+  // Large originals report progress individually. Only group files whose
+  // recorded sizes fit in one block, so one progress update covers bounded work.
+  let end = start;
+  while (
+    end < originals.length &&
+    end - start < ARCHIVE_FILE_BATCH &&
+    (originals[end]!.size ?? Infinity) <= FILE_CHUNK_BYTES
+  ) {
+    end++;
+  }
+  return Math.max(start + 1, end);
+}
 
 export function backupArea(context: string): Collection {
   return {
@@ -151,15 +167,7 @@ export async function archiveBackup(
     input.sql,
     SOURCE_VERSION,
     signal,
-    { resume: true },
-  );
-  await verifyFileContent(
-    client,
-    state.context,
-    "1",
-    sourceSql,
-    input.sql,
-    signal,
+    { resume: true, verifyStoredBytes: true },
   );
   let history: FileContent | null = null;
   if (historySource) {
@@ -173,9 +181,8 @@ export async function archiveBackup(
       blob,
       HISTORY_SOURCE_VERSION,
       signal,
-      { resume: true },
+      { resume: true, verifyStoredBytes: true },
     );
-    await verifyFileContent(client, state.context, "1", history, blob, signal);
   }
   const collection = await protectedCollection(client, area, signal);
   try {
@@ -183,33 +190,34 @@ export async function archiveBackup(
     const pages: PageReference[] = [];
     for (let offset = 0; offset < originals.length; offset += PAGE_SIZE) {
       const entries: ArchivedObject[] = [];
-      for (
-        let index = offset;
-        index < Math.min(offset + PAGE_SIZE, originals.length);
-        index++
-      ) {
-        const object = originals[index]!;
-        const id = (index + 2).toString(32);
-        const blob = await input.files.read(object, signal);
-        const stored = await storeFileContent(
+      const originalsOnPage = originals.slice(offset, offset + PAGE_SIZE);
+      for (let start = 0; start < originalsOnPage.length; ) {
+        const end = archiveGroupEnd(originalsOnPage, start);
+        const group = originalsOnPage.slice(start, end);
+        const sources = [];
+        for (const [index, object] of group.entries()) {
+          sources.push({
+            file: (offset + start + index + 2).toString(32),
+            blob: await input.files.read(object, signal),
+            version: SOURCE_VERSION,
+          });
+        }
+        const manifests = await storeFileContents(
           client,
           state.context,
-          id,
-          blob,
-          SOURCE_VERSION,
+          sources,
           signal,
-          { resume: true },
+          { resume: true, verifyStoredBytes: true },
         );
-        await verifyFileContent(
-          client,
-          state.context,
-          id,
-          stored,
-          blob,
-          signal,
-        );
-        entries.push({ ...object, id, content: stored });
-        progress(index + 1, originals.length);
+        for (const [index, object] of group.entries()) {
+          entries.push({
+            ...object,
+            id: sources[index]!.file,
+            content: manifests[index]!,
+          });
+        }
+        progress(offset + entries.length, originals.length);
+        start = end;
       }
       const id = `${state.context}:files:${pages.length}`;
       const value = { format: "sortsys-backup-files-v1", entries };

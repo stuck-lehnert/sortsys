@@ -12,6 +12,7 @@ import { lockCryptoSession } from "../crypto/session";
 import {
   loadFileContent,
   storeFileContent,
+  storeFileContents,
   verifyFileContent,
 } from "./fileContent";
 import { chunkCollection, FILE_CHUNK_BYTES } from "./projectFileData";
@@ -268,6 +269,78 @@ test("resuming an incomplete group uploads only the missing block", async () => 
     client.setToken(null);
   }
 });
+
+test("small files fill shared upload groups and retain their own block order", async () => {
+  const tenant = await protectedTenant([area]);
+  const { client, requests } = wireClient(tenant);
+  const signal = new AbortController().signal;
+  const files = [
+    { file: "2", blob: source(1), version },
+    { file: "3", blob: new Blob(), version },
+    { file: "4", blob: source(2), version },
+    { file: "5", blob: new Blob(["Private report from the archive"]), version },
+    {
+      file: "5",
+      blob: new Blob(["Private letter from the archive"]),
+      version: "c".repeat(32),
+    },
+  ];
+  const options = { resume: true, verifyStoredBytes: true };
+  try {
+    const manifests = await storeFileContents(
+      client,
+      namespace,
+      files,
+      signal,
+      options,
+    );
+    expect(manifests.map((manifest) => manifest.parts.length)).toEqual([
+      1, 0, 2, 1, 1,
+    ]);
+    expect(blockReads(requests, "findMany")).toEqual([4, 1]);
+    expect(blockReads(requests)).toEqual([4, 1]);
+    const uploads = requests.filter(({ paths }) =>
+      paths.includes("zerotrust.fileChunks.putMany"),
+    );
+    const ids = manifests.flatMap((manifest) =>
+      manifest.parts.map((part) => part.id),
+    );
+    expect(
+      uploads.map(({ inputs }) =>
+        inputs[0].envelopes.map(({ object }) => object),
+      ),
+    ).toEqual([ids.slice(0, 4), ids.slice(4)]);
+    expect(JSON.stringify(requests)).not.toContain(
+      "Private report from the archive",
+    );
+
+    requests.length = 0;
+    expect(
+      await storeFileContents(client, namespace, files, signal, options),
+    ).toEqual(manifests);
+    expect(blockReads(requests, "findMany")).toEqual([4, 1]);
+    expect(blockReads(requests)).toEqual([]);
+    expect(requests.flatMap(({ paths }) => paths)).not.toContain(
+      "zerotrust.fileChunks.putMany",
+    );
+
+    const changed = [...files];
+    changed[3] = {
+      ...files[3],
+      blob: new Blob(["Changed report from the archive"]),
+    };
+    requests.length = 0;
+    await expect(
+      storeFileContents(client, namespace, changed, signal, options),
+    ).rejects.toThrow();
+    expect(blockReads(requests, "findMany")).toEqual([4]);
+    expect(requests.flatMap(({ paths }) => paths)).not.toContain(
+      "zerotrust.fileChunks.putMany",
+    );
+  } finally {
+    client.setToken(null);
+  }
+}, 15_000);
 
 test("a failed block batch stops the download before requesting the next group", async () => {
   const tenant = await fixture();

@@ -119,7 +119,10 @@ globalThis.fetch = new Proxy(originalFetch, {
     ) {
       requests.push(url.searchParams.get("input")!);
     }
-    if (mode === "owner-staging" && url.searchParams.get("batch") === "1") {
+    if (
+      (mode === "owner-staging" || mode === "owner-backup-archive") &&
+      url.searchParams.get("batch") === "1"
+    ) {
       rpcTransmissions.push(url.pathname.slice(1).split(","));
     }
     if (requestHook)
@@ -439,7 +442,7 @@ try {
     await exerciseLateToolResponsibility(owner, peer);
   } else if (mode === "owner-backup-archive") {
     const { exerciseBackupArchive } = await import("./test-backup-archive");
-    await exerciseBackupArchive(owner, peer, draft);
+    await exerciseBackupArchive(owner, peer, draft, rpcTransmissions);
   } else if (mode === "owner-backup") {
     const { exerciseBackupInitialization } =
       await import("./test-backup-initialization");

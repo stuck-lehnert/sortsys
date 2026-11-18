@@ -40,6 +40,7 @@ export async function exerciseBackupArchive(
   owner: Client,
   peer: Client,
   draft: OwnerDraft,
+  transmissions: readonly string[][],
 ) {
   const signal = new AbortController().signal;
   const original = await readFile(
@@ -192,7 +193,14 @@ export async function exerciseBackupArchive(
     ]),
   ]);
   const source = await openPostgresBackup(sql, signal, await duckDriver());
+  function fileRequestsSince(start: number, procedure: string) {
+    return transmissions
+      .slice(start)
+      .filter((paths) => paths.includes(`zerotrust.fileChunks.${procedure}`))
+      .length;
+  }
   try {
+    const initial = transmissions.length;
     await archiveBackup(
       owner,
       {
@@ -204,6 +212,12 @@ export async function exerciseBackupArchive(
       },
       signal,
     );
+    // The two originals travel together. SQL and the selected history each
+    // have their own version and use one round of lookup, upload and readback.
+    assert.equal(fileRequestsSince(initial, "findMany"), 3);
+    assert.equal(fileRequestsSince(initial, "putMany"), 3);
+    assert.equal(fileRequestsSince(initial, "getMany"), 3);
+    const retry = transmissions.length;
     await archiveBackup(
       peer,
       {
@@ -214,6 +228,12 @@ export async function exerciseBackupArchive(
         history,
       },
       signal,
+    );
+    assert.equal(fileRequestsSince(retry, "findMany"), 3);
+    assert.equal(fileRequestsSince(retry, "putMany"), 0);
+    assert.equal(fileRequestsSince(retry, "getMany"), 0);
+    console.log(
+      "Native backup archive: four one-block sources use 9 file-block HTTP requests on initial upload and 3 on resume",
     );
   } finally {
     await source.database.close();

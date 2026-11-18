@@ -24,6 +24,33 @@ import { mapConcurrent } from "./runtime/concurrentReads";
 // Work on one group at a time to bound the bytes in flight for large files.
 const CONCURRENT_FILE_BLOCKS = 4;
 
+type FileSource = { file: string; blob: Blob; version: string };
+type PendingFile = FileSource & { parts: FileContent["parts"] };
+type PendingBlock = { source: PendingFile; index: number; id: string };
+type StoreOptions = { resume?: boolean; verifyStoredBytes?: boolean };
+
+function* fileBlockGroups(
+  namespace: string,
+  files: readonly PendingFile[],
+) {
+  let group: PendingBlock[] = [];
+  for (const source of files) {
+    const count = Math.ceil(source.blob.size / FILE_CHUNK_BYTES);
+    for (let index = 0; index < count; index++) {
+      group.push({
+        source,
+        index,
+        id: contentId(namespace, source.file, source.version, index),
+      });
+      if (group.length === CONCURRENT_FILE_BLOCKS) {
+        yield group;
+        group = [];
+      }
+    }
+  }
+  if (group.length > 0) yield group;
+}
+
 async function fetchFileBlocks(
   client: Client,
   domain: string,
@@ -65,6 +92,22 @@ function block(input: unknown, size: number): Uint8Array<ArrayBuffer> {
   }
   return bytes;
 }
+
+async function checkBlockBytes(
+  collection: Awaited<ReturnType<typeof protectedCollection>>,
+  envelope: unknown,
+  id: string,
+  size: number,
+  expectedHash: string,
+): Promise<void> {
+  const raw = block((await collection.open(envelope, id)).value, size);
+  try {
+    if ((await digest(raw)) !== expectedHash) throw new InvalidProtectedData();
+  } finally {
+    raw.fill(0);
+  }
+}
+
 /** Stage immutable blocks before publishing the encrypted file manifest. No
  * filename or plaintext bytes enter a storage request. Migration uses stable
  * IDs and verifies existing blocks to resume after a recovery or interruption. */
@@ -75,30 +118,46 @@ export async function storeFileContent(
   blob: Blob,
   version: string,
   signal: AbortSignal,
-  options: { resume?: boolean } = {},
+  options: StoreOptions = {},
 ): Promise<FileContent> {
-  if (blob.size > MAX_FILE_BYTES) throw new InvalidProtectedData();
+  const manifests = await storeFileContents(
+    client,
+    namespace,
+    [{ file, blob, version }],
+    signal,
+    options,
+  );
+  return manifests[0]!;
+}
+
+/** Stage files in one namespace through a shared, bounded stream of blocks.
+ * Returns the verified manifests in the same order as the sources. */
+export async function storeFileContents(
+  client: Client,
+  namespace: string,
+  sources: readonly FileSource[],
+  signal: AbortSignal,
+  options: StoreOptions = {},
+): Promise<FileContent[]> {
+  signal.throwIfAborted();
+  const ids = new Set<string>();
+  const files = sources.map<PendingFile>((source) => {
+    if (source.blob.size > MAX_FILE_BYTES) throw new InvalidProtectedData();
+    const id = contentId(namespace, source.file, source.version, 0);
+    if (ids.has(id)) throw new InvalidProtectedData();
+    ids.add(id);
+    return { ...source, parts: [] };
+  });
+  if (files.length === 0) return [];
+
   const area = chunkCollection(namespace);
   const collection = await protectedCollection(client, area, signal);
   try {
-    const resume = options.resume || version.startsWith("legacy");
-    const indices = Array.from(
-      { length: Math.ceil(blob.size / FILE_CHUNK_BYTES) },
-      (_, index) => index,
-    );
-    const parts: FileContent["parts"] = [];
-    for (
-      let start = 0;
-      start < indices.length;
-      start += CONCURRENT_FILE_BLOCKS
-    ) {
-      const group = indices
-        .slice(start, start + CONCURRENT_FILE_BLOCKS)
-        .map((index) => ({
-          index,
-          id: contentId(namespace, file, version, index),
-        }));
+    for (const group of fileBlockGroups(namespace, files)) {
       signal.throwIfAborted();
+      const resume =
+        options.resume ||
+        group.some(({ source }) => source.version.startsWith("legacy"));
       const existing = resume
         ? await required(
             client.query(
@@ -116,27 +175,31 @@ export async function storeFileContent(
       const staged = await mapConcurrent(
         group,
         CONCURRENT_FILE_BLOCKS,
-        async ({ index, id }, position) => {
+        async ({ source, index, id }, position) => {
           signal.throwIfAborted();
           const offset = index * FILE_CHUNK_BYTES;
           const raw = new Uint8Array(
-            await blob.slice(offset, offset + FILE_CHUNK_BYTES).arrayBuffer(),
+            await source.blob
+              .slice(offset, offset + FILE_CHUNK_BYTES)
+              .arrayBuffer(),
           );
           try {
             signal.throwIfAborted();
             const previous = existing?.[position];
             if (previous) {
-              const old = block(
-                (await collection.open(previous, id)).value,
+              await checkBlockBytes(
+                collection,
+                previous,
+                id,
                 raw.length,
+                await digest(raw),
               );
-              try {
-                if ((await digest(old)) !== (await digest(raw)))
-                  throw new InvalidProtectedData();
-              } finally {
-                old.fill(0);
-              }
-              return { id, hash: await packetHash(previous), envelope: null };
+              return {
+                source,
+                id,
+                hash: await packetHash(previous),
+                upload: null,
+              };
             }
             const packet = await collection.packet(
               id,
@@ -145,17 +208,24 @@ export async function storeFileContent(
               true,
             );
             return {
+              source,
               id,
               hash: await packetHash(packet.envelope),
-              envelope: packet.envelope,
+              upload: {
+                envelope: packet.envelope,
+                size: raw.length,
+                expectedPlaintextHash: options.verifyStoredBytes
+                  ? await digest(raw)
+                  : null,
+              },
             };
           } finally {
             raw.fill(0);
           }
         },
       );
-      const pending = staged.flatMap(({ id, hash, envelope }) =>
-        envelope ? [{ id, hash, envelope }] : [],
+      const pending = staged.flatMap(({ id, hash, upload }) =>
+        upload ? [{ id, hash, ...upload }] : [],
       );
       if (pending.length) {
         signal.throwIfAborted();
@@ -182,14 +252,26 @@ export async function storeFileContent(
           async (part, index) => {
             if ((await packetHash(saved[index])) !== part.hash)
               throw error ?? new InvalidProtectedData();
+            // Use the confirmation read for the plaintext check as well.
+            if (part.expectedPlaintextHash !== null) {
+              await checkBlockBytes(
+                collection,
+                saved[index],
+                part.id,
+                part.size,
+                part.expectedPlaintextHash,
+              );
+            }
           },
         );
       }
-      for (const { id, hash } of staged) parts.push({ id, hash });
+      for (const { source, id, hash } of staged) source.parts.push({ id, hash });
     }
     signal.throwIfAborted();
     if (!collection.can("read")) throw new InvalidProtectedData();
-    return content({ version, size: blob.size, parts }, namespace, file);
+    return files.map(({ file, blob, version, parts }) =>
+      content({ version, size: blob.size, parts }, namespace, file),
+    );
   } finally {
     collection.close();
   }
