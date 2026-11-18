@@ -36,6 +36,7 @@ import {
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
+import { prepareToolBookingRestore } from "./test-tool-booking-restore";
 
 async function adoptOrder(owner: Client, projectId: string) {
   const contract = await required(
@@ -368,6 +369,7 @@ export async function exerciseContentPreparation(
   directory: string,
   changes: readonly EncryptedChange[],
   ownerCredentials: { username: string; password: string },
+  member: Client,
 ) {
   const originalTitle = "Vertrauliche Projektfassung im Sicherungsbestand";
   const currentTitle = "Vertrauliche Projektfassung nach der Sicherung";
@@ -390,6 +392,16 @@ export async function exerciseContentPreparation(
       projectId: project.id,
       contactId: contact.id,
     }),
+  );
+  const replaceBooking = await prepareToolBookingRestore(
+    owner,
+    peer,
+    member,
+    project.id,
+    {
+      ...ownerCredentials,
+      tenant,
+    },
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
   const finalizeConfirmation = await prepareConfirmation(owner, project.id);
@@ -433,6 +445,7 @@ export async function exerciseContentPreparation(
     }),
   );
   assert.ok(snapshot.bytes);
+  const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
   const foreignTenant = `${tenant}-other`;
   const foreign = await tenantSetupRequest(foreignTenant);
@@ -757,6 +770,7 @@ export async function exerciseContentPreparation(
   assert.equal(peer.context.context().aborted, false);
   await checkEditors(await contentEpochFingerprint(approval));
   await confirmation.check();
+  await booking.check();
   const [samePage, stalePage] = await peer.query(
     "zerotrust.objects.list",
     {
@@ -897,6 +911,7 @@ export async function exerciseContentPreparation(
   );
   assert.equal(restoredAgain.title, originalTitle);
   await confirmation.check();
+  await booking.check();
 
   if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
     await required(
@@ -939,4 +954,5 @@ export async function exerciseContentPreparation(
     assert.equal(restoredInBrowser.title, originalTitle);
   }
   await rejectSnapshotWithoutLockedDocument(tenant, owner, peer, operator);
+  await booking.checkMemberAndReturn();
 }

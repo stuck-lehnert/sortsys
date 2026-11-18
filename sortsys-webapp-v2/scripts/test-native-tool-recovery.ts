@@ -76,7 +76,7 @@ async function asBusiness<T>(
   }
 }
 
-async function enroll(
+export async function enrollToolResponsibleMember(
   owner: Client,
   member: Client,
   person: { id: string; username: string },
@@ -223,7 +223,13 @@ export async function prepareNativeToolRecovery(
       return { person, toolId: tool.id, extraToolId: extra.id };
     },
   );
-  await enroll(owner, member, { id: person.id, username }, login, password);
+  await enrollToolResponsibleMember(
+    owner,
+    member,
+    { id: person.id, username },
+    login,
+    password,
+  );
   await signIn(owner, login);
   const returned = await book(owner, toolId, person.id);
   await asBusiness(owner, async (business) => {
@@ -398,7 +404,7 @@ export async function verifyNativeToolRecovery(
         return owner.mutate(path, input, options);
       }) as Client["mutate"],
     };
-    await enroll(
+    await enrollToolResponsibleMember(
       observed,
       fixture.member,
       { id: fixture.memberId, username: fixture.username },

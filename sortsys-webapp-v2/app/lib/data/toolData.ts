@@ -16,7 +16,7 @@ import {
 } from "./rowCodec";
 import { businessSchema, tableDefinition } from "./schema";
 import { defineDataModel } from "./runtime/model";
-import type { DataRequest } from "./runtime/runtime";
+import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
 
 export type ToolNamespace = "tool" | "tool-tracking";
 export type ToolBookingTool = NonNullable<
@@ -405,6 +405,77 @@ export const toolRequest = (
   model: TOOL_MODEL,
   area: toolCollection(namespace, id, facet),
 });
+
+type ToolBookingState = {
+  format: "sortsys-tool-booking-state-v1";
+  toolId: string;
+  trackingId: string | null;
+};
+
+export function toolBookingArea(toolId: string): Collection {
+  const area = toolCollection("tool", toolId, "master-data");
+  return { ...area, prefix: `${area.scope}:master-data:booking` };
+}
+
+export const TOOL_BOOKING_MODEL = defineDataModel<ToolBookingState>({
+  name: "tool-booking-state",
+  tables: [],
+  sources: () => [],
+  decode(input, object, area) {
+    const value = record(input, ["format", "toolId", "trackingId"]);
+    addressId(value.toolId);
+    const expected = toolBookingArea(value.toolId as string);
+    if (
+      value.format !== "sortsys-tool-booking-state-v1" ||
+      area.domain !== expected.domain ||
+      area.scope !== expected.scope ||
+      area.facet !== expected.facet ||
+      object !== expected.prefix
+    )
+      throw new InvalidProtectedData();
+    if (value.trackingId !== null) addressId(value.trackingId);
+    return value as ToolBookingState;
+  },
+});
+
+export function toolBookingRequest(toolId: string) {
+  return { model: TOOL_BOOKING_MODEL, area: toolBookingArea(toolId) };
+}
+
+export function toolBookingState(
+  toolId: string,
+  trackingId: string | null,
+): ToolBookingState {
+  return { format: "sortsys-tool-booking-state-v1", toolId, trackingId };
+}
+
+export function activeToolBooking(
+  view: DataView,
+  tool: ToolPart,
+): string | null {
+  const [booking] = view.documents(toolBookingRequest(tool.id));
+  return booking ? booking.value.trackingId : tool.activeTrackingId;
+}
+
+export function setActiveToolBooking(
+  tx: DataTransaction,
+  toolId: string,
+  trackingId: string | null,
+) {
+  const request = toolBookingRequest(toolId);
+  if (tx.documents(request).length) {
+    tx.edit(request, request.area.prefix, (booking) => {
+      booking.trackingId = trackingId;
+    });
+  } else {
+    tx.create(
+      request,
+      request.area.prefix,
+      toolBookingState(toolId, trackingId),
+    );
+  }
+}
+
 export function toolPart(
   namespace: ToolNamespace,
   id: string,

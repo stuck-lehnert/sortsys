@@ -9,7 +9,7 @@ import {
 import { lockCryptoSession, unlockedAccount } from "../crypto/session";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import { toolBookingInput, toolBookingTargets } from "./toolBookings";
-import { toolCollection, toolPart } from "./toolData";
+import { toolBookingArea, toolCollection, toolPart } from "./toolData";
 import { createProtectedTools } from "./tools";
 import { toolUsageCollection, toolUsagePart } from "./projectToolUsage";
 import { row } from "./testing/businessRow.mjs";
@@ -206,8 +206,8 @@ test("a mixed batch ends old bookings, denies transfers and creates every bookin
       closed.rows[0].values.ended_at,
     );
     for (const [index, target] of output.trackings.entries()) {
-      const tool = index === 0 ? f.master : f.second;
-      expect((await f.tenant.plain(tool, tool.prefix)).activeTrackingId).toBe(
+      const booking = toolBookingArea(target.toolId);
+      expect((await f.tenant.plain(booking, booking.prefix)).trackingId).toBe(
         target.trackingId,
       );
       const usage = await f.tenant.plain(
@@ -341,9 +341,10 @@ test("an uncommitted successful reply cannot acknowledge a batch", async () => {
     expect([...f.tenant.objects]).toEqual(before);
     f.tenant.state.discardCommit = false;
     await f.store.mutate("tools.trackMany", f.input);
-    expect(
-      (await f.tenant.plain(f.master, f.master.prefix)).activeTrackingId,
-    ).toBe("39");
+    const booking = toolBookingArea("34");
+    expect((await f.tenant.plain(booking, booking.prefix)).trackingId).toBe(
+      "39",
+    );
   } finally {
     f.store.close();
   }

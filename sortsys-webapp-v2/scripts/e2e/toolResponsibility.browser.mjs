@@ -40,6 +40,7 @@ const returned = new Promise((resolve, reject) => {
 
 try {
   browser = await chromium.launch({
+    executablePath: process.env.SORTSYS_E2E_CHROMIUM,
     headless: process.env.SORTSYS_E2E_HEADED !== "1",
   });
   context = await browser.newContext({

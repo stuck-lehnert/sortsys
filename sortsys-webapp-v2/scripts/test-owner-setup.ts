@@ -327,6 +327,7 @@ try {
       dirname(outputPath),
       contentChanges,
       { username: draft.username, password: draft.password },
+      createClient(endpoints[0], "owner-restore-tool-member"),
     );
   } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =

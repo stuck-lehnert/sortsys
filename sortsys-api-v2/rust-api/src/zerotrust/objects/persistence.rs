@@ -112,10 +112,18 @@ fn preserves_numbering(envelope: &EncryptedObject) -> bool {
             .starts_with("organization:invoicing:billing:counter:")
 }
 
-fn retains_publication(input: &SaveInput) -> bool {
+fn retained_record_count(input: &SaveInput) -> usize {
     // Recipient and responsibility proofs name the exact encrypted revision.
     // Their current packet and history must stay reachable after a restore.
-    input.resource_access.is_some() || preserves_numbering(&input.envelope)
+    if input.resource_access.is_some() || preserves_numbering(&input.envelope) {
+        return 4;
+    }
+    // Retain the current object and its address. Journal entries and ordinary
+    // revision history already have their own lifecycle.
+    if super::super::resource_access::retains_tool_booking(&input.envelope) {
+        return 2;
+    }
+    0
 }
 pub(in crate::zerotrust) async fn object(
     transaction: &mut Transaction,
@@ -538,8 +546,9 @@ async fn commit_batch_inner(
     }
     let mut retained = Vec::new();
     for packet in &input.objects {
-        if retains_publication(packet) {
-            retained.extend(publication_records(packet)?);
+        let count = retained_record_count(packet);
+        if count > 0 {
+            retained.extend(publication_records(packet)?.into_iter().take(count));
         }
     }
     context.transaction.prefetch_protected(retained).await?;
@@ -957,12 +966,9 @@ async fn save(
         &retained,
     )
     .await?;
-    if retains_publication(input) {
-        // Each new revision adds immutable history keys. One checkpoint per
-        // key bounds checkpoint size while the current rows can still advance.
-        for record in retained {
-            context.transaction.protect_record(record).await?;
-        }
+    // One checkpoint per key bounds checkpoint size while current rows advance.
+    for record in retained.into_iter().take(retained_record_count(input)) {
+        context.transaction.protect_record(record).await?;
     }
     Ok(true)
 }

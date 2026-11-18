@@ -844,12 +844,15 @@ fn tool_object_binding(input: &SaveInput) -> RpcResult<()> {
             _ => false,
         };
         let scope = format!("{namespace}:{token}");
+        let booking_state = namespace == "tool"
+            && facet == Facet::MasterData
+            && *object == format!("{scope}:master-data:booking");
         if !allowed
             || id.0 <= 0
             || id.encode() != token
             || input.envelope.scope != scope
             || input.domain != format!("{scope}:{}", facet.name())
-            || *object != format!("{}:record", input.domain)
+            || (!booking_state && *object != format!("{}:record", input.domain))
         {
             return Err(invalid());
         }
@@ -1032,7 +1035,7 @@ mod permission_tests {
         }
     }
     #[test]
-    fn tool_object_names_bind_the_scope_facet_record_and_number_index() {
+    fn tool_object_names_bind_the_scope_facet_booking_and_number_index() {
         let value: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/zerotrust-recovery.json"))
                 .unwrap();
@@ -1051,12 +1054,17 @@ mod permission_tests {
             recipient_key: None,
         };
         tool_object_binding(&input).unwrap();
+        input.envelope.object = "tool:abc:master-data:booking".into();
+        tool_object_binding(&input).unwrap();
         for object in [
             "tool:def:master-data:record",
             "tool:0abc:master-data:record",
             "tool:abc:procurement:record",
             "tool:abc:master-data:other",
             "tool-tracking:abc:master-data:record",
+            "tool:def:master-data:booking",
+            "tool:abc:procurement:booking",
+            "tool-tracking:abc:master-data:booking",
         ] {
             let mut changed = input.clone();
             changed.envelope.object = object.into();

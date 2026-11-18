@@ -193,6 +193,9 @@ pub(super) fn initial_record_creation_scope(
     if id.0 <= 0 || id.encode() != token {
         return None;
     }
+    if namespace == "tool" && object == format!("{scope}:master-data:booking") {
+        return creation_scope(namespace).ok();
+    }
     let expected = match namespace {
         "project" => scope.to_owned(),
         "commercial" => format!("{scope}:master-data:case"),
@@ -559,6 +562,7 @@ mod tests {
                 "create:commercial",
             ),
             ("tool:abc", "tool:abc:master-data:record", "create:tool"),
+            ("tool:abc", "tool:abc:master-data:booking", "create:tool"),
             (
                 "tool-tracking:abc",
                 "tool-tracking:abc:master-data:record",

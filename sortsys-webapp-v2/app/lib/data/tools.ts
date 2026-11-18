@@ -23,6 +23,9 @@ import { readableAreas } from "./readableAreas";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
 import {
+  activeToolBooking,
+  setActiveToolBooking,
+  toolBookingRequest,
   toolChanges,
   toolCollection,
   toolDomain,
@@ -126,6 +129,7 @@ function wireTool(
 ) {
   const value = document(view, request)!.value;
   const p = values(view, request);
+  const activeTrackingId = activeToolBooking(view, value);
   return {
     id: value.id,
     customId: Number(p.custom_id),
@@ -141,8 +145,8 @@ function wireTool(
       "usage_cost_per_day",
     ),
     status: p.status as "lost" | "broken" | null,
-    available: value.activeTrackingId === null,
-    activeTrackingId: value.activeTrackingId,
+    available: activeTrackingId === null,
+    activeTrackingId,
     createdByUserId: id(p.created_by_user_id),
     createdAt: date(p.created_at)!,
     modifiedAt: date(p.modified_at)!,
@@ -202,6 +206,7 @@ export function createProtectedTools(
     work: (view: DataView, selected: PartRequest[]) => T | Promise<T>,
     include: (request: PartRequest) => boolean = () => true,
     selectedDomains?: readonly string[],
+    withBookings = false,
   ) {
     live();
     const collections = await protectedCollections(
@@ -213,8 +218,13 @@ export function createProtectedTools(
       .areas(select)
       .map((area) => ({ model: TOOL_MODEL, area }))
       .filter(include);
+    const bookings = withBookings
+      ? matching(selected, "tool", "master-data").map((request) =>
+          toolBookingRequest(toolDomain(request.area.domain)!.id),
+        )
+      : [];
     const result = await runtime.read(
-      selected,
+      [...selected, ...bookings],
       (view) => {
         live();
         return work(
@@ -755,6 +765,9 @@ export function createProtectedTools(
           );
         },
         selectedDomains,
+        ["tools.get", "tools.list", "tools.inventories.overview"].includes(
+          path,
+        ),
       );
     },
     async mutate(path: string, input: unknown): Promise<unknown> {
@@ -788,30 +801,34 @@ export function createProtectedTools(
             throw new ProtectedWriteConflict();
         });
         await provision("tool", resource);
-        await persist([toolIndexRequest, ...requests], (tx) => {
-          const index = tx.documents(toolIndexRequest)[0];
-          if (
-            !index ||
-            index.value.entries.some(
-              (entry) => entry.customId === Number(row.values.custom_id),
+        await persist(
+          [toolIndexRequest, ...requests, toolBookingRequest(resource)],
+          (tx) => {
+            const index = tx.documents(toolIndexRequest)[0];
+            if (
+              !index ||
+              index.value.entries.some(
+                (entry) => entry.customId === Number(row.values.custom_id),
+              )
             )
-          )
-            throw new ProtectedWriteConflict();
-          tx.edit(toolIndexRequest, TOOL_INDEX.prefix, (value) => {
-            value.entries.push({
-              id: resource,
-              customId: Number(row.values.custom_id),
+              throw new ProtectedWriteConflict();
+            tx.edit(toolIndexRequest, TOOL_INDEX.prefix, (value) => {
+              value.entries.push({
+                id: resource,
+                customId: Number(row.values.custom_id),
+              });
             });
-          });
-          for (const request of requests) {
-            tx.require(request, "create");
-            replace(
-              tx,
-              request,
-              toolPart("tool", resource, request.area.facet, [row]),
-            );
-          }
-        });
+            for (const request of requests) {
+              tx.require(request, "create");
+              replace(
+                tx,
+                request,
+                toolPart("tool", resource, request.area.facet, [row]),
+              );
+            }
+            setActiveToolBooking(tx, resource, null);
+          },
+        );
         return { id: resource };
       }
       if (path === "tools.track" || path === "tools.trackMany") {
@@ -1036,6 +1053,7 @@ export function createProtectedTools(
         await persist(
           [
             ...(path === "tools.delete" ? [toolIndexRequest] : []),
+            toolBookingRequest(resource),
             ...related,
             ...usage,
           ],
@@ -1044,16 +1062,16 @@ export function createProtectedTools(
               throw new ProtectedWriteConflict();
             const source = document(tx, master)!.value;
             values(tx, master);
+            const active = activeToolBooking(tx, source);
             const tracking = matching(
               related,
               "tool-tracking",
               "master-data",
             ).filter((request) => !document(tx, request)!.value.deleted);
             if (
-              source.activeTrackingId !== null &&
+              active !== null &&
               !tracking.some(
-                (request) =>
-                  document(tx, request)!.value.id === source.activeTrackingId,
+                (request) => document(tx, request)!.value.id === active,
               )
             )
               throw new InvalidProtectedData();
@@ -1089,11 +1107,8 @@ export function createProtectedTools(
                 });
               }
             }
-            if (path === "tools.untrack")
-              tx.edit(master, master.area.prefix, (value) => {
-                value.activeTrackingId = null;
-              });
-            else {
+            setActiveToolBooking(tx, resource, null);
+            if (path === "tools.delete") {
               for (const request of tracking)
                 deleteToolUsage(tx, {
                   table: "tool_trackings",
@@ -1313,6 +1328,7 @@ export function createProtectedTools(
         ...(path.endsWith("accept")
           ? [
               toolRequest("tool", baseline.toolId, "master-data"),
+              toolBookingRequest(baseline.toolId),
               toolRequest("tool", baseline.toolId, "procurement"),
               ...next,
             ]
@@ -1341,7 +1357,7 @@ export function createProtectedTools(
             const tool = toolRequest("tool", baseline.toolId, "master-data");
             const price = toolRequest("tool", baseline.toolId, "procurement");
             if (
-              document(tx, tool)!.value.activeTrackingId !==
+              activeToolBooking(tx, document(tx, tool)!.value) !==
               publicId(current.id)
             )
               throw new ProtectedWriteConflict();
@@ -1378,9 +1394,7 @@ export function createProtectedTools(
               { table: "tool_trackings", values: values(tx, found.tracking) },
               ["master-data"],
             );
-            tx.edit(tool, tool.area.prefix, (value) => {
-              value.activeTrackingId = nextId;
-            });
+            setActiveToolBooking(tx, baseline.toolId, nextId);
             for (const request of next)
               replace(
                 tx,

@@ -33,6 +33,9 @@ import type {
   DataView as BusinessView,
 } from "./runtime/runtime";
 import {
+  activeToolBooking,
+  setActiveToolBooking,
+  toolBookingRequest,
   toolPart,
   toolRequest,
   toolRow,
@@ -318,6 +321,7 @@ export async function bookProtectedTools(
     ...selection,
     trackingId: trackings[index]!.trackingId,
     tool: toolRequest("tool", selection.id, "master-data"),
+    booking: toolBookingRequest(selection.id),
     price: toolRequest("tool", selection.id, "procurement"),
     previous:
       selection.expectedTrackingId === null
@@ -340,6 +344,7 @@ export async function bookProtectedTools(
   }));
   const sources = selected.flatMap((selection) => [
     selection.tool,
+    selection.booking,
     selection.price,
     ...(selection.previous
       ? [selection.previous.master, selection.previous.scope]
@@ -351,7 +356,7 @@ export async function bookProtectedTools(
       const previousRows = [];
       for (const selection of selected) {
         const tool = part(view, selection.tool);
-        if (tool.activeTrackingId !== selection.expectedTrackingId)
+        if (activeToolBooking(view, tool) !== selection.expectedTrackingId)
           throw new ToolBookingSelectionConflict();
         if (!view.can(selection.tool, "update"))
           throw new InvalidProtectedData();
@@ -427,7 +432,7 @@ export async function bookProtectedTools(
         if (previous) return previous;
         for (const selection of selected) {
           const tool = part(tx, selection.tool);
-          if (tool.activeTrackingId !== selection.expectedTrackingId)
+          if (activeToolBooking(tx, tool) !== selection.expectedTrackingId)
             throw new ToolBookingSelectionConflict();
           for (const request of selection.next) {
             if (tx.documents(request).length)
@@ -495,9 +500,7 @@ export async function bookProtectedTools(
               ),
             );
           }
-          tx.edit(selection.tool, selection.tool.area.prefix, (value) => {
-            value.activeTrackingId = selection.trackingId;
-          });
+          setActiveToolBooking(tx, selection.id, selection.trackingId);
           syncToolUsage(tx, row);
         }
         const result = { trackings };

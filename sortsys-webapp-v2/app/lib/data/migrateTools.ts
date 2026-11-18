@@ -9,6 +9,9 @@ import { copyProtectedCollection } from "./copyCollection";
 import { prepareOwnerCollections } from "./prepareCollections";
 import { publicId, readBusinessRows } from "./products";
 import {
+  toolBookingArea,
+  toolBookingState,
+  TOOL_BOOKING_MODEL,
   toolCollection,
   toolPart,
   bookingToolSummary,
@@ -86,20 +89,12 @@ export async function prepareTools(
     false,
     open,
   );
-  for (const row of tools)
+  for (const row of tools) {
+    const id = publicId(row.values.id);
     for (const facet of CREATION_FACETS.tool) {
-      const id = publicId(row.values.id),
-        area = toolCollection("tool", id, facet),
+      const area = toolCollection("tool", id, facet),
         rows = [row, ...(inventoryByTool.get(row.values.id as string) ?? [])];
-      const value = toolPart(
-        "tool",
-        id,
-        facet,
-        rows,
-        facet === "master-data"
-          ? (active.get(row.values.id as string) ?? null)
-          : null,
-      );
+      const value = toolPart("tool", id, facet, rows);
       await copyProtectedCollection(
         client,
         area,
@@ -110,6 +105,25 @@ export async function prepareTools(
         open,
       );
     }
+    const booking = toolBookingArea(id);
+    await copyProtectedCollection(
+      client,
+      booking,
+      [
+        {
+          id: booking.prefix,
+          value: toolBookingState(
+            id,
+            active.get(row.values.id as string) ?? null,
+          ),
+        },
+      ],
+      (value, object) => TOOL_BOOKING_MODEL.decode(value, object, booking),
+      signal,
+      false,
+      open,
+    );
+  }
   for (const row of trackings)
     for (const facet of CREATION_FACETS["tool-tracking"]) {
       const id = publicId(row.values.id),

@@ -2,14 +2,14 @@ import { afterEach, expect, test } from "bun:test";
 import { ACTIONS } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { createProtectedTools } from "./tools";
-import { toolCollection, toolPart } from "./toolData";
+import { toolBookingArea, toolCollection, toolPart } from "./toolData";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 afterEach(() => lockCryptoSession());
 
-test("one tool read checks only its master data and costs, without paging the whole tenant inventory", async () => {
+test("one tool read checks its description, booking state and costs without paging the tenant inventory", async () => {
   const master = toolCollection("tool", "34", "master-data");
   const cost = toolCollection("tool", "34", "procurement");
   const unrelated = toolCollection("tool-tracking", "35", "master-data");
@@ -61,8 +61,10 @@ test("one tool read checks only its master data and costs, without paging the wh
     expect(reads.length).toBeGreaterThan(0);
     for (const read of reads)
       expect(
-        read.input.selections.map((selection) => selection.domain).sort(),
-      ).toEqual([master.domain, cost.domain].sort());
+        read.input.selections.map((selection) => selection.prefix).sort(),
+      ).toEqual(
+        [master.prefix, toolBookingArea("34").prefix, cost.prefix].sort(),
+      );
     tenant.calls.length = 0;
     await expect(store.query("tools.get", { id: "034" })).rejects.toThrow();
     expect(tenant.calls).toHaveLength(0);

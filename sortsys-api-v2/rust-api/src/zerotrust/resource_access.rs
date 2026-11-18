@@ -4,12 +4,50 @@ use super::{
     creation::CreationOrigin,
     crypto::{invalid, revision},
     objects::{SaveInput, conflict, registry},
-    wire::Facet,
+    wire::{EncryptedObject, Facet},
 };
 use crate::{
     control::key,
     error::{RpcResult, forbidden},
+    ids::Id,
 };
+
+fn canonical_id(token: &str) -> bool {
+    Id::decode(token).is_ok_and(|id| id.0 > 0 && id.encode() == token)
+}
+
+/// These encrypted records represent the same physical checkout even when
+/// mutable descriptions or other project data are restored from a backup.
+pub(super) fn retains_tool_booking(envelope: &EncryptedObject) -> bool {
+    let object = envelope.object.as_str();
+    let Some((namespace, resource)) = envelope.scope.split_once(':') else {
+        return false;
+    };
+    let facet = envelope.facet;
+    match namespace {
+        "tool" => {
+            facet == Facet::MasterData
+                && canonical_id(resource)
+                && object == format!("tool:{resource}:master-data:booking")
+        }
+        "tool-tracking" => {
+            matches!(facet, Facet::MasterData | Facet::Scope | Facet::Procurement)
+                && canonical_id(resource)
+                && object == format!("{}:{}:record", envelope.scope, facet.name())
+        }
+        "project" => {
+            if !matches!(facet, Facet::MasterData | Facet::Procurement) {
+                return false;
+            }
+            let Some(project) = resource.strip_suffix(":tool-usage") else {
+                return false;
+            };
+            let prefix = format!("tool-usage:{project}:{}:", facet.name());
+            canonical_id(project) && object.strip_prefix(&prefix).is_some_and(canonical_id)
+        }
+        _ => false,
+    }
+}
 
 pub(super) async fn save(
     context: &mut MetadataContext,

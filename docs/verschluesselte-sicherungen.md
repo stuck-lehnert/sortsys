@@ -39,6 +39,15 @@ sie einen Schlüssel oder eine Bereichsdefinition verwendet. Der Inhaltscursor
 ist davon getrennt: Gewöhnliche Dokumentänderungen schreiben ihn fort, ohne
 deshalb eine neue Freigabe zu erzeugen.
 
+Werkzeugbuchungen und ihre Kostenansätze bleiben beim Zurückspielen eines
+Fachstands aktuell. Das gilt auch für abgeschlossene Buchungen und ihre
+Projektkosten. Die Werkzeugkarte kann auf ihre frühere Beschreibung und
+ihren früheren Standardtagessatz zurückkehren. Für eine laufende Buchung
+gilt weiterhin der bei der Ausgabe erfasste Tagessatz. Die Freigaben für
+Verantwortliche und für Kosten bleiben getrennt.
+Die Prüfung der Zuordnungen über Fachstände hinweg ist noch offen, wenn die
+Sicherung das zugehörige Werkzeug oder Projekt noch nicht enthält.
+
 Auch endgültige Dokumentsperren, unveränderliche Datensätze und
 Abwesenheitsentscheidungen erhalten unabhängige Nachweise. Sobald ein
 OpenTimestamps-Nachweis gespeichert wurde, wird auch dieser aufbewahrt. Ein
