@@ -595,13 +595,6 @@ function openCollection(
             head = snapshot;
             return { objects: [], unchanged: true };
           }
-          if (
-            page.after !== null &&
-            (page.after <= (after ?? "") ||
-              !page.objects.length ||
-              page.after !== page.objects.at(-1)?.object)
-          )
-            throw new InvalidProtectedData();
           if (page.openings !== undefined) {
             if (!Array.isArray(page.openings) || page.openings.length > 32)
               throw new InvalidProtectedData();
@@ -624,7 +617,7 @@ function openCollection(
           )
             throw new InvalidProtectedData();
           const envelopes = page.objects.map((input) => encryptedObject(input));
-          let previousId = result.at(-1)?.envelope.object ?? "";
+          let previousId = after ?? result.at(-1)?.envelope.object ?? "";
           for (const envelope of envelopes) {
             if (
               !envelope.object.startsWith(prefix) ||
@@ -633,6 +626,16 @@ function openCollection(
               throw new InvalidProtectedData();
             previousId = envelope.object;
           }
+          // Visibility filters may hide the last scanned object or an entire
+          // page. The cursor must still advance beyond the preceding scan and
+          // must not skip backwards over any object returned on this page.
+          if (
+            page.after !== null &&
+            (!page.after.startsWith(prefix) ||
+              page.after <= (after ?? "") ||
+              page.after < previousId)
+          )
+            throw new InvalidProtectedData();
           const opened: OpenedObject[] = [];
           for (let offset = 0; offset < envelopes.length; offset += 16) {
             opened.push(
@@ -729,7 +732,6 @@ function openCollection(
         isStagedObject(collection, id) ||
         [
           "price-import:",
-          "delivery-note:",
           "delivery-price:",
           "delivery-create:",
           "file-data:",

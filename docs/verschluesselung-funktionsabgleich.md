@@ -311,7 +311,10 @@ Anlage, Bearbeitung und Kostenberechnung verwenden getrennte Mengen- und
 Beschaffungsschlüssel je Projekt. Historische Preise werden im Browser
 einschließlich Mikrosekunden und numerischer Kennungen ausgewählt. Anlagen sind
 über mehrere Instanzen nummeriert und wiederholbar; Mengenänderungen erhalten
-nicht lesbare Preise. Projektwechsel und vollständige Löschkaskaden fehlen noch.
+nicht lesbare Preise. Löschen erfordert ein eigenes Recht im Mengenbereich und
+entfernt auch die Preise aus aktuellen Abfragen, ohne deren Schlüssel zu öffnen.
+Verschlüsselte historische Fassungen und die vergebenen Nummern bleiben erhalten.
+Projektwechsel und eine physische Bereinigung der Historie fehlen noch.
 Siehe [Lieferscheine](verschluesselte-lieferscheine.md).
 
 **Kunden und Ansprechpartner.** Getrennte Schlüsselbereiche mit lokaler Suche,

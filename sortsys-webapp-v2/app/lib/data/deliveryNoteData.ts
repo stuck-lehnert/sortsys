@@ -18,6 +18,7 @@ export const DELIVERY_QUERIES = new Set([
 export const DELIVERY_MUTATIONS = new Set([
   "deliveryNotes.create",
   "deliveryNotes.update",
+  "deliveryNotes.delete",
 ]);
 export type DeliveryNote = QueryResult<"deliveryNotes.get">;
 export type DeliveryPayload = {

@@ -353,7 +353,7 @@ export type QueryInputs = {
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
   "zerotrust.creations.list": void;
   "zerotrust.creations.origin": { domain: string, };
-  "zerotrust.deliveryNotes.locate": { id?: Id, number?: string, };
+  "zerotrust.deliveryNotes.locate": { id?: Id, number?: string, includeDeleted?: boolean, };
   "zerotrust.deliveryNotes.references": { objects: Array<string>, };
   "zerotrust.documents.get": { id: string, scope?: string, version?: string, };
   "zerotrust.documents.history": { scope: string, id: string, before: string, };
@@ -607,7 +607,7 @@ export type MutationInputs = {
   "customers.delete": { id: string; };
   "customers.update": { id: string; data: { salutation?: undefined | null | string; name?: undefined | string; address?: undefined | null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; phoneNumbers?: undefined | { number: string; name?: undefined | null | string; }[]; emailAddresses?: undefined | { email: string; name?: undefined | null | string; }[]; }; };
   "deliveryNotes.create": { requestId?: string; projectId: string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | { productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | { name: string; unit: string; amount: number; pricePerUnit: null | number; comment?: undefined | null | string; }[]; };
-  "deliveryNotes.delete": { id: string; };
+  "deliveryNotes.delete": { id: Id, expectedRevision?: string, };
   "deliveryNotes.scan.complete": { scanId: Id, };
   "deliveryNotes.update": { expectedRevision?: string; expectedPriceRevision?: string; id: string; data: { projectId?: undefined | null | string; effectiveTimestamp?: undefined | null | Date; comment?: undefined | null | string; records?: undefined | null | { id?: string; productId: string; quantity: number; unit?: undefined | null | string; comment?: undefined | null | string; }[]; specialRecords?: undefined | null | { id?: string; name: string; unit: string; amount: number; pricePerUnit?: null | number; comment?: undefined | null | string; }[]; }; };
   "errorReports.report": { source: string, message: string, level?: Level, stack?: string | null, path?: string | null, componentStack?: string | null, metadata: TechnicalMetadata, };
@@ -816,7 +816,7 @@ export type MutationOutputs = {
   "customers.delete": { success: true; };
   "customers.update": { success: true; };
   "deliveryNotes.create": { id: string; };
-  "deliveryNotes.delete": { success: true; };
+  "deliveryNotes.delete": { success: true, };
   "deliveryNotes.scan.complete": { documentType: ScanDocumentType, deliveryNote: DeliveryNoteScanResult | null, priceList: PriceListScanResult | null, };
   "deliveryNotes.update": { success: true; };
   "errorReports.report": { success: true, };

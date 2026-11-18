@@ -930,7 +930,10 @@ export function showDeleteDeliveryNoteModal(modals: MyModalsInterface, note: Del
       </>
     ),
     onSubmit: async ({ hide, pathname, navigate }) => {
-      const [data, err] = await client.mutate('deliveryNotes.delete', { id: note.id });
+      const [data, err] = await client.mutate('deliveryNotes.delete', {
+        id: note.id,
+        expectedRevision: note.revision,
+      });
       if (err) throw err;
       if (!data) return;
 

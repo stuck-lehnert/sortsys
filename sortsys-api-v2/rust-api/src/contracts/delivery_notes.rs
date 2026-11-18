@@ -9,6 +9,13 @@ use ts_rs::TS;
 pub struct CompleteScanInput {
     pub scan_id: Id,
 }
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteDeliveryNote {
+    pub id: Id,
+    #[ts(optional)]
+    pub expected_revision: Option<String>,
+}
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanHistoryEntry {
@@ -112,4 +119,5 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     builder
         .query_stub::<(), Vec<ScanHistoryEntry>>("deliveryNotes.scan.list")
         .mutation_stub::<CompleteScanInput, DocumentScanResult>("deliveryNotes.scan.complete")
+        .mutation_stub::<DeleteDeliveryNote, crate::api::Success>("deliveryNotes.delete")
 }

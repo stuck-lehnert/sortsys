@@ -36,12 +36,14 @@ struct DeliveryReferencesInput {
     objects: Vec<String>,
 }
 #[derive(Deserialize, TS)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DeliveryLocateInput {
     #[ts(optional)]
     id: Option<Id>,
     #[ts(optional)]
     number: Option<String>,
+    #[ts(optional)]
+    include_deleted: Option<bool>,
 }
 #[derive(Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -162,6 +164,26 @@ pub(super) async fn metadata_validate_packet(
     input: &SaveInput,
 ) -> RpcResult<()> {
     persistence::validate_packet(context, input).await
+}
+
+pub(super) fn deletion_price_domain(input: &SaveInput) -> RpcResult<Option<String>> {
+    if !input.envelope.is_tombstone() {
+        return Ok(None);
+    }
+    let Some(selected) = binding(&input.envelope.object)? else {
+        return Ok(None);
+    };
+    if !matches!(selected.kind, Kind::Note) {
+        return Ok(None);
+    }
+    Ok(Some(area(selected.project, true).0))
+}
+
+pub(super) async fn metadata_apply_visibility(
+    transaction: &mut crate::control::Transaction,
+    records: &mut [super::objects::ObjectRecord],
+) -> RpcResult<()> {
+    persistence::apply_visibility(transaction, records).await
 }
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {

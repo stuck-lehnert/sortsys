@@ -118,6 +118,40 @@ export function createProtectedDeliveryNotes(
       const current = cancellation
         ? AbortSignal.any([signal, cancellation])
         : signal;
+      if (path === "deliveryNotes.delete") {
+        const data = partialAddressRecord(input, ["id", "expectedRevision"]);
+        addressId(data.id);
+        if (
+          data.expectedRevision !== undefined &&
+          (typeof data.expectedRevision !== "string" ||
+            !/^[1-9]\d{0,18}$/.test(data.expectedRevision))
+        ) {
+          throw new InvalidProtectedData();
+        }
+        const allocation = deliveryAllocation(
+          await required(
+            client.query(
+              "zerotrust.deliveryNotes.locate",
+              { id: data.id as string, includeDeleted: true },
+              { strategy: "network-only" },
+            ),
+          ),
+        );
+        live();
+        current.throwIfAborted();
+        const area = deliveryCollection(allocation.projectId);
+        await runtime.remove(
+          { model: DELIVERY_MODEL, area },
+          area.prefix + allocation.id,
+          {
+            expectedRevision: data.expectedRevision as string | undefined,
+            signal: current,
+          },
+        );
+        live();
+        current.throwIfAborted();
+        return { success: true as const };
+      }
       const { writeDeliveryNote } = await import("./deliveryWrites");
       const result = await writeDeliveryNote(
         client,

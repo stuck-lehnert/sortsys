@@ -14,7 +14,6 @@ import {
 import { createBusinessDatabase, type DuckDriver } from "./database";
 import { deliveryChanges } from "./deliveryChanges";
 import {
-  DELIVERY_MUTATIONS,
   deliveryCollection,
   type DeliveryPayload,
   deliveryPayload,
@@ -85,7 +84,7 @@ export async function writeDeliveryNote(
   signal: AbortSignal,
   driver?: () => Promise<DuckDriver>,
 ) {
-  if (!DELIVERY_MUTATIONS.has(path)) {
+  if (path !== "deliveryNotes.create" && path !== "deliveryNotes.update") {
     throw new InvalidProtectedData();
   }
   const account = unlockedAccount();

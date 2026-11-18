@@ -273,12 +273,6 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
         output_ts: "{ id: string; }",
     },
     RawContractSpec {
-        path: "deliveryNotes.delete",
-        kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
-        output_ts: "{ success: true; }",
-    },
-    RawContractSpec {
         path: "deliveryNotes.get",
         kind: ProcedureKind::Query,
         input_ts: "{ id: string; } | { autoId: unknown; }",

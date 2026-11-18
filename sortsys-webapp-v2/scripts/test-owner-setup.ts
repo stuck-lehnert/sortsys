@@ -295,7 +295,9 @@ try {
       requestHook = hook;
     });
     const { exerciseNativeDelivery } = await import("./test-duckdb-delivery");
-    const canaries = await exerciseNativeDelivery(owner, peer);
+    const canaries = await exerciseNativeDelivery(owner, peer, (hook) => {
+      requestHook = hook;
+    });
     const { exerciseNativeBusinessWorkflows } =
       await import("./test-native-business-workflows");
     canaries.push(

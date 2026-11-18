@@ -1682,6 +1682,46 @@ test("denied and failed deletions never remove the last committed view", async (
   }
 }, 15000);
 
+test("deletion rejects a stale confirmation or cancellation and accepts an authenticated retry", async () => {
+  const f = fixture();
+  f.allowDelete();
+  try {
+    const revision = await f.runtime.read(
+      [first],
+      (view) => view.documents(first)[0].revision,
+    );
+    await expect(
+      f.runtime.remove(first, "main:1", {
+        expectedRevision: String(BigInt(revision) + 1n),
+      }),
+    ).rejects.toBeInstanceOf(ProtectedWriteConflict);
+    expect(f.calls.commit).toBe(0);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      f.runtime.remove(first, "main:1", {
+        expectedRevision: revision,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+    expect(f.calls.commit).toBe(0);
+    f.lose(true);
+    await f.runtime.remove(first, "main:1", { expectedRevision: revision });
+    await f.runtime.remove(first, "main:1", { expectedRevision: revision });
+    await expect(
+      f.runtime.remove(first, "main:1", {
+        expectedRevision: String(BigInt(revision) + 1n),
+      }),
+    ).rejects.toBeInstanceOf(ProtectedWriteConflict);
+    expect(f.calls.commit).toBe(1);
+    await f.runtime.read([first], (view) =>
+      expect(view.documents(first)).toEqual([]),
+    );
+  } finally {
+    await f.runtime.close();
+  }
+}, 15000);
+
 test("one atomic publication can delete one object and edit another without granting update on the deleted area", async () => {
   const f = fixture();
   f.allowDelete();

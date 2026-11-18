@@ -5,6 +5,7 @@ import {
   InvalidProtectedData,
   record,
   sign,
+  TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { readVerifiedPolicy } from "../crypto/policy";
@@ -150,8 +151,10 @@ export async function checkDeliveryObjects(
   objects: OpenedObject[],
   live: () => void,
 ) {
-  const selected = objects.filter((object) =>
-    object.envelope.object.startsWith("delivery-note:"),
+  const selected = objects.filter(
+    (object) =>
+      object.envelope.object.startsWith("delivery-note:") &&
+      object.envelope.format !== TOMBSTONE_FORMAT,
   );
   for (let offset = 0; offset < selected.length; offset += 64) {
     const chunk = selected.slice(offset, offset + 64),

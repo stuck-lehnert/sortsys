@@ -1127,35 +1127,57 @@ export class DataRuntime {
       if (!retained) close();
     }
   }
-  remove(request: DataRequest, id: string): Promise<void> {
-    return this.transaction([request], async (transaction) => {
-      transaction.require(request, "delete");
-      const document = transaction
-        .documents(request)
-        .find((document) => document.id === id);
-      if (document) {
-        transaction.delete(request, id);
-        return;
-      }
-      // A retry may find the signed tombstone rather than an ordinary model.
-      // Absence alone must not turn a failed deletion into a success.
-      const opened = await this.storage.open(this.controller.signal, [
-        request.area.domain,
-      ]);
-      const collection = opened(request.area);
-      try {
-        const deleted = await collection.get(id);
-        this.live();
-        if (
-          deleted.envelope.format !== TOMBSTONE_FORMAT ||
-          deleted.value !== null
-        ) {
-          throw new InvalidProtectedData();
+  remove(
+    request: DataRequest,
+    id: string,
+    options: { expectedRevision?: string; signal?: AbortSignal } = {},
+  ): Promise<void> {
+    const signal = options.signal
+      ? AbortSignal.any([this.controller.signal, options.signal])
+      : this.controller.signal;
+    return this.transaction(
+      [request],
+      async (transaction) => {
+        transaction.require(request, "delete");
+        const document = transaction
+          .documents(request)
+          .find((document) => document.id === id);
+        if (document) {
+          if (
+            options.expectedRevision !== undefined &&
+            document.revision !== options.expectedRevision
+          ) {
+            throw new ProtectedWriteConflict();
+          }
+          transaction.delete(request, id);
+          return;
         }
-      } finally {
-        collection.close();
-      }
-    });
+        // A retry may find the signed tombstone rather than an ordinary model.
+        // Absence alone must not turn a failed deletion into a success.
+        const opened = await this.storage.open(signal, [request.area.domain]);
+        const collection = opened(request.area);
+        try {
+          const deleted = await collection.get(id);
+          this.live();
+          if (
+            deleted.envelope.format !== TOMBSTONE_FORMAT ||
+            deleted.value !== null
+          ) {
+            throw new InvalidProtectedData();
+          }
+          if (
+            options.expectedRevision !== undefined &&
+            BigInt(deleted.envelope.revision) !==
+              BigInt(options.expectedRevision) + 1n
+          ) {
+            throw new ProtectedWriteConflict();
+          }
+        } finally {
+          collection.close();
+        }
+      },
+      { signal },
+    );
   }
   /** Catalogue deletion also updates signed references and uses a separate
    * public proof. It cannot be substituted by an ordinary tombstone. */

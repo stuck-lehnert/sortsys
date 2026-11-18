@@ -414,6 +414,13 @@ async fn locate(
         Id(allocation.project),
         super::Action::Read,
     )?;
+    if input.include_deleted == Some(true) {
+        authorize(
+            &context.security,
+            Id(allocation.project),
+            super::Action::Delete,
+        )?;
+    }
     let note = format!(
         "delivery-note:{}:{}",
         Id(allocation.project).encode(),
@@ -422,7 +429,10 @@ async fn locate(
     let record = objects::object(&mut context.transaction, &note)
         .await?
         .ok_or_else(not_found)?;
-    if record.deleted || record.domain != area(Id(allocation.project), false).0 {
+    if record.deleted
+        || (record.tombstone && input.include_deleted != Some(true))
+        || record.domain != area(Id(allocation.project), false).0
+    {
         return Err(not_found());
     }
     context.transaction.validate().await?;
@@ -489,6 +499,15 @@ pub(super) async fn validate_packet(
         if allocation.project != project.0 {
             return Err(conflict());
         }
+        if matches!(kind, Kind::Price) {
+            let object = format!("delivery-note:{}:{}", project.encode(), note.encode());
+            let parent = objects::raw_object(&mut context.transaction, &object).await?;
+            if !parent.is_some_and(|record| {
+                !record.deleted && !record.tombstone && record.domain == area(project, false).0
+            }) {
+                return Err(conflict());
+            }
+        }
         if input.envelope.revision == "1"
             && let Some(source) = &allocation.source
         {
@@ -528,6 +547,48 @@ pub(super) async fn validate_packet(
             || allocation.request != request
         {
             return Err(conflict());
+        }
+    }
+    Ok(())
+}
+
+/// The signed note head controls the visibility of its private prices. Deletion
+/// therefore needs neither a price key nor permission to rewrite cost contents.
+pub(super) async fn apply_visibility(
+    transaction: &mut Transaction,
+    records: &mut [objects::ObjectRecord],
+) -> RpcResult<()> {
+    let mut selected = Vec::new();
+    let mut parents = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        if record.deleted {
+            continue;
+        }
+        let Some(selected_binding) = binding(&record.object)? else {
+            continue;
+        };
+        if !matches!(selected_binding.kind, Kind::Price) {
+            continue;
+        }
+        let note = selected_binding.note.ok_or_else(invalid)?;
+        let domain = area(selected_binding.project, false).0;
+        let object = format!(
+            "delivery-note:{}:{}",
+            selected_binding.project.encode(),
+            note.encode()
+        );
+        parents.push(objects::record_key(&domain, &object));
+        selected.push((index, domain, object));
+    }
+    let states = transaction.many::<objects::ObjectRecord>(parents).await?;
+    for ((index, domain, object), parent) in selected.into_iter().zip(states) {
+        if let Some(parent) = parent {
+            if parent.domain != domain || parent.object != object {
+                return Err(invalid());
+            }
+            records[index].deleted = parent.deleted || parent.tombstone;
+        } else {
+            records[index].deleted = true;
         }
     }
     Ok(())

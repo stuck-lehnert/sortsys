@@ -12,10 +12,12 @@ import {
   protectedCollection,
   required,
 } from "../app/lib/data/protectedObjects";
+import type { DeliveryRequestHook } from "./test-native-delivery-deletion";
 
 export async function exerciseNativeDelivery(
   owner: Client,
   peer: Client,
+  setRequestHook: (hook: DeliveryRequestHook | null) => void,
 ): Promise<string[]> {
   const signal = new AbortController().signal;
   const title = "Interne Fenstersanierung mit vertraulichen Sonderkonditionen";
@@ -185,6 +187,15 @@ export async function exerciseNativeDelivery(
     signal,
   );
   assert.equal(tenth.number, "10", "rejected requests cannot consume a number");
+  const { exerciseNativeDeliveryDeletion } =
+    await import("./test-native-delivery-deletion");
+  await exerciseNativeDeliveryDeletion(
+    owner,
+    peer,
+    created.id,
+    note.id,
+    setRequestHook,
+  );
   console.log(
     "Native delivery notes verified: real project/note creation, concurrent shared numbering, replay, cross-project rejection, private prices and stable updates.",
   );

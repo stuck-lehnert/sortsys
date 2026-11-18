@@ -72,6 +72,7 @@ pub(in crate::zerotrust) async fn object(
     };
     let mut records = vec![record];
     super::super::stock::metadata_apply_visibility(transaction, &mut records).await?;
+    super::super::delivery::metadata_apply_visibility(transaction, &mut records).await?;
     Ok(records.pop())
 }
 pub(in crate::zerotrust) async fn read(
@@ -301,6 +302,8 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     }
     super::super::stock::metadata_apply_visibility(&mut context.transaction, &mut references)
         .await?;
+    super::super::delivery::metadata_apply_visibility(&mut context.transaction, &mut references)
+        .await?;
     references.retain(|record| !record.deleted);
     let mut objects = Vec::new();
     if !references.is_empty() {
@@ -420,6 +423,11 @@ async fn commit_batch_inner(
 ) -> RpcResult<BatchResult> {
     let shape = validate_batch(&input, preuploaded)?;
     let mut guarded_domains = shape.domains.clone();
+    for packet in &input.objects {
+        if let Some(domain) = super::super::delivery::deletion_price_domain(packet)? {
+            guarded_domains.insert(domain);
+        }
+    }
     if let Some(heads) = &input.heads {
         guarded_domains.extend(heads.iter().map(|head| head.domain.clone()));
     }
@@ -585,6 +593,10 @@ async fn commit_batch_inner(
         .await?;
         if written {
             changed_domains.insert(packet.domain.clone());
+            if let Some(domain) = super::super::delivery::deletion_price_domain(packet)? {
+                changed_domains.insert(domain.clone());
+                visible_domains.insert(domain);
+            }
             if super::super::documents::blob(&packet.envelope.object)?.is_none() {
                 visible_domains.insert(packet.domain.clone());
             }

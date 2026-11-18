@@ -486,6 +486,54 @@ test("verified openings bundled with object pages need no separate key request",
   }
 });
 
+test("pagination passes an entirely hidden page and retains its verified snapshot", async () => {
+  const { state, collection } = await fixture();
+  state.transformPage = (page) =>
+    page.objects[0]?.object === "item:000" ? { ...page, objects: [] } : page;
+  try {
+    expect(
+      (await collection.read()).map((object) => object.value.index),
+    ).toEqual(Array.from({ length: 16 }, (_, index) => 32 + index));
+    expect(state.pages).toEqual([null, "1"]);
+    expect(collection.snapshot()).toBe("1");
+  } finally {
+    collection.close();
+  }
+});
+
+test("pagination permits a hidden final object while rejecting backwards or foreign cursors", async () => {
+  const { state, collection } = await fixture();
+  state.transformPage = (page) => ({
+    ...page,
+    objects: page.objects.filter((object) => object.object !== "item:031"),
+  });
+  try {
+    expect(await collection.read()).toHaveLength(47);
+    for (const cursor of ["other:031", "item:030"]) {
+      state.transformPage = (page) =>
+        page.after === null ? page : { ...page, after: cursor };
+      await expect(collection.read()).rejects.toBeInstanceOf(
+        InvalidProtectedData,
+      );
+    }
+    state.transformPage = (page) =>
+      page.objects[0]?.object === "item:000"
+        ? { ...page, objects: [], after: "item:031" }
+        : {
+            ...page,
+            objects: [
+              page.objects[0],
+              { ...page.objects[1], object: "item:030" },
+            ],
+          };
+    await expect(collection.read()).rejects.toBeInstanceOf(
+      InvalidProtectedData,
+    );
+  } finally {
+    collection.close();
+  }
+});
+
 test.each([
   ["a non-array response", () => ({ length: 1 })],
   ["an empty response", () => []],

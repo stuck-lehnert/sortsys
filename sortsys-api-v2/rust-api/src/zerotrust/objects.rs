@@ -920,7 +920,6 @@ fn tombstone_binding(input: &SaveInput) -> RpcResult<()> {
         || super::documents::blob(id)?.is_some()
         || [
             "price-import:",
-            "delivery-note:",
             "delivery-price:",
             "delivery-create:",
             "file-data:",
@@ -1007,12 +1006,18 @@ mod permission_tests {
             recipient_key: None,
         };
         tombstone_binding(&input).unwrap();
+        let mut delivery = input.clone();
+        delivery.envelope.object = "delivery-note:2:3".into();
+        tombstone_binding(&delivery).unwrap();
+        assert_eq!(
+            crate::zerotrust::delivery::deletion_price_domain(&delivery).unwrap(),
+            Some("project:2:delivery-notes:procurement".into())
+        );
         for id in [
             "product:2",
             "vendor:2",
             "product-price:2",
             "price-import:1:request",
-            "delivery-note:2:3",
             "delivery-price:2:3",
             "delivery-create:1:request",
             "file-data:2:3:part",
