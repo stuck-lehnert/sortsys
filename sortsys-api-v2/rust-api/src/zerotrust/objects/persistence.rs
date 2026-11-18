@@ -112,10 +112,19 @@ fn preserves_numbering(envelope: &EncryptedObject) -> bool {
             .starts_with("organization:invoicing:billing:counter:")
 }
 
+fn preserves_issued_billing(envelope: &EncryptedObject) -> bool {
+    envelope.facet == Facet::Billing
+        && envelope.scope.starts_with("commercial:")
+        && envelope.object == format!("{}:billing:workflow:issued-billing", envelope.scope)
+}
+
 fn retained_record_count(input: &SaveInput) -> usize {
     // Recipient and responsibility proofs name the exact encrypted revision.
     // Their current packet and history must stay reachable after a restore.
-    if input.resource_access.is_some() || preserves_numbering(&input.envelope) {
+    if input.resource_access.is_some()
+        || preserves_numbering(&input.envelope)
+        || preserves_issued_billing(&input.envelope)
+    {
         return 4;
     }
     // Retain the current object and its address. Journal entries and ordinary
@@ -803,6 +812,9 @@ async fn save(
     }
     import_receipt(input, &context.security.subject)?;
     super::super::immutable::validate_packet(input)?;
+    if preserves_issued_billing(envelope) && envelope.is_tombstone() {
+        return Err(invalid());
+    }
     if envelope.tenant != context.auth.tenant
         || envelope.author != context.security.subject
         || envelope.scope != area.scope

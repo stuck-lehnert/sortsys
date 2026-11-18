@@ -132,6 +132,11 @@ export function billingCollection(contractCaseId: string): Collection {
   return { ...area, prefix: `${area.prefix}workflow:billing` };
 }
 
+export function issuedBillingCollection(contractCaseId: string): Collection {
+  const area = commercialCollection(contractCaseId, "billing");
+  return { ...area, prefix: `${area.prefix}workflow:issued-billing` };
+}
+
 export function emptyBillingRegister(contractCaseId: string): BillingRegister {
   addressId(contractCaseId);
   return {
@@ -141,39 +146,73 @@ export function emptyBillingRegister(contractCaseId: string): BillingRegister {
   };
 }
 
-export const BILLING_REGISTER_MODEL = defineDataModel<BillingRegister>({
-  name: "contract-billing-register",
-  decode(input, object, area) {
-    const binding = commercialDomain(area.domain);
-    if (
-      !binding ||
-      binding.facet !== "billing" ||
-      area.scope !== `commercial:${binding.id}` ||
-      object !== billingCollection(binding.id).prefix
-    )
-      throw new InvalidProtectedData();
-    const value = record(input, ["format", "contractCaseId", "invoices"]);
-    if (
-      value.format !== "sortsys-contract-billing-v1" ||
-      value.contractCaseId !== binding.id ||
-      !Array.isArray(value.invoices) ||
-      value.invoices.length > 10000
-    )
-      throw new InvalidProtectedData();
-    const invoices = value.invoices.map(billingEntry);
-    if (new Set(invoices.map((invoice) => invoice.id)).size !== invoices.length)
-      throw new InvalidProtectedData();
-    return { format: value.format, contractCaseId: binding.id, invoices };
-  },
-  sources: () => [],
-  tables: [],
-});
+function billingRegisterModel(issued: boolean) {
+  return defineDataModel<BillingRegister>({
+    name: issued ? "issued-contract-billing" : "contract-billing-register",
+    decode(input, object, area) {
+      const binding = commercialDomain(area.domain);
+      if (
+        !binding ||
+        binding.facet !== "billing" ||
+        area.scope !== `commercial:${binding.id}`
+      )
+        throw new InvalidProtectedData();
+      const collection = issued
+        ? issuedBillingCollection(binding.id)
+        : billingCollection(binding.id);
+      if (object !== collection.prefix) throw new InvalidProtectedData();
+      const value = record(input, ["format", "contractCaseId", "invoices"]);
+      if (
+        value.format !== "sortsys-contract-billing-v1" ||
+        value.contractCaseId !== binding.id ||
+        !Array.isArray(value.invoices) ||
+        value.invoices.length > 10000
+      )
+        throw new InvalidProtectedData();
+      const invoices = value.invoices.map(billingEntry);
+      if (
+        new Set(invoices.map((invoice) => invoice.id)).size !== invoices.length ||
+        invoices.some((entry) => ISSUED_STATUSES.includes(entry.status) !== issued)
+      )
+        throw new InvalidProtectedData();
+      return { format: value.format, contractCaseId: binding.id, invoices };
+    },
+    sources: () => [],
+    tables: [],
+  });
+}
+
+export const BILLING_REGISTER_MODEL = billingRegisterModel(false);
+export const ISSUED_BILLING_REGISTER_MODEL = billingRegisterModel(true);
 
 export function billingRequest(contractCaseId: string) {
   return {
     model: BILLING_REGISTER_MODEL,
     area: billingCollection(contractCaseId),
   };
+}
+
+export function issuedBillingRequest(contractCaseId: string) {
+  return {
+    model: ISSUED_BILLING_REGISTER_MODEL,
+    area: issuedBillingCollection(contractCaseId),
+  };
+}
+
+/** The active issued record supersedes its earlier draft in a recovered view. */
+export function mergeBillingRegisters(
+  drafts: BillingRegister,
+  issued: BillingRegister,
+): BillingRegister {
+  if (drafts.contractCaseId !== issued.contractCaseId)
+    throw new InvalidProtectedData();
+  const invoices = new Map(drafts.invoices.map((entry) => [entry.id, entry]));
+  for (const entry of issued.invoices) {
+    const earlier = invoices.get(entry.id);
+    if (earlier && earlier.kind !== entry.kind) throw new InvalidProtectedData();
+    invoices.set(entry.id, entry);
+  }
+  return { ...drafts, invoices: [...invoices.values()] };
 }
 
 export function checkInvoiceCreation(

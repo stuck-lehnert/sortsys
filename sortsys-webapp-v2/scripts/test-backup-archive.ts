@@ -35,6 +35,8 @@ import {
 import { assistantPayload } from "../app/lib/data/privateLlm";
 import { scanEntry } from "../app/lib/data/scanHistoryData";
 import { importResult } from "../app/lib/data/imports";
+import { publicId } from "../app/lib/data/products";
+import { invoiceXml } from "./test-live-billing";
 
 export async function exerciseBackupArchive(
   owner: Client,
@@ -56,6 +58,19 @@ export async function exerciseBackupArchive(
   const gaebFile = new File([xml], "innenputz.x84", {
     type: "application/xml",
   });
+  const invoiceNumber = "ALT-4201";
+  const archivedInvoiceXml = invoiceXml(
+    "progress_invoice",
+    "40.00",
+    "47.60",
+  ).replace(
+    "<InvoiceNo>ENTWURF</InvoiceNo>",
+    `<InvoiceNo>${invoiceNumber}</InvoiceNo>`,
+  );
+  const invoiceFile = new File([archivedInvoiceXml], `${invoiceNumber}.x89`, {
+    type: "application/xml",
+  });
+  const originals = localBackupFiles([file, gaebFile, invoiceFile]);
   const history = {
     file: new File(
       [
@@ -190,6 +205,61 @@ export async function exerciseBackupArchive(
         size_bytes: String(gaebFile.size),
         net_amount: "0.00",
       }),
+      row("commercial_cases", {
+        id: "104",
+        reference: "AU-4201",
+        project_id: "92",
+        title: "Übernommener Auftrag für Fensterarbeiten",
+        kind: "offer",
+        status: "accepted",
+        scope_item_ids: "[]",
+        currency: "EUR",
+        net_amount: "240.00",
+      }),
+      row("commercial_cases", {
+        id: "105",
+        reference: "AZ-4201",
+        project_id: "92",
+        parent_case_id: "104",
+        title: "Abschlag aus dem Altbestand",
+        kind: "progress_invoice",
+        status: "partially_paid",
+        scope_item_ids: "[]",
+        currency: "EUR",
+        net_amount: "40.00",
+      }),
+      row("commercial_documents", {
+        id: "106",
+        case_id: "105",
+        purpose: "invoice",
+        phase: "89",
+        file_name: invoiceFile.name,
+        object_key: invoiceFile.name,
+        size_bytes: String(invoiceFile.size),
+        net_amount: "40.00",
+        read_only: true,
+      }),
+      row("commercial_invoice_details", {
+        case_id: "105",
+        basis: "work",
+        vat_rate: "19.00",
+        invoice_number: invoiceNumber,
+        invoice_date: "2026-11-12",
+        due_date: "2026-11-26",
+        service_start: "2026-11-12",
+        service_end: "2026-11-12",
+        total_net: "40.00",
+        deducted_net: "0.00",
+        gross_amount: "47.60",
+      }),
+      row("commercial_invoice_payments", {
+        id: "107",
+        case_id: "105",
+        amount: "20.00",
+        paid_on: "2026-11-13",
+        reference: "Vergangener Abschlag aus der Buchhaltung",
+        created_by_user_id: "87",
+      }),
     ]),
   ]);
   const source = await openPostgresBackup(sql, signal, await duckDriver());
@@ -207,12 +277,12 @@ export async function exerciseBackupArchive(
         sql,
         database: source.database,
         rows: source.rows,
-        files: localBackupFiles([file, gaebFile]),
+        files: originals,
         history,
       },
       signal,
     );
-    // The two originals travel together. SQL and the selected history each
+    // The originals travel together. SQL and the selected history each
     // have their own version and use one round of lookup, upload and readback.
     assert.equal(fileRequestsSince(initial, "findMany"), 3);
     assert.equal(fileRequestsSince(initial, "putMany"), 3);
@@ -224,7 +294,7 @@ export async function exerciseBackupArchive(
         sql,
         database: source.database,
         rows: source.rows,
-        files: localBackupFiles([file, gaebFile]),
+        files: originals,
         history,
       },
       signal,
@@ -233,7 +303,7 @@ export async function exerciseBackupArchive(
     assert.equal(fileRequestsSince(retry, "putMany"), 0);
     assert.equal(fileRequestsSince(retry, "getMany"), 0);
     console.log(
-      "Native backup archive: four one-block sources use 9 file-block HTTP requests on initial upload and 3 on resume",
+      "Native backup archive: five one-block sources use 9 file-block HTTP requests on initial upload and 3 on resume",
     );
   } finally {
     await source.database.close();
@@ -248,7 +318,7 @@ export async function exerciseBackupArchive(
       await digest(new Uint8Array(await recoveredFile.arrayBuffer())),
       await digest(original),
     );
-    assert.equal(reopened.rows, 12n);
+    assert.equal(reopened.rows, 17n);
     assert.equal(reopened.history?.tenant, history.tenant);
     assert.equal(reopened.history?.records.length, 7);
     assert.ok(
@@ -282,7 +352,10 @@ export async function exerciseBackupArchive(
     processor: gaebTestProcessor,
   });
   await initializeTenant(owner, signal, duckDriver);
-  const business = createBusinessClient(peer, { productDriver: duckDriver });
+  const business = createBusinessClient(peer, {
+    productDriver: duckDriver,
+    gaebProcessor: gaebTestProcessor,
+  });
   try {
     const scans = await required(
       business.query("deliveryNotes.scan.list", undefined),
@@ -346,6 +419,29 @@ export async function exerciseBackupArchive(
     assert.equal(bookings.length, 1);
     assert.equal(bookings[0]!.id, "37");
     assert.equal(bookings[0]!.toolUsageCostPerDay, 11.625);
+    const invoiceId = publicId("105");
+    const invoice = await required(
+      business.query("commercial.cases.get", { id: invoiceId }),
+    );
+    assert.equal(invoice.case.status, "partially_paid");
+    assert.equal(invoice.invoice?.invoiceNumber, invoiceNumber);
+    assert.equal(invoice.invoice?.paidAmount, "20.00");
+    const chain = await required(
+      business.query("commercial.invoices.context", {
+        contractCaseId: publicId("104"),
+      }),
+    );
+    assert.equal(chain.progressInvoices.length, 1);
+    assert.equal(chain.progressInvoices[0]?.id, invoiceId);
+    assert.equal(chain.progressInvoices[0]?.paidAmount, "20.00");
+    const originalInvoice = await required(
+      business.query("commercial.documents.get", {
+        caseId: invoiceId,
+        id: publicId("106"),
+      }),
+    );
+    assert.equal(originalInvoice.xml, archivedInvoiceXml);
+    assert.equal(originalInvoice.canEdit, false);
   } finally {
     business.dispose();
   }

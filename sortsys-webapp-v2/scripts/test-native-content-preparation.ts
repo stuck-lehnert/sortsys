@@ -42,6 +42,7 @@ import {
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
+import { invoiceXml } from "./test-live-billing";
 import {
   prepareToolBookingRestore,
   rejectRestoreWithoutBookingParents,
@@ -114,8 +115,10 @@ async function changeStoredCaseTitle(owner: Client, id: string) {
   }
 }
 
-async function prepareConfirmation(owner: Client, projectId: string) {
-  const basis = await adoptOrder(owner, projectId);
+function prepareConfirmation(
+  owner: Client,
+  basis: Awaited<ReturnType<typeof adoptOrder>>,
+) {
   return async (peer: Client) => {
     await changeStoredCaseTitle(owner, basis.caseId);
     const { target, draft } = await createConfirmation(owner, basis);
@@ -218,6 +221,141 @@ async function prepareConfirmation(owner: Client, projectId: string) {
       assert.ok(error);
     }
     return { caseId: target.caseId, check };
+  };
+}
+
+async function prepareInvoiceRestore(
+  owner: Client,
+  projectId: string,
+  contractCaseId: string,
+) {
+  const fields = {
+    projectId,
+    parentCaseId: contractCaseId,
+    scopeItemIds: [],
+    vatRate: "19.00",
+  };
+  const { id } = await required(
+    owner.mutate("commercial.cases.create", {
+      ...fields,
+      kind: "progress_invoice",
+      title: "Abschlag für die Fensterarbeiten",
+    }),
+  );
+  const draft = await required(
+    owner.mutate("commercial.documents.create", {
+      caseId: id,
+      purpose: "invoice",
+      fileName: "Abschlag.x89",
+      xml: invoiceXml("progress_invoice", "40.00", "47.60"),
+      netAmount: "40.00",
+      readOnly: false,
+    }),
+  );
+  const document = { caseId: id, id: draft.id };
+  const contextInput = { contractCaseId };
+  const fresh = { strategy: "network-only" } as const;
+  return async (peer: Client) => {
+    await required(owner.mutate("commercial.invoices.issue", { id }));
+    await required(
+      owner.mutate("commercial.invoices.recordPayment", {
+        id,
+        amount: "20.00",
+        paidOn: "2026-11-12",
+        reference: "Anzahlung vom Bauherrn 736284",
+        operationId: "pdf1",
+      }),
+    );
+    const published = await required(
+      peer.query("commercial.documents.get", document, fresh),
+    );
+    const detail = await required(
+      peer.query("commercial.cases.get", { id }, fresh),
+    );
+    const number = detail.invoice?.invoiceNumber;
+    assert.ok(number);
+    assert.equal(detail.invoice?.paidAmount, "20.00");
+    const later = await required(
+      owner.mutate("commercial.cases.create", {
+        ...fields,
+        kind: "final_invoice",
+        title: "Schlussrechnung, die noch Entwurf ist",
+      }),
+    );
+    assert.ok(later.id);
+    const beforeRestore = await required(
+      peer.query("commercial.invoices.context", contextInput, fresh),
+    );
+    assert.equal(beforeRestore.hasFinalInvoice, true);
+    return {
+      caseId: id,
+      async check() {
+        const context = await required(
+          peer.query("commercial.invoices.context", contextInput, fresh),
+        );
+        assert.equal(
+          context.hasFinalInvoice,
+          false,
+          "The later draft must not survive",
+        );
+        assert.equal(context.progressInvoices.length, 1);
+        assert.equal(context.progressInvoices[0]?.id, id);
+        assert.equal(context.progressInvoices[0]?.invoiceNumber, number);
+        assert.equal(context.progressInvoices[0]?.paidAmount, "20.00");
+        const recovered = await required(
+          peer.query("commercial.documents.get", document, fresh),
+        );
+        assert.equal(recovered.xml, published.xml);
+        assert.equal(recovered.version, published.version);
+        assert.equal(recovered.canEdit, false);
+      },
+      async settle() {
+        const payment = {
+          id,
+          amount: "27.60",
+          paidOn: "2026-11-12",
+          reference: "Restzahlung nach Rücksicherung",
+          operationId: "pdf2",
+        };
+        await required(peer.mutate("commercial.invoices.recordPayment", payment));
+        await required(owner.mutate("commercial.invoices.recordPayment", payment));
+        const settled = await required(
+          owner.query("commercial.cases.get", { id }, fresh),
+        );
+        assert.equal(settled.case.status, "paid");
+        assert.equal(settled.invoice?.paidAmount, "47.60");
+        assert.equal(settled.invoice?.payments.length, 2);
+        const context = await required(
+          owner.query("commercial.invoices.context", contextInput, fresh),
+        );
+        assert.equal(context.progressInvoices[0]?.paidAmount, "47.60");
+        const final = await required(
+          owner.mutate("commercial.cases.create", {
+            ...fields,
+            kind: "final_invoice",
+            title: "Schlussrechnung nach Rücksicherung",
+          }),
+        );
+        await required(
+          owner.mutate("commercial.documents.create", {
+            caseId: final.id,
+            purpose: "invoice",
+            fileName: "Schlussrechnung.x89",
+            xml: invoiceXml("final_invoice", "150.00", "130.90", "47.60"),
+            netAmount: "110.00",
+            readOnly: false,
+          }),
+        );
+        await required(peer.mutate("commercial.invoices.issue", { id: final.id }));
+        const result = await required(
+          owner.query("commercial.cases.get", { id: final.id }, fresh),
+        );
+        assert.equal(result.invoice?.deductedNet, "40.00");
+        assert.equal(result.case.status, "sent");
+        assert.notEqual(result.invoice?.invoiceNumber, number);
+        console.log("Invoice restore preserved issuance and payments and allowed final settlement");
+      },
+    };
   };
 }
 
@@ -501,7 +639,13 @@ export async function exerciseContentPreparation(
     },
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
-  const finalizeConfirmation = await prepareConfirmation(owner, project.id);
+  const contract = await adoptOrder(owner, project.id);
+  const finalizeConfirmation = prepareConfirmation(owner, contract);
+  const issueInvoice = await prepareInvoiceRestore(
+    owner,
+    project.id,
+    contract.caseId,
+  );
   const ownerSession = await required(
     owner.query("auth.sessionInfo", undefined),
   );
@@ -544,6 +688,7 @@ export async function exerciseContentPreparation(
   assert.ok(snapshot.bytes);
   const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
+  const invoice = await issueInvoice(peer);
   await exerciseGaebBlockBatches(owner, peer, confirmation.caseId, transmissions);
   const foreignTenant = `${tenant}-other`;
   const foreign = await tenantSetupRequest(foreignTenant);
@@ -927,6 +1072,7 @@ export async function exerciseContentPreparation(
   assert.equal(peer.context.context().aborted, false);
   await checkEditors(await contentEpochFingerprint(approval));
   await confirmation.check();
+  await invoice.check();
   await booking.check();
   const [samePage, stalePage] = await peer.query(
     "zerotrust.objects.list",
@@ -1074,6 +1220,7 @@ export async function exerciseContentPreparation(
   );
   assert.equal(restoredAgain.title, originalTitle);
   await confirmation.check();
+  await invoice.check();
   await booking.check();
 
   if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
@@ -1095,6 +1242,7 @@ export async function exerciseContentPreparation(
             SORTSYS_RESTORE_E2E_PASSWORD: ownerCredentials.password,
             SORTSYS_RESTORE_E2E_PROJECT: project.id,
             SORTSYS_RESTORE_E2E_CONFIRMATION_CASE: confirmation.caseId,
+            SORTSYS_RESTORE_E2E_INVOICE_CASE: invoice.caseId,
             SORTSYS_RESTORE_E2E_BEFORE: newTitle,
             SORTSYS_RESTORE_E2E_AFTER: originalTitle,
           },
@@ -1125,4 +1273,5 @@ export async function exerciseContentPreparation(
     operator,
     project.id,
   );
+  await invoice.settle();
 }

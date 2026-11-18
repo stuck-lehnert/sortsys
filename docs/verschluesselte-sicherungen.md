@@ -70,6 +70,13 @@ signierte Versionskette bleiben unter den aktuellen Leserechten verfügbar.
 Bei älteren Festschreibungen ohne diesen zusätzlichen Nachweis muss die
 erste Dokumentversion weiterhin in der Sicherung liegen.
 
+Die Abrechnungsübersicht eines Auftrags führt ausgestellte Rechnungen und ihre
+Zahlungsstände über die Rücksicherung hinweg weiter. Entwürfe kehren auf den
+Stand der Sicherung zurück. So steht ein ausgestellter Abschlag weiterhin
+für die Schlussrechnung zur Verfügung, auch wenn die Rechnung beim Erstellen
+der Sicherung noch im Entwurf war. Für diesen Ablauf müssen Auftrag und
+Rechnungsvorgang im gewählten Fachstand enthalten sein.
+
 Die API kann einen vorbereiteten älteren Fachstand unter Beibehaltung der
 aktuellen Recovery- und Berechtigungsnachweise freigeben. Dafür sind eine
 aktive Administratorsitzung des Mandanten und eine Signatur der

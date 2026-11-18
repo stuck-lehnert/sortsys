@@ -355,9 +355,11 @@ Siehe [Projektkosten](verschluesselte-projektkosten.md).
 **Rechnungen, Abschläge, Zahlungen und Statusübergänge.** Der Browseradapter
 rechnet und prüft X89-Dokumente, vergibt Nummern und legt ausgestellte Werte und
 Zahlungen unveränderlich ab. Mehrinstanzbetrieb, verlorene Bestätigungen und
-zwei Recoveries sind geprüft. Die vollständige Bestandsübernahme und gewöhnliche
-Mitarbeiterfreigaben sind noch zu prüfen. Die API garantiert keine fachliche
-Richtigkeit geheimer Beträge. Siehe [Abrechnung](verschluesselte-abrechnung.md).
+zwei Recoveries sind geprüft. Der Mitarbeitertest prüft getrennte Rechte für
+Rechnung, Auftrag, Projektbuchung und Nummernvergabe. Bei der Rücksicherung
+behalten ausgestellte Abschläge ihre Nummer und ihre Zahlungen. Die API
+garantiert keine fachliche Richtigkeit geheimer Beträge. Siehe
+[Abrechnung](verschluesselte-abrechnung.md).
 
 **Rechnungsnummern und technische Eindeutigkeit.** Berechtigte Clients leiten
 geheime Belegungskennungen aus den Nummern ab. Die API erzwingt deren

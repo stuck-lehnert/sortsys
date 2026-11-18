@@ -10,10 +10,12 @@ const endpoints = JSON.parse(env.SORTSYS_AUTH_TEST_ENDPOINTS);
 assert.equal(endpoints.length, 2);
 const project = env.SORTSYS_RESTORE_E2E_PROJECT;
 const confirmationCase = env.SORTSYS_RESTORE_E2E_CONFIRMATION_CASE;
+const invoiceCase = env.SORTSYS_RESTORE_E2E_INVOICE_CASE;
 const finalizedText = "Vertrauliche Ausführung nach der Sicherung.";
+const paymentReference = "Anzahlung vom Bauherrn 736284";
 const before = env.SORTSYS_RESTORE_E2E_BEFORE;
 const after = env.SORTSYS_RESTORE_E2E_AFTER;
-assert.ok(project && confirmationCase && before && after);
+assert.ok(project && confirmationCase && invoiceCase && before && after);
 const artifacts = join(process.argv[2], "browser-artifacts", "content-restore");
 await mkdir(artifacts, { recursive: true });
 const server = await applicationServer(
@@ -48,7 +50,7 @@ try {
     if (!url.pathname.startsWith("/api/v2/")) return;
     if (url.pathname.includes("zerotrust.content.activate")) activations++;
     const wire = (request.postData() ?? "") + decodeURIComponent(url.search);
-    if ([before, after, finalizedText].some((text) => wire.includes(text))) {
+    if ([before, after, finalizedText, paymentReference].some((text) => wire.includes(text))) {
       leaks.push(url.pathname);
     }
   });
@@ -123,6 +125,16 @@ try {
   await page.screenshot({
     path: join(artifacts, "restored-locked-confirmation.png"),
   });
+  await page.goto(`${server.origin}/gaeb/${invoiceCase}`);
+  await expect(page.locator("canvas").first()).toBeVisible();
+  await page.getByRole("button", { name: "Zahlungseingang", exact: true }).click();
+  const payments = page.getByRole("dialog", { name: "Zahlungseingänge", exact: true });
+  await expect(payments.getByText(/Offener Betrag.*27,60/)).toBeVisible();
+  await expect(payments.getByText(new RegExp(paymentReference))).toBeVisible();
+  await page.screenshot({
+    path: join(artifacts, "restored-invoice-payments.png"),
+    animations: "disabled",
+  });
   assert.equal(activations, 1);
   assert.deepEqual(errors, []);
   assert.deepEqual(leaks, []);
@@ -134,6 +146,7 @@ try {
       previewCancelled: true,
       activations,
       lockedConfirmationVisible: true,
+      invoicePaymentVisible: true,
       errors,
       leaks,
     }),

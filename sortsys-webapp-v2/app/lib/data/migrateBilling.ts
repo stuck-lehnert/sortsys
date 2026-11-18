@@ -11,6 +11,7 @@ import {
   invoiceBillingRequest,
   invoiceSealObject,
   invoiceSealRequest,
+  issuedBillingRequest,
   ISSUED_STATUSES,
   type InvoiceSeal,
 } from "./commercialBillingData";
@@ -85,14 +86,21 @@ export async function prepareBillingRegisters(
   }
   for (const register of registers.values()) {
     register.invoices.sort((left, right) => left.id.localeCompare(right.id));
-    const request = billingRequest(register.contractCaseId);
-    await copyProtectedCollection(
-      client,
-      request.area,
-      [{ id: request.area.prefix, value: register }],
-      (value, object) => request.model.decode(value, object, request.area),
-      signal,
-    );
+    for (const issued of [false, true]) {
+      const request = issued
+        ? issuedBillingRequest(register.contractCaseId)
+        : billingRequest(register.contractCaseId);
+      const invoices = register.invoices.filter(
+        (invoice) => ISSUED_STATUSES.includes(invoice.status) === issued,
+      );
+      await copyProtectedCollection(
+        client,
+        request.area,
+        [{ id: request.area.prefix, value: { ...register, invoices } }],
+        (value, object) => request.model.decode(value, object, request.area),
+        signal,
+      );
+    }
   }
 }
 

@@ -11,6 +11,8 @@ import {
   invoicePaymentRequest,
   invoiceSealObject,
   invoiceSealRequest,
+  issuedBillingRequest,
+  mergeBillingRegisters,
 } from "./commercialBillingData";
 import { splitCommercialRows } from "./commercialData";
 import { commercialRequest } from "./commercialModel";
@@ -104,6 +106,33 @@ test("contract billing counts issued progress invoices and reserves settlement d
       request.area,
     ),
   ).toThrow();
+});
+
+test("the current issued register replaces restored drafts without hiding other drafts", () => {
+  const drafts = emptyBillingRegister("2");
+  drafts.invoices.push(
+    entry("8", "progress_invoice", "draft"),
+    entry("a", "final_invoice", "draft"),
+  );
+  const issued = emptyBillingRegister("2");
+  issued.invoices.push({
+    ...entry("8", "progress_invoice", "partially_paid"),
+    paidAmount: "35.00",
+  });
+  const restored = mergeBillingRegisters(drafts, issued);
+  const context = billingContext(restored);
+  expect(context.progressInvoices).toHaveLength(1);
+  expect(context.progressInvoices[0]?.paidAmount).toBe("35.00");
+  expect(context.hasFinalInvoice).toBe(true);
+  expect(drafts.invoices[0]?.status).toBe("draft");
+  const request = issuedBillingRequest("2");
+  expect(request.model.decode(issued, request.area.prefix, request.area)).toEqual(
+    issued,
+  );
+  expect(() =>
+    request.model.decode(drafts, request.area.prefix, request.area),
+  ).toThrow();
+  expect(() => mergeBillingRegisters(drafts, emptyBillingRegister("3"))).toThrow();
 });
 
 test("draft invoice details use exact rates and allow lump sums only for progress invoices", () => {

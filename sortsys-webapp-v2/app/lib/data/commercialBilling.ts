@@ -37,6 +37,9 @@ import {
   invoicePaymentRequest,
   invoiceSealObject,
   invoiceSealRequest,
+  issuedBillingRequest,
+  ISSUED_STATUSES,
+  mergeBillingRegisters,
   type BillingEntry,
   type InvoiceKind,
   type InvoiceSeal,
@@ -50,7 +53,7 @@ import { newProductRowId, publicId } from "./products";
 import { financialObject, financialRequest } from "./projectFinancialData";
 import { required } from "./protectedObjects";
 import type { BusinessRow } from "./rowCodec";
-import type { DataRuntime, PreparedData } from "./runtime/runtime";
+import type { DataRuntime, DataView, PreparedData } from "./runtime/runtime";
 
 export type CaseChange = {
   snapshot: CaseSnapshot;
@@ -193,6 +196,20 @@ export function invoiceEntry(rows: BusinessRow[]): BillingEntry {
   });
 }
 
+function readRegisters(view: DataView, contractId: string) {
+  const draftRequest = billingRequest(contractId);
+  const issuedRequest = issuedBillingRequest(contractId);
+  const drafts = view.documents(draftRequest);
+  const issued = view.documents(issuedRequest);
+  if (drafts.length !== 1 || issued.length !== 1)
+    throw new InvalidProtectedData();
+  return {
+    draft: drafts[0]!,
+    issued: issued[0]!,
+    register: mergeBillingRegisters(drafts[0]!.value, issued[0]!.value),
+  };
+}
+
 export function createCommercialBilling(
   client: Client,
   runtime: DataRuntime,
@@ -216,12 +233,14 @@ export function createCommercialBilling(
   }
 
   async function register(contractCaseId: string) {
-    const request = billingRequest(contractCaseId);
-    return runtime.read([request], (view) => {
-      const documents = view.documents(request);
-      if (documents.length !== 1) throw new InvalidProtectedData();
-      return { document: documents[0]!, head: view.head(request), request };
-    });
+    const draftRequest = billingRequest(contractCaseId);
+    return runtime.read(
+      [draftRequest, issuedBillingRequest(contractCaseId)],
+      (view) => ({
+        value: readRegisters(view, contractCaseId).register,
+        head: view.head(draftRequest),
+      }),
+    );
   }
 
   async function prepareEntry(
@@ -230,22 +249,21 @@ export function createCommercialBilling(
     creating = false,
   ) {
     const entry = invoiceEntry(rows);
-    const request = billingRequest(parent);
-    return runtime.prepare([request], (tx) => {
-      const documents = tx.documents(request);
-      if (documents.length !== 1) throw new InvalidProtectedData();
-      const previous = documents[0]!;
-      const existing = previous.value.invoices.find(
+    const draftRequest = billingRequest(parent);
+    const issuedRequest = issuedBillingRequest(parent);
+    return runtime.prepare([draftRequest, issuedRequest], (tx) => {
+      const previous = readRegisters(tx, parent);
+      const existing = previous.register.invoices.find(
         (invoice) => invoice.id === entry.id,
       );
       if (creating) {
         if (existing) throw new ProtectedWriteConflict();
         try {
-          checkInvoiceCreation(previous.value, entry.kind);
+          checkInvoiceCreation(previous.register, entry.kind);
         } catch (error) {
           billingError(error);
         }
-        const rate = billingContext(previous.value).vatRate;
+        const rate = billingContext(previous.register).vatRate;
         if (
           rate !== null &&
           commercialCents(rate) !== commercialCents(entry.vatRate)
@@ -259,12 +277,26 @@ export function createCommercialBilling(
       ) {
         throw new ProtectedWriteConflict();
       }
-      tx.edit(request, previous.id, (value) => {
-        value.invoices = value.invoices.filter(
-          (invoice) => invoice.id !== entry.id,
-        );
-        value.invoices.push(entry);
-      });
+      const issued = ISSUED_STATUSES.includes(entry.status);
+      if (issued) {
+        tx.edit(issuedRequest, previous.issued.id, (value) => {
+          value.invoices = value.invoices.filter(
+            (invoice) => invoice.id !== entry.id,
+          );
+          value.invoices.push(entry);
+        });
+      }
+      const hasDraft = previous.draft.value.invoices.some(
+        (invoice) => invoice.id === entry.id,
+      );
+      if (!issued || hasDraft) {
+        tx.edit(draftRequest, previous.draft.id, (value) => {
+          value.invoices = value.invoices.filter(
+            (invoice) => invoice.id !== entry.id,
+          );
+          if (!issued) value.invoices.push(entry);
+        });
+      }
     });
   }
 
@@ -288,21 +320,19 @@ export function createCommercialBilling(
     if (wireCommercialCase(parent.values).projectId !== current.projectId)
       throw new InvalidProtectedData();
     const selected = await register(current.parentCaseId);
-    const own = selected.document.value.invoices.find(
+    const own = selected.value.invoices.find(
       (invoice) => invoice.id === basis.id,
     );
     if (!own || own.status !== "draft" || own.kind !== current.kind)
       throw new InvalidProtectedData();
-    const settled = selected.document.value.invoices.some(
+    const settled = selected.value.invoices.some(
       (invoice) =>
         invoice.id !== basis.id &&
         ["invoice", "final_invoice"].includes(invoice.kind) &&
         ["sent", "partially_paid", "paid"].includes(invoice.status),
     );
     if (settled) billingError(new Error("billing-already-settled"));
-    const previousInvoices = billingContext(
-      selected.document.value,
-    ).progressInvoices;
+    const previousInvoices = billingContext(selected.value).progressInvoices;
     try {
       const validated = await processor.invoice(
         xml,
@@ -327,23 +357,26 @@ export function createCommercialBilling(
     validate,
     prepareEntry,
     async initialize(contractCaseId: string) {
-      const request = billingRequest(contractCaseId);
-      return runtime.prepare([request], (tx) => {
-        if (tx.documents(request).length) throw new ProtectedWriteConflict();
-        tx.create(
-          request,
-          request.area.prefix,
-          emptyBillingRegister(contractCaseId),
-        );
+      const requests = [
+        billingRequest(contractCaseId),
+        issuedBillingRequest(contractCaseId),
+      ];
+      return runtime.prepare(requests, (tx) => {
+        for (const request of requests) {
+          if (tx.documents(request).length) throw new ProtectedWriteConflict();
+          tx.create(
+            request,
+            request.area.prefix,
+            emptyBillingRegister(contractCaseId),
+          );
+        }
       });
     },
     async context(input: unknown) {
       const data = record(input, ["contractCaseId"]);
       addressId(data.contractCaseId);
       await contract(data.contractCaseId as string);
-      return billingContext(
-        (await register(data.contractCaseId as string)).document.value,
-      );
+      return billingContext((await register(data.contractCaseId as string)).value);
     },
     async cancel(basis: CaseSnapshot, rows: BusinessRow[]) {
       const current = wireCommercialCase(rows);

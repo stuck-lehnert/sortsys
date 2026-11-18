@@ -51,6 +51,14 @@ Rechnungsbeträge auch dann, wenn einzelne untergeordnete Vorgänge nicht lesbar
 sind. Damit beruht eine Schlussrechnung auf der vollständigen Abschlagskette.
 Die Freigabe dieses Bereichs erlaubt folglich Einsicht in diese Auftragssummen.
 
+Bei einer Rücksicherung stammen Entwürfe aus dem gewählten Fachstand.
+Der Browser ergänzt die ausgestellten Rechnungen und
+ihre Zahlungsstände aus dem aktuellen, verschlüsselten Abrechnungsregister.
+War ein Abschlag zum Zeitpunkt der Sicherung noch ein Entwurf, erscheint er
+danach mit seiner endgültigen Nummer und dem bereits bezahlten Betrag. Die
+Schlussrechnung zieht ihn weiterhin ab. Siehe
+[Rücksicherung](verschluesselte-sicherungen.md).
+
 Ein Rechnungsentwurf kann auch ohne Zugriff auf unbekannte XML-Erweiterungen
 bearbeitet werden. Dazu braucht das Konto die Rechnungswerte und Leserechte auf
 Grunddaten und Abrechnung des Auftrags. Schreibrechte auf Beschreibung,
@@ -81,16 +89,11 @@ gemeinsame Lauf öffnet eine vollständig bezahlte Rechnung nach zwei
 aufeinanderfolgenden Seed-Recoveries erneut. Die API-Anfragen enthalten dabei
 keine Rechnungstexte oder Zahlungsreferenzen im Klartext.
 
-Der [Bestandstest](../sortsys-webapp-v2/scripts/test-live-billing-migration.ts)
-übernimmt vorhandene Rechnungen, Abschläge, einen Schlussrechnungsentwurf,
-Zahlungen und Nummernzähler. Die XML-Originale bleiben bytegenau erhalten,
-einschließlich BOM und Zeilenenden. Historische Zahlungserfasser bleiben von der
-Person unterschieden, die den Bestand verschlüsselt. Ein Abbruch nach der ersten
-festgeschriebenen Rechnung lässt sich fortsetzen; eine abgeschlossene Übernahme
-erzeugt beim Wiederholen keine weiteren Schreibvorgänge. Weitere Zahlungen und
-die Ausstellung des übernommenen Entwurfs sind ebenfalls geprüft. Der Test
-stellt Originaldateien über einen eigenen schreibgeschützten HTTP-Dienst bereit;
-er prüft keine vollständige S3-Implementierung.
+Der Archivtest übernimmt einen bereits teilweise bezahlten Abschlag aus einem
+PostgreSQL-Backup bei der Mandanteneinrichtung. Nach einem simulierten Abbruch
+setzt die zweite API-Instanz die Übernahme fort. Der Test prüft das bytegenaue
+X89-Original, die erhaltene Rechnungsnummer, den Zahlungsstand und den Eintrag
+in der Abrechnungsübersicht des Auftrags. [Archivtest](../sortsys-webapp-v2/scripts/test-backup-archive.ts)
 
 Der
 [Mitarbeitertest](../sortsys-webapp-v2/scripts/test-live-billing-permissions.ts)
@@ -111,9 +114,6 @@ werden die einzelnen Freigaben, das Ausstellen einer Teilansicht, eine abgewiese
 Zahlungsansicht; eine erneute Lesefreigabe erlaubt nach dem Öffnen des Links nur
 die Einsicht. Beim Erstladen und bei kryptografischen Veröffentlichungen wartet
 der Test jeweils bis zu einer Minute. Er misst keine Ladezeiten.
-
-Die allgemeine Mandantenumstellung bleibt bis zum Abschluss der übrigen
-Fachbereiche gesperrt.
 
 Die API kann Versionen, technische Eindeutigkeit, Signaturen und Schreibrechte
 erzwingen. Die fachliche Richtigkeit geheimer Beträge bleibt eine
