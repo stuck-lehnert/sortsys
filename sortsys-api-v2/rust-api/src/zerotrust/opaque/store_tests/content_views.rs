@@ -55,11 +55,11 @@ async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
             Some(&endpoints),
             Some(tenant),
         ),
-        publish_prepared_fixture(&root, tenant, &first, &second),
+        inspect_prepared_copy(&root, tenant, &first, &second),
     );
 }
 
-async fn publish_prepared_fixture(
+async fn inspect_prepared_copy(
     root: &Path,
     tenant: &str,
     first: &CipherStore,
@@ -116,17 +116,9 @@ async fn publish_prepared_fixture(
     assert!(!ciphertext.contains("Vertrauliche Projektfassung"));
     assert_eq!(sortsys_store::content_id(&ciphertext), staged.reference);
 
-    let repository = Repository::system(first.clone()).tenant(tenant).unwrap();
-    let approval: ContentEpoch = serde_json::from_value(report["approval"].clone()).unwrap();
-    let mut transaction = repository.transaction().unwrap();
-    let root = crate::zerotrust::setup::metadata_root(&mut transaction, tenant)
+    tokio::fs::write(root.join("content-preparation-checked"), b"checked")
         .await
         .unwrap();
-    transaction.validate().await.unwrap();
-    assert_eq!(approval.snapshot, prepared.snapshot);
-    assert_eq!(approval.number, prepared.number);
-    assert_eq!(approval.actor, root.profile.owner.user);
-    publish_head(&repository, &approval, None, None, &root.profile.authority).await;
 }
 
 async fn stage(store: &CipherStore, epoch: &str, entries: &[(usize, u64)]) {

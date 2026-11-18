@@ -1,14 +1,16 @@
 //! Content selection is authorized by the tenant authority, independently of
 //! operator snapshot storage and independently of account/seed recovery.
+mod checks;
+
 use super::{
-    crypto::{invalid, revision, sized},
-    objects::AuthorityHistory,
-    wire::AuthorityCertificate,
+    crypto::{identifier, invalid, revision, sized},
+    objects::{AuthorityHistory, conflict, registry},
+    wire::{AuthorityCertificate, SignedPolicy},
 };
 use crate::{
     auth::AuthService,
     control::{Transaction, key},
-    error::{RpcError, RpcResult, bad_request, forbidden},
+    error::{RpcError, RpcResult, bad_request, forbidden, internal},
     rpc::{ProcedureRegistryBuilder, RequestContext},
 };
 use serde::{Deserialize, Serialize};
@@ -38,21 +40,228 @@ struct PreparedContent {
     ciphertexts: String,
 }
 
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ActivateInput {
+    operation: String,
+    approval: ContentEpoch,
+    policy: SignedPolicy,
+}
+
+#[derive(Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ContentActivation {
+    operation: String,
+    content: String,
+    policy_version: String,
+    policy_signature: String,
+}
+
 pub(super) fn register(
     builder: ProcedureRegistryBuilder,
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
-    builder.mutation(
-        "zerotrust.content.prepare",
-        move |request: RequestContext, input: PrepareInput| {
-            let service = service.clone();
-            async move { prepare(&service, &request, input).await }
-        },
-    )
+    let preparing = service.clone();
+    builder
+        .mutation(
+            "zerotrust.content.prepare",
+            move |request: RequestContext, input: PrepareInput| {
+                let service = preparing.clone();
+                async move { prepare(&service, &request, input).await }
+            },
+        )
+        .mutation(
+            "zerotrust.content.activate",
+            move |request: RequestContext, input: ActivateInput| {
+                let service = service.clone();
+                async move { activate(&service, &request, input).await }
+            },
+        )
 }
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    builder.mutation_stub::<PrepareInput, PreparedContent>("zerotrust.content.prepare")
+    builder
+        .mutation_stub::<PrepareInput, PreparedContent>("zerotrust.content.prepare")
+        .mutation_stub::<ActivateInput, ContentActivation>("zerotrust.content.activate")
+}
+
+fn activation_key(number: &str) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
+    Ok(key(
+        "zt-content-epochs",
+        &format!("activation-{:020}", revision(number)?),
+    ))
+}
+
+async fn activate(
+    service: &AuthService,
+    request: &RequestContext,
+    input: ActivateInput,
+) -> RpcResult<ContentActivation> {
+    let result = activate_once(service, request, &input).await;
+    if !result
+        .as_ref()
+        .is_err_and(|error| error.code == crate::error::ErrorCode::Conflict)
+    {
+        return result;
+    }
+    // A second instance may have accepted this exact request between the
+    // observations and commit. Only its durable receipt can confirm it.
+    let context = admin_context(service, request).await?;
+    match confirmed_activation(context, &input).await? {
+        Some(receipt) => Ok(receipt),
+        None => result,
+    }
+}
+
+fn verify_approval(
+    context: &super::access::MetadataContext,
+    input: &ActivateInput,
+) -> RpcResult<()> {
+    identifier(&input.operation)?;
+    let security = &context.security;
+    let generation = security.root.generation.to_string();
+    input.approval.verify(
+        &context.auth.tenant,
+        Some(&generation),
+        Some(&security.subject),
+        &security.authority,
+    )?;
+    input.policy.verify(&security.authority)?;
+    if input.policy.tenant != context.auth.tenant {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
+async fn activation_receipt(
+    context: &mut super::access::MetadataContext,
+    input: &ActivateInput,
+) -> RpcResult<Option<ContentActivation>> {
+    let head = &input.approval;
+    let receipt = context
+        .transaction
+        .read::<ContentActivation>(activation_key(&head.number)?)
+        .await?;
+    if let Some(receipt) = &receipt
+        && (receipt.operation != input.operation
+            || receipt.content != head.fingerprint()?
+            || receipt.policy_version != input.policy.version
+            || receipt.policy_signature != input.policy.signature
+            || context
+                .transaction
+                .read::<ContentEpoch>(history_key(&head.number)?)
+                .await?
+                .as_ref()
+                != Some(head))
+    {
+        return Err(conflict());
+    }
+    Ok(receipt)
+}
+
+async fn confirmed_activation(
+    mut context: super::access::MetadataContext,
+    input: &ActivateInput,
+) -> RpcResult<Option<ContentActivation>> {
+    verify_approval(&context, input)?;
+    let receipt = activation_receipt(&mut context, input).await?;
+    context.transaction.validate().await?;
+    Ok(receipt)
+}
+
+async fn activate_once(
+    service: &AuthService,
+    request: &RequestContext,
+    input: &ActivateInput,
+) -> RpcResult<ContentActivation> {
+    let mut context = admin_context(service, request).await?;
+    verify_approval(&context, input)?;
+    let head = &input.approval;
+    if let Some(receipt) = activation_receipt(&mut context, input).await? {
+        context.transaction.validate().await?;
+        return Ok(receipt);
+    }
+    let historical_head = history_key(&head.number)?;
+
+    let preparation: sortsys_store::content::Preparation = context
+        .transaction
+        .read(sortsys_store::content::preparation_key(&head.number).map_err(storage_error)?)
+        .await?
+        .ok_or_else(conflict)?;
+    if preparation.phase != sortsys_store::content::Phase::Ready
+        || preparation.operation != input.operation
+        || preparation.number != head.number
+        || preparation.previous != head.previous
+        || preparation.snapshot != head.snapshot
+        || preparation.source_number != head.source_number
+        || preparation.source_head != head.source_head
+        || context
+            .transaction
+            .read::<ContentEpoch>(historical_head.clone())
+            .await?
+            .is_some()
+    {
+        return Err(conflict());
+    }
+    let previous = context.transaction.content_epoch().await?;
+    let source = if head.source_number == "0" {
+        None
+    } else {
+        Some(
+            context
+                .transaction
+                .read::<ContentEpoch>(history_key(&head.source_number)?)
+                .await?
+                .ok_or_else(conflict)?,
+        )
+    };
+    head.follows(previous.as_ref(), source.as_ref())?;
+
+    // Advance the signed write version in the same publication so previously
+    // signed object/document/file mutations cannot be replayed into this view.
+    // A delegated policy needs a continuation proof that keeps its profiles.
+    if context.security.policy.administration.is_some() {
+        return Err(bad_request(
+            "A delegated policy needs a signed continuation before restoring",
+        ));
+    }
+    if input.policy.administration.is_some()
+        || input.policy.transaction.is_some()
+        || serde_json::to_value(&input.policy.rules).map_err(internal)?
+            != serde_json::to_value(&context.security.policy.rules).map_err(internal)?
+    {
+        return Err(forbidden());
+    }
+    context.transaction.select_prepared_content(head).await?;
+    checks::dependencies(&mut context).await?;
+    registry::replace_policy(
+        &mut context.transaction,
+        &context.security,
+        &input.policy,
+        false,
+    )
+    .await?;
+
+    let receipt = ContentActivation {
+        operation: input.operation.clone(),
+        content: head.fingerprint()?,
+        policy_version: input.policy.version.clone(),
+        policy_signature: input.policy.signature.clone(),
+    };
+    context
+        .transaction
+        .put_protected(historical_head, head)
+        .await?;
+    context
+        .transaction
+        .put_protected(activation_key(&head.number)?, &receipt)
+        .await?;
+    context
+        .transaction
+        .put_protected(crate::control::content::head_key(), head)
+        .await?;
+    context.transaction.commit().await?;
+    Ok(receipt)
 }
 
 fn history_key(number: &str) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {

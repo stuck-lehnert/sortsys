@@ -715,6 +715,7 @@ export type MutationInputs = {
   "users.vacations.delete": { id: string; expectedRevision?: undefined | string; };
   "users.vacations.deny": { id: string; expectedRevision?: undefined | string; reason: string; };
   "zerotrust.access.publish": { policyVersion: string, grants: Array<KeyGrant>, domains: Array<DomainDefinition>, };
+  "zerotrust.content.activate": { operation: string, approval: ContentEpoch, policy: SignedPolicy, };
   "zerotrust.content.prepare": { snapshotOperation: string, operation: string, };
   "zerotrust.creations.grant": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
   "zerotrust.creations.renew": { origins: Array<CreationOrigin>, object: string, revision: string, packetSignature: string, proof: string, };
@@ -926,6 +927,7 @@ export type MutationOutputs = {
   "users.vacations.delete": { success: true; };
   "users.vacations.deny": { success: true; };
   "zerotrust.access.publish": { success: true, };
+  "zerotrust.content.activate": { operation: string, content: string, policyVersion: string, policySignature: string, };
   "zerotrust.content.prepare": { operation: string, snapshotOperation: string, snapshot: string, bytes: string, current: ContentEpoch | null, source: ContentEpoch | null, sourceAuthority: AuthorityCertificate, number: string, records: string, ciphertexts: string, };
   "zerotrust.creations.grant": { success: true, };
   "zerotrust.creations.renew": { success: true, };
@@ -1286,6 +1288,7 @@ const mutationProcedures = new Set<string>([
   "users.vacations.delete",
   "users.vacations.deny",
   "zerotrust.access.publish",
+  "zerotrust.content.activate",
   "zerotrust.content.prepare",
   "zerotrust.creations.grant",
   "zerotrust.creations.renew",

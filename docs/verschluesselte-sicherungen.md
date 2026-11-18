@@ -47,13 +47,14 @@ Entscheidung. Die Sperre hängt nicht davon ab, ob bereits ein externer
 Zeitstempel vorliegt. Das Rückspielen einer älteren Mandantendatei darf diese
 späteren Festschreibungen nicht verschwinden lassen.
 
-Eine sichere Rücksicherung eines älteren Fachstands unter Beibehaltung der
-aktuellen Recovery- und Berechtigungsnachweise ist noch nicht fertig. Die
-Oberfläche bietet deshalb keinen allgemeinen Rücksicherungsaufruf an. Der
-Datendienst weist Mandantendateien mit veralteten Sicherheitsnachweisen
-weiterhin ab. Auch eine gemeinsame Rücksetzung von Mandanten- und Kontrolldatei
-auf einen alten Stand braucht unabhängige aktuelle Nachweise, um erkennbar zu
-bleiben.
+Die API kann einen vorbereiteten älteren Fachstand unter Beibehaltung der
+aktuellen Recovery- und Berechtigungsnachweise freigeben. Dafür sind eine
+aktive Administratorsitzung des Mandanten und eine Signatur der
+Mandantenautorität nötig. Die Signatur bindet die Freigabe an die konkrete
+Sicherung und den bisherigen Fachstand. Der Datendienst weist
+Mandantendateien mit veralteten Sicherheitsnachweisen weiterhin ab. Auch eine
+gemeinsame Rücksetzung von Mandanten- und Kontrolldatei auf einen alten Stand
+braucht unabhängige aktuelle Nachweise, um erkennbar zu bleiben.
 
 Der API-Speicherzugriff unterstützt dafür getrennte Ablagen je Fachstand.
 Konten samt Freigaben und Schlüsseln behalten ihren aktuellen Stand. Die Zähler
@@ -73,10 +74,20 @@ und prüft beim Kopieren die Inhaltsadressen der Chiffrate. Ein unterbrochener
 Auftrag lässt sich mit derselben Kennung über jede API-Instanz fortsetzen.
 Währenddessen bearbeiten Mitarbeiter weiterhin den aktuellen Stand.
 
-Die Freigabe des vorbereiteten Stands fehlt noch. Vor dem Wechsel müssen
-Fachreferenzen mit den erhaltenen Datensätzen abgeglichen werden. Verbundene
-Editoren erkennen den Wechsel bereits. Ihre ausstehenden Live-Nachrichten
-und Speicherbelege bleiben an den vorherigen Fachstand gebunden.
+Bei der Freigabe prüft die API die öffentlich prüfbaren Verweise von
+abgeschlossenen Dokumenten, persönlichen Einsatzzuweisungen und
+Werkzeugbuchungen mit einem Verantwortlichen. Bestehende Schlüssel und
+Freigaben gelten weiter. Die Mandantenautorität signiert dieselben Regeln mit
+einer neuen Schreibversion. Dadurch kann die API ältere, ausstehende Pakete
+abweisen. Die aktivierte Auswahl, der Freigabebeleg und die Schreibversion
+werden gemeinsam gespeichert. Verbundene Editoren erkennen den Wechsel und
+öffnen den neuen Stand.
+
+Die Freigabe setzt derzeit einen direkt von der Mandantenautorität signierten
+Berechtigungsstand voraus. Für delegierte Regeln fehlt ein signierter
+Fortsetzungsnachweis. Auch die Bedienoberfläche für Mandanten und der
+clientseitige Abgleich von Verweisen innerhalb verschlüsselter Fachdaten stehen
+noch aus.
 
 ## Erstellung und Nachweise
 

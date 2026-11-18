@@ -111,6 +111,23 @@ impl Transaction {
         self.content_head().await
     }
 
+    /// Read the prepared namespace through the normal pin resolver. The
+    /// compare-and-swap still observes the previous published head and every
+    /// record read from either view until the caller commits or discards it.
+    pub(crate) async fn select_prepared_content(&mut self, head: &ContentEpoch) -> RpcResult<()> {
+        if !matches!(&self.repository.target, Target::Tenant { tenant } if tenant == &head.tenant)
+            || !self.changes.is_empty()
+        {
+            return Err(conflict());
+        }
+        self.content_head().await?;
+        self.content = ContentState {
+            head: SelectedContent::Restored(Box::new(head.clone())),
+            ..ContentState::default()
+        };
+        Ok(())
+    }
+
     pub async fn prefetch(&mut self, records: Vec<RecordKey>) -> RpcResult<()> {
         for record in &records {
             record.validate()?;

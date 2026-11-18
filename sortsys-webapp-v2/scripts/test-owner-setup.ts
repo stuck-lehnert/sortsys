@@ -307,7 +307,7 @@ try {
     await exerciseContentPreparation(
       owner,
       peer,
-      operator,
+      { client: operator, token: login.token },
       tenant,
       dirname(outputPath),
       contentChanges,

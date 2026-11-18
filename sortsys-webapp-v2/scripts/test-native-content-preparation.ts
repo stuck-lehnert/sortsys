@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { rename, writeFile } from "node:fs/promises";
+import { access, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Client, MutateInput } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
@@ -9,7 +9,9 @@ import {
   encryptedObject,
   randomSecret,
   signContentEpoch,
+  signPolicy,
   sized,
+  verifyPolicy,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory } from "../app/lib/crypto/session";
 import { openAuthority } from "../app/lib/crypto/setup";
@@ -18,7 +20,11 @@ import type { EncryptedChange } from "../app/lib/data/events";
 import { openDocumentMessages } from "../app/lib/data/documentMessages";
 import { prepareLivePublication } from "../app/lib/data/liveCheckpoints";
 import { fileObject } from "../app/lib/data/projectFileData";
-import { required } from "../app/lib/data/protectedObjects";
+import { projectCollection } from "../app/lib/data/projectData";
+import {
+  protectedCollection,
+  required,
+} from "../app/lib/data/protectedObjects";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 
 async function holdEditorPackets(
@@ -151,17 +157,51 @@ async function holdEditorPackets(
 export async function exerciseContentPreparation(
   owner: Client,
   peer: ReturnType<typeof createBusinessClient>,
-  operator: Client,
+  infrastructure: { client: Client; token: string },
   tenant: string,
   directory: string,
   changes: readonly EncryptedChange[],
 ) {
+  const { client: operator, token: operatorToken } = infrastructure;
   const originalTitle = "Vertrauliche Projektfassung im Sicherungsbestand";
   const currentTitle = "Vertrauliche Projektfassung nach der Sicherung";
   const project = await required(
     owner.mutate("projects.create", { title: originalTitle }),
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
+  const ownerSession = await required(
+    owner.query("auth.sessionInfo", undefined),
+  );
+  const times = {
+    userId: ownerSession.user.id,
+    from: new Date("2026-11-18T08:00:00Z"),
+    to: new Date("2026-11-18T16:00:00Z"),
+  };
+  const assignment = await required(
+    owner.mutate("projects.deployments.create", {
+      ...times,
+      projectId: project.id,
+      note: "Zuweisung im Sicherungsbestand",
+    }),
+  );
+  const projectArea = projectCollection(project.id);
+  const originalProject = await protectedCollection(
+    peer,
+    projectArea,
+    new AbortController().signal,
+  );
+  let oldWrite;
+  try {
+    const [original] = await originalProject.read();
+    assert.ok(original);
+    oldWrite = await originalProject.packet(
+      original.envelope.object,
+      original.value,
+      original.envelope,
+    );
+  } finally {
+    originalProject.close();
+  }
   const snapshot = await required(
     operator.mutate("admin.storage.snapshots.create", {
       tenant,
@@ -169,6 +209,13 @@ export async function exerciseContentPreparation(
     }),
   );
   assert.ok(snapshot.bytes);
+  const currentAssignment = "Zuweisung mit aktueller Freigabe";
+  await required(
+    owner.mutate("projects.deployments.update", {
+      id: assignment.id,
+      data: { note: currentAssignment },
+    }),
+  );
   await required(
     owner.mutate("projects.update", {
       id: project.id,
@@ -191,6 +238,7 @@ export async function exerciseContentPreparation(
     operatorError,
     "Infrastructure credentials cannot prepare a tenant content view",
   );
+  operator.setToken(operatorToken);
   const [, missingError] = await owner.mutate("zerotrust.content.prepare", {
     ...input,
     snapshotOperation: "absent-snapshot",
@@ -243,20 +291,30 @@ export async function exerciseContentPreparation(
   const setup = status.profile;
   assert.ok(setup);
   const authority = await openAuthority(peer, setup);
-  const approval = await signContentEpoch(
-    {
-      format: "zt-content-epoch-v1",
-      tenant,
-      authorityGeneration: trust.current.generation,
-      number: prepared.number,
-      previous: null,
-      sourceNumber: "0",
-      sourceHead: null,
-      snapshot: prepared.snapshot,
-      actor: setup.owner.user,
-    },
+  const epoch = {
+    format: "zt-content-epoch-v1" as const,
+    tenant,
+    authorityGeneration: trust.current.generation,
+    number: prepared.number,
+    previous: null,
+    sourceNumber: "0",
+    sourceHead: null,
+    snapshot: prepared.snapshot,
+    actor: setup.owner.user,
+  };
+  const approval = await signContentEpoch(epoch, authority);
+  const currentPolicy = await required(
+    peer.query("zerotrust.policy.get", undefined, { strategy: "network-only" }),
+  );
+  const { permissions } = await verifyPolicy(currentPolicy, {
+    tenant,
+    authority: trust.authority(trust.current.generation),
+  });
+  const nextPolicy = await signPolicy(
+    { ...permissions, version: (BigInt(permissions.version) + 1n).toString() },
     authority,
   );
+  const activate = { operation, approval, policy: nextPolicy };
   const historyInput = {
     prefixes: [`project:${later.id}`],
     before: null,
@@ -280,13 +338,90 @@ export async function exerciseContentPreparation(
       operation,
       snapshot: prepared.snapshot,
       snapshotOperation: snapshot.id,
-      approval,
     }),
   );
   await rename(`${report}.pending`, report);
 
-  // The disposable Rust driver publishes the signed test view after the
-  // socket has established its old baseline and the draft is on disk.
+  // Inspect the hidden copy before changing the public head through the API.
+  const checked = join(directory, "content-preparation-checked");
+  const checkDeadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      await access(checked);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    assert.ok(Date.now() < checkDeadline, "The hidden copy was not inspected");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const [, denied] = await operator.mutate(
+    "zerotrust.content.activate",
+    activate,
+  );
+  assert.ok(denied);
+  operator.setToken(operatorToken);
+  const wrong = await signContentEpoch(
+    { ...epoch, snapshot: base64(randomSecret()) },
+    authority,
+  );
+  assert.ok(
+    (
+      await peer.mutate("zerotrust.content.activate", {
+        ...activate,
+        approval: wrong,
+      })
+    )[1],
+  );
+  assert.ok(
+    (
+      await owner.mutate("zerotrust.content.activate", {
+        ...activate,
+        operation: base64(randomSecret()),
+      })
+    )[1],
+  );
+  const changedRights = await signPolicy(
+    { ...permissions, version: nextPolicy.version, rules: [] },
+    authority,
+  );
+  assert.ok(
+    (
+      await peer.mutate("zerotrust.content.activate", {
+        ...activate,
+        policy: changedRights,
+      })
+    )[1],
+  );
+  const unrelatedAssignment = await required(
+    owner.mutate("projects.deployments.create", {
+      ...times,
+      projectId: later.id,
+      note: "Zuweisung ohne Projekt im Sicherungsbestand",
+    }),
+  );
+  const [unbound, dependencyError] = await peer.mutate(
+    "zerotrust.content.activate",
+    activate,
+  );
+  assert.equal(unbound, null);
+  assert.ok(dependencyError instanceof RpcClientError);
+  assert.equal(dependencyError.code, "CONFLICT");
+  await required(
+    owner.mutate("projects.deployments.delete", { id: unrelatedAssignment.id }),
+  );
+  const [published, simultaneous] = await Promise.all([
+    required(owner.mutate("zerotrust.content.activate", activate)),
+    required(peer.mutate("zerotrust.content.activate", activate)),
+  ]);
+  assert.deepEqual(simultaneous, published);
+  assert.equal(published.content, await contentEpochFingerprint(approval));
+  assert.equal(published.policyVersion, nextPolicy.version);
+  assert.deepEqual(
+    await required(peer.mutate("zerotrust.content.activate", activate)),
+    published,
+  );
+
   const deadline = Date.now() + 20_000;
   while (
     !changes.slice(beforeSwitch).some((change) => change.reset && change.all)
@@ -321,6 +456,16 @@ export async function exerciseContentPreparation(
     BigInt(afterObjects.snapshot),
     BigInt(beforeObjects.snapshot) + 1n,
   );
+  const [oldPublished, oldError] = await peer.mutate(
+    "zerotrust.objects.batch",
+    {
+      objects: [oldWrite],
+      heads: [{ domain: projectArea.domain, sequence: afterObjects.snapshot }],
+    },
+  );
+  assert.equal(oldPublished, null);
+  assert.ok(oldError instanceof RpcClientError);
+  assert.equal(oldError.code, "CONFLICT");
   const restored = await required(
     peer.query(
       "projects.get",
@@ -329,6 +474,20 @@ export async function exerciseContentPreparation(
     ),
   );
   assert.equal(restored.title, originalTitle);
+  const assignments = await required(
+    peer.query(
+      "projects.deployments.list",
+      {
+        ...times,
+        projectId: project.id,
+      },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.equal(
+    assignments.find(({ id }) => id === assignment.id)?.note,
+    currentAssignment,
+  );
   const [missing] = await peer.query(
     "projects.get",
     { id: later.id },
@@ -340,5 +499,79 @@ export async function exerciseContentPreparation(
       strategy: "network-only",
     }),
   );
-  assert.deepEqual(afterHistory.changes, beforeHistory.changes);
+  const restoredChanges = afterHistory.changes.map(({ access, ...change }) => {
+    assert.equal(access.policyVersion, nextPolicy.version);
+    return change;
+  });
+  assert.deepEqual(
+    restoredChanges,
+    beforeHistory.changes.map(({ access: _access, ...change }) => change),
+  );
+
+  const snapshotAfterSwitch = await required(
+    operator.mutate("admin.storage.snapshots.create", {
+      tenant,
+      operation: base64(randomSecret()),
+    }),
+  );
+  const newTitle = "Bearbeitung nach der ersten Rücksicherung";
+  await required(
+    owner.mutate("projects.update", {
+      id: project.id,
+      data: { title: newTitle },
+    }),
+  );
+  const second = await required(
+    peer.mutate("zerotrust.content.prepare", {
+      snapshotOperation: snapshotAfterSwitch.id,
+      operation: base64(randomSecret()),
+    }),
+  );
+  assert.deepEqual(second.source, approval);
+  assert.deepEqual(second.current, approval);
+  assert.equal(second.number, "2");
+  const secondApproval = await signContentEpoch(
+    {
+      ...epoch,
+      number: second.number,
+      snapshot: second.snapshot,
+      previous: published.content,
+      sourceNumber: "1",
+      sourceHead: published.content,
+    },
+    authority,
+  );
+  const secondPolicy = await signPolicy(
+    { ...permissions, version: (BigInt(nextPolicy.version) + 1n).toString() },
+    authority,
+  );
+  const secondReceipt = await required(
+    peer.mutate("zerotrust.content.activate", {
+      operation: second.operation,
+      approval: secondApproval,
+      policy: secondPolicy,
+    }),
+  );
+  assert.equal(
+    secondReceipt.content,
+    await contentEpochFingerprint(secondApproval),
+  );
+  assert.deepEqual(
+    await required(owner.mutate("zerotrust.content.activate", activate)),
+    published,
+  );
+  const activePolicy = await required(
+    owner.query("zerotrust.policy.get", undefined, {
+      strategy: "network-only",
+    }),
+  );
+  assert.equal(activePolicy.version, secondPolicy.version);
+  const restoredAgain = await required(
+    owner.query(
+      "projects.get",
+      { id: project.id },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.equal(restoredAgain.title, originalTitle);
 }

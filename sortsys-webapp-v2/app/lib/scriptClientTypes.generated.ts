@@ -4250,6 +4250,11 @@ export type MutationInputs = {
         grants: Array<KeyGrant>;
         domains: Array<DomainDefinition>;
     };
+    "zerotrust.content.activate": {
+        operation: string;
+        approval: ContentEpoch;
+        policy: SignedPolicy;
+    };
     "zerotrust.content.prepare": {
         snapshotOperation: string;
         operation: string;
@@ -5142,6 +5147,12 @@ export type MutationOutputs = {
     };
     "zerotrust.access.publish": {
         success: true;
+    };
+    "zerotrust.content.activate": {
+        operation: string;
+        content: string;
+        policyVersion: string;
+        policySignature: string;
     };
     "zerotrust.content.prepare": {
         operation: string;

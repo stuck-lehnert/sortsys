@@ -154,7 +154,7 @@ pub(in crate::zerotrust) async fn publish_domain(
 ) -> RpcResult<()> {
     super::domain_access::publish(transaction, area).await
 }
-async fn authority_at(
+pub(in crate::zerotrust) async fn authority_at(
     transaction: &mut Transaction,
     tenant: &str,
     generation: &str,

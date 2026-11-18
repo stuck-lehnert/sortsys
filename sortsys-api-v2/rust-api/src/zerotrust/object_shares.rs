@@ -115,7 +115,7 @@ fn allows_recipient(guard: &Security, recipient: &str, scope: &str, facet: Facet
         .allows_with(&derived, recipient, scope, facet, Action::Read)
 }
 
-fn verify_access(
+pub(super) fn verify_access(
     value: &RecipientAccess,
     envelope: &EncryptedObject,
     generation: &str,
@@ -224,7 +224,7 @@ pub(super) async fn save(
             ))
             .await?;
     }
-    context.transaction.put(record, &value).await?;
+    context.transaction.put_protected(record, &value).await?;
     if let Some(key) = &value.recipient_key {
         notified.insert(key.recipient.user.clone());
         context

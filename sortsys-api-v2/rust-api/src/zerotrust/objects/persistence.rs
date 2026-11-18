@@ -82,6 +82,12 @@ fn preserves_numbering(envelope: &EncryptedObject) -> bool {
             .object
             .starts_with("organization:invoicing:billing:counter:")
 }
+
+fn retains_publication(input: &SaveInput) -> bool {
+    // Recipient and responsibility proofs name the exact encrypted revision.
+    // Their current packet and history must stay reachable after a restore.
+    input.resource_access.is_some() || preserves_numbering(&input.envelope)
+}
 pub(in crate::zerotrust) async fn object(
     transaction: &mut Transaction,
     id: &str,
@@ -481,7 +487,7 @@ async fn commit_batch_inner(
     }
     let mut retained = Vec::new();
     for packet in &input.objects {
-        if preserves_numbering(&packet.envelope) {
+        if retains_publication(packet) {
             retained.extend(publication_records(packet)?);
         }
     }
@@ -900,10 +906,9 @@ async fn save(
         &retained,
     )
     .await?;
-    if preserves_numbering(envelope) {
-        // Counters remain mutable, but a content restore must not rewind them.
-        // Each record has its own checkpoint: collecting every invoice's two
-        // history keys in one growing checkpoint would hit the 64-key limit.
+    if retains_publication(input) {
+        // Each new revision adds immutable history keys. One checkpoint per
+        // key bounds checkpoint size while the current rows can still advance.
         for record in retained {
             context.transaction.protect_record(record).await?;
         }
