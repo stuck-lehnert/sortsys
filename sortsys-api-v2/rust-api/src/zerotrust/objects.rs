@@ -275,6 +275,8 @@ struct ListInput {
     after: Option<String>,
     snapshot: Option<String>,
     #[ts(optional)]
+    known: Option<String>,
+    #[ts(optional)]
     include_openings: Option<bool>,
     #[ts(optional)]
     head_only: Option<bool>,

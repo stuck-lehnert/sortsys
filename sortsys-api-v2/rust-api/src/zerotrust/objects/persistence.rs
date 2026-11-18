@@ -242,8 +242,16 @@ async fn list_objects(
 fn validate_list_input(input: &ListInput) -> RpcResult<()> {
     identifier(&input.domain)?;
     identifier(&input.prefix)?;
-    if input.head_only == Some(true) && input.snapshot.is_none() {
+    if input.head_only == Some(true) && input.after.is_some() {
         return Err(invalid());
+    }
+    if let Some(known) = &input.known {
+        if input.snapshot.is_some() || input.after.is_some() || input.head_only == Some(true) {
+            return Err(invalid());
+        }
+        if known != "0" {
+            revision(known)?;
+        }
     }
     if let Some(after) = &input.after {
         identifier(after)?;
@@ -305,7 +313,9 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     {
         return Err(conflict());
     }
-    if input.head_only == Some(true) {
+    // A known version is a cache hint. Only a snapshot used for pagination
+    // or a final consistency check must match the current version exactly.
+    if input.head_only == Some(true) || input.known.as_ref() == Some(&sequence) {
         return Ok(ObjectPage {
             snapshot: sequence,
             key_generation: area.generation,

@@ -201,7 +201,9 @@ export async function exerciseBatchedReads(
   for (const selections of [
     [],
     Array.from({ length: 17 }, () => first),
-    [{ ...first, headOnly: true, snapshot: null }],
+    [{ ...first, known: snapshot }],
+    [{ ...first, headOnly: true, after: "staged:0" }],
+    [{ ...first, snapshot: null, known: "01" }],
   ]) {
     const [value, error] = await peer.query("zerotrust.objects.pages", {
       selections,
@@ -209,6 +211,65 @@ export async function exerciseBatchedReads(
     assert.equal(value, null);
     assert.ok(error);
   }
+
+  // One round trip covers a current cached prefix, a stale prefix and a
+  // metadata-only lookup. Put a real record behind each selection so the
+  // absence of ciphertext in the response is meaningful.
+  const cached = { ...area, prefix: "staged:0" };
+  const changed = { ...area, prefix: "staged:319" };
+  const inspected = { ...area, prefix: "staged:318" };
+  const oldHead = (BigInt(snapshot) - 1n).toString();
+  const calls: string[] = [];
+  const observed: Client = {
+    ...peer,
+    query: (async (path, input, options) => {
+      calls.push(path);
+      const reply = await peer.query(path, input, options);
+      if (path === "zerotrust.objects.pages" && reply[0]) {
+        const [unchanged, withChanges, metadata] =
+          reply[0] as QueryResult<"zerotrust.objects.pages">;
+        for (const empty of [unchanged, metadata]) {
+          assert.equal(empty?.snapshot, snapshot);
+          assert.deepEqual(empty?.objects, []);
+          assert.equal(empty?.openings, undefined);
+          assert.equal(empty?.after, null);
+        }
+        assert.deepEqual(
+          withChanges?.objects.map((object) => object.object),
+          [changed.prefix],
+        );
+        assert.equal(withChanges?.openings?.length, 1);
+      }
+      return reply;
+    }) as Client["query"],
+  };
+  const refreshed = await protectedCollections(observed, signal, [area.domain]);
+  calls.length = 0;
+  await refreshed.prefetch([
+    { area: cached, known: snapshot },
+    { area: changed, known: oldHead },
+    { area: inspected, headOnly: true },
+  ]);
+  const collections = [cached, changed, inspected].map(refreshed);
+  try {
+    const [unchanged, updated, metadata] = await Promise.all([
+      collections[0]!.readIfChanged(snapshot),
+      collections[1]!.readIfChanged(oldHead),
+      collections[2]!.inspect(),
+    ]);
+    assert.equal(unchanged, null);
+    assert.deepEqual(
+      updated?.map((object) => object.value),
+      [{ title: "Geheime Kalkulationszeile 319", amount: 592.375 }],
+    );
+    assert.equal(metadata, snapshot);
+    assert.deepEqual(calls, ["zerotrust.objects.pages"]);
+  } finally {
+    for (const collection of collections) collection.close();
+  }
+  console.log(
+    "Native conditional reads: three collection selections use one request, only the changed selection carries encrypted data",
+  );
 
   const trusted = await protectedCollections(client, signal);
   await trusted.prefetch([{ area }]);

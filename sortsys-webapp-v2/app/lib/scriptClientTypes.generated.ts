@@ -537,6 +537,7 @@ export type ListInput = {
     prefix: string;
     after: string | null;
     snapshot: string | null;
+    known?: string;
     includeOpenings?: boolean;
     headOnly?: boolean;
 };
@@ -1440,6 +1441,7 @@ export type QueryInputs = {
         prefix: string;
         after: string | null;
         snapshot: string | null;
+        known?: string;
         includeOpenings?: boolean;
         headOnly?: boolean;
     };

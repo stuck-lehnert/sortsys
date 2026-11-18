@@ -649,15 +649,15 @@ export class DataRuntime {
           (await this.storage.open(this.controller.signal, domains));
       }
       await open?.prefetch?.(
-        requests
-          .filter((request) => request.ids === undefined)
-          .map((request) => {
-            const previous = next.get(dataAreaKey(request.area));
-            return {
-              area: request.area,
-              snapshot: previous?.complete ? previous.head : undefined,
-            };
-          }),
+        requests.map((request) => {
+          if (request.ids !== undefined)
+            return { area: request.area, headOnly: true };
+          const previous = next.get(dataAreaKey(request.area));
+          return {
+            area: request.area,
+            known: previous?.complete ? previous.head : undefined,
+          };
+        }),
       );
       for (const [key, resource] of next)
         if (open?.readable && !open.readable(resource.request.area))
@@ -681,7 +681,7 @@ export class DataRuntime {
           DATA_ACTIONS.map((action) => [action, collection.can(action)]),
         ) as Record<DataAction, boolean>;
         if (request.ids !== undefined) {
-          const head = await collection.inspect(undefined, request.ids[0]);
+          const head = await collection.inspect();
           const unchangedHead = previous?.head === head;
           const missingIds = unchangedHead
             ? request.ids.filter(
@@ -741,26 +741,20 @@ export class DataRuntime {
         )
           next.delete(key);
       await open?.prefetch?.(
-        [...reads.keys()].flatMap((key) => {
-          if (merged.get(key)?.ids !== undefined) return [];
+        [...reads.keys()].map((key) => {
           const resource = next.get(key);
           if (!resource) throw new ProtectedWriteConflict();
-          return [
-            {
-              area: resource.request.area,
-              snapshot: resource.head,
-              openings: false,
-            },
-          ];
+          return {
+            area: resource.request.area,
+            snapshot: resource.head,
+            headOnly: true,
+          };
         }),
       );
       await mapConcurrent([...reads], 4, async ([key, collection]) => {
         const resource = next.get(key);
         if (!resource) throw new ProtectedWriteConflict();
-        if (merged.get(key)?.ids !== undefined)
-          await collection.inspect(resource.head, merged.get(key)!.ids![0]);
-        else if ((await collection.readIfChanged(resource.head)) !== null)
-          throw new ProtectedWriteConflict();
+        await collection.inspect(resource.head);
       });
       this.live();
       if (generation !== this.generation) throw new ProtectedWriteConflict();

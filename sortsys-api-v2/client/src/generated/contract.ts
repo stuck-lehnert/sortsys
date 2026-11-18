@@ -130,7 +130,7 @@ export type Kind = "initialize" | "update" | "presence";
 
 export type Level = "error" | "warning";
 
-export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, includeOpenings?: boolean, headOnly?: boolean, };
+export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
 
 export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, content?: string, signature: string, };
 
@@ -386,7 +386,7 @@ export type QueryInputs = {
   "zerotrust.members.list": { after: Id | null, };
   "zerotrust.members.status": { id: Id, };
   "zerotrust.objects.get": { id: string, };
-  "zerotrust.objects.list": { domain: string, prefix: string, after: string | null, snapshot: string | null, includeOpenings?: boolean, headOnly?: boolean, };
+  "zerotrust.objects.list": { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
   "zerotrust.objects.pages": { selections: Array<ListInput>, };
   "zerotrust.objects.recipientAccess": { objects: Array<string>, };
   "zerotrust.objects.shared": { prefix: string, snapshot: string | null, after: string | null, };

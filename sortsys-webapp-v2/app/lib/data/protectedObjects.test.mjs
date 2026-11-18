@@ -236,6 +236,18 @@ async function fixture(extraReader = false, suspended = false) {
             new Error("Protected data changed; reload the current version"),
           ];
         }
+        if (input.headOnly || input.known === state.head) {
+          return [
+            state.transformPage({
+              snapshot: state.head,
+              keyGeneration: "1",
+              objects: [],
+              after: null,
+              recipientAccess: [],
+            }),
+            null,
+          ];
+        }
         let page = objects
           .filter(
             (object) => input.after === null || object.object > input.after,
@@ -481,6 +493,27 @@ test("verified openings bundled with object pages need no separate key request",
     expect(state.openingRequests).toBe(0);
     expect(state.keyRequests).toBe(0);
     expect(state.definitionRequests).toBe(0);
+  } finally {
+    collection.close();
+  }
+});
+
+test("metadata-only reads reject extra content or an unexpected snapshot", async () => {
+  const { state, collection } = await fixture();
+  try {
+    state.transformPage = (page) => ({ ...page, after: "item:031" });
+    await expect(collection.readIfChanged("1")).rejects.toBeInstanceOf(
+      InvalidProtectedData,
+    );
+    state.transformPage = (page) => ({ ...page, snapshot: "2" });
+    await expect(collection.inspect("1")).rejects.toBeInstanceOf(
+      InvalidProtectedData,
+    );
+    expect(state.openingRequests).toBe(0);
+    expect(() => collection.snapshot()).toThrow();
+    state.transformPage = (page) => page;
+    expect(await collection.readIfChanged("1")).toBeNull();
+    expect(await collection.inspect("1")).toBe("1");
   } finally {
     collection.close();
   }

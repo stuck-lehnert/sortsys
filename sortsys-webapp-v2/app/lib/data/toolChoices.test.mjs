@@ -167,15 +167,19 @@ test("tool and booking choices read only permitted master data and reuse one acc
       ].includes(call.path),
     );
     const cachedMasterReads = reads
+      .filter((call) => call.path === "zerotrust.objects.pages")
       .flatMap((call) => call.input.selections ?? [call.input])
       .filter((request) => request.domain === master.domain);
-    expect(cachedMasterReads.length).toBeGreaterThan(0);
-    for (const request of cachedMasterReads) {
-      expect(request.headOnly).toBe(true);
-      expect(request.snapshot).toBe(
-        String(tenant.domains.get(master.domain).head),
-      );
-    }
+    const masterHead = String(tenant.domains.get(master.domain).head);
+    expect(cachedMasterReads).toHaveLength(2);
+    expect(cachedMasterReads[0]).toMatchObject({
+      known: masterHead,
+      snapshot: null,
+    });
+    expect(cachedMasterReads[1]).toMatchObject({
+      headOnly: true,
+      snapshot: masterHead,
+    });
     for (const call of reads) {
       for (const selected of call.input.selections ?? [call.input]) {
         expect(selected.domain.endsWith(":master-data")).toBe(true);

@@ -535,6 +535,14 @@ Reihenfolge der Auswahl bleibt erhalten; fehlende Datensätze werden ausgelassen
 Ein Fehler verwirft die gesamte Auswahl. Bereits laufende Abrufe enden vor der
 Freigabe ihrer gemeinsam verwendeten Ressourcen.
 
+Beim Aktualisieren von Übersichten kann der Browser die zuletzt geprüften
+Datenstände für bis zu 16 Bereiche gemeinsam anfragen. Für einen unveränderten
+Bereich liefert die API nur den Datenstand. Bei einer Änderung liefert sie in
+derselben Antwort die erste Seite mit den verschlüsselten Datensätzen und ihren
+Schlüsselnachweisen. Die abschließende Versionsprüfung lädt ausschließlich
+Metadaten. Ändert sich ein Bereich während des Ladens, wird der begonnene
+Lesevorgang verworfen.
+
 Aktuelle Schlüsselzertifikate werden mit `zerotrust.keyAuthorities.forAreas` für
 bis zu 32 Bereiche in einem gemeinsamen, versionsgeprüften Stand gelesen. Die
 API bündelt auch die zugehörigen Metadatenabrufe beim Datendienst. Alle Einträge

@@ -323,10 +323,7 @@ export async function protectedTenant(
           if (input.snapshot != null && input.snapshot !== head) {
             return conflict();
           }
-          if (input.headOnly) {
-            if (input.snapshot == null) {
-              return [null, new Error("Head check requires a known snapshot")];
-            }
+          if (input.headOnly || input.known === head) {
             return [
               {
                 snapshot: head,

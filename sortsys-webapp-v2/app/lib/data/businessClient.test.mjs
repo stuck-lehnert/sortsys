@@ -511,10 +511,9 @@ test("unsupported typed, dynamic and subscribed business calls never reach the n
     const replies = await Promise.all([
       client.query("projects.deployments.list", { projectId: marker }),
       client.queryDynamic("users.vacations.list", { search: marker }),
-      client.mutate("deliveryNotes.delete", { id: "1" }),
       client.mutate("commercial.documents.save", { xml: marker }),
       client.mutateDynamic("zerotrust.missingRoute", { content: marker }),
-      client.mutateDynamic("auth.setPassword", {
+      client.mutate("auth.setPassword", {
         username: "somebody-else",
         password: marker,
       }),

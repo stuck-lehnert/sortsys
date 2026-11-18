@@ -42,6 +42,7 @@ import {
   sealOfficeSession,
 } from "./officeCapsule";
 import { officeRecipients, sameOfficeRecipients } from "./officeRecipients";
+import { mapConcurrent } from "./runtime/concurrentReads";
 import { searchDocuments, type SearchDocument } from "../search/documentSearch";
 import { createDocumentMatcher } from "../search/documentQuery";
 import {
@@ -264,9 +265,10 @@ export function createProtectedProjectFiles(
             : undefined,
         ));
       await open.prefetch(
-        ids
-          .filter((id) => !stores.has(id))
-          .map((id) => ({ area: fileCollection(id) })),
+        ids.map((id) => ({
+          area: fileCollection(id),
+          known: stores.get(id)?.head,
+        })),
       );
       if (visible) {
         for (const id of candidate.keys()) {
@@ -276,7 +278,7 @@ export function createProtectedProjectFiles(
           }
         }
       }
-      for (const id of ids) {
+      const loaded = await mapConcurrent(ids, 4, async (id) => {
         const collection = open(fileCollection(id));
         opened.push(collection);
         const old = stores.get(id);
@@ -284,6 +286,9 @@ export function createProtectedProjectFiles(
           ? await collection.readIfChanged(old.head)
           : await collection.read();
         live();
+        return { id, collection, old, entries };
+      });
+      for (const { id, collection, old, entries } of loaded) {
         if (entries === null) {
           candidate.set(id, { ...old!, collection });
         } else {

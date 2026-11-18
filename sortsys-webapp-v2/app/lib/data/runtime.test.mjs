@@ -309,7 +309,7 @@ test("read-only preparations retain exact source guards for an external signed p
   }
 });
 
-test("preparation reloads a stale batched snapshot before running the business callback", async () => {
+test("preparation refreshes a changed collection without retrying the batch", async () => {
   const f = fixture();
   const original = f.storage.open;
   let opened = 0;
@@ -352,7 +352,7 @@ test("preparation reloads a stale batched snapshot before running the business c
         { domain: mainArea.domain, sequence: "2" },
       ]);
       expect(callbacks).toBe(1);
-      expect(opened).toBe(3);
+      expect(opened).toBe(2);
       expect(f.calls.commit).toBe(0);
     } finally {
       prepared.close();

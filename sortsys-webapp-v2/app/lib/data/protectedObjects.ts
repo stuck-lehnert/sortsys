@@ -77,11 +77,35 @@ export type Collection = {
 export type CollectionPageRequest = {
   area: Collection;
   snapshot?: string;
-  openings?: boolean;
+  known?: string;
+  headOnly?: boolean;
 };
 type ObjectPage = QueryResult<"zerotrust.objects.list">;
-const pageKey = (area: Pick<Collection, "domain" | "prefix">) =>
-  `${area.domain}\0${area.prefix}`;
+
+function pageRequest(
+  area: Pick<Collection, "domain" | "prefix">,
+  options: Omit<CollectionPageRequest, "area"> = {},
+): QueryInput<"zerotrust.objects.list"> {
+  return {
+    domain: area.domain,
+    prefix: area.prefix,
+    after: null,
+    snapshot: options.snapshot ?? null,
+    known: options.known,
+    headOnly: options.headOnly,
+    includeOpenings: !options.headOnly,
+  };
+}
+
+function pageKey(request: QueryInput<"zerotrust.objects.list">): string {
+  return JSON.stringify([
+    request.domain,
+    request.prefix,
+    request.snapshot,
+    request.known,
+    request.headOnly ?? false,
+  ]);
+}
 export type OpenedObject = {
   envelope: EncryptedObject;
   value: unknown;
@@ -142,21 +166,15 @@ export async function protectedCollections(
     for (let offset = 0; offset < selections.length; offset += 16)
       groups.push(selections.slice(offset, offset + 16));
     await mapConcurrent(groups, 4, async (group) => {
+      const requests = group.map(({ area, ...options }) =>
+        pageRequest(area, options),
+      );
       let pages: ObjectPage[];
       try {
         pages = await required(
           client.query(
             "zerotrust.objects.pages",
-            {
-              selections: group.map(({ area, snapshot, openings }) => ({
-                domain: area.domain,
-                prefix: area.prefix,
-                after: null,
-                snapshot: snapshot ?? null,
-                includeOpenings: openings ?? true,
-                headOnly: snapshot !== undefined,
-              })),
-            },
+            { selections: requests },
             { strategy: "network-only" },
           ),
         );
@@ -175,7 +193,7 @@ export async function protectedCollections(
         throw new InvalidProtectedData();
       for (const [index, selection] of group.entries()) {
         if (!readable(selection.area)) throw new InvalidProtectedData();
-        context.pages.set(pageKey(selection.area), pages[index]!);
+        context.pages.set(pageKey(requests[index]!), pages[index]!);
       }
     });
   }
@@ -531,6 +549,30 @@ function openCollection(
       plain.fill(0);
     }
   }
+  async function loadPage(input: QueryInput<"zerotrust.objects.list">) {
+    if (input.after === null) {
+      const key = pageKey(input);
+      const cached = context.pages.get(key);
+      if (cached) {
+        context.pages.delete(key);
+        return cached;
+      }
+    }
+    return required(
+      client.query("zerotrust.objects.list", input, {
+        strategy: "network-only",
+      }),
+    );
+  }
+  function checkHeadOnly(page: ObjectPage) {
+    if (
+      !Array.isArray(page.objects) ||
+      page.objects.length !== 0 ||
+      page.after !== null ||
+      page.openings !== undefined
+    )
+      throw new InvalidProtectedData();
+  }
   async function readSnapshot(
     prefix = collection.prefix,
     previous?: string,
@@ -545,31 +587,15 @@ function openCollection(
       try {
         do {
           live();
-          const cached =
-            after === null
-              ? context.pages.get(
-                  pageKey({ domain: collection.domain, prefix }),
-                )
-              : undefined;
-          if (cached)
-            context.pages.delete(
-              pageKey({ domain: collection.domain, prefix }),
-            );
-          const page: ObjectPage =
-            cached ??
-            (await required(
-              client.query(
-                "zerotrust.objects.list",
-                {
-                  domain: collection.domain,
-                  prefix,
-                  after,
-                  snapshot,
-                  includeOpenings: previous === undefined,
-                },
-                { strategy: "network-only" },
-              ),
-            ));
+          const page = await loadPage({
+            ...pageRequest(
+              { domain: collection.domain, prefix },
+              { known: after === null ? previous : undefined },
+            ),
+            after,
+            snapshot,
+            includeOpenings: after === null || previous === undefined,
+          });
           live();
           if (
             !Array.isArray(page.objects) ||
@@ -592,6 +618,7 @@ function openCollection(
             previous !== undefined &&
             snapshot === previous
           ) {
+            checkHeadOnly(page);
             head = snapshot;
             return { objects: [], unchanged: true };
           }
@@ -922,26 +949,21 @@ function openCollection(
       live();
       if (!prefix.startsWith(collection.prefix))
         throw new InvalidProtectedData();
-      const page = await required(
-        client.query(
-          "zerotrust.objects.list",
-          {
-            domain: collection.domain,
-            prefix,
-            after: null,
-            snapshot: expected ?? null,
-          },
-          { strategy: "network-only" },
+      const page = await loadPage(
+        pageRequest(
+          { domain: collection.domain, prefix },
+          { snapshot: expected, headOnly: true },
         ),
       );
       live();
       if (
+        typeof page.snapshot !== "string" ||
         !/^(0|[1-9]\d*)$/.test(page.snapshot) ||
         page.keyGeneration !== domain.generation ||
-        !Array.isArray(page.objects) ||
-        page.objects.length > 32
+        (expected !== undefined && expected !== page.snapshot)
       )
         throw new InvalidProtectedData();
+      checkHeadOnly(page);
       head = page.snapshot;
       return head;
     },
