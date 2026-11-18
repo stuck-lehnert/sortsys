@@ -90,6 +90,7 @@ async function save(page, ready) {
 try {
   browser = await chromium.launch({
     headless: process.env.SORTSYS_E2E_HEADED !== "1",
+    executablePath: process.env.SORTSYS_E2E_CHROMIUM,
   });
   console.log("Scoped access UI: starting isolated browser sessions");
   const owner = await pageFor("owner");

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { text } from "node:stream/consumers";
 import {
   createClient,
   RpcClientError,
@@ -63,6 +64,7 @@ import {
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import {
   PRODUCT_COLLECTION,
+  productPayload,
   type ProductPayload,
 } from "../app/lib/data/products";
 import {
@@ -116,6 +118,42 @@ const login = {
   password: "Only-owner-knows-this-password-2026!",
 };
 
+async function recoverInBrowser(
+  phrase: string,
+  password: string,
+  username: string,
+): Promise<string> {
+  const child = spawn("node", ["scripts/e2e/seedRecovery.browser.mjs"], {
+    stdio: ["ignore", "pipe", "inherit"],
+    env: {
+      ...process.env,
+      SORTSYS_RECOVERY_E2E_PHRASE: phrase,
+      SORTSYS_RECOVERY_E2E_PASSWORD: password,
+      SORTSYS_RECOVERY_E2E_USER: username,
+    },
+  });
+  const finished = new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, termination) => {
+      if (code === 0) resolve();
+      else
+        reject(
+          new Error(
+            `Seed recovery browser test failed: ${termination ?? code}`,
+          ),
+        );
+    });
+  });
+  // Carry the replacement phrase to the second recovery in memory only.
+  const [output] = await Promise.all([text(child.stdout), finished]);
+  const newPhrase: unknown = JSON.parse(output);
+  assert.ok(
+    typeof newPhrase === "string" && newPhrase.split(" ").length === 24,
+  );
+  assert.ok(newPhrase !== phrase);
+  return newPhrase;
+}
+
 async function enroll(
   client: Client,
   username: string,
@@ -153,7 +191,12 @@ async function enroll(
   const password = `Private-password-${username}-2026!`;
   await signInMemberInvitation(client, invitation.link, password, signal);
   await joinMemberInvitation(client, invitation.link, signal);
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
   await approveMemberInvitation(
     owner,
     invitation.link.invitation.id,
@@ -166,8 +209,13 @@ async function enroll(
     client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
   );
   assert.equal(session.roles.includes(":admin"), false);
-  await acceptVaultWithKey(administrator.dataKey, administrator.vault, administrator.username, false);
-  return { subject: `user:${person.id}`, account };
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
+  return { subject: `user:${person.id}`, account, password };
 }
 
 try {
@@ -713,7 +761,12 @@ try {
   console.log(
     "Native key history: bounded selections retain exact definition/key pairs and reject partial, duplicate, unavailable or unauthorized reads",
   );
-  await acceptVaultWithKey(added.account.dataKey, added.account.vault, added.account.username, false);
+  await acceptVaultWithKey(
+    added.account.dataKey,
+    added.account.vault,
+    added.account.username,
+    false,
+  );
   assert.ok(
     (
       await newReader.query(
@@ -901,7 +954,12 @@ try {
       ),
     ),
   };
-  await acceptVaultWithKey(added.account.dataKey, added.account.vault, added.account.username, false);
+  await acceptVaultWithKey(
+    added.account.dataKey,
+    added.account.vault,
+    added.account.username,
+    false,
+  );
   const addedBusiness = createBusinessClient(newReader, {
     productDriver: duckDriver,
   });
@@ -1036,7 +1094,7 @@ try {
   );
   const prepared = await required(
     owner.mutate("zerotrust.content.prepare", {
-      operation: base64(randomSecret()),
+      operation: crypto.randomUUID(),
       snapshotOperation: backup.id,
     }),
   );
@@ -1207,6 +1265,100 @@ try {
   await edit("AENDERUNG_NACH_VERWALTERENTZUG_681942", true);
   assert.equal((await current(reader)).signature, checkpoint.signature);
 
+  // Re-establish a scoped manager through the normal client before restoring
+  // again. The recovery must begin with a continued policy still active.
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
+  await changeAreaActionAccesses(
+    owner,
+    delegated.subject,
+    [{ area: PRODUCT_COLLECTION, patch: { grant: true } }],
+    signal,
+  );
+  await acceptVaultWithKey(
+    delegated.account.dataKey,
+    delegated.account.vault,
+    delegated.account.username,
+    false,
+  );
+  await changeAreaActionAccesses(
+    manager,
+    added.subject,
+    [{ area: PRODUCT_COLLECTION, patch: { read: true } }],
+    signal,
+  );
+  const delegatedBeforeRecovery = await current(owner);
+  assert.ok(
+    delegatedBeforeRecovery.administration?.profiles.some(
+      (profile) => profile.subject === added.subject,
+    ),
+  );
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
+  );
+  const preparedForRecovery = await required(
+    owner.mutate("zerotrust.content.prepare", {
+      snapshotOperation: backup.id,
+      operation: crypto.randomUUID(),
+    }),
+  );
+  const restoreForRecovery = await approvePreparedContent(
+    owner,
+    preparedForRecovery,
+    signal,
+  );
+  assert.deepEqual(
+    restoreForRecovery.policy.administration?.profiles,
+    delegatedBeforeRecovery.administration?.profiles,
+  );
+  await required(
+    owner.mutate("zerotrust.content.activate", restoreForRecovery),
+  );
+  const policyAtRecovery = await current(manager);
+  assert.ok(policyAtRecovery.administration?.continuation);
+  assert.equal(policyAtRecovery.signature, restoreForRecovery.policy.signature);
+  const oldOwner = await required(owner.query("auth.sessionInfo", undefined));
+
+  async function readOnlyProduct() {
+    const catalogue = await protectedCollection(
+      newReader,
+      PRODUCT_COLLECTION,
+      signal,
+    );
+    try {
+      const productAfter = await catalogue.get(
+        PRODUCT_COLLECTION.prefix + product.id,
+      );
+      const payload = productPayload(
+        productAfter.value,
+        productAfter.envelope.object,
+      );
+      assert.equal(
+        payload.product?.values.description,
+        "NEUE_SCHLUESSELGENERATION_681942",
+      );
+      assert.equal(catalogue.can("update"), false);
+      assert.equal(catalogue.can("delete"), false);
+    } finally {
+      catalogue.close();
+    }
+  }
+
+  await acceptVaultWithKey(
+    added.account.dataKey,
+    added.account.vault,
+    added.account.username,
+    false,
+  );
+  await readOnlyProduct();
+
   const testRoot = process.env.SORTSYS_NATIVE_AUTH_ROOT;
   assert.ok(testRoot);
   const recoverySource: { tenant: string; phrase: string } = JSON.parse(
@@ -1214,23 +1366,74 @@ try {
   );
   assert.equal(recoverySource.tenant, tenant);
   let phrase = recoverySource.phrase;
+  const spentPhrases: string[] = [];
   recoverySecrets.push(phrase);
   for (let round = 0; round < 2; round++) {
     console.log(`Native administration: seed-only recovery ${round + 1}`);
     await lockCryptoSession();
-    for (const client of clients) client.setToken(null);
+    for (const client of clients) {
+      if (client !== manager) client.setToken(null);
+    }
     assert.equal(unlockedAccount(), null);
     const client = recoveryClients[round]!;
     const other = recoveryClients[1 - round]!;
     const password = `Independent-seed-recovery-${round}-2026!`;
-    const draft = await recoveryDraft(client, tenant, phrase, password);
-    recoverySecrets.push(password, draft.newPhrase);
-    const plan = await recoveryPlan(client, draft);
-    await commitRecovery(client, plan);
-    await assert.rejects(() => recoveryDraft(other, tenant, phrase, password));
-    await signIn(client, { tenant, username: plan.username, password });
+    const username = oldOwner.user.username;
+    let nextPhrase: string;
+    if (round === 0 && process.env.SORTSYS_NATIVE_BROWSER === "1") {
+      nextPhrase = await recoverInBrowser(phrase, password, username);
+    } else {
+      const draft = await recoveryDraft(client, tenant, phrase, password, {
+        restoreAdministrator: true,
+      });
+      const plan = await recoveryPlan(client, draft);
+      assert.equal(plan.username, username);
+      await commitRecovery(client, plan);
+      nextPhrase = draft.newPhrase;
+    }
+    recoverySecrets.push(password, nextPhrase);
+    spentPhrases.push(phrase);
+    for (const spent of spentPhrases) {
+      await assert.rejects(() => recoveryDraft(other, tenant, spent, password));
+    }
+    if (round === 0) {
+      const [oldGrant, oldGrantError] = await manager.query(
+        "zerotrust.keys.get",
+        { domain: PRODUCT_COLLECTION.domain, generation: thirdGeneration },
+        { strategy: "network-only" },
+      );
+      assert.equal(oldGrant, null);
+      assert.ok(
+        oldGrantError,
+        "An old manager session must not get a key after recovery",
+      );
+      manager.setToken(null);
+    }
+    await signIn(client, { tenant, username, password });
+    const session = await required(client.query("auth.sessionInfo", undefined));
+    assert.equal(session.user.id, oldOwner.user.id);
+    assert.equal(session.user.username, oldOwner.user.username);
+    assert.ok(session.roles.includes(":admin"));
     const initialized = await initializeTenant(client, signal, duckDriver);
     assert.equal(initialized.generation, String(round + 2));
+    const recoveredPolicy = await current(client);
+    assert.equal(
+      recoveredPolicy.administration,
+      undefined,
+      "Historical delegated signatures do not authorize current grants after recovery",
+    );
+    const historicalPolicy = await required(
+      client.query(
+        "zerotrust.policy.getVersion",
+        { version: policyAtRecovery.version },
+        {
+          strategy: "network-only",
+        },
+      ),
+    );
+    assert.equal(historicalPolicy.generation, "1");
+    assert.deepEqual(historicalPolicy.policy, policyAtRecovery);
+    await verifyPolicy(historicalPolicy.policy, { tenant, authority });
     const recoveredBusiness = createBusinessClient(client, {
       productDriver: duckDriver,
     });
@@ -1238,14 +1441,63 @@ try {
       const restored = await required(
         recoveredBusiness.query("products.get", { id: product.id }),
       );
-      assert.equal(
-        restored.description,
-        "AENDERUNG_NACH_VERWALTERENTZUG_681942",
-      );
+      assert.equal(restored.description, "NEUE_SCHLUESSELGENERATION_681942");
     } finally {
       recoveredBusiness.dispose();
     }
-    phrase = draft.newPhrase;
+    await signIn(newReader, {
+      tenant,
+      username: added.account.username,
+      password: added.password,
+    });
+    await assert.rejects(() =>
+      protectedCollection(newReader, PRODUCT_COLLECTION, signal),
+    );
+    if (round === 0) {
+      await signIn(client, {
+        tenant,
+        username: oldOwner.user.username,
+        password,
+      });
+      const invitation = await createMemberInvitation(
+        client,
+        { id: added.subject.slice(5), username: added.account.username },
+        {
+          catalogue: "read",
+          customers: "none",
+          contacts: "none",
+          vendors: "none",
+          prices: "none",
+          assistant: false,
+        },
+        signal,
+      );
+      await signInMemberInvitation(
+        newReader,
+        invitation.link,
+        added.password,
+        signal,
+      );
+      await joinMemberInvitation(newReader, invitation.link, signal);
+      await signIn(client, {
+        tenant,
+        username: oldOwner.user.username,
+        password,
+      });
+      await approveMemberInvitation(
+        client,
+        invitation.link.invitation.id,
+        signal,
+        duckDriver,
+      );
+      await signIn(newReader, {
+        tenant,
+        username: added.account.username,
+        password: added.password,
+      });
+      await readOnlyProduct();
+    }
+    phrase = nextPhrase;
   }
 
   const wire = bodies.join("\n");

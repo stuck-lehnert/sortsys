@@ -237,6 +237,12 @@ Administrationszugang Zugriff. Weitere Benutzer werden unter der neuen Autoritä
 Historische Zertifikate bleiben für die Prüfung alter Inhalte erhalten,
 berechtigen aber nicht zu neuen Schlüsselabrufen.
 
+Das gilt auch nach einer Rücksicherung aus der Organisationsverwaltung. Der
+ausgewählte Fachstand und die Nachweise früherer Freigaben bleiben vorhanden.
+Der wiederhergestellte Administrator kann auf die Inhalte zugreifen und
+bisherige Mitglieder unter der neuen Autorität für einzelne Bereiche erneut
+freigeben.
+
 ## Abbruch, Geräteverlust und zweite Wiederherstellung
 
 Vor dem verbindlichen Generationswechsel bleibt die bisherige Phrase gültig.
@@ -305,10 +311,11 @@ oder fehlende Nachweise sperren den Zugriff. Das verhindert die erneute
 Verwendung einer verbrauchten Phrase über eine allein zurückgespielte
 Mandantendatei. Dazu bewahrt er den verschlüsselten Recovery-Kopf,
 Kontozustände, signierte Richtlinien, Schlüsselumschläge und veröffentlichte
-Katalogseiten unabhängig auf. Ein automatischer Rücksicherungsablauf, der den
-älteren Fachbestand mit dem neuesten verschlüsselten Recovery-Katalog
-zusammenführt, fehlt noch. Ein Dateisnapshot allein ist deshalb noch kein
-geprüfter vollständiger Wiederherstellungsweg.
+Katalogseiten unabhängig auf. Im laufenden Mandanten lässt sich eine
+[registrierte Sicherung wiederherstellen](verschluesselte-sicherungen.md).
+Dabei gilt der aktuelle Recovery-Katalog weiter. Für den vollständigen
+Verlust des Datendienstes braucht es zusätzlich dessen unabhängigen
+Sicherungsbestand. Ein einzelner Dateisnapshot reicht dafür nicht aus.
 
 Bei der unabhängigen Aufbewahrung gehören die neue Phrase und der verschlüsselte
 aktuelle Recovery-Katalog zum Wiederherstellungspaket. Weitere Geschäftsdaten
@@ -365,6 +372,16 @@ Benutzerkonto und benötigen nur die jeweils gültige Phrase. Fehlende oder
 veränderte Nachweise fremd signierter Recovery-Hüllen werden bereits vor der
 Registrierung eines neuen Kontos abgelehnt.
 
+Der [Test für delegierte Freigaben](../sortsys-webapp-v2/scripts/test-native-administration.ts)
+beginnt die erste Seed-Recovery direkt nach einer Rücksicherung mit aktiver
+delegierter Freigabe. Er läuft gegen zwei getrennte API-Prozesse an derselben
+DuckDB. Chromium bestätigt die neue Phrase und meldet das bestehende
+Administratorkonto mit dem neuen Passwort an. Das frühere Lesekonto erhält
+seinen Zugriff erst nach einer neuen Einladung. Nach der zweiten Recovery
+bleibt der ältere Katalogstand lesbar und beide verbrauchten Phrasen werden
+abgewiesen. Die ursprünglichen Freigaben bleiben als signierte Nachweise
+prüfbar.
+
 Der Test enthält aktive und abgeschlossene Werkzeugbuchungen. Nach beiden
 Recoveries bleiben deren Inhalte und Kosten für den neuen Administrator lesbar.
 Eine Rückgabe mit anschließendem Schlüsselwechsel verhindert, dass alte
@@ -377,13 +394,11 @@ weiter, sein Konto erhält dadurch aber keinen Zugriff auf die administrative
 Mitgliederliste. Die Nachweise für weitere Arbeitsabläufe sind im
 [Funktionsabgleich](verschluesselung-funktionsabgleich.md) aufgeführt.
 
-Die unabhängige Generationssperre ist im Datendienst umgesetzt. Sein
-[Wiederherstellungstest](../sortsys-store/src/witness.rs) weist eine alte
-Mandantendatei nach einem Recovery-Wechsel zurück. Ein allgemeiner Ablauf, der
-einen älteren Fachstand unter Erhalt der aktuellen Sicherheitsnachweise
-wiederherstellt, fehlt weiterhin. Auch Bestände oberhalb der normalen
-Sammelgrenzen benötigen einen erweiterten Schreibweg. Die folgenden Fälle
-unterscheiden laufende Protokollprüfungen von noch nötigen Ausfalltests:
+Der [Wiederherstellungstest des Datendienstes](../sortsys-store/src/witness.rs)
+weist eine alte Mandantendatei nach einem Recovery-Wechsel zurück. Für den
+vollständigen Verlust des Datendienstes fehlen noch Ausfalltests. Bei größeren
+Beständen muss auch der erweiterte Schreibweg in diesen Tests durchlaufen
+werden.
 
 - Zwei API-Instanzen versuchen gleichzeitig dieselbe Phrase zu verwenden. Genau
   eine Operation startet; die andere darf weder einen zweiten Administrator

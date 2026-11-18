@@ -288,7 +288,7 @@ export async function exerciseContentPreparation(
     }),
   );
 
-  const operation = base64(randomSecret());
+  const operation = crypto.randomUUID();
   const input = { snapshotOperation: snapshot.id, operation };
   const [, operatorError] = await operatorProbe().mutate(
     "zerotrust.content.prepare",
@@ -303,6 +303,13 @@ export async function exerciseContentPreparation(
     snapshotOperation: "absent-snapshot",
   });
   assert.ok(missingError);
+  const [invalidOperation, invalidOperationError] = await owner.mutate(
+    "zerotrust.content.prepare",
+    { ...input, operation: "_invalid-preparation" },
+  );
+  assert.equal(invalidOperation, null);
+  assert.ok(invalidOperationError instanceof RpcClientError);
+  assert.equal(invalidOperationError.code, "BAD_REQUEST");
 
   const prepared = await required(
     owner.mutate("zerotrust.content.prepare", input),
@@ -402,7 +409,7 @@ export async function exerciseContentPreparation(
   const [substituted, deniedPreview] = await peer.query(
     "zerotrust.content.inspect",
     {
-      operation: base64(randomSecret()),
+      operation: crypto.randomUUID(),
       approval,
       pages: { selections: [objectSelection] },
     },
@@ -487,7 +494,7 @@ export async function exerciseContentPreparation(
     (
       await owner.mutate("zerotrust.content.activate", {
         ...activate,
-        operation: base64(randomSecret()),
+        operation: crypto.randomUUID(),
       })
     )[1],
   );
@@ -638,7 +645,7 @@ export async function exerciseContentPreparation(
   const second = await required(
     peer.mutate("zerotrust.content.prepare", {
       snapshotOperation: snapshotAfterSwitch.id,
-      operation: base64(randomSecret()),
+      operation: crypto.randomUUID(),
     }),
   );
   assert.deepEqual(second.source, approval);

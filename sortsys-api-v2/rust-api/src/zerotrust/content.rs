@@ -459,6 +459,7 @@ async fn prepare(
     input: PrepareInput,
 ) -> RpcResult<PreparedContent> {
     let context = admin_context(service, request).await?;
+    identifier(&input.operation)?;
     let tenant = context.auth.tenant.clone();
     let storage = context.repository.storage().clone();
     context.transaction.validate().await?;

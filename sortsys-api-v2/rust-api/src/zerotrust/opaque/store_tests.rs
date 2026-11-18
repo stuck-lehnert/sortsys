@@ -178,6 +178,12 @@ async fn browser_with_tenant(
         } else {
             Duration::from_secs(1800)
         }
+    } else if mode == "administration"
+        && std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1")
+    {
+        // This includes the actual scoped-access and seed-recovery views as
+        // well as both signed restore and recovery transitions.
+        Duration::from_secs(420)
     } else if matches!(
         mode,
         "recovery"
@@ -1340,19 +1346,27 @@ async fn delegated_administration_uses_own_keys_and_revokes_across_independent_a
     let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
     let store = QuackConfig::from_env().unwrap().unwrap();
     assert!(store.control_url.starts_with("http://127.0.0.1:"));
-    let first = Repository::system(CipherStore::new(store.clone()).unwrap());
-    let second = Repository::system(CipherStore::new(store.clone()).unwrap());
     let mut settings = configuration(store);
     settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
-    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
-    let endpoints = [first_url, second_url];
+    let mut first = processes::ApiProcess::start(&settings, &root, "first").await;
+    let mut second = processes::ApiProcess::start(&settings, &root, "second").await;
+    assert_ne!(first.pid, second.pid);
+    let endpoints = [first.endpoint.clone(), second.endpoint.clone()];
     for mode in ["owner-minimal", "administration"] {
         browser_with_tenant(mode, &root, Some(&endpoints), Some("administration-tenant")).await;
     }
+    first.stop().await;
+    second.stop().await;
+    let processes = serde_json::json!({
+        "parentPid": std::process::id(),
+        "apiPids": [first.pid, second.pid],
+        "endpoints": endpoints,
+        "stopped": true,
+    });
+    std::fs::write(root.join("api-processes.json"), processes.to_string()).unwrap();
 }
 
 #[tokio::test]

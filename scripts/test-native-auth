@@ -24,6 +24,7 @@ DEVELOPMENT_TEST = TEST_PREFIX + "development_seed_creates_ready_accounts_and_pr
 PROCESS_TESTS = {
     TEST_PREFIX + "first_administrator_finishes_setup_before_business_access",
     TEST_PREFIX + "content_views::tenant_prepares_an_encrypted_snapshot_across_api_instances",
+    TEST_PREFIX + "delegated_administration_uses_own_keys_and_revokes_across_independent_api_instances",
 }
 
 
