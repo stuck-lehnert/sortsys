@@ -90,6 +90,12 @@ starten, danach die API-Instanzen und den Office-Dienst. Mit einem
 Mandantenkonto Anmeldung, Projektzugriff und einen Anhang prüfen. Die
 Recovery-Phrase verbleibt beim Mandanten.
 
+Enthält die Sicherung unbestätigte Office- oder Drawio-Änderungen, kann ein
+berechtigtes Konto sie nach dem Wiederanlauf im Editor öffnen und bestätigen.
+Der [gemeinsame Wiederanlauftest](editoren-ohne-klartextserver.md#betrieb-des-office-dienstes)
+prüft beide Dateitypen mit kopierten DuckDB-Dateien und einem kopierten
+Office-Volume.
+
 Eine alte Mandantendatei mit einer neueren Kontrolldatei wird gesperrt, sobald
 Sicherheitsnachweise auseinanderlaufen. Wenn ein kompletter Dateisatz auf
 einen früheren Stand zurückfällt, braucht es einen unabhängig aufbewahrten

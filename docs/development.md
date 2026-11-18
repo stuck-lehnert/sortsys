@@ -146,6 +146,20 @@ DuckDB-Dateien. Der erste erhält absichtlich die alte Mandantendatei und
 blockiert sie. Der zweite öffnet den zu den Sicherheitsnachweisen passenden
 Dateisatz. `cold-restore-processes.json` hält die Prozesskennungen fest.
 
+Für den Wiederanlauf mit Office und Drawio wird zusätzlich ein Containerdienst
+und ein installiertes Chromium benötigt. Mit denselben Rust- und DuckDB-Variablen
+wie oben:
+
+```bash
+TEST_OFFICE_COLD_RESTORE=1 ./scripts/test-office
+```
+
+Der Test verwendet eigene Container und Volumes. Er kopiert das verschlüsselte
+Office-Volume bei beendetem Dienst und öffnet die Entwürfe in einem frischen
+Chromium-Profil. Die beiden Containerkennungen stehen in
+`office-volume-restore.log`. `TEST_OFFICE_IMAGE` kann ein bereits gebautes
+Office-Image für den Lauf auswählen.
+
 ## Browser-E2E mit echten Diensten
 
 Nach `bun run build` in `sortsys-webapp-v2` führt

@@ -40,6 +40,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if jwt_secret.len() < 32 || admin_hash.parse::<bcrypt::HashParts>().is_err() {
         return Err("explicit test credentials are required".into());
     }
+    let office = env::var("SORTSYS_ISOLATED_API_OFFICE_ORIGIN").unwrap_or_default();
+    let office_origin = if office.is_empty() {
+        None
+    } else {
+        let origin = url::Url::parse(&office)?;
+        if origin.scheme() != "http"
+            || origin.host_str() != Some("127.0.0.1")
+            || office != origin.origin().ascii_serialization()
+            || origin.port().is_none()
+        {
+            return Err("only an explicit loopback editor origin is allowed".into());
+        }
+        Some(office)
+    };
     let config = Config {
         port: 0,
         jwt_secret: Arc::from(jwt_secret.into_bytes()),
@@ -51,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             extensions: required("EXTENSIONS")?.into(),
             disable_ssl: true,
         },
-        editors: Default::default(),
+        editors: sortsys_api::editors::EditorConfig { office_origin },
         passkeys: Default::default(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

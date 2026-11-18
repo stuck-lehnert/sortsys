@@ -231,6 +231,18 @@ def run_cold_restore_case(binary, env, name, directory):
                     shutil.copyfile(retired_tenant, data / "tenants" / tenant_file)
                     # A log from the current tenant file does not belong to the old snapshot.
                     (data / "tenants" / (tenant_file + ".wal")).unlink(missing_ok=True)
+                if phase == "restored" and env.get("TEST_OFFICE_COLD_RESTORE") == "1":
+                    print("Office-Dienst aus der Volume-Kopie starten", flush=True)
+                    with (directory / "office-volume-restore.log").open("w") as office_log:
+                        subprocess.run(
+                            [str(ROOT / "scripts/test-office"), "--restore-test-volume"],
+                            cwd=ROOT,
+                            env=env,
+                            stdout=office_log,
+                            stderr=subprocess.STDOUT,
+                            check=True,
+                            timeout=180,
+                        )
             phase_env = case_environment(env, stage)
             phase_env.update({
                 "SORTSYS_NATIVE_COLD_RESTORE_PHASE": phase,

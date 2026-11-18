@@ -39,6 +39,10 @@ impl ApiProcess {
                 "SORTSYS_ISOLATED_API_ADMIN_HASH",
                 settings.admin_hash.as_ref(),
             )
+            .env(
+                "SORTSYS_ISOLATED_API_OFFICE_ORIGIN",
+                settings.editors.office_origin.as_deref().unwrap_or(""),
+            )
             .env_remove("LLM_LIVE_INTERNAL_URL")
             .stdout(Stdio::piped())
             .stderr(log)

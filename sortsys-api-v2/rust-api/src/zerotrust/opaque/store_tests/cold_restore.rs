@@ -20,6 +20,11 @@ async fn reopened_store_preserves_recovery_and_encrypted_files() {
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
+    if std::env::var("TEST_OFFICE_COLD_RESTORE").as_deref() == Ok("1") {
+        let origin = std::env::var("SORTSYS_OFFICE_TEST_ORIGIN").unwrap();
+        assert!(origin.starts_with("http://127.0.0.1:"));
+        settings.editors.office_origin = Some(crate::editors::office_origin(origin).unwrap());
+    }
     let mut first = processes::ApiProcess::start(&settings, &root, "first").await;
     let mut second = processes::ApiProcess::start(&settings, &root, "second").await;
     assert_ne!(first.pid, second.pid);

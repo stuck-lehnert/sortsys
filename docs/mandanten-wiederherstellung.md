@@ -399,9 +399,11 @@ verwendet drei getrennte DuckDB-Dienste mit je zwei neuen API-Prozessen. Eine
 vor dem Phrase-Wechsel heruntergeladene Mandantendatei wird mit den aktuellen
 Nachweisen abgewiesen. Aus dem vollständigen Dateisatz lassen sich ein Projekt
 und sein Anhang wieder öffnen. Die alte Phrase und die alte Sitzung bleiben
-gesperrt. Die gültige Phrase kann nach dem Neustart erneut ersetzt werden.
-Der Test umfasst den DuckDB-Dateisatz. Das Office-Volume und ein gleichzeitiger
-Verlust sämtlicher aktueller Nachweise liegen außerhalb dieses Tests.
+gesperrt. Die gültige Phrase kann nach dem Neustart erneut ersetzt werden. Ein
+zusätzlicher [Wiederanlauf mit Office](editoren-ohne-klartextserver.md#betrieb-des-office-dienstes)
+prüft auch unbestätigte DOCX- und Drawio-Änderungen im kopierten
+Office-Volume. Die Absicherung gegen einen gleichzeitigen Verlust sämtlicher
+aktueller Nachweise braucht weiterhin einen unabhängig aufbewahrten Stand.
 
 - Zwei API-Instanzen versuchen gleichzeitig dieselbe Phrase zu verwenden. Genau
   eine Operation startet; die andere darf weder einen zweiten Administrator

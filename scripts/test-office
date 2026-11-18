@@ -3,12 +3,70 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runtime="${CONTAINER_RUNTIME:-docker}"
 image="${TEST_OFFICE_IMAGE:-localhost/sortsys-private-office:test}"
+
+start_service() {
+  local data_volume="$1"
+  "$runtime" run -d --name "$container" --read-only --init --cap-drop ALL --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
+    -v "$data_volume:/var/lib/sortsys-office" \
+    -p "127.0.0.1:$main_port:8080" -p "127.0.0.1:$sandbox_port:8080" \
+    -e "OFFICE_PUBLIC_ORIGIN=$main_origin" -e "OFFICE_SANDBOX_ORIGIN=http://127.0.0.1:$sandbox_port" \
+    -e "SORTSYS_PUBLIC_ORIGIN=http://127.0.0.1:$app_port" "$image" >/dev/null
+  local attempt status
+  for attempt in $(seq 1 90); do
+    status="$("$runtime" inspect -f '{{.State.Health.Status}}' "$container")"
+    if [ "$status" = healthy ]; then return; fi
+    if [ "$attempt" = 90 ] || [ "$("$runtime" inspect -f '{{.State.Running}}' "$container")" != true ]; then
+      "$runtime" logs --tail 50 "$container"
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+if [ "${1:-}" = "--restore-test-volume" ]; then
+  [ "${SORTSYS_DISPOSABLE_OFFICE_TEST:-}" = 1 ]
+  [ "${TEST_OFFICE_COLD_RESTORE:-}" = 1 ]
+  runtime="${SORTSYS_OFFICE_TEST_RUNTIME:?}"
+  image="${SORTSYS_OFFICE_TEST_IMAGE:?}"
+  container="${SORTSYS_OFFICE_TEST_CONTAINER:?}"
+  [[ "$runtime" = docker || "$runtime" = podman ]]
+  [[ "$container" =~ ^sortsys-test-private-office-[0-9]+-[0-9]+$ ]]
+  main_origin="${SORTSYS_OFFICE_TEST_ORIGIN:?}"
+  [[ "$main_origin" =~ ^http://127\.0\.0\.1:([0-9]+)$ ]]
+  main_port="${BASH_REMATCH[1]}"
+  sandbox_port="${SORTSYS_OFFICE_SANDBOX_PORT:?}"
+  app_port="${SORTSYS_OFFICE_APP_PORT:?}"
+  [[ "$sandbox_port" =~ ^[0-9]+$ && "$app_port" =~ ^[0-9]+$ ]]
+  volume="${container}-data"
+  old_id="$("$runtime" inspect -f '{{.Id}}' "$container")"
+  mounted_volume="$("$runtime" inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/sortsys-office"}}{{.Name}}{{end}}{{end}}' "$container")"
+  [ "$mounted_volume" = "$volume" ]
+  if "$runtime" volume inspect "${volume}-restored" >/dev/null 2>&1; then
+    echo "Zielvolume des Office-Tests existiert bereits" >&2
+    exit 1
+  fi
+  "$runtime" stop "$container" >/dev/null
+  [ "$("$runtime" inspect -f '{{.State.ExitCode}}' "$container")" = 0 ]
+  "$runtime" volume create "${volume}-restored" >/dev/null
+  "$runtime" run --rm --network none --read-only --user 0:0 --entrypoint /bin/sh \
+    -v "$volume:/source:ro" -v "${volume}-restored:/restored" "$image" \
+    -ec 'test -d /source/datastore && cp -a /source/. /restored/'
+  "$runtime" rm "$container" >/dev/null
+  start_service "${volume}-restored"
+  new_id="$("$runtime" inspect -f '{{.Id}}' "$container")"
+  [ "$new_id" != "$old_id" ]
+  printf 'Office-Container vor der Kopie: %s\nOffice-Container aus dem kopierten Volume: %s\n' "$old_id" "$new_id"
+  exit
+fi
+
 container="sortsys-test-private-office-$$-$RANDOM"
 volume="${container}-data"
 cleanup() {
   result=$?
   if [ "$result" != 0 ]; then "$runtime" logs --tail 60 "$container" 2>/dev/null || true; fi
   "$runtime" rm -f "$container" >/dev/null 2>&1 || true
+  "$runtime" volume rm "${volume}-restored" >/dev/null 2>&1 || true
   "$runtime" volume rm "$volume" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
@@ -25,20 +83,15 @@ PY
 )
 main_origin="http://127.0.0.1:$main_port"
 "$runtime" volume create "$volume" >/dev/null
-"$runtime" run -d --name "$container" --read-only --init --cap-drop ALL --security-opt no-new-privileges \
-  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
-  -v "$volume:/var/lib/sortsys-office" \
-  -p "127.0.0.1:$main_port:8080" -p "127.0.0.1:$sandbox_port:8080" \
-  -e "OFFICE_PUBLIC_ORIGIN=$main_origin" -e "OFFICE_SANDBOX_ORIGIN=http://127.0.0.1:$sandbox_port" \
-  -e "SORTSYS_PUBLIC_ORIGIN=http://127.0.0.1:$app_port" "$image" >/dev/null
-for attempt in $(seq 1 90); do
-  status="$("$runtime" inspect -f '{{.State.Health.Status}}' "$container")"
-  if [ "$status" = healthy ]; then break; fi
-  if [ "$attempt" = 90 ] || [ "$("$runtime" inspect -f '{{.State.Running}}' "$container")" != true ]; then
-    "$runtime" logs --tail 50 "$container"; exit 1
-  fi
-  sleep 1
-done
+start_service "$volume"
+export SORTSYS_DISPOSABLE_OFFICE_TEST=1
+export SORTSYS_OFFICE_TEST_ORIGIN="$main_origin" SORTSYS_OFFICE_APP_PORT="$app_port"
+export SORTSYS_OFFICE_TEST_CONTAINER="$container" SORTSYS_OFFICE_TEST_RUNTIME="$runtime"
+if [ "${TEST_OFFICE_COLD_RESTORE:-}" = 1 ]; then
+  export SORTSYS_OFFICE_TEST_IMAGE="$image" SORTSYS_OFFICE_SANDBOX_PORT="$sandbox_port"
+  export SORTSYS_NATIVE_AUTH_TEST_FILTER=zerotrust::opaque::store_tests::cold_restore::reopened_store_preserves_recovery_and_encrypted_files
+  "$root/scripts/test-native-auth"
+  exit
+fi
 cd "$root/sortsys-webapp-v2"
-SORTSYS_DISPOSABLE_OFFICE_TEST=1 SORTSYS_OFFICE_TEST_ORIGIN="$main_origin" SORTSYS_OFFICE_APP_PORT="$app_port" \
-  SORTSYS_OFFICE_TEST_CONTAINER="$container" SORTSYS_OFFICE_TEST_RUNTIME="$runtime" bun scripts/test-live-office.ts
+bun scripts/test-live-office.ts

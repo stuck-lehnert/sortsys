@@ -17,6 +17,7 @@ import {
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import type { RestoredOfficeRoom } from "./test-native-office-restore";
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
 const endpoints: unknown = JSON.parse(
@@ -33,6 +34,10 @@ const root = process.env.SORTSYS_NATIVE_COLD_RESTORE_ROOT ?? "";
 assert.ok(root);
 assert.ok(phase === "source" || phase === "stale" || phase === "restored");
 const fixturePath = join(root, "recovery-fixture.json");
+const officeRestore =
+  process.env.TEST_OFFICE_COLD_RESTORE === "1"
+    ? await import("./test-native-office-restore")
+    : null;
 
 const tenant = process.env.SORTSYS_NATIVE_AUTH_TENANT ?? "";
 assert.ok(tenant);
@@ -60,6 +65,7 @@ type Fixture = {
   currentPhrase: string;
   retiredToken: string;
   currentToken: string;
+  officeRooms?: RestoredOfficeRoom[];
 };
 
 let lastBearer: string | undefined;
@@ -231,6 +237,17 @@ async function prepareSource() {
     currentToken,
   };
   await checkData(second, fixture, currentTitle);
+  if (officeRestore) {
+    const editor = openBusiness(second);
+    try {
+      fixture.officeRooms = await officeRestore.prepareOfficeRooms(
+        editor.files,
+        project,
+      );
+    } finally {
+      editor.dispose();
+    }
+  }
   // Include a second usable tenant in the same physical datastore. A blocked
   // file must not prevent this tenant from being listed or signing in.
   const other = await tenantSetupRequest(otherTenant);
@@ -310,6 +327,19 @@ async function useRestoredFiles(fixture: Fixture) {
   );
   await signIn(second, { tenant, username, password: currentPassword });
   await checkData(second, fixture, currentTitle);
+  if (officeRestore) {
+    assert.ok(fixture.officeRooms?.length === 2);
+    const editor = openBusiness(second);
+    try {
+      await officeRestore.restoreOfficeRooms(
+        editor.files,
+        fixture.project,
+        fixture.officeRooms,
+      );
+    } finally {
+      editor.dispose();
+    }
+  }
   await renameProject(second, fixture.project, nextTitle);
   second.setToken(null);
   await lockCryptoSession();
@@ -321,6 +351,19 @@ async function useRestoredFiles(fixture: Fixture) {
   );
   await signIn(first, { tenant, username, password: nextPassword });
   await checkData(first, fixture, nextTitle);
+  if (officeRestore) {
+    assert.ok(fixture.officeRooms?.length === 2);
+    const editor = openBusiness(first);
+    try {
+      await officeRestore.checkCommittedOfficeFiles(
+        editor.files,
+        fixture.project,
+        fixture.officeRooms,
+      );
+    } finally {
+      editor.dispose();
+    }
+  }
   console.log("Reopened encrypted project and file, saved a change, and rotated the phrase again");
 }
 

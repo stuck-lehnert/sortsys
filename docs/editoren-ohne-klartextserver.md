@@ -163,6 +163,15 @@ für Projektdateien von dieser Löschung aus. Der Diensttest schließt alle
 Teilnehmer, startet den Dienst neu und öffnet den gemeinsamen DOCX-Stand mit dem
 Leseschlüssel erneut. Ungespeicherte Exportansichten bleiben temporär.
 
+Der gemeinsame Wiederanlauftest ersetzt den beendeten Office-Container durch
+einen neuen Container mit einer Kopie des Volumes. Auch DuckDB und die beiden
+API-Prozesse starten aus einem getrennten Dateisatz neu. Chromium öffnet einen
+DOCX- und einen Drawio-Entwurf über die in den Projektdateien gespeicherten
+Raumfreigaben. In den Editorständen stecken Änderungen, die vor dem Ausfall
+noch nicht in der jeweiligen Projektdatei bestätigt waren. Der Test exportiert
+und speichert beide Entwürfe und liest die bestätigten Dateien nach einem
+weiteren Recovery-Wechsel über die andere API-Instanz.
+
 `OFFICE_PUBLIC_ORIGIN` und `OFFICE_SANDBOX_ORIGIN` müssen auf Port `8080` dieses
 Dienstes zeigen. `SORTSYS_PUBLIC_ORIGIN` nennt die einbettende Webapp. Alle drei
 Origins müssen verschieden sein. Die CSP lässt nur diese Einbettung und die
