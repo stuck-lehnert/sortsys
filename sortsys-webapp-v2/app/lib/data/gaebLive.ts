@@ -39,6 +39,11 @@ import {
   UnknownDocumentMessageAuthor,
   openDocumentMessages,
 } from "./documentMessages";
+import {
+  GAEB_LIVE_PAYLOAD_MAX_BYTES,
+  gaebLivePayloadInbox,
+  splitGaebLivePayload,
+} from "./gaebLivePayload";
 
 export type ProtectedGaebLiveOptions = {
   room: DocumentRoom;
@@ -52,10 +57,12 @@ export type ProtectedGaebLiveOptions = {
   readableFacets?: readonly GaebContentFacet[];
 };
 
+const MAX_ENCODED_UPDATE = GAEB_LIVE_PAYLOAD_MAX_BYTES - 256;
+
 function sharedUpdate(value: unknown): string {
   if (
     typeof value !== "string" ||
-    value.length > 96 * 1024 ||
+    value.length > MAX_ENCODED_UPDATE ||
     !/^[A-Za-z0-9+/]*={0,2}$/.test(value)
   ) {
     throw new InvalidProtectedData();
@@ -303,13 +310,8 @@ function connectChannel(
   const pendingWork: Array<() => Promise<void>> = [];
   const pendingUpdates = new Map<GaebContentFacet, string[]>();
   const updatesQueued = new Set<GaebContentFacet>();
-  const initializations: {
-    facet: GaebContentFacet;
-    field: string;
-    value: string;
-    key: string;
-    data: string;
-  }[] = [];
+  const initializations: Array<() => Promise<void>> = [];
+  const inbox = gaebLivePayloadInbox();
   let initializationsQueued = false;
   let draining: Promise<void> | undefined;
   let participants: Collaborator[] = [];
@@ -449,11 +451,14 @@ function connectChannel(
   }
   function stageMessage(
     reception: SharedFieldReception,
+    payloads: ReturnType<typeof inbox.stage>,
     opened: Awaited<ReturnType<Transport["open"]>>,
   ) {
     try {
+      const payload = payloads.receive(opened);
+      if (!payload) return;
       if (opened.kind === "initialize") {
-        const initial = record(opened.value, [
+        const initial = record(payload.value, [
           "facet",
           "field",
           "value",
@@ -472,7 +477,7 @@ function connectChannel(
           channelFacet(initial.facet),
         );
       } else {
-        const update = record(opened.value, ["facet", "data"]);
+        const update = record(payload.value, ["facet", "data"]);
         reception.update(sharedUpdate(update.data), channelFacet(update.facet));
       }
     } catch (error) {
@@ -548,6 +553,7 @@ function connectChannel(
           }
           liveSequence(page.after);
           const reception = options.sharedFields.beginReceive();
+          const payloads = inbox.stage();
           let candidateAfter = after;
           let rejected = false;
           try {
@@ -562,7 +568,7 @@ function connectChannel(
                 }
                 const opened = await openMessage(entry);
                 assertPageCurrent();
-                stageMessage(reception, opened);
+                stageMessage(reception, payloads, opened);
               } catch (error) {
                 assertPageCurrent();
                 if (
@@ -583,13 +589,14 @@ function connectChannel(
             }
             assertPageCurrent();
             reception.commit();
+            payloads.commit();
             // Coverage means every entry was examined. Invalid entries never
             // enter XML, but must not block future writes at this log position.
             after = candidateAfter;
           } finally {
             reception.destroy();
           }
-          if (rejected) {
+          if (rejected || payloads.discarded()) {
             options.onRejectedMessage?.();
           }
           more = page.more;
@@ -652,18 +659,54 @@ function connectChannel(
       presenceQueued = false;
     });
   }
+  function outgoing(
+    kind: "initialize" | "update",
+    value: object,
+    key?: string,
+  ) {
+    let parts: readonly object[] | undefined;
+    let next = 0;
+    return async () => {
+      parts ??= splitGaebLivePayload(value);
+      while (next < parts.length) {
+        // Each fragmented retry can acquire a fresh transport identity. The
+        // encrypted group and part number still deduplicate its content.
+        const messageKey = parts.length === 1 ? key : undefined;
+        await (await currentTransport()).post(kind, parts[next], messageKey);
+        next += 1;
+      }
+    };
+  }
   function publishUpdates(facet: GaebContentFacet) {
     if (updatesQueued.has(facet) || !pendingUpdates.get(facet)?.length) {
       return;
     }
     updatesQueued.add(facet);
-    let data: string | undefined;
+    let post: (() => Promise<void>) | undefined;
     enqueue(async () => {
-      if (data === undefined) {
-        data = mergeSharedUpdates(pendingUpdates.get(facet) ?? []);
-        pendingUpdates.delete(facet);
+      if (!post) {
+        const updates = pendingUpdates.get(facet)!;
+        let count = 0;
+        let encodedLength = 0;
+        for (const update of updates) {
+          if (encodedLength + update.length > MAX_ENCODED_UPDATE) break;
+          encodedLength += update.length;
+          count += 1;
+        }
+        let data = updates[0]!;
+        if (count > 1) {
+          const merged = mergeSharedUpdates(updates.slice(0, count));
+          if (merged.length <= MAX_ENCODED_UPDATE) {
+            data = merged;
+          } else {
+            count = 1;
+          }
+        }
+        updates.splice(0, count);
+        if (updates.length === 0) pendingUpdates.delete(facet);
+        post = outgoing("update", { facet, data });
       }
-      await (await currentTransport()).post("update", { facet, data });
+      await post();
       await refresh();
       updatesQueued.delete(facet);
       publishUpdates(facet);
@@ -675,12 +718,9 @@ function connectChannel(
     let batch: typeof initializations | undefined;
     enqueue(async () => {
       while (batch || initializations.length > 0) {
-        // Retain the same candidate keys after a partial failure. Successful
-        // candidates can be retried without creating extra initializers.
+        // Retain each candidate's progress across an interrupted batch.
         batch ??= initializations.splice(0, 16);
-        await mapConcurrent(batch, 4, async ({ key, ...value }) => {
-          await (await currentTransport()).post("initialize", value, key);
-        });
+        await mapConcurrent(batch, 4, (post) => post());
         await refresh();
         batch = undefined;
       }
@@ -697,7 +737,9 @@ function connectChannel(
         // initializer; a corrupt earlier candidate cannot reserve a field.
         const key = base64(randomSecret());
         const data = initializeSharedField(field, value);
-        initializations.push({ facet, field, value, key, data });
+        initializations.push(
+          outgoing("initialize", { facet, field, value, data }, key),
+        );
         publishInitializations();
       } else if (message.type === "update") {
         const updates = pendingUpdates.get(facet) ?? [];
@@ -806,6 +848,7 @@ function connectChannel(
     pendingUpdates.clear();
     updatesQueued.clear();
     initializations.length = 0;
+    inbox.clear();
     resetTransport();
     // Closing a connection never reopens it to send a farewell. Presence has
     // a short TTL, so it also disappears after a disconnected browser closes.

@@ -104,6 +104,7 @@ function auditPage(page) {
       "Gemeinsam bearbeiteter Leistungsumfang",
       "Altanstrich und lose Beschichtungen entfernen",
       "Fensterbänke und angrenzende Bauteile abdecken",
+      "Kanten mit Abdeckband schützen und anschließend reinigen",
       "Antrag vor Standardfreigabe",
       "Antrag mit Standardfreigabe",
       "Gemeinsames Auftrags-LV von John und Frank",
@@ -240,7 +241,11 @@ async function selectAccess(page, scope, label, value) {
   await expect(page.getByRole("listbox")).toBeHidden();
 }
 
-async function selectOfferAccess(page, title, existingDialog) {
+async function selectOfferAccess(
+  page,
+  title,
+  { existingDialog, timeout = 20_000 } = {},
+) {
   const dialog = existingDialog ?? (await openMemberPermissions(page));
   const picker = dialog.getByRole("combobox", {
     name: "Angebot oder Dokument",
@@ -251,7 +256,7 @@ async function selectOfferAccess(page, title, existingDialog) {
   const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   await page
     .getByRole("option", { name: new RegExp(` – ${escapedTitle}$`) })
-    .click();
+    .click({ timeout });
   await expect(page.getByRole("listbox")).toBeHidden();
   await expect(
     dialog.getByRole("button", { name: /Bezeichnung und Status/ }),
@@ -1794,7 +1799,9 @@ try {
       console.log(
         "Billing UI: partial invoice granted without issuance rights",
       );
-      access = await selectOfferAccess(page, projectTitle, access);
+      access = await selectOfferAccess(page, projectTitle, {
+        existingDialog: access,
+      });
       await selectAccess(
         page,
         documentAccess(access),
@@ -1925,7 +1932,9 @@ try {
       ).toBeVisible();
 
       console.log("Billing UI: payment recorded and visible");
-      access = await selectOfferAccess(page, invoiceTitle, access);
+      access = await selectOfferAccess(page, invoiceTitle, {
+        existingDialog: access,
+      });
       await selectAccess(
         page,
         documentAccess(access),
@@ -2192,7 +2201,9 @@ try {
         member.getByText("Vorgang nicht geladen", { exact: true }),
       ).toBeVisible({ timeout: caseLoadTimeout });
 
-      const access = await selectOfferAccess(page, title);
+      const access = await selectOfferAccess(page, title, {
+        timeout: caseLoadTimeout,
+      });
       await selectAccess(page, access, "Bezeichnung und Status", "Lesen");
       await selectAccess(
         page,
@@ -2296,6 +2307,51 @@ try {
         secondParagraph + secondAddition,
       ]);
       assert.match(xml, /<Qty>0(?:\.0+)?<\/Qty>/);
+
+      const additionalText =
+        " Kanten mit Abdeckband schützen und anschließend reinigen.".repeat(
+          1400,
+        );
+      const longText = agreedText + additionalText;
+      let updatePackets = 0;
+      const countUpdates = (request) => {
+        if (
+          request.method() !== "POST" ||
+          !new URL(request.url()).pathname.includes(
+            "zerotrust.documents.messages.post",
+          )
+        )
+          return;
+        updatePackets += Object.values(request.postDataJSON()).filter(
+          (entry) => entry?.json?.kind === "update",
+        ).length;
+      };
+      const receivedLongText = () =>
+        expect
+          .poll(
+            async () =>
+              (await gaebField(member, firstKey).getAttribute(
+                "aria-description",
+              )) === longText,
+            { timeout: caseLoadTimeout },
+          )
+          .toBe(true);
+      page.on("request", countUpdates);
+      try {
+        await shareTextBeforePublication(
+          editors,
+          async () => {
+            await changeGaebText(page, firstKey, longText);
+            await receivedLongText();
+            assert.ok(updatePackets > 1);
+          },
+          caseLoadTimeout,
+        );
+      } finally {
+        page.off("request", countUpdates);
+      }
+      await member.reload();
+      await receivedLongText();
       memberAudit.assertClean();
     } finally {
       await memberContext.tracing.stop({

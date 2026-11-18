@@ -71,6 +71,16 @@ Eine verlorene Bestätigung wird mit demselben signierten Paket wiederholt. Die
 Wiederholung eines Präsenzpakets verlängert dessen ursprüngliche Lebensdauer
 nicht. Geänderte Pakete mit derselben Präsenzversion werden zurückgewiesen.
 
+Lange Positionstexte und Änderungen werden in mehrere verschlüsselte Pakete
+aufgeteilt. Jedes Paket durchläuft die bisherige Rechte- und Signaturprüfung.
+Der empfangende Browser setzt die Teile erst zusammen, wenn die Gruppe
+vollständig ist. Dazu müssen Unterzeichner, Autoritätsgeneration, Fachstand
+und Nachrichtentyp übereinstimmen. Der Editor übernimmt den zusammengesetzten
+Text gemeinsam mit den übrigen Änderungen der Seite. Ein Paket enthält vor der
+Verschlüsselung höchstens 64 KiB. Der Browser fügt Nachrichten bis zu zwei MiB
+zusammen und hält pro Kanal bis zu acht unvollständige Gruppen vor. Muss er
+eine ältere Gruppe verwerfen, erscheint im Editor ein Hinweis.
+
 ## Rechte gelten auch beim Empfangen
 
 Die API prüft den angemeldeten Benutzer, dessen Signatur, die aktuelle
@@ -463,6 +473,10 @@ Nach dem Speichern zeigt Franks Browser beide Texte auch nach einem Neuladen.
 Die heruntergeladene X83 enthält sie als zwei native Absätze und behält die
 ursprüngliche Menge.
 
+Anschließend fügt John rund 81.000 Zeichen ein. Der Test hält die Veröffentlichung
+der X83 erneut an. Frank empfängt den vollständigen Text über mehrere
+verschlüsselte Pakete und sieht ihn nach dem Speichern auch beim erneuten Öffnen.
+
 Der Textabgleich berücksichtigt auch Eingaben während des Verbindungsaufbaus.
 Deren Ausgangspunkt ist der sichtbare Dokumentstand, selbst wenn der gemeinsame
 Nachrichtenverlauf mit einem älteren Text beginnt. Ein bereits nachgelesener
@@ -472,8 +486,7 @@ Dokumenttext wird beim Registrieren der Eingabefelder nicht nochmals als lokale
 Vor der Freigabe fehlen insbesondere:
 
 - Der dauerhafte Nachrichtenverlauf braucht bestätigte Zwischenstände und eine
-  begrenzte Wiederanlaufzeit. Lange Feldtexte benötigen eine Aufteilung; derzeit
-  ist der Nachrichteninhalt auf 64 KiB begrenzt.
+  begrenzte Wiederanlaufzeit.
 - Projektdateien und Wiederverbindungen nach längeren Unterbrechungen brauchen
   weitere gemeinsame Browser- und Mehrinstanztests. Die geprüften Angebotsabläufe
   decken diese Fälle noch nicht ab.

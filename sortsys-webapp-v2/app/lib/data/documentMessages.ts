@@ -26,7 +26,7 @@ import { mapConcurrent } from "./runtime/concurrentReads";
 type Message =
   QueryResult<"zerotrust.documents.messages.read">["messages"][number];
 export type DocumentMessageKind = Message["kind"];
-const MAX_MESSAGE_BYTES = 64 * 1024;
+export const DOCUMENT_MESSAGE_MAX_BYTES = 64 * 1024;
 
 export class RejectedDocumentMessage extends InvalidProtectedData {
   constructor() {
@@ -124,7 +124,7 @@ export async function openDocumentMessages(
     const binding = documentMessageObject(room, kind, key, content);
     let plaintext = bytes(JSON.stringify(value));
     try {
-      if (plaintext.length > MAX_MESSAGE_BYTES) {
+      if (plaintext.length > DOCUMENT_MESSAGE_MAX_BYTES) {
         throw new InvalidProtectedData();
       }
       // Load independent layer keys together. Encryption itself remains in
@@ -240,7 +240,7 @@ export async function openDocumentMessages(
     }
     let plaintext = unbase64(
       payload.data,
-      MAX_MESSAGE_BYTES + stores.length * 68,
+      DOCUMENT_MESSAGE_MAX_BYTES + stores.length * 68,
     );
     try {
       const keys = payload.keys.map((input, index) => {
@@ -274,7 +274,7 @@ export async function openDocumentMessages(
         plaintext.fill(0);
         plaintext = opened;
       }
-      if (plaintext.length > MAX_MESSAGE_BYTES) {
+      if (plaintext.length > DOCUMENT_MESSAGE_MAX_BYTES) {
         throw new InvalidProtectedData();
       }
       live();
