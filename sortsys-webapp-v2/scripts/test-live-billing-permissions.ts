@@ -249,6 +249,15 @@ export async function testBillingPermissions(
       assert.equal(headers[0]!.id, target.id);
       assert.equal(headers[0]!.kind, "invoice");
       assert.equal(headers[0]!.status, "draft");
+      const overview = await required(
+        business.query("commercial.cases.overview", {
+          projectId: target.projectId,
+        }),
+      );
+      assert.equal(overview.length, 1);
+      assert.equal(overview[0]!.id, target.id);
+      assert.equal(overview[0]!.status, "draft");
+      assert.equal(overview[0]!.netAmount, null);
       assert.deepEqual(
         await required(
           business.query("commercial.cases.headers", {

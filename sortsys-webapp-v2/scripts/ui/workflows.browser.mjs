@@ -4091,6 +4091,7 @@ function seedContractorWorkflows(canManage = true) {
           (!input?.status || row.status === input.status),
       );
   api.respond("commercial.cases.list", caseRows);
+  api.respond("commercial.cases.overview", caseRows);
   api.respond("commercial.cases.headers", (input) =>
     caseRows(input).map(
       ({ id, reference, title, projectId, kind, status }) => ({
@@ -4692,12 +4693,12 @@ test("contractor offer listing has localized empty, failed and permission-restri
     0,
   );
   await checkPageLayout("contractor-list-restricted-empty");
-  api.fail("commercial.cases.list", "Synthetic list failure");
+  api.fail("commercial.cases.overview", "Synthetic list failure");
   await page
     .getByRole("textbox", { name: "Search", exact: true })
     .fill("School");
   await page.getByRole("button", { name: "Try again", exact: true }).waitFor();
-  api.recover("commercial.cases.list");
+  api.recover("commercial.cases.overview");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await page
     .getByText("No offers yet. Start with a work inquiry or your own offer.", {
@@ -6628,7 +6629,7 @@ function seedOverlayOffers(count = 1, canManage = false) {
       sourceVersion: null,
     });
   }
-  api.respond("commercial.cases.list", (input) =>
+  const caseRows = (input) =>
     [...state.cases.values()]
       .map((detail) => detail.case)
       .filter(
@@ -6644,8 +6645,9 @@ function seedOverlayOffers(count = 1, canManage = false) {
       .slice(
         Number(input?.offset ?? 0),
         Number(input?.offset ?? 0) + Number(input?.limit ?? 50),
-      ),
-  );
+      );
+  api.respond("commercial.cases.list", caseRows);
+  api.respond("commercial.cases.overview", caseRows);
   return state;
 }
 
@@ -6679,7 +6681,7 @@ test("offer overlay preserves the current route, filters, loaded pages, focus an
   assert.equal(await searchNode.evaluate((node) => node.isConnected), true);
   assert.equal(new URL(page.url()).pathname, "/gaeb/overlay-59");
   const refreshed = page.waitForResponse((response) =>
-    response.url().includes("commercial.cases.list"),
+    response.url().includes("commercial.cases.overview"),
   );
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await refreshed;

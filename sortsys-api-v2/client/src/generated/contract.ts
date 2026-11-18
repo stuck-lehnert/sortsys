@@ -288,6 +288,7 @@ export type QueryInputs = {
   "commercial.cases.get": { id: Id, };
   "commercial.cases.headers": { projectId?: Id | null, kind?: string | null, };
   "commercial.cases.list": { projectId?: Id | null, kind?: string | null, status?: string | null, search?: string | null, limit?: bigint | null, offset?: bigint | null, };
+  "commercial.cases.overview": { projectId?: Id | null, kind?: string | null, status?: string | null, search?: string | null, limit?: bigint | null, offset?: bigint | null, };
   "commercial.documents.download": { caseId: Id, id: Id, };
   "commercial.documents.get": { caseId: Id, id: Id, };
   "commercial.invoices.context": { contractCaseId: Id, };
@@ -441,6 +442,7 @@ export type QueryOutputs = {
   "commercial.cases.get": { case: CommercialCase, documents: Array<Document>, events: Array<CaseEvent>, canManage: boolean, invoice: InvoiceDetails | null, };
   "commercial.cases.headers": Array<{ id: Id, reference: string, title: string, projectId: Id | null, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', }>;
   "commercial.cases.list": Array<{ id: Id, reference: string, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', title: string, existingContract: boolean, projectId: Id | null, projectTitle: string | null, parentCaseId: Id | null, customerId: Id | null, customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, validUntil: string | null, notes: string | null, scopeItemIds: JsonValue, selectedOfferDocumentId: Id | null, acceptedAt: string | null, createdAt: string, modifiedAt: string, }>;
+  "commercial.cases.overview": Array<{ customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, id: Id, reference: string, title: string, projectId: Id | null, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', }>;
   "commercial.documents.download": { url: string, fileName: string, };
   "commercial.documents.get": { frozen: boolean, xml: string, referenceXml: string | null, fileName: string, version: bigint, canEdit: boolean, liveTicket: string, livePath: string, recoveryScope: string, };
   "commercial.invoices.context": { progressInvoices: Array<PriorInvoice>, hasInvoice: boolean, hasFinalInvoice: boolean, vatRate: string | null, };
@@ -1020,6 +1022,7 @@ const queryProcedures = new Set<string>([
   "commercial.cases.get",
   "commercial.cases.headers",
   "commercial.cases.list",
+  "commercial.cases.overview",
   "commercial.documents.download",
   "commercial.documents.get",
   "commercial.invoices.context",

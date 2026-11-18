@@ -1097,6 +1097,14 @@ export type QueryInputs = {
         limit?: bigint | null;
         offset?: bigint | null;
     };
+    "commercial.cases.overview": {
+        projectId?: Id | null;
+        kind?: string | null;
+        status?: string | null;
+        search?: string | null;
+        limit?: bigint | null;
+        offset?: bigint | null;
+    };
     "commercial.documents.download": {
         caseId: Id;
         id: Id;
@@ -1730,6 +1738,18 @@ export type QueryOutputs = {
         acceptedAt: string | null;
         createdAt: string;
         modifiedAt: string;
+    }>;
+    "commercial.cases.overview": Array<{
+        customerName: string | null;
+        counterpartyName: string | null;
+        currency: string;
+        netAmount: string | null;
+        id: Id;
+        reference: string;
+        title: string;
+        projectId: Id | null;
+        kind: 'offer' | 'variation' | 'alternative' | 'subcontract' | 'measurement' | 'procurement' | 'calculation' | 'invoice' | 'progress_invoice' | 'final_invoice';
+        status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'cancelled' | 'requested' | 'awarded' | 'confirmed' | 'submitted' | 'approved' | 'partially_paid' | 'paid';
     }>;
     "commercial.documents.download": {
         url: string;

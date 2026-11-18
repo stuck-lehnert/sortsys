@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { combineLatest, type Subscription } from "rxjs";
+import type { QueryResult } from "@sortsys/v2-client";
 import { useProtectedDataContext } from "~/hooks/useProtectedDataContext";
 import { useMyModals } from "~/hooks/useMyModals";
 import { showCommercialWorkspace } from "~/modals/commercial";
@@ -16,11 +17,12 @@ import {
   kindLabel,
   money,
   statusLabel,
-  type CommercialCase,
   type CommercialKind,
 } from "~/lib/commercial";
 import { MyTable } from "~/components/MyTable";
 import { MyCallout } from "~/components/MyCallout";
+
+type OverviewRow = QueryResult<"commercial.cases.overview">[number];
 
 export function CommercialCaseList({
   projectId,
@@ -39,13 +41,13 @@ export function CommercialCaseList({
   const filterKey = JSON.stringify([projectId, kind, search, status]);
   const [pagination, setPagination] = useState({ filter: filterKey, pages: 1 });
   const count = pagination.filter === filterKey ? pagination.pages : 1;
-  const [state, setState] = useState<{ context: AbortSignal; filter: string; pages: number; rows: CommercialCase[]; more: boolean; error: string } | null>(null);
+  const [state, setState] = useState<{ context: AbortSignal; filter: string; pages: number; rows: OverviewRow[]; more: boolean; error: string } | null>(null);
   const current = state?.context === context && state.filter === filterKey && !context.aborted ? state : null;
   const rows = current?.rows ?? [], more = current?.more ?? false, error = current?.error ?? "", busy = !current || current.pages !== count;
   useEffect(() => {
     let active = true, subscription: Subscription | undefined;
     const timer = setTimeout(() => {
-      subscription = combineLatest(Array.from({ length: count }, (_, index) => client.streamQuery("commercial.cases.list", {
+      subscription = combineLatest(Array.from({ length: count }, (_, index) => client.streamQuery("commercial.cases.overview", {
         projectId: projectId ?? null, kind: kind === "offer" && !projectId ? "sales" : (kind ?? null),
         status: status || null, search: search.trim() || null, limit: 50n, offset: BigInt(index * 50),
       }))).subscribe(pages => {
@@ -184,7 +186,7 @@ export function CommercialCaseList({
             ? [
                 {
                   label: uiText("Projekt", "Project"),
-                  render: (row: CommercialCase) =>
+                  render: (row: OverviewRow) =>
                     row.projectId
                       ? uiText("Zugeordnet", "Linked")
                       : uiText("Vor Projektbeginn", "Before project start"),

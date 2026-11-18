@@ -275,7 +275,7 @@ export function createProtectedCommercial(
     live();
     return values.filter((value) => matchesListScope(value, filter));
   }
-  async function list(filter: { projectId?: unknown; kind?: unknown }) {
+  async function list(filter: ListScope) {
     const { selected, visible, collections } = await inventory();
     const master = new Map<string, DataRequest<CommercialPayload>>();
     const cases = new Map<string, DataRequest<CommercialPayload>[]>();
@@ -287,40 +287,58 @@ export function createProtectedCommercial(
       if (facet === "master-data") master.set(id, request);
     }
     const ids = [...master.keys()];
-    if (filter.projectId != null || filter.kind != null) {
+    if (filter.projectId != null || filter.kind != null || filter.overview) {
       // Public headers, including immutable invoice seals, select the cases.
       // Keep every header in the final read so a concurrent move cannot hide
       // a new match. Payment status is checked only with the full billing view.
       const headers = [...master.values()];
       const headerRequests = [...headers, ...invoiceViewRequests(headers)];
-      function matchingIds(view: DataView): string[] {
-        return headersInView(view, headers, visible)
-          .filter((value) => matchesListScope(value, filter))
-          .map((value) => value.id);
+      function matches(view: DataView) {
+        return headersInView(view, headers, visible).filter((value) =>
+          matchesListScope(value, filter),
+        );
       }
       for (let attempt = 0; ; attempt++) {
         const candidates = await runtime.read(
           headerRequests,
-          matchingIds,
+          matches,
           collections,
         );
-        const included = new Set(candidates);
-        const requests = selected.filter((request) => {
-          const { id, facet } = commercialDomain(request.area.domain)!;
-          return facet === "master-data" || included.has(id);
-        });
+        const included = new Map(candidates.map(({ id, kind }) => [id, kind]));
+        const matchingParts = new Map<
+          string,
+          DataRequest<CommercialPayload>[]
+        >();
+        const requests = [...headers];
+        for (const { id, kind } of candidates) {
+          const parts = cases.get(id)!;
+          const selectedParts = filter.overview
+            ? parts.filter(
+                ({ area }) =>
+                  area.facet === "master-data" ||
+                  area.facet === commercialAmountFacet(kind) ||
+                  (area.facet === "scope" &&
+                    !isInvoice(kind) &&
+                    kind !== "measurement"),
+              )
+            : parts;
+          matchingParts.set(id, selectedParts);
+          requests.push(
+            ...selectedParts.filter(({ area }) => area.facet !== "master-data"),
+          );
+        }
         try {
           return await runtime.read(
             [...requests, ...invoiceViewRequests(requests)],
             (view) => {
-              const current = matchingIds(view);
+              const current = matches(view);
               if (
                 current.length !== candidates.length ||
-                current.some((id) => !included.has(id))
+                current.some(({ id, kind }) => included.get(id) !== kind)
               )
                 throw new ProtectedWriteConflict();
-              return current.map((id) =>
-                snapshot(view, id, cases.get(id)!, visible, true),
+              return current.map(({ id }) =>
+                snapshot(view, id, matchingParts.get(id)!, visible, true),
               );
             },
             collections,
@@ -393,38 +411,27 @@ export function createProtectedCommercial(
   }
 
   function primaryAmountDocument(values: BusinessRow[], kind: string) {
-    const purposes: Record<string, readonly string[]> = {
-      offer: ["offer"],
-      variation: ["offer"],
-      alternative: ["alternative"],
-    };
-    for (const purpose of purposes[kind] ?? []) {
-      const documents = values.filter(
-        (row) =>
-          row.table === "commercial_documents" &&
-          row.values.purpose === purpose,
-      );
-      documents.sort((left, right) => {
-        const leftDate = Date.parse(left.values.created_at as string);
-        const rightDate = Date.parse(right.values.created_at as string);
-        if (leftDate !== rightDate) {
-          return rightDate - leftDate;
-        }
-        const leftId = BigInt(left.values.id as string);
-        const rightId = BigInt(right.values.id as string);
-        if (leftId > rightId) {
-          return -1;
-        }
-        if (leftId < rightId) {
-          return 1;
-        }
-        return 0;
-      });
-      if (documents[0]) {
-        return documents[0];
+    let purpose: string;
+    if (kind === "offer" || kind === "variation") purpose = "offer";
+    else if (kind === "alternative") purpose = "alternative";
+    else return undefined;
+    const documents = values.filter(
+      (row) =>
+        row.table === "commercial_documents" && row.values.purpose === purpose,
+    );
+    documents.sort((left, right) => {
+      const leftDate = Date.parse(left.values.created_at as string);
+      const rightDate = Date.parse(right.values.created_at as string);
+      if (leftDate !== rightDate) {
+        return rightDate - leftDate;
       }
-    }
-    return undefined;
+      const leftId = BigInt(left.values.id as string);
+      const rightId = BigInt(right.values.id as string);
+      if (leftId > rightId) return -1;
+      if (leftId < rightId) return 1;
+      return 0;
+    });
+    return documents[0];
   }
 
   // Calculated rows are a display/workflow view, never a signed storage
@@ -433,6 +440,7 @@ export function createProtectedCommercial(
     basis: CaseSnapshot,
     openStore: (scope: string) => Promise<DocumentStore> = (scope) =>
       commercialDocumentStore(client, scope, signal),
+    amount: "case" | "all" = "all",
   ): Promise<BusinessRow[]> {
     if (basis.values.length === 0) {
       return basis.values;
@@ -441,16 +449,13 @@ export function createProtectedCommercial(
     if (isInvoice(current.kind) || current.kind === "measurement") {
       return basis.values;
     }
-    const documents = basis.values.filter(
+    const priceDocuments = basis.values.filter(
       (row) =>
         row.table === "commercial_documents" &&
         phaseHasPrices(row.values.phase as GaebPhase),
     );
-    if (documents.length === 0) {
-      return basis.values;
-    }
     if (
-      !documents.some((document) =>
+      !priceDocuments.some((document) =>
         basis.parts.has(
           gaebAmountFacet(current.kind, document.values.phase as GaebPhase),
         ),
@@ -469,6 +474,12 @@ export function createProtectedCommercial(
         return row;
       });
     }
+    const primary = primaryAmountDocument(basis.values, current.kind);
+    const documents =
+      amount === "all"
+        ? priceDocuments
+        : priceDocuments.filter((document) => document === primary);
+    if (!documents.length) return basis.values;
     const store = await openStore(`commercial:${basis.id}`);
     const changed = new Map<string, string | null>();
     try {
@@ -550,7 +561,6 @@ export function createProtectedCommercial(
     if (changed.size === 0) {
       return basis.values;
     }
-    const primary = primaryAmountDocument(basis.values, current.kind);
     const values = basis.values.map((row) => {
       if (
         row.table === "commercial_documents" &&
@@ -621,7 +631,7 @@ export function createProtectedCommercial(
         : null,
     });
   }
-  type ListScope = { projectId?: unknown; kind?: unknown };
+  type ListScope = { projectId?: unknown; kind?: unknown; overview?: boolean };
   const pendingListViews = pendingReads(
     (_path, input) => readListView(input as ListScope),
     // Signed snapshots remain internal. Each returned public row is copied.
@@ -655,7 +665,7 @@ export function createProtectedCommercial(
         }),
       ),
     ];
-    const relatedProjects = projectIds.length
+    const relatedProjects = !filter.overview && projectIds.length
       ? await (await projects()).getMany(projectIds)
       : [];
     const titles = new Map(
@@ -687,6 +697,7 @@ export function createProtectedCommercial(
     const values = await pendingListViews.get("commercial-list", {
       projectId: filter.projectId ?? null,
       kind: filter.kind ?? null,
+      overview: filter.overview === true,
     });
     live();
     return values;
@@ -2522,7 +2533,11 @@ export function createProtectedCommercial(
           url: commercialDocumentUrl(caseId, id, head.version),
         };
       }
-      if (path === "commercial.cases.list") {
+      if (
+        path === "commercial.cases.list" ||
+        path === "commercial.cases.overview"
+      ) {
+        const overview = path === "commercial.cases.overview";
         const data = partialAddressRecord(input ?? {}, [
           "projectId",
           "kind",
@@ -2552,7 +2567,7 @@ export function createProtectedCommercial(
             throw new InvalidProtectedData();
           }
         }
-        const { all, values } = await listView(data);
+        const { all, values } = await listView({ ...data, overview });
         const search =
           (data.search as string | undefined)?.trim().toLocaleLowerCase() ?? "";
         const filtered = values
@@ -2611,10 +2626,29 @@ export function createProtectedCommercial(
           if (!basis) {
             throw new InvalidProtectedData();
           }
-          const calculated = await calculatedCaseRows(basis, openStore);
+          const calculated = await calculatedCaseRows(
+            basis,
+            openStore,
+            overview ? "case" : "all",
+          );
+          const netAmount = wireCommercialCase(calculated).netAmount;
+          if (overview) {
+            return {
+              id: value.id,
+              reference: value.reference,
+              title: value.title,
+              kind: value.kind,
+              status: value.status,
+              projectId: value.projectId,
+              customerName: value.customerName,
+              counterpartyName: value.counterpartyName,
+              currency: value.currency,
+              netAmount,
+            } satisfies QueryResult<"commercial.cases.overview">[number];
+          }
           return {
             ...structuredClone(value),
-            netAmount: wireCommercialCase(calculated).netAmount,
+            netAmount,
           };
         });
       }

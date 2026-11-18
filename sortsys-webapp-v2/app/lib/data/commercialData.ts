@@ -12,6 +12,7 @@ import { businessSchema, tableDefinition } from "./schema";
 
 export const COMMERCIAL_QUERIES = new Set([
   "commercial.cases.list",
+  "commercial.cases.overview",
   "commercial.cases.headers",
   "commercial.cases.get",
   "commercial.documents.get",

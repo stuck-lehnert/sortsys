@@ -90,6 +90,13 @@ Treffermenge führt zu einem erneuten Abruf. Zahlungsstände werden erst mit den
 zugehörigen unveränderlichen Abrechnungsbelegen ausgewertet. Kundennamen werden
 für die Liste gemeinsam geladen.
 
+Die Tabellenansicht verwendet `commercial.cases.overview`. Für passende
+Vorgänge liest sie zum Kopf nur die Bereiche für Vertragsumfang und Betrag,
+soweit sie für die Dokumentart benötigt werden. Bei Rechnungen schließt das die
+Nachweise zum Zahlungsstand ein. Der Browser prüft den Betrag am maßgeblichen
+Angebotsdokument. Anlagen und interne Kalkulationsnotizen bleiben bei normalen
+Angeboten geschlossen.
+
 `commercial.cases.headers` liefert nur Kennung, Referenz, Bezeichnung,
 Projektzuordnung, Dokumentart und Status. Die Vorgangsauswahl und die Vorprüfung
 einer gefilterten Liste verwenden denselben Leser für geprüfte Kopfdaten. Im

@@ -215,6 +215,75 @@ test("document choices batch only verified headers and never open price or calcu
   }
 });
 
+test("the offers table reads checked totals without opening private notes or attachment fields", async () => {
+  const id = "34";
+  const areas = [
+    "master-data",
+    "scope",
+    "offer-prices",
+    "calculation",
+    "attachment",
+    "contract-quantities",
+  ].map((facet) => commercialCollection(id, facet));
+  const tenant = await protectedTenant(areas);
+  const rows = splitCommercialRows(id, [
+    row("commercial_cases", {
+      id: "100",
+      kind: "offer",
+      status: "draft",
+      title: "Innenputz Nordflügel",
+      reference: "ANG-73",
+      currency: "EUR",
+      net_amount: "123456.78",
+      notes: "Interner Kalkulationsansatz",
+      project_id: "43",
+      scope_item_ids: "[]",
+    }),
+  ]);
+  for (const area of areas) {
+    const value = rows.get(area.facet);
+    await tenant.seed(area, `${area.prefix}case`, value);
+  }
+  const store = createProtectedCommercial(
+    tenant.client,
+    new AbortController().signal,
+    unusedDependency,
+    unusedDependency,
+    duckDriver,
+  );
+  try {
+    tenant.calls.length = 0;
+    expect(
+      await store.query("commercial.cases.overview", {
+        kind: "sales",
+        search: "Nordflügel",
+      }),
+    ).toEqual([
+      {
+        id,
+        reference: "ANG-73",
+        title: "Innenputz Nordflügel",
+        projectId: "1b",
+        kind: "offer",
+        status: "draft",
+        customerName: null,
+        counterpartyName: null,
+        currency: "EUR",
+        netAmount: "123456.78",
+      },
+    ]);
+    const reads = tenant.calls
+      .filter((call) => call.path === "zerotrust.objects.pages")
+      .flatMap((call) => call.input.selections.map(({ domain }) => domain));
+    expect(new Set(reads)).toEqual(
+      new Set(areas.slice(0, 3).map((area) => area.domain)),
+    );
+    expect(JSON.stringify(tenant.calls)).not.toContain("Kalkulationsansatz");
+  } finally {
+    store.close();
+  }
+});
+
 test("concurrent searches share one running case inventory and the next search observes a fresh read", async () => {
   const areas = ["34", "35"].map((id) =>
     commercialCollection(id, "master-data"),

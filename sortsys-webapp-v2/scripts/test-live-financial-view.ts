@@ -698,13 +698,16 @@ export async function testQuantityWriter(options: FinancialTestAccounts) {
         .replace("<Qty>3.000</Qty>", "<Qty>4.000</Qty>")
         .replace("<IT>30.00</IT>", "<IT>40.00</IT>"),
     );
-    const list = await required(
-      business.query("commercial.cases.list", { kind: "alternative" }),
-    );
-    assert.equal(
-      list.find((item) => item.id === target.caseId)?.netAmount,
-      "40.00",
-    );
+    for (const path of [
+      "commercial.cases.list",
+      "commercial.cases.overview",
+    ] as const) {
+      const list = await required(business.query(path, { kind: "alternative" }));
+      assert.equal(
+        list.find((item) => item.id === target.caseId)?.netAmount,
+        "40.00",
+      );
+    }
   });
   await grant([
     {
@@ -717,6 +720,13 @@ export async function testQuantityWriter(options: FinancialTestAccounts) {
       business.query("commercial.cases.get", { id: target.caseId }),
     );
     assert.equal(detail.case.netAmount, null);
+    const overview = await required(
+      business.query("commercial.cases.overview", { kind: "alternative" }),
+    );
+    assert.equal(
+      overview.find((item) => item.id === target.caseId)?.netAmount,
+      null,
+    );
     const session = await business.documents.open(
       target.caseId,
       target.documentId,

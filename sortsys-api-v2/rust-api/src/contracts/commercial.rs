@@ -6,6 +6,7 @@ use ts_rs::TS;
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .query_stub::<ListInput, Vec<CommercialCase>>("commercial.cases.list")
+        .query_stub::<ListInput, Vec<CaseOverviewRow>>("commercial.cases.overview")
         .query_stub::<HeaderListInput, Vec<CaseHeader>>("commercial.cases.headers")
         .query_stub::<CaseInput, CaseDetail>("commercial.cases.get")
         .mutation_stub::<CreateInput, CreatedId>("commercial.cases.create")
@@ -28,6 +29,17 @@ pub struct CaseHeader {
         type = "'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid'"
     )]
     pub status: String,
+}
+
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CaseOverviewRow {
+    #[serde(flatten)]
+    pub header: CaseHeader,
+    pub customer_name: Option<String>,
+    pub counterparty_name: Option<String>,
+    pub currency: String,
+    pub net_amount: Option<String>,
 }
 
 #[derive(Deserialize, TS)]
