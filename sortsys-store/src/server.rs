@@ -399,6 +399,55 @@ async fn snapshot(
         })
         .await
 }
+
+async fn describe_content(
+    State(state): State<Control>,
+    Json(input): Json<crate::content::DescribeInput>,
+) -> Result<Json<crate::content::Description>, StoreError> {
+    let directory = state.directory.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::content::Source::open(&directory, &input).map(|source| Json(source.description))
+    })
+    .await
+    .map_err(|_| StoreError::Unavailable("snapshot-reader"))?
+}
+
+async fn prepare_content(
+    State(state): State<Control>,
+    Json(input): Json<crate::content::PrepareInput>,
+) -> Result<Json<crate::content::Preparation>, StoreError> {
+    let directory = state.directory.clone();
+    let target = super::metadata::Target::Tenant {
+        tenant: input.source.tenant.clone(),
+    };
+    let mut plan = tokio::task::spawn_blocking(move || {
+        crate::content::Source::open(
+            &directory,
+            &crate::content::DescribeInput {
+                source: input.source.clone(),
+                records: Vec::new(),
+            },
+        )?
+        .plan(input)
+    })
+    .await
+    .map_err(|_| StoreError::Unavailable("snapshot-reader"))??;
+    loop {
+        let selected = target.clone();
+        let (next_plan, preparation) = state
+            .blocking(move |connection, directory, initialized| {
+                let catalog = metadata_catalog(connection, directory, selected, initialized)?;
+                let preparation = crate::content::advance(connection, &catalog, &plan)?;
+                Ok((plan, preparation))
+            })
+            .await?;
+        if preparation.phase == crate::content::Phase::Ready {
+            return Ok(Json(preparation));
+        }
+        plan = next_plan;
+        tokio::task::yield_now().await;
+    }
+}
 async fn download(
     State(state): State<Control>,
     RoutePath(id): RoutePath<String>,
@@ -719,6 +768,12 @@ pub async fn run(
         ));
     let private = Router::new()
         .merge(metadata)
+        .merge(
+            Router::new()
+                .route("/content/describe", post(describe_content))
+                .route("/content/prepare", post(prepare_content))
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
         .route("/tenants", post(provision))
         .route("/snapshots", post(snapshot))
         .route("/snapshots/{id}", get(download))

@@ -6,6 +6,7 @@ use duckdb::Connection;
 use sha2::{Digest, Sha256};
 
 mod client;
+pub mod content;
 mod journal;
 pub mod metadata;
 mod prepared;

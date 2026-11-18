@@ -64,10 +64,15 @@ sie noch nicht enthält. Die API prüft die Signatur der Mandantenautorität fü
 den ausgewählten Fachstand. Begonnene Lese- und Schreibvorgänge müssen beim
 Abschluss weiterhin zu diesem Stand passen.
 
-Für eine vollständige Rücksicherung muss der Dienst die gewählte Sicherung noch
-in diese Ablage übernehmen und ihre Abhängigkeiten prüfen. Die erhaltenen
-Metadatenverweise ersetzen die referenzierten Chiffrate nicht. Verbundene
-Editoren müssen den neuen Stand laden; dieser Ablauf ist noch nicht implementiert.
+Die API kann eine fertig registrierte Sicherung für einen neuen Fachstand
+vorbereiten. Der Datendienst kopiert die ausgewählten technischen Datensätze
+und prüft beim Kopieren die Inhaltsadressen der Chiffrate. Ein unterbrochener
+Auftrag lässt sich mit derselben Kennung über jede API-Instanz fortsetzen.
+Währenddessen bearbeiten Mitarbeiter weiterhin den aktuellen Stand.
+
+Die Freigabe des vorbereiteten Stands fehlt noch. Vor dem Wechsel müssen
+Fachreferenzen mit den erhaltenen Datensätzen abgeglichen werden. Verbundene
+Editoren müssen den neuen Stand laden.
 
 ## Erstellung und Nachweise
 

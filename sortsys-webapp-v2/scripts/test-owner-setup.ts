@@ -288,7 +288,20 @@ try {
     username: "builder",
     password: draft.password,
   });
-  if (mode === "owner-bootstrap") {
+  if (mode === "owner-content-preparation") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseContentPreparation } =
+      await import("./test-native-content-preparation");
+    await exerciseContentPreparation(
+      owner,
+      peer,
+      operator,
+      tenant,
+      dirname(outputPath),
+    );
+  } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =
       await import("./test-tenant-initialization");
     await exerciseTenantInitialization(owner, peer, draft, (hook) => {

@@ -240,23 +240,9 @@ async fn download_checked(
 ) -> RpcResult<Response> {
     service.require_global_operator(&headers).await?;
     let tenant = tenants::normalized_name(&tenant)?;
-    let expected_file = sortsys_store::snapshot_id(&tenant, &operation)
-        .map_err(|_| bad_request("Invalid snapshot operation"))?;
     let system = service.records()?;
     tenants::published_repository(system, &tenant).await?;
-    let record: SnapshotRecord = system
-        .read(record_key(&tenant, &operation))
-        .await?
-        .value
-        .ok_or_else(not_found)?;
-    if record.summary.tenant != tenant || record.summary.id != operation {
-        return Err(unavailable());
-    }
-    let file_id = record.file_id.ok_or_else(not_found)?;
-    if file_id != expected_file {
-        return Err(unavailable());
-    }
-    let bytes = record.summary.bytes.ok_or_else(unavailable)?;
+    let (file_id, bytes) = published_file(system, &tenant, &operation).await?;
     let response = system
         .storage()
         .download_snapshot(&file_id)
@@ -282,6 +268,28 @@ async fn download_checked(
         filename.parse().map_err(|_| unavailable())?,
     );
     Ok((headers, Body::from_stream(response.bytes_stream())).into_response())
+}
+
+pub(crate) async fn published_file(
+    system: &Repository,
+    tenant: &str,
+    operation: &str,
+) -> RpcResult<(String, u64)> {
+    let expected_file = sortsys_store::snapshot_id(tenant, operation)
+        .map_err(|_| bad_request("Invalid snapshot operation"))?;
+    let record: SnapshotRecord = system
+        .read(record_key(tenant, operation))
+        .await?
+        .value
+        .ok_or_else(not_found)?;
+    if record.summary.tenant != tenant || record.summary.id != operation {
+        return Err(unavailable());
+    }
+    let file_id = record.file_id.ok_or_else(not_found)?;
+    if file_id != expected_file {
+        return Err(unavailable());
+    }
+    Ok((file_id, record.summary.bytes.ok_or_else(unavailable)?))
 }
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {

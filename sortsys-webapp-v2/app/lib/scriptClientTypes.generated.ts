@@ -197,6 +197,19 @@ export type Completion = {
     signature: string;
 };
 
+export type ContentEpoch = {
+    format: string;
+    tenant: string;
+    authorityGeneration: string;
+    number: string;
+    previous: string | null;
+    sourceNumber: string;
+    sourceHead: string | null;
+    snapshot: string;
+    actor: string;
+    signature: string;
+};
+
 export type CreationCapability = {
     tenant: string;
     id: string;
@@ -4213,6 +4226,10 @@ export type MutationInputs = {
         grants: Array<KeyGrant>;
         domains: Array<DomainDefinition>;
     };
+    "zerotrust.content.prepare": {
+        snapshotOperation: string;
+        operation: string;
+    };
     "zerotrust.creations.grant": {
         tenant: string;
         id: string;
@@ -5100,6 +5117,18 @@ export type MutationOutputs = {
     };
     "zerotrust.access.publish": {
         success: true;
+    };
+    "zerotrust.content.prepare": {
+        operation: string;
+        snapshotOperation: string;
+        snapshot: string;
+        bytes: string;
+        current: ContentEpoch | null;
+        source: ContentEpoch | null;
+        sourceAuthority: AuthorityCertificate;
+        number: string;
+        records: string;
+        ciphertexts: string;
     };
     "zerotrust.creations.grant": {
         success: true;

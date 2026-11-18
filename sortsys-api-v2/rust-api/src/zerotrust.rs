@@ -46,6 +46,7 @@ pub(crate) fn register_native(
     let builder = setup::register_root_queries(builder, Arc::clone(&service));
     let builder = initialization::register(builder, Arc::clone(&service));
     let builder = bootstrap::register(builder, Arc::clone(&service));
+    let builder = content::register(builder, Arc::clone(&service));
     let builder = objects::register_metadata(builder, Arc::clone(&service));
     let builder = object_shares::register(builder, Arc::clone(&service));
     let builder = staged::register_metadata(builder, Arc::clone(&service));
@@ -186,6 +187,7 @@ pub(crate) async fn verify_live_identity(
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     let builder = bootstrap::register_contract(builder);
+    let builder = content::register_contract(builder);
     let builder = object_shares::register_contract(builder);
     let builder =
         builder.query_stub::<(), crate::editors::EditorConfig>("zerotrust.editors.config");

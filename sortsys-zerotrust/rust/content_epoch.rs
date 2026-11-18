@@ -7,8 +7,17 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(feature = "typescript")]
+use ts_rs::TS;
 
 const DATA_PREFIX: &str = "zt-data:";
+
+pub fn head_key() -> RecordKey {
+    RecordKey {
+        collection: "zt-content-epochs".into(),
+        key: "current".into(),
+    }
+}
 
 fn number(input: &str) -> Result<i64> {
     if input == "0" {
@@ -18,6 +27,7 @@ fn number(input: &str) -> Result<i64> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(feature = "typescript", derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContentEpoch {
     pub format: String,

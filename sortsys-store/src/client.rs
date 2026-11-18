@@ -45,6 +45,50 @@ pub struct SnapshotInfo {
 }
 
 impl CipherStore {
+    pub async fn describe_content(
+        &self,
+        input: &crate::content::DescribeInput,
+    ) -> Result<crate::content::Description, StoreError> {
+        self.content_request("describe", input).await
+    }
+
+    pub async fn prepare_content(
+        &self,
+        input: &crate::content::PrepareInput,
+    ) -> Result<crate::content::Preparation, StoreError> {
+        self.content_request("prepare", input).await
+    }
+
+    async fn content_request<I: Serialize + ?Sized, O: serde::de::DeserializeOwned>(
+        &self,
+        action: &str,
+        input: &I,
+    ) -> Result<O, StoreError> {
+        let response = self
+            .0
+            .http
+            .post(format!("{}/content/{action}", self.0.config.control_url))
+            .bearer_auth(&*self.0.config.token)
+            .timeout(Duration::from_secs(300))
+            .json(input)
+            .send()
+            .await
+            .map_err(|_| StoreError::Unavailable("content-transport"))?;
+        match response.status() {
+            reqwest::StatusCode::CONFLICT => return Err(StoreError::Conflict),
+            reqwest::StatusCode::BAD_REQUEST => return Err(StoreError::Integrity),
+            reqwest::StatusCode::NOT_FOUND => return Err(StoreError::NotFound),
+            status if !status.is_success() => {
+                return Err(StoreError::Unavailable("content-response"));
+            }
+            _ => {}
+        }
+        response
+            .json()
+            .await
+            .map_err(|_| StoreError::Unavailable("content-decode"))
+    }
+
     pub fn new(config: QuackConfig) -> Result<Self, StoreError> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))

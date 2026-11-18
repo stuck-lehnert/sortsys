@@ -9,7 +9,7 @@ use sortsys_zerotrust::{
 use super::*;
 
 pub(crate) fn head_key() -> RecordKey {
-    key("zt-content-epochs", "current")
+    sortsys_zerotrust::content_epoch::head_key()
 }
 
 /// Deliberate application classification, not an inferred default for future

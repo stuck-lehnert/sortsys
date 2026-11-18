@@ -46,6 +46,8 @@ export type CommercialCase = { id: Id, reference: string, kind: 'offer'|'variati
 
 export type Completion = { tenant: string, generation: string, subject: string, policyVersion: string, domains: Array<string>, objects: Array<string>, signature: string, };
 
+export type ContentEpoch = { format: string, tenant: string, authorityGeneration: string, number: string, previous: string | null, sourceNumber: string, sourceHead: string | null, snapshot: string, actor: string, signature: string, };
+
 export type CreationCapability = { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
 
 export type CreationOptions = { challenge: string, rp: RelyingParty, user: PasskeyUser, pubKeyCredParams: Array<CredentialParameter>, timeout: number, attestation: "none", authenticatorSelection: AuthenticatorSelection, excludeCredentials: Array<CredentialDescriptor>, };
@@ -711,6 +713,7 @@ export type MutationInputs = {
   "users.vacations.delete": { id: string; expectedRevision?: undefined | string; };
   "users.vacations.deny": { id: string; expectedRevision?: undefined | string; reason: string; };
   "zerotrust.access.publish": { policyVersion: string, grants: Array<KeyGrant>, domains: Array<DomainDefinition>, };
+  "zerotrust.content.prepare": { snapshotOperation: string, operation: string, };
   "zerotrust.creations.grant": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
   "zerotrust.creations.renew": { origins: Array<CreationOrigin>, object: string, revision: string, packetSignature: string, proof: string, };
   "zerotrust.deliveryNotes.adopt": { context: string, generation: string, policyVersion: string, allocations: Array<DeliveryAllocation>, proof: string, };
@@ -921,6 +924,7 @@ export type MutationOutputs = {
   "users.vacations.delete": { success: true; };
   "users.vacations.deny": { success: true; };
   "zerotrust.access.publish": { success: true, };
+  "zerotrust.content.prepare": { operation: string, snapshotOperation: string, snapshot: string, bytes: string, current: ContentEpoch | null, source: ContentEpoch | null, sourceAuthority: AuthorityCertificate, number: string, records: string, ciphertexts: string, };
   "zerotrust.creations.grant": { success: true, };
   "zerotrust.creations.renew": { success: true, };
   "zerotrust.deliveryNotes.adopt": { success: true, };
@@ -1279,6 +1283,7 @@ const mutationProcedures = new Set<string>([
   "users.vacations.delete",
   "users.vacations.deny",
   "zerotrust.access.publish",
+  "zerotrust.content.prepare",
   "zerotrust.creations.grant",
   "zerotrust.creations.renew",
   "zerotrust.deliveryNotes.adopt",

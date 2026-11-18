@@ -25,6 +25,79 @@ fn document(number: usize) -> sortsys_zerotrust::metadata::RecordKey {
     key("documents", &format!("doc-{number:02}"))
 }
 
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB and loopback listeners"]
+async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    assert!(config.token.starts_with("sortsys-disposable-"));
+    let first = CipherStore::new(config.clone()).unwrap();
+    let second = CipherStore::new(config.clone()).unwrap();
+    let mut settings = configuration(config);
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (first_url, _first_api) =
+        api(auth_service(&settings, Repository::system(first.clone()))).await;
+    let (second_url, _second_api) =
+        api(auth_service(&settings, Repository::system(second.clone()))).await;
+    let tenant = "content-preparation";
+    let endpoints = [first_url, second_url];
+    browser_with_tenant(
+        "owner-content-preparation",
+        &root,
+        Some(&endpoints),
+        Some(tenant),
+    )
+    .await;
+
+    let report: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("content-preparation.json")).unwrap(),
+    )
+    .unwrap();
+    let project = report["project"].as_str().unwrap();
+    let target = Target::Tenant {
+        tenant: tenant.into(),
+    };
+    let object = crate::zerotrust::objects::metadata_record_key(
+        &format!("project:{project}:master-data"),
+        &format!("project:{project}"),
+    );
+    let records = second
+        .metadata_read(
+            target,
+            vec![
+                head_key(),
+                sortsys_store::content::preparation_key("1").unwrap(),
+                object.clone(),
+                namespace_record(&object, "1").unwrap(),
+            ],
+        )
+        .await
+        .unwrap();
+    assert!(records[0].value.is_none());
+    let prepared: sortsys_store::content::Preparation =
+        serde_json::from_str(records[1].value.as_deref().unwrap()).unwrap();
+    assert_eq!(prepared.phase, sortsys_store::content::Phase::Ready);
+    assert_eq!(prepared.operation, report["operation"]);
+    assert_eq!(prepared.snapshot, report["snapshot"]);
+    let current: crate::zerotrust::objects::ObjectRecord =
+        serde_json::from_str(records[2].value.as_deref().unwrap()).unwrap();
+    let staged: crate::zerotrust::objects::ObjectRecord =
+        serde_json::from_str(records[3].value.as_deref().unwrap()).unwrap();
+    assert_eq!(current.object, staged.object);
+    assert_ne!(current.reference, staged.reference);
+    assert!(current.revision.parse::<u64>().unwrap() > staged.revision.parse::<u64>().unwrap());
+    let ciphertext = first.get(tenant, &staged.reference).await.unwrap();
+    assert!(!ciphertext.contains("Vertrauliche Projektfassung"));
+    assert_eq!(sortsys_store::content_id(&ciphertext), staged.reference);
+}
+
 async fn stage(store: &CipherStore, epoch: &str, entries: &[(usize, u64)]) {
     let mut batch = MetadataBatch {
         operation: super::super::super::crypto::random_id().unwrap(),
