@@ -80,6 +80,53 @@ after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
 });
 
+test("a replay from a measurement attachment restores all its text partitions together", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(base);
+    const result = await page.evaluate(async () => {
+      const { createGaebXml, GaebDocument, initializeSharedField, SharedFields } =
+        await import("/editor.js");
+      const filename = "Fassade.x31";
+      const draft = new GaebDocument(
+        createGaebXml("31", "Musteraufmaß"), filename,
+      );
+      const withItem = new GaebDocument(draft.addItem(), filename);
+      const heading = { id: "west", title: "Westfassade" };
+      const model = new GaebDocument(
+        withItem.addTakeoffHeading(withItem.items[0], heading), filename,
+      );
+      const key = `${model.items[0].key}:heading:${heading.id}`;
+      const state = new SharedFields();
+      state.enableFacets();
+      state.acknowledge(model.source, filename);
+      const scope = initializeSharedField("project:title", model.projectName());
+      const measurement = initializeSharedField(key, heading.title);
+      const invalid = initializeSharedField(key, "Falscher Stand");
+      try {
+        const rejected = !state.restoreReplays({ scope, measurement: invalid });
+        const untouched = state.captureReplay("scope") === undefined &&
+          state.captureReplay("measurement") === undefined;
+        const restored = state.restoreReplays({ scope, measurement });
+        const preserved = state.captureReplay("scope") === scope &&
+          state.captureReplay("measurement") === measurement;
+        const sent = [];
+        state.connect((message) => sent.push(message), true, "same-file", {
+          initializeOnEdit: true,
+        });
+        return { rejected, untouched, restored, preserved, sent };
+      } finally {
+        state.destroy();
+      }
+    });
+    assert.deepEqual(result, {
+      rejected: true, untouched: true, restored: true, preserved: true, sent: [],
+    });
+  } finally {
+    await page.close();
+  }
+});
+
 test(
   "Typst exports real paginated PDF with editable organization header, footer and table style",
   { timeout: 60000 },

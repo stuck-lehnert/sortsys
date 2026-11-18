@@ -39,8 +39,13 @@ export const MAX_LIVE_REPLAY = 2 * 1024 * 1024;
 export function liveReplay(input: unknown): LiveReplay {
   const value = partialAddressRecord(input, [...DOCUMENT_FACETS]);
   for (const data of Object.values(value)) {
-    if (typeof data !== "string" || !data || data.length > MAX_LIVE_REPLAY)
+    if (
+      typeof data !== "string" ||
+      data.length > MAX_LIVE_REPLAY ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(data)
+    ) {
       throw new InvalidProtectedData();
+    }
   }
   return value as LiveReplay;
 }
@@ -143,7 +148,7 @@ export async function prepareLivePublication(
   target: string,
   previousTarget: string | undefined,
   signal: AbortSignal,
-  options: { sequence?: string; preserve?: boolean } = {},
+  options: { sequence?: string; preserve?: boolean; replay?: StageReplay } = {},
 ): Promise<LivePublication | null> {
   return prepareWithContext(
     client,

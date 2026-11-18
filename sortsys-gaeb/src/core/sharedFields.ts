@@ -446,8 +446,32 @@ export class SharedFields {
   }
 
   restoreReplay(facet: GaebContentFacet, data: string) {
+    return this.restoreReplays({ [facet]: data });
+  }
+
+  /** A single attachment cursor covers all of its text partitions. Check
+   * every partition before changing any of them or showing new text. */
+  restoreReplays(data: Partial<Record<GaebContentFacet, string>>) {
     this.active();
-    return this.partition(facet).restoreReplay(data);
+    const commits: (() => void)[] = [];
+    for (const facet of GAEB_CONTENT_FACETS) {
+      const value = data[facet];
+      if (value === undefined) continue;
+      const commit = this.partition(facet).prepareReplay(value);
+      if (!commit) return false;
+      commits.push(commit);
+    }
+    if (commits.length === 0) return false;
+    this.notifications = [];
+    try {
+      for (const commit of commits) commit();
+      const notifications = this.notifications;
+      this.notifications = undefined;
+      for (const change of notifications) this.notify(change);
+    } finally {
+      this.notifications = undefined;
+    }
+    return true;
   }
 
   freeze(xml: string, fileName: string) {

@@ -76,6 +76,13 @@ pub(in crate::zerotrust) async fn prepare(
     proofs: &[LiveCheckpoint],
 ) -> RpcResult<Prepared> {
     let Targets { targets, selected } = collect_targets(documents, objects, proofs)?;
+    let mut project_replays = BTreeMap::new();
+    for packet in objects {
+        let id = packet.envelope.object.as_str();
+        if id.starts_with("project:") && super::super::documents::blob(id)?.is_some() {
+            project_replays.insert(id, packet);
+        }
+    }
     let mut accepted = Vec::new();
     for (room_key, target) in targets {
         let previous_hash = previous_target(context, &target).await?;
@@ -157,9 +164,12 @@ pub(in crate::zerotrust) async fn prepare(
                 return Err(conflict());
             }
         }
-        if let Some(replay) = &proof.replay
-            && existing.is_none()
-        {
+        if let Some(replay) = &proof.replay {
+            let pending = project_replays.remove(replay.object.as_str());
+            if existing.is_some() && pending.is_none() {
+                accepted.push(proof.clone());
+                continue;
+            }
             if target.frozen || target.deletion {
                 return Err(conflict());
             }
@@ -177,15 +187,36 @@ pub(in crate::zerotrust) async fn prepare(
                     return Err(conflict());
                 }
             }
-            super::super::documents::verify_part_reference(
-                &mut context.transaction,
-                &context.repository,
-                &target.room.scope,
-                replay,
-            )
-            .await?;
+            if target.room.scope.starts_with("project:") {
+                // Project replay data and its receipt are created together.
+                // Checking the pending envelope keeps the native save and its
+                // replay state in one transaction, with no separate staging write.
+                let packet = pending.ok_or_else(invalid)?;
+                if packet.envelope.revision != "1"
+                    || packet.envelope.ciphertext.len() > 3 * 1024 * 1024
+                {
+                    return Err(invalid());
+                }
+                super::super::documents::verify_part_envelope(
+                    &target.room.scope,
+                    replay,
+                    &packet.domain,
+                    &packet.envelope,
+                )?;
+            } else {
+                super::super::documents::verify_part_reference(
+                    &mut context.transaction,
+                    &context.repository,
+                    &target.room.scope,
+                    replay,
+                )
+                .await?;
+            }
         }
         accepted.push(proof.clone());
+    }
+    if !project_replays.is_empty() {
+        return Err(invalid());
     }
     Ok(Prepared { proofs: accepted })
 }

@@ -5,7 +5,7 @@ pub(super) use registrations::COLLECTION as REGISTRATIONS;
 use super::{
     crypto::{encode, frame, identifier, invalid, revision, sized, verify},
     objects::{conflict, packet_hash},
-    wire::{Action, Facet},
+    wire::{Action, EncryptedObject, Facet},
 };
 use crate::{
     error::RpcResult,
@@ -75,11 +75,45 @@ fn checked_id(value: &str) -> RpcResult<()> {
     }
     Ok(())
 }
+fn blob_token(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
 pub(super) fn blob(value: &str) -> RpcResult<Option<BlobId<'_>>> {
-    if !value.starts_with("commercial:") {
+    if !value.starts_with("commercial:") && !value.starts_with("project:") {
         return Ok(None);
     }
     let parts: Vec<_> = value.split(':').collect();
+    if value.starts_with("project:") {
+        if parts.get(3) != Some(&"replay") {
+            return Ok(None);
+        }
+        let [
+            "project",
+            project,
+            "attachment",
+            "replay",
+            id,
+            token,
+            "manifest",
+        ] = parts.as_slice()
+        else {
+            return Err(invalid());
+        };
+        checked_id(project)?;
+        checked_id(id)?;
+        if !blob_token(token) {
+            return Err(invalid());
+        }
+        return Ok(Some(BlobId {
+            scope: &value[..8 + project.len()],
+            id,
+            facet: "attachment",
+            manifest: true,
+        }));
+    }
     if parts
         .get(3)
         .is_none_or(|value| !["document", "opaque"].contains(value))
@@ -101,10 +135,7 @@ pub(super) fn blob(value: &str) -> RpcResult<Option<BlobId<'_>>> {
     };
     if !CONTENT_FACETS.contains(&facet)
         || facet == "opaque" && parts[3] != "opaque"
-        || parts[5].len() != 32
-        || !parts[5]
-            .bytes()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        || !blob_token(parts[5])
     {
         return Err(invalid());
     }
@@ -149,18 +180,26 @@ pub(super) async fn verify_part_reference(
 ) -> RpcResult<()> {
     let record = super::objects::metadata_object(transaction, &part.object)
         .await?
-        .filter(|record| !record.deleted)
+        .filter(|record| !record.deleted && !record.tombstone)
         .ok_or_else(invalid)?;
+    let envelope = super::objects::metadata_read(repository, &record.reference).await?;
+    verify_part_envelope(scope, part, &record.domain, &envelope)
+}
+
+pub(super) fn verify_part_envelope(
+    scope: &str,
+    part: &DocumentPart,
+    domain: &str,
+    envelope: &EncryptedObject,
+) -> RpcResult<()> {
     let owner = if part.facet == "opaque" {
         "scope"
     } else {
         &part.facet
     };
-    if record.domain != format!("{}:{owner}", scope) {
-        return Err(invalid());
-    }
-    let envelope = super::objects::metadata_read(repository, &record.reference).await?;
-    if envelope.object != part.object
+    if domain != format!("{scope}:{owner}")
+        || envelope.is_tombstone()
+        || envelope.object != part.object
         || envelope.scope != scope
         || envelope.facet.name() != owner
         || !part

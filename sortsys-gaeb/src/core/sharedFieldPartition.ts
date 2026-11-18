@@ -564,7 +564,7 @@ export class SharedFieldPartition {
     }
   }
 
-  restoreReplay(data: string): boolean {
+  prepareReplay(data: string): (() => void) | undefined {
     if (
       this.frozen ||
       this.online ||
@@ -572,16 +572,16 @@ export class SharedFieldPartition {
       !this.native ||
       !this.matchesReplay(data, this.native)
     ) {
-      return false;
+      return;
     }
-    this.resumed = true;
     try {
-      this.receive(data);
-      return true;
+      const apply = this.prepareReceived(readSharedUpdate(data), new Map());
+      return () => {
+        this.resumed = true;
+        apply();
+      };
     } catch (error) {
-      this.resumed = false;
-      this.resumeEdits.length = 0;
-      if (error instanceof InvalidSharedUpdate) return false;
+      if (error instanceof InvalidSharedUpdate) return;
       throw error;
     }
   }

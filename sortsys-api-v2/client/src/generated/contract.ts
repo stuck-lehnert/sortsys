@@ -682,7 +682,7 @@ export type MutationInputs = {
   "projects.files.folders.rename": { projectId: Id, folderId: Id, name: string, };
   "projects.files.move": { projectId: Id, fileIds: Array<Id>, folderId?: Id | null, };
   "projects.files.rename": { projectId: Id, fileId: Id, fileName: string, };
-  "projects.files.xmlSave": { projectId: Id, fileId: Id, version: bigint, xml: string, liveSequence?: string, };
+  "projects.files.xmlSave": { projectId: Id, fileId: Id, version: bigint, xml: string, liveSequence?: string, liveReplay?: { [key in string]: string }, };
   "projects.finish": { id: string; };
   "projects.resume": { id: string; };
   "projects.unavailability.create": { operationId?: string; projectId: string; from: unknown; to: unknown; reason: string; note?: undefined | null | string; };

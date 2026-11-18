@@ -4003,6 +4003,9 @@ export type MutationInputs = {
         version: bigint;
         xml: string;
         liveSequence?: string;
+        liveReplay?: {
+            [key in string]: string;
+        };
     };
     "projects.finish": {
         id: string;

@@ -37,7 +37,9 @@ import {
 import {
   prepareLivePublication,
   type LivePublication,
+  type LiveReplay,
 } from "./liveCheckpoints";
+import { prepareProjectGaebReplay } from "./projectGaebReplay";
 import { stockEnvelopeHash } from "./stockObjects";
 import { projectCollection, projectPayload } from "./projectData";
 import { readableProjectAreas } from "./projectAreas";
@@ -380,11 +382,52 @@ export function createProtectedProjectFiles(
       linked.close();
     }
   }
+  type ObjectPacket = MutateInput<"zerotrust.objects.save">;
+  type LiveSave = { sequence?: string; replay?: LiveReplay };
+
+  async function prepareFilePublication(
+    projectId: string,
+    fileId: string,
+    target: string,
+    previousTarget: string,
+    replayPackets: ObjectPacket[],
+    save?: LiveSave,
+  ) {
+    const replay = save?.replay;
+    const room = {
+      scope: `project:${projectId}`,
+      document: fileId,
+      facet: "attachment" as const,
+    };
+    return prepareLivePublication(
+      client,
+      room,
+      target,
+      previousTarget,
+      signal,
+      {
+        sequence: save?.sequence,
+        preserve: save === undefined,
+        replay:
+          replay &&
+          (async (_facet, target, sequence) => {
+            const prepared = await prepareProjectGaebReplay(
+              client, projectId, fileId, target, sequence, replay, signal,
+            );
+            if (!prepared) return;
+            replayPackets.push(prepared.packet);
+            return prepared.part;
+          }),
+      },
+    );
+  }
+
   async function prepareLivePublications(
     projectId: string,
     store: Store,
-    packets: MutateInput<"zerotrust.objects.save">[],
-    includedPositions: Map<string, string | undefined>,
+    packets: ObjectPacket[],
+    liveSaves: Map<string, LiveSave>,
+    replayPackets: ObjectPacket[],
   ): Promise<LivePublication[]> {
     const publications: LivePublication[] = [];
     for (const packet of packets) {
@@ -402,21 +445,13 @@ export function createProtectedProjectFiles(
 
       // Metadata changes keep the previously confirmed content position.
       // Content saves must confirm the position actually included in the file.
-      const changesContent = includedPositions.has(fileId);
-      const publication = await prepareLivePublication(
-        client,
-        {
-          scope: `project:${projectId}`,
-          document: fileId,
-          facet: "attachment",
-        },
+      const publication = await prepareFilePublication(
+        projectId,
+        fileId,
         await stockEnvelopeHash(envelope),
         await stockEnvelopeHash(previous),
-        signal,
-        {
-          sequence: includedPositions.get(fileId),
-          preserve: !changesContent,
-        },
+        replayPackets,
+        liveSaves.get(fileId),
       );
       if (publication) {
         publications.push(publication);
@@ -430,7 +465,7 @@ export function createProtectedProjectFiles(
     store: Store,
     changes: Map<string, FilePayload | FolderPayload | null>,
     guards: { domain: string; sequence: string }[] = [],
-    livePositions = new Map<string, string | undefined>(),
+    liveSaves = new Map<string, LiveSave>(),
   ) {
     if (!changes.size || changes.size > 200) {
       throw new InvalidProtectedData();
@@ -460,18 +495,20 @@ export function createProtectedProjectFiles(
           : await store.collection.packet(id, value, previous),
       );
     }
+    const replayPackets: ObjectPacket[] = [];
     const livePublications = await prepareLivePublications(
       projectId,
       store,
       packets,
-      livePositions,
+      liveSaves,
+      replayPackets,
     );
     await commitProtectedWrites(
       client,
       [
         {
           live: livePublications,
-          packets,
+          packets: [...packets, ...replayPackets],
           head: {
             domain: fileCollection(projectId).domain,
             sequence: store.head,
@@ -687,7 +724,7 @@ export function createProtectedProjectFiles(
     version: bigint | null,
     document: Blob,
     officeEpoch?: string,
-    liveSequence?: string,
+    liveSave: LiveSave = {},
   ): Promise<{ version: bigint; savedAt: Date }> {
     return queue(async () => {
       const store = await get(projectId, true);
@@ -712,7 +749,7 @@ export function createProtectedProjectFiles(
         throw new InvalidProtectedData();
       }
       if (
-        liveSequence !== undefined &&
+        liveSave.sequence !== undefined &&
         document.size === payload.original.size
       ) {
         const existing = await loadFileContent(
@@ -736,22 +773,40 @@ export function createProtectedProjectFiles(
             fileObject(projectId, fileId),
           )!.envelope;
           const target = await stockEnvelopeHash(envelope);
-          const publication = await prepareLivePublication(
-            client,
-            {
-              scope: `project:${projectId}`,
-              document: fileId,
-              facet: "attachment",
-            },
+          const replayPackets: ObjectPacket[] = [];
+          const publication = await prepareFilePublication(
+            projectId,
+            fileId,
             target,
             target,
-            signal,
-            { sequence: liveSequence },
+            replayPackets,
+            liveSave,
           );
           if (publication) {
-            await commitProtectedWrites(client, [], signal, [], {
-              live: [publication],
-            });
+            if (replayPackets.length > 0) {
+              await commitProtectedWrites(
+                client,
+                [{
+                  packets: replayPackets,
+                  head: {
+                    domain: fileCollection(projectId).domain,
+                    sequence: store.head,
+                  },
+                  live: [publication],
+                  async verify() {
+                    const current = await get(projectId, true);
+                    const saved = current.objects.get(envelope.object)?.envelope;
+                    return !!saved && (await stockEnvelopeHash(saved)) === target;
+                  },
+                  close() {},
+                }],
+                signal,
+              );
+            } else {
+              await commitProtectedWrites(client, [], signal, [], {
+                live: [publication],
+              });
+            }
           }
           return {
             version: BigInt(payload.file.values.office_version as string),
@@ -773,7 +828,7 @@ export function createProtectedProjectFiles(
           ],
         ]),
         [],
-        new Map([[fileId, liveSequence]]),
+        new Map([[fileId, liveSave]]),
       );
       return { version: update.version, savedAt: update.savedAt };
     });
@@ -1225,7 +1280,10 @@ export function createProtectedProjectFiles(
       return queue(async () => {
         const store = await get(projectId, true);
         const payload = store.files.get(fileId);
-        if (!payload?.file || !payload.original) {
+        const envelope = store.objects.get(
+          fileObject(projectId, fileId),
+        )?.envelope;
+        if (!payload?.file || !payload.original || !envelope) {
           throw new InvalidProtectedData();
         }
         if (payload.original.size > 16 * 1024 * 1024) {
@@ -1253,6 +1311,12 @@ export function createProtectedProjectFiles(
           fileName: payload.file.values.file_name as string,
           version: BigInt(payload.file.values.office_version as string),
           xml,
+          async liveTarget() {
+            live();
+            const target = await stockEnvelopeHash(envelope);
+            live();
+            return target;
+          },
         };
       });
     },

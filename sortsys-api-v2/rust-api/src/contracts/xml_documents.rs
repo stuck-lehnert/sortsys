@@ -36,6 +36,8 @@ pub struct XmlDocumentSaveInput {
     pub xml: String,
     #[ts(optional)]
     pub live_sequence: Option<String>,
+    #[ts(optional)]
+    pub live_replay: Option<std::collections::BTreeMap<String, String>>,
 }
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

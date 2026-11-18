@@ -123,6 +123,14 @@ export function documentObject(
   identifier(value);
   return value;
 }
+export function projectReplayObject(scope: string, id: string, token: string) {
+  if (!scope.startsWith("project:") || !/^[a-f0-9]{32}$/.test(token)) {
+    throw new InvalidProtectedData();
+  }
+  documentId(scope.slice(8));
+  documentId(id);
+  return `${scope}:attachment:replay:${id}:${token}:manifest`;
+}
 export function documentBlob(value: string): {
   scope: string;
   id: string;
@@ -130,6 +138,17 @@ export function documentBlob(value: string): {
   token: string;
   suffix: string;
 } | null {
+  if (value.startsWith("project:")) {
+    const [, project, , kind, id = "", token = ""] = value.split(":");
+    if (kind === "replay") {
+      const scope = `project:${project}`;
+      if (projectReplayObject(scope, id, token) !== value) {
+        throw new InvalidProtectedData();
+      }
+      return { scope, id, facet: "attachment", token, suffix: "manifest" };
+    }
+    return null;
+  }
   const match =
     /^(commercial:[1-9a-v][0-9a-v]{0,12}):(?:(scope):opaque|([a-z-]+):document):([1-9a-v][0-9a-v]{0,12}):([a-f0-9]{32}):(manifest|(?:0|[1-9]\d{0,5}))$/.exec(
       value,

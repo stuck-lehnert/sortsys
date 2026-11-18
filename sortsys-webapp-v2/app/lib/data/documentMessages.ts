@@ -24,6 +24,10 @@ import { commercialCollection } from "./commercialAreas";
 import { commercialDocumentStore } from "./commercialDocumentContent";
 import { MAX_LIVE_REPLAY } from "./liveCheckpoints";
 import { fileCollection } from "./projectFileData";
+import {
+  projectGaebReplayArea,
+  readProjectGaebReplay,
+} from "./projectGaebReplay";
 import { protectedCollections, required } from "./protectedObjects";
 import { readDocumentMessagePage } from "./documentMessagePages";
 import { mapConcurrent } from "./runtime/concurrentReads";
@@ -318,7 +322,7 @@ export async function openDocumentMessages(
     content,
     async resume(target: string) {
       live();
-      if (!commercial || !state.checkpoint?.replay) return;
+      if (!state.checkpoint?.replay) return;
       const proof = liveCheckpoint(state.checkpoint);
       const replay = proof.replay;
       if (!replay) return;
@@ -341,34 +345,40 @@ export async function openDocumentMessages(
         })),
       });
       live();
-      const store = await commercialDocumentStore(
-        client,
-        room.scope,
-        signal,
-        context,
-      );
-      try {
-        const payload = record(await store.readReplay(replay), [
-          "format",
-          "target",
-          "sequence",
-          "data",
-        ]);
-        live();
-        if (
-          payload.format !== "sortsys-gaeb-replay-v1" ||
-          payload.target !== proof.target ||
-          payload.sequence !== proof.covered ||
-          typeof payload.data !== "string" ||
-          !payload.data ||
-          payload.data.length > MAX_LIVE_REPLAY
-        ) {
-          throw new InvalidProtectedData();
+      let stored: unknown;
+      if (commercial) {
+        const store = await commercialDocumentStore(
+          client,
+          room.scope,
+          signal,
+          context,
+        );
+        try {
+          stored = await store.readReplay(replay);
+        } finally {
+          store.close();
         }
-        return { position: proof.covered, data: payload.data };
-      } finally {
-        store.close();
+      } else {
+        const store = context(projectGaebReplayArea(room.scope.slice(8)));
+        try {
+          stored = await readProjectGaebReplay(store, replay);
+        } finally {
+          store.close();
+        }
       }
+      live();
+      const payload = record(stored, ["format", "target", "sequence", "data"]);
+      if (
+        payload.format !== "sortsys-gaeb-replay-v1" ||
+        payload.target !== proof.target ||
+        payload.sequence !== proof.covered ||
+        typeof payload.data !== "string" ||
+        !payload.data ||
+        payload.data.length > MAX_LIVE_REPLAY
+      ) {
+        throw new InvalidProtectedData();
+      }
+      return { position: proof.covered, data: payload.data };
     },
     async read(after = "0") {
       live();

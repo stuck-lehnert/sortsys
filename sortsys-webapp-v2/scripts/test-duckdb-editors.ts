@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import superjson from "superjson";
 import { createClient, RpcClientError } from "@sortsys/v2-client";
+import { initializeSharedField } from "@sortsys/gaeb";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import { acquireDataRuntime } from "../app/lib/data/runtime/session";
@@ -12,7 +13,9 @@ import {
   base64,
   digest,
   encryptedObject,
+  liveCheckpoint,
   objectFrame,
+  signLiveCheckpoint,
   signedPacketFrame,
 } from "@sortsys/zerotrust/sortsys";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
@@ -33,6 +36,9 @@ import {
   signInMemberInvitation,
 } from "../app/lib/crypto/invitations";
 import { testFilePermissions } from "./test-live-file-permissions";
+import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
+import { openDocumentMessages } from "../app/lib/data/documentMessages";
+import { prepareProjectGaebReplay } from "../app/lib/data/projectGaebReplay";
 import {
   loadFileContent,
   storeFileContent,
@@ -193,6 +199,7 @@ try {
     }),
   );
   await checkBatchedFileContent(project.id);
+  await checkGaebAttachmentCheckpoint(project.id);
   const document = new Blob(["CONFIDENTIAL_OFFICE_NATIVE_846281"], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
@@ -278,6 +285,100 @@ try {
   operator.setToken(null);
   owner.setToken(null);
   member.setToken(null);
+}
+
+async function checkGaebAttachmentCheckpoint(projectId: string) {
+  const description = "Fensterlaibung verputzen.";
+  const xml = gaebWorkflowXml("83");
+  assert.ok(xml.includes(description));
+  const fileId = await business.files.upload({
+    projectId,
+    name: "Unverändertes Leistungsverzeichnis.x83",
+    mime: "application/xml",
+    blob: new Blob([xml]),
+  });
+  const room = {
+    scope: `project:${projectId}`,
+    document: fileId,
+    facet: "attachment" as const,
+  };
+  const native = await business.files.xmlDocument(projectId, fileId);
+  const target = await native.liveTarget();
+  const data = initializeSharedField("item-item-1:text:0", description);
+  const liveReplay = { scope: data };
+  const writer = await openDocumentMessages(owner, room, signal);
+  let sequence: string;
+  try {
+    await writer.post("update", { facet: "scope", data });
+    sequence = (await writer.read()).after;
+  } finally {
+    writer.close();
+  }
+  const saved = await required(
+    business.mutate("projects.files.xmlSave", {
+      projectId,
+      fileId,
+      version: native.version,
+      xml,
+      liveSequence: sequence,
+      liveReplay,
+    }),
+  );
+  assert.equal(saved.version, native.version);
+  const reader = await openDocumentMessages(owner, room, signal);
+  try {
+    assert.deepEqual(await reader.resume(target), {
+      position: sequence,
+      data: JSON.stringify(liveReplay),
+    });
+  } finally {
+    reader.close();
+  }
+  const state = await required(
+    owner.query("zerotrust.documents.messages.state", room, {
+      strategy: "network-only",
+    }),
+  );
+  const proof = liveCheckpoint(state.checkpoint);
+  assert.ok(proof.replay);
+  const staged = await prepareProjectGaebReplay(
+    owner, projectId, fileId, target, sequence, liveReplay, signal,
+  );
+  assert.ok(staged);
+  const forged = await signLiveCheckpoint(
+    {
+      ...proof,
+      replay: { ...staged.part, hash: base64(new Uint8Array(32).fill(47)) },
+    },
+    unlockedAccount()!.identity.signingKey.privateKey,
+  );
+  for (const checkpoints of [[], [forged]]) {
+    const [value, error]: [unknown, Error | null] = await owner.mutate(
+      "zerotrust.objects.batch",
+      {
+        objects: [staged.packet],
+        heads: [],
+        liveCheckpoints: checkpoints,
+      },
+    );
+    assert.equal(value, null);
+    assert.ok(error instanceof RpcClientError);
+    assert.equal(error.code, "BAD_REQUEST");
+  }
+  const selection = { id: staged.part.object };
+  const [unpublished] = await owner.query("zerotrust.objects.get", selection, {
+    strategy: "network-only",
+  });
+  assert.equal(unpublished, null);
+  const [unreadable, denial] = await member.query(
+    "zerotrust.objects.get",
+    { id: proof.replay.object },
+    { strategy: "network-only" },
+  );
+  assert.equal(unreadable, null);
+  assert.ok(denial instanceof RpcClientError);
+  assert.equal(denial.data?.httpCode, 403);
+  console.log("GAEB project replay: unchanged revision confirmed; orphan, digest substitution and ungranted read rejected");
 }
 
 async function checkBatchedFileContent(projectId: string) {

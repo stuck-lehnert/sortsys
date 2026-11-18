@@ -28,6 +28,7 @@ import {
 import { listenDataChanges } from "./runtime/changes";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import { partialAddressRecord } from "./addressBook";
+import { decodeProjectGaebReplay } from "./projectGaebReplay";
 import { unlockedAccount } from "../crypto/session";
 import {
   MessageProofUnavailable,
@@ -270,11 +271,12 @@ export function connectProtectedGaebLive(
       );
       for (const { facet, channel, snapshot } of snapshots) {
         if (!commercial) {
+          replay = channel.canWrite() ? snapshot.replay ?? {} : {};
           return snapshot.position;
         }
         if (channel.canWrite()) {
           positions[facet] = snapshot.position;
-          if (snapshot.replay) captured[facet] = snapshot.replay;
+          Object.assign(captured, snapshot.replay);
         }
       }
       replay = captured;
@@ -786,17 +788,21 @@ function connectChannel(
     }
     booting = (async () => {
       const source = await currentTransport();
-      if (commercial && after === "0" && options.initial.liveTarget) {
+      if (after === "0" && options.initial.liveTarget) {
         try {
           const target = await options.initial.liveTarget(options.room.facet);
           const resume = await source.resume(target);
           live();
-          if (
-            source === transport &&
-            resume &&
-            options.sharedFields.restoreReplay(options.room.facet, resume.data)
-          ) {
-            after = resume.position;
+          if (source === transport && resume) {
+            const restored = commercial
+              ? options.sharedFields.restoreReplay(
+                  options.room.facet,
+                  resume.data,
+                )
+              : options.sharedFields.restoreReplays(
+                  decodeProjectGaebReplay(resume.data),
+                );
+            if (restored) after = resume.position;
           }
         } catch {
           live();
@@ -911,7 +917,6 @@ function connectChannel(
         await synchronize();
         const position = content == null ? after : `${content}:${after}`;
         if (
-          !commercial ||
           !options.initial.liveTarget ||
           after === "0" ||
           !inbox.canCheckpoint() ||
@@ -919,8 +924,13 @@ function connectChannel(
         ) {
           return { position };
         }
-        const replay = options.sharedFields.captureReplay(options.room.facet);
-        if (!replay || replay.length > MAX_LIVE_REPLAY) return { position };
+        const replay: LiveReplay = {};
+        const facets = commercial ? [options.room.facet] : GAEB_CONTENT_FACETS;
+        for (const facet of facets) {
+          const data = options.sharedFields.captureReplay(facet);
+          if (data && data.length > MAX_LIVE_REPLAY) return { position };
+          if (data) replay[facet] = data;
+        }
         return { position, replay };
       } catch (error) {
         failed(error);

@@ -440,6 +440,7 @@ async function changeProjectTitleBeforePublication(writer, peer, value) {
 try {
   browser = await chromium.launch({
     headless: process.env.SORTSYS_E2E_HEADED !== "1",
+    executablePath: process.env.SORTSYS_E2E_CHROMIUM,
   });
   await scenario("anonymous-and-wrong-password", async (page) => {
     await page.goto(`${server.origin}/admin`);
@@ -903,6 +904,86 @@ try {
       }
     },
   );
+  await scenario("gaeb-attachment-resumes-across-api-instances", async (page) => {
+    const peerServer = await applicationServer(applicationBuild, endpoints[0]);
+    servers.add(peerServer);
+    const peerContext = await applicationContext();
+    const peer = await peerContext.newPage();
+    const peerAudit = auditPage(peer);
+    const timeout = 60_000;
+    const projectPath = `/projects/${seeded.projectId}/files`;
+    const filename = "Gemeinsames Leistungsverzeichnis.x83";
+    await peerContext.tracing.start({ screenshots: true, snapshots: true });
+    try {
+      await login(page, "john.doe");
+      await expect(page.getByRole("link", {
+        name: "Einstellungen", exact: true,
+      })).toBeVisible();
+      await page.goto(server.origin + projectPath);
+      const xml = await readFile(new URL(
+        "../../../sortsys-gaeb/scripts/fixtures/native-seed/demo.x83",
+        import.meta.url,
+      ));
+      await page.locator('input[type="file"]').setInputFiles(
+        { name: filename, mimeType: "application/xml", buffer: xml },
+        { timeout },
+      );
+      await page.getByRole("button", { name: filename, exact: true }).click({ timeout });
+      const editor = page.locator(".gaeb-editor");
+      await expect(editor).toHaveAttribute("data-connection-state", "online", { timeout });
+      const field = editor.locator('[data-gaeb-field^="item-"][data-gaeb-field$=":text:0"]').first();
+      const key = await field.getAttribute("data-gaeb-field");
+      assert.ok(key);
+      const savedText = "Laibung reinigen und Grundierung auftragen.";
+      const published = page.waitForResponse((response) => {
+        const request = rpcInput(response.request(), "zerotrust.objects.batch");
+        return response.ok() && request?.liveCheckpoints?.some((proof) => proof.replay);
+      }, { timeout });
+      await changeGaebText(page, key, savedText);
+      const request = rpcInput((await published).request(), "zerotrust.objects.batch");
+      const proof = request.liveCheckpoints.find((entry) => entry.replay);
+      assert.ok(request.objects.some((entry) => entry.envelope.object === proof.replay.object));
+      await expect(editor).toHaveAttribute("data-save-state", "saved", { timeout });
+
+      await login(peer, "john.doe", "123456", peerServer.origin);
+      await expect(peer.getByRole("link", {
+        name: "Einstellungen", exact: true,
+      })).toBeVisible();
+      const cursors = [];
+      const watchAttachment = (networkRequest) => {
+        const read = rpcInput(networkRequest, "zerotrust.documents.messages.read");
+        const pages = rpcInput(networkRequest, "zerotrust.documents.messages.pages");
+        for (const selection of read ? [read] : (pages?.selections ?? [])) {
+          if (selection.room?.facet === "attachment") cursors.push(selection.after);
+        }
+      };
+      peer.on("request", watchAttachment);
+      await peer.goto(peerServer.origin + new URL(page.url()).pathname);
+      const peerEditor = peer.locator(".gaeb-editor");
+      await expect(peerEditor).toHaveAttribute("data-connection-state", "online", { timeout });
+      await expect(gaebField(peer, key)).toHaveAttribute("aria-description", savedText);
+      assert.equal(cursors[0], proof.covered);
+      assert.ok(BigInt(cursors[0]) > 0n);
+      peer.off("request", watchAttachment);
+
+      const continued = "Laibung reinigen, grundieren und bündig verspachteln.";
+      await deferGaebRequests(
+        [page],
+        "zerotrust.objects.batch",
+        (input) => input?.liveCheckpoints?.some((entry) => entry.document === proof.document),
+        async () => {
+          await changeGaebText(page, key, continued);
+          await expect(gaebField(peer, key)).toHaveAttribute("aria-description", continued);
+        },
+      );
+      await expect(editor).toHaveAttribute("data-save-state", "saved", { timeout });
+      peerAudit.assertClean();
+    } finally {
+      await peerContext.tracing.stop({ path: join(artifacts, "peer-gaeb-attachment.zip") });
+      await peerContext.close();
+      await peerServer.close();
+    }
+  });
   await scenario("member-visibility-and-direct-url-denials", async (page) => {
     await login(page, "frank.doe");
     await expect(

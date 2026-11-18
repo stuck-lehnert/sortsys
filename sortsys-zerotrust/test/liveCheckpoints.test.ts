@@ -10,6 +10,7 @@ import {
   importSigningKey,
   livePosition,
   liveSequence,
+  projectReplayObject,
   signLiveCheckpoint,
   verifyLiveCheckpoint,
 } from "../src/sortsys";
@@ -183,6 +184,40 @@ test("a replay manifest is bound to a fully covered native cursor and the exact 
   for (const change of invalid) {
     await expect(
       verifyLiveCheckpoint({ ...checkpoint, ...change }, checkpoint, signer),
+    ).rejects.toThrow();
+  }
+});
+
+test("an attachment replay manifest is bound to the exact project and file", async () => {
+  const { signer, checkpoint } = await signedCheckpoint();
+  const room = {
+    tenant: "test",
+    scope: "project:2",
+    document: "3",
+    facet: "attachment" as const,
+  };
+  const token = "a".repeat(32);
+  const replay = {
+    facet: "attachment" as const,
+    object: projectReplayObject(room.scope, room.document, token),
+    hash: await digest(bytes("attachment replay envelope")),
+    keys: [{ facet: "attachment" as const, generation: "4" }],
+  };
+  const input = { ...checkpoint, ...room, covered: checkpoint.sequence, replay };
+  const signed = await signLiveCheckpoint(input, signer.signingKey.privateKey);
+  expect(
+    await verifyLiveCheckpoint(signed, room, signer.signingKey.publicKey),
+  ).toEqual(signed);
+  for (const object of [
+    projectReplayObject("project:4", room.document, token),
+    projectReplayObject(room.scope, "4", token),
+    replay.object.replace(":manifest", ":0"),
+  ]) {
+    await expect(
+      signLiveCheckpoint(
+        { ...input, replay: { ...replay, object } },
+        signer.signingKey.privateKey,
+      ),
     ).rejects.toThrow();
   }
 });

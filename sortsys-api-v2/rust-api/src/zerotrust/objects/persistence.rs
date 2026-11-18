@@ -45,7 +45,9 @@ pub(in crate::zerotrust) async fn raw_object(
     id: &str,
 ) -> RpcResult<Option<ObjectRecord>> {
     identifier(id)?;
-    if let Some(blob) = super::super::documents::blob(id)? {
+    if let Some(blob) = super::super::documents::blob(id)?
+        && blob.scope.starts_with("commercial:")
+    {
         let witness = key("documents", blob.id);
         let head: Option<super::super::documents::DocumentHead> =
             transaction.read(witness.clone()).await?;
@@ -1002,10 +1004,11 @@ async fn save(
         {
             return Err(invalid());
         }
-        if let Some(head) = context
-            .transaction
-            .read::<super::super::documents::DocumentHead>(key("documents", blob.id))
-            .await?
+        if blob.scope.starts_with("commercial:")
+            && let Some(head) = context
+                .transaction
+                .read::<super::super::documents::DocumentHead>(key("documents", blob.id))
+                .await?
             && head.locked
         {
             return Err(forbidden());

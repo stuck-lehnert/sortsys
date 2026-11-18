@@ -83,12 +83,22 @@ eine ältere Gruppe verwerfen, erscheint im Editor ein Hinweis.
 
 ## Wiederanlauf nach dem Speichern
 
-Beim Speichern eines Vorgangsdokuments kann der Browser den gemeinsamen
-Yjs-Stand verschlüsselt ablegen. Dafür müssen alle Teilpakete des betreffenden
-Kanals vorliegen und seine Texte zum gespeicherten XML passen. Der signierte
-Speicherbeleg bindet den verschlüsselten Stand an den Kanal, die abgedeckte
-Nachrichtenfolge und den exakten nativen Dokumentteil. Beleg und native
+Beim Speichern eines Vorgangsdokuments oder GAEB-Projektanhangs kann der Browser
+den gemeinsamen Yjs-Stand verschlüsselt ablegen. Dafür müssen alle Teilpakete
+des betreffenden Kanals vorliegen und seine Texte zum gespeicherten XML passen.
+Der signierte Speicherbeleg bindet den verschlüsselten Stand an den Kanal, die
+abgedeckte Nachrichtenfolge und den exakten nativen Dokumentteil. Beleg und native
 Änderung werden in derselben Transaktion bestätigt.
+
+Ein Projektanhang verwendet den Schlüssel für Projektdateien. Sein einzelner
+Nachrichtenkanal umfasst alle gemeinsam bearbeiteten Textbereiche des Anhangs.
+Deshalb speichert der Browser deren Zustand zusammen und lädt ihn nur, wenn
+jeder enthaltene Textbereich zur geöffneten XML-Datei passt. Der Beleg ist an
+das Projekt, die Datei und den signierten Dateistand gebunden. Nach einer
+Änderung am Dateieintrag, etwa einer Umbenennung, kann der Browser bis zum
+nächsten bestätigten Zwischenstand den Verlauf ab Anfang lesen.
+Dasselbe gilt, wenn der gemeinsame Zwischenstand die Grenze von 2 MiB
+überschreitet.
 
 Beim Öffnen prüft der Browser die Signatur, die damaligen Schreibrechte und
 die Bindung an den geöffneten Fachstand. Nach dem Entschlüsseln vergleicht er
@@ -501,14 +511,18 @@ verschlüsselte Pakete. Beim erneuten Öffnen setzt sein Browser hinter dem
 gespeicherten Wiederanlaufpunkt an. Eine weitere Änderung erreicht ihn über
 die zweite API-Instanz, während die nächste X83-Fassung noch unveröffentlicht ist.
 
+Der Browserfall für Projektanhänge lädt eine X83 in die Projektablage, ändert
+eine Positionsbeschreibung und öffnet den Dateilink über die zweite API-Instanz.
+Der zweite Browser liest ab dem gespeicherten Zwischenstand und empfängt die
+nächste Änderung vor der Veröffentlichung der XML-Datei. Der native Test
+weist Schreibversuche ohne Beleg oder mit abweichender Prüfsumme ab. Er prüft
+auch, dass die API einen Lesezugriff ohne Dateifreigabe verweigert.
+
 Der Textabgleich berücksichtigt auch Eingaben während des Verbindungsaufbaus.
 Deren Ausgangspunkt ist der sichtbare Dokumentstand, selbst wenn der gemeinsame
 Nachrichtenverlauf mit einem älteren Text beginnt. Ein bereits nachgelesener
 Dokumenttext wird beim Registrieren der Eingabefelder nicht nochmals als lokale
 Änderung vorgemerkt.
 
-Vor der Freigabe fehlen insbesondere:
-
-- Projektdateien benötigen eigene Wiederanlaufpunkte. Für Wiederverbindungen
-  nach längeren Unterbrechungen fehlen weitere gemeinsame Browser- und
-  Mehrinstanztests.
+Für Wiederverbindungen nach längeren Unterbrechungen fehlen weitere gemeinsame
+Browser- und Mehrinstanztests.

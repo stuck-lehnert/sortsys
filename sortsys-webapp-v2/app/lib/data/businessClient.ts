@@ -21,6 +21,7 @@ import {
 } from "./addressBook";
 import { FILE_QUERIES, FILE_MUTATIONS, fileDomainId } from "./projectFileData";
 import type { FileUpload, OfficeDraftRecovery } from "./projectFiles";
+import { liveReplay } from "./liveCheckpoints";
 import {
   PROJECT_QUERIES,
   PROJECT_MUTATIONS,
@@ -1058,7 +1059,7 @@ export function createBusinessClient(
       if (path === "projects.files.xmlContent") {
         const data = object(input, ["projectId", "fileId"]),
           signal = controller.signal;
-        const value = await (
+        const { liveTarget: _liveTarget, ...value } = await (
           await fileStore()
         ).document(text(data.projectId), text(data.fileId));
         if (closed || signal.aborted) throw unavailable();
@@ -1314,6 +1315,7 @@ export function createBusinessClient(
             "version",
             "xml",
             "liveSequence",
+            "liveReplay",
           ]),
           signal = controller.signal;
         if (typeof data.version !== "bigint") throw unavailable();
@@ -1325,7 +1327,10 @@ export function createBusinessClient(
           data.version,
           new Blob([text(data.xml)], { type: "application/xml" }),
           undefined,
-          data.liveSequence === undefined ? undefined : text(data.liveSequence),
+          {
+            sequence: data.liveSequence === undefined ? undefined : text(data.liveSequence),
+            replay: data.liveReplay === undefined ? undefined : liveReplay(data.liveReplay),
+          },
         );
         await refreshPositions();
         if (closed || signal.aborted) throw unavailable();
@@ -1628,6 +1633,16 @@ export function createBusinessClient(
       return () => {
         editorContextListeners.delete(listener);
       };
+    },
+    async xmlDocument(
+      projectId: string,
+      fileId: string,
+      cancellation?: AbortSignal,
+    ) {
+      cancellation?.throwIfAborted();
+      const value = await fileWork((files) => files.document(projectId, fileId));
+      cancellation?.throwIfAborted();
+      return value;
     },
     office(projectId: string, fileId: string, cancellation?: AbortSignal) {
       return fileWork((files) => files.office(projectId, fileId, cancellation));

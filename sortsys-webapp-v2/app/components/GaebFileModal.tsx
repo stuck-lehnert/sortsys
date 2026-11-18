@@ -168,15 +168,7 @@ export default function GaebFileModal({
     if (caseId && documentId) {
       value = await gaebDocuments.open(caseId, documentId, context);
     } else {
-      const [result, error] = await client.query(
-        "projects.files.xmlContent",
-        { projectId: projectId!, fileId: fileId! },
-        { strategy: "network-only" },
-      );
-      if (error) {
-        throw error;
-      }
-      value = result;
+      value = await projectFiles.xmlDocument(projectId!, fileId!, context);
     }
     assertCurrent();
     if (!value) {
@@ -448,7 +440,6 @@ export default function GaebFileModal({
         }
         let liveReplay: LiveReplay | undefined;
         if (
-          caseId &&
           connection &&
           "replay" in connection &&
           typeof connection.replay === "function"
@@ -459,8 +450,14 @@ export default function GaebFileModal({
             liveReplay = {};
             for (const facet of GAEB_CONTENT_FACETS) {
               const data = proposed[facet];
-              if (data && sharedFields.matchesReplay(facet, data, model))
+              if (!data) continue;
+              if (sharedFields.matchesReplay(facet, data, model)) {
                 liveReplay[facet] = data;
+              } else if (!caseId) {
+                // All text partitions share the one attachment sequence.
+                liveReplay = undefined;
+                break;
+              }
             }
           }
         }
@@ -489,6 +486,7 @@ export default function GaebFileModal({
                 version: current.version,
                 xml: merged,
                 liveSequence,
+                liveReplay,
               });
         assertCurrent();
         if (value && !error) {

@@ -167,8 +167,9 @@ automatischen Vorgesetztenfreigaben steht noch aus. Siehe
 ## Angebote, Projekte und Baustellenabläufe
 
 **GAEB bearbeiten, D-/P-Dateien lesen, X-Dateien speichern.** Projektdateien und
-Vorgangsdokumente verwenden verschlüsselte Speicher. Mengen, Preise und Texte
-haben getrennte Schlüssel; unbekannte Inhalte bleiben verlustfrei erhalten. Der
+Vorgangsdokumente verwenden verschlüsselte Speicher. Projektanhänge verwenden
+den Schlüssel für Projektdateien. In Vorgangsdokumenten haben Mengen, Preise und
+Texte getrennte Schlüssel; unbekannte Inhalte bleiben verlustfrei erhalten. Der
 Vorgangsdialog öffnet Teilansichten und erlaubt Textänderungen ohne
 Preisschlüssel. Preisänderungen sind mit lesbaren Mengen und unterstützten
 Berechnungsregeln möglich, auch ohne vertrauliche Erweiterungen. Eine X84 kann
@@ -201,10 +202,10 @@ einschließlich Textabgleich vor der XML-Veröffentlichung und erneutem Öffnen
 nach dem Speichern. Mit John und Frank ist auch die gemeinsame Änderung des
 Feldes „Bauvorhaben“ ohne Preisfreigabe über zwei API-Instanzen geprüft, ebenso
 Rechteentzug und erneute Nur-Lesen-Freigabe. Ein eigener Browserfall prüft zwei
-gleichzeitig bearbeitete Absätze einer X83-Position. Bei Vorgangsdokumenten kann
-ein signierter, verschlüsselter Wiederanlaufpunkt das Nachlesen auf die neueren
-Nachrichten begrenzen. Für Projektdateien und das spätere Zusammenführen
-heruntergeladener Teilentwürfe fehlen noch Anschlüsse.
+gleichzeitig bearbeitete Absätze einer X83-Position. Bei Vorgangsdokumenten und
+GAEB-Projektanhängen kann ein signierter, verschlüsselter Wiederanlaufpunkt das
+Nachlesen auf die neueren Nachrichten begrenzen. Das spätere Zusammenführen
+heruntergeladener Teilentwürfe fehlt noch.
 
 **Projektgrunddaten und Projektkontakte.** Getrennte Bereiche je Projekt,
 Grunddaten, Kontaktbezeichnungen und Statuswechsel sind angeschlossen.
