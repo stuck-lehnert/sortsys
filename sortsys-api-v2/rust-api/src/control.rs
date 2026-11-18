@@ -329,6 +329,16 @@ impl Repository {
             .await
             .map_err(storage)
     }
+    pub async fn journal_origins(
+        &self,
+        objects: Vec<RecordKey>,
+    ) -> RpcResult<Vec<Option<sortsys_zerotrust::journal::JournalEntry>>> {
+        self.store
+            .journal_origins(self.target.clone(), objects)
+            .await
+            .map_err(storage)
+    }
+
     pub async fn journal_list(
         &self,
         query: sortsys_zerotrust::journal::JournalQuery,

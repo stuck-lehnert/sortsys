@@ -512,6 +512,22 @@ async fn journal_read(
         })
         .await
 }
+async fn journal_origins(
+    State(state): State<Control>,
+    Json(input): Json<super::metadata::JournalOrigins>,
+) -> Result<Json<Vec<Option<sortsys_zerotrust::journal::JournalEntry>>>, StoreError> {
+    state
+        .blocking(move |connection, directory, initialized| {
+            let catalog = metadata_catalog(connection, directory, input.target, initialized)?;
+            Ok(Json(super::journal::origins(
+                connection,
+                &catalog,
+                &input.objects,
+            )?))
+        })
+        .await
+}
+
 async fn journal_list(
     State(state): State<Control>,
     Json(input): Json<super::metadata::JournalList>,
@@ -748,6 +764,7 @@ pub async fn run(
     let metadata = Router::new()
         .route("/metadata/read", post(metadata_read))
         .route("/metadata/journal/read", post(journal_read))
+        .route("/metadata/journal/origins", post(journal_origins))
         .route("/metadata/journal/list", post(journal_list))
         .route("/metadata/validate", post(metadata_validate))
         .route("/metadata/batch", post(metadata_batch))

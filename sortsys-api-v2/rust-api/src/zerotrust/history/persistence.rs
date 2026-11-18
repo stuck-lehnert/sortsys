@@ -9,7 +9,7 @@ use super::super::{
 use super::*;
 use crate::{auth::AuthService, control::key};
 use sortsys_zerotrust::journal::{JournalEntry, JournalQuery};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn recorded(entry: &JournalEntry) -> RpcResult<ChangeRecord> {
     let change: ChangeRecord = serde_json::from_str(&entry.entry.value).map_err(|_| invalid())?;
@@ -28,35 +28,52 @@ fn allowed(guard: &Security, area: &DomainDescriptor) -> RpcResult<()> {
     }
     Ok(())
 }
-async fn first_publication(
-    context: &mut MetadataContext,
-    area: &DomainDescriptor,
-    object: &str,
-) -> RpcResult<String> {
-    let id: String = context
-        .transaction
-        .read(key("object-history", &format!("{object}:{:020}", 1)))
-        .await?
-        .ok_or_else(invalid)?;
+async fn first_publications(
+    context: &MetadataContext,
+    entries: &[JournalEntry],
+) -> RpcResult<BTreeMap<(String, String), String>> {
+    let objects = entries
+        .iter()
+        .map(|entry| (entry.entry.stream.clone(), entry.entry.object.clone()))
+        .collect::<BTreeSet<_>>();
+    if objects.is_empty() {
+        return Ok(BTreeMap::new());
+    }
     let first = context
         .repository
-        .journal_get(&area.id, &metadata_journal_id(&id))
-        .await?
-        .ok_or_else(invalid)?;
-    let value = recorded(&first)?;
-    if value.object.object != object
-        || value.object.revision != "1"
-        || value.object.domain != area.id
-        || value.deletion.is_some()
-    {
+        .journal_origins(
+            objects
+                .iter()
+                .map(|(stream, object)| key(stream, object))
+                .collect(),
+        )
+        .await?;
+    if first.len() != objects.len() {
         return Err(invalid());
     }
-    Ok(value.publication)
+    objects
+        .into_iter()
+        .zip(first)
+        .map(|((stream, object), first)| {
+            let first = first.ok_or_else(invalid)?;
+            let value = recorded(&first)?;
+            if value.object.object != object
+                || value.object.revision != "1"
+                || value.object.domain != stream
+                || value.deletion.is_some()
+                || value.previous.is_some()
+            {
+                return Err(invalid());
+            }
+            Ok(((stream, object), value.publication))
+        })
+        .collect()
 }
 async fn change(
     context: &mut MetadataContext,
     area: &DomainDescriptor,
     entry: JournalEntry,
+    initial_publication: String,
 ) -> RpcResult<Option<Change>> {
     allowed(&context.security, area)?;
     let row = recorded(&entry)?;
@@ -103,7 +120,6 @@ async fn change(
             previous = Some(before);
         }
     }
-    let initial_publication = first_publication(context, area, &envelope.object).await?;
     let micros = sortsys_zerotrust::journal::instant(&row.occurred_micros)?;
     let occurred_at = DateTime::from_timestamp_micros(micros).ok_or_else(invalid)?;
     Ok(Some(Change {
@@ -141,6 +157,7 @@ async fn list(service: &AuthService, request: &RequestContext, input: List) -> R
     };
     query.validate()?;
     let page = context.repository.journal_list(query).await?;
+    let first = first_publications(&context, &page.entries).await?;
     let mut after = page.after;
     let mut after_micros = page.after_micros;
     let mut after_order = page.after_order;
@@ -154,7 +171,10 @@ async fn list(service: &AuthService, request: &RequestContext, input: List) -> R
             entry.order.clone(),
         );
         let area = areas.get(&entry.entry.stream).ok_or_else(invalid)?;
-        if let Some(value) = change(&mut context, area, entry).await? {
+        let initial = first
+            .get(&(entry.entry.stream.clone(), entry.entry.object.clone()))
+            .ok_or_else(invalid)?;
+        if let Some(value) = change(&mut context, area, entry, initial.clone()).await? {
             let size = value.envelope.ciphertext.len()
                 + value
                     .previous
@@ -241,7 +261,12 @@ async fn get(
         {
             return Err(invalid());
         }
-        change(&mut context, &area, entry).await?
+        let initial = first_publications(&context, std::slice::from_ref(&entry))
+            .await?
+            .into_values()
+            .next()
+            .ok_or_else(invalid)?;
+        change(&mut context, &area, entry, initial).await?
     } else {
         None
     };

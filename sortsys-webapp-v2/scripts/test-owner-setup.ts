@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { createClient } from "@sortsys/v2-client";
 import { base64, randomSecret } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
+import type { EncryptedChange } from "../app/lib/data/events";
 import { exerciseKeyRegistry } from "./test-key-registry";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import {
@@ -153,9 +154,18 @@ const owner = createBusinessClient(
   createClient(endpoints[1], "owner-setup-user"),
   { productDriver: duckDriver },
 );
+const contentChanges: EncryptedChange[] = [];
 const peer = createBusinessClient(
   createClient(endpoints[0], "owner-setup-peer"),
-  { productDriver: duckDriver },
+  {
+    productDriver: duckDriver,
+    endpoint: endpoints[0],
+    realtime: mode === "owner-content-preparation",
+    onRemoteChange:
+      mode === "owner-content-preparation"
+        ? (change) => contentChanges.push(change)
+        : undefined,
+  },
 );
 async function required<T>(promise: Promise<[T | null, Error | null]>) {
   const [value, error] = await promise;
@@ -300,6 +310,7 @@ try {
       operator,
       tenant,
       dirname(outputPath),
+      contentChanges,
     );
   } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =

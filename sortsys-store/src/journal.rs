@@ -134,6 +134,38 @@ pub(crate) fn get(
         .map(RawEntry::checked)
         .transpose()
 }
+
+/// The creation event belongs to the append-only journal. Its identity cannot
+/// be obtained from a mutable content view after that view changes.
+pub(crate) fn origins(
+    connection: &Connection,
+    catalog: &str,
+    objects: &[sortsys_zerotrust::metadata::RecordKey],
+) -> Result<Vec<Option<JournalEntry>>, StoreError> {
+    if objects.len() > sortsys_zerotrust::journal::MAX_PAGE_SIZE {
+        return Err(StoreError::Integrity);
+    }
+    for object in objects {
+        object.validate().map_err(|_| StoreError::Integrity)?;
+    }
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT {COLUMNS} FROM {catalog}.journal_entries
+             WHERE stream=? AND object_id=? ORDER BY sequence LIMIT 1"
+        ))
+        .map_err(database)?;
+    objects
+        .iter()
+        .map(|object| {
+            statement
+                .query_row(params![object.collection, object.key], RawEntry::row)
+                .optional()
+                .map_err(database)?
+                .map(RawEntry::checked)
+                .transpose()
+        })
+        .collect()
+}
 struct Filter {
     sql: String,
     parameters: Vec<Value>,

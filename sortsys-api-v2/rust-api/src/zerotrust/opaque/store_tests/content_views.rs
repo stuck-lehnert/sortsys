@@ -48,18 +48,37 @@ async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
         api(auth_service(&settings, Repository::system(second.clone()))).await;
     let tenant = "content-preparation";
     let endpoints = [first_url, second_url];
-    browser_with_tenant(
-        "owner-content-preparation",
-        &root,
-        Some(&endpoints),
-        Some(tenant),
-    )
-    .await;
+    tokio::join!(
+        browser_with_tenant(
+            "owner-content-preparation",
+            &root,
+            Some(&endpoints),
+            Some(tenant),
+        ),
+        publish_prepared_fixture(&root, tenant, &first, &second),
+    );
+}
 
-    let report: Value = serde_json::from_str(
-        &std::fs::read_to_string(root.join("content-preparation.json")).unwrap(),
-    )
-    .unwrap();
+async fn publish_prepared_fixture(
+    root: &Path,
+    tenant: &str,
+    first: &CipherStore,
+    second: &CipherStore,
+) {
+    let path = root.join("content-preparation.json");
+    let report = tokio::time::timeout(std::time::Duration::from_secs(220), async {
+        loop {
+            match tokio::fs::read(&path).await {
+                Ok(bytes) => break serde_json::from_slice::<Value>(&bytes).unwrap(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                Err(error) => panic!("Failed to read the test preparation: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("Browser must authorize the test content view");
     let project = report["project"].as_str().unwrap();
     let target = Target::Tenant {
         tenant: tenant.into(),
@@ -96,6 +115,18 @@ async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
     let ciphertext = first.get(tenant, &staged.reference).await.unwrap();
     assert!(!ciphertext.contains("Vertrauliche Projektfassung"));
     assert_eq!(sortsys_store::content_id(&ciphertext), staged.reference);
+
+    let repository = Repository::system(first.clone()).tenant(tenant).unwrap();
+    let approval: ContentEpoch = serde_json::from_value(report["approval"].clone()).unwrap();
+    let mut transaction = repository.transaction().unwrap();
+    let root = crate::zerotrust::setup::metadata_root(&mut transaction, tenant)
+        .await
+        .unwrap();
+    transaction.validate().await.unwrap();
+    assert_eq!(approval.snapshot, prepared.snapshot);
+    assert_eq!(approval.number, prepared.number);
+    assert_eq!(approval.actor, root.profile.owner.user);
+    publish_head(&repository, &approval, None, None, &root.profile.authority).await;
 }
 
 async fn stage(store: &CipherStore, epoch: &str, entries: &[(usize, u64)]) {
@@ -140,7 +171,7 @@ async fn publish_head(
     epoch.follows(previous, source).unwrap();
     let mut transaction = repository.transaction().unwrap();
     transaction.put_protected(head_key(), epoch).await.unwrap();
-    crate::zerotrust::content::verify_view(&mut transaction, "laboratory", authority)
+    crate::zerotrust::content::verify_view(&mut transaction, &epoch.tenant, authority)
         .await
         .unwrap();
     transaction.commit().await.unwrap();

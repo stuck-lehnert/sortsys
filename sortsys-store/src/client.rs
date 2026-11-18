@@ -663,6 +663,18 @@ impl CipherStore {
         )
         .await
     }
+    pub async fn journal_origins(
+        &self,
+        target: super::metadata::Target,
+        objects: Vec<sortsys_zerotrust::metadata::RecordKey>,
+    ) -> Result<Vec<Option<sortsys_zerotrust::journal::JournalEntry>>, StoreError> {
+        self.metadata_request(
+            "journal/origins",
+            &super::metadata::JournalOrigins { target, objects },
+        )
+        .await
+    }
+
     pub async fn journal_list(
         &self,
         target: super::metadata::Target,

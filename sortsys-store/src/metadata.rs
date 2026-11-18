@@ -29,6 +29,12 @@ pub struct JournalRead {
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct JournalOrigins {
+    pub target: Target,
+    pub objects: Vec<sortsys_zerotrust::metadata::RecordKey>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct JournalList {
     pub target: Target,
     pub query: sortsys_zerotrust::journal::JournalQuery,

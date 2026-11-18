@@ -228,7 +228,7 @@ impl Hub {
                         matches!(
                             record.collection.as_str(),
                             "accounts" | "sessions" | "tenant-status" | "crypto-root"
-                        )
+                        ) || *record == crate::control::content::head_key()
                     }) {
                         let _ = outgoing.send(Event::Access);
                     }
@@ -371,6 +371,7 @@ struct Snapshot {
     subject: String,
     generation: String,
     version: i64,
+    content: Option<String>,
     fingerprint: String,
     capabilities: HashMap<[u8; 32], u8>,
     roles: Vec<String>,
@@ -529,11 +530,22 @@ impl Snapshot {
             .any(|(scope, mask)| next.capabilities.get(scope).copied().unwrap_or(0) & mask != *mask)
             || self.roles.iter().any(|role| !next.roles.contains(role))
     }
+
+    fn resets_for(&self, next: &Self) -> bool {
+        self.content != next.content || self.loses_to(next)
+    }
 }
 async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcResult<Snapshot> {
     let repository = service.records()?.tenant(&auth.tenant)?;
     let mut transaction = repository.transaction()?;
     let guard = metadata_security(&mut transaction, auth).await?;
+    // A reconnect uses the same fingerprint as a live refresh. Include the
+    // verified content head even when no permission or role has changed.
+    let content = transaction
+        .content_epoch()
+        .await?
+        .map(|head| head.fingerprint())
+        .transpose()?;
     let domains = super::objects::metadata_catalog(&mut transaction).await?;
     // Hash scope/facet pairs and combine action bits once. The small retained
     // masks distinguish revocation from an added right without rescanning rules.
@@ -560,13 +572,14 @@ async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcR
         .collect::<Vec<_>>();
     rights.sort();
     let fingerprint = encode(&Sha256::digest(
-        serde_json::to_vec(&(rights, &roles)).map_err(internal)?,
+        serde_json::to_vec(&(rights, &roles, &content)).map_err(internal)?,
     ));
     transaction.validate().await?;
     Ok(Snapshot {
         subject: guard.subject,
         generation: guard.root.generation.to_string(),
         version: guard.root.policy_version,
+        content,
         fingerprint,
         capabilities,
         roles,
@@ -656,7 +669,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
                     return Err(forbidden());
                 }
                 let changed = !current.same_access(&next);
-                let reset = current.loses_to(&next);
+                let reset = current.resets_for(&next);
                 current = next;
                 if changed {
                     send(socket, json!({
@@ -704,7 +717,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         if refresh {
             let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
             all |= !current.same_access(&next);
-            reset = current.loses_to(&next);
+            reset = current.resets_for(&next);
             current = next;
             if current.generation != ticket.generation {
                 return Err(forbidden());
@@ -838,6 +851,7 @@ mod tests {
             subject: "user:1".into(),
             generation: "1".into(),
             version: 1,
+            content: None,
             fingerprint: "rights-and-roles".into(),
             capabilities: HashMap::new(),
             roles: vec!["admin".into()],
@@ -846,6 +860,10 @@ mod tests {
         };
         let before = baseline();
         assert!(before.same_access(&baseline()));
+        let mut restored = baseline();
+        restored.content = Some("content-head".into());
+        assert!(before.resets_for(&restored));
+        assert!(!before.resets_for(&baseline()));
         let mut policy = baseline();
         policy.version += 1;
         assert!(!before.same_access(&policy));
@@ -876,6 +894,7 @@ mod tests {
                 subject: "user:1".into(),
                 generation: "1".into(),
                 version: 1,
+                content: None,
                 fingerprint: String::new(),
                 capabilities: capabilities(&policy, "user:1", &[]),
                 roles,
