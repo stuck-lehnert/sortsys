@@ -394,15 +394,15 @@ LLM-/OCR-Ausnahme gilt nur für den ausdrücklich aufgerufenen Ablauf.
 Browsereditoren. Gemeinsame DOCX-Bearbeitung und Lesezugänge sind geprüft;
 weitere Dateifunktionen und laufende Änderungen bei Rechteentzug bleiben offen.
 
-**diagrams.net.** Öffnen und Speichern verwenden die verschlüsselte
-Browserablage; die alte XML-API wird nicht verwendet. Der Dateidialog verwirft
-seine Darstellung bei Rechteentzug oder Kontowechsel. Verspätete Ladeantworten
-bleiben an Sitzung und Datei gebunden. Bereits erfasste Änderungen dürfen nach
-dem normalen Schließen noch unter dem ursprünglichen Zugriff gespeichert
-werden; ein danach entzogener Zugriff beendet auch diese Arbeit.
-Verschlüsselte gemeinsame Editor-Updates fehlen noch. Die
-[Editorprüfungen](editoren-ohne-klartextserver.md) beschreiben die getrennten
-Browser- und Servernachweise.
+**diagrams.net.** Diagramme verwenden denselben geschützten Editorablauf und
+dieselbe verschlüsselte Projektablage wie Office-Dateien. Der echte Diensttest
+prüft gleichzeitige Änderungen an zwei Formen, erneutes Öffnen mit Leserechten,
+nativen XML-Export und die Wiederherstellung eines noch nicht als Projektdatei
+bestätigten Entwurfs. Gemeinsame Nachrichten werden verschlüsselt übertragen.
+Komponententests prüfen den Rechteentzug und verspätete Antworten beim
+Dateiewechsel für DOCX und Drawio. Komplexe Diagramme und eingebettete Bilder
+brauchen weitere Prüfungen. Siehe
+[Editorprüfungen](editoren-ohne-klartextserver.md).
 
 ## Assistent, Verläufe und eigene Werkzeuge
 

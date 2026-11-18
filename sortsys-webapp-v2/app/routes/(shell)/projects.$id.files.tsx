@@ -1,5 +1,9 @@
 import { FileResourceImage } from "~/components/FileResourceImage";
-import { downloadFileResource, fetchFileResource, useFileResource } from "~/lib/fileResources";
+import {
+  downloadFileResource,
+  fetchFileResource,
+  useFileResource,
+} from "~/lib/fileResources";
 import { inspectProjectFile } from "~/lib/fileInspection";
 import { projectFiles as privateProjectFiles } from "~/lib/client";
 import { Loading, Select, SelectItem } from "@sortsys/react-components";
@@ -8,7 +12,6 @@ import { Input as UIInput } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
 import { Modal, useNotifications } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
-import { DrawioEditor } from "~/components/DrawioEditor";
 import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { ZoomableImage } from "~/components/ZoomableImage";
@@ -93,14 +96,6 @@ type ProjectFileEntry = {
   downloadExpiresAt?: Date | null;
   downloadAttachmentUrl?: string | null;
   downloadAttachmentExpiresAt?: Date | null;
-};
-
-type DrawioSession = {
-  editorUrl: string;
-  canEdit: boolean;
-  fileName: string;
-  version: bigint;
-  xml: string;
 };
 
 function formatBytes(bytes: number | null | undefined) {
@@ -203,41 +198,29 @@ export default function ProjectFilesPage() {
   const [activePreviewFileId, setActivePreviewFileId] = useState<string | null>(
     null,
   );
-  const [activeDrawioFileId, setActiveDrawioFileId] = useState<string | null>(
-    null,
-  );
   const [activeGaebFileId, setActiveGaebFileId] = useState<string | null>(null);
   const [activeFallbackFileId, setActiveFallbackFileId] = useState<
     string | null
   >(null);
-  const [drawioSession, setDrawioSession] = useState<DrawioSession | null>(
-    null,
-  );
-  const [drawioError, setDrawioError] = useState<string | null>(null);
-  const [drawioLoading, setDrawioLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDestinationRef = useRef<string | null>(null);
   const pendingOpenFileIdRef = useRef<string | null>(null);
   const openedUrlFileIdRef = useRef<string | null>(null);
 
   const gaebWorkspace = useRef<GaebWorkspaceHandle>(null);
-  const editorRequest = useRef(0);
   const fileLocation = useProjectFileLocation(project.id, () => {
     if (activeGaebFileId && gaebWorkspace.current)
       void gaebWorkspace.current.requestClose();
     else closeAllViewers();
   });
   const resetViewers = () => {
-    editorRequest.current++;
     setActiveImageIndex(null);
     setActiveVideoFileId(null);
     setActiveDwgFileId(null);
     setActiveOfficeFileId(null);
     setActivePreviewFileId(null);
-    setActiveDrawioFileId(null);
     setActiveGaebFileId(null);
     setActiveFallbackFileId(null);
-    setDrawioSession(null);
   };
   const closeFileLocation = useCallback(() => {
     openedUrlFileIdRef.current = null;
@@ -327,11 +310,6 @@ export default function ProjectFilesPage() {
   const activePreviewFile = useMemo(() => {
     return attachments.find((file) => file.id === activePreviewFileId) ?? null;
   }, [activePreviewFileId, attachments]);
-  const activeDrawioFile = useMemo(() => {
-    if (!activeDrawioFileId) return null;
-    return attachments.find((file) => file.id === activeDrawioFileId) ?? null;
-  }, [activeDrawioFileId, attachments]);
-
   const documentFiles = useMemo(() => {
     return attachments.filter(
       (entry) => entry.kind !== "image" || isDwgAttachment(entry),
@@ -382,21 +360,15 @@ export default function ProjectFilesPage() {
       setActivePreviewFileId(null);
     }
   }, [activePreviewFileId, attachments]);
-  useEffect(() => {
-    if (!activeDrawioFileId) return;
-    if (attachments.some((entry) => entry.id === activeDrawioFileId)) return;
-
-    setActiveDrawioFileId(null);
-    setDrawioSession(null);
-  }, [activeDrawioFileId, attachments]);
-
   const imageCardUrl = (file: ProjectFileEntry) =>
     file.previewUrl || file.thumbnailUrl || file.downloadUrl || null;
   const attachmentDownloadUrl = (file: ProjectFileEntry) =>
     file.downloadAttachmentUrl || file.downloadUrl || null;
 
   const activeImageResource = useFileResource(activeImage?.downloadUrl);
-  const activeVideoResource = useFileResource(activeVideo?.downloadUrl || activeVideo?.downloadAttachmentUrl);
+  const activeVideoResource = useFileResource(
+    activeVideo?.downloadUrl || activeVideo?.downloadAttachmentUrl,
+  );
   const activeDwgSource = activeDwgFile
     ? activeDwgFile.downloadUrl || activeDwgFile.downloadAttachmentUrl || null
     : null;
@@ -455,7 +427,9 @@ export default function ProjectFilesPage() {
     closeFileLocation();
   };
 
-  const openOfficeEditor = (file: ProjectFileEntry) => { setActiveOfficeFileId(file.id); };
+  const openOfficeEditor = (file: ProjectFileEntry) => {
+    setActiveOfficeFileId(file.id);
+  };
 
   const closeOfficeEditor = useCallback(() => {
     setActiveOfficeFileId(null);
@@ -467,78 +441,6 @@ export default function ProjectFilesPage() {
     setActivePreviewFileId(null);
     closeFileLocation();
   }, [closeFileLocation]);
-  const openDrawioEditor = async (file: ProjectFileEntry) => {
-    const request = ++editorRequest.current;
-    setActiveDrawioFileId(file.id);
-    setDrawioSession(null);
-    setDrawioError(null);
-    setDrawioLoading(true);
-
-    const [session, error] = await client.query("projects.files.drawioConfig", {
-      fileId: file.id,
-      projectId: project.id,
-    });
-
-    if (request !== editorRequest.current) return;
-    setDrawioLoading(false);
-
-    if (error || !session) {
-      setDrawioError(
-        error?.message ??
-          uiText(
-            "Das Diagramm konnte nicht geöffnet werden.",
-            "The diagram could not be opened.",
-          ),
-      );
-      return;
-    }
-
-    setDrawioSession(session);
-  };
-
-  const closeDrawioEditor = useCallback(() => {
-    setActiveDrawioFileId(null);
-    setDrawioSession(null);
-    setDrawioError(null);
-    closeFileLocation();
-
-    void client.invalidate("projects.files.list");
-  }, [closeFileLocation]);
-
-  const saveDrawio = useCallback(
-    async (xml: string, version: bigint) => {
-      if (!activeDrawioFileId) {
-        throw new Error(
-          uiText(
-            "Das Diagramm ist nicht mehr geöffnet.",
-            "The diagram is no longer open.",
-          ),
-        );
-      }
-
-      const [result, error] = await client.mutate("projects.files.drawioSave", {
-        projectId: project.id,
-        fileId: activeDrawioFileId,
-        version,
-        xml,
-      });
-      if (error || !result) {
-        throw (
-          error ??
-          new Error(
-            uiText(
-              "Das Diagramm konnte nicht gespeichert werden.",
-              "The diagram could not be saved.",
-            ),
-          )
-        );
-      }
-
-      return result.version;
-    },
-    [activeDrawioFileId, project.id],
-  );
-
   const toggleAttachmentSelection = (fileId: string) => {
     setSelectedAttachmentIds((previous) => {
       if (previous.includes(fileId)) {
@@ -642,8 +544,14 @@ export default function ProjectFilesPage() {
   }, [activeImageIndex, imageFiles.length]);
 
   async function uploadProjectFile(file: File, folderId: string | null) {
-    return privateProjectFiles.upload({ projectId: project.id, folderId, name: file.name,
-      mime: file.type || "application/octet-stream", blob: file, inspect: () => inspectProjectFile(file) });
+    return privateProjectFiles.upload({
+      projectId: project.id,
+      folderId,
+      name: file.name,
+      mime: file.type || "application/octet-stream",
+      blob: file,
+      inspect: () => inspectProjectFile(file),
+    });
   }
 
   async function uploadSelectedFiles(
@@ -1183,18 +1091,28 @@ export default function ProjectFilesPage() {
       openDwgViewer(attachment);
     } else if (isVideoAttachment(attachment)) {
       openVideoViewer(attachment);
-    } else if (isDrawioAttachment(attachment)) {
-      void openDrawioEditor(attachment);
-    } else if (isOnlyOfficeAttachment(attachment)) {
-      void openOfficeEditor(attachment);
+    } else if (
+      isDrawioAttachment(attachment) ||
+      isOnlyOfficeAttachment(attachment)
+    ) {
+      openOfficeEditor(attachment);
     } else {
       setActiveFallbackFileId(attachment.id);
     }
   }
 
   async function downloadResource(url: string, name: string) {
-    try { await downloadFileResource(url, name); }
-    catch { notifications.danger({ title: uiText("Download fehlgeschlagen", "Download failed"), content: uiText("Die Datei konnte nicht geladen werden.", "The file could not be loaded.") }); }
+    try {
+      await downloadFileResource(url, name);
+    } catch {
+      notifications.danger({
+        title: uiText("Download fehlgeschlagen", "Download failed"),
+        content: uiText(
+          "Die Datei konnte nicht geladen werden.",
+          "The file could not be loaded.",
+        ),
+      });
+    }
   }
   function downloadBrowserFile(file: ProjectFileBrowserFile) {
     const attachment = attachments.find(
@@ -1636,52 +1554,6 @@ export default function ProjectFilesPage() {
             />
           </Suspense>
         )}
-      {!!activeDrawioFile && (
-        <Modal
-          open
-          passiveModal
-          modalHeading={
-            drawioSession?.canEdit
-              ? uiText("Diagramm bearbeiten", "Edit diagram")
-              : uiText("Diagramm ansehen", "View diagram")
-          }
-          modalLabel={activeDrawioFile.fileName}
-          closeButtonLabel={uiText("Schließen", "Close")}
-          onRequestClose={closeDrawioEditor}
-          edgeToEdge
-          data-fullheight="true"
-          data-fullwidth="true"
-          className="project-files-drawio-modal"
-        >
-          {drawioLoading && (
-            <div className="project-files-office-status">
-              {uiText("Diagramm wird geöffnet …", "Opening diagram …")}
-            </div>
-          )}
-
-          {!!drawioError && (
-            <div className="project-files-office-status">
-              <MyCallout icon={Icons.Deny} color="red">
-                {drawioError}
-              </MyCallout>
-            </div>
-          )}
-
-          {!!drawioSession && (
-            <DrawioEditor
-              editorUrl={drawioSession.editorUrl}
-              fileName={drawioSession.fileName}
-              xml={drawioSession.xml}
-              version={drawioSession.version}
-              canEdit={drawioSession.canEdit}
-              onSave={saveDrawio}
-              onClose={closeDrawioEditor}
-              onError={setDrawioError}
-            />
-          )}
-        </Modal>
-      )}
-
       {!!activePreviewFile && (
         <Modal
           open
@@ -1755,7 +1627,11 @@ export default function ProjectFilesPage() {
         <Modal
           open
           passiveModal
-          modalHeading={uiText("Dokument", "Document")}
+          modalHeading={
+            isDrawioAttachment(activeOfficeFile)
+              ? uiText("Diagramm", "Diagram")
+              : uiText("Dokument", "Document")
+          }
           modalLabel={activeOfficeFile.fileName}
           closeButtonLabel={uiText("Schließen", "Close")}
           onRequestClose={closeOfficeEditor}
@@ -1764,7 +1640,10 @@ export default function ProjectFilesPage() {
           data-fullwidth="true"
           className="project-files-office-modal"
         >
-          <ProtectedOfficeEditor projectId={project.id} fileId={activeOfficeFile.id} />
+          <ProtectedOfficeEditor
+            projectId={project.id}
+            fileId={activeOfficeFile.id}
+          />
         </Modal>
       )}
 
@@ -1804,7 +1683,10 @@ export default function ProjectFilesPage() {
                         activeDwgFile.downloadAttachmentUrl ||
                         activeDwgFile.downloadUrl;
                       if (!attachmentUrl) return;
-                      void downloadResource(attachmentUrl, activeDwgFile.fileName);
+                      void downloadResource(
+                        attachmentUrl,
+                        activeDwgFile.fileName,
+                      );
                     },
                   },
                 ]}
@@ -1812,7 +1694,12 @@ export default function ProjectFilesPage() {
             </div>
 
             <div className="project-files-dwg-canvas">
-              {activeDwgResource.loading ? <Loading active description={uiText("Datei wird geöffnet …", "Opening file…")} /> : activeDwgDocument ? (
+              {activeDwgResource.loading ? (
+                <Loading
+                  active
+                  description={uiText("Datei wird geöffnet …", "Opening file…")}
+                />
+              ) : activeDwgDocument ? (
                 <PlanViewer document={activeDwgDocument} defaultUnit="m" />
               ) : (
                 <MyCallout icon={Icons.Info} color="amber">
@@ -1861,8 +1748,7 @@ export default function ProjectFilesPage() {
                       const url =
                         activeVideo.downloadAttachmentUrl ||
                         activeVideo.downloadUrl;
-                      if (url)
-                        void downloadResource(url, activeVideo.fileName);
+                      if (url) void downloadResource(url, activeVideo.fileName);
                     },
                   },
                 ]}
@@ -1870,7 +1756,12 @@ export default function ProjectFilesPage() {
             </div>
 
             <div className="project-files-video-stage">
-              {activeVideoResource.loading ? <Loading active description={uiText("Datei wird geöffnet …", "Opening file…")} /> : videoError ? (
+              {activeVideoResource.loading ? (
+                <Loading
+                  active
+                  description={uiText("Datei wird geöffnet …", "Opening file…")}
+                />
+              ) : videoError ? (
                 <MyCallout icon={Icons.Deny} color="red">
                   {videoError}
                 </MyCallout>
@@ -1891,9 +1782,7 @@ export default function ProjectFilesPage() {
                   }
                 >
                   <source
-                    src={
-                      activeVideoResource.url || undefined
-                    }
+                    src={activeVideoResource.url || undefined}
                     type={
                       activeVideo.mimeType
                         .toLocaleLowerCase()
@@ -1946,15 +1835,19 @@ export default function ProjectFilesPage() {
                       const url =
                         activeImage.downloadAttachmentUrl ||
                         activeImage.downloadUrl;
-                      if (url)
-                        void downloadResource(url, activeImage.fileName);
+                      if (url) void downloadResource(url, activeImage.fileName);
                     },
                   },
                 ]}
               />
             </div>
 
-            {activeImageResource.loading ? <Loading active description={uiText("Datei wird geöffnet …", "Opening file…")} /> : activeImageResource.url ? (
+            {activeImageResource.loading ? (
+              <Loading
+                active
+                description={uiText("Datei wird geöffnet …", "Opening file…")}
+              />
+            ) : activeImageResource.url ? (
               <ZoomableImage
                 src={activeImageResource.url}
                 alt={activeImage.fileName}

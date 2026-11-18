@@ -1,7 +1,7 @@
-# Office-Dokumente im Browser
+# Office-Dokumente und Diagramme im Browser
 
-Dieser Dienst stellt CryptPads angepasste Office-Editoren und den verschlüsselten
-Abgleich gemeinsamer Sitzungen bereit. DOCX-, Tabellen- und Präsentationsdateien
+Dieser Dienst stellt CryptPads angepasste Office- und Diagrammeditoren und den verschlüsselten
+Abgleich gemeinsamer Sitzungen bereit. DOCX-, Tabellen-, Präsentations- und Drawio-Dateien
 werden im Browser geöffnet, konvertiert und wieder gespeichert. Die API liefert
 keine Klartext-Datei an einen Dokumentserver.
 
@@ -14,7 +14,8 @@ im Image enthalten; CryptPad und seine Office-Anpassungen stehen unter ihren
 jeweiligen AGPL-Lizenzen.
 
 Ein kleiner, beim Build geprüfter Quellpatch verbindet die PDF-Ausgabe mit dem
-browserseitigen Druckweg. Projektdateien verwenden dauerhafte verschlüsselte
+browserseitigen Druckweg. Er stellt außerdem den nativen Drawio-Export für
+Leser und die Übernahme unbestätigter Entwürfe bereit. Projektdateien verwenden dauerhafte verschlüsselte
 Räume; ungespeicherte Exportansichten behalten CryptPads temporäre Räume.
 
 `OFFICE_PUBLIC_ORIGIN`, `OFFICE_SANDBOX_ORIGIN` und `SORTSYS_PUBLIC_ORIGIN`

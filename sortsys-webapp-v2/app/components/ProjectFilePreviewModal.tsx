@@ -3,7 +3,6 @@ import type { QueryResult } from "@sortsys/v2-client";
 import { Loading, Modal, useNotifications } from "@sortsys/react-components";
 import { lazy, Suspense, useCallback, useState } from "react";
 import { from } from "rxjs";
-import { ProtectedDiagramEditor } from "~/components/ProtectedDiagramEditor";
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
 import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
@@ -43,29 +42,6 @@ function PreviewLoading() {
   );
 }
 
-function FileEditor({
-  file,
-  projectId,
-  kind,
-  onClose,
-}: {
-  file: ProjectFile;
-  projectId: string;
-  kind: "office" | "drawio";
-  onClose: () => void;
-}) {
-  if (kind === "office") {
-    return <ProtectedOfficeEditor projectId={projectId} fileId={file.id} />;
-  }
-  return (
-    <ProtectedDiagramEditor
-      projectId={projectId}
-      fileId={file.id}
-      onClose={onClose}
-    />
-  );
-}
-
 function FilePreview({
   file,
   projectId,
@@ -77,19 +53,16 @@ function FilePreview({
 }) {
   const kind = projectFilePreviewKind(file);
   const source = file.downloadUrl || file.downloadAttachmentUrl;
-  const resource = useFileResource(["image", "video", "dwg"].includes(kind ?? "") ? source : null);
-  const url = ["image", "video", "dwg"].includes(kind ?? "") ? resource.url : source;
+  const resource = useFileResource(
+    ["image", "video", "dwg"].includes(kind ?? "") ? source : null,
+  );
+  const url = ["image", "video", "dwg"].includes(kind ?? "")
+    ? resource.url
+    : source;
   const [videoError, setVideoError] = useState(false);
 
   if (kind === "office" || kind === "drawio") {
-    return (
-      <FileEditor
-        file={file}
-        projectId={projectId}
-        kind={kind}
-        onClose={onClose}
-      />
-    );
+    return <ProtectedOfficeEditor projectId={projectId} fileId={file.id} />;
   }
 
   if (resource.loading) return <PreviewLoading />;
@@ -109,16 +82,17 @@ function FilePreview({
   const downloadUrl = file.downloadAttachmentUrl || url;
 
   if (kind === "pdf") {
-    return <PdfAttachmentViewer url={url} downloadUrl={downloadUrl} fileName={file.fileName} />;
+    return (
+      <PdfAttachmentViewer
+        url={url}
+        downloadUrl={downloadUrl}
+        fileName={file.fileName}
+      />
+    );
   }
 
   if (kind === "eml" || kind === "msg") {
-    return (
-      <EmailAttachmentViewer
-        url={url}
-        format={kind}
-      />
-    );
+    return <EmailAttachmentViewer url={url} format={kind} />;
   }
 
   if (kind === "image") {
@@ -227,7 +201,16 @@ export default function ProjectFilePreviewModal({
   }, [onClose]);
 
   if (file && kind === "gaeb") {
-    return <Suspense fallback={<PreviewLoading />}><GaebFileModal projectId={target.projectId} fileId={file.id} fileName={file.fileName} onClose={closePreview} /></Suspense>;
+    return (
+      <Suspense fallback={<PreviewLoading />}>
+        <GaebFileModal
+          projectId={target.projectId}
+          fileId={file.id}
+          fileName={file.fileName}
+          onClose={closePreview}
+        />
+      </Suspense>
+    );
   }
 
   return (
@@ -245,12 +228,21 @@ export default function ProjectFilePreviewModal({
     >
       {downloadUrl && kind !== "pdf" && kind !== "eml" && kind !== "msg" && (
         <div className="chat-file-preview__toolbar">
-          <MyButton kind="tertiary" size="sm" onClick={() => {
-            void downloadFileResource(downloadUrl, file!.fileName).catch(() => notifications.danger({
-              title: uiText("Download fehlgeschlagen", "Download failed"),
-              content: uiText("Die Datei konnte nicht geladen werden.", "The file could not be loaded."),
-            }));
-          }}>
+          <MyButton
+            kind="tertiary"
+            size="sm"
+            onClick={() => {
+              void downloadFileResource(downloadUrl, file!.fileName).catch(() =>
+                notifications.danger({
+                  title: uiText("Download fehlgeschlagen", "Download failed"),
+                  content: uiText(
+                    "Die Datei konnte nicht geladen werden.",
+                    "The file could not be loaded.",
+                  ),
+                }),
+              );
+            }}
+          >
             {uiText("Herunterladen", "Download")}
           </MyButton>
         </div>

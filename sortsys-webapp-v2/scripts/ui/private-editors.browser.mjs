@@ -678,22 +678,11 @@ addEventListener('message',async event=>{
  }
  if(p.msg?.q==='DOWNLOAD_AS')state.exports.push(p.msg.data);
 });</script>`;
-const diagramHtml = `<!doctype html><script>
-window.state = { loads: [], statuses: [] };
-window.boot = () => parent.postMessage(JSON.stringify({ event: 'init' }), '*');
-window.autosave = xml => parent.postMessage(JSON.stringify({ event: 'autosave', xml }), '*');
-addEventListener('message', event => {
-  let message;
-  try { message = JSON.parse(event.data); } catch { return; }
-  if (message.action === 'load') state.loads.push(message);
-  if (message.action === 'status') state.statuses.push(message);
-});
-</script>`;
 async function serveEditor() {
   const http = createServer((req, res) => {
     requests.push({ url: req.url, method: req.method });
     res.setHeader("Content-Type", "text/html");
-    res.end(req.url.startsWith("/diagram") ? diagramHtml : editorHtml);
+    res.end(editorHtml);
   });
   await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
   return {
@@ -713,47 +702,21 @@ after(async () => {
   await attacker?.close();
   await server?.close();
 });
-async function open(canEdit = true, key) {
+async function open(canEdit = true, key, application = "doc") {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${server.origin}/private-editors.html`);
   await page.waitForFunction(() => window.privateEditorFixture);
   await page.evaluate(
-    ({ origin, canEdit, key }) =>
-      window.privateEditorFixture.open(origin, canEdit, key),
-    { origin: editor.origin, canEdit, key },
+    ({ origin, canEdit, key, application }) =>
+      window.privateEditorFixture.open(origin, canEdit, key, application),
+    { origin: editor.origin, canEdit, key, application },
   );
   const frame = await (
     await page.locator("#private-office").elementHandle()
   ).contentFrame();
   await frame.waitForFunction(() => window.boot);
   return { context, page, frame };
-}
-
-async function openDiagram(options = {}) {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(`${server.origin}/private-editors.html`);
-  await page.waitForFunction(() => window.privateEditorFixture);
-  await page.evaluate(
-    ({ url, options }) =>
-      window.privateEditorFixture.protectedDiagram(url, options),
-    {
-      url: `${editor.origin}/diagram`,
-      options,
-    },
-  );
-  return { context, page };
-}
-
-async function diagramFrame(page, file = "5") {
-  const target = page.locator(`iframe[title="Plan ${file}.drawio"]`);
-  await target.waitFor({ state: "attached" });
-  const frame = await (await target.elementHandle()).contentFrame();
-  await frame.waitForFunction(() => window.boot);
-  await frame.evaluate(() => window.boot());
-  await frame.waitForFunction(() => window.state.loads.length === 1);
-  return frame;
 }
 
 async function nextPaint(page) {
@@ -764,231 +727,6 @@ async function nextPaint(page) {
       ),
   );
 }
-
-test("the protected diagram saves edits with the confirmed revision", async () => {
-  const { context, page } = await openDiagram();
-  try {
-    const frame = await diagramFrame(page);
-    assert.equal(
-      await frame.evaluate(() => window.state.loads[0].xml),
-      "<mxfile><diagram>Private diagram 5 revision 1</diagram></mxfile>",
-    );
-    await frame.evaluate(() => window.autosave("<mxfile>First edit</mxfile>"));
-    await frame.waitForFunction(() => window.state.statuses.length === 1);
-    await frame.evaluate(() => window.autosave("<mxfile>Second edit</mxfile>"));
-    await frame.waitForFunction(() => window.state.statuses.length === 2);
-    const state = await page.evaluate(() =>
-      window.diagramAccessFixture.snapshot(),
-    );
-    assert.deepEqual(
-      state.saves.map((save) => [save.xml, save.version]),
-      [
-        ["<mxfile>First edit</mxfile>", "1"],
-        ["<mxfile>Second edit</mxfile>", "2"],
-      ],
-    );
-    assert.equal(new URL(frame.url()).searchParams.get("lockdown"), "1");
-    assert.equal(new URL(frame.url()).searchParams.get("stealth"), "1");
-  } finally {
-    await context.close();
-  }
-});
-
-test("the protected diagram discards a late load after access reset", async () => {
-  const { context, page } = await openDiagram({ holdLoad: true });
-  try {
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().loads.length === 1,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.revoke());
-    await page.evaluate(() => window.diagramAccessFixture.releaseLoad());
-    await nextPaint(page);
-    assert.equal(await page.locator("iframe").count(), 0);
-    assert.deepEqual(
-      await page.evaluate(() => window.diagramAccessFixture.snapshot().saves),
-      [],
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("the protected diagram drops a queued edit after revocation and reopens only the new read-only session", async () => {
-  const { context, page } = await openDiagram({ holdSave: true });
-  try {
-    const first = await diagramFrame(page);
-    await first.evaluate(() =>
-      window.autosave("<mxfile>Pending edit</mxfile>"),
-    );
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().saves.length === 1,
-    );
-    await first.evaluate(() =>
-      window.autosave("<mxfile>Queued old edit</mxfile>"),
-    );
-    await nextPaint(page);
-    await page.evaluate(() => window.diagramAccessFixture.revoke());
-    await nextPaint(page);
-    assert.equal(first.isDetached(), true);
-    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
-    await nextPaint(page);
-    assert.equal(
-      await page.evaluate(
-        () => window.diagramAccessFixture.snapshot().saves.length,
-      ),
-      1,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.grant());
-    const second = await diagramFrame(page);
-    assert.equal(
-      await second.evaluate(() => window.state.loads[0].autosave),
-      0,
-    );
-    assert.match(
-      await second.evaluate(() => window.state.loads[0].xml),
-      /revision 2/,
-    );
-    await second.evaluate(() =>
-      window.autosave("<mxfile>Denied read-only edit</mxfile>"),
-    );
-    await nextPaint(page);
-    assert.equal(
-      await page.evaluate(
-        () => window.diagramAccessFixture.snapshot().saves.length,
-      ),
-      1,
-    );
-    assert.equal(await page.getByRole("alert").count(), 0);
-  } finally {
-    await context.close();
-  }
-});
-
-test("the protected diagram keeps a late previous file out of the replacement file", async () => {
-  const { context, page } = await openDiagram({ holdLoad: true });
-  try {
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().loads.length === 1,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.switchFile("6"));
-    const frame = await diagramFrame(page, "6");
-    await page.evaluate(() => window.diagramAccessFixture.releaseLoad());
-    await nextPaint(page);
-    assert.equal(
-      await page.locator('iframe[title="Plan 5.drawio"]').count(),
-      0,
-    );
-    assert.match(
-      await frame.evaluate(() => window.state.loads[0].xml),
-      /diagram 6/,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.unmount());
-    assert.equal(frame.isDetached(), true);
-  } finally {
-    await context.close();
-  }
-});
-
-test("the protected diagram rejects an earlier load even after returning to the same file", async () => {
-  const { context, page } = await openDiagram({ holdLoad: true });
-  try {
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().loads.length === 1,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.switchFile("6"));
-    await diagramFrame(page, "6");
-    await page.evaluate(() => window.diagramAccessFixture.switchFile("5"));
-    const current = await diagramFrame(page);
-    assert.match(
-      await current.evaluate(() => window.state.loads[0].xml),
-      /revision 3/,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.releaseLoad());
-    await nextPaint(page);
-    assert.equal(current.isDetached(), false);
-    assert.match(
-      await current.evaluate(() => window.state.loads[0].xml),
-      /revision 3/,
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("the protected diagram finishes captured edits for the original file after normal unmount", async () => {
-  const { context, page } = await openDiagram({ holdSave: true });
-  try {
-    const frame = await diagramFrame(page);
-    await frame.evaluate(() =>
-      window.autosave("<mxfile>Pending edit</mxfile>"),
-    );
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().saves.length === 1,
-    );
-    await frame.evaluate(() =>
-      window.autosave("<mxfile>Queued old edit</mxfile>"),
-    );
-    await nextPaint(page);
-    await page.evaluate(() => window.diagramAccessFixture.unmount());
-    assert.equal(frame.isDetached(), true);
-    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().saves.length === 2,
-    );
-    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
-    await nextPaint(page);
-    assert.deepEqual(
-      await page.evaluate(() =>
-        window.diagramAccessFixture.snapshot().saves.map((save) => save.xml),
-      ),
-      ["<mxfile>Pending edit</mxfile>", "<mxfile>Queued old edit</mxfile>"],
-    );
-    assert.deepEqual(
-      await page.evaluate(() =>
-        window.diagramAccessFixture
-          .snapshot()
-          .saves.map((save) => [save.fileId, save.version]),
-      ),
-      [
-        ["5", "1"],
-        ["5", "2"],
-      ],
-    );
-    assert.equal(await page.getByRole("alert").count(), 0);
-  } finally {
-    await context.close();
-  }
-});
-
-test("the protected diagram cancels background edits when access expires after closing", async () => {
-  const { context, page } = await openDiagram({ holdSave: true });
-  try {
-    const frame = await diagramFrame(page);
-    await frame.evaluate(() =>
-      window.autosave("<mxfile>Pending edit</mxfile>"),
-    );
-    await page.waitForFunction(
-      () => window.diagramAccessFixture.snapshot().saves.length === 1,
-    );
-    await frame.evaluate(() =>
-      window.autosave("<mxfile>Queued old edit</mxfile>"),
-    );
-    await nextPaint(page);
-    await page.evaluate(() => window.diagramAccessFixture.unmount());
-    await page.evaluate(() => window.diagramAccessFixture.revoke());
-    await page.evaluate(() => window.diagramAccessFixture.releaseSave());
-    await nextPaint(page);
-    assert.deepEqual(
-      await page.evaluate(() =>
-        window.diagramAccessFixture.snapshot().saves.map((save) => save.xml),
-      ),
-      ["<mxfile>Pending edit</mxfile>"],
-    );
-    assert.equal(await page.getByRole("alert").count(), 0);
-  } finally {
-    await context.close();
-  }
-});
 
 test("the private editor rejects other windows and commits capabilities before sharing the document", async () => {
   const { context, page, frame } = await open();
@@ -1119,6 +857,50 @@ test("a reader can open an unshared copy before an editor initializes the shared
       await page.evaluate(() => window.privateEditorFixture.state.saved),
       [],
     );
+  } finally {
+    await context.close();
+  }
+});
+
+test("a read-only diagram room exports its native XML without publishing or saving a session", async () => {
+  const { context, page, frame } = await open(
+    false,
+    "view-capability",
+    "diagram",
+  );
+  const xml = '<mxfile><diagram id="floor-plan" name="Erdgeschoss"/></mxfile>';
+  try {
+    await frame.evaluate(() => window.boot());
+    await page.waitForFunction(
+      () => window.privateEditorFixture.state.ready === 1,
+    );
+    const start = await frame.evaluate(() => window.state.start);
+    assert.equal(start.application, "diagram");
+    assert.equal(start.name, "Private.drawio");
+    assert.equal(start.readOnly, true);
+    await page.evaluate(() => {
+      window.exportResult = null;
+      window.privateEditorFixture
+        .export("drawio")
+        .then((blob) => blob.text())
+        .then((value) => {
+          window.exportResult = value;
+        });
+    });
+    await frame.waitForFunction(() => window.state.exports[0] === "drawio");
+    await frame.evaluate(
+      (xml) =>
+        window.command(
+          "ON_DOWNLOADAS",
+          new Blob([xml], { type: "application/x-drawio" }),
+        ),
+      xml,
+    );
+    await page.waitForFunction((xml) => window.exportResult === xml, xml);
+    const state = await page.evaluate(() => window.privateEditorFixture.state);
+    assert.equal(state.published, 0);
+    assert.deepEqual(state.saved, []);
+    assert.equal(state.errors, 0);
   } finally {
     await context.close();
   }
@@ -1294,224 +1076,315 @@ test("a failed conversion cannot supply a late result to a later export request"
   }
 });
 
-test("the protected Office component previews a fixed shared draft before its explicit transfer", async () => {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  try {
-    await page.goto(`${server.origin}/private-editors.html`);
-    await page.waitForFunction(() => window.privateEditorFixture);
-    await page.evaluate(
-      (origin) => window.privateEditorFixture.protected(origin, true),
-      editor.origin,
-    );
-    const source = page.locator(
-      'iframe[title="Bearbeitungsstand wird übernommen"],iframe[title="Recovering document draft"]',
-    );
-    await source.waitFor({ state: "attached" });
-    const recovery = await (await source.elementHandle()).contentFrame();
-    await recovery.waitForFunction(() => window.boot);
-    await recovery.evaluate(() => window.boot());
-    await recovery.waitForFunction(() => window.state.exports.includes("docx"));
-    assert.equal(
-      await recovery.evaluate(() => window.state.start.readOnly),
-      true,
-    );
-    assert.equal(
-      await recovery.evaluate(() => window.state.start.key),
-      "view-capability",
-    );
-    assert.equal(
-      await page.evaluate(() => window.privateEditorFixture.state.published),
-      0,
-    );
-    await recovery.evaluate(() =>
-      window.command(
-        "ON_DOWNLOADAS",
-        new Blob(["shared draft before key replacement"]),
-      ),
-    );
-    const target = page.locator(
-      'iframe[title="Office-Dokument"],iframe[title="Office document"]',
-    );
-    await target.waitFor({ state: "attached" });
-    const preview = await (await target.elementHandle()).contentFrame();
-    await preview.waitForFunction(() => window.boot);
-    await preview.evaluate(() => window.boot());
-    await target.waitFor({ state: "visible" });
-    assert.equal(
-      await preview.evaluate(() => window.state.start.readOnly),
-      true,
-    );
-    assert.equal(
-      await preview.evaluate(() => window.state.start.key),
-      "new-edit-capability",
-    );
-    assert.equal(
-      await preview.evaluate(() => window.state.start.document),
-      "shared draft before key replacement",
-    );
-    assert.equal(
-      await page.evaluate(() => window.privateEditorFixture.state.published),
-      0,
-    );
-    const reviewBanner = page.getByRole("region", {
-      name: /Bearbeitungsstand prüfen|Review document draft/,
-    });
-    const bannerBounds = await reviewBanner.boundingBox();
-    const previewBounds = await target.boundingBox();
-    assert.ok(bannerBounds && previewBounds);
-    assert.ok(
-      previewBounds.y >= bannerBounds.y + bannerBounds.height - 1,
-      "Review actions must not cover the document preview",
-    );
-    assert.ok(previewBounds.height > 200);
-    await page.screenshot({
-      path: "/tmp/sortsys-office-draft-review.png",
-      fullPage: true,
-    });
-    await page
-      .getByRole("button", {
-        name: /Bearbeitungsstand übernehmen|Use editing draft/,
-      })
-      .click();
-    await page.waitForFunction(
-      () => window.privateEditorFixture.state.ready >= 2,
-    );
-    await target.waitFor({ state: "attached" });
-    const replacement = await (await target.elementHandle()).contentFrame();
-    await replacement.waitForFunction(() => window.boot);
-    await replacement.evaluate(() => window.boot());
-    await target.waitFor({ state: "visible" });
-    assert.equal(recovery.isDetached(), true);
-    assert.equal(preview.isDetached(), true);
-    assert.equal(
-      await replacement.evaluate(() => window.state.start.document),
-      "shared draft before key replacement",
-    );
-    assert.equal(
-      await replacement.evaluate(() => window.state.start.readOnly),
-      false,
-    );
-    assert.deepEqual(
-      await page.evaluate(() => window.privateEditorFixture.state.recovered),
-      [
-        {
-          text: "shared draft before key replacement",
-          epoch: "old-office-room",
-          version: "1",
-        },
-      ],
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("an unavailable shared draft requires an explicit choice before using the confirmed file", async () => {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  try {
-    await page.goto(`${server.origin}/private-editors.html`);
-    await page.waitForFunction(() => window.privateEditorFixture);
-    await page.evaluate(
-      (origin) => window.privateEditorFixture.protected(origin, true),
-      editor.origin,
-    );
-    const source = page.locator(
-      'iframe[title="Bearbeitungsstand wird übernommen"],iframe[title="Recovering document draft"]',
-    );
-    await source.waitFor({ state: "attached" });
-    const recovery = await (await source.elementHandle()).contentFrame();
-    await recovery.waitForFunction(() => window.boot);
-    await recovery.evaluate(() => window.boot());
-    await recovery.waitForFunction(() => window.state.exports.includes("docx"));
-    await recovery.evaluate(() => window.command("DOCUMENT_ERROR", {}));
-    const fallback = page.getByRole("button", {
-      name: /Gespeicherten Dateistand öffnen|Open saved file/,
-    });
-    await fallback.waitFor({ state: "visible" });
-    assert.equal(
-      await page.evaluate(() => window.privateEditorFixture.state.published),
-      0,
-    );
-    await fallback.click();
-    const target = page.locator(
-      'iframe[title="Office-Dokument"],iframe[title="Office document"]',
-    );
-    await target.waitFor({ state: "attached" });
-    const replacement = await (await target.elementHandle()).contentFrame();
-    await replacement.waitForFunction(() => window.boot);
-    await replacement.evaluate(() => window.boot());
-    await target.waitFor({ state: "visible" });
-    assert.equal(
-      await replacement.evaluate(() => window.state.start.document),
-      "private browser document",
-    );
-    assert.equal(
+for (const fileName of ["Private.docx", "Plan.drawio"]) {
+  test(`${fileName}: the protected component previews a fixed shared draft before its explicit transfer`, async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${server.origin}/private-editors.html`);
+      await page.waitForFunction(() => window.privateEditorFixture);
       await page.evaluate(
-        () => window.privateEditorFixture.state.recovered[0].text,
-      ),
-      "private browser document",
-    );
-  } finally {
-    await context.close();
-  }
-});
-
-test("the normal protected Office component removes the old iframe on a rights reset and opens only the new view capability", async () => {
-  const context = await browser.newContext(),
-    page = await context.newPage();
-  try {
-    await page.goto(`${server.origin}/private-editors.html`);
-    await page.waitForFunction(() => window.privateEditorFixture);
-    await page.evaluate(
-      (origin) => window.privateEditorFixture.protected(origin),
-      editor.origin,
-    );
-    const locate = () =>
-      page.locator(
-        'iframe[title="Office-Dokument"],iframe[title="Office document"]',
+        ({ origin, fileName }) =>
+          window.privateEditorFixture.protected(origin, true, { fileName }),
+        { origin: editor.origin, fileName },
       );
-    const first = await (await locate().elementHandle()).contentFrame();
-    await first.waitForFunction(() => window.boot);
-    await first.evaluate(() => window.boot());
-    await first.waitForFunction(() => window.state.start?.readOnly === false);
-    await locate().waitFor({ state: "visible" });
-    await first.evaluate(() =>
-      window.command("SAVE", new Blob(["actual component save"])),
-    );
-    await page.waitForFunction(
-      () => window.privateEditorFixture.state.saved.length === 1,
-    );
-    await page.evaluate(() => window.downgradePrivateOffice());
-    await page.waitForFunction(
-      () => window.privateEditorFixture.state.ready >= 2,
-    );
-    await locate().waitFor({ state: "attached" });
-    assert.equal(first.isDetached(), true);
-    const second = await (await locate().elementHandle()).contentFrame();
-    await second.waitForFunction(() => window.boot);
-    await second.evaluate(() => window.boot());
-    await second.waitForFunction(() => window.state.start?.readOnly === true);
-    assert.equal(
-      await second.evaluate(() => window.state.start.key),
-      "view-capability",
-    );
-    assert.equal(
-      await page.evaluate(() => window.privateEditorFixture.state.published),
-      1,
-    );
-    await second.evaluate(() =>
-      window.command("SAVE", new Blob(["denied after downgrade"])),
-    );
-    await second.waitForFunction(() =>
-      window.state.acks.some((ack) => ack.args?.error === "SAVE_REJECTED"),
-    );
-    assert.deepEqual(
-      await page.evaluate(() => window.privateEditorFixture.state.saved),
-      ["actual component save"],
-    );
-  } finally {
-    await context.close();
+      const source = page.locator(
+        'iframe[title="Bearbeitungsstand wird übernommen"],iframe[title="Recovering document draft"]',
+      );
+      await source.waitFor({ state: "attached" });
+      const recovery = await (await source.elementHandle()).contentFrame();
+      await recovery.waitForFunction(() => window.boot);
+      await recovery.evaluate(() => window.boot());
+      await recovery.waitForFunction(
+        (format) => window.state.exports.includes(format),
+        fileName.endsWith(".drawio") ? "drawio" : "docx",
+      );
+      assert.equal(
+        await recovery.evaluate(() => window.state.start.readOnly),
+        true,
+      );
+      assert.equal(
+        await recovery.evaluate(() => window.state.start.key),
+        "view-capability",
+      );
+      assert.equal(
+        await page.evaluate(() => window.privateEditorFixture.state.published),
+        0,
+      );
+      await recovery.evaluate(() =>
+        window.command(
+          "ON_DOWNLOADAS",
+          new Blob(["shared draft before key replacement"]),
+        ),
+      );
+      const target = page.locator(
+        'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
+      );
+      await target.waitFor({ state: "attached" });
+      const preview = await (await target.elementHandle()).contentFrame();
+      await preview.waitForFunction(() => window.boot);
+      await preview.evaluate(() => window.boot());
+      await target.waitFor({ state: "visible" });
+      assert.equal(
+        await preview.evaluate(() => window.state.start.readOnly),
+        true,
+      );
+      assert.equal(
+        await preview.evaluate(() => window.state.start.key),
+        "new-edit-capability",
+      );
+      assert.equal(
+        await preview.evaluate(() => window.state.start.document),
+        "shared draft before key replacement",
+      );
+      assert.equal(
+        await page.evaluate(() => window.privateEditorFixture.state.published),
+        0,
+      );
+      const reviewBanner = page.getByRole("region", {
+        name: /Bearbeitungsstand prüfen|Review document draft/,
+      });
+      const bannerBounds = await reviewBanner.boundingBox();
+      const previewBounds = await target.boundingBox();
+      assert.ok(bannerBounds && previewBounds);
+      assert.ok(
+        previewBounds.y >= bannerBounds.y + bannerBounds.height - 1,
+        "Review actions must not cover the document preview",
+      );
+      assert.ok(previewBounds.height > 200);
+      await page.screenshot({
+        path: "/tmp/sortsys-office-draft-review.png",
+        fullPage: true,
+      });
+      await page
+        .getByRole("button", {
+          name: /Bearbeitungsstand übernehmen|Use editing draft/,
+        })
+        .click();
+      await page.waitForFunction(
+        () => window.privateEditorFixture.state.ready >= 2,
+      );
+      await target.waitFor({ state: "attached" });
+      const replacement = await (await target.elementHandle()).contentFrame();
+      await replacement.waitForFunction(() => window.boot);
+      await replacement.evaluate(() => window.boot());
+      await target.waitFor({ state: "visible" });
+      assert.equal(recovery.isDetached(), true);
+      assert.equal(preview.isDetached(), true);
+      assert.equal(
+        await replacement.evaluate(() => window.state.start.document),
+        "shared draft before key replacement",
+      );
+      assert.equal(
+        await replacement.evaluate(() => window.state.start.readOnly),
+        false,
+      );
+      assert.deepEqual(
+        await page.evaluate(() => window.privateEditorFixture.state.recovered),
+        [
+          {
+            text: "shared draft before key replacement",
+            epoch: "old-office-room",
+            version: "1",
+          },
+        ],
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  test(`${fileName}: an unavailable shared draft requires an explicit choice before using the confirmed file`, async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${server.origin}/private-editors.html`);
+      await page.waitForFunction(() => window.privateEditorFixture);
+      await page.evaluate(
+        ({ origin, fileName }) =>
+          window.privateEditorFixture.protected(origin, true, { fileName }),
+        { origin: editor.origin, fileName },
+      );
+      const source = page.locator(
+        'iframe[title="Bearbeitungsstand wird übernommen"],iframe[title="Recovering document draft"]',
+      );
+      await source.waitFor({ state: "attached" });
+      const recovery = await (await source.elementHandle()).contentFrame();
+      await recovery.waitForFunction(() => window.boot);
+      await recovery.evaluate(() => window.boot());
+      await recovery.waitForFunction(
+        (format) => window.state.exports.includes(format),
+        fileName.endsWith(".drawio") ? "drawio" : "docx",
+      );
+      await recovery.evaluate(() => window.command("DOCUMENT_ERROR", {}));
+      const fallback = page.getByRole("button", {
+        name: /Gespeicherten Dateistand öffnen|Open saved file/,
+      });
+      await fallback.waitFor({ state: "visible" });
+      assert.equal(
+        await page.evaluate(() => window.privateEditorFixture.state.published),
+        0,
+      );
+      await fallback.click();
+      const target = page.locator(
+        'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
+      );
+      await target.waitFor({ state: "attached" });
+      const replacement = await (await target.elementHandle()).contentFrame();
+      await replacement.waitForFunction(() => window.boot);
+      await replacement.evaluate(() => window.boot());
+      await target.waitFor({ state: "visible" });
+      assert.equal(
+        await replacement.evaluate(() => window.state.start.document),
+        "private browser document",
+      );
+      assert.equal(
+        await page.evaluate(
+          () => window.privateEditorFixture.state.recovered[0].text,
+        ),
+        "private browser document",
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  test(`${fileName}: the protected component removes the old iframe on a rights reset and opens only the new view capability`, async () => {
+    const context = await browser.newContext(),
+      page = await context.newPage();
+    try {
+      await page.goto(`${server.origin}/private-editors.html`);
+      await page.waitForFunction(() => window.privateEditorFixture);
+      await page.evaluate(
+        ({ origin, fileName }) =>
+          window.privateEditorFixture.protected(origin, false, { fileName }),
+        { origin: editor.origin, fileName },
+      );
+      const locate = () =>
+        page.locator(
+          'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
+        );
+      const first = await (await locate().elementHandle()).contentFrame();
+      await first.waitForFunction(() => window.boot);
+      await first.evaluate(() => window.boot());
+      await first.waitForFunction(() => window.state.start?.readOnly === false);
+      await locate().waitFor({ state: "visible" });
+      await first.evaluate(() =>
+        window.command("SAVE", new Blob(["actual component save"])),
+      );
+      await page.waitForFunction(
+        () => window.privateEditorFixture.state.saved.length === 1,
+      );
+      await page.evaluate(() => window.downgradePrivateOffice());
+      await page.waitForFunction(
+        () => window.privateEditorFixture.state.ready >= 2,
+      );
+      await locate().waitFor({ state: "attached" });
+      assert.equal(first.isDetached(), true);
+      const second = await (await locate().elementHandle()).contentFrame();
+      await second.waitForFunction(() => window.boot);
+      await second.evaluate(() => window.boot());
+      await second.waitForFunction(() => window.state.start?.readOnly === true);
+      assert.equal(
+        await second.evaluate(() => window.state.start.key),
+        "view-capability",
+      );
+      assert.equal(
+        await page.evaluate(() => window.privateEditorFixture.state.published),
+        1,
+      );
+      await second.evaluate(() =>
+        window.command("SAVE", new Blob(["denied after downgrade"])),
+      );
+      await second.waitForFunction(() =>
+        window.state.acks.some((ack) => ack.args?.error === "SAVE_REJECTED"),
+      );
+      assert.deepEqual(
+        await page.evaluate(() => window.privateEditorFixture.state.saved),
+        ["actual component save"],
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const reset of ["revoke", "switch-back"]) {
+    test(`${fileName}: a late first load cannot replace the ${reset} session`, async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await page.goto(`${server.origin}/private-editors.html`);
+        await page.waitForFunction(() => window.privateEditorFixture);
+        await page.evaluate(
+          ({ origin, fileName }) =>
+            window.privateEditorFixture.protected(origin, false, {
+              fileName,
+              holdFirstLoad: true,
+            }),
+          { origin: editor.origin, fileName },
+        );
+        await page.waitForFunction(
+          () => window.privateOfficeLoads.length === 1,
+        );
+        const target = page.locator(
+          'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
+        );
+        if (reset === "revoke") {
+          await page.evaluate(() => window.denyPrivateOffice());
+          await page
+            .locator('.project-files-office-status[role="alert"]')
+            .waitFor();
+          await page.evaluate(() => window.releasePrivateOfficeLoad());
+          await nextPaint(page);
+          assert.equal(await target.count(), 0);
+          assert.equal(
+            await page.evaluate(
+              () => window.privateEditorFixture.state.published,
+            ),
+            0,
+          );
+        } else {
+          await page.evaluate(() => window.switchPrivateOfficeFile("6"));
+          await target.waitFor({ state: "attached" });
+          const intermediate = await (
+            await target.elementHandle()
+          ).contentFrame();
+          await intermediate.waitForFunction(() => window.boot);
+          await intermediate.evaluate(() => window.boot());
+          await target.waitFor({ state: "visible" });
+          assert.equal(
+            await intermediate.evaluate(() => window.state.start.document),
+            "Private document 6",
+          );
+          await page.evaluate(() => window.switchPrivateOfficeFile("5"));
+          await page.waitForFunction(
+            () => window.privateOfficeLoads.length === 3,
+          );
+          const current = await (await target.elementHandle()).contentFrame();
+          await current.waitForFunction(() => window.boot);
+          await current.evaluate(() => window.boot());
+          await target.waitFor({ state: "visible" });
+          await page.evaluate(() => window.releasePrivateOfficeLoad());
+          await nextPaint(page);
+          assert.equal(intermediate.isDetached(), true);
+          assert.equal(current.isDetached(), false);
+          assert.equal(await target.count(), 1);
+          assert.equal(
+            await current.evaluate(() => window.state.start.document),
+            "private browser document",
+          );
+          assert.equal(
+            await current.evaluate(() => window.state.start.application),
+            fileName.endsWith(".drawio") ? "diagram" : "doc",
+          );
+        }
+        assert.deepEqual(
+          await page.evaluate(() => window.privateEditorFixture.state.saved),
+          [],
+        );
+      } finally {
+        await context.close();
+      }
+    });
   }
-});
+}

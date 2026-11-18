@@ -7,13 +7,12 @@ verschlüsselte Inhalte das Gerät. Die Administration verwaltet weiterhin
 Benutzer und deren Rechte; eigene Schlüsselmenüs gehören nicht zum
 Arbeitsablauf.
 
-## Warum die bisherige Office-Anbindung ersetzt werden muss
+## Browsereditoren und Speicher
 
-Der vorhandene EuroOffice-Dokumentserver lädt die Quelldatei über die API. Nach
-der Bearbeitung lädt die API das Ergebnis über einen Speichercallback herunter.
-Der Dokumentserver verarbeitet dabei Klartext. TLS und signierte Sitzungstokens
-schützen den Transport und den Zugriff, verbergen den Inhalt aber nicht vor
-seinem Betreiber.
+Klassische Dokumentserver laden Quelldateien über die API und geben bearbeitete
+Dateien über einen Speichercallback zurück. Dabei verarbeiten sie Klartext.
+TLS und signierte Sitzungstokens schützen den Transport und den Zugriff,
+verbergen den Inhalt aber nicht vor dem Betreiber.
 
 CryptPad verwendet angepasste Browsereditoren und einen anderen Speicher- und
 Synchronisierungsweg. Der geprüfte Quellstand ist
@@ -77,49 +76,35 @@ Verschlüsselungsmodell.
 
 ## Diagramme
 
-draw.io kann Diagramme im Browser bearbeiten. Ein Java-Dienst zur Verarbeitung
-der Dokumentinhalte ist dafür nicht erforderlich. Öffnen und Speichern verwenden
-inzwischen die
-[verschlüsselte Projektablage](verschluesselte-projektdateien.md). Nur die
-statische Editoradresse wird von der API abgerufen; XML und Dateiinhalte werden
-im Browser entschlüsselt und vor dem Speichern wieder verschlüsselt.
+Diagramme verwenden denselben
+[geschützten Dateieditor](../sortsys-webapp-v2/app/components/ProtectedOfficeEditor.tsx)
+und dieselbe verschlüsselte Projektablage wie Office-Dateien. Der Editor öffnet
+native `.drawio`-Dateien über CryptPads
+[Diagrammanbindung](https://github.com/cryptpad/cryptpad/blob/86dc5ae80daa47f3b46487da9b33aeeb38846899/www/diagram/inner.js).
+Änderungen an verschiedenen Formen werden im Browser zusammengeführt. Ein
+Java-Dienst zur Verarbeitung der Dokumentinhalte ist dafür nicht nötig.
 
-Geprüft wurde die in Compose verwendete Version
-[32.6.9](https://github.com/jgraph/drawio/tree/3e707fd20b6930778d6f6bf6e4d0079b4bce366b).
-Ihr
-[Offline-Modus](https://github.com/jgraph/drawio/blob/3e707fd20b6930778d6f6bf6e4d0079b4bce366b/src/main/webapp/js/diagramly/EditorUi.js)
-deaktiviert den entfernten Exportdienst. sortsys setzt `stealth=1` und
-`lockdown=1`, deaktiviert Plugins und sperrt die Export-, Proxy- und
-Cloud-Schnittstellen im vorgeschalteten Nginx. Die Editorantworten erhalten
-zusätzlich eine CSP gegen externe Verbindungen, Bilder und
-Formularübertragungen. Eigene Bilder müssen im Browser eingebunden werden; ein
-externer Bildabruf darf keinen Ersatzweg zum Dokumentserver eröffnen.
+Die Anwendung speichert einen gemeinsamen Lesezugang und verschlüsselt den
+Bearbeitungszugang einzeln für berechtigte Bearbeiter. Ein zusätzlicher
+Quellpatch macht CryptPads nativen XML-Export über die Einbettung verfügbar.
+Damit können auch Leser den gemeinsamen Stand auslesen. Ebenso lassen sich
+unbestätigte Änderungen nach einem Schlüsselwechsel vor der Übernahme prüfen.
+Der native Export verwendet CryptPads vorhandene Bildauflösung im Browser.
+Der Test deckt eingebettete Diagrammbilder bisher nicht ab.
 
-CryptPad zeigt dafür einen konkreten Ansatz: Seine
-[Diagrammanbindung](https://github.com/cryptpad/cryptpad/blob/86dc5ae80daa47f3b46487da9b33aeeb38846899/www/diagram/inner.js)
-bindet den Browsereditor ein, überträgt Änderungen über das gemeinsame Framework
-und führt entfernte Stände wieder zusammen. Der
-[Bildadapter](https://github.com/cryptpad/cryptpad/blob/86dc5ae80daa47f3b46487da9b33aeeb38846899/www/diagram/util.js)
-lädt verschlüsselte Anlagen und entschlüsselt sie im Browser. Die bisherige
-sortsys-Einbettung hat diese Zusammenarbeit noch nicht.
+Ein Test mit dem tatsächlichen Dienst ändert zwei Formen gleichzeitig in
+getrennten Browserkontexten. Beide sehen anschließend beide Änderungen. Nach
+dem Schließen öffnet ein dritter Kontext denselben Stand mit dem Leseschlüssel
+und gibt natives XML zurück. Eine Entwurfsübernahme enthält die Änderungen auch
+dann, wenn noch kein Dateispeicherpunkt in sortsys bestätigt wurde.
 
-Der [Diagrammdateidialog](../sortsys-webapp-v2/app/components/ProtectedDiagramEditor.tsx)
-bindet seinen Zustand über `useProtectedState` an den aktuellen Inhaltszugriff.
-Nach Rechteentzug oder Kontowechsel wird der bisherige Editor entfernt. Auch
-verspätete Ladeantworten, Speicherbestätigungen und noch wartende Änderungen
-gehören weiterhin zu der Sitzung und Datei, aus der sie stammen. Beim normalen
-Schließen dürfen bereits erfasste Änderungen noch fertig gespeichert werden.
-Ein danach entzogener Zugriff oder Kontowechsel beendet auch diese
-Hintergrundspeicherung. Bereits an die API gesendete Änderungen können zu diesem
-Zeitpunkt schon gespeichert sein.
-
-Die [Diagramm-Browsertests](../sortsys-webapp-v2/scripts/ui/private-editors.browser.mjs)
-prüfen diese Grenzen mit der tatsächlichen sortsys-Komponente und einem
-Testfenster, das das Einbettungsprotokoll spricht. Sie prüfen außerdem den
-Wechsel zwischen zwei Dateien und zurück, das Speichern nach dem normalen
-Schließen sowie das erneute Öffnen mit reinen Leserechten. Die serverseitige
-Rechteprüfung ist davon getrennt durch die nativen Datei- und Editorprüfungen
-abgedeckt.
+Die [Komponententests](../sortsys-webapp-v2/scripts/ui/private-editors.browser.mjs)
+prüfen für DOCX und Drawio den Rechteentzug, verspätete Ladeantworten und den
+Wechsel zwischen Dateien einschließlich der Rückkehr zur ursprünglichen Datei.
+Sie verwenden die tatsächliche React-Komponente und ein Protokoll-Testfenster.
+Der Diensttest prüft dagegen die echte Zusammenarbeit; native API-Tests prüfen
+zusätzlich die Berechtigung zum Speichern. Diese Nachweise ersetzen einander
+nicht.
 
 ## Stand der Umsetzung und Prüfungen
 
@@ -157,8 +142,7 @@ Herabstufung auf Lesen und die Abweisung alter Speicheranfragen. Ein Browsertest
 prüft zusätzlich den tatsächlichen Iframe-Wechsel im normalen Office-Dialog. Der
 [native Editorlauf](../sortsys-webapp-v2/scripts/test-duckdb-editors.ts)
 verwendet dafür zwei eigenständige DuckDB-APIs und eine neu eingerichtete
-Organisation mit eingeladenem Mitarbeiter. Er öffnet auch die normalen Office-
-und Diagrammdateiadapter und prüft, dass Inhalte und Sitzungszugänge nicht
+Organisation mit eingeladenem Mitarbeiter. Er öffnet auch die normalen Dateiadapter und prüft, dass Inhalte und Sitzungszugänge nicht
 unverschlüsselt an die API gesendet werden. Nachträgliche Dateileser erhalten
 denselben öffentlichen Anlagenachweis wie die ursprünglichen Teilnehmer. Dadurch
 erkennen sie den gemeinsamen Raum, ohne den Bearbeitungszugang entschlüsseln zu
@@ -181,7 +165,9 @@ Leseschlüssel erneut. Ungespeicherte Exportansichten bleiben temporär.
 `OFFICE_PUBLIC_ORIGIN` und `OFFICE_SANDBOX_ORIGIN` müssen auf Port `8080` dieses
 Dienstes zeigen. `SORTSYS_PUBLIC_ORIGIN` nennt die einbettende Webapp. Alle drei
 Origins müssen verschieden sein. Die CSP lässt nur diese Einbettung und die
-benötigten Verbindungen zwischen den Editor-Origins zu. Der vorgeschaltete Nginx
+benötigten Verbindungen zwischen den Editor-Origins zu. Nur die Office-Engine
+erhält die benötigte Ausnahme für `unsafe-eval`; Diagramme und die allgemeine
+Einbettung behalten die strengere Skriptrichtlinie. Der vorgeschaltete Nginx
 sperrt die Klartextwege `ooapidl` und `oosave`. Compose enthält den alten
 Dokumentserver nicht mehr. Das Entwicklungsskript baut denselben privaten
 Office-Dienst und verwendet zwei getrennte Loopback-Origins. Die
@@ -207,8 +193,9 @@ schreibgeschützte Vorschau in einem eigenen temporären Raum. **Bearbeitungssta
 übernehmen** speichert genau diese Datei zusammen mit dem neuen Editorzugang.
 Die Speicherung prüft weiterhin die Ausgangsversion und die aktuellen Rechte.
 Eine inzwischen bestätigte fremde Übernahme wird dadurch nicht überschrieben.
-Ältere Office-Formate werden dabei als DOCX, XLSX oder PPTX übernommen; die
-Vorschau verwendet bereits den entsprechenden Dateinamen. Der gespeicherte
+Ältere Office-Formate werden dabei als DOCX, XLSX oder PPTX übernommen;
+Diagramme behalten das native Drawio-Format. Die Vorschau verwendet bereits
+den entsprechenden Dateinamen. Der gespeicherte
 ursprüngliche Dateistand bleibt über die Versionshistorie erhalten.
 
 Die Vorschau braucht eine ausdrückliche Übernahme: Frühere Schlüsselinhaber
@@ -237,7 +224,7 @@ abschließend auf verbliebene Sitzungsschlüssel geprüft werden.
 Der eigenständige API-Router registriert keine früheren Office-Downloads oder
 Speichercallbacks. Bestätigte Dateistände werden als unveränderliche
 verschlüsselte Blöcke gespeichert; ein signierter Versionsvergleich schützt die
-zugehörigen Dateimetadaten vor veralteten Speicheranfragen. Die draw.io-Sperren
+zugehörigen Dateimetadaten vor veralteten Speicheranfragen. Die Sperren
 werden zusätzlich gegen die tatsächlich verwendete Nginx-Version geprüft.
 
 Für Office wurden die festgelegten Editor- und WASM-Artefakte anhand ihrer
@@ -247,12 +234,17 @@ gespeicherte Datei enthält den ursprünglichen Text und beide Änderungen. Ein
 dritter Browser hat diesen gemeinsamen Stand mit dem Leseschlüssel geöffnet und
 als DOCX zurückgegeben, ohne eine Speicherfreigabe zu erhalten.
 
-Der Test verwendet auch den Upload verschlüsselter Dateiblöcke. Weder die
-HTTP-Inhalte noch die Base64-dekodierten Upload-Blöcke enthielten die Testtexte;
-Sitzungsgeheimnisse tauchten nicht in HTTP-URLs auf. Die Klartext-Download-,
-Callback- und Konvertierungswege wurden getrennt auf ihre Sperre geprüft. Diese
-Prüfung ersetzt keine vollständige Untersuchung aller Speicher- und
-Netzwerkwege.
+Der Test verwendet auch den Upload verschlüsselter Dateiblöcke. Er untersucht
+HTTP-Inhalte, Base64-dekodierte Upload-Blöcke und ausgehende WebSocket-Nachrichten
+auf bekannte Testtexte und Editorzugänge. CryptPads SharedWorker werden dafür
+vor ihrer ersten Anweisung über DevTools beobachtet; reine Seitenereignisse
+würden deren WebSockets übersehen. Ein eigener Canary-Test sendet direkt beim
+Workerstart Text und Binärdaten und gleicht den Mitschnitt mit den tatsächlich
+empfangenen Bytes ab. Die Prüfung schlägt fehl, wenn kein Worker-Verkehr erfasst
+wurde oder das Speicherlimit des Mitschnitts überschritten wird. Die
+Klartext-Download-, Callback- und Konvertierungswege werden getrennt auf ihre
+Sperre geprüft. Das ist keine vollständige Untersuchung aller Speicher- und
+Netzwerkwege beliebiger Dokumente.
 
 Eine erzeugte XLSX-Tabelle wurde ebenfalls im echten Editor geöffnet und wieder
 ausgelesen. Der Vergleich prüft eine Multiplikationsformel samt Ergebnis,
@@ -271,13 +263,6 @@ Entwicklungsstack bleibt dabei ausgeschaltet. Aufruf aus dem Repository:
 ```bash
 CONTAINER_RUNTIME=docker ./scripts/test-office
 ```
-
-draw.io 32.6.9 wurde zusätzlich mit der vorhandenen sortsys-Komponente aus
-statischen Dateien geöffnet und über eine Tastatureingabe geändert. Der Browser
-gab das geänderte XML an die Anwendung zurück. Dabei wurden keine externen
-Anfragen und keine Uploads an den statischen Editorserver beobachtet. Eine
-gleiche Darstellung, vollständige Formatunterstützung oder verlustfreie
-Bearbeitung aller bestehenden Dateien ist damit noch nicht nachgewiesen.
 
 Der weitere Funktionsabgleich muss mehr Formeln und Zahlenformate,
 Bildbearbeitung, komplexe Kopf- und Fußzeilen, Präsentationslayouts und

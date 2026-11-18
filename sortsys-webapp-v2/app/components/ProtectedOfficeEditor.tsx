@@ -12,8 +12,11 @@ import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { MyButton } from "./MyButton";
 import { MyCallout } from "./MyCallout";
 
-function application(file: string): "doc" | "sheet" | "presentation" {
+function application(
+  file: string,
+): "doc" | "sheet" | "presentation" | "diagram" {
   const extension = file.toLowerCase().split(".").pop() ?? "";
+  if (extension === "drawio") return "diagram";
   if (
     /^(?:csv|xls[xbm]?|xlt[xm]?|ods|ots|fods|numbers|et|ett|sxc)$/.test(
       extension,
@@ -88,7 +91,7 @@ export function ProtectedOfficeEditor({
     const frame = document.createElement("iframe");
     let recoveryFrame: HTMLIFrameElement | undefined;
     frame.className = "project-files-office-editor";
-    frame.title = uiText("Office-Dokument", "Office document");
+    frame.title = uiText("Dokumenteditor", "Document editor");
     frame.style.border = "0";
     frame.allow = "clipboard-read; clipboard-write; fullscreen";
     const live = () => {

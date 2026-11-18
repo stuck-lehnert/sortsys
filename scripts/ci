@@ -110,6 +110,7 @@ echo "Running webapp checks"
     bunx playwright install chromium
   fi
 
+  bun test scripts/lib/workerTraffic.test.ts
   SORTSYS_UI_ASSETS="$PWD/build/client" bun run test:ui
   TEST_NATIVE_BROWSER=1 ../scripts/test-api
   (cd ../sortsys-gaeb && bun run test:browser)

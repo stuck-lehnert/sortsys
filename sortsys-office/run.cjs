@@ -18,7 +18,11 @@ if (process.argv.includes("--health")) {
   if (previous.filter(value => value[0] === "ENABLE_EMBEDDING").at(-1)?.[1]?.[0] !== true) {
     fs.appendFileSync(decreeFile, JSON.stringify(["ENABLE_EMBEDDING", [true], "sortsys-office", Date.now()]) + "\n", { mode: 0o600 });
   }
-  const csp = `default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: ${main.origin}; style-src 'self' 'unsafe-inline' ${main.origin}; font-src 'self' data: ${main.origin}; img-src 'self' data: blob: ${main.origin}; media-src blob:; connect-src 'self' blob: ${main.origin} ${sandbox.origin} ${main.origin.replace(/^http/, "ws")}; worker-src 'self' blob: ${main.origin}; frame-src 'self' blob: ${main.origin} ${sandbox.origin}; frame-ancestors ${app.origin} ${main.origin} ${sandbox.origin}; object-src 'none'; base-uri 'self' ${main.origin}; form-action 'none'`;
+  const csp = `default-src 'none'; script-src 'self' 'unsafe-inline' blob: ${main.origin}; style-src 'self' 'unsafe-inline' ${main.origin}; font-src 'self' data: ${main.origin}; img-src 'self' data: blob: ${main.origin}; media-src blob:; connect-src 'self' blob: ${main.origin} ${sandbox.origin} ${main.origin.replace(/^http/, "ws")}; worker-src 'self' blob: ${main.origin}; frame-src 'self' blob: ${main.origin} ${sandbox.origin}; frame-ancestors ${app.origin} ${main.origin} ${sandbox.origin}; object-src 'none'; base-uri 'self' ${main.origin}; form-action 'none'`;
+  // CryptPad's generic applications deliberately abort when eval is allowed.
+  // The Office engine needs its own exception; diagram and integration pages
+  // retain the stricter policy and the same limits on network destinations.
+  const officeCsp = csp.replace("script-src 'self'", "script-src 'self' 'unsafe-eval'");
   fs.writeFileSync("/tmp/sortsys-office-nginx.conf", `
 pid /tmp/sortsys-office-nginx.pid;
 error_log /dev/stderr warn;
@@ -33,6 +37,11 @@ http {
   scgi_temp_path /tmp/sortsys-office-scgi;
   map $http_host $office_port { default 0; "${main.host}" 3000; "${sandbox.host}" 3001; }
   map $http_upgrade $office_connection { default upgrade; '' close; }
+  map $uri $office_csp {
+    default "${csp}";
+    ~^/(?:doc|sheet|presentation|unsafeiframe)(?:/|$) "${officeCsp}";
+    ~^/common/onlyoffice/ "${officeCsp}";
+  }
   server {
     listen 8080 default_server; server_name _;
     if ($office_port = 0) { return 444; }
@@ -40,7 +49,7 @@ http {
     proxy_set_header Cookie "";
     proxy_set_header Authorization "";
     proxy_hide_header Content-Security-Policy;
-    add_header Content-Security-Policy "${csp}" always;
+    add_header Content-Security-Policy $office_csp always;
     add_header Referrer-Policy no-referrer always;
     add_header X-Content-Type-Options nosniff always;
     location ~* ^/(?:ooapidl|oosave|ConvertService(?:\\.ashx)?|coauthoring|hosting|proxy)(?:/|$) { return 403; }

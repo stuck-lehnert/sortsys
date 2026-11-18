@@ -59,16 +59,20 @@ Tastaturbedienung, Zugänglichkeit und Dokumentdialoge. `SORTSYS_UI_ASSETS` kann
 vorhandenes `build/client`-Verzeichnis auswählen.
 
 Nginx liefert den statischen Produktionsbuild aus. `API_UPSTREAM` bestimmt die
-interne API-Adresse, `ONLYOFFICE_UPSTREAM` und `DRAWIO_UPSTREAM` die Editorziele.
+interne API-Adresse. `DRAWIO_UPSTREAM` bezeichnet den separat bereitgestellten
+statischen Diagrammeditor; die Dokumentdialoge verwenden die eigene CryptPad-Origin.
 `CLIENT_MAX_BODY_SIZE` beträgt standardmäßig `64m`.
 
 ## Dokumentbearbeitung
 
 DOCX, PPTX, XLSX und diagrams.net-Dateien lassen sich direkt bei Projektanhängen
-anlegen. Office-Dokumente öffnen in Euro-Office, Diagramme im eingebetteten
-Editor. Beide speichern über authentifizierte API-Prozeduren.
+anlegen. Office-Dateien und Diagramme öffnen in CryptPads Browsereditoren und
+verwenden gemeinsame verschlüsselte Sitzungen. Die Webapp entschlüsselt die
+Dateien beim Öffnen und bestätigt geänderte Dateistände nach der verschlüsselten
+Ablage. Der [Editorleitfaden](../docs/editoren-ohne-klartextserver.md) beschreibt
+Lesezugänge, gemeinsame Bearbeitung und die Übernahme unbestätigter Entwürfe.
 
-Hochgeladene PDFs werden im Hintergrund indiziert. Die Ansicht **Dokumente**
+PDF-Text wird im geöffneten Browser ermittelt und indiziert. Die Ansicht **Dokumente**
 durchsucht Dateinamen und erkannten PDF-Text aller zugänglichen Projekte.
 
 Projektanhänge öffnen unter `/projects/:id/files/:fileId` über dem weiterhin

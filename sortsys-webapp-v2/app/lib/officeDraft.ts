@@ -13,6 +13,7 @@ const MIME: Partial<Record<ExportFormat, string>> = {
   odp: "application/vnd.oasis.opendocument.presentation",
   csv: "text/csv",
   txt: "text/plain",
+  drawio: "application/x-drawio",
 };
 
 export class OfficeDraftUnavailable extends Error {
@@ -24,7 +25,9 @@ export class OfficeDraftUnavailable extends Error {
 export function officeDraftFormat(fileName: string, application: Application) {
   const extension = fileName.split(".").at(-1)?.toLowerCase() ?? "";
   let format: ExportFormat;
-  if (
+  if (application === "diagram") {
+    format = "drawio";
+  } else if (
     ["docx", "xlsx", "pptx", "odt", "ods", "odp", "csv", "txt"].includes(
       extension,
     )

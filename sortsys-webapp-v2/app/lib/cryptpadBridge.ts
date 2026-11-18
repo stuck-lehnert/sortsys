@@ -56,7 +56,8 @@ export function openCryptPad(options: Options): {
       | "ods"
       | "odp"
       | "csv"
-      | "txt",
+      | "txt"
+      | "drawio",
   ): Promise<Blob>;
 } {
   const origin = new URL(options.editorOrigin);
@@ -333,6 +334,7 @@ export function openCryptPad(options: Options): {
           "odp",
           "csv",
           "txt",
+          "drawio",
         ].includes(format)
       )
         return Promise.reject(new Error("Editor export is unavailable"));

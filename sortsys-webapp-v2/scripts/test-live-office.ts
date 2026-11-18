@@ -4,10 +4,11 @@ import { build, serve, spawnSync } from "bun";
 import JSZip from "jszip";
 import ExcelJS from "exceljs";
 import { chromium, type BrowserContext, type Request } from "playwright";
+import { observeWorkerTraffic } from "./lib/workerTraffic";
 
 if (process.env.SORTSYS_DISPOSABLE_OFFICE_TEST !== "1")
   throw new Error("A disposable Office test installation is required");
-const origin = process.env.SORTSYS_OFFICE_TEST_ORIGIN;
+const origin = process.env.SORTSYS_OFFICE_TEST_ORIGIN ?? "";
 if (!origin || !/^http:\/\/(?:127\.0\.0\.1|localhost):[0-9]+$/.test(origin)) {
   throw new Error("An explicit loopback Office test origin is required");
 }
@@ -31,6 +32,26 @@ const edit = "_EDITED_IN_BROWSER";
 const peerEdit = "_SECOND_COLLABORATOR";
 const unconfirmedDraft = "_UNCONFIRMED_DRAFT_FOR_REKEY";
 const oldRoomEdit = "_OLD_ROOM_AFTER_REKEY";
+const diagramInitialA = "SORTSYS_PRIVATE_DIAGRAM_A";
+const diagramInitialB = "SORTSYS_PRIVATE_DIAGRAM_B";
+const diagramEditA = "SORTSYS_PRIVATE_DIAGRAM_EDIT_A";
+const diagramEditB = "SORTSYS_PRIVATE_DIAGRAM_EDIT_B";
+const diagramFileName = "Privater-Bauablauf.drawio";
+const privateMarkers = [
+  initial,
+  edit,
+  peerEdit,
+  unconfirmedDraft,
+  oldRoomEdit,
+  "Proof.docx",
+  "MENGEN_PRIVATE_OFFICE",
+  "Mengen.xlsx",
+  diagramInitialA,
+  diagramInitialB,
+  diagramEditA,
+  diagramEditB,
+  diagramFileName,
+];
 const zip = new JSZip();
 zip.file(
   "[Content_Types].xml",
@@ -57,13 +78,13 @@ import { readOfficeDraft } from '/draft.js';
 window.officeTest = {
   ready: false, errors: 0, saved: [], session: null, holdSaves: false, pending: [],
 };
-window.recoverOfficeDraft = async (bytes, origin, viewKey) => {
+window.recoverOfficeDraft = async (bytes, origin, viewKey, settings = {}) => {
   const recovered = await readOfficeDraft({
     iframe: document.getElementById('editor'),
     editorOrigin: origin,
     document: new Blob([new Uint8Array(bytes)]),
-    fileName: 'Proof.docx',
-    application: 'doc',
+    fileName: settings.fileName || 'Proof.docx',
+    application: settings.application || 'doc',
     locale: 'de',
     viewKey,
     signal: new AbortController().signal,
@@ -115,8 +136,11 @@ const server = serve({
   },
 });
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+let workerTraffic: Awaited<ReturnType<typeof observeWorkerTraffic>> | undefined;
 try {
-  browser = await chromium.launch();
+  browser = await chromium.launch({
+    args: ["--remote-debugging-port=0", "--enable-automation"],
+  });
   const context = await browser.newContext();
   const page = await context.newPage();
   const diagnostics: string[] = [];
@@ -155,6 +179,64 @@ try {
   const forbidden: string[] = [];
   const leaks: string[] = [];
   const sentUrls: string[] = [];
+  const sentFrames: Buffer[] = [];
+  const sentBodies: Buffer[] = [];
+  let sentFrameBytes = 0;
+  let workerFrameCount = 0;
+  let capturedBytes = 0;
+  let captureOverflow = false;
+  const maxCapturedBytes = 64 * 1024 * 1024;
+  function capturePayload(target: Buffer[], bytes: Buffer) {
+    capturedBytes += bytes.length;
+    if (capturedBytes <= maxCapturedBytes) {
+      target.push(bytes);
+    } else {
+      captureOverflow = true;
+    }
+  }
+  function containsText(
+    bytes: Buffer | null | undefined,
+    text: string,
+  ): boolean {
+    return (
+      !!bytes &&
+      (bytes.includes(Buffer.from(text)) ||
+        bytes.includes(Buffer.from(text, "utf16le")))
+    );
+  }
+  function observeEditorContext(context: BrowserContext) {
+    context.on("request", observeRequest);
+    const observeSockets = (page: import("playwright").Page) => {
+      page.on("websocket", (socket) => {
+        sentUrls.push(socket.url());
+        socket.on("framesent", ({ payload }) => {
+          const bytes =
+            typeof payload === "string" ? Buffer.from(payload) : payload;
+          observeFrame(bytes);
+        });
+      });
+    };
+    context.on("page", observeSockets);
+    for (const page of context.pages()) {
+      observeSockets(page);
+    }
+  }
+  function observeFrame(bytes: Buffer) {
+    sentFrameBytes += bytes.length;
+    capturePayload(sentFrames, bytes);
+    for (const marker of privateMarkers) {
+      if (containsText(bytes, marker)) {
+        leaks.push("plaintext-websocket-frame");
+      }
+    }
+  }
+  workerTraffic = await observeWorkerTraffic(browser, {
+    socket: (url) => sentUrls.push(url),
+    frame: (bytes) => {
+      workerFrameCount++;
+      observeFrame(bytes);
+    },
+  });
   let uploads = 0;
   const observeRequest = (request: Request) => {
     const url = new URL(request.url());
@@ -166,42 +248,24 @@ try {
     )
       forbidden.push(url.pathname);
     const body = request.postDataBuffer();
-    for (const text of [
-      initial,
-      edit,
-      peerEdit,
-      unconfirmedDraft,
-      oldRoomEdit,
-      "Proof.docx",
-      "MENGEN_PRIVATE_OFFICE",
-      "Mengen.xlsx",
-    ]) {
-      if (
-        url.search.includes(text) ||
-        body?.includes(Buffer.from(text)) ||
-        body?.includes(Buffer.from(text, "utf16le"))
-      )
+    if (body) {
+      capturePayload(sentBodies, body);
+    }
+    for (const text of privateMarkers) {
+      if (url.search.includes(text) || containsText(body, text))
         leaks.push(url.pathname);
     }
     if (url.pathname.startsWith("/upload-blob/") && body) {
       const packet = JSON.parse(body.toString()),
         encrypted = Buffer.from(packet.chunk, "base64");
       uploads++;
-      for (const text of [
-        initial,
-        edit,
-        peerEdit,
-        unconfirmedDraft,
-        oldRoomEdit,
-      ])
-        if (
-          encrypted.includes(Buffer.from(text)) ||
-          encrypted.includes(Buffer.from(text, "utf16le"))
-        )
+      capturePayload(sentBodies, encrypted);
+      for (const text of privateMarkers)
+        if (containsText(encrypted, text))
           leaks.push("decrypted-looking-upload");
     }
   };
-  context.on("request", observeRequest);
+  observeEditorContext(context);
   const auxiliaries: BrowserContext[] = [];
   const documentText = async (bytes: number[]) => {
     const saved = await JSZip.loadAsync(new Uint8Array(bytes));
@@ -217,16 +281,7 @@ try {
     const stored = JSON.stringify(
       await context.storageState({ indexedDB: true, opfs: true }),
     );
-    const secrets = [
-      initial,
-      edit,
-      peerEdit,
-      unconfirmedDraft,
-      oldRoomEdit,
-      "Proof.docx",
-      "MENGEN_PRIVATE_OFFICE",
-      "Mengen.xlsx",
-    ];
+    const secrets = [...privateMarkers];
     for (const capability of capabilities) {
       secrets.push(capability, capability.split("/").filter(Boolean).at(-1)!);
     }
@@ -293,7 +348,7 @@ try {
     await page.screenshot({ path: "/tmp/sortsys-private-office-real.png" });
     const peerContext = await browser.newContext();
     auxiliaries.push(peerContext);
-    peerContext.on("request", observeRequest);
+    observeEditorContext(peerContext);
     const peer = await peerContext.newPage();
     await peer.goto(server.url.href);
     observePage(peer, "Peer");
@@ -383,7 +438,7 @@ try {
     await peerContext.close();
     const readerContext = await browser.newContext();
     auxiliaries.push(readerContext);
-    readerContext.on("request", observeRequest);
+    observeEditorContext(readerContext);
     const reader = await readerContext.newPage();
     await reader.goto(server.url.href);
     observePage(reader, "Reader");
@@ -456,7 +511,7 @@ try {
     await waitForSharedText(unconfirmedDraft);
     const recoveryContext = await browser.newContext();
     auxiliaries.push(recoveryContext);
-    recoveryContext.on("request", observeRequest);
+    observeEditorContext(recoveryContext);
     const recoveryPage = await recoveryContext.newPage();
     observePage(recoveryPage, "Draft recovery");
     await recoveryPage.goto(server.url.href);
@@ -481,7 +536,7 @@ try {
     );
     const replacementContext = await browser.newContext();
     auxiliaries.push(replacementContext);
-    replacementContext.on("request", observeRequest);
+    observeEditorContext(replacementContext);
     const replacement = await replacementContext.newPage();
     observePage(replacement, "Replacement room");
     await replacement.goto(server.url.href);
@@ -561,7 +616,7 @@ try {
       );
       const resumedContext = await browser.newContext();
       auxiliaries.push(resumedContext);
-      resumedContext.on("request", observeRequest);
+      observeEditorContext(resumedContext);
       const resumed = await resumedContext.newPage();
       observePage(resumed, "Reconnected reader");
       await resumed.goto(server.url.href);
@@ -626,7 +681,7 @@ try {
     );
     const sheetContext = await browser.newContext();
     auxiliaries.push(sheetContext);
-    sheetContext.on("request", observeRequest);
+    observeEditorContext(sheetContext);
     const sheetPage = await sheetContext.newPage();
     await sheetPage.goto(server.url.href);
     observePage(sheetPage, "Sheet");
@@ -686,6 +741,171 @@ try {
       ),
     );
     assert.equal(Buffer.from(pdf).subarray(0, 5).toString(), "%PDF-");
+    const diagram = new TextEncoder().encode(
+      `<mxfile><diagram id="construction" name="Bauablauf"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="a" value="${diagramInitialA}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="80" width="220" height="80" as="geometry"/></mxCell><mxCell id="b" value="${diagramInitialB}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="360" y="80" width="220" height="80" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>`,
+    );
+    async function openSharedDiagram(canEdit: boolean, key?: string) {
+      const diagramContext = await browser!.newContext();
+      auxiliaries.push(diagramContext);
+      observeEditorContext(diagramContext);
+      const diagramPage = await diagramContext.newPage();
+      observePage(diagramPage, "Diagram");
+      await diagramPage.goto(server.url.href);
+      await diagramPage.waitForFunction(
+        () => typeof window.startOffice === "function",
+      );
+      await diagramPage.evaluate(
+        ({ bytes, origin, canEdit, key, fileName }) => {
+          window.officeTest.holdSaves = true;
+          window.startOffice(bytes, origin, {
+            fileName,
+            application: "diagram",
+            canEdit,
+            accessKey: key,
+            viewKey: canEdit ? undefined : key,
+          });
+        },
+        {
+          bytes: Array.from(diagram),
+          origin,
+          canEdit,
+          key,
+          fileName: diagramFileName,
+        },
+      );
+      await diagramPage.waitForFunction(
+        () => window.officeTest.ready || window.officeTest.errors > 0,
+        undefined,
+        { timeout: 120000 },
+      );
+      assert.equal(
+        await diagramPage.evaluate(() => window.officeTest.errors),
+        0,
+      );
+      const isDrawingFrame = (frame: import("playwright").Frame) =>
+        new URL(frame.url()).pathname ===
+        "/components/drawio/src/main/webapp/index.html";
+      const drawing =
+        diagramPage.frames().find(isDrawingFrame) ??
+        (await diagramPage.waitForEvent("framenavigated", {
+          predicate: isDrawingFrame,
+          timeout: 120000,
+        }));
+      await drawing.locator(".geDiagramContainer").waitFor({ timeout: 120000 });
+      return { context: diagramContext, page: diagramPage, drawing };
+    }
+    async function editDiagramLabel(
+      frame: import("playwright").Frame,
+      previous: string,
+      next: string,
+    ) {
+      await frame
+        .locator(".geDiagramContainer")
+        .getByText(previous, { exact: true })
+        .dblclick();
+      const input = frame.locator(".mxCellEditor[contenteditable=true]");
+      await input.fill(next);
+      await input.press("Control+Enter");
+      await input.waitFor({ state: "hidden" });
+    }
+    const firstDiagram = await openSharedDiagram(true);
+    const diagramSession = await firstDiagram.page.evaluate(
+      () => window.officeTest.session,
+    );
+    assert.ok(diagramSession);
+    const secondDiagram = await openSharedDiagram(true, diagramSession.editKey);
+    await Promise.all([
+      editDiagramLabel(firstDiagram.drawing, diagramInitialA, diagramEditA),
+      editDiagramLabel(secondDiagram.drawing, diagramInitialB, diagramEditB),
+    ]);
+    for (const editor of [firstDiagram, secondDiagram]) {
+      await editor.drawing
+        .locator(".geDiagramContainer")
+        .getByText(diagramEditA, { exact: true })
+        .waitFor();
+      await editor.drawing
+        .locator(".geDiagramContainer")
+        .getByText(diagramEditB, { exact: true })
+        .waitFor();
+      const exported = await editor.page.evaluate(async () =>
+        (await window.officeTest.bridge!.export("drawio")).text(),
+      );
+      assert.ok(
+        exported.includes(diagramEditA) && exported.includes(diagramEditB),
+      );
+      assert.equal(
+        await editor.page.evaluate(() => window.officeTest.saved.length),
+        0,
+      );
+      await assertPrivateBrowserStorage(editor.context, [
+        diagramSession.editKey,
+        diagramSession.viewKey,
+      ]);
+    }
+    await firstDiagram.page.screenshot({
+      path: "/tmp/sortsys-private-diagram.png",
+    });
+    await firstDiagram.context.close();
+    await secondDiagram.context.close();
+    const readOnlyDiagram = await openSharedDiagram(
+      false,
+      diagramSession.viewKey,
+    );
+    const viewedDiagram = await readOnlyDiagram.page.evaluate(async () =>
+      (await window.officeTest.bridge!.export("drawio")).text(),
+    );
+    assert.ok(
+      viewedDiagram.includes(diagramEditA) &&
+        viewedDiagram.includes(diagramEditB),
+    );
+    assert.equal(
+      await readOnlyDiagram.page.evaluate(() => window.officeTest.session),
+      null,
+    );
+    assert.equal(
+      await readOnlyDiagram.page.evaluate(() => window.officeTest.saved.length),
+      0,
+    );
+    await assertPrivateBrowserStorage(readOnlyDiagram.context, [
+      diagramSession.viewKey,
+    ]);
+    await readOnlyDiagram.context.close();
+    const diagramRecoveryContext = await browser.newContext();
+    auxiliaries.push(diagramRecoveryContext);
+    observeEditorContext(diagramRecoveryContext);
+    const diagramRecoveryPage = await diagramRecoveryContext.newPage();
+    await diagramRecoveryPage.goto(server.url.href);
+    await diagramRecoveryPage.waitForFunction(
+      () => typeof window.recoverOfficeDraft === "function",
+    );
+    const recoveredDiagram = await diagramRecoveryPage.evaluate(
+      ({ bytes, origin, viewKey, fileName }) =>
+        window.recoverOfficeDraft(bytes, origin, viewKey, {
+          fileName,
+          application: "diagram",
+        }),
+      {
+        bytes: Array.from(diagram),
+        origin,
+        viewKey: diagramSession.viewKey,
+        fileName: diagramFileName,
+      },
+    );
+    const recoveredDiagramXml = new TextDecoder().decode(
+      new Uint8Array(recoveredDiagram),
+    );
+    assert.ok(
+      recoveredDiagramXml.includes(diagramEditA) &&
+        recoveredDiagramXml.includes(diagramEditB),
+      "Draft recovery must retain shared edits even when no project-file save was confirmed",
+    );
+    await assertPrivateBrowserStorage(diagramRecoveryContext, [
+      diagramSession.viewKey,
+    ]);
+    await diagramRecoveryContext.close();
+    console.log(
+      "Diagram proof: independent edits merged, native XML exported, view-only reopening and unconfirmed draft recovery verified",
+    );
     assert.ok(
       uploads > 0,
       "The real encrypted-block upload route must be exercised",
@@ -707,40 +927,91 @@ try {
     )!;
     assert.ok(policy.includes(`frame-ancestors ${server.url.origin} `));
     assert.ok(policy.includes("default-src 'none'"));
+    assert.ok(!policy.includes("'unsafe-eval'"));
+    for (const [path, permitsEval] of [
+      ["/diagram/inner.html", false],
+      ["/sheet/inner.html", true],
+    ] as const) {
+      const response: Response = await fetch(origin + path);
+      assert.equal(response.status, 200);
+      assert.equal(
+        response.headers
+          .get("content-security-policy")!
+          .includes("'unsafe-eval'"),
+        permitsEval,
+      );
+    }
     assert.deepEqual(forbidden, []);
     assert.deepEqual(leaks, []);
+    assert.ok(
+      workerFrameCount > 0,
+      "The privacy check must observe real outbound worker collaboration traffic",
+    );
+    assert.deepEqual(workerTraffic.errors, []);
+    assert.equal(
+      captureOverflow,
+      false,
+      "The test must inspect every outbound payload within its capture budget",
+    );
     await assertPrivateBrowserStorage(sheetContext);
     for (const key of [
       result.session.editKey,
       result.session.viewKey,
       replacementRoom.editKey,
       replacementRoom.viewKey,
+      diagramSession.editKey,
+      diagramSession.viewKey,
     ]) {
-      assert.ok(
-        sentUrls.every(
-          (url) => !url.includes(key) && !url.includes(encodeURIComponent(key)),
-        ),
-        "An editor capability appeared in an HTTP URL",
-      );
+      for (const secret of [key, key.split("/").filter(Boolean).at(-1)!]) {
+        assert.ok(
+          sentUrls.every(
+            (url) =>
+              !url.includes(secret) &&
+              !url.includes(encodeURIComponent(secret)),
+          ),
+          "An editor capability appeared in a network URL",
+        );
+        assert.ok(
+          sentBodies.every((body) => !containsText(body, secret)),
+          "An editor capability appeared in an outbound HTTP body",
+        );
+        assert.ok(
+          sentFrames.every((frame) => !containsText(frame, secret)),
+          "An editor capability appeared in an outbound WebSocket frame",
+        );
+      }
     }
     console.log(
-      "Real Office verified: two collaborators, merged DOCX autosave, read-only shared export, XLSX formulas/formats/header/image, local PDF conversion, encrypted-block uploads and blocked plaintext server routes.",
+      "Real private editors verified: DOCX and Drawio collaboration, native diagram draft recovery, read-only shared export, XLSX formulas/formats/header/image, local PDF conversion, encrypted-block uploads and blocked plaintext server routes.",
+    );
+    console.log(
+      `Inspected ${sentFrames.length} outbound WebSocket frames (${sentFrameBytes} bytes)`,
     );
   } catch (error) {
     console.error("Disposable Office diagnostics:", diagnostics.slice(-20));
     console.error(
       "Disposable Office frames:",
-      page.frames().map((frame) => {
-        const url = new URL(frame.url());
-        return url.origin + url.pathname;
-      }),
+      [context, ...auxiliaries]
+        .flatMap((context) => context.pages())
+        .flatMap((page) => page.frames())
+        .map((frame) => {
+          const url = new URL(frame.url());
+          return url.origin + url.pathname;
+        }),
     );
+    const currentPage = [context, ...auxiliaries]
+      .flatMap((context) => context.pages())
+      .at(-1);
+    await currentPage
+      ?.screenshot({ path: "/tmp/sortsys-private-editor-failed.png" })
+      .catch(() => {});
     throw error;
   } finally {
     for (const auxiliary of auxiliaries) await auxiliary.close();
     await context.close();
   }
 } finally {
+  await workerTraffic?.close();
   await browser?.close();
   await server.stop(true);
 }
@@ -755,13 +1026,17 @@ declare global {
         accessKey?: string;
         viewKey?: string;
         fileName?: string;
-        application?: "doc" | "sheet" | "presentation";
+        application?: "doc" | "sheet" | "presentation" | "diagram";
       },
     ) => void;
     recoverOfficeDraft: (
       bytes: number[],
       origin: string,
       viewKey: string,
+      settings?: {
+        fileName?: string;
+        application?: "doc" | "sheet" | "presentation" | "diagram";
+      },
     ) => Promise<number[]>;
     officeTest: {
       ready: boolean;
