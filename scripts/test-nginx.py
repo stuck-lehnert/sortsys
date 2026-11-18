@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test the configured Nginx template with owned loopback HTTP and DNS servers.
+"""Test the configured Nginx template with an owned loopback HTTP server.
 
 Pass an explicit executable command; no container runtime or implicit host fallback.
 """
@@ -15,8 +15,6 @@ import pwd
 import re
 import shlex
 import socket
-import socketserver
-import struct
 import subprocess
 import tempfile
 import threading
@@ -40,40 +38,6 @@ class Echo(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *args):
         pass
-
-
-class EditorDNS(socketserver.BaseRequestHandler):
-    def handle(self):
-        packet, connection = self.request
-        labels = []
-        offset = 12
-
-        while offset < len(packet) and packet[offset] != 0:
-            length = packet[offset]
-            offset += 1
-            labels.append(packet[offset:offset + length].decode("ascii"))
-            offset += length
-
-        offset += 1
-
-        if offset + 4 > len(packet):
-            return
-
-        name = ".".join(labels)
-        kind, query_class = struct.unpack("!HH", packet[offset:offset + 4])
-        question = packet[12:offset + 4]
-        address = self.server.records.get(name)
-        self.server.queries.append((name, kind, address))
-        answer = b""
-
-        if address and kind == 1 and query_class == 1:
-            answer = struct.pack("!HHHIH", 0xC00C, 1, 1, 1, 4)
-            answer += socket.inet_aton(address)
-
-        # Existing names have an empty AAAA answer, rather than NXDOMAIN.
-        flags = 0x8180 if address else 0x8183
-        header = packet[:2] + struct.pack("!HHHHH", flags, 1, bool(answer), 0, 0)
-        connection.sendto(header + question + answer, self.client_address)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -129,30 +93,19 @@ def assert_static_routes(get):
     for path in ["/assets/missing.js", "/pdfjs/missing.mjs"]:
         assert get(path)[0] == 404, path
 
-    for path in ["/drawio"]:
-        status, headers, _ = get(path)
-        assert status == 308 and headers["Location"] == path + "/", path
-
 
 def assert_proxy_routes(get):
-    for path in ["/office", "/office/", "/office/echo", "/office/echo?document=private-test-data"]:
-        assert get(path)[0] == 403, path
-    for service in ["proxy", "export", "i", "service", "log", "github2", "gitlab", "google", "microsoft", "dropbox"]:
-        assert get(f"/drawio/{service}?document=private-test-data")[0] == 403, service
-    assert get("/drawio/index.html", method="POST")[0] == 403
-    headers = get("/drawio/echo")[1]
-    policy = headers["Content-Security-Policy"]
-    assert "form-action 'none'" in policy and "object-src 'none'" in policy
-    assert "connect-src 'self' blob:" in policy
-    assert headers["Referrer-Policy"] == "no-referrer"
-    paths = [
-        ("/api/v2/echo", "/echo"),
-        ("/drawio/echo", "/drawio/echo"),
-        ("/drawio/echo%2Fpart?next=%2Fa", "/drawio/echo%2Fpart?next=%2Fa"),
-    ]
+    for editor in ["office", "drawio"]:
+        for suffix in ["", "/", "/echo", "/index.html", "/export?document=private-test-data"]:
+            for method in ["GET", "POST"]:
+                path = f"/{editor}{suffix}"
+                assert get(path, method=method)[0] == 403, (path, method)
 
-    for path, forwarded in paths:
-        status, headers, body = get(path, {
+    for path, forwarded in [
+        ("/api/v2/echo", "/echo"),
+        ("/api/v2/echo?next=%2Fa", "/echo?next=%2Fa"),
+    ]:
+        status, _, body = get(path, {
             "X-Forwarded-Proto": "https",
             "X-Forwarded-Host": "example.test",
         })
@@ -161,62 +114,14 @@ def assert_proxy_routes(get):
         assert echo["path"] == forwarded, echo
         assert echo["headers"]["X-Forwarded-Proto"] == "https", path
 
-    for path in ["/api/v2/echo", "/drawio/echo"]:
-        status, _, body = get(path, {"Upgrade": "websocket", "Connection": "Upgrade"})
-        assert status == 200, (path, status, body)
-        echo = json.loads(body)
-        assert echo["headers"]["Upgrade"] == "websocket"
-        assert echo["headers"]["Connection"] == "upgrade"
+    status, _, body = get("/api/v2/echo", {"Upgrade": "websocket", "Connection": "Upgrade"})
+    assert status == 200, (status, body)
+    echo = json.loads(body)
+    assert echo["headers"]["Upgrade"] == "websocket"
+    assert echo["headers"]["Connection"] == "upgrade"
 
 
-def wait_for_backend(get, path, address):
-    deadline = time.monotonic() + 12
-    last = None
-
-    while time.monotonic() < deadline:
-        status, _, body = get(path)
-        last = (status, body)
-
-        if status == 200 and json.loads(body)["backend"] == address:
-            return
-
-        time.sleep(0.15)
-
-    raise AssertionError(f"{path} did not recover to {address}: {last}")
-
-
-def assert_editor_recovery(get, dns):
-    assert_static_routes(get)
-    assert get("/api/v2/echo")[0] == 200
-
-    for path in ["/drawio/echo"]:
-        assert get(path)[0] == 502, path
-
-    # Allow the real production resolver's five-second negative cache to expire.
-    # No reload occurs: requests must trigger a fresh DNS query and reach HTTP.
-    dns.records.update({"drawio.test": "127.0.0.1"})
-
-    for path in ["/drawio/echo"]:
-        wait_for_backend(get, path, "127.0.0.1")
-
-    assert_proxy_routes(get)
-
-    # A restarted container may have a different IP. Test positive-cache expiry
-    # too, keeping the exact same proxy process and backend port.
-    dns.records.update({"drawio.test": "127.0.0.2"})
-
-    for path in ["/drawio/echo"]:
-        wait_for_backend(get, path, "127.0.0.2")
-
-    for name in ["drawio.test"]:
-        answers = {address for query, kind, address in dns.queries if query == name and kind == 1}
-        assert answers == {None, "127.0.0.1", "127.0.0.2"}, (name, dns.queries)
-
-    assert_static_routes(get)
-    assert_proxy_routes(get)
-
-
-def exercise_configuration(repo, root, command, mime_types, backend, dns):
+def exercise_configuration(repo, root, command, mime_types, backend):
     html = root / "html"
     (html / "assets").mkdir(parents=True)
     (html / "pdfjs").mkdir()
@@ -226,9 +131,7 @@ def exercise_configuration(repo, root, command, mime_types, backend, dns):
     (html / "sw.js").write_text("// smoke service worker")
     values = {
         "API_UPSTREAM": f"http://127.0.0.1:{backend.server_port}",
-        "DRAWIO_UPSTREAM": f"http://drawio.test:{backend.server_port}",
         "CLIENT_MAX_BODY_SIZE": "64m",
-        "NGINX_LOCAL_RESOLVERS": f"127.0.0.1:{dns.server_address[1]}",
     }
     template = (repo / "sortsys-webapp-v2/nginx.conf.template").read_text()
 
@@ -291,7 +194,8 @@ def exercise_configuration(repo, root, command, mime_types, backend, dns):
                         return response.status, response.headers, response.read()
 
                 time.sleep(0.15)
-                assert_editor_recovery(get, dns)
+                assert_static_routes(get)
+                assert_proxy_routes(get)
             except Exception:
                 log.flush()
                 print((root / "process.log").read_text())
@@ -323,19 +227,12 @@ def main():
         backend = stack.enter_context(serving(http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), Echo
         )))
-        stack.enter_context(serving(http.server.ThreadingHTTPServer(
-            ("127.0.0.2", backend.server_port), Echo
-        )))
-        dns = socketserver.UDPServer(("127.0.0.1", 0), EditorDNS)
-        dns.records = {}
-        dns.queries = []
-        stack.enter_context(serving(dns))
         directory = stack.enter_context(tempfile.TemporaryDirectory(prefix="sortsys-nginx-"))
-        exercise_configuration(repo, Path(directory), command, args.mime_types, backend, dns)
+        exercise_configuration(repo, Path(directory), command, args.mime_types, backend)
 
     print(
-        f"Nginx {expected}: config, SPA/assets, redirects, proxy paths, TLS/WebSocket "
-        "headers, unavailable-editor startup and DNS/IP recovery passed."
+        f"Nginx {expected}: config, SPA/assets, API proxy paths, TLS/WebSocket "
+        "headers and blocked editor proxy routes passed."
     )
 
 

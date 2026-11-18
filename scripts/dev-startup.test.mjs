@@ -81,9 +81,6 @@ start_private_office() {
   echo "Test editor is still warming up" >&2
   return 1
 }
-start_drawio() {
-  return 1
-}
 build_api_development_image() {
   record api-image
 }
@@ -121,7 +118,7 @@ wait
 
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stderr, /diagrams\.net.*unavailable/i);
+    assert.doesNotMatch(startup, /drawio|diagrams\.net/);
     assert.match(result.stdout, /Office.*ready/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -272,16 +269,16 @@ wait_for_editor_ready office "" Office 20
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-for (const name of ["start_private_office", "start_drawio"]) {
-  test(`${name} stops probing when container creation fails`, () => {
-    const definition = developmentFunction(name);
-    const variables = [...new Set(definition.match(/\bDEV_[A-Z0-9_]+\b/g))];
-    const environment = {
-      ...Object.fromEntries(variables.map((key) => [key, key])),
-      SCRIPT_DIR: "/fixture/scripts",
-    };
-    const result = runShell(
-      `
+test("private Office stops probing when container creation fails", () => {
+  const name = "start_private_office";
+  const definition = developmentFunction(name);
+  const variables = [...new Set(definition.match(/\bDEV_[A-Z0-9_]+\b/g))];
+  const environment = {
+    ...Object.fromEntries(variables.map((key) => [key, key])),
+    SCRIPT_DIR: "/fixture/scripts",
+  };
+  const result = runShell(
+    `
 ${definition}
 CONTAINER_RUNTIME=record_runtime
 runtime_pull_args=()
@@ -303,20 +300,19 @@ if ${name}; then
   exit 99
 fi
 `,
-      environment,
-    );
+    environment,
+  );
 
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.doesNotMatch(result.stderr, /Health check must not run/);
-    assert.doesNotMatch(result.stderr, /Creation failure must propagate/);
-  });
-}
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stderr, /Health check must not run/);
+  assert.doesNotMatch(result.stderr, /Creation failure must propagate/);
+});
 
 test("monitor warns once per missing editor and keeps the core running", () => {
   const result = runShell(`
 ${developmentFunction("monitor_containers")}
 DEV_SERVICE_CONTAINERS=(api)
-DEV_OPTIONAL_EDITOR_CONTAINERS=(office drawio)
+DEV_OPTIONAL_EDITOR_CONTAINERS=(office optional-fixture)
 CONTAINER_RUNTIME=record_runtime
 container_is_running() {
   test "$1" = api
@@ -348,7 +344,7 @@ test("monitor still stops on a failed required container", () => {
   const result = runShell(`
 ${developmentFunction("monitor_containers")}
 DEV_SERVICE_CONTAINERS=(api)
-DEV_OPTIONAL_EDITOR_CONTAINERS=(office drawio)
+DEV_OPTIONAL_EDITOR_CONTAINERS=(office optional-fixture)
 CONTAINER_RUNTIME=record_runtime
 container_is_running() {
   return 1

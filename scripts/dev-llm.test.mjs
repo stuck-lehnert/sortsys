@@ -81,7 +81,7 @@ fi
           DEV_DUCKDB_CONTAINER: "fixture-duckdb",
           DEV_DUCKDB_TOKEN: "fixture-datastore-token",
           DEV_OFFICE_PUBLIC_ORIGIN: "http://127.0.0.1:39180",
-          DEV_DRAWIO_PUBLIC_URL: "http://127.0.0.1:39181",
+          DEV_SORTSYS_PUBLIC_ORIGIN: "http://127.0.0.1:5173",
           DEV_ADMIN_HASH: "fixture-password-hash",
           DEV_API_IMAGE: "fixture-api-image",
           ROOT_DIR: directory,

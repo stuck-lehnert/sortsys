@@ -135,8 +135,8 @@ case "$KIND" in
       --security-opt no-new-privileges:true --network none --read-only \
       --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
       --sysctl net.ipv4.ip_unprivileged_port_start=0 \
-      -e API_UPSTREAM=http://127.0.0.1 -e ONLYOFFICE_UPSTREAM=http://127.0.0.1 \
-      -e DRAWIO_UPSTREAM=http://127.0.0.1 "$IMAGE" >/dev/null
+      -e API_UPSTREAM=http://127.0.0.1 \
+      "$IMAGE" >/dev/null
 
     ready=false
 

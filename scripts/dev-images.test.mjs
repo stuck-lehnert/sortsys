@@ -151,7 +151,6 @@ function prepareImages({ failRust = false } = {}) {
     `
 ${developmentFunction("wait_for_startup_step")}
 ${developmentFunction("prepare_images")}
-DEV_DRAWIO_IMAGE=drawio
 DEV_BUN_IMAGE=bun
 DEV_RUST_IMAGE=rust
 DEV_NODE_IMAGE=node
@@ -171,10 +170,9 @@ printf 'All selected images ready\\n'
 test("image preparation waits for the independent runtime dependencies", () => {
   const result = prepareImages();
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /Waiting for drawio/);
   assert.match(result.stdout, /Waiting for rust/);
   assert.match(result.stdout, /All selected images ready/);
-  assert.doesNotMatch(result.stdout, /postgres|s3|go/);
+  assert.doesNotMatch(result.stdout, /postgres|s3|go|drawio/);
 });
 
 test("a required image failure prevents startup", () => {

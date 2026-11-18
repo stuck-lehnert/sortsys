@@ -6,7 +6,6 @@ pub mod commercial_documents;
 pub mod common;
 pub mod delivery_notes;
 pub mod document_templates;
-pub mod drawio;
 pub mod gaeb_positions;
 pub mod llm;
 pub mod office_exports;
@@ -38,7 +37,6 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = delivery_notes::register_contract(builder);
     let builder = products::register_contract(builder);
     let builder = project_files::register_contract(builder);
-    let builder = drawio::register_contract(builder);
     let builder = xml_documents::register_contract(builder);
     let builder = office_exports::register_contract(builder);
     onlyoffice::register_contract(builder)

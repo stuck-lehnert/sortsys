@@ -15,7 +15,6 @@ if [[ ! "$DEV_STACK_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
 fi
 DEV_NETWORK="${DEV_STACK_NAME}-network"
 DEV_OFFICE_CONTAINER="${DEV_STACK_NAME}-office"
-DEV_DRAWIO_CONTAINER="${DEV_STACK_NAME}-drawio"
 DEV_API_CONTAINER="${DEV_STACK_NAME}-api"
 DEV_DUCKDB_CONTAINER="${DEV_STACK_NAME}-duckdb"
 DEV_DUCKDB_TOKEN="${DEV_DUCKDB_TOKEN:-sortsys-development-duckdb-token-not-for-production}"
@@ -33,7 +32,6 @@ DEV_OFFICE_DATA_DIR="$DEV_DATA_DIR/private-office"
 DEV_SEED_DATA_DIR="$DEV_DATA_DIR/seed"
 
 DEV_OFFICE_IMAGE="${DEV_OFFICE_IMAGE:-localhost/sortsys-private-office:dev}"
-DEV_DRAWIO_IMAGE="${DEV_DRAWIO_IMAGE:-$(sortsys_container_image drawio)}"
 DEV_BUN_IMAGE="${DEV_BUN_IMAGE:-$(sortsys_container_image bun)}"
 DEV_RUST_IMAGE="${DEV_RUST_IMAGE:-$(sortsys_container_image rust)}"
 DEV_API_IMAGE="${DEV_API_IMAGE:-localhost/sortsys-api-dev:rust-1.99-duckdb-2}"
@@ -47,8 +45,6 @@ DEV_OFFICE_SANDBOX_PORT="${DEV_OFFICE_SANDBOX_PORT:-39182}"
 DEV_OFFICE_PUBLIC_ORIGIN="${DEV_OFFICE_PUBLIC_ORIGIN:-http://127.0.0.1:${DEV_OFFICE_PORT}}"
 DEV_OFFICE_SANDBOX_ORIGIN="${DEV_OFFICE_SANDBOX_ORIGIN:-http://127.0.0.1:${DEV_OFFICE_SANDBOX_PORT}}"
 DEV_SORTSYS_PUBLIC_ORIGIN="${DEV_SORTSYS_PUBLIC_ORIGIN:-http://127.0.0.1:${DEV_WEBAPP_PORT}}"
-DEV_DRAWIO_PORT="${DEV_DRAWIO_PORT:-39181}"
-DEV_DRAWIO_PUBLIC_URL="${DEV_DRAWIO_PUBLIC_URL:-http://127.0.0.1:${DEV_DRAWIO_PORT}}"
 
 DEV_JWT_SECRET="${DEV_JWT_SECRET:-sortsys-development-api-signing-secret-not-for-production}"
 # Development global-admin password: 123456
@@ -57,7 +53,6 @@ DEV_ADMIN_HASH="${DEV_ADMIN_HASH:-\$2y\$12\$A20B6GFXZPxMInilSMwRy.q3tixzPl9Bq0tg
 
 DEV_OPTIONAL_EDITOR_CONTAINERS=(
   "$DEV_OFFICE_CONTAINER"
-  "$DEV_DRAWIO_CONTAINER"
 )
 
 DEV_SERVICE_CONTAINERS=(
@@ -441,7 +436,7 @@ wait_for_api_ready() {
 }
 
 prepare_images() {
-  local images=("$DEV_DRAWIO_IMAGE" "$DEV_BUN_IMAGE" "$DEV_RUST_IMAGE" "$DEV_NODE_IMAGE")
+  local images=("$DEV_BUN_IMAGE" "$DEV_RUST_IMAGE" "$DEV_NODE_IMAGE")
   local pids=()
   local index
   for image in "${images[@]}"; do
@@ -480,27 +475,6 @@ start_private_office() {
     return 1
   fi
   wait_for_editor_ready "$DEV_OFFICE_CONTAINER" "" "Office" 180
-}
-
-start_drawio() {
-  echo "Starting development diagrams.net on port ${DEV_DRAWIO_PORT}"
-
-  ensure_network || return 1
-
-  if ! "$CONTAINER_RUNTIME" run -d \
-    --rm \
-    --name "$DEV_DRAWIO_CONTAINER" \
-    "${runtime_pull_args[@]}" \
-    --network "$DEV_NETWORK" \
-    -p "${DEV_DRAWIO_PORT}:8080" \
-    -e DRAWIO_SERVER_URL="/" \
-    -e DRAWIO_BASE_URL="" \
-    "$DEV_DRAWIO_IMAGE" >/dev/null; then
-    return 1
-  fi
-
-  wait_for_editor_ready "$DEV_DRAWIO_CONTAINER" \
-    http://127.0.0.1:8080/ "diagrams.net" 180
 }
 
 ensure_local_api_client_package() {
@@ -582,7 +556,6 @@ start_api_container() {
     -e DUCKDB_SERVICE_TOKEN="$DEV_DUCKDB_TOKEN" \
     -e DUCKDB_QUACK_DISABLE_SSL="true" \
     -e OFFICE_PUBLIC_ORIGIN="$DEV_OFFICE_PUBLIC_ORIGIN" \
-    -e DRAWIO_PUBLIC_URL="$DEV_DRAWIO_PUBLIC_URL" \
     -e SORTSYS_PUBLIC_ORIGIN="$DEV_SORTSYS_PUBLIC_ORIGIN" \
     -e ADMIN_HASH="$DEV_ADMIN_HASH" \
     "$DEV_API_IMAGE" \
@@ -763,7 +736,6 @@ ensure_network
 prepare_images
 
 start_optional_editor "Office" start_private_office &
-start_optional_editor "diagrams.net" start_drawio &
 build_api_development_image &
 api_image_pid="$!"
 (
@@ -787,7 +759,6 @@ echo "- Betreiberverwaltung: DEV_ADMIN_PASSWORD (Standard: 123456)"
 echo "- API:      http://127.0.0.1:${DEV_API_PORT}"
 echo "- Webapp:   http://127.0.0.1:${DEV_WEBAPP_PORT}"
 echo "- Office: ${DEV_OFFICE_PUBLIC_ORIGIN}"
-echo "- diagrams.net: ${DEV_DRAWIO_PUBLIC_URL}"
 echo
 echo "Use '${CONTAINER_RUNTIME} logs -f <container>' to inspect logs."
 echo "Press Ctrl+C to stop and clean up all containers."

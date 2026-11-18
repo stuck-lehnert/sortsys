@@ -364,7 +364,6 @@ async fn private_editors_use_native_configuration_and_separate_file_permissions(
         .into();
     settings.editors = crate::editors::EditorConfig {
         office_origin: Some("http://127.0.0.1:29400".into()),
-        drawio_url: Some("/drawio".into()),
     };
     let mut tasks = Vec::new();
     let mut endpoints = Vec::new();

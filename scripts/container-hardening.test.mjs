@@ -68,7 +68,7 @@ for (const filename of filenames) {
     assert.deepEqual(service.networks, ["data"]);
     assert.equal(compose.networks.data.internal, true);
     assert.equal(shareNetwork(services, "duckdb", "api"), true);
-    for (const name of ["webapp", "office", "drawio"])
+    for (const name of ["webapp", "office"])
       assert.equal(shareNetwork(services, "duckdb", name), false, name);
     assert.deepEqual(service.command, ["/usr/local/bin/sortsys-duckdb"]);
     assert.deepEqual(service.cap_drop, ["ALL"]);
@@ -96,7 +96,6 @@ for (const filename of filenames) {
     for (const pair of [
       ["webapp", "api"],
       ["webapp", "office"],
-      ["webapp", "drawio"],
       ["api", "office"],
     ]) {
       assert.equal(shareNetwork(services, ...pair), true, pair.join(" -> "));
@@ -275,12 +274,11 @@ test("optional runtime checks use genuine worker tests separately from productio
   assert.ok(harness.includes('-test.run "^TestOCRRuntime$"'));
 });
 
-test("nginx only renders proxy and resolver values into its writable configuration", () => {
+test("nginx only renders API and body limit values into its writable configuration", () => {
   const dockerfile = read("sortsys-webapp-v2/Dockerfile");
   const config = read("sortsys-webapp-v2/nginx.conf");
 
   assert.match(dockerfile, /NGINX_ENVSUBST_OUTPUT_DIR=\/tmp/);
-  assert.match(dockerfile, /NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1/);
 
   const filterValue = dockerfile.match(/NGINX_ENVSUBST_FILTER=(\S+)/)?.[1];
 
@@ -288,12 +286,7 @@ test("nginx only renders proxy and resolver values into its writable configurati
 
   const filter = new RegExp(filterValue);
 
-  for (const name of [
-    "API_UPSTREAM",
-    "DRAWIO_UPSTREAM",
-    "CLIENT_MAX_BODY_SIZE",
-    "NGINX_LOCAL_RESOLVERS",
-  ]) {
+  for (const name of ["API_UPSTREAM", "CLIENT_MAX_BODY_SIZE"]) {
     assert.equal(filter.test(name), true, name);
   }
 
@@ -437,6 +430,8 @@ for (const file of ["compose.yaml", "ghcr-compose.yaml"]) {
       read("sortsys-office/Dockerfile"),
       /HEALTHCHECK.*run\.cjs.*--health/,
     );
-    assert.ok(services.drawio.healthcheck);
+    assert.equal(services.drawio, undefined);
+    assert.equal(services.api.environment.DRAWIO_PUBLIC_URL, undefined);
+    assert.equal(services.webapp.environment.DRAWIO_UPSTREAM, undefined);
   });
 }

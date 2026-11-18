@@ -1,8 +1,8 @@
 # Lokale Entwicklung
 
-`./scripts/dev` startet den gemeinsamen DuckDB-Datendienst, API und Webapp. Der
-Office-Dienst und diagrams.net starten unabhängig davon. Das neue Setup
-verwendet keine laufende PostgreSQL-Installation. Alte Bestände werden
+`./scripts/dev` startet den gemeinsamen DuckDB-Datendienst, API und Webapp.
+Der private Office-Dienst für Dokumente und Diagramme startet unabhängig davon.
+Das Setup verwendet keine laufende PostgreSQL-Installation. Alte Bestände werden
 [beim Anlegen eines Mandanten aus einer Sicherung übernommen](bestandsumstellung.md).
 
 | Dienst         | Standardadresse          |
@@ -11,7 +11,6 @@ verwendet keine laufende PostgreSQL-Installation. Alte Bestände werden
 | API            | <http://127.0.0.1:3000>  |
 | Office         | <http://127.0.0.1:39180> |
 | Office-Sandbox | <http://127.0.0.1:39182> |
-| diagrams.net   | <http://127.0.0.1:39181> |
 
 Ports und Images lassen sich über die `DEV_*`-Variablen am Anfang von
 [`scripts/dev`](../scripts/dev) anpassen. `CONTAINER_RUNTIME=docker` oder

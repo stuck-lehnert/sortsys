@@ -318,7 +318,6 @@ export type QueryInputs = {
   "projects.dailyReports.get": { projectId: string; day: unknown; };
   "projects.dailyReports.list": { projectId?: undefined | null | string; from?: unknown; to?: unknown; limit?: undefined | number; offset?: undefined | number; };
   "projects.deployments.list": { from: unknown; to: unknown; since?: unknown; projectId?: undefined | null | string; userId?: undefined | null | string; };
-  "projects.files.drawioConfig": { projectId: Id, fileId: Id, };
   "projects.files.folders.list": { projectId: Id, };
   "projects.files.list": { projectId: string; };
   "projects.files.officeConfig": { projectId: Id, fileId: Id, };
@@ -470,7 +469,6 @@ export type QueryOutputs = {
   "projects.dailyReports.get": { revision?: string; costRevision?: string; id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: "internal" | "external" | "subcontractor"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; };
   "projects.dailyReports.list": { revision?: string; costRevision?: string; id: string; projectId: string; day: Date; summary: null | string; weather: null | { summary?: undefined | null | string; temperatureC?: undefined | null | number; precipitationMm?: undefined | null | number; windKph?: undefined | null | number; }; createdByUserId: null | string; createdAt: Date; workHours: { id: string; reportId: string; userId: null | string; hours: number; costPerHour: null | number; contractType: "internal" | "external" | "subcontractor"; }[]; photos: { id: string; projectId: string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; createdByUserId: null | string; createdAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[]; }[];
   "projects.deployments.list": { revision?: string; id: string; projectId: string; projectTitle?: string; userId: string; from: Date; to: Date; note: null | string; createdAt: Date; modifiedAt: Date; }[];
-  "projects.files.drawioConfig": { editorUrl: string, canEdit: boolean, fileName: string, version: bigint, xml: string, };
   "projects.files.folders.list": Array<{ id: Id, projectId: Id, parentFolderId: Id | null, name: string, createdByUserId: Id | null, createdAt: Date, modifiedAt: Date, }>;
   "projects.files.list": { id: string; projectId: string; folderId: null | string; fileName: string; mimeType: string; kind: "file" | "image"; sizeBytes: null | number; status: "uploaded" | "pending"; thumbnailStatus: "none" | "processing" | "failed" | "queued" | "ready"; thumbnailExpiresAt: null | Date; previewExpiresAt: null | Date; thumbnailWidth: null | number; thumbnailHeight: null | number; textExtractionStatus: string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; uploadedAt: null | Date; downloadExpiresAt: null | Date; downloadAttachmentExpiresAt: null | Date; thumbnailUrl?: undefined | null | string; previewUrl?: undefined | null | string; downloadUrl?: undefined | null | string; downloadAttachmentUrl?: undefined | null | string; }[];
   "projects.files.officeConfig": { apiUrl: string, canEdit: boolean, config: Record<string, unknown>, };
@@ -521,7 +519,7 @@ export type QueryOutputs = {
   "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.list": Array<{ id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, }>;
   "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
-  "zerotrust.editors.config": { drawioUrl: string | null, officeOrigin: string | null, };
+  "zerotrust.editors.config": { officeOrigin: string | null, };
   "zerotrust.fileChunks.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.history.get": { access: Access, sequence: string, orderId: string, publication: string, initialPublication: string, domain: string, envelope: EncryptedObject<Facet>, previous: EncryptedObject<Facet> | null, migrationOrigin: MigrationOrigin | null, deletion: JsonValue | null, references: JsonValue | null, occurredAt: Date, occurredMicros: string, } | null;
   "zerotrust.history.list": { access: Access, current: string, total: string, snapshot: string, after: string | null, afterMicros: string | null, afterOrder: string | null, unchanged: boolean, changes: Array<Change>, };
@@ -664,7 +662,6 @@ export type MutationInputs = {
   "projects.files.completeUpload": { projectId: string; fileId: string; etag?: undefined | null | string; };
   "projects.files.createUpload": { projectId: string; fileName: string; mimeType: string; folderId?: undefined | null | string; sizeBytes?: undefined | null | number; };
   "projects.files.delete": { projectId: string; fileId: string; };
-  "projects.files.drawioSave": { projectId: Id, fileId: Id, version: bigint, xml: string, };
   "projects.files.folders.create": { projectId: Id, name: string, parentFolderId?: Id | null, };
   "projects.files.folders.delete": { projectId: Id, folderId: Id, };
   "projects.files.folders.move": { projectId: Id, folderId: Id, parentFolderId?: Id | null, };
@@ -880,7 +877,6 @@ export type MutationOutputs = {
   "projects.files.completeUpload": { success: true; };
   "projects.files.createUpload": { fileId: string; objectKey: string; uploadUrl: string; uploadMethod: "PUT"; uploadHeaders: Record<string, string>; expiresAt: Date; };
   "projects.files.delete": { success: true; };
-  "projects.files.drawioSave": { version: bigint, savedAt: Date, };
   "projects.files.folders.create": { id: Id, };
   "projects.files.folders.delete": { success: true, };
   "projects.files.folders.move": { success: true, };
@@ -1054,7 +1050,6 @@ const queryProcedures = new Set<string>([
   "projects.dailyReports.get",
   "projects.dailyReports.list",
   "projects.deployments.list",
-  "projects.files.drawioConfig",
   "projects.files.folders.list",
   "projects.files.list",
   "projects.files.officeConfig",
@@ -1248,7 +1243,6 @@ const mutationProcedures = new Set<string>([
   "projects.files.completeUpload",
   "projects.files.createUpload",
   "projects.files.delete",
-  "projects.files.drawioSave",
   "projects.files.folders.create",
   "projects.files.folders.delete",
   "projects.files.folders.move",

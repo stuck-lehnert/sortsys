@@ -154,7 +154,6 @@ try {
   console.log("Native editors: member enrolled");
   const expected = {
     officeOrigin: "http://127.0.0.1:29400",
-    drawioUrl: "/drawio",
   };
   assert.deepEqual(
     await required(owner.query("zerotrust.editors.config", undefined)),
@@ -192,26 +191,17 @@ try {
     mime: "application/vnd.jgraph.mxfile",
     blob: new Blob([xml]),
   });
-  const diagram = await required(
-    business.query("projects.files.drawioConfig", {
-      projectId: project.id,
-      fileId: diagramId,
-    }),
-  );
-  assert.equal(diagram.editorUrl, expected.drawioUrl);
-  assert.equal(diagram.xml, xml);
+  const diagram = await business.files.office(project.id, diagramId);
+  assert.equal(diagram.editorOrigin, expected.officeOrigin);
+  assert.equal(await diagram.document.text(), xml);
+  assert.equal(diagram.canEdit, true);
   const editedXml = xml.replace(
     "CONFIDENTIAL_DIAGRAM_846281",
     "CONFIDENTIAL_DIAGRAM_EDIT_846281",
   );
   await business.files.save(project.id, diagramId, 1n, new Blob([editedXml]));
-  const saved = await required(
-    business.query("projects.files.drawioConfig", {
-      projectId: project.id,
-      fileId: diagramId,
-    }),
-  );
-  assert.equal(saved.xml, editedXml);
+  const saved = await business.files.office(project.id, diagramId);
+  assert.equal(await saved.document.text(), editedXml);
   await changeProjectAccess(
     owner,
     `user:${profile.id}`,

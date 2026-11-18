@@ -59,8 +59,8 @@ Tastaturbedienung, Zugänglichkeit und Dokumentdialoge. `SORTSYS_UI_ASSETS` kann
 vorhandenes `build/client`-Verzeichnis auswählen.
 
 Nginx liefert den statischen Produktionsbuild aus. `API_UPSTREAM` bestimmt die
-interne API-Adresse. `DRAWIO_UPSTREAM` bezeichnet den separat bereitgestellten
-statischen Diagrammeditor; die Dokumentdialoge verwenden die eigene CryptPad-Origin.
+interne API-Adresse. Dokument- und Diagrammeditoren verwenden die eigene
+CryptPad-Origin; ein zusätzlicher diagrams.net-Container wird nicht benötigt.
 `CLIENT_MAX_BODY_SIZE` beträgt standardmäßig `64m`.
 
 ## Dokumentbearbeitung

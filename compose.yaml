@@ -50,25 +50,6 @@ services:
       - private-office-data:/var/lib/sortsys-office
     stop_grace_period: 20s
 
-  drawio:
-    image: ${DRAWIO_IMAGE:-jgraph/drawio:32.6.9}
-    restart: unless-stopped
-    environment:
-      # The official image derives its Tomcat context path from this URL.
-      # A relative same-origin URL keeps Coolify's generated domain authoritative.
-      DRAWIO_SERVER_URL: ${DRAWIO_SERVER_URL:-/drawio/}
-      DRAWIO_BASE_URL: ${DRAWIO_BASE_URL:-/drawio}
-    expose:
-      - "8080"
-    healthcheck:
-      test:
-        ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/drawio/"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 45s
-    stop_grace_period: 30s
-
   api:
     build:
       context: .
@@ -95,7 +76,6 @@ services:
       LLM_ENCRYPTION_KEY: ${LLM_ENCRYPTION_KEY:-}
       LLM_LIVE_INTERNAL_URL: ${LLM_LIVE_INTERNAL_URL:-}
       OFFICE_PUBLIC_ORIGIN: ${OFFICE_PUBLIC_ORIGIN}
-      DRAWIO_PUBLIC_URL: /drawio
       SORTSYS_PUBLIC_ORIGIN: ${SORTSYS_PUBLIC_ORIGIN}
     expose:
       - "3000"
@@ -138,7 +118,6 @@ services:
     environment:
       SERVICE_URL_WEBAPP_80: /
       API_UPSTREAM: http://api:3000
-      DRAWIO_UPSTREAM: http://drawio:8080
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-64m}
     expose:
       - "80"

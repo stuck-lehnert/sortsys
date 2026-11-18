@@ -1070,26 +1070,14 @@ export function createBusinessClient(
         if (closed || signal.aborted) throw unavailable();
         return [value, null];
       }
-      if (
-        path === "projects.files.xmlContent" ||
-        path === "projects.files.drawioConfig"
-      ) {
+      if (path === "projects.files.xmlContent") {
         const data = object(input, ["projectId", "fileId"]),
           signal = controller.signal;
         const value = await (
           await fileStore()
         ).document(text(data.projectId), text(data.fileId));
         if (closed || signal.aborted) throw unavailable();
-        if (path === "projects.files.xmlContent") return [value, null];
-        const config = await import("./protectedObjects").then((module) =>
-          module.required(
-            base.query("zerotrust.editors.config", undefined, {
-              strategy: "network-only",
-            }),
-          ),
-        );
-        if (!config.drawioUrl) throw unavailable();
-        return [{ ...value, editorUrl: config.drawioUrl }, null];
+        return [value, null];
       }
       if (PROJECT_QUERIES.has(path)) {
         const signal = controller.signal,
@@ -1334,10 +1322,7 @@ export function createBusinessClient(
         notify((path) => FILE_QUERIES.has(path));
         return [value, null];
       }
-      if (
-        path === "projects.files.xmlSave" ||
-        path === "projects.files.drawioSave"
-      ) {
+      if (path === "projects.files.xmlSave") {
         const data = object(input, [
             "projectId",
             "fileId",

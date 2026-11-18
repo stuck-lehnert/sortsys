@@ -414,7 +414,7 @@ Object.assign(window, {
         if (path !== "zerotrust.editors.config") {
           throw new Error("Unexpected export request");
         }
-        return [{ officeOrigin: editorOrigin, drawioUrl: null }, null];
+        return [{ officeOrigin: editorOrigin }, null];
       }) as typeof client.query;
       const host = document.createElement("div");
       document.body.append(host);

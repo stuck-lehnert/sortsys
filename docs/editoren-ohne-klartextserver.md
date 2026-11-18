@@ -102,9 +102,10 @@ Die [Komponententests](../sortsys-webapp-v2/scripts/ui/private-editors.browser.m
 prüfen für DOCX und Drawio den Rechteentzug, verspätete Ladeantworten und den
 Wechsel zwischen Dateien einschließlich der Rückkehr zur ursprünglichen Datei.
 Sie verwenden die tatsächliche React-Komponente und ein Protokoll-Testfenster.
-Der Diensttest prüft dagegen die echte Zusammenarbeit; native API-Tests prüfen
-zusätzlich die Berechtigung zum Speichern. Diese Nachweise ersetzen einander
-nicht.
+Der Diensttest prüft dagegen die echte Zusammenarbeit. Der
+[native Dateitest](../sortsys-webapp-v2/scripts/test-duckdb-editors.ts) öffnet
+Office-Dateien und Diagramme über denselben Datei-Client und prüft zusätzlich
+die Berechtigung zum Speichern. Diese Nachweise ersetzen einander nicht.
 
 ## Stand der Umsetzung und Prüfungen
 
@@ -176,13 +177,14 @@ Browsereditor. Änderungen bleiben dort bis zum Herunterladen im Browser; sie
 werden nicht als Projektdatei gespeichert. Die API liefert dafür nur die
 statische Editoradresse.
 
-Die eigenständige DuckDB-API liest `OFFICE_PUBLIC_ORIGIN` und
-`DRAWIO_PUBLIC_URL` auch ohne frühere Datenbankkonfiguration. Die
-authentifizierte Abfrage `zerotrust.editors.config` liefert ausschließlich diese
-öffentlichen Adressen. Dateiinhalte und Sitzungszugänge gehören nicht in diese
-Antwort. Die Office-Adresse muss eine HTTPS-Origin sein; HTTP ist nur an
-Loopback erlaubt. Die Diagrammadresse darf auch ein Pfad wie `/drawio` sein.
-Zugangsdaten, Queryparameter und URL-Fragmente sind dafür ausgeschlossen.
+Die API liest die öffentliche Editoradresse aus `OFFICE_PUBLIC_ORIGIN`.
+Die authentifizierte Abfrage `zerotrust.editors.config` liefert ausschließlich
+diese Adresse. Dateiinhalte und Sitzungszugänge gehören nicht in diese Antwort.
+Die Adresse muss eine HTTPS-Origin sein; HTTP ist nur an Loopback erlaubt.
+Zugangsdaten, Queryparameter und URL-Fragmente sind ausgeschlossen.
+Office-Dateien und Diagramme verwenden denselben privaten Dienst. Compose und
+das Entwicklungsskript starten deshalb keinen zusätzlichen diagrams.net-Container.
+Der Webapp-Nginx sperrt die früheren Editorpfade `/office` und `/drawio`.
 
 ## Noch nicht bestätigte Bearbeitungsstände
 
