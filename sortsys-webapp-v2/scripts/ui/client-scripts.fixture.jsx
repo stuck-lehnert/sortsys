@@ -91,6 +91,36 @@ export async function showClientScripts(
   window.cryptoFixture.releaseScriptDetail = () => release();
   window.cryptoFixture.clientScriptRequests = () => requests;
   window.cryptoFixture.clientScriptWireCalls = () => tenant.calls;
+  window.cryptoFixture.inspectScriptTypes = async (
+    source,
+    completionOffset,
+  ) => {
+    const monaco = await import("monaco-editor");
+    const model = monaco.editor
+      .getModels()
+      .find((model) => model.uri.path.startsWith("/sortsys/client-script-"));
+    if (!model) throw new Error("The real script editor must be open");
+    model.setValue(source);
+    const getWorker = await monaco.typescript.getJavaScriptWorker();
+    const worker = await getWorker(model.uri);
+    const uri = model.uri.toString();
+    const [syntax, semantic] = await Promise.all([
+      worker.getSyntacticDiagnostics(uri),
+      worker.getSemanticDiagnostics(uri),
+    ]);
+    const completions =
+      completionOffset === undefined
+        ? null
+        : await worker.getCompletionsAtPosition(uri, completionOffset);
+    return {
+      diagnostics: [...syntax, ...semantic].map((diagnostic) => ({
+        code: diagnostic.code,
+        start: diagnostic.start,
+        message: diagnostic.messageText,
+      })),
+      completions: completions?.entries.map((entry) => entry.name) ?? [],
+    };
+  };
   root.render(
     <I18nProvider>
       <MemoryRouter initialEntries={["/scripts"]}>

@@ -3862,6 +3862,59 @@ for (const { locale, theme, width } of [
   });
 }
 
+test("client script Monaco worker validates the current encrypted API and rejects removed calls", async () => {
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(() =>
+    window.cryptoFixture.showClientScripts({ locale: "en" }),
+  );
+  await page.getByRole("button", { name: /Fixture script/ }).click();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.locator(".script-editor .monaco-editor").waitFor();
+  const valid = [
+    'const { client } = await import("sortsys-client");',
+    'const [note] = await client.query("deliveryNotes.get", { id: "1" });',
+    "note?.autoId.toFixed();",
+    'await client.mutate("deliveryNotes.delete", { id: "1", expectedRevision: "2" });',
+  ].join("\n");
+  const accepted = await page.evaluate(
+    (source) => window.cryptoFixture.inspectScriptTypes(source),
+    valid,
+  );
+  assert.deepEqual(accepted.diagnostics, []);
+  const rejected = await page.evaluate(
+    (source) => window.cryptoFixture.inspectScriptTypes(source),
+    [
+      valid,
+      'await client.query("projects.files.officeConfig", { id: "1" });',
+      'await client.mutate("deliveryNotes.delete", { id: "1", expectedRevision: 2 });',
+      'await client.login("password");',
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    rejected.diagnostics.map((diagnostic) => diagnostic.code).sort(),
+    [2322, 2339, 2345],
+  );
+  const prefix = 'const { client } = await import("sortsys-client");\nclient.';
+  const suggestions = await page.evaluate(
+    (source) => window.cryptoFixture.inspectScriptTypes(source, source.length),
+    prefix,
+  );
+  for (const name of ["query", "mutate", "invalidate", "invalidateCascading"]) {
+    assert.ok(suggestions.completions.includes(name));
+  }
+  assert.equal(suggestions.completions.includes("login"), false);
+  await checkPageLayout("script-editor-current-api");
+  const wire = await page.evaluate(() =>
+    JSON.stringify(window.cryptoFixture.clientScriptWireCalls()),
+  );
+  assert.equal(
+    wire.includes("expectedRevision"),
+    false,
+    "checking types must not execute the script",
+  );
+});
+
 for (const state of ["empty", "error"]) {
   test(`admin import cannot save with ${state} model metadata`, async () => {
     seedAdminModels();

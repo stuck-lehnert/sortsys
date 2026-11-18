@@ -91,6 +91,7 @@ echo "Running webapp checks"
   bun run test:table
   bun run test:menus
   bun run test:editors
+  bun run test:script-client-types
   bun run test:chat-files
   bun run test:attachments
   bun run test:attachment-selection
