@@ -10,6 +10,9 @@ use crate::{
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+const OBJECT_PAGE_CIPHERTEXT_BUDGET: usize = 16 * 1024 * 1024;
+const OBJECT_PAGES_RESPONSE_BUDGET: usize = 32 * 1024 * 1024;
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::zerotrust) struct ObjectRecord {
@@ -342,12 +345,51 @@ pub(in crate::zerotrust) async fn selected_pages(
     context: &mut MetadataContext,
     input: ListBatchInput,
 ) -> RpcResult<Vec<ObjectPage>> {
-    let mut pages = Vec::with_capacity(input.selections.len());
-    let mut bytes = 0usize;
+    let mut reads = Vec::with_capacity(input.selections.len());
     for selection in input.selections {
-        let page = object_page(context, selection).await?;
+        reads.push(plan_object_page(context, selection).await?);
+    }
+    // Fetch only authorized, visible references. Empty and head-only pages
+    // don't consume a storage read or a slot in the ciphertext batch.
+    let groups = reads
+        .iter()
+        .filter(|read| !read.references.is_empty())
+        .map(ObjectPageRead::ciphertext_ids)
+        .collect::<Vec<_>>();
+    let ciphertexts = match groups.len() {
+        0 => Vec::new(),
+        1 => vec![
+            context
+                .repository
+                .ciphertext_prefix(
+                    groups.into_iter().next().ok_or_else(invalid)?,
+                    OBJECT_PAGE_CIPHERTEXT_BUDGET,
+                )
+                .await?,
+        ],
+        _ => {
+            context
+                .repository
+                .ciphertext_prefixes(
+                    groups,
+                    OBJECT_PAGE_CIPHERTEXT_BUDGET,
+                    OBJECT_PAGES_RESPONSE_BUDGET,
+                )
+                .await?
+        }
+    };
+    let mut ciphertexts = ciphertexts.into_iter();
+    let mut pages = Vec::with_capacity(reads.len());
+    let mut bytes = 0usize;
+    for read in reads {
+        let data = if read.references.is_empty() {
+            Vec::new()
+        } else {
+            ciphertexts.next().ok_or_else(invalid)?
+        };
+        let page = finish_object_page(context, read, data).await?;
         bytes += serde_json::to_vec(&page).map_err(internal)?.len();
-        if bytes > 32 * 1024 * 1024 {
+        if bytes > OBJECT_PAGES_RESPONSE_BUDGET {
             return Err(RpcError::new(
                 ErrorCode::BadRequest,
                 "Protected collection batch exceeds the response limit",
@@ -356,10 +398,46 @@ pub(in crate::zerotrust) async fn selected_pages(
         }
         pages.push(page);
     }
+    if ciphertexts.next().is_some() {
+        return Err(invalid());
+    }
     Ok(pages)
 }
 
 async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResult<ObjectPage> {
+    let read = plan_object_page(context, input).await?;
+    let data = if read.references.is_empty() {
+        Vec::new()
+    } else {
+        context
+            .repository
+            .ciphertext_prefix(read.ciphertext_ids(), OBJECT_PAGE_CIPHERTEXT_BUDGET)
+            .await?
+    };
+    finish_object_page(context, read, data).await
+}
+
+struct ObjectPageRead {
+    area: DomainRecord,
+    sequence: String,
+    references: Vec<ObjectRecord>,
+    after: Option<String>,
+    include_openings: bool,
+}
+
+impl ObjectPageRead {
+    fn ciphertext_ids(&self) -> Vec<String> {
+        self.references
+            .iter()
+            .map(|record| record.reference.clone())
+            .collect()
+    }
+}
+
+async fn plan_object_page(
+    context: &mut MetadataContext,
+    input: ListInput,
+) -> RpcResult<ObjectPageRead> {
     let area = registry::domain(&mut context.transaction, &input.domain).await?;
     require_read(&context.security, &area)?;
     let content_number = super::super::content::content_number(&mut context.transaction).await?;
@@ -374,13 +452,12 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     // A known version is a cache hint. Only a snapshot used for pagination
     // or a final consistency check must match the current version exactly.
     if input.head_only == Some(true) || input.known.as_ref() == Some(&sequence) {
-        return Ok(ObjectPage {
-            snapshot: sequence,
-            key_generation: area.generation,
-            objects: Vec::new(),
-            recipient_access: Vec::new(),
+        return Ok(ObjectPageRead {
+            area,
+            sequence,
+            references: Vec::new(),
             after: None,
-            openings: None,
+            include_openings: false,
         });
     }
     let page = context
@@ -400,40 +477,49 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     super::super::delivery::metadata_apply_visibility(&mut context.transaction, &mut references)
         .await?;
     references.retain(|record| !record.deleted);
-    let mut objects = Vec::new();
-    if !references.is_empty() {
-        let data = context
-            .repository
-            .ciphertext_prefix(
-                references
-                    .iter()
-                    .map(|record| record.reference.clone())
-                    .collect(),
-                16 * 1024 * 1024,
-            )
-            .await?;
-        if data.is_empty() || data.len() > references.len() {
-            return Err(invalid());
-        }
-        for (record, data) in references.iter().zip(data) {
-            let envelope: EncryptedObject = serde_json::from_str(&data).map_err(|_| invalid())?;
-            envelope.frame()?;
-            check_read(
-                &envelope,
-                record,
-                &context.auth.tenant,
-                &area.scope,
-                area.facet,
-            )?;
-            objects.push(envelope);
-        }
+    Ok(ObjectPageRead {
+        area,
+        sequence,
+        references,
+        after: page.after,
+        include_openings: input.include_openings == Some(true),
+    })
+}
+
+async fn finish_object_page(
+    context: &mut MetadataContext,
+    read: ObjectPageRead,
+    data: Vec<String>,
+) -> RpcResult<ObjectPage> {
+    let ObjectPageRead {
+        area,
+        sequence,
+        references,
+        after,
+        include_openings,
+    } = read;
+    if data.is_empty() != references.is_empty() || data.len() > references.len() {
+        return Err(invalid());
+    }
+    let mut objects = Vec::with_capacity(data.len());
+    for (record, data) in references.iter().zip(data) {
+        let envelope: EncryptedObject = serde_json::from_str(&data).map_err(|_| invalid())?;
+        envelope.frame()?;
+        check_read(
+            &envelope,
+            record,
+            &context.auth.tenant,
+            &area.scope,
+            area.facet,
+        )?;
+        objects.push(envelope);
     }
     let after = if objects.len() < references.len() {
         objects.last().map(|object| object.object.clone())
     } else {
-        page.after
+        after
     };
-    let openings = if input.include_openings == Some(true) {
+    let openings = if include_openings {
         let mut openings = Vec::new();
         let mut bytes = 0usize;
         let generations = objects

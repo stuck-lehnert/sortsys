@@ -306,6 +306,30 @@ impl Repository {
             .map_err(storage)
     }
 
+    pub async fn ciphertext_prefixes(
+        &self,
+        references: Vec<Vec<String>>,
+        page_budget: usize,
+        total_budget: usize,
+    ) -> RpcResult<Vec<Vec<String>>> {
+        self.store
+            .get_prefixes(
+                self.ciphertext_tenant()?,
+                references,
+                page_budget,
+                total_budget,
+            )
+            .await
+            .map_err(|error| match error {
+                StoreError::BatchTooLarge => RpcError::new(
+                    ErrorCode::BadRequest,
+                    "Ciphertext batch exceeds the response limit",
+                )
+                .with_http_code(413),
+                error => storage(error),
+            })
+    }
+
     pub fn transaction(&self) -> RpcResult<Transaction> {
         Ok(Transaction {
             repository: self.clone(),

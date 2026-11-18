@@ -257,9 +257,35 @@ async fn independent_api_clients_share_atomic_tenant_files_and_restorable_backup
         contents
     );
     assert_eq!(
-        second.get_prefix("first", ids, 1).await.unwrap(),
+        second.get_prefix("first", ids.clone(), 1).await.unwrap(),
         vec![ciphertext.to_owned()]
     );
+    let groups = vec![vec![ids[1].clone(), ids[0].clone()], ids];
+    let first_items_bytes = contents[0].len() + contents[1].len();
+    assert_eq!(
+        second
+            .get_prefixes("first", groups.clone(), 1, first_items_bytes)
+            .await
+            .unwrap(),
+        vec![vec![contents[1].clone()], vec![contents[0].clone()]]
+    );
+    assert!(matches!(
+        second
+            .get_prefixes("first", groups.clone(), 1, first_items_bytes - 1)
+            .await,
+        Err(StoreError::BatchTooLarge)
+    ));
+    assert_eq!(
+        second
+            .get_prefixes("first", groups.clone(), first_items_bytes + 1, 1024)
+            .await
+            .unwrap(),
+        vec![vec![contents[1].clone(), contents[0].clone()], contents]
+    );
+    assert!(matches!(
+        second.get_prefixes("second", groups, 1, 1024).await,
+        Err(StoreError::NotFound)
+    ));
     assert!(matches!(
         second.get("second", &id).await,
         Err(StoreError::NotFound)

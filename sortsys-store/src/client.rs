@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -13,6 +13,10 @@ use super::{
 };
 
 mod reads;
+
+const MAX_CIPHERTEXT_GROUPS: usize = 16;
+const MAX_CIPHERTEXT_GROUP_ITEMS: usize = 64;
+const MAX_CIPHERTEXT_READ_BYTES: usize = 2 * MAX_CIPHERTEXT_BYTES;
 
 #[derive(Clone)]
 pub struct CipherStore(Arc<Inner>);
@@ -300,34 +304,74 @@ impl CipherStore {
         }
         self.get_group(tenant, ids, Some(budget)).await
     }
+
+    /// Resolve several independent prefixes with one size lookup and one
+    /// ciphertext lookup. Enforce the combined budget before fetching bodies.
+    pub async fn get_prefixes(
+        &self,
+        tenant: &str,
+        groups: Vec<Vec<String>>,
+        page_budget: usize,
+        total_budget: usize,
+    ) -> Result<Vec<Vec<String>>, StoreError> {
+        if page_budget == 0
+            || page_budget > MAX_CIPHERTEXT_BYTES
+            || total_budget == 0
+            || total_budget > MAX_CIPHERTEXT_READ_BYTES
+        {
+            return Err(StoreError::Integrity);
+        }
+        self.get_groups(tenant, groups, Some(page_budget), total_budget)
+            .await
+    }
+
     async fn get_group(
         &self,
         tenant: &str,
         ids: Vec<String>,
         budget: Option<usize>,
     ) -> Result<Vec<String>, StoreError> {
-        if ids.is_empty() || ids.len() > 64 || ids.iter().any(|id| !valid_id(id)) {
-            return Err(StoreError::Integrity);
-        }
         if ids.len() == 1 {
             return self.get(tenant, &ids[0]).await.map(|data| vec![data]);
         }
+        self.get_groups(tenant, vec![ids], budget, MAX_CIPHERTEXT_READ_BYTES)
+            .await?
+            .pop()
+            .ok_or(StoreError::Integrity)
+    }
+
+    async fn get_groups(
+        &self,
+        tenant: &str,
+        groups: Vec<Vec<String>>,
+        page_budget: Option<usize>,
+        total_budget: usize,
+    ) -> Result<Vec<Vec<String>>, StoreError> {
+        if groups.is_empty()
+            || groups.len() > MAX_CIPHERTEXT_GROUPS
+            || groups.iter().any(|ids| {
+                ids.is_empty()
+                    || ids.len() > MAX_CIPHERTEXT_GROUP_ITEMS
+                    || ids.iter().any(|id| !valid_id(id))
+            })
+        {
+            return Err(StoreError::Integrity);
+        }
         let catalog = self.provision(tenant).await?;
-        let unique = ids
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>();
-        let quoted = unique
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(",");
+        let unique = groups.iter().flatten().cloned().collect::<BTreeSet<_>>();
         self.connection(move |connection| {
             let sizes_sql = format!(
                 "SELECT id || ':' || CAST(octet_length(encode(content)) AS VARCHAR) \
-                 FROM {catalog}.ciphertexts WHERE id IN ({quoted}) ORDER BY id"
+                 FROM {catalog}.ciphertexts WHERE id IN ({}) ORDER BY id",
+                quoted_ids(&unique)
             );
-            let metadata = connection.strings(&sizes_sql, "ciphertext-sizes", 64, 96, 64 * 96)?;
+            let metadata = connection.strings(
+                &sizes_sql,
+                "ciphertext-sizes",
+                unique.len(),
+                96,
+                unique.len() * 96,
+            )?;
             if metadata.len() != unique.len() {
                 return Err(StoreError::NotFound);
             }
@@ -343,37 +387,20 @@ impl CipherStore {
                 }
             }
 
-            let mut selected = Vec::new();
-            let mut total = 0usize;
-            for id in ids {
-                if budget.is_some_and(|budget| total >= budget) {
-                    break;
-                }
-                total += sizes[&id];
-                if total > 2 * MAX_CIPHERTEXT_BYTES {
-                    return Err(StoreError::BatchTooLarge);
-                }
-                selected.push(id);
-            }
-            let requested = selected
-                .iter()
-                .cloned()
-                .collect::<std::collections::BTreeSet<_>>();
-            let quoted = requested
-                .iter()
-                .map(|id| format!("'{id}'"))
-                .collect::<Vec<_>>()
-                .join(",");
+            let selected = select_ciphertext_prefixes(groups, &sizes, page_budget, total_budget)?;
+            let requested = selected.iter().flatten().cloned().collect::<BTreeSet<_>>();
             let encoded_single = MAX_CIPHERTEXT_BYTES.div_ceil(3) * 4 + 65;
-            let encoded_total = (2 * MAX_CIPHERTEXT_BYTES).div_ceil(3) * 4 + 64 * 65;
+            // Each independently encoded value can add up to three padding bytes.
+            let encoded_total = total_budget.div_ceil(3) * 4 + requested.len() * (65 + 3);
             let content_sql = format!(
                 "SELECT id || ':' || to_base64(encode(content)) \
-                 FROM {catalog}.ciphertexts WHERE id IN ({quoted}) ORDER BY id"
+                 FROM {catalog}.ciphertexts WHERE id IN ({}) ORDER BY id",
+                quoted_ids(&requested)
             );
             let rows = connection.strings(
                 &content_sql,
                 "ciphertexts-read",
-                64,
+                requested.len(),
                 encoded_single,
                 encoded_total,
             )?;
@@ -382,15 +409,12 @@ impl CipherStore {
             }
 
             let mut objects = BTreeMap::new();
-            let mut actual = 0usize;
             for row in rows {
                 let (id, encoded) = row.split_once(':').ok_or(StoreError::Integrity)?;
                 let data =
                     decode_content(Some(encoded.to_owned()))?.ok_or(StoreError::Integrity)?;
-                actual += data.len();
                 if !requested.contains(id)
-                    || data.len() > MAX_CIPHERTEXT_BYTES
-                    || actual > 2 * MAX_CIPHERTEXT_BYTES
+                    || sizes.get(id) != Some(&data.len())
                     || content_id(&data) != id
                 {
                     return Err(StoreError::Integrity);
@@ -401,7 +425,12 @@ impl CipherStore {
             }
             selected
                 .into_iter()
-                .map(|id| objects.get(&id).cloned().ok_or(StoreError::NotFound))
+                .map(|group| {
+                    group
+                        .into_iter()
+                        .map(|id| objects.get(&id).cloned().ok_or(StoreError::NotFound))
+                        .collect()
+                })
                 .collect()
         })
         .await
@@ -469,6 +498,42 @@ impl CipherStore {
         }
         Ok(response)
     }
+}
+
+fn quoted_ids(ids: &BTreeSet<String>) -> String {
+    ids.iter()
+        .map(|id| format!("'{id}'"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn select_ciphertext_prefixes(
+    groups: Vec<Vec<String>>,
+    sizes: &BTreeMap<String, usize>,
+    page_budget: Option<usize>,
+    total_budget: usize,
+) -> Result<Vec<Vec<String>>, StoreError> {
+    let mut total = 0;
+    let mut selected = Vec::with_capacity(groups.len());
+    for mut group in groups {
+        let mut page_bytes = 0;
+        let mut count = 0;
+        for id in &group {
+            if page_budget.is_some_and(|budget| page_bytes >= budget) {
+                break;
+            }
+            let size = sizes.get(id).ok_or(StoreError::NotFound)?;
+            page_bytes += size;
+            total += size;
+            if total > total_budget {
+                return Err(StoreError::BatchTooLarge);
+            }
+            count += 1;
+        }
+        group.truncate(count);
+        selected.push(group);
+    }
+    Ok(selected)
 }
 
 fn decode_content(encoded: Option<String>) -> Result<Option<String>, StoreError> {

@@ -172,6 +172,12 @@ export async function exerciseBatchedReads(
       selections: [first, second],
     }),
   );
+  const individualPages = await Promise.all(
+    [first, second].map((selection) =>
+      required(peer.query("zerotrust.objects.list", selection)),
+    ),
+  );
+  assert.deepEqual(pages, individualPages);
   assert.equal(pages.length, 2);
   assert.equal(pages[0]!.objects.length, 1);
   assert.equal(pages[1]!.objects.length, 32);
